@@ -1,0 +1,1027 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// 1. 조직/인사 도메인
+// ============================================
+
+model Organization {
+  id            String         @id @default(cuid())
+  name          String
+  fiscalYear    Int
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  departments   Department[]
+  evalCycles    EvalCycle[]
+  gradeSettings GradeSetting[]
+  compensationRuleSets CompensationRuleSet[]
+
+  @@map("organizations")
+}
+
+model Department {
+  id           String       @id @default(cuid())
+  deptCode     String       @unique
+  deptName     String
+  parentDeptId String?
+  parentDept   Department?  @relation("DeptHierarchy", fields: [parentDeptId], references: [id])
+  childDepts   Department[] @relation("DeptHierarchy")
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id])
+  employees    Employee[]
+  orgKpis      OrgKpi[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("departments")
+}
+
+model Employee {
+  id              String         @id @default(cuid())
+  empId           String         @unique
+  empName         String
+  gwsEmail        String         @unique
+  position        Position
+  role            SystemRole
+  deptId          String
+  department      Department     @relation(fields: [deptId], references: [id])
+  teamLeaderId    String?
+  sectionChiefId  String?
+  divisionHeadId  String?
+  joinDate        DateTime
+  currentSalary   Float          @default(0)
+  status          EmployeeStatus @default(ACTIVE)
+  profileImageUrl String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  personalKpis      PersonalKpi[]
+  monthlyRecords    MonthlyRecord[]
+  selfEvaluations   Evaluation[]    @relation("EvalTarget")
+  givenEvaluations  Evaluation[]    @relation("Evaluator")
+  checkInsAsOwner   CheckIn[]       @relation("CheckInOwner")
+  checkInsAsManager CheckIn[]       @relation("CheckInManager")
+  feedbackGiven     MultiFeedback[] @relation("FeedbackGiver")
+  feedbackReceived  MultiFeedback[] @relation("FeedbackReceiver")
+  notifications     Notification[]
+  appeals           Appeal[]
+  compensationSnapshots CompensationScenarioEmployee[]
+  notificationPreference NotificationPreference?
+  notificationJobs  NotificationJob[]
+  notificationDeadLetters NotificationDeadLetter[]
+  aiRequestLogs     AiRequestLog[]
+
+  @@map("employees")
+}
+
+enum Position {
+  MEMBER
+  TEAM_LEADER
+  SECTION_CHIEF
+  DIV_HEAD
+  CEO
+}
+
+enum SystemRole {
+  ROLE_MEMBER
+  ROLE_TEAM_LEADER
+  ROLE_SECTION_CHIEF
+  ROLE_DIV_HEAD
+  ROLE_CEO
+  ROLE_ADMIN
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  RESIGNED
+}
+
+// ============================================
+// 2. 평가 등급 설정
+// ============================================
+
+model GradeSetting {
+  id             String       @id @default(cuid())
+  orgId          String
+  organization   Organization @relation(fields: [orgId], references: [id])
+  evalYear       Int
+  gradeOrder     Int
+  gradeName      String
+  baseScore      Int
+  minScore       Int
+  maxScore       Int
+  levelName      String
+  description    String?
+  targetDistRate Float?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([orgId, evalYear, gradeName])
+  @@unique([orgId, evalYear, gradeOrder])
+  @@map("grade_settings")
+}
+
+// ============================================
+// 3. KPI 도메인
+// ============================================
+
+model OrgKpi {
+  id           String     @id @default(cuid())
+  deptId       String
+  department   Department @relation(fields: [deptId], references: [id])
+  evalYear     Int
+  kpiType      KpiType
+  kpiCategory  String
+  kpiName      String
+  definition   String?
+  formula      String?
+  targetValue  Float?
+  unit         String?
+  weight       Float
+  difficulty   Difficulty
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  personalKpis PersonalKpi[]
+
+  @@unique([deptId, evalYear, kpiName])
+  @@map("org_kpis")
+}
+
+model PersonalKpi {
+  id             String      @id @default(cuid())
+  employeeId     String
+  employee       Employee    @relation(fields: [employeeId], references: [id])
+  evalYear       Int
+  kpiType        KpiType
+  kpiName        String
+  definition     String?
+  formula        String?
+  targetValue    Float?
+  unit           String?
+  weight         Float
+  difficulty     Difficulty
+  linkedOrgKpiId String?
+  linkedOrgKpi   OrgKpi?     @relation(fields: [linkedOrgKpiId], references: [id])
+  status         KpiStatus   @default(DRAFT)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  monthlyRecords  MonthlyRecord[]
+  evaluationItems EvaluationItem[]
+
+  @@unique([employeeId, evalYear, kpiName])
+  @@map("personal_kpis")
+}
+
+enum KpiType {
+  QUANTITATIVE
+  QUALITATIVE
+}
+
+enum Difficulty {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum KpiStatus {
+  DRAFT
+  CONFIRMED
+  ARCHIVED
+}
+
+// ============================================
+// 4. 월별 실적 입력
+// ============================================
+
+model MonthlyRecord {
+  id              String      @id @default(cuid())
+  personalKpiId   String
+  personalKpi     PersonalKpi @relation(fields: [personalKpiId], references: [id])
+  employeeId      String
+  employee        Employee    @relation(fields: [employeeId], references: [id])
+  yearMonth       String
+  actualValue     Float?
+  achievementRate Float?
+  activities      String?
+  obstacles       String?
+  efforts         String?
+  attachments     Json?
+  isDraft         Boolean     @default(true)
+  submittedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([personalKpiId, yearMonth])
+  @@map("monthly_records")
+}
+
+// ============================================
+// 5. 평가 프로세스
+// ============================================
+
+model EvalCycle {
+  id              String       @id @default(cuid())
+  orgId           String
+  organization    Organization @relation(fields: [orgId], references: [id])
+  evalYear        Int
+  cycleName       String
+  status          CycleStatus  @default(SETUP)
+  kpiSetupStart   DateTime?
+  kpiSetupEnd     DateTime?
+  selfEvalStart   DateTime?
+  selfEvalEnd     DateTime?
+  firstEvalStart  DateTime?
+  firstEvalEnd    DateTime?
+  secondEvalStart DateTime?
+  secondEvalEnd   DateTime?
+  finalEvalStart  DateTime?
+  finalEvalEnd    DateTime?
+  ceoAdjustStart  DateTime?
+  ceoAdjustEnd    DateTime?
+  resultOpenStart DateTime?
+  resultOpenEnd   DateTime?
+  appealDeadline  DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  evaluations         Evaluation[]
+  multiFeedbackRounds MultiFeedbackRound[]
+  compensationScenarios CompensationScenario[]
+
+  @@map("eval_cycles")
+}
+
+enum CycleStatus {
+  SETUP
+  KPI_SETTING
+  IN_PROGRESS
+  SELF_EVAL
+  FIRST_EVAL
+  SECOND_EVAL
+  FINAL_EVAL
+  CEO_ADJUST
+  RESULT_OPEN
+  APPEAL
+  CLOSED
+}
+
+model CompensationRuleSet {
+  id           String       @id @default(cuid())
+  orgId        String
+  organization Organization @relation(fields: [orgId], references: [id])
+  evalYear     Int
+  versionNo    Int
+  changeReason String?
+  isActive     Boolean      @default(true)
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  rules     CompensationRule[]
+  scenarios CompensationScenario[]
+
+  @@unique([orgId, evalYear, versionNo])
+  @@map("compensation_rule_sets")
+}
+
+model CompensationRule {
+  id                 String              @id @default(cuid())
+  ruleSetId          String
+  ruleSet            CompensationRuleSet @relation(fields: [ruleSetId], references: [id], onDelete: Cascade)
+  gradeSettingId     String?
+  gradeName          String
+  bonusRate          Float
+  salaryIncreaseRate Float
+  description        String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([ruleSetId, gradeName])
+  @@map("compensation_rules")
+}
+
+model CompensationScenario {
+  id                 String                     @id @default(cuid())
+  evalCycleId        String
+  evalCycle          EvalCycle                  @relation(fields: [evalCycleId], references: [id])
+  ruleSetId          String
+  ruleSet            CompensationRuleSet        @relation(fields: [ruleSetId], references: [id])
+  scenarioName       String
+  versionNo          Int
+  sourceScenarioId   String?
+  sourceScenario     CompensationScenario?      @relation("CompensationScenarioVersion", fields: [sourceScenarioId], references: [id])
+  derivedScenarios   CompensationScenario[]     @relation("CompensationScenarioVersion")
+  status             CompensationScenarioStatus @default(DRAFT)
+  budgetLimit        Float
+  totalBonus         Float                      @default(0)
+  totalSalaryIncrease Float                     @default(0)
+  totalCost          Float                      @default(0)
+  isOverBudget       Boolean                    @default(false)
+  overBudgetAmount   Float                      @default(0)
+  needsRecalculation Boolean                    @default(false)
+  isLocked           Boolean                    @default(false)
+  lockReason         String?
+  lockedAt           DateTime?
+  reviewedById       String?
+  approvedById       String?
+  rejectedById       String?
+  publishedAt        DateTime?
+  createdById        String
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  employees CompensationScenarioEmployee[]
+  approvals CompensationApproval[]
+
+  @@unique([evalCycleId, versionNo])
+  @@map("compensation_scenarios")
+}
+
+model CompensationScenarioEmployee {
+  id                        String               @id @default(cuid())
+  scenarioId                String
+  scenario                  CompensationScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  employeeId                String
+  employee                  Employee             @relation(fields: [employeeId], references: [id])
+  evaluationId              String?
+  gradeName                 String
+  currentSalary             Float
+  bonusRate                 Float
+  salaryIncreaseRate        Float
+  bonusAmount               Float
+  salaryIncreaseAmount      Float
+  projectedSalary           Float
+  projectedTotalCompensation Float
+  sourceRuleId              String?
+  sourceRuleVersionNo       Int
+  calculationNote           String?
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+
+  @@unique([scenarioId, employeeId])
+  @@map("compensation_scenario_employees")
+}
+
+model CompensationApproval {
+  id         String                     @id @default(cuid())
+  scenarioId String
+  scenario   CompensationScenario       @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  actorId    String
+  actorRole  SystemRole
+  action     CompensationApprovalAction
+  fromStatus CompensationScenarioStatus
+  toStatus   CompensationScenarioStatus
+  comment    String?
+  createdAt  DateTime                   @default(now())
+
+  @@index([scenarioId, createdAt])
+  @@map("compensation_approvals")
+}
+
+enum CompensationScenarioStatus {
+  DRAFT
+  UNDER_REVIEW
+  REVIEW_APPROVED
+  REJECTED
+  FINAL_APPROVED
+}
+
+enum CompensationApprovalAction {
+  SUBMIT
+  REVIEW_APPROVE
+  FINAL_APPROVE
+  REJECT
+  LOCK
+  RECALCULATE
+}
+
+model Evaluation {
+  id              String     @id @default(cuid())
+  evalCycleId     String
+  evalCycle       EvalCycle  @relation(fields: [evalCycleId], references: [id])
+  targetId        String
+  target          Employee   @relation("EvalTarget", fields: [targetId], references: [id])
+  evaluatorId     String
+  evaluator       Employee   @relation("Evaluator", fields: [evaluatorId], references: [id])
+  evalStage       EvalStage
+  totalScore      Float?
+  gradeId         String?
+  comment         String?
+  status          EvalStatus @default(PENDING)
+  isDraft         Boolean    @default(true)
+  submittedAt     DateTime?
+  isRejected      Boolean    @default(false)
+  rejectionReason String?
+  rejectedAt      DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  items   EvaluationItem[]
+  appeals Appeal[]
+
+  @@unique([evalCycleId, targetId, evalStage])
+  @@map("evaluations")
+}
+
+enum EvalStage {
+  SELF
+  FIRST
+  SECOND
+  FINAL
+  CEO_ADJUST
+}
+
+enum EvalStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+  REJECTED
+  CONFIRMED
+}
+
+model EvaluationItem {
+  id            String      @id @default(cuid())
+  evaluationId  String
+  evaluation    Evaluation  @relation(fields: [evaluationId], references: [id])
+  personalKpiId String
+  personalKpi   PersonalKpi @relation(fields: [personalKpiId], references: [id])
+  quantScore    Float?
+  planScore     Float?
+  doScore       Float?
+  checkScore    Float?
+  actScore      Float?
+  qualScore     Float?
+  itemComment   String?
+  weightedScore Float?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("evaluation_items")
+}
+
+// ============================================
+// 6. 다면평가 (360도 피드백)
+// ============================================
+
+model MultiFeedbackRound {
+  id            String              @id @default(cuid())
+  evalCycleId   String
+  evalCycle     EvalCycle           @relation(fields: [evalCycleId], references: [id])
+  roundName     String
+  roundType     FeedbackRoundType
+  startDate     DateTime
+  endDate       DateTime
+  status        FeedbackRoundStatus @default(DRAFT)
+  isAnonymous   Boolean             @default(true)
+  minRaters     Int                 @default(3)
+  maxRaters     Int                 @default(8)
+  weightInFinal Float               @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  feedbacks MultiFeedback[]
+  questions FeedbackQuestion[]
+
+  @@map("multi_feedback_rounds")
+}
+
+enum FeedbackRoundType {
+  PEER
+  UPWARD
+  CROSS_DEPT
+  FULL_360
+}
+
+enum FeedbackRoundStatus {
+  DRAFT
+  RATER_SELECTION
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+}
+
+model FeedbackQuestion {
+  id           String             @id @default(cuid())
+  roundId      String
+  round        MultiFeedbackRound @relation(fields: [roundId], references: [id])
+  category     String
+  questionText String
+  questionType QuestionType
+  scaleMin     Int?               @default(1)
+  scaleMax     Int?               @default(5)
+  isRequired   Boolean            @default(true)
+  sortOrder    Int
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  responses FeedbackResponse[]
+
+  @@map("feedback_questions")
+}
+
+enum QuestionType {
+  RATING_SCALE
+  TEXT
+  MULTIPLE_CHOICE
+}
+
+model MultiFeedback {
+  id             String             @id @default(cuid())
+  roundId        String
+  round          MultiFeedbackRound @relation(fields: [roundId], references: [id])
+  giverId        String
+  giver          Employee           @relation("FeedbackGiver", fields: [giverId], references: [id])
+  receiverId     String
+  receiver       Employee           @relation("FeedbackReceiver", fields: [receiverId], references: [id])
+  relationship   RaterRelationship
+  overallComment String?
+  status         FeedbackStatus     @default(PENDING)
+  submittedAt    DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  responses FeedbackResponse[]
+
+  @@unique([roundId, giverId, receiverId])
+  @@map("multi_feedbacks")
+}
+
+enum RaterRelationship {
+  SUPERVISOR
+  PEER
+  CROSS_TEAM_PEER
+  SUBORDINATE
+  CROSS_DEPT
+}
+
+enum FeedbackStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+}
+
+model FeedbackResponse {
+  id          String           @id @default(cuid())
+  feedbackId  String
+  feedback    MultiFeedback    @relation(fields: [feedbackId], references: [id])
+  questionId  String
+  question    FeedbackQuestion @relation(fields: [questionId], references: [id])
+  ratingValue Int?
+  textValue   String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([feedbackId, questionId])
+  @@map("feedback_responses")
+}
+
+// ============================================
+// 7. 수시 체크인
+// ============================================
+
+model CheckIn {
+  id                String        @id @default(cuid())
+  ownerId           String
+  owner             Employee      @relation("CheckInOwner", fields: [ownerId], references: [id])
+  managerId         String
+  manager           Employee      @relation("CheckInManager", fields: [managerId], references: [id])
+  checkInType       CheckInType
+  scheduledDate     DateTime
+  actualDate        DateTime?
+  duration          Int?
+  status            CheckInStatus @default(SCHEDULED)
+  agendaItems       Json?
+  ownerNotes        String?
+  managerNotes      String?
+  keyTakeaways      String?
+  actionItems       Json?
+  nextCheckInDate   DateTime?
+  kpiDiscussed      Json?
+  energyLevel       Int?
+  satisfactionLevel Int?
+  blockerCount      Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("check_ins")
+}
+
+enum CheckInType {
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  AD_HOC
+  MIDYEAR_REVIEW
+  QUARTERLY
+}
+
+enum CheckInStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  RESCHEDULED
+}
+
+// ============================================
+// 8. 알림 시스템
+// ============================================
+
+model Notification {
+  id          String              @id @default(cuid())
+  recipientId String
+  recipient   Employee            @relation(fields: [recipientId], references: [id])
+  type        NotificationType
+  title       String
+  message     String
+  link        String?
+  isRead      Boolean             @default(false)
+  readAt      DateTime?
+  sentAt      DateTime            @default(now())
+  channel     NotificationChannel @default(IN_APP)
+  templateCode String?
+  jobId       String?
+  metadata    Json?
+
+  @@map("notifications")
+}
+
+model NotificationTemplate {
+  id              String                      @id @default(cuid())
+  code            String                      @unique
+  name            String
+  type            NotificationType
+  channel         NotificationDeliveryChannel
+  subjectTemplate String
+  bodyTemplate    String
+  defaultLink     String?
+  isActive        Boolean                     @default(true)
+  isDigestCompatible Boolean                  @default(true)
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  @@map("notification_templates")
+}
+
+model NotificationPreference {
+  id                String   @id @default(cuid())
+  employeeId        String   @unique
+  employee          Employee @relation(fields: [employeeId], references: [id])
+  inAppEnabled      Boolean  @default(true)
+  emailEnabled      Boolean  @default(true)
+  digestEnabled     Boolean  @default(false)
+  quietHoursEnabled Boolean  @default(false)
+  quietHoursStart   String?
+  quietHoursEnd     String?
+  timezone          String   @default("Asia/Seoul")
+  mutedTypes        Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
+model NotificationJob {
+  id              String                      @id @default(cuid())
+  recipientId     String
+  recipient       Employee                    @relation(fields: [recipientId], references: [id])
+  type            NotificationType
+  templateCode    String
+  channel         NotificationDeliveryChannel
+  status          NotificationJobStatus       @default(QUEUED)
+  priority        Int                         @default(0)
+  title           String?
+  message         String?
+  link            String?
+  payload         Json?
+  scheduledFor    DateTime
+  availableAt     DateTime                    @default(now())
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  suppressedAt    DateTime?
+  suppressReason  String?
+  retryCount      Int                         @default(0)
+  maxRetries      Int                         @default(3)
+  nextRetryAt     DateTime?
+  lastError       String?
+  digestKey       String?
+  isDigestMember  Boolean                     @default(false)
+  sourceType      String?
+  sourceId        String?
+  idempotencyKey  String                      @unique
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+
+  attempts        NotificationAttempt[]
+  deadLetter      NotificationDeadLetter?
+
+  @@index([status, availableAt])
+  @@index([recipientId, channel, scheduledFor])
+  @@index([digestKey])
+  @@map("notification_jobs")
+}
+
+model NotificationAttempt {
+  id                String                    @id @default(cuid())
+  notificationJobId String
+  notificationJob   NotificationJob           @relation(fields: [notificationJobId], references: [id], onDelete: Cascade)
+  channel           NotificationDeliveryChannel
+  status            NotificationAttemptStatus
+  responseCode      String?
+  providerMessageId String?
+  errorMessage      String?
+  attemptedAt       DateTime                  @default(now())
+
+  @@index([notificationJobId, attemptedAt])
+  @@map("notification_attempts")
+}
+
+model NotificationDeadLetter {
+  id               String                    @id @default(cuid())
+  notificationJobId String                   @unique
+  notificationJob  NotificationJob           @relation(fields: [notificationJobId], references: [id], onDelete: Cascade)
+  recipientId      String
+  recipient        Employee                  @relation(fields: [recipientId], references: [id])
+  channel          NotificationDeliveryChannel
+  type             NotificationType
+  idempotencyKey   String
+  reason           String
+  payload          Json?
+  createdAt        DateTime                  @default(now())
+
+  @@index([recipientId, createdAt])
+  @@map("notification_dead_letters")
+}
+
+model JobExecution {
+  id              String             @id @default(cuid())
+  jobName         String
+  jobType         JobExecutionType
+  status          JobExecutionStatus @default(RUNNING)
+  triggerSource   String?
+  startedAt       DateTime           @default(now())
+  finishedAt      DateTime?
+  processedCount  Int                @default(0)
+  successCount    Int                @default(0)
+  failedCount     Int                @default(0)
+  retriedCount    Int                @default(0)
+  deadLetterCount Int                @default(0)
+  suppressedCount Int                @default(0)
+  metadata        Json?
+  errorMessage    String?
+
+  @@index([jobType, startedAt])
+  @@map("job_executions")
+}
+
+model AiRequestLog {
+  id               String           @id @default(cuid())
+  requesterId      String
+  requester        Employee         @relation(fields: [requesterId], references: [id])
+  requestType      AIRequestType
+  requestStatus    AIRequestStatus  @default(PENDING)
+  approvalStatus   AIApprovalStatus @default(PENDING)
+  sourceType       String?
+  sourceId         String?
+  provider         String           @default("OPENAI")
+  model            String?
+  requestPayload   Json?
+  responsePayload  Json?
+  approvedPayload  Json?
+  piiMinimized     Boolean          @default(true)
+  inputTokens      Int?
+  outputTokens     Int?
+  estimatedCostUsd Float            @default(0)
+  errorCode        String?
+  errorMessage     String?
+  approvedById     String?
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([requesterId, createdAt])
+  @@index([requestType, createdAt])
+  @@map("ai_request_logs")
+}
+
+model OperationalEvent {
+  id        String                @id @default(cuid())
+  level     OperationalEventLevel
+  component String
+  eventType String
+  message   String
+  metadata  Json?
+  createdAt DateTime              @default(now())
+
+  @@index([level, createdAt])
+  @@index([component, createdAt])
+  @@map("operational_events")
+}
+
+enum NotificationType {
+  KPI_DEADLINE
+  GOAL_REMINDER
+  CHECKPOINT_REMINDER
+  EVALUATION_REMINDER
+  CALIBRATION_REMINDER
+  RESULT_CONFIRMATION_REMINDER
+  MEETING_REMINDER
+  MONTHLY_REMINDER
+  EVAL_START
+  EVAL_RECEIVED
+  EVAL_REJECTED
+  EVAL_COMPLETED
+  RESULT_PUBLISHED
+  CHECKIN_REMINDER
+  CHECKIN_SCHEDULED
+  FEEDBACK_REQUEST
+  FEEDBACK_DEADLINE
+  ACTION_ITEM_DUE
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  BOTH
+}
+
+enum NotificationDeliveryChannel {
+  IN_APP
+  EMAIL
+}
+
+enum NotificationJobStatus {
+  QUEUED
+  PROCESSING
+  SENT
+  RETRY_PENDING
+  SUPPRESSED
+  DEAD_LETTER
+}
+
+enum NotificationAttemptStatus {
+  SUCCESS
+  FAILED
+  SUPPRESSED
+}
+
+enum JobExecutionStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+enum JobExecutionType {
+  SCHEDULER
+  DISPATCH
+  RETRY
+  DIGEST
+  DEAD_LETTER_SWEEP
+}
+
+enum AIRequestType {
+  KPI_ASSIST
+  EVAL_COMMENT_DRAFT
+  BIAS_ANALYSIS
+  GROWTH_PLAN
+}
+
+enum AIRequestStatus {
+  PENDING
+  SUCCESS
+  FALLBACK
+  DISABLED
+  FAILED
+}
+
+enum AIApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum OperationalEventLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+// ============================================
+// 9. 감사 로그
+// ============================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String
+  entityType String
+  entityId   String?
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  timestamp  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId, timestamp])
+  @@map("audit_logs")
+}
+
+// ============================================
+// 10. 이의신청
+// ============================================
+
+model Appeal {
+  id            String       @id @default(cuid())
+  evaluationId  String
+  evaluation    Evaluation   @relation(fields: [evaluationId], references: [id])
+  appealerId    String
+  appealer      Employee     @relation(fields: [appealerId], references: [id])
+  reason        String
+  status        AppealStatus @default(SUBMITTED)
+  adminResponse String?
+  resolvedAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("appeals")
+}
+
+enum AppealStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  CLOSED
+}
+
+// ============================================
+// 11. 업로드 이력
+// ============================================
+
+model UploadHistory {
+  id           String   @id @default(cuid())
+  uploadType   String
+  uploaderId   String
+  fileName     String
+  totalRows    Int
+  successCount Int
+  failCount    Int
+  errorDetails Json?
+  uploadedAt   DateTime @default(now())
+
+  @@map("upload_histories")
+}
+
+// ============================================
+// 12. NextAuth 세션 관리
+// ============================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}

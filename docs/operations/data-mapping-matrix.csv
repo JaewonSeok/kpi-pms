@@ -1,0 +1,45 @@
+domain,source_system,source_table,source_field,target_model,target_field,transform_rule,validation_rule,notes
+organization,legacy_hr,ORG_MASTER,org_code,Organization,id,Generate stable UUID/CUID mapping,Must be unique,Use mapping registry during dry-run
+organization,legacy_hr,ORG_MASTER,org_name,Organization,name,Trim whitespace,Required,
+organization,legacy_hr,ORG_MASTER,fiscal_year,Organization,fiscalYear,Cast to integer,2020-2100,
+department,legacy_hr,DEPT_MASTER,dept_code,Department,deptCode,Uppercase and trim,Required and unique,Already aligns with org upload API
+department,legacy_hr,DEPT_MASTER,dept_name,Department,deptName,Trim whitespace,Required,
+department,legacy_hr,DEPT_MASTER,parent_dept_code,Department,parentDeptId,Lookup by mapped deptCode,Nullable,Load parent-child after base department insert
+employee,legacy_hr,EMP_MASTER,emp_id,Employee,empId,Trim and preserve original key,Required and unique,Primary business key for cutover verification
+employee,legacy_hr,EMP_MASTER,emp_name,Employee,empName,Trim whitespace,Required,
+employee,legacy_hr,EMP_MASTER,gws_email,Employee,gwsEmail,Lowercase and normalize domain,Required and unique for active users,Empty values must be fixed before launch
+employee,legacy_hr,EMP_MASTER,position_code,Employee,position,Map legacy grade/role to enum,Enum validation,MEMBER/TEAM_LEADER/SECTION_CHIEF/DIV_HEAD/CEO
+employee,legacy_hr,EMP_MASTER,role_code,Employee,role,Derive from mapped position or explicit override,Enum validation,Admin accounts handled separately
+employee,legacy_hr,EMP_MASTER,dept_code,Employee,deptId,Lookup Department by deptCode,Must resolve,Fail row if department missing
+employee,legacy_hr,EMP_MASTER,join_date,Employee,joinDate,Cast to ISO date,Required,
+employee,legacy_hr,EMP_MASTER,status,Employee,status,Map active/leave/resigned flags,Enum validation,ACTIVE/ON_LEAVE/RESIGNED
+employee,legacy_hr,EMP_MASTER,current_salary,Employee,currentSalary,Cast to number,>=0,Optional for early pilot but required before compensation rollout
+kpi_org,legacy_pms,ORG_KPI,kpi_name,OrgKpi,kpiName,Trim whitespace,Required and unique within dept/year,
+kpi_org,legacy_pms,ORG_KPI,kpi_category,OrgKpi,kpiCategory,Normalize controlled vocabulary,Required,
+kpi_org,legacy_pms,ORG_KPI,kpi_type,OrgKpi,kpiType,Map numeric/text code to enum,Enum validation,QUANTITATIVE/QUALITATIVE
+kpi_org,legacy_pms,ORG_KPI,target_value,OrgKpi,targetValue,Cast to float,Nullable,
+kpi_org,legacy_pms,ORG_KPI,unit,OrgKpi,unit,Trim whitespace,Nullable,
+kpi_org,legacy_pms,ORG_KPI,weight,OrgKpi,weight,Cast to float,0-100,Validate sum by department/year
+kpi_personal,legacy_pms,EMP_KPI,emp_id,PersonalKpi,employeeId,Lookup Employee by empId,Must resolve,
+kpi_personal,legacy_pms,EMP_KPI,eval_year,PersonalKpi,evalYear,Cast to integer,Required,
+kpi_personal,legacy_pms,EMP_KPI,kpi_name,PersonalKpi,kpiName,Trim whitespace,Required,
+kpi_personal,legacy_pms,EMP_KPI,definition,PersonalKpi,definition,Preserve text and trim,Nullable,
+kpi_personal,legacy_pms,EMP_KPI,formula,PersonalKpi,formula,Preserve text and trim,Nullable,
+kpi_personal,legacy_pms,EMP_KPI,target_value,PersonalKpi,targetValue,Cast to float,Nullable,
+kpi_personal,legacy_pms,EMP_KPI,weight,PersonalKpi,weight,Cast to float,0-100,Validate per employee/year total <= 100
+kpi_personal,legacy_pms,EMP_KPI,difficulty,PersonalKpi,difficulty,Map to enum,Enum validation,HIGH/MEDIUM/LOW
+kpi_personal,legacy_pms,EMP_KPI,status,PersonalKpi,status,Map draft/final/archive flags,Enum validation,DRAFT/CONFIRMED/ARCHIVED
+evaluation,legacy_pms,EVAL_HEADER,cycle_name,EvalCycle,cycleName,Trim whitespace,Required,Create cycle records before evaluation load
+evaluation,legacy_pms,EVAL_HEADER,stage_code,Evaluation,evalStage,Map to enum,Enum validation,SELF/FIRST/SECOND/FINAL/CEO_ADJUST
+evaluation,legacy_pms,EVAL_HEADER,target_emp_id,Evaluation,targetId,Lookup Employee by empId,Must resolve,
+evaluation,legacy_pms,EVAL_HEADER,evaluator_emp_id,Evaluation,evaluatorId,Lookup Employee by empId,Must resolve,
+evaluation,legacy_pms,EVAL_HEADER,total_score,Evaluation,totalScore,Cast to float,0-100 nullable,
+evaluation,legacy_pms,EVAL_HEADER,comment,Evaluation,comment,Preserve text and trim,Nullable,
+evaluation,legacy_pms,EVAL_HEADER,status,Evaluation,status,Map workflow state,Enum validation,PENDING/IN_PROGRESS/SUBMITTED/REJECTED/CONFIRMED
+evaluation_item,legacy_pms,EVAL_ITEM,kpi_reference,EvaluationItem,personalKpiId,Lookup PersonalKpi by employee/year/name,Must resolve,
+evaluation_item,legacy_pms,EVAL_ITEM,quant_score,EvaluationItem,quantScore,Cast to float,0-100 nullable,
+evaluation_item,legacy_pms,EVAL_ITEM,plan_score,EvaluationItem,planScore,Cast to float,0-100 nullable,
+evaluation_item,legacy_pms,EVAL_ITEM,do_score,EvaluationItem,doScore,Cast to float,0-100 nullable,
+evaluation_item,legacy_pms,EVAL_ITEM,check_score,EvaluationItem,checkScore,Cast to float,0-100 nullable,
+evaluation_item,legacy_pms,EVAL_ITEM,act_score,EvaluationItem,actScore,Cast to float,0-100 nullable,
+evaluation_item,legacy_pms,EVAL_ITEM,item_comment,EvaluationItem,itemComment,Preserve text and trim,Nullable,
