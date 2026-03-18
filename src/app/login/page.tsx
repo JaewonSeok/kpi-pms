@@ -22,10 +22,11 @@ function LoginContent() {
   const [adminMode, setAdminMode] = useState(false)
   const [adminError, setAdminError] = useState('')
 
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     setLoading(true)
-    const callbackUrl = `${window.location.origin}/dashboard`
-    window.location.href = `/api/auth/signin/google?callbackUrl=${encodeURIComponent(callbackUrl)}`
+    await signIn('google', {
+      callbackUrl: `${window.location.origin}/dashboard`,
+    })
   }
 
   const handleAdminLogin = async (e: React.FormEvent) => {
