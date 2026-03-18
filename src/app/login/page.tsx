@@ -2,7 +2,7 @@
 
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useState } from 'react'
+import { useState, Suspense } from 'react'
 
 const ERROR_MESSAGES: Record<string, string> = {
   InvalidDomain: '사내 Google Workspace 계정으로만 로그인 가능합니다.',
@@ -15,14 +15,12 @@ const ERROR_MESSAGES: Record<string, string> = {
 function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const searchError = searchParams.get('error')
+  const error = searchParams.get('error')
   const [adminEmail, setAdminEmail] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [adminMode, setAdminMode] = useState(false)
-  const [inlineError, setInlineError] = useState<string | null>(null)
-  const searchErrorMessage = searchError ? ERROR_MESSAGES[searchError] || ERROR_MESSAGES.Default : null
-  const visibleError = inlineError ?? (!loading ? searchErrorMessage : null)
+  const [adminError, setAdminError] = useState('')
 
   const handleGoogleLogin = () => {
     setLoading(true)
@@ -32,31 +30,27 @@ function LoginContent() {
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setInlineError(null)
     setLoading(true)
-    if (searchError) {
-      router.replace('/login', { scroll: false })
-    }
+    setAdminError('')
 
     try {
       const result = await signIn('admin-credentials', {
         email: adminEmail,
         password: adminPassword,
-        callbackUrl: '/dashboard',
         redirect: false,
       })
 
       setLoading(false)
 
       if (result?.ok) {
-        router.replace(result.url ?? '/dashboard')
+        router.push('/dashboard')
       } else {
-        setInlineError('로그인 실패. 이메일과 비밀번호를 확인해주세요.')
+        setAdminError('로그인 실패. 이메일과 비밀번호를 확인해주세요.')
       }
     } catch (error) {
       console.error('Admin sign-in failed:', error)
       setLoading(false)
-      setInlineError(ERROR_MESSAGES.Default)
+      setAdminError('로그인 중 오류가 발생했습니다. 다시 시도해주세요.')
     }
   }
 
@@ -84,9 +78,15 @@ function LoginContent() {
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">로그인</h2>
 
-          {visibleError && (
+          {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {visibleError}
+              {ERROR_MESSAGES[error] || ERROR_MESSAGES.Default}
+            </div>
+          )}
+
+          {adminMode && adminError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {adminError}
             </div>
           )}
 
@@ -122,7 +122,10 @@ function LoginContent() {
               <div className="mt-6 text-center">
                 <button
                   type="button"
-                  onClick={() => setAdminMode(true)}
+                  onClick={() => {
+                    setAdminError('')
+                    setAdminMode(true)
+                  }}
                   className="text-sm text-gray-400 hover:text-gray-600 underline"
                 >
                   관리자 계정으로 로그인 (GWS 장애 시)
@@ -164,7 +167,10 @@ function LoginContent() {
 
               <button
                 type="button"
-                onClick={() => setAdminMode(false)}
+                onClick={() => {
+                  setAdminError('')
+                  setAdminMode(false)
+                }}
                 className="mt-4 text-sm text-gray-400 hover:text-gray-600 underline w-full text-center"
               >
                 ← Google 로그인으로 돌아가기
