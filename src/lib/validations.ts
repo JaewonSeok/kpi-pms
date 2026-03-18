@@ -51,6 +51,21 @@ export const CreateOrgKpiSchema = z.object({
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
 })
 
+export const UpdateOrgKpiSchema = z.object({
+  deptId: z.string().min(1).optional(),
+  evalYear: z.number().int().min(2020).max(2100).optional(),
+  kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']).optional(),
+  kpiCategory: z.string().min(1).max(50).optional(),
+  kpiName: z.string().min(1).max(100).optional(),
+  definition: z.string().max(500).optional(),
+  formula: z.string().max(500).optional(),
+  targetValue: z.number().optional(),
+  unit: z.string().max(20).optional(),
+  weight: z.number().min(0).max(100).optional(),
+  difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+  status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
+})
+
 export const CreatePersonalKpiSchema = z.object({
   employeeId: z.string().min(1),
   evalYear: z.number().int().min(2020).max(2100),
@@ -190,6 +205,42 @@ export const EvalCycleSchema = z.object({
   orgId: z.string().min(1),
   evalYear: z.number().int().min(2020).max(2100),
   cycleName: z.string().min(1).max(100),
+  kpiSetupStart: z.string().datetime().optional(),
+  kpiSetupEnd: z.string().datetime().optional(),
+  selfEvalStart: z.string().datetime().optional(),
+  selfEvalEnd: z.string().datetime().optional(),
+  firstEvalStart: z.string().datetime().optional(),
+  firstEvalEnd: z.string().datetime().optional(),
+  secondEvalStart: z.string().datetime().optional(),
+  secondEvalEnd: z.string().datetime().optional(),
+  finalEvalStart: z.string().datetime().optional(),
+  finalEvalEnd: z.string().datetime().optional(),
+  ceoAdjustStart: z.string().datetime().optional(),
+  ceoAdjustEnd: z.string().datetime().optional(),
+  resultOpenStart: z.string().datetime().optional(),
+  resultOpenEnd: z.string().datetime().optional(),
+  appealDeadline: z.string().datetime().optional(),
+})
+
+export const UpdateEvalCycleSchema = z.object({
+  orgId: z.string().min(1).optional(),
+  evalYear: z.number().int().min(2020).max(2100).optional(),
+  cycleName: z.string().min(1).max(100).optional(),
+  status: z
+    .enum([
+      'SETUP',
+      'KPI_SETTING',
+      'IN_PROGRESS',
+      'SELF_EVAL',
+      'FIRST_EVAL',
+      'SECOND_EVAL',
+      'FINAL_EVAL',
+      'CEO_ADJUST',
+      'RESULT_OPEN',
+      'APPEAL',
+      'CLOSED',
+    ])
+    .optional(),
   kpiSetupStart: z.string().datetime().optional(),
   kpiSetupEnd: z.string().datetime().optional(),
   selfEvalStart: z.string().datetime().optional(),

@@ -146,6 +146,7 @@ model OrgKpi {
   unit         String?
   weight       Float
   difficulty   Difficulty
+  status       KpiStatus  @default(DRAFT)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 

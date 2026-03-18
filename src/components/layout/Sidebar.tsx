@@ -14,86 +14,8 @@ import {
   Settings,
   Target,
 } from 'lucide-react'
+import { filterNavigationItemsByRole, NAV_ITEMS, type NavigationItem } from '@/lib/navigation'
 import { cn } from '@/lib/utils'
-
-type NavItem = {
-  label: string
-  href: string
-  icon?: ReactNode
-  roles?: string[]
-  children?: NavItem[]
-}
-
-const NAV_ITEMS: NavItem[] = [
-  {
-    label: '대시보드',
-    href: '/dashboard',
-    icon: <LayoutDashboard className="h-5 w-5" />,
-  },
-  {
-    label: 'KPI 관리',
-    href: '/kpi',
-    icon: <BarChart3 className="h-5 w-5" />,
-    children: [
-      { label: '조직 KPI', href: '/kpi/org' },
-      { label: '개인 KPI', href: '/kpi/personal' },
-      { label: '월간 실적', href: '/kpi/monthly' },
-    ],
-  },
-  {
-    label: '평가',
-    href: '/evaluation',
-    icon: <ClipboardCheck className="h-5 w-5" />,
-    children: [
-      { label: 'AI 보조 작성', href: '/evaluation/assistant', icon: <Bot className="h-4 w-4" /> },
-      { label: '평가 결과', href: '/evaluation/results' },
-      { label: '이의 신청', href: '/evaluation/appeal' },
-      {
-        label: '등급 조정',
-        href: '/evaluation/ceo-adjust',
-        roles: ['ROLE_CEO', 'ROLE_ADMIN'],
-      },
-    ],
-  },
-  {
-    label: '체크인',
-    href: '/checkin',
-    icon: <CalendarClock className="h-5 w-5" />,
-    children: [{ label: '체크인 일정', href: '/checkin' }],
-  },
-  {
-    label: '보상',
-    href: '/compensation',
-    icon: <BriefcaseBusiness className="h-5 w-5" />,
-    children: [
-      {
-        label: '시뮬레이션 관리',
-        href: '/compensation/manage',
-        roles: ['ROLE_ADMIN', 'ROLE_DIV_HEAD', 'ROLE_CEO'],
-      },
-      { label: '내 보상 결과', href: '/compensation/my' },
-    ],
-  },
-  {
-    label: '알림',
-    href: '/notifications',
-    icon: <Bell className="h-5 w-5" />,
-  },
-  {
-    label: '관리자',
-    href: '/admin',
-    icon: <Settings className="h-5 w-5" />,
-    roles: ['ROLE_ADMIN'],
-    children: [
-      { label: '조직도 관리', href: '/admin/org-chart' },
-      { label: '등급 설정', href: '/admin/grades' },
-      { label: '평가 주기', href: '/admin/eval-cycle' },
-      { label: 'Google 계정 등록', href: '/admin/google-access' },
-      { label: '알림 운영', href: '/admin/notifications' },
-      { label: '운영 / 관제', href: '/admin/ops' },
-    ],
-  },
-]
 
 type SidebarProps = {
   role: string
@@ -103,7 +25,7 @@ type SidebarProps = {
 
 export function Sidebar({ role, className, onNavigate }: SidebarProps) {
   const pathname = usePathname()
-  const filteredItems = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(role))
+  const filteredItems = filterNavigationItemsByRole(NAV_ITEMS, role)
 
   return (
     <aside
@@ -131,7 +53,6 @@ export function Sidebar({ role, className, onNavigate }: SidebarProps) {
             key={item.href}
             item={item}
             pathname={pathname}
-            role={role}
             onNavigate={onNavigate}
           />
         ))}
@@ -147,16 +68,14 @@ export function Sidebar({ role, className, onNavigate }: SidebarProps) {
 function NavGroup({
   item,
   pathname,
-  role,
   onNavigate,
 }: {
-  item: NavItem
+  item: NavigationItem
   pathname: string
-  role: string
   onNavigate?: () => void
 }) {
   const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
-  const children = item.children?.filter((child) => !child.roles || child.roles.includes(role))
+  const children = item.children
 
   if (!children?.length) {
     return (
@@ -170,7 +89,7 @@ function NavGroup({
             : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
         )}
       >
-        {item.icon}
+        {getNavIcon(item.href)}
         <span>{item.label}</span>
       </Link>
     )
@@ -184,7 +103,7 @@ function NavGroup({
           isActive ? 'text-blue-700' : 'text-slate-700'
         )}
       >
-        {item.icon}
+        {getNavIcon(item.href)}
         <span>{item.label}</span>
       </div>
       <div className="mt-1 space-y-1 pl-3">
@@ -200,11 +119,28 @@ function NavGroup({
                 : 'text-slate-500 hover:bg-white hover:text-slate-900'
             )}
           >
-            {child.icon}
+            {getNavIcon(child.href)}
             <span>{child.label}</span>
           </Link>
         ))}
       </div>
     </div>
   )
+}
+
+function getNavIcon(href: string): ReactNode {
+  const iconClassName = href === '/evaluation/assistant' ? 'h-4 w-4' : 'h-5 w-5'
+
+  const icons: Record<string, ReactNode> = {
+    '/dashboard': <LayoutDashboard className={iconClassName} />,
+    '/kpi': <BarChart3 className={iconClassName} />,
+    '/evaluation': <ClipboardCheck className={iconClassName} />,
+    '/evaluation/assistant': <Bot className={iconClassName} />,
+    '/checkin': <CalendarClock className={iconClassName} />,
+    '/compensation': <BriefcaseBusiness className={iconClassName} />,
+    '/notifications': <Bell className={iconClassName} />,
+    '/admin': <Settings className={iconClassName} />,
+  }
+
+  return icons[href] ?? null
 }

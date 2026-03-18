@@ -21,6 +21,21 @@ export async function GET(request: Request) {
       },
       include: {
         department: { select: { deptName: true, deptCode: true } },
+        personalKpis: {
+          select: {
+            id: true,
+            kpiName: true,
+            status: true,
+            employee: {
+              select: {
+                empId: true,
+                empName: true,
+              },
+            },
+          },
+          orderBy: [{ employee: { empName: 'asc' } }],
+        },
+        _count: { select: { personalKpis: true } },
       },
       orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
     })
@@ -57,7 +72,29 @@ export async function POST(request: Request) {
       throw new AppError(400, 'WEIGHT_EXCEEDED', `가중치 합계가 100을 초과합니다. (현재: ${totalWeight - data.weight}, 추가: ${data.weight})`)
     }
 
-    const kpi = await prisma.orgKpi.create({ data })
+    const kpi = await prisma.orgKpi.create({
+      data: {
+        ...data,
+        status: 'DRAFT',
+      },
+      include: {
+        department: { select: { deptName: true, deptCode: true } },
+        personalKpis: {
+          select: {
+            id: true,
+            kpiName: true,
+            status: true,
+            employee: {
+              select: {
+                empId: true,
+                empName: true,
+              },
+            },
+          },
+        },
+        _count: { select: { personalKpis: true } },
+      },
+    })
     return successResponse(kpi)
   } catch (error) {
     return errorResponse(error)
