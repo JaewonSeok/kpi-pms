@@ -80,6 +80,41 @@ export const CreatePersonalKpiSchema = z.object({
   linkedOrgKpiId: z.string().optional(),
 })
 
+export const UpdatePersonalKpiSchema = z.object({
+  employeeId: z.string().min(1).optional(),
+  evalYear: z.number().int().min(2020).max(2100).optional(),
+  kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']).optional(),
+  kpiName: z.string().min(1).max(100).optional(),
+  definition: z.string().max(500).optional(),
+  formula: z.string().max(500).optional(),
+  targetValue: z.number().nullable().optional(),
+  unit: z.string().max(20).optional(),
+  weight: z.number().min(0).max(100).optional(),
+  difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+  linkedOrgKpiId: z.string().nullable().optional(),
+  status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
+})
+
+export const PersonalKpiWorkflowActionSchema = z.object({
+  action: z.enum(['SAVE_DRAFT', 'SUBMIT', 'START_REVIEW', 'APPROVE', 'REJECT', 'LOCK', 'REOPEN']),
+  note: z.string().max(1000).optional(),
+})
+
+export const PersonalKpiAiActionSchema = z.object({
+  action: z.enum([
+    'generate-draft',
+    'improve-wording',
+    'smart-check',
+    'suggest-weight',
+    'suggest-org-alignment',
+    'detect-duplicates',
+    'summarize-review-risks',
+    'draft-monthly-comment',
+  ]),
+  sourceId: z.string().optional(),
+  payload: z.record(z.string(), z.unknown()).default({}),
+})
+
 // ============================================
 // 월별 실적 관련
 // ============================================
@@ -91,7 +126,52 @@ export const MonthlyRecordSchema = z.object({
   activities: z.string().max(1000).optional(),
   obstacles: z.string().max(500).optional(),
   efforts: z.string().max(500).optional(),
+  attachments: z.array(z.object({
+    id: z.string().max(100),
+    name: z.string().min(1).max(200),
+    kind: z.enum(['KPI', 'OUTPUT', 'REPORT', 'OTHER']).default('OTHER'),
+    uploadedAt: z.string().optional(),
+    uploadedBy: z.string().max(100).optional(),
+    sizeLabel: z.string().max(30).optional(),
+    dataUrl: z.string().max(2_000_000).optional(),
+  })).optional(),
   isDraft: z.boolean().default(true),
+})
+
+export const UpdateMonthlyRecordSchema = z.object({
+  actualValue: z.number().nullable().optional(),
+  activities: z.string().max(1000).optional(),
+  obstacles: z.string().max(500).optional(),
+  efforts: z.string().max(500).optional(),
+  attachments: z.array(z.object({
+    id: z.string().max(100),
+    name: z.string().min(1).max(200),
+    kind: z.enum(['KPI', 'OUTPUT', 'REPORT', 'OTHER']).default('OTHER'),
+    uploadedAt: z.string().optional(),
+    uploadedBy: z.string().max(100).optional(),
+    sizeLabel: z.string().max(30).optional(),
+    dataUrl: z.string().max(2_000_000).optional(),
+  })).optional(),
+  isDraft: z.boolean().optional(),
+})
+
+export const MonthlyRecordWorkflowActionSchema = z.object({
+  action: z.enum(['SUBMIT', 'REVIEW', 'REQUEST_UPDATE', 'LOCK', 'UNLOCK']),
+  comment: z.string().max(1000).optional(),
+})
+
+export const MonthlyRecordAiActionSchema = z.object({
+  action: z.enum([
+    'generate-summary',
+    'explain-risk',
+    'generate-review',
+    'summarize-evidence',
+    'generate-retrospective',
+    'suggest-checkin-agenda',
+    'summarize-evaluation-evidence',
+  ]),
+  sourceId: z.string().max(100).optional(),
+  payload: z.record(z.string(), z.unknown()).default({}),
 })
 
 // ============================================
@@ -165,17 +245,25 @@ export const CreateCheckInSchema = z.object({
   ownerNotes: z.string().max(500).optional(),
 })
 
+const CheckInAgendaItemSchema = z.object({
+  topic: z.string().min(1).max(100),
+  notes: z.string().max(500).optional(),
+})
+
+const CheckInActionItemSchema = z.object({
+  action: z.string().min(1).max(200),
+  assignee: z.string().min(1).max(50),
+  dueDate: z.string().optional(),
+  completed: z.boolean().default(false),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional(),
+})
+
 export const CompleteCheckInSchema = z.object({
   actualDate: z.string().datetime(),
   duration: z.number().int().min(1).max(480).optional(),
   keyTakeaways: z.string().max(1000).optional(),
   managerNotes: z.string().max(500).optional(),
-  actionItems: z.array(z.object({
-    action: z.string().max(200),
-    assignee: z.string().max(50),
-    dueDate: z.string().optional(),
-    completed: z.boolean().default(false),
-  })).optional(),
+  actionItems: z.array(CheckInActionItemSchema).optional(),
   nextCheckInDate: z.string().datetime().optional(),
   kpiDiscussed: z.array(z.object({
     kpiId: z.string(),
@@ -186,6 +274,17 @@ export const CompleteCheckInSchema = z.object({
   energyLevel: z.number().int().min(1).max(5).optional(),
   satisfactionLevel: z.number().int().min(1).max(5).optional(),
   blockerCount: z.number().int().min(0).optional(),
+})
+
+export const UpdateCheckInSchema = z.object({
+  scheduledDate: z.string().datetime().optional(),
+  agendaItems: z.array(CheckInAgendaItemSchema).optional(),
+  ownerNotes: z.string().max(500).optional(),
+  managerNotes: z.string().max(500).optional(),
+  keyTakeaways: z.string().max(1000).optional(),
+  actionItems: z.array(CheckInActionItemSchema).optional(),
+  nextCheckInDate: z.string().datetime().nullable().optional(),
+  status: z.enum(['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'RESCHEDULED']).optional(),
 })
 
 // ============================================
@@ -312,10 +411,29 @@ export const AIAssistRequestSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 })
 
+export const OrgKpiAiActionSchema = z.object({
+  action: z.enum([
+    'generate-draft',
+    'improve-wording',
+    'smart-check',
+    'detect-duplicates',
+    'suggest-alignment',
+    'summarize-risk',
+    'draft-monthly-comment',
+  ]),
+  sourceId: z.string().max(100).optional(),
+  payload: z.record(z.string(), z.unknown()),
+})
+
 export const AIApprovalDecisionSchema = z.object({
   action: z.enum(['approve', 'reject']),
   approvedPayload: z.record(z.string(), z.unknown()).optional(),
   rejectionReason: z.string().min(3).max(500).optional(),
+})
+
+export const OrgKpiWorkflowActionSchema = z.object({
+  action: z.enum(['SUBMIT', 'LOCK', 'REOPEN']),
+  note: z.string().max(500).optional(),
 })
 
 // ============================================
@@ -371,6 +489,33 @@ export const NotificationPreferenceSchema = z.object({
 
 export const NotificationCronSchema = z.object({
   mode: z.enum(['schedule', 'dispatch', 'all']).default('all'),
+})
+
+export const NotificationDeadLetterActionSchema = z.object({
+  action: z.enum(['retry', 'archive']),
+  ids: z.array(z.string().min(1)).min(1).max(100),
+})
+
+export const NotificationOpsAiActionSchema = z.object({
+  action: z.enum([
+    'summarize-ops',
+    'summarize-dead-letters',
+    'validate-template-variables',
+    'generate-ops-report',
+  ]),
+  sourceId: z.string().max(100).optional(),
+  payload: z.record(z.string(), z.unknown()).default({}),
+})
+
+export const AdminOpsAiActionSchema = z.object({
+  action: z.enum([
+    'summarize-ops-status',
+    'summarize-incident-patterns',
+    'generate-daily-report',
+    'prioritize-risks',
+  ]),
+  sourceId: z.string().max(100).optional(),
+  payload: z.record(z.string(), z.unknown()).default({}),
 })
 
 // ============================================

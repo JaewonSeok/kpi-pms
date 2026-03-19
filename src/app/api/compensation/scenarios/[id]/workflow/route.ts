@@ -220,6 +220,7 @@ export async function POST(
         status: updated.status,
         isLocked: updated.isLocked,
         publishedAt: updated.publishedAt,
+        comment: validated.data.comment,
       },
       ...clientInfo,
     })

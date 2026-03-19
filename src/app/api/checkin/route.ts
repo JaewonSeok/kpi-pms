@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { CreateCheckInSchema } from '@/lib/validations'
+import { canOperateCheckinRole } from '@/server/checkin-access'
 
 // GET /api/checkin
 export async function GET(request: Request) {
@@ -14,26 +15,32 @@ export async function GET(request: Request) {
     const status = searchParams.get('status')
     const type = searchParams.get('type')
     const role = session.user.role
-
-    const isManager = ['ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_CEO', 'ROLE_ADMIN'].includes(role)
+    const isOperator = canOperateCheckinRole(role)
 
     const checkIns = await prisma.checkIn.findMany({
       where: {
-        OR: isManager
-          ? [
-              { ownerId: session.user.id },
-              { managerId: session.user.id },
-            ]
+        OR: isOperator
+          ? [{ ownerId: session.user.id }, { managerId: session.user.id }]
           : [{ ownerId: session.user.id }],
-        ...(status ? { status: status as any } : {}),
-        ...(type ? { checkInType: type as any } : {}),
+        ...(status ? { status: status as never } : {}),
+        ...(type ? { checkInType: type as never } : {}),
       },
       include: {
         owner: {
-          select: { empName: true, empId: true, position: true, profileImageUrl: true },
+          select: {
+            empName: true,
+            empId: true,
+            position: true,
+            profileImageUrl: true,
+            department: { select: { deptName: true } },
+          },
         },
         manager: {
-          select: { empName: true, empId: true, position: true },
+          select: {
+            empName: true,
+            empId: true,
+            position: true,
+          },
         },
       },
       orderBy: { scheduledDate: 'asc' },
@@ -60,24 +67,22 @@ export async function POST(request: Request) {
     const data = validated.data
     const role = session.user.role
 
-    // 팀장이 팀원의 체크인을 생성하거나, 팀원이 본인 체크인 요청
     let managerId = session.user.id
-    let ownerId = data.ownerId
+    const ownerId = data.ownerId
 
     if (ownerId === session.user.id) {
-      // 팀원이 직접 요청 - 팀장을 매니저로
       const employee = await prisma.employee.findUnique({
         where: { id: session.user.id },
+        select: { teamLeaderId: true },
       })
+
       if (!employee?.teamLeaderId) {
-        throw new AppError(400, 'NO_MANAGER', '담당 팀장이 없습니다.')
+        throw new AppError(400, 'NO_MANAGER', '대상 리더가 없어 체크인을 예약할 수 없습니다.')
       }
+
       managerId = employee.teamLeaderId
-    } else {
-      // 팀장이 팀원 체크인 생성
-      if (!['ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_ADMIN'].includes(role)) {
-        throw new AppError(403, 'FORBIDDEN', '팀장 이상만 타인의 체크인을 생성할 수 있습니다.')
-      }
+    } else if (!canOperateCheckinRole(role)) {
+      throw new AppError(403, 'FORBIDDEN', '리더 이상만 다른 구성원의 체크인을 예약할 수 있습니다.')
     }
 
     const checkIn = await prisma.checkIn.create({
@@ -86,23 +91,30 @@ export async function POST(request: Request) {
         managerId,
         checkInType: data.checkInType,
         scheduledDate: new Date(data.scheduledDate),
-        agendaItems: data.agendaItems as any,
+        agendaItems: data.agendaItems as never,
         ownerNotes: data.ownerNotes,
         status: 'SCHEDULED',
       },
       include: {
-        owner: { select: { empName: true, empId: true } },
-        manager: { select: { empName: true, empId: true } },
+        owner: {
+          select: {
+            empName: true,
+            empId: true,
+            department: { select: { deptName: true } },
+          },
+        },
+        manager: {
+          select: { empName: true, empId: true },
+        },
       },
     })
 
-    // 알림 생성
-    const notifyId = session.user.id === ownerId ? managerId : ownerId
+    const recipientId = session.user.id === ownerId ? managerId : ownerId
     await prisma.notification.create({
       data: {
-        recipientId: notifyId,
+        recipientId,
         type: 'CHECKIN_SCHEDULED',
-        title: '체크인 예정',
+        title: '체크인 일정',
         message: `${new Date(data.scheduledDate).toLocaleDateString('ko-KR')} 체크인이 예약되었습니다.`,
         link: `/checkin/${checkIn.id}`,
         channel: 'IN_APP',

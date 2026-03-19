@@ -18,6 +18,8 @@ type AiConfig = {
   systemPrompt: string
 }
 
+type SourceScopedAiConfigKey = `${AIRequestType}:${string}`
+
 type AiAssistExecutionParams = {
   requesterId: string
   requestType: AIRequestType
@@ -78,6 +80,619 @@ const KPI_SCHEMA = {
     managerReviewPoints: {
       type: 'array',
       items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ORG_KPI_DRAFT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'title',
+    'definition',
+    'formula',
+    'targetValueSuggestion',
+    'unit',
+    'weightSuggestion',
+    'difficultySuggestion',
+    'reviewPoints',
+  ],
+  properties: {
+    title: { type: 'string' },
+    category: { type: 'string' },
+    definition: { type: 'string' },
+    formula: { type: 'string' },
+    targetValueSuggestion: { type: 'string' },
+    unit: { type: 'string' },
+    weightSuggestion: { type: 'number' },
+    difficultySuggestion: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+    reviewPoints: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ORG_KPI_WORDING_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['improvedTitle', 'improvedDefinition', 'rationale'],
+  properties: {
+    improvedTitle: { type: 'string' },
+    improvedDefinition: { type: 'string' },
+    rationale: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ORG_KPI_SMART_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['overall', 'criteria', 'summary'],
+  properties: {
+    overall: { type: 'string', enum: ['GOOD', 'WARNING', 'CRITICAL'] },
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'status', 'reason', 'suggestion'],
+        properties: {
+          name: { type: 'string' },
+          status: { type: 'string', enum: ['PASS', 'WARN', 'FAIL'] },
+          reason: { type: 'string' },
+          suggestion: { type: 'string' },
+        },
+      },
+    },
+    summary: { type: 'string' },
+  },
+} satisfies JsonRecord
+
+const ORG_KPI_DUPLICATE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'duplicates'],
+  properties: {
+    summary: { type: 'string' },
+    duplicates: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'overlapLevel', 'similarityReason'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          overlapLevel: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+          similarityReason: { type: 'string' },
+        },
+      },
+    },
+  },
+} satisfies JsonRecord
+
+const ORG_KPI_ALIGNMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['riskLevel', 'rationale', 'suggestedLinks'],
+  properties: {
+    recommendedParentId: { type: 'string' },
+    recommendedParentTitle: { type: 'string' },
+    riskLevel: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+    rationale: { type: 'string' },
+    suggestedLinks: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ORG_KPI_RISK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['riskLevel', 'executiveSummary', 'risks', 'recommendations'],
+  properties: {
+    riskLevel: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+    executiveSummary: { type: 'string' },
+    risks: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    recommendations: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ORG_KPI_MONTHLY_COMMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['comment', 'highlights', 'concerns', 'nextActions'],
+  properties: {
+    comment: { type: 'string' },
+    highlights: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    concerns: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const PERSONAL_KPI_DRAFT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'title',
+    'definition',
+    'targetValueSuggestion',
+    'unit',
+    'weightSuggestion',
+    'difficultySuggestion',
+    'evaluationCriteria',
+    'reviewPoints',
+  ],
+  properties: {
+    title: { type: 'string' },
+    definition: { type: 'string' },
+    formula: { type: 'string' },
+    targetValueSuggestion: { type: 'string' },
+    unit: { type: 'string' },
+    weightSuggestion: { type: 'number' },
+    difficultySuggestion: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+    evaluationCriteria: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    reviewPoints: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const PERSONAL_KPI_WORDING_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['improvedTitle', 'improvedDefinition', 'rationale'],
+  properties: {
+    improvedTitle: { type: 'string' },
+    improvedDefinition: { type: 'string' },
+    rationale: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const PERSONAL_KPI_SMART_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['overall', 'summary', 'criteria'],
+  properties: {
+    overall: { type: 'string', enum: ['PASS', 'WARNING', 'FAIL'] },
+    summary: { type: 'string' },
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'status', 'reason', 'suggestion'],
+        properties: {
+          name: { type: 'string' },
+          status: { type: 'string', enum: ['PASS', 'WARN', 'FAIL'] },
+          reason: { type: 'string' },
+          suggestion: { type: 'string' },
+        },
+      },
+    },
+  },
+} satisfies JsonRecord
+
+const PERSONAL_KPI_WEIGHT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['currentTotal', 'recommendedTotal', 'recommendations', 'summary'],
+  properties: {
+    currentTotal: { type: 'number' },
+    recommendedTotal: { type: 'number' },
+    summary: { type: 'string' },
+    recommendations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'currentWeight', 'recommendedWeight', 'reason'],
+        properties: {
+          title: { type: 'string' },
+          currentWeight: { type: 'number' },
+          recommendedWeight: { type: 'number' },
+          reason: { type: 'string' },
+        },
+      },
+    },
+  },
+} satisfies JsonRecord
+
+const PERSONAL_KPI_ALIGNMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['recommendedOrgKpiId', 'recommendedOrgKpiTitle', 'rationale', 'alternatives'],
+  properties: {
+    recommendedOrgKpiId: { type: 'string' },
+    recommendedOrgKpiTitle: { type: 'string' },
+    rationale: { type: 'string' },
+    alternatives: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const PERSONAL_KPI_DUPLICATE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'duplicates'],
+  properties: {
+    summary: { type: 'string' },
+    duplicates: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'overlapLevel', 'similarityReason'],
+        properties: {
+          id: { type: 'string' },
+          title: { type: 'string' },
+          overlapLevel: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+          similarityReason: { type: 'string' },
+        },
+      },
+    },
+  },
+} satisfies JsonRecord
+
+const PERSONAL_KPI_REVIEWER_RISK_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'risks', 'reviewPoints'],
+  properties: {
+    summary: { type: 'string' },
+    risks: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    reviewPoints: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const PERSONAL_KPI_MONTHLY_COMMENT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['comment', 'nextActions', 'managerNotes'],
+  properties: {
+    comment: { type: 'string' },
+    nextActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    managerNotes: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const MONTHLY_PERFORMANCE_SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'highlights', 'risks', 'nextActions'],
+  properties: {
+    summary: { type: 'string' },
+    highlights: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    risks: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const MONTHLY_RISK_EXPLANATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['riskLevel', 'causeSummary', 'responsePoints'],
+  properties: {
+    riskLevel: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+    causeSummary: { type: 'string' },
+    responsePoints: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const MONTHLY_MANAGER_REVIEW_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['comment', 'strengths', 'requests'],
+  properties: {
+    comment: { type: 'string' },
+    strengths: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    requests: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const MONTHLY_EVIDENCE_SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'evidenceHighlights', 'missingEvidence'],
+  properties: {
+    summary: { type: 'string' },
+    evidenceHighlights: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    missingEvidence: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const MONTHLY_RETROSPECTIVE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['strengths', 'risks', 'nextMonthPriorities', 'summary'],
+  properties: {
+    strengths: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    risks: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextMonthPriorities: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    summary: { type: 'string' },
+  },
+} satisfies JsonRecord
+
+const MONTHLY_CHECKIN_AGENDA_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['agenda', 'leaderPrep', 'memberPrep'],
+  properties: {
+    agenda: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    leaderPrep: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    memberPrep: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const MONTHLY_EVALUATION_EVIDENCE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'evaluationPoints', 'watchouts'],
+  properties: {
+    summary: { type: 'string' },
+    evaluationPoints: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    watchouts: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const NOTIFICATION_OPS_SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'warnings', 'recommendedActions'],
+  properties: {
+    summary: { type: 'string' },
+    warnings: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    recommendedActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const NOTIFICATION_DEAD_LETTER_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'patterns', 'recommendedActions'],
+  properties: {
+    summary: { type: 'string' },
+    patterns: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['reason', 'count', 'impact'],
+        properties: {
+          reason: { type: 'string' },
+          count: { type: 'number' },
+          impact: { type: 'string' },
+        },
+      },
+    },
+    recommendedActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const NOTIFICATION_TEMPLATE_VALIDATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'missingVariables', 'confusingVariables', 'suggestions'],
+  properties: {
+    summary: { type: 'string' },
+    missingVariables: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    confusingVariables: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    suggestions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const NOTIFICATION_OPS_REPORT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['headline', 'highlights', 'risks', 'nextActions'],
+  properties: {
+    headline: { type: 'string' },
+    highlights: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    risks: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ADMIN_OPS_STATUS_SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'highlights', 'watchouts', 'recommendedActions'],
+  properties: {
+    summary: { type: 'string' },
+    highlights: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    watchouts: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    recommendedActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ADMIN_OPS_INCIDENT_PATTERNS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'patterns', 'topRisks'],
+  properties: {
+    summary: { type: 'string' },
+    patterns: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['component', 'pattern', 'severity', 'action'],
+        properties: {
+          component: { type: 'string' },
+          pattern: { type: 'string' },
+          severity: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+          action: { type: 'string' },
+        },
+      },
+    },
+    topRisks: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ADMIN_OPS_DAILY_REPORT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['headline', 'executiveSummary', 'issues', 'nextActions'],
+  properties: {
+    headline: { type: 'string' },
+    executiveSummary: { type: 'string' },
+    issues: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const ADMIN_OPS_RISK_PRIORITIZATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'priorities'],
+  properties: {
+    summary: { type: 'string' },
+    priorities: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'priority', 'reason', 'action'],
+        properties: {
+          label: { type: 'string' },
+          priority: { type: 'string', enum: ['P1', 'P2', 'P3'] },
+          reason: { type: 'string' },
+          action: { type: 'string' },
+        },
+      },
     },
   },
 } satisfies JsonRecord
@@ -168,6 +783,200 @@ const AI_CONFIGS: Record<AIRequestType, AiConfig> = {
   },
 }
 
+const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
+  'KPI_ASSIST:OrgKpiDraft': {
+    schemaName: 'org_kpi_draft',
+    schema: ORG_KPI_DRAFT_SCHEMA,
+    systemPrompt:
+      'You are an HR strategy assistant for organization KPI design. Reply in Korean. Generate concise, measurable organization KPI draft suggestions that align top-down strategy with monthly execution and personal KPI cascade. Avoid personal data and avoid vague wording.',
+  },
+  'KPI_ASSIST:OrgKpiWording': {
+    schemaName: 'org_kpi_wording',
+    schema: ORG_KPI_WORDING_SCHEMA,
+    systemPrompt:
+      'You are an HR strategy editor. Reply in Korean. Improve organization KPI wording so that the title and definition are clearer, measurable, and easier for executives and HR operators to understand.',
+  },
+  'KPI_ASSIST:OrgKpiSmart': {
+    schemaName: 'org_kpi_smart_check',
+    schema: ORG_KPI_SMART_SCHEMA,
+    systemPrompt:
+      'You are a SMART KPI reviewer. Reply in Korean. Diagnose whether the organization KPI is specific, measurable, achievable, relevant, and time-bound, and provide concise actionable suggestions.',
+  },
+  'KPI_ASSIST:OrgKpiDuplicate': {
+    schemaName: 'org_kpi_duplicate_detection',
+    schema: ORG_KPI_DUPLICATE_SCHEMA,
+    systemPrompt:
+      'You are an HR KPI governance assistant. Reply in Korean. Detect duplicated or overlapping organization KPIs inside the provided list and explain the overlap briefly.',
+  },
+  'KPI_ASSIST:OrgKpiAlignment': {
+    schemaName: 'org_kpi_alignment',
+    schema: ORG_KPI_ALIGNMENT_SCHEMA,
+    systemPrompt:
+      'You are a KPI cascade assistant. Reply in Korean. Suggest the most natural parent organization KPI or cascade linkage based on department context, strategy direction, and the candidate KPIs.',
+  },
+  'KPI_ASSIST:OrgKpiOperationalRisk': {
+    schemaName: 'org_kpi_operational_risk',
+    schema: ORG_KPI_RISK_SCHEMA,
+    systemPrompt:
+      'You are an HR operations analyst. Reply in Korean. Summarize the operational risks in the current organization KPI structure, including linkage gaps, unclear measures, and cascade difficulties, with concise recommendations.',
+  },
+  'KPI_ASSIST:OrgKpiMonthlyComment': {
+    schemaName: 'org_kpi_monthly_comment',
+    schema: ORG_KPI_MONTHLY_COMMENT_SCHEMA,
+    systemPrompt:
+      'You are a monthly KPI review assistant. Reply in Korean. Draft a short operational comment for an organization KPI using monthly execution signals. Highlight achievements, concerns, and next actions.',
+  },
+  'KPI_ASSIST:PersonalKpiDraft': {
+    schemaName: 'personal_kpi_draft',
+    schema: PERSONAL_KPI_DRAFT_SCHEMA,
+    systemPrompt:
+      'You are a personal KPI design assistant. Reply in Korean. Generate concise and measurable personal KPI draft suggestions aligned to the employee role, linked organization KPI, and expected yearly outcomes. Keep the wording practical for employee-manager agreement.',
+  },
+  'KPI_ASSIST:PersonalKpiWording': {
+    schemaName: 'personal_kpi_wording',
+    schema: PERSONAL_KPI_WORDING_SCHEMA,
+    systemPrompt:
+      'You are an HR goal-writing editor. Reply in Korean. Improve personal KPI wording so the title and definition are clearer, measurable, and easier for employees and leaders to review.',
+  },
+  'KPI_ASSIST:PersonalKpiSmart': {
+    schemaName: 'personal_kpi_smart_check',
+    schema: PERSONAL_KPI_SMART_SCHEMA,
+    systemPrompt:
+      'You are a SMART personal KPI reviewer. Reply in Korean. Diagnose whether the KPI is specific, measurable, achievable, relevant, and time-bound, with concise suggestions.',
+  },
+  'KPI_ASSIST:PersonalKpiWeight': {
+    schemaName: 'personal_kpi_weight_recommendation',
+    schema: PERSONAL_KPI_WEIGHT_SCHEMA,
+    systemPrompt:
+      'You are a KPI portfolio balancing assistant. Reply in Korean. Review the current personal KPI set, detect weight imbalance, and suggest better weight allocation while keeping the portfolio practical.',
+  },
+  'KPI_ASSIST:PersonalKpiAlignment': {
+    schemaName: 'personal_kpi_org_alignment',
+    schema: PERSONAL_KPI_ALIGNMENT_SCHEMA,
+    systemPrompt:
+      'You are a KPI alignment assistant. Reply in Korean. Suggest the most natural organization KPI alignment for the personal KPI and explain why it fits.',
+  },
+  'KPI_ASSIST:PersonalKpiDuplicate': {
+    schemaName: 'personal_kpi_duplicate_detection',
+    schema: PERSONAL_KPI_DUPLICATE_SCHEMA,
+    systemPrompt:
+      'You are a KPI governance assistant. Reply in Korean. Detect overlapping or duplicated personal KPIs and briefly explain the overlap.',
+  },
+  'KPI_ASSIST:PersonalKpiReviewerRisk': {
+    schemaName: 'personal_kpi_reviewer_risk',
+    schema: PERSONAL_KPI_REVIEWER_RISK_SCHEMA,
+    systemPrompt:
+      'You are a leader review assistant. Reply in Korean. Highlight risky, vague, or hard-to-review personal KPIs and provide concise review points for the manager.',
+  },
+  'KPI_ASSIST:PersonalKpiMonthlyComment': {
+    schemaName: 'personal_kpi_monthly_comment',
+    schema: PERSONAL_KPI_MONTHLY_COMMENT_SCHEMA,
+    systemPrompt:
+      'You are a monthly execution assistant. Reply in Korean. Draft a short execution comment and next actions for the personal KPI using recent monthly progress signals.',
+  },
+  'KPI_ASSIST:MonthlyPerformanceSummary': {
+    schemaName: 'monthly_performance_summary',
+    schema: MONTHLY_PERFORMANCE_SUMMARY_SCHEMA,
+    systemPrompt:
+      'You are a monthly performance summary assistant. Reply in Korean. Summarize the current month KPI execution with concise highlights, risks, and next actions that can be reused in monthly reports.',
+  },
+  'KPI_ASSIST:MonthlyRiskExplanation': {
+    schemaName: 'monthly_risk_explanation',
+    schema: MONTHLY_RISK_EXPLANATION_SCHEMA,
+    systemPrompt:
+      'You are a KPI risk explanation assistant. Reply in Korean. Explain why the KPI is risky this month and suggest practical response points for the employee and manager.',
+  },
+  'KPI_ASSIST:MonthlyManagerReview': {
+    schemaName: 'monthly_manager_review',
+    schema: MONTHLY_MANAGER_REVIEW_SCHEMA,
+    systemPrompt:
+      'You are a manager review drafting assistant. Reply in Korean. Suggest a balanced monthly review comment with strengths and practical requests for the next month.',
+  },
+  'KPI_ASSIST:MonthlyEvidenceSummary': {
+    schemaName: 'monthly_evidence_summary',
+    schema: MONTHLY_EVIDENCE_SUMMARY_SCHEMA,
+    systemPrompt:
+      'You are an evidence summarization assistant. Reply in Korean. Summarize the monthly evidence and mention what proof is strong or still missing.',
+  },
+  'KPI_ASSIST:MonthlyRetrospective': {
+    schemaName: 'monthly_retrospective',
+    schema: MONTHLY_RETROSPECTIVE_SCHEMA,
+    systemPrompt:
+      'You are a retrospective assistant. Reply in Korean. Organize this month into strengths, risks, next-month priorities, and a concise summary for HR-style reporting.',
+  },
+  'KPI_ASSIST:MonthlyCheckinAgenda': {
+    schemaName: 'monthly_checkin_agenda',
+    schema: MONTHLY_CHECKIN_AGENDA_SCHEMA,
+    systemPrompt:
+      'You are a check-in preparation assistant. Reply in Korean. Suggest a concise check-in agenda and preparation points for both the leader and the member.',
+  },
+  'KPI_ASSIST:MonthlyEvaluationEvidence': {
+    schemaName: 'monthly_evaluation_evidence',
+    schema: MONTHLY_EVALUATION_EVIDENCE_SCHEMA,
+    systemPrompt:
+      'You are an evaluation evidence assistant. Reply in Korean. Summarize how the current month performance can be referenced later in performance evaluation comments.',
+  },
+  'KPI_ASSIST:NotificationOpsSummary': {
+    schemaName: 'notification_ops_summary',
+    schema: NOTIFICATION_OPS_SUMMARY_SCHEMA,
+    systemPrompt:
+      'You are a notification operations analyst. Reply in Korean. Summarize the current notification operation health using concise admin-facing language, focusing on delivery status, failure risks, and immediate actions.',
+  },
+  'KPI_ASSIST:NotificationDeadLetterPatterns': {
+    schemaName: 'notification_dead_letter_patterns',
+    schema: NOTIFICATION_DEAD_LETTER_SCHEMA,
+    systemPrompt:
+      'You are a dead letter analysis assistant. Reply in Korean. Identify repeated dead letter failure patterns, explain the operational impact briefly, and suggest practical next actions for an admin operator.',
+  },
+  'KPI_ASSIST:NotificationTemplateValidation': {
+    schemaName: 'notification_template_validation',
+    schema: NOTIFICATION_TEMPLATE_VALIDATION_SCHEMA,
+    systemPrompt:
+      'You are a notification template QA assistant. Reply in Korean. Review the provided notification template and variables, point out missing or confusing placeholders, and suggest safer wording or variable handling.',
+  },
+  'KPI_ASSIST:NotificationOpsReport': {
+    schemaName: 'notification_ops_report',
+    schema: NOTIFICATION_OPS_REPORT_SCHEMA,
+    systemPrompt:
+      'You are an HR operations reporting assistant. Reply in Korean. Draft a short admin report for notification operations, covering highlights, risks, and recommended next actions in concise executive-ready language.',
+  },
+  'KPI_ASSIST:AdminOpsStatusSummary': {
+    schemaName: 'admin_ops_status_summary',
+    schema: ADMIN_OPS_STATUS_SUMMARY_SCHEMA,
+    systemPrompt:
+      'You are an admin operations analyst. Reply in Korean. Summarize the current service and business operations health in concise operator-friendly language, including immediate watchouts and practical next actions.',
+  },
+  'KPI_ASSIST:AdminOpsIncidentPatterns': {
+    schemaName: 'admin_ops_incident_patterns',
+    schema: ADMIN_OPS_INCIDENT_PATTERNS_SCHEMA,
+    systemPrompt:
+      'You are an incident pattern analyst. Reply in Korean. Review operations events and explain repeated patterns, likely impact, and the next actions an admin operator should take.',
+  },
+  'KPI_ASSIST:AdminOpsDailyReport': {
+    schemaName: 'admin_ops_daily_report',
+    schema: ADMIN_OPS_DAILY_REPORT_SCHEMA,
+    systemPrompt:
+      'You are an HR SaaS operations reporting assistant. Reply in Korean. Draft a concise daily operations report for admins and leadership, focusing on current health, issues, and next actions.',
+  },
+  'KPI_ASSIST:AdminOpsRiskPrioritization': {
+    schemaName: 'admin_ops_risk_prioritization',
+    schema: ADMIN_OPS_RISK_PRIORITIZATION_SCHEMA,
+    systemPrompt:
+      'You are an operations prioritization assistant. Reply in Korean. Rank current operational risks by urgency, explain why they matter, and suggest the first action for each.',
+  },
+}
+
+function getAiConfig(requestType: AIRequestType, sourceType?: string) {
+  if (sourceType) {
+    const sourceScoped = SOURCE_SCOPED_AI_CONFIGS[`${requestType}:${sourceType}` as SourceScopedAiConfigKey]
+    if (sourceScoped) {
+      return sourceScoped
+    }
+  }
+
+  return AI_CONFIGS[requestType]
+}
+
 const OMIT_KEY_PATTERN =
   /^(name|empname|employeename|email|gwsemail|empid|employeeid|requesterid|targetid|evaluatorid|recipientid|approvedbyid|linkedorgkpiid)$/i
 
@@ -227,11 +1036,440 @@ function toStringArray(values: unknown, fallback: string[]) {
   return list.length ? list : fallback
 }
 
-export function buildFallbackResult(requestType: AIRequestType, payload: JsonRecord): JsonRecord {
+export function buildFallbackResult(
+  requestType: AIRequestType,
+  payload: JsonRecord,
+  sourceType?: string
+): JsonRecord {
   const summary = String(payload.summary ?? payload.contextSummary ?? payload.definition ?? '').trim()
   const goal = String(payload.goal ?? payload.kpiName ?? payload.focusArea ?? '').trim()
   const orgKpi = String(payload.orgKpiName ?? '').trim()
   const grade = String(payload.gradeName ?? '').trim()
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiDraft') {
+    return {
+      title: goal || orgKpi || '조직 KPI 초안',
+      category: String(payload.category ?? payload.kpiCategory ?? '전략 실행'),
+      definition:
+        summary ||
+        '조직 전략을 월간 실행과 개인 KPI로 연결할 수 있도록 측정 가능한 결과 중심으로 정의한 조직 KPI 초안입니다.',
+      formula: '실적 / 목표 x 100',
+      targetValueSuggestion: String(payload.targetValue ?? '연간 목표 100 기준'),
+      unit: String(payload.unit ?? '%'),
+      weightSuggestion: Number(payload.weight ?? 20),
+      difficultySuggestion: String(payload.difficulty ?? 'MEDIUM'),
+      reviewPoints: [
+        '가중치 합과 부서 내 다른 KPI와의 중복 여부를 함께 확인하세요.',
+        '월간 실적 데이터로 실제 측정 가능한지 검토하세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiWording') {
+    return {
+      improvedTitle: goal || orgKpi || '측정 가능한 조직 KPI 문구',
+      improvedDefinition:
+        summary ||
+        '조직 목표와 측정 기준이 함께 드러나도록 문장을 간결하게 정리한 제안입니다.',
+      rationale: [
+        '측정 대상과 기대 결과를 한 문장 안에서 읽히게 정리했습니다.',
+        '실제 실행 지표와 연결될 수 있도록 표현을 구체화했습니다.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiSmart') {
+    return {
+      overall: 'WARNING',
+      summary: '현재 KPI는 방향성은 있으나 측정 기준과 기한 표현을 더 선명하게 다듬을 필요가 있습니다.',
+      criteria: [
+        {
+          name: 'Specific',
+          status: 'WARN',
+          reason: '대상과 결과 표현이 다소 넓습니다.',
+          suggestion: '핵심 고객군 또는 운영 지표를 명확히 지정하세요.',
+        },
+        {
+          name: 'Measurable',
+          status: 'PASS',
+          reason: '목표값과 측정 방식이 포함되어 있습니다.',
+          suggestion: '월간 추적 기준을 함께 적으면 더 좋습니다.',
+        },
+        {
+          name: 'Achievable',
+          status: 'WARN',
+          reason: '목표 수준의 근거가 부족합니다.',
+          suggestion: '전년 실적 또는 현재 기준치를 함께 적으세요.',
+        },
+        {
+          name: 'Relevant',
+          status: 'PASS',
+          reason: '조직 전략 방향과 연결되어 있습니다.',
+          suggestion: '상위 전략 키워드를 문장에 반영하면 더 분명해집니다.',
+        },
+        {
+          name: 'Time-bound',
+          status: 'FAIL',
+          reason: '평가 주기나 점검 주기가 약합니다.',
+          suggestion: '연간 목표와 월간 점검 기준을 함께 명시하세요.',
+        },
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiDuplicate') {
+    return {
+      summary: '유사 KPI 후보를 기반으로 중복 가능성을 정리했습니다.',
+      duplicates: Array.isArray(payload.candidates)
+        ? (payload.candidates as unknown[])
+            .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+            .slice(0, 3)
+            .map((item) => ({
+              id: String(item.id ?? ''),
+              title: String(item.title ?? '유사 KPI'),
+              overlapLevel: 'MEDIUM',
+              similarityReason: '측정 대상 또는 전략 키워드가 유사합니다.',
+            }))
+        : [],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiAlignment') {
+    return {
+      recommendedParentId: String(payload.recommendedParentId ?? ''),
+      recommendedParentTitle: String(payload.recommendedParentTitle ?? '상위 KPI 후보'),
+      riskLevel: 'MEDIUM',
+      rationale:
+        summary || '조직 트리와 KPI 카테고리 기준으로 가장 자연스러운 상위 연결 후보를 정리했습니다.',
+      suggestedLinks: [
+        '상위 전략 KPI와의 관계를 정의 문장에 함께 적어 두세요.',
+        '개인 KPI로 풀어내기 어려운 표현은 월간 실적 기준으로 다시 다듬으세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiOperationalRisk') {
+    return {
+      riskLevel: 'MEDIUM',
+      executiveSummary:
+        summary || '현재 KPI 구조는 운영 가능하지만 연결 누락과 실적 추적 공백이 일부 존재합니다.',
+      risks: [
+        '개인 KPI 연결 수가 낮은 항목이 있습니다.',
+        '최근 월간 실적이 없는 KPI가 있습니다.',
+      ],
+      recommendations: [
+        '연결 누락 KPI를 우선 검토하고 개인 KPI 템플릿과 연결하세요.',
+        '측정식이 약한 KPI는 SMART 관점으로 다시 정리하세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiMonthlyComment') {
+    return {
+      comment:
+        summary || '최근 월간 실적 기준으로는 실행은 진행 중이지만 연결 커버리지와 달성률 편차를 함께 점검할 필요가 있습니다.',
+      highlights: ['주요 KPI의 월간 달성 흐름은 유지되고 있습니다.'],
+      concerns: ['연결된 개인 KPI 수가 적은 항목은 실행 추적이 약해질 수 있습니다.'],
+      nextActions: ['다음 점검 전까지 미연결 KPI와 최근 실적 누락 항목을 우선 확인하세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiDraft') {
+    return {
+      title: goal || '개인 KPI 초안',
+      definition:
+        summary || '조직 KPI와 연결되고 월간 실적과 평가에서 근거로 활용할 수 있는 개인 KPI 초안입니다.',
+      formula: payload.kpiType === 'QUALITATIVE' ? '정성 기준 체크리스트 충족 여부' : '실적 / 목표 x 100',
+      targetValueSuggestion: String(payload.targetValue ?? '연간 목표 100 기준'),
+      unit: String(payload.unit ?? (payload.kpiType === 'QUALITATIVE' ? '건' : '%')),
+      weightSuggestion: Number(payload.weight ?? 25),
+      difficultySuggestion: String(payload.difficulty ?? 'MEDIUM'),
+      evaluationCriteria: [
+        '월간 실적 입력 시 동일한 기준으로 추적 가능한지 확인합니다.',
+        '리더 검토 시 목표 수준과 측정 방법이 설명 가능한지 확인합니다.',
+      ],
+      reviewPoints: [
+        '조직 KPI와의 연결 문장이 충분히 분명한지 확인하세요.',
+        '가중치 합이 100이 되도록 다른 KPI와 함께 조정하세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiWording') {
+    return {
+      improvedTitle: goal || '측정 가능한 개인 KPI 문장',
+      improvedDefinition:
+        summary || '직무 기대성과와 측정 방법이 더 명확하게 보이도록 개인 KPI 문장을 정리한 제안입니다.',
+      rationale: [
+        '목표 대상과 기대 결과를 더 분명하게 드러내도록 정리했습니다.',
+        '월간 실적과 평가 코멘트로 이어질 수 있게 측정 표현을 보완했습니다.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiSmart') {
+    return {
+      overall: 'WARNING',
+      summary: '개인 KPI의 방향은 적절하지만 측정 기준과 기한 표현을 더 구체화하면 검토와 합의가 쉬워집니다.',
+      criteria: [
+        { name: 'Specific', status: 'WARN', reason: '핵심 결과가 다소 넓게 표현되어 있습니다.', suggestion: '대상 업무나 결과물을 더 명확히 적어보세요.' },
+        { name: 'Measurable', status: 'PASS', reason: '측정 기준이 포함되어 있습니다.', suggestion: '월간 실적으로 같은 기준을 추적할 수 있는지 확인하세요.' },
+        { name: 'Achievable', status: 'WARN', reason: '목표 수준의 근거가 부족합니다.', suggestion: '전년 실적이나 기준선을 함께 적어보세요.' },
+        { name: 'Relevant', status: 'PASS', reason: '조직 KPI와 연결성이 보입니다.', suggestion: '상위 목표 설명을 한 줄 추가하면 더 좋습니다.' },
+        { name: 'Time-bound', status: 'FAIL', reason: '연간 또는 월간 기준 시점이 분명하지 않습니다.', suggestion: '평가 주기와 월간 추적 시점을 함께 적어주세요.' },
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiWeight') {
+    const items = Array.isArray(payload.items) ? payload.items : []
+    return {
+      currentTotal: Number(payload.currentTotal ?? 100),
+      recommendedTotal: 100,
+      summary: '현재 KPI 묶음 기준으로 핵심 성과에 더 무게를 두고 보조 KPI는 가볍게 조정하는 편이 적절합니다.',
+      recommendations: items.slice(0, 5).map((item, index) => {
+        const row = typeof item === 'object' && item ? (item as Record<string, unknown>) : {}
+        const currentWeight = Number(row.weight ?? 20)
+        return {
+          title: String(row.title ?? `KPI ${index + 1}`),
+          currentWeight,
+          recommendedWeight: Math.max(10, Math.min(40, currentWeight)),
+          reason: '조직 KPI 연결도와 실행 빈도를 함께 고려해 가중치를 조정했습니다.',
+        }
+      }),
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiAlignment') {
+    return {
+      recommendedOrgKpiId: String(payload.recommendedOrgKpiId ?? ''),
+      recommendedOrgKpiTitle: String(payload.orgKpiName ?? '추천 조직 KPI'),
+      rationale:
+        summary || '해당 개인 KPI는 상위 조직 KPI의 실행 성과를 직접적으로 뒷받침하는 성격이라 연결성이 높습니다.',
+      alternatives: ['같은 카테고리의 조직 KPI와 중복 연결되지 않는지 확인해보세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiDuplicate') {
+    return {
+      summary: '현재 KPI 목록 안에서 표현이 겹치거나 측정 기준이 유사한 항목을 정리했습니다.',
+      duplicates: Array.isArray(payload.candidates)
+        ? (payload.candidates as unknown[])
+            .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+            .slice(0, 4)
+            .map((item) => ({
+              id: String(item.id ?? ''),
+              title: String(item.title ?? '유사 KPI'),
+              overlapLevel: 'MEDIUM',
+              similarityReason: '측정 대상이나 결과 지표가 유사합니다.',
+            }))
+        : [],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiReviewerRisk') {
+    return {
+      summary: '리더 검토 관점에서 목표 수준과 측정 방법이 더 분명해야 하는 KPI가 보입니다.',
+      risks: ['조직 KPI 연결이 없는 항목이 있습니다.', '달성 기준이 모호한 정성 KPI가 포함되어 있습니다.'],
+      reviewPoints: ['가중치 합이 100인지 먼저 확인하세요.', '월간 실적 입력 기준으로 추적 가능한지 검토하세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiMonthlyComment') {
+    return {
+      comment:
+        summary || '최근 월간 실적 흐름을 보면 실행은 진행 중이지만 목표 대비 편차가 있어 다음 체크인에서 우선순위와 지원 필요사항을 함께 점검하는 것이 좋습니다.',
+      nextActions: ['다음 월간 실적 입력 전까지 핵심 장애요인을 정리하세요.', '체크인에서 지원 요청이 필요한 부분을 명확히 공유하세요.'],
+      managerNotes: ['실적 수치뿐 아니라 실행 과정의 병목 요인을 함께 확인하세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyPerformanceSummary') {
+    return {
+      summary:
+        summary || '이번 달 KPI 실행 상태를 보면 전반적으로 계획된 과제는 진행되고 있으나, 일부 지표는 목표 대비 편차가 보여 추가 점검이 필요합니다.',
+      highlights: ['주요 KPI의 실행 흐름이 유지되고 있습니다.', '월간 기록과 메모가 평가 근거로 누적되고 있습니다.'],
+      risks: ['달성률이 낮은 KPI는 원인과 대응 계획을 더 구체화할 필요가 있습니다.'],
+      nextActions: ['다음 월간 입력 전까지 위험 KPI의 장애요인과 대응 계획을 보완해 주세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyRiskExplanation') {
+    return {
+      riskLevel: 'MEDIUM',
+      causeSummary: summary || '이번 달 실적 저하는 실행 지연과 외부 의존 이슈가 함께 영향을 준 것으로 보입니다.',
+      responsePoints: ['지연 원인을 구체적으로 기록하고, 다음 달 보완 액션을 명시해 주세요.', '체크인에서 지원이 필요한 리소스를 함께 논의해 보세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyManagerReview') {
+    return {
+      comment:
+        summary || '이번 달에는 주요 과제 추진이 이어졌지만 일부 KPI는 목표 대비 편차가 있어 원인 분석과 다음 달 보완 계획을 조금 더 구체화하면 좋겠습니다.',
+      strengths: ['핵심 과제를 꾸준히 추진했습니다.', '기록과 근거를 비교적 충실하게 남겼습니다.'],
+      requests: ['위험 KPI의 장애요인과 대응 계획을 더 구체적으로 정리해 주세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyEvidenceSummary') {
+    return {
+      summary: summary || '현재 입력된 메모와 첨부를 기준으로 이번 달의 실행 근거를 요약했습니다.',
+      evidenceHighlights: ['주요 활동 내역과 일부 증빙이 함께 기록되어 있습니다.'],
+      missingEvidence: ['위험 KPI에 대한 보완 증빙이 더 있으면 평가 근거가 더 명확해집니다.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyRetrospective') {
+    return {
+      strengths: ['중요한 과제를 꾸준히 추진했습니다.'],
+      risks: ['낮은 달성률 KPI의 원인 설명이 더 필요합니다.'],
+      nextMonthPriorities: ['우선순위 KPI에 집중하고, 증빙과 메모를 더 구체화하세요.'],
+      summary: summary || '이번 달은 실행 흐름은 유지됐지만 일부 KPI는 보완이 필요한 상태입니다.',
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyCheckinAgenda') {
+    return {
+      agenda: ['위험 KPI 원인과 지원 필요사항 점검', '다음 달 우선순위와 일정 정렬'],
+      leaderPrep: ['지연된 KPI의 맥락과 지원 가능 리소스를 정리해 주세요.'],
+      memberPrep: ['이번 달 성과와 어려움, 다음 달 계획을 2~3문장으로 정리해 주세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyEvaluationEvidence') {
+    return {
+      summary: summary || '이번 달 실적은 향후 평가 코멘트에서 실행력과 리스크 대응을 설명하는 근거로 활용할 수 있습니다.',
+      evaluationPoints: ['주요 KPI 진행 상황', '위험 대응 방식', '근거 자료와 실행 메모의 일관성'],
+      watchouts: ['정량 실적이 부족한 KPI는 정성 근거를 보완해야 합니다.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'NotificationOpsSummary') {
+    return {
+      summary:
+        summary ||
+        '최근 알림 운영은 전반적으로 안정적이지만 일부 실패 템플릿과 dead letter 정리가 필요합니다.',
+      warnings: [
+        '실패 건이 반복되는 템플릿과 채널 조합을 우선 점검해 주세요.',
+        'dead letter 누적 건은 재처리 전 payload 누락 여부를 먼저 확인하는 것이 좋습니다.',
+      ],
+      recommendedActions: [
+        '실패 건이 많은 템플릿의 변수와 활성 상태를 검토하세요.',
+        '최근 24시간 재시도 이력과 dead letter 재처리 결과를 함께 모니터링하세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'NotificationDeadLetterPatterns') {
+    return {
+      summary: summary || 'dead letter는 변수 누락, 수신 대상 정보 누락, 일시적 채널 실패 유형으로 묶여 보입니다.',
+      patterns: [
+        { reason: '변수 누락 또는 치환 실패', count: 2, impact: '같은 템플릿의 반복 실패로 이어질 수 있습니다.' },
+        { reason: '수신 대상 정보 누락', count: 1, impact: '특정 사용자 알림이 누락될 수 있습니다.' },
+      ],
+      recommendedActions: [
+        '템플릿 변수 목록과 payload 키를 먼저 비교하세요.',
+        '수신 대상 정보가 비어 있는 경우 데이터 원본과 동기화 상태를 점검하세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'NotificationTemplateValidation') {
+    return {
+      summary: summary || '템플릿 변수는 대체로 일관되지만 누락될 수 있는 placeholder와 표현 중복을 점검하는 것이 좋습니다.',
+      missingVariables: ['dueDate'],
+      confusingVariables: ['employeeName / recipientName 중 하나로 통일 권장'],
+      suggestions: [
+        '제목과 본문에서 동일 의미 변수명은 하나로 통일하세요.',
+        '링크 변수는 누락 시 대체 문구가 보이도록 처리하는 것이 안전합니다.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'NotificationOpsReport') {
+    return {
+      headline: summary || '최근 알림 운영은 전반적으로 안정적이나 일부 실패 템플릿에 대한 운영 점검이 필요합니다.',
+      highlights: ['주요 알림은 정상적으로 처리되고 있습니다.', '큐 적체는 제한적이며 재처리 흐름은 유지되고 있습니다.'],
+      risks: ['dead letter 누적이 커지면 사용자 경험 저하로 이어질 수 있습니다.', '비활성 템플릿이 필요한 이벤트를 놓치지 않는지 확인해야 합니다.'],
+      nextActions: ['실패 템플릿을 우선 점검하고 test send를 실행하세요.', 'dead letter 재처리 후 24시간 동안 재발 여부를 모니터링하세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'AdminOpsStatusSummary') {
+    return {
+      summary:
+        summary || '최근 운영 상태는 전반적으로 확인 가능하지만, 실패 작업과 업무 리스크를 함께 점검하는 운영 대응이 필요합니다.',
+      highlights: [
+        '운영 핵심 지표와 업무 리스크를 한 화면에서 확인할 수 있습니다.',
+        '기술 상태와 HR 운영 리스크를 함께 보며 우선순위를 정할 수 있습니다.',
+      ],
+      watchouts: [
+        'dead letter, 로그인 준비 불가 계정, 예산 초과 시나리오는 즉시 확인이 필요합니다.',
+        'AI fallback 증가나 평가 주기 지연은 후속 운영 이슈로 이어질 수 있습니다.',
+      ],
+      recommendedActions: [
+        '실패 작업과 dead letter를 먼저 검토하고 복구 여부를 확인하세요.',
+        '평가 주기, 월간 실적, 보상 시뮬레이션의 지연 항목을 우선순위로 점검하세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'AdminOpsIncidentPatterns') {
+    return {
+      summary: summary || '최근 이벤트는 알림 실패, 로그인 준비 불가 계정, 운영 지연 이슈 중심으로 묶여 보입니다.',
+      patterns: [
+        {
+          component: 'notification',
+          pattern: 'dead letter와 재시도 지연이 반복되는 패턴',
+          severity: 'HIGH',
+          action: '알림 운영 화면에서 실패 원인과 재처리 결과를 우선 확인하세요.',
+        },
+        {
+          component: 'ops-summary',
+          pattern: '업무 리스크 항목이 복수 화면으로 분산되어 후속 조치가 지연되는 패턴',
+          severity: 'MEDIUM',
+          action: '업무 리스크 탭 기준으로 우선순위를 정해 관련 화면으로 이동하세요.',
+        },
+      ],
+      topRisks: ['dead letter 누적', '로그인 준비 불가 계정', '예산 초과 시나리오'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'AdminOpsDailyReport') {
+    return {
+      headline: summary || '오늘 운영 현황은 전반적으로 안정적이나, 일부 운영 리스크는 즉시 확인이 필요합니다.',
+      executiveSummary:
+        '실패 작업, dead letter, 로그인 준비 불가 계정, 예산 초과 시나리오를 함께 확인해 기술 운영과 업무 운영 리스크를 동시에 관리해야 합니다.',
+      issues: ['알림 실패 누적 여부 확인', '평가/보상 운영 지연 여부 확인', '로그인 준비 불가 계정 점검'],
+      nextActions: ['알림 운영에서 재처리 상태 확인', 'Google 계정 등록 화면에서 미등록 계정 점검', '보상 시뮬레이션의 예산 초과 시나리오 검토'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'AdminOpsRiskPrioritization') {
+    return {
+      summary: summary || '현재 운영 리스크는 사용자 영향과 복구 난이도를 기준으로 우선순위를 정하는 것이 좋습니다.',
+      priorities: [
+        {
+          label: 'Dead Letter 및 실패 작업',
+          priority: 'P1',
+          reason: '사용자 알림 누락으로 직접적인 운영 장애로 이어질 수 있습니다.',
+          action: '알림 운영에서 실패 원인 확인 후 재처리하세요.',
+        },
+        {
+          label: '로그인 준비 불가 계정',
+          priority: 'P2',
+          reason: '신규/기존 사용자의 접근 문제로 운영 문의가 증가할 수 있습니다.',
+          action: 'Google 계정 등록 화면에서 미등록 또는 도메인 불일치 계정을 정리하세요.',
+        },
+        {
+          label: '예산 초과 보상 시나리오',
+          priority: 'P3',
+          reason: '즉시 장애는 아니지만 승인 지연과 공개 지연으로 이어질 수 있습니다.',
+          action: '보상 시뮬레이션 관리 화면에서 초과 사유와 예외 승인 여부를 확인하세요.',
+        },
+      ],
+    }
+  }
 
   switch (requestType) {
     case AIRequestType.KPI_ASSIST:
@@ -346,14 +1584,15 @@ function extractOutputText(response: JsonRecord) {
 
 async function callOpenAIResponsesApi(
   requestType: AIRequestType,
-  payload: JsonRecord
+  payload: JsonRecord,
+  sourceType?: string
 ): Promise<OpenAIResponseData> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
     throw new AppError(503, 'AI_API_KEY_MISSING', 'OPENAI_API_KEY is not configured.')
   }
 
-  const config = AI_CONFIGS[requestType]
+  const config = getAiConfig(requestType, sourceType)
   const model = process.env.OPENAI_RESPONSES_MODEL || 'gpt-5-mini'
   const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')
   const response = await fetch(`${baseUrl}/responses`, {
@@ -429,7 +1668,7 @@ export async function generateAiAssist(
   db: PrismaClient = prisma
 ) {
   const requestPayload = sanitizeAiPayload(params.payload)
-  const fallbackResult = buildFallbackResult(params.requestType, requestPayload)
+  const fallbackResult = buildFallbackResult(params.requestType, requestPayload, params.sourceType)
   const baseData = {
     requesterId: params.requesterId,
     requestType: params.requestType,
@@ -470,7 +1709,7 @@ export async function generateAiAssist(
   }
 
   try {
-    const aiResult = await callOpenAIResponsesApi(params.requestType, requestPayload)
+    const aiResult = await callOpenAIResponsesApi(params.requestType, requestPayload, params.sourceType)
     const log = await db.aiRequestLog.create({
       data: {
         ...baseData,

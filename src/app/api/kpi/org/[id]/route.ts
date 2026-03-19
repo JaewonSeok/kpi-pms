@@ -1,12 +1,33 @@
-import { getServerSession } from 'next-auth'
+import { getServerSession, type Session } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { UpdateOrgKpiSchema } from '@/lib/validations'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import {
+  canEditOrgKpiByOperationalStatus,
+  resolveOrgKpiOperationalStatus,
+} from '@/server/org-kpi-workflow'
 
 type RouteContext = {
   params: Promise<{ id: string }>
+}
+
+function canManage(role: string) {
+  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
+}
+
+function getScopeDepartmentIds(session: Session | null) {
+  if (!session) return []
+  if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') {
+    return null
+  }
+  if (session.user.role === 'ROLE_MEMBER') {
+    return [session.user.deptId]
+  }
+  return session.user.accessibleDepartmentIds.length
+    ? session.user.accessibleDepartmentIds
+    : [session.user.deptId]
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -15,26 +36,30 @@ export async function GET(_request: Request, context: RouteContext) {
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
 
     const { id } = await context.params
+    const scopeDepartmentIds = getScopeDepartmentIds(session)
 
     const kpi = await prisma.orgKpi.findUnique({
       where: { id },
       include: {
         department: {
           select: {
+            id: true,
             deptName: true,
             deptCode: true,
           },
         },
         personalKpis: {
-          select: {
-            id: true,
-            kpiName: true,
-            status: true,
+          include: {
             employee: {
               select: {
+                id: true,
                 empId: true,
                 empName: true,
               },
+            },
+            monthlyRecords: {
+              orderBy: [{ yearMonth: 'desc' }],
+              take: 3,
             },
           },
           orderBy: [{ employee: { empName: 'asc' } }],
@@ -47,13 +72,17 @@ export async function GET(_request: Request, context: RouteContext) {
       throw new AppError(404, 'ORG_KPI_NOT_FOUND', '조직 KPI를 찾을 수 없습니다.')
     }
 
+    if (scopeDepartmentIds && !scopeDepartmentIds.includes(kpi.deptId)) {
+      throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 조직 KPI입니다.')
+    }
+
     const auditLogs = await prisma.auditLog.findMany({
       where: {
         entityType: 'OrgKpi',
         entityId: id,
       },
       orderBy: { timestamp: 'desc' },
-      take: 20,
+      take: 30,
     })
 
     return successResponse({
@@ -69,7 +98,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
-    if (!['ROLE_ADMIN', 'ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD'].includes(session.user.role)) {
+    if (!canManage(session.user.role)) {
       throw new AppError(403, 'FORBIDDEN', '권한이 없습니다.')
     }
 
@@ -111,6 +140,27 @@ export async function PATCH(request: Request, context: RouteContext) {
       throw new AppError(404, 'ORG_KPI_NOT_FOUND', '조직 KPI를 찾을 수 없습니다.')
     }
 
+    const scopeDepartmentIds = getScopeDepartmentIds(session)
+    if (scopeDepartmentIds && !scopeDepartmentIds.includes(current.deptId)) {
+      throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 조직 KPI입니다.')
+    }
+
+    const workflowLogs = await prisma.auditLog.findMany({
+      where: {
+        entityType: 'OrgKpi',
+        entityId: id,
+      },
+      orderBy: {
+        timestamp: 'desc',
+      },
+      take: 30,
+    })
+
+    const operationalStatus = resolveOrgKpiOperationalStatus({
+      status: current.status,
+      logs: workflowLogs,
+    })
+
     const targetDeptId = data.deptId ?? current.deptId
     const targetEvalYear = data.evalYear ?? current.evalYear
     const targetWeight = data.weight ?? current.weight
@@ -131,19 +181,11 @@ export async function PATCH(request: Request, context: RouteContext) {
       (personalKpi) => personalKpi.status === 'CONFIRMED'
     ).length
 
-    if (current.status === 'CONFIRMED' && hasFieldUpdates) {
+    if (hasFieldUpdates && !canEditOrgKpiByOperationalStatus(operationalStatus)) {
       throw new AppError(
         400,
         'ORG_KPI_LOCKED',
-        '확정된 조직 KPI는 수정할 수 없습니다. 먼저 초안으로 전환하세요.'
-      )
-    }
-
-    if (current.status === 'ARCHIVED' && hasFieldUpdates) {
-      throw new AppError(
-        400,
-        'ORG_KPI_ARCHIVED',
-        '보관된 조직 KPI는 수정할 수 없습니다. 먼저 초안으로 전환하세요.'
+        '초안 상태 KPI만 수정할 수 있습니다. 제출되었거나 잠금된 KPI는 먼저 재오픈해 주세요.'
       )
     }
 
@@ -152,7 +194,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         throw new AppError(
           403,
           'ORG_KPI_UNLOCK_FORBIDDEN',
-          '확정된 조직 KPI를 초안으로 되돌릴 수 있는 권한이 없습니다.'
+          '확정 KPI를 초안으로 되돌릴 권한이 없습니다.'
         )
       }
 
@@ -166,10 +208,22 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     if (
-      data.deptId !== undefined ||
-      data.evalYear !== undefined ||
-      data.weight !== undefined
+      (data.deptId !== undefined || data.evalYear !== undefined || data.weight !== undefined) &&
+      scopeDepartmentIds &&
+      !scopeDepartmentIds.includes(targetDeptId)
     ) {
+      throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 부서로 이동할 수 없습니다.')
+    }
+
+    if (data.status === 'CONFIRMED' && !['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF'].includes(session.user.role)) {
+      throw new AppError(403, 'FORBIDDEN', '이 역할은 조직 KPI를 확정할 수 없습니다.')
+    }
+
+    if (data.status === 'ARCHIVED' && !['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF'].includes(session.user.role)) {
+      throw new AppError(403, 'FORBIDDEN', '이 역할은 조직 KPI를 보관할 수 없습니다.')
+    }
+
+    if (data.deptId !== undefined || data.evalYear !== undefined || data.weight !== undefined) {
       const related = await prisma.orgKpi.findMany({
         where: {
           deptId: targetDeptId,
@@ -184,7 +238,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         throw new AppError(
           400,
           'WEIGHT_EXCEEDED',
-          `가중치 합계가 100을 초과합니다. (변경 후: ${totalWeight})`
+          `가중치 합계가 100을 초과합니다. (변경 후: ${Math.round(totalWeight * 10) / 10})`
         )
       }
     }
@@ -213,15 +267,17 @@ export async function PATCH(request: Request, context: RouteContext) {
           },
         },
         personalKpis: {
-          select: {
-            id: true,
-            kpiName: true,
-            status: true,
+          include: {
             employee: {
               select: {
+                id: true,
                 empId: true,
                 empName: true,
               },
+            },
+            monthlyRecords: {
+              orderBy: [{ yearMonth: 'desc' }],
+              take: 3,
             },
           },
           orderBy: [{ employee: { empName: 'asc' } }],
@@ -241,6 +297,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         evalYear: current.evalYear,
         weight: current.weight,
         status: current.status,
+        workflowStatus: operationalStatus,
         kpiName: current.kpiName,
         kpiCategory: current.kpiCategory,
         kpiType: current.kpiType,

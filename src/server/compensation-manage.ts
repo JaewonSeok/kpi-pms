@@ -1026,6 +1026,8 @@ function parseAuditStatus(value: Prisma.JsonValue | null) {
 
 function parseAuditNote(value: Prisma.JsonValue | null) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const comment = (value as Record<string, unknown>).comment
+  if (typeof comment === 'string' && comment.trim()) return comment
   const publishedAt = (value as Record<string, unknown>).publishedAt
   return typeof publishedAt === 'string' ? `공개 시각 ${publishedAt}` : undefined
 }
