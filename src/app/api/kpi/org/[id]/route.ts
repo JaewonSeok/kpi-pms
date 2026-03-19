@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { UpdateOrgKpiSchema } from '@/lib/validations'
+import { createAuditLog, getClientInfo } from '@/lib/audit'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -46,7 +47,19 @@ export async function GET(_request: Request, context: RouteContext) {
       throw new AppError(404, 'ORG_KPI_NOT_FOUND', '조직 KPI를 찾을 수 없습니다.')
     }
 
-    return successResponse(kpi)
+    const auditLogs = await prisma.auditLog.findMany({
+      where: {
+        entityType: 'OrgKpi',
+        entityId: id,
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 20,
+    })
+
+    return successResponse({
+      ...kpi,
+      auditLogs,
+    })
   } catch (error) {
     return errorResponse(error)
   }
@@ -77,6 +90,20 @@ export async function PATCH(request: Request, context: RouteContext) {
         deptId: true,
         evalYear: true,
         weight: true,
+        status: true,
+        kpiName: true,
+        kpiCategory: true,
+        kpiType: true,
+        definition: true,
+        formula: true,
+        targetValue: true,
+        unit: true,
+        difficulty: true,
+        personalKpis: {
+          select: {
+            status: true,
+          },
+        },
       },
     })
 
@@ -87,6 +114,56 @@ export async function PATCH(request: Request, context: RouteContext) {
     const targetDeptId = data.deptId ?? current.deptId
     const targetEvalYear = data.evalYear ?? current.evalYear
     const targetWeight = data.weight ?? current.weight
+    const hasFieldUpdates =
+      data.deptId !== undefined ||
+      data.evalYear !== undefined ||
+      data.kpiType !== undefined ||
+      data.kpiCategory !== undefined ||
+      data.kpiName !== undefined ||
+      data.definition !== undefined ||
+      data.formula !== undefined ||
+      data.targetValue !== undefined ||
+      data.unit !== undefined ||
+      data.weight !== undefined ||
+      data.difficulty !== undefined
+
+    const linkedConfirmedPersonalKpis = current.personalKpis.filter(
+      (personalKpi) => personalKpi.status === 'CONFIRMED'
+    ).length
+
+    if (current.status === 'CONFIRMED' && hasFieldUpdates) {
+      throw new AppError(
+        400,
+        'ORG_KPI_LOCKED',
+        '확정된 조직 KPI는 수정할 수 없습니다. 먼저 초안으로 전환하세요.'
+      )
+    }
+
+    if (current.status === 'ARCHIVED' && hasFieldUpdates) {
+      throw new AppError(
+        400,
+        'ORG_KPI_ARCHIVED',
+        '보관된 조직 KPI는 수정할 수 없습니다. 먼저 초안으로 전환하세요.'
+      )
+    }
+
+    if (data.status === 'DRAFT' && current.status === 'CONFIRMED') {
+      if (session.user.role !== 'ROLE_ADMIN') {
+        throw new AppError(
+          403,
+          'ORG_KPI_UNLOCK_FORBIDDEN',
+          '확정된 조직 KPI를 초안으로 되돌릴 수 있는 권한이 없습니다.'
+        )
+      }
+
+      if (linkedConfirmedPersonalKpis > 0) {
+        throw new AppError(
+          400,
+          'ORG_KPI_UNLOCK_BLOCKED',
+          '연결된 확정 개인 KPI가 있어 초안으로 되돌릴 수 없습니다.'
+        )
+      }
+    }
 
     if (
       data.deptId !== undefined ||
@@ -151,6 +228,43 @@ export async function PATCH(request: Request, context: RouteContext) {
         },
         _count: { select: { personalKpis: true } },
       },
+    })
+
+    const clientInfo = getClientInfo(request)
+    await createAuditLog({
+      userId: session.user.id,
+      action: data.status && data.status !== current.status ? 'ORG_KPI_STATUS_CHANGED' : 'ORG_KPI_UPDATED',
+      entityType: 'OrgKpi',
+      entityId: id,
+      oldValue: {
+        deptId: current.deptId,
+        evalYear: current.evalYear,
+        weight: current.weight,
+        status: current.status,
+        kpiName: current.kpiName,
+        kpiCategory: current.kpiCategory,
+        kpiType: current.kpiType,
+        definition: current.definition,
+        formula: current.formula,
+        targetValue: current.targetValue,
+        unit: current.unit,
+        difficulty: current.difficulty,
+      },
+      newValue: {
+        deptId: kpi.deptId,
+        evalYear: kpi.evalYear,
+        weight: kpi.weight,
+        status: kpi.status,
+        kpiName: kpi.kpiName,
+        kpiCategory: kpi.kpiCategory,
+        kpiType: kpi.kpiType,
+        definition: kpi.definition,
+        formula: kpi.formula,
+        targetValue: kpi.targetValue,
+        unit: kpi.unit,
+        difficulty: kpi.difficulty,
+      },
+      ...clientInfo,
     })
 
     return successResponse(kpi)

@@ -176,6 +176,102 @@ function buildFormFromCycle(cycle: EvalCycleItem): CycleFormState {
   }
 }
 
+function buildReadinessChecklist(cycle: EvalCycleItem) {
+  return [
+    {
+      label: 'KPI 설정 일정',
+      passed: !!cycle.kpiSetupStart && !!cycle.kpiSetupEnd,
+      detail: cycle.kpiSetupStart && cycle.kpiSetupEnd ? '완료' : '시작/종료 일정이 필요합니다.',
+    },
+    {
+      label: '자기 평가 일정',
+      passed: !!cycle.selfEvalStart && !!cycle.selfEvalEnd,
+      detail: cycle.selfEvalStart && cycle.selfEvalEnd ? '완료' : '시작/종료 일정이 필요합니다.',
+    },
+    {
+      label: '1차 평가 일정',
+      passed: !!cycle.firstEvalStart && !!cycle.firstEvalEnd,
+      detail: cycle.firstEvalStart && cycle.firstEvalEnd ? '완료' : '시작/종료 일정이 필요합니다.',
+    },
+    {
+      label: '최종 평가 일정',
+      passed: !!cycle.finalEvalStart && !!cycle.finalEvalEnd,
+      detail: cycle.finalEvalStart && cycle.finalEvalEnd ? '완료' : '시작/종료 일정이 필요합니다.',
+    },
+    {
+      label: '결과 공개 시작일',
+      passed: !!cycle.resultOpenStart,
+      detail: cycle.resultOpenStart ? formatDate(cycle.resultOpenStart) : '공개 시작일이 필요합니다.',
+    },
+    {
+      label: '이의 신청 마감일',
+      passed: !!cycle.appealDeadline,
+      detail: cycle.appealDeadline ? formatDate(cycle.appealDeadline) : '마감일이 필요합니다.',
+    },
+    {
+      label: '평가 데이터',
+      passed: cycle._count.evaluations > 0,
+      detail: cycle._count.evaluations > 0 ? `평가 ${cycle._count.evaluations}건 생성됨` : '생성된 평가 데이터가 없습니다.',
+    },
+  ]
+}
+
+function buildStatusRecommendation(cycle: EvalCycleItem, readinessPassed: boolean) {
+  const now = new Date()
+  const inRange = (start: string | null, end: string | null) => {
+    if (!start || !end) return false
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+    return startDate <= now && now <= endDate
+  }
+
+  if (inRange(cycle.kpiSetupStart, cycle.kpiSetupEnd)) {
+    return { status: 'KPI_SETTING' as CycleStatus, reason: '현재 KPI 설정 기간 안에 있습니다.' }
+  }
+  if (inRange(cycle.selfEvalStart, cycle.selfEvalEnd)) {
+    return { status: 'SELF_EVAL' as CycleStatus, reason: '현재 자기 평가 기간 안에 있습니다.' }
+  }
+  if (inRange(cycle.firstEvalStart, cycle.firstEvalEnd)) {
+    return { status: 'FIRST_EVAL' as CycleStatus, reason: '현재 1차 평가 기간 안에 있습니다.' }
+  }
+  if (inRange(cycle.secondEvalStart, cycle.secondEvalEnd)) {
+    return { status: 'SECOND_EVAL' as CycleStatus, reason: '현재 2차 평가 기간 안에 있습니다.' }
+  }
+  if (inRange(cycle.finalEvalStart, cycle.finalEvalEnd)) {
+    return { status: 'FINAL_EVAL' as CycleStatus, reason: '현재 최종 평가 기간 안에 있습니다.' }
+  }
+  if (inRange(cycle.ceoAdjustStart, cycle.ceoAdjustEnd)) {
+    return { status: 'CEO_ADJUST' as CycleStatus, reason: '현재 등급 조정 기간 안에 있습니다.' }
+  }
+  if (cycle.resultOpenStart && new Date(cycle.resultOpenStart) <= now) {
+    if (cycle.appealDeadline && new Date(cycle.appealDeadline) >= now) {
+      return {
+        status: readinessPassed ? ('APPEAL' as CycleStatus) : ('RESULT_OPEN' as CycleStatus),
+        reason: readinessPassed
+          ? '결과 공개 후 이의 신청 기간에 들어왔습니다.'
+          : '결과 공개 직전이지만 readiness 보완이 필요합니다.',
+      }
+    }
+
+    return {
+      status: readinessPassed ? ('RESULT_OPEN' as CycleStatus) : ('FINAL_EVAL' as CycleStatus),
+      reason: readinessPassed
+        ? '결과 공개 시점에 도달했습니다.'
+        : '결과 공개 시점 전 readiness 보완이 필요합니다.',
+    }
+  }
+
+  if (cycle.kpiSetupStart && new Date(cycle.kpiSetupStart) > now) {
+    return { status: 'SETUP' as CycleStatus, reason: '아직 첫 운영 단계가 시작되지 않았습니다.' }
+  }
+
+  if (readinessPassed) {
+    return { status: 'RESULT_OPEN' as CycleStatus, reason: '모든 준비가 완료되어 결과 공개 단계 진입이 가능합니다.' }
+  }
+
+  return { status: cycle.status, reason: '현재 설정된 일정과 상태를 유지하는 것이 안전합니다.' }
+}
+
 function getStatusBadgeClass(status: CycleStatus) {
   if (status === 'CLOSED') return 'bg-slate-100 text-slate-700'
   if (status === 'RESULT_OPEN' || status === 'APPEAL') return 'bg-emerald-100 text-emerald-700'
@@ -220,7 +316,7 @@ export function AdminEvalCycleClient({
   const [selectedStatus, setSelectedStatus] = useState<'ALL' | CycleStatus>('ALL')
   const [selectedCycleId, setSelectedCycleId] = useState<string | null>(initialCycles[0]?.id ?? null)
   const [editingCycleId, setEditingCycleId] = useState<string | null>(null)
-  const [statusDraft, setStatusDraft] = useState<CycleStatus>('SETUP')
+  const [statusDraft, setStatusDraft] = useState<CycleStatus>(initialCycles[0]?.status ?? 'SETUP')
   const [form, setForm] = useState<CycleFormState>(() => buildDefaultForm(organizations))
 
   const cyclesQuery = useQuery({
@@ -357,6 +453,9 @@ export function AdminEvalCycleClient({
   }, [cycles])
 
   const formBusy = createMutation.isPending || updateMutation.isPending
+  const readinessChecklist = selectedCycle ? buildReadinessChecklist(selectedCycle) : []
+  const readinessPassed = readinessChecklist.every((item) => item.passed)
+  const recommendedStatus = selectedCycle ? buildStatusRecommendation(selectedCycle, readinessPassed) : null
 
   return (
     <div className="space-y-6">
@@ -562,13 +661,89 @@ export function AdminEvalCycleClient({
                     <button
                       type="button"
                       disabled={statusMutation.isPending || statusDraft === selectedCycle.status}
-                      onClick={() => statusMutation.mutate({ id: selectedCycle.id, status: statusDraft })}
+                      onClick={() => {
+                        const requiresReadiness = ['RESULT_OPEN', 'APPEAL', 'CLOSED'].includes(statusDraft)
+                        if (requiresReadiness && !readinessPassed) {
+                          setFeedback({
+                            tone: 'error',
+                            message: '공개 전 readiness 체크를 먼저 모두 통과해 주세요.',
+                          })
+                          return
+                        }
+
+                        statusMutation.mutate({ id: selectedCycle.id, status: statusDraft })
+                      }}
                       className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-60"
                     >
                       {statusMutation.isPending ? '변경 중...' : '상태 적용'}
                     </button>
                   </div>
                 </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-slate-800">공개 전 readiness 체크</p>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                        readinessPassed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      {readinessPassed ? '통과' : '보완 필요'}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {readinessChecklist.map((item) => (
+                      <div key={item.label} className="flex items-start justify-between gap-3 rounded-2xl bg-white px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">{item.label}</p>
+                          <p className="mt-1 text-xs text-slate-500">{item.detail}</p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                            item.passed ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                          }`}
+                        >
+                          {item.passed ? '완료' : '미완료'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {recommendedStatus ? (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">자동 상태 추천</p>
+                        <p className="mt-1 text-xs text-slate-600">{recommendedStatus.reason}</p>
+                      </div>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-blue-700">
+                        {STATUS_LABELS[recommendedStatus.status]}
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        disabled={statusMutation.isPending || recommendedStatus.status === selectedCycle.status}
+                        onClick={() => {
+                          if (['RESULT_OPEN', 'APPEAL', 'CLOSED'].includes(recommendedStatus.status) && !readinessPassed) {
+                            setFeedback({
+                              tone: 'error',
+                              message: '추천 상태로 이동하기 전에 readiness 체크를 먼저 통과해 주세요.',
+                            })
+                            return
+                          }
+
+                          setStatusDraft(recommendedStatus.status)
+                          statusMutation.mutate({ id: selectedCycle.id, status: recommendedStatus.status })
+                        }}
+                        className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-blue-300 bg-white px-4 text-sm font-medium text-blue-700 disabled:opacity-60"
+                      >
+                        추천 상태 적용
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="space-y-3">
                   {[

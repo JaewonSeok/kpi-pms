@@ -171,16 +171,19 @@ export async function POST(
           validated.data.action === 'REJECT' ? session.user.id : scenario.rejectedById,
         publishedAt:
           transition.shouldPublish ? new Date() : scenario.publishedAt,
-        approvals: {
-          create: {
-            actorId: session.user.id,
-            actorRole: session.user.role,
-            action: validated.data.action,
-            fromStatus: scenario.status,
-            toStatus: transition.nextStatus,
-            comment: validated.data.comment,
-          },
-        },
+        approvals:
+          validated.data.action === 'PUBLISH'
+            ? undefined
+            : {
+                create: {
+                  actorId: session.user.id,
+                  actorRole: session.user.role,
+                  action: validated.data.action,
+                  fromStatus: scenario.status,
+                  toStatus: transition.nextStatus,
+                  comment: validated.data.comment,
+                },
+              },
       },
       include: {
         evalCycle: {

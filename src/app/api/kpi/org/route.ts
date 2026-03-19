@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { CreateOrgKpiSchema } from '@/lib/validations'
+import { createAuditLog, getClientInfo } from '@/lib/audit'
 
 // GET /api/kpi/org
 export async function GET(request: Request) {
@@ -95,6 +96,28 @@ export async function POST(request: Request) {
         _count: { select: { personalKpis: true } },
       },
     })
+
+    const clientInfo = getClientInfo(request)
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'ORG_KPI_CREATED',
+      entityType: 'OrgKpi',
+      entityId: kpi.id,
+      newValue: {
+        deptId: kpi.deptId,
+        evalYear: kpi.evalYear,
+        kpiName: kpi.kpiName,
+        kpiCategory: kpi.kpiCategory,
+        kpiType: kpi.kpiType,
+        targetValue: kpi.targetValue,
+        unit: kpi.unit,
+        weight: kpi.weight,
+        difficulty: kpi.difficulty,
+        status: kpi.status,
+      },
+      ...clientInfo,
+    })
+
     return successResponse(kpi)
   } catch (error) {
     return errorResponse(error)

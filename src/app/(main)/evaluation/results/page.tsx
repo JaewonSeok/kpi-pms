@@ -1,5 +1,27 @@
-import { UnderConstruction } from '@/components/common/UnderConstruction'
+import { getServerSession } from 'next-auth'
+import { redirect } from 'next/navigation'
+import { authOptions } from '@/lib/auth'
+import { getEvaluationResultsPageData } from '@/server/evaluation-results'
+import { EvaluationResultsClient } from '@/components/evaluation/EvaluationResultsClient'
 
-export default function EvaluationResultsPage() {
-  return <UnderConstruction requestedPath="/evaluation/results" />
+type EvaluationResultsPageProps = {
+  searchParams?: Promise<{
+    cycleId?: string
+  }>
+}
+
+export default async function EvaluationResultsPage({ searchParams }: EvaluationResultsPageProps) {
+  const session = await getServerSession(authOptions)
+
+  if (!session) {
+    redirect('/login')
+  }
+
+  const resolvedSearchParams = (await searchParams) ?? {}
+  const pageData = await getEvaluationResultsPageData({
+    userId: session.user.id,
+    cycleId: resolvedSearchParams.cycleId,
+  })
+
+  return <EvaluationResultsClient {...pageData} />
 }

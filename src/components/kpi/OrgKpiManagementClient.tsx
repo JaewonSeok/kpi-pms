@@ -28,6 +28,17 @@ type LinkedPersonalKpi = {
   }
 }
 
+type OrgKpiAuditLog = {
+  id: string
+  userId: string
+  action: string
+  entityType: string
+  entityId: string | null
+  oldValue: Record<string, unknown> | null
+  newValue: Record<string, unknown> | null
+  timestamp: string
+}
+
 type OrgKpiItem = {
   id: string
   deptId: string
@@ -52,6 +63,10 @@ type OrgKpiItem = {
   _count?: {
     personalKpis: number
   }
+}
+
+type OrgKpiDetail = OrgKpiItem & {
+  auditLogs: OrgKpiAuditLog[]
 }
 
 type OrgKpiFormState = {
@@ -258,6 +273,14 @@ export function OrgKpiManagementClient({
 
   const kpis = useMemo(() => kpisQuery.data ?? [], [kpisQuery.data])
   const selectedKpi = kpis.find((item) => item.id === selectedKpiId) ?? kpis[0] ?? null
+  const selectedKpiDetailQuery = useQuery({
+    queryKey: ['org-kpi-detail', selectedKpi?.id],
+    enabled: !!selectedKpi?.id,
+    queryFn: async () => {
+      const res = await fetch(`/api/kpi/org/${selectedKpi?.id}`)
+      return parseResponse<OrgKpiDetail>(await res.json())
+    },
+  })
 
   const metrics = useMemo(() => {
     const totalWeight = kpis.reduce((sum, item) => sum + item.weight, 0)
@@ -291,9 +314,10 @@ export function OrgKpiManagementClient({
     return Array.from(values).sort((a, b) => b - a)
   }, [currentYear, initialKpis])
 
+  const selectedKpiForDetail = selectedKpiDetailQuery.data ?? selectedKpi
   const selectedLinkSummary = useMemo(() => {
-    if (!selectedKpi) return { total: 0, confirmed: 0, draft: 0, archived: 0 }
-    return selectedKpi.personalKpis.reduce(
+    if (!selectedKpiForDetail) return { total: 0, confirmed: 0, draft: 0, archived: 0 }
+    return selectedKpiForDetail.personalKpis.reduce(
       (summary, item) => {
         summary.total += 1
         if (item.status === 'CONFIRMED') summary.confirmed += 1
@@ -303,9 +327,14 @@ export function OrgKpiManagementClient({
       },
       { total: 0, confirmed: 0, draft: 0, archived: 0 }
     )
-  }, [selectedKpi])
+  }, [selectedKpiForDetail])
 
   const formBusy = createMutation.isPending || updateMutation.isPending
+  const canEditSelectedKpi = selectedKpiForDetail ? selectedKpiForDetail.status === 'DRAFT' : false
+  const canUnlockSelectedKpi = selectedKpiForDetail
+    ? selectedKpiForDetail.status === 'ARCHIVED' ||
+      (selectedKpiForDetail.status === 'CONFIRMED' && selectedLinkSummary.confirmed === 0)
+    : false
 
   return (
     <div className="space-y-6">
@@ -410,12 +439,26 @@ export function OrgKpiManagementClient({
                   <p className="mt-1 text-sm text-slate-500">{selectedKpi.department.deptName} · {selectedKpi.evalYear}년</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => { setEditingKpiId(selectedKpi.id); setForm(buildFormFromKpi(selectedKpi)) }} className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"><FilePenLine className="mr-2 h-4 w-4" />이 KPI 편집</button>
+                  <button type="button" disabled={!canEditSelectedKpi} onClick={() => {
+                    if (!canEditSelectedKpi) {
+                      setFeedback({ tone: 'error', message: '확정 또는 보관된 조직 KPI는 먼저 초안으로 전환해야 수정할 수 있습니다.' })
+                      return
+                    }
+                    setEditingKpiId(selectedKpi.id)
+                    setForm(buildFormFromKpi(selectedKpi))
+                  }} className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"><FilePenLine className="mr-2 h-4 w-4" />이 KPI 편집</button>
                   {(['DRAFT', 'CONFIRMED', 'ARCHIVED'] as KpiStatus[]).map((status) => (
-                    <button key={status} type="button" disabled={statusMutation.isPending || selectedKpi.status === status} onClick={() => statusMutation.mutate({ id: selectedKpi.id, status })} className={`inline-flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-medium disabled:opacity-60 ${status === 'CONFIRMED' ? 'bg-emerald-600 text-white' : status === 'ARCHIVED' ? 'bg-slate-700 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}>{status === 'DRAFT' ? '초안으로' : status === 'CONFIRMED' ? '확정' : '보관'}</button>
+                    <button key={status} type="button" disabled={statusMutation.isPending || selectedKpi.status === status || (status === 'DRAFT' && !canUnlockSelectedKpi)} onClick={() => {
+                      if (status === 'DRAFT' && !canUnlockSelectedKpi) {
+                        setFeedback({ tone: 'error', message: selectedKpi.status === 'CONFIRMED' ? '연결된 확정 개인 KPI가 있으면 초안으로 되돌릴 수 없습니다.' : '현재 상태에서는 초안으로 되돌릴 수 없습니다.' })
+                        return
+                      }
+                      statusMutation.mutate({ id: selectedKpi.id, status })
+                    }} className={`inline-flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-medium disabled:opacity-60 ${status === 'CONFIRMED' ? 'bg-emerald-600 text-white' : status === 'ARCHIVED' ? 'bg-slate-700 text-white' : 'border border-slate-300 text-slate-700 hover:bg-slate-50'}`}>{status === 'DRAFT' ? '초안으로' : status === 'CONFIRMED' ? '확정' : '보관'}</button>
                   ))}
                 </div>
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600"><p className="font-medium text-slate-800">정의</p><p className="mt-1">{selectedKpi.definition || '등록된 설명이 없습니다.'}</p></div>
+                {selectedKpiForDetail?.status !== 'DRAFT' ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{selectedKpiForDetail?.status === 'CONFIRMED' ? canUnlockSelectedKpi ? '확정된 조직 KPI입니다. 수정하려면 먼저 초안으로 되돌리세요.' : '확정된 조직 KPI이며 연결된 확정 개인 KPI가 있어 초안 해제가 잠겨 있습니다.' : '보관된 조직 KPI입니다. 수정하려면 먼저 초안으로 되돌리세요.'}</div> : null}
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600"><p className="font-medium text-slate-800">산식 / 기준</p><p className="mt-1">{selectedKpi.formula || '등록된 산식이 없습니다.'}</p></div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border border-slate-200 px-4 py-3"><p className="text-xs text-slate-500">목표값</p><p className="mt-1 text-sm font-semibold text-slate-900">{selectedKpi.targetValue !== null ? `${selectedKpi.targetValue}${selectedKpi.unit ? ` ${selectedKpi.unit}` : ''}` : '정성 KPI'}</p></div>
@@ -428,11 +471,36 @@ export function OrgKpiManagementClient({
                     <div className="rounded-2xl bg-white px-4 py-3"><p className="text-xs text-slate-500">확정 개인 KPI</p><p className="mt-1 text-sm font-semibold text-emerald-700">{selectedLinkSummary.confirmed}건</p></div>
                     <div className="rounded-2xl bg-white px-4 py-3"><p className="text-xs text-slate-500">초안/보관</p><p className="mt-1 text-sm font-semibold text-slate-900">{selectedLinkSummary.draft + selectedLinkSummary.archived}건</p></div>
                   </div>
-                  {!selectedKpi.personalKpis.length ? (
+                  {!selectedKpiForDetail?.personalKpis.length ? (
                     <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">아직 연결된 개인 KPI가 없습니다.</div>
                   ) : (
                     <div className="mt-4 space-y-2">
-                      {selectedKpi.personalKpis.map((linked) => <div key={linked.id} className="rounded-2xl bg-white px-4 py-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-medium text-slate-900">{linked.employee.empName}</p><p className="mt-1 text-xs text-slate-500">{linked.employee.empId} · {linked.kpiName}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(linked.status)}`}>{STATUS_LABELS[linked.status]}</span></div></div>)}
+                      {selectedKpiForDetail?.personalKpis.map((linked) => <div key={linked.id} className="rounded-2xl bg-white px-4 py-3"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-medium text-slate-900">{linked.employee.empName}</p><p className="mt-1 text-xs text-slate-500">{linked.employee.empId} · {linked.kpiName}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(linked.status)}`}>{STATUS_LABELS[linked.status]}</span></div></div>)}
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-medium text-slate-800">확정 이력 / 승인 로그</p>
+                  {selectedKpiDetailQuery.isLoading ? (
+                    <div className="mt-4 text-sm text-slate-500">이력을 불러오는 중입니다.</div>
+                  ) : !selectedKpiDetailQuery.data?.auditLogs?.length ? (
+                    <div className="mt-4 rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-500">기록된 로그가 없습니다.</div>
+                  ) : (
+                    <div className="mt-4 space-y-2">
+                      {selectedKpiDetailQuery.data.auditLogs.map((log) => (
+                        <div key={log.id} className="rounded-2xl bg-white px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-medium text-slate-900">{log.action}</p>
+                            <p className="text-xs text-slate-500">{formatDate(log.timestamp)}</p>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">사용자 ID: {log.userId}</p>
+                          {typeof log.oldValue?.status === 'string' || typeof log.newValue?.status === 'string' ? (
+                            <p className="mt-2 text-xs text-slate-600">
+                              상태 {String(log.oldValue?.status ?? '-')} {'->'} {String(log.newValue?.status ?? '-')}
+                            </p>
+                          ) : null}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

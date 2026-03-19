@@ -289,7 +289,15 @@ export const UpdateCompensationScenarioSchema = z.object({
 })
 
 export const CompensationWorkflowSchema = z.object({
-  action: z.enum(['SUBMIT', 'REVIEW_APPROVE', 'FINAL_APPROVE', 'REJECT', 'LOCK', 'RECALCULATE']),
+  action: z.enum([
+    'SUBMIT',
+    'REVIEW_APPROVE',
+    'FINAL_APPROVE',
+    'PUBLISH',
+    'REJECT',
+    'LOCK',
+    'RECALCULATE',
+  ]),
   comment: z.string().min(3).max(500).optional(),
 })
 
@@ -369,7 +377,91 @@ export const NotificationCronSchema = z.object({
 // Google account registration
 // ============================================
 
+const EmployeeDateSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: '날짜 형식이 올바르지 않습니다.',
+  })
+
+export const AdminEmployeeRoleSchema = z.enum([
+  'ROLE_MEMBER',
+  'ROLE_TEAM_LEADER',
+  'ROLE_SECTION_CHIEF',
+  'ROLE_DIV_HEAD',
+  'ROLE_CEO',
+  'ROLE_ADMIN',
+])
+
+export const AdminEmployeeStatusSchema = z.enum(['ACTIVE', 'ON_LEAVE', 'RESIGNED'])
+
 export const RegisterGoogleAccountSchema = z.object({
   employeeId: z.string().min(1),
   gwsEmail: z.string().email().max(255),
+})
+
+export const UpdateGoogleAccountEmployeeSchema = RegisterGoogleAccountSchema.extend({
+  role: AdminEmployeeRoleSchema,
+  deptId: z.string().min(1),
+  status: AdminEmployeeStatusSchema.default('ACTIVE'),
+})
+
+export const CreateAdminEmployeeSchema = z.object({
+  empId: z.string().min(1).max(50),
+  empName: z.string().min(1).max(100),
+  deptId: z.string().min(1),
+  role: AdminEmployeeRoleSchema,
+  status: AdminEmployeeStatusSchema.default('ACTIVE'),
+  gwsEmail: z.string().email().max(255),
+  joinDate: EmployeeDateSchema,
+})
+
+export const BulkAdminEmployeeRowSchema = z.object({
+  empId: z.string().min(1).max(50),
+  empName: z.string().min(1).max(100),
+  deptCode: z.string().min(1).max(50),
+  deptName: z.string().min(1).max(100),
+  parentDeptCode: z.string().max(50).optional(),
+  role: AdminEmployeeRoleSchema,
+  status: AdminEmployeeStatusSchema.default('ACTIVE'),
+  gwsEmail: z.string().email().max(255),
+  joinDate: EmployeeDateSchema.optional(),
+})
+
+export const BulkAdminEmployeeUploadSchema = z.object({
+  fileName: z.string().max(255).optional(),
+  rows: z.array(BulkAdminEmployeeRowSchema).min(1).max(500),
+})
+
+export const CalibrationCandidateUpdateSchema = z
+  .object({
+    action: z.enum(['save', 'clear']),
+    cycleId: z.string().min(1),
+    targetId: z.string().min(1),
+    gradeId: z.string().optional(),
+    adjustReason: z.string().max(500).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.action !== 'save') return
+
+    if (!data.gradeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['gradeId'],
+        message: '조정 등급을 선택해 주세요.',
+      })
+    }
+
+    if (!data.adjustReason || data.adjustReason.trim().length < 30) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['adjustReason'],
+        message: '조정 사유는 최소 30자 이상 입력해 주세요.',
+      })
+    }
+  })
+
+export const CalibrationWorkflowSchema = z.object({
+  cycleId: z.string().min(1),
+  action: z.enum(['CONFIRM_REVIEW', 'LOCK', 'REOPEN_REQUEST']),
 })

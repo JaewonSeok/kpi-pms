@@ -19,6 +19,7 @@ export type ScenarioWorkflowAction =
   | 'SUBMIT'
   | 'REVIEW_APPROVE'
   | 'FINAL_APPROVE'
+  | 'PUBLISH'
   | 'REJECT'
   | 'LOCK'
   | 'RECALCULATE'
@@ -261,6 +262,13 @@ export function resolveWorkflowTransition(params: {
     if (actorRole !== 'ROLE_CEO') throw new Error('FORBIDDEN')
     if (currentStatus !== 'REVIEW_APPROVED') throw new Error('INVALID_STATUS')
     if (isOverBudget) throw new Error('BUDGET_EXCEEDED')
+
+    return { nextStatus: 'FINAL_APPROVED', shouldLock: true, shouldPublish: false }
+  }
+
+  if (action === 'PUBLISH') {
+    if (actorRole !== 'ROLE_ADMIN') throw new Error('FORBIDDEN')
+    if (currentStatus !== 'FINAL_APPROVED') throw new Error('INVALID_STATUS')
 
     return { nextStatus: 'FINAL_APPROVED', shouldLock: true, shouldPublish: true }
   }
