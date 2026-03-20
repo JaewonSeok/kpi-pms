@@ -29,6 +29,7 @@ export const NAV_ITEMS: NavigationItem[] = [
     href: '/evaluation',
     children: [
       { label: 'AI 보조 작성', href: '/evaluation/assistant', menuKey: 'AI_ASSIST' },
+      { label: '360 다면평가', href: '/evaluation/360', menuKey: 'FEEDBACK_360' },
       { label: '평가 결과', href: '/evaluation/results', menuKey: 'EVAL_RESULT' },
       { label: '이의 신청', href: '/evaluation/appeal', menuKey: 'APPEAL' },
       { label: '등급 조정', href: '/evaluation/ceo-adjust', menuKey: 'GRADE_ADJUST' },

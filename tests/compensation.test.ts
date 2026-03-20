@@ -77,7 +77,19 @@ run('approval and rejection workflow transitions are enforced', () => {
   })
   assert.equal(approved.nextStatus, 'FINAL_APPROVED')
   assert.equal(approved.shouldLock, true)
-  assert.equal(approved.shouldPublish, true)
+  assert.equal(approved.shouldPublish, false)
+
+  const published = resolveWorkflowTransition({
+    action: 'PUBLISH',
+    actorRole: 'ROLE_ADMIN',
+    currentStatus: 'FINAL_APPROVED',
+    isLocked: true,
+    isOverBudget: false,
+    needsRecalculation: false,
+  })
+  assert.equal(published.nextStatus, 'FINAL_APPROVED')
+  assert.equal(published.shouldLock, true)
+  assert.equal(published.shouldPublish, true)
 })
 
 run('permission separation blocks unauthorized actions', () => {

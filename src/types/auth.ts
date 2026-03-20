@@ -25,6 +25,7 @@ export const MENU_KEYS = [
   'GRADE_ADJUST',
   'EVAL_RESULT',
   'APPEAL',
+  'FEEDBACK_360',
   'DASHBOARD',
   'AUDIT_LOG',
   'SYSTEM_SETTING',

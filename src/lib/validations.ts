@@ -192,6 +192,20 @@ export const SubmitEvaluationSchema = z.object({
   })),
 })
 
+export const SaveEvaluationDraftSchema = z.object({
+  comment: z.string().max(2000).optional(),
+  gradeId: z.string().nullable().optional(),
+  items: z.array(z.object({
+    personalKpiId: z.string(),
+    quantScore: z.number().min(0).max(100).nullable().optional(),
+    planScore: z.number().min(0).max(100).nullable().optional(),
+    doScore: z.number().min(0).max(100).nullable().optional(),
+    checkScore: z.number().min(0).max(100).nullable().optional(),
+    actScore: z.number().min(0).max(100).nullable().optional(),
+    itemComment: z.string().max(500).optional(),
+  })).default([]),
+})
+
 export const RejectEvaluationSchema = z.object({
   rejectionReason: z.string().min(10, '반려 사유는 최소 10자 이상 입력하세요').max(500),
 })
@@ -221,13 +235,59 @@ export const CreateFeedbackRoundSchema = z.object({
 export const SubmitFeedbackSchema = z.object({
   roundId: z.string().min(1),
   receiverId: z.string().min(1),
-  relationship: z.enum(['SUPERVISOR', 'PEER', 'CROSS_TEAM_PEER', 'SUBORDINATE', 'CROSS_DEPT']),
+  relationship: z.enum(['SELF', 'SUPERVISOR', 'PEER', 'CROSS_TEAM_PEER', 'SUBORDINATE', 'CROSS_DEPT']),
   overallComment: z.string().max(1000).optional(),
   responses: z.array(z.object({
     questionId: z.string(),
     ratingValue: z.number().int().min(1).max(5).optional(),
     textValue: z.string().max(500).optional(),
   })),
+})
+
+export const FeedbackNominationReviewerSchema = z.object({
+  employeeId: z.string().min(1).max(100),
+  name: z.string().min(1).max(100),
+  relationship: z.enum(['SELF', 'SUPERVISOR', 'PEER', 'SUBORDINATE', 'CROSS_TEAM_PEER', 'CROSS_DEPT']),
+})
+
+export const FeedbackNominationDraftSchema = z.object({
+  roundId: z.string().min(1).max(100),
+  targetId: z.string().min(1).max(100),
+  reviewers: z.array(FeedbackNominationReviewerSchema).min(1).max(20),
+})
+
+export const Feedback360AiActionSchema = z.object({
+  action: z.enum([
+    'recommend-reviewers',
+    'summarize-themes',
+    'detect-careless-reviews',
+    'suggest-development-plan',
+  ]),
+  sourceId: z.string().max(100).optional(),
+  payload: z.record(z.string(), z.unknown()).default({}),
+})
+
+export const FeedbackNominationWorkflowSchema = z.object({
+  targetId: z.string().min(1).max(100),
+  action: z.enum(['submit', 'approve', 'reject', 'publish']),
+  note: z.string().max(500).optional(),
+})
+
+export const Feedback360ReportGenerateSchema = z.object({
+  targetId: z.string().min(1).max(100),
+})
+
+export const DevelopmentPlanCreateSchema = z.object({
+  employeeId: z.string().min(1).max(100),
+  sourceType: z.enum(['FEEDBACK_360', 'EVALUATION', 'CHECKIN', 'MANUAL']).default('FEEDBACK_360'),
+  sourceId: z.string().max(100).optional(),
+  title: z.string().min(1).max(200),
+  focusArea: z.string().min(1).max(200),
+  actions: z.array(z.string().min(1).max(500)).min(1).max(10),
+  managerSupport: z.array(z.string().min(1).max(500)).max(10).optional(),
+  nextCheckinTopics: z.array(z.string().min(1).max(500)).max(10).optional(),
+  note: z.string().max(1000).optional(),
+  dueDate: z.string().datetime().optional(),
 })
 
 // ============================================
@@ -436,6 +496,25 @@ export const OrgKpiWorkflowActionSchema = z.object({
   note: z.string().max(500).optional(),
 })
 
+export const BulkOrgKpiRowSchema = z.object({
+  deptId: z.string().min(1),
+  evalYear: z.number().int().min(2020).max(2100),
+  kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']).default('QUANTITATIVE'),
+  kpiCategory: z.string().min(1).max(50),
+  kpiName: z.string().min(1).max(100),
+  definition: z.string().max(500).optional(),
+  formula: z.string().max(500).optional(),
+  targetValue: z.number().nullable().optional(),
+  unit: z.string().max(20).optional(),
+  weight: z.number().min(0).max(100),
+  difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).default('MEDIUM'),
+})
+
+export const BulkOrgKpiUploadSchema = z.object({
+  fileName: z.string().max(255).optional(),
+  rows: z.array(BulkOrgKpiRowSchema).min(1).max(300),
+})
+
 // ============================================
 // Notifications
 // ============================================
@@ -494,6 +573,17 @@ export const NotificationCronSchema = z.object({
 export const NotificationDeadLetterActionSchema = z.object({
   action: z.enum(['retry', 'archive']),
   ids: z.array(z.string().min(1)).min(1).max(100),
+})
+
+export const NotificationTemplateTestSendSchema = z.object({
+  code: z.string().min(1).max(100),
+  name: z.string().min(1).max(100),
+  type: NotificationTemplateSchema.shape.type,
+  channel: NotificationTemplateSchema.shape.channel,
+  subjectTemplate: z.string().min(1).max(200),
+  bodyTemplate: z.string().min(1).max(5000),
+  defaultLink: z.string().max(200).optional(),
+  previewPayload: z.record(z.string(), z.unknown()).default({}),
 })
 
 export const NotificationOpsAiActionSchema = z.object({

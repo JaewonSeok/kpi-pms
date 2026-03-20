@@ -1,0 +1,892 @@
+'use client'
+
+import Link from 'next/link'
+import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import {
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardList,
+  MessageSquareMore,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  Undo2,
+} from 'lucide-react'
+import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
+
+type WorkbenchTab = 'workbench' | 'evidence' | 'feedback' | 'ai' | 'history'
+type AiRequestType = 'EVAL_COMMENT_DRAFT' | 'BIAS_ANALYSIS' | 'GROWTH_PLAN'
+
+type DraftItemState = {
+  personalKpiId: string
+  quantScore?: number | null
+  planScore?: number | null
+  doScore?: number | null
+  checkScore?: number | null
+  actScore?: number | null
+  itemComment?: string
+}
+
+type AssistPreview = {
+  requestLogId: string
+  source: 'ai' | 'fallback' | 'disabled'
+  fallbackReason?: string | null
+  requestType: AiRequestType
+  result: Record<string, unknown>
+}
+
+const TAB_LABELS: Record<WorkbenchTab, string> = {
+  workbench: '평가 실행',
+  evidence: '근거 자료',
+  feedback: '다면 피드백',
+  ai: 'AI 보조',
+  history: '제출 이력',
+}
+
+export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>('workbench')
+  const [notice, setNotice] = useState('')
+  const [errorNotice, setErrorNotice] = useState('')
+  const [decisionBusy, setDecisionBusy] = useState(false)
+  const [preview, setPreview] = useState<AssistPreview | null>(null)
+  const [draftComment, setDraftComment] = useState('')
+  const [draftGradeId, setDraftGradeId] = useState<string>('')
+  const [growthMemo, setGrowthMemo] = useState('')
+  const [rejectReason, setRejectReason] = useState('')
+  const [draftItems, setDraftItems] = useState<Record<string, DraftItemState>>({})
+
+  const selected = props.selected
+
+  useEffect(() => {
+    if (!selected) {
+      setDraftComment('')
+      setDraftGradeId('')
+      setRejectReason('')
+      setDraftItems({})
+      return
+    }
+
+    setDraftComment(selected.comment ?? '')
+    setDraftGradeId(selected.gradeId ?? '')
+    setRejectReason('')
+    setDraftItems(
+      Object.fromEntries(
+        selected.items.map((item) => [
+          item.personalKpiId,
+          {
+            personalKpiId: item.personalKpiId,
+            quantScore: item.quantScore ?? null,
+            planScore: item.planScore ?? null,
+            doScore: item.doScore ?? null,
+            checkScore: item.checkScore ?? null,
+            actScore: item.actScore ?? null,
+            itemComment: item.itemComment ?? '',
+          },
+        ])
+      )
+    )
+  }, [selected])
+
+  const editableItems = useMemo(() => {
+    if (!selected) return []
+    return selected.items.map((item) => ({
+      ...item,
+      draft: draftItems[item.personalKpiId] ?? {
+        personalKpiId: item.personalKpiId,
+        quantScore: item.quantScore ?? null,
+        planScore: item.planScore ?? null,
+        doScore: item.doScore ?? null,
+        checkScore: item.checkScore ?? null,
+        actScore: item.actScore ?? null,
+        itemComment: item.itemComment ?? '',
+      },
+    }))
+  }, [draftItems, selected])
+
+  const computedTotal = useMemo(
+    () =>
+      editableItems.reduce((sum, item) => {
+        if (item.type === 'QUANTITATIVE') {
+          return sum + ((item.draft.quantScore ?? 0) * item.weight) / 100
+        }
+
+        const pdca =
+          Number(item.draft.planScore ?? 0) * 0.3 +
+          Number(item.draft.doScore ?? 0) * 0.4 +
+          Number(item.draft.checkScore ?? 0) * 0.2 +
+          Number(item.draft.actScore ?? 0) * 0.1
+        return sum + (pdca * item.weight) / 100
+      }, 0),
+    [editableItems]
+  )
+
+  async function runMutation(
+    action: 'createSelf' | 'saveDraft' | 'submit' | 'reject',
+    payload?: Record<string, unknown>
+  ) {
+    setNotice('')
+    setErrorNotice('')
+
+    try {
+      if (action === 'createSelf') {
+        const response = await fetch('/api/evaluation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ evalCycleId: props.selectedCycleId }),
+        })
+        const json = await response.json()
+        if (!json.success) throw new Error(json.error?.message ?? '자기평가를 시작하지 못했습니다.')
+        const nextId = json.data?.id as string | undefined
+        const nextUrl = nextId
+          ? `/evaluation/assistant?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}&evaluationId=${encodeURIComponent(nextId)}`
+          : `/evaluation/assistant?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
+        startTransition(() => router.push(nextUrl))
+        setNotice('자기평가 초안을 생성했습니다.')
+        return
+      }
+
+      if (!selected) return
+      const url =
+        action === 'saveDraft'
+          ? `/api/evaluation/${selected.id}`
+          : action === 'submit'
+            ? `/api/evaluation/${selected.id}/submit`
+            : `/api/evaluation/${selected.id}/review`
+
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload ?? {}),
+      })
+      const json = await response.json()
+      if (!json.success) throw new Error(json.error?.message ?? '작업을 처리하지 못했습니다.')
+      setNotice(action === 'saveDraft' ? '평가 초안을 저장했습니다.' : action === 'submit' ? '평가를 제출했습니다.' : '평가를 반려하고 보완을 요청했습니다.')
+      startTransition(() => router.refresh())
+    } catch (error) {
+      setErrorNotice(error instanceof Error ? error.message : '작업을 처리하지 못했습니다.')
+    }
+  }
+
+  async function runAssist(requestType: AiRequestType) {
+    if (!selected) return
+    setNotice('')
+    setErrorNotice('')
+
+    try {
+      const response = await fetch('/api/ai/assist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestType,
+          sourceType: 'Evaluation',
+          sourceId: selected.id,
+          payload: {
+            summary: draftComment || selected.comment || '',
+            gradeName:
+              selected.gradeOptions.find((option) => option.id === draftGradeId)?.gradeName ?? '',
+            stage: selected.evalStage,
+            cycleName: selected.cycle.name,
+            evalYear: selected.cycle.year,
+            items: editableItems.map((item) => ({
+              kpiName: item.title,
+              weight: item.weight,
+              quantScore: item.draft.quantScore,
+              planScore: item.draft.planScore,
+              doScore: item.draft.doScore,
+              checkScore: item.draft.checkScore,
+              actScore: item.draft.actScore,
+              itemComment: item.draft.itemComment,
+            })),
+            contextSummary: `${selected.target.department} / ${selected.target.position}`,
+          },
+        }),
+      })
+      const json = await response.json()
+      if (!json.success) throw new Error(json.error?.message ?? 'AI 보조 생성에 실패했습니다.')
+      setPreview({ ...json.data, requestType })
+      setActiveTab('ai')
+    } catch (error) {
+      setErrorNotice(error instanceof Error ? error.message : 'AI 보조 생성에 실패했습니다.')
+    }
+  }
+
+  async function handlePreviewDecision(action: 'approve' | 'reject') {
+    if (!preview?.requestLogId) return
+    setDecisionBusy(true)
+
+    try {
+      const response = await fetch(`/api/ai/request-logs/${preview.requestLogId}/decision`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          approvedPayload: action === 'approve' ? preview.result : undefined,
+          rejectionReason: action === 'reject' ? 'Dismissed from review workbench.' : undefined,
+        }),
+      })
+      const json = await response.json()
+      if (!json.success) throw new Error(json.error?.message ?? 'AI 결과 상태를 변경하지 못했습니다.')
+
+      if (action === 'approve') {
+        if (preview.requestType === 'EVAL_COMMENT_DRAFT') {
+          setDraftComment(String(preview.result.draftComment || ''))
+        } else if (preview.requestType === 'BIAS_ANALYSIS') {
+          setDraftComment(String(preview.result.balancedRewrite || draftComment))
+        } else {
+          setGrowthMemo(JSON.stringify(preview.result, null, 2))
+        }
+        setNotice('AI 제안을 검토 후 반영했습니다. 저장 후 제출 전에 다시 확인하세요.')
+      } else {
+        setNotice('AI 제안을 반려했습니다.')
+      }
+
+      setPreview(null)
+      startTransition(() => router.refresh())
+    } catch (error) {
+      setErrorNotice(error instanceof Error ? error.message : 'AI 결과 상태를 변경하지 못했습니다.')
+    } finally {
+      setDecisionBusy(false)
+    }
+  }
+
+  function updateItemField(personalKpiId: string, field: keyof DraftItemState, value: string | number | null) {
+    setDraftItems((current) => ({
+      ...current,
+      [personalKpiId]: {
+        ...(current[personalKpiId] ?? { personalKpiId }),
+        [field]: value,
+      },
+    }))
+  }
+
+  function moveToCycle(cycleId: string) {
+    startTransition(() => router.push(`/evaluation/assistant?cycleId=${encodeURIComponent(cycleId)}`))
+  }
+
+  function moveToEvaluation(evaluationId: string) {
+    const params = new URLSearchParams()
+    if (props.selectedCycleId) params.set('cycleId', props.selectedCycleId)
+    params.set('evaluationId', evaluationId)
+    startTransition(() => router.push(`/evaluation/assistant?${params.toString()}`))
+  }
+
+  if (props.state !== 'ready') {
+    return (
+      <div className="space-y-6">
+        <PageHeader />
+        <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+            <ClipboardList className="h-6 w-6" />
+          </div>
+          <h2 className="mt-4 text-lg font-semibold text-slate-900">
+            {props.state === 'permission-denied' ? '접근 권한이 없습니다' : props.state === 'empty' ? '평가 항목이 아직 없습니다' : '데이터를 불러오지 못했습니다'}
+          </h2>
+          <p className="mt-2 text-sm text-slate-500">{props.message ?? '평가 주기와 권한을 확인해 주세요.'}</p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <QuickLink href="/evaluation/results" label="평가 결과 보기" />
+            <QuickLink href="/kpi/monthly" label="월간 실적 보기" />
+            <QuickLink href="/checkin" label="체크인 보기" />
+          </div>
+        </section>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader />
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge tone={toneFromCount(props.summary?.actionRequiredCount ?? 0)}>
+                {labelFromCount(props.summary?.actionRequiredCount ?? 0)}
+              </Badge>
+              {selected ? <Badge tone={statusTone(selected.status)}>{`${selected.stageLabel} · ${selected.statusLabel}`}</Badge> : null}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">평가 실행 워크벤치</h1>
+              <p className="mt-2 text-sm text-slate-500">
+                목표, 월간 실적, 체크인, 다면 피드백을 한 화면에서 검토하고 평가 초안과 AI 보조를 함께 운영합니다.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricCard label="작성/검토 필요" value={String(props.summary?.actionRequiredCount ?? 0)} help="지금 처리해야 하는 평가" />
+              <MetricCard label="제출 완료" value={String(props.summary?.submittedCount ?? 0)} help="현재 주기 제출 건수" />
+              <MetricCard label="반려 건수" value={String(props.summary?.rejectedCount ?? 0)} help="보완이 필요한 평가" />
+              <MetricCard label="다면 피드백" value={String(props.summary?.feedbackRoundCount ?? 0)} help={props.summary?.evidenceFreshnessLabel ?? '근거 데이터 상태'} />
+            </div>
+          </div>
+
+          <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-[440px]">
+            <label className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Cycle</span>
+              <select
+                value={props.selectedCycleId}
+                onChange={(event) => moveToCycle(event.target.value)}
+                className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+              >
+                {props.availableCycles.map((cycle) => (
+                  <option key={cycle.id} value={cycle.id}>
+                    {cycle.year} · {cycle.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => runMutation('createSelf')}
+                disabled={!props.permissions?.canCreateSelfEvaluation || isPending}
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                자기평가 시작
+              </button>
+              <Link
+                href="/evaluation/results"
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                결과 보기
+              </Link>
+            </div>
+            <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={() =>
+                  runMutation('saveDraft', {
+                    comment: draftComment,
+                    gradeId: draftGradeId || null,
+                    items: editableItems.map((item) => ({
+                      personalKpiId: item.personalKpiId,
+                      quantScore: item.draft.quantScore ?? null,
+                      planScore: item.draft.planScore ?? null,
+                      doScore: item.draft.doScore ?? null,
+                      checkScore: item.draft.checkScore ?? null,
+                      actScore: item.draft.actScore ?? null,
+                      itemComment: item.draft.itemComment ?? '',
+                    })),
+                  })
+                }
+                disabled={!selected?.permissions.canEdit || isPending}
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+              >
+                임시저장
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  runMutation('submit', {
+                    comment: draftComment,
+                    gradeId: draftGradeId || undefined,
+                    items: editableItems.map((item) => ({
+                      personalKpiId: item.personalKpiId,
+                      quantScore: item.draft.quantScore ?? undefined,
+                      planScore: item.draft.planScore ?? undefined,
+                      doScore: item.draft.doScore ?? undefined,
+                      checkScore: item.draft.checkScore ?? undefined,
+                      actScore: item.draft.actScore ?? undefined,
+                      itemComment: item.draft.itemComment ?? undefined,
+                    })),
+                  })
+                }
+                disabled={!selected?.permissions.canSubmit || isPending}
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+              >
+                <Send className="mr-2 h-4 w-4" />
+                제출
+              </button>
+              <button
+                type="button"
+                onClick={() => runMutation('reject', { rejectionReason: rejectReason })}
+                disabled={!selected?.permissions.canReject || !rejectReason.trim() || isPending}
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
+              >
+                <Undo2 className="mr-2 h-4 w-4" />
+                반려
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {notice ? <Banner tone="success" message={notice} /> : null}
+      {errorNotice ? <Banner tone="error" message={errorNotice} /> : null}
+
+      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900">평가 목록</h2>
+              <p className="mt-1 text-sm text-slate-500">내가 작성하거나 검토해야 하는 평가입니다.</p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{props.summary?.totalCount ?? 0}건</span>
+          </div>
+          <div className="mt-4 space-y-3">
+            {props.evaluations?.length ? (
+              props.evaluations.map((evaluation) => (
+                <button
+                  key={evaluation.id}
+                  type="button"
+                  onClick={() => moveToEvaluation(evaluation.id)}
+                  className={`w-full rounded-2xl border p-4 text-left transition ${
+                    evaluation.id === props.selectedEvaluationId
+                      ? 'border-blue-300 bg-blue-50 shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{evaluation.targetName}</p>
+                      <p className="mt-1 text-xs text-slate-500">{evaluation.targetDepartment} · {evaluation.stageLabel}</p>
+                    </div>
+                    <Badge tone={statusTone(evaluation.status)}>{evaluation.statusLabel}</Badge>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                    <span>{evaluation.isEvaluator ? '검토자 관점' : '내 평가'}</span>
+                    <span>{evaluation.updatedAt}</span>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <EmptyBlock message="현재 선택한 주기에는 평가가 없습니다." />
+            )}
+          </div>
+        </section>
+
+        <section className="space-y-6">
+          {selected ? (
+            <>
+              <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">Selected evaluation</p>
+                    <h2 className="mt-2 text-xl font-semibold text-slate-900">{selected.target.name} · {selected.stageLabel}</h2>
+                    <p className="mt-2 text-sm text-slate-500">
+                      {selected.cycle.year} / {selected.cycle.name} · 평가자 {selected.evaluator.name}
+                    </p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <MetricCard label="초안 총점" value={computedTotal.toFixed(1)} help="입력 중 계산값" compact />
+                    <MetricCard label="저장 점수" value={selected.totalScore?.toFixed(1) ?? '-'} help="마지막 저장 기준" compact />
+                    <MetricCard label="근거 하이라이트" value={String(selected.evidence.highlights.length)} help="빠르게 읽을 핵심 근거" compact />
+                  </div>
+                </div>
+              </section>
+
+              <div className="overflow-x-auto">
+                <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+                  {(Object.keys(TAB_LABELS) as WorkbenchTab[]).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setActiveTab(tab)}
+                      className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                        activeTab === tab ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      }`}
+                    >
+                      {TAB_LABELS[tab]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {activeTab === 'workbench' ? (
+                <div className="space-y-6">
+                  <Panel title="검토 포인트" description="평가 단계별로 먼저 봐야 할 핵심 포인트입니다.">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      {selected.reviewGuidance.map((item) => (
+                        <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </Panel>
+
+                  <Panel title="종합 의견 및 등급" description="제출 후에는 다음 평가 단계로 자동 연결됩니다.">
+                    <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">제안 등급</span>
+                        <select
+                          value={draftGradeId}
+                          onChange={(event) => setDraftGradeId(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                        >
+                          <option value="">등급 선택 안 함</option>
+                          {selected.gradeOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.gradeName} ({option.scoreRange})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">종합 의견</span>
+                        <textarea
+                          value={draftComment}
+                          onChange={(event) => setDraftComment(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="min-h-32 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                          placeholder="강점, 보완점, 근거를 포함해 작성하세요."
+                        />
+                      </label>
+                    </div>
+                  </Panel>
+
+                  <Panel title="KPI별 점수 입력" description="정량은 점수 입력, 정성은 PDCA와 코멘트를 함께 남깁니다.">
+                    <div className="space-y-4">
+                      {editableItems.map((item) => (
+                        <article key={item.personalKpiId} className="rounded-2xl border border-slate-200 p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h4 className="text-sm font-semibold text-slate-900">{item.title}</h4>
+                                <Badge tone="neutral">{item.type === 'QUANTITATIVE' ? '정량' : '정성'}</Badge>
+                                <Badge tone="neutral">가중치 {item.weight}%</Badge>
+                                {typeof item.recentAchievementRate === 'number' ? (
+                                  <Badge tone={item.recentAchievementRate < 80 ? 'warn' : 'success'}>최근 달성률 {item.recentAchievementRate}%</Badge>
+                                ) : null}
+                              </div>
+                              <p className="mt-2 text-sm text-slate-500">{item.definition ?? '정의가 등록되지 않았습니다.'}</p>
+                              <p className="mt-2 text-xs text-slate-500">
+                                연결 조직 KPI: {item.linkedOrgKpiTitle ?? '연결 없음'} · 목표값 {item.targetValue ?? '-'} {item.unit ?? ''}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-right">
+                              <div className="text-xs text-slate-400">가중 반영 점수</div>
+                              <div className="mt-1 text-lg font-semibold text-slate-900">{formatWeighted(item).toFixed(1)}</div>
+                            </div>
+                          </div>
+
+                          {item.type === 'QUANTITATIVE' ? (
+                            <div className="mt-4 grid gap-4 md:grid-cols-[140px_minmax(0,1fr)]">
+                              <label className="space-y-2">
+                                <span className="text-sm font-semibold text-slate-700">점수</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={item.draft.quantScore ?? ''}
+                                  onChange={(event) => updateItemField(item.personalKpiId, 'quantScore', event.target.value === '' ? null : Number(event.target.value))}
+                                  disabled={selected.permissions.readOnly}
+                                  className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                                />
+                              </label>
+                              <label className="space-y-2">
+                                <span className="text-sm font-semibold text-slate-700">항목 코멘트</span>
+                                <textarea
+                                  value={item.draft.itemComment ?? ''}
+                                  onChange={(event) => updateItemField(item.personalKpiId, 'itemComment', event.target.value)}
+                                  disabled={selected.permissions.readOnly}
+                                  className="min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                                />
+                              </label>
+                            </div>
+                          ) : (
+                            <div className="mt-4 grid gap-4 lg:grid-cols-4">
+                              {([
+                                ['planScore', 'Plan'],
+                                ['doScore', 'Do'],
+                                ['checkScore', 'Check'],
+                                ['actScore', 'Act'],
+                              ] as const).map(([field, label]) => (
+                                <label key={field} className="space-y-2">
+                                  <span className="text-sm font-semibold text-slate-700">{label}</span>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={item.draft[field] ?? ''}
+                                    onChange={(event) => updateItemField(item.personalKpiId, field, event.target.value === '' ? null : Number(event.target.value))}
+                                    disabled={selected.permissions.readOnly}
+                                    className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                                  />
+                                </label>
+                              ))}
+                              <label className="space-y-2 lg:col-span-4">
+                                <span className="text-sm font-semibold text-slate-700">항목 코멘트</span>
+                                <textarea
+                                  value={item.draft.itemComment ?? ''}
+                                  onChange={(event) => updateItemField(item.personalKpiId, 'itemComment', event.target.value)}
+                                  disabled={selected.permissions.readOnly}
+                                  className="min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </Panel>
+
+                  <Panel title="반려 사유" description="반려 시 대상자는 같은 평가를 수정해 재제출할 수 있습니다.">
+                    <textarea
+                      value={rejectReason}
+                      onChange={(event) => setRejectReason(event.target.value)}
+                      disabled={!selected.permissions.canReject}
+                      className="min-h-24 w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-amber-400 disabled:bg-amber-100"
+                      placeholder="반려 사유와 보완 요청 포인트를 구체적으로 남기세요."
+                    />
+                  </Panel>
+                </div>
+              ) : null}
+
+              {activeTab === 'evidence' ? (
+                <Panel title="근거 자료" description="월간 실적, 체크인, 연결 조직 KPI를 함께 검토합니다.">
+                  <SectionTitle title="하이라이트" />
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {selected.evidence.highlights.map((item) => (
+                      <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{item}</div>
+                    ))}
+                  </div>
+                  <SectionTitle title="월간 실적" />
+                  <div className="space-y-3">
+                    {selected.evidence.monthlyRecords.length ? selected.evidence.monthlyRecords.map((record) => (
+                      <div key={`${record.title}-${record.yearMonth}`} className="rounded-2xl border border-slate-200 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{record.title}</p>
+                            <p className="mt-1 text-xs text-slate-500">{record.yearMonth}</p>
+                          </div>
+                          <Badge tone={typeof record.achievementRate === 'number' && record.achievementRate < 80 ? 'warn' : 'success'}>
+                            달성률 {record.achievementRate ?? 0}%
+                          </Badge>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-700">{record.activities ?? record.obstacles ?? '상세 메모 없음'}</p>
+                      </div>
+                    )) : <EmptyBlock message="연결된 월간 실적이 없습니다." />}
+                  </div>
+                  <SectionTitle title="체크인 요약" />
+                  <div className="space-y-3">
+                    {selected.evidence.checkins.length ? selected.evidence.checkins.map((checkin) => (
+                      <div key={checkin.id} className="rounded-2xl border border-slate-200 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900">{checkin.scheduledDate}</p>
+                          <Link href="/checkin" className="inline-flex items-center text-sm font-semibold text-blue-600">체크인 보기<ChevronRight className="ml-1 h-4 w-4" /></Link>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-700">{checkin.summary}</p>
+                      </div>
+                    )) : <EmptyBlock message="연결된 체크인 기록이 없습니다." />}
+                  </div>
+                  <div className="mt-4">
+                    <QuickLink href={`/evaluation/360/results${props.selectedCycleId ? `?cycleId=${encodeURIComponent(props.selectedCycleId)}` : ''}`} label="360 다면평가 결과 보기" />
+                  </div>
+                </Panel>
+              ) : null}
+
+              {activeTab === 'feedback' ? (
+                <Panel title="다면 피드백" description="최소 응답 수를 충족한 라운드는 평가 근거로 활용할 수 있습니다.">
+                  <div className="space-y-3">
+                    {selected.evidence.feedbackRounds.length ? selected.evidence.feedbackRounds.map((round) => (
+                      <div key={round.id} className="rounded-2xl border border-slate-200 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{round.roundName}</p>
+                            <p className="mt-1 text-xs text-slate-500">{round.roundType} · 제출 {round.submittedCount}건</p>
+                          </div>
+                          <Badge tone={round.averageRating && round.averageRating < 3.5 ? 'warn' : 'neutral'}>
+                            평균 {round.averageRating?.toFixed(1) ?? '-'}
+                          </Badge>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-700">{round.summary}</p>
+                      </div>
+                    )) : <EmptyBlock message="연결된 다면 피드백 라운드가 없습니다." />}
+                  </div>
+                </Panel>
+              ) : null}
+
+              {activeTab === 'ai' ? (
+                <div className="space-y-6">
+                  <Panel title="평가 AI 보조" description="OpenAI 기반 제안은 preview로만 제공되고 승인 후에만 초안에 반영됩니다.">
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <AiCard icon={<MessageSquareMore className="h-5 w-5" />} title="코멘트 초안" description="종합 의견 초안을 만듭니다." onClick={() => runAssist('EVAL_COMMENT_DRAFT')} />
+                      <AiCard icon={<ShieldAlert className="h-5 w-5" />} title="편향 점검" description="표현을 균형 있게 다듬습니다." onClick={() => runAssist('BIAS_ANALYSIS')} />
+                      <AiCard icon={<Bot className="h-5 w-5" />} title="성장 제안" description="성장/후속 논의 포인트를 제안합니다." onClick={() => runAssist('GROWTH_PLAN')} />
+                    </div>
+                  </Panel>
+                  {preview ? (
+                    <Panel title="AI preview" description={preview.source === 'ai' ? 'OpenAI 응답을 확인합니다.' : `fallback preview (${preview.fallbackReason ?? 'AI unavailable'})`}>
+                      <pre className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 whitespace-pre-wrap">{JSON.stringify(preview.result, null, 2)}</pre>
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button type="button" onClick={() => handlePreviewDecision('approve')} disabled={decisionBusy} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          적용
+                        </button>
+                        <button type="button" onClick={() => handlePreviewDecision('reject')} disabled={decisionBusy} className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
+                          반려
+                        </button>
+                      </div>
+                    </Panel>
+                  ) : null}
+                  <Panel title="성장 메모" description="성장 제안과 후속 1:1 포인트를 임시 메모로 정리합니다.">
+                    <textarea
+                      value={growthMemo}
+                      onChange={(event) => setGrowthMemo(event.target.value)}
+                      className="min-h-32 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                      placeholder="성장 메모를 정리하세요."
+                    />
+                  </Panel>
+                </div>
+              ) : null}
+
+              {activeTab === 'history' ? (
+                <Panel title="제출 이력" description="초안 저장, 제출, 반려, AI 승인 여부까지 감사 가능한 이력으로 남깁니다.">
+                  <div className="space-y-3">
+                    {selected.auditLogs.length ? selected.auditLogs.map((log) => (
+                      <div key={log.id} className="rounded-2xl border border-slate-200 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{log.action}</p>
+                            <p className="mt-1 text-xs text-slate-500">{log.actor} · {log.timestamp}</p>
+                          </div>
+                          <Badge tone="neutral">{log.timestamp}</Badge>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-700">{log.detail}</p>
+                      </div>
+                    )) : <EmptyBlock message="감사 이력이 아직 없습니다." />}
+                  </div>
+                </Panel>
+              ) : null}
+            </>
+          ) : (
+            <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+                <ClipboardList className="h-6 w-6" />
+              </div>
+              <h2 className="mt-4 text-lg font-semibold text-slate-900">선택된 평가가 없습니다</h2>
+              <p className="mt-2 text-sm text-slate-500">현재 주기에서 작성하거나 검토할 평가를 선택하거나 자기평가를 새로 시작하세요.</p>
+            </section>
+          )}
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function PageHeader() {
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">Evaluation Operations</p>
+      <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">평가 실행 워크벤치</h1>
+      <p className="mt-2 max-w-3xl text-sm text-slate-500">
+        목표, 월간 실적, 체크인, 다면 피드백을 한 화면에서 검토하고 평가 초안과 AI 보조를 함께 운영합니다.
+      </p>
+    </section>
+  )
+}
+
+function Panel(props: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-slate-900">{props.title}</h3>
+        <p className="mt-1 text-sm text-slate-500">{props.description}</p>
+      </div>
+      {props.children}
+    </section>
+  )
+}
+
+function QuickLink(props: { href: string; label: string }) {
+  return (
+    <Link href={props.href} className="inline-flex items-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+      {props.label}
+      <ChevronRight className="ml-1 h-4 w-4" />
+    </Link>
+  )
+}
+
+function MetricCard(props: { label: string; value: string; help: string; compact?: boolean }) {
+  return (
+    <div className={`rounded-2xl border border-slate-200 bg-slate-50 ${props.compact ? 'px-4 py-3' : 'p-4'}`}>
+      <div className="text-xs uppercase tracking-[0.16em] text-slate-400">{props.label}</div>
+      <div className="mt-2 text-xl font-semibold text-slate-900">{props.value}</div>
+      <div className="mt-1 text-xs text-slate-500">{props.help}</div>
+    </div>
+  )
+}
+
+function Banner(props: { tone: 'success' | 'error'; message: string }) {
+  return (
+    <div className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${props.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+      {props.tone === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+      <span>{props.message}</span>
+    </div>
+  )
+}
+
+function Badge(props: { tone: 'success' | 'warn' | 'error' | 'neutral'; children: React.ReactNode }) {
+  const palette =
+    props.tone === 'success'
+      ? 'bg-emerald-100 text-emerald-700'
+      : props.tone === 'warn'
+        ? 'bg-amber-100 text-amber-700'
+        : props.tone === 'error'
+          ? 'bg-rose-100 text-rose-700'
+          : 'bg-slate-100 text-slate-600'
+
+  return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${palette}`}>{props.children}</span>
+}
+
+function EmptyBlock(props: { message: string }) {
+  return <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">{props.message}</div>
+}
+
+function SectionTitle(props: { title: string }) {
+  return <h4 className="mb-3 mt-6 text-sm font-semibold text-slate-900 first:mt-0">{props.title}</h4>
+}
+
+function AiCard(props: { icon: React.ReactNode; title: string; description: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={props.onClick} className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:bg-slate-50">
+      <div className="flex items-center gap-2 text-slate-900">
+        {props.icon}
+        <span className="text-sm font-semibold">{props.title}</span>
+      </div>
+      <p className="mt-3 text-sm text-slate-500">{props.description}</p>
+    </button>
+  )
+}
+
+function toneFromCount(count: number): 'success' | 'warn' | 'error' | 'neutral' {
+  if (count >= 5) return 'error'
+  if (count > 0) return 'warn'
+  return 'success'
+}
+
+function labelFromCount(count: number) {
+  if (count >= 5) return '검토 집중'
+  if (count > 0) return '주의 필요'
+  return '정상'
+}
+
+function statusTone(status: string): 'success' | 'warn' | 'error' | 'neutral' {
+  if (status === 'CONFIRMED') return 'success'
+  if (status === 'REJECTED') return 'error'
+  if (status === 'SUBMITTED' || status === 'PENDING') return 'warn'
+  return 'neutral'
+}
+
+function formatWeighted(item: {
+  type: 'QUANTITATIVE' | 'QUALITATIVE'
+  weight: number
+  draft: DraftItemState
+}) {
+  if (item.type === 'QUANTITATIVE') {
+    return ((item.draft.quantScore ?? 0) * item.weight) / 100
+  }
+
+  const pdca =
+    Number(item.draft.planScore ?? 0) * 0.3 +
+    Number(item.draft.doScore ?? 0) * 0.4 +
+    Number(item.draft.checkScore ?? 0) * 0.2 +
+    Number(item.draft.actScore ?? 0) * 0.1
+  return (pdca * item.weight) / 100
+}

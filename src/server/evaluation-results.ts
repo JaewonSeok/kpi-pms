@@ -42,6 +42,8 @@ export type EvaluationResultViewModel = {
     title: string
   }
   summary: {
+    acknowledged: boolean
+    acknowledgedAt?: string
     finalGrade: string
     totalScore: number
     performanceScore: number
@@ -496,6 +498,8 @@ function buildEvaluationResultViewModel(params: {
   publicationStatus: ResultPublicationStatus
   auditLogs: Array<{
     action: string
+    entityType: string
+    entityId: string | null
     userId: string
     timestamp: Date
   }>
@@ -577,6 +581,13 @@ function buildEvaluationResultViewModel(params: {
   const feedbacks = buildFeedbackSummary(params.evaluations, params.checkIns)
   const strengths = buildStrengths(performanceRows, competencyRows)
   const improvements = buildImprovements(performanceRows, competencyRows)
+  const acknowledgedLog = params.auditLogs.find(
+    (log) =>
+      log.action === 'EVALUATION_RESULT_ACKNOWLEDGED' &&
+      log.entityType === 'EvalCycle' &&
+      log.entityId === params.cycle.id &&
+      log.userId === params.employee.id
+  )
   const evaluatorPreview =
     finalEvaluation?.comment ||
     feedbacks.find((feedback) => feedback.author !== '시스템')?.content ||
@@ -602,6 +613,8 @@ function buildEvaluationResultViewModel(params: {
       title: resolvePositionLabel(params.employee.position),
     },
     summary: {
+      acknowledged: Boolean(acknowledgedLog),
+      acknowledgedAt: acknowledgedLog?.timestamp.toISOString(),
       finalGrade: finalGrade ?? '미확정',
       totalScore,
       performanceScore: performanceScore ?? 0,

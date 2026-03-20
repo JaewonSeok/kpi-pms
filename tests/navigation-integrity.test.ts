@@ -56,6 +56,7 @@ run('member sidebar hides admin-only and restricted KPI routes', () => {
   assert.equal(memberHrefs.includes('/kpi/org'), false)
   assert.equal(memberHrefs.includes('/compensation/manage'), false)
   assert.equal(memberHrefs.includes('/kpi/monthly'), true)
+  assert.equal(memberHrefs.includes('/evaluation/360'), true)
 })
 
 run('ceo sidebar excludes monthly record but keeps ceo-specific routes', () => {
@@ -72,6 +73,7 @@ run('admin sidebar exposes every admin and setup route', () => {
   for (const href of [
     '/kpi/org',
     '/kpi/monthly',
+    '/evaluation/360',
     '/evaluation/results',
     '/evaluation/appeal',
     '/evaluation/ceo-adjust',

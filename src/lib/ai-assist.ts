@@ -523,6 +523,131 @@ const MONTHLY_EVALUATION_EVIDENCE_SCHEMA = {
   },
 } satisfies JsonRecord
 
+const FEEDBACK_360_REVIEWER_RECOMMENDATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['recommendations', 'rationale', 'watchouts'],
+  properties: {
+    recommendations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['employeeId', 'name', 'relationship'],
+        properties: {
+          employeeId: { type: 'string' },
+          name: { type: 'string' },
+          relationship: { type: 'string' },
+        },
+      },
+    },
+    rationale: { type: 'string' },
+    watchouts: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const FEEDBACK_360_THEME_SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['anonymousSummary', 'strengths', 'blindSpots', 'textHighlights'],
+  properties: {
+    anonymousSummary: { type: 'string' },
+    strengths: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    blindSpots: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    textHighlights: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const FEEDBACK_360_CARELESS_REVIEW_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'riskFlags', 'recommendedActions'],
+  properties: {
+    summary: { type: 'string' },
+    riskFlags: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['label', 'severity', 'reason'],
+        properties: {
+          label: { type: 'string' },
+          severity: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
+          reason: { type: 'string' },
+        },
+      },
+    },
+    recommendedActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const FEEDBACK_360_DEVELOPMENT_PLAN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['focusArea', 'actions', 'managerSupport', 'nextCheckinTopics'],
+  properties: {
+    focusArea: { type: 'string' },
+    actions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    managerSupport: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextCheckinTopics: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const CALIBRATION_RISK_SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'priorityRisks', 'recommendedActions'],
+  properties: {
+    summary: { type: 'string' },
+    priorityRisks: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    recommendedActions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+} satisfies JsonRecord
+
+const COMPENSATION_DECISION_EXPLANATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'drivers', 'employeeFacingNote'],
+  properties: {
+    summary: { type: 'string' },
+    drivers: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    employeeFacingNote: { type: 'string' },
+  },
+} satisfies JsonRecord
+
 const NOTIFICATION_OPS_SUMMARY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -964,6 +1089,42 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     systemPrompt:
       'You are an operations prioritization assistant. Reply in Korean. Rank current operational risks by urgency, explain why they matter, and suggest the first action for each.',
   },
+  'KPI_ASSIST:Feedback360ReviewerRecommendation': {
+    schemaName: 'feedback_360_reviewer_recommendation',
+    schema: FEEDBACK_360_REVIEWER_RECOMMENDATION_SCHEMA,
+    systemPrompt:
+      'You are a 360 feedback nomination assistant. Reply in Korean. Recommend a balanced reviewer mix across supervisor, peer, and subordinate groups while protecting anonymity and minimizing reviewer fatigue.',
+  },
+  'KPI_ASSIST:Feedback360ThemeSummary': {
+    schemaName: 'feedback_360_theme_summary',
+    schema: FEEDBACK_360_THEME_SUMMARY_SCHEMA,
+    systemPrompt:
+      'You are a 360 feedback summary assistant. Reply in Korean. Summarize anonymized feedback themes into strengths, blind spots, and representative highlights without exposing identifying details.',
+  },
+  'KPI_ASSIST:Feedback360CarelessReview': {
+    schemaName: 'feedback_360_careless_review',
+    schema: FEEDBACK_360_CARELESS_REVIEW_SCHEMA,
+    systemPrompt:
+      'You are a 360 feedback quality analyst. Reply in Korean. Identify signs of careless reviews, explain why they are risky, and suggest concrete follow-up actions for HR operators.',
+  },
+  'KPI_ASSIST:Feedback360DevelopmentPlan': {
+    schemaName: 'feedback_360_development_plan',
+    schema: FEEDBACK_360_DEVELOPMENT_PLAN_SCHEMA,
+    systemPrompt:
+      'You are a development planning assistant. Reply in Korean. Convert 360 feedback themes into a focused development plan with practical actions, manager support, and next check-in topics.',
+  },
+  'KPI_ASSIST:CalibrationRiskSummary': {
+    schemaName: 'calibration_risk_summary',
+    schema: CALIBRATION_RISK_SUMMARY_SCHEMA,
+    systemPrompt:
+      'You are a calibration risk assistant. Reply in Korean. Summarize distribution and fairness risks in a calibration session and suggest the next action for HR or executives.',
+  },
+  'KPI_ASSIST:CompensationDecisionExplanation': {
+    schemaName: 'compensation_decision_explanation',
+    schema: COMPENSATION_DECISION_EXPLANATION_SCHEMA,
+    systemPrompt:
+      'You are a compensation explanation assistant. Reply in Korean. Explain the main drivers of a compensation decision in concise, employee-friendly language without exposing internal-only details.',
+  },
 }
 
 function getAiConfig(requestType: AIRequestType, sourceType?: string) {
@@ -1341,6 +1502,108 @@ export function buildFallbackResult(
       summary: summary || '이번 달 실적은 향후 평가 코멘트에서 실행력과 리스크 대응을 설명하는 근거로 활용할 수 있습니다.',
       evaluationPoints: ['주요 KPI 진행 상황', '위험 대응 방식', '근거 자료와 실행 메모의 일관성'],
       watchouts: ['정량 실적이 부족한 KPI는 정성 근거를 보완해야 합니다.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'Feedback360ReviewerRecommendation') {
+    const reviewerGroups = Array.isArray(payload.reviewerGroups) ? payload.reviewerGroups : []
+    const recommendations = reviewerGroups.flatMap((group) => {
+      const record = typeof group === 'object' && group ? (group as Record<string, unknown>) : {}
+      const reviewers = Array.isArray(record.reviewers) ? record.reviewers : []
+      const limit = record.key === 'peer' || record.key === 'subordinate' ? 2 : 1
+
+      return reviewers
+        .filter((reviewer): reviewer is Record<string, unknown> => Boolean(reviewer && typeof reviewer === 'object'))
+        .slice(0, limit)
+        .map((reviewer) => ({
+          employeeId: String(reviewer.employeeId ?? ''),
+          name: String(reviewer.name ?? '리뷰어 후보'),
+          relationship: String(reviewer.relationship ?? record.key ?? 'PEER'),
+        }))
+    })
+
+    return {
+      recommendations,
+      rationale:
+        summary || '익명 기준과 reviewer fatigue를 함께 고려해 상사 1명, 동료 2명, 부하 또는 협업 리뷰어 1~2명을 우선 추천했습니다.',
+      watchouts: [
+        '소수 조직은 동일 조합이 반복되면 익명성이 약해질 수 있습니다.',
+        '최근 실제 협업이 없었던 리뷰어는 우선순위를 낮추는 편이 좋습니다.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'Feedback360ThemeSummary') {
+    return {
+      anonymousSummary:
+        summary || '익명 기준 안에서 반복적으로 언급된 강점과 개선 포인트를 중심으로 다면평가 내용을 요약했습니다.',
+      strengths: ['협업 과정에서 조율과 커뮤니케이션 안정성이 높다는 피드백이 반복됩니다.'],
+      blindSpots: ['우선순위 전환 시 기대 정렬과 진행 공유를 더 구조적으로 하면 좋다는 의견이 있습니다.'],
+      textHighlights: Array.isArray(payload.textHighlights)
+        ? (payload.textHighlights as unknown[])
+            .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+            .slice(0, 3)
+        : ['익명 기준을 충족하면 대표 코멘트 하이라이트가 더 풍부해집니다.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'Feedback360CarelessReview') {
+    return {
+      summary: summary || '일부 응답에서 동일 점수 반복과 짧은 서술형 응답이 보여 품질 검토가 필요합니다.',
+      riskFlags: [
+        {
+          label: '동일 점수 반복',
+          severity: 'MEDIUM',
+          reason: '여러 문항에 동일 점수가 반복되면 관찰 기반 응답인지 확인이 필요합니다.',
+        },
+        {
+          label: '짧은 서술형 응답',
+          severity: 'LOW',
+          reason: '서술형 텍스트가 지나치게 짧으면 actionable insight가 부족할 수 있습니다.',
+        },
+      ],
+      recommendedActions: [
+        'quality flag가 붙은 응답은 HR 운영 화면에서 우선 검토하세요.',
+        '필요 시 reviewer reminder 또는 재요청 여부를 운영 메모로 남기세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'Feedback360DevelopmentPlan') {
+    return {
+      focusArea: String(payload.focusArea ?? '협업과 피드백 전달 방식 강화'),
+      actions: [
+        '다음 체크인에서 blind spot 하나를 구체 행동 사례와 함께 리뷰합니다.',
+        '다음 한 달 동안 개선 포인트와 연결된 행동 실험을 1개 실행합니다.',
+      ],
+      managerSupport: [
+        '리더는 체크인에서 기대 수준과 실제 관찰 차이를 구체 예시 중심으로 피드백합니다.',
+        '월간 실적 코멘트에 360 후속 액션 진행 여부를 짧게 남깁니다.',
+      ],
+      nextCheckinTopics: [
+        '협업 맥락에서 가장 자주 나온 강점의 재현 방법',
+        'blind spot을 줄이기 위한 다음 행동 실험',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'CalibrationRiskSummary') {
+    return {
+      summary: summary || '현재 캘리브레이션에서는 분포 편차와 조정 사유 누락 여부를 먼저 확인하는 것이 중요합니다.',
+      priorityRisks: ['저인원 조직의 분포 왜곡', '조정 사유 누락', '원점수와 조정등급 괴리'],
+      recommendedActions: [
+        '분포 편차가 큰 조직부터 후보와 조정 사유를 다시 검토하세요.',
+        '예외 조직은 별도 정책 메모를 남겨 감사 가능성을 확보하세요.',
+      ],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'CompensationDecisionExplanation') {
+    return {
+      summary: summary || '평가 결과, 등급 규칙, 시나리오 예산 범위를 기준으로 보상 결정 배경을 설명하는 초안입니다.',
+      drivers: ['최종 평가 등급', '시뮬레이션 규칙', '예산 한도 및 예외 승인 여부'],
+      employeeFacingNote:
+        '이번 보상 결정은 평가 결과와 적용된 보상 규칙을 기준으로 산정되었으며, 공개 전 최종 승인과 예산 검토를 거쳤습니다.',
     }
   }
 

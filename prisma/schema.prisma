@@ -68,6 +68,14 @@ model Employee {
   checkInsAsManager CheckIn[]       @relation("CheckInManager")
   feedbackGiven     MultiFeedback[] @relation("FeedbackGiver")
   feedbackReceived  MultiFeedback[] @relation("FeedbackReceiver")
+  feedbackNominationTargets     FeedbackNomination[] @relation("FeedbackNominationTarget")
+  feedbackNominationReviewers   FeedbackNomination[] @relation("FeedbackNominationReviewer")
+  feedbackNominationSubmitters  FeedbackNomination[] @relation("FeedbackNominationSubmitter")
+  feedbackNominationApprovers   FeedbackNomination[] @relation("FeedbackNominationApprover")
+  feedbackReportTargets         FeedbackReportCache[] @relation("FeedbackReportTarget")
+  feedbackReportGenerators      FeedbackReportCache[] @relation("FeedbackReportGenerator")
+  developmentPlans              DevelopmentPlan[] @relation("DevelopmentPlanEmployee")
+  createdDevelopmentPlans       DevelopmentPlan[] @relation("DevelopmentPlanCreator")
   notifications     Notification[]
   appeals           Appeal[]
   compensationSnapshots CompensationScenarioEmployee[]
@@ -491,6 +499,8 @@ model MultiFeedbackRound {
 
   feedbacks MultiFeedback[]
   questions FeedbackQuestion[]
+  nominations FeedbackNomination[]
+  reportCaches FeedbackReportCache[]
 
   @@map("multi_feedback_rounds")
 }
@@ -557,6 +567,7 @@ model MultiFeedback {
 }
 
 enum RaterRelationship {
+  SELF
   SUPERVISOR
   PEER
   CROSS_TEAM_PEER
@@ -588,6 +599,104 @@ model FeedbackResponse {
 // ============================================
 // 7. 수시 체크인
 // ============================================
+
+enum FeedbackNominationStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PUBLISHED
+}
+
+model FeedbackNomination {
+  id           String                    @id @default(cuid())
+  roundId       String
+  round         MultiFeedbackRound       @relation(fields: [roundId], references: [id])
+  targetId      String
+  target        Employee                 @relation("FeedbackNominationTarget", fields: [targetId], references: [id])
+  reviewerId    String
+  reviewer      Employee                 @relation("FeedbackNominationReviewer", fields: [reviewerId], references: [id])
+  relationship  RaterRelationship
+  status        FeedbackNominationStatus @default(DRAFT)
+  submittedById String?
+  submittedBy   Employee?                @relation("FeedbackNominationSubmitter", fields: [submittedById], references: [id])
+  approvedById  String?
+  approvedBy    Employee?                @relation("FeedbackNominationApprover", fields: [approvedById], references: [id])
+  note          String?
+  submittedAt   DateTime?
+  approvedAt    DateTime?
+  rejectedAt    DateTime?
+  publishedAt   DateTime?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@unique([roundId, targetId, reviewerId])
+  @@index([roundId, targetId, status])
+  @@map("feedback_nominations")
+}
+
+model FeedbackReportCache {
+  id                 String             @id @default(cuid())
+  roundId            String
+  round              MultiFeedbackRound @relation(fields: [roundId], references: [id])
+  targetId           String
+  target             Employee           @relation("FeedbackReportTarget", fields: [targetId], references: [id])
+  generatedById      String?
+  generatedBy        Employee?          @relation("FeedbackReportGenerator", fields: [generatedById], references: [id])
+  anonymityThreshold Int
+  feedbackCount      Int                @default(0)
+  thresholdMet       Boolean            @default(false)
+  categoryScores     Json?
+  strengths          Json?
+  improvements       Json?
+  anonymousSummary   String?
+  textHighlights     Json?
+  reportPayload      Json?
+  generatedAt        DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@unique([roundId, targetId])
+  @@index([targetId, generatedAt])
+  @@map("feedback_report_caches")
+}
+
+enum DevelopmentPlanSourceType {
+  FEEDBACK_360
+  EVALUATION
+  CHECKIN
+  MANUAL
+}
+
+enum DevelopmentPlanStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+model DevelopmentPlan {
+  id                String                    @id @default(cuid())
+  employeeId        String
+  employee          Employee                  @relation("DevelopmentPlanEmployee", fields: [employeeId], references: [id])
+  createdById       String
+  createdBy         Employee                  @relation("DevelopmentPlanCreator", fields: [createdById], references: [id])
+  sourceType        DevelopmentPlanSourceType
+  sourceId          String?
+  title             String
+  focusArea         String
+  actions           Json
+  managerSupport    Json?
+  nextCheckinTopics Json?
+  note              String?
+  dueDate           DateTime?
+  status            DevelopmentPlanStatus     @default(DRAFT)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  @@index([employeeId, status])
+  @@index([sourceType, sourceId])
+  @@map("development_plans")
+}
 
 model CheckIn {
   id                String        @id @default(cuid())

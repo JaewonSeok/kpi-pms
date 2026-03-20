@@ -350,6 +350,172 @@ async function sendEmail(params: { to: string; subject: string; text: string }) 
   return typeof result.messageId === 'string' ? result.messageId : null
 }
 
+export async function sendNotificationTemplateTest(
+  params: {
+    recipientId: string
+    type: NotificationType
+    code: string
+    channel: NotificationDeliveryChannel
+    subjectTemplate: string
+    bodyTemplate: string
+    defaultLink?: string | null
+    payload: Record<string, string | number | boolean | null | undefined>
+  },
+  db: PrismaClient = prisma
+) {
+  const recipient = await db.employee.findUnique({
+    where: { id: params.recipientId },
+    select: {
+      id: true,
+      empName: true,
+      gwsEmail: true,
+    },
+  })
+
+  if (!recipient) {
+    throw new Error('테스트 발송 대상 직원을 찾을 수 없습니다.')
+  }
+
+  const payload = {
+    employeeName: recipient.empName,
+    link:
+      typeof params.payload.link === 'string' && params.payload.link.trim().length
+        ? params.payload.link
+        : (params.defaultLink ?? ''),
+    ...params.payload,
+  }
+
+  const title = renderTemplate(params.subjectTemplate, payload)
+  const message = renderTemplate(params.bodyTemplate, payload)
+  const job = await db.notificationJob.create({
+    data: {
+      recipientId: recipient.id,
+      type: params.type,
+      templateCode: params.code,
+      channel: params.channel,
+      title,
+      message,
+      link: typeof payload.link === 'string' ? payload.link : undefined,
+      payload,
+      scheduledFor: new Date(),
+      availableAt: new Date(),
+      priority: 100,
+      sourceType: 'NotificationTemplateTest',
+      sourceId: params.code,
+      idempotencyKey: `${params.code}:${recipient.id}:${Date.now()}`,
+      status: NotificationJobStatus.PROCESSING,
+    },
+  })
+
+  try {
+    if (params.channel === NotificationDeliveryChannel.IN_APP) {
+      await db.$transaction(async (tx) => {
+        await tx.notification.create({
+          data: {
+            recipientId: recipient.id,
+            type: params.type,
+            title,
+            message,
+            link: typeof payload.link === 'string' ? payload.link : undefined,
+            channel: 'IN_APP',
+            templateCode: params.code,
+            jobId: job.id,
+            metadata: payload,
+          },
+        })
+
+        await tx.notificationAttempt.create({
+          data: {
+            notificationJobId: job.id,
+            channel: params.channel,
+            status: NotificationAttemptStatus.SUCCESS,
+          },
+        })
+
+        await tx.notificationJob.update({
+          where: { id: job.id },
+          data: {
+            status: NotificationJobStatus.SENT,
+            sentAt: new Date(),
+            deliveredAt: new Date(),
+          },
+        })
+      })
+    } else {
+      if (!recipient.gwsEmail) {
+        throw new Error('테스트 이메일을 받을 Google Workspace 이메일이 등록되어 있지 않습니다.')
+      }
+
+      const providerMessageId = await sendEmail({
+        to: recipient.gwsEmail,
+        subject: title,
+        text: message,
+      })
+
+      await db.$transaction(async (tx) => {
+        await tx.notificationAttempt.create({
+          data: {
+            notificationJobId: job.id,
+            channel: params.channel,
+            status: NotificationAttemptStatus.SUCCESS,
+            providerMessageId,
+          },
+        })
+
+        await tx.notificationJob.update({
+          where: { id: job.id },
+          data: {
+            status: NotificationJobStatus.SENT,
+            sentAt: new Date(),
+            deliveredAt: new Date(),
+          },
+        })
+      })
+    }
+  } catch (error) {
+    await db.$transaction(async (tx) => {
+      await tx.notificationAttempt.create({
+        data: {
+          notificationJobId: job.id,
+          channel: params.channel,
+          status: NotificationAttemptStatus.FAILED,
+          errorMessage: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+        },
+      })
+
+      await tx.notificationJob.update({
+        where: { id: job.id },
+        data: {
+          status: NotificationJobStatus.DEAD_LETTER,
+          lastError: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+          retryCount: 1,
+        },
+      })
+
+      await tx.notificationDeadLetter.create({
+        data: {
+          notificationJobId: job.id,
+          recipientId: recipient.id,
+          channel: params.channel,
+          type: params.type,
+          idempotencyKey: job.idempotencyKey,
+          reason: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
+          payload,
+        },
+      })
+    })
+
+    throw error
+  }
+
+  return {
+    jobId: job.id,
+    channel: params.channel,
+    recipientName: recipient.empName,
+    recipientEmail: recipient.gwsEmail,
+  }
+}
+
 function getDefaultChannels(preference: Awaited<ReturnType<typeof ensureNotificationPreference>>) {
   const channels: NotificationDeliveryChannel[] = []
   if (preference.inAppEnabled) channels.push(NotificationDeliveryChannel.IN_APP)

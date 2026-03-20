@@ -1,4 +1,5 @@
 import { getServerSession } from 'next-auth'
+import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { getMonthlyKpiPageData } from '@/server/monthly-kpi-page'
 import { MonthlyKpiManagementClient } from '@/components/kpi/MonthlyKpiManagementClient'
@@ -17,7 +18,7 @@ type PageProps = {
 export default async function MonthlyKpiPage({ searchParams }: PageProps) {
   const session = await getServerSession(authOptions)
   if (!session) {
-    return null
+    redirect('/login')
   }
 
   const resolvedSearchParams = (await searchParams) ?? {}
