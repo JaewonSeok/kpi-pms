@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import {
+  PERSONAL_KPI_REVIEW_CTA_LABEL,
+  getPersonalKpiHeroCtaTransition,
+  getPersonalKpiSubmitCtaState,
+} from '../src/lib/personal-kpi-cta'
 
 function run(name: string, fn: () => void) {
   try {
@@ -59,6 +64,78 @@ run('notification ops client uses real test send and dead-letter actions', () =>
   assert.equal(file.includes('/api/admin/notification-templates/test-send'), true)
   assert.equal(file.includes('/api/admin/notification-dead-letters'), true)
   assert.equal(file.includes('/api/cron/notifications'), true)
+})
+
+run('personal KPI create CTA transition opens editor even outside ready state', () => {
+  const transition = getPersonalKpiHeroCtaTransition('create')
+  const file = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+  assert.deepEqual(transition, { nextTab: 'mine', openEditor: true })
+  assert.equal(file.includes("setForm(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))"), true)
+  assert.equal(file.includes('setAiPreview(null)'), true)
+  assert.equal(file.includes('setEditorOpen(true)'), true)
+})
+
+run('personal KPI AI CTA transition opens visible AI surface in non-ready states', () => {
+  const transition = getPersonalKpiHeroCtaTransition('ai')
+  const file = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+  assert.deepEqual(transition, { nextTab: 'ai', openEditor: false })
+  assert.equal(file.includes("const transition = getPersonalKpiHeroCtaTransition('ai')"), true)
+  assert.equal(file.includes('setActiveTab(transition.nextTab)'), true)
+  assert.equal(file.includes("activeTab === 'ai' ? ("), true)
+})
+
+run('personal KPI history and review CTAs stay usable in non-ready states', () => {
+  const file = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+  assert.equal(PERSONAL_KPI_REVIEW_CTA_LABEL, '검토 대기 보기')
+  assert.equal(file.includes(PERSONAL_KPI_REVIEW_CTA_LABEL), true)
+  assert.equal(file.includes("activeTab === 'review' ? ("), true)
+  assert.equal(file.includes("activeTab === 'history' ? ("), true)
+  assert.equal(file.includes('<StatePanel state={props.state} message={props.message} />'), true)
+  assert.equal(file.includes('<Tabs activeTab={activeTab} onChange={setActiveTab} />'), true)
+})
+
+run('personal KPI submit CTA explains disabled reasons and enables only for draft selection', () => {
+  const emptyState = getPersonalKpiSubmitCtaState({
+    canSubmit: true,
+    totalCount: 0,
+    selectedKpiStatus: null,
+    hasSelectedKpi: false,
+    workflowSaving: false,
+  })
+  const nonDraftState = getPersonalKpiSubmitCtaState({
+    canSubmit: true,
+    totalCount: 2,
+    selectedKpiStatus: 'CONFIRMED',
+    hasSelectedKpi: true,
+    workflowSaving: false,
+  })
+  const readyState = getPersonalKpiSubmitCtaState({
+    canSubmit: true,
+    totalCount: 2,
+    selectedKpiStatus: 'DRAFT',
+    hasSelectedKpi: true,
+    workflowSaving: false,
+  })
+  const file = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+  assert.equal(emptyState.disabled, true)
+  assert.equal(emptyState.reason, '제출하려면 KPI를 먼저 1개 이상 작성하세요.')
+  assert.equal(nonDraftState.disabled, true)
+  assert.equal(nonDraftState.reason, '제출하려면 선택한 KPI가 초안 상태여야 합니다.')
+  assert.equal(readyState.disabled, false)
+  assert.equal(file.includes('data-testid="personal-kpi-submit-helper"'), true)
+  assert.equal(file.includes('disabled={props.submitState.disabled}'), true)
+})
+
+run('personal KPI client no longer uses early return that hides CTA targets', () => {
+  const file = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+  assert.equal(file.includes("if (props.state !== 'ready') {"), false)
+  assert.equal(file.includes("props.state === 'ready' ? ("), true)
+  assert.equal(file.includes('{editorOpen ? ('), true)
 })
 
 console.log('Interaction integrity tests completed')
