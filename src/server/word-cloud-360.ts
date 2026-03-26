@@ -20,6 +20,7 @@ import {
   WORD_CLOUD_CATEGORY_LABELS,
   WORD_CLOUD_GROUP_LABELS,
   WORD_CLOUD_POLARITY_LABELS,
+  WORD_CLOUD_SOURCE_TYPE_LABELS,
   type WordCloudAssignmentDraft,
 } from '@/lib/word-cloud-360'
 
@@ -148,12 +149,14 @@ export type WordCloud360PageData = {
     }
     keywordPool: Array<{
       keywordId: string
+      keywordCode?: string
       keyword: string
       polarity: WordCloudKeywordPolarity
       polarityLabel: string
       category: WordCloudKeywordCategory
       categoryLabel: string
       sourceType: WordCloudKeywordSourceType
+      sourceTypeLabel: string
       active: boolean
       displayOrder: number
       warningFlag: boolean
@@ -199,6 +202,94 @@ export type WordCloud360PageData = {
 
 type SectionAlert = NonNullable<WordCloud360PageData['alerts']>[number]
 
+export type WordCloudKeywordCsvImportIssue = {
+  field: string
+  message: string
+}
+
+export type WordCloudKeywordCsvImportAction = 'create' | 'update' | 'unchanged' | 'deactivate'
+
+export type WordCloudKeywordCsvImportRowResult = {
+  rowNumber: number
+  keywordCode?: string
+  keyword: string
+  polarity?: string
+  category?: string
+  sourceType?: string
+  action: WordCloudKeywordCsvImportAction
+  valid: boolean
+  issues: WordCloudKeywordCsvImportIssue[]
+}
+
+export type WordCloudKeywordCsvImportSummary = {
+  totalRows: number
+  validRows: number
+  invalidRows: number
+  createCount: number
+  updateCount: number
+  unchangedCount: number
+  deactivateCount: number
+}
+
+export type WordCloudKeywordCsvImportResult = {
+  mode: 'preview' | 'apply'
+  fileName: string
+  summary: WordCloudKeywordCsvImportSummary
+  rows: WordCloudKeywordCsvImportRowResult[]
+  applyResult?: {
+    createdCount: number
+    updatedCount: number
+    unchangedCount: number
+    deactivatedCount: number
+    failedCount: number
+    uploadHistoryId?: string
+  }
+}
+
+type ParsedWordCloudKeywordImportRow = {
+  rowNumber: number
+  keywordCode?: string
+  keyword: string
+  polarity?: string
+  category?: string
+  sourceType?: string
+  active?: string
+  displayOrder?: string
+  governanceFlag?: string
+  note?: string
+}
+
+type ValidatedWordCloudKeywordImportRow = Omit<
+  ParsedWordCloudKeywordImportRow,
+  'polarity' | 'category' | 'sourceType' | 'active' | 'displayOrder' | 'governanceFlag'
+> & {
+  normalizedKeyword: string
+  normalizedKeywordCode?: string
+  polarity: WordCloudKeywordPolarity
+  category: WordCloudKeywordCategory
+  sourceType: WordCloudKeywordSourceType
+  active: boolean
+  displayOrder: number
+  governanceFlag: boolean
+  action: WordCloudKeywordCsvImportAction
+  targetKeywordId?: string
+}
+
+const WORD_CLOUD_KEYWORD_IMPORT_HEADERS = [
+  'keyword_code',
+  'keyword',
+  'polarity',
+  'category',
+  'source_type',
+  'active',
+  'display_order',
+  'governance_flag',
+  'note',
+] as const
+
+const WORD_CLOUD_KEYWORD_REQUIRED_HEADERS = ['keyword', 'polarity', 'active'] as const
+export const WORD_CLOUD_KEYWORD_MAX_UPLOAD_SIZE = 5 * 1024 * 1024
+
 function toIso(value?: Date | null) {
   return value ? value.toISOString() : undefined
 }
@@ -213,9 +304,46 @@ function mapCloudItems(items: Array<{ keywordId: string; keyword: string; catego
   }))
 }
 
-async function getActor(session: AuthenticatedSession) {
-  const actor = await prisma.employee.findUnique({
-    where: { id: session.user.id },
+function normalizeKeywordText(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
+}
+
+function normalizeKeywordCode(value?: string | null) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed.toUpperCase() : undefined
+}
+
+function escapeCsvCell(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined) return ''
+  const text = String(value)
+  if (/[",\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`
+  }
+  return text
+}
+
+function parseImportBoolean(value: string | undefined, field: string): { value: boolean | undefined; error?: string } {
+  const errorMessage = `${field} 값은 TRUE 또는 FALSE로 입력하세요.`
+  const normalized = value?.trim().toUpperCase()
+  if (!normalized) {
+    return {
+      value: undefined,
+      error: errorMessage,
+    }
+  }
+
+  if (normalized === 'TRUE') return { value: true }
+  if (normalized === 'FALSE') return { value: false }
+
+  return {
+    value: undefined,
+    error: errorMessage,
+  }
+}
+
+async function getActorById(actorId: string) {
+  return prisma.employee.findUnique({
+    where: { id: actorId },
     include: {
       department: {
         include: {
@@ -224,12 +352,487 @@ async function getActor(session: AuthenticatedSession) {
       },
     },
   })
+}
+
+async function getActor(session: AuthenticatedSession) {
+  const actor = await getActorById(session.user.id)
 
   if (!actor) {
     throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '현재 로그인 사용자의 직원 정보를 찾을 수 없습니다.')
   }
 
   return actor
+}
+
+async function getWordCloudAdminActor(actorId: string) {
+  const actor = await getActorById(actorId)
+  if (!actor) {
+    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '현재 사용자 정보를 찾을 수 없습니다.')
+  }
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '관리자만 키워드 CSV 업로드를 처리할 수 있습니다.')
+  }
+  return actor
+}
+
+export function buildWordCloudKeywordCsvTemplate() {
+  const sampleRows: Array<Record<(typeof WORD_CLOUD_KEYWORD_IMPORT_HEADERS)[number], string>> = [
+    {
+      keyword_code: 'POS_001',
+      keyword: '책임감 있음',
+      polarity: 'POSITIVE',
+      category: 'ATTITUDE',
+      source_type: 'DOCUMENT_FINAL',
+      active: 'TRUE',
+      display_order: '1',
+      governance_flag: 'FALSE',
+      note: '문서 확정 키워드 예시',
+    },
+    {
+      keyword_code: 'NEG_001',
+      keyword: '책임 회피',
+      polarity: 'NEGATIVE',
+      category: 'ATTITUDE',
+      source_type: 'DOCUMENT_FINAL',
+      active: 'TRUE',
+      display_order: '101',
+      governance_flag: 'FALSE',
+      note: '부정 키워드 예시',
+    },
+    {
+      keyword_code: 'GOV_001',
+      keyword: '청렴함',
+      polarity: 'POSITIVE',
+      category: 'ATTITUDE',
+      source_type: 'EXTRA_GOVERNANCE',
+      active: 'TRUE',
+      display_order: '9',
+      governance_flag: 'TRUE',
+      note: '거버넌스 키워드 예시',
+    },
+  ]
+
+  const lines = [
+    WORD_CLOUD_KEYWORD_IMPORT_HEADERS.join(','),
+    ...sampleRows.map((row) =>
+      WORD_CLOUD_KEYWORD_IMPORT_HEADERS.map((header) => escapeCsvCell(row[header] ?? '')).join(',')
+    ),
+  ]
+
+  return Buffer.from(`\uFEFF${lines.join('\r\n')}`, 'utf8')
+}
+
+function parseWordCloudKeywordCsv(params: { fileName: string; buffer: Buffer }) {
+  if (!params.fileName.toLowerCase().endsWith('.csv')) {
+    throw new AppError(400, 'INVALID_UPLOAD_FILE', 'CSV 파일만 업로드할 수 있습니다.')
+  }
+
+  const csvText = params.buffer.toString('utf8').replace(/^\uFEFF/, '')
+  const workbook = XLSX.read(csvText, {
+    type: 'string',
+    raw: false,
+    codepage: 65001,
+  })
+  const sheetName = workbook.SheetNames[0]
+  const sheet = sheetName ? workbook.Sheets[sheetName] : undefined
+
+  if (!sheet) {
+    throw new AppError(400, 'EMPTY_UPLOAD_FILE', '업로드할 CSV 파일을 선택하세요.')
+  }
+
+  const rows = XLSX.utils.sheet_to_json<Array<string | number | boolean>>(sheet, {
+    header: 1,
+    raw: false,
+    blankrows: false,
+    defval: '',
+  })
+  const [headerRow, ...dataRows] = rows
+  const normalizedHeaders = (headerRow ?? []).map((value) => String(value ?? '').trim().toLowerCase())
+  const missingHeaders = WORD_CLOUD_KEYWORD_REQUIRED_HEADERS.filter((header) => !normalizedHeaders.includes(header))
+
+  if (missingHeaders.length > 0) {
+    throw new AppError(
+      400,
+      'INVALID_UPLOAD_HEADERS',
+      `필수 헤더가 누락되었습니다: ${missingHeaders.join(', ')}`
+    )
+  }
+
+  const headerIndex = new Map<string, number>()
+  normalizedHeaders.forEach((header, index) => {
+    if (header) headerIndex.set(header, index)
+  })
+
+  const parsedRows: ParsedWordCloudKeywordImportRow[] = []
+
+  dataRows.forEach((row, rowIndex) => {
+    const values = Array.isArray(row) ? row.map((cell) => String(cell ?? '').trim()) : []
+    if (!values.some((value) => value !== '')) return
+
+    const read = (header: string) => values[headerIndex.get(header) ?? -1] ?? ''
+
+    parsedRows.push({
+      rowNumber: rowIndex + 2,
+      keywordCode: read('keyword_code') || undefined,
+      keyword: read('keyword'),
+      polarity: read('polarity') || undefined,
+      category: read('category') || undefined,
+      sourceType: read('source_type') || undefined,
+      active: read('active') || undefined,
+      displayOrder: read('display_order') || undefined,
+      governanceFlag: read('governance_flag') || undefined,
+      note: read('note') || undefined,
+    })
+  })
+
+  return {
+    fileName: params.fileName,
+    rows: parsedRows,
+  }
+}
+
+function summarizeWordCloudKeywordImportRows(rows: WordCloudKeywordCsvImportRowResult[]): WordCloudKeywordCsvImportSummary {
+  return rows.reduce<WordCloudKeywordCsvImportSummary>(
+    (summary, row) => {
+      summary.totalRows += 1
+      if (row.valid) {
+        summary.validRows += 1
+        if (row.action === 'create') summary.createCount += 1
+        else if (row.action === 'update') summary.updateCount += 1
+        else if (row.action === 'unchanged') summary.unchangedCount += 1
+        else if (row.action === 'deactivate') summary.deactivateCount += 1
+      } else {
+        summary.invalidRows += 1
+      }
+      return summary
+    },
+    {
+      totalRows: 0,
+      validRows: 0,
+      invalidRows: 0,
+      createCount: 0,
+      updateCount: 0,
+      unchangedCount: 0,
+      deactivateCount: 0,
+    }
+  )
+}
+
+async function validateWordCloudKeywordCsvImport(params: { actorId: string; fileName: string; buffer: Buffer }) {
+  const actor = await getWordCloudAdminActor(params.actorId)
+  const parsed = parseWordCloudKeywordCsv(params)
+  const existingKeywords = await prisma.wordCloud360Keyword.findMany({
+    where: { orgId: actor.department.orgId },
+    orderBy: [{ createdAt: 'asc' }],
+  })
+
+  const existingByCode = new Map(
+    existingKeywords
+      .filter((keyword) => normalizeKeywordCode(keyword.keywordCode))
+      .map((keyword) => [normalizeKeywordCode(keyword.keywordCode)!, keyword])
+  )
+  const existingByPair = new Map(
+    existingKeywords.map((keyword) => [
+      `${keyword.polarity}:${normalizeKeywordText(keyword.keyword).toLocaleLowerCase('ko-KR')}`,
+      keyword,
+    ])
+  )
+
+  const seenCodes = new Map<string, number>()
+  const seenPairs = new Map<string, number>()
+  const rows: WordCloudKeywordCsvImportRowResult[] = []
+  const validRows: ValidatedWordCloudKeywordImportRow[] = []
+
+  for (const row of parsed.rows) {
+    const issues: WordCloudKeywordCsvImportIssue[] = []
+    const normalizedKeyword = normalizeKeywordText(row.keyword)
+    const normalizedKeywordCode = normalizeKeywordCode(row.keywordCode)
+    const normalizedPolarity = row.polarity?.trim().toUpperCase()
+    const normalizedCategory = row.category?.trim().toUpperCase()
+    const normalizedSourceType = row.sourceType?.trim().toUpperCase()
+
+    if (!normalizedKeyword) {
+      issues.push({ field: 'keyword', message: '키워드는 비워 둘 수 없습니다.' })
+    }
+
+    if (normalizedKeywordCode && !/^[A-Z0-9_-]{2,50}$/.test(normalizedKeywordCode)) {
+      issues.push({ field: 'keyword_code', message: 'keyword_code는 영문, 숫자, -, _ 조합으로 입력하세요.' })
+    }
+
+    const polarity = normalizedPolarity as WordCloudKeywordPolarity | undefined
+    if (!normalizedPolarity || !['POSITIVE', 'NEGATIVE'].includes(normalizedPolarity)) {
+      issues.push({ field: 'polarity', message: 'polarity는 POSITIVE 또는 NEGATIVE만 사용할 수 있습니다.' })
+    }
+
+    const category = (normalizedCategory || 'OTHER') as WordCloudKeywordCategory
+    if (!['ATTITUDE', 'ABILITY', 'BOTH', 'OTHER'].includes(category)) {
+      issues.push({ field: 'category', message: 'category는 ATTITUDE, ABILITY, BOTH, OTHER 중 하나여야 합니다.' })
+    }
+
+    const sourceType = (normalizedSourceType || 'IMPORTED') as WordCloudKeywordSourceType
+    if (!['DOCUMENT_FINAL', 'EXTRA_GOVERNANCE', 'ADMIN_ADDED', 'IMPORTED'].includes(sourceType)) {
+      issues.push({
+        field: 'source_type',
+        message: 'source_type은 DOCUMENT_FINAL, EXTRA_GOVERNANCE, ADMIN_ADDED, IMPORTED 중 하나여야 합니다.',
+      })
+    }
+
+    const activeResult = parseImportBoolean(row.active, 'active')
+    if (activeResult.error) {
+      issues.push({ field: 'active', message: activeResult.error })
+    }
+
+    const governanceResult = row.governanceFlag?.trim()
+      ? parseImportBoolean(row.governanceFlag, 'governance_flag')
+      : { value: false as boolean | undefined }
+    if (governanceResult.error) {
+      issues.push({ field: 'governance_flag', message: governanceResult.error })
+    }
+
+    let displayOrder = 0
+    if (row.displayOrder?.trim()) {
+      const parsedDisplayOrder = Number(row.displayOrder.trim())
+      if (!Number.isInteger(parsedDisplayOrder) || parsedDisplayOrder < 0 || parsedDisplayOrder > 9999) {
+        issues.push({ field: 'display_order', message: 'display_order는 0 이상 9999 이하 정수만 입력할 수 있습니다.' })
+      } else {
+        displayOrder = parsedDisplayOrder
+      }
+    }
+
+    const note = row.note?.trim() || undefined
+    if (note && note.length > 500) {
+      issues.push({ field: 'note', message: 'note는 500자 이하여야 합니다.' })
+    }
+
+    if (normalizedKeywordCode) {
+      const firstRow = seenCodes.get(normalizedKeywordCode)
+      if (firstRow) {
+        issues.push({ field: 'keyword_code', message: `같은 keyword_code가 파일 ${firstRow}행과 중복되었습니다.` })
+      } else {
+        seenCodes.set(normalizedKeywordCode, row.rowNumber)
+      }
+    }
+
+    const pairKey =
+      polarity && normalizedKeyword
+        ? `${polarity}:${normalizedKeyword.toLocaleLowerCase('ko-KR')}`
+        : undefined
+    if (pairKey) {
+      const firstRow = seenPairs.get(pairKey)
+      if (firstRow) {
+        issues.push({ field: 'keyword', message: `같은 polarity/keyword 조합이 파일 ${firstRow}행과 중복되었습니다.` })
+      } else {
+        seenPairs.set(pairKey, row.rowNumber)
+      }
+    }
+
+    const existingByKeywordCode = normalizedKeywordCode ? existingByCode.get(normalizedKeywordCode) : undefined
+    const existingByKeywordPair = pairKey ? existingByPair.get(pairKey) : undefined
+    if (
+      existingByKeywordCode &&
+      existingByKeywordPair &&
+      existingByKeywordCode.id !== existingByKeywordPair.id
+    ) {
+      issues.push({
+        field: 'keyword_code',
+        message: 'keyword_code와 (polarity, keyword)가 서로 다른 기존 키워드를 가리키고 있습니다.',
+      })
+    }
+
+    const targetKeyword = existingByKeywordCode ?? existingByKeywordPair
+    if (
+      targetKeyword &&
+      normalizedKeywordCode &&
+      targetKeyword.keywordCode &&
+      normalizeKeywordCode(targetKeyword.keywordCode) !== normalizedKeywordCode
+    ) {
+      issues.push({
+        field: 'keyword_code',
+        message: '기존 키워드에 다른 keyword_code가 이미 연결되어 있습니다.',
+      })
+    }
+
+    const active = activeResult.value ?? false
+    const governanceFlag = governanceResult.value ?? false
+
+    let action: WordCloudKeywordCsvImportAction = 'create'
+    if (targetKeyword) {
+      const nextKeywordCode = normalizedKeywordCode ?? normalizeKeywordCode(targetKeyword.keywordCode)
+      const unchanged =
+        normalizeKeywordText(targetKeyword.keyword) === normalizedKeyword &&
+        targetKeyword.polarity === polarity &&
+        targetKeyword.category === category &&
+        targetKeyword.sourceType === sourceType &&
+        targetKeyword.active === active &&
+        targetKeyword.displayOrder === displayOrder &&
+        (targetKeyword.note ?? undefined) === note &&
+        targetKeyword.warningFlag === governanceFlag &&
+        normalizeKeywordCode(targetKeyword.keywordCode) === nextKeywordCode
+
+      if (unchanged) action = 'unchanged'
+      else if (targetKeyword.active && !active) action = 'deactivate'
+      else action = 'update'
+    }
+
+    const rowResult: WordCloudKeywordCsvImportRowResult = {
+      rowNumber: row.rowNumber,
+      keywordCode: normalizedKeywordCode,
+      keyword: normalizedKeyword || row.keyword.trim(),
+      polarity: normalizedPolarity,
+      category,
+      sourceType,
+      action,
+      valid: issues.length === 0,
+      issues,
+    }
+    rows.push(rowResult)
+
+    if (!issues.length && polarity) {
+      validRows.push({
+        ...row,
+        keyword: normalizedKeyword,
+        normalizedKeyword,
+        normalizedKeywordCode,
+        polarity,
+        category,
+        sourceType,
+        active,
+        displayOrder,
+        governanceFlag,
+        note,
+        action,
+        targetKeywordId: targetKeyword?.id,
+      })
+    }
+  }
+
+  return {
+    actor,
+    fileName: parsed.fileName,
+    rows,
+    validRows,
+    summary: summarizeWordCloudKeywordImportRows(rows),
+  }
+}
+
+export async function previewWordCloudKeywordCsvImport(params: {
+  actorId: string
+  fileName: string
+  buffer: Buffer
+}): Promise<WordCloudKeywordCsvImportResult> {
+  const validation = await validateWordCloudKeywordCsvImport(params)
+  return {
+    mode: 'preview',
+    fileName: validation.fileName,
+    summary: validation.summary,
+    rows: validation.rows,
+  }
+}
+
+export async function applyWordCloudKeywordCsvImport(params: {
+  actorId: string
+  fileName: string
+  buffer: Buffer
+}): Promise<WordCloudKeywordCsvImportResult> {
+  const validation = await validateWordCloudKeywordCsvImport(params)
+
+  let createdCount = 0
+  let updatedCount = 0
+  const unchangedCount = validation.summary.unchangedCount
+  let deactivatedCount = 0
+
+  if (validation.validRows.length > 0) {
+    await prisma.$transaction(async (tx) => {
+      for (const row of validation.validRows) {
+        if (row.action === 'unchanged') continue
+
+        if (row.targetKeywordId) {
+          await tx.wordCloud360Keyword.update({
+            where: { id: row.targetKeywordId },
+            data: {
+              keywordCode: row.normalizedKeywordCode ?? null,
+              keyword: row.normalizedKeyword,
+              polarity: row.polarity,
+              category: row.category,
+              sourceType: row.sourceType,
+              active: row.active,
+              displayOrder: row.displayOrder,
+              note: row.note ?? null,
+              warningFlag: row.governanceFlag,
+            },
+          })
+          if (row.action === 'deactivate') deactivatedCount += 1
+          else updatedCount += 1
+        } else {
+          await tx.wordCloud360Keyword.create({
+            data: {
+              orgId: validation.actor.department.orgId,
+              keywordCode: row.normalizedKeywordCode ?? null,
+              keyword: row.normalizedKeyword,
+              polarity: row.polarity,
+              category: row.category,
+              sourceType: row.sourceType,
+              active: row.active,
+              displayOrder: row.displayOrder,
+              note: row.note ?? null,
+              warningFlag: row.governanceFlag,
+            },
+          })
+          createdCount += 1
+        }
+      }
+    })
+  }
+
+  const uploadHistory = await prisma.uploadHistory.create({
+    data: {
+      uploadType: 'WORD_CLOUD_360_KEYWORD_CSV',
+      uploaderId: validation.actor.id,
+      fileName: validation.fileName,
+      totalRows: validation.summary.totalRows,
+      successCount: createdCount + updatedCount + unchangedCount + deactivatedCount,
+      failCount: validation.summary.invalidRows,
+      errorDetails: {
+        importMode: 'UPSERT',
+        createdCount,
+        updatedCount,
+        unchangedCount,
+        deactivatedCount,
+        rows: validation.rows.filter((row) => !row.valid).slice(0, 100),
+      },
+    },
+  })
+
+  await createAuditLog({
+    userId: validation.actor.id,
+    action: 'WORD_CLOUD_360_KEYWORD_CSV_IMPORT',
+    entityType: 'WORD_CLOUD_360_KEYWORD',
+    entityId: uploadHistory.id,
+    newValue: {
+      fileName: validation.fileName,
+      totalRows: validation.summary.totalRows,
+      createdCount,
+      updatedCount,
+      unchangedCount,
+      deactivatedCount,
+      failedCount: validation.summary.invalidRows,
+    },
+  })
+
+  return {
+    mode: 'apply',
+    fileName: validation.fileName,
+    summary: validation.summary,
+    rows: validation.rows,
+    applyResult: {
+      createdCount,
+      updatedCount,
+      unchangedCount,
+      deactivatedCount,
+      failedCount: validation.summary.invalidRows,
+      uploadHistoryId: uploadHistory.id,
+    },
+  }
 }
 
 async function loadWordCloudSection<T>(params: {
@@ -285,12 +888,14 @@ async function buildAdminView(params: {
 
       return keywords.map((keyword) => ({
         keywordId: keyword.id,
+        keywordCode: keyword.keywordCode ?? undefined,
         keyword: keyword.keyword,
         polarity: keyword.polarity,
         polarityLabel: WORD_CLOUD_POLARITY_LABELS[keyword.polarity],
         category: keyword.category,
         categoryLabel: WORD_CLOUD_CATEGORY_LABELS[keyword.category],
         sourceType: keyword.sourceType,
+        sourceTypeLabel: WORD_CLOUD_SOURCE_TYPE_LABELS[keyword.sourceType],
         active: keyword.active,
         displayOrder: keyword.displayOrder,
         warningFlag: keyword.warningFlag,
@@ -881,6 +1486,7 @@ export async function upsertWordCloud360Keyword(params: {
   actorId: string
   input: {
     keywordId?: string
+    keywordCode?: string
     keyword: string
     polarity: WordCloudKeywordPolarity
     category: WordCloudKeywordCategory
@@ -899,10 +1505,13 @@ export async function upsertWordCloud360Keyword(params: {
     throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '현재 사용자 정보를 찾을 수 없습니다.')
   }
 
+  const normalizedKeywordCode = normalizeKeywordCode(params.input.keywordCode)
+
   const keyword = params.input.keywordId
     ? await prisma.wordCloud360Keyword.update({
         where: { id: params.input.keywordId },
         data: {
+          keywordCode: normalizedKeywordCode ?? null,
           keyword: params.input.keyword,
           polarity: params.input.polarity,
           category: params.input.category,
@@ -916,6 +1525,7 @@ export async function upsertWordCloud360Keyword(params: {
     : await prisma.wordCloud360Keyword.create({
         data: {
           orgId: actor.department.orgId,
+          keywordCode: normalizedKeywordCode ?? null,
           keyword: params.input.keyword,
           polarity: params.input.polarity,
           category: params.input.category,
@@ -933,6 +1543,7 @@ export async function upsertWordCloud360Keyword(params: {
     entityType: 'WORD_CLOUD_360_KEYWORD',
     entityId: keyword.id,
     newValue: {
+      keywordCode: keyword.keywordCode,
       keyword: keyword.keyword,
       polarity: keyword.polarity,
       active: keyword.active,
@@ -954,6 +1565,7 @@ export async function seedDefaultWordCloudKeywords(params: { actorId: string }) 
   const result = await prisma.wordCloud360Keyword.createMany({
     data: DEFAULT_WORD_CLOUD_KEYWORDS.map((keyword) => ({
       orgId: actor.department.orgId,
+      keywordCode: keyword.keywordCode ?? null,
       keyword: keyword.keyword,
       polarity: keyword.polarity,
       category: keyword.category,

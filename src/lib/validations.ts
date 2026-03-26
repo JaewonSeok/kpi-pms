@@ -1097,9 +1097,14 @@ export const WordCloud360CycleStatusSchema = z.enum(['DRAFT', 'OPEN', 'CLOSED', 
 
 export const WordCloudKeywordPolaritySchema = z.enum(['POSITIVE', 'NEGATIVE'])
 
-export const WordCloudKeywordCategorySchema = z.enum(['ATTITUDE', 'ABILITY', 'OTHER'])
+export const WordCloudKeywordCategorySchema = z.enum(['ATTITUDE', 'ABILITY', 'BOTH', 'OTHER'])
 
-export const WordCloudKeywordSourceTypeSchema = z.enum(['KDN', 'MBTI', 'ENNEAGRAM', 'EXTRA'])
+export const WordCloudKeywordSourceTypeSchema = z.enum([
+  'DOCUMENT_FINAL',
+  'EXTRA_GOVERNANCE',
+  'ADMIN_ADDED',
+  'IMPORTED',
+])
 
 export const WordCloudEvaluatorGroupSchema = z.enum(['MANAGER', 'PEER', 'SUBORDINATE', 'SELF'])
 
@@ -1129,15 +1134,18 @@ export const WordCloud360CycleSchema = z
 
 export const WordCloud360KeywordSchema = z.object({
   keywordId: z.string().min(1).optional(),
+  keywordCode: EmptyStringToUndefined(z.string().trim().regex(/^[A-Z0-9_-]{2,50}$/i, '키워드 코드는 영문, 숫자, -, _ 조합으로 입력하세요.')),
   keyword: z.string().trim().min(1).max(50),
   polarity: WordCloudKeywordPolaritySchema,
   category: WordCloudKeywordCategorySchema,
-  sourceType: WordCloudKeywordSourceTypeSchema.default('EXTRA'),
+  sourceType: WordCloudKeywordSourceTypeSchema.default('ADMIN_ADDED'),
   active: z.boolean().default(true),
   displayOrder: z.number().int().min(0).max(999).default(0),
   note: EmptyStringToUndefined(z.string().max(500)),
   warningFlag: z.boolean().default(false),
 })
+
+export const WordCloud360KeywordImportModeSchema = z.enum(['preview', 'apply'])
 
 export const WordCloud360AssignmentItemSchema = z
   .object({

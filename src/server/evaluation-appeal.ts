@@ -12,6 +12,11 @@ export type AppealCaseStatus =
 
 export type AppealPageState = 'ready' | 'empty' | 'hidden' | 'permission-denied' | 'error'
 
+export type AppealPageAlert = {
+  title: string
+  description: string
+}
+
 export type AppealViewModel = {
   actorMode: 'applicant' | 'admin'
   cycle: {
@@ -106,6 +111,7 @@ export type AppealPageData = {
   selectedCaseId?: string
   viewModel?: AppealViewModel
   message?: string
+  alerts?: AppealPageAlert[]
 }
 
 type AppealAuditPayload = {
@@ -133,6 +139,25 @@ type AppealAuditPayload = {
   afterGrade?: string
 }
 
+async function loadAppealSection<T>(params: {
+  alerts: AppealPageAlert[]
+  title: string
+  description: string
+  fallback: T
+  loader: () => Promise<T>
+}) {
+  try {
+    return await params.loader()
+  } catch (error) {
+    console.error(`[evaluation-appeal] ${params.title}`, error)
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+    })
+    return params.fallback
+  }
+}
+
 export async function getEvaluationAppealPageData(params: {
   userId: string
   role: SystemRole
@@ -141,6 +166,7 @@ export async function getEvaluationAppealPageData(params: {
   caseId?: string
 }): Promise<AppealPageData> {
   try {
+    const alerts: AppealPageAlert[] = []
     const employee = await prisma.employee.findUnique({
       where: { id: params.userId },
       include: {
@@ -157,6 +183,7 @@ export async function getEvaluationAppealPageData(params: {
         state: 'permission-denied',
         availableCycles: [],
         message: '이의 신청 화면을 확인할 수 있는 직원 정보를 찾지 못했습니다.',
+        alerts,
       }
     }
 
@@ -179,6 +206,7 @@ export async function getEvaluationAppealPageData(params: {
         state: 'empty',
         availableCycles,
         message: '아직 평가 주기가 생성되지 않았습니다.',
+        alerts,
       }
     }
 
@@ -191,6 +219,7 @@ export async function getEvaluationAppealPageData(params: {
 
     if (actorMode === 'admin') {
       return buildAdminAppealPage({
+        alerts,
         employeeId: params.userId,
         selectedCycle,
         availableCycles,
@@ -199,6 +228,7 @@ export async function getEvaluationAppealPageData(params: {
     }
 
     return buildApplicantAppealPage({
+      alerts,
       employeeId: params.userId,
       selectedCycle,
       availableCycles,
@@ -210,6 +240,7 @@ export async function getEvaluationAppealPageData(params: {
       state: 'error',
       availableCycles: [],
       message: '이의 신청 화면을 불러오는 중 오류가 발생했습니다.',
+      alerts: [],
     }
   }
 }
@@ -254,6 +285,7 @@ type AppealAuditLogRecord = {
 }
 
 async function buildApplicantAppealPage(params: {
+  alerts: AppealPageAlert[]
   employeeId: string
   selectedCycle: {
     id: string
@@ -308,6 +340,7 @@ async function buildApplicantAppealPage(params: {
       state: isAppealOpen(params.selectedCycle) ? 'empty' : 'hidden',
       availableCycles: params.availableCycles,
       selectedCycleId: params.selectedCycle.id,
+      alerts: params.alerts,
       message: isAppealOpen(params.selectedCycle)
         ? '연결된 평가 결과가 없어 이의 신청을 만들 수 없습니다.'
         : '현재 주기는 아직 이의 신청 기간이 아닙니다.',
@@ -319,32 +352,51 @@ async function buildApplicantAppealPage(params: {
     evaluation.appeals[0] ??
     null
 
-  const gradeSettings = await prisma.gradeSetting.findMany({
-    where: {
-      orgId: params.selectedCycle.orgId,
-      evalYear: params.selectedCycle.evalYear,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      gradeName: true,
-      minScore: true,
-      maxScore: true,
-    },
-    orderBy: {
-      gradeOrder: 'asc',
-    },
+  const gradeSettings = await loadAppealSection({
+    alerts: params.alerts,
+    title: '등급 기준을 불러오지 못했습니다.',
+    description: '등급 표시는 최종 점수 기준으로만 안내합니다.',
+    fallback: [] as Array<{
+      id: string
+      gradeName: string
+      minScore: number
+      maxScore: number
+    }>,
+    loader: () =>
+      prisma.gradeSetting.findMany({
+        where: {
+          orgId: params.selectedCycle.orgId,
+          evalYear: params.selectedCycle.evalYear,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          gradeName: true,
+          minScore: true,
+          maxScore: true,
+        },
+        orderBy: {
+          gradeOrder: 'asc',
+        },
+      }),
   })
 
   const auditLogs = selectedAppeal
-    ? await prisma.auditLog.findMany({
-        where: {
-          entityType: 'Appeal',
-          entityId: selectedAppeal.id,
-        },
-        orderBy: {
-          timestamp: 'asc',
-        },
+    ? await loadAppealSection({
+        alerts: params.alerts,
+        title: '이의 신청 처리 이력을 불러오지 못했습니다.',
+        description: '처리 타임라인은 축약해 표시합니다.',
+        fallback: [] as AppealAuditLogRecord[],
+        loader: () =>
+          prisma.auditLog.findMany({
+            where: {
+              entityType: 'Appeal',
+              entityId: selectedAppeal.id,
+            },
+            orderBy: {
+              timestamp: 'asc',
+            },
+          }) as Promise<AppealAuditLogRecord[]>,
       })
     : []
 
@@ -370,10 +422,12 @@ async function buildApplicantAppealPage(params: {
     selectedCycleId: params.selectedCycle.id,
     selectedCaseId: selectedAppeal?.id,
     viewModel,
+    alerts: params.alerts,
   }
 }
 
 async function buildAdminAppealPage(params: {
+  alerts: AppealPageAlert[]
   employeeId: string
   selectedCycle: {
     id: string
@@ -444,39 +498,59 @@ async function buildAdminAppealPage(params: {
       state: isAppealOpen(params.selectedCycle) ? 'empty' : 'hidden',
       availableCycles: params.availableCycles,
       selectedCycleId: params.selectedCycle.id,
+      alerts: params.alerts,
       message: isAppealOpen(params.selectedCycle)
         ? '현재 주기에는 검토할 이의 신청 케이스가 없습니다.'
         : '이의 신청 운영 기간이 아니어서 검토할 케이스가 없습니다.',
     }
   }
 
-  const gradeSettings = await prisma.gradeSetting.findMany({
-    where: {
-      orgId: params.selectedCycle.orgId,
-      evalYear: params.selectedCycle.evalYear,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      gradeName: true,
-      minScore: true,
-      maxScore: true,
-    },
-    orderBy: {
-      gradeOrder: 'asc',
-    },
+  const gradeSettings = await loadAppealSection({
+    alerts: params.alerts,
+    title: '운영용 등급 기준을 불러오지 못했습니다.',
+    description: '점수/등급 비교는 기본 값으로 표시합니다.',
+    fallback: [] as Array<{
+      id: string
+      gradeName: string
+      minScore: number
+      maxScore: number
+    }>,
+    loader: () =>
+      prisma.gradeSetting.findMany({
+        where: {
+          orgId: params.selectedCycle.orgId,
+          evalYear: params.selectedCycle.evalYear,
+          isActive: true,
+        },
+        select: {
+          id: true,
+          gradeName: true,
+          minScore: true,
+          maxScore: true,
+        },
+        orderBy: {
+          gradeOrder: 'asc',
+        },
+      }),
   })
 
-  const allAuditLogs = await prisma.auditLog.findMany({
-    where: {
-      entityType: 'Appeal',
-      entityId: {
-        in: appeals.map((appeal) => appeal.id),
-      },
-    },
-    orderBy: {
-      timestamp: 'asc',
-    },
+  const allAuditLogs = await loadAppealSection({
+    alerts: params.alerts,
+    title: '운영 처리 이력을 불러오지 못했습니다.',
+    description: '처리 이력과 SLA 계산은 일부 생략될 수 있습니다.',
+    fallback: [] as AppealAuditLogRecord[],
+    loader: () =>
+      prisma.auditLog.findMany({
+        where: {
+          entityType: 'Appeal',
+          entityId: {
+            in: appeals.map((appeal) => appeal.id),
+          },
+        },
+        orderBy: {
+          timestamp: 'asc',
+        },
+      }) as Promise<AppealAuditLogRecord[]>,
   })
 
   const selectedAuditLogs = allAuditLogs.filter((log) => log.entityId === selectedAppeal.id)
@@ -520,6 +594,7 @@ async function buildAdminAppealPage(params: {
     selectedCycleId: params.selectedCycle.id,
     selectedCaseId: selectedAppeal.id,
     viewModel,
+    alerts: params.alerts,
   }
 }
 

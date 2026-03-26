@@ -76,6 +76,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
   }, [viewModel])
 
   const selectedDetail = detailItems.find((item) => item.id === selectedDetailId) ?? detailItems[0] ?? null
+  const loadAlerts = props.alerts?.length ? <LoadAlerts alerts={props.alerts} /> : null
 
   useEffect(() => {
     setAcknowledged(props.viewModel?.summary.acknowledged ?? false)
@@ -175,6 +176,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
           onScopeChange={handleScopeChange}
           onCycleChange={handleCycleChange}
         />
+        {loadAlerts}
         <StatePanel state={props.state} message={props.message} />
         <RelatedActionLinks />
       </div>
@@ -197,6 +199,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
         onDownloadPdf={handleDownloadPdf}
         downloadPending={busyAction === 'download'}
       />
+      {loadAlerts}
       {localNotice ? <Banner tone={localNotice.tone} message={localNotice.message} /> : null}
       <EvaluationResultsSummaryCards
         viewModel={viewModel}
@@ -404,6 +407,26 @@ function Banner({ tone, message }: { tone: 'success' | 'error' | 'info'; message
         : 'border-blue-200 bg-blue-50 text-blue-800'
 
   return <div className={`rounded-2xl border px-4 py-3 text-sm ${toneClass}`}>{message}</div>
+}
+
+function LoadAlerts(props: {
+  alerts: Array<{
+    title: string
+    description: string
+  }>
+}) {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <p className="font-semibold">일부 평가 근거를 불러오지 못해 기본 결과 화면으로 표시 중입니다.</p>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800">
+        {props.alerts.map((alert) => (
+          <li key={`${alert.title}:${alert.description}`}>
+            {alert.title} {alert.description}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 function SelectorCard({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {

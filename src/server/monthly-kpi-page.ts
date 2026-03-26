@@ -16,6 +16,11 @@ import {
 export type MonthlyPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 export type MonthlyPageScope = 'self' | 'team' | 'employee'
 
+export type MonthlyPageAlert = {
+  title: string
+  description: string
+}
+
 export type MonthlyAttachmentViewModel = {
   id: string
   name: string
@@ -135,6 +140,7 @@ export type MonthlyScopeOption = {
 export type MonthlyPageData = {
   state: MonthlyPageState
   message?: string
+  alerts?: MonthlyPageAlert[]
   selectedYear: number
   selectedMonth: string
   selectedScope: MonthlyPageScope
@@ -206,14 +212,49 @@ type AuditLogLite = {
   userId: string
 }
 
+type MonthlyAiLogRecord = Prisma.AiRequestLogGetPayload<{
+  include: {
+    requester: {
+      select: {
+        empName: true
+      }
+    }
+  }
+}>
+
+function normalizeScopeDepartmentIds(accessibleDepartmentIds?: string[] | null) {
+  if (!Array.isArray(accessibleDepartmentIds)) return []
+  return accessibleDepartmentIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+}
+
+async function loadMonthlySection<T>(params: {
+  alerts: MonthlyPageAlert[]
+  title: string
+  description: string
+  fallback: T
+  loader: () => Promise<T>
+}) {
+  try {
+    return await params.loader()
+  } catch (error) {
+    console.error(`[monthly-kpi] ${params.title}`, error)
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+    })
+    return params.fallback
+  }
+}
+
 function getScopeDepartmentIds(params: {
   role: SystemRole
   deptId: string
-  accessibleDepartmentIds: string[]
+  accessibleDepartmentIds?: string[] | null
 }) {
   if (params.role === 'ROLE_ADMIN' || params.role === 'ROLE_CEO') return null
   if (params.role === 'ROLE_MEMBER') return [params.deptId]
-  return params.accessibleDepartmentIds.length ? params.accessibleDepartmentIds : [params.deptId]
+  const normalizedIds = normalizeScopeDepartmentIds(params.accessibleDepartmentIds)
+  return normalizedIds.length ? normalizedIds : [params.deptId]
 }
 
 function asRecord(value: unknown) {
@@ -362,6 +403,7 @@ function buildAiLogSummary(payload: Prisma.JsonValue | null) {
 
 export async function getMonthlyKpiPageData(params: PageParams): Promise<MonthlyPageData> {
   try {
+    const alerts: MonthlyPageAlert[] = []
     const selectedYear = params.year ?? new Date().getFullYear()
     const selectedMonth = /^\d{4}-\d{2}$/.test(params.month ?? '')
       ? (params.month as string)
@@ -378,6 +420,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       return {
         state: 'permission-denied',
         message: '월간 실적 화면을 사용할 수 있는 직원 정보를 찾지 못했습니다.',
+        alerts,
         selectedYear,
         selectedMonth,
         selectedScope: 'self',
@@ -459,6 +502,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       return {
         state: 'permission-denied',
         message: '조회 가능한 대상자를 찾지 못했습니다.',
+        alerts,
         selectedYear,
         selectedMonth,
         selectedScope: 'self',
@@ -535,6 +579,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       return {
         state: 'empty',
         message: '아직 등록된 개인 KPI가 없습니다. 먼저 개인 KPI를 작성한 뒤 월간 실적을 입력해 주세요.',
+        alerts,
         selectedYear,
         selectedMonth,
         selectedScope,
@@ -580,13 +625,20 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
 
     const recordIds = personalKpis.flatMap((kpi) => kpi.monthlyRecords.map((record) => record.id))
     const monthlyLogs = recordIds.length
-      ? await prisma.auditLog.findMany({
-          where: {
-            entityType: 'MonthlyRecord',
-            entityId: { in: recordIds },
-          },
-          orderBy: { timestamp: 'desc' },
-          take: Math.max(120, recordIds.length * 8),
+      ? await loadMonthlySection({
+          alerts,
+          title: '월간 실적 변경 이력을 불러오지 못했습니다.',
+          description: '이력과 리뷰 코멘트는 기본 상태로 표시합니다.',
+          fallback: [] as AuditLogLite[],
+          loader: () =>
+            prisma.auditLog.findMany({
+              where: {
+                entityType: 'MonthlyRecord',
+                entityId: { in: recordIds },
+              },
+              orderBy: { timestamp: 'desc' },
+              take: Math.max(120, recordIds.length * 8),
+            }) as Promise<AuditLogLite[]>,
         })
       : []
 
@@ -598,41 +650,55 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       logsByRecordId.set(log.entityId, bucket)
     })
 
-    const checkins = await prisma.checkIn.findMany({
-      where: {
-        ownerId: targetEmployee.id,
-      },
-      orderBy: [{ scheduledDate: 'desc' }],
-      take: 8,
+    const checkins = await loadMonthlySection({
+      alerts,
+      title: '최근 체크인 기록을 불러오지 못했습니다.',
+      description: '체크인 연계 정보는 비어 있는 상태로 표시합니다.',
+      fallback: [] as Awaited<ReturnType<typeof prisma.checkIn.findMany>>,
+      loader: () =>
+        prisma.checkIn.findMany({
+          where: {
+            ownerId: targetEmployee.id,
+          },
+          orderBy: [{ scheduledDate: 'desc' }],
+          take: 8,
+        }),
     })
 
-    const aiLogs = await prisma.aiRequestLog.findMany({
-      where: {
-        sourceType: {
-          in: [
-            'MonthlyPerformanceSummary',
-            'MonthlyRiskExplanation',
-            'MonthlyManagerReview',
-            'MonthlyEvidenceSummary',
-            'MonthlyRetrospective',
-            'MonthlyCheckinAgenda',
-            'MonthlyEvaluationEvidence',
-          ],
-        },
-        OR: [
-          { requesterId: params.session.user.id },
-          { sourceId: { in: recordIds } },
-        ],
-      },
-      include: {
-        requester: {
-          select: {
-            empName: true,
+    const aiLogs: MonthlyAiLogRecord[] = await loadMonthlySection({
+      alerts,
+      title: '월간 실적 AI 요청 이력을 불러오지 못했습니다.',
+      description: 'AI 보조 이력은 비어 있는 상태로 표시합니다.',
+      fallback: [] as MonthlyAiLogRecord[],
+      loader: () =>
+        prisma.aiRequestLog.findMany({
+          where: {
+            sourceType: {
+              in: [
+                'MonthlyPerformanceSummary',
+                'MonthlyRiskExplanation',
+                'MonthlyManagerReview',
+                'MonthlyEvidenceSummary',
+                'MonthlyRetrospective',
+                'MonthlyCheckinAgenda',
+                'MonthlyEvaluationEvidence',
+              ],
+            },
+            OR: [
+              { requesterId: params.session.user.id },
+              { sourceId: { in: recordIds } },
+            ],
           },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
+          include: {
+            requester: {
+              select: {
+                empName: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        }),
     })
 
     const selectedMonthRecords = personalKpis.map((kpi) => {
@@ -781,6 +847,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
 
     return {
       state: 'ready',
+      alerts,
       selectedYear,
       selectedMonth,
       selectedScope,
@@ -830,6 +897,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
     return {
       state: 'error',
       message: '월간 실적 데이터를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+      alerts: [],
       selectedYear: params.year ?? new Date().getFullYear(),
       selectedMonth:
         params.month && /^\d{4}-\d{2}$/.test(params.month)

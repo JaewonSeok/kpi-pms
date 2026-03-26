@@ -654,6 +654,7 @@ export function PersonalKpiManagementClient(props: Props) {
         onSubmit={handleSubmitSelected}
       />
 
+      {props.alerts?.length ? <LoadAlerts alerts={props.alerts} /> : null}
       {banner ? <BannerMessage tone={banner.tone} message={banner.message} /> : null}
 
       {props.state === 'ready' ? (
@@ -1628,6 +1629,26 @@ function BannerMessage(props: Banner) {
         : 'border-sky-200 bg-sky-50 text-sky-700'
 
   return <div className={`rounded-2xl border px-4 py-3 text-sm ${toneClass}`}>{props.message}</div>
+}
+
+function LoadAlerts(props: {
+  alerts: Array<{
+    title: string
+    description: string
+  }>
+}) {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <p className="font-semibold">일부 운영 정보를 불러오지 못해 기본 화면으로 표시 중입니다.</p>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800">
+        {props.alerts.map((alert) => (
+          <li key={`${alert.title}:${alert.description}`}>
+            {alert.title} {alert.description}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 function ActionButton(props: {

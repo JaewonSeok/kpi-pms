@@ -21,6 +21,11 @@ import {
 
 export type PersonalKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
+export type PersonalKpiPageAlert = {
+  title: string
+  description: string
+}
+
 export type PersonalKpiScopeOption = {
   id: string
   name: string
@@ -121,6 +126,7 @@ export type OrgKpiOption = {
 export type PersonalKpiPageData = {
   state: PersonalKpiPageState
   message?: string
+  alerts?: PersonalKpiPageAlert[]
   selectedYear: number
   availableYears: number[]
   selectedEmployeeId: string
@@ -180,6 +186,39 @@ type PersonalKpiWithRelations = Prisma.PersonalKpiGetPayload<{
   }
 }>
 
+type ReviewQueueKpi = Prisma.PersonalKpiGetPayload<{
+  include: {
+    employee: {
+      include: {
+        department: true
+      }
+    }
+    linkedOrgKpi: true
+    monthlyRecords: {
+      orderBy: {
+        yearMonth: 'desc'
+      }
+      take: 1
+    }
+  }
+}>
+
+type OrgKpiRecord = Prisma.OrgKpiGetPayload<{
+  include: {
+    department: true
+  }
+}>
+
+type PersonalAiLogRecord = Prisma.AiRequestLogGetPayload<{
+  include: {
+    requester: {
+      select: {
+        empName: true
+      }
+    }
+  }
+}>
+
 type EmployeeLite = Prisma.EmployeeGetPayload<{
   include: {
     department: true
@@ -194,6 +233,25 @@ type AuditLogLite = {
   newValue: Prisma.JsonValue | null
   timestamp: Date
   userId: string
+}
+
+async function loadPersonalKpiSection<T>(params: {
+  alerts: PersonalKpiPageAlert[]
+  title: string
+  description: string
+  fallback: T
+  loader: () => Promise<T>
+}) {
+  try {
+    return await params.loader()
+  } catch (error) {
+    console.error(`[personal-kpi] ${params.title}`, error)
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+    })
+    return params.fallback
+  }
 }
 
 type PageParams = {
@@ -309,6 +367,7 @@ function deriveOverallStatus(items: PersonalKpiViewModel[]): PersonalKpiPageData
 
 export async function getPersonalKpiPageData(params: PageParams): Promise<PersonalKpiPageData> {
   try {
+    const alerts: PersonalKpiPageAlert[] = []
     const scopeDepartmentIds = getPersonalKpiScopeDepartmentIds({
       role: params.session.user.role,
       deptId: params.session.user.deptId,
@@ -348,6 +407,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       return {
         state: 'permission-denied',
         message: '조회 가능한 직원 범위를 찾을 수 없습니다.',
+        alerts,
         selectedYear: params.year ?? new Date().getFullYear(),
         availableYears: [params.year ?? new Date().getFullYear()],
         selectedEmployeeId: params.session.user.id,
@@ -380,39 +440,59 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
 
     const selectedYear = params.year ?? new Date().getFullYear()
 
-    const selectedDepartment = await prisma.department.findUnique({
-      where: { id: targetEmployee.deptId },
-      include: {
-        organization: true,
-      },
-    })
+    const cycleOptions = await loadPersonalKpiSection({
+      alerts,
+      title: '평가 주기 옵션을 불러오지 못했습니다.',
+      description: '주기 선택은 비어 있는 상태로 표시합니다.',
+      fallback: [] as Array<{
+        id: string
+        cycleName: string
+        evalYear: number
+        status: string
+      }>,
+      loader: async () => {
+        const selectedDepartment = await prisma.department.findUnique({
+          where: { id: targetEmployee.deptId },
+          include: {
+            organization: true,
+          },
+        })
 
-    const cycleOptions = selectedDepartment
-      ? await prisma.evalCycle.findMany({
+        if (!selectedDepartment) return []
+
+        return prisma.evalCycle.findMany({
           where: {
             orgId: selectedDepartment.organization.id,
             evalYear: selectedYear,
           },
           orderBy: [{ evalYear: 'desc' }, { createdAt: 'desc' }],
         })
-      : []
+      },
+    })
 
     const selectedCycleId =
       params.cycleId && cycleOptions.some((cycle) => cycle.id === params.cycleId)
         ? params.cycleId
         : cycleOptions[0]?.id
 
-    const availableYearsRaw = await prisma.personalKpi.findMany({
-      where: {
-        employeeId: targetEmployee.id,
-      },
-      select: {
-        evalYear: true,
-      },
-      distinct: ['evalYear'],
-      orderBy: {
-        evalYear: 'desc',
-      },
+    const availableYearsRaw = await loadPersonalKpiSection({
+      alerts,
+      title: '개인 KPI 연도 옵션을 불러오지 못했습니다.',
+      description: '연도 선택은 현재 연도 기준으로 표시합니다.',
+      fallback: [] as Array<{ evalYear: number }>,
+      loader: () =>
+        prisma.personalKpi.findMany({
+          where: {
+            employeeId: targetEmployee.id,
+          },
+          select: {
+            evalYear: true,
+          },
+          distinct: ['evalYear'],
+          orderBy: {
+            evalYear: 'desc',
+          },
+        }),
     })
 
     const availableYears = Array.from(
@@ -445,49 +525,64 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       orderBy: [{ createdAt: 'asc' }],
     })
 
-    const reviewQueueCandidates = params.session.user.role === 'ROLE_MEMBER'
-      ? []
-      : await prisma.personalKpi.findMany({
-          where: {
-            evalYear: selectedYear,
-            employee: scopeDepartmentIds
-              ? {
-                  deptId: { in: scopeDepartmentIds },
-                }
-              : undefined,
-            NOT: {
-              employeeId: params.session.user.id,
-            },
-          },
-          include: {
-            employee: {
-              include: {
-                department: true,
-              },
-            },
-            linkedOrgKpi: true,
-            monthlyRecords: {
-              orderBy: {
-                yearMonth: 'desc',
-              },
-              take: 1,
-            },
-          },
-          orderBy: [{ updatedAt: 'desc' }],
-        })
+    const reviewQueueCandidates: ReviewQueueKpi[] =
+      params.session.user.role === 'ROLE_MEMBER'
+        ? []
+        : await loadPersonalKpiSection({
+            alerts,
+            title: '검토 대기 KPI 목록을 불러오지 못했습니다.',
+            description: '검토 대기 탭은 빈 상태로 표시합니다.',
+            fallback: [] as ReviewQueueKpi[],
+            loader: () =>
+              prisma.personalKpi.findMany({
+                where: {
+                  evalYear: selectedYear,
+                  employee: scopeDepartmentIds
+                    ? {
+                        deptId: { in: scopeDepartmentIds },
+                      }
+                    : undefined,
+                  NOT: {
+                    employeeId: params.session.user.id,
+                  },
+                },
+                include: {
+                  employee: {
+                    include: {
+                      department: true,
+                    },
+                  },
+                  linkedOrgKpi: true,
+                  monthlyRecords: {
+                    orderBy: {
+                      yearMonth: 'desc',
+                    },
+                    take: 1,
+                  },
+                },
+                orderBy: [{ updatedAt: 'desc' }],
+              }),
+          })
 
     const allKpiIds = [...mine.map((item) => item.id), ...reviewQueueCandidates.map((item) => item.id)]
 
     const auditLogs = allKpiIds.length
-      ? await prisma.auditLog.findMany({
-          where: {
-            entityType: 'PersonalKpi',
-            entityId: { in: allKpiIds },
-          },
-          orderBy: {
-            timestamp: 'desc',
-          },
-          take: Math.max(120, allKpiIds.length * 8),
+      ? await loadPersonalKpiSection({
+          alerts,
+          title: 'KPI 변경 이력을 불러오지 못했습니다.',
+          description: '이력 탭은 빈 상태로 표시합니다.',
+          fallback: [] as AuditLogLite[],
+          loader: () =>
+            prisma.auditLog.findMany({
+              where: {
+                entityType: 'PersonalKpi',
+                entityId: { in: allKpiIds },
+              },
+              orderBy: {
+                timestamp: 'desc',
+              },
+              take: Math.max(120, allKpiIds.length * 8),
+            }) as Promise<AuditLogLite[]>,
         })
       : []
 
@@ -506,70 +601,91 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       ])
     )
 
-    const orgKpiOptions = await prisma.orgKpi.findMany({
-      where: {
-        evalYear: selectedYear,
-        deptId: {
-          in: scopeDepartmentIds ?? linkedOrgKpiDeptIds,
-        },
-        status: {
-          not: 'ARCHIVED',
-        },
-      },
-      include: {
-        department: true,
-      },
-      orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
+    const orgKpiOptions: OrgKpiRecord[] = await loadPersonalKpiSection({
+      alerts,
+      title: '조직 KPI 옵션을 불러오지 못했습니다.',
+      description: '상위 목표 연결 목록은 빈 상태로 표시합니다.',
+      fallback: [] as OrgKpiRecord[],
+      loader: () =>
+        prisma.orgKpi.findMany({
+          where: {
+            evalYear: selectedYear,
+            deptId: {
+              in: scopeDepartmentIds ?? linkedOrgKpiDeptIds,
+            },
+            status: {
+              not: 'ARCHIVED',
+            },
+          },
+          include: {
+            department: true,
+          },
+          orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
+        }),
     })
 
-    const aiLogs = await prisma.aiRequestLog.findMany({
-      where: {
-        sourceType: {
-          in: [
-            'PersonalKpiDraft',
-            'PersonalKpiWording',
-            'PersonalKpiSmart',
-            'PersonalKpiWeight',
-            'PersonalKpiAlignment',
-            'PersonalKpiDuplicate',
-            'PersonalKpiReviewerRisk',
-            'PersonalKpiMonthlyComment',
-          ],
-        },
-        OR: [
-          { requesterId: params.session.user.id },
-          { sourceId: { in: mine.map((item) => item.id) } },
-        ],
-      },
-      include: {
-        requester: {
-          select: {
-            empName: true,
+    const aiLogs: PersonalAiLogRecord[] = await loadPersonalKpiSection({
+      alerts,
+      title: '개인 KPI AI 요청 이력을 불러오지 못했습니다.',
+      description: 'AI 탭 이력은 빈 상태로 표시합니다.',
+      fallback: [] as PersonalAiLogRecord[],
+      loader: () =>
+        prisma.aiRequestLog.findMany({
+          where: {
+            sourceType: {
+              in: [
+                'PersonalKpiDraft',
+                'PersonalKpiWording',
+                'PersonalKpiSmart',
+                'PersonalKpiWeight',
+                'PersonalKpiAlignment',
+                'PersonalKpiDuplicate',
+                'PersonalKpiReviewerRisk',
+                'PersonalKpiMonthlyComment',
+              ],
+            },
+            OR: [
+              { requesterId: params.session.user.id },
+              { sourceId: { in: mine.map((item) => item.id) } },
+            ],
           },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 20,
+          include: {
+            requester: {
+              select: {
+                empName: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 20,
+        }),
     })
 
-    const feedbacks = await prisma.multiFeedback.findMany({
-      where: {
-        receiverId: targetEmployee.id,
-        status: 'SUBMITTED',
-      },
-      include: {
-        giver: {
-          select: {
-            empName: true,
+    const feedbacks = await loadPersonalKpiSection({
+      alerts,
+      title: '다면 피드백 요약을 불러오지 못했습니다.',
+      description: 'AI 요약에 사용할 참고 피드백은 제외하고 표시합니다.',
+      fallback: [] as Awaited<ReturnType<typeof prisma.multiFeedback.findMany>>,
+      loader: () =>
+        prisma.multiFeedback.findMany({
+          where: {
+            receiverId: targetEmployee.id,
+            status: 'SUBMITTED',
           },
-        },
-      },
-      orderBy: {
-        submittedAt: 'desc',
-      },
-      take: 10,
+          include: {
+            giver: {
+              select: {
+                empName: true,
+              },
+            },
+          },
+          orderBy: {
+            submittedAt: 'desc',
+          },
+          take: 10,
+        }),
     })
 
     const feedbackSummary = feedbacks
@@ -678,6 +794,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         !mappedMine.length && !mappedReviewQueue.length
           ? '아직 개인 KPI가 없습니다. 올해 목표를 작성하고 상사 검토를 요청해보세요.'
           : undefined,
+      alerts,
       selectedYear,
       availableYears,
       selectedEmployeeId: targetEmployee.id,
@@ -755,6 +872,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     return {
       state: 'error',
       message: '개인 KPI 데이터를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
+      alerts: [],
       selectedYear: params.year ?? new Date().getFullYear(),
       availableYears: [params.year ?? new Date().getFullYear()],
       selectedEmployeeId: params.employeeId ?? params.session.user.id,

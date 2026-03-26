@@ -546,6 +546,9 @@ export async function getCompensationManagePageData(params: {
         ? loadAiCompetencySyncedResults({
             evalCycleIds: [selectedScenario.evalCycleId],
             employeeIds: scenarioEmployeeIds,
+          }).catch((error) => {
+            console.error('[compensation-manage] AI competency sync fallback', error)
+            return new Map()
           })
         : Promise.resolve(new Map()),
     ])

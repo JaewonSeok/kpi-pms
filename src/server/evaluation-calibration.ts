@@ -426,6 +426,9 @@ export async function getEvaluationCalibrationPageData(params: {
     const aiCompetencyResults = await loadAiCompetencySyncedResults({
       evalCycleIds: [selectedCycle.id],
       employeeIds: filteredGroups.map((group) => group.target.id),
+    }).catch((error) => {
+      console.error('[evaluation-calibration] AI competency sync fallback', error)
+      return new Map()
     })
 
     const checkInMap = buildCheckInMap(checkIns)

@@ -625,14 +625,15 @@ enum WordCloudKeywordPolarity {
 enum WordCloudKeywordCategory {
   ATTITUDE
   ABILITY
+  BOTH
   OTHER
 }
 
 enum WordCloudKeywordSourceType {
-  KDN
-  MBTI
-  ENNEAGRAM
-  EXTRA
+  DOCUMENT_FINAL
+  EXTRA_GOVERNANCE
+  ADMIN_ADDED
+  IMPORTED
 }
 
 enum WordCloudEvaluatorGroup {
@@ -686,6 +687,7 @@ model WordCloud360Keyword {
   id           String                    @id @default(cuid())
   orgId        String
   organization Organization              @relation(fields: [orgId], references: [id])
+  keywordCode  String?
   keyword      String
   polarity     WordCloudKeywordPolarity
   category     WordCloudKeywordCategory
@@ -699,7 +701,9 @@ model WordCloud360Keyword {
 
   items WordCloud360ResponseItem[]
 
+  @@unique([orgId, keywordCode])
   @@unique([orgId, keyword, polarity])
+  @@index([orgId, keywordCode])
   @@index([orgId, polarity, active, displayOrder])
   @@map("word_cloud_360_keywords")
 }

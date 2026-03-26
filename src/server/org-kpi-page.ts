@@ -122,6 +122,10 @@ export type OrgKpiTreeNode = {
 export type OrgKpiPageData = {
   state: OrgKpiPageState
   message?: string
+  alerts?: Array<{
+    title: string
+    description: string
+  }>
   selectedYear: number
   availableYears: number[]
   selectedDepartmentId: string
@@ -216,10 +220,17 @@ type EmployeeLite = Prisma.EmployeeGetPayload<{
   }
 }>
 
+type OrgKpiPageAlert = NonNullable<OrgKpiPageData['alerts']>[number]
+
+function normalizeScopeDepartmentIds(accessibleDepartmentIds?: string[] | null) {
+  if (!Array.isArray(accessibleDepartmentIds)) return []
+  return accessibleDepartmentIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+}
+
 function getEffectiveScopeDepartmentIds(params: {
   role: SystemRole
   deptId: string
-  accessibleDepartmentIds: string[]
+  accessibleDepartmentIds?: string[] | null
 }) {
   if (params.role === 'ROLE_ADMIN' || params.role === 'ROLE_CEO') {
     return null
@@ -229,7 +240,27 @@ function getEffectiveScopeDepartmentIds(params: {
     return [params.deptId]
   }
 
-  return params.accessibleDepartmentIds.length ? params.accessibleDepartmentIds : [params.deptId]
+  const normalizedIds = normalizeScopeDepartmentIds(params.accessibleDepartmentIds)
+  return normalizedIds.length ? normalizedIds : [params.deptId]
+}
+
+async function loadOrgKpiSection<T>(params: {
+  title: string
+  description: string
+  alerts: OrgKpiPageAlert[]
+  loader: () => Promise<T>
+  fallback: T
+}) {
+  try {
+    return await params.loader()
+  } catch (error) {
+    console.error(`[org-kpi-page] ${params.title}`, error)
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+    })
+    return params.fallback
+  }
 }
 
 function buildDepartmentLevelMap(departments: DepartmentLite[]) {
@@ -482,12 +513,13 @@ export async function getOrgKpiPageData(params: {
   role: SystemRole
   deptId: string
   deptName: string
-  accessibleDepartmentIds: string[]
+  accessibleDepartmentIds?: string[] | null
   year?: number
   selectedDepartmentId?: string
   userName: string
 }): Promise<OrgKpiPageData> {
   try {
+    const alerts: OrgKpiPageAlert[] = []
     const scopeDepartmentIds = getEffectiveScopeDepartmentIds({
       role: params.role,
       deptId: params.deptId,
@@ -539,6 +571,7 @@ export async function getOrgKpiPageData(params: {
         history: [],
         linkage: [],
         aiLogs: [],
+        alerts,
         permissions: {
           canManage: false,
           canCreate: false,
@@ -585,64 +618,87 @@ export async function getOrgKpiPageData(params: {
 
     const selectedYear = params.year && availableYears.includes(params.year) ? params.year : availableYears[0]
 
-    const [kpis, auditLogs, aiLogs] = await Promise.all([
-      prisma.orgKpi.findMany({
-        where: {
-          evalYear: selectedYear,
-          ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
+    const kpis = await prisma.orgKpi.findMany({
+      where: {
+        evalYear: selectedYear,
+        ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
+      },
+      include: {
+        department: {
+          include: {
+            organization: true,
+          },
         },
-        include: {
-          department: {
-            include: {
-              organization: true,
+        personalKpis: {
+          include: {
+            employee: {
+              select: {
+                id: true,
+                empId: true,
+                empName: true,
+              },
+            },
+            monthlyRecords: {
+              orderBy: [{ yearMonth: 'desc' }],
+              take: 3,
             },
           },
-          personalKpis: {
+        },
+        _count: {
+          select: {
+            personalKpis: true,
+          },
+        },
+      },
+      orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
+    })
+
+    const [auditLogs, aiLogs] = await Promise.all([
+      loadOrgKpiSection({
+        title: '조직 KPI 이력',
+        description: '조직 KPI 변경 이력을 불러오지 못해 상세 이력은 표시되지 않습니다.',
+        alerts,
+        loader: () =>
+          prisma.auditLog.findMany({
+            where: {
+              entityType: 'OrgKpi',
+            },
+            orderBy: { timestamp: 'desc' },
+            take: 200,
+          }),
+        fallback: [] as AuditLogLite[],
+      }),
+      loadOrgKpiSection({
+        title: '조직 KPI AI 보조',
+        description: 'AI 보조 이력을 불러오지 못해 AI 탭은 기본 정보만 표시됩니다.',
+        alerts,
+        loader: () =>
+          prisma.aiRequestLog.findMany({
+            where: {
+              requesterId: params.userId,
+              sourceType: {
+                startsWith: 'OrgKpi',
+              },
+            },
             include: {
-              employee: {
+              requester: {
                 select: {
-                  id: true,
-                  empId: true,
                   empName: true,
                 },
               },
-              monthlyRecords: {
-                orderBy: [{ yearMonth: 'desc' }],
-                take: 3,
-              },
             },
-          },
-          _count: {
-            select: {
-              personalKpis: true,
-            },
-          },
-        },
-        orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
-      }),
-      prisma.auditLog.findMany({
-        where: {
-          entityType: 'OrgKpi',
-        },
-        orderBy: { timestamp: 'desc' },
-        take: 200,
-      }),
-      prisma.aiRequestLog.findMany({
-        where: {
-          requesterId: params.userId,
-          sourceType: {
-            startsWith: 'OrgKpi',
-          },
-        },
-        include: {
-          requester: {
-            select: {
-              empName: true,
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 30,
+            orderBy: { createdAt: 'desc' },
+            take: 30,
+          }),
+        fallback: [] as Prisma.AiRequestLogGetPayload<{
+          include: {
+            requester: {
+              select: {
+                empName: true
+              }
+            }
+          }
+        }>[],
       }),
     ])
 
@@ -874,6 +930,7 @@ export async function getOrgKpiPageData(params: {
         approvalStatus: log.approvalStatus,
         summary: parseAiSummary(log.responsePayload),
       })),
+      alerts,
       permissions: {
         canManage,
         canCreate: canManage,
@@ -912,6 +969,7 @@ export async function getOrgKpiPageData(params: {
       history: [],
       linkage: [],
       aiLogs: [],
+      alerts: [],
       permissions: {
         canManage: false,
         canCreate: false,

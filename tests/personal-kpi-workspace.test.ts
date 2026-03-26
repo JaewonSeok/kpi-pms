@@ -324,6 +324,42 @@ async function main() {
     assert.equal(missingApiKey.reason, 'configuration-missing')
   })
 
+  await run('non-critical AI log failure keeps the personal KPI page operational with a degraded-state alert', async () => {
+    await withStubbedPersonalKpiPageData(
+      {
+        aiRequestLogFindMany: async () => {
+          throw new Error('ai log unavailable')
+        },
+      },
+      async () => {
+        const originalConsoleError = console.error
+        console.error = () => undefined
+
+        try {
+          const data = await getPersonalKpiPageData({
+            session: {
+              user: {
+                id: 'leader-1',
+                role: 'ROLE_TEAM_LEADER',
+                name: '팀장',
+                deptId: 'dept-1',
+                deptName: '사업지원팀',
+                accessibleDepartmentIds: ['dept-1'],
+              },
+            },
+            year: 2026,
+          })
+
+          assert.equal(data.state, 'empty')
+          assert.equal(data.aiLogs.length, 0)
+          assert.equal(data.alerts?.some((item) => item.title === '개인 KPI AI 요청 이력을 불러오지 못했습니다.'), true)
+        } finally {
+          console.error = originalConsoleError
+        }
+      }
+    )
+  })
+
   await run('personal KPI client disables create and AI hero CTAs when the server says they are unavailable', () => {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
@@ -331,6 +367,7 @@ async function main() {
     assert.equal(source.includes('disabled={Boolean(props.aiDisabledReason)}'), true)
     assert.equal(source.includes("const createDisabledReason ="), true)
     assert.equal(source.includes("const aiDisabledReason ="), true)
+    assert.equal(source.includes('일부 운영 정보를 불러오지 못해 기본 화면으로 표시 중입니다.'), true)
   })
 
   await run('personal KPI AI route now uses the same access resolver as the page', () => {

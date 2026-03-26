@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useDeferredValue, useMemo, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -12,6 +13,42 @@ type Notice = {
   tone: 'success' | 'error'
   message: string
 } | null
+
+type KeywordImportResult = {
+  mode: 'preview' | 'apply'
+  fileName: string
+  summary: {
+    totalRows: number
+    validRows: number
+    invalidRows: number
+    createCount: number
+    updateCount: number
+    unchangedCount: number
+    deactivateCount: number
+  }
+  rows: Array<{
+    rowNumber: number
+    keywordCode?: string
+    keyword: string
+    polarity?: string
+    category?: string
+    sourceType?: string
+    action: 'create' | 'update' | 'unchanged' | 'deactivate'
+    valid: boolean
+    issues: Array<{
+      field: string
+      message: string
+    }>
+  }>
+  applyResult?: {
+    createdCount: number
+    updatedCount: number
+    unchangedCount: number
+    deactivatedCount: number
+    failedCount: number
+    uploadHistoryId?: string
+  }
+}
 
 function initialTab(data: WordCloud360PageData): TabKey {
   if (data.permissions?.canManage) return 'admin'
@@ -36,7 +73,14 @@ const groupLabels: Record<string, string> = {
 const categoryLabels: Record<string, string> = {
   ATTITUDE: '태도',
   ABILITY: '역량',
+  BOTH: '태도/역량',
   OTHER: '기타',
+}
+const sourceTypeLabels: Record<string, string> = {
+  DOCUMENT_FINAL: '문서 확정',
+  EXTRA_GOVERNANCE: '거버넌스 추가',
+  ADMIN_ADDED: '관리자 추가',
+  IMPORTED: 'CSV 업로드',
 }
 
 function readApiBody(body: unknown) {
@@ -55,6 +99,22 @@ async function callAction(action: string, payload: unknown) {
     throw new Error(body.error?.message ?? '요청을 처리하지 못했습니다.')
   }
   return body.data
+}
+
+async function uploadKeywordCsv(mode: 'preview' | 'apply', file: File) {
+  const formData = new FormData()
+  formData.set('mode', mode)
+  formData.set('file', file)
+
+  const response = await fetch('/api/evaluation/word-cloud-360/keywords/upload', {
+    method: 'POST',
+    body: formData,
+  })
+  const body = readApiBody(await response.json())
+  if (!response.ok || !body.success) {
+    throw new Error(body.error?.message ?? 'CSV 업로드를 처리하지 못했습니다.')
+  }
+  return body.data as KeywordImportResult
 }
 
 function StateBox(props: { title: string; description: string }) {
@@ -156,15 +216,18 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   })
   const [keywordForm, setKeywordForm] = useState({
     keywordId: '',
+    keywordCode: '',
     keyword: '',
     polarity: 'POSITIVE',
     category: 'ATTITUDE',
-    sourceType: 'EXTRA',
+    sourceType: 'ADMIN_ADDED',
     active: true,
     displayOrder: 0,
     warningFlag: false,
     note: '',
   })
+  const [keywordUploadFile, setKeywordUploadFile] = useState<File | null>(null)
+  const [keywordImportResult, setKeywordImportResult] = useState<KeywordImportResult | null>(null)
   const [assignmentForm, setAssignmentForm] = useState({
     evaluatorId: '',
     evaluateeId: '',
@@ -193,6 +256,8 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
       })) ?? [],
     [data.evaluateeView?.categorySummary]
   )
+  const keywordImportRowsToShow = keywordImportResult?.rows.slice(0, 100) ?? []
+  const canApplyKeywordImport = Boolean(keywordUploadFile && keywordImportResult?.mode === 'preview' && keywordImportResult.summary.validRows > 0)
 
   function updateCycle(nextCycleId: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -226,6 +291,45 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
         }
       })()
     })
+  }
+
+  function runKeywordImport(mode: 'preview' | 'apply') {
+    if (!keywordUploadFile) {
+      setNotice({ tone: 'error', message: '업로드할 CSV 파일을 선택하세요.' })
+      return
+    }
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          setNotice(null)
+          const result = await uploadKeywordCsv(mode, keywordUploadFile)
+          setKeywordImportResult(result)
+          setNotice({
+            tone: 'success',
+            message:
+              mode === 'preview'
+                ? '업로드 검증이 완료되었습니다.'
+                : result.summary.invalidRows > 0
+                  ? '오류가 있는 행은 반영되지 않았습니다.'
+                  : '키워드 풀을 성공적으로 반영했습니다.',
+          })
+          if (mode === 'apply') {
+            router.refresh()
+          }
+        } catch (error) {
+          setNotice({
+            tone: 'error',
+            message: error instanceof Error ? error.message : 'CSV 업로드를 처리하지 못했습니다.',
+          })
+        }
+      })()
+    })
+  }
+
+  function resetKeywordImport() {
+    setKeywordUploadFile(null)
+    setKeywordImportResult(null)
   }
 
   function toggleSelection(kind: 'positive' | 'negative', keywordId: string, limit: number) {
@@ -685,36 +789,212 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
             </article>
 
             <article className={cardClassName}>
-              <h2 className="text-xl font-semibold text-slate-950">키워드 풀 관리</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold text-slate-950">키워드 풀 관리</h2>
+                <Link className={secondaryButtonClassName} href="/api/evaluation/word-cloud-360/keywords/template" prefetch={false}>
+                  CSV 템플릿 다운로드
+                </Link>
+              </div>
+
               <div className="mt-4 grid gap-3">
-                <input className={inputClassName} value={keywordForm.keyword} onChange={(event) => setKeywordForm((current) => ({ ...current, keyword: event.target.value }))} placeholder="키워드" />
                 <div className="grid grid-cols-2 gap-3">
-                  <select className={inputClassName} value={keywordForm.polarity} onChange={(event) => setKeywordForm((current) => ({ ...current, polarity: event.target.value }))}>
+                  <input
+                    className={inputClassName}
+                    value={keywordForm.keywordCode}
+                    onChange={(event) => setKeywordForm((current) => ({ ...current, keywordCode: event.target.value }))}
+                    placeholder="키워드 코드"
+                  />
+                  <input
+                    className={inputClassName}
+                    value={keywordForm.keyword}
+                    onChange={(event) => setKeywordForm((current) => ({ ...current, keyword: event.target.value }))}
+                    placeholder="키워드"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <select
+                    className={inputClassName}
+                    value={keywordForm.polarity}
+                    onChange={(event) => setKeywordForm((current) => ({ ...current, polarity: event.target.value }))}
+                  >
                     <option value="POSITIVE">긍정</option>
                     <option value="NEGATIVE">부정</option>
                   </select>
-                  <select className={inputClassName} value={keywordForm.category} onChange={(event) => setKeywordForm((current) => ({ ...current, category: event.target.value }))}>
+                  <select
+                    className={inputClassName}
+                    value={keywordForm.category}
+                    onChange={(event) => setKeywordForm((current) => ({ ...current, category: event.target.value }))}
+                  >
                     <option value="ATTITUDE">태도</option>
                     <option value="ABILITY">역량</option>
+                    <option value="BOTH">태도/역량</option>
                     <option value="OTHER">기타</option>
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <select className={inputClassName} value={keywordForm.sourceType} onChange={(event) => setKeywordForm((current) => ({ ...current, sourceType: event.target.value }))}>
-                    <option value="KDN">KDN</option>
-                    <option value="MBTI">MBTI</option>
-                    <option value="ENNEAGRAM">Enneagram</option>
-                    <option value="EXTRA">추가</option>
+                  <select
+                    className={inputClassName}
+                    value={keywordForm.sourceType}
+                    onChange={(event) => setKeywordForm((current) => ({ ...current, sourceType: event.target.value }))}
+                  >
+                    <option value="DOCUMENT_FINAL">문서 확정</option>
+                    <option value="EXTRA_GOVERNANCE">거버넌스 추가</option>
+                    <option value="ADMIN_ADDED">관리자 추가</option>
+                    <option value="IMPORTED">CSV 업로드</option>
                   </select>
-                  <input className={inputClassName} type="number" min={0} value={keywordForm.displayOrder} onChange={(event) => setKeywordForm((current) => ({ ...current, displayOrder: Number(event.target.value) }))} placeholder="표시 순서" />
+                  <input
+                    className={inputClassName}
+                    type="number"
+                    min={0}
+                    value={keywordForm.displayOrder}
+                    onChange={(event) => setKeywordForm((current) => ({ ...current, displayOrder: Number(event.target.value) }))}
+                    placeholder="표시 순서"
+                  />
                 </div>
+                <textarea
+                  className={`${inputClassName} min-h-24`}
+                  value={keywordForm.note}
+                  onChange={(event) => setKeywordForm((current) => ({ ...current, note: event.target.value }))}
+                  placeholder="메모"
+                />
                 <label className="flex items-center gap-2 text-sm text-slate-600">
-                  <input type="checkbox" checked={keywordForm.warningFlag} onChange={(event) => setKeywordForm((current) => ({ ...current, warningFlag: event.target.checked }))} />
+                  <input
+                    type="checkbox"
+                    checked={keywordForm.warningFlag}
+                    onChange={(event) => setKeywordForm((current) => ({ ...current, warningFlag: event.target.checked }))}
+                  />
                   민감 키워드 표시
                 </label>
-                <button type="button" disabled={isPending || !keywordForm.keyword.trim()} className={primaryButtonClassName} onClick={() => mutate(() => callAction('upsertKeyword', keywordForm), '키워드를 저장했습니다.')}>
+                <button
+                  type="button"
+                  disabled={isPending || !keywordForm.keyword.trim()}
+                  className={primaryButtonClassName}
+                  onClick={() => mutate(() => callAction('upsertKeyword', keywordForm), '키워드를 저장했습니다.')}
+                >
                   키워드 저장
                 </button>
+              </div>
+
+              <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-950">CSV 업로드</h3>
+                    <div className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
+                      <p>- UTF-8 BOM CSV를 사용하면 Excel에서 한글이 안정적으로 열립니다.</p>
+                      <p>- 필수 컬럼은 `keyword`, `polarity`, `active` 입니다.</p>
+                      <p>- 적용 시 유효한 행만 반영되고, 오류가 있는 행은 제외됩니다.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className={secondaryButtonClassName} disabled={!keywordImportResult} onClick={resetKeywordImport}>
+                      취소
+                    </button>
+                    <button
+                      type="button"
+                      className={secondaryButtonClassName}
+                      disabled={isPending || !keywordUploadFile}
+                      onClick={() => runKeywordImport('preview')}
+                    >
+                      업로드 미리보기
+                    </button>
+                    <button
+                      type="button"
+                      className={primaryButtonClassName}
+                      disabled={isPending || !canApplyKeywordImport}
+                      onClick={() => runKeywordImport('apply')}
+                    >
+                      적용
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    className={inputClassName}
+                    onChange={(event) => {
+                      setKeywordUploadFile(event.target.files?.[0] ?? null)
+                      setKeywordImportResult(null)
+                    }}
+                  />
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                    {keywordUploadFile ? `선택 파일: ${keywordUploadFile.name}` : '업로드할 CSV 파일을 선택하세요.'}
+                  </div>
+                </div>
+
+                {keywordImportResult ? (
+                  <div className="mt-4 space-y-4">
+                    <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                      <MetricCard label="전체 행" value={`${keywordImportResult.summary.totalRows}`} description="빈 행은 자동으로 제외됩니다." />
+                      <MetricCard label="유효 행" value={`${keywordImportResult.summary.validRows}`} description="현재 규칙을 통과한 행입니다." />
+                      <MetricCard label="오류 행" value={`${keywordImportResult.summary.invalidRows}`} description="오류가 있는 행은 반영되지 않습니다." />
+                      <MetricCard label="생성 예정" value={`${keywordImportResult.summary.createCount}`} description="새로 추가될 키워드입니다." />
+                      <MetricCard label="수정 예정" value={`${keywordImportResult.summary.updateCount}`} description="기존 키워드를 갱신합니다." />
+                      <MetricCard label="비활성화 예정" value={`${keywordImportResult.summary.deactivateCount}`} description="active=FALSE 행입니다." />
+                    </div>
+
+                    {keywordImportResult.applyResult ? (
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                        생성 {keywordImportResult.applyResult.createdCount}건, 수정 {keywordImportResult.applyResult.updatedCount}건,
+                        비활성화 {keywordImportResult.applyResult.deactivatedCount}건, 유지 {keywordImportResult.applyResult.unchangedCount}건을 반영했습니다.
+                      </div>
+                    ) : null}
+
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+                      <table className="min-w-full text-sm">
+                        <thead className="text-left text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2">행</th>
+                            <th className="px-3 py-2">keyword_code</th>
+                            <th className="px-3 py-2">키워드</th>
+                            <th className="px-3 py-2">극성</th>
+                            <th className="px-3 py-2">예정 작업</th>
+                            <th className="px-3 py-2">결과</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {keywordImportRowsToShow.map((row) => (
+                            <tr key={`${row.rowNumber}-${row.keywordCode ?? row.keyword}`} className="border-t border-slate-100 align-top">
+                              <td className="px-3 py-3 text-slate-700">{row.rowNumber}</td>
+                              <td className="px-3 py-3 text-slate-700">{row.keywordCode ?? '-'}</td>
+                              <td className="px-3 py-3 font-medium text-slate-900">{row.keyword || '-'}</td>
+                              <td className="px-3 py-3 text-slate-700">{row.polarity === 'POSITIVE' ? '긍정' : row.polarity === 'NEGATIVE' ? '부정' : '-'}</td>
+                              <td className="px-3 py-3 text-slate-700">
+                                {row.action === 'create'
+                                  ? '생성'
+                                  : row.action === 'update'
+                                    ? '수정'
+                                    : row.action === 'deactivate'
+                                      ? '비활성화'
+                                      : '유지'}
+                              </td>
+                              <td className="px-3 py-3">
+                                <div className="space-y-1">
+                                  <div className={row.valid ? 'text-emerald-700' : 'text-rose-700'}>
+                                    {row.valid ? '반영 가능' : '오류 있음'}
+                                  </div>
+                                  {row.issues.map((issue, index) => (
+                                    <div key={`${row.rowNumber}-${issue.field}-${index}`} className="text-rose-700">
+                                      [{issue.field}] {issue.message}
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                          {!keywordImportRowsToShow.length ? (
+                            <tr>
+                              <td colSpan={6} className="px-3 py-10 text-center text-sm text-slate-500">
+                                유효한 행이 없습니다.
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </article>
           </section>
@@ -825,6 +1105,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 <table className="min-w-full text-sm">
                   <thead className="text-left text-slate-500">
                     <tr>
+                      <th className="pb-2 pr-4">코드</th>
                       <th className="pb-2 pr-4">키워드</th>
                       <th className="pb-2 pr-4">극성</th>
                       <th className="pb-2 pr-4">카테고리</th>
@@ -836,10 +1117,11 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                   <tbody>
                     {data.adminView?.keywordPool.map((keyword) => (
                       <tr key={keyword.keywordId} className="border-t border-slate-100">
+                        <td className="py-2 pr-4 text-slate-700">{keyword.keywordCode ?? '-'}</td>
                         <td className="py-2 pr-4 text-slate-900">{keyword.keyword}</td>
                         <td className="py-2 pr-4 text-slate-700">{keyword.polarityLabel}</td>
                         <td className="py-2 pr-4 text-slate-700">{keyword.categoryLabel}</td>
-                        <td className="py-2 pr-4 text-slate-500">{keyword.sourceType}</td>
+                        <td className="py-2 pr-4 text-slate-500">{keyword.sourceTypeLabel ?? sourceTypeLabels[keyword.sourceType] ?? keyword.sourceType}</td>
                         <td className="py-2 pr-4 text-slate-500">{keyword.active ? '활성' : '비활성'}</td>
                         <td className="py-2 text-right">
                           <div className="flex justify-end gap-2">
@@ -849,6 +1131,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                               onClick={() =>
                                 setKeywordForm({
                                   keywordId: keyword.keywordId,
+                                  keywordCode: keyword.keywordCode ?? '',
                                   keyword: keyword.keyword,
                                   polarity: keyword.polarity,
                                   category: keyword.category,
@@ -870,6 +1153,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                                   () =>
                                     callAction('upsertKeyword', {
                                       keywordId: keyword.keywordId,
+                                      keywordCode: keyword.keywordCode ?? '',
                                       keyword: keyword.keyword,
                                       polarity: keyword.polarity,
                                       category: keyword.category,

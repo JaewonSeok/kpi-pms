@@ -187,6 +187,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
   const [aiAction, setAiAction] = useState<AiAction>('generate-draft')
   const [search, setSearch] = useState('')
+  const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
 
   const filteredList = useMemo(
     () =>
@@ -399,6 +400,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     return (
       <div className="space-y-6">
         <h1 className="text-3xl font-bold text-slate-900">조직 KPI</h1>
+        {loadAlerts}
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">
             {pageData.state === 'permission-denied' ? '권한이 없습니다' : '조직 KPI 화면을 불러오지 못했습니다'}
@@ -457,6 +459,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
         </div>
       </section>
 
+      {loadAlerts}
       {banner ? <BannerBox tone={banner.tone} message={banner.message} /> : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -623,6 +626,21 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function ActionButton({ label, icon, onClick, disabled, primary = false }: { label: string; icon: ReactNode; onClick: () => void; disabled: boolean; primary?: boolean }) {
   return <button type="button" onClick={onClick} disabled={disabled} className={cls('inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60', primary ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>{icon}{label}</button>
+}
+
+function LoadAlerts({ alerts }: { alerts: NonNullable<Props['alerts']> }) {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+      <div className="font-semibold">일부 운영 데이터를 불러오지 못해 기본 화면으로 표시 중입니다.</div>
+      <ul className="mt-2 space-y-1">
+        {alerts.map((alert) => (
+          <li key={`${alert.title}-${alert.description}`}>
+            - {alert.title}: {alert.description}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 function StatusBadge({ status }: { status: OrgKpiViewModel['status'] }) {

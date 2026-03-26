@@ -1,6 +1,6 @@
 export const WORD_CLOUD_POLARITIES = ['POSITIVE', 'NEGATIVE'] as const
-export const WORD_CLOUD_CATEGORIES = ['ATTITUDE', 'ABILITY', 'OTHER'] as const
-export const WORD_CLOUD_SOURCE_TYPES = ['KDN', 'MBTI', 'ENNEAGRAM', 'EXTRA'] as const
+export const WORD_CLOUD_CATEGORIES = ['ATTITUDE', 'ABILITY', 'BOTH', 'OTHER'] as const
+export const WORD_CLOUD_SOURCE_TYPES = ['DOCUMENT_FINAL', 'EXTRA_GOVERNANCE', 'ADMIN_ADDED', 'IMPORTED'] as const
 export const WORD_CLOUD_EVALUATOR_GROUPS = ['MANAGER', 'PEER', 'SUBORDINATE', 'SELF'] as const
 
 export type WordCloudKeywordPolarity = (typeof WORD_CLOUD_POLARITIES)[number]
@@ -9,6 +9,7 @@ export type WordCloudKeywordSourceType = (typeof WORD_CLOUD_SOURCE_TYPES)[number
 export type WordCloudEvaluatorGroup = (typeof WORD_CLOUD_EVALUATOR_GROUPS)[number]
 
 export type WordCloudKeywordSeed = {
+  keywordCode?: string
   keyword: string
   polarity: WordCloudKeywordPolarity
   category: WordCloudKeywordCategory
@@ -63,6 +64,7 @@ export type WordCloudAggregateKeyword = {
 export const WORD_CLOUD_CATEGORY_LABELS: Record<WordCloudKeywordCategory, string> = {
   ATTITUDE: '태도',
   ABILITY: '역량',
+  BOTH: '태도/역량',
   OTHER: '기타',
 }
 
@@ -78,46 +80,53 @@ export const WORD_CLOUD_GROUP_LABELS: Record<WordCloudEvaluatorGroup, string> = 
   SELF: '자기평가',
 }
 
+export const WORD_CLOUD_SOURCE_TYPE_LABELS: Record<WordCloudKeywordSourceType, string> = {
+  DOCUMENT_FINAL: '문서 확정',
+  EXTRA_GOVERNANCE: '거버넌스 추가',
+  ADMIN_ADDED: '관리자 추가',
+  IMPORTED: 'CSV 업로드',
+}
+
 export const DEFAULT_WORD_CLOUD_KEYWORDS: WordCloudKeywordSeed[] = [
-  { keyword: '책임감 있음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'KDN', displayOrder: 1 },
-  { keyword: '성실함', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'KDN', displayOrder: 2 },
-  { keyword: '협업적임', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'MBTI', displayOrder: 3 },
-  { keyword: '배려심 있음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'ENNEAGRAM', displayOrder: 4 },
-  { keyword: '주도적임', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'KDN', displayOrder: 5 },
-  { keyword: '침착함', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'MBTI', displayOrder: 6 },
-  { keyword: '유연함', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'MBTI', displayOrder: 7 },
-  { keyword: '신뢰감 있음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'KDN', displayOrder: 8 },
-  { keyword: '청렴함', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'EXTRA', displayOrder: 9, warningFlag: true },
-  { keyword: '성인지 감수성이 높음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'EXTRA', displayOrder: 10, warningFlag: true },
-  { keyword: '갑질 성향이 없음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'EXTRA', displayOrder: 11, warningFlag: true },
-  { keyword: '일 떠넘기기 없음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'EXTRA', displayOrder: 12, warningFlag: true },
-  { keyword: '분석적임', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 13 },
-  { keyword: '문제해결력이 좋음', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 14 },
-  { keyword: '기획력이 좋음', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 15 },
-  { keyword: '커뮤니케이션이 명확함', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'MBTI', displayOrder: 16 },
-  { keyword: '실행력이 좋음', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 17 },
-  { keyword: '학습이 빠름', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 18 },
-  { keyword: '업무 구조화가 뛰어남', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 19 },
-  { keyword: '고객지향적임', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 20 },
-  { keyword: '변화 수용력이 높음', polarity: 'POSITIVE', category: 'OTHER', sourceType: 'ENNEAGRAM', displayOrder: 21 },
-  { keyword: '조직 적응력이 높음', polarity: 'POSITIVE', category: 'OTHER', sourceType: 'MBTI', displayOrder: 22 },
-  { keyword: '책임 회피', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'KDN', displayOrder: 101 },
-  { keyword: '성의 없음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'KDN', displayOrder: 102 },
-  { keyword: '비협조적임', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'MBTI', displayOrder: 103 },
-  { keyword: '방어적임', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'ENNEAGRAM', displayOrder: 104 },
-  { keyword: '감정기복이 큼', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'MBTI', displayOrder: 105 },
-  { keyword: '소통이 단절됨', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'KDN', displayOrder: 106 },
-  { keyword: '청렴하지 않음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'EXTRA', displayOrder: 107, warningFlag: true },
-  { keyword: '성인지 감수성이 낮음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'EXTRA', displayOrder: 108, warningFlag: true },
-  { keyword: '갑질 성향이 많음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'EXTRA', displayOrder: 109, warningFlag: true },
-  { keyword: '일 떠넘기기 많음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'EXTRA', displayOrder: 110, warningFlag: true },
-  { keyword: '우선순위 혼선', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 111 },
-  { keyword: '문제정의가 약함', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 112 },
-  { keyword: '실행 지연', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 113 },
-  { keyword: '분석이 피상적임', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 114 },
-  { keyword: '고객관점 부족', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'KDN', displayOrder: 115 },
-  { keyword: '피드백 수용이 낮음', polarity: 'NEGATIVE', category: 'OTHER', sourceType: 'ENNEAGRAM', displayOrder: 116 },
-  { keyword: '변화 저항이 큼', polarity: 'NEGATIVE', category: 'OTHER', sourceType: 'ENNEAGRAM', displayOrder: 117 },
+  { keywordCode: 'POS_001', keyword: '책임감 있음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 1 },
+  { keywordCode: 'POS_002', keyword: '성실함', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 2 },
+  { keywordCode: 'POS_003', keyword: '협업적임', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 3 },
+  { keywordCode: 'POS_004', keyword: '배려심 있음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 4 },
+  { keywordCode: 'POS_005', keyword: '주도적임', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 5 },
+  { keywordCode: 'POS_006', keyword: '침착함', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 6 },
+  { keywordCode: 'POS_007', keyword: '유연함', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 7 },
+  { keywordCode: 'POS_008', keyword: '신뢰감 있음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 8 },
+  { keywordCode: 'POS_009', keyword: '청렴함', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'EXTRA_GOVERNANCE', displayOrder: 9, warningFlag: true },
+  { keywordCode: 'POS_010', keyword: '성인지 감수성이 높음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'EXTRA_GOVERNANCE', displayOrder: 10, warningFlag: true },
+  { keywordCode: 'POS_011', keyword: '갑질 성향이 없음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'EXTRA_GOVERNANCE', displayOrder: 11, warningFlag: true },
+  { keywordCode: 'POS_012', keyword: '일 떠넘기기 없음', polarity: 'POSITIVE', category: 'ATTITUDE', sourceType: 'EXTRA_GOVERNANCE', displayOrder: 12, warningFlag: true },
+  { keywordCode: 'POS_013', keyword: '분석적임', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 13 },
+  { keywordCode: 'POS_014', keyword: '문제해결력이 좋음', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 14 },
+  { keywordCode: 'POS_015', keyword: '기획력이 좋음', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 15 },
+  { keywordCode: 'POS_016', keyword: '커뮤니케이션이 명확함', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 16 },
+  { keywordCode: 'POS_017', keyword: '실행력이 좋음', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 17 },
+  { keywordCode: 'POS_018', keyword: '학습이 빠름', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 18 },
+  { keywordCode: 'POS_019', keyword: '업무 구조화가 뛰어남', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 19 },
+  { keywordCode: 'POS_020', keyword: '고객지향적임', polarity: 'POSITIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 20 },
+  { keywordCode: 'POS_021', keyword: '변화 수용력이 높음', polarity: 'POSITIVE', category: 'OTHER', sourceType: 'DOCUMENT_FINAL', displayOrder: 21 },
+  { keywordCode: 'POS_022', keyword: '조직 적응력이 높음', polarity: 'POSITIVE', category: 'OTHER', sourceType: 'DOCUMENT_FINAL', displayOrder: 22 },
+  { keywordCode: 'NEG_001', keyword: '책임 회피', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 101 },
+  { keywordCode: 'NEG_002', keyword: '성의 없음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 102 },
+  { keywordCode: 'NEG_003', keyword: '비협조적임', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 103 },
+  { keywordCode: 'NEG_004', keyword: '방어적임', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 104 },
+  { keywordCode: 'NEG_005', keyword: '감정기복이 큼', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 105 },
+  { keywordCode: 'NEG_006', keyword: '소통이 단절됨', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'DOCUMENT_FINAL', displayOrder: 106 },
+  { keywordCode: 'NEG_007', keyword: '청렴하지 않음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'EXTRA_GOVERNANCE', displayOrder: 107, warningFlag: true },
+  { keywordCode: 'NEG_008', keyword: '성인지 감수성이 낮음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'EXTRA_GOVERNANCE', displayOrder: 108, warningFlag: true },
+  { keywordCode: 'NEG_009', keyword: '갑질 성향이 많음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'EXTRA_GOVERNANCE', displayOrder: 109, warningFlag: true },
+  { keywordCode: 'NEG_010', keyword: '일 떠넘기기 많음', polarity: 'NEGATIVE', category: 'ATTITUDE', sourceType: 'EXTRA_GOVERNANCE', displayOrder: 110, warningFlag: true },
+  { keywordCode: 'NEG_011', keyword: '우선순위 혼선', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 111 },
+  { keywordCode: 'NEG_012', keyword: '문제정의가 약함', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 112 },
+  { keywordCode: 'NEG_013', keyword: '실행 지연', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 113 },
+  { keywordCode: 'NEG_014', keyword: '분석이 피상적임', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 114 },
+  { keywordCode: 'NEG_015', keyword: '고객관점 부족', polarity: 'NEGATIVE', category: 'ABILITY', sourceType: 'DOCUMENT_FINAL', displayOrder: 115 },
+  { keywordCode: 'NEG_016', keyword: '피드백 수용이 낮음', polarity: 'NEGATIVE', category: 'OTHER', sourceType: 'DOCUMENT_FINAL', displayOrder: 116 },
+  { keywordCode: 'NEG_017', keyword: '변화 저항이 큼', polarity: 'NEGATIVE', category: 'OTHER', sourceType: 'DOCUMENT_FINAL', displayOrder: 117 },
 ]
 
 export function validateWordCloudSelections(params: {

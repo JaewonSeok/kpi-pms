@@ -14,6 +14,11 @@ import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
 export type ResultVisibilityState = 'ready' | 'empty' | 'hidden' | 'permission-denied' | 'error'
 export type ResultPublicationStatus = 'HIDDEN' | 'PUBLISHED' | 'APPEAL_OPEN' | 'APPEAL_CLOSED'
 
+export type EvaluationResultPageAlert = {
+  title: string
+  description: string
+}
+
 export type EvaluationResultScopeOption = {
   id: string
   name: string
@@ -153,6 +158,7 @@ export type EvaluationResultPageData = {
   selectedCycleId?: string
   viewModel?: EvaluationResultViewModel
   message?: string
+  alerts?: EvaluationResultPageAlert[]
 }
 
 type EmployeeWithDepartment = Prisma.EmployeeGetPayload<{
@@ -195,11 +201,31 @@ type GradeSettingLite = {
   maxScore: number
 }
 
+async function loadEvaluationResultSection<T>(params: {
+  alerts: EvaluationResultPageAlert[]
+  title: string
+  description: string
+  fallback: T
+  loader: () => Promise<T>
+}) {
+  try {
+    return await params.loader()
+  } catch (error) {
+    console.error(`[evaluation-results] ${params.title}`, error)
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+    })
+    return params.fallback
+  }
+}
+
 export async function getEvaluationResultsPageData(params: {
   userId: string
   cycleId?: string
 }): Promise<EvaluationResultPageData> {
   try {
+    const alerts: EvaluationResultPageAlert[] = []
     const employee = await prisma.employee.findUnique({
       where: { id: params.userId },
       include: {
@@ -216,6 +242,7 @@ export async function getEvaluationResultsPageData(params: {
         state: 'permission-denied',
         availableCycles: [],
         message: '평가 결과를 확인할 수 있는 직원 정보를 찾지 못했습니다.',
+        alerts,
       }
     }
 
@@ -247,6 +274,7 @@ export async function getEvaluationResultsPageData(params: {
         state: 'empty',
         availableCycles,
         message: '아직 생성된 평가 주기가 없습니다.',
+        alerts,
       }
     }
 
@@ -282,6 +310,7 @@ export async function getEvaluationResultsPageData(params: {
         state: publicationStatus === 'HIDDEN' ? 'hidden' : 'empty',
         availableCycles,
         selectedCycleId: selectedCycle.id,
+        alerts,
         message:
           publicationStatus === 'HIDDEN'
             ? '평가 결과가 아직 공개되지 않았습니다. 결과 공개 일정 이후 다시 확인해 주세요.'
@@ -292,120 +321,191 @@ export async function getEvaluationResultsPageData(params: {
     const evaluationIds = baseEvaluations.map((evaluation) => evaluation.id)
     const appealIds = baseEvaluations.flatMap((evaluation) => evaluation.appeals.map((appeal) => appeal.id))
 
-    const [gradeSettings, previousFinalEvaluations, cycleFinalEvaluations, personalKpis, checkIns, auditLogs, aiCompetencyResults] =
-      await Promise.all([
-        prisma.gradeSetting.findMany({
-          where: {
-            orgId: selectedCycle.orgId,
-            evalYear: selectedCycle.evalYear,
-            isActive: true,
-          },
-          select: {
-            id: true,
-            gradeName: true,
-            minScore: true,
-            maxScore: true,
-          },
-          orderBy: {
-            gradeOrder: 'asc',
-          },
-        }),
-        prisma.evaluation.findMany({
-          where: {
-            targetId: employee.id,
-            status: 'CONFIRMED',
-            evalStage: {
-              in: ['FINAL', 'CEO_ADJUST'],
-            },
-            evalCycle: {
+    const [
+      gradeSettings,
+      previousFinalEvaluations,
+      cycleFinalEvaluations,
+      personalKpis,
+      checkIns,
+      auditLogs,
+      aiCompetencyResults,
+    ] = await Promise.all([
+      loadEvaluationResultSection({
+        alerts,
+        title: '등급 기준을 불러오지 못했습니다.',
+        description: '등급은 등록된 최종 결과 또는 점수 기준으로만 표시합니다.',
+        fallback: [] as GradeSettingLite[],
+        loader: () =>
+          prisma.gradeSetting.findMany({
+            where: {
               orgId: selectedCycle.orgId,
-              evalYear: {
-                lt: selectedCycle.evalYear,
+              evalYear: selectedCycle.evalYear,
+              isActive: true,
+            },
+            select: {
+              id: true,
+              gradeName: true,
+              minScore: true,
+              maxScore: true,
+            },
+            orderBy: {
+              gradeOrder: 'asc',
+            },
+          }),
+      }),
+      loadEvaluationResultSection({
+        alerts,
+        title: '전년도 평가 이력을 불러오지 못했습니다.',
+        description: '전년 비교 지표는 생략하고 현재 결과만 표시합니다.',
+        fallback: [] as Array<{ totalScore: number | null; gradeId: string | null }>,
+        loader: () =>
+          prisma.evaluation.findMany({
+            where: {
+              targetId: employee.id,
+              status: 'CONFIRMED',
+              evalStage: {
+                in: ['FINAL', 'CEO_ADJUST'],
+              },
+              evalCycle: {
+                orgId: selectedCycle.orgId,
+                evalYear: {
+                  lt: selectedCycle.evalYear,
+                },
               },
             },
-          },
-          select: {
-            totalScore: true,
-            gradeId: true,
-          },
-          orderBy: [{ submittedAt: 'desc' }, { createdAt: 'desc' }],
-          take: 4,
-        }),
-        prisma.evaluation.findMany({
-          where: {
-            evalCycleId: selectedCycle.id,
-            status: 'CONFIRMED',
-            evalStage: {
-              in: ['FINAL', 'CEO_ADJUST'],
+            select: {
+              totalScore: true,
+              gradeId: true,
             },
-          },
-          select: {
-            targetId: true,
-            totalScore: true,
-          },
-        }),
-        prisma.personalKpi.findMany({
-          where: {
-            employeeId: employee.id,
-            evalYear: selectedCycle.evalYear,
-          },
-          include: {
-            monthlyRecords: {
-              orderBy: {
-                yearMonth: 'asc',
+            orderBy: [{ submittedAt: 'desc' }, { createdAt: 'desc' }],
+            take: 4,
+          }),
+      }),
+      loadEvaluationResultSection({
+        alerts,
+        title: '주기 분포 데이터를 불러오지 못했습니다.',
+        description: '백분위 비교는 생략하고 개인 결과만 표시합니다.',
+        fallback: [] as Array<{ targetId: string; totalScore: number | null }>,
+        loader: () =>
+          prisma.evaluation.findMany({
+            where: {
+              evalCycleId: selectedCycle.id,
+              status: 'CONFIRMED',
+              evalStage: {
+                in: ['FINAL', 'CEO_ADJUST'],
               },
             },
-          },
-          orderBy: [{ weight: 'desc' }, { kpiName: 'asc' }],
-        }),
-        prisma.checkIn.findMany({
-          where: {
-            ownerId: employee.id,
-            scheduledDate: {
-              gte: new Date(`${selectedCycle.evalYear}-01-01T00:00:00.000Z`),
-              lte: new Date(`${selectedCycle.evalYear}-12-31T23:59:59.999Z`),
+            select: {
+              targetId: true,
+              totalScore: true,
             },
-          },
-          orderBy: {
-            scheduledDate: 'desc',
-          },
-          take: 6,
-        }),
-        prisma.auditLog.findMany({
-          where: {
-            OR: [
-              evaluationIds.length
-                ? {
-                    entityType: 'Evaluation',
-                    entityId: {
-                      in: evaluationIds,
-                    },
-                  }
-                : undefined,
-              {
-                entityType: 'EvalCycle',
-                entityId: selectedCycle.id,
+          }),
+      }),
+      loadEvaluationResultSection({
+        alerts,
+        title: '연결된 KPI 근거를 불러오지 못했습니다.',
+        description: 'KPI 근거 표는 빈 상태로 표시합니다.',
+        fallback: [] as PersonalKpiWithRecords[],
+        loader: () =>
+          prisma.personalKpi.findMany({
+            where: {
+              employeeId: employee.id,
+              evalYear: selectedCycle.evalYear,
+            },
+            include: {
+              monthlyRecords: {
+                orderBy: {
+                  yearMonth: 'asc',
+                },
               },
-              appealIds.length
-                ? {
-                    entityType: 'Appeal',
-                    entityId: {
-                      in: appealIds,
-                    },
-                  }
-                : undefined,
-            ].filter(Boolean) as Prisma.AuditLogWhereInput[],
-          },
-          orderBy: {
-            timestamp: 'desc',
-          },
-          take: 20,
-        }),
-        loadAiCompetencySyncedResults({
-          evalCycleIds: [selectedCycle.id],
-          employeeIds: [employee.id],
-        }),
-      ])
+            },
+            orderBy: [{ weight: 'desc' }, { kpiName: 'asc' }],
+          }),
+      }),
+      loadEvaluationResultSection({
+        alerts,
+        title: '체크인 근거를 불러오지 못했습니다.',
+        description: '체크인 증거는 빈 상태로 표시합니다.',
+        fallback: [] as Array<{
+          scheduledDate: Date
+          actualDate: Date | null
+          checkInType: CheckInType
+          status: CheckInStatus
+          keyTakeaways: string | null
+          ownerNotes: string | null
+          managerNotes: string | null
+          actionItems: Prisma.JsonValue
+        }>,
+        loader: () =>
+          prisma.checkIn.findMany({
+            where: {
+              ownerId: employee.id,
+              scheduledDate: {
+                gte: new Date(`${selectedCycle.evalYear}-01-01T00:00:00.000Z`),
+                lte: new Date(`${selectedCycle.evalYear}-12-31T23:59:59.999Z`),
+              },
+            },
+            orderBy: {
+              scheduledDate: 'desc',
+            },
+            take: 6,
+          }),
+      }),
+      loadEvaluationResultSection({
+        alerts,
+        title: '평가 공개/이력 로그를 불러오지 못했습니다.',
+        description: '확인 이력과 캘리브레이션 로그는 축약해 표시합니다.',
+        fallback: [] as Array<{
+          action: string
+          entityType: string
+          entityId: string | null
+          userId: string
+          timestamp: Date
+        }>,
+        loader: () =>
+          prisma.auditLog.findMany({
+            where: {
+              OR: [
+                evaluationIds.length
+                  ? {
+                      entityType: 'Evaluation',
+                      entityId: {
+                        in: evaluationIds,
+                      },
+                    }
+                  : undefined,
+                {
+                  entityType: 'EvalCycle',
+                  entityId: selectedCycle.id,
+                },
+                appealIds.length
+                  ? {
+                      entityType: 'Appeal',
+                      entityId: {
+                        in: appealIds,
+                      },
+                    }
+                  : undefined,
+              ].filter(Boolean) as Prisma.AuditLogWhereInput[],
+            },
+            orderBy: {
+              timestamp: 'desc',
+            },
+            take: 20,
+          }),
+      }),
+      loadEvaluationResultSection({
+        alerts,
+        title: 'AI 활용능력 연동 점수를 불러오지 못했습니다.',
+        description: 'AI 활용능력 가산/대체 점수 없이 기존 평가 결과만 표시합니다.',
+        fallback: new Map() as Awaited<ReturnType<typeof loadAiCompetencySyncedResults>>,
+        loader: () =>
+          loadAiCompetencySyncedResults({
+            evalCycleIds: [selectedCycle.id],
+            employeeIds: [employee.id],
+          }),
+      }),
+    ])
 
     const stageMap = new Map(baseEvaluations.map((evaluation) => [evaluation.evalStage, evaluation] as const))
     const finalEvaluation =
@@ -429,6 +529,7 @@ export async function getEvaluationResultsPageData(params: {
         state: 'hidden',
         availableCycles,
         selectedCycleId: selectedCycle.id,
+        alerts,
         message: '평가 결과가 아직 공개되지 않았습니다. 공개 일정과 마감 상태를 확인해 주세요.',
       }
     }
@@ -453,6 +554,7 @@ export async function getEvaluationResultsPageData(params: {
       availableCycles,
       selectedCycleId: selectedCycle.id,
       viewModel,
+      alerts,
     }
   } catch (error) {
     console.error('[evaluation-results] failed to build page data', error)
@@ -461,6 +563,7 @@ export async function getEvaluationResultsPageData(params: {
       state: 'error',
       availableCycles: [],
       message: '평가 결과를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+      alerts: [],
     }
   }
 }

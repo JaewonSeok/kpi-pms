@@ -248,6 +248,26 @@ function StatePanel({ tone, title, message }: { tone: 'neutral' | 'danger'; titl
   )
 }
 
+function LoadAlerts(props: {
+  alerts: Array<{
+    title: string
+    description: string
+  }>
+}) {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <p className="font-semibold">일부 운영 데이터를 불러오지 못해 기본 화면으로 표시 중입니다.</p>
+      <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800">
+        {props.alerts.map((alert) => (
+          <li key={`${alert.title}:${alert.description}`}>
+            {alert.title} {alert.description}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export function MonthlyKpiManagementClient({
   initialTab,
   initialRecordId,
@@ -638,6 +658,8 @@ export function MonthlyKpiManagementClient({
     setBanner({ tone: 'success', message: '선택한 KPI에 지난달 값을 불러왔습니다.' })
   }
 
+  const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
+
   if (pageData.state !== 'ready') {
     const title =
       pageData.state === 'permission-denied'
@@ -654,6 +676,7 @@ export function MonthlyKpiManagementClient({
           </p>
           <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">월간 실적</h1>
         </section>
+        {loadAlerts}
         <StatePanel
           tone={pageData.state === 'error' || pageData.state === 'permission-denied' ? 'danger' : 'neutral'}
           title={title}
@@ -681,8 +704,9 @@ export function MonthlyKpiManagementClient({
         <p className="mt-2 text-sm text-slate-500">
           개인 KPI 기준으로 월간 실적을 기록하고, 리뷰와 증빙을 누적해 평가 근거로 연결합니다.
         </p>
-      </section>
+        </section>
 
+      {loadAlerts}
       <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#ffffff_45%,#f9fafb_100%)] p-6 shadow-sm lg:p-8">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-5">
