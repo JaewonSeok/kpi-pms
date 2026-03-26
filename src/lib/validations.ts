@@ -1092,3 +1092,109 @@ export const AiCompetencyResultOverrideSchema = z.object({
   overrideScore: z.number().min(0).max(100),
   overrideReason: z.string().trim().min(5).max(1000),
 })
+
+export const WordCloud360CycleStatusSchema = z.enum(['DRAFT', 'OPEN', 'CLOSED', 'PUBLISHED', 'ARCHIVED'])
+
+export const WordCloudKeywordPolaritySchema = z.enum(['POSITIVE', 'NEGATIVE'])
+
+export const WordCloudKeywordCategorySchema = z.enum(['ATTITUDE', 'ABILITY', 'OTHER'])
+
+export const WordCloudKeywordSourceTypeSchema = z.enum(['KDN', 'MBTI', 'ENNEAGRAM', 'EXTRA'])
+
+export const WordCloudEvaluatorGroupSchema = z.enum(['MANAGER', 'PEER', 'SUBORDINATE', 'SELF'])
+
+export const WordCloud360CycleSchema = z
+  .object({
+    cycleId: z.string().min(1).optional(),
+    evalCycleId: EmptyStringToUndefined(z.string().min(1)),
+    cycleName: z.string().trim().min(1).max(100),
+    startDate: EmptyStringToUndefined(z.string().datetime()),
+    endDate: EmptyStringToUndefined(z.string().datetime()),
+    positiveSelectionLimit: z.number().int().min(1).max(30).default(10),
+    negativeSelectionLimit: z.number().int().min(1).max(30).default(10),
+    resultPrivacyThreshold: z.number().int().min(1).max(20).default(3),
+    evaluatorGroups: z.array(WordCloudEvaluatorGroupSchema).min(1).max(4),
+    notes: EmptyStringToUndefined(z.string().max(1000)),
+    status: WordCloud360CycleStatusSchema.default('DRAFT'),
+  })
+  .superRefine((data, ctx) => {
+    if (data.startDate && data.endDate && new Date(data.startDate) > new Date(data.endDate)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['endDate'],
+        message: '종료일은 시작일보다 빠를 수 없습니다.',
+      })
+    }
+  })
+
+export const WordCloud360KeywordSchema = z.object({
+  keywordId: z.string().min(1).optional(),
+  keyword: z.string().trim().min(1).max(50),
+  polarity: WordCloudKeywordPolaritySchema,
+  category: WordCloudKeywordCategorySchema,
+  sourceType: WordCloudKeywordSourceTypeSchema.default('EXTRA'),
+  active: z.boolean().default(true),
+  displayOrder: z.number().int().min(0).max(999).default(0),
+  note: EmptyStringToUndefined(z.string().max(500)),
+  warningFlag: z.boolean().default(false),
+})
+
+export const WordCloud360AssignmentItemSchema = z
+  .object({
+    assignmentId: z.string().min(1).optional(),
+    cycleId: z.string().min(1),
+    evaluatorId: z.string().min(1),
+    evaluateeId: z.string().min(1),
+    evaluatorGroup: WordCloudEvaluatorGroupSchema,
+  })
+  .superRefine((data, ctx) => {
+    if (data.evaluatorId === data.evaluateeId && data.evaluatorGroup !== 'SELF') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['evaluateeId'],
+        message: '자기 자신을 평가할 때는 SELF 그룹만 사용할 수 있습니다.',
+      })
+    }
+  })
+
+export const WordCloud360AssignmentBatchSchema = z.object({
+  cycleId: z.string().min(1),
+  assignments: z.array(WordCloud360AssignmentItemSchema).min(1).max(500),
+})
+
+export const WordCloud360AutoAssignSchema = z.object({
+  cycleId: z.string().min(1),
+  includeSelf: z.boolean().default(false),
+  peerLimit: z.number().int().min(0).max(5).default(3),
+  subordinateLimit: z.number().int().min(0).max(5).default(3),
+})
+
+export const WordCloud360ResponseSchema = z
+  .object({
+    assignmentId: z.string().min(1),
+    positiveKeywordIds: z.array(z.string().min(1)).max(30).default([]),
+    negativeKeywordIds: z.array(z.string().min(1)).max(30).default([]),
+    submitFinal: z.boolean().default(false),
+  })
+  .superRefine((data, ctx) => {
+    if (new Set(data.positiveKeywordIds).size !== data.positiveKeywordIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['positiveKeywordIds'],
+        message: '긍정 키워드는 중복 선택할 수 없습니다.',
+      })
+    }
+
+    if (new Set(data.negativeKeywordIds).size !== data.negativeKeywordIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['negativeKeywordIds'],
+        message: '부정 키워드는 중복 선택할 수 없습니다.',
+      })
+    }
+  })
+
+export const WordCloud360PublishSchema = z.object({
+  cycleId: z.string().min(1),
+  publish: z.boolean().default(true),
+})

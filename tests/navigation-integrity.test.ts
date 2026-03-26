@@ -58,6 +58,7 @@ run('member sidebar hides admin-only and restricted KPI routes', () => {
   assert.equal(memberHrefs.includes('/kpi/monthly'), true)
   assert.equal(memberHrefs.includes('/evaluation/ai-competency'), true)
   assert.equal(memberHrefs.includes('/evaluation/360'), true)
+  assert.equal(memberHrefs.includes('/evaluation/word-cloud-360'), true)
 })
 
 run('ceo sidebar excludes monthly record but keeps ceo-specific routes', () => {
@@ -65,6 +66,7 @@ run('ceo sidebar excludes monthly record but keeps ceo-specific routes', () => {
 
   assert.equal(ceoHrefs.includes('/kpi/monthly'), false)
   assert.equal(ceoHrefs.includes('/evaluation/ai-competency'), true)
+  assert.equal(ceoHrefs.includes('/evaluation/word-cloud-360'), true)
   assert.equal(ceoHrefs.includes('/evaluation/ceo-adjust'), true)
   assert.equal(ceoHrefs.includes('/compensation/manage'), true)
 })
@@ -77,6 +79,7 @@ run('admin sidebar exposes every admin and setup route', () => {
     '/kpi/monthly',
     '/evaluation/ai-competency',
     '/evaluation/360',
+    '/evaluation/word-cloud-360',
     '/evaluation/results',
     '/evaluation/appeal',
     '/evaluation/ceo-adjust',

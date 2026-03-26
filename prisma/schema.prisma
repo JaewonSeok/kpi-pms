@@ -21,6 +21,8 @@ model Organization {
   gradeSettings GradeSetting[]
   compensationRuleSets CompensationRuleSet[]
   aiCompetencyExternalCertMasters AiCompetencyExternalCertMaster[]
+  wordCloud360Keywords WordCloud360Keyword[]
+  wordCloud360Cycles   WordCloud360Cycle[]
 
   @@map("organizations")
 }
@@ -101,6 +103,10 @@ model Employee {
   aiCompetencyExternalCertApprovals AiCompetencyExternalCertClaim[] @relation("AiCompetencyCertApprover")
   aiCompetencyResults AiCompetencyResult[] @relation("AiCompetencyResultEmployee")
   aiCompetencyResultSyncs AiCompetencyResult[] @relation("AiCompetencyResultSyncActor")
+  wordCloud360EvaluatorAssignments WordCloud360Assignment[] @relation("WordCloud360Evaluator")
+  wordCloud360EvaluateeAssignments WordCloud360Assignment[] @relation("WordCloud360Evaluatee")
+  wordCloud360EvaluatorResponses   WordCloud360Response[] @relation("WordCloud360ResponseEvaluator")
+  wordCloud360EvaluateeResponses   WordCloud360Response[] @relation("WordCloud360ResponseEvaluatee")
 
   @@map("employees")
 }
@@ -286,6 +292,7 @@ model EvalCycle {
   compensationScenarios CompensationScenario[]
   aiCompetencyCycle   AiCompetencyCycle?
   aiCompetencyResults AiCompetencyResult[]
+  wordCloud360Cycles  WordCloud360Cycle[]
 
   @@map("eval_cycles")
 }
@@ -600,6 +607,164 @@ enum FeedbackStatus {
   PENDING
   IN_PROGRESS
   SUBMITTED
+}
+
+enum WordCloud360CycleStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum WordCloudKeywordPolarity {
+  POSITIVE
+  NEGATIVE
+}
+
+enum WordCloudKeywordCategory {
+  ATTITUDE
+  ABILITY
+  OTHER
+}
+
+enum WordCloudKeywordSourceType {
+  KDN
+  MBTI
+  ENNEAGRAM
+  EXTRA
+}
+
+enum WordCloudEvaluatorGroup {
+  MANAGER
+  PEER
+  SUBORDINATE
+  SELF
+}
+
+enum WordCloudAssignmentStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+}
+
+enum WordCloudResponseStatus {
+  DRAFT
+  SUBMITTED
+}
+
+model WordCloud360Cycle {
+  id                     String                  @id @default(cuid())
+  orgId                  String
+  organization           Organization            @relation(fields: [orgId], references: [id])
+  evalCycleId            String?
+  evalCycle              EvalCycle?              @relation(fields: [evalCycleId], references: [id])
+  cycleName              String
+  startDate              DateTime?
+  endDate                DateTime?
+  status                 WordCloud360CycleStatus @default(DRAFT)
+  positiveSelectionLimit Int                     @default(10)
+  negativeSelectionLimit Int                     @default(10)
+  resultPrivacyThreshold Int                     @default(3)
+  evaluatorGroups        Json?
+  publishedAt            DateTime?
+  notes                  String?
+  createdById            String
+  updatedById            String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  assignments WordCloud360Assignment[]
+  responses   WordCloud360Response[]
+
+  @@index([orgId, createdAt])
+  @@index([evalCycleId, createdAt])
+  @@map("word_cloud_360_cycles")
+}
+
+model WordCloud360Keyword {
+  id           String                    @id @default(cuid())
+  orgId        String
+  organization Organization              @relation(fields: [orgId], references: [id])
+  keyword      String
+  polarity     WordCloudKeywordPolarity
+  category     WordCloudKeywordCategory
+  sourceType   WordCloudKeywordSourceType
+  active       Boolean                   @default(true)
+  displayOrder Int                       @default(0)
+  note         String?
+  warningFlag  Boolean                   @default(false)
+  createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+
+  items WordCloud360ResponseItem[]
+
+  @@unique([orgId, keyword, polarity])
+  @@index([orgId, polarity, active, displayOrder])
+  @@map("word_cloud_360_keywords")
+}
+
+model WordCloud360Assignment {
+  id             String                    @id @default(cuid())
+  cycleId        String
+  cycle          WordCloud360Cycle         @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  evaluatorId    String
+  evaluator      Employee                  @relation("WordCloud360Evaluator", fields: [evaluatorId], references: [id])
+  evaluateeId    String
+  evaluatee      Employee                  @relation("WordCloud360Evaluatee", fields: [evaluateeId], references: [id])
+  evaluatorGroup WordCloudEvaluatorGroup
+  status         WordCloudAssignmentStatus @default(PENDING)
+  draftSavedAt   DateTime?
+  submittedAt    DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+
+  response WordCloud360Response?
+
+  @@unique([cycleId, evaluatorId, evaluateeId, evaluatorGroup])
+  @@index([cycleId, evaluateeId, status])
+  @@index([cycleId, evaluatorId, status])
+  @@map("word_cloud_360_assignments")
+}
+
+model WordCloud360Response {
+  id          String                @id @default(cuid())
+  assignmentId String               @unique
+  assignment  WordCloud360Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  cycleId     String
+  cycle       WordCloud360Cycle     @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  evaluatorId String
+  evaluator   Employee              @relation("WordCloud360ResponseEvaluator", fields: [evaluatorId], references: [id])
+  evaluateeId String
+  evaluatee   Employee              @relation("WordCloud360ResponseEvaluatee", fields: [evaluateeId], references: [id])
+  status      WordCloudResponseStatus @default(DRAFT)
+  submittedAt DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  items WordCloud360ResponseItem[]
+
+  @@index([cycleId, evaluateeId, status])
+  @@index([cycleId, evaluatorId, status])
+  @@map("word_cloud_360_responses")
+}
+
+model WordCloud360ResponseItem {
+  id                String                    @id @default(cuid())
+  responseId        String
+  response          WordCloud360Response      @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  keywordId         String
+  keyword           WordCloud360Keyword       @relation(fields: [keywordId], references: [id])
+  polarity          WordCloudKeywordPolarity
+  category          WordCloudKeywordCategory
+  keywordTextSnapshot String
+  evaluatorGroup    WordCloudEvaluatorGroup
+  selectedAt        DateTime                  @default(now())
+
+  @@unique([responseId, keywordId])
+  @@index([responseId, polarity])
+  @@index([keywordId])
+  @@map("word_cloud_360_response_items")
 }
 
 model FeedbackResponse {

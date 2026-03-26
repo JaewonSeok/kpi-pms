@@ -329,6 +329,18 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
             {notice.message}
           </div>
         ) : null}
+        {data.alerts?.length ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="font-semibold">일부 운영 데이터를 불러오지 못해 기본 화면으로 표시 중입니다.</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800">
+              {data.alerts.map((alert) => (
+                <li key={`${alert.title}:${alert.description}`}>
+                  {alert.title} {alert.description}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {data.summary ? (
           <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <MetricCard label="대상자" value={`${data.summary.targetCount}명`} />

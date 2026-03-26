@@ -68,6 +68,10 @@ export type AiCompetencyPageState = 'ready' | 'empty' | 'permission-denied' | 'e
 export type AiCompetencyPageData = {
   state: AiCompetencyPageState
   message?: string
+  alerts?: Array<{
+    title: string
+    description: string
+  }>
   currentUser?: {
     id: string
     name: string
@@ -491,6 +495,8 @@ export type AiCompetencyPageData = {
   }
 }
 
+type AiCompetencyPageAlert = NonNullable<AiCompetencyPageData['alerts']>[number]
+
 const DEFAULT_POLICY_ACKNOWLEDGEMENT =
   '외부 자격으로 대체하더라도 사내 AI 활용 가이드와 민감정보 처리 원칙을 숙지하고 준수합니다.'
 
@@ -799,6 +805,82 @@ async function loadEmployeeWithOrg(userId: string) {
       },
     },
   })
+}
+
+function buildAiCompetencyCurrentUser(
+  employee: {
+    id: string
+    empName: string
+    department: {
+      deptName: string
+    }
+  },
+  role: SystemRole
+) {
+  return {
+    id: employee.id,
+    name: employee.empName,
+    role,
+    department: employee.department.deptName,
+  }
+}
+
+function buildAiCompetencyPermissions(role: SystemRole) {
+  return {
+    canManageCycles: isAdmin(role),
+    canManageQuestions: isAdmin(role),
+    canManageAssignments: isAdmin(role),
+    canManageResults: isAdmin(role),
+    canReviewSubmissions: canServeAsReviewer(role),
+    canViewExecutive: canViewExecutive(role),
+  }
+}
+
+function buildEmptyAiCompetencySummary(): NonNullable<AiCompetencyPageData['summary']> {
+  return {
+    targetCount: 0,
+    completedFirstRoundCount: 0,
+    passedFirstRoundCount: 0,
+    secondRoundSubmissionCount: 0,
+    certificationCount: 0,
+    syncedCount: 0,
+  }
+}
+
+function buildEmptyAiCompetencyAdminView(): NonNullable<AiCompetencyPageData['adminView']> {
+  return {
+    employeeDirectory: [],
+    reviewerDirectory: [],
+    questionBank: [],
+    assignments: [],
+    manualScoringQueue: [],
+    secondRoundQueue: [],
+    blueprints: [],
+    blueprintLibrary: [],
+    rubrics: [],
+    rubricLibrary: [],
+    certClaims: [],
+    results: [],
+  }
+}
+
+async function loadAiCompetencySection<T>(params: {
+  alerts: AiCompetencyPageAlert[]
+  title: string
+  description: string
+  fallback: T
+  task: () => Promise<T>
+}) {
+  try {
+    return await params.task()
+  } catch (error) {
+    console.error(`[ai-competency] ${params.title}`, error)
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+    })
+    return params.fallback
+  }
 }
 
 async function requireCycleForMutation(cycleId: string) {
@@ -1188,6 +1270,9 @@ export async function getAiCompetencyPageData(params: {
       }
     }
 
+    const currentUser = buildAiCompetencyCurrentUser(employee, params.session.user.role)
+    const permissions = buildAiCompetencyPermissions(params.session.user.role)
+
     const [regularEvalCycles, aiCycles] = await Promise.all([
       prisma.evalCycle.findMany({
         where: { orgId: employee.department.orgId },
@@ -1215,38 +1300,20 @@ export async function getAiCompetencyPageData(params: {
       aiCycles[0] ??
       null
 
-    const permissions = {
-      canManageCycles: isAdmin(params.session.user.role),
-      canManageQuestions: isAdmin(params.session.user.role),
-      canManageAssignments: isAdmin(params.session.user.role),
-      canManageResults: isAdmin(params.session.user.role),
-      canReviewSubmissions: canServeAsReviewer(params.session.user.role),
-      canViewExecutive: canViewExecutive(params.session.user.role),
-    }
-
     if (!selectedCycle) {
-      if (!isAdmin(params.session.user.role)) {
+      if (!permissions.canManageCycles) {
         return {
           state: 'empty',
           message: '운영 중인 AI 활용능력 평가 주기가 없습니다.',
-          currentUser: {
-            id: employee.id,
-            name: employee.empName,
-            role: params.session.user.role,
-            department: employee.department.deptName,
-          },
+          currentUser,
           availableCycles: [],
+          permissions,
         }
       }
 
       return {
         state: 'ready',
-        currentUser: {
-          id: employee.id,
-          name: employee.empName,
-          role: params.session.user.role,
-          department: employee.department.deptName,
-        },
+        currentUser,
         availableCycles: [],
         availableEvalCycles: regularEvalCycles.map((cycle) => ({
           id: cycle.id,
@@ -1256,238 +1323,337 @@ export async function getAiCompetencyPageData(params: {
           linkedAiCycleId: cycle.aiCompetencyCycle?.id,
         })),
         permissions,
-        adminView: {
-          employeeDirectory: [],
-          reviewerDirectory: [],
-          questionBank: [],
-          assignments: [],
-          manualScoringQueue: [],
-          secondRoundQueue: [],
-          blueprints: [],
-          blueprintLibrary: [],
-          rubrics: [],
-          rubricLibrary: [],
-          certClaims: [],
-          results: [],
-        },
+        adminView: buildEmptyAiCompetencyAdminView(),
       }
     }
 
-    await ensureDefaultCertificateMasters(selectedCycle.evalCycle.orgId)
+    const alerts: AiCompetencyPageAlert[] = []
+    const loadsAllAssignments = permissions.canManageCycles || permissions.canViewExecutive
 
-    const [certMasters, cycleAssignments, cycleQuestions, reviewerQueue, cycleSummary] = await Promise.all([
-      prisma.aiCompetencyExternalCertMaster.findMany({
-        where: {
-          orgId: selectedCycle.evalCycle.orgId,
-          isActive: true,
-        },
-        orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
-      }),
-      prisma.aiCompetencyAssignment.findMany({
-        where: { cycleId: selectedCycle.id },
-        include: {
-          employee: {
-            include: {
-              department: true,
-            },
-          },
-          attempt: {
-            include: {
-              answers: {
-                select: {
-                  questionId: true,
-                  answerPayload: true,
-                },
-              },
-              generatedSet: true,
-            },
-          },
-          secondRoundSubmissions: {
-            include: {
-              artifacts: true,
-              rubric: {
-                include: {
-                  criteria: {
-                    include: {
-                      bands: {
-                        orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
-                      },
-                    },
-                    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-                  },
-                },
-              },
-              reviews: {
-                include: {
-                  reviewer: {
-                    select: {
-                      id: true,
-                      empName: true,
-                    },
-                  },
-                  rubric: {
-                    include: {
-                      criteria: {
-                        include: {
-                          bands: {
-                            orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
-                          },
-                        },
-                        orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-                      },
-                    },
-                  },
-                  scores: true,
-                },
-              },
-            },
-          },
-          externalCertClaims: {
-            include: {
-              certificate: true,
-            },
-            orderBy: [{ createdAt: 'desc' }],
-          },
-          result: true,
-        },
-        orderBy: [{ employee: { empName: 'asc' } }],
-      }),
-      prisma.aiCompetencyQuestion.findMany({
-        where: { cycleId: selectedCycle.id },
-        orderBy: [{ isActive: 'desc' }, { isCommon: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
-      }),
-      prisma.aiCompetencySubmissionReview.findMany({
-        where: isAdmin(params.session.user.role)
-          ? { submission: { cycleId: selectedCycle.id } }
-          : { reviewerId: employee.id, submission: { cycleId: selectedCycle.id } },
-        include: {
-          scores: true,
-          rubric: {
-            include: {
-              criteria: {
-                include: {
-                  bands: {
-                    orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
-                  },
-                },
-                orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-              },
-            },
-          },
-          submission: {
-            include: {
-              employee: {
-                include: {
-                  department: true,
-                },
-              },
-              assignment: true,
-              artifacts: true,
-              rubric: {
-                include: {
-                  criteria: {
-                    include: {
-                      bands: {
-                        orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
-                      },
-                    },
-                    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-                  },
-                },
-              },
-            },
-          },
-        },
-        orderBy: [{ createdAt: 'desc' }],
-      }),
-      Promise.all([
-        prisma.aiCompetencyAssignment.count({ where: { cycleId: selectedCycle.id } }),
-        prisma.aiCompetencyAttempt.count({ where: { cycleId: selectedCycle.id, status: { in: ['SUBMITTED', 'SCORED'] } } }),
-        prisma.aiCompetencyAttempt.count({ where: { cycleId: selectedCycle.id, passStatus: 'PASSED' } }),
-        prisma.aiCompetencySecondRoundSubmission.count({ where: { cycleId: selectedCycle.id } }),
-        prisma.aiCompetencyResult.count({
+    const certMasters = (await loadAiCompetencySection({
+      alerts,
+      title: '외부자격 기준 정보를 불러오지 못했습니다.',
+      description: '외부자격 카드와 승인 목록은 기본 상태로 표시합니다.',
+      fallback: [] as Awaited<ReturnType<typeof prisma.aiCompetencyExternalCertMaster.findMany>>,
+      task: async () => {
+        await ensureDefaultCertificateMasters(selectedCycle.evalCycle.orgId)
+        return prisma.aiCompetencyExternalCertMaster.findMany({
           where: {
-            cycleId: selectedCycle.id,
-            certificationStatus: {
-              in: ['INTERNAL_CERTIFIED', 'EXTERNAL_RECOGNIZED', 'INTERNAL_AND_EXTERNAL'],
-            },
+            orgId: selectedCycle.evalCycle.orgId,
+            isActive: true,
           },
-        }),
-        prisma.aiCompetencyResult.count({ where: { cycleId: selectedCycle.id, syncState: 'SYNCED' } }),
-      ]),
-    ])
+          orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+        })
+      },
+    })) as Array<any>
 
-    const [targetCount, completedFirstRoundCount, passedFirstRoundCount, secondRoundSubmissionCount, certificationCount, syncedCount] =
-      cycleSummary
-
-    const [cycleBlueprints, blueprintLibrary, cycleRubrics, rubricLibrary] = await Promise.all([
-      prisma.aiCompetencyExamBlueprint.findMany({
-        where: { cycleId: selectedCycle.id },
-        include: {
-          rows: {
-            orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-          },
-        },
-        orderBy: [{ track: 'asc' }, { status: 'asc' }, { blueprintVersion: 'desc' }, { createdAt: 'desc' }],
-      }),
-      prisma.aiCompetencyExamBlueprint.findMany({
-        where: {
-          cycle: {
-            evalCycle: {
-              orgId: employee.department.orgId,
-            },
-          },
-        },
-        include: {
-          cycle: {
-            include: {
-              evalCycle: true,
-            },
-          },
-        },
-        orderBy: [{ cycle: { evalCycle: { evalYear: 'desc' } } }, { createdAt: 'desc' }],
-      }),
-      prisma.aiCompetencyReviewRubric.findMany({
-        where: { cycleId: selectedCycle.id },
-        include: {
-          criteria: {
-            include: {
-              bands: {
-                orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
+    const cycleAssignments = (await loadAiCompetencySection({
+      alerts,
+      title: '대상자와 진행 현황을 불러오지 못했습니다.',
+      description: '배정 현황과 개인 진행 상태는 비어 있는 상태로 표시합니다.',
+      fallback: [] as Awaited<ReturnType<typeof prisma.aiCompetencyAssignment.findMany>>,
+      task: () =>
+        prisma.aiCompetencyAssignment.findMany({
+          where: loadsAllAssignments
+            ? { cycleId: selectedCycle.id }
+            : { cycleId: selectedCycle.id, employeeId: employee.id },
+          include: {
+            employee: {
+              include: {
+                department: true,
               },
             },
-            orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
-          },
-        },
-        orderBy: [{ track: 'asc' }, { status: 'asc' }, { rubricVersion: 'desc' }, { createdAt: 'desc' }],
-      }),
-      prisma.aiCompetencyReviewRubric.findMany({
-        where: {
-          cycle: {
-            evalCycle: {
-              orgId: employee.department.orgId,
+            attempt: {
+              include: {
+                answers: {
+                  select: {
+                    questionId: true,
+                    answerPayload: true,
+                  },
+                },
+                generatedSet: true,
+              },
             },
-          },
-        },
-        include: {
-          cycle: {
-            include: {
-              evalCycle: true,
+            secondRoundSubmissions: {
+              include: {
+                artifacts: true,
+                rubric: {
+                  include: {
+                    criteria: {
+                      include: {
+                        bands: {
+                          orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
+                        },
+                      },
+                      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+                    },
+                  },
+                },
+                reviews: {
+                  include: {
+                    reviewer: {
+                      select: {
+                        id: true,
+                        empName: true,
+                      },
+                    },
+                    rubric: {
+                      include: {
+                        criteria: {
+                          include: {
+                            bands: {
+                              orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
+                            },
+                          },
+                          orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+                        },
+                      },
+                    },
+                    scores: true,
+                  },
+                },
+              },
             },
+            externalCertClaims: {
+              include: {
+                certificate: true,
+              },
+              orderBy: [{ createdAt: 'desc' }],
+            },
+            result: true,
           },
-        },
-        orderBy: [{ cycle: { evalCycle: { evalYear: 'desc' } } }, { createdAt: 'desc' }],
-      }),
-    ])
+          orderBy: [{ employee: { empName: 'asc' } }],
+        }),
+    })) as Array<any>
+
+    const cycleQuestions = await loadAiCompetencySection({
+      alerts,
+      title: '1차 문제은행을 불러오지 못했습니다.',
+      description: '문항 목록과 체계표 비교 정보는 비어 있는 상태로 표시합니다.',
+      fallback: [] as QuestionRecord[],
+      task: () =>
+        prisma.aiCompetencyQuestion.findMany({
+          where: { cycleId: selectedCycle.id },
+          orderBy: [{ isActive: 'desc' }, { isCommon: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }],
+        }),
+    })
+
+    const cycleSummary = await loadAiCompetencySection({
+      alerts,
+      title: '운영 요약 통계를 불러오지 못했습니다.',
+      description: '상단 통계 카드는 0건 기준으로 표시합니다.',
+      fallback: buildEmptyAiCompetencySummary(),
+      task: async () => {
+        const [
+          targetCount,
+          completedFirstRoundCount,
+          passedFirstRoundCount,
+          secondRoundSubmissionCount,
+          certificationCount,
+          syncedCount,
+        ] = await Promise.all([
+          prisma.aiCompetencyAssignment.count({ where: { cycleId: selectedCycle.id } }),
+          prisma.aiCompetencyAttempt.count({
+            where: {
+              cycleId: selectedCycle.id,
+              status: { in: ['SUBMITTED', 'SCORED'] },
+            },
+          }),
+          prisma.aiCompetencyAttempt.count({ where: { cycleId: selectedCycle.id, passStatus: 'PASSED' } }),
+          prisma.aiCompetencySecondRoundSubmission.count({ where: { cycleId: selectedCycle.id } }),
+          prisma.aiCompetencyResult.count({
+            where: {
+              cycleId: selectedCycle.id,
+              certificationStatus: {
+                in: ['INTERNAL_CERTIFIED', 'EXTERNAL_RECOGNIZED', 'INTERNAL_AND_EXTERNAL'],
+              },
+            },
+          }),
+          prisma.aiCompetencyResult.count({ where: { cycleId: selectedCycle.id, syncState: 'SYNCED' } }),
+        ])
+
+        return {
+          targetCount,
+          completedFirstRoundCount,
+          passedFirstRoundCount,
+          secondRoundSubmissionCount,
+          certificationCount,
+          syncedCount,
+        }
+      },
+    })
+
+    const reviewerQueue = permissions.canReviewSubmissions
+      ? ((await loadAiCompetencySection({
+          alerts,
+          title: '심사 대기 목록을 불러오지 못했습니다.',
+          description: '리뷰어 큐는 비어 있는 상태로 표시합니다.',
+          fallback: [] as Awaited<ReturnType<typeof prisma.aiCompetencySubmissionReview.findMany>>,
+          task: () =>
+            prisma.aiCompetencySubmissionReview.findMany({
+              where: permissions.canManageCycles
+                ? { submission: { cycleId: selectedCycle.id } }
+                : { reviewerId: employee.id, submission: { cycleId: selectedCycle.id } },
+              include: {
+                scores: true,
+                rubric: {
+                  include: {
+                    criteria: {
+                      include: {
+                        bands: {
+                          orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
+                        },
+                      },
+                      orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+                    },
+                  },
+                },
+                submission: {
+                  include: {
+                    employee: {
+                      include: {
+                        department: true,
+                      },
+                    },
+                    assignment: true,
+                    artifacts: true,
+                    rubric: {
+                      include: {
+                        criteria: {
+                          include: {
+                            bands: {
+                              orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
+                            },
+                          },
+                          orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              orderBy: [{ createdAt: 'desc' }],
+            }),
+        })) as Array<any>)
+      : ([] as Array<any>)
+
+    const selfAssignment = cycleAssignments.find((assignment) => assignment.employeeId === employee.id) ?? null
+
+    const employeeBlueprints =
+      selfAssignment && !permissions.canManageCycles
+        ? ((await loadAiCompetencySection({
+            alerts,
+            title: '적용 중인 1차 문항 체계표를 불러오지 못했습니다.',
+            description: '시험 운영은 계속 가능하지만 체계표 요약은 표시되지 않습니다.',
+            fallback: [] as Awaited<ReturnType<typeof loadActiveBlueprintBundle>>,
+            task: () =>
+              loadActiveBlueprintBundle({
+                cycleId: selectedCycle.id,
+                track: selfAssignment.track,
+              }),
+          })) as Array<any>)
+        : ([] as Array<any>)
+
+    const cycleBlueprints = permissions.canManageCycles
+      ? ((await loadAiCompetencySection({
+          alerts,
+          title: '문항 체계표 운영 정보를 불러오지 못했습니다.',
+          description: '문항 체계표 탭은 빈 목록으로 표시합니다.',
+          fallback: [] as Awaited<ReturnType<typeof prisma.aiCompetencyExamBlueprint.findMany>>,
+          task: () =>
+            prisma.aiCompetencyExamBlueprint.findMany({
+              where: { cycleId: selectedCycle.id },
+              include: {
+                rows: {
+                  orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+                },
+              },
+              orderBy: [{ track: 'asc' }, { status: 'asc' }, { blueprintVersion: 'desc' }, { createdAt: 'desc' }],
+            }),
+        })) as Array<any>)
+      : ([] as Array<any>)
+
+    const blueprintLibrary = permissions.canManageCycles
+      ? ((await loadAiCompetencySection({
+          alerts,
+          title: '이전 문항 체계표 라이브러리를 불러오지 못했습니다.',
+          description: '체계표 복제 목록은 비어 있는 상태로 표시합니다.',
+          fallback: [] as Awaited<ReturnType<typeof prisma.aiCompetencyExamBlueprint.findMany>>,
+          task: () =>
+            prisma.aiCompetencyExamBlueprint.findMany({
+              where: {
+                cycle: {
+                  evalCycle: {
+                    orgId: employee.department.orgId,
+                  },
+                },
+              },
+              include: {
+                cycle: {
+                  include: {
+                    evalCycle: true,
+                  },
+                },
+              },
+              orderBy: [{ createdAt: 'desc' }],
+            }),
+        })) as Array<any>)
+      : ([] as Array<any>)
+
+    const cycleRubrics = permissions.canManageCycles
+      ? ((await loadAiCompetencySection({
+          alerts,
+          title: '루브릭 시트 운영 정보를 불러오지 못했습니다.',
+          description: '루브릭 탭은 빈 목록으로 표시합니다.',
+          fallback: [] as Awaited<ReturnType<typeof prisma.aiCompetencyReviewRubric.findMany>>,
+          task: () =>
+            prisma.aiCompetencyReviewRubric.findMany({
+              where: { cycleId: selectedCycle.id },
+              include: {
+                criteria: {
+                  include: {
+                    bands: {
+                      orderBy: [{ displayOrder: 'asc' }, { score: 'desc' }],
+                    },
+                  },
+                  orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+                },
+              },
+              orderBy: [{ track: 'asc' }, { status: 'asc' }, { rubricVersion: 'desc' }, { createdAt: 'desc' }],
+            }),
+        })) as Array<any>)
+      : ([] as Array<any>)
+
+    const rubricLibrary = permissions.canManageCycles
+      ? ((await loadAiCompetencySection({
+          alerts,
+          title: '이전 루브릭 라이브러리를 불러오지 못했습니다.',
+          description: '루브릭 복제 목록은 비어 있는 상태로 표시합니다.',
+          fallback: [] as Awaited<ReturnType<typeof prisma.aiCompetencyReviewRubric.findMany>>,
+          task: () =>
+            prisma.aiCompetencyReviewRubric.findMany({
+              where: {
+                cycle: {
+                  evalCycle: {
+                    orgId: employee.department.orgId,
+                  },
+                },
+              },
+              include: {
+                cycle: {
+                  include: {
+                    evalCycle: true,
+                  },
+                },
+              },
+              orderBy: [{ createdAt: 'desc' }],
+            }),
+        })) as Array<any>)
+      : ([] as Array<any>)
 
     const pageData: AiCompetencyPageData = {
       state: 'ready',
-      currentUser: {
-        id: employee.id,
-        name: employee.empName,
-        role: params.session.user.role,
-        department: employee.department.deptName,
-      },
+      currentUser,
       availableCycles: aiCycles.map((cycle) => ({
         id: cycle.id,
         name: cycle.cycleName,
@@ -1504,17 +1670,9 @@ export async function getAiCompetencyPageData(params: {
       })),
       selectedCycleId: selectedCycle.id,
       permissions,
-      summary: {
-        targetCount,
-        completedFirstRoundCount,
-        passedFirstRoundCount,
-        secondRoundSubmissionCount,
-        certificationCount,
-        syncedCount,
-      },
+      summary: cycleSummary,
+      alerts,
     }
-
-    const selfAssignment = cycleAssignments.find((assignment) => assignment.employeeId === employee.id)
     const reviewQueue = reviewerQueue.map((review) => ({
       reviewId: review.id,
       submissionId: review.submissionId,
@@ -1523,20 +1681,20 @@ export async function getAiCompetencyPageData(params: {
       track: review.submission.assignment.track,
       status: review.submission.status,
       artifactCount: review.submission.artifacts.length,
-      artifacts: review.submission.artifacts.map((artifact) => ({
+      artifacts: review.submission.artifacts.map((artifact: any) => ({
         id: artifact.id,
         fileName: artifact.fileName,
         sizeBytes: artifact.sizeBytes,
       })),
       taskDescription: review.submission.taskDescription,
-      submittedAt: review.submission.submittedAt.toISOString(),
+      submittedAt: toIso(review.submission.submittedAt) ?? '',
       reviewStatus: review.status,
       aggregatedScore: review.submission.aggregatedScore ?? undefined,
       existingDecision: review.decision ?? undefined,
       existingBonus: review.bonusScore ?? undefined,
       existingNote: review.notes ?? undefined,
       existingQnaNote: review.qnaNote ?? undefined,
-      existingCriteriaScores: review.scores.map((score) => ({
+      existingCriteriaScores: review.scores.map((score: any) => ({
         criterionId: score.criterionId,
         score: score.score,
         comment: score.comment ?? undefined,
@@ -1550,7 +1708,7 @@ export async function getAiCompetencyPageData(params: {
             passScore: (review.rubric ?? review.submission.rubric)!.passScore,
             bonusScoreIfPassed: (review.rubric ?? review.submission.rubric)!.bonusScoreIfPassed,
             certificationLabel: (review.rubric ?? review.submission.rubric)!.certificationLabel ?? undefined,
-            criteria: (review.rubric ?? review.submission.rubric)!.criteria.map((criterion) => ({
+            criteria: (review.rubric ?? review.submission.rubric)!.criteria.map((criterion: any) => ({
               criterionId: criterion.id,
               criterionCode: criterion.criterionCode,
               criterionName: criterion.criterionName,
@@ -1558,7 +1716,7 @@ export async function getAiCompetencyPageData(params: {
               maxScore: criterion.maxScore,
               mandatory: criterion.mandatory,
               knockout: criterion.knockout,
-              bands: criterion.bands.map((band) => ({
+              bands: criterion.bands.map((band: any) => ({
                 score: band.score,
                 title: band.title,
                 description: band.description ?? undefined,
@@ -1570,23 +1728,21 @@ export async function getAiCompetencyPageData(params: {
     }))
 
     if (selfAssignment) {
-      const activeBlueprintsForTrack = cycleBlueprints.filter(
-        (blueprint) =>
-          blueprint.status === 'ACTIVE' &&
-          (blueprint.track === null || blueprint.track === selfAssignment.track)
+      const activeBlueprintsForTrack = (permissions.canManageCycles ? cycleBlueprints : employeeBlueprints).filter(
+        (blueprint) => blueprint.status === 'ACTIVE' && (blueprint.track === null || blueprint.track === selfAssignment.track)
       )
       const questionsForTrack = cycleQuestions
         .filter((question) => question.isActive)
         .filter((question) => question.isCommon || question.track === selfAssignment.track)
 
       const answerMap = new Map(
-        selfAssignment.attempt?.answers.map((answer) => [answer.questionId, answer.answerPayload] as const) ?? []
+        selfAssignment.attempt?.answers.map((answer: any) => [answer.questionId, answer.answerPayload] as const) ?? []
       )
       const orderedQuestions =
         selfAssignment.attempt?.questionOrder && Array.isArray(selfAssignment.attempt.questionOrder)
           ? selfAssignment.attempt.questionOrder
-              .map((questionId) => questionsForTrack.find((question) => question.id === questionId))
-              .filter((question): question is QuestionRecord => Boolean(question))
+              .map((questionId: any) => questionsForTrack.find((question: any) => question.id === questionId))
+              .filter((question: any): question is QuestionRecord => Boolean(question))
           : activeBlueprintsForTrack.length
             ? []
             : questionsForTrack
@@ -1620,8 +1776,8 @@ export async function getAiCompetencyPageData(params: {
           secondRoundVolunteer: selfAssignment.secondRoundVolunteer,
           policyAcknowledgedAt: toIso(selfAssignment.policyAcknowledgedAt),
         },
-        questions: orderedQuestions.map((question) =>
-          serializeQuestionForEmployee(question, answerMap.get(question.id))
+        questions: orderedQuestions.map((question: any) =>
+          serializeQuestionForEmployee(question, answerMap.get(question.id) as Prisma.JsonValue | undefined)
         ),
         assessmentPlan,
         attempt: selfAssignment.attempt
@@ -1654,12 +1810,12 @@ export async function getAiCompetencyPageData(params: {
             validityMonths: master.validityMonths ?? undefined,
             requiresPolicyAcknowledgement: master.requiresPolicyAcknowledgement,
           })),
-          claims: selfAssignment.externalCertClaims.map((claim) => ({
+          claims: selfAssignment.externalCertClaims.map((claim: any) => ({
             id: claim.id,
             status: claim.status,
             certificateName: claim.certificate.name,
             mappedScoreSnapshot: claim.mappedScoreSnapshot,
-            submittedAt: claim.submittedAt.toISOString(),
+            submittedAt: toIso(claim.submittedAt) ?? '',
             decidedAt: toIso(claim.decidedAt),
             rejectionReason: claim.rejectionReason ?? undefined,
             proofFileName: claim.proofFileName,
@@ -1695,12 +1851,12 @@ export async function getAiCompetencyPageData(params: {
           aggregatedScore: latestSubmission.aggregatedScore ?? undefined,
           aggregatedBonus: latestSubmission.aggregatedBonus ?? undefined,
           internalCertificationGranted: latestSubmission.internalCertificationGranted,
-          artifacts: latestSubmission.artifacts.map((artifact) => ({
+          artifacts: latestSubmission.artifacts.map((artifact: any) => ({
             id: artifact.id,
             fileName: artifact.fileName,
             sizeBytes: artifact.sizeBytes,
           })),
-          reviews: latestSubmission.reviews.map((review) => ({
+          reviews: latestSubmission.reviews.map((review: any) => ({
             reviewerId: review.reviewerId,
             reviewerName: review.reviewer.empName,
             decision: review.decision ?? undefined,
@@ -1735,47 +1891,63 @@ export async function getAiCompetencyPageData(params: {
       }
     }
 
-    if (isAdmin(params.session.user.role)) {
-      const departments = await prisma.department.findMany({
-        where: { orgId: employee.department.orgId },
-        select: { id: true },
-      })
-      const orgEmployees = await prisma.employee.findMany({
-        where: {
-          deptId: { in: departments.map((department) => department.id) },
-        },
-        include: {
-          department: true,
-        },
-        orderBy: [{ status: 'asc' }, { empName: 'asc' }],
-      })
-      const manualScoringQueue = await prisma.aiCompetencyAnswer.findMany({
-        where: {
-          question: {
-            cycleId: selectedCycle.id,
-            OR: [{ questionType: 'SHORT_ANSWER' }, { questionType: 'PRACTICAL' }, { requiresManualScoring: true }],
-          },
-          manualScore: null,
-          attempt: {
-            status: 'SUBMITTED',
-          },
-        },
-        include: {
-          question: true,
-          attempt: {
+    if (permissions.canManageCycles) {
+      const orgEmployees = (await loadAiCompetencySection({
+        alerts,
+        title: '조직 대상자 목록을 불러오지 못했습니다.',
+        description: '대상자/리뷰어 배정 탭은 빈 목록으로 표시합니다.',
+        fallback: [] as Awaited<ReturnType<typeof prisma.employee.findMany>>,
+        task: async () => {
+          const departments = await prisma.department.findMany({
+            where: { orgId: employee.department.orgId },
+            select: { id: true },
+          })
+          return prisma.employee.findMany({
+            where: {
+              deptId: { in: departments.map((department) => department.id) },
+            },
             include: {
-              assignment: {
+              department: true,
+            },
+            orderBy: [{ status: 'asc' }, { empName: 'asc' }],
+          })
+        },
+      })) as Array<any>
+      const manualScoringQueue = (await loadAiCompetencySection({
+        alerts,
+        title: '수기 채점 대기 답안을 불러오지 못했습니다.',
+        description: '수기 채점 탭은 빈 목록으로 표시합니다.',
+        fallback: [] as Awaited<ReturnType<typeof prisma.aiCompetencyAnswer.findMany>>,
+        task: () =>
+          prisma.aiCompetencyAnswer.findMany({
+            where: {
+              question: {
+                cycleId: selectedCycle.id,
+                OR: [{ questionType: 'SHORT_ANSWER' }, { questionType: 'PRACTICAL' }, { requiresManualScoring: true }],
+              },
+              manualScore: null,
+              attempt: {
+                status: 'SUBMITTED',
+              },
+            },
+            include: {
+              question: true,
+              attempt: {
                 include: {
-                  employee: true,
+                  assignment: {
+                    include: {
+                      employee: true,
+                    },
+                  },
                 },
               },
             },
-          },
-        },
-        orderBy: [{ createdAt: 'asc' }],
-      })
+            orderBy: [{ createdAt: 'asc' }],
+          }),
+      })) as Array<any>
 
       pageData.adminView = {
+        ...buildEmptyAiCompetencyAdminView(),
         cycle: {
           id: selectedCycle.id,
           evalCycleId: selectedCycle.evalCycleId,
@@ -1865,7 +2037,7 @@ export async function getAiCompetencyPageData(params: {
           attemptId: row.attemptId,
         })),
         secondRoundQueue: cycleAssignments.flatMap((assignment) =>
-          assignment.secondRoundSubmissions.map((submission) => ({
+          assignment.secondRoundSubmissions.map((submission: any) => ({
             submissionId: submission.id,
             employeeName: assignment.employee.empName,
             department: assignment.employee.department.deptName,
@@ -1873,7 +2045,7 @@ export async function getAiCompetencyPageData(params: {
             status: submission.status,
             artifactCount: submission.artifacts.length,
             reviewerCount: submission.reviews.length,
-            submittedAt: submission.submittedAt.toISOString(),
+            submittedAt: toIso(submission.submittedAt) ?? '',
             aggregatedScore: submission.aggregatedScore ?? undefined,
             aggregatedBonus: submission.aggregatedBonus ?? undefined,
           }))
@@ -1984,13 +2156,13 @@ export async function getAiCompetencyPageData(params: {
             track: rubric.track ?? undefined,
           })),
         certClaims: cycleAssignments.flatMap((assignment) =>
-          assignment.externalCertClaims.map((claim) => ({
+          assignment.externalCertClaims.map((claim: any) => ({
             claimId: claim.id,
             employeeName: assignment.employee.empName,
             certificateName: claim.certificate.name,
             status: claim.status,
             mappedScoreSnapshot: claim.mappedScoreSnapshot,
-            submittedAt: claim.submittedAt.toISOString(),
+            submittedAt: toIso(claim.submittedAt) ?? '',
             decidedAt: toIso(claim.decidedAt),
             proofFileName: claim.proofFileName,
           }))
@@ -2015,7 +2187,7 @@ export async function getAiCompetencyPageData(params: {
       }
     }
 
-    if (canViewExecutive(params.session.user.role)) {
+    if (permissions.canViewExecutive) {
       const results = cycleAssignments
         .filter((assignment) => Boolean(assignment.result))
         .map((assignment) => ({
@@ -2044,10 +2216,14 @@ export async function getAiCompetencyPageData(params: {
       })
 
       pageData.executiveView = {
-        completionRate: targetCount ? roundScore((completedFirstRoundCount / targetCount) * 100) : 0,
-        passRate: targetCount ? roundScore((passedFirstRoundCount / targetCount) * 100) : 0,
-        secondRoundParticipationRate: targetCount ? roundScore((secondRoundSubmissionCount / targetCount) * 100) : 0,
-        certificationRate: targetCount ? roundScore((certificationCount / targetCount) * 100) : 0,
+        completionRate: cycleSummary.targetCount ? roundScore((cycleSummary.completedFirstRoundCount / cycleSummary.targetCount) * 100) : 0,
+        passRate: cycleSummary.targetCount ? roundScore((cycleSummary.passedFirstRoundCount / cycleSummary.targetCount) * 100) : 0,
+        secondRoundParticipationRate: cycleSummary.targetCount
+          ? roundScore((cycleSummary.secondRoundSubmissionCount / cycleSummary.targetCount) * 100)
+          : 0,
+        certificationRate: cycleSummary.targetCount
+          ? roundScore((cycleSummary.certificationCount / cycleSummary.targetCount) * 100)
+          : 0,
         trackDistribution,
         departmentDistribution: [...departmentMap.entries()].map(([department, scores]) => ({
           department,
