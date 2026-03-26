@@ -1,5 +1,9 @@
 import { getServerSession, type Session } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import {
+  canManagePersonalKpi,
+  getPersonalKpiScopeDepartmentIds,
+} from '@/lib/personal-kpi-access'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { UpdatePersonalKpiSchema } from '@/lib/validations'
@@ -13,17 +17,13 @@ type RouteContext = {
   params: Promise<{ id: string }>
 }
 
-function canManage(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
-}
-
 function getScopeDepartmentIds(session: Session | null) {
   if (!session) return []
-  if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') return null
-  if (session.user.role === 'ROLE_MEMBER') return [session.user.deptId]
-  return session.user.accessibleDepartmentIds.length
-    ? session.user.accessibleDepartmentIds
-    : [session.user.deptId]
+  return getPersonalKpiScopeDepartmentIds({
+    role: session.user.role,
+    deptId: session.user.deptId,
+    accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+  })
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -160,7 +160,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const nextEvalYear = data.evalYear ?? current.evalYear
     const nextWeight = data.weight ?? current.weight
 
-    if (nextEmployeeId !== current.employeeId && !canManage(session.user.role)) {
+    if (nextEmployeeId !== current.employeeId && !canManagePersonalKpi(session.user.role)) {
       throw new AppError(403, 'FORBIDDEN', '다른 직원으로 KPI를 이동할 권한이 없습니다.')
     }
 
@@ -204,11 +204,11 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
     }
 
-    if (data.status === 'CONFIRMED' && !canManage(session.user.role)) {
+    if (data.status === 'CONFIRMED' && !canManagePersonalKpi(session.user.role)) {
       throw new AppError(403, 'FORBIDDEN', '확정 상태로 변경할 권한이 없습니다.')
     }
 
-    if (data.status === 'ARCHIVED' && !canManage(session.user.role)) {
+    if (data.status === 'ARCHIVED' && !canManagePersonalKpi(session.user.role)) {
       throw new AppError(403, 'FORBIDDEN', '보관 처리할 권한이 없습니다.')
     }
 

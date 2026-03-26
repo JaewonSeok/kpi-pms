@@ -1,5 +1,9 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import {
+  canReviewPersonalKpi,
+  getPersonalKpiScopeDepartmentIds,
+} from '@/lib/personal-kpi-access'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -16,10 +20,6 @@ import {
 
 type RouteContext = {
   params: Promise<{ id: string }>
-}
-
-function canReview(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -47,11 +47,15 @@ export async function POST(request: Request, context: RouteContext) {
       throw new AppError(404, 'PERSONAL_KPI_NOT_FOUND', '개인 KPI를 찾을 수 없습니다.')
     }
 
+    const scopeDepartmentIds = getPersonalKpiScopeDepartmentIds({
+      role: session.user.role,
+      deptId: session.user.deptId,
+      accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+    })
     const inScope =
       kpi.employeeId === session.user.id ||
-      session.user.role === 'ROLE_ADMIN' ||
-      session.user.role === 'ROLE_CEO' ||
-      session.user.accessibleDepartmentIds.includes(kpi.employee.deptId) ||
+      scopeDepartmentIds === null ||
+      scopeDepartmentIds.includes(kpi.employee.deptId) ||
       session.user.deptId === kpi.employee.deptId
 
     if (!inScope) {
@@ -77,7 +81,7 @@ export async function POST(request: Request, context: RouteContext) {
     const clientInfo = getClientInfo(request)
 
     if (validated.data.action === 'SAVE_DRAFT') {
-      if (kpi.employeeId !== session.user.id && !canReview(session.user.role)) {
+      if (kpi.employeeId !== session.user.id && !canReviewPersonalKpi(session.user.role)) {
         throw new AppError(403, 'FORBIDDEN', '임시저장 로그를 남길 권한이 없습니다.')
       }
 
@@ -100,7 +104,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (validated.data.action === 'SUBMIT') {
-      if (kpi.employeeId !== session.user.id && !canReview(session.user.role)) {
+      if (kpi.employeeId !== session.user.id && !canReviewPersonalKpi(session.user.role)) {
         throw new AppError(403, 'FORBIDDEN', '제출 처리 권한이 없습니다.')
       }
 
@@ -122,7 +126,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (validated.data.action === 'START_REVIEW') {
-      if (!canReview(session.user.role)) {
+      if (!canReviewPersonalKpi(session.user.role)) {
         throw new AppError(403, 'FORBIDDEN', '검토 시작 권한이 없습니다.')
       }
 
@@ -144,7 +148,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (validated.data.action === 'REJECT') {
-      if (!canReview(session.user.role)) {
+      if (!canReviewPersonalKpi(session.user.role)) {
         throw new AppError(403, 'FORBIDDEN', '반려 권한이 없습니다.')
       }
 
@@ -173,7 +177,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (validated.data.action === 'APPROVE') {
-      if (!canReview(session.user.role)) {
+      if (!canReviewPersonalKpi(session.user.role)) {
         throw new AppError(403, 'FORBIDDEN', '승인 권한이 없습니다.')
       }
 
@@ -202,7 +206,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (validated.data.action === 'LOCK') {
-      if (!canReview(session.user.role)) {
+      if (!canReviewPersonalKpi(session.user.role)) {
         throw new AppError(403, 'FORBIDDEN', '잠금 권한이 없습니다.')
       }
 

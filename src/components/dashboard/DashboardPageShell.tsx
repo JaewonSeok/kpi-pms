@@ -15,11 +15,34 @@ export function DashboardPageShell({ data }: { data: DashboardPageData }) {
           </div>
           <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
             <div className="font-semibold text-slate-900">{data.title}</div>
-            <div className="mt-1">{data.year}년 기준 / {data.userName}</div>
-            <div className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${toneClass(data.statusTone)}`}>{data.statusLabel}</div>
+            <div className="mt-1">
+              {data.year}년 기준 / {data.userName}
+            </div>
+            <div className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${toneClass(data.statusTone)}`}>
+              {data.statusLabel}
+            </div>
           </div>
         </div>
       </section>
+
+      {data.alerts.length ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+            <AlertTriangle className="h-4 w-4" />
+            일부 정보를 불러오지 못해 기본 대시보드로 표시 중입니다.
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {data.alerts.map((alert) => (
+              <div key={alert.title + alert.description} className="rounded-2xl border border-amber-200 bg-white/80 p-4">
+                <div className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${toneClass(alert.tone)}`}>
+                  {alert.title}
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{alert.description}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {data.summary.map((card) => (
@@ -41,7 +64,7 @@ export function DashboardPageShell({ data }: { data: DashboardPageData }) {
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">달성률 추이</h2>
+              <h2 className="text-lg font-semibold text-slate-900">성과 추이</h2>
               <p className="mt-1 text-sm text-slate-500">최근 6개월 기준 평균 달성률 흐름입니다.</p>
             </div>
             <Link href="/kpi/monthly" className="inline-flex items-center text-sm font-semibold text-blue-600">
@@ -53,7 +76,7 @@ export function DashboardPageShell({ data }: { data: DashboardPageData }) {
             {data.trend.length ? (
               <MonthlyTrendChart data={data.trend} />
             ) : (
-              <EmptyState icon={<TrendingUp className="h-6 w-6" />} message="최근 달성률 데이터가 충분하지 않습니다." />
+              <EmptyState icon={<TrendingUp className="h-6 w-6" />} message="최근 성과 데이터가 아직 충분하지 않습니다." />
             )}
           </div>
         </section>
@@ -62,7 +85,7 @@ export function DashboardPageShell({ data }: { data: DashboardPageData }) {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">다음 행동</h2>
-              <p className="mt-1 text-sm text-slate-500">지금 바로 가야 하는 화면만 추렸습니다.</p>
+              <p className="mt-1 text-sm text-slate-500">바로 이동할 수 있는 주요 작업만 모았습니다.</p>
             </div>
             <ShieldCheck className="h-5 w-5 text-slate-400" />
           </div>
@@ -82,22 +105,36 @@ export function DashboardPageShell({ data }: { data: DashboardPageData }) {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-3">
-        <Panel title="중점 확인 항목" description="전략-실행-평가 흐름에서 가장 먼저 봐야 할 신호입니다.">
-          {data.focusItems.length ? data.focusItems.map((item) => <ListCard key={item.title} {...item} />) : <EmptyState icon={<ClipboardList className="h-6 w-6" />} message="중점 확인 항목이 없습니다." />}
+        <Panel title="중점 확인 항목" description="계획, 실행, 평가 흐름에서 우선적으로 확인할 내용입니다.">
+          {data.focusItems.length ? (
+            data.focusItems.map((item) => <ListCard key={item.title} {...item} />)
+          ) : (
+            <EmptyState icon={<ClipboardList className="h-6 w-6" />} message="지금 바로 확인할 항목이 없습니다." />
+          )}
         </Panel>
-        <Panel title="평가 / 검토 큐" description="내가 지금 작성하거나 검토해야 하는 평가입니다.">
-          {data.reviewQueue.length ? data.reviewQueue.map((item) => <ListCard key={item.title + item.description} {...item} tone="neutral" />) : <EmptyState icon={<ClipboardList className="h-6 w-6" />} message="대기 중인 평가가 없습니다." />}
+        <Panel title="평가 / 검토" description="내가 진행하거나 검토해야 하는 평가 목록입니다.">
+          {data.reviewQueue.length ? (
+            data.reviewQueue.map((item) => <ListCard key={item.title + item.description} {...item} tone="neutral" />)
+          ) : (
+            <EmptyState icon={<ClipboardList className="h-6 w-6" />} message="대기 중인 평가가 없습니다." />
+          )}
         </Panel>
-        <Panel title="체크인 / 알림" description="예정된 면담과 읽지 않은 알림을 함께 봅니다.">
+        <Panel title="체크인 / 알림" description="예정된 체크인과 아직 읽지 않은 알림을 함께 확인합니다.">
           {data.checkins.length ? data.checkins.map((item) => <ListCard key={item.title + item.description} {...item} tone="neutral" />) : null}
           {data.notifications.length ? data.notifications.map((item) => <SimpleCard key={item.title + item.description} {...item} />) : null}
-          {!data.checkins.length && !data.notifications.length ? <EmptyState icon={<Bell className="h-6 w-6" />} message="확인할 체크인이나 알림이 없습니다." /> : null}
+          {!data.checkins.length && !data.notifications.length ? (
+            <EmptyState icon={<Bell className="h-6 w-6" />} message="확인할 체크인이나 알림이 없습니다." />
+          ) : null}
         </Panel>
       </section>
 
-      <Panel title="리스크 / 주의 신호" description="지금 놓치면 다음 단계에 영향을 주는 항목입니다.">
+      <Panel title="리스크 / 주의 신호" description="지금 조치하지 않으면 다음 단계에 영향을 줄 수 있는 항목입니다.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.risks.length ? data.risks.map((risk) => <ListCard key={risk.title} {...risk} />) : <EmptyState icon={<AlertTriangle className="h-6 w-6" />} message="현재 확인된 리스크가 없습니다." />}
+          {data.risks.length ? (
+            data.risks.map((risk) => <ListCard key={risk.title} {...risk} />)
+          ) : (
+            <EmptyState icon={<AlertTriangle className="h-6 w-6" />} message="현재 확인된 리스크가 없습니다." />
+          )}
         </div>
       </Panel>
     </div>

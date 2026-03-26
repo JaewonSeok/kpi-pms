@@ -301,6 +301,21 @@ export function PersonalKpiManagementClient(props: Props) {
     hasSelectedKpi: Boolean(selectedKpi),
     workflowSaving: busyAction === 'submit',
   })
+  const createDisabledReason =
+    props.state === 'error'
+      ? '개인 KPI 데이터를 아직 불러오지 못해 추가 기능을 사용할 수 없습니다.'
+      : props.state === 'permission-denied' || !props.permissions.canCreate
+        ? '현재 범위에서는 개인 KPI를 추가할 권한이 없습니다.'
+        : undefined
+  const aiDisabledReason =
+    props.state === 'error'
+      ? '개인 KPI 데이터를 아직 불러오지 못해 AI 보조를 시작할 수 없습니다.'
+      : !props.permissions.canUseAi
+        ? 'AI 기능이 비활성화되어 있거나 현재 계정 권한으로는 사용할 수 없습니다.'
+        : undefined
+  const reviewDisabledReason = !props.permissions.canReview
+    ? '현재 범위에서는 검토 대기열을 확인할 권한이 없습니다.'
+    : undefined
 
   const setActiveTab = (nextTab: PersonalKpiTabKey) => {
     setActiveTabState(nextTab)
@@ -332,8 +347,8 @@ export function PersonalKpiManagementClient(props: Props) {
   }
 
   function handleOpenCreate() {
-    if (!props.permissions.canCreate) {
-      setBanner({ tone: 'error', message: '현재 범위에서는 개인 KPI를 추가할 권한이 없습니다.' })
+    if (createDisabledReason) {
+      setBanner({ tone: 'error', message: createDisabledReason })
       return
     }
 
@@ -346,13 +361,19 @@ export function PersonalKpiManagementClient(props: Props) {
   }
 
   function handleOpenAiDraft() {
+    if (aiDisabledReason) {
+      setBanner({
+        tone: 'info',
+        message: aiDisabledReason,
+      })
+      return
+    }
+
     const transition = getPersonalKpiHeroCtaTransition('ai')
     setActiveTab(transition.nextTab)
     setBanner({
       tone: 'info',
-      message: props.permissions.canUseAi
-        ? 'AI 보조 탭에서 초안 생성과 문장 개선을 바로 시작할 수 있습니다.'
-        : 'AI 기능이 비활성화되어 있어 기본 제안만 확인할 수 있습니다.',
+      message: 'AI 보조 탭에서 초안 생성과 문장 개선을 바로 시작할 수 있습니다.',
     })
   }
 
@@ -620,6 +641,9 @@ export function PersonalKpiManagementClient(props: Props) {
         employeeOptions={props.employeeOptions}
         summary={props.summary}
         submitState={submitCtaState}
+        createDisabledReason={createDisabledReason}
+        aiDisabledReason={aiDisabledReason}
+        reviewDisabledReason={reviewDisabledReason}
         onChangeYear={(year) => handleRouteSelection({ year })}
         onChangeCycle={(cycleId) => handleRouteSelection({ cycleId })}
         onChangeEmployee={(employeeId) => handleRouteSelection({ employeeId })}
@@ -754,6 +778,9 @@ function HeroSection(props: {
   employeeOptions: Props['employeeOptions']
   summary: Props['summary']
   submitState: PersonalKpiSubmitCtaState
+  createDisabledReason?: string
+  aiDisabledReason?: string
+  reviewDisabledReason?: string
   onChangeYear: (year: string) => void
   onChangeCycle: (cycleId: string) => void
   onChangeEmployee: (employeeId: string) => void
@@ -834,17 +861,29 @@ function HeroSection(props: {
         </div>
 
         <div className="flex w-full flex-col gap-3 xl:max-w-md">
-          <ActionButton icon={<Plus className="h-4 w-4" />} onClick={props.onOpenCreate}>
+          <ActionButton
+            icon={<Plus className="h-4 w-4" />}
+            onClick={props.onOpenCreate}
+            disabled={Boolean(props.createDisabledReason)}
+            title={props.createDisabledReason}
+          >
             KPI 추가
           </ActionButton>
-          <ActionButton icon={<Sparkles className="h-4 w-4" />} variant="secondary" onClick={props.onOpenAiDraft}>
+          <ActionButton
+            icon={<Sparkles className="h-4 w-4" />}
+            variant="secondary"
+            onClick={props.onOpenAiDraft}
+            disabled={Boolean(props.aiDisabledReason)}
+            title={props.aiDisabledReason}
+          >
             AI 초안 생성
           </ActionButton>
           <ActionButton
             icon={<ClipboardList className="h-4 w-4" />}
             variant="secondary"
             onClick={props.onOpenReview}
-            title={PERSONAL_KPI_REVIEW_CTA_LABEL}
+            title={props.reviewDisabledReason || PERSONAL_KPI_REVIEW_CTA_LABEL}
+            disabled={Boolean(props.reviewDisabledReason)}
           >
             검토 대기 보기
           </ActionButton>

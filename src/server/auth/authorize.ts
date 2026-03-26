@@ -42,7 +42,10 @@ export function canAccessDepartment(
 ) {
   if (!session) return false
   if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') return true
-  return session.user.accessibleDepartmentIds.includes(targetDeptId)
+  const accessibleDepartmentIds = Array.isArray(session.user.accessibleDepartmentIds)
+    ? session.user.accessibleDepartmentIds
+    : []
+  return accessibleDepartmentIds.includes(targetDeptId)
 }
 
 export function canAccessEmployee(

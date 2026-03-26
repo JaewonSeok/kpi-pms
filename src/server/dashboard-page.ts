@@ -61,6 +61,19 @@ export type DashboardPageData = {
     href?: string
     tone: DashboardTone
   }>
+  alerts: Array<{
+    title: string
+    description: string
+    tone: DashboardTone
+  }>
+}
+
+type DashboardSessionUser = NonNullable<Session['user']> & {
+  id: string
+  name: string
+  role: string
+  deptId: string
+  accessibleDepartmentIds?: string[] | null
 }
 
 function toTone(count: number, warnThreshold = 1, errorThreshold = 5): DashboardTone {
@@ -88,58 +101,177 @@ function averageTrend(records: Array<{ yearMonth: string; achievementRate: numbe
     }))
 }
 
+function normalizeAccessibleDepartmentIds(accessibleDepartmentIds?: string[] | null) {
+  if (!Array.isArray(accessibleDepartmentIds)) return []
+  return accessibleDepartmentIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+}
+
+function resolveDashboardScopeDepartmentIds(sessionUser: DashboardSessionUser) {
+  if (sessionUser.role === 'ROLE_MEMBER') {
+    return sessionUser.deptId ? [sessionUser.deptId] : []
+  }
+
+  const accessibleDepartmentIds = normalizeAccessibleDepartmentIds(sessionUser.accessibleDepartmentIds)
+  if (accessibleDepartmentIds.length) {
+    return accessibleDepartmentIds
+  }
+
+  return sessionUser.deptId ? [sessionUser.deptId] : []
+}
+
+async function loadDashboardSection<T>(params: {
+  key: string
+  title: string
+  description: string
+  fallback: T
+  alerts: DashboardPageData['alerts']
+  loader: () => Promise<T>
+}) {
+  try {
+    return await params.loader()
+  } catch (error) {
+    console.error(`Failed to load dashboard section: ${params.key}`, error)
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+      tone: 'warn',
+    })
+    return params.fallback
+  }
+}
+
+function buildMissingEmployeeDashboard(
+  sessionUser: DashboardSessionUser,
+  year: number,
+  alerts: DashboardPageData['alerts']
+): DashboardPageData {
+  return {
+    role: sessionUser.role,
+    userName: sessionUser.name,
+    year,
+    title: '대시보드',
+    description: '직원 정보를 찾을 수 없어 기본 요약만 표시합니다.',
+    statusLabel: '주의',
+    statusTone: 'warn',
+    summary: [],
+    actions: [],
+    trend: [],
+    focusItems: [],
+    reviewQueue: [],
+    checkins: [],
+    notifications: [],
+    risks: [],
+    alerts,
+  }
+}
+
 export async function getDashboardPageData(session: Session): Promise<DashboardPageData> {
   const year = getCurrentYear()
+  const alerts: DashboardPageData['alerts'] = []
+  const sessionUser = session.user as DashboardSessionUser
 
-  const employee = await prisma.employee.findUnique({
-    where: { id: session.user.id },
-    include: {
-      department: true,
-    },
+  const employee = await loadDashboardSection({
+    key: 'employee-profile',
+    title: '기본 프로필 로딩 지연',
+    description: '직원 정보를 불러오지 못해 일부 대시보드 항목을 생략했습니다.',
+    fallback: null,
+    alerts,
+    loader: () =>
+      prisma.employee.findUnique({
+        where: { id: sessionUser.id },
+        include: {
+          department: true,
+        },
+      }),
   })
 
   if (!employee) {
-    return {
-      role: session.user.role,
-      userName: session.user.name,
-      year,
-      title: '대시보드',
-      description: '직원 정보를 찾을 수 없습니다.',
-      statusLabel: '주의',
-      statusTone: 'warn',
-      summary: [],
-      actions: [],
-      trend: [],
-      focusItems: [],
-      reviewQueue: [],
-      checkins: [],
-      notifications: [],
-      risks: [],
-    }
+    return buildMissingEmployeeDashboard(sessionUser, year, alerts)
   }
 
-  const unreadNotifications = await prisma.notification.findMany({
-    where: { recipientId: session.user.id, isRead: false },
-    orderBy: { sentAt: 'desc' },
-    take: 5,
-  })
-
-  const myKpis = await prisma.personalKpi.findMany({
-    where: {
-      employeeId: session.user.id,
-      evalYear: year,
-    },
-    include: {
-      monthlyRecords: {
-        orderBy: { yearMonth: 'asc' },
-      },
-      linkedOrgKpi: {
-        select: {
-          kpiName: true,
-        },
-      },
-    },
-  })
+  const [unreadNotifications, myKpis, upcomingMine, reviewQueue] = await Promise.all([
+    loadDashboardSection({
+      key: 'notifications',
+      title: '알림 위젯 일부 생략',
+      description: '알림 데이터를 불러오지 못해 받은 알림 목록을 잠시 숨겼습니다.',
+      fallback: [],
+      alerts,
+      loader: () =>
+        prisma.notification.findMany({
+          where: { recipientId: sessionUser.id, isRead: false },
+          orderBy: { sentAt: 'desc' },
+          take: 5,
+        }),
+    }),
+    loadDashboardSection({
+      key: 'personal-kpis',
+      title: '개인 KPI 요약 일부 생략',
+      description: '개인 KPI 데이터를 불러오지 못해 성과 추이와 KPI 요약을 기본값으로 표시합니다.',
+      fallback: [],
+      alerts,
+      loader: () =>
+        prisma.personalKpi.findMany({
+          where: {
+            employeeId: sessionUser.id,
+            evalYear: year,
+          },
+          include: {
+            monthlyRecords: {
+              orderBy: { yearMonth: 'asc' },
+            },
+            linkedOrgKpi: {
+              select: {
+                kpiName: true,
+              },
+            },
+          },
+        }),
+    }),
+    loadDashboardSection({
+      key: 'my-checkins',
+      title: '체크인 일정 일부 생략',
+      description: '체크인 일정을 불러오지 못해 일정 카드 일부를 숨겼습니다.',
+      fallback: [],
+      alerts,
+      loader: () =>
+        prisma.checkIn.findMany({
+          where: {
+            OR: [{ ownerId: sessionUser.id }, { managerId: sessionUser.id }],
+            status: { in: ['SCHEDULED', 'IN_PROGRESS', 'RESCHEDULED'] },
+          },
+          include: {
+            owner: { select: { empName: true } },
+          },
+          orderBy: { scheduledDate: 'asc' },
+          take: 5,
+        }),
+    }),
+    loadDashboardSection({
+      key: 'review-queue',
+      title: '평가 대기열 일부 생략',
+      description: '평가 대기열을 불러오지 못해 검토 카드 일부를 숨겼습니다.',
+      fallback: [],
+      alerts,
+      loader: () =>
+        prisma.evaluation.findMany({
+          where: {
+            evaluatorId: sessionUser.id,
+            status: { in: ['PENDING', 'IN_PROGRESS', 'REJECTED'] },
+          },
+          include: {
+            target: {
+              select: {
+                empName: true,
+                department: { select: { deptName: true } },
+              },
+            },
+            evalCycle: { select: { cycleName: true, evalYear: true } },
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 6,
+        }),
+    }),
+  ])
 
   const myTrend = averageTrend(
     myKpis.flatMap((kpi) =>
@@ -150,97 +282,100 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
     )
   )
 
-  const upcomingMine = await prisma.checkIn.findMany({
-    where: {
-      OR: [{ ownerId: session.user.id }, { managerId: session.user.id }],
-      status: { in: ['SCHEDULED', 'IN_PROGRESS', 'RESCHEDULED'] },
-    },
-    include: {
-      owner: { select: { empName: true } },
-    },
-    orderBy: { scheduledDate: 'asc' },
-    take: 5,
-  })
-
-  const reviewQueue = await prisma.evaluation.findMany({
-    where: {
-      evaluatorId: session.user.id,
-      status: { in: ['PENDING', 'IN_PROGRESS', 'REJECTED'] },
-    },
-    include: {
-      target: {
-        select: {
-          empName: true,
-          department: { select: { deptName: true } },
-        },
-      },
-      evalCycle: { select: { cycleName: true, evalYear: true } },
-    },
-    orderBy: { updatedAt: 'desc' },
-    take: 6,
-  })
-
-  const accessibleDepartmentIds =
-    session.user.role === 'ROLE_MEMBER' ? [session.user.deptId] : session.user.accessibleDepartmentIds
-
-  const teamMembers = await prisma.employee.findMany({
-    where: {
-      deptId: { in: accessibleDepartmentIds.length ? accessibleDepartmentIds : [session.user.deptId] },
-      status: 'ACTIVE',
-      id: { not: session.user.id },
-    },
-    select: {
-      id: true,
-      empName: true,
-      department: { select: { deptName: true } },
-    },
-    take: 30,
-  })
+  const accessibleDepartmentIds = resolveDashboardScopeDepartmentIds(sessionUser)
+  const teamMembers = accessibleDepartmentIds.length
+    ? await loadDashboardSection({
+        key: 'team-members',
+        title: '팀 현황 일부 생략',
+        description: '조직 범위 데이터를 불러오지 못해 팀 현황 카드 일부를 숨겼습니다.',
+        fallback: [],
+        alerts,
+        loader: () =>
+          prisma.employee.findMany({
+            where: {
+              deptId: { in: accessibleDepartmentIds },
+              status: 'ACTIVE',
+              id: { not: sessionUser.id },
+            },
+            select: {
+              id: true,
+              empName: true,
+              department: { select: { deptName: true } },
+            },
+            take: 30,
+          }),
+      })
+    : []
 
   const teamMemberIds = teamMembers.map((item) => item.id)
 
-  const teamRiskyMonthly = teamMemberIds.length
-    ? await prisma.monthlyRecord.count({
-        where: {
-          employeeId: { in: teamMemberIds },
-          achievementRate: { lt: 80 },
-        },
-      })
-    : 0
+  const [teamRiskyMonthly, teamUpcomingCheckins, opsSummary] = await Promise.all([
+    teamMemberIds.length
+      ? loadDashboardSection({
+          key: 'team-risk',
+          title: '팀 리스크 일부 생략',
+          description: '팀 월간 실적 리스크를 집계하지 못해 기본값으로 표시합니다.',
+          fallback: 0,
+          alerts,
+          loader: () =>
+            prisma.monthlyRecord.count({
+              where: {
+                employeeId: { in: teamMemberIds },
+                achievementRate: { lt: 80 },
+              },
+            }),
+        })
+      : Promise.resolve(0),
+    loadDashboardSection({
+      key: 'team-checkins',
+      title: '팀 체크인 일부 생략',
+      description: '팀 체크인 일정을 불러오지 못해 기본 카드만 표시합니다.',
+      fallback: [],
+      alerts,
+      loader: () =>
+        prisma.checkIn.findMany({
+          where: {
+            managerId: sessionUser.id,
+            status: { in: ['SCHEDULED', 'IN_PROGRESS', 'RESCHEDULED'] },
+          },
+          include: {
+            owner: { select: { empName: true } },
+          },
+          orderBy: { scheduledDate: 'asc' },
+          take: 6,
+        }),
+    }),
+    sessionUser.role === 'ROLE_ADMIN' || sessionUser.role === 'ROLE_CEO'
+      ? loadDashboardSection({
+          key: 'operations-summary',
+          title: '운영 요약 일부 생략',
+          description: '운영 지표를 불러오지 못해 관리자 카드 일부를 기본값으로 표시합니다.',
+          fallback: null,
+          alerts,
+          loader: () => buildOperationsSummary(),
+        })
+      : Promise.resolve(null),
+  ])
 
-  const teamUpcomingCheckins = await prisma.checkIn.findMany({
-    where: {
-      managerId: session.user.id,
-      status: { in: ['SCHEDULED', 'IN_PROGRESS', 'RESCHEDULED'] },
-    },
-    include: {
-      owner: { select: { empName: true } },
-    },
-    orderBy: { scheduledDate: 'asc' },
-    take: 6,
-  })
+  const hasDegradedSections = alerts.length > 0
 
-  const opsSummary =
-    session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO'
-      ? await buildOperationsSummary()
-      : null
-
-  if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') {
-    const title = session.user.role === 'ROLE_CEO' ? '경영 관점 요약' : '운영 관점 요약'
+  if (sessionUser.role === 'ROLE_ADMIN' || sessionUser.role === 'ROLE_CEO') {
+    const title = sessionUser.role === 'ROLE_CEO' ? '경영 대시보드' : '운영 대시보드'
     const description =
-      session.user.role === 'ROLE_CEO'
-        ? '성과, 조정, 보상, 운영 리스크를 함께 확인합니다.'
-        : '평가/보상/운영 이슈를 빠르게 파악하고 바로 조치할 수 있습니다.'
+      sessionUser.role === 'ROLE_CEO'
+        ? '성과, 보정, 보상, 운영 리스크를 한 화면에서 빠르게 확인합니다.'
+        : '운영 이상 징후와 후속 조치가 필요한 영역을 빠르게 확인합니다.'
 
     return {
-      role: session.user.role,
-      userName: session.user.name,
+      role: sessionUser.role,
+      userName: sessionUser.name,
       year,
       title,
       description,
-      statusLabel: opsSummary?.status.label ?? '정상',
-      statusTone:
-        opsSummary?.status.tone === 'error'
+      statusLabel: hasDegradedSections ? '주의' : opsSummary?.status.label ?? '정상',
+      statusTone: hasDegradedSections
+        ? 'warn'
+        : opsSummary?.status.tone === 'error'
           ? 'error'
           : opsSummary?.status.tone === 'warn'
             ? 'warn'
@@ -256,50 +391,50 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         {
           label: 'Dead Letter',
           value: String(opsSummary?.metrics.notificationDeadLetters ?? 0),
-          description: '재처리가 필요한 알림 실패',
+          description: '처리가 필요한 알림 실패',
           tone: toTone(opsSummary?.metrics.notificationDeadLetters ?? 0, 1, 1),
           href: '/admin/notifications',
         },
         {
           label: '예산 초과 시나리오',
           value: String(opsSummary?.metrics.overBudgetScenarios ?? 0),
-          description: '보상 시뮬레이션 위험 건',
+          description: '보상 시뮬레이션 초과 건',
           tone: toTone(opsSummary?.metrics.overBudgetScenarios ?? 0, 1, 1),
           href: '/compensation/manage',
         },
         {
           label: '진행 중 평가 주기',
           value: String(opsSummary?.metrics.activeEvalCycles ?? 0),
-          description: '현재 닫히지 않은 주기',
+          description: '현재 종료되지 않은 주기',
           tone: toTone(opsSummary?.metrics.delayedEvalCycles ?? 0, 1, 2),
           href: '/admin/eval-cycle',
         },
       ],
       actions: [
-        { label: '운영/관제 열기', description: '시스템 상태와 이벤트 로그 확인', href: '/admin/ops' },
-        { label: '알림 운영', description: 'dead letter와 템플릿 복구', href: '/admin/notifications' },
-        { label: 'Google 계정 등록', description: '로그인 준비 불가 계정 점검', href: '/admin/google-access' },
-        { label: '보상 시뮬레이션', description: '예산 초과/승인 상태 확인', href: '/compensation/manage' },
+        { label: '운영 관제 보기', description: '시스템 상태와 이벤트 로그 확인', href: '/admin/ops' },
+        { label: '알림 운영', description: 'dead letter와 재처리 현황 확인', href: '/admin/notifications' },
+        { label: 'Google 계정 등록', description: '로그인 계정 매핑과 허용 상태 관리', href: '/admin/google-access' },
+        { label: '보상 시뮬레이션', description: '예산 초과와 승인 상태 확인', href: '/compensation/manage' },
       ],
       trend: myTrend,
       focusItems: [
         {
-          title: '로그인 준비 불가 계정',
-          description: `${opsSummary?.metrics.loginUnavailableAccounts ?? 0}건의 계정 정합성 이슈가 있습니다.`,
+          title: '로그인 준비 미완료 계정',
+          description: `${opsSummary?.metrics.loginUnavailableAccounts ?? 0}건의 계정에 로그인 준비 이슈가 있습니다.`,
           badge: 'Google access',
           href: '/admin/google-access',
           tone: toTone(opsSummary?.metrics.loginUnavailableAccounts ?? 0, 1, 1),
         },
         {
-          title: '미리뷰 월간 실적',
+          title: '미검토 월간 실적',
           description: `${opsSummary?.metrics.unreviewedMonthlyRecords ?? 0}건이 검토 대기 중입니다.`,
           badge: 'Monthly review',
           href: '/kpi/monthly',
           tone: toTone(opsSummary?.metrics.unreviewedMonthlyRecords ?? 0, 1, 5),
         },
         {
-          title: '조정 미완료 평가',
-          description: `${opsSummary?.metrics.unresolvedCalibrationCount ?? 0}개 주기가 조정 단계에 머물러 있습니다.`,
+          title: '보정 미완료 평가',
+          description: `${opsSummary?.metrics.unresolvedCalibrationCount ?? 0}개 주기가 보정 단계에 머물러 있습니다.`,
           badge: 'Calibration',
           href: '/evaluation/ceo-adjust',
           tone: toTone(opsSummary?.metrics.unresolvedCalibrationCount ?? 0, 1, 1),
@@ -307,12 +442,12 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
       ],
       reviewQueue: reviewQueue.map((item) => ({
         title: `${item.target.empName} · ${item.evalCycle.cycleName}`,
-        description: `${item.target.department.deptName} / ${item.evalStage} / ${item.status}`,
+        description: `${item.target.department?.deptName ?? '부서 미지정'} / ${item.evalStage} / ${item.status}`,
         badge: item.status,
         href: `/evaluation/workbench?cycleId=${encodeURIComponent(item.evalCycleId)}&evaluationId=${encodeURIComponent(item.id)}`,
       })),
       checkins: teamUpcomingCheckins.map((item) => ({
-        title: `${item.owner.empName} 체크인`,
+        title: `${item.owner?.empName ?? '담당자'} 체크인`,
         description: `${item.scheduledDate.toLocaleString('ko-KR')} / ${item.status}`,
         badge: item.checkInType,
         href: '/checkin',
@@ -327,13 +462,9 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         description: risk.description,
         badge: `${risk.count}건`,
         href: risk.relatedUrl,
-        tone:
-          risk.severity === 'HIGH'
-            ? 'error'
-            : risk.severity === 'MEDIUM'
-              ? 'warn'
-              : 'neutral',
+        tone: risk.severity === 'HIGH' ? 'error' : risk.severity === 'MEDIUM' ? 'warn' : 'neutral',
       })),
+      alerts,
     }
   }
 
@@ -342,29 +473,25 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
       ? Math.round((myTrend.reduce((sum, item) => sum + item.achievementRate, 0) / myTrend.length) * 10) / 10
       : 0
 
-  const title =
-    session.user.role === 'ROLE_MEMBER'
-      ? '내 성과 흐름 요약'
-      : '팀 운영과 나의 성과 흐름'
-
+  const title = sessionUser.role === 'ROLE_MEMBER' ? '나의 성과 대시보드' : '팀 운영과 개인 성과 대시보드'
   const description =
-    session.user.role === 'ROLE_MEMBER'
-      ? '이번 달 목표, 체크인, 평가 준비에 바로 이어지는 정보만 모았습니다.'
-      : '내 목표와 함께 팀 검토/체크인/리스크를 한 화면에서 확인합니다.'
+    sessionUser.role === 'ROLE_MEMBER'
+      ? '이번 해 목표, 체크인, 평가 준비에 바로 이어지는 정보를 모아 보여줍니다.'
+      : '팀 목표와 검토, 체크인 리스크를 한 번에 확인합니다.'
 
   return {
-    role: session.user.role,
-    userName: session.user.name,
+    role: sessionUser.role,
+    userName: sessionUser.name,
     year,
     title,
     description,
-    statusLabel: reviewQueue.length > 0 || teamRiskyMonthly > 0 ? '주의' : '정상',
-    statusTone: reviewQueue.length > 0 || teamRiskyMonthly > 0 ? 'warn' : 'success',
+    statusLabel: hasDegradedSections || reviewQueue.length > 0 || teamRiskyMonthly > 0 ? '주의' : '정상',
+    statusTone: hasDegradedSections || reviewQueue.length > 0 || teamRiskyMonthly > 0 ? 'warn' : 'success',
     summary: [
       {
         label: '평균 달성률',
         value: `${memberAverage}%`,
-        description: '최근 6개월 평균 기준',
+        description: '최근 6개월 기준 평균',
         tone: memberAverage >= 90 ? 'success' : memberAverage >= 75 ? 'warn' : 'error',
         href: '/kpi/monthly',
       },
@@ -378,7 +505,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
       {
         label: '검토 대기 평가',
         value: String(reviewQueue.length),
-        description: '내가 검토하거나 작성할 평가',
+        description: '내가 검토하거나 작성 중인 평가',
         tone: toTone(reviewQueue.length, 1, 4),
         href: '/evaluation/workbench',
       },
@@ -393,13 +520,13 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
     actions: [
       { label: '개인 KPI 관리', description: '가중치와 조직 KPI 연결 상태 확인', href: '/kpi/personal' },
       { label: '월간 실적 입력', description: '이번 달 실적과 증빙 업데이트', href: '/kpi/monthly' },
-      { label: '평가 실행', description: '자기평가 또는 팀 평가 작성', href: '/evaluation/workbench' },
-      { label: '체크인 일정', description: '이번 주 1:1과 후속 액션 확인', href: '/checkin' },
+      { label: '평가 진행', description: '자기평가 또는 팀 평가 작성', href: '/evaluation/workbench' },
+      { label: '체크인 일정', description: '이번 주 1:1 일정과 후속 액션 확인', href: '/checkin' },
     ],
     trend: myTrend,
     focusItems: [
       {
-        title: '개인 KPI 연결 상태',
+        title: '개인 KPI 정렬 상태',
         description: `${myKpis.filter((item) => item.linkedOrgKpiId).length}/${myKpis.length}개 KPI가 조직 목표와 연결되어 있습니다.`,
         badge: 'Alignment',
         href: '/kpi/personal',
@@ -426,12 +553,12 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
     ],
     reviewQueue: reviewQueue.map((item) => ({
       title: `${item.target.empName} · ${item.evalCycle.cycleName}`,
-      description: `${item.target.department.deptName} / ${item.evalStage} / ${item.status}`,
+      description: `${item.target.department?.deptName ?? '부서 미지정'} / ${item.evalStage} / ${item.status}`,
       badge: item.status,
       href: `/evaluation/workbench?cycleId=${encodeURIComponent(item.evalCycleId)}&evaluationId=${encodeURIComponent(item.id)}`,
     })),
     checkins: [...upcomingMine, ...teamUpcomingCheckins].slice(0, 6).map((item) => ({
-      title: `${item.owner.empName} 체크인`,
+      title: `${item.owner?.empName ?? '담당자'} 체크인`,
       description: `${item.scheduledDate.toLocaleString('ko-KR')} / ${item.status}`,
       badge: item.checkInType,
       href: '/checkin',
@@ -444,7 +571,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
     risks: [
       {
         title: '검토 대기 평가',
-        description: `${reviewQueue.length}건이 아직 제출/확정되지 않았습니다.`,
+        description: `${reviewQueue.length}건이 아직 제출 또는 확정되지 않았습니다.`,
         badge: 'Review',
         href: '/evaluation/workbench',
         tone: toTone(reviewQueue.length, 1, 4),
@@ -457,12 +584,13 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         tone: toTone(teamRiskyMonthly, 1, 5),
       },
       {
-        title: '안 읽은 알림',
+        title: '읽지 않은 알림',
         description: `${unreadNotifications.length}건의 알림이 남아 있습니다.`,
         badge: 'Inbox',
         href: '/notifications',
         tone: toTone(unreadNotifications.length, 1, 5),
       },
     ],
+    alerts,
   }
 }

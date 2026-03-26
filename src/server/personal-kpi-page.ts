@@ -8,7 +8,11 @@ import type {
   SystemRole,
 } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { isFeatureEnabled } from '@/lib/feature-flags'
+import {
+  buildPersonalKpiPermissions,
+  getPersonalKpiScopeDepartmentIds,
+  resolvePersonalKpiAiAccess,
+} from '@/lib/personal-kpi-access'
 import {
   hasRejectedRevisionPending,
   resolvePersonalKpiOperationalStatus,
@@ -212,20 +216,6 @@ function asRecord(value: unknown) {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
-function getScopeDepartmentIds(params: {
-  role: SystemRole
-  deptId: string
-  accessibleDepartmentIds: string[]
-}) {
-  if (params.role === 'ROLE_ADMIN' || params.role === 'ROLE_CEO') {
-    return null
-  }
-  if (params.role === 'ROLE_MEMBER') {
-    return [params.deptId]
-  }
-  return params.accessibleDepartmentIds.length ? params.accessibleDepartmentIds : [params.deptId]
-}
-
 function getReviewerCandidate(employee: EmployeeLite, employeesById: Map<string, EmployeeLite>) {
   const reviewerId = employee.teamLeaderId ?? employee.sectionChiefId ?? employee.divisionHeadId
   if (!reviewerId) return undefined
@@ -319,7 +309,7 @@ function deriveOverallStatus(items: PersonalKpiViewModel[]): PersonalKpiPageData
 
 export async function getPersonalKpiPageData(params: PageParams): Promise<PersonalKpiPageData> {
   try {
-    const scopeDepartmentIds = getScopeDepartmentIds({
+    const scopeDepartmentIds = getPersonalKpiScopeDepartmentIds({
       role: params.session.user.role,
       deptId: params.session.user.deptId,
       accessibleDepartmentIds: params.session.user.accessibleDepartmentIds,
@@ -342,7 +332,19 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       employeesById.get(params.employeeId ?? params.session.user.id) ??
       employeesById.get(params.session.user.id)
 
+    const aiAccess = resolvePersonalKpiAiAccess({
+      role: params.session.user.role,
+    })
+
     if (!targetEmployee) {
+      const permissions = buildPersonalKpiPermissions({
+        actorId: params.session.user.id,
+        actorRole: params.session.user.role,
+        targetEmployeeId: params.session.user.id,
+        pageState: 'permission-denied',
+        aiAccess,
+      })
+
       return {
         state: 'permission-denied',
         message: '조회 가능한 직원 범위를 찾을 수 없습니다.',
@@ -366,15 +368,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         reviewQueue: [],
         history: [],
         aiLogs: [],
-        permissions: {
-          canEdit: false,
-          canCreate: false,
-          canSubmit: false,
-          canReview: false,
-          canLock: false,
-          canUseAi: false,
-          canOverride: false,
-        },
+        permissions,
         actor: {
           id: params.session.user.id,
           role: params.session.user.role,
@@ -669,24 +663,17 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       ? Math.round((mappedMine.filter((item) => item.linkedMonthlyCount > 0).length / mappedMine.length) * 100)
       : 0
 
-    const permissions = {
-      canEdit:
-        targetEmployee.id === params.session.user.id ||
-        ['ROLE_ADMIN', 'ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_CEO'].includes(params.session.user.role),
-      canCreate:
-        targetEmployee.id === params.session.user.id ||
-        ['ROLE_ADMIN', 'ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_CEO'].includes(params.session.user.role),
-      canSubmit:
-        targetEmployee.id === params.session.user.id ||
-        ['ROLE_ADMIN', 'ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_CEO'].includes(params.session.user.role),
-      canReview: ['ROLE_ADMIN', 'ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_CEO'].includes(params.session.user.role),
-      canLock: ['ROLE_ADMIN', 'ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_CEO'].includes(params.session.user.role),
-      canUseAi: isFeatureEnabled('aiAssist'),
-      canOverride: ['ROLE_ADMIN'].includes(params.session.user.role),
-    }
+    const pageState = mappedMine.length || mappedReviewQueue.length ? 'ready' : 'empty'
+    const permissions = buildPersonalKpiPermissions({
+      actorId: params.session.user.id,
+      actorRole: params.session.user.role,
+      targetEmployeeId: targetEmployee.id,
+      pageState,
+      aiAccess,
+    })
 
     return {
-      state: mappedMine.length || mappedReviewQueue.length ? 'ready' : 'empty',
+      state: pageState,
       message:
         !mappedMine.length && !mappedReviewQueue.length
           ? '아직 개인 KPI가 없습니다. 올해 목표를 작성하고 상사 검토를 요청해보세요.'
@@ -754,6 +741,17 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     }
   } catch (error) {
     console.error('Failed to build personal KPI page data:', error)
+    const aiAccess = resolvePersonalKpiAiAccess({
+      role: params.session.user.role,
+    })
+    const permissions = buildPersonalKpiPermissions({
+      actorId: params.session.user.id,
+      actorRole: params.session.user.role,
+      targetEmployeeId: params.employeeId ?? params.session.user.id,
+      pageState: 'error',
+      aiAccess,
+    })
+
     return {
       state: 'error',
       message: '개인 KPI 데이터를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
@@ -777,15 +775,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       reviewQueue: [],
       history: [],
       aiLogs: [],
-      permissions: {
-        canEdit: false,
-        canCreate: false,
-        canSubmit: false,
-        canReview: false,
-        canLock: false,
-        canUseAi: false,
-        canOverride: false,
-      },
+      permissions,
       actor: {
         id: params.session.user.id,
         role: params.session.user.role,

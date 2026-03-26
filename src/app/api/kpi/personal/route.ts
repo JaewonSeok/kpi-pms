@@ -1,14 +1,11 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { canManagePersonalKpi } from '@/lib/personal-kpi-access'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreatePersonalKpiSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
-
-function canManage(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
-}
 
 // GET /api/kpi/personal
 export async function GET(request: Request) {
@@ -23,7 +20,7 @@ export async function GET(request: Request) {
     let targetEmployeeId = session.user.id
 
     if (employeeId && employeeId !== session.user.id) {
-      if (!canManage(session.user.role)) {
+      if (!canManagePersonalKpi(session.user.role)) {
         throw new AppError(403, 'FORBIDDEN', '다른 직원의 개인 KPI를 조회할 권한이 없습니다.')
       }
 
@@ -83,7 +80,7 @@ export async function POST(request: Request) {
 
     const data = validated.data
 
-    if (data.employeeId !== session.user.id && !canManage(session.user.role)) {
+    if (data.employeeId !== session.user.id && !canManagePersonalKpi(session.user.role)) {
       throw new AppError(403, 'FORBIDDEN', '다른 직원의 개인 KPI를 생성할 권한이 없습니다.')
     }
 
