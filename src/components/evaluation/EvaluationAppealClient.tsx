@@ -1447,7 +1447,7 @@ function StatePanel({ state, message }: { state: AppealPageData['state']; messag
 function RelatedLinks() {
   const links = [
     { href: '/evaluation/results', label: '평가 결과' },
-    { href: '/evaluation/assistant', label: '평가 보조 작성' },
+    { href: '/evaluation/workbench', label: '평가 보조 작성' },
     { href: '/kpi/monthly', label: '월간 실적' },
     { href: '/checkin', label: '체크인 일정' },
     { href: '/notifications', label: '알림 센터' },

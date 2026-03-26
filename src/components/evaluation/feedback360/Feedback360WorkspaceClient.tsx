@@ -155,7 +155,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
           </h2>
           <p className="mt-2 text-sm text-slate-500">{props.data.message ?? '평가 주기와 접근 권한을 확인해 주세요.'}</p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <ActionLink href="/evaluation/assistant" label="평가 워크벤치" />
+            <ActionLink href="/evaluation/workbench" label="평가 워크벤치" />
             <ActionLink href="/evaluation/results" label="평가 결과" />
             <ActionLink href="/checkin" label="체크인 일정" />
           </div>
@@ -233,7 +233,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                 {props.data.permissions?.canViewAdmin ? (
                   <ActionLink href={`/evaluation/360/admin?cycleId=${encodeURIComponent(props.data.selectedCycleId ?? '')}${props.data.selectedRoundId ? `&roundId=${encodeURIComponent(props.data.selectedRoundId)}` : ''}`} label="운영 관리" />
                 ) : null}
-                <ActionLink href="/evaluation/assistant" label="평가 워크벤치 연결" />
+                <ActionLink href="/evaluation/workbench" label="평가 워크벤치 연결" />
               </div>
             </Panel>
           </section>

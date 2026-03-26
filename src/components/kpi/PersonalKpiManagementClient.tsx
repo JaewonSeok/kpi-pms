@@ -1312,7 +1312,7 @@ function QuickLinks() {
           { href: '/kpi/org', label: '조직 KPI' },
           { href: '/kpi/monthly', label: '월간 실적' },
           { href: '/evaluation/results', label: '평가 결과' },
-          { href: '/evaluation/assistant', label: '평가 워크벤치' },
+          { href: '/evaluation/workbench', label: '평가 워크벤치' },
           { href: '/checkin', label: '체크인 일정' },
         ].map((item) => (
           <Link

@@ -27,7 +27,9 @@ Local PostgreSQL runs from [`docker-compose.yml`](/c:/Users/RSUPPORT/Desktop/성
 This project uses these exact environment variable names for Google sign-in:
 
 - `NEXTAUTH_URL`
+- `AUTH_URL` (alias fallback)
 - `NEXTAUTH_SECRET`
+- `AUTH_SECRET` (alias fallback)
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `ALLOWED_DOMAIN`
@@ -71,6 +73,8 @@ Rules:
 Important:
 
 - Do not use `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, or custom alias names unless you also change the code.
+- If `NEXTAUTH_URL` and `AUTH_URL` are both set, they must match exactly.
+- If `NEXTAUTH_SECRET` and `AUTH_SECRET` are both set, they must match exactly.
 - Do not leave `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` as placeholder values.
 - Placeholder values will cause:
   - `The OAuth client was not found`

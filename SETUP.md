@@ -23,6 +23,8 @@ DATABASE_URL="postgresql://postgres:your_password@localhost:5432/kpi_pms"
 # NextAuth 설정 (임의의 랜덤 문자열)
 NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="your-random-secret-key"
+# AUTH_URL="http://localhost:3000"
+# AUTH_SECRET="your-random-secret-key"
 
 # Google OAuth (선택 - GWS SSO 사용 시)
 GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"

@@ -58,14 +58,30 @@ function readBooleanEnv(key: string, fallback: boolean) {
   return rawValue === 'true'
 }
 
+function readAiAssistFlag(fallback: boolean) {
+  if (process.env.AI_ASSIST_ENABLED != null) {
+    return readBooleanEnv('AI_ASSIST_ENABLED', fallback)
+  }
+
+  if (process.env.FEATURE_AI_ASSIST != null) {
+    return readBooleanEnv('FEATURE_AI_ASSIST', fallback)
+  }
+
+  if (process.env.AI_FEATURE_ENABLED != null) {
+    return readBooleanEnv('AI_FEATURE_ENABLED', fallback)
+  }
+
+  return fallback
+}
+
 export function getFeatureFlagSnapshot() {
   return FEATURE_FLAG_DEFINITIONS.map((definition) => ({
     key: definition.key,
     envKey: definition.envKey,
     description: definition.description,
     enabled:
-      definition.key === 'aiAssist' && process.env.AI_FEATURE_ENABLED != null
-        ? readBooleanEnv('AI_FEATURE_ENABLED', definition.defaultValue)
+      definition.key === 'aiAssist'
+        ? readAiAssistFlag(definition.defaultValue)
         : readBooleanEnv(definition.envKey, definition.defaultValue),
   }))
 }
@@ -74,8 +90,8 @@ export function isFeatureEnabled(key: FeatureFlagKey) {
   const definition = FEATURE_FLAG_DEFINITIONS.find((item) => item.key === key)
   if (!definition) return false
 
-  if (key === 'aiAssist' && process.env.AI_FEATURE_ENABLED != null) {
-    return readBooleanEnv('AI_FEATURE_ENABLED', definition.defaultValue)
+  if (key === 'aiAssist') {
+    return readAiAssistFlag(definition.defaultValue)
   }
 
   return readBooleanEnv(definition.envKey, definition.defaultValue)

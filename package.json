@@ -17,16 +17,17 @@
   "db:studio": "prisma studio",
   "db:reset": "prisma migrate reset",
   "register:google-email": "ts-node -P tsconfig.seed.json scripts/register-google-email.ts",
-  "test": "npm run test:google-workspace && npm run test:auth && npm run test:ai && npm run test:compensation && npm run test:notifications && npm run test:ops && npm run test:navigation && npm run test:interactions && npm run test:feedback360",
+  "test": "npm run test:google-workspace && npm run test:auth && npm run test:ai && npm run test:compensation && npm run test:notifications && npm run test:ops && npm run test:navigation && npm run test:pwa && npm run test:interactions && npm run test:feedback360",
   "test:navigation": "ts-node -P tsconfig.seed.json tests/navigation-integrity.test.ts",
   "test:interactions": "ts-node -P tsconfig.seed.json tests/interaction-integrity.test.ts",
   "test:feedback360": "ts-node -P tsconfig.seed.json tests/feedback-360-foundation.test.ts",
   "test:google-workspace": "ts-node -P tsconfig.seed.json tests/google-workspace.test.ts",
-  "test:auth": "ts-node -P tsconfig.seed.json tests/auth-rbac.test.ts",
-  "test:ai": "ts-node -P tsconfig.seed.json tests/ai.test.ts",
+  "test:auth": "ts-node -P tsconfig.seed.json tests/auth-rbac.test.ts && ts-node -P tsconfig.seed.json tests/google-auth-flow.test.ts",
+  "test:ai": "ts-node -P tsconfig.seed.json tests/ai.test.ts && ts-node -P tsconfig.seed.json tests/evaluation-ai-assist.test.ts",
   "test:compensation": "ts-node -P tsconfig.seed.json tests/compensation.test.ts",
   "test:notifications": "ts-node -P tsconfig.seed.json tests/notifications.test.ts",
-  "test:ops": "ts-node -P tsconfig.seed.json tests/ops.test.ts"
+  "test:ops": "ts-node -P tsconfig.seed.json tests/ops.test.ts",
+  "test:pwa": "ts-node -P tsconfig.seed.json tests/pwa-cache-safety.test.ts"
 },
   "prisma": {
     "seed": "ts-node -P tsconfig.seed.json prisma/seed.ts"

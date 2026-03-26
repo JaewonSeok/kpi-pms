@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState, useTransition } from 'react'
@@ -15,10 +15,20 @@ import {
   Sparkles,
   Undo2,
 } from 'lucide-react'
+import {
+  applyEvaluationAssistResult,
+  getEvaluationAssistActionLabel,
+  getEvaluationAssistDisabledReason,
+  getEvaluationAssistModeLabel,
+  getEvaluationAssistRequestErrorMessage,
+  normalizeEvaluationAssistResult,
+  type EvaluationAssistMode,
+  type EvaluationAssistPreview,
+  type EvaluationAssistResult,
+} from '@/lib/evaluation-ai-assist'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 
 type WorkbenchTab = 'workbench' | 'evidence' | 'feedback' | 'ai' | 'history'
-type AiRequestType = 'EVAL_COMMENT_DRAFT' | 'BIAS_ANALYSIS' | 'GROWTH_PLAN'
 
 type DraftItemState = {
   personalKpiId: string
@@ -28,14 +38,6 @@ type DraftItemState = {
   checkScore?: number | null
   actScore?: number | null
   itemComment?: string
-}
-
-type AssistPreview = {
-  requestLogId: string
-  source: 'ai' | 'fallback' | 'disabled'
-  fallbackReason?: string | null
-  requestType: AiRequestType
-  result: Record<string, unknown>
 }
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
@@ -53,7 +55,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [notice, setNotice] = useState('')
   const [errorNotice, setErrorNotice] = useState('')
   const [decisionBusy, setDecisionBusy] = useState(false)
-  const [preview, setPreview] = useState<AssistPreview | null>(null)
+  const [assistLoadingMode, setAssistLoadingMode] = useState<EvaluationAssistMode | null>(null)
+  const [preview, setPreview] = useState<EvaluationAssistPreview | null>(null)
   const [draftComment, setDraftComment] = useState('')
   const [draftGradeId, setDraftGradeId] = useState<string>('')
   const [growthMemo, setGrowthMemo] = useState('')
@@ -66,14 +69,20 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     if (!selected) {
       setDraftComment('')
       setDraftGradeId('')
+      setGrowthMemo('')
       setRejectReason('')
+      setPreview(null)
+      setAssistLoadingMode(null)
       setDraftItems({})
       return
     }
 
     setDraftComment(selected.comment ?? '')
     setDraftGradeId(selected.gradeId ?? '')
+    setGrowthMemo('')
     setRejectReason('')
+    setPreview(null)
+    setAssistLoadingMode(null)
     setDraftItems(
       Object.fromEntries(
         selected.items.map((item) => [
@@ -143,8 +152,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         if (!json.success) throw new Error(json.error?.message ?? '자기평가를 시작하지 못했습니다.')
         const nextId = json.data?.id as string | undefined
         const nextUrl = nextId
-          ? `/evaluation/assistant?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}&evaluationId=${encodeURIComponent(nextId)}`
-          : `/evaluation/assistant?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
+          ? `/evaluation/workbench?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}&evaluationId=${encodeURIComponent(nextId)}`
+          : `/evaluation/workbench?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
         startTransition(() => router.push(nextUrl))
         setNotice('자기평가 초안을 생성했습니다.')
         return
@@ -163,7 +172,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload ?? {}),
       })
-      const json = await response.json()
+      const json = await response.json().catch(() => null)
       if (!json.success) throw new Error(json.error?.message ?? '작업을 처리하지 못했습니다.')
       setNotice(action === 'saveDraft' ? '평가 초안을 저장했습니다.' : action === 'submit' ? '평가를 제출했습니다.' : '평가를 반려하고 보완을 요청했습니다.')
       startTransition(() => router.refresh())
@@ -172,46 +181,52 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     }
   }
 
-  async function runAssist(requestType: AiRequestType) {
+  async function runAssist(mode: EvaluationAssistMode) {
     if (!selected) return
     setNotice('')
     setErrorNotice('')
+    setPreview(null)
+    setAssistLoadingMode(mode)
 
     try {
-      const response = await fetch('/api/ai/assist', {
+      const response = await fetch('/api/ai/evaluation-assist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requestType,
-          sourceType: 'Evaluation',
-          sourceId: selected.id,
-          payload: {
-            summary: draftComment || selected.comment || '',
-            gradeName:
-              selected.gradeOptions.find((option) => option.id === draftGradeId)?.gradeName ?? '',
-            stage: selected.evalStage,
-            cycleName: selected.cycle.name,
-            evalYear: selected.cycle.year,
-            items: editableItems.map((item) => ({
-              kpiName: item.title,
-              weight: item.weight,
-              quantScore: item.draft.quantScore,
-              planScore: item.draft.planScore,
-              doScore: item.draft.doScore,
-              checkScore: item.draft.checkScore,
-              actScore: item.draft.actScore,
-              itemComment: item.draft.itemComment,
-            })),
-            contextSummary: `${selected.target.department} / ${selected.target.position}`,
-          },
+          mode,
+          evaluationId: selected.id,
+          draftComment,
+          growthMemo,
+          draftGradeId: draftGradeId || null,
+          items: editableItems.map((item) => ({
+            personalKpiId: item.personalKpiId,
+            title: item.title,
+            weight: item.weight,
+            quantScore: item.draft.quantScore ?? null,
+            planScore: item.draft.planScore ?? null,
+            doScore: item.draft.doScore ?? null,
+            checkScore: item.draft.checkScore ?? null,
+            actScore: item.draft.actScore ?? null,
+            itemComment: item.draft.itemComment ?? '',
+          })),
         }),
       })
-      const json = await response.json()
-      if (!json.success) throw new Error(json.error?.message ?? 'AI 보조 생성에 실패했습니다.')
-      setPreview({ ...json.data, requestType })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? getEvaluationAssistRequestErrorMessage())
+      }
+      setPreview({
+        requestLogId: String(json.data.requestLogId),
+        source: json.data.source === 'disabled' ? 'disabled' : 'ai',
+        fallbackReason: json.data.fallbackReason ?? null,
+        mode,
+        result: normalizeEvaluationAssistResult(json.data.result),
+      })
       setActiveTab('ai')
     } catch (error) {
-      setErrorNotice(error instanceof Error ? error.message : 'AI 보조 생성에 실패했습니다.')
+      setErrorNotice(error instanceof Error ? error.message : getEvaluationAssistRequestErrorMessage())
+    } finally {
+      setAssistLoadingMode(null)
     }
   }
 
@@ -229,16 +244,20 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
           rejectionReason: action === 'reject' ? 'Dismissed from review workbench.' : undefined,
         }),
       })
-      const json = await response.json()
-      if (!json.success) throw new Error(json.error?.message ?? 'AI 결과 상태를 변경하지 못했습니다.')
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? 'AI 결과 상태를 변경하지 못했습니다.')
+      }
 
       if (action === 'approve') {
-        if (preview.requestType === 'EVAL_COMMENT_DRAFT') {
-          setDraftComment(String(preview.result.draftComment || ''))
-        } else if (preview.requestType === 'BIAS_ANALYSIS') {
-          setDraftComment(String(preview.result.balancedRewrite || draftComment))
-        } else {
-          setGrowthMemo(JSON.stringify(preview.result, null, 2))
+        const applied = applyEvaluationAssistResult(preview.mode, preview.result)
+
+        if (typeof applied.draftComment === 'string') {
+          setDraftComment(applied.draftComment)
+        }
+
+        if (typeof applied.growthMemo === 'string') {
+          setGrowthMemo(applied.growthMemo)
         }
         setNotice('AI 제안을 검토 후 반영했습니다. 저장 후 제출 전에 다시 확인하세요.')
       } else {
@@ -265,14 +284,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   }
 
   function moveToCycle(cycleId: string) {
-    startTransition(() => router.push(`/evaluation/assistant?cycleId=${encodeURIComponent(cycleId)}`))
+    startTransition(() => router.push(`/evaluation/workbench?cycleId=${encodeURIComponent(cycleId)}`))
   }
 
   function moveToEvaluation(evaluationId: string) {
     const params = new URLSearchParams()
     if (props.selectedCycleId) params.set('cycleId', props.selectedCycleId)
     params.set('evaluationId', evaluationId)
-    startTransition(() => router.push(`/evaluation/assistant?${params.toString()}`))
+    startTransition(() => router.push(`/evaluation/workbench?${params.toString()}`))
   }
 
   if (props.state !== 'ready') {
@@ -704,16 +723,49 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
               {activeTab === 'ai' ? (
                 <div className="space-y-6">
-                  <Panel title="평가 AI 보조" description="OpenAI 기반 제안은 preview로만 제공되고 승인 후에만 초안에 반영됩니다.">
+                  <Panel title="평가 AI 보조" description="OpenAI 기반 제안은 미리보기로만 제공되고 승인 후에만 초안에 반영됩니다.">
                     <div className="grid gap-3 md:grid-cols-3">
-                      <AiCard icon={<MessageSquareMore className="h-5 w-5" />} title="코멘트 초안" description="종합 의견 초안을 만듭니다." onClick={() => runAssist('EVAL_COMMENT_DRAFT')} />
-                      <AiCard icon={<ShieldAlert className="h-5 w-5" />} title="편향 점검" description="표현을 균형 있게 다듬습니다." onClick={() => runAssist('BIAS_ANALYSIS')} />
-                      <AiCard icon={<Bot className="h-5 w-5" />} title="성장 제안" description="성장/후속 논의 포인트를 제안합니다." onClick={() => runAssist('GROWTH_PLAN')} />
+                      <AiCard
+                        icon={<MessageSquareMore className="h-5 w-5" />}
+                        title="코멘트 초안"
+                        description="종합 의견 초안을 만듭니다."
+                        onClick={() => runAssist('draft')}
+                        disabled={Boolean(assistLoadingMode)}
+                        loading={assistLoadingMode === 'draft'}
+                      />
+                      <AiCard
+                        icon={<ShieldAlert className="h-5 w-5" />}
+                        title="편향 점검"
+                        description="표현을 균형 있게 다듬습니다."
+                        onClick={() => runAssist('bias')}
+                        disabled={Boolean(assistLoadingMode)}
+                        loading={assistLoadingMode === 'bias'}
+                      />
+                      <AiCard
+                        icon={<Bot className="h-5 w-5" />}
+                        title="성장 제안"
+                        description="성장과 후속 논의 포인트를 제안합니다."
+                        onClick={() => runAssist('growth')}
+                        disabled={Boolean(assistLoadingMode)}
+                        loading={assistLoadingMode === 'growth'}
+                      />
                     </div>
                   </Panel>
                   {preview ? (
-                    <Panel title="AI preview" description={preview.source === 'ai' ? 'OpenAI 응답을 확인합니다.' : `fallback preview (${preview.fallbackReason ?? 'AI unavailable'})`}>
-                      <pre className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 whitespace-pre-wrap">{JSON.stringify(preview.result, null, 2)}</pre>
+                    <Panel
+                      title={`${getEvaluationAssistModeLabel(preview.mode)} 미리보기`}
+                      description={
+                        preview.source === 'ai'
+                          ? '생성된 AI 제안을 검토한 뒤 반영할 수 있습니다.'
+                          : getEvaluationAssistDisabledReason(preview.fallbackReason)
+                      }
+                    >
+                      {preview.source === 'disabled' ? (
+                        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                          {getEvaluationAssistDisabledReason(preview.fallbackReason)}
+                        </div>
+                      ) : null}
+                      <AssistPreviewDetails mode={preview.mode} result={preview.result} />
                       <div className="mt-4 flex flex-wrap gap-3">
                         <button type="button" onClick={() => handlePreviewDecision('approve')} disabled={decisionBusy} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
                           <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -843,15 +895,63 @@ function SectionTitle(props: { title: string }) {
   return <h4 className="mb-3 mt-6 text-sm font-semibold text-slate-900 first:mt-0">{props.title}</h4>
 }
 
-function AiCard(props: { icon: React.ReactNode; title: string; description: string; onClick: () => void }) {
+function AiCard(props: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  onClick: () => void
+  disabled?: boolean
+  loading?: boolean
+}) {
   return (
-    <button type="button" onClick={props.onClick} className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:bg-slate-50">
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+    >
       <div className="flex items-center gap-2 text-slate-900">
         {props.icon}
         <span className="text-sm font-semibold">{props.title}</span>
       </div>
       <p className="mt-3 text-sm text-slate-500">{props.description}</p>
+      {props.loading ? <p className="mt-3 text-xs font-semibold text-blue-600">AI 제안을 생성하고 있습니다...</p> : null}
     </button>
+  )
+}
+
+function AssistPreviewDetails(props: {
+  mode: EvaluationAssistMode
+  result: EvaluationAssistResult
+}) {
+  return (
+    <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">핵심 포인트</div>
+        <p className="mt-2 text-sm text-slate-800">{props.result.focusArea}</p>
+      </div>
+      <PreviewList title={getEvaluationAssistActionLabel(props.mode)} items={props.result.recommendedActions} />
+      <PreviewList title="필요 지원" items={props.result.supportNeeded} />
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">마일스톤</div>
+        <p className="mt-2 text-sm text-slate-800">{props.result.milestone}</p>
+      </div>
+    </div>
+  )
+}
+
+function PreviewList(props: { title: string; items: string[] }) {
+  return (
+    <div>
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{props.title}</div>
+      <ul className="mt-2 space-y-2">
+        {props.items.map((item) => (
+          <li key={`${props.title}-${item}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -890,3 +990,4 @@ function formatWeighted(item: {
     Number(item.draft.actScore ?? 0) * 0.1
   return (pdca * item.weight) / 100
 }
+

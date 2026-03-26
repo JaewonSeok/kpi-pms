@@ -309,7 +309,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         title: `${item.target.empName} · ${item.evalCycle.cycleName}`,
         description: `${item.target.department.deptName} / ${item.evalStage} / ${item.status}`,
         badge: item.status,
-        href: `/evaluation/assistant?cycleId=${encodeURIComponent(item.evalCycleId)}&evaluationId=${encodeURIComponent(item.id)}`,
+        href: `/evaluation/workbench?cycleId=${encodeURIComponent(item.evalCycleId)}&evaluationId=${encodeURIComponent(item.id)}`,
       })),
       checkins: teamUpcomingCheckins.map((item) => ({
         title: `${item.owner.empName} 체크인`,
@@ -380,7 +380,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         value: String(reviewQueue.length),
         description: '내가 검토하거나 작성할 평가',
         tone: toTone(reviewQueue.length, 1, 4),
-        href: '/evaluation/assistant',
+        href: '/evaluation/workbench',
       },
       {
         label: '예정 체크인',
@@ -393,7 +393,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
     actions: [
       { label: '개인 KPI 관리', description: '가중치와 조직 KPI 연결 상태 확인', href: '/kpi/personal' },
       { label: '월간 실적 입력', description: '이번 달 실적과 증빙 업데이트', href: '/kpi/monthly' },
-      { label: '평가 실행', description: '자기평가 또는 팀 평가 작성', href: '/evaluation/assistant' },
+      { label: '평가 실행', description: '자기평가 또는 팀 평가 작성', href: '/evaluation/workbench' },
       { label: '체크인 일정', description: '이번 주 1:1과 후속 액션 확인', href: '/checkin' },
     ],
     trend: myTrend,
@@ -428,7 +428,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
       title: `${item.target.empName} · ${item.evalCycle.cycleName}`,
       description: `${item.target.department.deptName} / ${item.evalStage} / ${item.status}`,
       badge: item.status,
-      href: `/evaluation/assistant?cycleId=${encodeURIComponent(item.evalCycleId)}&evaluationId=${encodeURIComponent(item.id)}`,
+      href: `/evaluation/workbench?cycleId=${encodeURIComponent(item.evalCycleId)}&evaluationId=${encodeURIComponent(item.id)}`,
     })),
     checkins: [...upcomingMine, ...teamUpcomingCheckins].slice(0, 6).map((item) => ({
       title: `${item.owner.empName} 체크인`,
@@ -446,7 +446,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         title: '검토 대기 평가',
         description: `${reviewQueue.length}건이 아직 제출/확정되지 않았습니다.`,
         badge: 'Review',
-        href: '/evaluation/assistant',
+        href: '/evaluation/workbench',
         tone: toTone(reviewQueue.length, 1, 4),
       },
       {

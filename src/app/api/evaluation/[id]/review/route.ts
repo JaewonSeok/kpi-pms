@@ -63,7 +63,7 @@ export async function PATCH(
           type: 'EVAL_REJECTED',
           title: '평가 보완 요청',
           message: `${evaluation.target.empName}님의 평가가 반려되어 보완이 필요합니다.`,
-          link: '/evaluation/assistant',
+          link: '/evaluation/workbench',
           channel: 'IN_APP',
         },
       })

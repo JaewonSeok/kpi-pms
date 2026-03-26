@@ -1,8 +1,6 @@
-import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
-import { getEvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
-import { EvaluationWorkbenchClient } from '@/components/evaluation/EvaluationWorkbenchClient'
+
+export const dynamic = 'force-dynamic'
 
 type PageProps = {
   searchParams?: Promise<{
@@ -12,18 +10,16 @@ type PageProps = {
 }
 
 export default async function EvaluationAssistantPage({ searchParams }: PageProps) {
-  const session = await getServerSession(authOptions)
+  const resolvedSearchParams = (await searchParams) ?? {}
+  const params = new URLSearchParams()
 
-  if (!session) {
-    redirect('/login')
+  if (resolvedSearchParams.cycleId) {
+    params.set('cycleId', resolvedSearchParams.cycleId)
   }
 
-  const resolvedSearchParams = (await searchParams) ?? {}
-  const data = await getEvaluationWorkbenchPageData({
-    session,
-    cycleId: resolvedSearchParams.cycleId,
-    evaluationId: resolvedSearchParams.evaluationId,
-  })
+  if (resolvedSearchParams.evaluationId) {
+    params.set('evaluationId', resolvedSearchParams.evaluationId)
+  }
 
-  return <EvaluationWorkbenchClient {...data} />
+  redirect(params.size ? `/evaluation/workbench?${params.toString()}` : '/evaluation/workbench')
 }

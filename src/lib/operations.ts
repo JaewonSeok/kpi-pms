@@ -91,9 +91,9 @@ function buildSecretChecks() {
   const env = getAppEnvironment()
   const checks: SecretCheck[] = [
     {
-      name: 'NEXTAUTH_SECRET',
+      name: 'NEXTAUTH_SECRET / AUTH_SECRET',
       requiredIn: ['stage', 'prod'],
-      configured: Boolean(process.env.NEXTAUTH_SECRET),
+      configured: Boolean(process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET),
     },
     {
       name: 'CRON_SECRET',
@@ -228,7 +228,7 @@ async function buildHealthChecks(
     checkedAt,
   })
 
-  const authSecretReady = Boolean(process.env.NEXTAUTH_SECRET)
+  const authSecretReady = Boolean(process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET)
   checks.push({
     key: 'auth',
     name: 'Auth',
@@ -238,7 +238,7 @@ async function buildHealthChecks(
         ? `로그인 준비가 안 된 계정 ${context.loginUnavailableAccounts}건이 있습니다.`
         : authSecretReady
           ? '인증 설정이 정상입니다.'
-          : 'NEXTAUTH_SECRET 설정이 누락되었습니다.',
+          : 'NEXTAUTH_SECRET 또는 AUTH_SECRET 설정이 누락되었습니다.',
     impact: context.loginUnavailableAccounts > 0 ? 'Google 계정 등록 화면에서 대상 계정을 점검해 주세요.' : undefined,
     checkedAt,
   })

@@ -129,13 +129,13 @@ function NavGroup({
 }
 
 function getNavIcon(href: string): ReactNode {
-  const iconClassName = href === '/evaluation/assistant' ? 'h-4 w-4' : 'h-5 w-5'
+  const iconClassName = href === '/evaluation/workbench' ? 'h-4 w-4' : 'h-5 w-5'
 
   const icons: Record<string, ReactNode> = {
     '/dashboard': <LayoutDashboard className={iconClassName} />,
     '/kpi': <BarChart3 className={iconClassName} />,
     '/evaluation': <ClipboardCheck className={iconClassName} />,
-    '/evaluation/assistant': <Bot className={iconClassName} />,
+    '/evaluation/workbench': <Bot className={iconClassName} />,
     '/checkin': <CalendarClock className={iconClassName} />,
     '/compensation': <BriefcaseBusiness className={iconClassName} />,
     '/notifications': <Bell className={iconClassName} />,

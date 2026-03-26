@@ -4,66 +4,53 @@ import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from '@/lib/prisma'
 import { buildOrgPath, getAccessibleDeptIds, resolveManagerId } from '@/server/auth/org-scope'
-
-const PLACEHOLDER_ENV_VALUES = new Set([
-  'your-google-client-id',
-  'your-google-client-secret',
-  'your-nextauth-secret-change-in-production',
-  'change-me',
-])
-
-function readRequiredAuthEnv(key: string) {
-  const value = process.env[key]?.trim()
-
-  if (!value) {
-    throw new Error(
-      `[auth] Missing required environment variable: ${key}. ` +
-        'This project uses GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / NEXTAUTH_URL / NEXTAUTH_SECRET / ALLOWED_DOMAIN.'
-    )
-  }
-
-  if (
-    (key === 'GOOGLE_CLIENT_ID' || key === 'GOOGLE_CLIENT_SECRET' || key === 'NEXTAUTH_SECRET') &&
-    PLACEHOLDER_ENV_VALUES.has(value)
-  ) {
-    throw new Error(
-      `[auth] ${key} is still set to a placeholder value. ` +
-        'Replace it with the real Google OAuth credential or NextAuth secret before starting the app.'
-    )
-  }
-
-  return value
-}
-
-function readRequiredNextAuthUrl() {
-  const value = readRequiredAuthEnv('NEXTAUTH_URL')
-
-  try {
-    const parsed = new URL(value)
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      throw new Error('invalid protocol')
-    }
-  } catch {
-    throw new Error(
-      `[auth] NEXTAUTH_URL must be a valid absolute URL. ` +
-        'Example local callback: http://localhost:3000/api/auth/callback/google'
-    )
-  }
-
-  return value
-}
+import { normalizeGoogleWorkspaceEmail } from './google-workspace'
+import { readAuthEnv } from './auth-env'
+import { decideGoogleAccess, resolveAuthRedirect } from './auth-flow'
 
 function buildGoogleCallbackUrl(baseUrl: string) {
   return new URL('/api/auth/callback/google', baseUrl).toString()
 }
 
-const nextAuthUrl = readRequiredNextAuthUrl()
-readRequiredAuthEnv('NEXTAUTH_SECRET')
+const authEnv = readAuthEnv()
+const googleCallbackUrl = buildGoogleCallbackUrl(authEnv.baseUrl)
 
-const googleClientId = readRequiredAuthEnv('GOOGLE_CLIENT_ID')
-const googleClientSecret = readRequiredAuthEnv('GOOGLE_CLIENT_SECRET')
-const allowedDomain = readRequiredAuthEnv('ALLOWED_DOMAIN')
-const googleCallbackUrl = buildGoogleCallbackUrl(nextAuthUrl)
+function maskEmail(email?: string | null) {
+  if (!email) {
+    return null
+  }
+
+  const [localPart, domain] = email.split('@')
+  if (!domain) {
+    return email
+  }
+
+  if (localPart.length <= 2) {
+    return `${localPart[0] ?? '*'}*@${domain}`
+  }
+
+  return `${localPart.slice(0, 2)}***@${domain}`
+}
+
+function authLog(level: 'info' | 'warn' | 'error', event: string, metadata?: Record<string, unknown>) {
+  const payload = {
+    event,
+    ...(metadata ?? {}),
+  }
+
+  const message = `[auth] ${event} ${JSON.stringify(payload)}`
+  if (level === 'error') {
+    console.error(message)
+    return
+  }
+
+  if (level === 'warn') {
+    console.warn(message)
+    return
+  }
+
+  console.log(message)
+}
 
 type EmployeeWithDepartment = Employee & {
   department: Department
@@ -128,8 +115,9 @@ async function findEmployeeForToken(token: { sub?: string | null; email?: string
   }
 
   if (token.email) {
+    const normalizedEmail = normalizeGoogleWorkspaceEmail(token.email)
     return prisma.employee.findUnique({
-      where: { gwsEmail: token.email },
+      where: { gwsEmail: normalizedEmail },
       include: { department: true },
     })
   }
@@ -187,13 +175,14 @@ declare module 'next-auth/jwt' {
 }
 
 export const authOptions: NextAuthOptions = {
+  secret: authEnv.secret,
   providers: [
     GoogleProvider({
-      clientId: googleClientId,
-      clientSecret: googleClientSecret,
+      clientId: authEnv.googleClientId,
+      clientSecret: authEnv.googleClientSecret,
       authorization: {
         params: {
-          hd: allowedDomain,
+          hd: authEnv.allowedDomain,
           prompt: 'consent',
           access_type: 'offline',
           response_type: 'code',
@@ -232,24 +221,35 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }) {
       if (account?.provider === 'google') {
         const email = profile?.email || user.email
-        if (!email) return false
 
-        if (!email.endsWith(`@${allowedDomain}`)) {
-          return '/login?error=InvalidDomain'
-        }
+        const normalizedEmail = email ? normalizeGoogleWorkspaceEmail(email) : null
+        const employee = normalizedEmail
+          ? await prisma.employee.findUnique({
+              where: { gwsEmail: normalizedEmail },
+              include: { department: true },
+            })
+          : null
 
-        const employee = await prisma.employee.findUnique({
-          where: { gwsEmail: email },
-          include: { department: true },
+        const decision = decideGoogleAccess({
+          email,
+          allowedDomain: authEnv.allowedDomain,
+          employeeStatus: employee?.status,
         })
 
-        if (!employee) {
-          return '/login?error=NotRegistered'
+        if (!decision.allowed) {
+          authLog('warn', 'GOOGLE_SIGNIN_REJECTED', {
+            reason: decision.errorCode,
+            email: maskEmail(decision.normalizedEmail),
+            provider: account.provider,
+          })
+          return `/login?error=${decision.errorCode}`
         }
 
-        if (employee.status !== 'ACTIVE') {
-          return '/login?error=InactiveAccount'
-        }
+        authLog('info', 'GOOGLE_SIGNIN_ALLOWED', {
+          email: maskEmail(decision.normalizedEmail),
+          employeeId: employee?.id,
+          role: employee?.role,
+        })
 
         return true
       }
@@ -274,8 +274,9 @@ export const authOptions: NextAuthOptions = {
       }
 
       if (account?.provider === 'google' && profile?.email) {
+        const normalizedEmail = normalizeGoogleWorkspaceEmail(profile.email)
         const employee = await prisma.employee.findUnique({
-          where: { gwsEmail: profile.email },
+          where: { gwsEmail: normalizedEmail },
           include: { department: true },
         })
 
@@ -293,6 +294,10 @@ export const authOptions: NextAuthOptions = {
           token.managerId = claims.managerId
           token.orgPath = claims.orgPath
           token.accessibleDepartmentIds = claims.accessibleDepartmentIds
+        } else {
+          authLog('error', 'GOOGLE_JWT_EMPLOYEE_MISSING', {
+            email: maskEmail(normalizedEmail),
+          })
         }
       } else if (!account && (!token.departmentCode || !token.orgPath)) {
         const employee = await findEmployeeForToken(token)
@@ -310,14 +315,39 @@ export const authOptions: NextAuthOptions = {
           token.managerId = claims.managerId
           token.orgPath = claims.orgPath
           token.accessibleDepartmentIds = claims.accessibleDepartmentIds
+        } else {
+          authLog('warn', 'JWT_REHYDRATION_EMPLOYEE_MISSING', {
+            tokenSub: token.sub ?? null,
+            email: maskEmail(token.email),
+          })
         }
       }
 
       return token
     },
 
+    async redirect({ url, baseUrl }) {
+      const resolvedUrl = resolveAuthRedirect(url, baseUrl)
+      if (resolvedUrl !== url) {
+        authLog('warn', 'REDIRECT_FALLBACK_APPLIED', {
+          requestedUrl: url,
+          resolvedUrl,
+          baseUrl,
+        })
+      }
+
+      return resolvedUrl
+    },
+
     async session({ session, token }) {
       if (token) {
+        if (!token.sub || !token.role) {
+          authLog('warn', 'SESSION_CLAIMS_INCOMPLETE', {
+            tokenSub: token.sub ?? null,
+            email: maskEmail(token.email),
+          })
+        }
+
         session.user.id = token.sub!
         session.user.email = token.email ?? session.user.email
         session.user.name = token.name ?? session.user.name
@@ -349,9 +379,12 @@ export const authOptions: NextAuthOptions = {
   logger: {
     error(code, metadata) {
       console.error(
-        `[auth] ${code}. Check GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET and Google callback URL: ${googleCallbackUrl}`,
+        `[auth] ${code}. Check ${authEnv.baseUrlSource}, ${authEnv.secretSource}, GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, and Google callback URL: ${googleCallbackUrl}`,
         metadata
       )
+    },
+    warn(code) {
+      console.warn(`[auth] ${code}`)
     },
   },
 }

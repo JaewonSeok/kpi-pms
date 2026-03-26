@@ -16,7 +16,9 @@
 | `CRON_SECRET` | optional | required | required | Scheduler protection |
 | `OPS_METRICS_TOKEN` | optional | required | required | Metrics endpoint protection |
 | `GOOGLE_CLIENT_ID/SECRET` | optional | required if Google login enabled | required | OAuth |
+| `AI_ASSIST_ENABLED` | optional | recommended | required | Enables server-side evaluation/KPI AI assist |
 | `OPENAI_API_KEY` | optional | required if AI flag enabled | required if AI flag enabled | AI assist |
+| `OPENAI_MODEL` | optional | recommended | recommended | Preferred model env name for AI assist |
 | `SMTP_PASS` | optional | required if email enabled | required if email enabled | Notification email |
 | `SENTRY_DSN` | optional | recommended | recommended | Error tracking hook |
 | `BACKUP_BUCKET_URI` | optional | required | required | Backup destination |
@@ -34,6 +36,17 @@
   - `OPS_METRICS_TOKEN`
   - `OPENAI_API_KEY`
   - `SMTP_PASS`
+
+## AI assist env notes
+
+- Preferred env names:
+  - `AI_ASSIST_ENABLED`
+  - `OPENAI_API_KEY`
+  - `OPENAI_MODEL`
+- Legacy aliases still supported for compatibility:
+  - `FEATURE_AI_ASSIST`
+  - `AI_FEATURE_ENABLED`
+  - `OPENAI_RESPONSES_MODEL`
 
 ## Google OAuth secret rotation
 

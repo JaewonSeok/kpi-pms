@@ -2,8 +2,7 @@ import { withAuth } from 'next-auth/middleware'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { canAccessMenu, resolveMenuFromPath } from '@/lib/auth/permissions'
-
-const PUBLIC_PATHS = ['/login', '/403', '/api/auth']
+import { isAuthPublicPath } from '@/lib/auth-middleware'
 
 export default withAuth(
   function middleware(
@@ -18,7 +17,7 @@ export default withAuth(
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
 
-    if (PUBLIC_PATHS.some((path) => pathname.startsWith(path))) {
+    if (isAuthPublicPath(pathname)) {
       if (pathname.startsWith('/login') && token) {
         return NextResponse.redirect(new URL('/dashboard', req.url))
       }

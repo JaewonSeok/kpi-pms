@@ -112,6 +112,7 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/dashboard', menuKey: 'DASHBOARD' },
   { prefix: '/checkin', menuKey: 'CHECKIN' },
   { prefix: '/api/checkin', menuKey: 'CHECKIN' },
+  { prefix: '/evaluation/workbench', menuKey: 'AI_ASSIST' },
   { prefix: '/evaluation/assistant', menuKey: 'AI_ASSIST' },
   { prefix: '/evaluation/360', menuKey: 'FEEDBACK_360' },
   { prefix: '/evaluation/results', menuKey: 'EVAL_RESULT' },

@@ -2,54 +2,65 @@
 
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useState, Suspense } from 'react'
-
-const ERROR_MESSAGES: Record<string, string> = {
-  InvalidDomain: '사내 Google Workspace 계정으로만 로그인 가능합니다.',
-  NotRegistered: '등록되지 않은 사내 계정입니다. HR팀에 문의해주세요.',
-  InactiveAccount: '비활성화된 계정입니다. HR팀에 문의해주세요.',
-  OAuthAccountNotLinked: '다른 방법으로 이미 가입된 이메일입니다.',
-  Default: '로그인 중 오류가 발생했습니다. 다시 시도해주세요.',
-}
+import { Suspense, useState } from 'react'
+import { buildGoogleSignInRequest, getLoginErrorMessage } from '@/lib/auth-flow'
 
 function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const error = searchParams.get('error')
+  const requestedCallbackUrl = searchParams.get('callbackUrl')
   const [adminEmail, setAdminEmail] = useState('')
   const [adminPassword, setAdminPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [adminMode, setAdminMode] = useState(false)
   const [adminError, setAdminError] = useState('')
+  const [googleError, setGoogleError] = useState('')
+
+  const visibleGoogleError = googleError || getLoginErrorMessage(error)
 
   const handleGoogleLogin = async () => {
     setLoading(true)
-    await signIn('google', {
-      callbackUrl: `${window.location.origin}/dashboard`,
-    })
+    setGoogleError('')
+
+    try {
+      const request = buildGoogleSignInRequest(window.location.origin, requestedCallbackUrl)
+
+      await signIn(request.provider, {
+        callbackUrl: request.callbackUrl,
+      })
+    } catch (signInError) {
+      console.error('[auth][client] Google sign-in start failed', signInError)
+      setLoading(false)
+      setGoogleError(
+        getLoginErrorMessage('OAuthSignin') || '로그인 중 오류가 발생했습니다. 다시 시도해주세요.'
+      )
+    }
   }
 
-  const handleAdminLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleAdminLogin = async (event: React.FormEvent) => {
+    event.preventDefault()
     setLoading(true)
     setAdminError('')
+    setGoogleError('')
 
     try {
       const result = await signIn('admin-credentials', {
         email: adminEmail,
         password: adminPassword,
         redirect: false,
+        callbackUrl: requestedCallbackUrl || '/dashboard',
       })
 
       setLoading(false)
 
       if (result?.ok) {
-        router.push('/dashboard')
+        router.push(result.url || '/dashboard')
       } else {
         setAdminError('로그인 실패. 이메일과 비밀번호를 확인해주세요.')
       }
-    } catch (error) {
-      console.error('Admin sign-in failed:', error)
+    } catch (signInError) {
+      console.error('Admin sign-in failed:', signInError)
       setLoading(false)
       setAdminError('로그인 중 오류가 발생했습니다. 다시 시도해주세요.')
     }
@@ -79,9 +90,9 @@ function LoginContent() {
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">로그인</h2>
 
-          {error && (
+          {visibleGoogleError && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {ERROR_MESSAGES[error] || ERROR_MESSAGES.Default}
+              {visibleGoogleError}
             </div>
           )}
 
@@ -141,7 +152,7 @@ function LoginContent() {
                   <input
                     type="email"
                     value={adminEmail}
-                    onChange={(e) => setAdminEmail(e.target.value)}
+                    onChange={(event) => setAdminEmail(event.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="admin@company.com"
                     required
@@ -152,7 +163,7 @@ function LoginContent() {
                   <input
                     type="password"
                     value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
+                    onChange={(event) => setAdminPassword(event.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />

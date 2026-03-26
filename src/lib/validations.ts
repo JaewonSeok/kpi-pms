@@ -471,6 +471,27 @@ export const AIAssistRequestSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 })
 
+const EvaluationAssistItemSchema = z.object({
+  personalKpiId: z.string().min(1).max(100),
+  title: z.string().min(1).max(200),
+  weight: z.number().min(0).max(100),
+  quantScore: z.number().min(0).max(100).nullable().optional(),
+  planScore: z.number().min(0).max(100).nullable().optional(),
+  doScore: z.number().min(0).max(100).nullable().optional(),
+  checkScore: z.number().min(0).max(100).nullable().optional(),
+  actScore: z.number().min(0).max(100).nullable().optional(),
+  itemComment: z.string().max(500).optional(),
+})
+
+export const EvaluationAIAssistRequestSchema = z.object({
+  mode: z.enum(['draft', 'bias', 'growth']),
+  evaluationId: z.string().min(1).max(100),
+  draftComment: z.string().max(2000).optional().default(''),
+  growthMemo: z.string().max(4000).optional().default(''),
+  draftGradeId: z.string().max(100).nullable().optional(),
+  items: z.array(EvaluationAssistItemSchema).max(50).default([]),
+})
+
 export const OrgKpiAiActionSchema = z.object({
   action: z.enum([
     'generate-draft',

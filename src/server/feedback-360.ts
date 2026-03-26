@@ -815,7 +815,7 @@ export async function getFeedback360PageData(
           linkage: [
             {
               label: '평가 워크벤치로 이동',
-              href: `/evaluation/assistant?cycleId=${encodeURIComponent(selectedCycle.id)}`,
+              href: `/evaluation/workbench?cycleId=${encodeURIComponent(selectedCycle.id)}`,
               description: '다면피드백을 평가 근거로 함께 검토합니다.',
             },
             {

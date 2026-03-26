@@ -962,7 +962,7 @@ export function MonthlyKpiManagementClient({
             ['/kpi/personal', '개인 KPI'],
             ['/checkin', '체크인'],
             ['/evaluation/results', '평가 결과'],
-            ['/evaluation/assistant', 'AI 보조 작성'],
+            ['/evaluation/workbench', 'AI 보조 작성'],
             ['/notifications', '알림'],
           ].map(([href, label]) => (
             <Link
