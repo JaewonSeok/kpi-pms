@@ -77,6 +77,19 @@ run('manager resolution follows reporting chain fallback', () => {
       deptId: 'team-a',
       role: 'ROLE_MEMBER',
       position: 'MEMBER',
+      managerId: 'explicit-manager',
+      teamLeaderId: 'leader-1',
+      sectionChiefId: 'chief-1',
+      divisionHeadId: 'div-1',
+    }),
+    'explicit-manager'
+  )
+
+  assert.equal(
+    resolveManagerId({
+      deptId: 'team-a',
+      role: 'ROLE_MEMBER',
+      position: 'MEMBER',
       teamLeaderId: 'leader-1',
       sectionChiefId: 'chief-1',
       divisionHeadId: 'div-1',

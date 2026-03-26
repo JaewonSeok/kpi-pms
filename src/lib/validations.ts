@@ -640,6 +640,34 @@ const EmployeeDateSchema = z
     message: '날짜 형식이 올바르지 않습니다.',
   })
 
+const EmptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => {
+    if (value === null || value === undefined) {
+      return undefined
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      return trimmed === '' ? undefined : trimmed
+    }
+    return value
+  }, schema.optional())
+
+const SortOrderSchema = z.preprocess((value) => {
+  if (value === null || value === undefined || value === '') {
+    return undefined
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return undefined
+    }
+    return Number(trimmed)
+  }
+
+  return value
+}, z.number().int().min(0).max(9999).optional())
+
 export const AdminEmployeeRoleSchema = z.enum([
   'ROLE_MEMBER',
   'ROLE_TEAM_LEADER',
@@ -649,44 +677,94 @@ export const AdminEmployeeRoleSchema = z.enum([
   'ROLE_ADMIN',
 ])
 
-export const AdminEmployeeStatusSchema = z.enum(['ACTIVE', 'ON_LEAVE', 'RESIGNED'])
+export const AdminEmployeeStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'ON_LEAVE', 'RESIGNED'])
 
 export const RegisterGoogleAccountSchema = z.object({
   employeeId: z.string().min(1),
   gwsEmail: z.string().email().max(255),
 })
 
-export const UpdateGoogleAccountEmployeeSchema = RegisterGoogleAccountSchema.extend({
-  role: AdminEmployeeRoleSchema,
-  deptId: z.string().min(1),
-  status: AdminEmployeeStatusSchema.default('ACTIVE'),
+export const AdminEmployeeRecordSchema = z
+  .object({
+    employeeNumber: z.string().trim().min(1).max(50),
+    name: z.string().trim().min(1).max(100),
+    gwsEmail: z.string().email().max(255),
+    deptId: z.string().min(1),
+    teamName: EmptyStringToUndefined(z.string().max(100)),
+    jobTitle: EmptyStringToUndefined(z.string().max(100)),
+    role: AdminEmployeeRoleSchema,
+    employmentStatus: AdminEmployeeStatusSchema.default('ACTIVE'),
+    managerEmployeeNumber: EmptyStringToUndefined(z.string().max(50)),
+    joinDate: EmptyStringToUndefined(EmployeeDateSchema),
+    resignationDate: EmptyStringToUndefined(EmployeeDateSchema),
+    sortOrder: SortOrderSchema,
+    notes: EmptyStringToUndefined(z.string().max(500)),
+  })
+  .superRefine((data, ctx) => {
+    if (data.managerEmployeeNumber && data.managerEmployeeNumber === data.employeeNumber) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['managerEmployeeNumber'],
+        message: '본인을 관리자로 지정할 수 없습니다.',
+      })
+    }
+
+    if (data.employmentStatus === 'ACTIVE' && data.resignationDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['resignationDate'],
+        message: '재직 상태가 ACTIVE이면 퇴사일을 입력할 수 없습니다.',
+      })
+    }
+  })
+
+export const UpdateGoogleAccountEmployeeSchema = AdminEmployeeRecordSchema.extend({
+  employeeId: z.string().min(1),
 })
 
-export const CreateAdminEmployeeSchema = z.object({
-  empId: z.string().min(1).max(50),
-  empName: z.string().min(1).max(100),
-  deptId: z.string().min(1),
-  role: AdminEmployeeRoleSchema,
-  status: AdminEmployeeStatusSchema.default('ACTIVE'),
-  gwsEmail: z.string().email().max(255),
-  joinDate: EmployeeDateSchema,
+export const AdminEmployeeLifecycleActionSchema = z
+  .object({
+    employeeId: z.string().min(1),
+    action: z.enum(['DEACTIVATE', 'RESIGN', 'REACTIVATE']),
+    resignationDate: EmptyStringToUndefined(EmployeeDateSchema),
+    note: EmptyStringToUndefined(z.string().max(500)),
+  })
+  .superRefine((data, ctx) => {
+    if (data.action === 'RESIGN' && !data.resignationDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['resignationDate'],
+        message: '퇴사 처리 시 퇴사일을 입력해 주세요.',
+      })
+    }
+  })
+
+export const DeleteGoogleAccountEmployeeSchema = z.object({
+  employeeId: z.string().min(1),
 })
 
-export const BulkAdminEmployeeRowSchema = z.object({
-  empId: z.string().min(1).max(50),
-  empName: z.string().min(1).max(100),
-  deptCode: z.string().min(1).max(50),
-  deptName: z.string().min(1).max(100),
-  parentDeptCode: z.string().max(50).optional(),
+export const CreateAdminEmployeeSchema = AdminEmployeeRecordSchema
+
+export const AdminEmployeeUploadRowSchema = z.object({
+  employeeNumber: z.string().trim().min(1).max(50),
+  name: z.string().trim().min(1).max(100),
+  googleEmail: z.string().email().max(255),
+  departmentCode: z.string().trim().min(1).max(50),
+  department: z.string().trim().min(1).max(100),
+  team: EmptyStringToUndefined(z.string().max(100)),
+  title: EmptyStringToUndefined(z.string().max(100)),
   role: AdminEmployeeRoleSchema,
-  status: AdminEmployeeStatusSchema.default('ACTIVE'),
-  gwsEmail: z.string().email().max(255),
-  joinDate: EmployeeDateSchema.optional(),
+  employmentStatus: AdminEmployeeStatusSchema.default('ACTIVE'),
+  managerEmployeeNumber: EmptyStringToUndefined(z.string().max(50)),
+  joinDate: EmptyStringToUndefined(EmployeeDateSchema),
+  resignationDate: EmptyStringToUndefined(EmployeeDateSchema),
+  sortOrder: SortOrderSchema,
+  notes: EmptyStringToUndefined(z.string().max(500)),
 })
 
 export const BulkAdminEmployeeUploadSchema = z.object({
   fileName: z.string().max(255).optional(),
-  rows: z.array(BulkAdminEmployeeRowSchema).min(1).max(500),
+  rows: z.array(AdminEmployeeUploadRowSchema).min(1).max(500),
 })
 
 export const CalibrationCandidateUpdateSchema = z

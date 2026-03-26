@@ -11,6 +11,7 @@ type EmployeeScopeTarget = {
   deptId: string
   role: AuthRole
   position: Position
+  managerId?: string | null
   teamLeaderId?: string | null
   sectionChiefId?: string | null
   divisionHeadId?: string | null
@@ -55,6 +56,10 @@ export function getAccessibleDeptIds(target: EmployeeScopeTarget, departments: D
 }
 
 export function resolveManagerId(target: EmployeeScopeTarget) {
+  if (target.managerId) {
+    return target.managerId
+  }
+
   if (target.position === 'MEMBER') {
     return target.teamLeaderId ?? target.sectionChiefId ?? target.divisionHeadId ?? null
   }

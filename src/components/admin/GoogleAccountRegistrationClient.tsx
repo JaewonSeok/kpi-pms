@@ -1,10 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { POSITION_LABELS, ROLE_LABELS } from '@/lib/utils'
 
 type EmployeeRole =
   | 'ROLE_MEMBER'
@@ -14,20 +13,7 @@ type EmployeeRole =
   | 'ROLE_CEO'
   | 'ROLE_ADMIN'
 
-type EmployeeStatus = 'ACTIVE' | 'ON_LEAVE' | 'RESIGNED'
-
-type EmployeeListItem = {
-  id: string
-  empId: string
-  empName: string
-  role: EmployeeRole
-  status: EmployeeStatus
-  deptId: string
-  deptCode: string
-  deptName: string
-  gwsEmail: string
-  joinDate: string
-}
+type EmployeeStatus = 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE' | 'RESIGNED'
 
 type DepartmentOption = {
   id: string
@@ -35,101 +21,171 @@ type DepartmentOption = {
   deptName: string
 }
 
+type ManagerOption = {
+  id: string
+  employeeNumber: string
+  name: string
+  employmentStatus: EmployeeStatus
+  departmentName: string
+}
+
+type EmployeeListItem = {
+  id: string
+  employeeNumber: string
+  name: string
+  googleEmail: string
+  departmentId: string
+  departmentCode: string
+  departmentName: string
+  teamName: string | null
+  jobTitle: string | null
+  role: EmployeeRole
+  employmentStatus: EmployeeStatus
+  joinDate: string
+  resignationDate: string | null
+  managerId: string | null
+  managerEmployeeNumber: string | null
+  managerName: string | null
+  sortOrder: number | null
+  notes: string | null
+  directReportCount: number
+  loginEnabled: boolean
+}
+
 type EmployeeDirectoryResponse = {
   allowedDomain: string
   departments: DepartmentOption[]
+  managerOptions: ManagerOption[]
+  summary: {
+    totalEmployees: number
+    activeEmployees: number
+    inactiveEmployees: number
+    resignedEmployees: number
+    unassignedManagerCount: number
+  }
   uploadHistory: Array<{
     id: string
     fileName: string
     totalRows: number
+    successCount: number
+    failedCount: number
     createdCount: number
     updatedCount: number
-    failedCount: number
     hierarchyUpdatedCount: number
-    userId: string
-    timestamp: string
+    uploadedAt: string
+    uploaderId: string
   }>
   employees: EmployeeListItem[]
 }
 
-type UpdateGoogleAccountResponse = {
+type SaveEmployeeResponse = {
   employee: EmployeeListItem
-  allowedDomain: string
-  loginReady: boolean
   hierarchyUpdatedCount: number
 }
 
-type BulkUploadResponse = {
-  fileName: string
-  totalRows: number
-  createdDepartmentCount: number
-  createdCount: number
-  updatedCount: number
-  failedCount: number
+type DeleteEmployeeResponse = {
+  deletedEmployee: {
+    id: string
+    employeeNumber: string
+    name: string
+  }
   hierarchyUpdatedCount: number
+}
+
+type UploadPreviewRow = {
+  rowNumber: number
+  employeeNumber: string
+  name: string
+  action: 'create' | 'update'
+  valid: boolean
+  issues: Array<{
+    field: string
+    message: string
+    severity: 'error' | 'warning'
+  }>
+}
+
+type UploadResponse = {
+  mode: 'preview' | 'apply'
+  fileName: string
+  summary: {
+    totalRows: number
+    validRows: number
+    invalidRows: number
+    createCount: number
+    updateCount: number
+    errorCount: number
+    warningCount: number
+  }
+  rows: UploadPreviewRow[]
   errors: Array<{
     rowNumber: number
-    empId?: string
-    empName?: string
+    employeeNumber?: string
+    field?: string
     message: string
   }>
-}
-
-type HierarchyPreviewResponse = {
-  contextLabel: string
-  summary: {
-    changedEmployeeCount: number
-    teamLeaderChangedCount: number
-    sectionChiefChangedCount: number
-    divisionHeadChangedCount: number
+  applyResult?: {
+    fileName: string
+    totalRows: number
+    createdDepartmentCount: number
+    createdCount: number
+    updatedCount: number
+    failedCount: number
+    hierarchyUpdatedCount: number
   }
-  changedEmployees: Array<{
-    employeeId: string
-    empId: string
-    empName: string
-    deptName: string
+}
+
+type OrgChartNode = {
+  employee: {
+    id: string
+    employeeNumber: string
+    name: string
+    googleEmail: string
+    departmentName: string
+    departmentCode: string
+    teamName: string | null
+    jobTitle: string | null
     role: EmployeeRole
-    changedFields: Array<'teamLeader' | 'sectionChief' | 'divisionHead'>
-    current: {
-      teamLeaderName: string
-      sectionChiefName: string
-      divisionHeadName: string
-    }
-    next: {
-      teamLeaderName: string
-      sectionChiefName: string
-      divisionHeadName: string
-    }
-  }>
+    employmentStatus: EmployeeStatus
+    joinDate: string
+    resignationDate: string | null
+    managerEmployeeNumber: string | null
+    managerName: string | null
+    directReportCount: number
+    sortOrder: number | null
+  }
+  reports: OrgChartNode[]
 }
 
-type EmployeeDraft = {
+type OrgChartResponse = {
+  roots: OrgChartNode[]
+  orphanedEmployees: OrgChartNode['employee'][]
+  cycleEmployees: OrgChartNode['employee'][]
+  summary: {
+    totalEmployees: number
+    activeEmployees: number
+    inactiveEmployees: number
+    resignedEmployees: number
+    roots: number
+    orphanedEmployees: number
+    cycleEmployees: number
+  }
+}
+
+type EmployeeFormState = {
+  employeeNumber: string
+  name: string
   gwsEmail: string
-  role: EmployeeRole
   deptId: string
-  status: EmployeeStatus
-}
-
-type ManualEmployeeForm = {
-  empId: string
-  empName: string
-  deptId: string
+  teamName: string
+  jobTitle: string
   role: EmployeeRole
-  status: EmployeeStatus
-  gwsEmail: string
+  employmentStatus: EmployeeStatus
+  managerEmployeeNumber: string
   joinDate: string
-}
-
-type BulkRowPreview = {
-  empId: string
-  empName: string
-  deptCode: string
-  deptName: string
-  parentDeptCode: string
-  role: EmployeeRole
-  status: EmployeeStatus
-  gwsEmail: string
-  joinDate: string
+  resignationDate: string
+  sortOrder: string
+  notes: string
 }
 
 type FeedbackState =
@@ -139,27 +195,36 @@ type FeedbackState =
     }
   | null
 
-const ROLE_OPTIONS: EmployeeRole[] = [
-  'ROLE_MEMBER',
-  'ROLE_TEAM_LEADER',
-  'ROLE_SECTION_CHIEF',
-  'ROLE_DIV_HEAD',
-  'ROLE_CEO',
-  'ROLE_ADMIN',
-]
+const ROLE_LABELS: Record<EmployeeRole, string> = {
+  ROLE_MEMBER: '구성원',
+  ROLE_TEAM_LEADER: '팀장',
+  ROLE_SECTION_CHIEF: '실장/부문장',
+  ROLE_DIV_HEAD: '본부장',
+  ROLE_CEO: 'CEO',
+  ROLE_ADMIN: 'HR 관리자',
+}
 
 const STATUS_LABELS: Record<EmployeeStatus, string> = {
   ACTIVE: '재직',
+  INACTIVE: '비활성',
   ON_LEAVE: '휴직',
   RESIGNED: '퇴사',
 }
 
-function getTodayString() {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+const EMPTY_FORM: EmployeeFormState = {
+  employeeNumber: '',
+  name: '',
+  gwsEmail: '',
+  deptId: '',
+  teamName: '',
+  jobTitle: '',
+  role: 'ROLE_MEMBER',
+  employmentStatus: 'ACTIVE',
+  managerEmployeeNumber: '',
+  joinDate: '',
+  resignationDate: '',
+  sortOrder: '',
+  notes: '',
 }
 
 function parseResponse<T>(json: unknown): T {
@@ -171,1340 +236,954 @@ function parseResponse<T>(json: unknown): T {
   return payload.data as T
 }
 
-function normalizeRoleValue(value: unknown): EmployeeRole | null {
-  const normalized = String(value ?? '')
-    .trim()
-    .toUpperCase()
-
-  const map: Record<string, EmployeeRole> = {
-    ROLE_MEMBER: 'ROLE_MEMBER',
-    MEMBER: 'ROLE_MEMBER',
-    구성원: 'ROLE_MEMBER',
-    ROLE_TEAM_LEADER: 'ROLE_TEAM_LEADER',
-    TEAM_LEADER: 'ROLE_TEAM_LEADER',
-    팀장: 'ROLE_TEAM_LEADER',
-    ROLE_SECTION_CHIEF: 'ROLE_SECTION_CHIEF',
-    SECTION_CHIEF: 'ROLE_SECTION_CHIEF',
-    SECTIONCHIEF: 'ROLE_SECTION_CHIEF',
-    부서장: 'ROLE_SECTION_CHIEF',
-    실장: 'ROLE_SECTION_CHIEF',
-    ROLE_DIV_HEAD: 'ROLE_DIV_HEAD',
-    DIV_HEAD: 'ROLE_DIV_HEAD',
-    DIVHEAD: 'ROLE_DIV_HEAD',
-    본부장: 'ROLE_DIV_HEAD',
-    ROLE_CEO: 'ROLE_CEO',
-    CEO: 'ROLE_CEO',
-    ROLE_ADMIN: 'ROLE_ADMIN',
-    ADMIN: 'ROLE_ADMIN',
-    HR: 'ROLE_ADMIN',
-    관리자: 'ROLE_ADMIN',
-    HR관리자: 'ROLE_ADMIN',
-  }
-
-  return map[normalized] ?? null
+function getTodayString() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-function normalizeStatusValue(value: unknown): EmployeeStatus | null {
-  const normalized = String(value ?? '')
-    .trim()
-    .toUpperCase()
-
-  const map: Record<string, EmployeeStatus> = {
-    ACTIVE: 'ACTIVE',
-    재직: 'ACTIVE',
-    ON_LEAVE: 'ON_LEAVE',
-    ONLEAVE: 'ON_LEAVE',
-    휴직: 'ON_LEAVE',
-    RESIGNED: 'RESIGNED',
-    퇴사: 'RESIGNED',
-  }
-
-  return map[normalized] ?? null
+function buildQuery(search: string, status: string, departmentId: string) {
+  const params = new URLSearchParams()
+  if (search.trim()) params.set('q', search.trim())
+  if (status && status !== 'ALL') params.set('status', status)
+  if (departmentId) params.set('departmentId', departmentId)
+  const query = params.toString()
+  return query ? `?${query}` : ''
 }
 
-function getSpreadsheetValue(row: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const direct = row[key]
-    if (direct !== undefined && String(direct).trim() !== '') {
-      return direct
-    }
-  }
+function OrgChartTree({
+  nodes,
+  onEdit,
+}: {
+  nodes: OrgChartNode[]
+  onEdit: (employeeId: string) => void
+}) {
+  return (
+    <div className="space-y-4">
+      {nodes.map((node) => (
+        <div key={node.employee.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-base font-semibold text-slate-900">
+                {node.employee.name} ({node.employee.employeeNumber})
+              </div>
+              <div className="mt-1 text-sm text-slate-500">
+                {node.employee.departmentName}
+                {node.employee.teamName ? ` / ${node.employee.teamName}` : ''}
+                {node.employee.jobTitle ? ` / ${node.employee.jobTitle}` : ''}
+              </div>
+              <div className="mt-1 text-sm text-slate-500">
+                {ROLE_LABELS[node.employee.role]} · {STATUS_LABELS[node.employee.employmentStatus]}
+                {node.employee.managerName ? ` · 상위: ${node.employee.managerName}` : ''}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">
+                부하 {node.employee.directReportCount}명
+              </span>
+              <button
+                type="button"
+                onClick={() => onEdit(node.employee.id)}
+                className="rounded-xl border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700"
+              >
+                이 직원 수정
+              </button>
+            </div>
+          </div>
 
-  const normalizedEntries = Object.entries(row).map(([key, value]) => [
-    key.replace(/\s+/g, '').toLowerCase(),
-    value,
-  ])
-
-  for (const key of keys) {
-    const normalizedKey = key.replace(/\s+/g, '').toLowerCase()
-    const match = normalizedEntries.find(([entryKey]) => entryKey === normalizedKey)
-    if (match && String(match[1]).trim() !== '') {
-      return match[1]
-    }
-  }
-
-  return ''
+          {!!node.reports.length && (
+            <div className="mt-4 border-l-2 border-slate-200 pl-4">
+              <OrgChartTree nodes={node.reports} onEdit={onEdit} />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function GoogleAccountRegistrationClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const initialSearch = searchParams.get('q')?.trim() ?? ''
-  const targetEmployeeId = searchParams.get('employeeId')?.trim() ?? ''
-  const returnTo = searchParams.get('returnTo')?.trim() ?? ''
   const queryClient = useQueryClient()
-  const [search, setSearch] = useState(initialSearch)
-  const [submittedSearch, setSubmittedSearch] = useState(initialSearch)
+  const [activeTab, setActiveTab] = useState(
+    searchParams.get('tab') === 'org-chart' || searchParams.get('tab') === 'upload'
+      ? (searchParams.get('tab') as 'org-chart' | 'upload')
+      : 'manage'
+  )
+  const [search, setSearch] = useState(searchParams.get('q') ?? '')
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? 'ALL')
+  const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') ?? '')
   const [feedback, setFeedback] = useState<FeedbackState>(null)
-  const [showReturnAction, setShowReturnAction] = useState(false)
-  const [focusedEmployeeId, setFocusedEmployeeId] = useState(targetEmployeeId)
-  const [editingEmployeeId, setEditingEmployeeId] = useState(targetEmployeeId)
-  const [drafts, setDrafts] = useState<Record<string, EmployeeDraft>>({})
-  const [bulkRows, setBulkRows] = useState<BulkRowPreview[]>([])
-  const [bulkSummary, setBulkSummary] = useState<BulkUploadResponse | null>(null)
-  const [bulkFileName, setBulkFileName] = useState('')
-  const [hierarchyPreview, setHierarchyPreview] = useState<HierarchyPreviewResponse | null>(null)
-  const [manualForm, setManualForm] = useState<ManualEmployeeForm>({
-    empId: '',
-    empName: '',
-    deptId: '',
-    role: 'ROLE_MEMBER',
-    status: 'ACTIVE',
-    gwsEmail: '',
-    joinDate: getTodayString(),
-  })
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null)
+  const [form, setForm] = useState<EmployeeFormState>(EMPTY_FORM)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null)
 
-  const employeesQuery = useQuery({
-    queryKey: ['admin-google-account-directory', submittedSearch],
+  const querySuffix = buildQuery(search, statusFilter, departmentFilter)
+
+  const directoryQuery = useQuery({
+    queryKey: ['admin-google-account-directory', querySuffix],
     queryFn: async () => {
-      const query = submittedSearch ? `?q=${encodeURIComponent(submittedSearch)}` : ''
-      const res = await fetch(`/api/admin/employees/google-account${query}`)
-      return parseResponse<EmployeeDirectoryResponse>(await res.json())
+      const response = await fetch(`/api/admin/employees/google-account${querySuffix}`)
+      return parseResponse<EmployeeDirectoryResponse>(await response.json())
     },
   })
 
-  const createMutation = useMutation({
-    mutationFn: async (input: ManualEmployeeForm) => {
-      const res = await fetch('/api/admin/employees/google-account', {
-        method: 'POST',
+  const orgChartQuery = useQuery({
+    queryKey: ['admin-google-account-org-chart', querySuffix],
+    enabled: activeTab === 'org-chart',
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/employees/google-account/org-chart${querySuffix}`)
+      return parseResponse<OrgChartResponse>(await response.json())
+    },
+  })
+
+  const refreshQueries = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['admin-google-account-directory'] })
+    await queryClient.invalidateQueries({ queryKey: ['admin-google-account-org-chart'] })
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async (input: EmployeeFormState) => {
+      const payload = {
+        employeeId: editingEmployeeId ?? undefined,
+        employeeNumber: input.employeeNumber,
+        name: input.name,
+        gwsEmail: input.gwsEmail,
+        deptId: input.deptId,
+        teamName: input.teamName,
+        jobTitle: input.jobTitle,
+        role: input.role,
+        employmentStatus: input.employmentStatus,
+        managerEmployeeNumber: input.managerEmployeeNumber,
+        joinDate: input.joinDate || undefined,
+        resignationDate: input.resignationDate || undefined,
+        sortOrder: input.sortOrder ? Number(input.sortOrder) : undefined,
+        notes: input.notes,
+      }
+      const response = await fetch('/api/admin/employees/google-account', {
+        method: editingEmployeeId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
+        body: JSON.stringify(payload),
       })
 
-      return parseResponse<UpdateGoogleAccountResponse>(await res.json())
+      return parseResponse<SaveEmployeeResponse>(await response.json())
     },
-    onSuccess: (data) => {
-      setHierarchyPreview(null)
-      setShowReturnAction(false)
+    onSuccess: async (data) => {
       setFeedback({
         type: 'success',
-        message: `${data.employee.empName}(${data.employee.empId}) 직원을 등록했습니다. 조직장 체계 ${data.hierarchyUpdatedCount}건을 다시 계산했습니다.`,
+        message: `${data.employee.name}(${data.employee.employeeNumber}) 정보를 저장했습니다. 조직도 연계 ${data.hierarchyUpdatedCount}건을 재계산했습니다.`,
       })
-      setManualForm((current) => ({
-        ...current,
-        empId: '',
-        empName: '',
-        role: 'ROLE_MEMBER',
-        status: 'ACTIVE',
-        gwsEmail: '',
-        joinDate: getTodayString(),
-      }))
-      queryClient.invalidateQueries({ queryKey: ['admin-google-account-directory'] })
+      setEditingEmployeeId(null)
+      setForm(EMPTY_FORM)
+      await refreshQueries()
     },
     onError: (error: Error) => {
-      setShowReturnAction(false)
       setFeedback({ type: 'error', message: error.message })
     },
   })
 
-  const updateMutation = useMutation({
+  const lifecycleMutation = useMutation({
     mutationFn: async (input: {
       employeeId: string
-      gwsEmail: string
-      role: EmployeeRole
-      deptId: string
-      status: EmployeeStatus
+      action: 'DEACTIVATE' | 'RESIGN' | 'REACTIVATE'
+      resignationDate?: string
     }) => {
-      const res = await fetch('/api/admin/employees/google-account', {
-        method: 'PUT',
+      const response = await fetch('/api/admin/employees/google-account', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
       })
 
-      return parseResponse<UpdateGoogleAccountResponse>(await res.json())
+      return parseResponse<SaveEmployeeResponse & { impactedDirectReports: number }>(
+        await response.json()
+      )
     },
-    onSuccess: (data) => {
-      setHierarchyPreview(null)
-      setShowReturnAction(Boolean(returnTo))
+    onSuccess: async (data, variables) => {
+      const actionLabel =
+        variables.action === 'DEACTIVATE'
+          ? '비활성화'
+          : variables.action === 'RESIGN'
+            ? '퇴사 처리'
+            : '재활성화'
+
       setFeedback({
         type: 'success',
-        message: `${data.employee.empName} 직원 정보를 저장했습니다. 조직장 체계 ${data.hierarchyUpdatedCount}건을 다시 계산했습니다.`,
-      })
-      setDrafts((current) => ({
-        ...current,
-        [data.employee.id]: {
-          gwsEmail: data.employee.gwsEmail,
-          role: data.employee.role,
-          deptId: data.employee.deptId,
-          status: data.employee.status,
-        },
-      }))
-      queryClient.invalidateQueries({ queryKey: ['admin-google-account-directory'] })
-    },
-    onError: (error: Error) => {
-      setShowReturnAction(false)
-      setFeedback({ type: 'error', message: error.message })
-    },
-  })
-
-  const bulkMutation = useMutation({
-    mutationFn: async (input: { fileName: string; rows: BulkRowPreview[] }) => {
-      const res = await fetch('/api/admin/employees/google-account/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      })
-
-      return parseResponse<BulkUploadResponse>(await res.json())
-    },
-    onSuccess: (data) => {
-      setHierarchyPreview(null)
-      setShowReturnAction(false)
-      setBulkSummary(data)
-      setFeedback({
-        type: data.failedCount > 0 ? 'error' : 'success',
         message:
-          data.failedCount > 0
-            ? `일괄 업데이트를 완료했지만 ${data.failedCount}건은 실패했습니다. 조직장 체계는 ${data.hierarchyUpdatedCount}건 다시 계산했습니다.`
-            : `${data.totalRows}건의 직원을 일괄 반영했습니다. 조직장 체계 ${data.hierarchyUpdatedCount}건을 다시 계산했습니다.`,
+          data.impactedDirectReports > 0
+            ? `${data.employee.name} 직원을 ${actionLabel}했습니다. 직속 구성원 ${data.impactedDirectReports}명의 관리자 연결도 함께 점검해 주세요.`
+            : `${data.employee.name} 직원을 ${actionLabel}했습니다.`,
       })
-      queryClient.invalidateQueries({ queryKey: ['admin-google-account-directory'] })
+      await refreshQueries()
     },
     onError: (error: Error) => {
-      setShowReturnAction(false)
       setFeedback({ type: 'error', message: error.message })
-      setBulkSummary(null)
     },
   })
 
-  const previewMutation = useMutation({
-    mutationFn: async (input: {
-      contextLabel: string
-      updates?: Array<{
-        id: string
-        empId: string
-        empName: string
-        deptId: string
-        role: EmployeeRole
-        status: EmployeeStatus
-        joinDate: string
-      }>
-      creates?: Array<{
-        empId: string
-        empName: string
-        deptId: string
-        role: EmployeeRole
-        status: EmployeeStatus
-        joinDate: string
-      }>
-    }) => {
-      const res = await fetch('/api/admin/employees/google-account/preview', {
-        method: 'POST',
+  const deleteMutation = useMutation({
+    mutationFn: async (employeeId: string) => {
+      const response = await fetch('/api/admin/employees/google-account', {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ employeeId }),
       })
 
-      return parseResponse<HierarchyPreviewResponse>(await res.json())
+      return parseResponse<DeleteEmployeeResponse>(await response.json())
     },
-    onSuccess: (data) => {
-      setHierarchyPreview(data)
-      setShowReturnAction(false)
+    onSuccess: async (data) => {
       setFeedback({
         type: 'success',
-        message: `${data.contextLabel} 결과를 불러왔습니다. 변경 대상 ${data.summary.changedEmployeeCount}건입니다.`,
+        message: `${data.deletedEmployee.name}(${data.deletedEmployee.employeeNumber}) 직원을 삭제했습니다.`,
       })
+      if (editingEmployeeId === data.deletedEmployee.id) {
+        setEditingEmployeeId(null)
+        setForm(EMPTY_FORM)
+      }
+      await refreshQueries()
     },
     onError: (error: Error) => {
-      setShowReturnAction(false)
-      setHierarchyPreview(null)
       setFeedback({ type: 'error', message: error.message })
     },
   })
 
-  const employees = useMemo(() => employeesQuery.data?.employees ?? [], [employeesQuery.data?.employees])
-  const departments = useMemo(
-    () => employeesQuery.data?.departments ?? [],
-    [employeesQuery.data?.departments]
-  )
-  const uploadHistory = useMemo(
-    () => employeesQuery.data?.uploadHistory ?? [],
-    [employeesQuery.data?.uploadHistory]
-  )
-  const allowedDomain = employeesQuery.data?.allowedDomain ?? 'rsupport.com'
-  const savingId = useMemo(
-    () => (updateMutation.variables ? updateMutation.variables.employeeId : null),
-    [updateMutation.variables]
-  )
+  const uploadMutation = useMutation({
+    mutationFn: async (mode: 'preview' | 'apply') => {
+      if (!uploadFile) {
+        throw new Error('업로드할 파일을 먼저 선택해 주세요.')
+      }
 
-  const previewRows = bulkRows.slice(0, 8)
-  const departmentIdByCode = useMemo(
-    () =>
-      new Map(
-        departments.map((department) => [department.deptCode.trim().toUpperCase(), department.id] as const)
-      ),
-    [departments]
-  )
-  const employeeByEmpId = useMemo(
-    () => new Map(employees.map((employee) => [employee.empId, employee] as const)),
-    [employees]
-  )
+      const body = new FormData()
+      body.set('mode', mode)
+      body.set('file', uploadFile)
 
-  useEffect(() => {
-    if (initialSearch) {
-      setSearch(initialSearch)
-      setSubmittedSearch(initialSearch)
-    }
-    if (targetEmployeeId) {
-      setFocusedEmployeeId(targetEmployeeId)
-      setEditingEmployeeId(targetEmployeeId)
-    }
-  }, [initialSearch, targetEmployeeId])
-
-  useEffect(() => {
-    if (!focusedEmployeeId || employees.length === 0) {
-      return
-    }
-
-    const targetElement = document.getElementById(`employee-${focusedEmployeeId}`)
-    if (!targetElement) {
-      return
-    }
-
-    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [focusedEmployeeId, employees])
-
-  useEffect(() => {
-    if (!editingEmployeeId) {
-      return
-    }
-
-    const focusTarget = window.setTimeout(() => {
-      const input = document.getElementById(`employee-email-${editingEmployeeId}`) as HTMLInputElement | null
-      input?.focus()
-    }, 150)
-
-    return () => window.clearTimeout(focusTarget)
-  }, [editingEmployeeId, employees])
-
-  function handlePreviewReset() {
-    setHierarchyPreview(null)
-  }
-
-  async function handleTemplateDownload() {
-    const XLSX = await import('xlsx')
-    const employeeRows = [
-      {
-        empId: 'E2026001',
-        empName: '홍길동',
-        deptCode: 'HR',
-        deptName: '인사팀',
-        parentDeptCode: '',
-        role: 'ROLE_MEMBER',
-        status: 'ACTIVE',
-        gwsEmail: `hong.gildong@${allowedDomain}`,
-        joinDate: getTodayString(),
-      },
-      {
-        empId: 'E2026002',
-        empName: '김팀장',
-        deptCode: 'HR',
-        deptName: '인사팀',
-        parentDeptCode: '',
-        role: 'ROLE_TEAM_LEADER',
-        status: 'ACTIVE',
-        gwsEmail: `kim.leader@${allowedDomain}`,
-        joinDate: getTodayString(),
-      },
-    ]
-    const guideRows = [
-      {
-        item: '작성 시트',
-        value: 'employees',
-        description: '이 시트에 직원 정보를 입력한 뒤 그대로 업로드하세요.',
-      },
-      {
-        item: '필수 컬럼',
-        value: 'empId, empName, deptCode, deptName, role, status, gwsEmail, joinDate',
-        description: '컬럼명은 그대로 유지해주세요.',
-      },
-      {
-        item: '신규 부서 생성',
-        value: 'deptName, parentDeptCode',
-        description: 'deptCode가 없으면 새 부서를 만들고, parentDeptCode가 있으면 상위 부서로 연결합니다.',
-      },
-      {
-        item: 'role 허용값',
-        value:
-          'ROLE_MEMBER, ROLE_TEAM_LEADER, ROLE_SECTION_CHIEF, ROLE_DIV_HEAD, ROLE_CEO, ROLE_ADMIN',
-        description: '한국어 역할명도 업로드에서 읽을 수 있지만 템플릿 값 사용을 권장합니다.',
-      },
-      {
-        item: 'status 허용값',
-        value: 'ACTIVE, ON_LEAVE, RESIGNED',
-        description: '재직, 휴직, 퇴사도 허용되지만 enum 값 사용을 권장합니다.',
-      },
-      {
-        item: 'deptCode',
-        value: 'departments 시트 참고',
-        description: '반드시 현재 등록된 부서코드를 사용해야 조직도에 자동 반영됩니다.',
-      },
-      {
-        item: 'joinDate 형식',
-        value: 'YYYY-MM-DD',
-        description: '예: 2026-03-19',
-      },
-    ]
-    const departmentRows = departments.map((department) => ({
-      deptCode: department.deptCode,
-      deptName: department.deptName,
-    }))
-
-    const employeeSheet = XLSX.utils.json_to_sheet(employeeRows)
-    const guideSheet = XLSX.utils.json_to_sheet(guideRows)
-    const departmentSheet = XLSX.utils.json_to_sheet(departmentRows)
-    const workbook = XLSX.utils.book_new()
-
-    XLSX.utils.book_append_sheet(workbook, employeeSheet, 'employees')
-    XLSX.utils.book_append_sheet(workbook, guideSheet, 'guide')
-    XLSX.utils.book_append_sheet(workbook, departmentSheet, 'departments')
-
-    XLSX.writeFile(workbook, 'employee-google-access-template.xlsx')
-  }
-
-  async function handleBulkFileChange(file: File | null) {
-    if (!file) {
-      return
-    }
-
-    setBulkFileName(file.name)
-
-    try {
-      const XLSX = await import('xlsx')
-      const buffer = await file.arrayBuffer()
-      const workbook = XLSX.read(buffer, { type: 'array' })
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]]
-      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-        defval: '',
+      const response = await fetch('/api/admin/employees/google-account/upload', {
+        method: 'POST',
+        body,
       })
 
-      const mappedRows = rawRows.map((row) => {
-        const role = normalizeRoleValue(
-          getSpreadsheetValue(row, ['role', '역할', '권한', '직원권한'])
-        )
-        const status =
-          normalizeStatusValue(getSpreadsheetValue(row, ['status', '상태', '재직상태'])) ?? 'ACTIVE'
-
-        if (!role) {
-          throw new Error('엑셀의 역할 컬럼 값이 올바르지 않습니다. ROLE_MEMBER 형식을 사용해주세요.')
-        }
-
-        return {
-          empId: String(getSpreadsheetValue(row, ['empId', 'employeeId', '사번'])).trim(),
-          empName: String(getSpreadsheetValue(row, ['empName', 'name', '이름', '직원명'])).trim(),
-          deptCode: String(
-            getSpreadsheetValue(row, ['deptCode', 'departmentCode', '부서코드'])
-          ).trim(),
-          deptName: String(getSpreadsheetValue(row, ['deptName', 'departmentName', '부서명'])).trim(),
-          parentDeptCode: String(
-            getSpreadsheetValue(row, ['parentDeptCode', 'upperDeptCode', '상위부서코드'])
-          ).trim(),
-          role,
-          status,
-          gwsEmail: String(
-            getSpreadsheetValue(row, ['gwsEmail', 'googleEmail', 'email', '구글이메일', 'Google이메일'])
-          ).trim(),
-          joinDate:
-            String(getSpreadsheetValue(row, ['joinDate', '입사일', '입사일자'])).trim() ||
-            getTodayString(),
-        } satisfies BulkRowPreview
-      })
-
-      setBulkRows(mappedRows)
-      setBulkSummary(null)
-      setHierarchyPreview(null)
-      setFeedback({
-        type: 'success',
-        message: `${mappedRows.length}건의 업로드 미리보기를 불러왔습니다.`,
-      })
-    } catch (error) {
-      setBulkRows([])
-      setBulkSummary(null)
-      setBulkFileName('')
-      setHierarchyPreview(null)
-      setFeedback({
-        type: 'error',
-        message: error instanceof Error ? error.message : '엑셀 파일을 읽는 중 오류가 발생했습니다.',
-      })
-    }
-  }
-
-  function handleManualPreview() {
-    if (!manualForm.empId || !manualForm.empName || !manualForm.deptId) {
-      setFeedback({
-        type: 'error',
-        message: '직접 등록 미리보기를 보려면 사번, 이름, 부서를 먼저 입력해주세요.',
-      })
-      return
-    }
-
-    previewMutation.mutate({
-      contextLabel: '직접 등록 조직장 체계 미리보기',
-      creates: [
-        {
-          empId: manualForm.empId,
-          empName: manualForm.empName,
-          deptId: manualForm.deptId,
-          role: manualForm.role,
-          status: manualForm.status,
-          joinDate: manualForm.joinDate,
-        },
-      ],
-    })
-  }
-
-  function handleEmployeePreview(employee: EmployeeListItem, draft: EmployeeDraft) {
-    previewMutation.mutate({
-      contextLabel: `${employee.empName} 조직장 체계 미리보기`,
-      updates: [
-        {
-          id: employee.id,
-          empId: employee.empId,
-          empName: employee.empName,
-          deptId: draft.deptId,
-          role: draft.role,
-          status: draft.status,
-          joinDate: employee.joinDate.slice(0, 10),
-        },
-      ],
-    })
-  }
-
-  function handleBulkPreview() {
-    const updates: Array<{
-      id: string
-      empId: string
-      empName: string
-      deptId: string
-      role: EmployeeRole
-      status: EmployeeStatus
-      joinDate: string
-    }> = []
-    const creates: Array<{
-      empId: string
-      empName: string
-      deptId: string
-      role: EmployeeRole
-      status: EmployeeStatus
-      joinDate: string
-    }> = []
-
-    for (const row of bulkRows) {
-      const deptId = departmentIdByCode.get(row.deptCode.trim().toUpperCase())
-      if (!deptId) {
+      return parseResponse<UploadResponse>(await response.json())
+    },
+    onSuccess: async (data) => {
+      setUploadResult(data)
+      if (data.mode === 'apply') {
         setFeedback({
-          type: 'error',
-          message: `${row.deptCode} 부서코드를 찾을 수 없어 미리보기를 만들 수 없습니다.`,
+          type: data.summary.invalidRows > 0 ? 'error' : 'success',
+          message:
+            data.summary.invalidRows > 0
+              ? `일괄 업로드를 적용했습니다. 유효한 ${data.summary.validRows}건은 반영했고, ${data.summary.invalidRows}건은 오류로 제외했습니다.`
+              : `일괄 업로드 ${data.summary.validRows}건을 모두 반영했습니다.`,
         })
-        return
+        await refreshQueries()
       }
+    },
+    onError: (error: Error) => {
+      setFeedback({ type: 'error', message: error.message })
+    },
+  })
 
-      const existingEmployee = employeeByEmpId.get(row.empId)
-      if (existingEmployee) {
-        updates.push({
-          id: existingEmployee.id,
-          empId: row.empId,
-          empName: row.empName,
-          deptId,
-          role: row.role,
-          status: row.status,
-          joinDate: row.joinDate,
-        })
-      } else {
-        creates.push({
-          empId: row.empId,
-          empName: row.empName,
-          deptId,
-          role: row.role,
-          status: row.status,
-          joinDate: row.joinDate,
-        })
-      }
-    }
+  const departmentOptions = directoryQuery.data?.departments ?? []
+  const managerOptions = directoryQuery.data?.managerOptions ?? []
+  const employees = directoryQuery.data?.employees ?? []
+  const summary = directoryQuery.data?.summary
 
-    previewMutation.mutate({
-      contextLabel: '엑셀 일괄 업데이트 조직장 체계 미리보기',
-      updates,
-      creates,
-    })
+  const uploadRowsToShow = uploadResult?.rows.slice(0, 80) ?? []
+
+  const applyTab = (nextTab: 'manage' | 'upload' | 'org-chart') => {
+    setActiveTab(nextTab)
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('tab', nextTab)
+    router.replace(`/admin/google-access?${params.toString()}`)
   }
 
-  async function handleFailedRowsDownload() {
-    if (!bulkSummary || bulkSummary.errors.length === 0) {
+  const startEdit = (employeeId: string) => {
+    const employee = employees.find((item) => item.id === employeeId)
+    if (!employee) {
       return
     }
 
-    const XLSX = await import('xlsx')
-    const failedRows = bulkSummary.errors
-      .map((error) => {
-        const originalRow = bulkRows[error.rowNumber - 2]
-        if (!originalRow) {
-          return null
-        }
-
-        return {
-          ...originalRow,
-          errorMessage: error.message,
-        }
-      })
-      .filter((row): row is BulkRowPreview & { errorMessage: string } => row !== null)
-
-    const worksheet = XLSX.utils.json_to_sheet(failedRows)
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'failed_rows')
-    XLSX.writeFile(workbook, 'employee-bulk-upload-failed-rows.xlsx')
+    setEditingEmployeeId(employee.id)
+    setForm({
+      employeeNumber: employee.employeeNumber,
+      name: employee.name,
+      gwsEmail: employee.googleEmail,
+      deptId: employee.departmentId,
+      teamName: employee.teamName ?? '',
+      jobTitle: employee.jobTitle ?? '',
+      role: employee.role,
+      employmentStatus: employee.employmentStatus,
+      managerEmployeeNumber: employee.managerEmployeeNumber ?? '',
+      joinDate: employee.joinDate ?? '',
+      resignationDate: employee.resignationDate ?? '',
+      sortOrder: employee.sortOrder !== null ? String(employee.sortOrder) : '',
+      notes: employee.notes ?? '',
+    })
+    setFeedback(null)
+    setActiveTab('manage')
   }
+
+  const resetForm = () => {
+    setEditingEmployeeId(null)
+    setForm(EMPTY_FORM)
+  }
+
+  const handleLifecycle = (employee: EmployeeListItem, action: 'DEACTIVATE' | 'RESIGN' | 'REACTIVATE') => {
+    const confirmMessage =
+      action === 'DEACTIVATE'
+        ? `${employee.name} 직원을 비활성화하시겠습니까? ACTIVE 상태가 아니면 Google 로그인이 차단됩니다.`
+        : action === 'RESIGN'
+          ? `${employee.name} 직원을 퇴사 처리하시겠습니까?`
+          : `${employee.name} 직원을 재활성화하시겠습니까?`
+
+    if (!window.confirm(confirmMessage)) {
+      return
+    }
+
+    if (action === 'RESIGN') {
+      lifecycleMutation.mutate({
+        employeeId: employee.id,
+        action,
+        resignationDate: employee.resignationDate ?? getTodayString(),
+      })
+      return
+    }
+
+    lifecycleMutation.mutate({
+      employeeId: employee.id,
+      action,
+    })
+  }
+
+  const canApplyUpload = Boolean(uploadFile && uploadResult && uploadResult.mode === 'preview')
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-        <h1 className="text-2xl font-bold text-slate-900">Google 계정 등록</h1>
-        <p className="mt-2 text-sm text-slate-700">
-          관리자 화면에서 직원을 직접 등록하고, Google Workspace 계정과 역할을 함께 관리할 수
-          있습니다.
-        </p>
-        <p className="mt-2 text-sm text-slate-600">
-          허용된 도메인:
-          <span className="ml-1 font-semibold text-blue-700">@{allowedDomain}</span>
-        </p>
-        <p className="mt-2 text-sm text-slate-600">
-          일괄업로드 후에는{' '}
-          <Link href="/admin/org-chart" className="font-semibold text-blue-700 underline">
-            조직도 관리
-          </Link>{' '}
-          에서 자동 반영 결과를 바로 확인할 수 있습니다.
-        </p>
-      </div>
-
-      {feedback && (
-        <div
-          className={`rounded-2xl border px-4 py-3 text-sm ${
-            feedback.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-              : 'border-rose-200 bg-rose-50 text-rose-700'
-          }`}
-        >
-          <div>{feedback.message}</div>
-          {feedback.type === 'success' && showReturnAction && returnTo ? (
-            <div className="mt-3">
-              <button
-                type="button"
-                onClick={() => router.push(returnTo)}
-                className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-700"
-              >
-                조직도로 돌아가기
-              </button>
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {hierarchyPreview && (
-        <section className="rounded-2xl border border-violet-200 bg-violet-50 p-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-violet-900">{hierarchyPreview.contextLabel}</h2>
-              <p className="mt-1 text-sm text-violet-700">
-                저장 시 예상되는 조직장 체계 변경 결과입니다.
-              </p>
-            </div>
-            <button
-              onClick={handlePreviewReset}
-              className="rounded-xl border border-violet-300 bg-white px-4 py-2 text-sm font-medium text-violet-700"
+      <section className="rounded-3xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Google 계정 등록 관리</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              관리자 전용 화면입니다. 단건 등록/수정, 일괄 업로드, 조직도 확인을 한 곳에서 처리하며,
+              Google 로그인 허용 목록은 재직 상태가 ACTIVE인 직원만 유지됩니다.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/api/admin/employees/google-account/template"
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
             >
-              닫기
+              템플릿 다운로드
+            </Link>
+            <button
+              type="button"
+              onClick={() => applyTab('upload')}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+            >
+              일괄 업로드
             </button>
           </div>
+        </div>
+      </section>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <div className="rounded-xl bg-white p-3 text-sm">
-              <div className="text-violet-700">변경 대상 직원</div>
-              <div className="mt-1 text-lg font-semibold text-violet-900">
-                {hierarchyPreview.summary.changedEmployeeCount}
-              </div>
-            </div>
-            <div className="rounded-xl bg-white p-3 text-sm">
-              <div className="text-violet-700">팀장 변경</div>
-              <div className="mt-1 text-lg font-semibold text-violet-900">
-                {hierarchyPreview.summary.teamLeaderChangedCount}
-              </div>
-            </div>
-            <div className="rounded-xl bg-white p-3 text-sm">
-              <div className="text-violet-700">부서장 변경</div>
-              <div className="mt-1 text-lg font-semibold text-violet-900">
-                {hierarchyPreview.summary.sectionChiefChangedCount}
-              </div>
-            </div>
-            <div className="rounded-xl bg-white p-3 text-sm">
-              <div className="text-violet-700">본부장 변경</div>
-              <div className="mt-1 text-lg font-semibold text-violet-900">
-                {hierarchyPreview.summary.divisionHeadChangedCount}
-              </div>
+      {summary && (
+        <section className="grid gap-4 md:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm text-slate-500">전체 등록 직원</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">{summary.totalEmployees}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm text-slate-500">재직</div>
+            <div className="mt-2 text-2xl font-semibold text-emerald-700">{summary.activeEmployees}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm text-slate-500">비활성/퇴사</div>
+            <div className="mt-2 text-2xl font-semibold text-amber-700">
+              {summary.inactiveEmployees + summary.resignedEmployees}
             </div>
           </div>
-
-          <div className="mt-4 space-y-3">
-            {!hierarchyPreview.changedEmployees.length && (
-              <div className="rounded-xl bg-white px-4 py-5 text-sm text-slate-500">
-                예상되는 조직장 체계 변경이 없습니다.
-              </div>
-            )}
-
-            {hierarchyPreview.changedEmployees.slice(0, 12).map((item) => (
-              <div key={item.employeeId} className="rounded-xl bg-white p-4 text-sm text-slate-700">
-                <div className="font-medium text-slate-900">
-                  {item.empName} ({item.empId}) / {item.deptName}
-                </div>
-                <div className="mt-2 grid gap-2 md:grid-cols-3">
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">팀장</div>
-                    <div className="mt-1">
-                      {item.current.teamLeaderName} → {item.next.teamLeaderName}
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">부서장</div>
-                    <div className="mt-1">
-                      {item.current.sectionChiefName} → {item.next.sectionChiefName}
-                    </div>
-                  </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <div className="text-xs text-slate-500">본부장</div>
-                    <div className="mt-1">
-                      {item.current.divisionHeadName} → {item.next.divisionHeadName}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {hierarchyPreview.changedEmployees.length > 12 && (
-              <div className="text-sm text-violet-700">
-                총 {hierarchyPreview.changedEmployees.length}건 중 12건만 표시했습니다.
-              </div>
-            )}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="text-sm text-slate-500">관리자 미지정 재직자</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">{summary.unassignedManagerCount}</div>
           </div>
         </section>
       )}
 
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">직원 직접 등록</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              신규 직원을 직접 추가하면서 Google 이메일과 역할을 함께 부여합니다.
-            </p>
-          </div>
+      {feedback && (
+        <section
+          className={`rounded-2xl border p-4 text-sm ${
+            feedback.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-rose-200 bg-rose-50 text-rose-800'
+          }`}
+        >
+          {feedback.message}
+        </section>
+      )}
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="space-y-1 text-sm">
-              <span className="font-medium text-gray-700">사번</span>
+      <section className="flex flex-wrap gap-2">
+        {[
+          { key: 'manage' as const, label: '목록 관리' },
+          { key: 'upload' as const, label: '일괄 업로드' },
+          { key: 'org-chart' as const, label: '조직도' },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => applyTab(tab.key)}
+            className={`rounded-full px-4 py-2 text-sm font-medium ${
+              activeTab === tab.key
+                ? 'bg-slate-900 text-white'
+                : 'border border-slate-300 bg-white text-slate-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-4">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="사번, 이름, 이메일, 부서 검색"
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          />
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="ALL">상태 전체</option>
+            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={departmentFilter}
+            onChange={(event) => setDepartmentFilter(event.target.value)}
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="">부서 전체</option>
+            {departmentOptions.map((department) => (
+              <option key={department.id} value={department.id}>
+                {department.deptName} ({department.deptCode})
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('')
+              setStatusFilter('ALL')
+              setDepartmentFilter('')
+            }}
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
+          >
+            필터 초기화
+          </button>
+        </div>
+      </section>
+
+      {activeTab === 'manage' && (
+        <div className="space-y-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {editingEmployeeId ? '직원 정보 수정' : '직원 1건 등록'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  허용 도메인: {directoryQuery.data?.allowedDomain ?? '-'}
+                </p>
+              </div>
+              {editingEmployeeId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
+                >
+                  새 등록으로 전환
+                </button>
+              )}
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <input
-                value={manualForm.empId}
-                onChange={(event) =>
-                  setManualForm((current) => ({ ...current, empId: event.target.value }))
-                }
-                className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
-                placeholder="예: E2026001"
+                value={form.employeeNumber}
+                onChange={(event) => setForm((current) => ({ ...current, employeeNumber: event.target.value }))}
+                placeholder="사번"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
-            </label>
-
-            <label className="space-y-1 text-sm">
-              <span className="font-medium text-gray-700">이름</span>
               <input
-                value={manualForm.empName}
-                onChange={(event) =>
-                  setManualForm((current) => ({ ...current, empName: event.target.value }))
-                }
-                className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
-                placeholder="홍길동"
+                value={form.name}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="이름"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
-            </label>
-
-            <label className="space-y-1 text-sm">
-              <span className="font-medium text-gray-700">부서</span>
+              <input
+                value={form.gwsEmail}
+                onChange={(event) => setForm((current) => ({ ...current, gwsEmail: event.target.value }))}
+                placeholder="Google 이메일"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
               <select
-                value={manualForm.deptId}
-                onChange={(event) =>
-                  setManualForm((current) => ({ ...current, deptId: event.target.value }))
-                }
-                className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
+                value={form.deptId}
+                onChange={(event) => setForm((current) => ({ ...current, deptId: event.target.value }))}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
               >
-                <option value="">부서를 선택하세요</option>
-                {departments.map((department) => (
+                <option value="">부서 선택</option>
+                {departmentOptions.map((department) => (
                   <option key={department.id} value={department.id}>
                     {department.deptName} ({department.deptCode})
                   </option>
                 ))}
               </select>
-            </label>
-
-            <label className="space-y-1 text-sm">
-              <span className="font-medium text-gray-700">Role</span>
+              <input
+                value={form.teamName}
+                onChange={(event) => setForm((current) => ({ ...current, teamName: event.target.value }))}
+                placeholder="팀명"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+              <input
+                value={form.jobTitle}
+                onChange={(event) => setForm((current) => ({ ...current, jobTitle: event.target.value }))}
+                placeholder="직책/직위"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
               <select
-                value={manualForm.role}
-                onChange={(event) =>
-                  setManualForm((current) => ({
-                    ...current,
-                    role: event.target.value as EmployeeRole,
-                  }))
-                }
-                className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
+                value={form.role}
+                onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as EmployeeRole }))}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
               >
-                {ROLE_OPTIONS.map((role) => (
-                  <option key={role} value={role}>
-                    {ROLE_LABELS[role]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1 text-sm">
-              <span className="font-medium text-gray-700">재직 상태</span>
-              <select
-                value={manualForm.status}
-                onChange={(event) =>
-                  setManualForm((current) => ({
-                    ...current,
-                    status: event.target.value as EmployeeStatus,
-                  }))
-                }
-                className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
-              >
-                {Object.entries(STATUS_LABELS).map(([status, label]) => (
-                  <option key={status} value={status}>
+                {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
                     {label}
                   </option>
                 ))}
               </select>
-            </label>
-
-            <label className="space-y-1 text-sm">
-              <span className="font-medium text-gray-700">입사일</span>
+              <select
+                value={form.employmentStatus}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, employmentStatus: event.target.value as EmployeeStatus }))
+                }
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              >
+                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={form.managerEmployeeNumber}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, managerEmployeeNumber: event.target.value }))
+                }
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">직속 관리자 없음</option>
+                {managerOptions.map((manager) => (
+                  <option key={manager.id} value={manager.employeeNumber}>
+                    {manager.name} ({manager.employeeNumber}) / {manager.departmentName}
+                  </option>
+                ))}
+              </select>
               <input
                 type="date"
-                value={manualForm.joinDate}
-                onChange={(event) =>
-                  setManualForm((current) => ({ ...current, joinDate: event.target.value }))
-                }
-                className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
+                value={form.joinDate}
+                onChange={(event) => setForm((current) => ({ ...current, joinDate: event.target.value }))}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
-            </label>
-
-            <label className="space-y-1 text-sm md:col-span-2">
-              <span className="font-medium text-gray-700">Google Workspace 이메일</span>
               <input
-                value={manualForm.gwsEmail}
-                onChange={(event) =>
-                  setManualForm((current) => ({ ...current, gwsEmail: event.target.value }))
-                }
-                className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
-                placeholder={`name@${allowedDomain}`}
+                type="date"
+                value={form.resignationDate}
+                onChange={(event) => setForm((current) => ({ ...current, resignationDate: event.target.value }))}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
-            </label>
-          </div>
-
-          <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-            선택한 role에 따라 기본 직급이 자동 매핑됩니다.
-            <div className="mt-2 text-xs text-slate-500">
-              예: 팀장 role은 팀장 직급으로, HR 관리자 role은 구성원 직급으로 저장됩니다.
+              <input
+                value={form.sortOrder}
+                onChange={(event) => setForm((current) => ({ ...current, sortOrder: event.target.value }))}
+                placeholder="정렬 순서"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
             </div>
-          </div>
 
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={handleManualPreview}
-              disabled={previewMutation.isPending}
-              className="mr-2 min-h-11 rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
-            >
-              {previewMutation.isPending ? '미리보기 계산 중...' : '조직장 미리보기'}
-            </button>
-            <button
-              onClick={() => createMutation.mutate(manualForm)}
-              disabled={createMutation.isPending}
-              className="min-h-11 rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:opacity-50"
-            >
-              {createMutation.isPending ? '등록 중...' : '직원 등록'}
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">엑셀 일괄 업데이트</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                사번 기준으로 기존 직원을 업데이트하고, 없는 직원은 새로 생성합니다.
-              </p>
-            </div>
-            <button
-              onClick={handleTemplateDownload}
-              className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700"
-            >
-              템플릿 다운로드
-            </button>
-          </div>
-
-          <div className="rounded-2xl border border-dashed border-gray-300 bg-slate-50 p-4">
-            <div className="text-sm font-medium text-slate-700">
-              업로드 컬럼: `empId`, `empName`, `deptCode`, `deptName`, `parentDeptCode`,
-              `role`, `status`, `gwsEmail`, `joinDate`
-            </div>
-            <div className="mt-1 text-xs text-slate-500">
-              없는 `deptCode`는 새 부서로 생성되고, `parentDeptCode`가 있으면 상위 부서 아래에
-              자동 연결됩니다.
-            </div>
-            <input
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={(event) => handleBulkFileChange(event.target.files?.[0] ?? null)}
-              className="mt-4 block w-full text-sm text-slate-700"
+            <textarea
+              value={form.notes}
+              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+              placeholder="비고"
+              className="mt-3 min-h-24 w-full rounded-2xl border border-slate-300 px-3 py-2 text-sm"
             />
-          </div>
 
-          {bulkRows.length > 0 && (
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-medium text-slate-800">
-                  업로드 미리보기 {bulkRows.length}건
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => saveMutation.mutate(form)}
+                disabled={saveMutation.isPending}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {saveMutation.isPending ? '저장 중...' : editingEmployeeId ? '수정 저장' : '등록'}
+              </button>
+              <button
+                type="button"
+                onClick={resetForm}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+              >
+                입력 초기화
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">등록 목록</h2>
+              <div className="text-sm text-slate-500">총 {employees.length}건 표시</div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead className="border-b border-slate-200 text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">직원</th>
+                    <th className="px-3 py-2">Google 계정</th>
+                    <th className="px-3 py-2">부서/팀</th>
+                    <th className="px-3 py-2">권한/상태</th>
+                    <th className="px-3 py-2">관리자</th>
+                    <th className="px-3 py-2">작업</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((employee) => (
+                    <tr key={employee.id} className="border-b border-slate-100 align-top">
+                      <td className="px-3 py-3">
+                        <div className="font-medium text-slate-900">
+                          {employee.name} ({employee.employeeNumber})
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          입사일 {employee.joinDate}
+                          {employee.jobTitle ? ` · ${employee.jobTitle}` : ''}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="text-slate-700">{employee.googleEmail}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          로그인 {employee.loginEnabled ? '허용' : '차단'}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div>{employee.departmentName}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {employee.departmentCode}
+                          {employee.teamName ? ` · ${employee.teamName}` : ''}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div>{ROLE_LABELS[employee.role]}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {STATUS_LABELS[employee.employmentStatus]}
+                          {employee.resignationDate ? ` · ${employee.resignationDate}` : ''}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div>{employee.managerName ?? '미지정'}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {employee.managerEmployeeNumber ?? '관리자 사번 없음'}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startEdit(employee.id)}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
+                          >
+                            수정
+                          </button>
+                          {employee.employmentStatus !== 'INACTIVE' && (
+                            <button
+                              type="button"
+                              onClick={() => handleLifecycle(employee, 'DEACTIVATE')}
+                              className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700"
+                            >
+                              비활성화
+                            </button>
+                          )}
+                          {employee.employmentStatus !== 'RESIGNED' && (
+                            <button
+                              type="button"
+                              onClick={() => handleLifecycle(employee, 'RESIGN')}
+                              className="rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-medium text-rose-700"
+                            >
+                              퇴사 처리
+                            </button>
+                          )}
+                          {employee.employmentStatus !== 'ACTIVE' && (
+                            <button
+                              type="button"
+                              onClick={() => handleLifecycle(employee, 'REACTIVATE')}
+                              className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-700"
+                            >
+                              재활성화
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `${employee.name} 직원을 삭제하시겠습니까? 참조 데이터가 있으면 서버에서 자동으로 차단합니다.`
+                                )
+                              ) {
+                                deleteMutation.mutate(employee.id)
+                              }
+                            }}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!employees.length && (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-10 text-center text-sm text-slate-500">
+                        조건에 맞는 직원이 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === 'upload' && (
+        <div className="space-y-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">일괄 업로드</h2>
+            <div className="mt-3 space-y-2 text-sm text-slate-600">
+              <p>1. 템플릿을 내려받아 사번, 이름, Google 이메일, 부서 코드를 채워 주세요.</p>
+              <p>2. 사번이 이미 있으면 해당 직원을 수정하고, 없으면 신규 등록합니다.</p>
+              <p>3. 오류가 있는 행은 제외하고 유효한 행만 반영할 수 있습니다.</p>
+              <p>4. ACTIVE 상태에서는 퇴사일을 입력할 수 없고, 관리자 사번은 기존/동일 파일 내 직원이어야 합니다.</p>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <input
+                type="file"
+                accept=".xlsx,.csv"
+                onChange={(event) => {
+                  const nextFile = event.target.files?.[0] ?? null
+                  setUploadFile(nextFile)
+                  setUploadResult(null)
+                }}
+                className="text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => uploadMutation.mutate('preview')}
+                disabled={!uploadFile || uploadMutation.isPending}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
+              >
+                검증 미리보기
+              </button>
+              <button
+                type="button"
+                onClick={() => uploadMutation.mutate('apply')}
+                disabled={!canApplyUpload || uploadMutation.isPending}
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                유효 행 반영
+              </button>
+            </div>
+          </section>
+
+          {uploadResult && (
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="grid gap-4 md:grid-cols-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm text-slate-500">전체 행</div>
+                  <div className="mt-2 text-2xl font-semibold text-slate-900">{uploadResult.summary.totalRows}</div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setBulkRows([])
-                      setBulkSummary(null)
-                      setBulkFileName('')
-                    }}
-                    className="rounded-xl border border-gray-300 px-4 py-2 text-sm text-gray-700"
-                  >
-                    비우기
-                  </button>
-                  <button
-                    onClick={handleBulkPreview}
-                    disabled={previewMutation.isPending}
-                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
-                  >
-                    {previewMutation.isPending ? '미리보기 계산 중...' : '재계산 미리보기'}
-                  </button>
-                  <button
-                    onClick={() =>
-                      bulkMutation.mutate({
-                        fileName: bulkFileName,
-                        rows: bulkRows,
-                      })
-                    }
-                    disabled={bulkMutation.isPending}
-                    className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                  >
-                    {bulkMutation.isPending ? '업로드 중...' : '일괄 반영'}
-                  </button>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="text-sm text-emerald-700">유효 행</div>
+                  <div className="mt-2 text-2xl font-semibold text-emerald-800">{uploadResult.summary.validRows}</div>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <div className="text-sm text-rose-700">오류 행</div>
+                  <div className="mt-2 text-2xl font-semibold text-rose-800">{uploadResult.summary.invalidRows}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm text-slate-500">경고</div>
+                  <div className="mt-2 text-2xl font-semibold text-slate-900">{uploadResult.summary.warningCount}</div>
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-2xl border border-gray-200">
-                <div className="grid grid-cols-6 gap-2 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-600">
-                  <div>사번</div>
-                  <div>이름</div>
-                  <div>부서코드</div>
-                  <div>부서명</div>
-                  <div>Role</div>
-                  <div>Google 이메일</div>
+              {uploadResult.applyResult && (
+                <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                  부서 생성 {uploadResult.applyResult.createdDepartmentCount}건, 신규 등록 {uploadResult.applyResult.createdCount}건,
+                  수정 {uploadResult.applyResult.updatedCount}건, 조직도 재계산 {uploadResult.applyResult.hierarchyUpdatedCount}건
                 </div>
-                {previewRows.map((row, index) => (
+              )}
+
+              <div className="mt-6 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b border-slate-200 text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2">행</th>
+                      <th className="px-3 py-2">사번</th>
+                      <th className="px-3 py-2">이름</th>
+                      <th className="px-3 py-2">처리</th>
+                      <th className="px-3 py-2">결과</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uploadRowsToShow.map((row) => (
+                      <tr key={`${row.rowNumber}-${row.employeeNumber}`} className="border-b border-slate-100 align-top">
+                        <td className="px-3 py-3">{row.rowNumber}</td>
+                        <td className="px-3 py-3">{row.employeeNumber || '-'}</td>
+                        <td className="px-3 py-3">{row.name || '-'}</td>
+                        <td className="px-3 py-3">{row.action === 'create' ? '신규 등록' : '기존 수정'}</td>
+                        <td className="px-3 py-3">
+                          <div className="space-y-1">
+                            <div className={row.valid ? 'text-emerald-700' : 'text-rose-700'}>
+                              {row.valid ? '반영 가능' : '오류 있음'}
+                            </div>
+                            {row.issues.map((issue, index) => (
+                              <div
+                                key={`${row.rowNumber}-${index}`}
+                                className={issue.severity === 'warning' ? 'text-amber-700' : 'text-rose-700'}
+                              >
+                                [{issue.field}] {issue.message}
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
+          {!!directoryQuery.data?.uploadHistory.length && (
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900">최근 업로드 이력</h2>
+              <div className="mt-4 space-y-3">
+                {directoryQuery.data.uploadHistory.map((history) => (
                   <div
-                    key={`${row.empId}-${index}`}
-                    className="grid grid-cols-6 gap-2 border-t border-gray-100 px-4 py-3 text-sm text-slate-700"
+                    key={history.id}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"
                   >
-                    <div>{row.empId}</div>
-                    <div>{row.empName}</div>
-                    <div>{row.deptCode}</div>
-                    <div>{row.deptName}</div>
-                    <div>{ROLE_LABELS[row.role]}</div>
-                    <div className="truncate">{row.gwsEmail}</div>
+                    <div className="font-medium text-slate-900">{history.fileName}</div>
+                    <div className="mt-1">
+                      총 {history.totalRows}행 · 성공 {history.successCount}행 · 실패 {history.failedCount}행 · 신규 {history.createdCount}건 · 수정 {history.updatedCount}건
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">{history.uploadedAt.replace('T', ' ').slice(0, 16)}</div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {bulkSummary && (
-            <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
-              <div className="mb-3 text-sm text-slate-500">
-                업로드 파일: {bulkSummary.fileName || bulkFileName || '이름 없음'}
-              </div>
-              <div className="grid gap-3 md:grid-cols-5">
-                <div className="rounded-xl bg-slate-50 p-3 text-sm">
-                  <div className="text-slate-500">총 행 수</div>
-                  <div className="mt-1 text-lg font-semibold text-slate-900">
-                    {bulkSummary.totalRows}
-                  </div>
-                </div>
-                <div className="rounded-xl bg-violet-50 p-3 text-sm">
-                  <div className="text-violet-700">신규 부서</div>
-                  <div className="mt-1 text-lg font-semibold text-violet-800">
-                    {bulkSummary.createdDepartmentCount}
-                  </div>
-                </div>
-                <div className="rounded-xl bg-emerald-50 p-3 text-sm">
-                  <div className="text-emerald-700">신규 등록</div>
-                  <div className="mt-1 text-lg font-semibold text-emerald-800">
-                    {bulkSummary.createdCount}
-                  </div>
-                </div>
-                <div className="rounded-xl bg-blue-50 p-3 text-sm">
-                  <div className="text-blue-700">업데이트</div>
-                  <div className="mt-1 text-lg font-semibold text-blue-800">
-                    {bulkSummary.updatedCount}
-                  </div>
-                </div>
-                <div className="rounded-xl bg-rose-50 p-3 text-sm">
-                  <div className="text-rose-700">실패</div>
-                  <div className="mt-1 text-lg font-semibold text-rose-800">
-                    {bulkSummary.failedCount}
-                  </div>
-                </div>
-              </div>
-
-              {bulkSummary.errors.length > 0 && (
-                <div className="mt-4 space-y-2 rounded-xl border border-rose-200 bg-rose-50 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold text-rose-700">실패한 행</div>
-                    <button
-                      onClick={handleFailedRowsDownload}
-                      className="rounded-xl border border-rose-300 bg-white px-4 py-2 text-sm font-medium text-rose-700"
-                    >
-                      실패 행 다운로드
-                    </button>
-                  </div>
-                  {bulkSummary.errors.slice(0, 10).map((error) => (
-                    <div key={`${error.rowNumber}-${error.empId}`} className="text-sm text-rose-700">
-                      {error.rowNumber}행 {error.empName ? `${error.empName} ` : ''}
-                      {error.empId ? `(${error.empId}) ` : ''}- {error.message}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            </section>
           )}
         </div>
-      </section>
+      )}
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">업로드 이력</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            최근 일괄 업데이트 이력과 처리 결과를 확인할 수 있습니다.
-          </p>
-        </div>
+      {activeTab === 'org-chart' && (
+        <div className="space-y-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-slate-900">조직도</h2>
+              <div className="text-sm text-slate-500">
+                관리자 관계 기준으로 표시하며, 관리자 누락이나 순환 관계는 별도로 분리해 보여 줍니다.
+              </div>
+            </div>
 
-        {!uploadHistory.length && (
-          <div className="rounded-2xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            아직 저장된 업로드 이력이 없습니다.
-          </div>
-        )}
-
-        {!!uploadHistory.length && (
-          <div className="space-y-3">
-            {uploadHistory.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-2xl border border-gray-200 px-4 py-4 text-sm text-slate-700"
-              >
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="font-medium text-slate-900">
-                      {item.fileName || '파일명 없음'}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      업로드 시각: {item.timestamp.slice(0, 16).replace('T', ' ')} / 수행자 ID:{' '}
-                      {item.userId}
-                    </div>
+            {orgChartQuery.data && (
+              <div className="grid gap-4 md:grid-cols-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm text-slate-500">표시 인원</div>
+                  <div className="mt-2 text-2xl font-semibold text-slate-900">{orgChartQuery.data.summary.totalEmployees}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm text-slate-500">루트 노드</div>
+                  <div className="mt-2 text-2xl font-semibold text-slate-900">{orgChartQuery.data.summary.roots}</div>
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <div className="text-sm text-amber-700">관리자 누락</div>
+                  <div className="mt-2 text-2xl font-semibold text-amber-800">
+                    {orgChartQuery.data.summary.orphanedEmployees}
                   </div>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-                      총 {item.totalRows}건
-                    </span>
-                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
-                      신규 {item.createdCount}건
-                    </span>
-                    <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">
-                      업데이트 {item.updatedCount}건
-                    </span>
-                    <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-700">
-                      실패 {item.failedCount}건
-                    </span>
-                    <span className="rounded-full bg-violet-100 px-3 py-1 text-violet-700">
-                      조직장 재계산 {item.hierarchyUpdatedCount}건
-                    </span>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <div className="text-sm text-rose-700">순환 관계</div>
+                  <div className="mt-2 text-2xl font-semibold text-rose-800">
+                    {orgChartQuery.data.summary.cycleEmployees}
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            )}
+          </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="사번, 이름, Google 이메일로 검색"
-            className="min-h-11 flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm"
-          />
-          <button
-            onClick={() => setSubmittedSearch(search.trim())}
-            className="min-h-11 rounded-xl bg-slate-900 px-5 py-3 text-sm font-medium text-white"
-          >
-            검색
-          </button>
+          {orgChartQuery.data?.orphanedEmployees.length ? (
+            <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-amber-900">관리자 재지정이 필요한 직원</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {orgChartQuery.data.orphanedEmployees.map((employee) => (
+                  <button
+                    key={`orphan-${employee.id}`}
+                    type="button"
+                    onClick={() => startEdit(employee.id)}
+                    className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-sm text-amber-800"
+                  >
+                    {employee.name} ({employee.employeeNumber})
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {orgChartQuery.data?.cycleEmployees.length ? (
+            <section className="rounded-3xl border border-rose-200 bg-rose-50 p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-rose-900">순환 관계 감지 직원</h3>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {orgChartQuery.data.cycleEmployees.map((employee) => (
+                  <button
+                    key={`cycle-${employee.id}`}
+                    type="button"
+                    onClick={() => startEdit(employee.id)}
+                    className="rounded-full border border-rose-300 bg-white px-3 py-1.5 text-sm text-rose-800"
+                  >
+                    {employee.name} ({employee.employeeNumber})
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            {orgChartQuery.isLoading ? (
+              <div className="text-sm text-slate-500">조직도를 불러오는 중입니다...</div>
+            ) : orgChartQuery.data?.roots.length ? (
+              <OrgChartTree nodes={orgChartQuery.data.roots} onEdit={startEdit} />
+            ) : (
+              <div className="text-sm text-slate-500">표시할 조직도 데이터가 없습니다.</div>
+            )}
+          </section>
+
+          <section className="text-sm text-slate-500">
+            기존 조직도 전용 경로가 필요하면 <Link href="/admin/org-chart" className="text-blue-700 underline">/admin/org-chart</Link> 로도 접근할 수 있으며, 현재는 같은 관리 모듈로 연결됩니다.
+          </section>
         </div>
-      </section>
-
-      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="border-b border-gray-200 px-5 py-4">
-          <h2 className="text-lg font-semibold text-gray-900">직원 Google 계정 / Role 관리</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            기존 직원의 Google 이메일, 부서, role, 재직 상태를 수정할 수 있습니다.
-          </p>
-        </div>
-
-        {employeesQuery.isLoading && (
-          <div className="px-5 py-10 text-center text-sm text-gray-500">
-            직원 목록을 불러오는 중입니다.
-          </div>
-        )}
-
-        {!employeesQuery.isLoading && !employees.length && (
-          <div className="px-5 py-10 text-center text-sm text-gray-500">검색 결과가 없습니다.</div>
-        )}
-
-        {!!employees.length && (
-          <div className="divide-y divide-gray-100">
-            {employees.map((employee) => {
-              const draft = drafts[employee.id] ?? {
-                gwsEmail: employee.gwsEmail,
-                role: employee.role,
-                deptId: employee.deptId,
-                status: employee.status,
-              }
-
-              const department = departments.find((item) => item.id === draft.deptId)
-              const isSaving = savingId === employee.id && updateMutation.isPending
-              const isEditing = editingEmployeeId === employee.id
-              const mappedPosition =
-                draft.role === 'ROLE_TEAM_LEADER'
-                  ? 'TEAM_LEADER'
-                  : draft.role === 'ROLE_SECTION_CHIEF'
-                    ? 'SECTION_CHIEF'
-                    : draft.role === 'ROLE_DIV_HEAD'
-                      ? 'DIV_HEAD'
-                      : draft.role === 'ROLE_CEO'
-                        ? 'CEO'
-                        : 'MEMBER'
-
-              return (
-                <div
-                  id={`employee-${employee.id}`}
-                  key={employee.id}
-                  className={`space-y-4 px-5 py-4 ${
-                    focusedEmployeeId === employee.id ? 'bg-amber-50 ring-2 ring-amber-300' : ''
-                  }`}
-                >
-                  <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <div className="font-medium text-gray-900">
-                        {employee.empName} ({employee.empId})
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        현재 부서: {employee.deptName} / 현재 role: {ROLE_LABELS[employee.role]} /
-                        상태: {STATUS_LABELS[employee.status]}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">
-                        자동 직급 매핑: {POSITION_LABELS[mappedPosition]}
-                      </div>
-                      <button
-                        onClick={() => {
-                          setEditingEmployeeId((current) => (current === employee.id ? '' : employee.id))
-                          setFocusedEmployeeId(employee.id)
-                        }}
-                        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                      >
-                        {isEditing ? '수정 닫기' : '수정 열기'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {isEditing ? (
-                    <>
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                        현재 이 직원의 수정 모드가 열려 있습니다.
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                        <label className="space-y-1 text-sm">
-                          <span className="font-medium text-gray-700">Google 이메일</span>
-                          <input
-                            id={`employee-email-${employee.id}`}
-                            value={draft.gwsEmail}
-                            onChange={(event) =>
-                              setDrafts((current) => ({
-                                ...current,
-                                [employee.id]: {
-                                  ...draft,
-                                  gwsEmail: event.target.value,
-                                },
-                              }))
-                            }
-                            placeholder={`name@${allowedDomain}`}
-                            className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
-                          />
-                        </label>
-
-                        <label className="space-y-1 text-sm">
-                          <span className="font-medium text-gray-700">Role</span>
-                          <select
-                            value={draft.role}
-                            onChange={(event) =>
-                              setDrafts((current) => ({
-                                ...current,
-                                [employee.id]: {
-                                  ...draft,
-                                  role: event.target.value as EmployeeRole,
-                                },
-                              }))
-                            }
-                            className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
-                          >
-                            {ROLE_OPTIONS.map((role) => (
-                              <option key={role} value={role}>
-                                {ROLE_LABELS[role]}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="space-y-1 text-sm">
-                          <span className="font-medium text-gray-700">부서</span>
-                          <select
-                            value={draft.deptId}
-                            onChange={(event) =>
-                              setDrafts((current) => ({
-                                ...current,
-                                [employee.id]: {
-                                  ...draft,
-                                  deptId: event.target.value,
-                                },
-                              }))
-                            }
-                            className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
-                          >
-                            {departments.map((item) => (
-                              <option key={item.id} value={item.id}>
-                                {item.deptName} ({item.deptCode})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className="space-y-1 text-sm">
-                          <span className="font-medium text-gray-700">재직 상태</span>
-                          <select
-                            value={draft.status}
-                            onChange={(event) =>
-                              setDrafts((current) => ({
-                                ...current,
-                                [employee.id]: {
-                                  ...draft,
-                                  status: event.target.value as EmployeeStatus,
-                                },
-                              }))
-                            }
-                            className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3"
-                          >
-                            {Object.entries(STATUS_LABELS).map(([status, label]) => (
-                              <option key={status} value={status}>
-                                {label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-xs text-gray-500">
-                          선택 부서: {department?.deptName ?? employee.deptName} / 입사일:{' '}
-                          {employee.joinDate.slice(0, 10)}
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleEmployeePreview(employee, draft)}
-                            disabled={previewMutation.isPending}
-                            className="min-h-11 rounded-xl border border-slate-300 px-5 py-3 text-sm font-medium text-slate-700 disabled:opacity-50"
-                          >
-                            {previewMutation.isPending ? '미리보기 계산 중...' : '미리보기'}
-                          </button>
-                          <button
-                            onClick={() =>
-                              updateMutation.mutate({
-                                employeeId: employee.id,
-                                gwsEmail: draft.gwsEmail,
-                                role: draft.role,
-                                deptId: draft.deptId,
-                                status: draft.status,
-                              })
-                            }
-                            disabled={isSaving}
-                            className="min-h-11 rounded-xl border border-blue-300 px-5 py-3 text-sm font-medium text-blue-700 disabled:opacity-50"
-                          >
-                            {isSaving ? '저장 중...' : '변경 저장'}
-                          </button>
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3">
-                      <div className="text-sm text-slate-600">
-                        수정 모드가 닫혀 있습니다. `수정 열기`를 누르면 편집 폼이 열립니다.
-                      </div>
-                      <button
-                        onClick={() => {
-                          setEditingEmployeeId(employee.id)
-                          setFocusedEmployeeId(employee.id)
-                        }}
-                        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
-                      >
-                        수정 열기
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
+      )}
     </div>
   )
 }

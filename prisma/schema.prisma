@@ -50,10 +50,16 @@ model Employee {
   role            SystemRole
   deptId          String
   department      Department     @relation(fields: [deptId], references: [id])
+  jobTitle        String?
+  teamName        String?
+  managerId       String?
   teamLeaderId    String?
   sectionChiefId  String?
   divisionHeadId  String?
   joinDate        DateTime
+  resignationDate DateTime?
+  sortOrder       Int?
+  notes           String?
   currentSalary   Float          @default(0)
   status          EmployeeStatus @default(ACTIVE)
   profileImageUrl String?
@@ -106,6 +112,7 @@ enum SystemRole {
 
 enum EmployeeStatus {
   ACTIVE
+  INACTIVE
   ON_LEAVE
   RESIGNED
 }
