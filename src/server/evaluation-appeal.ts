@@ -114,6 +114,16 @@ export type AppealPageData = {
   alerts?: AppealPageAlert[]
 }
 
+type AppealSession = {
+  user: {
+    id: string
+    role: SystemRole
+    name: string
+    deptId: string
+    accessibleDepartmentIds: string[]
+  }
+}
+
 type AppealAuditPayload = {
   category?: string
   requestedAction?: string
@@ -158,17 +168,19 @@ async function loadAppealSection<T>(params: {
   }
 }
 
+function hasDepartmentScope(employee: { department?: { orgId?: string | null } | null }) {
+  return Boolean(employee.department?.orgId)
+}
+
 export async function getEvaluationAppealPageData(params: {
-  userId: string
-  role: SystemRole
-  accessibleDepartmentIds: string[]
+  session: AppealSession
   cycleId?: string
   caseId?: string
 }): Promise<AppealPageData> {
   try {
     const alerts: AppealPageAlert[] = []
     const employee = await prisma.employee.findUnique({
-      where: { id: params.userId },
+      where: { id: params.session.user.id },
       include: {
         department: {
           include: {
@@ -177,8 +189,18 @@ export async function getEvaluationAppealPageData(params: {
         },
       },
     })
+    const sessionDepartment =
+      !employee && params.session.user.deptId
+        ? await prisma.department.findUnique({
+            where: { id: params.session.user.deptId },
+            include: {
+              organization: true,
+            },
+          })
+        : null
+    const organizationId = employee?.department?.orgId ?? sessionDepartment?.orgId ?? null
 
-    if (!employee) {
+    if (!employee && !organizationId) {
       return {
         state: 'permission-denied',
         availableCycles: [],
@@ -187,9 +209,18 @@ export async function getEvaluationAppealPageData(params: {
       }
     }
 
+    if (employee && !hasDepartmentScope(employee) && !organizationId) {
+      return {
+        state: 'permission-denied',
+        availableCycles: [],
+        message: '이의 신청을 조회할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.',
+        alerts,
+      }
+    }
+
     const cycles = await prisma.evalCycle.findMany({
       where: {
-        orgId: employee.department.orgId,
+        orgId: organizationId ?? undefined,
       },
       orderBy: [{ evalYear: 'desc' }, { createdAt: 'desc' }],
     })
@@ -215,12 +246,22 @@ export async function getEvaluationAppealPageData(params: {
       cycles.find((cycle) => cycle.status !== 'SETUP') ??
       cycles[0]
 
-    const actorMode = params.role === 'ROLE_ADMIN' ? 'admin' : 'applicant'
+    const actorMode = params.session.user.role === 'ROLE_ADMIN' ? 'admin' : 'applicant'
+
+    if (!employee && actorMode !== 'admin') {
+      return {
+        state: isAppealOpen(selectedCycle) ? 'empty' : 'hidden',
+        availableCycles,
+        selectedCycleId: selectedCycle.id,
+        alerts,
+        message: '연결된 직원 평가 결과가 없어 현재 계정으로 신청할 이의 신청이 없습니다.',
+      }
+    }
 
     if (actorMode === 'admin') {
       return buildAdminAppealPage({
         alerts,
-        employeeId: params.userId,
+        employeeId: params.session.user.id,
         selectedCycle,
         availableCycles,
         caseId: params.caseId,
@@ -229,7 +270,7 @@ export async function getEvaluationAppealPageData(params: {
 
     return buildApplicantAppealPage({
       alerts,
-      employeeId: params.userId,
+      employeeId: params.session.user.id,
       selectedCycle,
       availableCycles,
       caseId: params.caseId,

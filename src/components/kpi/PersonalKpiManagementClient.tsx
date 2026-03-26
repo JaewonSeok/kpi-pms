@@ -304,18 +304,41 @@ export function PersonalKpiManagementClient(props: Props) {
   const createDisabledReason =
     props.state === 'error'
       ? '개인 KPI 데이터를 아직 불러오지 못해 추가 기능을 사용할 수 없습니다.'
+      : props.state === 'no-target'
+        ? '대상자를 먼저 선택해야 KPI를 추가할 수 있습니다.'
+        : props.state === 'setup-required'
+          ? '조회 가능한 대상자나 운영 설정이 없어 KPI를 추가할 수 없습니다.'
       : props.state === 'permission-denied' || !props.permissions.canCreate
         ? '현재 범위에서는 개인 KPI를 추가할 권한이 없습니다.'
         : undefined
   const aiDisabledReason =
     props.state === 'error'
       ? '개인 KPI 데이터를 아직 불러오지 못해 AI 보조를 시작할 수 없습니다.'
+      : props.state === 'no-target'
+        ? '대상자를 먼저 선택해야 AI 초안 생성을 사용할 수 있습니다.'
+        : props.state === 'setup-required'
+          ? '조회 가능한 대상자나 운영 설정이 없어 AI 보조를 사용할 수 없습니다.'
       : !props.permissions.canUseAi
         ? 'AI 기능이 비활성화되어 있거나 현재 계정 권한으로는 사용할 수 없습니다.'
         : undefined
-  const reviewDisabledReason = !props.permissions.canReview
-    ? '현재 범위에서는 검토 대기열을 확인할 권한이 없습니다.'
-    : undefined
+  const reviewDisabledReason =
+    props.state === 'error'
+      ? '페이지 상태를 복구한 뒤 검토 대기열을 확인해 주세요.'
+      : props.state === 'no-target'
+        ? '대상자를 먼저 선택해야 검토 대기열을 확인할 수 있습니다.'
+        : props.state === 'setup-required'
+          ? '조회 가능한 대상자나 운영 설정이 없어 검토 대기열을 확인할 수 없습니다.'
+          : !props.permissions.canReview
+            ? '현재 범위에서는 검토 대기열을 확인할 권한이 없습니다.'
+            : undefined
+  const historyDisabledReason =
+    props.state === 'error'
+      ? '페이지 상태를 복구한 뒤 이력을 확인해 주세요.'
+      : props.state === 'no-target'
+        ? '대상자를 먼저 선택해야 이력을 확인할 수 있습니다.'
+        : props.state === 'setup-required'
+          ? '조회 가능한 대상자나 운영 설정이 없어 이력을 확인할 수 없습니다.'
+          : undefined
 
   const setActiveTab = (nextTab: PersonalKpiTabKey) => {
     setActiveTabState(nextTab)
@@ -378,6 +401,10 @@ export function PersonalKpiManagementClient(props: Props) {
   }
 
   function handleOpenHistory() {
+    if (historyDisabledReason) {
+      setBanner({ tone: 'info', message: historyDisabledReason })
+      return
+    }
     const transition = getPersonalKpiHeroCtaTransition('history')
     setActiveTab(transition.nextTab)
     setBanner(null)
@@ -644,6 +671,7 @@ export function PersonalKpiManagementClient(props: Props) {
         createDisabledReason={createDisabledReason}
         aiDisabledReason={aiDisabledReason}
         reviewDisabledReason={reviewDisabledReason}
+        historyDisabledReason={historyDisabledReason}
         onChangeYear={(year) => handleRouteSelection({ year })}
         onChangeCycle={(cycleId) => handleRouteSelection({ cycleId })}
         onChangeEmployee={(employeeId) => handleRouteSelection({ employeeId })}
@@ -782,6 +810,7 @@ function HeroSection(props: {
   createDisabledReason?: string
   aiDisabledReason?: string
   reviewDisabledReason?: string
+  historyDisabledReason?: string
   onChangeYear: (year: string) => void
   onChangeCycle: (cycleId: string) => void
   onChangeEmployee: (employeeId: string) => void
@@ -798,7 +827,17 @@ function HeroSection(props: {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={props.summary.overallStatus} />
             <InfoPill>{props.actorName}</InfoPill>
-            <InfoPill>{props.state === 'ready' ? '운영 중' : '준비 필요'}</InfoPill>
+            <InfoPill>
+              {props.state === 'ready'
+                ? '운영 중'
+                : props.state === 'empty'
+                  ? '초안 준비'
+                  : props.state === 'no-target'
+                    ? '대상 선택 필요'
+                    : props.state === 'setup-required'
+                      ? '운영 설정 필요'
+                      : '확인 필요'}
+            </InfoPill>
           </div>
 
           <div className="grid gap-3 md:grid-cols-3">
@@ -888,7 +927,13 @@ function HeroSection(props: {
           >
             검토 대기 보기
           </ActionButton>
-          <ActionButton icon={<History className="h-4 w-4" />} variant="secondary" onClick={props.onOpenHistory}>
+          <ActionButton
+            icon={<History className="h-4 w-4" />}
+            variant="secondary"
+            onClick={props.onOpenHistory}
+            disabled={Boolean(props.historyDisabledReason)}
+            title={props.historyDisabledReason}
+          >
             이력 보기
           </ActionButton>
           <ActionButton
@@ -1322,6 +1367,28 @@ function AiSection(props: {
 }
 
 function StatePanel(props: { state: Props['state']; message?: string }) {
+  if (props.state === 'no-target') {
+    return (
+      <EmptyState
+        title="조회할 대상자를 먼저 선택해 주세요."
+        description={
+          props.message ?? '상단 대상자 선택에서 조회할 직원을 다시 선택하면 개인 KPI 작성과 검토를 이어서 진행할 수 있습니다.'
+        }
+      />
+    )
+  }
+
+  if (props.state === 'setup-required') {
+    return (
+      <EmptyState
+        title="개인 KPI 운영 설정이 더 필요합니다."
+        description={
+          props.message ?? '조회 가능한 대상자 범위나 조직 연결 설정이 없어 개인 KPI 화면을 준비할 수 없습니다.'
+        }
+      />
+    )
+  }
+
   const title =
     props.state === 'empty'
       ? '아직 등록된 개인 KPI가 없습니다.'

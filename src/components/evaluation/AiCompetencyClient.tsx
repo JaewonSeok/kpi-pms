@@ -290,6 +290,17 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
   if (data.state === 'error') {
     return <StateScreen title="AI 활용능력 평가 화면을 불러오지 못했습니다." description={data.message ?? '잠시 후 다시 시도해 주세요.'} />
   }
+  if (data.state === 'no-assignment') {
+    return (
+      <StateScreen
+        title="현재 주기에 배정된 AI 활용능력 평가가 없습니다."
+        description={
+          data.message ??
+          '배정 대상자 편성 또는 트랙 설정이 완료되면 1차 평가와 2차 실무인증 화면이 이곳에 표시됩니다.'
+        }
+      />
+    )
+  }
   if (data.state === 'empty' && !data.permissions?.canManageCycles) {
     return <StateScreen title="진행 중인 AI 활용능력 평가 주기가 없습니다." description={data.message ?? '관리자에게 주기 개설을 요청해 주세요.'} />
   }

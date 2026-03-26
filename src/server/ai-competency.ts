@@ -49,6 +49,15 @@ export {
   scoreObjectiveQuestion,
 } from '@/lib/ai-competency-scoring'
 
+function hasDepartmentScope(employee: { department?: { orgId?: string | null; deptName?: string | null } | null }) {
+  return Boolean(employee.department?.orgId && employee.department?.deptName)
+}
+
+function getDepartmentLabel(department?: { deptName?: string | null } | null) {
+  const name = department?.deptName?.trim()
+  return name?.length ? name : '미지정 부서'
+}
+
 export type StoredUpload = {
   fileName: string
   mimeType: string
@@ -63,7 +72,12 @@ type AuthenticatedSession = Session & {
   }
 }
 
-export type AiCompetencyPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
+export type AiCompetencyPageState =
+  | 'ready'
+  | 'empty'
+  | 'no-assignment'
+  | 'permission-denied'
+  | 'error'
 
 export type AiCompetencyPageData = {
   state: AiCompetencyPageState
@@ -821,7 +835,7 @@ function buildAiCompetencyCurrentUser(
     id: employee.id,
     name: employee.empName,
     role,
-    department: employee.department.deptName,
+    department: getDepartmentLabel(employee.department),
   }
 }
 
@@ -1270,6 +1284,14 @@ export async function getAiCompetencyPageData(params: {
       }
     }
 
+    if (!hasDepartmentScope(employee)) {
+      return {
+        state: 'permission-denied',
+        message: 'AI 활용능력 평가 화면을 준비할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.',
+        availableCycles: [],
+      }
+    }
+
     const currentUser = buildAiCompetencyCurrentUser(employee, params.session.user.role)
     const permissions = buildAiCompetencyPermissions(params.session.user.role)
 
@@ -1539,6 +1561,37 @@ export async function getAiCompetencyPageData(params: {
 
     const selfAssignment = cycleAssignments.find((assignment) => assignment.employeeId === employee.id) ?? null
 
+    if (
+      !selfAssignment &&
+      !permissions.canManageCycles &&
+      !permissions.canReviewSubmissions &&
+      !permissions.canViewExecutive
+    ) {
+      return {
+        state: 'no-assignment',
+        currentUser,
+        availableCycles: aiCycles.map((cycle) => ({
+          id: cycle.id,
+          name: cycle.cycleName,
+          year: cycle.evalCycle.evalYear,
+          status: cycle.status,
+          evalCycleId: cycle.evalCycleId,
+        })),
+        availableEvalCycles: regularEvalCycles.map((cycle) => ({
+          id: cycle.id,
+          name: cycle.cycleName,
+          year: cycle.evalYear,
+          organizationName: cycle.organization.name,
+          linkedAiCycleId: cycle.aiCompetencyCycle?.id,
+        })),
+        selectedCycleId: selectedCycle.id,
+        permissions,
+        summary: cycleSummary,
+        alerts,
+        message: '현재 주기에는 배정된 AI 활용능력 평가가 없습니다.',
+      }
+    }
+
     const employeeBlueprints =
       selfAssignment && !permissions.canManageCycles
         ? ((await loadAiCompetencySection({
@@ -1677,7 +1730,7 @@ export async function getAiCompetencyPageData(params: {
       reviewId: review.id,
       submissionId: review.submissionId,
       employeeName: review.submission.employee.empName,
-      department: review.submission.employee.department.deptName,
+      department: getDepartmentLabel(review.submission.employee.department),
       track: review.submission.assignment.track,
       status: review.submission.status,
       artifactCount: review.submission.artifacts.length,
@@ -1977,7 +2030,7 @@ export async function getAiCompetencyPageData(params: {
           employeeNumber: member.empId,
           name: member.empName,
           email: member.gwsEmail,
-          department: member.department.deptName,
+          department: getDepartmentLabel(member.department),
           position: member.position,
           role: member.role,
           status: member.status,
@@ -1987,7 +2040,7 @@ export async function getAiCompetencyPageData(params: {
           .map((member) => ({
             id: member.id,
             name: member.empName,
-            department: member.department.deptName,
+            department: getDepartmentLabel(member.department),
             position: member.position,
             role: member.role,
           })),
@@ -2016,7 +2069,7 @@ export async function getAiCompetencyPageData(params: {
           employeeId: assignment.employeeId,
           employeeNumber: assignment.employee.empId,
           name: assignment.employee.empName,
-          department: assignment.employee.department.deptName,
+          department: getDepartmentLabel(assignment.employee.department),
           track: assignment.track,
           firstRoundStatus: assignment.attempt?.status ?? 'NOT_STARTED',
           firstRoundScore: assignment.attempt?.totalScore ?? undefined,
@@ -2040,7 +2093,7 @@ export async function getAiCompetencyPageData(params: {
           assignment.secondRoundSubmissions.map((submission: any) => ({
             submissionId: submission.id,
             employeeName: assignment.employee.empName,
-            department: assignment.employee.department.deptName,
+            department: getDepartmentLabel(assignment.employee.department),
             track: assignment.track,
             status: submission.status,
             artifactCount: submission.artifacts.length,
@@ -2172,7 +2225,7 @@ export async function getAiCompetencyPageData(params: {
           .map((assignment) => ({
             resultId: assignment.result!.id,
             employeeName: assignment.employee.empName,
-            department: assignment.employee.department.deptName,
+            department: getDepartmentLabel(assignment.employee.department),
             track: assignment.track,
             firstRoundScore: assignment.result!.firstRoundScore ?? undefined,
             externalCertMappedScore: assignment.result!.externalCertMappedScore ?? undefined,
@@ -2192,7 +2245,7 @@ export async function getAiCompetencyPageData(params: {
         .filter((assignment) => Boolean(assignment.result))
         .map((assignment) => ({
           track: assignment.track,
-          department: assignment.employee.department.deptName,
+          department: getDepartmentLabel(assignment.employee.department),
           finalScore: assignment.result!.finalScore,
           passStatus: assignment.result!.finalScore >= selectedCycle.firstRoundPassThreshold,
           certificationStatus: assignment.result!.certificationStatus,
@@ -2981,6 +3034,9 @@ export async function upsertAiCompetencyAssignment(params: {
   })
   if (!employee) {
     throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '대상 직원을 찾을 수 없습니다.')
+  }
+  if (!employee.department?.orgId) {
+    throw new AppError(400, 'EMPLOYEE_SCOPE_MISSING', '대상 직원의 부서/조직 정보가 없어 배정할 수 없습니다.')
   }
   if (employee.status === 'RESIGNED') {
     throw new AppError(400, 'EMPLOYEE_RESIGNED', '퇴사자는 대상자로 배정할 수 없습니다.')
@@ -4049,7 +4105,7 @@ export async function exportAiCompetencyReport(params: {
   const rows = cycle.results.map((result) => ({
     employeeNumber: result.employee.empId,
     name: result.employee.empName,
-    department: result.employee.department.deptName,
+    department: getDepartmentLabel(result.employee.department),
     track: TRACK_LABELS[result.assignment.track],
     firstRoundScore: result.firstRoundScore ?? '',
     externalCertMappedScore: result.externalCertMappedScore ?? '',

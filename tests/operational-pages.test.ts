@@ -26,6 +26,7 @@ const { getMonthlyKpiPageData } = require('../src/server/monthly-kpi-page') as t
 const { getEvaluationResultsPageData } = require('../src/server/evaluation-results') as typeof import('../src/server/evaluation-results')
 const { getEvaluationAppealPageData } = require('../src/server/evaluation-appeal') as typeof import('../src/server/evaluation-appeal')
 const { getOrgKpiPageData } = require('../src/server/org-kpi-page') as typeof import('../src/server/org-kpi-page')
+const { getAiCompetencyPageData } = require('../src/server/ai-competency') as typeof import('../src/server/ai-competency')
 
 function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
@@ -303,6 +304,30 @@ async function main() {
     })
   })
 
+  await run('monthly KPI page returns permission-denied instead of crashing when actor department mapping is missing', async () => {
+    await withStubbedOperationalData(
+      {
+        employeeFindUnique: async () => ({
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: '홍길동',
+          role: 'ROLE_MEMBER',
+          deptId: 'dept-1',
+          department: null,
+        }),
+      },
+      async () => {
+        const data = await getMonthlyKpiPageData({
+          session: makeSession(),
+          year: 2026,
+        })
+
+        assert.equal(data.state, 'permission-denied')
+        assert.equal(data.message, '월간 실적 화면을 준비할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.')
+      }
+    )
+  })
+
   await run('monthly KPI page stays ready when only AI log loading fails', async () => {
     await withStubbedOperationalData(
       {
@@ -353,6 +378,57 @@ async function main() {
     )
   })
 
+  await run('monthly KPI page exposes no-target instead of a fatal error when an out-of-scope employee is requested', async () => {
+    await withStubbedOperationalData(
+      {
+        employeeFindMany: async () => [
+          {
+            id: 'emp-2',
+            empId: 'EMP-002',
+            empName: '팀 구성원',
+            role: 'ROLE_MEMBER',
+            deptId: 'dept-1',
+            status: 'ACTIVE',
+            position: 'STAFF',
+            department: {
+              deptName: '경영지원팀',
+            },
+          },
+        ],
+      },
+      async () => {
+        const data = await getMonthlyKpiPageData({
+          session: makeSession({ role: 'ROLE_TEAM_LEADER' }),
+          year: 2026,
+          scope: 'employee',
+          employeeId: 'missing-user',
+        })
+
+        assert.equal(data.state, 'no-target')
+        assert.equal(data.selectedEmployeeId, '')
+      }
+    )
+  })
+
+  await run('monthly KPI page exposes setup-required for managers with no available employees instead of a fatal error', async () => {
+    await withStubbedOperationalData(
+      {
+        employeeFindUnique: async () => null,
+        employeeFindMany: async () => [],
+      },
+      async () => {
+        const data = await getMonthlyKpiPageData({
+          session: makeSession({ role: 'ROLE_ADMIN' }),
+          year: 2026,
+          scope: 'employee',
+        })
+
+        assert.equal(data.state, 'setup-required')
+        assert.equal(data.employeeOptions.length, 0)
+      }
+    )
+  })
+
   await run('evaluation results page stays ready when AI competency sync data fails', async () => {
     await withStubbedOperationalData(
       {
@@ -369,7 +445,7 @@ async function main() {
 
         try {
           const data = await getEvaluationResultsPageData({
-            userId: 'emp-1',
+            session: makeSession(),
             cycleId: 'cycle-2026',
           })
 
@@ -382,6 +458,79 @@ async function main() {
         } finally {
           console.error = originalConsoleError
         }
+      }
+    )
+  })
+
+  await run('evaluation results page returns permission-denied instead of crashing when department mapping is missing', async () => {
+    await withStubbedOperationalData(
+      {
+        employeeFindUnique: async () => ({
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: '홍길동',
+          role: 'ROLE_MEMBER',
+          deptId: 'dept-1',
+          department: null,
+        }),
+      },
+      async () => {
+        const data = await getEvaluationResultsPageData({
+          session: makeSession(),
+          cycleId: 'cycle-2026',
+        })
+
+        assert.equal(data.state, 'permission-denied')
+        assert.equal(data.message, '평가 결과를 조회할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.')
+      }
+    )
+  })
+
+  await run('evaluation results page uses session department scope and returns empty when the employee row is missing', async () => {
+    await withStubbedOperationalData(
+      {
+        employeeFindUnique: async () => null,
+        departmentFindUnique: async () => ({
+          id: 'dept-1',
+          deptName: '경영지원팀',
+          orgId: 'org-1',
+          organization: {
+            id: 'org-1',
+            name: 'RSUPPORT',
+          },
+        }),
+      },
+      async () => {
+        const data = await getEvaluationResultsPageData({
+          session: makeSession(),
+          cycleId: 'cycle-2026',
+        })
+
+        assert.equal(data.state, 'empty')
+        assert.equal(data.selectedCycleId, 'cycle-2026')
+      }
+    )
+  })
+
+  await run('AI competency page returns permission-denied instead of crashing when department mapping is missing', async () => {
+    await withStubbedOperationalData(
+      {
+        employeeFindUnique: async () => ({
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: '홍길동',
+          role: 'ROLE_MEMBER',
+          deptId: 'dept-1',
+          department: null,
+        }),
+      },
+      async () => {
+        const data = await getAiCompetencyPageData({
+          session: makeSession(),
+        })
+
+        assert.equal(data.state, 'permission-denied')
+        assert.equal(data.message, 'AI 활용능력 평가 화면을 준비할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.')
       }
     )
   })
@@ -487,9 +636,7 @@ async function main() {
 
         try {
           const data = await getEvaluationAppealPageData({
-            userId: 'emp-1',
-            role: 'ROLE_MEMBER',
-            accessibleDepartmentIds: ['dept-1'],
+            session: makeSession(),
             cycleId: 'cycle-2026',
             caseId: 'appeal-1',
           })
@@ -503,6 +650,56 @@ async function main() {
         } finally {
           console.error = originalConsoleError
         }
+      }
+    )
+  })
+
+  await run('appeal page returns permission-denied instead of crashing when department mapping is missing', async () => {
+    await withStubbedOperationalData(
+      {
+        employeeFindUnique: async () => ({
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: '홍길동',
+          role: 'ROLE_MEMBER',
+          deptId: 'dept-1',
+          department: null,
+        }),
+      },
+      async () => {
+        const data = await getEvaluationAppealPageData({
+          session: makeSession(),
+          cycleId: 'cycle-2026',
+        })
+
+        assert.equal(data.state, 'permission-denied')
+        assert.equal(data.message, '이의 신청을 조회할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.')
+      }
+    )
+  })
+
+  await run('appeal page keeps applicant flow in empty/hidden state when employee mapping is missing but session scope is still valid', async () => {
+    await withStubbedOperationalData(
+      {
+        employeeFindUnique: async () => null,
+        departmentFindUnique: async () => ({
+          id: 'dept-1',
+          deptName: '경영지원팀',
+          orgId: 'org-1',
+          organization: {
+            id: 'org-1',
+            name: 'RSUPPORT',
+          },
+        }),
+      },
+      async () => {
+        const data = await getEvaluationAppealPageData({
+          session: makeSession(),
+          cycleId: 'cycle-2026',
+        })
+
+        assert.equal(data.state, 'empty')
+        assert.equal(data.selectedCycleId, 'cycle-2026')
       }
     )
   })

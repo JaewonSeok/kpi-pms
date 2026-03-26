@@ -20,9 +20,7 @@ export default async function EvaluationAppealPage({ searchParams }: EvaluationA
 
   const resolvedSearchParams = (await searchParams) ?? {}
   const pageData = await getEvaluationAppealPageData({
-    userId: session.user.id,
-    role: session.user.role,
-    accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+    session,
     cycleId: resolvedSearchParams.cycleId,
     caseId: resolvedSearchParams.caseId,
   })

@@ -248,6 +248,83 @@ function StatePanel({ tone, title, message }: { tone: 'neutral' | 'danger'; titl
   )
 }
 
+function RecoveryScopeControls(props: {
+  pageData: MonthlyPageData
+  onChangeYear: (year: number) => void
+  onChangeMonth: (month: string) => void
+  onChangeScope: (scope: string) => void
+  onChangeEmployee: (employeeId: string) => void
+}) {
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#ffffff_45%,#f9fafb_100%)] p-6 shadow-sm lg:p-8">
+      <div className="grid gap-3 md:grid-cols-4">
+        <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">연도</span>
+          <select
+            value={String(props.pageData.selectedYear)}
+            onChange={(event) => props.onChangeYear(Number(event.target.value))}
+            className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
+          >
+            {props.pageData.availableYears.map((year) => (
+              <option key={year} value={year}>
+                {year}년
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">월</span>
+          <select
+            value={props.pageData.selectedMonth}
+            onChange={(event) => props.onChangeMonth(event.target.value)}
+            className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
+          >
+            {Array.from({ length: 12 }, (_, index) => {
+              const value = `${props.pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
+              return (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              )
+            })}
+          </select>
+        </label>
+
+        <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">대상 범위</span>
+          <select
+            value={props.pageData.selectedScope}
+            onChange={(event) => props.onChangeScope(event.target.value)}
+            className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
+          >
+            <option value="self">내 실적</option>
+            <option value="team">팀 범위</option>
+            <option value="employee">특정 직원</option>
+          </select>
+        </label>
+
+        <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">대상자</span>
+          <select
+            value={props.pageData.selectedEmployeeId}
+            onChange={(event) => props.onChangeEmployee(event.target.value)}
+            disabled={props.pageData.selectedScope === 'self'}
+            className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900 disabled:bg-slate-50"
+          >
+            <option value="">대상자를 선택해 주세요</option>
+            {props.pageData.employeeOptions.map((employee) => (
+              <option key={employee.id} value={employee.id}>
+                {employee.name} / {employee.departmentName}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    </section>
+  )
+}
+
 function LoadAlerts(props: {
   alerts: Array<{
     title: string
@@ -661,6 +738,33 @@ export function MonthlyKpiManagementClient({
   const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
 
   if (pageData.state !== 'ready') {
+    if (pageData.state === 'no-target' || pageData.state === 'setup-required') {
+      const title =
+        pageData.state === 'no-target'
+          ? '조회할 대상자를 먼저 선택해 주세요'
+          : '월간 실적 운영 설정이 더 필요합니다'
+
+      return (
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">
+              Monthly Performance Operations
+            </p>
+            <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">월간 실적</h1>
+          </section>
+          <RecoveryScopeControls
+            pageData={pageData}
+            onChangeYear={(year) => refreshRoute({ year })}
+            onChangeMonth={(month) => refreshRoute({ month })}
+            onChangeScope={(scope) => refreshRoute({ scope })}
+            onChangeEmployee={(employeeId) => refreshRoute({ scope: 'employee', employeeId })}
+          />
+          {loadAlerts}
+          <StatePanel tone="neutral" title={title} message={pageData.message || '현재 상태를 다시 확인해 주세요.'} />
+        </div>
+      )
+    }
+
     const title =
       pageData.state === 'permission-denied'
         ? '월간 실적에 접근할 수 없습니다'
@@ -914,6 +1018,7 @@ export function MonthlyKpiManagementClient({
           selectedDraft={selectedDraft}
           canEdit={canEdit}
           canSubmit={canSubmit}
+          canUseAi={pageData.permissions.canUseAi}
           busy={busy}
           updateDraft={updateDraft}
           reviewComment={reviewComment}
@@ -1012,6 +1117,7 @@ function EntryTab({
   selectedDraft,
   canEdit,
   canSubmit,
+  canUseAi,
   busy,
   updateDraft,
   reviewComment,
@@ -1034,6 +1140,7 @@ function EntryTab({
   selectedDraft: Draft | null
   canEdit: boolean
   canSubmit: boolean
+  canUseAi: boolean
   busy: BusyState
   updateDraft: (patch: Partial<Draft>) => void
   reviewComment: string
@@ -1333,7 +1440,11 @@ function EntryTab({
               >
                 제출
               </Button>
-              <Button icon={<Sparkles className="h-4 w-4" />} onClick={onRunAi} disabled={busy !== null}>
+              <Button
+                icon={<Sparkles className="h-4 w-4" />}
+                onClick={onRunAi}
+                disabled={busy !== null || !canUseAi}
+              >
                 AI preview
               </Button>
               <Link

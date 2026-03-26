@@ -272,12 +272,28 @@ async function main() {
           session: makeSession({ role: 'ROLE_MEMBER' }),
         })
 
-        assert.equal(data.state, 'ready')
-        assert.equal(data.employeeView?.questions.length, 0)
-        assert.equal(data.reviewerView, undefined)
-        assert.equal(reviewerQueryCount, 0)
-        assert.equal(blueprintQueryCount, 0)
+          assert.equal(data.state, 'no-assignment')
+          assert.equal(data.employeeView, undefined)
+          assert.equal(data.reviewerView, undefined)
+          assert.equal(reviewerQueryCount, 0)
+          assert.equal(blueprintQueryCount, 0)
         assert.equal(rubricQueryCount, 0)
+      }
+    )
+  })
+
+  await run('employee without an assignment sees a dedicated no-assignment state instead of the broken placeholder', async () => {
+    await withStubbedAiCompetencyData(
+      {
+        aiCompetencyAssignmentFindMany: async () => [],
+      },
+      async () => {
+        const data = await getAiCompetencyPageData({
+          session: makeSession({ role: 'ROLE_MEMBER' }),
+        })
+
+        assert.equal(data.state, 'no-assignment')
+        assert.equal(data.employeeView, undefined)
       }
     )
   })

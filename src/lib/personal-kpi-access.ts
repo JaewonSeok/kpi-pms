@@ -1,7 +1,13 @@
 import type { SystemRole } from '@prisma/client'
 import { readAiAssistEnv, type AiAssistEnv } from './ai-env'
 
-export type PersonalKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
+export type PersonalKpiPageState =
+  | 'ready'
+  | 'empty'
+  | 'no-target'
+  | 'setup-required'
+  | 'permission-denied'
+  | 'error'
 
 export type PersonalKpiAiAccess = {
   allowed: boolean
@@ -100,7 +106,8 @@ export function buildPersonalKpiPermissions(params: {
   pageState: PersonalKpiPageState
   aiAccess?: PersonalKpiAiAccess
 }) {
-  const pageReadyForAction = params.pageState !== 'permission-denied' && params.pageState !== 'error'
+  const pageReadyForAction =
+    params.pageState === 'ready' || params.pageState === 'empty'
   const canManageTarget = params.actorId === params.targetEmployeeId || canManagePersonalKpi(params.actorRole)
   const aiAccess = params.aiAccess ?? resolvePersonalKpiAiAccess({ role: params.actorRole })
 

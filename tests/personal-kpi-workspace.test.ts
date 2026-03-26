@@ -218,7 +218,7 @@ async function main() {
     )
   })
 
-  await run('permission-denied and error fallbacks stay distinct', async () => {
+  await run('no-target, setup-required, and error fallbacks stay distinct', async () => {
     await withStubbedPersonalKpiPageData(
       {
         employeeFindMany: async () => [],
@@ -239,7 +239,30 @@ async function main() {
           employeeId: 'missing-user',
         })
 
-        assert.equal(denied.state, 'permission-denied')
+        assert.equal(denied.state, 'no-target')
+      }
+    )
+
+    await withStubbedPersonalKpiPageData(
+      {
+        employeeFindMany: async () => [],
+      },
+      async () => {
+        const setupRequired = await getPersonalKpiPageData({
+          session: {
+            user: {
+              id: 'leader-1',
+              role: 'ROLE_TEAM_LEADER',
+              name: '리더',
+              deptId: 'dept-1',
+              deptName: '사업지원팀',
+              accessibleDepartmentIds: ['dept-1'],
+            },
+          },
+          year: 2026,
+        })
+
+        assert.equal(setupRequired.state, 'setup-required')
       }
     )
 
@@ -277,7 +300,7 @@ async function main() {
     )
   })
 
-  await run('scope helper and permission helper use a deterministic fallback and disable actions on error state', () => {
+  await run('scope helper and permission helper use deterministic fallbacks and disable actions outside operational states', () => {
     assert.deepEqual(
       getPersonalKpiScopeDepartmentIds({
         role: 'ROLE_TEAM_LEADER',
@@ -300,6 +323,35 @@ async function main() {
 
     assert.equal(permissions.canCreate, false)
     assert.equal(permissions.canUseAi, false)
+
+    const noTargetPermissions = buildPersonalKpiPermissions({
+      actorId: 'leader-1',
+      actorRole: 'ROLE_TEAM_LEADER',
+      targetEmployeeId: 'member-2',
+      pageState: 'no-target',
+      aiAccess: {
+        allowed: true,
+        reason: null,
+      },
+    })
+
+    const setupPermissions = buildPersonalKpiPermissions({
+      actorId: 'leader-1',
+      actorRole: 'ROLE_TEAM_LEADER',
+      targetEmployeeId: 'member-2',
+      pageState: 'setup-required',
+      aiAccess: {
+        allowed: true,
+        reason: null,
+      },
+    })
+
+    assert.equal(noTargetPermissions.canCreate, false)
+    assert.equal(noTargetPermissions.canSubmit, false)
+    assert.equal(noTargetPermissions.canUseAi, false)
+    assert.equal(setupPermissions.canCreate, false)
+    assert.equal(setupPermissions.canSubmit, false)
+    assert.equal(setupPermissions.canUseAi, false)
   })
 
   await run('AI access resolver disables personal KPI AI consistently when feature or configuration is unavailable', () => {
@@ -375,6 +427,45 @@ async function main() {
 
     assert.equal(routeSource.includes('resolvePersonalKpiAiAccess'), true)
     assert.equal(routeSource.includes("throw new AppError(403, 'FORBIDDEN', aiAccess.message"), true)
+  })
+
+  await run('missing department mapping on scoped employees no longer crashes the personal KPI page', async () => {
+    await withStubbedPersonalKpiPageData(
+      {
+        employeeFindMany: async () => [
+          {
+            id: 'emp-1',
+            empId: 'EMP-001',
+            empName: '홍길동',
+            role: 'ROLE_MEMBER',
+            deptId: 'dept-1',
+            teamLeaderId: null,
+            sectionChiefId: null,
+            divisionHeadId: null,
+            department: null,
+          },
+        ],
+        personalKpiFindMany: async () => [],
+      },
+      async () => {
+        const data = await getPersonalKpiPageData({
+          session: {
+            user: {
+              id: 'emp-1',
+              role: 'ROLE_MEMBER',
+              name: '홍길동',
+              deptId: 'dept-1',
+              deptName: '사업지원팀',
+              accessibleDepartmentIds: ['dept-1'],
+            },
+          },
+          year: 2026,
+        })
+
+        assert.equal(data.state, 'empty')
+        assert.equal(data.employeeOptions[0]?.departmentName, '미지정 부서')
+      }
+    )
   })
 
   console.log('Personal KPI workspace tests completed')

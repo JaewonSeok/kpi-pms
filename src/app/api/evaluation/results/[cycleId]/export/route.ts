@@ -26,7 +26,7 @@ export async function GET(
 
     const { cycleId } = await context.params
     const data = await getEvaluationResultsPageData({
-      userId: session.user.id,
+      session,
       cycleId,
     })
 

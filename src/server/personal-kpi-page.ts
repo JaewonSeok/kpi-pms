@@ -10,6 +10,7 @@ import type {
 import { prisma } from '@/lib/prisma'
 import {
   buildPersonalKpiPermissions,
+  canManagePersonalKpi,
   getPersonalKpiScopeDepartmentIds,
   resolvePersonalKpiAiAccess,
 } from '@/lib/personal-kpi-access'
@@ -19,7 +20,13 @@ import {
   type PersonalKpiOperationalStatus,
 } from './personal-kpi-workflow'
 
-export type PersonalKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
+export type PersonalKpiPageState =
+  | 'ready'
+  | 'empty'
+  | 'no-target'
+  | 'setup-required'
+  | 'permission-denied'
+  | 'error'
 
 export type PersonalKpiPageAlert = {
   title: string
@@ -274,6 +281,11 @@ function asRecord(value: unknown) {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
+function resolveDepartmentLabel(department?: { deptName?: string | null } | null) {
+  const name = department?.deptName?.trim()
+  return name?.length ? name : '미지정 부서'
+}
+
 function getReviewerCandidate(employee: EmployeeLite, employeesById: Map<string, EmployeeLite>) {
   const reviewerId = employee.teamLeaderId ?? employee.sectionChiefId ?? employee.divisionHeadId
   if (!reviewerId) return undefined
@@ -387,15 +399,110 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     })
 
     const employeesById = new Map(employees.map((employee) => [employee.id, employee]))
-    const targetEmployee =
-      employeesById.get(params.employeeId ?? params.session.user.id) ??
-      employeesById.get(params.session.user.id)
+    const employeeOptions = employees.map((employee) => ({
+      id: employee.id,
+      name: employee.empName,
+      departmentName: resolveDepartmentLabel(employee.department),
+      role: employee.role,
+    }))
+    const requestedEmployeeId = params.employeeId?.trim() || undefined
+    const requestedEmployee = requestedEmployeeId ? employeesById.get(requestedEmployeeId) : undefined
+    const defaultTargetEmployee =
+      employeesById.get(params.session.user.id) ??
+      (canManagePersonalKpi(params.session.user.role) ? employees[0] : undefined)
+    const targetEmployee = requestedEmployee ?? defaultTargetEmployee
 
     const aiAccess = resolvePersonalKpiAiAccess({
       role: params.session.user.role,
     })
 
+    if (requestedEmployeeId && !requestedEmployee) {
+      const permissions = buildPersonalKpiPermissions({
+        actorId: params.session.user.id,
+        actorRole: params.session.user.role,
+        targetEmployeeId: requestedEmployeeId,
+        pageState: 'no-target',
+        aiAccess,
+      })
+
+      return {
+        state: 'no-target',
+        message: '현재 범위에서 조회할 대상자를 찾지 못했습니다. 대상자를 다시 선택해 주세요.',
+        alerts,
+        selectedYear: params.year ?? new Date().getFullYear(),
+        availableYears: [params.year ?? new Date().getFullYear()],
+        selectedEmployeeId: '',
+        cycleOptions: [],
+        employeeOptions,
+        orgKpiOptions: [],
+        summary: {
+          totalCount: 0,
+          totalWeight: 0,
+          remainingWeight: 100,
+          linkedOrgKpiCount: 0,
+          rejectedCount: 0,
+          reviewPendingCount: 0,
+          monthlyCoverageRate: 0,
+          overallStatus: 'DRAFT',
+        },
+        mine: [],
+        reviewQueue: [],
+        history: [],
+        aiLogs: [],
+        permissions,
+        actor: {
+          id: params.session.user.id,
+          role: params.session.user.role,
+          name: params.session.user.name,
+          departmentName: params.session.user.deptName,
+        },
+      }
+    }
+
     if (!targetEmployee) {
+      if (canManagePersonalKpi(params.session.user.role)) {
+        const permissions = buildPersonalKpiPermissions({
+          actorId: params.session.user.id,
+          actorRole: params.session.user.role,
+          targetEmployeeId: params.session.user.id,
+          pageState: 'setup-required',
+          aiAccess,
+        })
+
+        return {
+          state: 'setup-required',
+          message: '조회 가능한 대상자가 없어 개인 KPI 운영을 시작할 수 없습니다. 대상자 범위 또는 조직 설정을 확인해 주세요.',
+          alerts,
+          selectedYear: params.year ?? new Date().getFullYear(),
+          availableYears: [params.year ?? new Date().getFullYear()],
+          selectedEmployeeId: '',
+          cycleOptions: [],
+          employeeOptions,
+          orgKpiOptions: [],
+          summary: {
+            totalCount: 0,
+            totalWeight: 0,
+            remainingWeight: 100,
+            linkedOrgKpiCount: 0,
+            rejectedCount: 0,
+            reviewPendingCount: 0,
+            monthlyCoverageRate: 0,
+            overallStatus: 'DRAFT',
+          },
+          mine: [],
+          reviewQueue: [],
+          history: [],
+          aiLogs: [],
+          permissions,
+          actor: {
+            id: params.session.user.id,
+            role: params.session.user.role,
+            name: params.session.user.name,
+            departmentName: params.session.user.deptName,
+          },
+        }
+      }
+
       const permissions = buildPersonalKpiPermissions({
         actorId: params.session.user.id,
         actorRole: params.session.user.role,
@@ -412,7 +519,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         availableYears: [params.year ?? new Date().getFullYear()],
         selectedEmployeeId: params.session.user.id,
         cycleOptions: [],
-        employeeOptions: [],
+        employeeOptions,
         orgKpiOptions: [],
         summary: {
           totalCount: 0,
@@ -708,7 +815,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         title: kpi.kpiName,
         employeeId: kpi.employeeId,
         employeeName: kpi.employee.empName,
-        departmentName: kpi.employee.department.deptName,
+        departmentName: resolveDepartmentLabel(kpi.employee.department),
         orgKpiId: kpi.linkedOrgKpiId,
         orgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
         orgKpiCategory: kpi.linkedOrgKpi?.kpiCategory ?? null,
@@ -758,7 +865,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         id: kpi.id,
         employeeId: kpi.employeeId,
         employeeName: kpi.employee.empName,
-        departmentName: kpi.employee.department.deptName,
+        departmentName: resolveDepartmentLabel(kpi.employee.department),
         title: kpi.kpiName,
         status,
         changedFields: getChangedFields(logs),
@@ -805,17 +912,12 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         year: cycle.evalYear,
         status: cycle.status,
       })),
-      employeeOptions: employees.map((employee) => ({
-        id: employee.id,
-        name: employee.empName,
-        departmentName: employee.department.deptName,
-        role: employee.role,
-      })),
+      employeeOptions,
       orgKpiOptions: orgKpiOptions.map((item) => ({
         id: item.id,
         title: item.kpiName,
         category: item.kpiCategory,
-        departmentName: item.department.deptName,
+        departmentName: resolveDepartmentLabel(item.department),
         description: item.definition,
       })),
       summary: {

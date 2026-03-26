@@ -201,6 +201,15 @@ type GradeSettingLite = {
   maxScore: number
 }
 
+type ResultsSession = {
+  user: {
+    id: string
+    name: string
+    deptId: string
+    deptName: string
+  }
+}
+
 async function loadEvaluationResultSection<T>(params: {
   alerts: EvaluationResultPageAlert[]
   title: string
@@ -220,14 +229,19 @@ async function loadEvaluationResultSection<T>(params: {
   }
 }
 
+function resolveDepartmentLabel(department?: { deptName?: string | null } | null) {
+  const name = department?.deptName?.trim()
+  return name?.length ? name : '미지정 부서'
+}
+
 export async function getEvaluationResultsPageData(params: {
-  userId: string
+  session: ResultsSession
   cycleId?: string
 }): Promise<EvaluationResultPageData> {
   try {
     const alerts: EvaluationResultPageAlert[] = []
     const employee = await prisma.employee.findUnique({
-      where: { id: params.userId },
+      where: { id: params.session.user.id },
       include: {
         department: {
           include: {
@@ -236,8 +250,19 @@ export async function getEvaluationResultsPageData(params: {
         },
       },
     })
+    const sessionDepartment =
+      !employee && params.session.user.deptId
+        ? await prisma.department.findUnique({
+            where: { id: params.session.user.deptId },
+            include: {
+              organization: true,
+            },
+          })
+        : null
+    const organizationId = employee?.department?.orgId ?? sessionDepartment?.orgId ?? null
+    const scopeDepartmentName = resolveDepartmentLabel(employee?.department ?? sessionDepartment)
 
-    if (!employee) {
+    if (!employee && !organizationId) {
       return {
         state: 'permission-denied',
         availableCycles: [],
@@ -246,9 +271,18 @@ export async function getEvaluationResultsPageData(params: {
       }
     }
 
+    if (employee && !employee.department && !organizationId) {
+      return {
+        state: 'permission-denied',
+        availableCycles: [],
+        message: '평가 결과를 조회할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.',
+        alerts,
+      }
+    }
+
     const cycles = await prisma.evalCycle.findMany({
       where: {
-        orgId: employee.department.orgId,
+        orgId: organizationId ?? undefined,
       },
       include: {
         organization: {
@@ -265,7 +299,7 @@ export async function getEvaluationResultsPageData(params: {
       name: cycle.cycleName,
       year: cycle.evalYear,
       organizationName: cycle.organization.name,
-      departmentName: employee.department.deptName,
+      departmentName: scopeDepartmentName,
       status: cycle.status,
     }))
 
@@ -282,6 +316,16 @@ export async function getEvaluationResultsPageData(params: {
       cycles.find((cycle) => cycle.id === params.cycleId) ??
       cycles.find((cycle) => cycle.status !== 'SETUP') ??
       cycles[0]
+
+    if (!employee) {
+      return {
+        state: 'empty',
+        availableCycles,
+        selectedCycleId: selectedCycle?.id,
+        alerts,
+        message: '연결된 직원 평가 결과가 없어 현재 계정으로 확인할 결과가 없습니다.',
+      }
+    }
 
     const baseEvaluations = await prisma.evaluation.findMany({
       where: {
@@ -722,7 +766,7 @@ function buildEvaluationResultViewModel(params: {
       status: params.publicationStatus,
       rawStatus: params.cycle.status,
       organizationName: params.cycle.organization.name,
-      departmentScope: params.employee.department.deptName,
+      departmentScope: resolveDepartmentLabel(params.employee.department),
       publishedAt: params.cycle.resultOpenStart?.toISOString() ?? undefined,
       appealDeadline: params.cycle.appealDeadline?.toISOString() ?? undefined,
       confirmedAt: finalEvaluation?.submittedAt?.toISOString() ?? undefined,
@@ -730,7 +774,7 @@ function buildEvaluationResultViewModel(params: {
     employee: {
       id: params.employee.id,
       name: params.employee.empName,
-      department: params.employee.department.deptName,
+      department: resolveDepartmentLabel(params.employee.department),
       title: resolvePositionLabel(params.employee.position),
     },
     summary: {

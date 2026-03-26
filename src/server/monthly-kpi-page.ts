@@ -13,7 +13,13 @@ import {
   type MonthlyRecordOperationalStatus,
 } from './monthly-kpi-workflow'
 
-export type MonthlyPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
+export type MonthlyPageState =
+  | 'ready'
+  | 'empty'
+  | 'no-target'
+  | 'setup-required'
+  | 'permission-denied'
+  | 'error'
 export type MonthlyPageScope = 'self' | 'team' | 'employee'
 
 export type MonthlyPageAlert = {
@@ -227,6 +233,11 @@ function normalizeScopeDepartmentIds(accessibleDepartmentIds?: string[] | null) 
   return accessibleDepartmentIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
 }
 
+function resolveDepartmentLabel(department?: { deptName?: string | null } | null) {
+  const name = department?.deptName?.trim()
+  return name?.length ? name : '미지정 부서'
+}
+
 async function loadMonthlySection<T>(params: {
   alerts: MonthlyPageAlert[]
   title: string
@@ -408,6 +419,11 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
     const selectedMonth = /^\d{4}-\d{2}$/.test(params.month ?? '')
       ? (params.month as string)
       : `${selectedYear}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+    let selectedScope: MonthlyPageScope =
+      params.scope === 'team' || params.scope === 'employee' || params.scope === 'self'
+        ? params.scope
+        : 'self'
+    let employeeOptions: MonthlyScopeOption[] = []
 
     const actor = await prisma.employee.findUnique({
       where: { id: params.session.user.id },
@@ -416,15 +432,15 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       },
     })
 
-    if (!actor) {
+    if (!actor && !isManageRole(params.session.user.role)) {
       return {
-        state: 'permission-denied',
+        state: isManageRole(params.session.user.role) ? 'setup-required' : 'permission-denied',
         message: '월간 실적 화면을 사용할 수 있는 직원 정보를 찾지 못했습니다.',
         alerts,
         selectedYear,
         selectedMonth,
-        selectedScope: 'self',
-        selectedEmployeeId: params.session.user.id,
+        selectedScope,
+        selectedEmployeeId: '',
         availableYears: [selectedYear],
         employeeOptions: [],
         summary: {
@@ -459,6 +475,49 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       }
     }
 
+    if (actor && !actor.department) {
+      return {
+        state: 'permission-denied',
+        message: '월간 실적 화면을 준비할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.',
+        alerts,
+        selectedYear,
+        selectedMonth,
+        selectedScope: 'self',
+        selectedEmployeeId: params.employeeId ?? params.session.user.id,
+        availableYears: [selectedYear],
+        employeeOptions,
+        summary: {
+          totalKpiCount: 0,
+          submittedCount: 0,
+          missingCount: 0,
+          riskyCount: 0,
+          submissionRate: 0,
+          attachmentCount: 0,
+          reviewPendingCount: 0,
+          overallStatus: 'NOT_STARTED',
+        },
+        records: [],
+        trends: [],
+        reviews: [],
+        evidence: [],
+        aiLogs: [],
+        permissions: {
+          canEdit: false,
+          canSubmit: false,
+          canReview: false,
+          canLock: false,
+          canUnlock: false,
+          canUseAi: false,
+        },
+        actor: {
+          id: actor.id,
+          role: params.session.user.role,
+          name: actor.empName,
+          departmentName: params.session.user.deptName,
+        },
+      }
+    }
+
     const scopeDepartmentIds = getScopeDepartmentIds({
       role: params.session.user.role,
       deptId: params.session.user.deptId,
@@ -477,27 +536,112 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
     })
 
     const employeesById = new Map(employees.map((employee) => [employee.id, employee]))
+    employeeOptions = employees.map((employee) => ({
+      id: employee.id,
+      name: employee.empName,
+      departmentName: resolveDepartmentLabel(employee.department),
+      role: employee.role,
+    }))
+    const actorDisplay = {
+      id: actor?.id ?? params.session.user.id,
+      role: params.session.user.role,
+      name: actor?.empName ?? params.session.user.name,
+      departmentName: actor ? resolveDepartmentLabel(actor.department) : params.session.user.deptName,
+    }
+
+    if (!employees.length && isManageRole(params.session.user.role)) {
+      return {
+        state: 'setup-required',
+        message: '조회 가능한 대상자가 없어 월간 실적 운영을 시작할 수 없습니다. 대상자 범위 또는 조직 설정을 확인해 주세요.',
+        alerts,
+        selectedYear,
+        selectedMonth,
+        selectedScope: 'employee',
+        selectedEmployeeId: '',
+        availableYears: [selectedYear],
+        employeeOptions,
+        summary: {
+          totalKpiCount: 0,
+          submittedCount: 0,
+          missingCount: 0,
+          riskyCount: 0,
+          submissionRate: 0,
+          attachmentCount: 0,
+          reviewPendingCount: 0,
+          overallStatus: 'NOT_STARTED',
+        },
+        records: [],
+        trends: [],
+        reviews: [],
+        evidence: [],
+        aiLogs: [],
+        permissions: {
+          canEdit: false,
+          canSubmit: false,
+          canReview: false,
+          canLock: false,
+          canUnlock: false,
+          canUseAi: false,
+        },
+        actor: actorDisplay,
+      }
+    }
     const managedEmployees = isManageRole(params.session.user.role)
       ? await getManagedEmployees(params.session.user.id, params.session.user.role)
       : []
 
-    let selectedScope: MonthlyPageScope =
-      params.scope === 'team' || params.scope === 'employee' || params.scope === 'self'
-        ? params.scope
-        : 'self'
-
     if (!isManageRole(params.session.user.role)) {
       selectedScope = 'self'
+    } else if (!actor && selectedScope === 'self') {
+      selectedScope = 'employee'
     }
 
     let targetEmployeeId = params.session.user.id
     if (selectedScope === 'employee' && params.employeeId && employeesById.has(params.employeeId)) {
       targetEmployeeId = params.employeeId
+    } else if (selectedScope === 'employee' && params.employeeId && !employeesById.has(params.employeeId)) {
+      return {
+        state: 'no-target',
+        message: '현재 범위에서 조회할 대상자를 찾지 못했습니다. 대상자를 다시 선택해 주세요.',
+        alerts,
+        selectedYear,
+        selectedMonth,
+        selectedScope,
+        selectedEmployeeId: '',
+        availableYears: [selectedYear],
+        employeeOptions,
+        summary: {
+          totalKpiCount: 0,
+          submittedCount: 0,
+          missingCount: 0,
+          riskyCount: 0,
+          submissionRate: 0,
+          attachmentCount: 0,
+          reviewPendingCount: 0,
+          overallStatus: 'NOT_STARTED',
+        },
+        records: [],
+        trends: [],
+        reviews: [],
+        evidence: [],
+        aiLogs: [],
+        permissions: {
+          canEdit: false,
+          canSubmit: false,
+          canReview: false,
+          canLock: false,
+          canUnlock: false,
+          canUseAi: false,
+        },
+        actor: actorDisplay,
+      }
     } else if (selectedScope === 'team') {
-      targetEmployeeId = managedEmployees[0]?.id ?? params.session.user.id
+      targetEmployeeId = managedEmployees[0]?.id ?? employees[0]?.id ?? params.session.user.id
+    } else if (!actor && isManageRole(params.session.user.role)) {
+      targetEmployeeId = employees[0]?.id ?? params.session.user.id
     }
 
-    const targetEmployee = employeesById.get(targetEmployeeId) ?? actor
+    const targetEmployee = employeesById.get(targetEmployeeId) ?? actor ?? employees[0]
     if (!targetEmployee) {
       return {
         state: 'permission-denied',
@@ -532,12 +676,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
           canUnlock: false,
           canUseAi: false,
         },
-        actor: {
-          id: params.session.user.id,
-          role: params.session.user.role,
-          name: params.session.user.name,
-          departmentName: params.session.user.deptName,
-        },
+        actor: actorDisplay,
       }
     }
 
@@ -585,12 +724,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         selectedScope,
         selectedEmployeeId: targetEmployee.id,
         availableYears,
-        employeeOptions: employees.map((employee) => ({
-          id: employee.id,
-          name: employee.empName,
-          departmentName: employee.department.deptName,
-          role: employee.role,
-        })),
+        employeeOptions,
         summary: {
           totalKpiCount: 0,
           submittedCount: 0,
@@ -614,12 +748,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
           canUnlock: params.session.user.role === 'ROLE_ADMIN',
           canUseAi: isFeatureEnabled('aiAssist'),
         },
-        actor: {
-          id: actor.id,
-          role: params.session.user.role,
-          name: actor.empName,
-          departmentName: actor.department.deptName,
-        },
+        actor: actorDisplay,
       }
     }
 
@@ -734,7 +863,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         personalKpiId: kpi.id,
         employeeId: targetEmployee.id,
         employeeName: targetEmployee.empName,
-        departmentName: targetEmployee.department.deptName,
+        departmentName: resolveDepartmentLabel(targetEmployee.department),
         kpiTitle: kpi.kpiName,
         orgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
         type: kpi.kpiType,
@@ -853,12 +982,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       selectedScope,
       selectedEmployeeId: targetEmployee.id,
       availableYears,
-      employeeOptions: employees.map((employee) => ({
-        id: employee.id,
-        name: employee.empName,
-        departmentName: employee.department.deptName,
-        role: employee.role,
-      })),
+      employeeOptions,
       summary,
       records: selectedMonthRecords,
       trends,
@@ -885,12 +1009,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         canUnlock: params.session.user.role === 'ROLE_ADMIN',
         canUseAi: isFeatureEnabled('aiAssist'),
       },
-      actor: {
-        id: actor.id,
-        role: params.session.user.role,
-        name: actor.empName,
-        departmentName: actor.department.deptName,
-      },
+      actor: actorDisplay,
     }
   } catch (error) {
     console.error('Failed to build monthly KPI page data:', error)
