@@ -6,6 +6,7 @@ import type {
   SystemRole,
 } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
 
 export type CompensationManagePageState =
   | 'ready'
@@ -455,7 +456,9 @@ export async function getCompensationManagePageData(params: {
       .map((row) => row.evaluationId)
       .filter((value): value is string => Boolean(value)) ?? []
 
-    const [evaluations, auditLogs, baselineScenario] = await Promise.all([
+    const scenarioEmployeeIds = selectedScenario?.employees.map((row) => row.employee.id) ?? []
+
+    const [evaluations, auditLogs, baselineScenario, aiCompetencyResults] = await Promise.all([
       evaluationIds.length
         ? prisma.evaluation.findMany({
             where: {
@@ -539,6 +542,12 @@ export async function getCompensationManagePageData(params: {
               },
             })
           : Promise.resolve(null),
+      selectedScenario
+        ? loadAiCompetencySyncedResults({
+            evalCycleIds: [selectedScenario.evalCycleId],
+            employeeIds: scenarioEmployeeIds,
+          })
+        : Promise.resolve(new Map()),
     ])
 
     const viewModel = buildCompensationManageViewModel({
@@ -552,6 +561,7 @@ export async function getCompensationManagePageData(params: {
       evaluations,
       auditLogs,
       baselineScenario,
+      aiCompetencyResults,
     })
 
     return {
@@ -620,6 +630,14 @@ function buildCompensationManageViewModel(params: {
       id: string
     }>
   } | null
+  aiCompetencyResults: Map<
+    string,
+    {
+      finalScore: number
+      finalGrade: string
+      certificationStatus: string
+    }
+  >
 }) : CompensationManageViewModel {
   const visualStatus = getScenarioVisualStatus(
     params.selectedScenario?.status ?? null,
@@ -667,7 +685,9 @@ function buildCompensationManageViewModel(params: {
     params.selectedScenario?.employees.map((row) => {
       const evaluation = row.evaluationId ? evaluationMap.get(row.evaluationId) : undefined
       const performanceScore = calculateAxisScore(evaluation, 'performance')
-      const competencyScore = calculateAxisScore(evaluation, 'competency')
+      const competencyScore =
+        params.aiCompetencyResults.get(`${params.cycle.id}:${row.employee.id}`)?.finalScore ??
+        calculateAxisScore(evaluation, 'competency')
       const excluded = row.calculationNote?.startsWith('EXCLUDED:') ?? false
       const exclusionReason = excluded
         ? row.calculationNote?.replace('EXCLUDED:', '').trim()

@@ -94,6 +94,14 @@ export const MENU_PERMISSIONS: Record<MenuKey, AuthRole[]> = {
     'ROLE_TEAM_LEADER',
     'ROLE_MEMBER',
   ],
+  AI_COMPETENCY: [
+    'ROLE_ADMIN',
+    'ROLE_CEO',
+    'ROLE_DIV_HEAD',
+    'ROLE_SECTION_CHIEF',
+    'ROLE_TEAM_LEADER',
+    'ROLE_MEMBER',
+  ],
 }
 
 const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
@@ -114,10 +122,12 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/api/checkin', menuKey: 'CHECKIN' },
   { prefix: '/evaluation/workbench', menuKey: 'AI_ASSIST' },
   { prefix: '/evaluation/assistant', menuKey: 'AI_ASSIST' },
+  { prefix: '/evaluation/ai-competency', menuKey: 'AI_COMPETENCY' },
   { prefix: '/evaluation/360', menuKey: 'FEEDBACK_360' },
   { prefix: '/evaluation/results', menuKey: 'EVAL_RESULT' },
   { prefix: '/evaluation/appeal', menuKey: 'APPEAL' },
   { prefix: '/evaluation/ceo-adjust', menuKey: 'GRADE_ADJUST' },
+  { prefix: '/api/evaluation/ai-competency', menuKey: 'AI_COMPETENCY' },
   { prefix: '/compensation/manage', menuKey: 'COMPENSATION_MANAGE' },
   { prefix: '/api/compensation/scenarios', menuKey: 'COMPENSATION_MANAGE' },
   { prefix: '/api/compensation/rules', menuKey: 'COMPENSATION_MANAGE' },

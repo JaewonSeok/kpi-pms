@@ -34,6 +34,7 @@ export const MENU_KEYS = [
   'COMPENSATION_SELF',
   'NOTIFICATIONS',
   'AI_ASSIST',
+  'AI_COMPETENCY',
 ] as const
 
 export type MenuKey = (typeof MENU_KEYS)[number]

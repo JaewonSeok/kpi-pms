@@ -9,6 +9,7 @@ import type {
 } from '@prisma/client'
 import { calcPdcaScore } from '@/lib/utils'
 import { prisma } from '@/lib/prisma'
+import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
 
 export type ResultVisibilityState = 'ready' | 'empty' | 'hidden' | 'permission-denied' | 'error'
 export type ResultPublicationStatus = 'HIDDEN' | 'PUBLISHED' | 'APPEAL_OPEN' | 'APPEAL_CLOSED'
@@ -291,7 +292,7 @@ export async function getEvaluationResultsPageData(params: {
     const evaluationIds = baseEvaluations.map((evaluation) => evaluation.id)
     const appealIds = baseEvaluations.flatMap((evaluation) => evaluation.appeals.map((appeal) => appeal.id))
 
-    const [gradeSettings, previousFinalEvaluations, cycleFinalEvaluations, personalKpis, checkIns, auditLogs] =
+    const [gradeSettings, previousFinalEvaluations, cycleFinalEvaluations, personalKpis, checkIns, auditLogs, aiCompetencyResults] =
       await Promise.all([
         prisma.gradeSetting.findMany({
           where: {
@@ -400,6 +401,10 @@ export async function getEvaluationResultsPageData(params: {
           },
           take: 20,
         }),
+        loadAiCompetencySyncedResults({
+          evalCycleIds: [selectedCycle.id],
+          employeeIds: [employee.id],
+        }),
       ])
 
     const stageMap = new Map(baseEvaluations.map((evaluation) => [evaluation.evalStage, evaluation] as const))
@@ -440,6 +445,7 @@ export async function getEvaluationResultsPageData(params: {
       cycleFinalEvaluations,
       publicationStatus,
       auditLogs,
+      aiCompetencyScore: aiCompetencyResults.get(`${selectedCycle.id}:${employee.id}`)?.finalScore,
     })
 
     return {
@@ -503,6 +509,7 @@ function buildEvaluationResultViewModel(params: {
     userId: string
     timestamp: Date
   }>
+  aiCompetencyScore?: number
 }) {
   const stageMap = new Map<EvalStage, EvaluationWithRelations>()
   for (const evaluation of params.evaluations) {
@@ -517,8 +524,8 @@ function buildEvaluationResultViewModel(params: {
     draftEvaluation?.totalScore ?? null,
     params.gradeSettings
   )
-  const finalGrade = resolveGradeName(
-    finalEvaluation?.gradeId ?? null,
+  let finalGrade = resolveGradeName(
+    typeof params.aiCompetencyScore === 'number' ? null : finalEvaluation?.gradeId ?? null,
     finalEvaluation?.totalScore ?? null,
     params.gradeSettings
   )
@@ -566,11 +573,22 @@ function buildEvaluationResultViewModel(params: {
   const performanceRows = scoreRows.filter((row) => row.kpiType === 'QUANTITATIVE')
   const competencyRows = scoreRows.filter((row) => row.kpiType === 'QUALITATIVE')
   const performanceScore = weightedAverage(performanceRows)
-  const competencyScore = weightedAverage(competencyRows)
-  const totalScore =
-    finalEvaluation?.totalScore ??
-    weightedAverage([...performanceRows, ...competencyRows]) ??
-    0
+  const competencyScore =
+    typeof params.aiCompetencyScore === 'number' ? params.aiCompetencyScore : weightedAverage(competencyRows)
+  const totalScore = calculateEffectiveTotalScore({
+    performanceRows,
+    competencyRows,
+    fallback:
+      finalEvaluation?.totalScore ??
+      weightedAverage([...performanceRows, ...competencyRows]) ??
+      0,
+    syncedCompetencyScore: params.aiCompetencyScore,
+  })
+  finalGrade = resolveGradeName(
+    typeof params.aiCompetencyScore === 'number' ? null : finalEvaluation?.gradeId ?? null,
+    totalScore,
+    params.gradeSettings
+  )
 
   const previousGrade = resolveGradeName(
     params.previousEvaluation?.gradeId ?? null,
@@ -800,6 +818,27 @@ function weightedAverage(rows: Array<{ score: number; weight?: number }>) {
     return roundToSingle(rows.reduce((sum, row) => sum + row.score, 0) / rows.length)
   }
   return roundToSingle(numerator / denominator)
+}
+
+function calculateEffectiveTotalScore(params: {
+  performanceRows: Array<{ score: number; weight?: number }>
+  competencyRows: Array<{ score: number; weight?: number }>
+  fallback: number
+  syncedCompetencyScore?: number
+}) {
+  if (typeof params.syncedCompetencyScore !== 'number') {
+    return params.fallback
+  }
+
+  const effectiveRows = [
+    ...params.performanceRows,
+    ...params.competencyRows.map((row) => ({
+      ...row,
+      score: params.syncedCompetencyScore!,
+    })),
+  ]
+
+  return weightedAverage(effectiveRows) ?? params.fallback
 }
 
 function calcOverallAchievementRate(personalKpis: PersonalKpiWithRecords[]) {

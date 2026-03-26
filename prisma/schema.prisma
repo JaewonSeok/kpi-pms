@@ -20,6 +20,7 @@ model Organization {
   evalCycles    EvalCycle[]
   gradeSettings GradeSetting[]
   compensationRuleSets CompensationRuleSet[]
+  aiCompetencyExternalCertMasters AiCompetencyExternalCertMaster[]
 
   @@map("organizations")
 }
@@ -89,6 +90,17 @@ model Employee {
   notificationJobs  NotificationJob[]
   notificationDeadLetters NotificationDeadLetter[]
   aiRequestLogs     AiRequestLog[]
+  aiCompetencyAssignments AiCompetencyAssignment[]
+  aiCompetencyAttempts AiCompetencyAttempt[]
+  aiCompetencyGeneratedExamSets AiCompetencyGeneratedExamSet[]
+  aiCompetencyAnswerReviews AiCompetencyAnswer[] @relation("AiCompetencyAnswerReviewer")
+  aiCompetencySecondRoundSubmissions AiCompetencySecondRoundSubmission[]
+  aiCompetencySubmissionReviews AiCompetencySubmissionReview[] @relation("AiCompetencySubmissionReviewer")
+  aiCompetencySubmissionDecisions AiCompetencySecondRoundSubmission[] @relation("AiCompetencySubmissionDecisionActor")
+  aiCompetencyExternalCertClaims AiCompetencyExternalCertClaim[]
+  aiCompetencyExternalCertApprovals AiCompetencyExternalCertClaim[] @relation("AiCompetencyCertApprover")
+  aiCompetencyResults AiCompetencyResult[] @relation("AiCompetencyResultEmployee")
+  aiCompetencyResultSyncs AiCompetencyResult[] @relation("AiCompetencyResultSyncActor")
 
   @@map("employees")
 }
@@ -272,6 +284,8 @@ model EvalCycle {
   evaluations         Evaluation[]
   multiFeedbackRounds MultiFeedbackRound[]
   compensationScenarios CompensationScenario[]
+  aiCompetencyCycle   AiCompetencyCycle?
+  aiCompetencyResults AiCompetencyResult[]
 
   @@map("eval_cycles")
 }
@@ -752,6 +766,568 @@ enum CheckInStatus {
 // ============================================
 // 8. 알림 시스템
 // ============================================
+
+model AiCompetencyCycle {
+  id                        String                  @id @default(cuid())
+  evalCycleId               String                  @unique
+  evalCycle                 EvalCycle               @relation(fields: [evalCycleId], references: [id])
+  cycleName                 String
+  status                    AiCompetencyCycleStatus @default(DRAFT)
+  firstRoundOpenAt          DateTime?
+  firstRoundCloseAt         DateTime?
+  secondRoundApplyOpenAt    DateTime?
+  secondRoundApplyCloseAt   DateTime?
+  reviewOpenAt              DateTime?
+  reviewCloseAt             DateTime?
+  calibrationOpenAt         DateTime?
+  calibrationCloseAt        DateTime?
+  resultPublishAt           DateTime?
+  firstRoundPassThreshold   Float                   @default(70)
+  secondRoundBonusCap       Float                   @default(10)
+  scoreCap                  Float                   @default(100)
+  timeLimitMinutes          Int                     @default(60)
+  randomizeQuestions        Boolean                 @default(false)
+  companyEmailDomain        String?
+  artifactMinCount          Int                     @default(2)
+  artifactMaxCount          Int                     @default(3)
+  policyAcknowledgementText String?
+  createdById               String
+  updatedById               String?
+  createdAt                 DateTime                @default(now())
+  updatedAt                 DateTime                @updatedAt
+
+  assignments            AiCompetencyAssignment[]
+  attempts               AiCompetencyAttempt[]
+  questions              AiCompetencyQuestion[]
+  examBlueprints         AiCompetencyExamBlueprint[]
+  generatedExamSets      AiCompetencyGeneratedExamSet[]
+  secondRoundSubmissions AiCompetencySecondRoundSubmission[]
+  reviewRubrics          AiCompetencyReviewRubric[]
+  externalCertClaims     AiCompetencyExternalCertClaim[]
+  results                AiCompetencyResult[]
+
+  @@map("ai_competency_cycles")
+}
+
+enum AiCompetencyCycleStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum AiCompetencyTrack {
+  HR_SUPPORT
+  FINANCE_OPERATIONS
+  SALES_CS
+  MARKETING_PLANNING
+}
+
+enum AiCompetencyQuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  SCENARIO_JUDGEMENT
+  SHORT_ANSWER
+  PRACTICAL
+}
+
+enum AiCompetencyDifficulty {
+  BASIC
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum AiCompetencyDomain {
+  AI_FOUNDATION
+  PROMPT_CONTEXT_DESIGN
+  VERIFICATION_HALLUCINATION
+  SECURITY_ETHICS
+  BUSINESS_JUDGEMENT
+}
+
+enum AiCompetencyTemplateStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum AiCompetencyBlueprintScope {
+  COMMON
+  TRACK_SPECIFIC
+}
+
+enum AiCompetencyAttemptStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  SCORED
+}
+
+enum AiCompetencyPassStatus {
+  PASSED
+  FAILED
+  MANUAL_REVIEW_REQUIRED
+}
+
+enum AiCompetencySecondRoundStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  REVISE_REQUESTED
+  PASSED
+  FAILED
+}
+
+enum AiCompetencyReviewStatus {
+  ASSIGNED
+  DRAFT
+  SUBMITTED
+}
+
+enum AiCompetencyReviewDecision {
+  PASS
+  FAIL
+  REVISE
+}
+
+enum AiCompetencyExternalCertClaimStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum AiCompetencyGrade {
+  S
+  A
+  B
+  C
+  D
+}
+
+enum AiCompetencyCertificationStatus {
+  NOT_CERTIFIED
+  INTERNAL_CERTIFIED
+  EXTERNAL_RECOGNIZED
+  INTERNAL_AND_EXTERNAL
+}
+
+enum AiCompetencySyncState {
+  PENDING
+  SYNCED
+}
+
+model AiCompetencyAssignment {
+  id                     String                 @id @default(cuid())
+  cycleId                String
+  cycle                  AiCompetencyCycle      @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  employeeId             String
+  employee               Employee               @relation(fields: [employeeId], references: [id])
+  track                  AiCompetencyTrack
+  firstRoundRequired     Boolean                @default(true)
+  secondRoundVolunteer   Boolean                @default(false)
+  policyAcknowledgedAt   DateTime?
+  assignedAt             DateTime               @default(now())
+  assignedById           String?
+  notes                  String?
+  attempt                AiCompetencyAttempt?
+  generatedExamSet       AiCompetencyGeneratedExamSet?
+  result                 AiCompetencyResult?
+  secondRoundSubmissions AiCompetencySecondRoundSubmission[]
+  externalCertClaims     AiCompetencyExternalCertClaim[]
+
+  @@unique([cycleId, employeeId])
+  @@index([cycleId, track])
+  @@map("ai_competency_assignments")
+}
+
+model AiCompetencyQuestion {
+  id                    String                   @id @default(cuid())
+  cycleId               String
+  cycle                 AiCompetencyCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  track                 AiCompetencyTrack?
+  version               Int                      @default(1)
+  competencyDomain      AiCompetencyDomain       @default(AI_FOUNDATION)
+  questionType          AiCompetencyQuestionType
+  difficulty            AiCompetencyDifficulty   @default(INTERMEDIATE)
+  title                 String
+  prompt                String
+  options               Json?
+  answerKey             Json?
+  tags                  Json?
+  explanation           String?
+  maxScore              Float                    @default(5)
+  sortOrder             Int                      @default(0)
+  isCommon              Boolean                  @default(false)
+  isActive              Boolean                  @default(true)
+  randomizable          Boolean                  @default(true)
+  requiresManualScoring Boolean                  @default(false)
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  answers AiCompetencyAnswer[]
+
+  @@index([cycleId, track, isActive])
+  @@map("ai_competency_questions")
+}
+
+model AiCompetencyAttempt {
+  id               String                    @id @default(cuid())
+  cycleId          String
+  cycle            AiCompetencyCycle         @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  assignmentId     String                    @unique
+  assignment       AiCompetencyAssignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         Employee                  @relation(fields: [employeeId], references: [id])
+  status           AiCompetencyAttemptStatus @default(NOT_STARTED)
+  startedAt        DateTime?
+  lastSavedAt      DateTime?
+  submittedAt      DateTime?
+  dueAt            DateTime?
+  objectiveScore   Float?
+  manualScore      Float?
+  totalScore       Float?
+  passStatus       AiCompetencyPassStatus?
+  questionOrder    Json?
+  timeLimitMinutes Int                       @default(60)
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  answers       AiCompetencyAnswer[]
+  generatedSet  AiCompetencyGeneratedExamSet?
+
+  @@index([cycleId, employeeId])
+  @@map("ai_competency_attempts")
+}
+
+model AiCompetencyExamBlueprint {
+  id                  String                     @id @default(cuid())
+  cycleId             String
+  cycle               AiCompetencyCycle          @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  blueprintName       String
+  blueprintVersion    Int                        @default(1)
+  track               AiCompetencyTrack?
+  status              AiCompetencyTemplateStatus @default(DRAFT)
+  totalQuestionCount  Int
+  totalPoints         Float
+  timeLimitMinutes    Int
+  passScore           Float
+  randomizationEnabled Boolean                   @default(true)
+  notes               String?
+  createdById         String
+  updatedById         String?
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  rows AiCompetencyExamBlueprintRow[]
+
+  @@index([cycleId, track, status])
+  @@map("ai_competency_exam_blueprints")
+}
+
+model AiCompetencyExamBlueprintRow {
+  id                    String                    @id @default(cuid())
+  blueprintId           String
+  blueprint             AiCompetencyExamBlueprint @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
+  competencyDomain      AiCompetencyDomain
+  itemType              AiCompetencyQuestionType
+  difficulty            AiCompetencyDifficulty
+  scope                 AiCompetencyBlueprintScope @default(COMMON)
+  requiredQuestionCount Int
+  pointsPerQuestion     Float
+  rowPoints             Float
+  requiredTags          Json?
+  excludedTags          Json?
+  displayOrder          Int                       @default(0)
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  @@index([blueprintId, displayOrder])
+  @@map("ai_competency_exam_blueprint_rows")
+}
+
+model AiCompetencyGeneratedExamSet {
+  id                String               @id @default(cuid())
+  cycleId           String
+  cycle             AiCompetencyCycle    @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  assignmentId      String               @unique
+  assignment        AiCompetencyAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  attemptId         String               @unique
+  attempt           AiCompetencyAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee             @relation(fields: [employeeId], references: [id])
+  blueprintSnapshot Json
+  questionSet       Json
+  generatedAt       DateTime             @default(now())
+
+  @@index([cycleId, employeeId])
+  @@map("ai_competency_generated_exam_sets")
+}
+
+model AiCompetencyAnswer {
+  id             String               @id @default(cuid())
+  attemptId      String
+  attempt        AiCompetencyAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId     String
+  question       AiCompetencyQuestion @relation(fields: [questionId], references: [id])
+  answerPayload  Json?
+  isCorrect      Boolean?
+  objectiveScore Float?
+  manualScore    Float?
+  finalScore     Float?
+  reviewerId     String?
+  reviewer       Employee?            @relation("AiCompetencyAnswerReviewer", fields: [reviewerId], references: [id])
+  reviewerNote   String?
+  scoredAt       DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([attemptId, questionId])
+  @@map("ai_competency_answers")
+}
+
+model AiCompetencySecondRoundSubmission {
+  id                           String                        @id @default(cuid())
+  cycleId                      String
+  cycle                        AiCompetencyCycle             @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  assignmentId                 String
+  assignment                   AiCompetencyAssignment        @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  employeeId                   String
+  employee                     Employee                      @relation(fields: [employeeId], references: [id])
+  rubricId                     String?
+  rubric                       AiCompetencyReviewRubric?     @relation(fields: [rubricId], references: [id])
+  status                       AiCompetencySecondRoundStatus @default(SUBMITTED)
+  taskDescription              String
+  aiUsagePurpose               String
+  toolUsed                     String
+  promptSummary                String
+  verificationMethod           String
+  businessImpact               String
+  sensitiveDataCheck           String
+  qnaNotes                     Json?
+  submittedAt                  DateTime                      @default(now())
+  decidedAt                    DateTime?
+  finalDecisionById            String?
+  finalDecisionBy              Employee?                     @relation("AiCompetencySubmissionDecisionActor", fields: [finalDecisionById], references: [id])
+  finalDecisionNote            String?
+  aggregatedScore              Float?
+  aggregatedBonus              Float?
+  reviewerSummary              String?
+  internalCertificationGranted Boolean                       @default(false)
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+
+  artifacts AiCompetencySecondRoundArtifact[]
+  reviews   AiCompetencySubmissionReview[]
+
+  @@unique([assignmentId])
+  @@index([cycleId, employeeId, status])
+  @@map("ai_competency_second_round_submissions")
+}
+
+model AiCompetencySecondRoundArtifact {
+  id           String                           @id @default(cuid())
+  submissionId String
+  submission   AiCompetencySecondRoundSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  content      Bytes
+  createdAt    DateTime                         @default(now())
+
+  @@map("ai_competency_second_round_artifacts")
+}
+
+model AiCompetencySubmissionReview {
+  id           String                        @id @default(cuid())
+  submissionId String
+  submission   AiCompetencySecondRoundSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  reviewerId   String
+  reviewer     Employee                      @relation("AiCompetencySubmissionReviewer", fields: [reviewerId], references: [id])
+  rubricId     String?
+  rubric       AiCompetencyReviewRubric?     @relation(fields: [rubricId], references: [id])
+  status       AiCompetencyReviewStatus      @default(ASSIGNED)
+  rubricPayload Json?
+  score        Float?
+  bonusScore   Float?
+  decision     AiCompetencyReviewDecision?
+  notes        String?
+  qnaNote      String?
+  reviewedAt   DateTime?
+  createdAt    DateTime                      @default(now())
+  updatedAt    DateTime                      @updatedAt
+
+  scores AiCompetencySubmissionReviewScore[]
+
+  @@unique([submissionId, reviewerId])
+  @@map("ai_competency_submission_reviews")
+}
+
+model AiCompetencyReviewRubric {
+  id                 String                     @id @default(cuid())
+  cycleId            String
+  cycle              AiCompetencyCycle          @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  rubricName         String
+  rubricVersion      Int                        @default(1)
+  track              AiCompetencyTrack?
+  status             AiCompetencyTemplateStatus @default(DRAFT)
+  totalScore         Float
+  passScore          Float
+  bonusScoreIfPassed Float                      @default(0)
+  certificationLabel String?
+  notes              String?
+  createdById        String
+  updatedById        String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  criteria    AiCompetencyReviewRubricCriterion[]
+  reviews      AiCompetencySubmissionReview[]
+  submissions  AiCompetencySecondRoundSubmission[]
+
+  @@index([cycleId, track, status])
+  @@map("ai_competency_review_rubrics")
+}
+
+model AiCompetencyReviewRubricCriterion {
+  id                   String                           @id @default(cuid())
+  rubricId             String
+  rubric               AiCompetencyReviewRubric         @relation(fields: [rubricId], references: [id], onDelete: Cascade)
+  criterionCode        String
+  criterionName        String
+  criterionDescription String?
+  maxScore             Float
+  displayOrder         Int                              @default(0)
+  mandatory            Boolean                          @default(true)
+  knockout             Boolean                          @default(false)
+  createdAt            DateTime                         @default(now())
+  updatedAt            DateTime                         @updatedAt
+
+  bands       AiCompetencyReviewRubricBand[]
+  reviewScores AiCompetencySubmissionReviewScore[]
+
+  @@unique([rubricId, criterionCode])
+  @@index([rubricId, displayOrder])
+  @@map("ai_competency_review_rubric_criteria")
+}
+
+model AiCompetencyReviewRubricBand {
+  id          String                           @id @default(cuid())
+  criterionId String
+  criterion   AiCompetencyReviewRubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+  score       Float
+  title       String
+  description String?
+  guidance    String?
+  displayOrder Int                             @default(0)
+  createdAt   DateTime                         @default(now())
+  updatedAt   DateTime                         @updatedAt
+
+  @@index([criterionId, displayOrder])
+  @@map("ai_competency_review_rubric_bands")
+}
+
+model AiCompetencySubmissionReviewScore {
+  id                String                     @id @default(cuid())
+  reviewId          String
+  review            AiCompetencySubmissionReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  criterionId       String
+  criterion         AiCompetencyReviewRubricCriterion @relation(fields: [criterionId], references: [id])
+  score             Float
+  comment           String?
+  knockoutTriggered Boolean                    @default(false)
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  @@unique([reviewId, criterionId])
+  @@map("ai_competency_submission_review_scores")
+}
+
+model AiCompetencyExternalCertMaster {
+  id                            String       @id @default(cuid())
+  orgId                         String
+  organization                  Organization @relation(fields: [orgId], references: [id])
+  name                          String
+  vendor                        String?
+  validityMonths                Int?
+  mappedScore                   Float
+  requiresPolicyAcknowledgement Boolean      @default(true)
+  isActive                      Boolean      @default(true)
+  displayOrder                  Int          @default(0)
+  createdAt                     DateTime     @default(now())
+  updatedAt                     DateTime     @updatedAt
+
+  claims AiCompetencyExternalCertClaim[]
+
+  @@unique([orgId, name])
+  @@map("ai_competency_external_cert_masters")
+}
+
+model AiCompetencyExternalCertClaim {
+  id                   String                            @id @default(cuid())
+  cycleId              String
+  cycle                AiCompetencyCycle                 @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  assignmentId         String
+  assignment           AiCompetencyAssignment            @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             Employee                          @relation(fields: [employeeId], references: [id])
+  certificateId        String
+  certificate          AiCompetencyExternalCertMaster    @relation(fields: [certificateId], references: [id])
+  status               AiCompetencyExternalCertClaimStatus @default(SUBMITTED)
+  certificateNumber    String?
+  issuedAt             DateTime?
+  expiresAt            DateTime?
+  policyAcknowledgedAt DateTime?
+  proofFileName        String
+  proofMimeType        String
+  proofSizeBytes       Int
+  proofContent         Bytes
+  submittedAt          DateTime                          @default(now())
+  decidedAt            DateTime?
+  decidedById          String?
+  decidedBy            Employee?                         @relation("AiCompetencyCertApprover", fields: [decidedById], references: [id])
+  rejectionReason      String?
+  mappedScoreSnapshot  Float
+  createdAt            DateTime                          @default(now())
+  updatedAt            DateTime                          @updatedAt
+  syncedResults        AiCompetencyResult[]
+
+  @@index([cycleId, employeeId, status])
+  @@map("ai_competency_external_cert_claims")
+}
+
+model AiCompetencyResult {
+  id                      String                         @id @default(cuid())
+  cycleId                 String
+  cycle                   AiCompetencyCycle              @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  evalCycleId             String
+  evalCycle               EvalCycle                      @relation(fields: [evalCycleId], references: [id])
+  employeeId              String
+  employee                Employee                       @relation("AiCompetencyResultEmployee", fields: [employeeId], references: [id])
+  assignmentId            String                         @unique
+  assignment              AiCompetencyAssignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  externalCertClaimId     String?
+  externalCertClaim       AiCompetencyExternalCertClaim? @relation(fields: [externalCertClaimId], references: [id])
+  firstRoundScore         Float?
+  secondRoundBonus        Float                          @default(0)
+  secondRoundPassed       Boolean                        @default(false)
+  externalCertMappedScore Float?
+  finalScore              Float
+  finalGrade              AiCompetencyGrade
+  certificationStatus     AiCompetencyCertificationStatus
+  syncState               AiCompetencySyncState          @default(PENDING)
+  syncedAt                DateTime?
+  syncActorId             String?
+  syncActor               Employee?                      @relation("AiCompetencyResultSyncActor", fields: [syncActorId], references: [id])
+  syncedCompetencyScore   Float?
+  overrideScore           Float?
+  overrideReason          String?
+  publishedAt             DateTime?
+  createdAt               DateTime                       @default(now())
+  updatedAt               DateTime                       @updatedAt
+
+  @@unique([cycleId, employeeId])
+  @@unique([evalCycleId, employeeId])
+  @@map("ai_competency_results")
+}
 
 model Notification {
   id          String              @id @default(cuid())

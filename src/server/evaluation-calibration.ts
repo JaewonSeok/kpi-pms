@@ -8,6 +8,7 @@ import type {
 } from '@prisma/client'
 import { calcPdcaScore } from '@/lib/utils'
 import { prisma } from '@/lib/prisma'
+import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
 
 export type CalibrationPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 export type CalibrationStatus = 'READY' | 'CALIBRATING' | 'REVIEW_CONFIRMED' | 'FINAL_LOCKED'
@@ -422,6 +423,11 @@ export async function getEvaluationCalibrationPageData(params: {
       }
     }
 
+    const aiCompetencyResults = await loadAiCompetencySyncedResults({
+      evalCycleIds: [selectedCycle.id],
+      employeeIds: filteredGroups.map((group) => group.target.id),
+    })
+
     const checkInMap = buildCheckInMap(checkIns)
     const byDepartment = buildDepartmentDistributions(filteredGroups, gradeSettings)
     const outlierDepartmentIds = new Set(
@@ -433,6 +439,7 @@ export async function getEvaluationCalibrationPageData(params: {
         gradeSettings,
         checkIns: checkInMap.get(group.target.id) ?? [],
         departmentOutlierMap: outlierDepartmentIds,
+        aiCompetencyScore: aiCompetencyResults.get(`${selectedCycle.id}:${group.target.id}`)?.finalScore,
       })
     )
 
@@ -555,11 +562,16 @@ function buildCalibrationCandidate(params: {
   gradeSettings: GradeSettingLite[]
   checkIns: CheckInRecord[]
   departmentOutlierMap: Set<string>
+  aiCompetencyScore?: number
 }) {
   const { group, gradeSettings } = params
   const baseEvaluation = group.finalEvaluation ?? group.adjustedEvaluation
   const adjustedEvaluation = group.adjustedEvaluation
-  const rawScore = baseEvaluation?.totalScore ?? adjustedEvaluation?.totalScore ?? 0
+  const rawScore = calculateEffectiveEvaluationScore({
+    evaluation: baseEvaluation ?? adjustedEvaluation ?? null,
+    fallback: baseEvaluation?.totalScore ?? adjustedEvaluation?.totalScore ?? 0,
+    syncedCompetencyScore: params.aiCompetencyScore,
+  })
   const originalGrade = resolveGradeName(
     group.finalEvaluation?.gradeId ?? null,
     group.finalEvaluation?.totalScore ?? rawScore,
@@ -574,7 +586,7 @@ function buildCalibrationCandidate(params: {
   const reason = adjustedEvaluation?.comment?.trim() || undefined
   const reasonMissing = adjusted && !reason
   const performanceScore = calcEvaluationAxisScore(baseEvaluation, 'performance')
-  const competencyScore = calcEvaluationAxisScore(baseEvaluation, 'competency')
+  const competencyScore = params.aiCompetencyScore ?? calcEvaluationAxisScore(baseEvaluation, 'competency')
   const monthlySummary = buildMonthlySummary(baseEvaluation)
   const kpiSummary = buildKpiSummary(baseEvaluation)
   const checkins = params.checkIns
@@ -894,6 +906,37 @@ function calcEvaluationAxisScore(
   if (!rows.length) return undefined
   const weightSum = rows.reduce((sum, row) => sum + row.weight, 0)
   if (weightSum <= 0) return roundToSingle(rows.reduce((sum, row) => sum + row.score, 0) / rows.length)
+  return roundToSingle(rows.reduce((sum, row) => sum + row.score * row.weight, 0) / weightSum)
+}
+
+function calculateEffectiveEvaluationScore(params: {
+  evaluation: EvaluationRecord | null
+  fallback: number
+  syncedCompetencyScore?: number
+}) {
+  if (!params.evaluation || typeof params.syncedCompetencyScore !== 'number') {
+    return params.fallback
+  }
+
+  const rows = params.evaluation.items.map((item) => {
+    const score = getDisplayScore(item)
+    return {
+      type: item.personalKpi.kpiType,
+      score:
+        item.personalKpi.kpiType === 'QUALITATIVE' && typeof params.syncedCompetencyScore === 'number'
+          ? params.syncedCompetencyScore
+          : score,
+      weight: item.personalKpi.weight,
+    }
+  }).filter((row): row is { type: EvaluationRecord['items'][number]['personalKpi']['kpiType']; score: number; weight: number } => typeof row.score === 'number')
+
+  if (!rows.length) return params.fallback
+
+  const weightSum = rows.reduce((sum, row) => sum + row.weight, 0)
+  if (weightSum <= 0) {
+    return roundToSingle(rows.reduce((sum, row) => sum + row.score, 0) / rows.length)
+  }
+
   return roundToSingle(rows.reduce((sum, row) => sum + row.score * row.weight, 0) / weightSum)
 }
 

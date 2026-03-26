@@ -799,3 +799,296 @@ export const CalibrationWorkflowSchema = z.object({
   cycleId: z.string().min(1),
   action: z.enum(['CONFIRM_REVIEW', 'LOCK', 'REOPEN_REQUEST']),
 })
+
+export const AiCompetencyTrackSchema = z.enum([
+  'HR_SUPPORT',
+  'FINANCE_OPERATIONS',
+  'SALES_CS',
+  'MARKETING_PLANNING',
+])
+
+export const AiCompetencyQuestionTypeSchema = z.enum([
+  'SINGLE_CHOICE',
+  'MULTIPLE_CHOICE',
+  'SCENARIO_JUDGEMENT',
+  'SHORT_ANSWER',
+  'PRACTICAL',
+])
+
+export const AiCompetencyDifficultySchema = z.enum(['BASIC', 'INTERMEDIATE', 'ADVANCED'])
+
+export const AiCompetencyCycleStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'CLOSED'])
+
+export const AiCompetencyDomainSchema = z.enum([
+  'AI_FOUNDATION',
+  'PROMPT_CONTEXT_DESIGN',
+  'VERIFICATION_HALLUCINATION',
+  'SECURITY_ETHICS',
+  'BUSINESS_JUDGEMENT',
+])
+
+export const AiCompetencyTemplateStatusSchema = z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED'])
+
+export const AiCompetencyBlueprintScopeSchema = z.enum(['COMMON', 'TRACK_SPECIFIC'])
+
+export const AiCompetencyCycleUpsertSchema = z
+  .object({
+    evalCycleId: z.string().min(1).optional(),
+    cycleName: z.string().trim().min(1).max(100),
+    firstRoundOpenAt: EmptyStringToUndefined(z.string().datetime()),
+    firstRoundCloseAt: EmptyStringToUndefined(z.string().datetime()),
+    secondRoundApplyOpenAt: EmptyStringToUndefined(z.string().datetime()),
+    secondRoundApplyCloseAt: EmptyStringToUndefined(z.string().datetime()),
+    reviewOpenAt: EmptyStringToUndefined(z.string().datetime()),
+    reviewCloseAt: EmptyStringToUndefined(z.string().datetime()),
+    calibrationOpenAt: EmptyStringToUndefined(z.string().datetime()),
+    calibrationCloseAt: EmptyStringToUndefined(z.string().datetime()),
+    resultPublishAt: EmptyStringToUndefined(z.string().datetime()),
+    firstRoundPassThreshold: z.number().min(0).max(100),
+    secondRoundBonusCap: z.number().min(0).max(30),
+    scoreCap: z.number().min(60).max(100),
+    timeLimitMinutes: z.number().int().min(10).max(240),
+    randomizeQuestions: z.boolean().default(false),
+    companyEmailDomain: EmptyStringToUndefined(z.string().max(100)),
+    artifactMinCount: z.number().int().min(1).max(3),
+    artifactMaxCount: z.number().int().min(1).max(5),
+    policyAcknowledgementText: EmptyStringToUndefined(z.string().max(1000)),
+    status: AiCompetencyCycleStatusSchema.optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.evalCycleId && !data.status) return
+    if (data.artifactMinCount > data.artifactMaxCount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['artifactMinCount'],
+        message: '최소 제출 개수는 최대 제출 개수보다 클 수 없습니다.',
+      })
+    }
+  })
+
+export const AiCompetencyQuestionSchema = z.object({
+  id: z.string().min(1).optional(),
+  cycleId: z.string().min(1),
+  track: AiCompetencyTrackSchema.optional().nullable(),
+  version: z.number().int().min(1).max(20).default(1),
+  competencyDomain: AiCompetencyDomainSchema.default('AI_FOUNDATION'),
+  questionType: AiCompetencyQuestionTypeSchema,
+  difficulty: AiCompetencyDifficultySchema.default('INTERMEDIATE'),
+  title: z.string().trim().min(1).max(120),
+  prompt: z.string().trim().min(1).max(4000),
+  options: z.array(z.string().trim().min(1).max(500)).max(10).optional(),
+  answerKey: z.array(z.string().trim().min(1).max(500)).max(10).optional(),
+  tags: z.array(z.string().trim().min(1).max(50)).max(20).optional(),
+  explanation: EmptyStringToUndefined(z.string().max(2000)),
+  maxScore: z.number().min(1).max(100),
+  sortOrder: z.number().int().min(0).max(999).default(0),
+  isCommon: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  randomizable: z.boolean().default(true),
+  requiresManualScoring: z.boolean().default(false),
+})
+
+export const AiCompetencyBlueprintRowSchema = z.object({
+  competencyDomain: AiCompetencyDomainSchema,
+  itemType: AiCompetencyQuestionTypeSchema,
+  difficulty: AiCompetencyDifficultySchema,
+  requiredQuestionCount: z.number().int().min(1).max(100),
+  pointsPerQuestion: z.number().min(1).max(100),
+  scope: AiCompetencyBlueprintScopeSchema,
+  requiredTags: z.array(z.string().trim().min(1).max(50)).max(20).optional().default([]),
+  excludedTags: z.array(z.string().trim().min(1).max(50)).max(20).optional().default([]),
+  displayOrder: z.number().int().min(0).max(999).default(0),
+})
+
+export const AiCompetencyBlueprintSchema = z
+  .object({
+    id: z.string().min(1).optional(),
+    cycleId: z.string().min(1),
+    blueprintName: z.string().trim().min(1).max(100),
+    blueprintVersion: z.number().int().min(1).max(50).default(1),
+    track: AiCompetencyTrackSchema.optional().nullable(),
+    status: AiCompetencyTemplateStatusSchema.optional(),
+    totalQuestionCount: z.number().int().min(1).max(300),
+    totalPoints: z.number().min(1).max(100),
+    timeLimitMinutes: z.number().int().min(10).max(240),
+    passScore: z.number().min(0).max(100),
+    randomizationEnabled: z.boolean().default(true),
+    notes: EmptyStringToUndefined(z.string().max(1000)),
+    rows: z.array(AiCompetencyBlueprintRowSchema).min(1).max(100),
+  })
+  .superRefine((data, ctx) => {
+    const totalQuestionCount = data.rows.reduce((sum, row) => sum + row.requiredQuestionCount, 0)
+    const totalPoints = data.rows.reduce((sum, row) => sum + row.requiredQuestionCount * row.pointsPerQuestion, 0)
+
+    if (totalQuestionCount !== data.totalQuestionCount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['totalQuestionCount'],
+        message: '행별 문항 수 합계가 총 문항 수와 일치해야 합니다.',
+      })
+    }
+
+    if (Math.abs(totalPoints - data.totalPoints) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['totalPoints'],
+        message: '행별 배점 합계가 총점과 일치해야 합니다.',
+      })
+    }
+
+    if (data.passScore > data.totalPoints) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['passScore'],
+        message: '합격 기준은 총점을 초과할 수 없습니다.',
+      })
+    }
+  })
+
+export const AiCompetencyTemplateActionSchema = z.object({
+  templateId: z.string().min(1),
+})
+
+export const AiCompetencyRubricBandSchema = z.object({
+  score: z.number().min(0).max(100),
+  title: z.string().trim().min(1).max(50),
+  description: EmptyStringToUndefined(z.string().max(300)),
+  guidance: EmptyStringToUndefined(z.string().max(500)),
+  displayOrder: z.number().int().min(0).max(99).default(0),
+})
+
+export const AiCompetencyRubricCriterionSchema = z.object({
+  criterionCode: z.string().trim().min(1).max(30),
+  criterionName: z.string().trim().min(1).max(100),
+  criterionDescription: EmptyStringToUndefined(z.string().max(1000)),
+  maxScore: z.number().min(1).max(100),
+  displayOrder: z.number().int().min(0).max(999).default(0),
+  mandatory: z.boolean().default(true),
+  knockout: z.boolean().default(false),
+  bands: z.array(AiCompetencyRubricBandSchema).min(1).max(10),
+})
+
+export const AiCompetencyRubricSchema = z
+  .object({
+    id: z.string().min(1).optional(),
+    cycleId: z.string().min(1),
+    rubricName: z.string().trim().min(1).max(100),
+    rubricVersion: z.number().int().min(1).max(50).default(1),
+    track: AiCompetencyTrackSchema.optional().nullable(),
+    status: AiCompetencyTemplateStatusSchema.optional(),
+    totalScore: z.number().min(1).max(100),
+    passScore: z.number().min(0).max(100),
+    bonusScoreIfPassed: z.number().min(0).max(30),
+    certificationLabel: EmptyStringToUndefined(z.string().max(100)),
+    notes: EmptyStringToUndefined(z.string().max(1000)),
+    criteria: z.array(AiCompetencyRubricCriterionSchema).min(1).max(30),
+  })
+  .superRefine((data, ctx) => {
+    const totalScore = data.criteria.reduce((sum, criterion) => sum + criterion.maxScore, 0)
+    if (Math.abs(totalScore - data.totalScore) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['totalScore'],
+        message: '평가 기준 배점 합계가 총점과 일치해야 합니다.',
+      })
+    }
+    if (data.passScore > data.totalScore) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['passScore'],
+        message: '합격 기준은 총점을 초과할 수 없습니다.',
+      })
+    }
+  })
+
+export const AiCompetencyAssignmentSchema = z.object({
+  cycleId: z.string().min(1),
+  employeeId: z.string().min(1),
+  track: AiCompetencyTrackSchema,
+  firstRoundRequired: z.boolean().default(true),
+  secondRoundVolunteer: z.boolean().default(false),
+  notes: EmptyStringToUndefined(z.string().max(500)),
+})
+
+export const AiCompetencyAttemptSaveSchema = z.object({
+  attemptId: z.string().min(1),
+  submit: z.boolean().default(false),
+  answers: z
+    .array(
+      z.object({
+        questionId: z.string().min(1),
+        answer: z.union([z.string(), z.array(z.string()), z.record(z.string(), z.unknown()), z.null()]),
+      })
+    )
+    .min(1)
+    .max(200),
+})
+
+export const AiCompetencyShortAnswerScoreSchema = z.object({
+  answerId: z.string().min(1),
+  manualScore: z.number().min(0).max(100),
+  reviewerNote: EmptyStringToUndefined(z.string().max(1000)),
+})
+
+export const AiCompetencySecondRoundSubmissionSchema = z.object({
+  assignmentId: z.string().min(1),
+  taskDescription: z.string().trim().min(10).max(2000),
+  aiUsagePurpose: z.string().trim().min(5).max(1000),
+  toolUsed: z.string().trim().min(2).max(200),
+  promptSummary: z.string().trim().min(10).max(2000),
+  verificationMethod: z.string().trim().min(10).max(1000),
+  businessImpact: z.string().trim().min(10).max(1000),
+  sensitiveDataCheck: z.string().trim().min(5).max(1000),
+})
+
+export const AiCompetencyReviewerAssignmentSchema = z.object({
+  submissionId: z.string().min(1),
+  reviewerIds: z.array(z.string().min(1)).min(1).max(5),
+})
+
+export const AiCompetencySubmissionReviewCriterionInputSchema = z.object({
+  criterionId: z.string().min(1),
+  score: z.number().min(0).max(100),
+  comment: EmptyStringToUndefined(z.string().max(1000)),
+  knockoutTriggered: z.boolean().default(false),
+})
+
+export const AiCompetencySubmissionReviewSchema = z
+  .object({
+    submissionId: z.string().min(1),
+    criterionScores: z.array(AiCompetencySubmissionReviewCriterionInputSchema).min(1).max(30),
+    decision: z.enum(['PASS', 'FAIL', 'REVISE']).optional(),
+    notes: EmptyStringToUndefined(z.string().max(2000)),
+    qnaNote: EmptyStringToUndefined(z.string().max(2000)),
+    submitFinal: z.boolean().default(false),
+  })
+  .superRefine((data, ctx) => {
+    if (data.submitFinal && !data.decision) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['decision'],
+        message: '최종 제출 시 판정을 선택해 주세요.',
+      })
+    }
+  })
+
+export const AiCompetencyExternalCertClaimSchema = z.object({
+  assignmentId: z.string().min(1),
+  certificateId: z.string().min(1),
+  certificateNumber: EmptyStringToUndefined(z.string().max(100)),
+  issuedAt: EmptyStringToUndefined(EmployeeDateSchema),
+  expiresAt: EmptyStringToUndefined(EmployeeDateSchema),
+  policyAcknowledged: z.boolean(),
+})
+
+export const AiCompetencyExternalCertDecisionSchema = z.object({
+  claimId: z.string().min(1),
+  action: z.enum(['APPROVE', 'REJECT']),
+  rejectionReason: EmptyStringToUndefined(z.string().max(1000)),
+})
+
+export const AiCompetencyResultOverrideSchema = z.object({
+  resultId: z.string().min(1),
+  overrideScore: z.number().min(0).max(100),
+  overrideReason: z.string().trim().min(5).max(1000),
+})
