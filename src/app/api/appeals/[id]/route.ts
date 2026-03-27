@@ -4,6 +4,44 @@ import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 
+type AppealWorkflowStatus =
+  | 'SUBMITTED'
+  | 'UNDER_REVIEW'
+  | 'INFO_REQUESTED'
+  | 'RESOLVED'
+  | 'REJECTED'
+  | 'WITHDRAWN'
+
+function normalizeAppealPayload(body: Record<string, unknown>) {
+  return {
+    reason: typeof body.reason === 'string' ? body.reason.trim() : '',
+    category: typeof body.category === 'string' ? body.category : undefined,
+    requestedAction: typeof body.requestedAction === 'string' ? body.requestedAction : undefined,
+    relatedTargets: Array.isArray(body.relatedTargets)
+      ? body.relatedTargets.filter((item): item is string => typeof item === 'string')
+      : [],
+    attachments: Array.isArray(body.attachments) ? body.attachments : [],
+  }
+}
+
+function deriveAppealWorkflowStatus(
+  appealStatus: 'SUBMITTED' | 'UNDER_REVIEW' | 'ACCEPTED' | 'REJECTED' | 'CLOSED',
+  auditLogs: Array<{
+    action: string
+  }>
+): AppealWorkflowStatus {
+  const latestAction = [...auditLogs]
+    .reverse()
+    .find((log) => log.action.startsWith('APPEAL_') && log.action !== 'APPEAL_DRAFT_SAVED')?.action
+
+  if (latestAction === 'APPEAL_WITHDRAWN') return 'WITHDRAWN'
+  if (latestAction === 'APPEAL_INFO_REQUESTED') return 'INFO_REQUESTED'
+  if (appealStatus === 'UNDER_REVIEW') return 'UNDER_REVIEW'
+  if (appealStatus === 'REJECTED') return 'REJECTED'
+  if (appealStatus === 'ACCEPTED') return 'RESOLVED'
+  return 'SUBMITTED'
+}
+
 export async function PATCH(
   request: Request,
   context: {
@@ -46,8 +84,51 @@ export async function PATCH(
       adminResponse: appeal.adminResponse,
     }
     const client = getClientInfo(request)
+    const auditLogs = await prisma.auditLog.findMany({
+      where: {
+        entityType: 'Appeal',
+        entityId: appeal.id,
+      },
+      orderBy: {
+        timestamp: 'asc',
+      },
+    })
+    const currentStatus = deriveAppealWorkflowStatus(appeal.status, auditLogs)
+
+    if (action === 'save_draft') {
+      if (!isOwner) throw new AppError(403, 'FORBIDDEN', '?좎껌?먮쭔 珥덉븞????ν븷 ???덉뒿?덈떎.')
+      if (currentStatus !== 'INFO_REQUESTED') {
+        throw new AppError(409, 'INVALID_STATUS', '蹂댁셿 ?붿껌 ?곹깭?먯꽌留?珥덉븞????ν븷 ???덉뒿?덈떎.')
+      }
+
+      const payload = normalizeAppealPayload(body as Record<string, unknown>)
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'APPEAL_DRAFT_SAVED',
+        entityType: 'Appeal',
+        entityId: appeal.id,
+        oldValue,
+        newValue: {
+          status: 'DRAFT',
+          reason: payload.reason,
+          category: payload.category,
+          requestedAction: payload.requestedAction,
+          relatedTargets: payload.relatedTargets,
+          attachments: payload.attachments,
+        },
+        ...client,
+      })
+
+      return successResponse({
+        saved: true,
+        status: currentStatus,
+      })
+    }
 
     if (action === 'withdraw') {
+      if (!['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(currentStatus)) {
+        throw new AppError(409, 'INVALID_STATUS', '?꾩옱 ?곹깭?먯꽌???댁쓽 ?좎껌??泥좏쉶?????놁뒿?덈떎.')
+      }
       if (!isOwner) throw new AppError(403, 'FORBIDDEN', '신청자만 철회할 수 있습니다.')
 
       const updated = await prisma.appeal.update({
@@ -72,6 +153,9 @@ export async function PATCH(
     }
 
     if (action === 'resubmit') {
+      if (currentStatus !== 'INFO_REQUESTED') {
+        throw new AppError(409, 'INVALID_STATUS', '蹂댁셿 ?붿껌 ?곹깭?먯꽌留?다시 제출할 수 있습니다.')
+      }
       if (!isOwner) throw new AppError(403, 'FORBIDDEN', '신청자만 재제출할 수 있습니다.')
 
       const reason = String(body.reason ?? '').trim()
@@ -113,6 +197,9 @@ export async function PATCH(
     }
 
     if (action === 'start_review') {
+      if (currentStatus !== 'SUBMITTED') {
+        throw new AppError(409, 'INVALID_STATUS', '?쒖텧 ?곹깭?먯꽌留?寃???쒖옉?????덉뒿?덈떎.')
+      }
       const updated = await prisma.appeal.update({
         where: { id },
         data: {
@@ -137,6 +224,9 @@ export async function PATCH(
     }
 
     if (action === 'request_info') {
+      if (!['SUBMITTED', 'UNDER_REVIEW'].includes(currentStatus)) {
+        throw new AppError(409, 'INVALID_STATUS', '?쒖텧 ?먮뒗 寃??以??곹깭?먯꽌留?蹂댁셿 ?붿껌?????덉뒿?덈떎.')
+      }
       const note = String(body.note ?? '').trim()
       if (!note) throw new AppError(400, 'MISSING_NOTE', '보완 요청 사유를 입력해 주세요.')
 
@@ -166,6 +256,9 @@ export async function PATCH(
     }
 
     if (action === 'resolve' || action === 'reject') {
+      if (!['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(currentStatus)) {
+        throw new AppError(409, 'INVALID_STATUS', '?꾩옱 ?곹깭?먯꽌??寃곗젙 ?곗뾽?????놁뒿?덈떎.')
+      }
       const note = String(body.note ?? '').trim()
       if (!note) throw new AppError(400, 'MISSING_NOTE', '결정 사유를 입력해 주세요.')
 

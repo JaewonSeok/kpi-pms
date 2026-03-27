@@ -21,6 +21,13 @@ import type { EvaluationResultPageData, EvaluationResultViewModel } from '@/serv
 
 type ResultTab = 'summary' | 'details' | 'evidence' | 'history' | 'growth'
 
+function buildResultsQuery(params: { cycleId?: string; employeeId?: string }) {
+  const query = new URLSearchParams()
+  if (params.cycleId) query.set('cycleId', params.cycleId)
+  if (params.employeeId) query.set('employeeId', params.employeeId)
+  return query.toString()
+}
+
 type DetailItem =
   | (EvaluationResultViewModel['scoreBreakdown']['performance'][number] & { group: '성과' | '역량' })
   | null
@@ -43,7 +50,9 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
 
   const viewModel = props.viewModel
   const scopeOptions = props.availableCycles
+  const employeeOptions = props.employeeOptions
   const selectedCycle = scopeOptions.find((cycle) => cycle.id === props.selectedCycleId) ?? scopeOptions[0]
+  const selectedEmployeeId = props.selectedEmployeeId ?? viewModel?.employee.id ?? ''
 
   const availableYears = useMemo(
     () => Array.from(new Set(scopeOptions.map((cycle) => cycle.year))).sort((a, b) => b - a),
@@ -66,6 +75,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
       ),
     [scopeOptions]
   )
+  const selectedScopeKey = selectedCycle ? `${selectedCycle.organizationName}__${selectedCycle.departmentName}` : availableScopes[0]?.key ?? ''
 
   const detailItems = useMemo(() => {
     if (!viewModel) return []
@@ -75,38 +85,79 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
     ]
   }, [viewModel])
 
+  const resultsContextKey = `${props.state}:${props.selectedCycleId ?? ''}:${selectedEmployeeId}`
   const selectedDetail = detailItems.find((item) => item.id === selectedDetailId) ?? detailItems[0] ?? null
   const loadAlerts = props.alerts?.length ? <LoadAlerts alerts={props.alerts} /> : null
+  const acknowledgeDisabledReason =
+    !viewModel
+      ? '?뺤씤?????덈뒗 寃곌낵媛 ?놁뒿?덈떎.'
+      : acknowledged
+        ? '?대? ?뺤씤 ?꾨즺???됯? 寃곌낵?낅땲??'
+        : viewModel.actions.acknowledgeMessage
+  const exportDisabledReason = viewModel?.actions.exportMessage
 
   useEffect(() => {
     setAcknowledged(props.viewModel?.summary.acknowledged ?? false)
-  }, [props.viewModel?.cycle.id, props.viewModel?.summary.acknowledged])
+  }, [resultsContextKey, props.viewModel?.summary.acknowledged])
+
+  useEffect(() => {
+    setActiveTab('summary')
+    setSelectedDetailId('')
+    setLocalNotice(null)
+  }, [resultsContextKey])
+
+  function navigateTo(cycleId?: string, employeeId?: string) {
+    const query = buildResultsQuery({ cycleId, employeeId })
+    router.push(query ? `/evaluation/results?${query}` : '/evaluation/results')
+  }
 
   function handleYearChange(year: number) {
-    const nextCycle = scopeOptions.find((cycle) => cycle.year === year)
+    const nextCycle =
+      scopeOptions.find(
+        (cycle) =>
+          cycle.year === year &&
+          `${cycle.organizationName}__${cycle.departmentName}` === selectedScopeKey
+      ) ?? scopeOptions.find((cycle) => cycle.year === year)
     if (!nextCycle) return
-    router.push(`/evaluation/results?cycleId=${encodeURIComponent(nextCycle.id)}`)
+    navigateTo(nextCycle.id, selectedEmployeeId || undefined)
   }
 
   function handleScopeChange(scopeKey: string) {
-    const nextCycle = scopeOptions.find(
-      (cycle) => `${cycle.organizationName}__${cycle.departmentName}` === scopeKey
-    )
+    const nextCycle =
+      scopeOptions.find(
+        (cycle) =>
+          cycle.year === selectedCycle?.year &&
+          `${cycle.organizationName}__${cycle.departmentName}` === scopeKey
+      ) ?? scopeOptions.find((cycle) => `${cycle.organizationName}__${cycle.departmentName}` === scopeKey)
     if (!nextCycle) return
-    router.push(`/evaluation/results?cycleId=${encodeURIComponent(nextCycle.id)}`)
+    navigateTo(nextCycle.id, selectedEmployeeId || undefined)
   }
 
   function handleCycleChange(cycleId: string) {
-    router.push(`/evaluation/results?cycleId=${encodeURIComponent(cycleId)}`)
+    navigateTo(cycleId, selectedEmployeeId || undefined)
+  }
+
+  function handleEmployeeChange(employeeId: string) {
+    navigateTo(selectedCycle?.id ?? props.selectedCycleId, employeeId || undefined)
   }
 
   async function handleDownloadPdf() {
-    if (!viewModel) return
+    if (!viewModel || !viewModel.actions.canExport) {
+      setLocalNotice({
+        tone: 'info',
+        message: exportDisabledReason ?? '?꾩옱 ?곹깭?먯꽌??由ы룷?몃? ?ㅼ슫濡쒕뱶?????놁뒿?덈떎.',
+      })
+      return
+    }
     setBusyAction('download')
     try {
-      const response = await fetch(`/api/evaluation/results/${encodeURIComponent(viewModel.cycle.id)}/export`, {
-        cache: 'no-store',
-      })
+      const query = buildResultsQuery({ employeeId: selectedEmployeeId || undefined })
+      const response = await fetch(
+        `/api/evaluation/results/${encodeURIComponent(viewModel.cycle.id)}/export${query ? `?${query}` : ''}`,
+        {
+          cache: 'no-store',
+        }
+      )
       if (!response.ok) {
         const json = (await response.json().catch(() => null)) as { error?: { message?: string } } | null
         throw new Error(json?.error?.message || '평가 결과 리포트를 다운로드하지 못했습니다.')
@@ -139,7 +190,13 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
   }
 
   async function handleAcknowledge() {
-    if (!viewModel || acknowledged) return
+    if (!viewModel || acknowledged || !viewModel.actions.canAcknowledge) {
+      setLocalNotice({
+        tone: 'info',
+        message: acknowledgeDisabledReason ?? '?꾩옱 ?곹깭?먯꽌???뺤씤 ?꾨즺濡?泥섎━?????놁뒿?덈떎.',
+      })
+      return
+    }
     setBusyAction('acknowledge')
     try {
       const response = await fetch(`/api/evaluation/results/${encodeURIComponent(viewModel.cycle.id)}/acknowledge`, {
@@ -172,9 +229,13 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
           selectedCycle={selectedCycle}
           availableYears={availableYears}
           availableScopes={availableScopes}
+          employeeOptions={employeeOptions}
+          selectedEmployeeId={selectedEmployeeId}
+          canSelectEmployee={props.canSelectEmployee}
           onYearChange={handleYearChange}
           onScopeChange={handleScopeChange}
           onCycleChange={handleCycleChange}
+          onEmployeeChange={handleEmployeeChange}
         />
         {loadAlerts}
         <StatePanel state={props.state} message={props.message} />
@@ -191,13 +252,18 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
         cycleOptions={scopeOptions}
         availableYears={availableYears}
         availableScopes={availableScopes}
+        employeeOptions={employeeOptions}
+        selectedEmployeeId={selectedEmployeeId}
+        canSelectEmployee={props.canSelectEmployee}
         selectedCycle={selectedCycle}
         onYearChange={handleYearChange}
         onScopeChange={handleScopeChange}
         onCycleChange={handleCycleChange}
+        onEmployeeChange={handleEmployeeChange}
         onShowEvidence={() => setActiveTab('evidence')}
         onDownloadPdf={handleDownloadPdf}
         downloadPending={busyAction === 'download'}
+        downloadDisabledReason={exportDisabledReason}
       />
       {loadAlerts}
       {localNotice ? <Banner tone={localNotice.tone} message={localNotice.message} /> : null}
@@ -205,6 +271,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
         viewModel={viewModel}
         acknowledged={acknowledged}
         acknowledgePending={busyAction === 'acknowledge'}
+        acknowledgeDisabledReason={acknowledgeDisabledReason}
         onAcknowledge={handleAcknowledge}
       />
       <EvaluationResultsTabs activeTab={activeTab} onChange={setActiveTab} />
@@ -240,24 +307,25 @@ function PageHeader({ cycleOptions, selectedCycleId }: { cycleOptions: Evaluatio
   )
 }
 
-function ScopeSelectors({ cycleOptions, selectedCycle, availableYears, availableScopes, onYearChange, onScopeChange, onCycleChange }: { cycleOptions: EvaluationResultPageData['availableCycles']; selectedCycle?: EvaluationResultPageData['availableCycles'][number]; availableYears: number[]; availableScopes: Array<{ key: string; organizationName: string; departmentName: string }>; onYearChange: (year: number) => void; onScopeChange: (scopeKey: string) => void; onCycleChange: (cycleId: string) => void }) {
+function ScopeSelectors({ cycleOptions, selectedCycle, availableYears, availableScopes, employeeOptions, selectedEmployeeId, canSelectEmployee, onYearChange, onScopeChange, onCycleChange, onEmployeeChange }: { cycleOptions: EvaluationResultPageData['availableCycles']; selectedCycle?: EvaluationResultPageData['availableCycles'][number]; availableYears: number[]; availableScopes: Array<{ key: string; organizationName: string; departmentName: string }>; employeeOptions: EvaluationResultPageData['employeeOptions']; selectedEmployeeId?: string; canSelectEmployee: boolean; onYearChange: (year: number) => void; onScopeChange: (scopeKey: string) => void; onCycleChange: (cycleId: string) => void; onEmployeeChange: (employeeId: string) => void }) {
   const selectedScopeKey = selectedCycle ? `${selectedCycle.organizationName}__${selectedCycle.departmentName}` : availableScopes[0]?.key ?? ''
   const filteredCycles = cycleOptions.filter((cycle) => cycle.year === selectedCycle?.year && `${cycle.organizationName}__${cycle.departmentName}` === selectedScopeKey)
   return (
-    <div className="grid gap-3 md:grid-cols-3">
+    <div className="grid gap-3 md:grid-cols-4">
       <SelectorCard label="연도" value={selectedCycle?.year ? String(selectedCycle.year) : ''} options={availableYears.map((year) => ({ value: String(year), label: `${year}년` }))} onChange={(value) => onYearChange(Number(value))} />
       <SelectorCard label="주기" value={selectedCycle?.id ?? ''} options={(filteredCycles.length ? filteredCycles : selectedCycle ? [selectedCycle] : []).map((cycle) => ({ value: cycle.id, label: cycle.name }))} onChange={onCycleChange} />
       <SelectorCard label="조직" value={selectedScopeKey} options={availableScopes.map((scope) => ({ value: scope.key, label: `${scope.organizationName} / ${scope.departmentName}` }))} onChange={onScopeChange} />
+      <SelectorCard label="??곸옄" value={selectedEmployeeId ?? ''} options={employeeOptions.map((employee) => ({ value: employee.id, label: `${employee.name} / ${employee.departmentName}` }))} onChange={onEmployeeChange} disabled={!canSelectEmployee || employeeOptions.length <= 1} />
     </div>
   )
 }
 
-function EvaluationResultsHero({ viewModel, cycleOptions, availableYears, availableScopes, selectedCycle, onYearChange, onScopeChange, onCycleChange, onShowEvidence, onDownloadPdf, downloadPending }: { viewModel: EvaluationResultViewModel; cycleOptions: EvaluationResultPageData['availableCycles']; availableYears: number[]; availableScopes: Array<{ key: string; organizationName: string; departmentName: string }>; selectedCycle?: EvaluationResultPageData['availableCycles'][number]; onYearChange: (year: number) => void; onScopeChange: (scopeKey: string) => void; onCycleChange: (cycleId: string) => void; onShowEvidence: () => void; onDownloadPdf: () => void; downloadPending?: boolean }) {
+function EvaluationResultsHero({ viewModel, cycleOptions, availableYears, availableScopes, employeeOptions, selectedEmployeeId, canSelectEmployee, selectedCycle, onYearChange, onScopeChange, onCycleChange, onEmployeeChange, onShowEvidence, onDownloadPdf, downloadPending, downloadDisabledReason }: { viewModel: EvaluationResultViewModel; cycleOptions: EvaluationResultPageData['availableCycles']; availableYears: number[]; availableScopes: Array<{ key: string; organizationName: string; departmentName: string }>; employeeOptions: EvaluationResultPageData['employeeOptions']; selectedEmployeeId?: string; canSelectEmployee: boolean; selectedCycle?: EvaluationResultPageData['availableCycles'][number]; onYearChange: (year: number) => void; onScopeChange: (scopeKey: string) => void; onCycleChange: (cycleId: string) => void; onEmployeeChange: (employeeId: string) => void; onShowEvidence: () => void; onDownloadPdf: () => void; downloadPending?: boolean; downloadDisabledReason?: string }) {
   return (
     <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#ffffff_45%,#f9fafb_100%)] p-6 shadow-sm lg:p-8">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-5">
-          <ScopeSelectors cycleOptions={cycleOptions} selectedCycle={selectedCycle} availableYears={availableYears} availableScopes={availableScopes} onYearChange={onYearChange} onScopeChange={onScopeChange} onCycleChange={onCycleChange} />
+          <ScopeSelectors cycleOptions={cycleOptions} selectedCycle={selectedCycle} availableYears={availableYears} availableScopes={availableScopes} employeeOptions={employeeOptions} selectedEmployeeId={selectedEmployeeId} canSelectEmployee={canSelectEmployee} onYearChange={onYearChange} onScopeChange={onScopeChange} onCycleChange={onCycleChange} onEmployeeChange={onEmployeeChange} />
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={viewModel.cycle.status} />
             <InfoPill label={viewModel.summary.calibrationAdjusted ? '캘리브레이션 반영' : '캘리브레이션 없음'} />
@@ -277,7 +345,7 @@ function EvaluationResultsHero({ viewModel, cycleOptions, availableYears, availa
           </div>
         </div>
         <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <ActionButton icon={<Download className="h-4 w-4" />} label={downloadPending ? 'PDF 다운로드 중...' : 'PDF 다운로드'} onClick={onDownloadPdf} disabled={downloadPending} />
+          <ActionButton icon={<Download className="h-4 w-4" />} label={downloadPending ? 'PDF 다운로드 중...' : 'PDF 다운로드'} onClick={onDownloadPdf} disabled={downloadPending || !viewModel.actions.canExport} title={!viewModel.actions.canExport ? downloadDisabledReason : undefined} />
           <ActionLink icon={<FileSearch className="h-4 w-4" />} label="이의 신청하기" href="/evaluation/appeal" description={viewModel.cycle.status === 'APPEAL_OPEN' ? '현재 이의 신청이 가능합니다.' : '이의 신청 화면으로 이동합니다.'} />
           <ActionButton icon={<Layers3 className="h-4 w-4" />} label="상세 근거 보기" onClick={onShowEvidence} />
           <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600"><div className="font-semibold text-slate-900">결과 해석</div><p className="mt-2 leading-6">{viewModel.overview.interpretation}</p></div>
@@ -287,14 +355,32 @@ function EvaluationResultsHero({ viewModel, cycleOptions, availableYears, availa
   )
 }
 
-function EvaluationResultsSummaryCards({ viewModel, acknowledged, acknowledgePending, onAcknowledge }: { viewModel: EvaluationResultViewModel; acknowledged: boolean; acknowledgePending?: boolean; onAcknowledge: () => void }) {
+function EvaluationResultsSummaryCards({
+  viewModel,
+  acknowledged,
+  acknowledgePending,
+  acknowledgeDisabledReason,
+  onAcknowledge,
+}: {
+  viewModel: EvaluationResultViewModel
+  acknowledged: boolean
+  acknowledgePending?: boolean
+  acknowledgeDisabledReason?: string
+  onAcknowledge: () => void
+}) {
   const deltaLabel = viewModel.summary.deltaFromPrevious !== undefined ? `${viewModel.summary.deltaFromPrevious > 0 ? '+' : ''}${viewModel.summary.deltaFromPrevious.toFixed(1)}점` : '비교 데이터 없음'
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <SummaryCard icon={<Award className="h-5 w-5" />} label="최종 등급" value={viewModel.summary.finalGrade} description="최종 공개된 등급 기준입니다." />
       <SummaryCard icon={<BarChart3 className="h-5 w-5" />} label="총점" value={`${viewModel.summary.totalScore.toFixed(1)}점`} description={viewModel.summary.percentileLabel ?? '조직 내 비교 정보 준비 중'} />
       <SummaryCard icon={<TrendingUp className="h-5 w-5" />} label="직전 주기 대비" value={deltaLabel} description={viewModel.summary.previousGrade ? `직전 등급 ${viewModel.summary.previousGrade}` : '직전 등급 데이터 없음'} />
-      <NextActionCard viewModel={viewModel} acknowledged={acknowledged} acknowledgePending={acknowledgePending} onAcknowledge={onAcknowledge} />
+      <NextActionCard
+        viewModel={viewModel}
+        acknowledged={acknowledged}
+        acknowledgePending={acknowledgePending}
+        acknowledgeDisabledReason={acknowledgeDisabledReason}
+        onAcknowledge={onAcknowledge}
+      />
     </section>
   )
 }
@@ -323,13 +409,16 @@ function NextActionCard({
   viewModel,
   acknowledged,
   acknowledgePending,
+  acknowledgeDisabledReason,
   onAcknowledge,
 }: {
   viewModel: EvaluationResultViewModel
   acknowledged: boolean
   acknowledgePending?: boolean
+  acknowledgeDisabledReason?: string
   onAcknowledge: () => void
 }) {
+  const acknowledgeBlocked = acknowledged || acknowledgePending || !viewModel.actions.canAcknowledge
   return (
     <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
       <div className="flex items-center gap-2 text-blue-800">
@@ -342,7 +431,8 @@ function NextActionCard({
           done={acknowledged}
           pending={acknowledgePending}
           action={acknowledged ? '확인 완료' : acknowledgePending ? '확인 중...' : '확인 체크'}
-          onClick={acknowledged || acknowledgePending ? undefined : onAcknowledge}
+          disabledReason={acknowledgeBlocked ? acknowledgeDisabledReason : undefined}
+          onClick={acknowledgeBlocked ? undefined : onAcknowledge}
         />
         <ActionChecklistRow label="이의 신청 가능 여부" done={viewModel.cycle.status === 'APPEAL_OPEN'} href="/evaluation/appeal" action="이동" />
         <ActionChecklistRow label="성장 계획 확인" done={false} href="/evaluation/workbench" action="열기" />
@@ -429,11 +519,28 @@ function LoadAlerts(props: {
   )
 }
 
-function SelectorCard({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
+function SelectorCard({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  label: string
+  value: string
+  options: Array<{ value: string; label: string }>
+  onChange: (value: string) => void
+  disabled?: boolean
+}) {
   return (
     <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900">
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+        className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
+      >
         {options.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
@@ -442,14 +549,30 @@ function SelectorCard({ label, value, options, onChange }: { label: string; valu
   )
 }
 
-function ActionChecklistRow({ label, done, pending, action, href, onClick }: { label: string; done: boolean; pending?: boolean; action: string; href?: string; onClick?: () => void }) {
+function ActionChecklistRow({
+  label,
+  done,
+  pending,
+  action,
+  href,
+  onClick,
+  disabledReason,
+}: {
+  label: string
+  done: boolean
+  pending?: boolean
+  action: string
+  href?: string
+  onClick?: () => void
+  disabledReason?: string
+}) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-3 py-3">
       <div className="font-medium">{label}</div>
       {href ? (
         <Link href={href} className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700">{action}</Link>
       ) : (
-        <button type="button" onClick={onClick} disabled={pending || !onClick} className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60">{done ? '완료' : action}</button>
+        <button type="button" onClick={onClick} disabled={pending || !onClick} title={disabledReason} className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-60">{done ? '완료' : action}</button>
       )}
     </div>
   )
@@ -495,8 +618,8 @@ function TimelineItem({ title, description, meta }: { title: string; description
   return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between"><div className="font-medium text-slate-900">{title}</div>{meta ? <div className="text-xs text-slate-500">{meta}</div> : null}</div><p className="mt-2 text-sm leading-6 text-slate-600">{description}</p></div>
 }
 
-function ActionButton({ icon, label, onClick, disabled }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean }) {
-  return <button type="button" onClick={onClick} disabled={disabled} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">{icon}{label}</button>
+function ActionButton({ icon, label, onClick, disabled, title }: { icon: React.ReactNode; label: string; onClick: () => void; disabled?: boolean; title?: string }) {
+  return <button type="button" onClick={onClick} disabled={disabled} title={title} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">{icon}{label}</button>
 }
 
 function ActionLink({ icon, label, href, description }: { icon: React.ReactNode; label: string; href: string; description: string }) {
@@ -504,7 +627,7 @@ function ActionLink({ icon, label, href, description }: { icon: React.ReactNode;
 }
 
 function StatePanel({ state, message }: { state: EvaluationResultPageData['state']; message?: string }) {
-  const config = state === 'hidden' ? { title: '아직 결과가 공개되지 않았습니다.', tone: 'amber' } : state === 'permission-denied' ? { title: '결과를 확인할 권한이 없습니다.', tone: 'rose' } : state === 'error' ? { title: '평가 결과를 불러오지 못했습니다.', tone: 'rose' } : { title: '표시할 결과가 없습니다.', tone: 'slate' }
+  const config = state === 'unpublished' ? { title: '아직 결과가 공개되지 않았습니다.', tone: 'amber' } : state === 'permission-denied' ? { title: '결과를 확인할 권한이 없습니다.', tone: 'rose' } : state === 'error' ? { title: '평가 결과를 불러오지 못했습니다.', tone: 'rose' } : { title: '표시할 결과가 없습니다.', tone: 'slate' }
   const toneClass = config.tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-900' : config.tone === 'rose' ? 'border-rose-200 bg-rose-50 text-rose-900' : 'border-slate-200 bg-slate-50 text-slate-800'
   return <section className={`rounded-2xl border p-6 shadow-sm ${toneClass}`}><div className="text-lg font-semibold">{config.title}</div><p className="mt-2 text-sm leading-6">{message || '현재 상태를 다시 확인해 주세요.'}</p></section>
 }

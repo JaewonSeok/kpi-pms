@@ -79,7 +79,7 @@ type ReviewFormState = {
 function initialTabFor(data: AiCompetencyPageData): TabKey {
   if (data.permissions?.canManageCycles) return 'admin'
   if (data.employeeView) return 'assessment'
-  if (data.reviewerView?.queue.length) return 'reviewer'
+  if (data.reviewerView) return 'reviewer'
   if (data.executiveView) return 'executive'
   return 'overview'
 }
@@ -122,8 +122,17 @@ function buildCriterionDrafts(
   })
 }
 
-function buildReviewForm(data: AiCompetencyPageData): ReviewFormState {
-  const first = data.reviewerView?.queue[0]
+function findReviewItem(
+  data: AiCompetencyPageData,
+  preferredSubmissionId?: string
+): NonNullable<AiCompetencyPageData['reviewerView']>['queue'][number] | undefined {
+  const queue = data.reviewerView?.queue ?? []
+  if (!queue.length) return undefined
+  return queue.find((item) => item.submissionId === preferredSubmissionId) ?? queue[0]
+}
+
+function buildReviewForm(data: AiCompetencyPageData, preferredSubmissionId?: string): ReviewFormState {
+  const first = findReviewItem(data, preferredSubmissionId)
   return {
     submissionId: first?.submissionId ?? '',
     decision: first?.existingDecision ?? 'PASS',
@@ -180,7 +189,7 @@ function tabsFor(data: AiCompetencyPageData): Array<{ key: TabKey; label: string
     tabs.push({ key: 'second-round', label: '2차 실무인증' })
     tabs.push({ key: 'certificate', label: '외부자격 인정' })
   }
-  if (data.reviewerView?.queue.length) tabs.push({ key: 'reviewer', label: '리뷰어 심사' })
+  if (data.reviewerView) tabs.push({ key: 'reviewer', label: '리뷰어 심사' })
   if (data.permissions?.canManageCycles) tabs.push({ key: 'admin', label: '관리자 운영' })
   if (data.executiveView) tabs.push({ key: 'executive', label: '보고/분포' })
   return tabs
@@ -207,7 +216,7 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
     setSecondRoundFiles([])
     setCertForm(buildCertForm(data))
     setCertFile(null)
-    setReviewForm(buildReviewForm(data))
+    setReviewForm((current) => buildReviewForm(data, current.submissionId))
     const allowedTabs = tabsFor(data).map((item) => item.key)
     setActiveTab((current) => (allowedTabs.includes(current) ? current : initialTabFor(data)))
   }, [data])
@@ -279,13 +288,44 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
     }) ?? []
 
   const selectedReviewItem = data.reviewerView?.queue.find((item) => item.submissionId === reviewForm.submissionId)
-  const canSubmitSecondRound =
-    Boolean(data.employeeView?.assignment?.secondRoundVolunteer) &&
-    (data.employeeView?.secondRound.eligible ||
-      data.employeeView?.secondRound.application?.status === 'REVISE_REQUESTED')
+  const attemptStatus = data.employeeView?.attempt?.status
+  const attemptScore = data.employeeView?.result?.firstRoundScore ?? data.employeeView?.attempt?.totalScore
+  const isAttemptEditable = attemptStatus === 'IN_PROGRESS'
+  const secondRoundApplication = data.employeeView?.secondRound.application
+  const canSubmitSecondRound = data.employeeView?.secondRound.canSubmit ?? false
+  const secondRoundMessage =
+    data.employeeView?.secondRound.submitMessage ??
+    '1차 합격자 중 신청 가능자로 배정된 경우에만 2차 실무인증을 제출할 수 있습니다.'
+  const hasCertMasters = (data.employeeView?.externalCerts.masters.length ?? 0) > 0
+  const selectedCertMaster =
+    data.employeeView?.externalCerts.masters.find((master) => master.id === certForm.certificateId) ??
+    data.employeeView?.externalCerts.masters[0]
+  const canSubmitCertClaim =
+    Boolean(data.employeeView?.assignment) &&
+    hasCertMasters &&
+    Boolean(certForm.certificateId) &&
+    Boolean(certFile) &&
+    (!selectedCertMaster?.requiresPolicyAcknowledgement || certForm.policyAcknowledged)
 
   if (data.state === 'permission-denied') {
     return <StateScreen title="접근 권한이 없습니다." description={data.message ?? '권한을 확인해 주세요.'} />
+  }
+  if (data.state === 'setup-required') {
+    return (
+      <StateScreen
+        title={
+          data.permissions?.canManageCycles
+            ? 'AI 활용능력 평가 운영 설정이 필요합니다.'
+            : '현재 AI 활용능력 평가 운영이 아직 준비되지 않았습니다.'
+        }
+        description={
+          data.message ??
+          (data.permissions?.canManageCycles
+            ? '운영을 시작하려면 평가 사이클과 대상자 배정, 기본 운영 설정을 먼저 완료해 주세요.'
+            : '관리자가 AI 활용능력 평가 사이클을 준비하면 이 화면에서 1차, 2차, 자격 인정 현황을 확인할 수 있습니다.')
+        }
+      />
+    )
   }
   if (data.state === 'error') {
     return <StateScreen title="AI 활용능력 평가 화면을 불러오지 못했습니다." description={data.message ?? '잠시 후 다시 시도해 주세요.'} />
@@ -388,10 +428,12 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
               <div className="grid gap-4 md:grid-cols-2">
                 <InfoRow label="트랙" value={labelForTrack(data.employeeView.assignment.track)} />
                 <InfoRow label="1차 상태" value={STATUS_LABELS[data.employeeView.attempt?.status ?? 'NOT_STARTED'] ?? '미응시'} />
-                <InfoRow label="1차 점수" value={data.employeeView.result?.firstRoundScore ? `${data.employeeView.result.firstRoundScore}점` : '-'} />
+                <InfoRow label="1차 점수" value={typeof attemptScore === 'number' ? `${attemptScore}점` : '-'} />
+                <InfoRow label="1차 판정" value={data.employeeView.attempt?.passStatus ? STATUS_LABELS[data.employeeView.attempt.passStatus] ?? data.employeeView.attempt.passStatus : '판정 대기'} />
+                <InfoRow label="2차 상태" value={secondRoundApplication ? STATUS_LABELS[secondRoundApplication.status] ?? secondRoundApplication.status : data.employeeView.secondRound.submitMessage ?? '신청 전'} />
                 <InfoRow label="2차 보너스" value={`${data.employeeView.result?.secondRoundBonus ?? 0}점`} />
                 <InfoRow label="외부자격 점수" value={data.employeeView.result?.externalCertMappedScore ? `${data.employeeView.result.externalCertMappedScore}점` : '-'} />
-                <InfoRow label="PMS 반영" value={STATUS_LABELS[data.employeeView.result?.syncState ?? 'PENDING'] ?? '반영 대기'} />
+                <InfoRow label="PMS 반영" value={data.employeeView.result ? STATUS_LABELS[data.employeeView.result.syncState] ?? data.employeeView.result.syncState : '최종 결과 대기'} />
               </div>
             ) : (
               <EmptyBox message="현재 주기에 배정된 AI 활용능력 평가가 없습니다." />
@@ -408,7 +450,13 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
                 </div>
               </div>
             ) : (
-              <EmptyBox message="아직 계산된 결과가 없습니다." />
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                <p className="font-medium text-slate-900">아직 최종 결과가 확정되지 않았습니다.</p>
+                <p className="mt-2">
+                  1차 점수 {typeof attemptScore === 'number' ? `${attemptScore}점` : '미채점'} /
+                  {' '}2차 상태 {secondRoundApplication ? STATUS_LABELS[secondRoundApplication.status] ?? secondRoundApplication.status : '진행 전'}
+                </p>
+              </div>
             )}
           </SectionCard>
         </div>
@@ -431,6 +479,14 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
               {data.employeeView.assessmentPlan?.blueprints.length && !data.employeeView.attempt ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
                   체계표 기준: {data.employeeView.assessmentPlan.blueprints.map((blueprint) => blueprint.blueprintName).join(', ')}. 시험 시작 시 개인별 시험지가 생성되고, 시작 이후에는 문항 구성이 고정됩니다.
+                </div>
+              ) : null}
+              {data.employeeView.attempt ? (
+                <div className="grid gap-3 md:grid-cols-4">
+                  <MetricCard label="응시 상태" value={STATUS_LABELS[data.employeeView.attempt.status] ?? data.employeeView.attempt.status} />
+                  <MetricCard label="총점" value={typeof data.employeeView.attempt.totalScore === 'number' ? `${data.employeeView.attempt.totalScore}점` : '채점 대기'} />
+                  <MetricCard label="합격 여부" value={data.employeeView.attempt.passStatus ? STATUS_LABELS[data.employeeView.attempt.passStatus] ?? data.employeeView.attempt.passStatus : '판정 대기'} />
+                  <MetricCard label="최종 제출" value={formatDateTime(data.employeeView.attempt.submittedAt)} />
                 </div>
               ) : null}
               {!data.employeeView.attempt && (
@@ -461,24 +517,24 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
                     {(question.questionType === 'SINGLE_CHOICE' || question.questionType === 'SCENARIO_JUDGEMENT') &&
                       question.options.map((option) => (
                         <label key={option} className="flex gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                          <input type="radio" name={question.id} checked={answers[question.id] === option} onChange={() => setAnswers((current) => ({ ...current, [question.id]: option }))} />
+                          <input type="radio" name={question.id} checked={answers[question.id] === option} disabled={!isAttemptEditable} onChange={() => setAnswers((current) => ({ ...current, [question.id]: option }))} />
                           <span>{option}</span>
                         </label>
                       ))}
                     {question.questionType === 'MULTIPLE_CHOICE' &&
                       question.options.map((option) => (
                         <label key={option} className="flex gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                          <input type="checkbox" checked={isSelectedMultiAnswer(answers, question.id, option)} onChange={(event) => toggleMultiAnswer(question.id, option, event.target.checked)} />
+                          <input type="checkbox" checked={isSelectedMultiAnswer(answers, question.id, option)} disabled={!isAttemptEditable} onChange={(event) => toggleMultiAnswer(question.id, option, event.target.checked)} />
                           <span>{option}</span>
                         </label>
                       ))}
                     {(question.questionType === 'SHORT_ANSWER' || question.questionType === 'PRACTICAL' || !question.options.length) && (
-                      <textarea className={`${inputClassName} min-h-32`} value={typeof answers[question.id] === 'string' ? answers[question.id] ?? '' : ''} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} />
+                      <textarea className={`${inputClassName} min-h-32`} value={typeof answers[question.id] === 'string' ? answers[question.id] ?? '' : ''} disabled={!isAttemptEditable} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} />
                     )}
                   </div>
                 </div>
               ))}
-              {data.employeeView.attempt && data.employeeView.attempt.status !== 'SCORED' && (
+              {data.employeeView.attempt && isAttemptEditable && (
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
@@ -524,6 +580,13 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
                   </button>
                 </div>
               )}
+              {data.employeeView.attempt && !isAttemptEditable ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                  {data.employeeView.attempt.status === 'SCORED'
+                    ? '1차 공통평가 채점이 완료되어 답안을 수정할 수 없습니다.'
+                    : '1차 공통평가가 제출되어 현재는 답안을 수정할 수 없습니다.'}
+                </div>
+              ) : null}
             </div>
           )}
         </SectionCard>
@@ -541,10 +604,19 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
                     <StatusPill value={data.employeeView.secondRound.application.status} />
                     <span className="text-sm text-slate-600">제출물 {data.employeeView.secondRound.application.artifacts.length}건 / 보너스 {data.employeeView.secondRound.application.aggregatedBonus ?? 0}점</span>
                   </div>
+                  {data.employeeView.secondRound.application.reviews.length ? (
+                    <div className="mt-3 space-y-2 text-sm text-slate-600">
+                      {data.employeeView.secondRound.application.reviews.map((review) => (
+                        <p key={review.reviewerId}>
+                          {review.reviewerName} / {review.decision ? STATUS_LABELS[review.decision] ?? review.decision : '심사 진행 중'}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {!canSubmitSecondRound ? (
-                <EmptyBox message="1차 합격자 중 신청 가능자로 배정된 경우에만 2차 실무인증을 제출할 수 있습니다." />
+                <EmptyBox message={secondRoundMessage} />
               ) : (
                 <form
                   className="grid gap-4"
@@ -572,7 +644,9 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
                     <Field label="민감정보 점검"><textarea className={`${inputClassName} min-h-24`} value={secondRoundForm.sensitiveDataCheck} onChange={(event) => setSecondRoundForm((current) => ({ ...current, sensitiveDataCheck: event.target.value }))} /></Field>
                   </div>
                   <Field label="제출물 첨부"><input type="file" multiple onChange={(event) => setSecondRoundFiles(Array.from(event.target.files ?? []))} /></Field>
-                  <button type="submit" className={primaryButtonClassName} disabled={isPending}>2차 실무인증 제출</button>
+                  <button type="submit" className={primaryButtonClassName} disabled={isPending}>
+                    {secondRoundApplication?.status === 'REVISE_REQUESTED' ? '2차 실무인증 재제출' : '2차 실무인증 제출'}
+                  </button>
                 </form>
               )}
             </div>
@@ -588,12 +662,16 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
             <div className="space-y-6">
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
                 <div className="space-y-3">
-                  {data.employeeView.externalCerts.masters.map((master) => (
-                    <div key={master.id} className="rounded-2xl border border-slate-200 px-4 py-3">
-                      <p className="font-medium text-slate-900">{master.name}</p>
-                      <p className="text-sm text-slate-500">{master.vendor ?? '외부 기관'} / 인정 점수 {master.mappedScore}점</p>
-                    </div>
-                  ))}
+                  {data.employeeView.externalCerts.masters.length ? (
+                    data.employeeView.externalCerts.masters.map((master) => (
+                      <div key={master.id} className="rounded-2xl border border-slate-200 px-4 py-3">
+                        <p className="font-medium text-slate-900">{master.name}</p>
+                        <p className="text-sm text-slate-500">{master.vendor ?? '외부 기관'} / 인정 점수 {master.mappedScore}점</p>
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyBox message="현재 운영 중인 외부자격 인정 기준이 없습니다." />
+                  )}
                 </div>
                 <form
                   className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-5"
@@ -629,7 +707,7 @@ export function AiCompetencyClient(data: AiCompetencyPageData) {
                     <input type="checkbox" checked={certForm.policyAcknowledged} onChange={(event) => setCertForm((current) => ({ ...current, policyAcknowledged: event.target.checked }))} />
                     <span>사내 AI 사용 가이드와 민감정보 처리 정책을 확인했습니다.</span>
                   </label>
-                  <button type="submit" className={primaryButtonClassName} disabled={isPending}>외부자격 인정 요청</button>
+                  <button type="submit" className={primaryButtonClassName} disabled={isPending || !canSubmitCertClaim}>외부자격 인정 요청</button>
                 </form>
               </div>
               <DataTable title="요청 이력" columns={['자격명', '상태', '제출 시각', '인정 점수']} rows={data.employeeView.externalCerts.claims.map((claim) => [claim.certificateName, STATUS_LABELS[claim.status] ?? claim.status, formatDateTime(claim.submittedAt), `${claim.mappedScoreSnapshot}점`])} />

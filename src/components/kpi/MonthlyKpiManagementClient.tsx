@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { type Dispatch, type ReactNode, type SetStateAction, useRef, useState } from 'react'
+import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Bot,
@@ -37,6 +37,13 @@ type BusyState =
   | null
 
 type Banner = { tone: 'success' | 'error' | 'info'; message: string }
+type ActionState = { disabled: boolean; reason?: string }
+type FilterState = {
+  status: string
+  risk: string
+  type: string
+  review: string
+}
 type Draft = {
   actualValue: string
   activityNote: string
@@ -93,6 +100,128 @@ const AI_LABELS: Record<AiAction, string> = {
   'generate-retrospective': '월간 회고 요약',
   'suggest-checkin-agenda': '체크인 아젠다 추천',
   'summarize-evaluation-evidence': '평가 근거 초안',
+}
+
+const DEFAULT_FILTERS: FilterState = {
+  status: 'ALL',
+  risk: 'ALL',
+  type: 'ALL',
+  review: 'ALL',
+}
+
+function hasMeaningfulMonthlyContent(record: MonthlyRecordViewModel | null, draft: Draft | null) {
+  if (!record || !draft) return false
+  if (record.recordId) return true
+  if (draft.actualValue.trim().length > 0) return true
+  if (draft.activityNote.trim().length > 0) return true
+  if (draft.blockerNote.trim().length > 0) return true
+  if (draft.effortNote.trim().length > 0) return true
+  if (draft.attachments.length > 0) return true
+  if (record.linkedCheckins.length > 0) return true
+  return false
+}
+
+function getEditBlockedReason(record: MonthlyRecordViewModel | null, canEdit: boolean) {
+  if (!record) return '입력할 KPI를 먼저 선택하세요.'
+  if (canEdit) return undefined
+  if (record.status === 'SUBMITTED') return '제출된 월간 실적은 리뷰 전까지 수정할 수 없습니다.'
+  if (record.status === 'REVIEWED') return '리뷰가 완료된 월간 실적은 읽기 전용입니다.'
+  if (record.status === 'LOCKED') return '잠금 상태의 월간 실적은 관리자 unlock 후 수정할 수 있습니다.'
+  return '현재 상태에서는 월간 실적을 수정할 수 없습니다.'
+}
+
+function getSubmitBlockedReason(record: MonthlyRecordViewModel | null, canSubmit: boolean, draft: Draft | null) {
+  if (!record) return '제출할 KPI를 먼저 선택하세요.'
+  if (!canSubmit) {
+    if (record.status === 'SUBMITTED') return '이미 제출된 월간 실적입니다.'
+    if (record.status === 'REVIEWED') return '리뷰가 완료된 월간 실적은 다시 제출할 수 없습니다.'
+    if (record.status === 'LOCKED') return '잠금 상태의 월간 실적은 제출할 수 없습니다.'
+    return '현재 상태에서는 제출할 수 없습니다.'
+  }
+
+  if (record.type === 'QUANTITATIVE' && draft?.actualValue.trim() && !Number.isFinite(Number(draft.actualValue))) {
+    return '정량 KPI는 숫자 실적값을 입력해야 합니다.'
+  }
+
+  return undefined
+}
+
+function getReviewActionState(
+  record: MonthlyRecordViewModel | null,
+  canReview: boolean,
+  action: 'REVIEW' | 'REQUEST_UPDATE'
+): ActionState {
+  if (!record?.recordId) {
+    return { disabled: true, reason: '제출된 월간 실적이 있을 때만 리뷰할 수 있습니다.' }
+  }
+
+  if (!canReview) {
+    return { disabled: true, reason: '리뷰 권한이 없습니다.' }
+  }
+
+  if (!['SUBMITTED', 'REVIEWED'].includes(record.status)) {
+    return {
+      disabled: true,
+      reason:
+        action === 'REVIEW'
+          ? '제출된 월간 실적만 리뷰 완료 처리할 수 있습니다.'
+          : '제출된 월간 실적만 보완 요청할 수 있습니다.',
+    }
+  }
+
+  return { disabled: false }
+}
+
+function buildAiActionState(params: {
+  action: AiAction
+  canUseAi: boolean
+  selected: MonthlyRecordViewModel | null
+  selectedDraft: Draft | null
+  canReview: boolean
+}): ActionState {
+  const { action, canUseAi, selected, selectedDraft, canReview } = params
+
+  if (!selected || !selectedDraft) {
+    return { disabled: true, reason: 'KPI를 먼저 선택하세요.' }
+  }
+
+  if (!canUseAi) {
+    return { disabled: true, reason: '현재 환경에서는 AI 보조를 사용할 수 없습니다.' }
+  }
+
+  const hasContent = hasMeaningfulMonthlyContent(selected, selectedDraft)
+  const hasEvidence = selectedDraft.attachments.length > 0
+
+  switch (action) {
+    case 'generate-summary':
+    case 'generate-retrospective':
+    case 'summarize-evaluation-evidence':
+      return hasContent
+        ? { disabled: false }
+        : { disabled: true, reason: '이번 달 실적 입력이나 근거가 있어야 AI 초안을 생성할 수 있습니다.' }
+    case 'explain-risk':
+      return selected.riskFlags.length > 0 || selectedDraft.blockerNote.trim().length > 0
+        ? { disabled: false }
+        : { disabled: true, reason: '위험 신호나 이슈 메모가 있을 때 사용할 수 있습니다.' }
+    case 'generate-review':
+      if (!canReview) {
+        return { disabled: true, reason: '리뷰 권한이 있는 사용자만 사용할 수 있습니다.' }
+      }
+      if (!selected.recordId || !['SUBMITTED', 'REVIEWED'].includes(selected.status)) {
+        return { disabled: true, reason: '제출된 월간 실적을 선택해야 리뷰 초안을 생성할 수 있습니다.' }
+      }
+      return { disabled: false }
+    case 'summarize-evidence':
+      return hasEvidence
+        ? { disabled: false }
+        : { disabled: true, reason: '증빙 자료가 있을 때만 요약할 수 있습니다.' }
+    case 'suggest-checkin-agenda':
+      return hasContent || selected.linkedCheckins.length > 0
+        ? { disabled: false }
+        : { disabled: true, reason: '월간 실적이나 체크인 근거가 있을 때 안건을 제안할 수 있습니다.' }
+    default:
+      return { disabled: false }
+  }
 }
 
 function formatDate(value?: string) {
@@ -209,18 +338,21 @@ function Button({
   disabled,
   variant = 'secondary',
   icon,
+  title,
 }: {
   children: ReactNode
   onClick?: () => void
   disabled?: boolean
   variant?: 'primary' | 'secondary'
   icon?: ReactNode
+  title?: string
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
         variant === 'primary'
           ? 'bg-slate-900 text-white hover:bg-slate-800'
@@ -352,6 +484,7 @@ export function MonthlyKpiManagementClient({
 }: Props) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const previousContextRef = useRef<string | null>(null)
   const [tab, setTab] = useState<TabKey>(
     TABS.some((item) => item.key === initialTab) ? (initialTab as TabKey) : 'entry'
   )
@@ -359,12 +492,7 @@ export function MonthlyKpiManagementClient({
   const [busy, setBusy] = useState<BusyState>(null)
   const [banner, setBanner] = useState<Banner | null>(null)
   const [reviewComment, setReviewComment] = useState('')
-  const [filters, setFilters] = useState({
-    status: 'ALL',
-    risk: 'ALL',
-    type: 'ALL',
-    review: 'ALL',
-  })
+  const [filters, setFilters] = useState({ ...DEFAULT_FILTERS })
   const [lastAiAction, setLastAiAction] = useState<AiAction>('generate-summary')
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
   const [drafts, setDrafts] = useState<Record<string, Draft>>(
@@ -385,6 +513,34 @@ export function MonthlyKpiManagementClient({
     Boolean(selected) &&
     pageData.permissions.canSubmit &&
     ['NOT_STARTED', 'DRAFT'].includes(selected.status)
+  const contextKey = useMemo(
+    () =>
+      `${pageData.selectedScope}:${pageData.selectedEmployeeId}:${pageData.selectedYear}:${pageData.selectedMonth}`,
+    [pageData.selectedEmployeeId, pageData.selectedMonth, pageData.selectedScope, pageData.selectedYear]
+  )
+  const editDisabledReason = getEditBlockedReason(selected, canEdit)
+  const submitDisabledReason = getSubmitBlockedReason(selected, canSubmit, selectedDraft)
+  const reviewActionState = getReviewActionState(selected, pageData.permissions.canReview, 'REVIEW')
+  const requestUpdateActionState = getReviewActionState(selected, pageData.permissions.canReview, 'REQUEST_UPDATE')
+  const aiActionStates = Object.fromEntries(
+    (Object.keys(AI_LABELS) as AiAction[]).map((action) => [
+      action,
+      buildAiActionState({
+        action,
+        canUseAi: pageData.permissions.canUseAi,
+        selected,
+        selectedDraft,
+        canReview: pageData.permissions.canReview,
+      }),
+    ])
+  ) as Record<AiAction, ActionState>
+  const copyPreviousReason =
+    !selected
+      ? 'KPI를 먼저 선택하세요.'
+      : !selected.previousRecord
+        ? '이전 달 실적이 없어 불러올 값이 없습니다.'
+        : editDisabledReason
+  const uploadDisabledReason = editDisabledReason
 
   const visibleRecords = pageData.records.filter((record) => {
     if (filters.status !== 'ALL' && record.status !== filters.status) return false
@@ -396,7 +552,45 @@ export function MonthlyKpiManagementClient({
     return true
   })
 
-  function refreshRoute(next: {
+  useEffect(() => {
+    setDrafts(Object.fromEntries(pageData.records.map((record) => [record.id, createDraft(record)])))
+    setSelectedId((current) => {
+      const recordIds = new Set(pageData.records.map((record) => record.id))
+      if (initialRecordId && recordIds.has(initialRecordId)) {
+        return initialRecordId
+      }
+      if (current && recordIds.has(current)) {
+        return current
+      }
+      return pageData.records[0]?.id ?? ''
+    })
+  }, [initialRecordId, pageData.records])
+
+  useEffect(() => {
+    if (previousContextRef.current === contextKey) {
+      return
+    }
+    previousContextRef.current = contextKey
+    setTab('entry')
+    setSelectedId(() => {
+      const recordIds = new Set(pageData.records.map((record) => record.id))
+      if (initialRecordId && recordIds.has(initialRecordId)) {
+        return initialRecordId
+      }
+      return pageData.records[0]?.id ?? ''
+    })
+    setReviewComment('')
+    setAiPreview(null)
+    setBanner(null)
+    setFilters({ ...DEFAULT_FILTERS })
+  }, [contextKey, initialRecordId, pageData.records])
+
+  useEffect(() => {
+    setReviewComment('')
+    setAiPreview(null)
+  }, [selected?.id])
+
+  function handleRouteSelection(next: {
     year?: number
     month?: string
     scope?: string
@@ -404,6 +598,9 @@ export function MonthlyKpiManagementClient({
     tab?: TabKey
     recordId?: string
   }) {
+    if (next.tab) {
+      setTab(next.tab)
+    }
     const query = buildQuery({
       year: String(next.year ?? pageData.selectedYear),
       month: next.month ?? pageData.selectedMonth,
@@ -456,12 +653,22 @@ export function MonthlyKpiManagementClient({
   async function saveRecord(mode: 'draft' | 'submit') {
     if (!selected || !selectedDraft) return
 
-    if (mode === 'draft' && !canEdit) {
+    if (mode === 'draft' && editDisabledReason) {
+      setBanner({ tone: 'info', message: editDisabledReason })
+      return
+    }
+
+    if (mode === 'submit' && submitDisabledReason) {
+      setBanner({ tone: 'info', message: submitDisabledReason })
+      return
+    }
+
+    if (mode === 'draft' && editDisabledReason) {
       setBanner({ tone: 'info', message: '현재 상태에서는 임시저장을 할 수 없습니다.' })
       return
     }
 
-    if (mode === 'submit' && !canSubmit) {
+    if (mode === 'submit' && submitDisabledReason) {
       setBanner({ tone: 'info', message: '현재 상태에서는 제출할 수 없습니다.' })
       return
     }
@@ -532,7 +739,8 @@ export function MonthlyKpiManagementClient({
         tone: 'success',
         message: mode === 'draft' ? '월간 실적을 임시저장했습니다.' : '월간 실적을 제출했습니다.',
       })
-      refreshRoute({ recordId, tab })
+      setSelectedId(recordId)
+      handleRouteSelection({ recordId, tab })
       router.refresh()
     } catch (error) {
       setBanner({
@@ -545,6 +753,12 @@ export function MonthlyKpiManagementClient({
   }
 
   async function handleReview(action: 'REVIEW' | 'REQUEST_UPDATE') {
+    const actionState = getReviewActionState(selected, pageData.permissions.canReview, action)
+    if (actionState.disabled) {
+      setBanner({ tone: 'info', message: actionState.reason ?? '현재 상태에서는 리뷰할 수 없습니다.' })
+      return
+    }
+
     if (!selected?.recordId) {
       setBanner({ tone: 'info', message: '먼저 제출된 월간 실적이 있어야 합니다.' })
       return
@@ -585,6 +799,12 @@ export function MonthlyKpiManagementClient({
   }
 
   async function runAi(action: AiAction) {
+    const actionState = aiActionStates[action]
+    if (actionState?.disabled) {
+      setBanner({ tone: 'info', message: actionState.reason ?? '현재 상태에서는 AI 보조를 사용할 수 없습니다.' })
+      return
+    }
+
     if (!selected || !selectedDraft) {
       setBanner({ tone: 'info', message: '먼저 KPI를 선택해 주세요.' })
       return
@@ -754,10 +974,10 @@ export function MonthlyKpiManagementClient({
           </section>
           <RecoveryScopeControls
             pageData={pageData}
-            onChangeYear={(year) => refreshRoute({ year })}
-            onChangeMonth={(month) => refreshRoute({ month })}
-            onChangeScope={(scope) => refreshRoute({ scope })}
-            onChangeEmployee={(employeeId) => refreshRoute({ scope: 'employee', employeeId })}
+            onChangeYear={(year) => handleRouteSelection({ year, tab: 'entry', recordId: '' })}
+            onChangeMonth={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
+            onChangeScope={(scope) => handleRouteSelection({ scope, tab: 'entry', recordId: '' })}
+            onChangeEmployee={(employeeId) => handleRouteSelection({ scope: 'employee', employeeId, tab: 'entry', recordId: '' })}
           />
           {loadAlerts}
           <StatePanel tone="neutral" title={title} message={pageData.message || '현재 상태를 다시 확인해 주세요.'} />
@@ -821,7 +1041,7 @@ export function MonthlyKpiManagementClient({
                 </span>
                 <select
                   value={String(pageData.selectedYear)}
-                  onChange={(event) => refreshRoute({ year: Number(event.target.value) })}
+                  onChange={(event) => handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })}
                   className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
                 >
                   {pageData.availableYears.map((year) => (
@@ -838,7 +1058,7 @@ export function MonthlyKpiManagementClient({
                 </span>
                 <select
                   value={pageData.selectedMonth}
-                  onChange={(event) => refreshRoute({ month: event.target.value })}
+                  onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}
                   className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
                 >
                   {Array.from({ length: 12 }, (_, index) => {
@@ -858,7 +1078,7 @@ export function MonthlyKpiManagementClient({
                 </span>
                 <select
                   value={pageData.selectedScope}
-                  onChange={(event) => refreshRoute({ scope: event.target.value })}
+                  onChange={(event) => handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })}
                   className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
                 >
                   <option value="self">내 실적</option>
@@ -874,9 +1094,11 @@ export function MonthlyKpiManagementClient({
                 <select
                   value={pageData.selectedEmployeeId}
                   onChange={(event) =>
-                    refreshRoute({
+                    handleRouteSelection({
                       scope: 'employee',
                       employeeId: event.target.value,
+                      tab: 'entry',
+                      recordId: '',
                     })
                   }
                   disabled={pageData.selectedScope === 'self'}
@@ -922,7 +1144,8 @@ export function MonthlyKpiManagementClient({
             <Button
               icon={<Save className="h-4 w-4" />}
               onClick={() => void saveRecord('draft')}
-              disabled={!selected || busy !== null || !canEdit}
+              disabled={!selected || busy !== null || Boolean(editDisabledReason)}
+              title={editDisabledReason}
             >
               임시저장
             </Button>
@@ -930,11 +1153,17 @@ export function MonthlyKpiManagementClient({
               icon={<CheckCircle2 className="h-4 w-4" />}
               variant="primary"
               onClick={() => void saveRecord('submit')}
-              disabled={!selected || busy !== null || !canSubmit}
+              disabled={!selected || busy !== null || Boolean(submitDisabledReason)}
+              title={submitDisabledReason}
             >
               제출
             </Button>
-            <Button icon={<History className="h-4 w-4" />} onClick={handleCopyPreviousMonth} disabled={busy !== null}>
+            <Button
+              icon={<History className="h-4 w-4" />}
+              onClick={handleCopyPreviousMonth}
+              disabled={busy !== null || Boolean(copyPreviousReason)}
+              title={copyPreviousReason}
+            >
               이전월 값 불러오기
             </Button>
             <Button
@@ -946,7 +1175,8 @@ export function MonthlyKpiManagementClient({
                 }
                 fileInputRef.current?.click()
               }}
-              disabled={!selected || busy !== null}
+              disabled={!selected || busy !== null || Boolean(uploadDisabledReason)}
+              title={uploadDisabledReason}
             >
               증빙 첨부
             </Button>
@@ -1018,7 +1248,12 @@ export function MonthlyKpiManagementClient({
           selectedDraft={selectedDraft}
           canEdit={canEdit}
           canSubmit={canSubmit}
-          canUseAi={pageData.permissions.canUseAi}
+          editDisabledReason={editDisabledReason}
+          submitDisabledReason={submitDisabledReason}
+          reviewActionState={reviewActionState}
+          requestUpdateActionState={requestUpdateActionState}
+          generateSummaryActionState={aiActionStates['generate-summary']}
+          uploadDisabledReason={uploadDisabledReason}
           busy={busy}
           updateDraft={updateDraft}
           reviewComment={reviewComment}
@@ -1077,6 +1312,7 @@ export function MonthlyKpiManagementClient({
           aiLogs={pageData.aiLogs}
           aiPreview={aiPreview}
           lastAiAction={lastAiAction}
+          actionStates={aiActionStates}
           busy={busy}
           onRunAi={(action) => void runAi(action)}
           onApprove={() => void handleAiDecision('approve')}
@@ -1117,7 +1353,12 @@ function EntryTab({
   selectedDraft,
   canEdit,
   canSubmit,
-  canUseAi,
+  editDisabledReason,
+  submitDisabledReason,
+  reviewActionState,
+  requestUpdateActionState,
+  generateSummaryActionState,
+  uploadDisabledReason,
   busy,
   updateDraft,
   reviewComment,
@@ -1140,7 +1381,12 @@ function EntryTab({
   selectedDraft: Draft | null
   canEdit: boolean
   canSubmit: boolean
-  canUseAi: boolean
+  editDisabledReason?: string
+  submitDisabledReason?: string
+  reviewActionState: ActionState
+  requestUpdateActionState: ActionState
+  generateSummaryActionState: ActionState
+  uploadDisabledReason?: string
   busy: BusyState
   updateDraft: (patch: Partial<Draft>) => void
   reviewComment: string
@@ -1212,12 +1458,7 @@ function EntryTab({
           <div className="flex items-end">
             <Button
               onClick={() =>
-                setFilters({
-                  status: 'ALL',
-                  risk: 'ALL',
-                  type: 'ALL',
-                  review: 'ALL',
-                })
+                setFilters({ ...DEFAULT_FILTERS })
               }
             >
               초기화
@@ -1366,7 +1607,12 @@ function EntryTab({
                   <p className="text-sm font-semibold text-slate-900">증빙 첨부</p>
                   <p className="mt-1 text-xs text-slate-500">제출 전까지 파일 추가와 삭제가 가능합니다.</p>
                 </div>
-                <Button icon={<FilePlus2 className="h-4 w-4" />} onClick={onUploadClick} disabled={!canEdit}>
+                <Button
+                  icon={<FilePlus2 className="h-4 w-4" />}
+                  onClick={onUploadClick}
+                  disabled={!canEdit}
+                  title={uploadDisabledReason}
+                >
                   증빙 추가
                 </Button>
               </div>
@@ -1418,10 +1664,19 @@ function EntryTab({
                   className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900"
                 />
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button variant="primary" onClick={onReview} disabled={busy !== null}>
+                  <Button
+                    variant="primary"
+                    onClick={onReview}
+                    disabled={busy !== null || reviewActionState.disabled}
+                    title={reviewActionState.reason}
+                  >
                     리뷰 완료
                   </Button>
-                  <Button onClick={onRequestUpdate} disabled={busy !== null}>
+                  <Button
+                    onClick={onRequestUpdate}
+                    disabled={busy !== null || requestUpdateActionState.disabled}
+                    title={requestUpdateActionState.reason}
+                  >
                     보완 요청
                   </Button>
                 </div>
@@ -1429,7 +1684,12 @@ function EntryTab({
             ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <Button icon={<Save className="h-4 w-4" />} onClick={onSaveDraft} disabled={!canEdit || busy !== null}>
+              <Button
+                icon={<Save className="h-4 w-4" />}
+                onClick={onSaveDraft}
+                disabled={!canEdit || busy !== null}
+                title={editDisabledReason}
+              >
                 임시저장
               </Button>
               <Button
@@ -1437,13 +1697,15 @@ function EntryTab({
                 variant="primary"
                 onClick={onSubmit}
                 disabled={!canSubmit || busy !== null}
+                title={submitDisabledReason}
               >
                 제출
               </Button>
               <Button
                 icon={<Sparkles className="h-4 w-4" />}
                 onClick={onRunAi}
-                disabled={busy !== null || !canUseAi}
+                disabled={busy !== null || generateSummaryActionState.disabled}
+                title={generateSummaryActionState.reason}
               >
                 AI preview
               </Button>
@@ -1648,6 +1910,7 @@ function AiTab({
   aiLogs,
   aiPreview,
   lastAiAction,
+  actionStates,
   busy,
   onRunAi,
   onApprove,
@@ -1656,6 +1919,7 @@ function AiTab({
   aiLogs: MonthlyPageData['aiLogs']
   aiPreview: AiPreview | null
   lastAiAction: AiAction
+  actionStates: Record<AiAction, ActionState>
   busy: BusyState
   onRunAi: (action: AiAction) => void
   onApprove: () => void
@@ -1674,13 +1938,17 @@ function AiTab({
               key={action}
               type="button"
               onClick={() => onRunAi(action)}
-              disabled={busy !== null}
+              disabled={busy !== null || actionStates[action]?.disabled}
+              title={actionStates[action]?.reason}
               className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-left transition hover:bg-slate-50 disabled:opacity-60"
             >
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <Bot className="h-4 w-4 text-slate-500" />
                 {AI_LABELS[action]}
               </div>
+              {actionStates[action]?.reason ? (
+                <p className="mt-2 text-xs text-slate-500">{actionStates[action]?.reason}</p>
+              ) : null}
             </button>
           ))}
         </div>

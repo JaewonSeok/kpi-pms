@@ -34,7 +34,7 @@ function readFirstValue(env: EnvMap, keys: string[]): ResolvedEnvValue {
 }
 
 export function readAiAssistEnv(env: EnvMap = process.env) : AiAssistEnv {
-  const enabledSetting = readFirstValue(env, ['AI_ASSIST_ENABLED', 'FEATURE_AI_ASSIST', 'AI_FEATURE_ENABLED'])
+  const enabledSetting = readFirstValue(env, ['AI_ASSIST_ENABLED', 'AI_FEATURE_ENABLED', 'FEATURE_AI_ASSIST'])
   const modelSetting = readFirstValue(env, ['OPENAI_MODEL', 'OPENAI_RESPONSES_MODEL'])
   const baseUrlSetting = readFirstValue(env, ['OPENAI_BASE_URL'])
 

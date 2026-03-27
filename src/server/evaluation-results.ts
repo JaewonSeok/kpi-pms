@@ -6,17 +6,26 @@ import type {
   EvalStage,
   Position,
   Prisma,
+  SystemRole,
 } from '@prisma/client'
 import { calcPdcaScore } from '@/lib/utils'
 import { prisma } from '@/lib/prisma'
+import { normalizeAccessibleDepartmentIds } from '@/lib/personal-kpi-access'
 import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
 
-export type ResultVisibilityState = 'ready' | 'empty' | 'hidden' | 'permission-denied' | 'error'
+export type ResultVisibilityState = 'ready' | 'empty' | 'unpublished' | 'permission-denied' | 'error'
 export type ResultPublicationStatus = 'HIDDEN' | 'PUBLISHED' | 'APPEAL_OPEN' | 'APPEAL_CLOSED'
 
 export type EvaluationResultPageAlert = {
   title: string
   description: string
+}
+
+export type EvaluationResultEmployeeOption = {
+  id: string
+  name: string
+  departmentName: string
+  title: string
 }
 
 export type EvaluationResultScopeOption = {
@@ -150,12 +159,21 @@ export type EvaluationResultViewModel = {
     actions: string[]
     discussionQuestions: string[]
   }
+  actions: {
+    canAcknowledge: boolean
+    acknowledgeMessage?: string
+    canExport: boolean
+    exportMessage?: string
+  }
 }
 
 export type EvaluationResultPageData = {
   state: ResultVisibilityState
   availableCycles: EvaluationResultScopeOption[]
   selectedCycleId?: string
+  employeeOptions: EvaluationResultEmployeeOption[]
+  selectedEmployeeId?: string
+  canSelectEmployee: boolean
   viewModel?: EvaluationResultViewModel
   message?: string
   alerts?: EvaluationResultPageAlert[]
@@ -207,8 +225,20 @@ type ResultsSession = {
     name: string
     deptId: string
     deptName: string
+    role?: SystemRole
+    accessibleDepartmentIds?: string[]
   }
 }
+
+type ResultScopeEmployee = Prisma.EmployeeGetPayload<{
+  include: {
+    department: {
+      include: {
+        organization: true
+      }
+    }
+  }
+}>
 
 async function loadEvaluationResultSection<T>(params: {
   alerts: EvaluationResultPageAlert[]
@@ -234,12 +264,34 @@ function resolveDepartmentLabel(department?: { deptName?: string | null } | null
   return name?.length ? name : '미지정 부서'
 }
 
+function canBrowseScopedEvaluationResults(role?: SystemRole) {
+  return role === 'ROLE_ADMIN' || role === 'ROLE_CEO' || role === 'ROLE_DIV_HEAD' || role === 'ROLE_SECTION_CHIEF' || role === 'ROLE_TEAM_LEADER'
+}
+
+function getEvaluationResultScopeDepartmentIds(params: {
+  role?: SystemRole
+  deptId?: string | null
+  accessibleDepartmentIds?: string[] | null
+}) {
+  if (params.role === 'ROLE_ADMIN' || params.role === 'ROLE_CEO') {
+    return null
+  }
+
+  const normalizedIds = normalizeAccessibleDepartmentIds(params.accessibleDepartmentIds)
+  if (normalizedIds.length) return normalizedIds
+  if (params.deptId?.trim()) return [params.deptId]
+  return []
+}
+
 export async function getEvaluationResultsPageData(params: {
   session: ResultsSession
   cycleId?: string
+  employeeId?: string
 }): Promise<EvaluationResultPageData> {
   try {
     const alerts: EvaluationResultPageAlert[] = []
+    const actorRole = params.session.user.role ?? 'ROLE_MEMBER'
+    const canSelectEmployee = canBrowseScopedEvaluationResults(actorRole)
     const employee = await prisma.employee.findUnique({
       where: { id: params.session.user.id },
       include: {
@@ -266,6 +318,8 @@ export async function getEvaluationResultsPageData(params: {
       return {
         state: 'permission-denied',
         availableCycles: [],
+        employeeOptions: [],
+        canSelectEmployee,
         message: '평가 결과를 확인할 수 있는 직원 정보를 찾지 못했습니다.',
         alerts,
       }
@@ -275,6 +329,8 @@ export async function getEvaluationResultsPageData(params: {
       return {
         state: 'permission-denied',
         availableCycles: [],
+        employeeOptions: [],
+        canSelectEmployee,
         message: '평가 결과를 조회할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.',
         alerts,
       }
@@ -307,6 +363,8 @@ export async function getEvaluationResultsPageData(params: {
       return {
         state: 'empty',
         availableCycles,
+        employeeOptions: [],
+        canSelectEmployee,
         message: '아직 생성된 평가 주기가 없습니다.',
         alerts,
       }
@@ -317,20 +375,103 @@ export async function getEvaluationResultsPageData(params: {
       cycles.find((cycle) => cycle.status !== 'SETUP') ??
       cycles[0]
 
-    if (!employee) {
+    if (!employee && !canSelectEmployee) {
       return {
         state: 'empty',
         availableCycles,
+        employeeOptions: [],
         selectedCycleId: selectedCycle?.id,
+        canSelectEmployee,
         alerts,
         message: '연결된 직원 평가 결과가 없어 현재 계정으로 확인할 결과가 없습니다.',
+      }
+    }
+
+    const scopeDepartmentIds = getEvaluationResultScopeDepartmentIds({
+      role: actorRole,
+      deptId: params.session.user.deptId,
+      accessibleDepartmentIds: params.session.user.accessibleDepartmentIds,
+    })
+
+    const scopedEmployees = await loadEvaluationResultSection({
+      alerts,
+      title: '?됯? 寃곌낵 議고쉶 ????곸옄 紐⑸줉???щ윭?ㅼ? 紐삵뻽?듬땲??',
+      description: '??곸옄 ?꾪꽣???遺? ?곌낵 ?붾㈃?쇰줈 ?쒖떆?⑸땲??',
+      fallback: [] as ResultScopeEmployee[],
+      loader: () =>
+        prisma.employee.findMany({
+          where: {
+            status: 'ACTIVE',
+            ...(scopeDepartmentIds === null
+              ? {
+                  department: {
+                    orgId: organizationId ?? undefined,
+                  },
+                }
+              : {
+                  deptId: {
+                    in: scopeDepartmentIds,
+                  },
+                }),
+          },
+          include: {
+            department: {
+              include: {
+                organization: true,
+              },
+            },
+          },
+          orderBy: [{ empName: 'asc' }],
+        }),
+    })
+
+    const employeeOptions = scopedEmployees.map((item) => ({
+      id: item.id,
+      name: item.empName,
+      departmentName: resolveDepartmentLabel(item.department),
+      title: resolvePositionLabel(item.position),
+    }))
+
+    const defaultTargetEmployee = employee ?? (canSelectEmployee ? scopedEmployees[0] ?? null : null)
+    const requestedEmployee =
+      params.employeeId?.trim()
+        ? scopedEmployees.find((item) => item.id === params.employeeId) ?? null
+        : null
+
+    if (params.employeeId?.trim() && !requestedEmployee) {
+      return {
+        state: 'permission-denied',
+        availableCycles,
+        employeeOptions,
+        selectedCycleId: selectedCycle?.id,
+        selectedEmployeeId: defaultTargetEmployee?.id,
+        canSelectEmployee,
+        alerts,
+        message: '?붾㈃???뺤씤?????놁뒗 ??곸옄瑜?議고쉶?섍퀬 ?덉뒿?덈떎.',
+      }
+    }
+
+    const targetEmployee = requestedEmployee ?? defaultTargetEmployee
+
+    if (!targetEmployee) {
+      return {
+        state: 'empty',
+        availableCycles,
+        employeeOptions,
+        selectedCycleId: selectedCycle?.id,
+        selectedEmployeeId: undefined,
+        canSelectEmployee,
+        alerts,
+        message: canSelectEmployee
+          ? '?댁쓽 踰붿쐞?먯꽌 議고쉶?????덈뒗 ?됯? ??곸옄媛 ?놁뒿?덈떎.'
+          : '?곌껐??吏곸썝 ?됯? 寃곌낵媛 ?놁뼱 ?꾩옱 怨꾩젙?쇰줈 ?뺤씤??寃곌낵媛 ?놁뒿?덈떎.',
       }
     }
 
     const baseEvaluations = await prisma.evaluation.findMany({
       where: {
         evalCycleId: selectedCycle.id,
-        targetId: employee.id,
+        targetId: targetEmployee.id,
       },
       include: {
         evaluator: {
@@ -351,9 +492,12 @@ export async function getEvaluationResultsPageData(params: {
     if (!baseEvaluations.length) {
       const publicationStatus = resolvePublicationStatus(selectedCycle, false)
       return {
-        state: publicationStatus === 'HIDDEN' ? 'hidden' : 'empty',
+        state: publicationStatus === 'HIDDEN' ? 'unpublished' : 'empty',
         availableCycles,
+        employeeOptions,
         selectedCycleId: selectedCycle.id,
+        selectedEmployeeId: targetEmployee.id,
+        canSelectEmployee,
         alerts,
         message:
           publicationStatus === 'HIDDEN'
@@ -405,7 +549,7 @@ export async function getEvaluationResultsPageData(params: {
         loader: () =>
           prisma.evaluation.findMany({
             where: {
-              targetId: employee.id,
+              targetId: targetEmployee.id,
               status: 'CONFIRMED',
               evalStage: {
                 in: ['FINAL', 'CEO_ADJUST'],
@@ -453,7 +597,7 @@ export async function getEvaluationResultsPageData(params: {
         loader: () =>
           prisma.personalKpi.findMany({
             where: {
-              employeeId: employee.id,
+              employeeId: targetEmployee.id,
               evalYear: selectedCycle.evalYear,
             },
             include: {
@@ -483,7 +627,7 @@ export async function getEvaluationResultsPageData(params: {
         loader: () =>
           prisma.checkIn.findMany({
             where: {
-              ownerId: employee.id,
+              ownerId: targetEmployee.id,
               scheduledDate: {
                 gte: new Date(`${selectedCycle.evalYear}-01-01T00:00:00.000Z`),
                 lte: new Date(`${selectedCycle.evalYear}-12-31T23:59:59.999Z`),
@@ -546,7 +690,7 @@ export async function getEvaluationResultsPageData(params: {
         loader: () =>
           loadAiCompetencySyncedResults({
             evalCycleIds: [selectedCycle.id],
-            employeeIds: [employee.id],
+            employeeIds: [targetEmployee.id],
           }),
       }),
     ])
@@ -570,16 +714,19 @@ export async function getEvaluationResultsPageData(params: {
 
     if (publicationStatus === 'HIDDEN' && !hasConfirmedFinal) {
       return {
-        state: 'hidden',
+        state: 'unpublished',
         availableCycles,
+        employeeOptions,
         selectedCycleId: selectedCycle.id,
+        selectedEmployeeId: targetEmployee.id,
+        canSelectEmployee,
         alerts,
         message: '평가 결과가 아직 공개되지 않았습니다. 공개 일정과 마감 상태를 확인해 주세요.',
       }
     }
 
     const viewModel = buildEvaluationResultViewModel({
-      employee,
+      employee: targetEmployee,
       cycle: selectedCycle,
       evaluations: baseEvaluations,
       finalEvaluation,
@@ -590,13 +737,18 @@ export async function getEvaluationResultsPageData(params: {
       cycleFinalEvaluations,
       publicationStatus,
       auditLogs,
-      aiCompetencyScore: aiCompetencyResults.get(`${selectedCycle.id}:${employee.id}`)?.finalScore,
+      aiCompetencyScore: aiCompetencyResults.get(`${selectedCycle.id}:${targetEmployee.id}`)?.finalScore,
+      actorId: params.session.user.id,
+      canExport: true,
     })
 
     return {
       state: 'ready',
       availableCycles,
+      employeeOptions,
       selectedCycleId: selectedCycle.id,
+      selectedEmployeeId: targetEmployee.id,
+      canSelectEmployee,
       viewModel,
       alerts,
     }
@@ -606,6 +758,8 @@ export async function getEvaluationResultsPageData(params: {
     return {
       state: 'error',
       availableCycles: [],
+      employeeOptions: [],
+      canSelectEmployee: false,
       message: '평가 결과를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
       alerts: [],
     }
@@ -657,6 +811,8 @@ function buildEvaluationResultViewModel(params: {
     timestamp: Date
   }>
   aiCompetencyScore?: number
+  actorId: string
+  canExport: boolean
 }) {
   const stageMap = new Map<EvalStage, EvaluationWithRelations>()
   for (const evaluation of params.evaluations) {
@@ -753,6 +909,10 @@ function buildEvaluationResultViewModel(params: {
       log.entityId === params.cycle.id &&
       log.userId === params.employee.id
   )
+  const canAcknowledge = params.actorId === params.employee.id
+  const acknowledgeMessage = canAcknowledge
+    ? undefined
+    : '??곸옄 蹂몄씤留??됯? 寃곌낵瑜??뺤씤 ?꾨즺濡?泥섎━?????덉뒿?덈떎.'
   const evaluatorPreview =
     finalEvaluation?.comment ||
     feedbacks.find((feedback) => feedback.author !== '시스템')?.content ||
@@ -871,6 +1031,12 @@ function buildEvaluationResultViewModel(params: {
       improvements,
       actions: buildGrowthActions(improvements),
       discussionQuestions: buildDiscussionQuestions(improvements, strengths),
+    },
+    actions: {
+      canAcknowledge,
+      acknowledgeMessage,
+      canExport: params.canExport,
+      exportMessage: params.canExport ? undefined : '?꾩옱 ?곹깭?먯꽌??由ы룷?몃? ?ㅼ슫濡쒕뱶?????놁뒿?덈떎.',
     },
   } satisfies EvaluationResultViewModel
 }

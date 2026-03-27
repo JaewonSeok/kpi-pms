@@ -10,7 +10,14 @@ export type AppealCaseStatus =
   | 'REJECTED'
   | 'WITHDRAWN'
 
-export type AppealPageState = 'ready' | 'empty' | 'hidden' | 'permission-denied' | 'error'
+export type AppealPageState =
+  | 'ready'
+  | 'empty'
+  | 'hidden'
+  | 'no-result-yet'
+  | 'window-closed'
+  | 'permission-denied'
+  | 'error'
 
 export type AppealPageAlert = {
   title: string
@@ -125,6 +132,7 @@ type AppealSession = {
 }
 
 type AppealAuditPayload = {
+  reason?: string
   category?: string
   requestedAction?: string
   relatedTargets?: string[]
@@ -148,6 +156,8 @@ type AppealAuditPayload = {
   beforeGrade?: string
   afterGrade?: string
 }
+
+const APPEAL_DRAFT_ENTITY_TYPE = 'AppealDraft'
 
 async function loadAppealSection<T>(params: {
   alerts: AppealPageAlert[]
@@ -250,7 +260,7 @@ export async function getEvaluationAppealPageData(params: {
 
     if (!employee && actorMode !== 'admin') {
       return {
-        state: isAppealOpen(selectedCycle) ? 'empty' : 'hidden',
+        state: isAppealOpen(selectedCycle) ? 'no-result-yet' : 'window-closed',
         availableCycles,
         selectedCycleId: selectedCycle.id,
         alerts,
@@ -378,7 +388,7 @@ async function buildApplicantAppealPage(params: {
 
   if (!evaluation) {
     return {
-      state: isAppealOpen(params.selectedCycle) ? 'empty' : 'hidden',
+      state: isAppealOpen(params.selectedCycle) ? 'no-result-yet' : 'window-closed',
       availableCycles: params.availableCycles,
       selectedCycleId: params.selectedCycle.id,
       alerts: params.alerts,
@@ -388,10 +398,12 @@ async function buildApplicantAppealPage(params: {
     }
   }
 
-  const selectedAppeal =
-    evaluation.appeals.find((appeal) => appeal.id === params.caseId) ??
-    evaluation.appeals[0] ??
-    null
+  const requestedNewDraft = params.caseId === 'new'
+  const selectedAppeal = requestedNewDraft
+    ? null
+    : evaluation.appeals.find((appeal) => appeal.id === params.caseId) ??
+      evaluation.appeals[0] ??
+      null
 
   const gradeSettings = await loadAppealSection({
     alerts: params.alerts,
@@ -422,7 +434,7 @@ async function buildApplicantAppealPage(params: {
       }),
   })
 
-  const auditLogs = selectedAppeal
+  const allAppealAuditLogs = evaluation.appeals.length
     ? await loadAppealSection({
         alerts: params.alerts,
         title: '이의 신청 처리 이력을 불러오지 못했습니다.',
@@ -432,7 +444,9 @@ async function buildApplicantAppealPage(params: {
           prisma.auditLog.findMany({
             where: {
               entityType: 'Appeal',
-              entityId: selectedAppeal.id,
+              entityId: {
+                in: evaluation.appeals.map((appeal) => appeal.id),
+              },
             },
             orderBy: {
               timestamp: 'asc',
@@ -441,17 +455,53 @@ async function buildApplicantAppealPage(params: {
       })
     : []
 
+  const draftAuditLogs = await loadAppealSection({
+    alerts: params.alerts,
+    title: '?댁쓽 ?좎껌 珥덉븞???遺덈윭?ㅼ? 紐삵뻽?듬땲??',
+    description: '濡쒖뭅?댁뿉??怨꾩냽 ?묒꽦 ???덈룄濡?湲곗〈 珥덉븞??諛섏쁺?섏? 紐삵뻽?듬땲??',
+    fallback: [] as AppealAuditLogRecord[],
+    loader: () =>
+      prisma.auditLog.findMany({
+        where: {
+          entityType: APPEAL_DRAFT_ENTITY_TYPE,
+          entityId: evaluation.id,
+          userId: params.employeeId,
+          action: 'APPEAL_DRAFT_SAVED',
+        },
+        orderBy: {
+          timestamp: 'asc',
+        },
+      }) as Promise<AppealAuditLogRecord[]>,
+  })
+
+  if (!selectedAppeal && !draftAuditLogs.length && !isAppealOpen(params.selectedCycle)) {
+    return {
+      state: 'window-closed',
+      availableCycles: params.availableCycles,
+      selectedCycleId: params.selectedCycle.id,
+      alerts: params.alerts,
+      message: '?꾩옱 二쇨린???댁쓽 ?좎껌 湲곌컙???꾨떃?덈떎.',
+    }
+  }
+
+  const selectedAuditLogs = selectedAppeal
+    ? allAppealAuditLogs.filter((log) => log.entityId === selectedAppeal.id)
+    : draftAuditLogs
+
   const viewModel = await buildAppealViewModel({
     actorMode: 'applicant',
     cycle: params.selectedCycle,
     evaluation,
     appeal: selectedAppeal,
     gradeSettings,
-    auditLogs,
+    auditLogs: selectedAuditLogs,
     caseOptions: evaluation.appeals.map((appeal) => ({
       id: appeal.id,
       caseNumber: buildCaseNumber(appeal.id, appeal.createdAt),
-      status: deriveAppealCaseStatus(appeal, auditLogs),
+      status: deriveAppealCaseStatus(
+        appeal,
+        allAppealAuditLogs.filter((log) => log.entityId === appeal.id)
+      ),
       applicantName: '나',
       label: '내 신청',
     })),
@@ -536,7 +586,7 @@ async function buildAdminAppealPage(params: {
 
   if (!selectedAppeal) {
     return {
-      state: isAppealOpen(params.selectedCycle) ? 'empty' : 'hidden',
+      state: isAppealOpen(params.selectedCycle) ? 'empty' : 'window-closed',
       availableCycles: params.availableCycles,
       selectedCycleId: params.selectedCycle.id,
       alerts: params.alerts,
@@ -662,6 +712,7 @@ async function buildAppealViewModel(params: {
   queueSummary?: AppealViewModel['queueSummary']
 }) {
   const parsedAuditPayload = extractLatestAppealPayload(params.auditLogs)
+  const latestAuditLog = [...params.auditLogs].reverse()[0]
   const attachments = parsedAuditPayload.attachments?.length
     ? parsedAuditPayload.attachments
     : buildSuggestedAttachments(params.evaluation.items)
@@ -695,16 +746,16 @@ async function buildAppealViewModel(params: {
       caseNumber: params.appeal ? buildCaseNumber(params.appeal.id, params.appeal.createdAt) : buildDraftCaseNumber(params.cycle.evalYear),
       status,
       category: parsedAuditPayload.category ?? '점수 이의',
-      reason: params.appeal?.reason ?? '',
+      reason: params.appeal?.reason ?? parsedAuditPayload.reason ?? '',
       requestedAction: parsedAuditPayload.requestedAction ?? '재검토 요청',
       relatedTargets: parsedAuditPayload.relatedTargets ?? ['최종 등급'],
-      createdAt: (params.appeal?.createdAt ?? new Date()).toISOString(),
-      updatedAt: (params.appeal?.updatedAt ?? new Date()).toISOString(),
+      createdAt: (params.appeal?.createdAt ?? params.auditLogs[0]?.timestamp ?? new Date()).toISOString(),
+      updatedAt: (params.appeal?.updatedAt ?? latestAuditLog?.timestamp ?? new Date()).toISOString(),
       assignedTo: parsedAuditPayload.assignedTo,
       slaDueAt,
       resolutionType: parsedAuditPayload.resolutionType,
       resolutionNote: params.appeal?.adminResponse ?? parsedAuditPayload.resolutionNote,
-      canEdit: status === 'DRAFT' || status === 'INFO_REQUESTED',
+      canEdit: isAppealOpen(params.cycle) && (status === 'DRAFT' || status === 'INFO_REQUESTED'),
       canWithdraw: ['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(status),
       canSubmit: isAppealOpen(params.cycle) && (status === 'DRAFT' || status === 'INFO_REQUESTED'),
     },
@@ -748,7 +799,9 @@ function deriveAppealCaseStatus(
 ): AppealCaseStatus {
   if (!appeal) return 'DRAFT'
 
-  const latestAction = [...auditLogs].reverse().find((log) => log.action.startsWith('APPEAL_'))?.action
+  const latestAction = [...auditLogs]
+    .reverse()
+    .find((log) => log.action.startsWith('APPEAL_') && log.action !== 'APPEAL_DRAFT_SAVED')?.action
 
   if (latestAction === 'APPEAL_WITHDRAWN') return 'WITHDRAWN'
   if (latestAction === 'APPEAL_INFO_REQUESTED') return 'INFO_REQUESTED'
@@ -853,6 +906,7 @@ function extractLatestAppealPayload(auditLogs: AppealAuditLogRecord[]): AppealAu
   for (const log of [...auditLogs].reverse()) {
     const payload = parseAuditPayload(log.newValue)
     if (
+      payload.reason ||
       payload.category ||
       payload.requestedAction ||
       payload.relatedTargets?.length ||

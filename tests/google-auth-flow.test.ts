@@ -21,6 +21,7 @@ function run(name: string, fn: () => void) {
 }
 
 const loginPageSource = readFileSync(path.resolve(process.cwd(), 'src/app/login/page.tsx'), 'utf8')
+const authSource = readFileSync(path.resolve(process.cwd(), 'src/lib/auth.ts'), 'utf8')
 
 run('login page starts Google sign-in without redirect:false misuse', () => {
   assert.match(loginPageSource, /buildGoogleSignInRequest/)
@@ -119,6 +120,17 @@ run('middleware keeps auth callback routes public', () => {
   assert.equal(isAuthPublicPath('/api/auth/callback/google'), true)
   assert.equal(isAuthPublicPath('/api/auth/signin/google'), true)
   assert.equal(isAuthPublicPath('/dashboard'), false)
+})
+
+run('auth employee lookup uses a minimal select instead of loading the full employee row', () => {
+  assert.match(authSource, /const authEmployeeSelect = \{/)
+  assert.match(authSource, /select: authEmployeeSelect/)
+  assert.doesNotMatch(authSource, /include:\s*\{\s*department:\s*true\s*\}/)
+  assert.doesNotMatch(authSource, /jobTitle:\s*true/)
+  assert.doesNotMatch(authSource, /teamName:\s*true/)
+  assert.doesNotMatch(authSource, /resignationDate:\s*true/)
+  assert.doesNotMatch(authSource, /sortOrder:\s*true/)
+  assert.doesNotMatch(authSource, /notes:\s*true/)
 })
 
 run('login error messages stay specific for callback and access failures', () => {

@@ -433,11 +433,13 @@ run('admin employee management API paths still resolve to SYSTEM_SETTING permiss
   assert.equal(resolveMenuFromPath('/api/admin/employees/google-account/template'), 'SYSTEM_SETTING')
 })
 
-run('google login lookup still uses gwsEmail and ACTIVE status regression guard', () => {
+run('google login lookup still uses gwsEmail with minimal auth select and ACTIVE status regression guard', () => {
   const authSource = readFileSync(path.resolve(process.cwd(), 'src/lib/auth.ts'), 'utf8')
   const authFlowSource = readFileSync(path.resolve(process.cwd(), 'src/lib/auth-flow.ts'), 'utf8')
 
-  assert.match(authSource, /where: \{ gwsEmail: normalizedEmail \}/)
+  assert.match(authSource, /findAuthEmployee\(\{ gwsEmail: normalizedEmail \}\)/)
+  assert.match(authSource, /const authEmployeeSelect = \{/)
+  assert.match(authSource, /select: authEmployeeSelect/)
   assert.match(authFlowSource, /params\.employeeStatus !== 'ACTIVE'/)
 })
 

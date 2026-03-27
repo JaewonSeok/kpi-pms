@@ -7,6 +7,7 @@ import { EvaluationResultsClient } from '@/components/evaluation/EvaluationResul
 type EvaluationResultsPageProps = {
   searchParams?: Promise<{
     cycleId?: string
+    employeeId?: string
   }>
 }
 
@@ -21,6 +22,7 @@ export default async function EvaluationResultsPage({ searchParams }: Evaluation
   const pageData = await getEvaluationResultsPageData({
     session,
     cycleId: resolvedSearchParams.cycleId,
+    employeeId: resolvedSearchParams.employeeId,
   })
 
   return <EvaluationResultsClient {...pageData} />

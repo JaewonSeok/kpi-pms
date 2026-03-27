@@ -376,6 +376,33 @@ function normalizeQuestionFormForType(form: QuestionFormState, nextType: AiCompe
   }
 }
 
+function findSelectedSubmission(
+  data: AiCompetencyPageData,
+  submissionId?: string
+) {
+  const queue = data.adminView?.secondRoundQueue ?? []
+  if (!queue.length) return undefined
+  return queue.find((item) => item.submissionId === submissionId) ?? queue[0]
+}
+
+function findSelectedClaim(
+  data: AiCompetencyPageData,
+  claimId?: string
+) {
+  const claims = data.adminView?.certClaims ?? []
+  if (!claims.length) return undefined
+  return claims.find((item) => item.claimId === claimId) ?? claims[0]
+}
+
+function findSelectedResult(
+  data: AiCompetencyPageData,
+  resultId?: string
+) {
+  const results = data.adminView?.results ?? []
+  if (!results.length) return undefined
+  return results.find((item) => item.resultId === resultId) ?? results[0]
+}
+
 export function AiCompetencyAdminPanel(props: Props) {
   const [activeTab, setActiveTab] = useState<AdminTabKey>('cycle')
   const [createMode, setCreateMode] = useState(!props.pageData.selectedCycleId)
@@ -408,6 +435,10 @@ export function AiCompetencyAdminPanel(props: Props) {
   const deferredAdminSearch = useDeferredValue(adminSearch)
 
   useEffect(() => {
+    const nextSelectedSubmission = findSelectedSubmission(props.pageData, reviewerAssignmentSubmissionId)
+    const nextSelectedClaim = findSelectedClaim(props.pageData, certDecision.claimId)
+    const nextSelectedResult = findSelectedResult(props.pageData, overrideResult.resultId)
+
     setCreateMode(!props.pageData.selectedCycleId)
     setCycleForm(buildCycleForm(props.pageData))
     setQuestionForm(buildQuestionForm())
@@ -419,20 +450,25 @@ export function AiCompetencyAdminPanel(props: Props) {
       score: '',
       reviewerNote: '',
     })
-    setReviewerAssignmentSubmissionId(props.pageData.adminView?.secondRoundQueue[0]?.submissionId ?? '')
-    setReviewerIds([])
+    setReviewerAssignmentSubmissionId(nextSelectedSubmission?.submissionId ?? '')
+    setReviewerIds(nextSelectedSubmission?.reviewerIds ?? [])
     setCertDecision({
-      claimId: props.pageData.adminView?.certClaims[0]?.claimId ?? '',
+      claimId: nextSelectedClaim?.claimId ?? '',
       rejectionReason: '',
     })
     setOverrideResult({
-      resultId: props.pageData.adminView?.results[0]?.resultId ?? '',
-      overrideScore: props.pageData.adminView?.results[0]
-        ? String(props.pageData.adminView.results[0].finalScore)
+      resultId: nextSelectedResult?.resultId ?? '',
+      overrideScore: nextSelectedResult
+        ? String(nextSelectedResult.finalScore)
         : '',
       overrideReason: '',
     })
   }, [props.pageData])
+
+  useEffect(() => {
+    const selected = findSelectedSubmission(props.pageData, reviewerAssignmentSubmissionId)
+    setReviewerIds(selected?.reviewerIds ?? [])
+  }, [props.pageData, reviewerAssignmentSubmissionId])
 
   const filteredAssignments =
     props.pageData.adminView?.assignments.filter((item) => {
@@ -1776,105 +1812,126 @@ export function AiCompetencyAdminPanel(props: Props) {
               </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
                 <h3 className="font-semibold text-slate-900">2차 제출건 리뷰어 배정</h3>
-                <div className="mt-4 space-y-4">
-                  <Field label="제출건 선택">
-                    <select className={inputClassName} value={reviewerAssignmentSubmissionId} onChange={(event) => setReviewerAssignmentSubmissionId(event.target.value)}>
-                      {props.pageData.adminView?.secondRoundQueue.map((item) => (
-                        <option key={item.submissionId} value={item.submissionId}>
-                          {item.employeeName} / {labelForTrack(item.track)} / {STATUS_LABELS[item.status] ?? item.status}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  {selectedSubmission ? (
-                    <p className="text-sm text-slate-600">
-                      제출물 {selectedSubmission.artifactCount}건 / 현재 리뷰어 {selectedSubmission.reviewerCount}명 / 제출 {formatDateTime(selectedSubmission.submittedAt)}
-                    </p>
-                  ) : null}
-                  <div className="max-h-48 space-y-2 overflow-auto rounded-2xl border border-slate-200 bg-white p-3">
-                    {props.pageData.adminView?.reviewerDirectory.map((reviewer) => (
-                      <label key={reviewer.id} className="flex items-start gap-3 text-sm text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={reviewerIds.includes(reviewer.id)}
-                          onChange={(event) =>
-                            setReviewerIds((current) =>
-                              event.target.checked ? [...current, reviewer.id] : current.filter((item) => item !== reviewer.id)
-                            )
-                          }
-                        />
-                        <span>{reviewer.name} / {reviewer.department} / {reviewer.position}</span>
-                      </label>
-                    ))}
+                {!props.pageData.adminView?.secondRoundQueue.length ? (
+                  <div className="mt-4">
+                    <EmptyBox message="현재 리뷰어를 배정할 2차 제출건이 없습니다." />
                   </div>
-                  <button
-                    type="button"
-                    className={secondaryButtonClassName}
-                    disabled={props.isPending || !reviewerAssignmentSubmissionId || reviewerIds.length === 0}
-                    onClick={() =>
-                      props.runMutation(
-                        () =>
-                          props.callAction('assignReviewers', {
-                            submissionId: reviewerAssignmentSubmissionId,
-                            reviewerIds,
-                          }),
-                        '리뷰어를 배정했습니다.'
-                      )
-                    }
-                  >
-                    리뷰어 배정
-                  </button>
-                </div>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    <Field label="제출건 선택">
+                      <select className={inputClassName} value={reviewerAssignmentSubmissionId} onChange={(event) => setReviewerAssignmentSubmissionId(event.target.value)}>
+                        {props.pageData.adminView?.secondRoundQueue.map((item) => (
+                          <option key={item.submissionId} value={item.submissionId}>
+                            {item.employeeName} / {labelForTrack(item.track)} / {STATUS_LABELS[item.status] ?? item.status}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    {selectedSubmission ? (
+                      <div className="space-y-2 text-sm text-slate-600">
+                        <p>
+                          제출물 {selectedSubmission.artifactCount}건 / 현재 리뷰어 {selectedSubmission.reviewerCount}명 / 제출 {formatDateTime(selectedSubmission.submittedAt)}
+                        </p>
+                        <p>
+                          현재 배정: {selectedSubmission.reviewerNames.length ? selectedSubmission.reviewerNames.join(', ') : '미배정'}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div className="max-h-48 space-y-2 overflow-auto rounded-2xl border border-slate-200 bg-white p-3">
+                      {props.pageData.adminView?.reviewerDirectory.map((reviewer) => (
+                        <label key={reviewer.id} className="flex items-start gap-3 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={reviewerIds.includes(reviewer.id)}
+                            onChange={(event) =>
+                              setReviewerIds((current) =>
+                                event.target.checked ? [...current, reviewer.id] : current.filter((item) => item !== reviewer.id)
+                              )
+                            }
+                          />
+                          <span>{reviewer.name} / {reviewer.department} / {reviewer.position}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className={secondaryButtonClassName}
+                      disabled={props.isPending || !reviewerAssignmentSubmissionId || reviewerIds.length === 0}
+                      onClick={() =>
+                        props.runMutation(
+                          () =>
+                            props.callAction('assignReviewers', {
+                              submissionId: reviewerAssignmentSubmissionId,
+                              reviewerIds,
+                            }),
+                          '리뷰어를 배정했습니다.'
+                        )
+                      }
+                    >
+                      리뷰어 배정
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
             <div className="space-y-6">
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
                 <h3 className="font-semibold text-slate-900">외부자격 승인</h3>
-                <div className="mt-4 space-y-4">
-                  <Field label="승인 대상">
-                    <select className={inputClassName} value={certDecision.claimId} onChange={(event) => setCertDecision((current) => ({ ...current, claimId: event.target.value }))}>
-                      {props.pageData.adminView?.certClaims.map((claim) => (
-                        <option key={claim.claimId} value={claim.claimId}>
-                          {claim.employeeName} / {claim.certificateName} / {STATUS_LABELS[claim.status] ?? claim.status}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="반려 사유"><textarea className={`${inputClassName} min-h-24`} value={certDecision.rejectionReason} onChange={(event) => setCertDecision((current) => ({ ...current, rejectionReason: event.target.value }))} /></Field>
-                  {selectedClaim ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                      인정 점수 {selectedClaim.mappedScoreSnapshot}점 / 제출 {formatDateTime(selectedClaim.submittedAt)} / 증빙 {selectedClaim.proofFileName}
-                    </div>
-                  ) : null}
-                  <div className="flex gap-2">
-                    <button type="button" className={secondaryButtonClassName} disabled={props.isPending || !certDecision.claimId} onClick={() => props.runMutation(() => props.callAction('decideCertClaim', { claimId: certDecision.claimId, action: 'APPROVE' }), '외부자격을 승인했습니다.')}>승인</button>
-                    <button type="button" className={secondaryButtonClassName} disabled={props.isPending || !certDecision.claimId} onClick={() => props.runMutation(() => props.callAction('decideCertClaim', { claimId: certDecision.claimId, action: 'REJECT', rejectionReason: certDecision.rejectionReason }), '외부자격 요청을 반려했습니다.')}>반려</button>
+                {!props.pageData.adminView?.certClaims.length ? (
+                  <div className="mt-4">
+                    <EmptyBox message="현재 승인 대기 중인 외부자격 요청이 없습니다." />
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-4 space-y-4">
+                    <Field label="승인 대상">
+                      <select className={inputClassName} value={certDecision.claimId} onChange={(event) => setCertDecision((current) => ({ ...current, claimId: event.target.value }))}>
+                        {props.pageData.adminView?.certClaims.map((claim) => (
+                          <option key={claim.claimId} value={claim.claimId}>
+                            {claim.employeeName} / {claim.certificateName} / {STATUS_LABELS[claim.status] ?? claim.status}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="반려 사유"><textarea className={`${inputClassName} min-h-24`} value={certDecision.rejectionReason} onChange={(event) => setCertDecision((current) => ({ ...current, rejectionReason: event.target.value }))} /></Field>
+                    {selectedClaim ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                        인정 점수 {selectedClaim.mappedScoreSnapshot}점 / 제출 {formatDateTime(selectedClaim.submittedAt)} / 증빙 {selectedClaim.proofFileName}
+                      </div>
+                    ) : null}
+                    <div className="flex gap-2">
+                      <button type="button" className={secondaryButtonClassName} disabled={props.isPending || !certDecision.claimId} onClick={() => props.runMutation(() => props.callAction('decideCertClaim', { claimId: certDecision.claimId, action: 'APPROVE' }), '외부자격을 승인했습니다.')}>승인</button>
+                      <button type="button" className={secondaryButtonClassName} disabled={props.isPending || !certDecision.claimId} onClick={() => props.runMutation(() => props.callAction('decideCertClaim', { claimId: certDecision.claimId, action: 'REJECT', rejectionReason: certDecision.rejectionReason }), '외부자격 요청을 반려했습니다.')}>반려</button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
                 <h3 className="font-semibold text-slate-900">결과 보정 및 PMS 반영</h3>
                 <div className="mt-4 space-y-4">
-                  <Field label="결과 선택">
-                    <select className={inputClassName} value={overrideResult.resultId} onChange={(event) => setOverrideResult((current) => ({ ...current, resultId: event.target.value }))}>
-                      {props.pageData.adminView?.results.map((result) => (
-                        <option key={result.resultId} value={result.resultId}>
-                          {result.employeeName} / {result.finalScore.toFixed(1)}점 / {result.finalGrade}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  {selectedResult ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                      현재 점수 {selectedResult.finalScore.toFixed(1)}점 / 반영 상태 {STATUS_LABELS[selectedResult.syncState] ?? selectedResult.syncState}
-                    </div>
-                  ) : null}
-                  <Field label="보정 점수"><input type="number" className={inputClassName} value={overrideResult.overrideScore} onChange={(event) => setOverrideResult((current) => ({ ...current, overrideScore: event.target.value }))} /></Field>
-                  <Field label="보정 사유"><textarea className={`${inputClassName} min-h-24`} value={overrideResult.overrideReason} onChange={(event) => setOverrideResult((current) => ({ ...current, overrideReason: event.target.value }))} /></Field>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className={secondaryButtonClassName} disabled={props.isPending || !overrideResult.resultId} onClick={() => props.runMutation(() => props.callAction('overrideResult', { resultId: overrideResult.resultId, overrideScore: Number(overrideResult.overrideScore), overrideReason: overrideResult.overrideReason }), '결과를 보정했습니다.')}>보정 저장</button>
-                    <button type="button" className={primaryButtonClassName} disabled={props.isPending || !props.pageData.selectedCycleId} onClick={() => props.runMutation(() => props.callAction('publishResults', { cycleId: props.pageData.selectedCycleId }), 'AI 활용능력 평가 결과를 PMS에 반영했습니다.')}>PMS 결과 반영</button>
-                  </div>
+                  {!props.pageData.adminView?.results.length ? (
+                    <EmptyBox message="아직 계산된 최종 결과가 없습니다. PMS 결과 반영을 실행하면 결과 행이 생성됩니다." />
+                  ) : (
+                    <>
+                      <Field label="결과 선택">
+                        <select className={inputClassName} value={overrideResult.resultId} onChange={(event) => setOverrideResult((current) => ({ ...current, resultId: event.target.value }))}>
+                          {props.pageData.adminView?.results.map((result) => (
+                            <option key={result.resultId} value={result.resultId}>
+                              {result.employeeName} / {result.finalScore.toFixed(1)}점 / {result.finalGrade}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      {selectedResult ? (
+                        <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                          현재 점수 {selectedResult.finalScore.toFixed(1)}점 / 반영 상태 {STATUS_LABELS[selectedResult.syncState] ?? selectedResult.syncState}
+                        </div>
+                      ) : null}
+                      <Field label="보정 점수"><input type="number" className={inputClassName} value={overrideResult.overrideScore} onChange={(event) => setOverrideResult((current) => ({ ...current, overrideScore: event.target.value }))} /></Field>
+                      <Field label="보정 사유"><textarea className={`${inputClassName} min-h-24`} value={overrideResult.overrideReason} onChange={(event) => setOverrideResult((current) => ({ ...current, overrideReason: event.target.value }))} /></Field>
+                      <button type="button" className={secondaryButtonClassName} disabled={props.isPending || !overrideResult.resultId} onClick={() => props.runMutation(() => props.callAction('overrideResult', { resultId: overrideResult.resultId, overrideScore: Number(overrideResult.overrideScore), overrideReason: overrideResult.overrideReason }), '결과를 보정했습니다.')}>보정 저장</button>
+                    </>
+                  )}
+                  <button type="button" className={primaryButtonClassName} disabled={props.isPending || !props.pageData.selectedCycleId} onClick={() => props.runMutation(() => props.callAction('publishResults', { cycleId: props.pageData.selectedCycleId }), 'AI 활용능력 평가 결과를 PMS에 반영했습니다.')}>PMS 결과 반영</button>
                 </div>
               </div>
             </div>

@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
@@ -62,8 +62,29 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [growthMemo, setGrowthMemo] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [draftItems, setDraftItems] = useState<Record<string, DraftItemState>>({})
+  const workbenchContextKey = `${props.selectedCycleId ?? ''}:${props.selectedEvaluationId ?? ''}`
+  const previousWorkbenchContextKey = useRef(workbenchContextKey)
+  const previousCycleId = useRef(props.selectedCycleId ?? '')
 
   const selected = props.selected
+
+  useEffect(() => {
+    if (previousWorkbenchContextKey.current === workbenchContextKey) {
+      return
+    }
+
+    const cycleChanged = previousCycleId.current !== (props.selectedCycleId ?? '')
+    previousWorkbenchContextKey.current = workbenchContextKey
+    previousCycleId.current = props.selectedCycleId ?? ''
+
+    setNotice('')
+    setErrorNotice('')
+    setDecisionBusy(false)
+
+    if (cycleChanged) {
+      setActiveTab('workbench')
+    }
+  }, [props.selectedCycleId, workbenchContextKey])
 
   useEffect(() => {
     if (!selected) {

@@ -64,6 +64,11 @@ type AiPreview = {
   action: AiAction
 }
 
+type AiActionState = {
+  disabled: boolean
+  reason?: string
+}
+
 const TABS: Array<{ key: PersonalKpiTabKey; label: string }> = [
   { key: 'mine', label: '내 KPI' },
   { key: 'review', label: '검토 대기' },
@@ -251,6 +256,106 @@ function applyPreviewToForm(form: KpiForm, preview: Record<string, unknown>) {
   }
 }
 
+function isDraftStatus(status?: PersonalKpiViewModel['status']) {
+  return status === 'DRAFT'
+}
+
+function buildAiActionState(params: {
+  action: AiAction
+  canUseAi: boolean
+  selectedKpi?: PersonalKpiViewModel
+  reviewQueueCount: number
+  totalKpiCount: number
+}): AiActionState {
+  if (!params.canUseAi) {
+    return {
+      disabled: true,
+      reason: '현재 조건에서는 AI 보조를 사용할 수 없습니다.',
+    }
+  }
+
+  switch (params.action) {
+    case 'generate-draft':
+      return { disabled: false }
+    case 'detect-duplicates':
+      return params.totalKpiCount > 0
+        ? { disabled: false }
+        : {
+            disabled: true,
+            reason: '비교할 기존 KPI가 있을 때만 중복 점검을 실행할 수 있습니다.',
+          }
+    case 'summarize-review-risks':
+      return params.reviewQueueCount > 0
+        ? { disabled: false }
+        : {
+            disabled: true,
+            reason: '검토 대기 KPI가 있을 때만 리뷰 리스크 요약을 실행할 수 있습니다.',
+          }
+    case 'draft-monthly-comment':
+      return params.selectedKpi?.recentMonthlyRecords.length
+        ? { disabled: false }
+        : {
+            disabled: true,
+            reason: '월간 실적 기록이 있는 KPI를 선택한 뒤 실행해 주세요.',
+          }
+    case 'improve-wording':
+    case 'smart-check':
+    case 'suggest-weight':
+    case 'suggest-org-alignment':
+      return params.selectedKpi && isDraftStatus(params.selectedKpi.status)
+        ? { disabled: false }
+        : {
+            disabled: true,
+            reason: '초안 상태 KPI를 선택한 경우에만 실행할 수 있습니다.',
+          }
+    default:
+      return { disabled: false }
+  }
+}
+
+function getReviewActionState(status: PersonalKpiReviewQueueItem['status'], action: 'START_REVIEW' | 'APPROVE' | 'REJECT') {
+  if (action === 'START_REVIEW') {
+    return status === 'SUBMITTED'
+      ? { disabled: false }
+      : {
+          disabled: true,
+          reason: '제출 상태 KPI에서만 검토를 시작할 수 있습니다.',
+        }
+  }
+
+  return status === 'SUBMITTED' || status === 'MANAGER_REVIEW'
+    ? { disabled: false }
+    : {
+        disabled: true,
+        reason: '검토 가능한 KPI에서만 승인 또는 반려할 수 있습니다.',
+      }
+}
+
+function validateKpiForm(form: KpiForm) {
+  if (!form.employeeId.trim()) {
+    return '대상자를 먼저 선택한 뒤 KPI를 저장해 주세요.'
+  }
+
+  if (!form.kpiName.trim()) {
+    return 'KPI명을 입력해 주세요.'
+  }
+
+  if (!form.weight.trim()) {
+    return '가중치를 입력해 주세요.'
+  }
+
+  const weight = Number(form.weight)
+  if (!Number.isFinite(weight)) {
+    return '가중치는 숫자로 입력해 주세요.'
+  }
+
+  if (weight < 0 || weight > 100) {
+    return '가중치는 0 이상 100 이하로 입력해 주세요.'
+  }
+
+  return undefined
+}
+
 export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
@@ -269,8 +374,19 @@ export function PersonalKpiManagementClient(props: Props) {
       setSelectedKpiId('')
       return
     }
+
+    const requestedKpiId =
+      props.initialKpiId && props.mine.some((item) => item.id === props.initialKpiId)
+        ? props.initialKpiId
+        : undefined
+
+    if (requestedKpiId && requestedKpiId !== selectedKpiId) {
+      setSelectedKpiId(requestedKpiId)
+      return
+    }
+
     if (!props.mine.some((item) => item.id === selectedKpiId)) {
-      setSelectedKpiId(props.initialKpiId ?? props.mine[0].id)
+      setSelectedKpiId(props.mine[0].id)
     }
   }, [props.mine, props.initialKpiId, selectedKpiId])
 
@@ -284,6 +400,22 @@ export function PersonalKpiManagementClient(props: Props) {
     }
   }, [props.reviewQueue, selectedReviewId])
 
+  useEffect(() => {
+    setActiveTabState('mine')
+    setSelectedKpiId(
+      props.initialKpiId && props.mine.some((item) => item.id === props.initialKpiId)
+        ? props.initialKpiId
+        : props.mine[0]?.id ?? ''
+    )
+    setSelectedReviewId(props.reviewQueue[0]?.id ?? '')
+    setForm(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
+    setEditorOpen(false)
+    setEditorMode('create')
+    setAiPreview(null)
+    setBanner(null)
+    setReviewNote('')
+  }, [props.selectedEmployeeId, props.selectedYear, props.selectedCycleId])
+
   const activeTab = activeTabState
   const selectedKpi = useMemo(
     () => props.mine.find((item) => item.id === selectedKpiId) ?? props.mine[0],
@@ -293,6 +425,27 @@ export function PersonalKpiManagementClient(props: Props) {
     () => props.reviewQueue.find((item) => item.id === selectedReviewId) ?? props.reviewQueue[0],
     [props.reviewQueue, selectedReviewId]
   )
+  const canEditSelectedKpi = Boolean(selectedKpi && props.permissions.canEdit && isDraftStatus(selectedKpi.status))
+  const selectedKpiEditReason =
+    !selectedKpi
+      ? '수정할 KPI를 먼저 선택해 주세요.'
+      : !props.permissions.canEdit
+        ? '현재 범위에서는 KPI를 수정할 권한이 없습니다.'
+        : isDraftStatus(selectedKpi.status)
+          ? undefined
+          : '초안 상태 KPI만 수정할 수 있습니다.'
+  const aiActionStates = Object.fromEntries(
+    AI_ACTIONS.map((item) => [
+      item.action,
+      buildAiActionState({
+        action: item.action,
+        canUseAi: props.permissions.canUseAi,
+        selectedKpi,
+        reviewQueueCount: props.reviewQueue.length,
+        totalKpiCount: props.mine.length,
+      }),
+    ])
+  ) as Record<AiAction, AiActionState>
 
   const submitCtaState = getPersonalKpiSubmitCtaState({
     canSubmit: props.permissions.canSubmit,
@@ -359,6 +512,9 @@ export function PersonalKpiManagementClient(props: Props) {
     tab?: string
     kpiId?: string
   }) {
+    if (next.tab && isTabKey(next.tab)) {
+      setActiveTabState(next.tab)
+    }
     const query = buildSearch({
       year: next.year ?? String(props.selectedYear),
       employeeId: next.employeeId ?? props.selectedEmployeeId,
@@ -411,6 +567,10 @@ export function PersonalKpiManagementClient(props: Props) {
   }
 
   function handleOpenReview() {
+    if (reviewDisabledReason) {
+      setBanner({ tone: 'info', message: reviewDisabledReason })
+      return
+    }
     const transition = getPersonalKpiHeroCtaTransition('review')
     setActiveTab(transition.nextTab)
     setBanner(null)
@@ -451,6 +611,17 @@ export function PersonalKpiManagementClient(props: Props) {
       return
     }
 
+    const validationMessage = validateKpiForm(form)
+    if (validationMessage) {
+      setBanner({ tone: 'error', message: validationMessage })
+      return
+    }
+
+    if (editorMode === 'edit' && selectedKpi && !isDraftStatus(selectedKpi.status)) {
+      setBanner({ tone: 'error', message: '초안 상태 KPI만 수정할 수 있습니다.' })
+      return
+    }
+
     setBusyAction('save-form')
     setBanner(null)
 
@@ -486,8 +657,14 @@ export function PersonalKpiManagementClient(props: Props) {
               }),
             })
 
-      await parseJsonOrThrow(response)
+      const saved = await parseJsonOrThrow<{ id: string; employeeId: string }>(response)
       setEditorOpen(false)
+      setSelectedKpiId(saved.id)
+      handleRouteSelection({
+        employeeId: saved.employeeId,
+        tab: 'mine',
+        kpiId: saved.id,
+      })
       setBanner({
         tone: 'success',
         message: editorMode === 'create' ? '개인 KPI를 추가했습니다.' : '개인 KPI를 수정했습니다.',
@@ -537,6 +714,15 @@ export function PersonalKpiManagementClient(props: Props) {
   }
 
   async function handleRunAi(action: AiAction) {
+    const actionState = aiActionStates[action]
+    if (actionState?.disabled) {
+      setBanner({
+        tone: 'info',
+        message: actionState.reason || '현재 조건에서는 AI 보조를 실행할 수 없습니다.',
+      })
+      return
+    }
+
     setBusyAction('ai')
     setBanner(null)
     setActiveTab('ai')
@@ -647,6 +833,10 @@ export function PersonalKpiManagementClient(props: Props) {
       setBanner({ tone: 'error', message: '현재 범위에서는 KPI를 수정할 권한이 없습니다.' })
       return
     }
+    if (!isDraftStatus(kpi.status)) {
+      setBanner({ tone: 'info', message: '초안 상태 KPI만 수정할 수 있습니다.' })
+      return
+    }
     setSelectedKpiId(kpi.id)
     setEditorMode('edit')
     setForm(buildFormFromKpi(kpi))
@@ -672,9 +862,9 @@ export function PersonalKpiManagementClient(props: Props) {
         aiDisabledReason={aiDisabledReason}
         reviewDisabledReason={reviewDisabledReason}
         historyDisabledReason={historyDisabledReason}
-        onChangeYear={(year) => handleRouteSelection({ year })}
-        onChangeCycle={(cycleId) => handleRouteSelection({ cycleId })}
-        onChangeEmployee={(employeeId) => handleRouteSelection({ employeeId })}
+        onChangeYear={(year) => handleRouteSelection({ year, tab: 'mine', kpiId: '' })}
+        onChangeCycle={(cycleId) => handleRouteSelection({ cycleId, tab: 'mine', kpiId: '' })}
+        onChangeEmployee={(employeeId) => handleRouteSelection({ employeeId, tab: 'mine', kpiId: '' })}
         onOpenCreate={handleOpenCreate}
         onOpenAiDraft={handleOpenAiDraft}
         onOpenHistory={handleOpenHistory}
@@ -696,7 +886,8 @@ export function PersonalKpiManagementClient(props: Props) {
               onSelect={handleSelectKpi}
               onEdit={handleEditKpi}
               selectedKpi={selectedKpi}
-              canEdit={props.permissions.canEdit}
+              canEdit={canEditSelectedKpi}
+              editDisabledReason={selectedKpiEditReason}
             />
           ) : null}
           {activeTab === 'review' ? (
@@ -722,6 +913,7 @@ export function PersonalKpiManagementClient(props: Props) {
               busy={busyAction === 'ai'}
               preview={aiPreview}
               logs={props.aiLogs}
+              actionStates={aiActionStates}
               onRun={handleRunAi}
               onApprove={handleApproveAiPreview}
               onReject={handleRejectAiPreview}
@@ -756,6 +948,7 @@ export function PersonalKpiManagementClient(props: Props) {
               busy={busyAction === 'ai'}
               preview={aiPreview}
               logs={props.aiLogs}
+              actionStates={aiActionStates}
               onRun={handleRunAi}
               onApprove={handleApproveAiPreview}
               onReject={handleRejectAiPreview}
@@ -1014,6 +1207,7 @@ function MineSection(props: {
   onEdit: (kpi: PersonalKpiViewModel) => void
   selectedKpi?: PersonalKpiViewModel
   canEdit: boolean
+  editDisabledReason?: string
 }) {
   if (!props.items.length) {
     return (
@@ -1060,7 +1254,7 @@ function MineSection(props: {
         </div>
       </SectionCard>
 
-      <DetailPanel selectedKpi={props.selectedKpi} canEdit={props.canEdit} onEdit={props.onEdit} />
+      <DetailPanel selectedKpi={props.selectedKpi} canEdit={props.canEdit} editDisabledReason={props.editDisabledReason} onEdit={props.onEdit} />
     </div>
   )
 }
@@ -1068,6 +1262,7 @@ function MineSection(props: {
 function DetailPanel(props: {
   selectedKpi?: PersonalKpiViewModel
   canEdit: boolean
+  editDisabledReason?: string
   onEdit: (kpi: PersonalKpiViewModel) => void
 }) {
   if (!props.selectedKpi) {
@@ -1092,6 +1287,8 @@ function DetailPanel(props: {
               <ActionButton variant="secondary" onClick={() => props.onEdit(item)}>
                 수정
               </ActionButton>
+            ) : props.editDisabledReason ? (
+              <InfoPill>{props.editDisabledReason}</InfoPill>
             ) : null}
           </div>
         </div>
@@ -1144,6 +1341,9 @@ function ReviewQueueSection(props: {
   onAction: (kpiId: string, action: 'START_REVIEW' | 'APPROVE' | 'REJECT' | 'LOCK' | 'REOPEN') => void
 }) {
   const selectedItem = props.selectedItem
+  const startReviewState = selectedItem ? getReviewActionState(selectedItem.status, 'START_REVIEW') : { disabled: true }
+  const approveState = selectedItem ? getReviewActionState(selectedItem.status, 'APPROVE') : { disabled: true }
+  const rejectState = selectedItem ? getReviewActionState(selectedItem.status, 'REJECT') : { disabled: true }
 
   if (!props.items.length) {
     return (
@@ -1203,13 +1403,13 @@ function ReviewQueueSection(props: {
               />
             </label>
             <div className="grid gap-2 sm:grid-cols-3">
-              <ActionButton variant="secondary" disabled={!props.canReview || props.busy} onClick={() => props.onAction(selectedItem.id, 'START_REVIEW')}>
+              <ActionButton variant="secondary" disabled={!props.canReview || props.busy || startReviewState.disabled} title={startReviewState.reason} onClick={() => props.onAction(selectedItem.id, 'START_REVIEW')}>
                 검토 시작
               </ActionButton>
-              <ActionButton disabled={!props.canReview || props.busy} onClick={() => props.onAction(selectedItem.id, 'APPROVE')}>
+              <ActionButton disabled={!props.canReview || props.busy || approveState.disabled} title={approveState.reason} onClick={() => props.onAction(selectedItem.id, 'APPROVE')}>
                 승인
               </ActionButton>
-              <ActionButton variant="secondary" disabled={!props.canReview || props.busy} onClick={() => props.onAction(selectedItem.id, 'REJECT')}>
+              <ActionButton variant="secondary" disabled={!props.canReview || props.busy || rejectState.disabled} title={rejectState.reason} onClick={() => props.onAction(selectedItem.id, 'REJECT')}>
                 반려
               </ActionButton>
             </div>
@@ -1281,6 +1481,7 @@ function HistorySection(props: { history: PersonalKpiTimelineItem[]; aiLogs: Per
 function AiSection(props: {
   canUseAi: boolean
   actions: Array<{ action: AiAction; title: string; description: string }>
+  actionStates: Record<AiAction, AiActionState>
   busy: boolean
   preview: AiPreview | null
   logs: PersonalKpiAiLogItem[]
@@ -1304,7 +1505,8 @@ function AiSection(props: {
                 key={item.action}
                 type="button"
                 onClick={() => props.onRun(item.action)}
-                disabled={props.busy}
+                disabled={props.busy || props.actionStates[item.action]?.disabled}
+                title={props.actionStates[item.action]?.reason}
                 className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
@@ -1312,6 +1514,9 @@ function AiSection(props: {
                   {item.title}
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{item.description}</p>
+                {props.actionStates[item.action]?.reason ? (
+                  <p className="mt-2 text-xs text-slate-500">{props.actionStates[item.action]?.reason}</p>
+                ) : null}
               </button>
             ))}
           </div>

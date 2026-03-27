@@ -1,9 +1,9 @@
-import type { Department, Employee, SystemRole } from '@prisma/client'
+import type { Prisma, SystemRole } from '@prisma/client'
 import type { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { prisma } from '@/lib/prisma'
-import { buildOrgPath, getAccessibleDeptIds, resolveManagerId } from '@/server/auth/org-scope'
+import { buildOrgPath, getAccessibleDeptIds } from '@/server/auth/org-scope'
 import { normalizeGoogleWorkspaceEmail } from './google-workspace'
 import { readAuthEnv } from './auth-env'
 import { decideGoogleAccess, resolveAuthRedirect } from './auth-flow'
@@ -52,15 +52,32 @@ function authLog(level: 'info' | 'warn' | 'error', event: string, metadata?: Rec
   console.log(message)
 }
 
-type EmployeeWithDepartment = Employee & {
-  department: Department
-}
-
 type DepartmentScopeNode = {
   id: string
   deptCode: string
   parentDeptId: string | null
 }
+
+const authEmployeeSelect = {
+  id: true,
+  gwsEmail: true,
+  empName: true,
+  role: true,
+  empId: true,
+  position: true,
+  deptId: true,
+  status: true,
+  department: {
+    select: {
+      deptName: true,
+      deptCode: true,
+    },
+  },
+} satisfies Prisma.EmployeeSelect
+
+type AuthEmployeeRecord = Prisma.EmployeeGetPayload<{
+  select: typeof authEmployeeSelect
+}>
 
 type AuthClaims = {
   id: string
@@ -87,7 +104,7 @@ async function loadDepartmentScope() {
   }) as Promise<DepartmentScopeNode[]>
 }
 
-async function buildAuthClaims(employee: EmployeeWithDepartment): Promise<AuthClaims> {
+async function buildAuthClaims(employee: AuthEmployeeRecord): Promise<AuthClaims> {
   const departments = await loadDepartmentScope()
 
   return {
@@ -100,26 +117,27 @@ async function buildAuthClaims(employee: EmployeeWithDepartment): Promise<AuthCl
     deptId: employee.deptId,
     deptName: employee.department.deptName,
     departmentCode: employee.department.deptCode,
-    managerId: resolveManagerId(employee),
+    managerId: null,
     orgPath: buildOrgPath(employee, departments),
     accessibleDepartmentIds: getAccessibleDeptIds(employee, departments),
   }
 }
 
+async function findAuthEmployee(where: Prisma.EmployeeWhereUniqueInput) {
+  return prisma.employee.findUnique({
+    where,
+    select: authEmployeeSelect,
+  })
+}
+
 async function findEmployeeForToken(token: { sub?: string | null; email?: string | null }) {
   if (token.sub) {
-    return prisma.employee.findUnique({
-      where: { id: token.sub },
-      include: { department: true },
-    })
+    return findAuthEmployee({ id: token.sub })
   }
 
   if (token.email) {
     const normalizedEmail = normalizeGoogleWorkspaceEmail(token.email)
-    return prisma.employee.findUnique({
-      where: { gwsEmail: normalizedEmail },
-      include: { department: true },
-    })
+    return findAuthEmployee({ gwsEmail: normalizedEmail })
   }
 
   return null
@@ -203,10 +221,7 @@ export const authOptions: NextAuthOptions = {
           credentials.email === process.env.ADMIN_EMAIL &&
           credentials.password === process.env.ADMIN_PASSWORD
         ) {
-          const employee = await prisma.employee.findUnique({
-            where: { gwsEmail: credentials.email },
-            include: { department: true },
-          })
+          const employee = await findAuthEmployee({ gwsEmail: credentials.email })
 
           if (employee) {
             return buildAuthClaims(employee)
@@ -224,10 +239,7 @@ export const authOptions: NextAuthOptions = {
 
         const normalizedEmail = email ? normalizeGoogleWorkspaceEmail(email) : null
         const employee = normalizedEmail
-          ? await prisma.employee.findUnique({
-              where: { gwsEmail: normalizedEmail },
-              include: { department: true },
-            })
+          ? await findAuthEmployee({ gwsEmail: normalizedEmail })
           : null
 
         const decision = decideGoogleAccess({
@@ -275,10 +287,7 @@ export const authOptions: NextAuthOptions = {
 
       if (account?.provider === 'google' && profile?.email) {
         const normalizedEmail = normalizeGoogleWorkspaceEmail(profile.email)
-        const employee = await prisma.employee.findUnique({
-          where: { gwsEmail: normalizedEmail },
-          include: { department: true },
-        })
+        const employee = await findAuthEmployee({ gwsEmail: normalizedEmail })
 
         if (employee) {
           const claims = await buildAuthClaims(employee)
