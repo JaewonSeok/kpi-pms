@@ -58,12 +58,34 @@ run('org KPI client opens real bulk upload modal', () => {
   assert.equal(file.includes('/api/kpi/org/ai'), true)
 })
 
+run('org KPI client resets stale selection and AI state when year or department context changes', () => {
+  const file = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.equal(file.includes('const serverContextKey ='), true)
+  assert.equal(file.includes('const viewContextKey ='), true)
+  assert.equal(file.includes('setSelectedDepartmentId(defaultDepartmentSelection)'), true)
+  assert.equal(file.includes("setTab('map')"), true)
+  assert.equal(file.includes('setAiPreview(null)'), true)
+  assert.equal(file.includes("const saved = await fetchJson<{ id: string; deptId: string }>("), true)
+  assert.equal(file.includes('setSelectedKpiId(saved.id)'), true)
+})
+
 run('notification ops client uses real test send and dead-letter actions', () => {
   const file = read('src/components/notifications/NotificationOpsClient.tsx')
 
   assert.equal(file.includes('/api/admin/notification-templates/test-send'), true)
   assert.equal(file.includes('/api/admin/notification-dead-letters'), true)
   assert.equal(file.includes('/api/cron/notifications'), true)
+})
+
+run('evaluation workbench clears stale notices when cycle or evaluation context changes', () => {
+  const file = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
+
+  assert.equal(file.includes('const workbenchContextKey ='), true)
+  assert.equal(file.includes('previousWorkbenchContextKey'), true)
+  assert.equal(file.includes("setNotice('')"), true)
+  assert.equal(file.includes("setErrorNotice('')"), true)
+  assert.equal(file.includes('setDecisionBusy(false)'), true)
 })
 
 run('personal KPI create CTA transition opens editor even outside ready state', () => {

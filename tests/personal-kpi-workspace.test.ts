@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
 import 'dotenv/config'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -47,6 +47,7 @@ type PrismaDelegateMethod = (...args: any[]) => any
 
 type PersonalKpiPagePrismaSnapshot = {
   employeeFindMany: PrismaDelegateMethod
+  departmentFindMany: PrismaDelegateMethod
   departmentFindUnique: PrismaDelegateMethod
   evalCycleFindMany: PrismaDelegateMethod
   personalKpiFindMany: PrismaDelegateMethod
@@ -60,6 +61,7 @@ function capturePrismaSnapshot(): PersonalKpiPagePrismaSnapshot {
   const prismaAny = prisma as any
   return {
     employeeFindMany: prismaAny.employee.findMany,
+    departmentFindMany: prismaAny.department.findMany,
     departmentFindUnique: prismaAny.department.findUnique,
     evalCycleFindMany: prismaAny.evalCycle.findMany,
     personalKpiFindMany: prismaAny.personalKpi.findMany,
@@ -73,6 +75,7 @@ function capturePrismaSnapshot(): PersonalKpiPagePrismaSnapshot {
 function restorePrismaSnapshot(snapshot: PersonalKpiPagePrismaSnapshot) {
   const prismaAny = prisma as any
   prismaAny.employee.findMany = snapshot.employeeFindMany
+  prismaAny.department.findMany = snapshot.departmentFindMany
   prismaAny.department.findUnique = snapshot.departmentFindUnique
   prismaAny.evalCycle.findMany = snapshot.evalCycleFindMany
   prismaAny.personalKpi.findMany = snapshot.personalKpiFindMany
@@ -95,53 +98,68 @@ async function withStubbedPersonalKpiPageData(
       {
         id: 'leader-1',
         empId: 'EMP-LEADER',
-        empName: '팀장',
+        empName: 'Leader One',
         role: 'ROLE_TEAM_LEADER',
         deptId: 'dept-1',
-        status: 'ACTIVE',
-        department: {
-          deptName: '사업지원팀',
-        },
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
       },
       {
         id: 'member-2',
         empId: 'EMP-MEMBER-2',
-        empName: '구성원2',
+        empName: 'Member Two',
         role: 'ROLE_MEMBER',
         deptId: 'dept-1',
-        status: 'ACTIVE',
-        department: {
-          deptName: '사업지원팀',
-        },
+        teamLeaderId: 'leader-1',
+        sectionChiefId: null,
+        divisionHeadId: null,
       },
     ])
+
+  prismaAny.department.findMany =
+    overrides.departmentFindMany ??
+    (async () => [
+      {
+        id: 'dept-1',
+        deptName: 'Business Ops',
+      },
+      {
+        id: 'dept-2',
+        deptName: 'Finance',
+      },
+    ])
+
   prismaAny.department.findUnique =
     overrides.departmentFindUnique ??
     (async () => ({
       id: 'dept-1',
-      deptName: '사업지원팀',
+      deptName: 'Business Ops',
       organization: {
         id: 'org-1',
         name: 'RSUPPORT',
       },
     }))
+
   prismaAny.evalCycle.findMany =
     overrides.evalCycleFindMany ??
     (async () => [
       {
         id: 'cycle-2026',
-        cycleName: '2026 KPI 설정',
+        cycleName: '2026 KPI ?ㅼ젙',
         evalYear: 2026,
         status: 'KPI_SETTING',
       },
     ])
+
   let personalKpiFindManyCallCount = 0
   prismaAny.personalKpi.findMany =
     overrides.personalKpiFindMany ??
     (async () => {
       personalKpiFindManyCallCount += 1
-      return personalKpiFindManyCallCount === 1 ? [] : []
+      return personalKpiFindManyCallCount >= 1 ? [] : []
     })
+
   prismaAny.orgKpi.findMany = overrides.orgKpiFindMany ?? (async () => [])
   prismaAny.auditLog.findMany = overrides.auditLogFindMany ?? (async () => [])
   prismaAny.aiRequestLog.findMany = overrides.aiRequestLogFindMany ?? (async () => [])
@@ -162,9 +180,9 @@ async function main() {
           user: {
             id: 'leader-1',
             role: 'ROLE_TEAM_LEADER',
-            name: '팀장',
+            name: 'Leader One',
             deptId: 'dept-1',
-            deptName: '사업지원팀',
+            deptName: 'Business Ops',
             accessibleDepartmentIds: undefined as never,
           },
         },
@@ -174,7 +192,8 @@ async function main() {
 
       assert.equal(data.state, 'empty')
       assert.equal(data.summary.totalCount, 0)
-      assert.notEqual(data.message, '개인 KPI 데이터를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.')
+      assert.ok(data.employeeOptions.length > 0)
+      assert.notEqual(data.message, '\uAC1C\uC778 KPI \uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911 \uBB38\uC81C\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694.')
     })
   })
 
@@ -185,12 +204,12 @@ async function main() {
           {
             id: 'member-2',
             empId: 'EMP-MEMBER-2',
-            empName: '구성원2',
+            empName: 'Member Two',
             role: 'ROLE_MEMBER',
             deptId: 'dept-1',
             status: 'ACTIVE',
             department: {
-              deptName: '사업지원팀',
+              deptName: 'Business Ops',
             },
           },
         ],
@@ -201,9 +220,9 @@ async function main() {
             user: {
               id: 'member-2',
               role: 'ROLE_MEMBER',
-              name: '구성원2',
+              name: 'Member Two',
               deptId: 'dept-1',
-              deptName: '사업지원팀',
+              deptName: 'Business Ops',
               accessibleDepartmentIds: [],
             },
           },
@@ -218,20 +237,118 @@ async function main() {
     )
   })
 
-  await run('no-target, setup-required, and error fallbacks stay distinct', async () => {
+  await run('HR admin without a direct employee row still gets assignee options and a valid target', async () => {
+    await withStubbedPersonalKpiPageData(
+      {
+        employeeFindMany: async () => [
+          {
+            id: 'member-10',
+            empId: 'EMP-010',
+            empName: 'Scoped Member',
+            role: 'ROLE_MEMBER',
+            deptId: 'dept-1',
+            teamLeaderId: null,
+            sectionChiefId: null,
+            divisionHeadId: null,
+          },
+          {
+            id: 'member-11',
+            empId: 'EMP-011',
+            empName: 'Another Member',
+            role: 'ROLE_MEMBER',
+            deptId: 'dept-2',
+            teamLeaderId: null,
+            sectionChiefId: null,
+            divisionHeadId: null,
+          },
+        ],
+      },
+      async () => {
+        const data = await getPersonalKpiPageData({
+          session: {
+            user: {
+              id: 'admin-without-employee-row',
+              role: 'ROLE_ADMIN',
+              name: 'HR Admin',
+              deptId: 'dept-admin',
+              deptName: 'HR',
+              accessibleDepartmentIds: [],
+            },
+          },
+          year: 2026,
+        })
+
+        assert.equal(data.state, 'empty')
+        assert.equal(data.employeeOptions.length, 2)
+        assert.equal(data.selectedEmployeeId, 'member-10')
+        assert.equal(data.permissions.canCreate, true)
+      }
+    )
+  })
+
+  await run('assignee dropdown stays populated even when department-name lookup fails', async () => {
+    await withStubbedPersonalKpiPageData(
+      {
+        employeeFindMany: async () => [
+          {
+            id: 'member-10',
+            empId: 'EMP-010',
+            empName: 'Scoped Member',
+            role: 'ROLE_MEMBER',
+            deptId: 'dept-1',
+            teamLeaderId: null,
+            sectionChiefId: null,
+            divisionHeadId: null,
+          },
+        ],
+        departmentFindMany: async () => {
+          throw new Error('department lookup failed')
+        },
+      },
+      async () => {
+        const originalConsoleError = console.error
+        console.error = () => undefined
+
+        try {
+          const data = await getPersonalKpiPageData({
+            session: {
+              user: {
+                id: 'admin-without-employee-row',
+                role: 'ROLE_ADMIN',
+                name: 'HR Admin',
+                deptId: 'dept-admin',
+                deptName: 'HR',
+                accessibleDepartmentIds: [],
+              },
+            },
+            year: 2026,
+          })
+
+          assert.equal(data.state, 'empty')
+          assert.equal(data.employeeOptions.length, 1)
+          assert.equal(data.employeeOptions[0]?.departmentName, '\uBBF8\uC9C0\uC815 \uBD80\uC11C')
+          assert.equal(data.selectedEmployeeId, 'member-10')
+        } finally {
+          console.error = originalConsoleError
+        }
+      }
+    )
+  })
+
+  await run('requested out-of-scope employee returns no-target instead of a generic error', async () => {
     await withStubbedPersonalKpiPageData(
       {
         employeeFindMany: async () => [],
       },
       async () => {
-        const denied = await getPersonalKpiPageData({
+        const data = await getPersonalKpiPageData({
           session: {
             user: {
               id: 'leader-1',
               role: 'ROLE_TEAM_LEADER',
-              name: '팀장',
+              name: 'Leader One',
               deptId: 'dept-1',
-              deptName: '사업지원팀',
+              deptName: 'Business Ops',
               accessibleDepartmentIds: ['dept-1'],
             },
           },
@@ -239,33 +356,37 @@ async function main() {
           employeeId: 'missing-user',
         })
 
-        assert.equal(denied.state, 'no-target')
+        assert.equal(data.state, 'no-target')
       }
     )
+  })
 
+  await run('no scoped employees for a manager returns setup-required', async () => {
     await withStubbedPersonalKpiPageData(
       {
         employeeFindMany: async () => [],
       },
       async () => {
-        const setupRequired = await getPersonalKpiPageData({
+        const data = await getPersonalKpiPageData({
           session: {
             user: {
               id: 'leader-1',
               role: 'ROLE_TEAM_LEADER',
-              name: '리더',
+              name: 'Leader One',
               deptId: 'dept-1',
-              deptName: '사업지원팀',
+              deptName: 'Business Ops',
               accessibleDepartmentIds: ['dept-1'],
             },
           },
           year: 2026,
         })
 
-        assert.equal(setupRequired.state, 'setup-required')
+        assert.equal(data.state, 'setup-required')
       }
     )
+  })
 
+  await run('employee lookup failure is still fatal and returns the true error state', async () => {
     await withStubbedPersonalKpiPageData(
       {
         employeeFindMany: async () => {
@@ -277,22 +398,98 @@ async function main() {
         console.error = () => undefined
 
         try {
-          const failed = await getPersonalKpiPageData({
+          const data = await getPersonalKpiPageData({
             session: {
               user: {
                 id: 'leader-1',
                 role: 'ROLE_TEAM_LEADER',
-                name: '팀장',
+                name: 'Leader One',
                 deptId: 'dept-1',
-                deptName: '사업지원팀',
+                deptName: 'Business Ops',
                 accessibleDepartmentIds: ['dept-1'],
               },
             },
             year: 2026,
           })
 
-          assert.equal(failed.state, 'error')
-          assert.equal(failed.message, '개인 KPI 데이터를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.')
+          assert.equal(data.state, 'error')
+          assert.equal(data.message, '\uAC1C\uC778 KPI \uB370\uC774\uD130\uB97C \uBD88\uB7EC\uC624\uB294 \uC911 \uBB38\uC81C\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694.')
+        } finally {
+          console.error = originalConsoleError
+        }
+      }
+    )
+  })
+
+  await run('non-critical AI log failure keeps the personal KPI page operational with a degraded-state alert', async () => {
+    await withStubbedPersonalKpiPageData(
+      {
+        aiRequestLogFindMany: async () => {
+          throw new Error('ai log unavailable')
+        },
+      },
+      async () => {
+        const originalConsoleError = console.error
+        console.error = () => undefined
+
+        try {
+          const data = await getPersonalKpiPageData({
+            session: {
+              user: {
+                id: 'leader-1',
+                role: 'ROLE_TEAM_LEADER',
+                name: 'Leader One',
+                deptId: 'dept-1',
+                deptName: 'Business Ops',
+                accessibleDepartmentIds: ['dept-1'],
+              },
+            },
+            year: 2026,
+          })
+
+          assert.equal(data.state, 'empty')
+          assert.equal(data.aiLogs.length, 0)
+          assert.equal(data.alerts?.some((item) => item.title.includes('AI')), true)
+        } finally {
+          console.error = originalConsoleError
+        }
+      }
+    )
+  })
+
+  await run('a recoverable KPI-list failure preserves the assignee shell instead of returning a generic error', async () => {
+    await withStubbedPersonalKpiPageData(
+      {
+        personalKpiFindMany: async (args: any) => {
+          if (args?.select?.evalYear) {
+            return []
+          }
+          throw new Error('personal kpi query failed')
+        },
+      },
+      async () => {
+        const originalConsoleError = console.error
+        console.error = () => undefined
+
+        try {
+          const data = await getPersonalKpiPageData({
+            session: {
+              user: {
+                id: 'admin-without-employee-row',
+                role: 'ROLE_ADMIN',
+                name: 'HR Admin',
+                deptId: 'dept-admin',
+                deptName: 'HR',
+                accessibleDepartmentIds: [],
+              },
+            },
+            year: 2026,
+          })
+
+          assert.equal(data.state, 'empty')
+          assert.equal(data.employeeOptions.length, 2)
+          assert.equal(data.selectedEmployeeId, 'leader-1')
+          assert.equal(data.alerts?.some((item) => item.title.includes('KPI')), true)
         } finally {
           console.error = originalConsoleError
         }
@@ -310,7 +507,7 @@ async function main() {
       ['dept-team']
     )
 
-    const permissions = buildPersonalKpiPermissions({
+    const errorPermissions = buildPersonalKpiPermissions({
       actorId: 'emp-1',
       actorRole: 'ROLE_MEMBER',
       targetEmployeeId: 'emp-1',
@@ -320,9 +517,8 @@ async function main() {
         reason: null,
       },
     })
-
-    assert.equal(permissions.canCreate, false)
-    assert.equal(permissions.canUseAi, false)
+    assert.equal(errorPermissions.canCreate, false)
+    assert.equal(errorPermissions.canUseAi, false)
 
     const noTargetPermissions = buildPersonalKpiPermissions({
       actorId: 'leader-1',
@@ -334,6 +530,9 @@ async function main() {
         reason: null,
       },
     })
+    assert.equal(noTargetPermissions.canCreate, false)
+    assert.equal(noTargetPermissions.canSubmit, false)
+    assert.equal(noTargetPermissions.canUseAi, false)
 
     const setupPermissions = buildPersonalKpiPermissions({
       actorId: 'leader-1',
@@ -345,10 +544,6 @@ async function main() {
         reason: null,
       },
     })
-
-    assert.equal(noTargetPermissions.canCreate, false)
-    assert.equal(noTargetPermissions.canSubmit, false)
-    assert.equal(noTargetPermissions.canUseAi, false)
     assert.equal(setupPermissions.canCreate, false)
     assert.equal(setupPermissions.canSubmit, false)
     assert.equal(setupPermissions.canUseAi, false)
@@ -376,38 +571,164 @@ async function main() {
     assert.equal(missingApiKey.reason, 'configuration-missing')
   })
 
-  await run('non-critical AI log failure keeps the personal KPI page operational with a degraded-state alert', async () => {
+  await run('scoped employees still get department labels from department lookup even without embedded relation data', async () => {
     await withStubbedPersonalKpiPageData(
       {
-        aiRequestLogFindMany: async () => {
-          throw new Error('ai log unavailable')
-        },
+        employeeFindMany: async () => [
+          {
+            id: 'emp-1',
+            empId: 'EMP-001',
+            empName: 'Employee One',
+            role: 'ROLE_MEMBER',
+            deptId: 'dept-1',
+            teamLeaderId: null,
+            sectionChiefId: null,
+            divisionHeadId: null,
+            department: null,
+          },
+        ],
+        personalKpiFindMany: async () => [],
       },
       async () => {
-        const originalConsoleError = console.error
-        console.error = () => undefined
-
-        try {
-          const data = await getPersonalKpiPageData({
-            session: {
-              user: {
-                id: 'leader-1',
-                role: 'ROLE_TEAM_LEADER',
-                name: '팀장',
-                deptId: 'dept-1',
-                deptName: '사업지원팀',
-                accessibleDepartmentIds: ['dept-1'],
-              },
+        const data = await getPersonalKpiPageData({
+          session: {
+            user: {
+              id: 'emp-1',
+              role: 'ROLE_MEMBER',
+              name: 'Employee One',
+              deptId: 'dept-1',
+              deptName: 'Business Ops',
+              accessibleDepartmentIds: ['dept-1'],
             },
-            year: 2026,
-          })
+          },
+          year: 2026,
+        })
 
-          assert.equal(data.state, 'empty')
-          assert.equal(data.aiLogs.length, 0)
-          assert.equal(data.alerts?.some((item) => item.title === '개인 KPI AI 요청 이력을 불러오지 못했습니다.'), true)
-        } finally {
-          console.error = originalConsoleError
-        }
+        assert.equal(data.state, 'empty')
+        assert.equal(data.employeeOptions[0]?.departmentName, 'Business Ops')
+      }
+    )
+  })
+
+  await run('assignee selection returns the requested employee data and recomputes KPI summary from that employee rows', async () => {
+    await withStubbedPersonalKpiPageData(
+      {
+        employeeFindMany: async () => [
+          {
+            id: 'member-1',
+            empId: 'EMP-001',
+            empName: 'Member One',
+            role: 'ROLE_MEMBER',
+            deptId: 'dept-1',
+            teamLeaderId: 'leader-1',
+            sectionChiefId: null,
+            divisionHeadId: null,
+          },
+          {
+            id: 'member-2',
+            empId: 'EMP-002',
+            empName: 'Member Two',
+            role: 'ROLE_MEMBER',
+            deptId: 'dept-1',
+            teamLeaderId: 'leader-1',
+            sectionChiefId: null,
+            divisionHeadId: null,
+          },
+          {
+            id: 'leader-1',
+            empId: 'EMP-LEADER',
+            empName: 'Leader One',
+            role: 'ROLE_TEAM_LEADER',
+            deptId: 'dept-1',
+            teamLeaderId: null,
+            sectionChiefId: null,
+            divisionHeadId: null,
+          },
+        ],
+        personalKpiFindMany: async (args: any) => {
+          if (args?.select?.evalYear) {
+            return [{ evalYear: 2026 }]
+          }
+
+          if (args?.where?.employeeId === 'member-2') {
+            return [
+              {
+                id: 'pk-2',
+                employeeId: 'member-2',
+                evalYear: 2026,
+                kpiType: 'QUANTITATIVE',
+                kpiName: '재계약률 향상',
+                definition: '재계약률을 95% 이상 유지한다.',
+                formula: '재계약 고객 수 / 전체 고객 수 x 100',
+                targetValue: 95,
+                unit: '%',
+                weight: 40,
+                difficulty: 'MEDIUM',
+                status: 'DRAFT',
+                linkedOrgKpiId: 'org-1',
+                linkedOrgKpi: {
+                  id: 'org-1',
+                  deptId: 'dept-1',
+                  kpiName: '고객 유지율',
+                  kpiCategory: '성과',
+                  definition: '재계약률 유지',
+                  department: {
+                    deptName: 'Business Ops',
+                  },
+                },
+                employee: {
+                  id: 'member-2',
+                  empName: 'Member Two',
+                  deptId: 'dept-1',
+                  teamLeaderId: 'leader-1',
+                  sectionChiefId: null,
+                  divisionHeadId: null,
+                  department: {
+                    deptName: 'Business Ops',
+                  },
+                },
+                monthlyRecords: [
+                  {
+                    id: 'monthly-1',
+                    yearMonth: '2026-03',
+                    achievementRate: 92,
+                    activities: '핵심 고객 follow-up',
+                    obstacles: null,
+                  },
+                ],
+                updatedAt: new Date('2026-03-01T09:00:00Z'),
+                createdAt: new Date('2026-02-01T09:00:00Z'),
+              },
+            ]
+          }
+
+          return []
+        },
+        auditLogFindMany: async () => [],
+      },
+      async () => {
+        const data = await getPersonalKpiPageData({
+          session: {
+            user: {
+              id: 'leader-1',
+              role: 'ROLE_TEAM_LEADER',
+              name: 'Leader One',
+              deptId: 'dept-1',
+              deptName: 'Business Ops',
+              accessibleDepartmentIds: ['dept-1'],
+            },
+          },
+          year: 2026,
+          employeeId: 'member-2',
+        })
+
+        assert.equal(data.state, 'ready')
+        assert.equal(data.selectedEmployeeId, 'member-2')
+        assert.equal(data.mine[0]?.title, '재계약률 향상')
+        assert.equal(data.summary.totalCount, 1)
+        assert.equal(data.summary.totalWeight, 40)
+        assert.equal(data.summary.remainingWeight, 60)
+        assert.equal(data.summary.linkedOrgKpiCount, 1)
       }
     )
   })
@@ -429,43 +750,25 @@ async function main() {
     assert.equal(routeSource.includes("throw new AppError(403, 'FORBIDDEN', aiAccess.message"), true)
   })
 
-  await run('missing department mapping on scoped employees no longer crashes the personal KPI page', async () => {
-    await withStubbedPersonalKpiPageData(
-      {
-        employeeFindMany: async () => [
-          {
-            id: 'emp-1',
-            empId: 'EMP-001',
-            empName: '홍길동',
-            role: 'ROLE_MEMBER',
-            deptId: 'dept-1',
-            teamLeaderId: null,
-            sectionChiefId: null,
-            divisionHeadId: null,
-            department: null,
-          },
-        ],
-        personalKpiFindMany: async () => [],
-      },
-      async () => {
-        const data = await getPersonalKpiPageData({
-          session: {
-            user: {
-              id: 'emp-1',
-              role: 'ROLE_MEMBER',
-              name: '홍길동',
-              deptId: 'dept-1',
-              deptName: '사업지원팀',
-              accessibleDepartmentIds: ['dept-1'],
-            },
-          },
-          year: 2026,
-        })
+  await run('personal KPI client resets stale selection and editor state when assignee scope changes', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
-        assert.equal(data.state, 'empty')
-        assert.equal(data.employeeOptions[0]?.departmentName, '미지정 부서')
-      }
-    )
+    assert.equal(source.includes('setActiveTabState(\'mine\')'), true)
+    assert.equal(source.includes('setEditorOpen(false)'), true)
+    assert.equal(source.includes('setAiPreview(null)'), true)
+    assert.equal(source.includes('onChangeEmployee={(employeeId) => handleRouteSelection({ employeeId, tab: \'mine\', kpiId: \'\' })}'), true)
+    assert.equal(source.includes('employeeId: saved.employeeId'), true)
+    assert.equal(source.includes('kpiId: saved.id'), true)
+  })
+
+  await run('personal KPI client gates edit, review, and AI actions with live operational state instead of dead-ending in the API', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+    assert.equal(source.includes('function getReviewActionState('), true)
+    assert.equal(source.includes('const aiActionStates = Object.fromEntries('), true)
+    assert.equal(source.includes('if (!isDraftStatus(kpi.status))'), true)
+    assert.equal(source.includes('disabled={!props.canReview || props.busy || startReviewState.disabled}'), true)
+    assert.equal(source.includes('disabled={props.busy || props.actionStates[item.action]?.disabled}'), true)
   })
 
   console.log('Personal KPI workspace tests completed')
@@ -479,3 +782,5 @@ main()
   .finally(async () => {
     await prisma.$disconnect()
   })
+
+

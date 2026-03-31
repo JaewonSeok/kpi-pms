@@ -228,8 +228,18 @@ function makeSession(overrides?: Partial<any>) {
   } as any
 }
 
+function makeMissingAiStorageError(modelName: string) {
+  const error = new Error('The table public.ai_competency_cycles does not exist in the current database.') as Error & {
+    code: string
+    meta: { modelName: string }
+  }
+  error.code = 'P2021'
+  error.meta = { modelName }
+  return error
+}
+
 async function main() {
-  await run('admin without active AI cycle gets a real setup state instead of the broken placeholder', async () => {
+  await run('admin without active AI cycle gets a setup-required state instead of the broken placeholder', async () => {
     await withStubbedAiCompetencyData(
       {
         aiCompetencyCycleFindMany: async () => [],
@@ -239,10 +249,64 @@ async function main() {
           session: makeSession({ role: 'ROLE_ADMIN' }),
         })
 
-        assert.equal(data.state, 'ready')
+        assert.equal(data.state, 'setup-required')
         assert.equal(data.permissions?.canManageCycles, true)
         assert.equal(data.availableEvalCycles?.length, 1)
         assert.equal(data.adminView?.assignments.length, 0)
+      }
+    )
+  })
+
+  await run('missing AI competency tables degrade to setup-required for admin instead of the broken placeholder', async () => {
+    await withStubbedAiCompetencyData(
+      {
+        aiCompetencyCycleFindMany: async () => {
+          throw makeMissingAiStorageError('AiCompetencyCycle')
+        },
+      },
+      async () => {
+        const originalConsoleError = console.error
+        console.error = () => undefined
+
+        try {
+          const data = await getAiCompetencyPageData({
+            session: makeSession({ role: 'ROLE_ADMIN' }),
+          })
+
+          assert.equal(data.state, 'setup-required')
+          assert.equal(data.permissions?.canManageCycles, true)
+          assert.equal(data.availableEvalCycles?.length, 1)
+          assert.equal(data.summary?.targetCount, 0)
+          assert.equal(data.adminView?.assignments.length, 0)
+        } finally {
+          console.error = originalConsoleError
+        }
+      }
+    )
+  })
+
+  await run('missing AI competency tables degrade to setup-required for members instead of the broken placeholder', async () => {
+    await withStubbedAiCompetencyData(
+      {
+        aiCompetencyCycleFindMany: async () => {
+          throw makeMissingAiStorageError('AiCompetencyCycle')
+        },
+      },
+      async () => {
+        const originalConsoleError = console.error
+        console.error = () => undefined
+
+        try {
+          const data = await getAiCompetencyPageData({
+            session: makeSession({ role: 'ROLE_MEMBER' }),
+          })
+
+          assert.equal(data.state, 'setup-required')
+          assert.equal(data.permissions?.canManageCycles, false)
+          assert.equal(data.availableCycles.length, 0)
+        } finally {
+          console.error = originalConsoleError
+        }
       }
     )
   })
@@ -384,6 +448,7 @@ async function main() {
     const source = read('src/components/evaluation/AiCompetencyClient.tsx')
 
     assert.equal(source.includes('data.alerts?.length'), true)
+    assert.equal(source.includes("data.state === 'setup-required'"), true)
     assert.equal(source.includes('일부 운영 데이터를 불러오지 못해 기본 화면으로 표시 중입니다.'), true)
     assert.equal(source.includes('AI 활용능력 평가 화면을 불러오지 못했습니다.'), true)
   })

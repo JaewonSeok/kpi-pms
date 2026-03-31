@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertCircle,
@@ -59,6 +59,95 @@ const CATEGORY_OPTIONS = ['점수 이의', '코멘트 이의', '절차 이의', 
 const REQUESTED_ACTIONS = ['재검토 요청', '설명 요청', '재평가 요청']
 const RELATED_TARGET_OPTIONS = ['성과 항목', '역량 항목', '최종 등급']
 
+type AppealAdminAction = 'start_review' | 'request_info' | 'resolve' | 'reject'
+type DisabledState = {
+  disabled: boolean
+  reason?: string
+}
+
+function getDraftSaveState(viewModel: AppealViewModel | undefined, isReady: boolean): DisabledState {
+  if (!isReady || !viewModel) {
+    return { disabled: true, reason: '?댁쓽 ?좎껌 ?붾㈃??以鍮?以묒엯?덈떎.' }
+  }
+  if (viewModel.actorMode === 'admin') {
+    return { disabled: true, reason: '?댁쁺?먮뒗 耳?댁뒪瑜?泥섎━留??섏닔 ?덉뒿?덈떎.' }
+  }
+  if (!viewModel.case.canEdit) {
+    return {
+      disabled: true,
+      reason: viewModel.cycle.appealOpen
+        ? '?꾩옱 ?곹깭?먯꽌???꾩떆??섏쓣 ???놁뒿?덈떎.'
+        : '?댁쓽 ?좎껌 媛??湲곌컙???꾨땲?쇰㈃ 珥덉븞 ??ν뵫???놁뒿?덈떎.',
+    }
+  }
+  return { disabled: false }
+}
+
+function getSubmitState(viewModel: AppealViewModel | undefined, draft: DraftSnapshot | null, isReady: boolean): DisabledState {
+  if (!isReady || !viewModel || !draft) {
+    return { disabled: true, reason: '?댁쓽 ?좎껌 ?붾㈃??以鍮?以묒엯?덈떎.' }
+  }
+  if (viewModel.actorMode === 'admin') {
+    return { disabled: true, reason: '?댁쁺?먮뒗 ?좎껌???쒖텧?섏? ?딆뒿?덈떎.' }
+  }
+  if (!viewModel.case.canSubmit) {
+    return {
+      disabled: true,
+      reason: viewModel.cycle.appealOpen
+        ? '?꾩옱 ?곹깭?먯꽌???쒖텧?????놁뒿?덈떎.'
+        : '?댁쓽 ?좎껌 媛??湲곌컙???꾨떃?섏뿀?듬땲??',
+    }
+  }
+  if (!draft.reason.trim()) {
+    return { disabled: true, reason: '?댁쓽 ?좎껌 ?ъ쑀瑜??낅젰??二쇱꽭??' }
+  }
+  if (draft.reason.trim().length < 20) {
+    return { disabled: true, reason: '?댁쓽 ?좎껌 ?ъ쑀??20???댁긽 ?낅젰??二쇱꽭??' }
+  }
+  if (!draft.relatedTargets.length) {
+    return { disabled: true, reason: '愿????ぉ???쒖냼 1媛?紐낆? ?좏깮??二쇱꽭??' }
+  }
+  if (!draft.confirmed) {
+    return { disabled: true, reason: '?쒖텧 ?꾨줈 ?뺤씤 ?숈쓽瑜??좏깮??二쇱꽭??' }
+  }
+  return { disabled: false }
+}
+
+function getWithdrawState(viewModel: AppealViewModel | undefined, isReady: boolean): DisabledState {
+  if (!isReady || !viewModel) {
+    return { disabled: true, reason: '?댁쓽 ?좎껌 ?붾㈃??以鍮?以묒엯?덈떎.' }
+  }
+  if (viewModel.actorMode === 'admin') {
+    return { disabled: true, reason: '?댁쁺?먮뒗 泥좏쉶???섑뻾?섏? ?딆뒿?덈떎.' }
+  }
+  if (!viewModel.case.canWithdraw) {
+    return { disabled: true, reason: '?꾩옱 ?곹깭?먯꽌???좏쉶?????놁뒿?덈떎.' }
+  }
+  return { disabled: false }
+}
+
+function getAdminActionState(viewModel: AppealViewModel | undefined, action: AppealAdminAction, note: string): DisabledState {
+  if (!viewModel || viewModel.actorMode !== 'admin') {
+    return { disabled: true, reason: '?댁쁺 ?먯떊留??ъ슜?????덉뒿?덈떎.' }
+  }
+
+  const status = viewModel.case.status
+  const noteRequired = action === 'request_info' || action === 'resolve' || action === 'reject'
+  if (action === 'start_review' && status !== 'SUBMITTED') {
+    return { disabled: true, reason: '?쒖텧 ?곹깭?먯꽌留?寃???쒖옉?????덉뒿?덈떎.' }
+  }
+  if (action === 'request_info' && !['SUBMITTED', 'UNDER_REVIEW'].includes(status)) {
+    return { disabled: true, reason: '?쒖텧 ?먮뒗 寃??以??곹깭?먯꽌留?蹂댁셿 ?붿껌?????덉뒿?덈떎.' }
+  }
+  if ((action === 'resolve' || action === 'reject') && !['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(status)) {
+    return { disabled: true, reason: '?꾩옱 ?곹깭?먯꽌??寃곗젙 ?곗뾽?????놁뒿?덈떎.' }
+  }
+  if (noteRequired && note.trim().length < 3) {
+    return { disabled: true, reason: '?댁쁺 硫붾え瑜?3???댁긽 ?낅젰??二쇱꽭??' }
+  }
+  return { disabled: false }
+}
+
 export function EvaluationAppealClient(props: AppealPageData) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<AppealTab>('form')
@@ -72,14 +161,8 @@ export function EvaluationAppealClient(props: AppealPageData) {
   const [draft, setDraft] = useState<DraftSnapshot | null>(null)
 
   const availableCycles = props.availableCycles
-  const selectedCycle = availableCycles.find((cycle) => cycle.id === props.selectedCycleId) ?? availableCycles[0]
   const viewModel = props.viewModel
   const loadAlerts = props.alerts?.length ? <LoadAlerts alerts={props.alerts} /> : null
-
-  const draftStorageKey = useMemo(() => {
-    if (!selectedCycle?.id) return null
-    return `evaluation-appeal-draft:${selectedCycle.id}:${viewModel?.case.id ?? 'new'}`
-  }, [selectedCycle?.id, viewModel?.case.id])
 
   useEffect(() => {
     if (!viewModel) {
@@ -87,34 +170,37 @@ export function EvaluationAppealClient(props: AppealPageData) {
       return
     }
 
-    const nextDraft = buildInitialDraft(viewModel)
-
-    if (viewModel.actorMode !== 'applicant' || !draftStorageKey) {
-      setDraft(nextDraft)
-      return
-    }
-
-    const savedDraft = safeParseDraft(window.localStorage.getItem(draftStorageKey))
-    setDraft(savedDraft ?? nextDraft)
-  }, [viewModel, draftStorageKey])
+    setDraft(buildInitialDraft(viewModel))
+  }, [viewModel])
 
   useEffect(() => {
-    if (!draftStorageKey || !draft || viewModel?.actorMode !== 'applicant') return
-    window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
-  }, [draftStorageKey, draft, viewModel?.actorMode])
+    setActiveTab('form')
+    setBanner(null)
+    setAdminNote('')
+  }, [props.state, props.selectedCycleId, props.selectedCaseId, viewModel?.actorMode])
 
-  const isReady = props.state === 'ready' && viewModel && draft
-  const isAdmin = viewModel?.actorMode === 'admin'
-  const canEdit = Boolean(isReady && !isAdmin && viewModel.case.canEdit)
+  const readyContext = props.state === 'ready' && viewModel && draft ? { viewModel, draft } : null
+  const isReady = Boolean(readyContext)
+  const activeViewModel = readyContext?.viewModel
+  const activeDraft = readyContext?.draft
+  const isAdmin = activeViewModel?.actorMode === 'admin'
+  const canEdit = Boolean(activeViewModel && !isAdmin && activeViewModel.case.canEdit)
+  const draftSaveState = getDraftSaveState(activeViewModel, isReady)
+  const submitState = getSubmitState(activeViewModel, activeDraft ?? null, isReady)
+  const withdrawState = getWithdrawState(activeViewModel, isReady)
+  const adminActionStates: Record<AppealAdminAction, DisabledState> = {
+    start_review: getAdminActionState(activeViewModel, 'start_review', adminNote),
+    request_info: getAdminActionState(activeViewModel, 'request_info', adminNote),
+    resolve: getAdminActionState(activeViewModel, 'resolve', adminNote),
+    reject: getAdminActionState(activeViewModel, 'reject', adminNote),
+  }
   const hasOpenCase = Boolean(
-    isReady &&
-      viewModel.case.id &&
-      ['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(viewModel.case.status)
+    activeViewModel?.case.id &&
+      ['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(activeViewModel.case.status)
   )
 
   function handleCycleChange(nextCycleId: string) {
-    const caseIdPart = props.selectedCaseId ? `&caseId=${encodeURIComponent(props.selectedCaseId)}` : ''
-    router.push(`/evaluation/appeal?cycleId=${encodeURIComponent(nextCycleId)}${caseIdPart}`)
+    router.push(`/evaluation/appeal?cycleId=${encodeURIComponent(nextCycleId)}`)
   }
 
   function handleCaseChange(nextCaseId: string) {
@@ -125,11 +211,11 @@ export function EvaluationAppealClient(props: AppealPageData) {
   }
 
   function resetDraftState() {
-    if (!viewModel) return
+    if (!activeViewModel) return
     const nextDraft = buildInitialDraft({
-      ...viewModel,
+      ...activeViewModel,
       case: {
-        ...viewModel.case,
+        ...activeViewModel.case,
         id: undefined,
         status: 'DRAFT',
         reason: '',
@@ -140,15 +226,13 @@ export function EvaluationAppealClient(props: AppealPageData) {
     })
     setDraft(nextDraft)
     setAdminNote('')
-    if (draftStorageKey) {
-      window.localStorage.removeItem(draftStorageKey)
-    }
   }
 
   function handleStartNewAppeal() {
-    if (!isReady || !viewModel) return
+    if (!isReady || !activeViewModel) return
+    const readyViewModel = activeViewModel
 
-    if (viewModel.actorMode === 'admin') {
+    if (readyViewModel.actorMode === 'admin') {
       setBanner({
         tone: 'info',
         message: '운영자는 케이스 선택기에서 기존 이의 신청을 확인하고 처리할 수 있습니다.',
@@ -165,7 +249,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
     }
 
     resetDraftState()
-    router.push(`/evaluation/appeal?cycleId=${encodeURIComponent(viewModel.cycle.id)}`)
+    router.push(`/evaluation/appeal?cycleId=${encodeURIComponent(readyViewModel.cycle.id)}&caseId=new`)
     setBanner({
       tone: 'success',
       message: '새 이의 신청 초안을 시작했습니다. 사유와 관련 항목을 입력해 주세요.',
@@ -173,15 +257,44 @@ export function EvaluationAppealClient(props: AppealPageData) {
   }
 
   async function handleSaveDraft() {
-    if (!isReady || !draft) return
+    if (!isReady || !activeViewModel || !activeDraft) return
+    const readyViewModel = activeViewModel
+    const readyDraft = activeDraft
+    if (draftSaveState.disabled) {
+      setBanner({
+        tone: 'info',
+        message: draftSaveState.reason ?? '?꾩옱 ?곹깭?먯꽌???꾩떆??섏쓣 ???놁뒿?덈떎.',
+      })
+      return
+    }
     setBusyAction('save-draft')
     try {
-      if (draftStorageKey) {
-        window.localStorage.setItem(draftStorageKey, JSON.stringify(draft))
-      }
+      const response = await fetch(
+        readyViewModel.case.id ? `/api/appeals/${encodeURIComponent(readyViewModel.case.id)}` : '/api/appeals',
+        {
+          method: readyViewModel.case.id ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'save_draft',
+            evaluationId: readyViewModel.resultSummary.resultId,
+            reason: readyDraft.reason,
+            category: readyDraft.category,
+            requestedAction: readyDraft.requestedAction,
+            relatedTargets: readyDraft.relatedTargets,
+            attachments: readyDraft.attachments,
+          }),
+        }
+      )
+      await assertJsonSuccess(response, '?꾩떆??섎뒗 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.')
       setBanner({
         tone: 'success',
         message: '임시저장했습니다. 같은 브라우저에서 이어서 작성할 수 있습니다.',
+      })
+      router.refresh()
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '?꾩떆??섎뒗 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.',
       })
     } finally {
       setBusyAction(null)
@@ -189,31 +302,38 @@ export function EvaluationAppealClient(props: AppealPageData) {
   }
 
   async function handleSubmit() {
-    if (!isReady || !viewModel || !draft) return
+    if (!isReady || !activeViewModel || !activeDraft) return
+    const readyViewModel = activeViewModel
+    const readyDraft = activeDraft
 
-    if (!draft.confirmed) {
+    if (submitState.disabled) {
+      setBanner({
+        tone: 'error',
+        message: submitState.reason ?? '?꾩옱 ?곹깭?먯꽌???쒖텧?????놁뒿?덈떎.',
+      })
+      return
       setBanner({ tone: 'error', message: '제출 전 확인 체크박스를 선택해 주세요.' })
       return
     }
 
-    if (draft.reason.trim().length < 20) {
+    if (readyDraft.reason.trim().length < 20) {
       setBanner({ tone: 'error', message: '이의 신청 사유는 20자 이상 입력해 주세요.' })
       return
     }
 
     setBusyAction('submit')
     try {
-      if (viewModel.case.id && viewModel.case.status === 'INFO_REQUESTED') {
-        const response = await fetch(`/api/appeals/${encodeURIComponent(viewModel.case.id)}`, {
+      if (readyViewModel.case.id && readyViewModel.case.status === 'INFO_REQUESTED') {
+        const response = await fetch(`/api/appeals/${encodeURIComponent(readyViewModel.case.id)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'resubmit',
-            reason: draft.reason,
-            category: draft.category,
-            requestedAction: draft.requestedAction,
-            relatedTargets: draft.relatedTargets,
-            attachments: draft.attachments,
+            reason: readyDraft.reason,
+            category: readyDraft.category,
+            requestedAction: readyDraft.requestedAction,
+            relatedTargets: readyDraft.relatedTargets,
+            attachments: readyDraft.attachments,
           }),
         })
         await assertJsonSuccess(response, '이의 신청을 다시 제출하지 못했습니다.')
@@ -222,20 +342,17 @@ export function EvaluationAppealClient(props: AppealPageData) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            evaluationId: viewModel.resultSummary.resultId,
-            reason: draft.reason,
-            category: draft.category,
-            requestedAction: draft.requestedAction,
-            relatedTargets: draft.relatedTargets,
-            attachments: draft.attachments,
+            evaluationId: readyViewModel.resultSummary.resultId,
+            reason: readyDraft.reason,
+            category: readyDraft.category,
+            requestedAction: readyDraft.requestedAction,
+            relatedTargets: readyDraft.relatedTargets,
+            attachments: readyDraft.attachments,
           }),
         })
         const json = await assertJsonSuccess<{ id: string }>(response, '이의 신청을 제출하지 못했습니다.')
-        if (draftStorageKey) {
-          window.localStorage.removeItem(draftStorageKey)
-        }
         router.push(
-          `/evaluation/appeal?cycleId=${encodeURIComponent(viewModel.cycle.id)}&caseId=${encodeURIComponent(
+          `/evaluation/appeal?cycleId=${encodeURIComponent(readyViewModel.cycle.id)}&caseId=${encodeURIComponent(
             json.id
           )}`
         )
@@ -243,7 +360,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
 
       setBanner({
         tone: 'success',
-        message: viewModel.case.status === 'INFO_REQUESTED' ? '보완 후 다시 제출했습니다.' : '이의 신청을 제출했습니다.',
+        message: readyViewModel.case.status === 'INFO_REQUESTED' ? '보완 후 다시 제출했습니다.' : '이의 신청을 제출했습니다.',
       })
       router.refresh()
     } catch (error) {
@@ -257,10 +374,19 @@ export function EvaluationAppealClient(props: AppealPageData) {
   }
 
   async function handleWithdraw() {
-    if (!isReady || !viewModel.case.id) return
+    if (!isReady || !activeViewModel?.case.id) return
+    const readyViewModel = activeViewModel
+    const caseId = readyViewModel.case.id!
+    if (withdrawState.disabled) {
+      setBanner({
+        tone: 'info',
+        message: withdrawState.reason ?? '?꾩옱 ?곹깭?먯꽌???좏쉶?????놁뒿?덈떎.',
+      })
+      return
+    }
     setBusyAction('withdraw')
     try {
-      const response = await fetch(`/api/appeals/${encodeURIComponent(viewModel.case.id)}`, {
+      const response = await fetch(`/api/appeals/${encodeURIComponent(caseId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'withdraw' }),
@@ -279,7 +405,17 @@ export function EvaluationAppealClient(props: AppealPageData) {
   }
 
   async function handleAdminAction(action: 'start_review' | 'request_info' | 'resolve' | 'reject') {
-    if (!isReady || !viewModel.case.id) return
+    if (!isReady || !activeViewModel?.case.id) return
+    const readyViewModel = activeViewModel
+    const caseId = readyViewModel.case.id!
+    const actionState = adminActionStates[action]
+    if (actionState.disabled) {
+      setBanner({
+        tone: 'error',
+        message: actionState.reason ?? '?꾩옱 ?곹깭?먯꽌??泥섎━ ?곗뾽?????놁뒿?덈떎.',
+      })
+      return
+    }
 
     if (['request_info', 'resolve', 'reject'].includes(action) && adminNote.trim().length < 3) {
       setBanner({ tone: 'error', message: '운영 메모 또는 결정 사유를 3자 이상 입력해 주세요.' })
@@ -288,15 +424,15 @@ export function EvaluationAppealClient(props: AppealPageData) {
 
     setBusyAction('admin')
     try {
-      const response = await fetch(`/api/appeals/${encodeURIComponent(viewModel.case.id)}`, {
+      const response = await fetch(`/api/appeals/${encodeURIComponent(caseId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action,
           note: adminNote.trim(),
           resolutionType: action === 'resolve' ? '재검토 반영' : action === 'reject' ? '기각' : undefined,
-          beforeScore: viewModel.resultSummary.totalScore,
-          beforeGrade: viewModel.resultSummary.finalGrade,
+          beforeScore: readyViewModel.resultSummary.totalScore,
+          beforeGrade: readyViewModel.resultSummary.finalGrade,
         }),
       })
 
@@ -406,7 +542,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
     }
   }
 
-  if (!isReady) {
+  if (!readyContext || !activeViewModel || !activeDraft) {
     return (
       <div className="space-y-6">
         <AppealPageHeader availableCycles={availableCycles} selectedCycleId={props.selectedCycleId} />
@@ -417,13 +553,16 @@ export function EvaluationAppealClient(props: AppealPageData) {
     )
   }
 
+  const readyViewModel = activeViewModel
+  const readyDraft = activeDraft
+
   return (
     <div className="space-y-6">
       <AppealPageHeader availableCycles={availableCycles} selectedCycleId={props.selectedCycleId} />
       {loadAlerts}
 
       <AppealHero
-        viewModel={viewModel}
+        viewModel={readyViewModel}
         availableCycles={availableCycles}
         selectedCycleId={props.selectedCycleId}
         selectedCaseId={props.selectedCaseId}
@@ -434,17 +573,21 @@ export function EvaluationAppealClient(props: AppealPageData) {
         onSubmit={handleSubmit}
         onWithdraw={handleWithdraw}
         busyAction={busyAction}
+        canStartNew={!isAdmin && readyViewModel.cycle.appealOpen && !hasOpenCase}
+        draftSaveState={draftSaveState}
+        submitState={submitState}
+        withdrawState={withdrawState}
       />
 
       {banner ? <Banner tone={banner.tone} message={banner.message} /> : null}
 
       <AppealSummaryCards
-        viewModel={viewModel}
-        attachmentCount={draft.attachments.length}
+        viewModel={readyViewModel}
+        attachmentCount={readyDraft.attachments.length}
         nextActionLabel={
-          viewModel.case.status === 'INFO_REQUESTED'
+          readyViewModel.case.status === 'INFO_REQUESTED'
             ? '신청 내용 보완하기'
-            : viewModel.case.status === 'RESOLVED' || viewModel.case.status === 'REJECTED'
+            : readyViewModel.case.status === 'RESOLVED' || readyViewModel.case.status === 'REJECTED'
               ? '결정 내용 확인하기'
               : '평가 결과로 돌아가기'
         }
@@ -453,11 +596,11 @@ export function EvaluationAppealClient(props: AppealPageData) {
       <AppealTabs activeTab={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'form' ? (
-        <AppealFormSection viewModel={viewModel} draft={draft} setDraft={setDraft} readOnly={!canEdit} />
+        <AppealFormSection viewModel={readyViewModel} draft={readyDraft} setDraft={setDraft} readOnly={!canEdit} />
       ) : null}
       {activeTab === 'attachments' ? (
         <AppealAttachmentsSection
-          attachments={draft.attachments}
+          attachments={readyDraft.attachments}
           canEdit={canEdit}
           busy={busyAction === 'upload' || busyAction === 'download'}
           onUpload={handleAttachmentUpload}
@@ -465,17 +608,18 @@ export function EvaluationAppealClient(props: AppealPageData) {
           onDownload={handleAttachmentDownload}
         />
       ) : null}
-      {activeTab === 'timeline' ? <AppealTimelineSection viewModel={viewModel} /> : null}
+      {activeTab === 'timeline' ? <AppealTimelineSection viewModel={readyViewModel} /> : null}
       {activeTab === 'decision' ? (
         <AppealDecisionSection
-          viewModel={viewModel}
+          viewModel={readyViewModel}
           adminNote={adminNote}
           onAdminNoteChange={setAdminNote}
           onAdminAction={handleAdminAction}
           busy={busyAction === 'admin'}
+          actionStates={adminActionStates}
         />
       ) : null}
-      {activeTab === 'policy' ? <AppealPolicySection viewModel={viewModel} /> : null}
+      {activeTab === 'policy' ? <AppealPolicySection viewModel={readyViewModel} /> : null}
 
       <RelatedLinks />
     </div>
@@ -525,6 +669,10 @@ function AppealHero({
   onSubmit,
   onWithdraw,
   busyAction,
+  canStartNew,
+  draftSaveState,
+  submitState,
+  withdrawState,
 }: {
   viewModel: AppealViewModel
   availableCycles: AppealPageData['availableCycles']
@@ -537,6 +685,10 @@ function AppealHero({
   onSubmit: () => void
   onWithdraw: () => void
   busyAction: 'save-draft' | 'submit' | 'withdraw' | 'upload' | 'admin' | 'download' | null
+  canStartNew: boolean
+  draftSaveState: DisabledState
+  submitState: DisabledState
+  withdrawState: DisabledState
 }) {
   const statusTone =
     viewModel.case.status === 'RESOLVED'
@@ -611,29 +763,50 @@ function AppealHero({
         </div>
 
         <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          {viewModel.actorMode === 'applicant' ? (
+            <>
           <ActionButton
             icon={<FilePlus2 className="h-4 w-4" />}
             label="새 이의 신청"
             onClick={onStartNew}
+            disabled={busyAction !== null || !canStartNew}
+            title={
+              canStartNew
+                ? undefined
+                : String(viewModel.actorMode) === 'admin'
+                  ? '?댁쁺?먮뒗 耳?댁뒪瑜?寃?듯븯怨?泥섎━留??섏닔 ?덉뒿?덈떎.'
+                  : viewModel.cycle.appealOpen
+                    ? '?덉씠 誘몃━ ?쒖텧?섎맂 ?댁쓽 ?좎껌 ?먮뒗 泥섎━ 以묒씤 耳?댁뒪媛 ?덉뒿?덈떎.'
+                    : '?댁쓽 ?좎껌 媛??湲곌컙???꾨땲?쇰㈃ ?깈?쒖옉?????놁뒿?덈떎.'
+            }
           />
           <ActionButton
             icon={<FolderClock className="h-4 w-4" />}
             label={busyAction === 'save-draft' ? '임시저장 중...' : '임시저장'}
             onClick={onSaveDraft}
-            disabled={busyAction !== null}
+            disabled={busyAction !== null || draftSaveState.disabled}
+            title={draftSaveState.reason}
           />
           <ActionButton
             icon={<Send className="h-4 w-4" />}
             label={busyAction === 'submit' ? '제출 중...' : '제출'}
             onClick={onSubmit}
-            disabled={busyAction !== null || !viewModel.case.canSubmit}
+            disabled={busyAction !== null || submitState.disabled}
+            title={submitState.reason}
           />
           <ActionButton
             icon={<XCircle className="h-4 w-4" />}
             label={busyAction === 'withdraw' ? '철회 중...' : '철회'}
             onClick={onWithdraw}
-            disabled={busyAction !== null || !viewModel.case.canWithdraw}
+            disabled={busyAction !== null || withdrawState.disabled}
+            title={withdrawState.reason}
           />
+            </>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+              운영자는 케이스를 선택한 뒤 처리 이력과 결정 탭에서 검토, 보완 요청, 처리 완료를 진행합니다.
+            </div>
+          )}
           <ActionLink
             icon={<ClipboardCheck className="h-4 w-4" />}
             label="결과 보기"
@@ -967,12 +1140,14 @@ function AppealDecisionSection({
   onAdminNoteChange,
   onAdminAction,
   busy,
+  actionStates,
 }: {
   viewModel: AppealViewModel
   adminNote: string
   onAdminNoteChange: (value: string) => void
   onAdminAction: (action: 'start_review' | 'request_info' | 'resolve' | 'reject') => void
   busy: boolean
+  actionStates: Record<AppealAdminAction, DisabledState>
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -1044,25 +1219,29 @@ function AppealDecisionSection({
                 icon={<RefreshCcw className="h-4 w-4" />}
                 label={busy ? '처리 중...' : '검토 시작'}
                 onClick={() => onAdminAction('start_review')}
-                disabled={busy}
+                disabled={busy || actionStates.start_review.disabled}
+                title={actionStates.start_review.reason}
               />
               <ActionButton
                 icon={<ShieldAlert className="h-4 w-4" />}
                 label={busy ? '처리 중...' : '보완 요청'}
                 onClick={() => onAdminAction('request_info')}
-                disabled={busy}
+                disabled={busy || actionStates.request_info.disabled}
+                title={actionStates.request_info.reason}
               />
               <ActionButton
                 icon={<CheckCircle2 className="h-4 w-4" />}
                 label={busy ? '처리 중...' : '처리 완료'}
                 onClick={() => onAdminAction('resolve')}
-                disabled={busy}
+                disabled={busy || actionStates.resolve.disabled}
+                title={actionStates.resolve.reason}
               />
               <ActionButton
                 icon={<XCircle className="h-4 w-4" />}
                 label={busy ? '처리 중...' : '기각'}
                 onClick={() => onAdminAction('reject')}
-                disabled={busy}
+                disabled={busy || actionStates.reject.disabled}
+                title={actionStates.reject.reason}
               />
             </div>
           </div>
@@ -1331,17 +1510,20 @@ function ActionButton({
   label,
   onClick,
   disabled,
+  title,
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
   disabled?: boolean
+  title?: string
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
     >
       {icon}
@@ -1441,7 +1623,11 @@ function CompareCard({ title, lines }: { title: string; lines: string[] }) {
 
 function StatePanel({ state, message }: { state: AppealPageData['state']; message?: string }) {
   const config =
-    state === 'hidden'
+    state === 'window-closed'
+      ? { title: '?꾩옱???댁쓽 ?좎껌 媛??湲곌컙???꾨떃?덈떎.', tone: 'amber' }
+      : state === 'no-result-yet'
+        ? { title: '?댁쓽 ?좎껌 ????됯? 寃곌낵媛 ?꾩쭅 溲?닔 ?놁뒿?덈떎.', tone: 'slate' }
+      : state === 'hidden'
       ? { title: '현재는 이의 신청 가능 기간이 아닙니다.', tone: 'amber' }
       : state === 'permission-denied'
         ? { title: '이 화면을 볼 권한이 없습니다.', tone: 'rose' }
@@ -1513,6 +1699,7 @@ function setDraftField<K extends keyof DraftSnapshot>(
   setDraft((current) => (current ? { ...current, [key]: value } : current))
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function safeParseDraft(input: string | null) {
   if (!input) return null
   try {

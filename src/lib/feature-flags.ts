@@ -63,12 +63,12 @@ function readAiAssistFlag(fallback: boolean) {
     return readBooleanEnv('AI_ASSIST_ENABLED', fallback)
   }
 
-  if (process.env.FEATURE_AI_ASSIST != null) {
-    return readBooleanEnv('FEATURE_AI_ASSIST', fallback)
-  }
-
   if (process.env.AI_FEATURE_ENABLED != null) {
     return readBooleanEnv('AI_FEATURE_ENABLED', fallback)
+  }
+
+  if (process.env.FEATURE_AI_ASSIST != null) {
+    return readBooleanEnv('FEATURE_AI_ASSIST', fallback)
   }
 
   return fallback

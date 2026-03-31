@@ -58,6 +58,80 @@ function getDepartmentLabel(department?: { deptName?: string | null } | null) {
   return name?.length ? name : '미지정 부서'
 }
 
+function resolveSecondRoundState(params: {
+  secondRoundVolunteer: boolean
+  eligible: boolean
+  applicationStatus?: AiCompetencySecondRoundStatus
+}) {
+  const { secondRoundVolunteer, eligible, applicationStatus } = params
+
+  if (applicationStatus === 'REVISE_REQUESTED') {
+    return {
+      canSubmit: true,
+      message: '보완 요청 사항을 반영해 2차 실무인증을 다시 제출해 주세요.',
+    }
+  }
+
+  if (applicationStatus === 'UNDER_REVIEW' || applicationStatus === 'SUBMITTED') {
+    return {
+      canSubmit: false,
+      message: '현재 2차 심사 대기 중입니다.',
+    }
+  }
+
+  if (applicationStatus === 'PASSED') {
+    return {
+      canSubmit: false,
+      message: '2차 실무인증 심사가 완료되었습니다.',
+    }
+  }
+
+  if (applicationStatus === 'FAILED') {
+    return {
+      canSubmit: false,
+      message: '2차 실무인증 심사가 완료되어 재제출할 수 없습니다.',
+    }
+  }
+
+  if (!secondRoundVolunteer) {
+    return {
+      canSubmit: false,
+      message: '현재 배정에서는 2차 실무인증 대상자가 아닙니다.',
+    }
+  }
+
+  if (!eligible) {
+    return {
+      canSubmit: false,
+      message: '1차 합격자 중 신청 가능자로 배정된 경우에만 2차 실무인증을 제출할 수 있습니다.',
+    }
+  }
+
+  return {
+    canSubmit: true,
+    message: '2차 실무인증 제출이 가능합니다.',
+  }
+}
+
+function isPrismaKnownRequestError(error: unknown): error is {
+  code: string
+  message?: string
+  meta?: Record<string, unknown>
+} {
+  return typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+}
+
+function isAiCompetencyStorageMissing(error: unknown) {
+  if (!isPrismaKnownRequestError(error) || error.code !== 'P2021') {
+    return false
+  }
+
+  const modelName = typeof error.meta?.modelName === 'string' ? error.meta.modelName : ''
+  const message = typeof error.message === 'string' ? error.message : ''
+  const target = `${modelName} ${message}`.toLowerCase()
+  return target.includes('aicompetency') || target.includes('ai_competency')
+}
+
 export type StoredUpload = {
   fileName: string
   mimeType: string
@@ -74,6 +148,7 @@ type AuthenticatedSession = Session & {
 
 export type AiCompetencyPageState =
   | 'ready'
+  | 'setup-required'
   | 'empty'
   | 'no-assignment'
   | 'permission-denied'
@@ -168,6 +243,8 @@ export type AiCompetencyPageData = {
     }
     secondRound: {
       eligible: boolean
+      canSubmit: boolean
+      submitMessage?: string
       application?: {
         id: string
         status: AiCompetencySecondRoundStatus
@@ -378,7 +455,10 @@ export type AiCompetencyPageData = {
       status: AiCompetencySecondRoundStatus
       artifactCount: number
       reviewerCount: number
+      reviewerIds: string[]
+      reviewerNames: string[]
       submittedAt: string
+      aggregatedScore?: number
       aggregatedBonus?: number
     }>
     blueprints: Array<{
@@ -878,6 +958,24 @@ function buildEmptyAiCompetencyAdminView(): NonNullable<AiCompetencyPageData['ad
   }
 }
 
+function mapAvailableEvalCycles(
+  cycles: Array<{
+    id: string
+    cycleName: string
+    evalYear: number
+    organization: { name: string }
+    aiCompetencyCycle?: { id: string } | null
+  }>
+) {
+  return cycles.map((cycle) => ({
+    id: cycle.id,
+    name: cycle.cycleName,
+    year: cycle.evalYear,
+    organizationName: cycle.organization.name,
+    linkedAiCycleId: cycle.aiCompetencyCycle?.id,
+  }))
+}
+
 async function loadAiCompetencySection<T>(params: {
   alerts: AiCompetencyPageAlert[]
   title: string
@@ -1295,7 +1393,7 @@ export async function getAiCompetencyPageData(params: {
     const currentUser = buildAiCompetencyCurrentUser(employee, params.session.user.role)
     const permissions = buildAiCompetencyPermissions(params.session.user.role)
 
-    const [regularEvalCycles, aiCycles] = await Promise.all([
+    const [regularEvalCycleResult, aiCycleResult] = await Promise.allSettled([
       prisma.evalCycle.findMany({
         where: { orgId: employee.department.orgId },
         include: {
@@ -1317,6 +1415,40 @@ export async function getAiCompetencyPageData(params: {
       }),
     ])
 
+    if (regularEvalCycleResult.status === 'rejected') {
+      throw regularEvalCycleResult.reason
+    }
+
+    const regularEvalCycles = regularEvalCycleResult.value
+
+    if (aiCycleResult.status === 'rejected') {
+      if (isAiCompetencyStorageMissing(aiCycleResult.reason)) {
+        console.error('[ai-competency] AI competency storage is not initialized', {
+          userId: params.session.user.id,
+          role: params.session.user.role,
+          orgId: employee.department.orgId,
+          code: isPrismaKnownRequestError(aiCycleResult.reason) ? aiCycleResult.reason.code : undefined,
+        })
+
+        return {
+          state: 'setup-required',
+          message: permissions.canManageCycles
+            ? '운영을 시작하려면 AI 활용능력 평가 저장소 설정과 평가 사이클 생성이 필요합니다.'
+            : '현재 AI 활용능력 평가 운영이 아직 준비되지 않았습니다. 관리자에게 설정을 요청해 주세요.',
+          currentUser,
+          availableCycles: [],
+          availableEvalCycles: mapAvailableEvalCycles(regularEvalCycles),
+          permissions,
+          summary: buildEmptyAiCompetencySummary(),
+          adminView: permissions.canManageCycles ? buildEmptyAiCompetencyAdminView() : undefined,
+        }
+      }
+
+      throw aiCycleResult.reason
+    }
+
+    const aiCycles = aiCycleResult.value
+
     const selectedCycle =
       aiCycles.find((cycle) => cycle.id === params.cycleId) ??
       aiCycles[0] ??
@@ -1334,17 +1466,13 @@ export async function getAiCompetencyPageData(params: {
       }
 
       return {
-        state: 'ready',
+        state: 'setup-required',
+        message: '운영을 시작하려면 평가 사이클과 대상자 배정이 필요합니다.',
         currentUser,
         availableCycles: [],
-        availableEvalCycles: regularEvalCycles.map((cycle) => ({
-          id: cycle.id,
-          name: cycle.cycleName,
-          year: cycle.evalYear,
-          organizationName: cycle.organization.name,
-          linkedAiCycleId: cycle.aiCompetencyCycle?.id,
-        })),
+        availableEvalCycles: mapAvailableEvalCycles(regularEvalCycles),
         permissions,
+        summary: buildEmptyAiCompetencySummary(),
         adminView: buildEmptyAiCompetencyAdminView(),
       }
     }
@@ -1821,6 +1949,16 @@ export async function getAiCompetencyPageData(params: {
           }
 
       const latestSubmission = selfAssignment.secondRoundSubmissions[0]
+      const secondRoundEligibility = canApplyForSecondRound({
+        firstRoundScore: selfAssignment.attempt?.totalScore,
+        passThreshold: selectedCycle.firstRoundPassThreshold,
+        passStatus: selfAssignment.attempt?.passStatus,
+      })
+      const secondRoundState = resolveSecondRoundState({
+        secondRoundVolunteer: selfAssignment.secondRoundVolunteer,
+        eligible: secondRoundEligibility,
+        applicationStatus: latestSubmission?.status,
+      })
       pageData.employeeView = {
         assignment: {
           id: selfAssignment.id,
@@ -1848,11 +1986,9 @@ export async function getAiCompetencyPageData(params: {
             }
           : undefined,
         secondRound: {
-          eligible: canApplyForSecondRound({
-            firstRoundScore: selfAssignment.attempt?.totalScore,
-            passThreshold: selectedCycle.firstRoundPassThreshold,
-            passStatus: selfAssignment.attempt?.passStatus,
-          }),
+          eligible: secondRoundEligibility,
+          canSubmit: secondRoundState.canSubmit,
+          submitMessage: secondRoundState.message,
         },
         externalCerts: {
           masters: certMasters.map((master) => ({
@@ -1923,7 +2059,11 @@ export async function getAiCompetencyPageData(params: {
     } else {
       pageData.employeeView = {
         questions: [],
-        secondRound: { eligible: false },
+        secondRound: {
+          eligible: false,
+          canSubmit: false,
+          submitMessage: '현재 주기에서는 2차 실무인증 대상자가 아닙니다.',
+        },
         externalCerts: {
           masters: certMasters.map((master) => ({
             id: master.id,
@@ -2098,6 +2238,10 @@ export async function getAiCompetencyPageData(params: {
             status: submission.status,
             artifactCount: submission.artifacts.length,
             reviewerCount: submission.reviews.length,
+            reviewerIds: submission.reviews.map((review: any) => review.reviewerId),
+            reviewerNames: submission.reviews
+              .map((review: any) => review.reviewer?.empName)
+              .filter((name: unknown): name is string => typeof name === 'string' && name.length > 0),
             submittedAt: toIso(submission.submittedAt) ?? '',
             aggregatedScore: submission.aggregatedScore ?? undefined,
             aggregatedBonus: submission.aggregatedBonus ?? undefined,

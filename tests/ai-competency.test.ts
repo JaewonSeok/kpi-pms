@@ -309,6 +309,18 @@ run('reviewer scoring is rubric-based, draftable, and permission-guarded', () =>
   assert.match(clientSource, /submitFinal: false/)
 })
 
+run('live client click-path gating reflects reviewer empty queue, scored attempts, and second-round under-review states', () => {
+  assert.match(clientSource, /if \(data\.reviewerView\) tabs\.push\(\{ key: 'reviewer'/)
+  assert.match(clientSource, /if \(data\.reviewerView\) return 'reviewer'/)
+  assert.match(clientSource, /const isAttemptEditable = attemptStatus === 'IN_PROGRESS'/)
+  assert.match(clientSource, /disabled=\{!isAttemptEditable\}/)
+  assert.match(clientSource, /data\.employeeView\?\.secondRound\.canSubmit/)
+  assert.match(clientSource, /data\.employeeView\?\.secondRound\.submitMessage/)
+  assert.match(adminPanelSource, /selectedSubmission\.reviewerNames/)
+  assert.match(adminPanelSource, /현재 승인 대기 중인 외부자격 요청이 없습니다\./)
+  assert.match(adminPanelSource, /아직 계산된 최종 결과가 없습니다\./)
+})
+
 run('question bank, blueprint, and rubric admin screens are exposed with Korean labels', () => {
   for (const label of ['문항 체계표', '문항 분포 검증', '문항 부족 경고', '루브릭 시트', '평가기준', '리뷰어 심사']) {
     assert.match(adminPanelSource + clientSource + sharedSource, new RegExp(label))

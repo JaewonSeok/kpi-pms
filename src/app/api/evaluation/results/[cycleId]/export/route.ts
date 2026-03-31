@@ -13,7 +13,7 @@ function escapeHtml(value: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: {
     params: Promise<{
       cycleId: string
@@ -25,9 +25,11 @@ export async function GET(
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
 
     const { cycleId } = await context.params
+    const { searchParams } = new URL(request.url)
     const data = await getEvaluationResultsPageData({
       session,
       cycleId,
+      employeeId: searchParams.get('employeeId') ?? undefined,
     })
 
     if (data.state !== 'ready' || !data.viewModel) {

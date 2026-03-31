@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Archive, Bot, FilePenLine, FileUp, Lock, Plus, Send, ShieldCheck, Sparkles } from 'lucide-react'
 import type { OrgKpiPageData, OrgKpiViewModel } from '@/server/org-kpi-page'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
@@ -173,10 +173,11 @@ function buildAiPayload(action: AiAction, kpi: OrgKpiViewModel | null, form: For
 export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pageData }: Props) {
   const router = useRouter()
   const canRenderWorkspace = pageData.state === 'ready' || pageData.state === 'empty'
-  const [tab, setTab] = useState<TabKey>(initialTab && initialTab in TAB_LABELS ? (initialTab as TabKey) : 'map')
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState(
+  const defaultTab = initialTab && initialTab in TAB_LABELS ? (initialTab as TabKey) : 'map'
+  const defaultDepartmentSelection =
     pageData.departments.length > 1 ? 'ALL' : pageData.selectedDepartmentId
-  )
+  const [tab, setTab] = useState<TabKey>(defaultTab)
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState(defaultDepartmentSelection)
   const [selectedKpiId, setSelectedKpiId] = useState(initialSelectedKpiId ?? pageData.list[0]?.id ?? '')
   const [showForm, setShowForm] = useState(false)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
@@ -188,6 +189,10 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const [aiAction, setAiAction] = useState<AiAction>('generate-draft')
   const [search, setSearch] = useState('')
   const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
+  const serverContextKey = `${pageData.selectedYear}:${pageData.selectedDepartmentId}:${pageData.list.map((item) => item.id).join(',')}:${initialSelectedKpiId ?? ''}:${defaultTab}`
+  const previousServerContextKey = useRef(serverContextKey)
+  const viewContextKey = `${pageData.selectedYear}:${selectedDepartmentId}`
+  const previousViewContextKey = useRef(viewContextKey)
 
   const filteredList = useMemo(
     () =>
@@ -205,6 +210,47 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       }),
     [pageData.list, search, selectedDepartmentId]
   )
+
+  useEffect(() => {
+    if (previousServerContextKey.current === serverContextKey) {
+      return
+    }
+
+    previousServerContextKey.current = serverContextKey
+    setTab(defaultTab)
+    setSelectedDepartmentId(defaultDepartmentSelection)
+    setSelectedKpiId(initialSelectedKpiId ?? pageData.list[0]?.id ?? '')
+    setShowForm(false)
+    setShowBulkUpload(false)
+    setEditingKpiId(null)
+    setForm(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
+    setBanner(null)
+    setAiPreview(null)
+    setSearch('')
+  }, [
+    defaultDepartmentSelection,
+    defaultTab,
+    initialSelectedKpiId,
+    pageData.list,
+    pageData.selectedDepartmentId,
+    pageData.selectedYear,
+    serverContextKey,
+  ])
+
+  useEffect(() => {
+    if (previousViewContextKey.current === viewContextKey) {
+      return
+    }
+
+    previousViewContextKey.current = viewContextKey
+    setSelectedKpiId('')
+    setShowForm(false)
+    setShowBulkUpload(false)
+    setEditingKpiId(null)
+    setBanner(null)
+    setAiPreview(null)
+    setTab('map')
+  }, [viewContextKey])
 
   useEffect(() => {
     if (!filteredList.length) {
@@ -231,7 +277,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
     setBusy(true)
     try {
-      await fetchJson(editingKpiId ? `/api/kpi/org/${editingKpiId}` : '/api/kpi/org', {
+      const saved = await fetchJson<{ id: string; deptId: string }>(editingKpiId ? `/api/kpi/org/${editingKpiId}` : '/api/kpi/org', {
         method: editingKpiId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -252,6 +298,8 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
         tone: 'success',
         message: editingKpiId ? '조직 KPI를 수정했습니다.' : '새 조직 KPI를 등록했습니다.',
       })
+      setSelectedDepartmentId((current) => (current === 'ALL' ? current : saved.deptId))
+      setSelectedKpiId(saved.id)
       setShowForm(false)
       router.refresh()
     } catch (error) {

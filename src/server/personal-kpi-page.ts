@@ -227,8 +227,15 @@ type PersonalAiLogRecord = Prisma.AiRequestLogGetPayload<{
 }>
 
 type EmployeeLite = Prisma.EmployeeGetPayload<{
-  include: {
-    department: true
+  select: {
+    id: true
+    empId: true
+    empName: true
+    role: true
+    deptId: true
+    teamLeaderId: true
+    sectionChiefId: true
+    divisionHeadId: true
   }
 }>
 
@@ -259,6 +266,38 @@ async function loadPersonalKpiSection<T>(params: {
     })
     return params.fallback
   }
+}
+
+function mapPersonalKpiSection<TInput, TOutput>(params: {
+  alerts: PersonalKpiPageAlert[]
+  title: string
+  description: string
+  items: TInput[]
+  mapper: (item: TInput) => TOutput | undefined
+}) {
+  const mapped: TOutput[] = []
+  let failed = false
+
+  for (const item of params.items) {
+    try {
+      const next = params.mapper(item)
+      if (typeof next !== 'undefined') {
+        mapped.push(next)
+      }
+    } catch (error) {
+      failed = true
+      console.error(`[personal-kpi] ${params.title}`, error)
+    }
+  }
+
+  if (failed) {
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+    })
+  }
+
+  return mapped
 }
 
 type PageParams = {
@@ -359,8 +398,8 @@ function mapHistoryItem(log: AuditLogLite, employeesById: Map<string, EmployeeLi
 
 function deriveRiskFlags(kpi: PersonalKpiWithRelations, hasRejectedRevision: boolean) {
   const flags: string[] = []
-  if (!kpi.linkedOrgKpiId) flags.push('조직 KPI 연결 누락')
-  if (kpi.weight <= 0) flags.push('가중치 미설정')
+  if (!kpi.linkedOrgKpiId) flags.push('조직 KPI 연결 필요')
+  if (kpi.weight <= 0) flags.push('가중치 확인 필요')
   const latestRecord = kpi.monthlyRecords[0]
   if (!latestRecord) {
     flags.push('최근 월간 실적 없음')
@@ -378,176 +417,170 @@ function deriveOverallStatus(items: PersonalKpiViewModel[]): PersonalKpiPageData
 }
 
 export async function getPersonalKpiPageData(params: PageParams): Promise<PersonalKpiPageData> {
+  const selectedYear = params.year ?? new Date().getFullYear()
+  const actor = {
+    id: params.session.user.id,
+    role: params.session.user.role,
+    name: params.session.user.name,
+    departmentName: params.session.user.deptName,
+  }
+  const aiAccess = resolvePersonalKpiAiAccess({
+    role: params.session.user.role,
+  })
+  const emptySummary: PersonalKpiPageData['summary'] = {
+    totalCount: 0,
+    totalWeight: 0,
+    remainingWeight: 100,
+    linkedOrgKpiCount: 0,
+    rejectedCount: 0,
+    reviewPendingCount: 0,
+    monthlyCoverageRate: 0,
+    overallStatus: 'DRAFT',
+  }
+
+  let failureStage = 'bootstrap'
+  let shellEmployeeOptions: PersonalKpiScopeOption[] = []
+  let shellTargetEmployee: EmployeeLite | undefined
+  let shellCycleOptions: EvalCycleOption[] = []
+  let shellAlerts: PersonalKpiPageAlert[] = []
+
   try {
     const alerts: PersonalKpiPageAlert[] = []
+    shellAlerts = alerts
+
     const scopeDepartmentIds = getPersonalKpiScopeDepartmentIds({
       role: params.session.user.role,
       deptId: params.session.user.deptId,
       accessibleDepartmentIds: params.session.user.accessibleDepartmentIds,
     })
 
-    const employeeWhere = scopeDepartmentIds
-      ? { deptId: { in: scopeDepartmentIds }, status: 'ACTIVE' as const }
-      : { status: 'ACTIVE' as const }
-
+    failureStage = 'employee-options'
     const employees = await prisma.employee.findMany({
-      where: employeeWhere,
-      include: {
-        department: true,
+      where: scopeDepartmentIds
+        ? { deptId: { in: scopeDepartmentIds }, status: 'ACTIVE' }
+        : { status: 'ACTIVE' },
+      select: {
+        id: true,
+        empId: true,
+        empName: true,
+        role: true,
+        deptId: true,
+        teamLeaderId: true,
+        sectionChiefId: true,
+        divisionHeadId: true,
       },
       orderBy: [{ deptId: 'asc' }, { empName: 'asc' }],
     })
-
+    const departmentIds = Array.from(
+      new Set(
+        employees
+          .map((employee) => employee.deptId)
+          .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      )
+    )
+    const departments = departmentIds.length
+      ? await loadPersonalKpiSection({
+          alerts,
+          title: '대상자 부서 정보를 모두 불러오지 못했습니다.',
+          description: '대상자 목록은 유지하고, 확인되지 않은 부서는 미지정으로 표시합니다.',
+          fallback: [] as Array<{ id: string; deptName: string | null }>,
+          loader: () =>
+            prisma.department.findMany({
+              where: {
+                id: {
+                  in: departmentIds,
+                },
+              },
+              select: {
+                id: true,
+                deptName: true,
+              },
+            }),
+        })
+      : []
+    const departmentNameMap = new Map(departments.map((department) => [department.id, department.deptName]))
     const employeesById = new Map(employees.map((employee) => [employee.id, employee]))
     const employeeOptions = employees.map((employee) => ({
       id: employee.id,
       name: employee.empName,
-      departmentName: resolveDepartmentLabel(employee.department),
+      departmentName: resolveDepartmentLabel({
+        deptName: departmentNameMap.get(employee.deptId) ?? null,
+      }),
       role: employee.role,
     }))
+    shellEmployeeOptions = employeeOptions
+
     const requestedEmployeeId = params.employeeId?.trim() || undefined
     const requestedEmployee = requestedEmployeeId ? employeesById.get(requestedEmployeeId) : undefined
     const defaultTargetEmployee =
       employeesById.get(params.session.user.id) ??
       (canManagePersonalKpi(params.session.user.role) ? employees[0] : undefined)
     const targetEmployee = requestedEmployee ?? defaultTargetEmployee
-
-    const aiAccess = resolvePersonalKpiAiAccess({
-      role: params.session.user.role,
-    })
+    shellTargetEmployee = targetEmployee
 
     if (requestedEmployeeId && !requestedEmployee) {
-      const permissions = buildPersonalKpiPermissions({
-        actorId: params.session.user.id,
-        actorRole: params.session.user.role,
-        targetEmployeeId: requestedEmployeeId,
-        pageState: 'no-target',
-        aiAccess,
-      })
-
       return {
         state: 'no-target',
         message: '현재 범위에서 조회할 대상자를 찾지 못했습니다. 대상자를 다시 선택해 주세요.',
         alerts,
-        selectedYear: params.year ?? new Date().getFullYear(),
-        availableYears: [params.year ?? new Date().getFullYear()],
+        selectedYear,
+        availableYears: [selectedYear],
         selectedEmployeeId: '',
         cycleOptions: [],
         employeeOptions,
         orgKpiOptions: [],
-        summary: {
-          totalCount: 0,
-          totalWeight: 0,
-          remainingWeight: 100,
-          linkedOrgKpiCount: 0,
-          rejectedCount: 0,
-          reviewPendingCount: 0,
-          monthlyCoverageRate: 0,
-          overallStatus: 'DRAFT',
-        },
+        summary: emptySummary,
         mine: [],
         reviewQueue: [],
         history: [],
         aiLogs: [],
-        permissions,
-        actor: {
-          id: params.session.user.id,
-          role: params.session.user.role,
-          name: params.session.user.name,
-          departmentName: params.session.user.deptName,
-        },
+        permissions: buildPersonalKpiPermissions({
+          actorId: params.session.user.id,
+          actorRole: params.session.user.role,
+          targetEmployeeId: requestedEmployeeId,
+          pageState: 'no-target',
+          aiAccess,
+        }),
+        actor,
       }
     }
 
     if (!targetEmployee) {
-      if (canManagePersonalKpi(params.session.user.role)) {
-        const permissions = buildPersonalKpiPermissions({
-          actorId: params.session.user.id,
-          actorRole: params.session.user.role,
-          targetEmployeeId: params.session.user.id,
-          pageState: 'setup-required',
-          aiAccess,
-        })
-
-        return {
-          state: 'setup-required',
-          message: '조회 가능한 대상자가 없어 개인 KPI 운영을 시작할 수 없습니다. 대상자 범위 또는 조직 설정을 확인해 주세요.',
-          alerts,
-          selectedYear: params.year ?? new Date().getFullYear(),
-          availableYears: [params.year ?? new Date().getFullYear()],
-          selectedEmployeeId: '',
-          cycleOptions: [],
-          employeeOptions,
-          orgKpiOptions: [],
-          summary: {
-            totalCount: 0,
-            totalWeight: 0,
-            remainingWeight: 100,
-            linkedOrgKpiCount: 0,
-            rejectedCount: 0,
-            reviewPendingCount: 0,
-            monthlyCoverageRate: 0,
-            overallStatus: 'DRAFT',
-          },
-          mine: [],
-          reviewQueue: [],
-          history: [],
-          aiLogs: [],
-          permissions,
-          actor: {
-            id: params.session.user.id,
-            role: params.session.user.role,
-            name: params.session.user.name,
-            departmentName: params.session.user.deptName,
-          },
-        }
-      }
-
-      const permissions = buildPersonalKpiPermissions({
-        actorId: params.session.user.id,
-        actorRole: params.session.user.role,
-        targetEmployeeId: params.session.user.id,
-        pageState: 'permission-denied',
-        aiAccess,
-      })
+      const pageState: PersonalKpiPageState = canManagePersonalKpi(params.session.user.role)
+        ? 'setup-required'
+        : 'permission-denied'
 
       return {
-        state: 'permission-denied',
-        message: '조회 가능한 직원 범위를 찾을 수 없습니다.',
+        state: pageState,
+        message:
+          pageState === 'setup-required'
+            ? '조회 가능한 대상자가 없어 개인 KPI 운영을 시작할 수 없습니다. 대상자 범위 또는 조직 설정을 확인해 주세요.'
+            : '조회 가능한 직원 범위를 찾을 수 없습니다.',
         alerts,
-        selectedYear: params.year ?? new Date().getFullYear(),
-        availableYears: [params.year ?? new Date().getFullYear()],
-        selectedEmployeeId: params.session.user.id,
+        selectedYear,
+        availableYears: [selectedYear],
+        selectedEmployeeId: '',
         cycleOptions: [],
         employeeOptions,
         orgKpiOptions: [],
-        summary: {
-          totalCount: 0,
-          totalWeight: 0,
-          remainingWeight: 100,
-          linkedOrgKpiCount: 0,
-          rejectedCount: 0,
-          reviewPendingCount: 0,
-          monthlyCoverageRate: 0,
-          overallStatus: 'DRAFT',
-        },
+        summary: emptySummary,
         mine: [],
         reviewQueue: [],
         history: [],
         aiLogs: [],
-        permissions,
-        actor: {
-          id: params.session.user.id,
-          role: params.session.user.role,
-          name: params.session.user.name,
-          departmentName: params.session.user.deptName,
-        },
+        permissions: buildPersonalKpiPermissions({
+          actorId: params.session.user.id,
+          actorRole: params.session.user.role,
+          targetEmployeeId: params.employeeId ?? params.session.user.id,
+          pageState,
+          aiAccess,
+        }),
+        actor,
       }
     }
 
-    const selectedYear = params.year ?? new Date().getFullYear()
-
-    const cycleOptions = await loadPersonalKpiSection({
+    failureStage = 'cycle-options'
+    const cycleRecords = await loadPersonalKpiSection({
       alerts,
       title: '평가 주기 옵션을 불러오지 못했습니다.',
       description: '주기 선택은 비어 있는 상태로 표시합니다.',
@@ -577,11 +610,20 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       },
     })
 
+    const cycleOptions = cycleRecords.map((cycle) => ({
+      id: cycle.id,
+      name: cycle.cycleName,
+      year: cycle.evalYear,
+      status: cycle.status,
+    }))
+    shellCycleOptions = cycleOptions
+
     const selectedCycleId =
       params.cycleId && cycleOptions.some((cycle) => cycle.id === params.cycleId)
         ? params.cycleId
         : cycleOptions[0]?.id
 
+    failureStage = 'available-years'
     const availableYearsRaw = await loadPersonalKpiSection({
       alerts,
       title: '개인 KPI 연도 옵션을 불러오지 못했습니다.',
@@ -603,42 +645,51 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     })
 
     const availableYears = Array.from(
-      new Set([selectedYear, ...availableYearsRaw.map((item) => item.evalYear), ...cycleOptions.map((item) => item.evalYear)])
+      new Set([selectedYear, ...availableYearsRaw.map((item) => item.evalYear), ...cycleOptions.map((item) => item.year)])
     ).sort((a, b) => b - a)
 
-    const mine = await prisma.personalKpi.findMany({
-      where: {
-        employeeId: targetEmployee.id,
-        evalYear: selectedYear,
-      },
-      include: {
-        employee: {
+    failureStage = 'mine-query'
+    const mine = await loadPersonalKpiSection({
+      alerts,
+      title: '개인 KPI 목록을 불러오지 못했습니다.',
+      description: '기존 KPI 목록 없이 기본 화면으로 표시합니다.',
+      fallback: [] as PersonalKpiWithRelations[],
+      loader: () =>
+        prisma.personalKpi.findMany({
+          where: {
+            employeeId: targetEmployee.id,
+            evalYear: selectedYear,
+          },
           include: {
-            department: true,
+            employee: {
+              include: {
+                department: true,
+              },
+            },
+            linkedOrgKpi: {
+              include: {
+                department: true,
+              },
+            },
+            monthlyRecords: {
+              orderBy: {
+                yearMonth: 'desc',
+              },
+              take: 6,
+            },
           },
-        },
-        linkedOrgKpi: {
-          include: {
-            department: true,
-          },
-        },
-        monthlyRecords: {
-          orderBy: {
-            yearMonth: 'desc',
-          },
-          take: 6,
-        },
-      },
-      orderBy: [{ createdAt: 'asc' }],
+          orderBy: [{ createdAt: 'asc' }],
+        }),
     })
 
+    failureStage = 'review-queue'
     const reviewQueueCandidates: ReviewQueueKpi[] =
       params.session.user.role === 'ROLE_MEMBER'
         ? []
         : await loadPersonalKpiSection({
             alerts,
             title: '검토 대기 KPI 목록을 불러오지 못했습니다.',
-            description: '검토 대기 탭은 빈 상태로 표시합니다.',
+            description: '검토 대기 목록은 비어 있는 상태로 표시합니다.',
             fallback: [] as ReviewQueueKpi[],
             loader: () =>
               prisma.personalKpi.findMany({
@@ -673,11 +724,12 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
 
     const allKpiIds = [...mine.map((item) => item.id), ...reviewQueueCandidates.map((item) => item.id)]
 
+    failureStage = 'audit-logs'
     const auditLogs = allKpiIds.length
       ? await loadPersonalKpiSection({
           alerts,
           title: 'KPI 변경 이력을 불러오지 못했습니다.',
-          description: '이력 탭은 빈 상태로 표시합니다.',
+          description: '이력 영역은 비어 있는 상태로 표시합니다.',
           fallback: [] as AuditLogLite[],
           loader: () =>
             prisma.auditLog.findMany({
@@ -708,10 +760,11 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       ])
     )
 
-    const orgKpiOptions: OrgKpiRecord[] = await loadPersonalKpiSection({
+    failureStage = 'org-kpi-options'
+    const orgKpiRecords = await loadPersonalKpiSection({
       alerts,
       title: '조직 KPI 옵션을 불러오지 못했습니다.',
-      description: '상위 목표 연결 목록은 빈 상태로 표시합니다.',
+      description: '상위 목표 연결 목록은 비어 있는 상태로 표시합니다.',
       fallback: [] as OrgKpiRecord[],
       loader: () =>
         prisma.orgKpi.findMany({
@@ -731,10 +784,11 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         }),
     })
 
-    const aiLogs: PersonalAiLogRecord[] = await loadPersonalKpiSection({
+    failureStage = 'ai-logs'
+    const aiLogRecords = await loadPersonalKpiSection({
       alerts,
       title: '개인 KPI AI 요청 이력을 불러오지 못했습니다.',
-      description: 'AI 탭 이력은 빈 상태로 표시합니다.',
+      description: 'AI 요청 이력은 비어 있는 상태로 표시합니다.',
       fallback: [] as PersonalAiLogRecord[],
       loader: () =>
         prisma.aiRequestLog.findMany({
@@ -770,10 +824,11 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         }),
     })
 
+    failureStage = 'feedback-summary'
     const feedbacks = await loadPersonalKpiSection({
       alerts,
       title: '다면 피드백 요약을 불러오지 못했습니다.',
-      description: 'AI 요약에 사용할 참고 피드백은 제외하고 표시합니다.',
+      description: 'AI 요약에서 참고할 피드백 없이 표시합니다.',
       fallback: [] as Awaited<ReturnType<typeof prisma.multiFeedback.findMany>>,
       loader: () =>
         prisma.multiFeedback.findMany({
@@ -794,89 +849,137 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           take: 10,
         }),
     })
-
     const feedbackSummary = feedbacks
       .map((item) => item.overallComment)
       .filter((value): value is string => Boolean(value))
       .slice(0, 2)
       .join(' / ')
 
-    const mappedMine = mine.map((kpi) => {
-      const logs = logsByKpiId.get(kpi.id) ?? []
-      const status = resolvePersonalKpiOperationalStatus({
-        status: kpi.status,
-        logs,
-      })
-      const hasRejectedRevision = hasRejectedRevisionPending(logs)
-      const latestRecord = kpi.monthlyRecords[0]
+    failureStage = 'mine-mapping'
+    const mappedMine = mapPersonalKpiSection({
+      alerts,
+      title: '개인 KPI 화면 정보를 구성하지 못한 항목이 있습니다.',
+      description: '일부 KPI 항목을 제외하고 화면을 계속 표시합니다.',
+      items: mine,
+      mapper: (kpi) => {
+        const logs = logsByKpiId.get(kpi.id) ?? []
+        const status = resolvePersonalKpiOperationalStatus({
+          status: kpi.status,
+          logs,
+        })
+        const hasRejectedRevision = hasRejectedRevisionPending(logs)
+        const latestRecord = kpi.monthlyRecords[0]
 
-      return {
-        id: kpi.id,
-        title: kpi.kpiName,
-        employeeId: kpi.employeeId,
-        employeeName: kpi.employee.empName,
-        departmentName: resolveDepartmentLabel(kpi.employee.department),
-        orgKpiId: kpi.linkedOrgKpiId,
-        orgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
-        orgKpiCategory: kpi.linkedOrgKpi?.kpiCategory ?? null,
-        orgKpiDefinition: kpi.linkedOrgKpi?.definition ?? null,
-        type: kpi.kpiType,
-        definition: kpi.definition ?? undefined,
-        formula: kpi.formula ?? undefined,
-        targetValue: kpi.targetValue ?? undefined,
-        unit: kpi.unit ?? undefined,
-        weight: kpi.weight,
-        difficulty: kpi.difficulty,
-        status,
-        persistedStatus: kpi.status,
-        reviewComment: parseReviewComment(logs),
-        reviewer: getReviewerCandidate(kpi.employee, employeesById),
-        monthlyAchievementRate: latestRecord?.achievementRate ?? undefined,
-        updatedAt: kpi.updatedAt.toISOString(),
-        hasRejectedRevision,
-        linkedMonthlyCount: kpi.monthlyRecords.length,
-        riskFlags: deriveRiskFlags(kpi, hasRejectedRevision),
-        recentMonthlyRecords: kpi.monthlyRecords.map((record) => ({
-          id: record.id,
-          month: record.yearMonth,
-          achievementRate: record.achievementRate ?? undefined,
-          activities: record.activities,
-          obstacles: record.obstacles,
-        })),
-        history: logs.slice(0, 10).map((log) => mapHistoryItem(log, employeesById)),
-      } satisfies PersonalKpiViewModel
+        return {
+          id: kpi.id,
+          title: kpi.kpiName,
+          employeeId: kpi.employeeId,
+          employeeName: kpi.employee.empName,
+          departmentName: resolveDepartmentLabel(kpi.employee.department),
+          orgKpiId: kpi.linkedOrgKpiId,
+          orgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
+          orgKpiCategory: kpi.linkedOrgKpi?.kpiCategory ?? null,
+          orgKpiDefinition: kpi.linkedOrgKpi?.definition ?? null,
+          type: kpi.kpiType,
+          definition: kpi.definition ?? undefined,
+          formula: kpi.formula ?? undefined,
+          targetValue: kpi.targetValue ?? undefined,
+          unit: kpi.unit ?? undefined,
+          weight: kpi.weight,
+          difficulty: kpi.difficulty,
+          status,
+          persistedStatus: kpi.status,
+          reviewComment: parseReviewComment(logs),
+          reviewer: getReviewerCandidate(kpi.employee, employeesById),
+          monthlyAchievementRate: latestRecord?.achievementRate ?? undefined,
+          updatedAt: kpi.updatedAt.toISOString(),
+          hasRejectedRevision,
+          linkedMonthlyCount: kpi.monthlyRecords.length,
+          riskFlags: deriveRiskFlags(kpi, hasRejectedRevision),
+          recentMonthlyRecords: kpi.monthlyRecords.map((record) => ({
+            id: record.id,
+            month: record.yearMonth,
+            achievementRate: record.achievementRate ?? undefined,
+            activities: record.activities,
+            obstacles: record.obstacles,
+          })),
+          history: mapPersonalKpiSection({
+            alerts,
+            title: '개인 KPI 이력 일부를 구성하지 못했습니다.',
+            description: '일부 이력 항목을 제외하고 계속 표시합니다.',
+            items: logs.slice(0, 10),
+            mapper: (log) => mapHistoryItem(log, employeesById),
+          }),
+        } satisfies PersonalKpiViewModel
+      },
     })
 
-    const mappedReviewQueue = reviewQueueCandidates.reduce<PersonalKpiReviewQueueItem[]>((queue, kpi) => {
-      const logs = logsByKpiId.get(kpi.id) ?? []
-      const status = resolvePersonalKpiOperationalStatus({
-        status: kpi.status,
-        logs,
-      })
+    failureStage = 'review-queue-mapping'
+    const mappedReviewQueue = mapPersonalKpiSection({
+      alerts,
+      title: '검토 대기 KPI 일부를 구성하지 못했습니다.',
+      description: '일부 검토 대기 항목을 제외하고 계속 표시합니다.',
+      items: reviewQueueCandidates,
+      mapper: (kpi) => {
+        const logs = logsByKpiId.get(kpi.id) ?? []
+        const status = resolvePersonalKpiOperationalStatus({
+          status: kpi.status,
+          logs,
+        })
 
-      if (status !== 'SUBMITTED' && status !== 'MANAGER_REVIEW') {
-        return queue
-      }
+        if (status !== 'SUBMITTED' && status !== 'MANAGER_REVIEW') {
+          return undefined
+        }
 
-      const lastSubmit = logs.find((log) => log.action === 'PERSONAL_KPI_SUBMITTED')
-      const updateLog = logs.find((log) => log.action === 'PERSONAL_KPI_UPDATED')
+        const lastSubmit = logs.find((log) => log.action === 'PERSONAL_KPI_SUBMITTED')
+        const updateLog = logs.find((log) => log.action === 'PERSONAL_KPI_UPDATED')
 
-      queue.push({
-        id: kpi.id,
-        employeeId: kpi.employeeId,
-        employeeName: kpi.employee.empName,
-        departmentName: resolveDepartmentLabel(kpi.employee.department),
-        title: kpi.kpiName,
-        status,
-        changedFields: getChangedFields(logs),
-        previousValueSummary: buildSummaryText(asRecord(updateLog?.oldValue)),
-        currentValueSummary: buildSummaryText(asRecord(updateLog?.newValue)) ?? `${kpi.kpiName} · ${kpi.weight}%`,
-        submittedAt: lastSubmit?.timestamp.toISOString() ?? kpi.updatedAt.toISOString(),
-        reviewComment: parseReviewComment(logs),
-      })
+        return {
+          id: kpi.id,
+          employeeId: kpi.employeeId,
+          employeeName: kpi.employee.empName,
+          departmentName: resolveDepartmentLabel(kpi.employee.department),
+          title: kpi.kpiName,
+          status,
+          changedFields: getChangedFields(logs),
+          previousValueSummary: buildSummaryText(asRecord(updateLog?.oldValue)),
+          currentValueSummary: buildSummaryText(asRecord(updateLog?.newValue)) ?? `${kpi.kpiName} · ${kpi.weight}%`,
+          submittedAt: lastSubmit?.timestamp.toISOString() ?? kpi.updatedAt.toISOString(),
+          reviewComment: parseReviewComment(logs),
+        } satisfies PersonalKpiReviewQueueItem
+      },
+    })
 
-      return queue
-    }, [])
+    failureStage = 'history-mapping'
+    const mappedHistory = mapPersonalKpiSection({
+      alerts,
+      title: '개인 KPI 전체 이력 일부를 구성하지 못했습니다.',
+      description: '일부 이력 항목을 제외하고 계속 표시합니다.',
+      items: auditLogs.filter((log) => mine.some((item) => item.id === log.entityId)).slice(0, 40),
+      mapper: (log) => mapHistoryItem(log, employeesById),
+    })
+
+    failureStage = 'ai-log-mapping'
+    const mappedAiLogs = mapPersonalKpiSection({
+      alerts,
+      title: 'AI 요청 이력 일부를 구성하지 못했습니다.',
+      description: '일부 AI 요청 이력을 제외하고 계속 표시합니다.',
+      items: aiLogRecords,
+      mapper: (log) => ({
+        id: log.id,
+        createdAt: log.createdAt.toISOString(),
+        sourceType: log.sourceType ?? 'PersonalKpiDraft',
+        sourceId: log.sourceId ?? undefined,
+        requesterName: log.requester.empName,
+        requestStatus: log.requestStatus,
+        approvalStatus: log.approvalStatus,
+        summary:
+          (asRecord(log.requestPayload)?.summary as string | undefined) ??
+          (asRecord(log.responsePayload)?.summary as string | undefined) ??
+          feedbackSummary ??
+          '개인 KPI AI 보조 요청',
+      }),
+    })
 
     const totalWeight = mappedMine.reduce((sum, item) => sum + item.weight, 0)
     const linkedOrgKpiCount = mappedMine.filter((item) => item.orgKpiId).length
@@ -886,34 +989,22 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       ? Math.round((mappedMine.filter((item) => item.linkedMonthlyCount > 0).length / mappedMine.length) * 100)
       : 0
 
-    const pageState = mappedMine.length || mappedReviewQueue.length ? 'ready' : 'empty'
-    const permissions = buildPersonalKpiPermissions({
-      actorId: params.session.user.id,
-      actorRole: params.session.user.role,
-      targetEmployeeId: targetEmployee.id,
-      pageState,
-      aiAccess,
-    })
+    const pageState: PersonalKpiPageState = mappedMine.length || mappedReviewQueue.length ? 'ready' : 'empty'
 
     return {
       state: pageState,
       message:
-        !mappedMine.length && !mappedReviewQueue.length
-          ? '아직 개인 KPI가 없습니다. 올해 목표를 작성하고 상사 검토를 요청해보세요.'
+        pageState === 'empty'
+          ? '아직 등록된 개인 KPI가 없습니다. 새 KPI를 작성하거나 대상자를 선택해 주세요.'
           : undefined,
       alerts,
       selectedYear,
       availableYears,
       selectedEmployeeId: targetEmployee.id,
       selectedCycleId,
-      cycleOptions: cycleOptions.map((cycle) => ({
-        id: cycle.id,
-        name: cycle.cycleName,
-        year: cycle.evalYear,
-        status: cycle.status,
-      })),
+      cycleOptions,
       employeeOptions,
-      orgKpiOptions: orgKpiOptions.map((item) => ({
+      orgKpiOptions: orgKpiRecords.map((item) => ({
         id: item.id,
         title: item.kpiName,
         category: item.kpiCategory,
@@ -932,76 +1023,95 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       },
       mine: mappedMine,
       reviewQueue: mappedReviewQueue,
-      history: auditLogs
-        .filter((log) => mine.some((item) => item.id === log.entityId))
-        .slice(0, 40)
-        .map((log) => mapHistoryItem(log, employeesById)),
-      aiLogs: aiLogs.map((log) => ({
-        id: log.id,
-        createdAt: log.createdAt.toISOString(),
-        sourceType: log.sourceType ?? 'PersonalKpiDraft',
-        sourceId: log.sourceId ?? undefined,
-        requesterName: log.requester.empName,
-        requestStatus: log.requestStatus,
-        approvalStatus: log.approvalStatus,
-        summary:
-          (asRecord(log.requestPayload)?.summary as string | undefined) ??
-          (asRecord(log.responsePayload)?.summary as string | undefined) ??
-          feedbackSummary ??
-          '개인 KPI AI 보조 요청',
-      })),
-      permissions,
-      actor: {
-        id: params.session.user.id,
-        role: params.session.user.role,
-        name: params.session.user.name,
-        departmentName: params.session.user.deptName,
-      },
+      history: mappedHistory,
+      aiLogs: mappedAiLogs,
+      permissions: buildPersonalKpiPermissions({
+        actorId: params.session.user.id,
+        actorRole: params.session.user.role,
+        targetEmployeeId: targetEmployee.id,
+        pageState,
+        aiAccess,
+      }),
+      actor,
     }
   } catch (error) {
-    console.error('Failed to build personal KPI page data:', error)
-    const aiAccess = resolvePersonalKpiAiAccess({
-      role: params.session.user.role,
-    })
-    const permissions = buildPersonalKpiPermissions({
+    console.error('Failed to build personal KPI page data:', {
+      failureStage,
       actorId: params.session.user.id,
       actorRole: params.session.user.role,
-      targetEmployeeId: params.employeeId ?? params.session.user.id,
-      pageState: 'error',
-      aiAccess,
+      requestedEmployeeId: params.employeeId ?? null,
+      employeeOptionCount: shellEmployeeOptions.length,
+      hasTargetEmployee: Boolean(shellTargetEmployee),
+      error,
     })
+
+    if (shellEmployeeOptions.length || shellTargetEmployee) {
+      const pageState: PersonalKpiPageState = shellTargetEmployee
+        ? 'empty'
+        : canManagePersonalKpi(params.session.user.role)
+          ? 'setup-required'
+          : 'permission-denied'
+
+      return {
+        state: pageState,
+        message:
+          pageState === 'setup-required'
+            ? '조회 가능한 대상자가 없어 개인 KPI 운영을 시작할 수 없습니다. 대상자 범위 또는 조직 설정을 확인해 주세요.'
+            : '개인 KPI 화면을 구성하는 중 일부 보조 정보를 불러오지 못해 기본 화면으로 표시합니다.',
+        alerts: [
+          ...shellAlerts,
+          {
+            title: '개인 KPI 운영 화면 정보를 완전히 불러오지 못했습니다.',
+            description: `구성 단계(${failureStage})에서 문제가 발생해 기본 화면으로 전환했습니다.`,
+          },
+        ],
+        selectedYear,
+        availableYears: [selectedYear],
+        selectedEmployeeId: shellTargetEmployee?.id ?? '',
+        selectedCycleId: shellCycleOptions[0]?.id,
+        cycleOptions: shellCycleOptions,
+        employeeOptions: shellEmployeeOptions,
+        orgKpiOptions: [],
+        summary: emptySummary,
+        mine: [],
+        reviewQueue: [],
+        history: [],
+        aiLogs: [],
+        permissions: buildPersonalKpiPermissions({
+          actorId: params.session.user.id,
+          actorRole: params.session.user.role,
+          targetEmployeeId: shellTargetEmployee?.id ?? params.employeeId ?? params.session.user.id,
+          pageState,
+          aiAccess,
+        }),
+        actor,
+      }
+    }
 
     return {
       state: 'error',
       message: '개인 KPI 데이터를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
-      alerts: [],
-      selectedYear: params.year ?? new Date().getFullYear(),
-      availableYears: [params.year ?? new Date().getFullYear()],
+      alerts: shellAlerts,
+      selectedYear,
+      availableYears: [selectedYear],
       selectedEmployeeId: params.employeeId ?? params.session.user.id,
-      cycleOptions: [],
-      employeeOptions: [],
+      selectedCycleId: shellCycleOptions[0]?.id,
+      cycleOptions: shellCycleOptions,
+      employeeOptions: shellEmployeeOptions,
       orgKpiOptions: [],
-      summary: {
-        totalCount: 0,
-        totalWeight: 0,
-        remainingWeight: 100,
-        linkedOrgKpiCount: 0,
-        rejectedCount: 0,
-        reviewPendingCount: 0,
-        monthlyCoverageRate: 0,
-        overallStatus: 'DRAFT',
-      },
+      summary: emptySummary,
       mine: [],
       reviewQueue: [],
       history: [],
       aiLogs: [],
-      permissions,
-      actor: {
-        id: params.session.user.id,
-        role: params.session.user.role,
-        name: params.session.user.name,
-        departmentName: params.session.user.deptName,
-      },
+      permissions: buildPersonalKpiPermissions({
+        actorId: params.session.user.id,
+        actorRole: params.session.user.role,
+        targetEmployeeId: params.employeeId ?? params.session.user.id,
+        pageState: 'error',
+        aiAccess,
+      }),
+      actor,
     }
   }
 }

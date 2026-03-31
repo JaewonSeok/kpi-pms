@@ -678,7 +678,7 @@ async function main() {
     )
   })
 
-  await run('appeal page keeps applicant flow in empty/hidden state when employee mapping is missing but session scope is still valid', async () => {
+  await run('appeal page keeps applicant flow in no-result-yet/window-closed state when employee mapping is missing but session scope is still valid', async () => {
     await withStubbedOperationalData(
       {
         employeeFindUnique: async () => null,
@@ -698,7 +698,7 @@ async function main() {
           cycleId: 'cycle-2026',
         })
 
-        assert.equal(data.state, 'empty')
+        assert.equal(data.state, 'no-result-yet')
         assert.equal(data.selectedCycleId, 'cycle-2026')
       }
     )
