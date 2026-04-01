@@ -31,6 +31,7 @@ export async function POST(request: Request) {
 
     const result = await runNotificationJob({
       mode: validated.data.mode,
+      reminderTypes: validated.data.reminderTypes,
       triggerSource: session?.user.role === 'ROLE_ADMIN' ? 'admin-manual' : 'cron',
     })
 

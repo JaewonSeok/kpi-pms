@@ -49,6 +49,8 @@ export const CreateOrgKpiSchema = z.object({
   unit: z.string().max(20).optional(),
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+  tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
+  parentOrgKpiId: z.string().nullable().optional(),
 })
 
 export const UpdateOrgKpiSchema = z.object({
@@ -63,7 +65,17 @@ export const UpdateOrgKpiSchema = z.object({
   unit: z.string().max(20).optional(),
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+  tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
+  parentOrgKpiId: z.string().nullable().optional(),
+})
+
+export const CloneOrgKpiSchema = z.object({
+  targetDeptId: z.string().min(1),
+  targetEvalYear: z.number().int().min(2020).max(2100),
+  targetCycleId: z.string().min(1).optional(),
+  includeProgress: z.boolean().default(false),
+  includeCheckins: z.boolean().default(false),
 })
 
 export const CreatePersonalKpiSchema = z.object({
@@ -78,6 +90,7 @@ export const CreatePersonalKpiSchema = z.object({
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   linkedOrgKpiId: z.string().optional(),
+  tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
 })
 
 export const UpdatePersonalKpiSchema = z.object({
@@ -92,7 +105,17 @@ export const UpdatePersonalKpiSchema = z.object({
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   linkedOrgKpiId: z.string().nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
+})
+
+export const ClonePersonalKpiSchema = z.object({
+  targetEmployeeId: z.string().min(1).optional(),
+  assignToSelf: z.boolean().default(false),
+  targetEvalYear: z.number().int().min(2020).max(2100),
+  targetCycleId: z.string().min(1).optional(),
+  includeProgress: z.boolean().default(false),
+  includeCheckins: z.boolean().default(false),
 })
 
 export const PersonalKpiWorkflowActionSchema = z.object({
@@ -230,6 +253,25 @@ export const CreateFeedbackRoundSchema = z.object({
   minRaters: z.number().int().min(1).max(10).default(3),
   maxRaters: z.number().int().min(1).max(20).default(8),
   weightInFinal: z.number().min(0).max(100).default(0),
+  folderId: z.string().nullable().optional(),
+  selectionSettings: z
+    .object({
+      requireLeaderApproval: z.boolean().default(false),
+      allowPreferredPeers: z.boolean().default(false),
+      excludeLeaderFromPeerSelection: z.boolean().default(false),
+      excludeDirectReportsFromPeerSelection: z.boolean().default(false),
+    })
+    .optional(),
+  visibilitySettings: z
+    .object({
+      SELF: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('FULL'),
+      SUPERVISOR: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('FULL'),
+      PEER: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
+      SUBORDINATE: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
+      CROSS_TEAM_PEER: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
+      CROSS_DEPT: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
+    })
+    .optional(),
 })
 
 export const SubmitFeedbackSchema = z.object({
@@ -255,6 +297,59 @@ export const FeedbackNominationDraftSchema = z.object({
   targetId: z.string().min(1).max(100),
   reviewers: z.array(FeedbackNominationReviewerSchema).min(1).max(20),
 })
+
+export const FeedbackFolderSchema = z.object({
+  name: z.string().trim().min(1).max(50),
+  description: z.string().trim().max(200).optional(),
+  color: z.string().trim().max(20).optional(),
+  sortOrder: z.number().int().min(0).max(999).default(0),
+})
+
+export const FeedbackRoundFolderAssignSchema = z.object({
+  roundId: z.string().min(1),
+  folderId: z.string().nullable(),
+})
+
+export const FeedbackRoundSettingsSchema = z.object({
+  folderId: z.string().nullable().optional(),
+  selectionSettings: z
+    .object({
+      requireLeaderApproval: z.boolean().default(false),
+      allowPreferredPeers: z.boolean().default(false),
+      excludeLeaderFromPeerSelection: z.boolean().default(false),
+      excludeDirectReportsFromPeerSelection: z.boolean().default(false),
+    })
+    .optional(),
+  visibilitySettings: z
+    .object({
+      SELF: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('FULL'),
+      SUPERVISOR: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('FULL'),
+      PEER: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
+      SUBORDINATE: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
+      CROSS_TEAM_PEER: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
+      CROSS_DEPT: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
+    })
+    .optional(),
+})
+
+export const FeedbackRoundReminderSchema = z
+  .object({
+    action: z.enum(['send-review-reminder', 'send-peer-selection-reminder', 'send-result-share', 'test-send']),
+    roundId: z.string().min(1),
+    targetIds: z.array(z.string().min(1)).min(1).max(100),
+    subject: z.string().trim().min(1).max(200),
+    body: z.string().trim().min(1).max(5000),
+    testEmail: z.string().email().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.action === 'test-send' && !data.testEmail) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['testEmail'],
+        message: '테스트 발송용 이메일 주소를 입력해 주세요.',
+      })
+    }
+  })
 
 export const Feedback360AiActionSchema = z.object({
   action: z.enum([
@@ -364,6 +459,9 @@ export const EvalCycleSchema = z.object({
   orgId: z.string().min(1),
   evalYear: z.number().int().min(2020).max(2100),
   cycleName: z.string().min(1).max(100),
+  showQuestionWeight: z.boolean().default(true),
+  showScoreSummary: z.boolean().default(true),
+  goalEditMode: z.enum(['FULL', 'CHECKIN_ONLY']).default('FULL'),
   kpiSetupStart: z.string().datetime().optional(),
   kpiSetupEnd: z.string().datetime().optional(),
   selfEvalStart: z.string().datetime().optional(),
@@ -385,6 +483,9 @@ export const UpdateEvalCycleSchema = z.object({
   orgId: z.string().min(1).optional(),
   evalYear: z.number().int().min(2020).max(2100).optional(),
   cycleName: z.string().min(1).max(100).optional(),
+  showQuestionWeight: z.boolean().optional(),
+  showScoreSummary: z.boolean().optional(),
+  goalEditMode: z.enum(['FULL', 'CHECKIN_ONLY']).optional(),
   status: z
     .enum([
       'SETUP',
@@ -492,6 +593,10 @@ export const EvaluationAIAssistRequestSchema = z.object({
   items: z.array(EvaluationAssistItemSchema).max(50).default([]),
 })
 
+export const EvaluationGuideActionSchema = z.object({
+  action: z.enum(['view', 'confirm']),
+})
+
 export const OrgKpiAiActionSchema = z.object({
   action: z.enum([
     'generate-draft',
@@ -589,6 +694,7 @@ export const NotificationPreferenceSchema = z.object({
 
 export const NotificationCronSchema = z.object({
   mode: z.enum(['schedule', 'dispatch', 'all']).default('all'),
+  reminderTypes: z.array(z.enum(['goal', 'checkpoint'])).max(2).optional(),
 })
 
 export const NotificationDeadLetterActionSchema = z.object({
@@ -769,14 +875,70 @@ export const BulkAdminEmployeeUploadSchema = z.object({
 
 export const CalibrationCandidateUpdateSchema = z
   .object({
-    action: z.enum(['save', 'clear']),
+    action: z.enum(['save', 'clear', 'bulk-import', 'update-session-config']),
     cycleId: z.string().min(1),
-    targetId: z.string().min(1),
+    targetId: z.string().min(1).optional(),
     gradeId: z.string().optional(),
     adjustReason: z.string().max(500).optional(),
+    rows: z
+      .array(
+        z.object({
+          targetId: z.string().min(1),
+          gradeId: z.string().min(1),
+          adjustReason: z.string().trim().min(30).max(500),
+        })
+      )
+      .max(300)
+      .optional(),
+    sessionConfig: z
+      .object({
+        excludedTargetIds: z.array(z.string().min(1)).max(500).default([]),
+        participantIds: z.array(z.string().min(1)).max(100).default([]),
+        evaluatorIds: z.array(z.string().min(1)).max(100).default([]),
+      })
+      .optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.action === 'clear' && !data.targetId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['targetId'],
+        message: '대상자를 선택해 주세요.',
+      })
+      return
+    }
+
+    if (data.action === 'bulk-import') {
+      if (!data.rows?.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['rows'],
+          message: '적용할 등급/코멘트 행이 없습니다.',
+        })
+      }
+      return
+    }
+
+    if (data.action === 'update-session-config') {
+      if (!data.sessionConfig) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['sessionConfig'],
+          message: '세션 설정 값을 확인해 주세요.',
+        })
+      }
+      return
+    }
+
     if (data.action !== 'save') return
+
+    if (!data.targetId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['targetId'],
+        message: '대상자를 선택해 주세요.',
+      })
+    }
 
     if (!data.gradeId) {
       ctx.addIssue({

@@ -52,6 +52,212 @@ export async function PATCH(request: Request) {
       throw new AppError(400, 'CALIBRATION_LOCKED', '잠금 상태에서는 조정을 수정할 수 없습니다.')
     }
 
+    if (body.action === 'update-session-config') {
+      await prisma.evalCycle.update({
+        where: { id: cycle.id },
+        data: {
+          calibrationSessionConfig: body.sessionConfig,
+        },
+      })
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'CALIBRATION_SESSION_CONFIG_UPDATED',
+        entityType: 'EvalCycle',
+        entityId: cycle.id,
+        newValue: body.sessionConfig,
+        ...client,
+      })
+
+      return successResponse({
+        cycleId: cycle.id,
+        sessionConfig: body.sessionConfig,
+      })
+    }
+
+    if (body.action === 'bulk-import') {
+      const targetIds = Array.from(new Set((body.rows ?? []).map((row) => row.targetId)))
+      const [gradeSettings, evaluations] = await Promise.all([
+        prisma.gradeSetting.findMany({
+          where: {
+            orgId: cycle.orgId,
+            evalYear: cycle.evalYear,
+            isActive: true,
+          },
+          select: {
+            id: true,
+            gradeName: true,
+            minScore: true,
+            maxScore: true,
+          },
+        }),
+        prisma.evaluation.findMany({
+          where: {
+            evalCycleId: cycle.id,
+            targetId: { in: targetIds },
+            evalStage: {
+              in: ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'],
+            },
+          },
+          include: {
+            target: {
+              include: {
+                department: true,
+              },
+            },
+            items: true,
+          },
+        }),
+      ])
+
+      const grouped = new Map<
+        string,
+        {
+          finalEvaluation: (typeof evaluations)[number] | null
+          adjustedEvaluation: (typeof evaluations)[number] | null
+        }
+      >()
+
+      for (const evaluation of evaluations) {
+        const current = grouped.get(evaluation.targetId) ?? { finalEvaluation: null, adjustedEvaluation: null }
+        if (evaluation.evalStage === 'CEO_ADJUST') current.adjustedEvaluation = evaluation
+        if (evaluation.evalStage === 'FINAL') current.finalEvaluation = evaluation
+        if (!current.finalEvaluation && evaluation.evalStage === 'SECOND') current.finalEvaluation = evaluation
+        if (!current.finalEvaluation && evaluation.evalStage === 'FIRST') current.finalEvaluation = evaluation
+        grouped.set(evaluation.targetId, current)
+      }
+
+      const savedRows: Array<{
+        targetId: string
+        targetName: string
+        department: string
+        fromGrade: string
+        toGrade: string
+        rawScore: number
+        reason: string
+        evaluationId: string
+      }> = []
+
+      await prisma.$transaction(async (tx) => {
+        for (const row of body.rows ?? []) {
+          const grade = gradeSettings.find((item) => item.id === row.gradeId)
+          if (!grade) {
+            throw new AppError(404, 'GRADE_NOT_FOUND', '선택한 조정 등급을 찾지 못했습니다.')
+          }
+
+          const entry = grouped.get(row.targetId)
+          const finalEvaluation = entry?.finalEvaluation
+          const adjustedEvaluation = entry?.adjustedEvaluation
+
+          if (!finalEvaluation) {
+            throw new AppError(404, 'FINAL_EVALUATION_NOT_FOUND', '원 평가 결과를 찾지 못했습니다.')
+          }
+
+          const originalGrade =
+            resolveGradeName(
+              adjustedEvaluation?.gradeId ?? finalEvaluation.gradeId,
+              finalEvaluation.totalScore,
+              gradeSettings
+            ) ?? '미확정'
+
+          const savedEvaluation = adjustedEvaluation
+            ? await tx.evaluation.update({
+                where: { id: adjustedEvaluation.id },
+                data: {
+                  gradeId: grade.id,
+                  totalScore: finalEvaluation.totalScore,
+                  comment: row.adjustReason.trim(),
+                  evaluatorId: session.user.id,
+                  status: 'CONFIRMED',
+                  isDraft: false,
+                  submittedAt: new Date(),
+                },
+              })
+            : await tx.evaluation.create({
+                data: {
+                  evalCycleId: cycle.id,
+                  targetId: row.targetId,
+                  evaluatorId: session.user.id,
+                  evalStage: 'CEO_ADJUST',
+                  totalScore: finalEvaluation.totalScore,
+                  gradeId: grade.id,
+                  comment: row.adjustReason.trim(),
+                  status: 'CONFIRMED',
+                  isDraft: false,
+                  submittedAt: new Date(),
+                  items: {
+                    create: finalEvaluation.items.map((item) => ({
+                      personalKpiId: item.personalKpiId,
+                      quantScore: item.quantScore,
+                      planScore: item.planScore,
+                      doScore: item.doScore,
+                      checkScore: item.checkScore,
+                      actScore: item.actScore,
+                      qualScore: item.qualScore,
+                      itemComment: item.itemComment,
+                      weightedScore: item.weightedScore,
+                    })),
+                  },
+                },
+              })
+
+          savedRows.push({
+            targetId: row.targetId,
+            targetName: finalEvaluation.target.empName,
+            department: finalEvaluation.target.department.deptName,
+            fromGrade: originalGrade,
+            toGrade: grade.gradeName,
+            rawScore: finalEvaluation.totalScore ?? 0,
+            reason: row.adjustReason.trim(),
+            evaluationId: savedEvaluation.id,
+          })
+        }
+      })
+
+      for (const row of savedRows) {
+        await createAuditLog({
+          userId: session.user.id,
+          action: 'CALIBRATION_UPDATED',
+          entityType: 'Evaluation',
+          entityId: row.evaluationId,
+          oldValue: {
+            targetId: row.targetId,
+            targetName: row.targetName,
+            department: row.department,
+            fromGrade: row.fromGrade,
+          },
+          newValue: {
+            targetId: row.targetId,
+            targetName: row.targetName,
+            department: row.department,
+            fromGrade: row.fromGrade,
+            toGrade: row.toGrade,
+            rawScore: row.rawScore,
+            reason: row.reason,
+            confirmedBy: session.user.name,
+          },
+          ...client,
+        })
+      }
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'CALIBRATION_BULK_IMPORTED',
+        entityType: 'EvalCycle',
+        entityId: cycle.id,
+        newValue: {
+          rowCount: savedRows.length,
+          targetIds: savedRows.map((item) => item.targetId),
+        },
+        ...client,
+      })
+
+      return successResponse({
+        cycleId: cycle.id,
+        rowCount: savedRows.length,
+      })
+    }
+
     const [gradeSettings, evaluations] = await Promise.all([
       prisma.gradeSetting.findMany({
         where: {
@@ -90,9 +296,14 @@ export async function PATCH(request: Request) {
       evaluations.find((evaluation) => evaluation.evalStage === 'SECOND') ??
       evaluations.find((evaluation) => evaluation.evalStage === 'FIRST')
     const adjustedEvaluation = evaluations.find((evaluation) => evaluation.evalStage === 'CEO_ADJUST')
+    const targetId = body.targetId ?? finalEvaluation?.targetId ?? adjustedEvaluation?.targetId
 
     if (!finalEvaluation) {
       throw new AppError(404, 'FINAL_EVALUATION_NOT_FOUND', '원 평가 결과를 찾지 못했습니다.')
+    }
+
+    if (!targetId) {
+      throw new AppError(400, 'TARGET_REQUIRED', '?깃툒 議곗젙 ??곸옄瑜?李얠? 紐삵뻽?듬땲??')
     }
 
     const originalGrade =
@@ -136,7 +347,7 @@ export async function PATCH(request: Request) {
       })
 
       return successResponse({
-        targetId: body.targetId,
+        targetId,
         cleared: true,
       })
     }
@@ -165,7 +376,7 @@ export async function PATCH(request: Request) {
       return tx.evaluation.create({
         data: {
           evalCycleId: cycle.id,
-          targetId: body.targetId,
+          targetId,
           evaluatorId: session.user.id,
           evalStage: 'CEO_ADJUST',
           totalScore: finalEvaluation.totalScore,

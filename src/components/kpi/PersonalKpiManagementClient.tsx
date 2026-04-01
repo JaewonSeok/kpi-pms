@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bot, ClipboardList, History, Link2, Plus, Send, Sparkles, X } from 'lucide-react'
+import { Bot, ClipboardList, Copy, History, Link2, Plus, Send, Sparkles, X } from 'lucide-react'
 import type {
   PersonalKpiAiLogItem,
   PersonalKpiPageData,
@@ -37,6 +37,7 @@ type KpiForm = {
   evalYear: number
   kpiType: 'QUANTITATIVE' | 'QUALITATIVE'
   kpiName: string
+  tags: string
   definition: string
   formula: string
   targetValue: string
@@ -44,6 +45,15 @@ type KpiForm = {
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
   linkedOrgKpiId: string
+}
+
+type PersonalCloneForm = {
+  targetEmployeeId: string
+  targetEvalYear: string
+  targetCycleId: string
+  includeProgress: boolean
+  includeCheckins: boolean
+  assignToSelf: boolean
 }
 
 type AiAction =
@@ -118,6 +128,9 @@ const AI_ACTIONS: Array<{ action: AiAction; title: string; description: string }
   { action: 'draft-monthly-comment', title: '월간 실적 코멘트 초안', description: '월간 실적과 이어질 코멘트 초안을 제안합니다.' },
 ]
 
+const PERSONAL_KPI_AI_PREVIEW_ERROR_MESSAGE =
+  'AI 초안 생성 중 설정 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의해 주세요.'
+
 function isTabKey(value?: string): value is PersonalKpiTabKey {
   return value === 'mine' || value === 'review' || value === 'history' || value === 'ai'
 }
@@ -150,6 +163,17 @@ function toNumberOrUndefined(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+function parseTagInput(value: string) {
+  return Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  )
+}
+
 function parseJsonOrThrow<T>(response: Response) {
   return response.json().then((json) => {
     const typed = json as { success?: boolean; data?: T; error?: { message?: string } }
@@ -157,6 +181,29 @@ function parseJsonOrThrow<T>(response: Response) {
       throw new Error(typed.error?.message || '요청을 처리하는 중 문제가 발생했습니다.')
     }
     return typed.data as T
+  })
+}
+
+function toPersonalKpiAiPreviewErrorMessage(error: unknown) {
+  if (!(error instanceof Error)) {
+    return PERSONAL_KPI_AI_PREVIEW_ERROR_MESSAGE
+  }
+
+  if (
+    error.message.includes('response_format') ||
+    error.message.includes('json_schema') ||
+    error.message.includes('structured output') ||
+    error.message.includes('OpenAI')
+  ) {
+    return PERSONAL_KPI_AI_PREVIEW_ERROR_MESSAGE
+  }
+
+  return error.message
+}
+
+function parseAiJsonOrThrow<T>(response: Response) {
+  return parseJsonOrThrow<T>(response).catch((error) => {
+    throw new Error(toPersonalKpiAiPreviewErrorMessage(error))
   })
 }
 
@@ -182,6 +229,7 @@ function buildEmptyForm(year: number, employeeId: string): KpiForm {
     evalYear: year,
     kpiType: 'QUANTITATIVE',
     kpiName: '',
+    tags: '',
     definition: '',
     formula: '',
     targetValue: '',
@@ -192,12 +240,24 @@ function buildEmptyForm(year: number, employeeId: string): KpiForm {
   }
 }
 
+function buildCloneForm(props: Props, selectedKpi?: PersonalKpiViewModel): PersonalCloneForm {
+  return {
+    targetEmployeeId: selectedKpi?.employeeId ?? props.selectedEmployeeId,
+    targetEvalYear: String(props.selectedYear),
+    targetCycleId: props.selectedCycleId ?? props.cycleOptions[0]?.id ?? '',
+    includeProgress: false,
+    includeCheckins: false,
+    assignToSelf: false,
+  }
+}
+
 function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
   return {
     employeeId: kpi.employeeId,
     evalYear: new Date(kpi.updatedAt ?? Date.now()).getFullYear(),
     kpiType: kpi.type,
     kpiName: kpi.title,
+    tags: kpi.tags.join(', '),
     definition: kpi.definition ?? '',
     formula: kpi.formula ?? '',
     targetValue: toNumberString(kpi.targetValue),
@@ -364,6 +424,8 @@ export function PersonalKpiManagementClient(props: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>('create')
   const [form, setForm] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
+  const [cloneOpen, setCloneOpen] = useState(false)
+  const [cloneForm, setCloneForm] = useState<PersonalCloneForm>(buildCloneForm(props))
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
@@ -411,6 +473,8 @@ export function PersonalKpiManagementClient(props: Props) {
     setForm(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
     setEditorOpen(false)
     setEditorMode('create')
+    setCloneOpen(false)
+    setCloneForm(buildCloneForm(props))
     setAiPreview(null)
     setBanner(null)
     setReviewNote('')
@@ -434,6 +498,18 @@ export function PersonalKpiManagementClient(props: Props) {
         : isDraftStatus(selectedKpi.status)
           ? undefined
           : '초안 상태 KPI만 수정할 수 있습니다.'
+  const cloneDisabledReason =
+    !selectedKpi
+      ? '복제할 KPI를 먼저 선택해 주세요.'
+      : props.state === 'error'
+        ? '개인 KPI 화면이 아직 완전히 준비되지 않아 복제를 시작할 수 없습니다.'
+        : props.state === 'no-target'
+          ? '대상자를 먼저 선택해야 KPI 복제를 진행할 수 있습니다.'
+          : props.state === 'setup-required'
+            ? '운영 대상자 또는 주기 설정이 없어 KPI 복제를 진행할 수 없습니다.'
+            : !props.permissions.canCreate
+              ? '현재 범위에서는 KPI를 복제할 권한이 없습니다.'
+              : undefined
   const aiActionStates = Object.fromEntries(
     AI_ACTIONS.map((item) => [
       item.action,
@@ -446,14 +522,21 @@ export function PersonalKpiManagementClient(props: Props) {
       }),
     ])
   ) as Record<AiAction, AiActionState>
+  const goalEditLocked =
+    props.alerts?.some((alert) => alert.title.includes('읽기 전용 모드')) ?? false
 
-  const submitCtaState = getPersonalKpiSubmitCtaState({
-    canSubmit: props.permissions.canSubmit,
-    totalCount: props.summary.totalCount,
-    selectedKpiStatus: selectedKpi?.status ?? null,
-    hasSelectedKpi: Boolean(selectedKpi),
-    workflowSaving: busyAction === 'submit',
-  })
+  const submitCtaState = goalEditLocked
+    ? {
+        disabled: true,
+        reason: '현재는 목표 읽기 전용 모드로 승인 요청 대신 체크인과 코멘트만 이어갈 수 있습니다.',
+      }
+    : getPersonalKpiSubmitCtaState({
+        canSubmit: props.permissions.canSubmit,
+        totalCount: props.summary.totalCount,
+        selectedKpiStatus: selectedKpi?.status ?? null,
+        hasSelectedKpi: Boolean(selectedKpi),
+        workflowSaving: busyAction === 'submit',
+      })
   const createDisabledReason =
     props.state === 'error'
       ? '개인 KPI 데이터를 아직 불러오지 못해 추가 기능을 사용할 수 없습니다.'
@@ -537,6 +620,17 @@ export function PersonalKpiManagementClient(props: Props) {
     setForm(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
     setAiPreview(null)
     setEditorOpen(true)
+  }
+
+  function handleOpenClone() {
+    if (cloneDisabledReason || !selectedKpi) {
+      setBanner({ tone: 'error', message: cloneDisabledReason ?? '복제할 KPI를 먼저 선택해 주세요.' })
+      return
+    }
+
+    setCloneForm(buildCloneForm(props, selectedKpi))
+    setCloneOpen(true)
+    setBanner(null)
   }
 
   function handleOpenAiDraft() {
@@ -631,6 +725,7 @@ export function PersonalKpiManagementClient(props: Props) {
         evalYear: props.selectedYear,
         kpiType: form.kpiType,
         kpiName: form.kpiName.trim(),
+        tags: parseTagInput(form.tags),
         definition: form.definition.trim() || undefined,
         formula: form.formula.trim() || undefined,
         targetValue: toNumberOrUndefined(form.targetValue),
@@ -672,6 +767,73 @@ export function PersonalKpiManagementClient(props: Props) {
       router.refresh()
     } catch (error) {
       setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'KPI 저장에 실패했습니다.' })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleCloneKpi() {
+    if (!selectedKpi) {
+      setBanner({ tone: 'error', message: '복제할 KPI를 먼저 선택해 주세요.' })
+      return
+    }
+
+    if (cloneDisabledReason) {
+      setBanner({ tone: 'error', message: cloneDisabledReason })
+      return
+    }
+
+    const targetEvalYear = Number(cloneForm.targetEvalYear)
+    if (!Number.isInteger(targetEvalYear) || targetEvalYear < 2020 || targetEvalYear > 2100) {
+      setBanner({ tone: 'error', message: '복제 대상 연도를 확인해 주세요.' })
+      return
+    }
+
+    if (!cloneForm.assignToSelf && !cloneForm.targetEmployeeId.trim()) {
+      setBanner({ tone: 'error', message: '복제 대상 담당자를 선택해 주세요.' })
+      return
+    }
+
+    setBusyAction('save-form')
+    setBanner(null)
+
+    try {
+      const cloned = await parseJsonOrThrow<{
+        id: string
+        employeeId: string
+        evalYear: number
+      }>(
+        await fetch(`/api/kpi/personal/${selectedKpi.id}/clone`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            targetEmployeeId: cloneForm.assignToSelf ? undefined : cloneForm.targetEmployeeId,
+            assignToSelf: cloneForm.assignToSelf,
+            targetEvalYear,
+            targetCycleId: cloneForm.targetCycleId || undefined,
+            includeProgress: cloneForm.includeProgress,
+            includeCheckins: cloneForm.includeCheckins,
+          }),
+        })
+      )
+
+      setCloneOpen(false)
+      setCloneForm(buildCloneForm(props))
+      setSelectedKpiId(cloned.id)
+      setBanner({ tone: 'success', message: '개인 KPI 복제본을 생성했습니다.' })
+      handleRouteSelection({
+        year: String(cloned.evalYear),
+        employeeId: cloned.employeeId,
+        cycleId: cloneForm.targetCycleId || undefined,
+        tab: 'mine',
+        kpiId: cloned.id,
+      })
+      router.refresh()
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '개인 KPI 복제에 실패했습니다.',
+      })
     } finally {
       setBusyAction(null)
     }
@@ -747,7 +909,7 @@ export function PersonalKpiManagementClient(props: Props) {
           payload: buildAiPayload(props, selectedKpi, form, action),
         }),
       })
-      const data = await parseJsonOrThrow<{
+      const data = await parseAiJsonOrThrow<{
         requestLogId: string
         source: 'ai' | 'fallback' | 'disabled'
         fallbackReason?: string | null
@@ -857,6 +1019,7 @@ export function PersonalKpiManagementClient(props: Props) {
         selectedEmployeeId={props.selectedEmployeeId}
         employeeOptions={props.employeeOptions}
         summary={props.summary}
+        rejectedCount={props.summary.rejectedCount}
         submitState={submitCtaState}
         createDisabledReason={createDisabledReason}
         aiDisabledReason={aiDisabledReason}
@@ -885,9 +1048,11 @@ export function PersonalKpiManagementClient(props: Props) {
               selectedId={selectedKpiId}
               onSelect={handleSelectKpi}
               onEdit={handleEditKpi}
+              onClone={handleOpenClone}
               selectedKpi={selectedKpi}
               canEdit={canEditSelectedKpi}
               editDisabledReason={selectedKpiEditReason}
+              cloneDisabledReason={cloneDisabledReason}
             />
           ) : null}
           {activeTab === 'review' ? (
@@ -971,6 +1136,18 @@ export function PersonalKpiManagementClient(props: Props) {
           onSave={handleSaveForm}
         />
       ) : null}
+      {cloneOpen ? (
+        <CloneKpiModal
+          form={cloneForm}
+          employeeOptions={props.employeeOptions}
+          cycleOptions={props.cycleOptions}
+          actorName={props.actor.name}
+          busy={busyAction === 'save-form'}
+          onChange={setCloneForm}
+          onClose={() => setCloneOpen(false)}
+          onSubmit={handleCloneKpi}
+        />
+      ) : null}
     </div>
   )
 }
@@ -999,6 +1176,7 @@ function HeroSection(props: {
   selectedEmployeeId: string
   employeeOptions: Props['employeeOptions']
   summary: Props['summary']
+  rejectedCount: number
   submitState: PersonalKpiSubmitCtaState
   createDisabledReason?: string
   aiDisabledReason?: string
@@ -1141,6 +1319,14 @@ function HeroSection(props: {
           <p data-testid="personal-kpi-submit-helper" className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
             {props.submitState.reason}
           </p>
+          {props.rejectedCount > 0 ? (
+            <p
+              data-testid="personal-kpi-rejected-count"
+              className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
+            >
+              반려된 목표 {props.rejectedCount}개를 수정했다면 바로 승인 요청을 다시 보낼 수 있습니다.
+            </p>
+          ) : null}
         </div>
       </div>
     </section>
@@ -1205,9 +1391,11 @@ function MineSection(props: {
   selectedId: string
   onSelect: (id: string) => void
   onEdit: (kpi: PersonalKpiViewModel) => void
+  onClone: () => void
   selectedKpi?: PersonalKpiViewModel
   canEdit: boolean
   editDisabledReason?: string
+  cloneDisabledReason?: string
 }) {
   if (!props.items.length) {
     return (
@@ -1240,6 +1428,13 @@ function MineSection(props: {
                     <StatusBadge status={item.status} />
                     <InfoPill>{KPI_TYPE_LABELS[item.type]}</InfoPill>
                   </div>
+                  {item.tags.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {item.tags.map((tag) => (
+                        <InfoPill key={tag}>{tag}</InfoPill>
+                      ))}
+                    </div>
+                  ) : null}
                   <p className={`text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
                     {item.orgKpiTitle ? `상위 목표: ${item.orgKpiTitle}` : '연결된 조직 KPI 없음'}
                   </p>
@@ -1254,7 +1449,15 @@ function MineSection(props: {
         </div>
       </SectionCard>
 
-      <DetailPanel selectedKpi={props.selectedKpi} canEdit={props.canEdit} editDisabledReason={props.editDisabledReason} onEdit={props.onEdit} />
+      <DetailPanel
+        selectedKpi={props.selectedKpi}
+        canEdit={props.canEdit}
+        editDisabledReason={props.editDisabledReason}
+        onEdit={props.onEdit}
+        canClone={!props.cloneDisabledReason}
+        cloneDisabledReason={props.cloneDisabledReason}
+        onClone={props.onClone}
+      />
     </div>
   )
 }
@@ -1264,6 +1467,9 @@ function DetailPanel(props: {
   canEdit: boolean
   editDisabledReason?: string
   onEdit: (kpi: PersonalKpiViewModel) => void
+  canClone: boolean
+  cloneDisabledReason?: string
+  onClone: () => void
 }) {
   if (!props.selectedKpi) {
     return (
@@ -1290,6 +1496,15 @@ function DetailPanel(props: {
             ) : props.editDisabledReason ? (
               <InfoPill>{props.editDisabledReason}</InfoPill>
             ) : null}
+            <ActionButton
+              icon={<Copy className="h-4 w-4" />}
+              variant="secondary"
+              onClick={props.onClone}
+              disabled={!props.canClone}
+              title={props.cloneDisabledReason}
+            >
+              복제
+            </ActionButton>
           </div>
         </div>
 
@@ -1302,9 +1517,39 @@ function DetailPanel(props: {
           <Field label="조직 KPI 연결" value={item.orgKpiTitle ?? '미연결'} />
         </div>
 
+        {item.tags.length ? (
+          <Block title="목표 태그">
+            <div className="flex flex-wrap gap-2">
+              {item.tags.map((tag) => (
+                <span key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </Block>
+        ) : null}
+
+        {item.orgLineage.length ? (
+          <Block title="목표 정렬 경로">
+            <div className="flex flex-wrap gap-2">
+              {item.orgLineage.map((segment) => (
+                <span key={segment.id} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                  {segment.departmentName} · {segment.title}
+                </span>
+              ))}
+            </div>
+          </Block>
+        ) : null}
+
         <Block title="정의">{item.definition || '정의가 아직 작성되지 않았습니다.'}</Block>
         <Block title="산식">{item.formula || '산식이 아직 작성되지 않았습니다.'}</Block>
         <Block title="검토 코멘트">{item.reviewComment || '검토 코멘트가 아직 없습니다.'}</Block>
+
+        {item.cloneInfo ? (
+          <Block title="복제 정보">
+            {`${item.cloneInfo.sourceOwnerName ?? '원본'}의 "${item.cloneInfo.sourceTitle}"에서 복제되었습니다. 진행 snapshot ${item.cloneInfo.progressEntryCount}건, 체크인 snapshot ${item.cloneInfo.checkinEntryCount}건을 이관했습니다.`}
+          </Block>
+        ) : null}
 
         <div className="space-y-2">
           <h4 className="text-sm font-semibold text-slate-900">최근 월간 실적</h4>
@@ -1392,6 +1637,17 @@ function ReviewQueueSection(props: {
             <CompareCard label="이전 값" value={selectedItem.previousValueSummary || '이전 기록 없음'} />
             <CompareCard label="현재 값" value={selectedItem.currentValueSummary || '현재 요약 없음'} />
             <Block title="기존 반려 사유">{selectedItem.reviewComment || '반려 또는 검토 메모가 아직 없습니다.'}</Block>
+            {selectedItem.tags.length ? (
+              <Block title="목표 태그">
+                <div className="flex flex-wrap gap-2">
+                  {selectedItem.tags.map((tag) => (
+                    <span key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </Block>
+            ) : null}
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-900">검토 메모</span>
               <textarea
@@ -1612,6 +1868,136 @@ function StatePanel(props: { state: Props['state']; message?: string }) {
   return <EmptyState title={title} description={description} />
 }
 
+function CloneKpiModal(props: {
+  form: PersonalCloneForm
+  employeeOptions: Props['employeeOptions']
+  cycleOptions: Props['cycleOptions']
+  actorName: string
+  busy: boolean
+  onChange: (next: PersonalCloneForm | ((current: PersonalCloneForm) => PersonalCloneForm)) => void
+  onClose: () => void
+  onSubmit: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">KPI 복제</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              목표 진행 snapshot과 체크인 기록을 선택적으로 이관해 다음 주기 운영을 바로 이어갈 수 있습니다.
+            </p>
+          </div>
+          <button type="button" onClick={props.onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-5 px-6 py-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-900">대상 연도</span>
+              <input
+                type="number"
+                value={props.form.targetEvalYear}
+                onChange={(event) => props.onChange((current) => ({ ...current, targetEvalYear: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-900">대상 주기</span>
+              <select
+                value={props.form.targetCycleId}
+                onChange={(event) => props.onChange((current) => ({ ...current, targetCycleId: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+              >
+                <option value="">주기 미지정</option>
+                {props.cycleOptions.map((cycle) => (
+                  <option key={cycle.id} value={cycle.id}>
+                    {cycle.year} · {cycle.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={props.form.assignToSelf}
+              onChange={(event) =>
+                props.onChange((current) => ({
+                  ...current,
+                  assignToSelf: event.target.checked,
+                  targetEmployeeId: event.target.checked ? current.targetEmployeeId : current.targetEmployeeId,
+                }))
+              }
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+            />
+            <span>
+              <span className="block font-semibold text-slate-900">복제 후 담당자를 나 자신으로 설정</span>
+              <span className="mt-1 block text-slate-500">{props.actorName} 계정으로 바로 이어서 작성할 수 있습니다.</span>
+            </span>
+          </label>
+
+          {!props.form.assignToSelf ? (
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-900">대상 담당자</span>
+              <select
+                value={props.form.targetEmployeeId}
+                onChange={(event) => props.onChange((current) => ({ ...current, targetEmployeeId: event.target.value }))}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+              >
+                {props.employeeOptions.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name} · {employee.departmentName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={props.form.includeProgress}
+                onChange={(event) => props.onChange((current) => ({ ...current, includeProgress: event.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+              />
+              <span>
+                <span className="block font-semibold text-slate-900">진척도 snapshot 포함</span>
+                <span className="mt-1 block text-slate-500">최근 월간 실적 기반 진척 메모를 복제 metadata로 이관합니다.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={props.form.includeCheckins}
+                onChange={(event) => props.onChange((current) => ({ ...current, includeCheckins: event.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+              />
+              <span>
+                <span className="block font-semibold text-slate-900">체크인 이력 snapshot 포함</span>
+                <span className="mt-1 block text-slate-500">연결된 체크인 요약을 carry-over metadata로 남깁니다.</span>
+              </span>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <ActionButton variant="secondary" onClick={props.onClose}>
+              취소
+            </ActionButton>
+            <ActionButton onClick={props.onSubmit} disabled={props.busy}>
+              {props.busy ? '복제 중...' : '복제 실행'}
+            </ActionButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function QuickLinks() {
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1705,6 +2091,17 @@ function EditorModal(props: {
               className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
               placeholder="무엇을 달성하려는 KPI인지, 왜 중요한지를 명확하게 적어주세요."
             />
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-900">목표 태그</span>
+            <input
+              value={props.form.tags}
+              onChange={(event) => props.onChange((current) => ({ ...current, tags: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+              placeholder="예: 매출, 고객, 운영 안정화"
+            />
+            <p className="text-xs text-slate-500">쉼표로 구분해 입력하면 승인과 검토 화면에서 함께 표시됩니다.</p>
           </label>
 
           <div className="grid gap-4 md:grid-cols-2">

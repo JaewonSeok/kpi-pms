@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 
 process.env.DATABASE_URL ||= 'postgresql://postgres:password@localhost:5432/kpi_pms'
 process.env.OPENAI_INPUT_COST_PER_1M = '0.5'
@@ -13,6 +15,15 @@ function run(name: string, fn: () => void) {
     console.error(`FAIL ${name}`)
     throw error
   }
+}
+
+function read(relativePath: string) {
+  return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
+}
+
+function extractSchemaBlock(source: string, schemaName: string) {
+  const pattern = new RegExp(`const ${schemaName} = \\{[\\s\\S]*?\\n\\} satisfies JsonRecord`)
+  return source.match(pattern)?.[0] ?? ''
 }
 
 async function main() {
@@ -77,6 +88,23 @@ async function main() {
 
   run('AI feature flag can disable remote calls cleanly', () => {
     assert.equal(isAiFeatureEnabled(), false)
+  })
+
+  run('structured output schemas keep nullable optional fields in required arrays for strict json_schema', () => {
+    const source = read('src/lib/ai-assist.ts')
+    const personalDraftSchema = extractSchemaBlock(source, 'PERSONAL_KPI_DRAFT_SCHEMA')
+    const orgDraftSchema = extractSchemaBlock(source, 'ORG_KPI_DRAFT_SCHEMA')
+    const personalDuplicateSchema = extractSchemaBlock(source, 'PERSONAL_KPI_DUPLICATE_SCHEMA')
+    const orgDuplicateSchema = extractSchemaBlock(source, 'ORG_KPI_DUPLICATE_SCHEMA')
+
+    assert.equal(personalDraftSchema.includes("'formula'"), true)
+    assert.equal(personalDraftSchema.includes("formula: { type: ['string', 'null'] }"), true)
+    assert.equal(orgDraftSchema.includes("'category'"), true)
+    assert.equal(orgDraftSchema.includes("category: { type: ['string', 'null'] }"), true)
+    assert.equal(personalDuplicateSchema.includes("required: ['id', 'title', 'overlapLevel', 'similarityReason']"), true)
+    assert.equal(personalDuplicateSchema.includes("id: { type: ['string', 'null'] }"), true)
+    assert.equal(orgDuplicateSchema.includes("required: ['id', 'title', 'overlapLevel', 'similarityReason']"), true)
+    assert.equal(orgDuplicateSchema.includes("id: { type: ['string', 'null'] }"), true)
   })
 
   console.log('AI assistant tests completed')

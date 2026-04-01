@@ -6,8 +6,8 @@ import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreatePersonalKpiSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { validatePersonalOrgLink } from '@/server/goal-alignment'
 
-// GET /api/kpi/personal
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -66,7 +66,6 @@ export async function GET(request: Request) {
   }
 }
 
-// POST /api/kpi/personal
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -84,6 +83,7 @@ export async function POST(request: Request) {
       throw new AppError(403, 'FORBIDDEN', '다른 직원의 개인 KPI를 생성할 권한이 없습니다.')
     }
 
+    let targetEmployeeDeptId = session.user.deptId
     if (data.employeeId !== session.user.id) {
       const targetEmployee = await prisma.employee.findUnique({
         where: { id: data.employeeId },
@@ -93,30 +93,39 @@ export async function POST(request: Request) {
       if (!targetEmployee || !canAccessEmployee(session, targetEmployee)) {
         throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 직원입니다.')
       }
+
+      targetEmployeeDeptId = targetEmployee.deptId
     }
 
-    if (data.linkedOrgKpiId) {
-      const orgKpi = await prisma.orgKpi.findUnique({
-        where: { id: data.linkedOrgKpiId },
-        select: {
-          id: true,
-          evalYear: true,
-          status: true,
-        },
-      })
+    const targetDepartment = await prisma.department.findUnique({
+      where: { id: targetEmployeeDeptId },
+      select: { orgId: true },
+    })
 
-      if (!orgKpi) {
-        throw new AppError(404, 'ORG_KPI_NOT_FOUND', '연결할 조직 KPI를 찾을 수 없습니다.')
-      }
+    const targetCycle = targetDepartment
+      ? await prisma.evalCycle.findFirst({
+          where: {
+            orgId: targetDepartment.orgId,
+            evalYear: data.evalYear,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { goalEditMode: true },
+        })
+      : null
 
-      if (orgKpi.evalYear !== data.evalYear) {
-        throw new AppError(400, 'ORG_KPI_YEAR_MISMATCH', '같은 연도의 조직 KPI만 연결할 수 있습니다.')
-      }
-
-      if (orgKpi.status === 'ARCHIVED') {
-        throw new AppError(400, 'ORG_KPI_ARCHIVED', '보관된 조직 KPI에는 연결할 수 없습니다.')
-      }
+    if (targetCycle?.goalEditMode === 'CHECKIN_ONLY') {
+      throw new AppError(
+        400,
+        'GOAL_EDIT_LOCKED',
+        '현재 주기는 읽기 전용 모드입니다. 목표 생성/수정은 막혀 있으며 체크인과 코멘트만 허용됩니다.'
+      )
     }
+
+    const linkedOrgKpiId = await validatePersonalOrgLink({
+      linkedOrgKpiId: data.linkedOrgKpiId ?? null,
+      targetEvalYear: data.evalYear,
+      targetEmployeeDeptId,
+    })
 
     const existingKpis = await prisma.personalKpi.findMany({
       where: {
@@ -141,7 +150,8 @@ export async function POST(request: Request) {
     const kpi = await prisma.personalKpi.create({
       data: {
         ...data,
-        linkedOrgKpiId: data.linkedOrgKpiId || null,
+        linkedOrgKpiId,
+        tags: data.tags ?? [],
         status: 'DRAFT',
       },
       include: {
@@ -173,6 +183,7 @@ export async function POST(request: Request) {
         weight: kpi.weight,
         difficulty: kpi.difficulty,
         linkedOrgKpiId: kpi.linkedOrgKpiId,
+        tags: kpi.tags,
         status: kpi.status,
       },
       ...getClientInfo(request),

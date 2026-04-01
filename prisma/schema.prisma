@@ -20,6 +20,7 @@ model Organization {
   evalCycles    EvalCycle[]
   gradeSettings GradeSetting[]
   compensationRuleSets CompensationRuleSet[]
+  feedbackFolders FeedbackFolder[]
   aiCompetencyExternalCertMasters AiCompetencyExternalCertMaster[]
   wordCloud360Keywords WordCloud360Keyword[]
   wordCloud360Cycles   WordCloud360Cycle[]
@@ -180,12 +181,21 @@ model OrgKpi {
   weight       Float
   difficulty   Difficulty
   status       KpiStatus  @default(DRAFT)
+  tags         Json?
+  parentOrgKpiId String?
+  parentOrgKpi   OrgKpi?    @relation("OrgKpiAlignment", fields: [parentOrgKpiId], references: [id])
+  childOrgKpis   OrgKpi[]   @relation("OrgKpiAlignment")
+  copiedFromOrgKpiId String?
+  copiedFromOrgKpi   OrgKpi?    @relation("OrgKpiCloneSource", fields: [copiedFromOrgKpiId], references: [id])
+  clonedOrgKpis      OrgKpi[]   @relation("OrgKpiCloneSource")
+  copyMetadata       Json?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
   personalKpis PersonalKpi[]
 
   @@unique([deptId, evalYear, kpiName])
+  @@index([evalYear, parentOrgKpiId])
   @@map("org_kpis")
 }
 
@@ -205,6 +215,11 @@ model PersonalKpi {
   linkedOrgKpiId String?
   linkedOrgKpi   OrgKpi?     @relation(fields: [linkedOrgKpiId], references: [id])
   status         KpiStatus   @default(DRAFT)
+  tags           Json?
+  copiedFromPersonalKpiId String?
+  copiedFromPersonalKpi   PersonalKpi?  @relation("PersonalKpiCloneSource", fields: [copiedFromPersonalKpiId], references: [id])
+  clonedPersonalKpis      PersonalKpi[] @relation("PersonalKpiCloneSource")
+  copyMetadata            Json?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -269,6 +284,10 @@ model EvalCycle {
   evalYear        Int
   cycleName       String
   status          CycleStatus  @default(SETUP)
+  showQuestionWeight Boolean   @default(true)
+  showScoreSummary   Boolean   @default(true)
+  goalEditMode    GoalEditMode @default(FULL)
+  calibrationSessionConfig Json?
   kpiSetupStart   DateTime?
   kpiSetupEnd     DateTime?
   selfEvalStart   DateTime?
@@ -513,6 +532,8 @@ model MultiFeedbackRound {
   id            String              @id @default(cuid())
   evalCycleId   String
   evalCycle     EvalCycle           @relation(fields: [evalCycleId], references: [id])
+  folderId      String?
+  folder        FeedbackFolder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
   roundName     String
   roundType     FeedbackRoundType
   startDate     DateTime
@@ -522,6 +543,8 @@ model MultiFeedbackRound {
   minRaters     Int                 @default(3)
   maxRaters     Int                 @default(8)
   weightInFinal Float               @default(0)
+  selectionSettings Json?
+  visibilitySettings Json?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
@@ -531,6 +554,25 @@ model MultiFeedbackRound {
   reportCaches FeedbackReportCache[]
 
   @@map("multi_feedback_rounds")
+}
+
+model FeedbackFolder {
+  id          String              @id @default(cuid())
+  orgId       String
+  organization Organization       @relation(fields: [orgId], references: [id])
+  name        String
+  description String?
+  color       String?
+  sortOrder   Int                 @default(0)
+  createdById String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  rounds MultiFeedbackRound[]
+
+  @@unique([orgId, name])
+  @@index([orgId, sortOrder])
+  @@map("feedback_folders")
 }
 
 enum FeedbackRoundType {
@@ -546,6 +588,11 @@ enum FeedbackRoundStatus {
   IN_PROGRESS
   COMPLETED
   CLOSED
+}
+
+enum GoalEditMode {
+  FULL
+  CHECKIN_ONLY
 }
 
 model FeedbackQuestion {

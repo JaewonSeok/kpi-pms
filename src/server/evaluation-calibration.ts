@@ -67,6 +67,25 @@ export type CalibrationViewModel = {
     organizationName: string
     selectedScopeId: string
   }
+  sessionConfig: {
+    excludedTargetIds: string[]
+    participantIds: string[]
+    evaluatorIds: string[]
+  }
+  sessionOptions: {
+    targets: Array<{
+      id: string
+      employeeId: string
+      name: string
+      department: string
+    }>
+    people: Array<{
+      id: string
+      name: string
+      department: string
+      role: string
+    }>
+  }
   scopeOptions: Array<{
     id: string
     label: string
@@ -287,7 +306,7 @@ export async function getEvaluationCalibrationPageData(params: {
       cycles.find((cycle) => cycle.status !== 'SETUP') ??
       cycles[0]
 
-    const [gradeSettings, evaluations, checkIns] = await Promise.all([
+    const [gradeSettings, evaluations, checkIns, orgEmployees] = await Promise.all([
       prisma.gradeSetting.findMany({
         where: {
           orgId: selectedCycle.orgId,
@@ -359,6 +378,25 @@ export async function getEvaluationCalibrationPageData(params: {
           ownerNotes: true,
         },
       }),
+      prisma.employee.findMany({
+        where: {
+          department: {
+            orgId: selectedCycle.orgId,
+          },
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          empName: true,
+          position: true,
+          department: {
+            select: {
+              deptName: true,
+            },
+          },
+        },
+        orderBy: [{ department: { deptName: 'asc' } }, { empName: 'asc' }],
+      }),
     ])
 
     if (!evaluations.length) {
@@ -405,6 +443,7 @@ export async function getEvaluationCalibrationPageData(params: {
       }
     }
 
+    const sessionConfig = parseCalibrationSessionConfig(selectedCycle.calibrationSessionConfig)
     const groups = groupEvaluationsByTarget(evaluations)
     const scopeOptions = buildScopeOptions(groups)
     const selectedScopeId =
@@ -412,7 +451,9 @@ export async function getEvaluationCalibrationPageData(params: {
         ? params.scopeId
         : 'all'
 
-    const filteredGroups = filterGroupsByScope(groups, selectedScopeId)
+    const filteredGroups = filterGroupsByScope(groups, selectedScopeId).filter(
+      (group) => !sessionConfig.excludedTargetIds.includes(group.target.id)
+    )
     if (!filteredGroups.length) {
       return {
         state: 'empty',
@@ -472,6 +513,21 @@ export async function getEvaluationCalibrationPageData(params: {
           lockedAt: resolveLockedAt(selectedCycle, auditLogs),
           organizationName: employee.department.organization.name,
           selectedScopeId,
+        },
+        sessionConfig,
+        sessionOptions: {
+          targets: groups.map((group) => ({
+            id: group.target.id,
+            employeeId: group.target.empId,
+            name: group.target.empName,
+            department: group.target.department.deptName,
+          })),
+          people: orgEmployees.map((person) => ({
+            id: person.id,
+            name: person.empName,
+            department: person.department.deptName,
+            role: resolvePositionLabel(person.position),
+          })),
         },
         scopeOptions,
         gradeOptions: gradeSettings.map((grade) => ({
@@ -1058,6 +1114,30 @@ function buildSuggestedReason(params: {
 function parseCalibrationPayload(value: Prisma.JsonValue | null) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as CalibrationAuditPayload
+}
+
+function parseCalibrationSessionConfig(value: Prisma.JsonValue | null): CalibrationViewModel['sessionConfig'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {
+      excludedTargetIds: [],
+      participantIds: [],
+      evaluatorIds: [],
+    }
+  }
+
+  const record = value as Record<string, unknown>
+
+  return {
+    excludedTargetIds: Array.isArray(record.excludedTargetIds)
+      ? record.excludedTargetIds.filter((item): item is string => typeof item === 'string')
+      : [],
+    participantIds: Array.isArray(record.participantIds)
+      ? record.participantIds.filter((item): item is string => typeof item === 'string')
+      : [],
+    evaluatorIds: Array.isArray(record.evaluatorIds)
+      ? record.evaluatorIds.filter((item): item is string => typeof item === 'string')
+      : [],
+  }
 }
 
 function humanizeCalibrationAction(action: string) {

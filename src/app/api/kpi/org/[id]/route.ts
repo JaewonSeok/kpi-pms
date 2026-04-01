@@ -8,6 +8,7 @@ import {
   canEditOrgKpiByOperationalStatus,
   resolveOrgKpiOperationalStatus,
 } from '@/server/org-kpi-workflow'
+import { validateOrgParentLink } from '@/server/goal-alignment'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -123,11 +124,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         kpiName: true,
         kpiCategory: true,
         kpiType: true,
+        parentOrgKpiId: true,
         definition: true,
         formula: true,
         targetValue: true,
         unit: true,
         difficulty: true,
+        tags: true,
         personalKpis: {
           select: {
             status: true,
@@ -175,7 +178,24 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.targetValue !== undefined ||
       data.unit !== undefined ||
       data.weight !== undefined ||
-      data.difficulty !== undefined
+      data.difficulty !== undefined ||
+      data.tags !== undefined
+
+    const targetDepartment = await prisma.department.findUnique({
+      where: { id: targetDeptId },
+      select: { orgId: true },
+    })
+
+    const targetCycle = targetDepartment
+      ? await prisma.evalCycle.findFirst({
+          where: {
+            orgId: targetDepartment.orgId,
+            evalYear: targetEvalYear,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { goalEditMode: true },
+        })
+      : null
 
     const linkedConfirmedPersonalKpis = current.personalKpis.filter(
       (personalKpi) => personalKpi.status === 'CONFIRMED'
@@ -186,6 +206,14 @@ export async function PATCH(request: Request, context: RouteContext) {
         400,
         'ORG_KPI_LOCKED',
         '초안 상태 KPI만 수정할 수 있습니다. 제출되었거나 잠금된 KPI는 먼저 재오픈해 주세요.'
+      )
+    }
+
+    if ((hasFieldUpdates || data.status === 'ARCHIVED') && targetCycle?.goalEditMode === 'CHECKIN_ONLY') {
+      throw new AppError(
+        400,
+        'GOAL_EDIT_LOCKED',
+        '현재 주기는 읽기 전용 모드입니다. 목표 생성/수정/삭제는 막혀 있으며 체크인과 코멘트만 허용됩니다.'
       )
     }
 
@@ -243,6 +271,18 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
     }
 
+    const validatedParentOrgKpiId =
+      data.parentOrgKpiId !== undefined || data.deptId !== undefined || data.evalYear !== undefined
+        ? await validateOrgParentLink({
+            goalId: id,
+            parentOrgKpiId:
+              data.parentOrgKpiId !== undefined ? data.parentOrgKpiId ?? null : current.parentOrgKpiId,
+            targetDeptId,
+            targetEvalYear,
+            editableDepartmentIds: scopeDepartmentIds,
+          })
+        : current.parentOrgKpiId
+
     const kpi = await prisma.orgKpi.update({
       where: { id },
       data: {
@@ -257,6 +297,10 @@ export async function PATCH(request: Request, context: RouteContext) {
         ...(data.unit !== undefined ? { unit: data.unit || null } : {}),
         ...(data.weight !== undefined ? { weight: data.weight } : {}),
         ...(data.difficulty !== undefined ? { difficulty: data.difficulty } : {}),
+        ...(data.tags !== undefined ? { tags: data.tags } : {}),
+        ...(data.parentOrgKpiId !== undefined || data.deptId !== undefined || data.evalYear !== undefined
+          ? { parentOrgKpiId: validatedParentOrgKpiId }
+          : {}),
         ...(data.status !== undefined ? { status: data.status } : {}),
       },
       include: {
@@ -301,11 +345,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         kpiName: current.kpiName,
         kpiCategory: current.kpiCategory,
         kpiType: current.kpiType,
+        parentOrgKpiId: current.parentOrgKpiId,
         definition: current.definition,
         formula: current.formula,
         targetValue: current.targetValue,
         unit: current.unit,
         difficulty: current.difficulty,
+        tags: current.tags,
       },
       newValue: {
         deptId: kpi.deptId,
@@ -315,11 +361,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         kpiName: kpi.kpiName,
         kpiCategory: kpi.kpiCategory,
         kpiType: kpi.kpiType,
+        parentOrgKpiId: kpi.parentOrgKpiId,
         definition: kpi.definition,
         formula: kpi.formula,
         targetValue: kpi.targetValue,
         unit: kpi.unit,
         difficulty: kpi.difficulty,
+        tags: kpi.tags,
       },
       ...clientInfo,
     })

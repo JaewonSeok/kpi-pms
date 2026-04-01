@@ -2,8 +2,79 @@ import type { FeedbackNominationStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { AppError } from '@/lib/utils'
 
+export type FeedbackSelectionSettings = {
+  requireLeaderApproval: boolean
+  allowPreferredPeers: boolean
+  excludeLeaderFromPeerSelection: boolean
+  excludeDirectReportsFromPeerSelection: boolean
+}
+
+export type FeedbackVisibilitySettings = Record<
+  'SELF' | 'SUPERVISOR' | 'PEER' | 'SUBORDINATE' | 'CROSS_TEAM_PEER' | 'CROSS_DEPT',
+  'FULL' | 'ANONYMOUS' | 'PRIVATE'
+>
+
+export const DEFAULT_FEEDBACK_SELECTION_SETTINGS: FeedbackSelectionSettings = {
+  requireLeaderApproval: false,
+  allowPreferredPeers: false,
+  excludeLeaderFromPeerSelection: false,
+  excludeDirectReportsFromPeerSelection: false,
+}
+
+export const DEFAULT_FEEDBACK_VISIBILITY_SETTINGS: FeedbackVisibilitySettings = {
+  SELF: 'FULL',
+  SUPERVISOR: 'FULL',
+  PEER: 'ANONYMOUS',
+  SUBORDINATE: 'ANONYMOUS',
+  CROSS_TEAM_PEER: 'ANONYMOUS',
+  CROSS_DEPT: 'ANONYMOUS',
+}
+
 function asRecord(value: unknown) {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
+}
+
+export function parseFeedbackSelectionSettings(value: unknown): FeedbackSelectionSettings {
+  const record = asRecord(value)
+  if (!record) return DEFAULT_FEEDBACK_SELECTION_SETTINGS
+
+  return {
+    requireLeaderApproval:
+      typeof record.requireLeaderApproval === 'boolean'
+        ? record.requireLeaderApproval
+        : DEFAULT_FEEDBACK_SELECTION_SETTINGS.requireLeaderApproval,
+    allowPreferredPeers:
+      typeof record.allowPreferredPeers === 'boolean'
+        ? record.allowPreferredPeers
+        : DEFAULT_FEEDBACK_SELECTION_SETTINGS.allowPreferredPeers,
+    excludeLeaderFromPeerSelection:
+      typeof record.excludeLeaderFromPeerSelection === 'boolean'
+        ? record.excludeLeaderFromPeerSelection
+        : DEFAULT_FEEDBACK_SELECTION_SETTINGS.excludeLeaderFromPeerSelection,
+    excludeDirectReportsFromPeerSelection:
+      typeof record.excludeDirectReportsFromPeerSelection === 'boolean'
+        ? record.excludeDirectReportsFromPeerSelection
+        : DEFAULT_FEEDBACK_SELECTION_SETTINGS.excludeDirectReportsFromPeerSelection,
+  }
+}
+
+export function parseFeedbackVisibilitySettings(value: unknown): FeedbackVisibilitySettings {
+  const record = asRecord(value)
+  if (!record) return DEFAULT_FEEDBACK_VISIBILITY_SETTINGS
+
+  const resolve = (key: keyof FeedbackVisibilitySettings) =>
+    record[key] === 'FULL' || record[key] === 'ANONYMOUS' || record[key] === 'PRIVATE'
+      ? record[key]
+      : DEFAULT_FEEDBACK_VISIBILITY_SETTINGS[key]
+
+  return {
+    SELF: resolve('SELF'),
+    SUPERVISOR: resolve('SUPERVISOR'),
+    PEER: resolve('PEER'),
+    SUBORDINATE: resolve('SUBORDINATE'),
+    CROSS_TEAM_PEER: resolve('CROSS_TEAM_PEER'),
+    CROSS_DEPT: resolve('CROSS_DEPT'),
+  }
 }
 
 function average(values: number[]) {
@@ -202,4 +273,62 @@ export function getNominationAggregateStatus(statuses: FeedbackNominationStatus[
 
 export function parsePersistedReportPayload(value: unknown) {
   return asRecord(value)
+}
+
+export function validatePeerReviewerSelection(params: {
+  actorId: string
+  actorRole: string
+  target: {
+    id: string
+    teamLeaderId: string | null
+    sectionChiefId: string | null
+    divisionHeadId: string | null
+  }
+  reviewers: Array<{
+    employeeId: string
+    relationship: string
+  }>
+  teamMemberIds: string[]
+  selectionSettings: FeedbackSelectionSettings
+}) {
+  const { actorId, actorRole, target, reviewers, teamMemberIds, selectionSettings } = params
+  if (!reviewers.length) return
+
+  const leaderIds = [target.teamLeaderId, target.sectionChiefId, target.divisionHeadId].filter(Boolean) as string[]
+  const teamMemberIdSet = new Set(teamMemberIds)
+
+  for (const reviewer of reviewers) {
+    if (reviewer.relationship !== 'PEER') continue
+
+    if (
+      selectionSettings.excludeLeaderFromPeerSelection &&
+      leaderIds.includes(reviewer.employeeId)
+    ) {
+      throw new AppError(
+        400,
+        'LEADER_PEER_EXCLUDED',
+        '현재 설정에서는 리뷰 대상자가 자신의 리더를 동료 작성자로 선택할 수 없습니다.'
+      )
+    }
+
+    if (
+      selectionSettings.excludeDirectReportsFromPeerSelection &&
+      teamMemberIdSet.has(reviewer.employeeId)
+    ) {
+      throw new AppError(
+        400,
+        'TEAM_MEMBER_PEER_EXCLUDED',
+        '현재 설정에서는 리뷰 대상자가 자신의 팀원을 동료 작성자로 선택할 수 없습니다.'
+      )
+    }
+  }
+
+  if (
+    selectionSettings.requireLeaderApproval &&
+    actorRole !== 'ROLE_ADMIN' &&
+    !leaderIds.includes(actorId) &&
+    actorId !== target.id
+  ) {
+    throw new AppError(403, 'LEADER_APPROVAL_REQUIRED', '리더 승인 대상 nomination은 현재 권한으로 수정할 수 없습니다.')
+  }
 }

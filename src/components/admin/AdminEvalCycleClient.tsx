@@ -31,6 +31,9 @@ type EvalCycleItem = {
   evalYear: number
   cycleName: string
   status: CycleStatus
+  showQuestionWeight: boolean
+  showScoreSummary: boolean
+  goalEditMode: 'FULL' | 'CHECKIN_ONLY'
   kpiSetupStart: string | null
   kpiSetupEnd: string | null
   selfEvalStart: string | null
@@ -56,6 +59,9 @@ type CycleFormState = {
   orgId: string
   evalYear: string
   cycleName: string
+  showQuestionWeight: boolean
+  showScoreSummary: boolean
+  goalEditMode: 'FULL' | 'CHECKIN_ONLY'
   kpiSetupStart: string
   kpiSetupEnd: string
   selfEvalStart: string
@@ -78,6 +84,23 @@ type FeedbackState = {
   message: string
 } | null
 
+type CyclePhaseFieldKey =
+  | 'kpiSetupStart'
+  | 'kpiSetupEnd'
+  | 'selfEvalStart'
+  | 'selfEvalEnd'
+  | 'firstEvalStart'
+  | 'firstEvalEnd'
+  | 'secondEvalStart'
+  | 'secondEvalEnd'
+  | 'finalEvalStart'
+  | 'finalEvalEnd'
+  | 'ceoAdjustStart'
+  | 'ceoAdjustEnd'
+  | 'resultOpenStart'
+  | 'resultOpenEnd'
+  | 'appealDeadline'
+
 const STATUS_LABELS: Record<CycleStatus, string> = {
   SETUP: '설계',
   KPI_SETTING: 'KPI 설정',
@@ -92,7 +115,7 @@ const STATUS_LABELS: Record<CycleStatus, string> = {
   CLOSED: '종료',
 }
 
-const PHASE_FIELDS: Array<{ key: keyof CycleFormState; label: string }> = [
+const PHASE_FIELDS: Array<{ key: CyclePhaseFieldKey; label: string }> = [
   { key: 'kpiSetupStart', label: 'KPI 설정 시작' },
   { key: 'kpiSetupEnd', label: 'KPI 설정 종료' },
   { key: 'selfEvalStart', label: '자기 평가 시작' },
@@ -135,6 +158,9 @@ function buildDefaultForm(organizations: OrganizationOption[]): CycleFormState {
     orgId: organizations[0]?.id || '',
     evalYear: String(getCurrentYear()),
     cycleName: '',
+    showQuestionWeight: true,
+    showScoreSummary: true,
+    goalEditMode: 'FULL',
     kpiSetupStart: '',
     kpiSetupEnd: '',
     selfEvalStart: '',
@@ -158,6 +184,9 @@ function buildFormFromCycle(cycle: EvalCycleItem): CycleFormState {
     orgId: cycle.orgId,
     evalYear: String(cycle.evalYear),
     cycleName: cycle.cycleName,
+    showQuestionWeight: cycle.showQuestionWeight,
+    showScoreSummary: cycle.showScoreSummary,
+    goalEditMode: cycle.goalEditMode ?? 'FULL',
     kpiSetupStart: toDateTimeLocalValue(cycle.kpiSetupStart),
     kpiSetupEnd: toDateTimeLocalValue(cycle.kpiSetupEnd),
     selfEvalStart: toDateTimeLocalValue(cycle.selfEvalStart),
@@ -337,6 +366,9 @@ export function AdminEvalCycleClient({
           orgId: input.orgId,
           evalYear: Number(input.evalYear),
           cycleName: input.cycleName,
+          showQuestionWeight: input.showQuestionWeight,
+          showScoreSummary: input.showScoreSummary,
+          goalEditMode: input.goalEditMode,
           kpiSetupStart: toIso(input.kpiSetupStart),
           kpiSetupEnd: toIso(input.kpiSetupEnd),
           selfEvalStart: toIso(input.selfEvalStart),
@@ -375,6 +407,9 @@ export function AdminEvalCycleClient({
           orgId: input.form.orgId,
           evalYear: Number(input.form.evalYear),
           cycleName: input.form.cycleName,
+          showQuestionWeight: input.form.showQuestionWeight,
+          showScoreSummary: input.form.showScoreSummary,
+          goalEditMode: input.form.goalEditMode,
           kpiSetupStart: toIso(input.form.kpiSetupStart),
           kpiSetupEnd: toIso(input.form.kpiSetupEnd),
           selfEvalStart: toIso(input.form.selfEvalStart),
@@ -745,6 +780,29 @@ export function AdminEvalCycleClient({
                   </div>
                 ) : null}
 
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-sm font-semibold text-slate-900">질문별 가중치</div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      {selectedCycle.showQuestionWeight ? '평가권자 화면에 표시' : '평가권자 화면에서 숨김'}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-sm font-semibold text-slate-900">점수 요약 카드</div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      {selectedCycle.showScoreSummary ? '평가권자 화면에 표시' : '평가권자 화면에서 숨김'}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:col-span-2">
+                    <div className="text-sm font-semibold text-slate-900">목표 읽기 모드</div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      {selectedCycle.goalEditMode === 'CHECKIN_ONLY'
+                        ? '목표 생성/수정/삭제는 막고 체크인과 코멘트만 허용합니다.'
+                        : '목표 생성/수정/삭제와 체크인을 모두 허용합니다.'}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="space-y-3">
                   {[
                     ['KPI 설정', selectedCycle.kpiSetupStart, selectedCycle.kpiSetupEnd],
@@ -820,6 +878,68 @@ export function AdminEvalCycleClient({
                   createMutation.mutate(form)
                 }}
               >
+                <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">평가권자 화면 노출 설정</h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      평가 작성 화면에서 질문별 가중치와 점수 요약 카드의 노출 여부를 제어합니다. 계산과 저장, 내보내기는 그대로 유지됩니다.
+                    </p>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={form.showQuestionWeight}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, showQuestionWeight: event.target.checked }))
+                        }
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+                      />
+                      <span>
+                        <span className="block font-semibold text-slate-900">질문별 가중치 표시</span>
+                        <span className="mt-1 block text-slate-500">
+                          평가권자가 각 KPI 항목의 가중치를 화면에서 바로 확인할 수 있습니다.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={form.showScoreSummary}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, showScoreSummary: event.target.checked }))
+                        }
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+                      />
+                      <span>
+                        <span className="block font-semibold text-slate-900">점수 요약 카드 표시</span>
+                        <span className="mt-1 block text-slate-500">
+                          초안 총점과 저장 점수 같은 요약 카드를 평가 화면 상단에 노출합니다.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                      <span className="block font-semibold text-slate-900">목표 운영 모드</span>
+                      <span className="mt-1 block text-slate-500">
+                        읽기 전용 모드에서는 목표 생성/수정/삭제를 막고 체크인과 코멘트만 허용합니다.
+                      </span>
+                      <select
+                        value={form.goalEditMode}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            goalEditMode: event.target.value as CycleFormState['goalEditMode'],
+                          }))
+                        }
+                        className="mt-3 w-full rounded-xl border border-slate-300 px-3 py-2.5"
+                      >
+                        <option value="FULL">전체 편집 허용</option>
+                        <option value="CHECKIN_ONLY">체크인 / 코멘트만 허용</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-2 text-sm text-slate-700">
                     <span className="font-medium">대상 조직</span>

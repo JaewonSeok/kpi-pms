@@ -14,6 +14,22 @@ import {
   summarizeReviewerRisks,
 } from '@/server/ai/personal-kpi'
 
+const PERSONAL_KPI_AI_PUBLIC_ERROR_MESSAGE =
+  'AI 초안 생성 중 설정 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의해 주세요.'
+
+function shouldMaskPersonalKpiAiError(error: unknown): error is AppError {
+  if (!(error instanceof AppError)) {
+    return false
+  }
+
+  return (
+    error.code.startsWith('AI_') ||
+    error.message.includes('response_format') ||
+    error.message.includes('json_schema') ||
+    error.message.includes('structured output')
+  )
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -66,6 +82,17 @@ export async function POST(request: Request) {
 
     return successResponse(result)
   } catch (error) {
+    if (shouldMaskPersonalKpiAiError(error)) {
+      console.error('[personal-kpi-ai]', error)
+      return errorResponse(
+        new AppError(
+          error.statusCode,
+          error.code,
+          PERSONAL_KPI_AI_PUBLIC_ERROR_MESSAGE
+        )
+      )
+    }
+
     return errorResponse(error)
   }
 }

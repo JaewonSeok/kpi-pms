@@ -41,6 +41,9 @@ export async function POST(request: Request) {
     const cycle = await prisma.evalCycle.create({
       data: {
         ...data,
+        showQuestionWeight: data.showQuestionWeight,
+        showScoreSummary: data.showScoreSummary,
+        goalEditMode: data.goalEditMode,
         kpiSetupStart: data.kpiSetupStart ? new Date(data.kpiSetupStart) : undefined,
         kpiSetupEnd: data.kpiSetupEnd ? new Date(data.kpiSetupEnd) : undefined,
         selfEvalStart: data.selfEvalStart ? new Date(data.selfEvalStart) : undefined,

@@ -22,6 +22,28 @@ type RouteContext = {
   params: Promise<{ id: string }>
 }
 
+async function isGoalEditLocked(employeeDeptId: string, evalYear: number) {
+  const department = await prisma.department.findUnique({
+    where: { id: employeeDeptId },
+    select: { orgId: true },
+  })
+
+  if (!department) {
+    return false
+  }
+
+  const targetCycle = await prisma.evalCycle.findFirst({
+    where: {
+      orgId: department.orgId,
+      evalYear,
+    },
+    orderBy: { createdAt: 'desc' },
+    select: { goalEditMode: true },
+  })
+
+  return targetCycle?.goalEditMode === 'CHECKIN_ONLY'
+}
+
 export async function POST(request: Request, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions)
@@ -60,6 +82,15 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!inScope) {
       throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 개인 KPI입니다.')
+    }
+
+    const goalEditLocked = await isGoalEditLocked(kpi.employee.deptId, kpi.evalYear)
+    if (goalEditLocked && ['SAVE_DRAFT', 'SUBMIT', 'REOPEN'].includes(validated.data.action)) {
+      throw new AppError(
+        400,
+        'GOAL_EDIT_LOCKED',
+        '현재 주기는 목표 읽기 전용 모드입니다. 승인 요청 대신 체크인과 코멘트만 이어갈 수 있습니다.'
+      )
     }
 
     const logs = await prisma.auditLog.findMany({

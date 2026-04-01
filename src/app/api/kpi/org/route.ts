@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateOrgKpiSchema } from '@/lib/validations'
+import { validateOrgParentLink } from '@/server/goal-alignment'
 
 function canManage(role: string) {
   return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
@@ -96,6 +97,30 @@ export async function POST(request: Request) {
       throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 부서입니다.')
     }
 
+    const targetDepartment = await prisma.department.findUnique({
+      where: { id: data.deptId },
+      select: { orgId: true },
+    })
+
+    const targetCycle = targetDepartment
+      ? await prisma.evalCycle.findFirst({
+          where: {
+            orgId: targetDepartment.orgId,
+            evalYear: data.evalYear,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { goalEditMode: true },
+        })
+      : null
+
+    if (targetCycle?.goalEditMode === 'CHECKIN_ONLY') {
+      throw new AppError(
+        400,
+        'GOAL_EDIT_LOCKED',
+        '현재 주기는 읽기 전용 모드입니다. 목표 생성/수정은 막혀 있으며 체크인과 코멘트만 허용됩니다.'
+      )
+    }
+
     const related = await prisma.orgKpi.findMany({
       where: { deptId: data.deptId, evalYear: data.evalYear },
       select: { weight: true },
@@ -110,6 +135,13 @@ export async function POST(request: Request) {
       )
     }
 
+    const parentOrgKpiId = await validateOrgParentLink({
+      parentOrgKpiId: data.parentOrgKpiId ?? null,
+      targetDeptId: data.deptId,
+      targetEvalYear: data.evalYear,
+      editableDepartmentIds: scopeDepartmentIds,
+    })
+
     const kpi = await prisma.orgKpi.create({
       data: {
         deptId: data.deptId,
@@ -123,6 +155,8 @@ export async function POST(request: Request) {
         unit: data.unit,
         weight: data.weight,
         difficulty: data.difficulty,
+        tags: data.tags ?? [],
+        parentOrgKpiId,
         status: 'DRAFT',
       },
       include: {
@@ -161,6 +195,8 @@ export async function POST(request: Request) {
         kpiName: kpi.kpiName,
         kpiCategory: kpi.kpiCategory,
         kpiType: kpi.kpiType,
+        parentOrgKpiId: kpi.parentOrgKpiId,
+        tags: kpi.tags,
       },
       ...clientInfo,
     })

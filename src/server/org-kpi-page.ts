@@ -55,10 +55,20 @@ export type OrgKpiAiLogItem = {
 export type OrgKpiViewModel = {
   id: string
   title: string
+  tags: string[]
   evalYear: number
   departmentId: string
   departmentName: string
   departmentCode: string
+  parentOrgKpiId?: string | null
+  parentOrgKpiTitle?: string | null
+  parentOrgDepartmentName?: string | null
+  childOrgKpiCount: number
+  lineage: Array<{
+    id: string
+    title: string
+    departmentName: string
+  }>
   category?: string
   type?: KpiType
   definition?: string
@@ -81,6 +91,17 @@ export type OrgKpiViewModel = {
   riskFlags: string[]
   coverageRate: number
   targetPopulationCount: number
+  cloneInfo?: {
+    sourceId: string
+    sourceTitle: string
+    sourceDepartmentName?: string
+    sourceEvalYear: number
+    includedProgress: boolean
+    includedCheckins: boolean
+    progressEntryCount: number
+    checkinEntryCount: number
+    clonedAt?: string
+  }
   suggestedParent?: {
     id: string
     title: string
@@ -130,6 +151,13 @@ export type OrgKpiPageData = {
   availableYears: number[]
   selectedDepartmentId: string
   departments: OrgKpiScopeOption[]
+  parentGoalOptions: Array<{
+    id: string
+    title: string
+    departmentId: string
+    departmentName: string
+    evalYear: number
+  }>
   summary: {
     totalCount: number
     confirmedCount: number
@@ -198,6 +226,35 @@ type OrgKpiWithRelations = Prisma.OrgKpiGetPayload<{
     _count: {
       select: {
         personalKpis: true
+      }
+    }
+    copiedFromOrgKpi: {
+      select: {
+        id: true
+        kpiName: true
+        evalYear: true
+        department: {
+          select: {
+            deptName: true
+          }
+        }
+      }
+    }
+    parentOrgKpi: {
+      select: {
+        id: true
+        kpiName: true
+        deptId: true
+        department: {
+          select: {
+            deptName: true
+          }
+        }
+      }
+    }
+    childOrgKpis: {
+      select: {
+        id: true
       }
     }
   }
@@ -508,6 +565,46 @@ function parseAiSummary(record: Prisma.JsonValue | null | undefined) {
   return 'AI 요청 결과'
 }
 
+function asRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function parseCloneInfo(kpi: OrgKpiWithRelations): OrgKpiViewModel['cloneInfo'] {
+  if (!kpi.copiedFromOrgKpiId || !kpi.copiedFromOrgKpi) {
+    return undefined
+  }
+
+  const metadata = asRecord(kpi.copyMetadata)
+  const progressSnapshot = asRecord(metadata?.progressSnapshot)
+  const checkinSnapshot = Array.isArray(metadata?.checkinSnapshot) ? metadata.checkinSnapshot : []
+
+  return {
+    sourceId: kpi.copiedFromOrgKpi.id,
+    sourceTitle: kpi.copiedFromOrgKpi.kpiName,
+    sourceDepartmentName: kpi.copiedFromOrgKpi.department.deptName,
+    sourceEvalYear:
+      typeof metadata?.sourceEvalYear === 'number'
+        ? metadata.sourceEvalYear
+        : kpi.copiedFromOrgKpi.evalYear,
+    includedProgress: metadata?.includedProgress === true,
+    includedCheckins: metadata?.includedCheckins === true,
+    progressEntryCount:
+      typeof progressSnapshot?.linkedMonthlyRecordCount === 'number'
+        ? progressSnapshot.linkedMonthlyRecordCount
+        : 0,
+    checkinEntryCount: checkinSnapshot.length,
+    clonedAt: typeof metadata?.clonedAt === 'string' ? metadata.clonedAt : undefined,
+  }
+}
+
+function parseTags(value: Prisma.JsonValue | null) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : []
+}
+
 export async function getOrgKpiPageData(params: {
   userId: string
   role: SystemRole
@@ -556,6 +653,7 @@ export async function getOrgKpiPageData(params: {
         availableYears: [new Date().getFullYear()],
         selectedDepartmentId: params.deptId,
         departments: [],
+        parentGoalOptions: [],
         summary: {
           totalCount: 0,
           confirmedCount: 0,
@@ -617,6 +715,19 @@ export async function getOrgKpiPageData(params: {
     ).sort((left, right) => right - left)
 
     const selectedYear = params.year && availableYears.includes(params.year) ? params.year : availableYears[0]
+    const selectedOrgId = departments.find((department) => department.id === params.deptId)?.organization.id ?? departments[0]?.organization.id
+    const cycleRecords =
+      selectedOrgId
+        ? await prisma.evalCycle.findMany({
+            where: {
+              orgId: selectedOrgId,
+              evalYear: selectedYear,
+            },
+            orderBy: [{ createdAt: 'desc' }],
+            take: 5,
+          })
+        : []
+    const goalEditLocked = cycleRecords.some((cycle) => cycle.goalEditMode === 'CHECKIN_ONLY')
 
     const kpis = await prisma.orgKpi.findMany({
       where: {
@@ -647,6 +758,35 @@ export async function getOrgKpiPageData(params: {
         _count: {
           select: {
             personalKpis: true,
+          },
+        },
+        copiedFromOrgKpi: {
+          select: {
+            id: true,
+            kpiName: true,
+            evalYear: true,
+            department: {
+              select: {
+                deptName: true,
+              },
+            },
+          },
+        },
+        parentOrgKpi: {
+          select: {
+            id: true,
+            kpiName: true,
+            deptId: true,
+            department: {
+              select: {
+                deptName: true,
+              },
+            },
+          },
+        },
+        childOrgKpis: {
+          select: {
+            id: true,
           },
         },
       },
@@ -719,6 +859,28 @@ export async function getOrgKpiPageData(params: {
       logsByEntityId.set(log.entityId, current)
     })
 
+    const kpisById = new Map(kpis.map((item) => [item.id, item]))
+
+    const buildLineage = (kpiId: string) => {
+      const lineage: OrgKpiViewModel['lineage'] = []
+      let current = kpisById.get(kpiId)?.parentOrgKpiId ?? null
+      const visited = new Set<string>()
+
+      while (current && !visited.has(current)) {
+        visited.add(current)
+        const parent = kpisById.get(current)
+        if (!parent) break
+        lineage.unshift({
+          id: parent.id,
+          title: parent.kpiName,
+          departmentName: parent.department.deptName,
+        })
+        current = parent.parentOrgKpiId ?? null
+      }
+
+      return lineage
+    }
+
     const mappedList = kpis.map<OrgKpiViewModel>((kpi) => {
       const logs = logsByEntityId.get(kpi.id) ?? []
       const owner = findDepartmentOwner(kpi.deptId, employeesByDept, departmentsById)
@@ -763,10 +925,16 @@ export async function getOrgKpiPageData(params: {
       return {
         id: kpi.id,
         title: kpi.kpiName,
+        tags: parseTags(kpi.tags),
         evalYear: kpi.evalYear,
         departmentId: kpi.deptId,
         departmentName: kpi.department.deptName,
         departmentCode: kpi.department.deptCode,
+        parentOrgKpiId: kpi.parentOrgKpiId ?? null,
+        parentOrgKpiTitle: kpi.parentOrgKpi?.kpiName ?? null,
+        parentOrgDepartmentName: kpi.parentOrgKpi?.department?.deptName ?? null,
+        childOrgKpiCount: kpi.childOrgKpis?.length ?? 0,
+        lineage: buildLineage(kpi.id),
         category: kpi.kpiCategory,
         type: kpi.kpiType,
         definition: kpi.definition ?? undefined,
@@ -794,6 +962,7 @@ export async function getOrgKpiPageData(params: {
         riskFlags,
         coverageRate,
         targetPopulationCount,
+        cloneInfo: parseCloneInfo(kpi),
         suggestedParent: findSuggestedParent({
           kpi,
           accessibleKpis: kpis,
@@ -877,6 +1046,16 @@ export async function getOrgKpiPageData(params: {
         ? params.selectedDepartmentId
         : departmentsForSelector[0]?.id ?? params.deptId
 
+    const parentGoalOptions = kpis
+      .filter((kpi) => visibleTreeIds.has(kpi.deptId))
+      .map((kpi) => ({
+        id: kpi.id,
+        title: kpi.kpiName,
+        departmentId: kpi.deptId,
+        departmentName: kpi.department.deptName,
+        evalYear: kpi.evalYear,
+      }))
+
     const history = makeTimelineItems({
       logs: auditLogs.filter((log) => log.entityId && mappedById.has(log.entityId)).slice(0, 80),
       employeeNameMap,
@@ -897,6 +1076,13 @@ export async function getOrgKpiPageData(params: {
     )
     const canLock = ['ROLE_ADMIN', 'ROLE_CEO'].includes(params.role)
 
+    if (goalEditLocked) {
+      alerts.push({
+        title: '현재 목표는 읽기 전용 모드입니다.',
+        description: '목표 생성, 수정, 삭제는 막혀 있으며 현재 확정 상태와 연결 관계를 중심으로 조회할 수 있습니다.',
+      })
+    }
+
     const pageState: OrgKpiPageState = totalCount ? 'ready' : 'empty'
 
     return {
@@ -906,6 +1092,7 @@ export async function getOrgKpiPageData(params: {
       availableYears,
       selectedDepartmentId,
       departments: departmentsForSelector,
+      parentGoalOptions,
       summary: {
         totalCount,
         confirmedCount,
@@ -933,7 +1120,7 @@ export async function getOrgKpiPageData(params: {
       alerts,
       permissions: {
         canManage,
-        canCreate: canManage,
+        canCreate: goalEditLocked ? false : canManage,
         canConfirm,
         canLock,
         canArchive: canManage,
@@ -954,6 +1141,7 @@ export async function getOrgKpiPageData(params: {
       availableYears: [new Date().getFullYear()],
       selectedDepartmentId: params.deptId,
       departments: [],
+      parentGoalOptions: [],
       summary: {
         totalCount: 0,
         confirmedCount: 0,

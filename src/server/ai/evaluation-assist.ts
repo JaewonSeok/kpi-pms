@@ -8,7 +8,10 @@ import {
 import { estimateAiCostUsd, sanitizeAiPayload } from '@/lib/ai-assist'
 import { readAiAssistEnv } from '@/lib/ai-env'
 import {
+  buildEvaluationAssistEvidenceView,
   EvaluationAssistResultSchema,
+  getEvaluationAssistPublicErrorMessage,
+  type EvaluationAssistEvidenceView,
   type EvaluationAssistMode,
   type EvaluationAssistResult,
 } from '@/lib/evaluation-ai-assist'
@@ -43,32 +46,87 @@ type EvaluationAssistContext = {
   evaluationId: string
   requestType: AIRequestType
   fallbackResult: EvaluationAssistResult
+  evidenceView: EvaluationAssistEvidenceView
   payload: Record<string, unknown>
 }
 
 type JsonRecord = Record<string, unknown>
 
-function toJsonValue(value: Record<string, unknown> | EvaluationAssistResult) {
-  return value as Prisma.InputJsonValue
+type ItemSummary = {
+  title: string
+  type: string
+  weight: number
+  definition: string | null
+  targetValue: number | null
+  unit: string | null
+  linkedOrgKpi: string | null
+  draftScore: number | null
+  draftComment: string
+  recentMonthlyEvidence: Array<{
+    yearMonth: string
+    achievementRate: number | null
+    activities: string | null
+    obstacles: string | null
+    efforts: string | null
+  }>
+}
+
+type LoadedEvaluationItem = {
+  personalKpiId: string
+  quantScore: number | null
+  planScore: number | null
+  doScore: number | null
+  checkScore: number | null
+  actScore: number | null
+  itemComment: string | null
+  personalKpi: {
+    kpiName: string
+    kpiType: string
+    weight: number
+    definition: string | null
+    targetValue: number | null
+    unit: string | null
+    linkedOrgKpi: {
+      department: {
+        deptName: string
+      }
+      kpiName: string
+    } | null
+    monthlyRecords: Array<{
+      yearMonth: string
+      achievementRate: number | null
+      activities: string | null
+      obstacles: string | null
+      efforts: string | null
+    }>
+  }
 }
 
 const EVALUATION_ASSIST_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['focusArea', 'recommendedActions', 'supportNeeded', 'milestone'],
+  required: ['draftText', 'strengths', 'concerns', 'coachingPoints', 'nextStep'],
   properties: {
-    focusArea: { type: 'string' },
-    recommendedActions: {
+    draftText: { type: 'string' },
+    strengths: {
       type: 'array',
       items: { type: 'string' },
     },
-    supportNeeded: {
+    concerns: {
       type: 'array',
       items: { type: 'string' },
     },
-    milestone: { type: 'string' },
+    coachingPoints: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextStep: { type: 'string' },
   },
 } as const
+
+function toJsonValue(value: Record<string, unknown> | EvaluationAssistResult) {
+  return value as Prisma.InputJsonValue
+}
 
 function resolveRequestType(mode: EvaluationAssistMode) {
   switch (mode) {
@@ -91,90 +149,89 @@ function buildEvaluationAssistFallbackResult(
 ): EvaluationAssistResult {
   const highlights = params.highlights.length
     ? params.highlights
-    : ['현재 입력된 근거를 기준으로 핵심 포인트를 먼저 정리해보세요.']
+    : ['현재 입력된 근거를 먼저 정리한 뒤 평가 초안을 검토해 주세요.']
 
   if (mode === 'draft') {
     return {
-      focusArea: params.gradeName
-        ? `${params.gradeName} 기준으로 근거 중심의 종합 의견을 정리합니다.`
-        : '현재 근거를 바탕으로 균형 잡힌 종합 의견을 정리합니다.',
-      recommendedActions: [
-        params.draftComment || highlights[0],
-        '주요 성과와 협업 기여를 분리해서 적고, 확인된 사실만 담아 문장을 구성하세요.',
-        '보완이 필요한 지점은 단정 대신 근거와 기대 행동을 함께 적어주세요.',
+      draftText:
+        params.draftComment ||
+        `${params.gradeName ? `${params.gradeName} 기준으로 ` : ''}현재 근거를 바탕으로 강점과 보완 포인트를 균형 있게 정리한 평가 코멘트 초안입니다.`,
+      strengths: highlights.slice(0, 2),
+      concerns: [
+        '근거가 부족한 항목은 단정적인 표현 대신 확인이 필요한 포인트로 남겨 주세요.',
+        '최근 실적과 체크인에서 보이지 않는 내용은 최종 제출 전에 다시 확인해 주세요.',
       ],
-      supportNeeded: [
-        '최근 월간 실적과 체크인 메모에서 반복된 강점/리스크를 한 번 더 확인해주세요.',
-        '점수와 코멘트가 서로 어긋나는 항목이 없는지 검토해주세요.',
+      coachingPoints: [
+        '핵심 성과와 보완 포인트를 각각 한 문단씩 나눠서 정리해 주세요.',
+        '정량 KPI와 정성 KPI 근거가 서로 모순되지 않는지 마지막으로 점검해 주세요.',
       ],
-      milestone: '종합 의견 초안 확인 후 제출 전 1회 검토',
+      nextStep: '근거를 보강한 뒤 평가 코멘트를 다듬고 제출 전 최종 검토를 진행하세요.',
     }
   }
 
   if (mode === 'bias') {
     return {
-      focusArea: '주관적 표현을 줄이고 근거 중심 문장으로 다시 정리합니다.',
-      recommendedActions: [
-        params.draftComment || '현재 초안에서 감정적이거나 단정적인 표현을 먼저 확인해주세요.',
-        '개인 성향 판단 대신 관찰 가능한 행동과 KPI 결과를 중심으로 문장을 수정하세요.',
-        '최근 사례 하나에 치우치지 않도록 기간 전체 근거를 다시 묶어 표현하세요.',
+      draftText:
+        '다음 1:1에서는 최근 성과 근거를 먼저 확인한 뒤, 강점은 유지하고 보완 과제는 구체적 행동으로 연결하는 방향으로 대화를 시작해 보세요.',
+      strengths: highlights.slice(0, 2),
+      concerns: [
+        '근거가 적은 항목은 평가 확정이 아니라 질문 형태로 다루는 것이 안전합니다.',
+        '최근 사례 한두 개에만 의존하면 과도한 일반화로 이어질 수 있습니다.',
       ],
-      supportNeeded: [
-        '정량 결과와 구체 사례가 부족한 문장은 추가 근거를 보완해주세요.',
-        '협업/태도 표현은 실제 관찰 사례가 있는지 다시 확인해주세요.',
+      coachingPoints: [
+        '최근 월간 실적과 체크인 메모를 기준으로 사실 확인 질문부터 시작해 주세요.',
+        '행동 변화에 필요한 지원과 기대 수준을 함께 합의하는 문장으로 마무리해 주세요.',
       ],
-      milestone: '편향 위험 문장 정리 후 수정안 재검토',
+      nextStep: '코칭 대화 초안을 메모에 반영하고, 실제 1:1 전에 근거 항목을 다시 확인해 주세요.',
     }
   }
 
   return {
-    focusArea: '다음 평가 주기까지 바로 실행할 수 있는 성장 포인트를 정리합니다.',
-    recommendedActions: [
-      '다음 체크인 전까지 가장 중요한 개선 과제 1개를 정하고 실행 계획을 명확히 적어주세요.',
-      '정기 리뷰에서 진척도를 확인할 수 있도록 측정 가능한 행동 기준을 함께 두세요.',
-      '현재 강점을 유지하면서도 보완이 필요한 역량을 한 가지로 좁혀 집중하세요.',
+    draftText: '다음 주기에 우선 추진할 성장 과제와 지원 요청을 한 번에 볼 수 있도록 개선 과제 초안을 정리했습니다.',
+    strengths: highlights.slice(0, 2),
+    concerns: [
+      '현재 자료만으로는 장기 성과 추세를 단정하기 어렵습니다.',
+      '지속 개선이 필요한 항목은 월간 체크인에서 다시 확인해 주세요.',
     ],
-    supportNeeded: [
-      '리더 피드백과 필요한 지원 리소스를 구체적으로 적어주세요.',
-      '월간 실적 또는 360 피드백과 연결되는 근거를 함께 남겨주세요.',
+    coachingPoints: [
+      '다음 체크인 전까지 실행할 개선 과제를 1~2개로 압축해 주세요.',
+      '필요한 지원과 점검 시점을 함께 적어 실행 가능성을 높여 주세요.',
     ],
-    milestone: '다음 1:1 전까지 성장 계획 초안 합의',
+    nextStep: '성장 과제를 메모에 반영하고 다음 체크인 아젠다와 연결해 주세요.',
   }
 }
 
 function buildSystemPrompt(mode: EvaluationAssistMode) {
   if (mode === 'draft') {
     return [
-      '당신은 한국어 성과평가 작성 보조자입니다.',
-      '제공된 근거만 사용해 전문적이고 균형 잡힌 평가 코멘트 초안용 구조화 제안을 만드세요.',
-      '사실을 꾸며내지 말고, 과장하거나 단정하지 마세요.',
-      'focusArea는 코멘트의 핵심 초점을 한 문장으로 적습니다.',
-      'recommendedActions는 실제 초안 문장으로 바로 사용할 수 있는 한국어 문장 3개 이상을 적습니다.',
-      'supportNeeded는 제출 전 더 확인하면 좋은 근거 또는 검토 포인트를 적습니다.',
-      'milestone은 다음 검토 단계 한 줄로 적습니다.',
+      '당신은 성과 평가 코멘트 초안을 돕는 HR 평가 보조자입니다.',
+      '반드시 제공된 근거만 사용하고, 없는 사실을 만들거나 단정하지 마세요.',
+      'draftText에는 제출 전 사람이 다듬을 수 있는 평가 코멘트 초안을 작성하세요.',
+      'strengths에는 실제로 확인된 강점 포인트를, concerns에는 보완이 필요한 포인트를 적으세요.',
+      'coachingPoints에는 평가자와 대상자가 바로 논의할 수 있는 코칭 포인트를 적으세요.',
+      'nextStep에는 제출 전 확인할 다음 단계를 한 문장으로 적으세요.',
     ].join(' ')
   }
 
   if (mode === 'bias') {
     return [
-      '당신은 한국어 평가 문장 편향 점검 보조자입니다.',
-      '주관적, 감정적, 모호한 표현을 줄이고 근거 기반의 중립적 문장으로 정리하세요.',
-      '사실을 새로 만들지 말고 제공된 맥락 안에서만 답하세요.',
-      'focusArea는 수정이 필요한 핵심 편향/모호성 포인트를 한 문장으로 적습니다.',
-      'recommendedActions는 현재 초안을 대체하거나 수정하는 한국어 문장 3개 이상을 적습니다.',
-      'supportNeeded는 공정성을 높이기 위해 추가 확인이 필요한 근거나 질문을 적습니다.',
-      'milestone은 다음 수정 단계 한 줄로 적습니다.',
+      '당신은 평가자 1:1 코칭 대화 초안을 돕는 HR 코칭 보조자입니다.',
+      '반드시 제공된 근거만 사용하고, 불확실한 내용은 질문형 또는 확인 필요 표현으로 남기세요.',
+      'draftText에는 존중하는 톤의 코칭 대화 시작 문안을 작성하세요.',
+      'strengths에는 대화에서 먼저 인정할 강점 포인트를 적으세요.',
+      'concerns에는 확인이 필요한 우려 포인트를 적으세요.',
+      'coachingPoints에는 실제 1:1에서 사용할 질문 또는 합의 포인트를 적으세요.',
+      'nextStep에는 다음 대화나 점검 시점을 한 문장으로 적으세요.',
     ].join(' ')
   }
 
   return [
-    '당신은 한국어 성장계획 코칭 보조자입니다.',
-    '성과관리 문맥에 맞는 현실적이고 실행 가능한 성장 제안을 작성하세요.',
-    '막연한 조언이나 꾸며낸 사실은 금지합니다.',
-    'focusArea는 가장 중요한 성장 초점을 한 문장으로 적습니다.',
-    'recommendedActions는 바로 실행 가능한 액션 3개 이상을 적습니다.',
-    'supportNeeded는 리더/조직 차원의 지원 항목을 적습니다.',
-    'milestone은 다음 점검 시점까지 확인할 마일스톤 한 줄로 적습니다.',
+    '당신은 다음 주기 성장 과제 초안을 돕는 성과 관리 보조자입니다.',
+    '반드시 제공된 근거만 사용하고, 과장하거나 없는 사실을 추가하지 마세요.',
+    'draftText에는 성장/개선 과제의 전체 방향을 한 단락으로 정리하세요.',
+    'strengths에는 계속 활용할 강점을, concerns에는 우선 보완할 과제를 적으세요.',
+    'coachingPoints에는 실행 가능한 개선 액션과 필요한 지원을 적으세요.',
+    'nextStep에는 다음 체크인이나 리뷰 전까지의 실행 단계를 한 문장으로 적으세요.',
   ].join(' ')
 }
 
@@ -275,6 +332,60 @@ async function callEvaluationAssistModel(
   }
 }
 
+async function loadAssistSource<T>(params: {
+  title: string
+  fallback: T
+  alert: string
+  load: () => Promise<T>
+}) {
+  try {
+    return { value: await params.load(), alert: null as string | null }
+  } catch (error) {
+    console.error(`[evaluation-ai-assist] ${params.title}`, error)
+    return { value: params.fallback, alert: params.alert }
+  }
+}
+
+function formatScore(value: number | null) {
+  return typeof value === 'number' ? `${Math.round(value * 10) / 10}점` : '점수 미기입'
+}
+
+function buildItemSummaries(evaluationItems: LoadedEvaluationItem[], items: DraftItemInput[]) {
+  const draftItemMap = new Map(items.map((item) => [item.personalKpiId, item]))
+
+  return evaluationItems.map<ItemSummary>((item) => {
+    const draftItem = draftItemMap.get(item.personalKpiId)
+
+    return {
+      title: item.personalKpi.kpiName,
+      type: item.personalKpi.kpiType,
+      weight: item.personalKpi.weight,
+      definition: item.personalKpi.definition,
+      targetValue: item.personalKpi.targetValue,
+      unit: item.personalKpi.unit,
+      linkedOrgKpi: item.personalKpi.linkedOrgKpi
+        ? `${item.personalKpi.linkedOrgKpi.department.deptName} / ${item.personalKpi.linkedOrgKpi.kpiName}`
+        : null,
+      draftScore:
+        draftItem?.quantScore ??
+        item.quantScore ??
+        draftItem?.planScore ??
+        item.planScore ??
+        draftItem?.doScore ??
+        item.doScore ??
+        null,
+      draftComment: draftItem?.itemComment ?? item.itemComment ?? '',
+      recentMonthlyEvidence: item.personalKpi.monthlyRecords.map((record) => ({
+        yearMonth: record.yearMonth,
+        achievementRate: record.achievementRate,
+        activities: record.activities,
+        obstacles: record.obstacles,
+        efforts: record.efforts,
+      })),
+    }
+  })
+}
+
 async function loadEvaluationAssistContext(
   params: GenerateEvaluationAssistParams,
   db: PrismaClient
@@ -320,110 +431,170 @@ async function loadEvaluationAssistContext(
   })
 
   if (!evaluation) {
-    throw new AppError(404, 'EVALUATION_NOT_FOUND', '평가 정보를 찾을 수 없습니다.')
+    throw new AppError(404, 'EVALUATION_NOT_FOUND', '평가 정보를 찾지 못했습니다.')
   }
 
-  const canUseAssist =
-    params.actorRole === 'ROLE_ADMIN' || evaluation.evaluatorId === params.actorId
-
+  const canUseAssist = params.actorRole === 'ROLE_ADMIN' || evaluation.evaluatorId === params.actorId
   if (!canUseAssist) {
     throw new AppError(403, 'FORBIDDEN', '평가 AI 보조를 사용할 권한이 없습니다.')
   }
 
-  const [gradeSettings, recentCheckins, feedbackRounds] = await Promise.all([
-    db.gradeSetting.findMany({
-      where: {
-        orgId: evaluation.target.department.orgId,
-        evalYear: evaluation.evalCycle.evalYear,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        gradeName: true,
-      },
-    }),
-    db.checkIn.findMany({
-      where: {
-        ownerId: evaluation.targetId,
-      },
-      orderBy: [{ scheduledDate: 'desc' }],
-      take: 3,
-      select: {
-        scheduledDate: true,
-        keyTakeaways: true,
-        managerNotes: true,
-        ownerNotes: true,
-      },
-    }),
-    db.multiFeedbackRound.findMany({
-      where: {
-        evalCycleId: evaluation.evalCycleId,
-      },
-      include: {
-        feedbacks: {
+  const [gradeSettingsResult, recentCheckinsResult, feedbackRoundsResult] = await Promise.all([
+    loadAssistSource({
+      title: 'grade settings',
+      fallback: [] as Array<{ id: string; gradeName: string }>,
+      alert: '평가 등급 기준을 일부 불러오지 못해 현재 코멘트 기준으로 초안을 작성합니다.',
+      load: () =>
+        db.gradeSetting.findMany({
           where: {
-            receiverId: evaluation.targetId,
-            status: 'SUBMITTED',
+            orgId: evaluation.target.department.orgId,
+            evalYear: evaluation.evalCycle.evalYear,
+            isActive: true,
+          },
+          select: {
+            id: true,
+            gradeName: true,
+          },
+        }),
+    }),
+    loadAssistSource({
+      title: 'recent checkins',
+      fallback: [] as Array<{
+        scheduledDate: Date
+        keyTakeaways: string | null
+        managerNotes: string | null
+        ownerNotes: string | null
+      }>,
+      alert: '최근 체크인 메모를 모두 불러오지 못해 확인 가능한 자료 중심으로 초안을 생성합니다.',
+      load: () =>
+        db.checkIn.findMany({
+          where: {
+            ownerId: evaluation.targetId,
+          },
+          orderBy: [{ scheduledDate: 'desc' }],
+          take: 3,
+          select: {
+            scheduledDate: true,
+            keyTakeaways: true,
+            managerNotes: true,
+            ownerNotes: true,
+          },
+        }),
+    }),
+    loadAssistSource({
+      title: 'feedback rounds',
+      fallback: [] as Array<{
+        roundName: string
+        roundType: string
+        feedbacks: Array<{ responses: Array<{ textValue: string | null }> }>
+      }>,
+      alert: '다면 피드백 일부를 불러오지 못해 현재 KPI와 체크인 근거 중심으로 초안을 생성합니다.',
+      load: () =>
+        db.multiFeedbackRound.findMany({
+          where: {
+            evalCycleId: evaluation.evalCycleId,
           },
           include: {
-            responses: {
-              select: {
-                ratingValue: true,
-                textValue: true,
+            feedbacks: {
+              where: {
+                receiverId: evaluation.targetId,
+                status: 'SUBMITTED',
+              },
+              include: {
+                responses: {
+                  select: {
+                    textValue: true,
+                  },
+                },
               },
             },
           },
-        },
-      },
-      orderBy: { endDate: 'desc' },
-      take: 3,
+          orderBy: { endDate: 'desc' },
+          take: 3,
+        }),
     }),
   ])
 
-  const draftItemMap = new Map(params.items.map((item) => [item.personalKpiId, item]))
+  const gradeSettings = gradeSettingsResult.value
+  const recentCheckins = recentCheckinsResult.value
+  const feedbackRounds = feedbackRoundsResult.value
+  const sourceAlerts = [
+    gradeSettingsResult.alert,
+    recentCheckinsResult.alert,
+    feedbackRoundsResult.alert,
+  ].filter((value): value is string => Boolean(value))
+
+  const itemSummaries = buildItemSummaries(evaluation.items, params.items)
   const selectedGradeName =
     gradeSettings.find((grade) => grade.id === (params.draftGradeId || evaluation.gradeId))?.gradeName ?? ''
 
-  const itemSummaries = evaluation.items.map((item) => {
-    const draftItem = draftItemMap.get(item.personalKpiId)
+  const kpiSummaries = itemSummaries.slice(0, 6).map((item) => {
+    const parts = [
+      item.title,
+      `가중치 ${item.weight}%`,
+      formatScore(item.draftScore),
+      item.linkedOrgKpi ? `연결 ${item.linkedOrgKpi}` : '연결 목표 없음',
+    ]
 
-    return {
-      title: item.personalKpi.kpiName,
-      type: item.personalKpi.kpiType,
-      weight: item.personalKpi.weight,
-      definition: item.personalKpi.definition,
-      targetValue: item.personalKpi.targetValue,
-      unit: item.personalKpi.unit,
-      linkedOrgKpi: item.personalKpi.linkedOrgKpi
-        ? `${item.personalKpi.linkedOrgKpi.department.deptName} / ${item.personalKpi.linkedOrgKpi.kpiName}`
-        : null,
-      draftScore:
-        draftItem?.quantScore ??
-        item.quantScore ??
-        draftItem?.planScore ??
-        item.planScore ??
-        draftItem?.doScore ??
-        item.doScore ??
-        null,
-      draftComment: draftItem?.itemComment ?? item.itemComment ?? '',
-      recentMonthlyEvidence: item.personalKpi.monthlyRecords.map((record) => ({
-        yearMonth: record.yearMonth,
-        achievementRate: record.achievementRate,
-        activities: record.activities,
-        obstacles: record.obstacles,
-        efforts: record.efforts,
-      })),
+    const monthlyEvidence = item.recentMonthlyEvidence[0]
+    if (monthlyEvidence && typeof monthlyEvidence.achievementRate === 'number') {
+      parts.push(`최근 달성률 ${monthlyEvidence.achievementRate}%`)
     }
+
+    return parts.join(' / ')
   })
+
+  const monthlySummaries = itemSummaries
+    .flatMap((item) =>
+      item.recentMonthlyEvidence.slice(0, 1).map((record) =>
+        [
+          `${item.title} / ${record.yearMonth}`,
+          typeof record.achievementRate === 'number' ? `달성률 ${record.achievementRate}%` : '달성률 미집계',
+          record.activities || record.obstacles || record.efforts || '상세 메모 없음',
+        ].join(' / ')
+      )
+    )
+    .slice(0, 6)
+
+  const noteSummaries = [
+    ...recentCheckins.map((checkin) =>
+      [
+        `체크인 / ${checkin.scheduledDate.toISOString().slice(0, 10)}`,
+        checkin.keyTakeaways || checkin.managerNotes || checkin.ownerNotes || '메모 없음',
+      ].join(' / ')
+    ),
+    ...feedbackRounds.map((round) => {
+      const highlight =
+        round.feedbacks
+          .flatMap((feedback) => feedback.responses.map((response) => response.textValue || '').filter(Boolean))
+          .slice(0, 2)
+          .join(' / ') || '텍스트 피드백 요약 없음'
+
+      return `${round.roundName} / ${round.roundType} / 응답 ${round.feedbacks.length}건 / ${highlight}`
+    }),
+  ].slice(0, 6)
 
   const highlights = [
     ...itemSummaries
       .slice(0, 3)
-      .map((item) => `${item.title}: ${item.draftComment || '평가 코멘트 초안 없음'}`),
+      .map((item) => `${item.title}: ${item.draftComment || `${formatScore(item.draftScore)} 기준으로 추가 코멘트 보강이 필요합니다.`}`),
     ...recentCheckins
       .slice(0, 2)
       .map((checkin) => checkin.keyTakeaways || checkin.managerNotes || checkin.ownerNotes || '최근 체크인 요약 없음'),
-  ].filter((item) => item && item.trim().length > 0)
+    ...feedbackRounds
+      .slice(0, 1)
+      .map((round) => `${round.roundName} 응답 ${round.feedbacks.length}건이 연결되어 있습니다.`),
+  ]
+    .filter((item) => item && item.trim().length > 0)
+    .slice(0, 8)
+
+  const evidenceView = buildEvaluationAssistEvidenceView({
+    kpiSummaries,
+    monthlySummaries,
+    noteSummaries,
+    keyPoints: highlights,
+    alerts: sourceAlerts,
+  })
 
   const requestType = resolveRequestType(params.mode)
   const fallbackResult = buildEvaluationAssistFallbackResult(params.mode, {
@@ -436,6 +607,7 @@ async function loadEvaluationAssistContext(
     evaluationId: evaluation.id,
     requestType,
     fallbackResult,
+    evidenceView,
     payload: sanitizeAiPayload({
       mode: params.mode,
       cycle: {
@@ -444,6 +616,7 @@ async function loadEvaluationAssistContext(
         stage: EVAL_STAGE_LABELS[evaluation.evalStage],
       },
       targetContext: {
+        employeeName: evaluation.target.empName,
         department: evaluation.target.department.deptName,
         position: POSITION_LABELS[evaluation.target.position] ?? evaluation.target.position,
       },
@@ -456,19 +629,12 @@ async function loadEvaluationAssistContext(
       currentGrowthMemo: params.growthMemo,
       itemSummaries,
       evidence: {
-        recentCheckins: recentCheckins.map((checkin) => ({
-          scheduledDate: checkin.scheduledDate.toISOString(),
-          summary: checkin.keyTakeaways || checkin.managerNotes || checkin.ownerNotes || '',
-        })),
-        feedbackSummaries: feedbackRounds.map((round) => ({
-          roundName: round.roundName,
-          roundType: round.roundType,
-          submittedCount: round.feedbacks.length,
-          highlights: round.feedbacks
-            .flatMap((feedback) => feedback.responses.map((response) => response.textValue || '').filter(Boolean))
-            .slice(0, 5),
-        })),
-        highlights,
+        kpiSummaries,
+        monthlySummaries,
+        noteSummaries,
+        keyPoints: evidenceView.keyPoints,
+        warnings: evidenceView.warnings,
+        sufficiency: evidenceView.sufficiency,
       },
     }),
   }
@@ -483,7 +649,7 @@ export async function generateEvaluationAssist(
   const disabledReason = !env.enabled
     ? 'AI 보조 기능이 현재 비활성화되어 있습니다.'
     : !env.apiKey
-      ? 'OPENAI_API_KEY가 설정되지 않아 AI 보조 기능이 현재 비활성화되어 있습니다.'
+      ? 'OPENAI_API_KEY가 설정되지 않아 AI 보조 기능을 사용할 수 없습니다.'
       : null
 
   const baseLogData = {
@@ -526,6 +692,7 @@ export async function generateEvaluationAssist(
       source: 'disabled' as const,
       fallbackReason: disabledReason,
       result: context.fallbackResult,
+      evidence: context.evidenceView,
     }
   }
 
@@ -549,6 +716,7 @@ export async function generateEvaluationAssist(
       source: 'ai' as const,
       fallbackReason: null,
       result: aiResult.result,
+      evidence: context.evidenceView,
     }
   } catch (error) {
     const errorCode = error instanceof AppError ? error.code : 'AI_REQUEST_FAILED'
@@ -581,6 +749,6 @@ export async function generateEvaluationAssist(
       },
     })
 
-    throw new AppError(502, 'AI_ASSIST_FAILED', 'AI 제안을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.')
+    throw new AppError(502, 'AI_ASSIST_FAILED', getEvaluationAssistPublicErrorMessage())
   }
 }

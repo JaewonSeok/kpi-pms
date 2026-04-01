@@ -1,10 +1,25 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { getEvaluationAssistPublicErrorMessage } from '@/lib/evaluation-ai-assist'
 import { EvaluationAIAssistRequestSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { generateEvaluationAssist } from '@/server/ai/evaluation-assist'
 
 export const runtime = 'nodejs'
+
+function shouldMaskEvaluationAssistError(error: unknown): error is AppError {
+  if (!(error instanceof AppError)) {
+    return false
+  }
+
+  return (
+    error.code.startsWith('AI_') ||
+    error.message.includes('OpenAI') ||
+    error.message.includes('response_format') ||
+    error.message.includes('json_schema') ||
+    error.message.includes('structured output')
+  )
+}
 
 export async function POST(request: Request) {
   try {
@@ -36,6 +51,13 @@ export async function POST(request: Request) {
 
     return successResponse(result)
   } catch (error) {
+    if (shouldMaskEvaluationAssistError(error)) {
+      console.error('[evaluation-ai-assist]', error)
+      return errorResponse(
+        new AppError(error.statusCode, error.code, getEvaluationAssistPublicErrorMessage())
+      )
+    }
+
     return errorResponse(error)
   }
 }
