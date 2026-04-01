@@ -12,6 +12,11 @@ import { calcPdcaScore } from '@/lib/utils'
 import { prisma } from '@/lib/prisma'
 import { normalizeAccessibleDepartmentIds } from '@/lib/personal-kpi-access'
 import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
+import {
+  calculateEffectiveTotalScore,
+  toWeightedScoredRows,
+  weightedAverage,
+} from '@/server/evaluation-results-scoring'
 
 export type ResultVisibilityState = 'ready' | 'empty' | 'unpublished' | 'permission-denied' | 'error'
 export type ResultPublicationStatus = 'HIDDEN' | 'PUBLISHED' | 'APPEAL_OPEN' | 'APPEAL_CLOSED'
@@ -875,17 +880,24 @@ function buildEvaluationResultViewModel(params: {
 
   const performanceRows = scoreRows.filter((row) => row.kpiType === 'QUANTITATIVE')
   const competencyRows = scoreRows.filter((row) => row.kpiType === 'QUALITATIVE')
-  const performanceScore = weightedAverage(performanceRows)
+  const weightedPerformanceRows = toWeightedScoredRows(performanceRows)
+  const weightedCompetencyRows = toWeightedScoredRows(competencyRows)
+  const performanceScore = weightedAverage(weightedPerformanceRows)
   const competencyScore =
-    typeof params.aiCompetencyScore === 'number' ? params.aiCompetencyScore : weightedAverage(competencyRows)
+    typeof params.aiCompetencyScore === 'number' ? params.aiCompetencyScore : weightedAverage(weightedCompetencyRows)
   const totalScore = calculateEffectiveTotalScore({
-    performanceRows,
-    competencyRows,
+    performanceRows: weightedPerformanceRows,
+    competencyRows:
+      typeof params.aiCompetencyScore === 'number'
+        ? competencyRows.map((row) => ({
+            score: params.aiCompetencyScore!,
+            weight: row.weight,
+          }))
+        : weightedCompetencyRows,
     fallback:
       finalEvaluation?.totalScore ??
-      weightedAverage([...performanceRows, ...competencyRows]) ??
+      weightedAverage([...weightedPerformanceRows, ...weightedCompetencyRows]) ??
       0,
-    syncedCompetencyScore: params.aiCompetencyScore,
   })
   finalGrade = resolveGradeName(
     typeof params.aiCompetencyScore === 'number' ? null : finalEvaluation?.gradeId ?? null,
@@ -900,8 +912,44 @@ function buildEvaluationResultViewModel(params: {
   )
   const previousScore = params.previousEvaluation?.totalScore ?? undefined
   const feedbacks = buildFeedbackSummary(params.evaluations, params.checkIns)
-  const strengths = buildStrengths(performanceRows, competencyRows)
-  const improvements = buildImprovements(performanceRows, competencyRows)
+  const strengths = buildStrengths(
+    performanceRows
+      .filter((row): row is typeof row & { finalScore: number } => typeof row.finalScore === 'number')
+      .map((row) => ({
+        title: row.title,
+        score: row.finalScore,
+      })),
+    (typeof params.aiCompetencyScore === 'number'
+      ? competencyRows.map((row) => ({
+          title: row.title,
+          score: params.aiCompetencyScore!,
+        }))
+      : competencyRows
+          .filter((row): row is typeof row & { finalScore: number } => typeof row.finalScore === 'number')
+          .map((row) => ({
+            title: row.title,
+            score: row.finalScore,
+          })))
+  )
+  const improvements = buildImprovements(
+    performanceRows
+      .filter((row): row is typeof row & { finalScore: number } => typeof row.finalScore === 'number')
+      .map((row) => ({
+        title: row.title,
+        score: row.finalScore,
+      })),
+    (typeof params.aiCompetencyScore === 'number'
+      ? competencyRows.map((row) => ({
+          title: row.title,
+          score: params.aiCompetencyScore!,
+        }))
+      : competencyRows
+          .filter((row): row is typeof row & { finalScore: number } => typeof row.finalScore === 'number')
+          .map((row) => ({
+            title: row.title,
+            score: row.finalScore,
+          })))
+  )
   const acknowledgedLog = params.auditLogs.find(
     (log) =>
       log.action === 'EVALUATION_RESULT_ACKNOWLEDGED' &&
@@ -1121,37 +1169,6 @@ function getDisplayScore(
   }
 
   return null
-}
-
-function weightedAverage(rows: Array<{ score: number; weight?: number }>) {
-  if (!rows.length) return null
-  const numerator = rows.reduce((sum, row) => sum + row.score * (row.weight ?? 0), 0)
-  const denominator = rows.reduce((sum, row) => sum + (row.weight ?? 0), 0)
-  if (denominator <= 0) {
-    return roundToSingle(rows.reduce((sum, row) => sum + row.score, 0) / rows.length)
-  }
-  return roundToSingle(numerator / denominator)
-}
-
-function calculateEffectiveTotalScore(params: {
-  performanceRows: Array<{ score: number; weight?: number }>
-  competencyRows: Array<{ score: number; weight?: number }>
-  fallback: number
-  syncedCompetencyScore?: number
-}) {
-  if (typeof params.syncedCompetencyScore !== 'number') {
-    return params.fallback
-  }
-
-  const effectiveRows = [
-    ...params.performanceRows,
-    ...params.competencyRows.map((row) => ({
-      ...row,
-      score: params.syncedCompetencyScore!,
-    })),
-  ]
-
-  return weightedAverage(effectiveRows) ?? params.fallback
 }
 
 function calcOverallAchievementRate(personalKpis: PersonalKpiWithRecords[]) {

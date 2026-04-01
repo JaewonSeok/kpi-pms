@@ -169,7 +169,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
       const url = window.URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = fileNameMatch ? decodeURIComponent(fileNameMatch[1]) : 'evaluation-result.html'
+      anchor.download = fileNameMatch ? decodeURIComponent(fileNameMatch[1]) : 'evaluation-result.pdf'
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()

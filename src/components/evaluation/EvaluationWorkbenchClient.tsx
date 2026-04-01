@@ -55,6 +55,9 @@ type DraftItemState = {
 }
 
 type EvidenceSectionKey = 'highlights' | 'kpi' | 'notes' | 'warnings'
+type EditableWorkbenchItem = NonNullable<EvaluationWorkbenchPageData['selected']>['items'][number] & {
+  draft: DraftItemState
+}
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '평가 실행',
@@ -77,6 +80,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [preview, setPreview] = useState<EvaluationAssistPreview | null>(null)
   const [copiedPreviewMode, setCopiedPreviewMode] = useState<EvaluationAssistMode | null>(null)
   const [selectedEvidenceSection, setSelectedEvidenceSection] = useState<EvidenceSectionKey>('highlights')
+  const [expandedGoalContextId, setExpandedGoalContextId] = useState<string | null>(null)
   const [guideBusy, setGuideBusy] = useState(false)
   const [guideStatus, setGuideStatus] = useState({ viewed: false, confirmed: false })
   const [draftComment, setDraftComment] = useState('')
@@ -112,6 +116,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setAssistLoadingMode(null)
     setCopiedPreviewMode(null)
     setSelectedEvidenceSection('highlights')
+    setExpandedGoalContextId(null)
     setAssistMode('draft')
     setGuideStatus({ viewed: false, confirmed: false })
     guideViewRequestRef.current = null
@@ -131,6 +136,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setAssistLoadingMode(null)
       setCopiedPreviewMode(null)
       setSelectedEvidenceSection('highlights')
+      setExpandedGoalContextId(null)
       setAssistMode('draft')
       setGuideBusy(false)
       setGuideStatus({ viewed: false, confirmed: false })
@@ -147,6 +153,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setAssistLoadingMode(null)
     setCopiedPreviewMode(null)
     setSelectedEvidenceSection('highlights')
+    setExpandedGoalContextId(null)
     setAssistMode('draft')
     setGuideBusy(false)
     guideViewRequestRef.current = null
@@ -842,6 +849,15 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                               <p className="mt-2 text-xs text-slate-500">
                                 연결 조직 KPI: {item.linkedOrgKpiTitle ?? '연결 없음'} · 목표값 {item.targetValue ?? '-'} {item.unit ?? ''}
                               </p>
+                              <GoalContextBlock
+                                item={item}
+                                expanded={expandedGoalContextId === item.personalKpiId}
+                                onToggle={() =>
+                                  setExpandedGoalContextId((current) =>
+                                    current === item.personalKpiId ? null : item.personalKpiId
+                                  )
+                                }
+                              />
                             </div>
                             {displaySettings.showScoreSummary ? (
                               <div className="rounded-2xl bg-slate-50 px-4 py-3 text-right">
@@ -1264,6 +1280,123 @@ function EmptyBlock(props: { message: string }) {
 
 function SectionTitle(props: { title: string }) {
   return <h4 className="mb-3 mt-6 text-sm font-semibold text-slate-900 first:mt-0">{props.title}</h4>
+}
+
+function GoalContextBlock(props: {
+  item: EditableWorkbenchItem
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const { goalContext } = props.item
+  const progressTone =
+    typeof goalContext.progressRate === 'number'
+      ? goalContext.progressRate < 70
+        ? 'error'
+        : goalContext.progressRate < 90
+          ? 'warn'
+          : 'success'
+      : 'neutral'
+  const approvalTone =
+    goalContext.approvalStatusKey === 'CONFIRMED'
+      ? 'success'
+      : goalContext.approvalStatusKey === 'ARCHIVED'
+        ? 'warn'
+        : goalContext.approvalStatusKey === 'DRAFT'
+          ? 'neutral'
+          : 'error'
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">연결 목표 맥락</div>
+          <p className="mt-1 text-sm font-semibold text-slate-900">
+            {goalContext.linkedGoalLabel ?? props.item.linkedOrgKpiTitle ?? '연결 목표 맥락'}
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
+            {goalContext.achievementSummary ?? '주요 성과 기술이 아직 등록되지 않았습니다.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={props.onToggle}
+          className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+        >
+          {props.expanded ? '접기' : '상세 보기'}
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Badge tone={progressTone}>{goalContext.progressLabel}</Badge>
+        <Badge tone={approvalTone}>{goalContext.approvalStatusLabel}</Badge>
+        <Badge tone="neutral">{goalContext.weightLabel}</Badge>
+      </div>
+
+      {props.expanded ? (
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <GoalContextField label="기간" value={goalContext.periodLabel} />
+          <GoalContextField
+            label="협업한 동료"
+            value={
+              goalContext.collaborators.length
+                ? goalContext.collaborators.join(', ')
+                : '협업 정보 없음'
+            }
+          />
+          <GoalContextField
+            label="진행률"
+            value={
+              typeof goalContext.progressRate === 'number'
+                ? `${goalContext.progressRate}%`
+                : '진행률 미집계'
+            }
+          />
+          <GoalContextField label="승인 상태" value={goalContext.approvalStatusLabel.replace('승인 상태: ', '')} />
+          <GoalContextField label="성과 가중치" value={goalContext.weightLabel.replace('성과 가중치 ', '')} />
+          <GoalContextField
+            label="연결 목표"
+            value={goalContext.linkedGoalLabel ?? props.item.linkedOrgKpiTitle ?? '연결 없음'}
+          />
+          <div className="md:col-span-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">주요 성과 기술</div>
+            <p className="mt-2 text-sm leading-6 text-slate-700">
+              {goalContext.achievementSummary ?? '등록된 성과 기술이 없습니다.'}
+            </p>
+          </div>
+          <div className="md:col-span-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">관련 링크</div>
+            {goalContext.links.length ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {goalContext.links.map((link) => (
+                  <a
+                    key={link.id}
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                  >
+                    {link.label}
+                    {link.uploadedBy ? <span className="ml-1 text-slate-400">· {link.uploadedBy}</span> : null}
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500">연결된 링크가 없습니다.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function GoalContextField(props: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{props.label}</div>
+      <p className="mt-2 text-sm text-slate-700">{props.value}</p>
+    </div>
+  )
 }
 
 function AiCard(props: {

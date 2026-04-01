@@ -4,7 +4,12 @@ import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { queueNotification, sendAdhocNotificationTest } from '@/lib/notification-service'
-import { getEligibleReminderRecipientIds } from '@/server/feedback-360-admin'
+import { buildReviewEmailContent } from '@/lib/review-email-editor'
+import {
+  getEligibleReminderRecipientIds,
+  resolveFeedbackResultPrimaryLeaderId,
+  resolveFeedbackResultRecipientIds,
+} from '@/server/feedback-360-admin'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackRoundReminderSchema } from '@/lib/validations'
 
@@ -49,6 +54,8 @@ export async function POST(request: Request, context: RouteContext) {
       throw new AppError(400, 'ROUND_MISMATCH', '현재 라운드와 발송 대상이 일치하지 않습니다.')
     }
 
+    const normalizedBody = buildReviewEmailContent(validated.data.body)
+
     const employee = await getAdminEmployee(session.user.id)
     if (!employee) {
       throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '직원 정보를 찾을 수 없습니다.')
@@ -92,40 +99,24 @@ export async function POST(request: Request, context: RouteContext) {
         recipientEmail: validated.data.testEmail!,
         recipientName: session.user.name,
         subject: validated.data.subject,
-        body: validated.data.body,
+        body: normalizedBody.html,
       })
 
       return successResponse({
-        message: '테스트 발송을 완료했습니다.',
+        message: '테스트 발송이 완료되었습니다.',
         preview,
       })
     }
 
-    const eligibleRecipientIds = new Set(
+    const eligibleTargetIds = new Set(
       getEligibleReminderRecipientIds(validated.data.action, {
         feedbacks: round.feedbacks,
         nominations: round.nominations,
       })
     )
-    const invalidTargetIds = validated.data.targetIds.filter((item) => !eligibleRecipientIds.has(item))
+    const invalidTargetIds = validated.data.targetIds.filter((item) => !eligibleTargetIds.has(item))
     if (invalidTargetIds.length) {
       throw new AppError(400, 'INVALID_REMINDER_TARGET', '현재 조건에서 발송할 수 없는 대상자가 포함되어 있습니다.')
-    }
-
-    const recipients = await prisma.employee.findMany({
-      where: {
-        id: {
-          in: Array.from(new Set(validated.data.targetIds)),
-        },
-      },
-      select: {
-        id: true,
-        empName: true,
-      },
-    })
-
-    if (!recipients.length) {
-      throw new AppError(400, 'NO_RECIPIENTS', '발송할 대상자를 선택해 주세요.')
     }
 
     const type = resolveNotificationType(validated.data.action)
@@ -133,30 +124,169 @@ export async function POST(request: Request, context: RouteContext) {
     let suppressedCount = 0
     let duplicateCount = 0
 
+    const uniqueTargetIds = Array.from(new Set(validated.data.targetIds))
+    const recipients: Array<{
+      recipientId: string
+      recipientName: string
+      targetId: string
+      targetName: string
+      recipientRole?: 'LEADER' | 'REVIEWEE'
+    }> = []
+
+    if (validated.data.action === 'send-result-share') {
+      const targets = await prisma.employee.findMany({
+        where: {
+          id: {
+            in: uniqueTargetIds,
+          },
+        },
+        select: {
+          id: true,
+          empName: true,
+          teamLeaderId: true,
+          sectionChiefId: true,
+          divisionHeadId: true,
+        },
+      })
+
+      if (!targets.length) {
+        throw new AppError(400, 'NO_RECIPIENTS', '공유할 결과 대상자를 선택해 주세요.')
+      }
+
+      const leaderIds = Array.from(
+        new Set(
+          targets
+            .map((target) => resolveFeedbackResultPrimaryLeaderId(target))
+            .filter((value): value is string => Boolean(value))
+        )
+      )
+
+      const leaders = leaderIds.length
+        ? await prisma.employee.findMany({
+            where: {
+              id: {
+                in: leaderIds,
+              },
+            },
+            select: {
+              id: true,
+              empName: true,
+            },
+          })
+        : []
+
+      const leadersById = new Map(leaders.map((leader) => [leader.id, leader.empName] as const))
+      const recipientMap = new Map<
+        string,
+        {
+          recipientId: string
+          recipientName: string
+          targetId: string
+          targetName: string
+          recipientRole: 'LEADER' | 'REVIEWEE'
+        }
+      >()
+
+      for (const target of targets) {
+        for (const recipientId of resolveFeedbackResultRecipientIds({
+          audience: validated.data.shareAudience,
+          target,
+        })) {
+          if (recipientId === target.id) {
+            recipientMap.set(`${target.id}:REVIEWEE`, {
+              recipientId,
+              recipientName: target.empName,
+              targetId: target.id,
+              targetName: target.empName,
+              recipientRole: 'REVIEWEE',
+            })
+            continue
+          }
+
+          const leaderName = leadersById.get(recipientId)
+          if (!leaderName) continue
+
+          recipientMap.set(`${target.id}:LEADER:${recipientId}`, {
+            recipientId,
+            recipientName: leaderName,
+            targetId: target.id,
+            targetName: target.empName,
+            recipientRole: 'LEADER',
+          })
+        }
+      }
+
+      recipients.push(...recipientMap.values())
+    } else {
+      const selectedRecipients = await prisma.employee.findMany({
+        where: {
+          id: {
+            in: uniqueTargetIds,
+          },
+        },
+        select: {
+          id: true,
+          empName: true,
+        },
+      })
+
+      recipients.push(
+        ...selectedRecipients.map((recipient) => ({
+          recipientId: recipient.id,
+          recipientName: recipient.empName,
+          targetId: recipient.id,
+          targetName: recipient.empName,
+        }))
+      )
+    }
+
+    if (!recipients.length) {
+      throw new AppError(400, 'NO_RECIPIENTS', '발송 대상자를 선택해 주세요.')
+    }
+
     for (const recipient of recipients) {
       const result = await queueNotification({
-        recipientId: recipient.id,
+        recipientId: recipient.recipientId,
         type,
         sourceType: 'MultiFeedbackRound',
         sourceId: round.id,
-        dedupeToken: `${validated.data.action}:${round.id}:${recipient.id}:${new Date().toISOString().slice(0, 10)}`,
+        dedupeToken: `${validated.data.action}:${round.id}:${recipient.recipientId}:${recipient.targetId}:${new Date().toISOString().slice(0, 10)}`,
         subjectOverride: validated.data.subject,
-        bodyOverride: validated.data.body,
+        bodyOverride: normalizedBody.html,
         payload: {
-          employeeName: recipient.empName,
+          employeeName: recipient.recipientName,
           roundName: round.roundName,
           cycleName: round.roundName,
           link:
             validated.data.action === 'send-peer-selection-reminder'
               ? `/evaluation/360/nomination?roundId=${encodeURIComponent(round.id)}`
               : validated.data.action === 'send-result-share'
-                ? `/evaluation/360/results?roundId=${encodeURIComponent(round.id)}`
+                ? `/evaluation/360/results?roundId=${encodeURIComponent(round.id)}&empId=${encodeURIComponent(recipient.targetId)}`
                 : `/evaluation/360?roundId=${encodeURIComponent(round.id)}`,
         },
       })
+
       queuedCount += result.created
       suppressedCount += result.suppressed
       duplicateCount += result.duplicates
+
+      if (validated.data.action === 'send-result-share' && recipient.recipientRole) {
+        await createAuditLog({
+          userId: session.user.id,
+          action: 'FEEDBACK_RESULT_SHARED',
+          entityType: 'MultiFeedbackRound',
+          entityId: round.id,
+          newValue: {
+            targetId: recipient.targetId,
+            targetName: recipient.targetName,
+            recipientId: recipient.recipientId,
+            recipientName: recipient.recipientName,
+            recipientRole: recipient.recipientRole,
+            shareAudience: validated.data.shareAudience,
+          },
+          ...getClientInfo(request),
+        })
+      }
     }
 
     await createAuditLog({
@@ -166,17 +296,23 @@ export async function POST(request: Request, context: RouteContext) {
       entityId: round.id,
       newValue: {
         action: validated.data.action,
-        targetCount: recipients.length,
+        targetCount: uniqueTargetIds.length,
+        recipientCount: recipients.length,
         queuedCount,
         suppressedCount,
         duplicateCount,
         subject: validated.data.subject,
+        bodyPreview: normalizedBody.text.slice(0, 200),
+        shareAudience: validated.data.action === 'send-result-share' ? validated.data.shareAudience : undefined,
       },
       ...getClientInfo(request),
     })
 
     return successResponse({
-      message: `${recipients.length}명에게 리마인드 발송을 예약했습니다.`,
+      message:
+        validated.data.action === 'send-result-share'
+          ? `${uniqueTargetIds.length}명의 결과 공유를 예약했습니다. (발송 대상 ${recipients.length}명)`
+          : `${recipients.length}명에게 리마인드 발송을 예약했습니다.`,
       queuedCount,
       suppressedCount,
       duplicateCount,

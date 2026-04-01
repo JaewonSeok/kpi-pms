@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { reviewEmailHtmlToText } from './review-email-editor'
 
 // ============================================
 // 조직도 관련
@@ -338,10 +339,19 @@ export const FeedbackRoundReminderSchema = z
     roundId: z.string().min(1),
     targetIds: z.array(z.string().min(1)).min(1).max(100),
     subject: z.string().trim().min(1).max(200),
-    body: z.string().trim().min(1).max(5000),
+    body: z.string().trim().min(1).max(12000),
+    shareAudience: z.enum(['REVIEWEE', 'LEADER', 'LEADER_AND_REVIEWEE']).optional().default('REVIEWEE'),
     testEmail: z.string().email().optional(),
   })
   .superRefine((data, ctx) => {
+    if (!reviewEmailHtmlToText(data.body).trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['body'],
+        message: '본문을 한 줄 이상 입력해 주세요.',
+      })
+    }
+
     if (data.action === 'test-send' && !data.testEmail) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -372,6 +382,10 @@ export const Feedback360ReportGenerateSchema = z.object({
   targetId: z.string().min(1).max(100),
 })
 
+export const FeedbackResultViewReceiptSchema = z.object({
+  targetId: z.string().min(1).max(100),
+})
+
 export const DevelopmentPlanCreateSchema = z.object({
   employeeId: z.string().min(1).max(100),
   sourceType: z.enum(['FEEDBACK_360', 'EVALUATION', 'CHECKIN', 'MANUAL']).default('FEEDBACK_360'),
@@ -383,6 +397,93 @@ export const DevelopmentPlanCreateSchema = z.object({
   nextCheckinTopics: z.array(z.string().min(1).max(500)).max(10).optional(),
   note: z.string().max(1000).optional(),
   dueDate: z.string().datetime().optional(),
+})
+
+export const OnboardingReviewConditionSchema = z.discriminatedUnion('field', [
+  z.object({
+    id: z.string().min(1).max(100),
+    field: z.literal('JOIN_DATE'),
+    operator: z.enum(['ON_OR_AFTER', 'ON_OR_BEFORE', 'BETWEEN']),
+    value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '날짜 형식을 확인해 주세요.'),
+    valueTo: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, '날짜 형식을 확인해 주세요.')
+      .nullable()
+      .optional(),
+  }),
+  z.object({
+    id: z.string().min(1).max(100),
+    field: z.literal('POSITION'),
+    operator: z.literal('IN'),
+    values: z
+      .array(z.enum(['MEMBER', 'TEAM_LEADER', 'SECTION_CHIEF', 'DIV_HEAD', 'CEO']))
+      .min(1, '직군을 하나 이상 선택해 주세요.')
+      .max(5),
+  }),
+])
+
+export const OnboardingReviewWorkflowStepSchema = z.object({
+  id: z.string().min(1).max(100),
+  stepOrder: z.number().int().min(1).max(12),
+  stepName: z.string().trim().min(1).max(50),
+  triggerDaysAfterJoin: z.number().int().min(0).max(365),
+  durationDays: z.number().int().min(1).max(180),
+  reviewNameTemplate: z.string().trim().min(1).max(200),
+  includeEmployeeNameInName: z.boolean().default(true),
+  includeHireDateInName: z.boolean().default(false),
+})
+
+export const OnboardingReviewWorkflowSchema = z
+  .object({
+    id: z.string().min(1).max(100).optional(),
+    evalCycleId: z.string().min(1),
+    workflowName: z.string().trim().min(1).max(100),
+    isActive: z.boolean().default(true),
+    scheduleHourKst: z.number().int().min(0).max(23).default(8),
+    targetConditions: z.array(OnboardingReviewConditionSchema).min(1, '대상자 조건을 하나 이상 설정해 주세요.'),
+    steps: z.array(OnboardingReviewWorkflowStepSchema).min(1, '단계를 하나 이상 추가해 주세요.').max(10),
+  })
+  .superRefine((data, ctx) => {
+    const stepIds = new Set<string>()
+    const stepOrders = new Set<number>()
+
+    data.steps.forEach((step, index) => {
+      if (stepIds.has(step.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['steps', index, 'id'],
+          message: '단계 식별자가 중복되었습니다.',
+        })
+      }
+      stepIds.add(step.id)
+
+      if (stepOrders.has(step.stepOrder)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['steps', index, 'stepOrder'],
+          message: '단계 번호는 중복될 수 없습니다.',
+        })
+      }
+      stepOrders.add(step.stepOrder)
+    })
+
+    data.targetConditions.forEach((condition, index) => {
+      if (condition.field === 'JOIN_DATE' && condition.operator === 'BETWEEN') {
+        const end = condition.valueTo ?? condition.value
+        if (end < condition.value) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['targetConditions', index, 'valueTo'],
+            message: '종료일은 시작일보다 빠를 수 없습니다.',
+          })
+        }
+      }
+    })
+  })
+
+export const OnboardingReviewWorkflowRunSchema = z.object({
+  cycleId: z.string().min(1),
+  workflowId: z.string().min(1).optional(),
 })
 
 // ============================================
@@ -850,6 +951,19 @@ export const DeleteGoogleAccountEmployeeSchema = z.object({
 })
 
 export const CreateAdminEmployeeSchema = AdminEmployeeRecordSchema
+
+export const AdminDepartmentRecordSchema = z.object({
+  departmentId: z.string().min(1).optional(),
+  deptCode: z.string().trim().min(1).max(50),
+  deptName: z.string().trim().min(1).max(100),
+  parentDeptId: EmptyStringToUndefined(z.string().min(1).max(191)).nullable().optional(),
+  leaderEmployeeId: EmptyStringToUndefined(z.string().min(1).max(191)).nullable().optional(),
+  excludeLeaderFromEvaluatorAutoAssign: z.boolean().default(false),
+})
+
+export const AdminEvaluatorAssignmentActionSchema = z.object({
+  action: z.enum(['preview', 'apply']),
+})
 
 export const AdminEmployeeUploadRowSchema = z.object({
   employeeNumber: z.string().trim().min(1).max(50),

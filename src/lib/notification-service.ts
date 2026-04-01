@@ -11,6 +11,7 @@ import {
 } from '@prisma/client'
 import { prisma } from './prisma'
 import { isFeatureEnabled } from './feature-flags'
+import { buildReviewEmailContent, hasReviewEmailHtml } from './review-email-editor'
 
 type TemplateSeed = {
   code: string
@@ -341,13 +342,14 @@ function getEmailTransport() {
   })
 }
 
-async function sendEmail(params: { to: string; subject: string; text: string }) {
+async function sendEmail(params: { to: string; subject: string; text: string; html?: string }) {
   const transporter = getEmailTransport()
   const result = await transporter.sendMail({
     from: process.env.SMTP_USER || 'noreply@company.com',
     to: params.to,
     subject: params.subject,
     text: params.text,
+    ...(params.html ? { html: params.html } : {}),
   })
 
   return typeof result.messageId === 'string' ? result.messageId : null
@@ -529,10 +531,12 @@ export async function sendAdhocNotificationTest(params: {
     employeeName: params.recipientName,
     link: '',
   })
+  const content = buildReviewEmailContent(renderedBody)
   await sendEmail({
     to: params.recipientEmail,
     subject: params.subject,
-    text: renderedBody,
+    text: content.text,
+    html: content.html,
   })
 }
 
@@ -687,15 +691,23 @@ export async function queueNotification(
     const title = input.subjectOverride?.trim()
       ? renderTemplate(input.subjectOverride, payload)
       : renderTemplate(template.subjectTemplate, payload)
-    const message = input.bodyOverride?.trim()
+    const renderedMessage = input.bodyOverride?.trim()
       ? renderTemplate(input.bodyOverride, {
           ...payload,
           link: resolvedLink,
         })
       : renderTemplate(template.bodyTemplate, {
-      ...payload,
-      link: resolvedLink,
-    })
+          ...payload,
+          link: resolvedLink,
+        })
+    const richMessage = hasReviewEmailHtml(renderedMessage) ? buildReviewEmailContent(renderedMessage) : null
+    const message = richMessage?.text ?? renderedMessage
+    const deliveryPayload = richMessage
+      ? {
+          ...payload,
+          htmlMessage: richMessage.html,
+        }
+      : payload
 
     try {
       await createNotificationJob(db, {
@@ -706,7 +718,7 @@ export async function queueNotification(
         title,
         message,
         link: resolvedLink || undefined,
-        payload,
+        payload: deliveryPayload,
         scheduledFor,
         availableAt,
         priority: input.priority ?? 0,
@@ -854,10 +866,16 @@ async function deliverEmailJob(
   db: PrismaClient,
   job: Awaited<ReturnType<typeof getProcessableJobs>>[number]
 ) {
+  const payloadRecord =
+    job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload)
+      ? (job.payload as Record<string, unknown>)
+      : null
+  const htmlMessage = typeof payloadRecord?.htmlMessage === 'string' ? payloadRecord.htmlMessage : undefined
   const providerMessageId = await sendEmail({
     to: job.recipient.gwsEmail,
     subject: job.title || '',
     text: job.message || '',
+    html: htmlMessage,
   })
 
   await db.$transaction(async (tx) => {

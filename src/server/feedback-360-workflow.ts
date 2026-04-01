@@ -300,14 +300,19 @@ export function validatePeerReviewerSelection(params: {
   for (const reviewer of reviewers) {
     if (reviewer.relationship !== 'PEER') continue
 
-    if (
-      selectionSettings.excludeLeaderFromPeerSelection &&
-      leaderIds.includes(reviewer.employeeId)
-    ) {
+    if (reviewer.employeeId === target.id) {
       throw new AppError(
         400,
-        'LEADER_PEER_EXCLUDED',
-        '현재 설정에서는 리뷰 대상자가 자신의 리더를 동료 작성자로 선택할 수 없습니다.'
+        'SELF_PEER_EXCLUDED',
+        '리뷰 대상자는 본인을 동료 작성자로 선택할 수 없습니다.'
+      )
+    }
+
+    if (leaderIds.includes(reviewer.employeeId)) {
+      throw new AppError(
+        400,
+        'EVALUATOR_PEER_EXCLUDED',
+        '리뷰 대상자는 본인의 평가권자 또는 상위 평가권자를 동료 작성자로 선택할 수 없습니다.'
       )
     }
 

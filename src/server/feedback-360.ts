@@ -17,6 +17,8 @@ import {
   parseFeedbackVisibilitySettings,
   parsePersistedReportPayload,
 } from './feedback-360-workflow'
+import { resolveFeedbackResultPrimaryLeaderId } from './feedback-360-admin'
+import { getOnboardingReviewAdminSnapshot } from './onboarding-review-workflow'
 
 export type Feedback360RouteMode = 'overview' | 'nomination' | 'results' | 'admin' | 'respond'
 
@@ -105,6 +107,7 @@ export type Feedback360PageData = {
       key: 'self' | 'supervisor' | 'peer' | 'subordinate'
       label: string
       description: string
+      helpMessage?: string
       reviewers: Array<{
         employeeId: string
         name: string
@@ -215,6 +218,9 @@ export type Feedback360PageData = {
       departmentName?: string
       roundId: string
       roundName: string
+      statusKey: string
+      statusLabel: string
+      statusTone: 'slate' | 'amber' | 'emerald' | 'rose' | 'blue'
       detail: string
     }>
     settings?: {
@@ -236,6 +242,88 @@ export type Feedback360PageData = {
       approvedCount: number
       publishedCount: number
     }>
+    resultShare?: {
+      roundId: string
+      roundName: string
+      totalTargets: number
+      leaderSharedCount: number
+      leaderViewedCount: number
+      revieweeSharedCount: number
+      revieweeViewedCount: number
+      rows: Array<{
+        targetId: string
+        targetName: string
+        departmentName: string
+        leaderName?: string
+        leaderStatus: 'NOT_SHARED' | 'SHARED' | 'VIEWED' | 'NO_LEADER'
+        leaderSharedAt?: string
+        leaderViewedAt?: string
+        revieweeStatus: 'NOT_SHARED' | 'SHARED' | 'VIEWED'
+        revieweeSharedAt?: string
+        revieweeViewedAt?: string
+        resultHref: string
+      }>
+    }
+    onboarding?: {
+      scheduleInfo: string
+      jobFamilyOptions: Array<{
+        value: string
+        label: string
+      }>
+      workflows: Array<{
+        id: string
+        workflowName: string
+        isActive: boolean
+        scheduleHourKst: number
+        scheduleInfo: string
+        targetConditions: Array<
+          | {
+              id: string
+              field: 'JOIN_DATE'
+              operator: 'ON_OR_AFTER' | 'ON_OR_BEFORE' | 'BETWEEN'
+              value: string
+              valueTo?: string | null
+            }
+          | {
+              id: string
+              field: 'POSITION'
+              operator: 'IN'
+              values: Array<'MEMBER' | 'TEAM_LEADER' | 'SECTION_CHIEF' | 'DIV_HEAD' | 'CEO'>
+            }
+        >
+        targetConditionSummary: string[]
+        steps: Array<{
+          id: string
+          stepOrder: number
+          stepName: string
+          triggerDaysAfterJoin: number
+          durationDays: number
+          reviewNameTemplate: string
+          includeEmployeeNameInName: boolean
+          includeHireDateInName: boolean
+          reviewNamePreview: string
+        }>
+        eligibleTargetCount: number
+        generatedCount: number
+      }>
+      generatedReviews: Array<{
+        id: string
+        workflowId: string
+        workflowName: string
+        stepId: string
+        stepName: string
+        roundId: string
+        roundName: string
+        targetId: string
+        targetName: string
+        targetDepartment: string
+        status: string
+        feedbackStatus: string
+        createdAt: string
+        createdDateLabel: string
+        scheduledDateKey: string
+      }>
+    }
   }
   respond?: {
     feedbackId: string
@@ -318,6 +406,40 @@ function getPositionLabel(position: string) {
   }
 
   return labels[position] ?? position
+}
+
+function describeReminderStatus(
+  kind: 'review-reminder' | 'peer-selection-reminder' | 'result-share',
+  status: string
+): {
+  key: string
+  label: string
+  tone: 'slate' | 'amber' | 'emerald' | 'rose' | 'blue'
+} {
+  if (kind === 'review-reminder') {
+    if (status === 'IN_PROGRESS') {
+      return { key: status, label: '작성 중', tone: 'blue' }
+    }
+    if (status === 'SUBMITTED') {
+      return { key: status, label: '제출 완료', tone: 'emerald' }
+    }
+    return { key: 'PENDING', label: '미제출', tone: 'amber' }
+  }
+
+  if (kind === 'peer-selection-reminder') {
+    if (status === 'APPROVED') {
+      return { key: status, label: '승인 완료', tone: 'emerald' }
+    }
+    if (status === 'SUBMITTED') {
+      return { key: status, label: '승인 대기', tone: 'amber' }
+    }
+    if (status === 'REJECTED') {
+      return { key: status, label: '반려됨', tone: 'rose' }
+    }
+    return { key: 'DRAFT', label: '승인 요청 전', tone: 'slate' }
+  }
+
+  return { key: 'RESULT_READY', label: '공유 대기', tone: 'blue' }
 }
 
 function buildGroupedResponses(params: {
@@ -409,6 +531,49 @@ function parseAuditRecord(value: unknown) {
   }
 
   return value as Record<string, unknown>
+}
+
+function getLatestAuditTimestamp(params: {
+  logs: Array<{
+    action: string
+    timestamp: Date
+    newValue: unknown
+  }>
+  targetId: string
+  recipientRole: 'LEADER' | 'REVIEWEE'
+  action: 'FEEDBACK_RESULT_SHARED' | 'FEEDBACK_RESULT_VIEWED'
+}) {
+  for (const log of params.logs) {
+    if (log.action !== params.action) continue
+    const record = parseAuditRecord(log.newValue)
+    if (!record) continue
+    if (record.targetId !== params.targetId) continue
+    if (record.recipientRole !== params.recipientRole) continue
+    return log.timestamp.toISOString()
+  }
+
+  return undefined
+}
+
+function resolveReceiptStatus(params: {
+  sharedAt?: string
+  viewedAt?: string
+  unavailable: true
+}): 'NO_LEADER'
+function resolveReceiptStatus(params: {
+  sharedAt?: string
+  viewedAt?: string
+  unavailable?: false | undefined
+}): 'NOT_SHARED' | 'SHARED' | 'VIEWED'
+function resolveReceiptStatus(params: {
+  sharedAt?: string
+  viewedAt?: string
+  unavailable?: boolean
+}): 'NOT_SHARED' | 'SHARED' | 'VIEWED' | 'NO_LEADER' {
+  if (params.unavailable) return 'NO_LEADER'
+  if (params.viewedAt) return 'VIEWED'
+  if (params.sharedAt) return 'SHARED'
+  return 'NOT_SHARED'
 }
 
 export async function getFeedback360PageData(
@@ -815,7 +980,7 @@ export async function getFeedback360PageData(
 
       const directReportIds = new Set(subordinateEmployees.map((reviewer) => reviewer.id))
       const filteredPeerReviewers = sameDepartmentEmployees.filter((reviewer) => {
-        if (selectionSettings.excludeLeaderFromPeerSelection && supervisorIds.includes(reviewer.id)) {
+        if (supervisorIds.includes(reviewer.id)) {
           return false
         }
 
@@ -825,6 +990,15 @@ export async function getFeedback360PageData(
 
         return true
       })
+
+      const peerGroupHelp = [
+        '본인, 본인의 평가권자, 상위 평가권자는 동료 후보에서 자동 제외됩니다.',
+        selectionSettings.excludeDirectReportsFromPeerSelection
+          ? '현재 설정에서는 본인의 팀원도 함께 동료 후보에서 제외됩니다.'
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' ')
 
       return {
         ...baseData,
@@ -867,6 +1041,7 @@ export async function getFeedback360PageData(
               key: 'peer',
               label: '동료',
               description: '같은 조직 안에서 협업 맥락이 있는 동료를 추천합니다.',
+              helpMessage: peerGroupHelp,
               reviewers: filteredPeerReviewers.map((reviewer) => ({
                 employeeId: reviewer.id,
                 name: reviewer.empName,
@@ -1147,30 +1322,173 @@ export async function getFeedback360PageData(
         }))
         .slice(0, 12)
 
+      const resultShareAuditLogs = selectedRound
+        ? await prisma.auditLog.findMany({
+            where: {
+              entityType: 'MultiFeedbackRound',
+              entityId: selectedRound.id,
+              action: {
+                in: ['FEEDBACK_RESULT_SHARED', 'FEEDBACK_RESULT_VIEWED'],
+              },
+            },
+            orderBy: [{ timestamp: 'desc' }],
+            select: {
+              action: true,
+              timestamp: true,
+              newValue: true,
+            },
+          })
+        : []
+
+      const resultShareTargets = selectedRound
+        ? Array.from(
+            selectedRound.feedbacks
+              .filter((feedback) => feedback.status === 'SUBMITTED')
+              .reduce((map, feedback) => {
+                if (!map.has(feedback.receiverId)) {
+                  map.set(feedback.receiverId, feedback.receiver)
+                }
+                return map
+              }, new Map<string, (typeof selectedRound.feedbacks)[number]['receiver']>())
+              .values()
+          )
+        : []
+
+      const resultShareLeaderIds = Array.from(
+        new Set(
+          resultShareTargets
+            .map((target) => resolveFeedbackResultPrimaryLeaderId(target))
+            .filter((value): value is string => Boolean(value))
+        )
+      )
+
+      const resultShareLeaders = resultShareLeaderIds.length
+        ? await prisma.employee.findMany({
+            where: {
+              id: {
+                in: resultShareLeaderIds,
+              },
+            },
+            select: {
+              id: true,
+              empName: true,
+            },
+          })
+        : []
+
+      const resultShareLeadersById = new Map(
+        resultShareLeaders.map((leader) => [leader.id, leader.empName] as const)
+      )
+
+      const resultShareRows = resultShareTargets.map((target) => {
+        const leaderId = resolveFeedbackResultPrimaryLeaderId(target)
+        const leaderSharedAt = leaderId
+          ? getLatestAuditTimestamp({
+              logs: resultShareAuditLogs,
+              targetId: target.id,
+              recipientRole: 'LEADER',
+              action: 'FEEDBACK_RESULT_SHARED',
+            })
+          : undefined
+        const leaderViewedAt = leaderId
+          ? getLatestAuditTimestamp({
+              logs: resultShareAuditLogs,
+              targetId: target.id,
+              recipientRole: 'LEADER',
+              action: 'FEEDBACK_RESULT_VIEWED',
+            })
+          : undefined
+        const revieweeSharedAt = getLatestAuditTimestamp({
+          logs: resultShareAuditLogs,
+          targetId: target.id,
+          recipientRole: 'REVIEWEE',
+          action: 'FEEDBACK_RESULT_SHARED',
+        })
+        const revieweeViewedAt = getLatestAuditTimestamp({
+          logs: resultShareAuditLogs,
+          targetId: target.id,
+          recipientRole: 'REVIEWEE',
+          action: 'FEEDBACK_RESULT_VIEWED',
+        })
+
+        const leaderStatus = leaderId
+          ? resolveReceiptStatus({
+              sharedAt: leaderSharedAt,
+              viewedAt: leaderViewedAt,
+            })
+          : resolveReceiptStatus({
+              sharedAt: leaderSharedAt,
+              viewedAt: leaderViewedAt,
+              unavailable: true,
+            })
+
+        return {
+          targetId: target.id,
+          targetName: target.empName,
+          departmentName: target.department.deptName,
+          leaderName: leaderId ? resultShareLeadersById.get(leaderId) ?? undefined : undefined,
+          leaderStatus,
+          leaderSharedAt,
+          leaderViewedAt,
+          revieweeStatus: resolveReceiptStatus({
+            sharedAt: revieweeSharedAt,
+            viewedAt: revieweeViewedAt,
+          }),
+          revieweeSharedAt,
+          revieweeViewedAt,
+          resultHref: `/evaluation/360/results?cycleId=${encodeURIComponent(selectedCycle.id)}&roundId=${encodeURIComponent(selectedRound?.id ?? '')}&empId=${encodeURIComponent(target.id)}`,
+        }
+      })
+
+      const resultShareSummary = selectedRound
+        ? {
+            roundId: selectedRound.id,
+            roundName: selectedRound.roundName,
+            totalTargets: resultShareRows.length,
+            leaderSharedCount: resultShareRows.filter((row) => row.leaderStatus === 'SHARED' || row.leaderStatus === 'VIEWED').length,
+            leaderViewedCount: resultShareRows.filter((row) => row.leaderStatus === 'VIEWED').length,
+            revieweeSharedCount: resultShareRows.filter((row) => row.revieweeStatus === 'SHARED' || row.revieweeStatus === 'VIEWED').length,
+            revieweeViewedCount: resultShareRows.filter((row) => row.revieweeStatus === 'VIEWED').length,
+            rows: resultShareRows,
+          }
+        : undefined
+
       const reminderTargets = [
         ...rounds.flatMap((round) =>
           round.feedbacks
             .filter((feedback) => feedback.status !== 'SUBMITTED')
-            .map((feedback) => ({
-              kind: 'review-reminder' as const,
-              recipientId: feedback.giverId,
-              recipientName: feedback.giver.empName,
-              departmentName: feedback.giver.department.deptName,
-              roundId: round.id,
-              roundName: round.roundName,
-              detail: `${feedback.receiver.empName} · ${feedback.relationship} · 마감 ${formatDate(round.endDate)}`,
-            }))
+            .map((feedback) => {
+              const status = describeReminderStatus('review-reminder', feedback.status)
+              return {
+                kind: 'review-reminder' as const,
+                recipientId: feedback.giverId,
+                recipientName: feedback.giver.empName,
+                departmentName: feedback.giver.department.deptName,
+                roundId: round.id,
+                roundName: round.roundName,
+                statusKey: status.key,
+                statusLabel: status.label,
+                statusTone: status.tone,
+                detail: `${feedback.receiver.empName} · ${feedback.relationship} · 마감 ${formatDate(round.endDate)}`,
+              }
+            })
         ),
         ...nominationQueue
           .filter((item) => item.status !== 'PUBLISHED')
-          .map((item) => ({
-            kind: 'peer-selection-reminder' as const,
-            recipientId: item.targetId,
-            recipientName: item.targetName,
-            roundId: item.roundId,
-            roundName: item.roundName,
-            detail: `현재 상태 ${item.status} · 승인 ${item.approvedCount}/${item.totalCount}`,
-          })),
+          .map((item) => {
+            const status = describeReminderStatus('peer-selection-reminder', item.status)
+            return {
+              kind: 'peer-selection-reminder' as const,
+              recipientId: item.targetId,
+              recipientName: item.targetName,
+              roundId: item.roundId,
+              roundName: item.roundName,
+              statusKey: status.key,
+              statusLabel: status.label,
+              statusTone: status.tone,
+              detail: `현재 상태 ${item.status} · 승인 ${item.approvedCount}/${item.totalCount}`,
+            }
+          }),
         ...rounds.flatMap((round) => {
           const uniqueReceivers = new Map<string, (typeof round.feedbacks)[number]>()
           for (const feedback of round.feedbacks.filter((item) => item.status === 'SUBMITTED')) {
@@ -1179,17 +1497,37 @@ export async function getFeedback360PageData(
             }
           }
 
-          return [...uniqueReceivers.values()].map((feedback) => ({
-            kind: 'result-share' as const,
-            recipientId: feedback.receiverId,
-            recipientName: feedback.receiver.empName,
-            departmentName: feedback.receiver.department.deptName,
-            roundId: round.id,
-            roundName: round.roundName,
-            detail: `제출 ${round.feedbacks.filter((item) => item.receiverId === feedback.receiverId && item.status === 'SUBMITTED').length}건`,
-          }))
+          return [...uniqueReceivers.values()].map((feedback) => {
+            const status = describeReminderStatus('result-share', 'RESULT_READY')
+            return {
+              kind: 'result-share' as const,
+              recipientId: feedback.receiverId,
+              recipientName: feedback.receiver.empName,
+              departmentName: feedback.receiver.department.deptName,
+              roundId: round.id,
+              roundName: round.roundName,
+              statusKey: status.key,
+              statusLabel: status.label,
+              statusTone: status.tone,
+              detail: `제출 ${round.feedbacks.filter((item) => item.receiverId === feedback.receiverId && item.status === 'SUBMITTED').length}건`,
+            }
+          })
         }),
       ]
+
+      const onboardingSnapshotResult =
+        employee.role === 'ROLE_ADMIN'
+          ? await Promise.resolve()
+              .then(() => getOnboardingReviewAdminSnapshot({ cycleId: selectedCycle.id }))
+              .then((data) => ({ data, alert: null as string | null }))
+              .catch((error) => ({
+                data: null,
+                alert:
+                  error instanceof Error
+                    ? `온보딩 리뷰 워크플로우를 일부 불러오지 못했습니다. ${error.message}`
+                    : '온보딩 리뷰 워크플로우를 일부 불러오지 못했습니다.',
+              }))
+          : { data: null, alert: null as string | null }
 
       return {
         ...baseData,
@@ -1200,7 +1538,8 @@ export async function getFeedback360PageData(
             description: `${round.status} · 응답률 ${toResponseRate(round.feedbacks.filter((feedback) => feedback.status === 'SUBMITTED').length, round.feedbacks.length)}%`,
             at: formatDate(round.endDate),
           })),
-          alerts: roundHealth.flatMap((item) => {
+          alerts: [
+            ...roundHealth.flatMap((item) => {
             const alerts: string[] = []
             if (item.responseRate < 60) {
               alerts.push(`${item.roundName}의 응답률이 낮아 reminder cadence 점검이 필요합니다.`)
@@ -1210,6 +1549,8 @@ export async function getFeedback360PageData(
               }
               return alerts
             }),
+            ...(onboardingSnapshotResult.alert ? [onboardingSnapshotResult.alert] : []),
+          ],
           folders: folders.map((folder) => ({
             id: folder.id,
             name: folder.name,
@@ -1225,6 +1566,8 @@ export async function getFeedback360PageData(
               }
             : undefined,
           nominationQueue,
+          resultShare: resultShareSummary,
+          onboarding: onboardingSnapshotResult.data ?? undefined,
         },
       }
     }

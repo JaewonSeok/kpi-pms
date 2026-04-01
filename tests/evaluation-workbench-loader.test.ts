@@ -118,6 +118,7 @@ async function withStubbedWorkbenchData(
               id: 'pk-1',
               kpiName: '매출 성장',
               kpiType: 'QUANTITATIVE',
+              status: 'CONFIRMED',
               weight: 40,
               targetValue: 100,
               unit: '%',
@@ -329,6 +330,185 @@ async function main() {
         assert.equal(data.adminSummary?.guideViewedCount, 1)
         assert.equal(data.adminSummary?.guideConfirmedCount, 1)
         assert.equal(data.adminSummary?.aiUsedCount, 1)
+      }
+    )
+  })
+
+  await run('evaluation workbench builds goal-linked context from KPI, monthly record, and checkin evidence', async () => {
+    const { getEvaluationWorkbenchPageData } = await import('../src/server/evaluation-workbench')
+
+    await withStubbedWorkbenchData(
+      {
+        monthlyRecordFindMany: async () => [
+          {
+            id: 'mr-1',
+            personalKpiId: 'pk-1',
+            yearMonth: '2026-02',
+            achievementRate: 88,
+            activities: '신규 파이프라인 운영 체계를 정리했습니다.',
+            obstacles: '승인 리드타임이 길었습니다.',
+            efforts: '자동화 규칙을 설계해 운영 부담을 줄였습니다.',
+            attachments: [
+              {
+                id: 'link-1',
+                name: '성과 정리 문서',
+                uploadedBy: '정지원',
+                dataUrl: 'https://example.com/goal-context',
+              },
+            ],
+            personalKpi: {
+              kpiName: '매출 성장',
+            },
+          },
+          {
+            id: 'mr-2',
+            personalKpiId: 'pk-1',
+            yearMonth: '2026-01',
+            achievementRate: 72,
+            activities: '초기 실험을 진행했습니다.',
+            obstacles: null,
+            efforts: null,
+            attachments: null,
+            personalKpi: {
+              kpiName: '매출 성장',
+            },
+          },
+        ],
+        checkInFindMany: async () => [
+          {
+            id: 'checkin-1',
+            scheduledDate: new Date('2026-02-20T00:00:00Z'),
+            status: 'COMPLETED',
+            keyTakeaways: '실행 우선순위를 다시 잡았습니다.',
+            managerNotes: null,
+            ownerNotes: null,
+            actionItems: [
+              { action: '고객 인터뷰 정리', assignee: '박하나' },
+              { action: '후속 미팅 조율', assignee: '정수현' },
+            ],
+            kpiDiscussed: [
+              {
+                kpiId: 'pk-1',
+                progress: '리드 품질이 안정적으로 개선되고 있습니다.',
+                support: '승인 리드타임 단축이 필요합니다.',
+              },
+            ],
+          },
+        ],
+      },
+      async () => {
+        const data = await getEvaluationWorkbenchPageData({
+          session: makeSession(),
+          cycleId: 'cycle-1',
+          evaluationId: 'eval-1',
+        })
+
+        assert.equal(data.state, 'ready')
+        assert.equal(data.selected?.items[0]?.goalContext.periodLabel, '2026.01 ~ 2026.02')
+        assert.deepEqual(data.selected?.items[0]?.goalContext.collaborators, ['박하나', '정수현', '정지원'])
+        assert.equal(
+          data.selected?.items[0]?.goalContext.achievementSummary?.includes('자동화 규칙을 설계해 운영 부담을 줄였습니다.'),
+          true
+        )
+        assert.deepEqual(data.selected?.items[0]?.goalContext.links, [
+          {
+            id: 'link-1',
+            label: '성과 정리 문서',
+            href: 'https://example.com/goal-context',
+            uploadedBy: '정지원',
+          },
+        ])
+        assert.equal(data.selected?.items[0]?.goalContext.progressRate, 88)
+        assert.equal(data.selected?.items[0]?.goalContext.progressLabel, '진행률 88%')
+        assert.equal(data.selected?.items[0]?.goalContext.approvalStatusKey, 'CONFIRMED')
+        assert.equal(data.selected?.items[0]?.goalContext.approvalStatusLabel, '승인 상태: 확정')
+        assert.equal(data.selected?.items[0]?.goalContext.weightLabel, '성과 가중치 40%')
+      }
+    )
+  })
+
+  await run('evaluation workbench goal-linked context degrades safely when optional goal details are missing', async () => {
+    const { getEvaluationWorkbenchPageData } = await import('../src/server/evaluation-workbench')
+
+    await withStubbedWorkbenchData(
+      {
+        evaluationFindMany: async () => [
+          {
+            id: 'eval-1',
+            evalCycleId: 'cycle-1',
+            evalCycle: {
+              id: 'cycle-1',
+              cycleName: '2026 상반기',
+              evalYear: 2026,
+              status: 'SELF_EVAL',
+            },
+            evaluator: {
+              id: 'emp-admin',
+              empName: '관리자',
+              position: 'DIRECTOR',
+              department: { deptName: '인사팀' },
+            },
+            target: {
+              id: 'emp-target',
+              empName: '홍길동',
+              position: 'TEAM_LEADER',
+              department: { deptName: '영업팀' },
+            },
+            evalStage: 'FIRST',
+            status: 'IN_PROGRESS',
+            totalScore: 78,
+            comment: null,
+            gradeId: null,
+            submittedAt: null,
+            updatedAt: new Date('2026-03-31T09:00:00Z'),
+            createdAt: new Date('2026-03-30T09:00:00Z'),
+            items: [
+              {
+                id: 'eval-item-1',
+                personalKpiId: 'pk-1',
+                quantScore: 80,
+                planScore: null,
+                doScore: null,
+                checkScore: null,
+                actScore: null,
+                weightedScore: 32,
+                itemComment: null,
+                personalKpi: {
+                  id: 'pk-1',
+                  kpiName: '매출 성장',
+                  kpiType: 'QUANTITATIVE',
+                  status: 'DRAFT',
+                  weight: 40,
+                  targetValue: 100,
+                  unit: '%',
+                  definition: '매출 성장 목표',
+                  linkedOrgKpi: null,
+                  monthlyRecords: [],
+                },
+              },
+            ],
+          },
+        ],
+        monthlyRecordFindMany: async () => [],
+        checkInFindMany: async () => [],
+      },
+      async () => {
+        const data = await getEvaluationWorkbenchPageData({
+          session: makeSession(),
+          cycleId: 'cycle-1',
+          evaluationId: 'eval-1',
+        })
+
+        assert.equal(data.state, 'ready')
+        assert.equal(data.selected?.items[0]?.goalContext.periodLabel, '2026년 평가 주기')
+        assert.deepEqual(data.selected?.items[0]?.goalContext.collaborators, [])
+        assert.equal(data.selected?.items[0]?.goalContext.achievementSummary, null)
+        assert.deepEqual(data.selected?.items[0]?.goalContext.links, [])
+        assert.equal(data.selected?.items[0]?.goalContext.progressRate, null)
+        assert.equal(data.selected?.items[0]?.goalContext.progressLabel, '진행률 미집계')
+        assert.equal(data.selected?.items[0]?.goalContext.approvalStatusKey, 'DRAFT')
+        assert.equal(data.selected?.items[0]?.goalContext.approvalStatusLabel, '승인 상태: 초안')
+        assert.equal(data.selected?.items[0]?.goalContext.linkedGoalLabel, null)
       }
     )
   })

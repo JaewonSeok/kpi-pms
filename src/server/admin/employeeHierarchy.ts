@@ -15,6 +15,14 @@ type Assignment = {
   divisionHeadId: string | null
 }
 
+type HierarchyDepartment = {
+  id: string
+  deptName: string
+  parentDeptId: string | null
+  leaderEmployeeId: string | null
+  excludeLeaderFromEvaluatorAutoAssign: boolean
+}
+
 type HierarchyEmployee = {
   id: string
   empId: string
@@ -60,10 +68,7 @@ function shouldAssignDivisionHead(role: EmployeeRole) {
   return ROLE_ORDER[role] < ROLE_ORDER.ROLE_DIV_HEAD
 }
 
-function buildAssignments(
-  departments: Array<{ id: string; parentDeptId: string | null }>,
-  employees: HierarchyEmployee[]
-) {
+function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees: HierarchyEmployee[]) {
   const parentByDeptId = new Map(departments.map((department) => [department.id, department.parentDeptId]))
   const activeEmployees = employees.filter((employee) => employee.status === 'ACTIVE')
   const leadersByDept = new Map<
@@ -135,6 +140,79 @@ function buildAssignments(
   )
 }
 
+function fillAssignmentSlots(candidates: Array<string | null | undefined>) {
+  const assigned: string[] = []
+
+  for (const candidate of candidates) {
+    if (!candidate || assigned.includes(candidate)) continue
+    assigned.push(candidate)
+    if (assigned.length === 3) break
+  }
+
+  return {
+    teamLeaderId: assigned[0] ?? null,
+    sectionChiefId: assigned[1] ?? null,
+    divisionHeadId: assigned[2] ?? null,
+  } satisfies Assignment
+}
+
+export function buildAssignments(
+  departments: HierarchyDepartment[],
+  employees: HierarchyEmployee[]
+) {
+  const roleBasedAssignments = buildRoleBasedAssignments(departments, employees)
+  const activeEmployeeIds = new Set(
+    employees.filter((employee) => employee.status === 'ACTIVE').map((employee) => employee.id)
+  )
+  const departmentById = new Map(departments.map((department) => [department.id, department]))
+
+  return new Map(
+    employees.map((employee) => {
+      const leaderChain: string[] = []
+      const excludedLeaderIds = new Set<string>()
+      const visited = new Set<string>()
+      let currentDeptId: string | null | undefined = employee.deptId
+
+      while (currentDeptId && !visited.has(currentDeptId)) {
+        visited.add(currentDeptId)
+        const department = departmentById.get(currentDeptId)
+        const leaderId = department?.leaderEmployeeId ?? null
+
+        if (department?.excludeLeaderFromEvaluatorAutoAssign && leaderId) {
+          excludedLeaderIds.add(leaderId)
+        }
+
+        if (
+          leaderId &&
+          !department?.excludeLeaderFromEvaluatorAutoAssign &&
+          leaderId !== employee.id &&
+          activeEmployeeIds.has(leaderId) &&
+          !leaderChain.includes(leaderId)
+        ) {
+          leaderChain.push(leaderId)
+        }
+
+        currentDeptId = department?.parentDeptId ?? null
+      }
+
+      const fallback = roleBasedAssignments.get(employee.id) ?? {
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      }
+
+      const nextAssignment = fillAssignmentSlots([
+        ...leaderChain,
+        excludedLeaderIds.has(fallback.teamLeaderId ?? '') ? null : fallback.teamLeaderId,
+        excludedLeaderIds.has(fallback.sectionChiefId ?? '') ? null : fallback.sectionChiefId,
+        excludedLeaderIds.has(fallback.divisionHeadId ?? '') ? null : fallback.divisionHeadId,
+      ])
+
+      return [employee.id, nextAssignment]
+    })
+  )
+}
+
 async function loadHierarchyBaseData() {
   const [departments, employees] = await Promise.all([
     prisma.department.findMany({
@@ -142,6 +220,8 @@ async function loadHierarchyBaseData() {
         id: true,
         deptName: true,
         parentDeptId: true,
+        leaderEmployeeId: true,
+        excludeLeaderFromEvaluatorAutoAssign: true,
       },
     }),
     prisma.employee.findMany({
@@ -216,7 +296,10 @@ export async function previewEmployeeLeadershipLinks(
   const nextAssignments = buildAssignments(
     departments.map((department) => ({
       id: department.id,
+      deptName: department.deptName,
       parentDeptId: department.parentDeptId,
+      leaderEmployeeId: department.leaderEmployeeId,
+      excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
     })),
     combinedEmployees
   )
@@ -290,7 +373,10 @@ export async function recalculateEmployeeLeadershipLinks() {
   const nextAssignments = buildAssignments(
     departments.map((department) => ({
       id: department.id,
+      deptName: department.deptName,
       parentDeptId: department.parentDeptId,
+      leaderEmployeeId: department.leaderEmployeeId,
+      excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
     })),
     employees.map((employee) => ({
       ...employee,

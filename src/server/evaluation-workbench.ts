@@ -4,6 +4,8 @@ import type {
   EvalStatus,
   FeedbackRoundType,
   FeedbackStatus,
+  KpiStatus,
+  Prisma,
   QuestionType,
   SystemRole,
 } from '@prisma/client'
@@ -141,6 +143,23 @@ export type EvaluationWorkbenchPageData = {
       actScore?: number | null
       weightedScore?: number | null
       itemComment?: string | null
+      goalContext: {
+        periodLabel: string
+        collaborators: string[]
+        achievementSummary?: string | null
+        links: Array<{
+          id: string
+          label: string
+          href: string
+          uploadedBy?: string
+        }>
+        progressRate?: number | null
+        progressLabel: string
+        approvalStatusKey: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED' | 'UNKNOWN'
+        approvalStatusLabel: string
+        weightLabel: string
+        linkedGoalLabel?: string | null
+      }
     }>
     evidence: {
       monthlyRecords: Array<{
@@ -204,6 +223,8 @@ type WorkbenchMonthlyEvidenceRecord = {
   achievementRate: number | null
   activities: string | null
   obstacles: string | null
+  efforts: string | null
+  attachments: Prisma.JsonValue | null
   personalKpi: {
     kpiName: string
   }
@@ -221,6 +242,217 @@ type WorkbenchFeedbackRound = {
       ratingValue: number | null
     }>
   }>
+}
+
+type WorkbenchGoalContextLink = {
+  id: string
+  label: string
+  href: string
+  uploadedBy?: string
+}
+
+type WorkbenchGoalContextStatus = 'DRAFT' | 'CONFIRMED' | 'ARCHIVED' | 'UNKNOWN'
+
+type WorkbenchKpiDiscussion = {
+  kpiId: string
+  progress?: string
+  concern?: string
+  support?: string
+}
+
+type WorkbenchCheckinGoalContext = {
+  scheduledDate: Date
+  progress?: string
+  concern?: string
+  support?: string
+  collaborators: string[]
+}
+
+function asWorkbenchRecord(value: unknown) {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
+}
+
+function parseGoalContextLinks(value: Prisma.JsonValue | null | undefined): WorkbenchGoalContextLink[] {
+  if (!Array.isArray(value)) return []
+
+  const links: WorkbenchGoalContextLink[] = []
+
+  value.forEach((item, index) => {
+    const record = asWorkbenchRecord(item)
+    if (!record) return
+
+    const href =
+      typeof record.dataUrl === 'string'
+        ? record.dataUrl.trim()
+        : typeof record.href === 'string'
+          ? record.href.trim()
+          : typeof record.url === 'string'
+            ? record.url.trim()
+            : ''
+
+    if (!href) {
+      return
+    }
+
+    links.push({
+      id: typeof record.id === 'string' ? record.id : `goal-link-${index}`,
+      label:
+        typeof record.name === 'string' && record.name.trim()
+          ? record.name.trim()
+          : `관련 링크 ${index + 1}`,
+      href,
+      uploadedBy:
+        typeof record.uploadedBy === 'string' && record.uploadedBy.trim()
+          ? record.uploadedBy.trim()
+          : undefined,
+    })
+  })
+
+  return links
+}
+
+function parseGoalContextActionAssignees(value: Prisma.JsonValue | null | undefined) {
+  if (!Array.isArray(value)) return []
+
+  const assignees: string[] = []
+
+  for (const item of value) {
+    const record = asWorkbenchRecord(item)
+    if (!record) continue
+
+    const assignee = typeof record.assignee === 'string' ? record.assignee.trim() : ''
+    if (!assignee) continue
+    assignees.push(assignee)
+  }
+
+  return assignees
+}
+
+function parseGoalContextKpiDiscussions(value: Prisma.JsonValue | null | undefined): WorkbenchKpiDiscussion[] {
+  if (!Array.isArray(value)) return []
+
+  const discussions: WorkbenchKpiDiscussion[] = []
+
+  for (const item of value) {
+    const record = asWorkbenchRecord(item)
+    if (!record) continue
+
+    const kpiId = typeof record.kpiId === 'string' ? record.kpiId : ''
+    if (!kpiId) continue
+
+    discussions.push({
+      kpiId,
+      progress: typeof record.progress === 'string' ? record.progress.trim() || undefined : undefined,
+      concern: typeof record.concern === 'string' ? record.concern.trim() || undefined : undefined,
+      support: typeof record.support === 'string' ? record.support.trim() || undefined : undefined,
+    })
+  }
+
+  return discussions
+}
+
+function formatGoalContextMonthLabel(yearMonth: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(yearMonth)
+  if (!match) {
+    return yearMonth
+  }
+
+  return `${match[1]}.${match[2]}`
+}
+
+function buildGoalContextPeriodLabel(params: {
+  cycleYear: number
+  records: WorkbenchMonthlyEvidenceRecord[]
+  checkins: WorkbenchCheckinGoalContext[]
+}) {
+  const { cycleYear, records, checkins } = params
+
+  if (records.length) {
+    const ordered = [...records]
+      .map((record) => record.yearMonth)
+      .sort((left, right) => left.localeCompare(right))
+    const first = formatGoalContextMonthLabel(ordered[0]!)
+    const last = formatGoalContextMonthLabel(ordered[ordered.length - 1]!)
+    return first === last ? `${first} 기준` : `${first} ~ ${last}`
+  }
+
+  if (checkins.length) {
+    const ordered = [...checkins].sort(
+      (left, right) => left.scheduledDate.getTime() - right.scheduledDate.getTime()
+    )
+    const first = formatDate(ordered[0]!.scheduledDate)
+    const last = formatDate(ordered[ordered.length - 1]!.scheduledDate)
+    return first === last ? `${first} 체크인 기준` : `${first} ~ ${last}`
+  }
+
+  return `${cycleYear}년 평가 주기`
+}
+
+function getGoalContextStatus(status: KpiStatus | null | undefined): {
+  approvalStatusKey: WorkbenchGoalContextStatus
+  approvalStatusLabel: string
+} {
+  if (status === 'CONFIRMED') {
+    return {
+      approvalStatusKey: 'CONFIRMED',
+      approvalStatusLabel: '승인 상태: 확정',
+    }
+  }
+
+  if (status === 'ARCHIVED') {
+    return {
+      approvalStatusKey: 'ARCHIVED',
+      approvalStatusLabel: '승인 상태: 보관',
+    }
+  }
+
+  if (status === 'DRAFT') {
+    return {
+      approvalStatusKey: 'DRAFT',
+      approvalStatusLabel: '승인 상태: 초안',
+    }
+  }
+
+  return {
+    approvalStatusKey: 'UNKNOWN',
+    approvalStatusLabel: '승인 상태: 미확인',
+  }
+}
+
+function buildGoalAchievementSummary(params: {
+  latestRecord?: WorkbenchMonthlyEvidenceRecord
+  latestCheckin?: WorkbenchCheckinGoalContext
+}) {
+  const parts = [
+    params.latestRecord?.activities?.trim(),
+    params.latestRecord?.efforts?.trim() ? `주요 기여: ${params.latestRecord.efforts.trim()}` : '',
+    params.latestCheckin?.progress?.trim(),
+    params.latestCheckin?.support?.trim()
+      ? `지원 필요: ${params.latestCheckin.support.trim()}`
+      : '',
+    params.latestCheckin?.concern?.trim()
+      ? `주의 포인트: ${params.latestCheckin.concern.trim()}`
+      : params.latestRecord?.obstacles?.trim()
+        ? `주의 포인트: ${params.latestRecord.obstacles.trim()}`
+        : '',
+  ].filter(Boolean)
+
+  return parts.length ? parts.join(' · ') : null
+}
+
+function buildGoalProgressLabel(params: {
+  latestRecord?: WorkbenchMonthlyEvidenceRecord
+  latestCheckin?: WorkbenchCheckinGoalContext
+}) {
+  if (typeof params.latestRecord?.achievementRate === 'number') {
+    return `진행률 ${params.latestRecord.achievementRate}%`
+  }
+
+  if (params.latestCheckin?.progress) {
+    return '진행 메모 참고'
+  }
+
+  return '진행률 미집계'
 }
 
 function getWorkbenchSessionUser(session: Session): WorkbenchSessionUser | null {
@@ -883,9 +1115,32 @@ export async function getEvaluationWorkbenchPageData(
     }
 
     const recordMap = new Map<string, typeof recentMonthlyRecords[number]>()
+    const recordsByKpiId = new Map<string, WorkbenchMonthlyEvidenceRecord[]>()
     for (const record of recentMonthlyRecords) {
       if (!recordMap.has(record.personalKpiId)) {
         recordMap.set(record.personalKpiId, record)
+      }
+
+      const current = recordsByKpiId.get(record.personalKpiId) ?? []
+      current.push(record)
+      recordsByKpiId.set(record.personalKpiId, current)
+    }
+
+    const checkinGoalContextByKpiId = new Map<string, WorkbenchCheckinGoalContext[]>()
+    for (const checkin of recentCheckins) {
+      const collaborators = parseGoalContextActionAssignees(checkin.actionItems)
+      const discussions = parseGoalContextKpiDiscussions(checkin.kpiDiscussed)
+
+      for (const discussion of discussions) {
+        const current = checkinGoalContextByKpiId.get(discussion.kpiId) ?? []
+        current.push({
+          scheduledDate: checkin.scheduledDate,
+          progress: discussion.progress,
+          concern: discussion.concern,
+          support: discussion.support,
+          collaborators,
+        })
+        checkinGoalContextByKpiId.set(discussion.kpiId, current)
       }
     }
 
@@ -942,6 +1197,24 @@ export async function getEvaluationWorkbenchPageData(
       })),
       items: selectedEvaluation.items.map((item) => {
         const latestRecord = recordMap.get(item.personalKpiId)
+        const relatedRecords = recordsByKpiId.get(item.personalKpiId) ?? []
+        const relatedCheckins = checkinGoalContextByKpiId.get(item.personalKpiId) ?? []
+        const latestCheckin = relatedCheckins[0]
+        const links = relatedRecords.flatMap((record) => parseGoalContextLinks(record.attachments))
+        const collaborators = Array.from(
+          new Set(
+            [
+              ...relatedCheckins.flatMap((checkin) => checkin.collaborators),
+              ...links
+                .map((link) => link.uploadedBy?.trim())
+                .filter((name): name is string => Boolean(name)),
+            ].filter((name) => name !== selectedEvaluation.target.empName)
+          )
+        )
+        const { approvalStatusKey, approvalStatusLabel } = getGoalContextStatus(
+          item.personalKpi.status
+        )
+
         return {
           personalKpiId: item.personalKpiId,
           title: item.personalKpi.kpiName,
@@ -960,6 +1233,30 @@ export async function getEvaluationWorkbenchPageData(
           actScore: item.actScore,
           weightedScore: item.weightedScore,
           itemComment: item.itemComment,
+          goalContext: {
+            periodLabel: buildGoalContextPeriodLabel({
+              cycleYear: selectedEvaluation.evalCycle.evalYear,
+              records: relatedRecords,
+              checkins: relatedCheckins,
+            }),
+            collaborators,
+            achievementSummary: buildGoalAchievementSummary({
+              latestRecord,
+              latestCheckin,
+            }),
+            links,
+            progressRate: latestRecord?.achievementRate ?? null,
+            progressLabel: buildGoalProgressLabel({
+              latestRecord,
+              latestCheckin,
+            }),
+            approvalStatusKey,
+            approvalStatusLabel,
+            weightLabel: `성과 가중치 ${item.personalKpi.weight}%`,
+            linkedGoalLabel: item.personalKpi.linkedOrgKpi
+              ? `${item.personalKpi.linkedOrgKpi.department.deptName} / ${item.personalKpi.linkedOrgKpi.kpiName}`
+              : null,
+          },
         }
       }),
       evidence: {

@@ -3,9 +3,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import * as XLSX from 'xlsx'
+import './register-path-aliases'
 import { resolveMenuFromPath } from '../src/lib/auth/permissions'
 import {
+  AdminDepartmentRecordSchema,
   AdminEmployeeLifecycleActionSchema,
+  AdminEvaluatorAssignmentActionSchema,
   CreateAdminEmployeeSchema,
   UpdateGoogleAccountEmployeeSchema,
 } from '../src/lib/validations'
@@ -21,6 +24,8 @@ const {
   parseEmployeeUploadWorkbook,
   validateEmployeeUploadRows,
 } = require('../src/server/admin/google-account-management') as typeof import('../src/server/admin/google-account-management')
+
+const { buildAssignments } = require('../src/server/admin/employeeHierarchy') as typeof import('../src/server/admin/employeeHierarchy')
 
 function run(name: string, fn: () => void) {
   try {
@@ -315,6 +320,130 @@ run('reactivation action is accepted by lifecycle schema', () => {
   assert.equal(parsed.success, true)
 })
 
+run('department admin schema accepts leader assignment and exclusion toggle', () => {
+  const parsed = AdminDepartmentRecordSchema.safeParse({
+    deptCode: 'BIZ-OPS',
+    deptName: '비즈니스운영본부',
+    parentDeptId: 'dept-root',
+    leaderEmployeeId: 'mgr-1',
+    excludeLeaderFromEvaluatorAutoAssign: true,
+  })
+
+  assert.equal(parsed.success, true)
+})
+
+run('evaluator assignment action schema accepts preview and apply actions', () => {
+  assert.equal(
+    AdminEvaluatorAssignmentActionSchema.safeParse({ action: 'preview' }).success,
+    true
+  )
+  assert.equal(
+    AdminEvaluatorAssignmentActionSchema.safeParse({ action: 'apply' }).success,
+    true
+  )
+})
+
+run('department leader based evaluator assignment skips excluded leaders while keeping leader metadata', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const assignments = buildAssignments(
+    [
+      {
+        id: 'dept-root',
+        deptName: '전사',
+        parentDeptId: null,
+        leaderEmployeeId: 'ceo-1',
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-a',
+        deptName: '사업본부',
+        parentDeptId: 'dept-root',
+        leaderEmployeeId: 'leader-a',
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-b',
+        deptName: '지원본부',
+        parentDeptId: 'dept-root',
+        leaderEmployeeId: 'leader-b',
+        excludeLeaderFromEvaluatorAutoAssign: true,
+      },
+    ],
+    [
+      {
+        id: 'ceo-1',
+        empId: 'E-9000',
+        empName: '대표',
+        deptId: 'dept-root',
+        role: 'ROLE_DIV_HEAD',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'leader-a',
+        empId: 'E-9001',
+        empName: '사업 리더',
+        deptId: 'dept-a',
+        role: 'ROLE_TEAM_LEADER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'leader-b',
+        empId: 'E-9002',
+        empName: '지원 리더',
+        deptId: 'dept-b',
+        role: 'ROLE_TEAM_LEADER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'member-a',
+        empId: 'E-9003',
+        empName: '구성원A',
+        deptId: 'dept-a',
+        role: 'ROLE_MEMBER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'member-b',
+        empId: 'E-9004',
+        empName: '구성원B',
+        deptId: 'dept-b',
+        role: 'ROLE_MEMBER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+    ]
+  )
+
+  assert.equal(assignments.get('member-a')?.teamLeaderId, 'leader-a')
+  assert.equal(assignments.get('member-a')?.sectionChiefId, 'ceo-1')
+  assert.equal(assignments.get('member-b')?.teamLeaderId, 'ceo-1')
+  assert.notEqual(assignments.get('member-b')?.teamLeaderId, 'leader-b')
+})
+
 run('org chart builder returns nested hierarchy for manager relationships', () => {
   const chart = buildEmployeeOrgChart([
     {
@@ -420,6 +549,8 @@ run('admin-only employee management routes enforce SYSTEM_SETTING authz', () => 
     'src/app/api/admin/employees/google-account/template/route.ts',
     'src/app/api/admin/employees/google-account/upload/route.ts',
     'src/app/api/admin/employees/google-account/org-chart/route.ts',
+    'src/app/api/admin/employees/google-account/departments/route.ts',
+    'src/app/api/admin/employees/google-account/evaluators/route.ts',
   ].map((file) => readFileSync(path.resolve(process.cwd(), file), 'utf8'))
 
   for (const source of routeSources) {
@@ -431,6 +562,36 @@ run('admin employee management API paths still resolve to SYSTEM_SETTING permiss
   assert.equal(resolveMenuFromPath('/api/admin/employees/google-account'), 'SYSTEM_SETTING')
   assert.equal(resolveMenuFromPath('/api/admin/employees/google-account/upload'), 'SYSTEM_SETTING')
   assert.equal(resolveMenuFromPath('/api/admin/employees/google-account/template'), 'SYSTEM_SETTING')
+  assert.equal(resolveMenuFromPath('/api/admin/employees/google-account/departments'), 'SYSTEM_SETTING')
+  assert.equal(resolveMenuFromPath('/api/admin/employees/google-account/evaluators'), 'SYSTEM_SETTING')
+})
+
+run('admin org and evaluator panels expose staged banner and exclusion copy in source', () => {
+  const registrationClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
+    'utf8'
+  )
+  const evaluatorPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/EvaluatorAssignmentAdminPanel.tsx'),
+    'utf8'
+  )
+  const orgMemberPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/OrgMemberManagementPanel.tsx'),
+    'utf8'
+  )
+
+  assert.match(registrationClientSource, /EvaluatorAssignmentAdminPanel/)
+  assert.match(registrationClientSource, /OrgMemberManagementPanel/)
+  assert.match(evaluatorPanelSource, /조직 리더를 기준으로 평가권자가 일괄 지정되었습니다/)
+  assert.match(evaluatorPanelSource, /before → after 비교/)
+  assert.match(orgMemberPanelSource, /하위 조직 포함/)
+  assert.match(
+    orgMemberPanelSource,
+    /이 조직의 리더를 평가권자 일괄 지정 대상에서 제외/
+  )
+  assert.match(orgMemberPanelSource, /collectChildDepartmentIds/)
+  assert.match(orgMemberPanelSource, /visibleEmployees/)
+  assert.match(orgMemberPanelSource, /구성원 엑셀 다운로드/)
 })
 
 run('google login lookup still uses gwsEmail with minimal auth select and ACTIVE status regression guard', () => {

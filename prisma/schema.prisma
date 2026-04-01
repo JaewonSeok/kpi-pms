@@ -35,6 +35,9 @@ model Department {
   parentDeptId String?
   parentDept   Department?  @relation("DeptHierarchy", fields: [parentDeptId], references: [id])
   childDepts   Department[] @relation("DeptHierarchy")
+  leaderEmployeeId String?
+  leaderEmployee   Employee?  @relation("DepartmentLeader", fields: [leaderEmployeeId], references: [id], onDelete: SetNull)
+  excludeLeaderFromEvaluatorAutoAssign Boolean @default(false)
   orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
   employees    Employee[]
@@ -70,6 +73,7 @@ model Employee {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
+  ledDepartments    Department[] @relation("DepartmentLeader")
   personalKpis      PersonalKpi[]
   monthlyRecords    MonthlyRecord[]
   selfEvaluations   Evaluation[]    @relation("EvalTarget")
@@ -84,6 +88,7 @@ model Employee {
   feedbackNominationApprovers   FeedbackNomination[] @relation("FeedbackNominationApprover")
   feedbackReportTargets         FeedbackReportCache[] @relation("FeedbackReportTarget")
   feedbackReportGenerators      FeedbackReportCache[] @relation("FeedbackReportGenerator")
+  onboardingReviewGenerations   OnboardingReviewGeneration[]
   developmentPlans              DevelopmentPlan[] @relation("DevelopmentPlanEmployee")
   createdDevelopmentPlans       DevelopmentPlan[] @relation("DevelopmentPlanCreator")
   notifications     Notification[]
@@ -308,6 +313,7 @@ model EvalCycle {
 
   evaluations         Evaluation[]
   multiFeedbackRounds MultiFeedbackRound[]
+  onboardingReviewWorkflows OnboardingReviewWorkflow[]
   compensationScenarios CompensationScenario[]
   aiCompetencyCycle   AiCompetencyCycle?
   aiCompetencyResults AiCompetencyResult[]
@@ -552,8 +558,50 @@ model MultiFeedbackRound {
   questions FeedbackQuestion[]
   nominations FeedbackNomination[]
   reportCaches FeedbackReportCache[]
+  onboardingReviewGeneration OnboardingReviewGeneration?
 
   @@map("multi_feedback_rounds")
+}
+
+model OnboardingReviewWorkflow {
+  id               String   @id @default(cuid())
+  evalCycleId      String
+  evalCycle        EvalCycle @relation(fields: [evalCycleId], references: [id], onDelete: Cascade)
+  workflowName     String
+  isActive         Boolean  @default(true)
+  scheduleHourKst  Int      @default(8)
+  targetConditions Json
+  stepConfig       Json
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  generations OnboardingReviewGeneration[]
+
+  @@index([evalCycleId, isActive])
+  @@map("onboarding_review_workflows")
+}
+
+model OnboardingReviewGeneration {
+  id                String   @id @default(cuid())
+  workflowId        String
+  workflow          OnboardingReviewWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee @relation(fields: [employeeId], references: [id])
+  roundId           String   @unique
+  round             MultiFeedbackRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  stepId            String
+  stepOrder         Int
+  stepName          String
+  roundNameSnapshot String
+  scheduledDateKey  String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([workflowId, employeeId, stepId])
+  @@index([workflowId, createdAt])
+  @@index([employeeId, createdAt])
+  @@map("onboarding_review_generations")
 }
 
 model FeedbackFolder {

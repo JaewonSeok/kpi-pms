@@ -128,6 +128,22 @@ run('evaluation workbench clears stale notices when cycle or evaluation context 
   assert.equal(file.includes("setAssistMode('draft')"), true)
 })
 
+run('evaluation workbench renders goal-linked context with safe link handling and stale reset', () => {
+  const file = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
+  const loader = read('src/server/evaluation-workbench.ts')
+
+  assert.equal(file.includes('GoalContextBlock'), true)
+  assert.equal(file.includes('const [expandedGoalContextId, setExpandedGoalContextId] = useState<string | null>(null)'), true)
+  assert.equal(file.includes('setExpandedGoalContextId(null)'), true)
+  assert.equal(file.includes('연결 목표 맥락'), true)
+  assert.equal(file.includes('관련 링크'), true)
+  assert.equal(file.includes('target="_blank"'), true)
+  assert.equal(file.includes('rel="noreferrer noopener"'), true)
+  assert.equal(loader.includes('goalContext:'), true)
+  assert.equal(loader.includes('buildGoalContextPeriodLabel'), true)
+  assert.equal(loader.includes('buildGoalAchievementSummary'), true)
+})
+
 run('evaluation workbench exposes integrated guide and guide audit route for evaluator education', () => {
   const file = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
   const guideRoute = read('src/app/api/evaluation/[id]/guide/route.ts')

@@ -198,6 +198,47 @@ export type EmployeeDirectoryItem = {
   loginEnabled: boolean
 }
 
+export type DepartmentDirectoryItem = {
+  id: string
+  deptCode: string
+  deptName: string
+  parentDeptId: string | null
+  leaderEmployeeId: string | null
+  leaderEmployeeNumber: string | null
+  leaderEmployeeName: string | null
+  excludeLeaderFromEvaluatorAutoAssign: boolean
+  memberCount: number
+}
+
+export type EvaluatorAssignmentPreviewRow = {
+  employeeId: string
+  employeeNumber: string
+  employeeName: string
+  departmentName: string
+  role: SystemRole
+  changedFields: Array<'teamLeader' | 'sectionChief' | 'divisionHead'>
+  current: {
+    teamLeaderName: string
+    sectionChiefName: string
+    divisionHeadName: string
+  }
+  next: {
+    teamLeaderName: string
+    sectionChiefName: string
+    divisionHeadName: string
+  }
+}
+
+export type EvaluatorAssignmentPreview = {
+  summary: {
+    changedEmployeeCount: number
+    teamLeaderChangedCount: number
+    sectionChiefChangedCount: number
+    divisionHeadChangedCount: number
+  }
+  changedEmployees: EvaluatorAssignmentPreviewRow[]
+}
+
 export type EmployeeOrgChartNode = {
   employee: {
     id: string
@@ -387,6 +428,11 @@ function hasError(row: EmployeeUploadValidationRow) {
 async function recalculateLeadershipLinks() {
   const hierarchyModule = await import('./employeeHierarchy')
   return hierarchyModule.recalculateEmployeeLeadershipLinks()
+}
+
+async function previewLeadershipLinks() {
+  const hierarchyModule = await import('./employeeHierarchy')
+  return hierarchyModule.previewEmployeeLeadershipLinks()
 }
 
 function compareMembers(
@@ -754,6 +800,9 @@ export async function loadEmployeeDirectory(params: {
         id: true,
         deptCode: true,
         deptName: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+        excludeLeaderFromEvaluatorAutoAssign: true,
       },
       orderBy: [{ deptName: 'asc' }],
     }),
@@ -783,8 +832,10 @@ export async function loadEmployeeDirectory(params: {
   const employeeNumberById = new Map(employees.map((employee) => [employee.id, employee.empId]))
   const employeeNameById = new Map(employees.map((employee) => [employee.id, employee.empName]))
   const directReportCountByManagerId = new Map<string, number>()
+  const memberCountByDepartmentId = new Map<string, number>()
 
   for (const employee of employees) {
+    memberCountByDepartmentId.set(employee.deptId, (memberCountByDepartmentId.get(employee.deptId) ?? 0) + 1)
     if (employee.managerId) {
       directReportCountByManagerId.set(
         employee.managerId,
@@ -842,7 +893,21 @@ export async function loadEmployeeDirectory(params: {
 
   return {
     allowedDomain: getAllowedGoogleWorkspaceDomain(),
-    departments,
+    departments: departments.map((department) => ({
+      id: department.id,
+      deptCode: department.deptCode,
+      deptName: department.deptName,
+      parentDeptId: department.parentDeptId,
+      leaderEmployeeId: department.leaderEmployeeId,
+      leaderEmployeeNumber: department.leaderEmployeeId
+        ? employeeNumberById.get(department.leaderEmployeeId) ?? null
+        : null,
+      leaderEmployeeName: department.leaderEmployeeId
+        ? employeeNameById.get(department.leaderEmployeeId) ?? null
+        : null,
+      excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
+      memberCount: memberCountByDepartmentId.get(department.id) ?? 0,
+    })),
     managerOptions: employees.map((employee) => ({
       id: employee.id,
       employeeNumber: employee.empId,
@@ -882,6 +947,9 @@ async function resolveDepartmentOrThrow(deptId: string) {
       id: true,
       deptCode: true,
       deptName: true,
+      parentDeptId: true,
+      leaderEmployeeId: true,
+      excludeLeaderFromEvaluatorAutoAssign: true,
     },
   })
 
@@ -890,6 +958,191 @@ async function resolveDepartmentOrThrow(deptId: string) {
   }
 
   return department
+}
+
+async function resolveDepartmentLeaderOrThrow(leaderEmployeeId?: string | null) {
+  if (!leaderEmployeeId) {
+    return null
+  }
+
+  const leader = await prisma.employee.findUnique({
+    where: { id: leaderEmployeeId },
+    select: {
+      id: true,
+      empId: true,
+      empName: true,
+      deptId: true,
+      status: true,
+    },
+  })
+
+  if (!leader) {
+    throw new AppError(404, 'DEPARTMENT_LEADER_NOT_FOUND', '조직 리더를 찾을 수 없습니다.')
+  }
+
+  if (leader.status !== 'ACTIVE') {
+    throw new AppError(400, 'DEPARTMENT_LEADER_INACTIVE', '재직 중인 구성원만 조직 리더로 지정할 수 있습니다.')
+  }
+
+  return leader
+}
+
+export async function loadEvaluatorAssignmentPreview(): Promise<EvaluatorAssignmentPreview> {
+  const preview = await previewLeadershipLinks()
+
+  return {
+    summary: preview.summary,
+    changedEmployees: preview.changedEmployees.map((item) => ({
+      employeeId: item.employeeId,
+      employeeNumber: item.empId,
+      employeeName: item.empName,
+      departmentName: item.deptName,
+      role: item.role,
+      changedFields: item.changedFields,
+      current: item.current,
+      next: item.next,
+    })),
+  }
+}
+
+export async function applyEvaluatorAssignments() {
+  const preview = await loadEvaluatorAssignmentPreview()
+  const hierarchyResult = await recalculateLeadershipLinks()
+
+  return {
+    summary: preview.summary,
+    appliedCount: preview.summary.changedEmployeeCount,
+    hierarchyUpdatedCount: hierarchyResult.updatedCount,
+  }
+}
+
+export async function upsertDepartmentRecord(params: {
+  departmentId?: string
+  deptCode: string
+  deptName: string
+  parentDeptId?: string | null
+  leaderEmployeeId?: string | null
+  excludeLeaderFromEvaluatorAutoAssign?: boolean
+}) {
+  const normalizedCode = params.deptCode.trim().toUpperCase()
+  const normalizedName = params.deptName.trim()
+  const parentDeptId = params.parentDeptId?.trim() || null
+  const leader = await resolveDepartmentLeaderOrThrow(params.leaderEmployeeId)
+
+  const existingDepartment = params.departmentId
+    ? await prisma.department.findUnique({
+        where: { id: params.departmentId },
+        select: { id: true, orgId: true },
+      })
+    : null
+
+  if (params.departmentId && !existingDepartment) {
+    throw new AppError(404, 'DEPARTMENT_NOT_FOUND', '조직 정보를 찾을 수 없습니다.')
+  }
+
+  if (parentDeptId && params.departmentId && parentDeptId === params.departmentId) {
+    throw new AppError(400, 'DEPARTMENT_PARENT_SELF', '조직의 상위 조직을 자기 자신으로 지정할 수 없습니다.')
+  }
+
+  const duplicateCode = await prisma.department.findFirst({
+    where: {
+      deptCode: normalizedCode,
+      NOT: params.departmentId ? { id: params.departmentId } : undefined,
+    },
+    select: { id: true },
+  })
+
+  if (duplicateCode) {
+    throw new AppError(409, 'DEPARTMENT_CODE_EXISTS', '이미 사용 중인 조직 코드입니다.')
+  }
+
+  let parentDepartment:
+    | {
+        id: string
+        orgId: string
+        parentDeptId: string | null
+      }
+    | null = null
+
+  if (parentDeptId) {
+    parentDepartment = await prisma.department.findUnique({
+      where: { id: parentDeptId },
+      select: { id: true, orgId: true, parentDeptId: true },
+    })
+
+    if (!parentDepartment) {
+      throw new AppError(404, 'DEPARTMENT_PARENT_NOT_FOUND', '상위 조직을 찾을 수 없습니다.')
+    }
+
+    if (existingDepartment && parentDepartment.orgId !== existingDepartment.orgId) {
+      throw new AppError(400, 'DEPARTMENT_PARENT_ORG_MISMATCH', '같은 조직 체계 안에서만 상위 조직을 지정할 수 있습니다.')
+    }
+
+    if (params.departmentId) {
+      const visited = new Set<string>()
+      let currentParentId: string | null = parentDepartment.id
+
+      while (currentParentId && !visited.has(currentParentId)) {
+        if (currentParentId === params.departmentId) {
+          throw new AppError(400, 'DEPARTMENT_PARENT_CYCLE', '조직 상위 관계에 순환이 생기지 않도록 설정해 주세요.')
+        }
+
+        visited.add(currentParentId)
+        const current: { parentDeptId: string | null } | null = await prisma.department.findUnique({
+          where: { id: currentParentId },
+          select: { parentDeptId: true },
+        })
+        currentParentId = current?.parentDeptId ?? null
+      }
+    }
+  }
+
+  const orgId =
+    existingDepartment?.orgId ??
+    parentDepartment?.orgId ??
+    (await prisma.organization.findFirst({ select: { id: true }, orderBy: { createdAt: 'asc' } }))?.id
+
+  if (!orgId) {
+    throw new AppError(500, 'ORG_NOT_FOUND', '조직 기준 정보가 없어 조직을 저장할 수 없습니다.')
+  }
+
+  const department = params.departmentId
+    ? await prisma.department.update({
+        where: { id: params.departmentId },
+        data: {
+          deptCode: normalizedCode,
+          deptName: normalizedName,
+          parentDeptId,
+          leaderEmployeeId: leader?.id ?? null,
+          excludeLeaderFromEvaluatorAutoAssign: Boolean(params.excludeLeaderFromEvaluatorAutoAssign),
+        },
+      })
+    : await prisma.department.create({
+        data: {
+          deptCode: normalizedCode,
+          deptName: normalizedName,
+          parentDeptId,
+          leaderEmployeeId: leader?.id ?? null,
+          excludeLeaderFromEvaluatorAutoAssign: Boolean(params.excludeLeaderFromEvaluatorAutoAssign),
+          orgId,
+        },
+      })
+
+  const hierarchyResult = await recalculateLeadershipLinks()
+
+  return {
+    department: {
+      id: department.id,
+      deptCode: department.deptCode,
+      deptName: department.deptName,
+      parentDeptId: department.parentDeptId,
+      leaderEmployeeId: leader?.id ?? null,
+      leaderEmployeeNumber: leader?.empId ?? null,
+      leaderEmployeeName: leader?.empName ?? null,
+      excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
+    },
+    hierarchyUpdatedCount: hierarchyResult.updatedCount,
+  }
 }
 
 async function resolveManagerOrThrow(managerEmployeeNumber?: string | null) {

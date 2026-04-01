@@ -345,6 +345,11 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
           <div key={group.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="text-sm font-semibold text-slate-900">{group.label}</div>
             <div className="mt-1 text-xs text-slate-500">{group.description}</div>
+            {group.helpMessage ? (
+              <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-xs leading-5 text-blue-800">
+                {group.helpMessage}
+              </div>
+            ) : null}
             <div className="mt-4 space-y-2">
               {group.reviewers.length ? (
                 group.reviewers.map((reviewer) => {

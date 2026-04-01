@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { EvaluatorAssignmentAdminPanel } from './EvaluatorAssignmentAdminPanel'
+import { OrgMemberManagementPanel } from './OrgMemberManagementPanel'
 
 type EmployeeRole =
   | 'ROLE_MEMBER'
@@ -19,6 +21,12 @@ type DepartmentOption = {
   id: string
   deptCode: string
   deptName: string
+  parentDeptId: string | null
+  leaderEmployeeId: string | null
+  leaderEmployeeNumber: string | null
+  leaderEmployeeName: string | null
+  excludeLeaderFromEvaluatorAutoAssign: boolean
+  memberCount: number
 }
 
 type ManagerOption = {
@@ -308,14 +316,16 @@ export function GoogleAccountRegistrationClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
+  const currentTab = searchParams.get('tab')
   const [activeTab, setActiveTab] = useState(
-    searchParams.get('tab') === 'org-chart' || searchParams.get('tab') === 'upload'
-      ? (searchParams.get('tab') as 'org-chart' | 'upload')
+    currentTab === 'org-chart' || currentTab === 'upload' || currentTab === 'evaluator'
+      ? (currentTab as 'org-chart' | 'upload' | 'evaluator')
       : 'manage'
   )
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? 'ALL')
   const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') ?? '')
+  const [includeChildDepartments, setIncludeChildDepartments] = useState(false)
   const [feedback, setFeedback] = useState<FeedbackState>(null)
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null)
   const [form, setForm] = useState<EmployeeFormState>(EMPTY_FORM)
@@ -323,11 +333,21 @@ export function GoogleAccountRegistrationClient() {
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null)
 
   const querySuffix = buildQuery(search, statusFilter, departmentFilter)
+  const orgMemberQuerySuffix = buildQuery(search, statusFilter, '')
 
   const directoryQuery = useQuery({
     queryKey: ['admin-google-account-directory', querySuffix],
     queryFn: async () => {
       const response = await fetch(`/api/admin/employees/google-account${querySuffix}`)
+      return parseResponse<EmployeeDirectoryResponse>(await response.json())
+    },
+  })
+
+  const orgMemberDirectoryQuery = useQuery({
+    queryKey: ['admin-google-account-directory-org-member', orgMemberQuerySuffix],
+    enabled: activeTab === 'org-chart',
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/employees/google-account${orgMemberQuerySuffix}`)
       return parseResponse<EmployeeDirectoryResponse>(await response.json())
     },
   })
@@ -343,6 +363,7 @@ export function GoogleAccountRegistrationClient() {
 
   const refreshQueries = async () => {
     await queryClient.invalidateQueries({ queryKey: ['admin-google-account-directory'] })
+    await queryClient.invalidateQueries({ queryKey: ['admin-google-account-directory-org-member'] })
     await queryClient.invalidateQueries({ queryKey: ['admin-google-account-org-chart'] })
   }
 
@@ -485,17 +506,28 @@ export function GoogleAccountRegistrationClient() {
     },
   })
 
-  const departmentOptions = directoryQuery.data?.departments ?? []
-  const managerOptions = directoryQuery.data?.managerOptions ?? []
-  const employees = directoryQuery.data?.employees ?? []
-  const summary = directoryQuery.data?.summary
+  const directoryData =
+    activeTab === 'org-chart' ? orgMemberDirectoryQuery.data ?? directoryQuery.data : directoryQuery.data
+  const departmentOptions = directoryData?.departments ?? []
+  const managerOptions = directoryData?.managerOptions ?? []
+  const employees = directoryData?.employees ?? []
+  const summary = directoryData?.summary
 
   const uploadRowsToShow = uploadResult?.rows.slice(0, 80) ?? []
 
-  const applyTab = (nextTab: 'manage' | 'upload' | 'org-chart') => {
+  const applyTab = (
+    nextTab: 'manage' | 'upload' | 'org-chart' | 'evaluator',
+    nextDepartmentId = departmentFilter
+  ) => {
     setActiveTab(nextTab)
+    setDepartmentFilter(nextDepartmentId)
     const params = new URLSearchParams(searchParams.toString())
     params.set('tab', nextTab)
+    if (nextDepartmentId) {
+      params.set('departmentId', nextDepartmentId)
+    } else {
+      params.delete('departmentId')
+    }
     router.replace(`/admin/google-access?${params.toString()}`)
   }
 
@@ -522,7 +554,7 @@ export function GoogleAccountRegistrationClient() {
       notes: employee.notes ?? '',
     })
     setFeedback(null)
-    setActiveTab('manage')
+    applyTab('manage', employee.departmentId)
   }
 
   const resetForm = () => {
@@ -628,6 +660,7 @@ export function GoogleAccountRegistrationClient() {
           { key: 'manage' as const, label: '목록 관리' },
           { key: 'upload' as const, label: '일괄 업로드' },
           { key: 'org-chart' as const, label: '조직도' },
+          { key: 'evaluator' as const, label: '평가권자 관리' },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -682,6 +715,7 @@ export function GoogleAccountRegistrationClient() {
               setSearch('')
               setStatusFilter('ALL')
               setDepartmentFilter('')
+              setIncludeChildDepartments(false)
             }}
             className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
           >
@@ -1097,8 +1131,30 @@ export function GoogleAccountRegistrationClient() {
         </div>
       )}
 
+      {activeTab === 'evaluator' && (
+        <EvaluatorAssignmentAdminPanel onFeedback={setFeedback} onRefresh={refreshQueries} />
+      )}
+
       {activeTab === 'org-chart' && (
         <div className="space-y-6">
+          <OrgMemberManagementPanel
+            departments={departmentOptions}
+            managerOptions={managerOptions}
+            employees={employees}
+            selectedDepartmentId={departmentFilter}
+            includeChildDepartments={includeChildDepartments}
+            onSelectDepartment={setDepartmentFilter}
+            onToggleIncludeChildDepartments={setIncludeChildDepartments}
+            onEditEmployee={startEdit}
+            onOpenCreateEmployee={() => {
+              resetForm()
+              applyTab('manage')
+            }}
+            onOpenUpload={() => applyTab('upload')}
+            onRefresh={refreshQueries}
+            onFeedback={setFeedback}
+          />
+
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-900">조직도</h2>

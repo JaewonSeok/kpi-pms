@@ -22,6 +22,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   const [respondError, setRespondError] = useState('')
   const [resultsNotice, setResultsNotice] = useState('')
   const [resultsError, setResultsError] = useState('')
+  const [recordedResultViewKey, setRecordedResultViewKey] = useState('')
   const [overallComment, setOverallComment] = useState(props.data.respond?.overallComment ?? '')
   const [questionState, setQuestionState] = useState<Record<string, { ratingValue?: number | null; textValue?: string | null }>>(
     Object.fromEntries(
@@ -41,6 +42,54 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
     setRespondNotice('')
     setRespondError('')
   }, [props.data.mode, props.data.selectedCycleId, props.data.selectedRoundId])
+
+  const resultTargetId = props.data.mode === 'results' ? props.data.results?.targetEmployee.id ?? '' : ''
+  const resultViewContextKey =
+    resultTargetId && props.data.selectedRoundId
+      ? `${props.data.selectedRoundId}:${resultTargetId}`
+      : ''
+
+  useEffect(() => {
+    if (!resultViewContextKey || recordedResultViewKey === resultViewContextKey) {
+      return
+    }
+
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/feedback/rounds/${encodeURIComponent(props.data.selectedRoundId!)}/result-view`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              targetId: resultTargetId,
+            }),
+          }
+        )
+
+        if (!response.ok) {
+          return
+        }
+
+        if (!cancelled) {
+          setRecordedResultViewKey(resultViewContextKey)
+        }
+      } catch {
+        // Result view receipt failures should not block the live results flow.
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    recordedResultViewKey,
+    resultTargetId,
+    resultViewContextKey,
+    props.data.selectedRoundId,
+  ])
 
   const resultsAiPayload = useMemo(() => {
     if (!props.data.results) return null
