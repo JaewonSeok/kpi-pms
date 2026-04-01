@@ -204,11 +204,18 @@ async function main() {
         console.error = () => undefined
 
         try {
-          const data = await getDashboardPageData(makeSession())
+          const data = await getDashboardPageData(
+            makeSession({
+              role: 'ROLE_ADMIN',
+              position: '관리자',
+            })
+          )
 
           assert.equal(data.summary.length, 4)
           assert.equal(data.notifications.length, 0)
-          assert.equal(data.actions.length, 4)
+          assert.equal(data.actions.length, 6)
+          assert.equal(data.actions.some((item) => item.href === '/admin/performance-calendar'), true)
+          assert.equal(data.actions.some((item) => item.href === '/admin/goal-alignment'), true)
           assert.equal(data.alerts.some((item) => item.title === '알림 위젯 일부 생략'), true)
         } finally {
           console.error = originalConsoleError

@@ -33,6 +33,9 @@ type QueueNotificationInput = {
   channels?: NotificationDeliveryChannel[]
   scheduledFor?: Date
   priority?: number
+  subjectOverride?: string
+  bodyOverride?: string
+  linkOverride?: string
 }
 
 type QueueNotificationResult = {
@@ -516,6 +519,23 @@ export async function sendNotificationTemplateTest(
   }
 }
 
+export async function sendAdhocNotificationTest(params: {
+  recipientEmail: string
+  recipientName: string
+  subject: string
+  body: string
+}) {
+  const renderedBody = renderTemplate(params.body, {
+    employeeName: params.recipientName,
+    link: '',
+  })
+  await sendEmail({
+    to: params.recipientEmail,
+    subject: params.subject,
+    text: renderedBody,
+  })
+}
+
 function getDefaultChannels(preference: Awaited<ReturnType<typeof ensureNotificationPreference>>) {
   const channels: NotificationDeliveryChannel[] = []
   if (preference.inAppEnabled) channels.push(NotificationDeliveryChannel.IN_APP)
@@ -658,10 +678,23 @@ export async function queueNotification(
       isDigestMember = true
     }
 
-    const title = renderTemplate(template.subjectTemplate, payload)
-    const message = renderTemplate(template.bodyTemplate, {
+    const resolvedLink =
+      input.linkOverride ??
+      (typeof payload.link === 'string' && payload.link.length ? payload.link : undefined) ??
+      template.defaultLink ??
+      ''
+
+    const title = input.subjectOverride?.trim()
+      ? renderTemplate(input.subjectOverride, payload)
+      : renderTemplate(template.subjectTemplate, payload)
+    const message = input.bodyOverride?.trim()
+      ? renderTemplate(input.bodyOverride, {
+          ...payload,
+          link: resolvedLink,
+        })
+      : renderTemplate(template.bodyTemplate, {
       ...payload,
-      link: payload.link || template.defaultLink || '',
+      link: resolvedLink,
     })
 
     try {
@@ -672,10 +705,7 @@ export async function queueNotification(
         channel,
         title,
         message,
-        link:
-          typeof payload.link === 'string'
-            ? payload.link
-            : (template.defaultLink ?? undefined),
+        link: resolvedLink || undefined,
         payload,
         scheduledFor,
         availableAt,
@@ -965,8 +995,17 @@ function getEvaluationStageLabel(status: string) {
   return map[status] ?? status
 }
 
-export async function enqueueLifecycleReminders(db: PrismaClient = prisma) {
+export type NotificationReminderType = 'goal' | 'checkpoint'
+
+export async function enqueueLifecycleReminders(
+  db: PrismaClient = prisma,
+  reminderTypes?: NotificationReminderType[]
+) {
   await ensureDefaultNotificationTemplates(db)
+
+  const requestedReminderTypes = reminderTypes?.length ? new Set(reminderTypes) : null
+  const shouldQueueGoals = !requestedReminderTypes || requestedReminderTypes.has('goal')
+  const shouldQueueCheckpoints = !requestedReminderTypes || requestedReminderTypes.has('checkpoint')
 
   const now = new Date()
   const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000)
@@ -1030,7 +1069,7 @@ export async function enqueueLifecycleReminders(db: PrismaClient = prisma) {
   let duplicates = 0
 
   for (const cycle of cycles) {
-    if (cycle.kpiSetupEnd) {
+    if (shouldQueueGoals && cycle.kpiSetupEnd) {
       for (const employee of activeEmployees) {
         const result = await queueNotification(
           {
@@ -1107,24 +1146,26 @@ export async function enqueueLifecycleReminders(db: PrismaClient = prisma) {
   }
 
   const yearMonth = now.toISOString().slice(0, 7)
-  for (const record of monthlyKpis) {
-    const result = await queueNotification(
-      {
-        recipientId: record.employeeId,
-        type: NotificationType.CHECKPOINT_REMINDER,
-        sourceType: 'PersonalKpi',
-        sourceId: record.id,
-        dedupeToken: `checkpoint:${yearMonth}`,
-        payload: {
-          yearMonth,
-          link: '/kpi/monthly',
+  if (shouldQueueCheckpoints) {
+    for (const record of monthlyKpis) {
+      const result = await queueNotification(
+        {
+          recipientId: record.employeeId,
+          type: NotificationType.CHECKPOINT_REMINDER,
+          sourceType: 'PersonalKpi',
+          sourceId: record.id,
+          dedupeToken: `checkpoint:${yearMonth}`,
+          payload: {
+            yearMonth,
+            link: '/kpi/monthly',
+          },
         },
-      },
-      db
-    )
-    created += result.created
-    suppressed += result.suppressed
-    duplicates += result.duplicates
+        db
+      )
+      created += result.created
+      suppressed += result.suppressed
+      duplicates += result.duplicates
+    }
   }
 
   const evaluationBuckets = new Map<
@@ -1202,6 +1243,7 @@ export async function runNotificationJob(
   params: {
     mode: 'schedule' | 'dispatch' | 'all'
     triggerSource: string
+    reminderTypes?: NotificationReminderType[]
   },
   db: PrismaClient = prisma
 ) {
@@ -1218,7 +1260,7 @@ export async function runNotificationJob(
     const scheduleSummary =
       params.mode === 'dispatch'
         ? { processedCount: 0, successCount: 0, failedCount: 0, retriedCount: 0, deadLetterCount: 0, suppressedCount: 0 }
-        : await enqueueLifecycleReminders(db)
+        : await enqueueLifecycleReminders(db, params.reminderTypes)
 
     const dispatchSummary =
       params.mode === 'schedule'
@@ -1248,6 +1290,7 @@ export async function runNotificationJob(
         metadata: {
           scheduleSummary,
           dispatchSummary,
+          reminderTypes: params.reminderTypes ?? [],
         },
       },
     })

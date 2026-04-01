@@ -750,6 +750,20 @@ async function main() {
     assert.equal(routeSource.includes("throw new AppError(403, 'FORBIDDEN', aiAccess.message"), true)
   })
 
+  await run('personal KPI AI route masks raw structured-output failures with a Korean fallback message', () => {
+    const routeSource = read('src/app/api/kpi/personal/ai/route.ts')
+
+    assert.equal(routeSource.includes('PERSONAL_KPI_AI_PUBLIC_ERROR_MESSAGE'), true)
+    assert.equal(
+      routeSource.includes(
+        'AI 초안 생성 중 설정 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의해 주세요.'
+      ),
+      true
+    )
+    assert.equal(routeSource.includes("error.code.startsWith('AI_')"), true)
+    assert.equal(routeSource.includes("error.message.includes('response_format')"), true)
+  })
+
   await run('personal KPI client resets stale selection and editor state when assignee scope changes', () => {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
@@ -769,6 +783,20 @@ async function main() {
     assert.equal(source.includes('if (!isDraftStatus(kpi.status))'), true)
     assert.equal(source.includes('disabled={!props.canReview || props.busy || startReviewState.disabled}'), true)
     assert.equal(source.includes('disabled={props.busy || props.actionStates[item.action]?.disabled}'), true)
+  })
+
+  await run('personal KPI AI preview client shows a Korean fallback instead of raw structured-output schema errors', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+    assert.equal(source.includes('PERSONAL_KPI_AI_PREVIEW_ERROR_MESSAGE'), true)
+    assert.equal(
+      source.includes(
+        'AI 초안 생성 중 설정 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의해 주세요.'
+      ),
+      true
+    )
+    assert.equal(source.includes('function toPersonalKpiAiPreviewErrorMessage('), true)
+    assert.equal(source.includes('const data = await parseAiJsonOrThrow<{'), true)
   })
 
   console.log('Personal KPI workspace tests completed')

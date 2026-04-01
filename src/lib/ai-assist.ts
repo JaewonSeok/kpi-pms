@@ -89,6 +89,7 @@ const ORG_KPI_DRAFT_SCHEMA = {
   additionalProperties: false,
   required: [
     'title',
+    'category',
     'definition',
     'formula',
     'targetValueSuggestion',
@@ -99,7 +100,7 @@ const ORG_KPI_DRAFT_SCHEMA = {
   ],
   properties: {
     title: { type: 'string' },
-    category: { type: 'string' },
+    category: { type: ['string', 'null'] },
     definition: { type: 'string' },
     formula: { type: 'string' },
     targetValueSuggestion: { type: 'string' },
@@ -162,9 +163,9 @@ const ORG_KPI_DUPLICATE_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['title', 'overlapLevel', 'similarityReason'],
+        required: ['id', 'title', 'overlapLevel', 'similarityReason'],
         properties: {
-          id: { type: 'string' },
+          id: { type: ['string', 'null'] },
           title: { type: 'string' },
           overlapLevel: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
           similarityReason: { type: 'string' },
@@ -235,6 +236,7 @@ const PERSONAL_KPI_DRAFT_SCHEMA = {
   required: [
     'title',
     'definition',
+    'formula',
     'targetValueSuggestion',
     'unit',
     'weightSuggestion',
@@ -245,7 +247,7 @@ const PERSONAL_KPI_DRAFT_SCHEMA = {
   properties: {
     title: { type: 'string' },
     definition: { type: 'string' },
-    formula: { type: 'string' },
+    formula: { type: ['string', 'null'] },
     targetValueSuggestion: { type: 'string' },
     unit: { type: 'string' },
     weightSuggestion: { type: 'number' },
@@ -350,9 +352,9 @@ const PERSONAL_KPI_DUPLICATE_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['title', 'overlapLevel', 'similarityReason'],
+        required: ['id', 'title', 'overlapLevel', 'similarityReason'],
         properties: {
-          id: { type: 'string' },
+          id: { type: ['string', 'null'] },
           title: { type: 'string' },
           overlapLevel: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
           similarityReason: { type: 'string' },

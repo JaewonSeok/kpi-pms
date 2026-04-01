@@ -4,7 +4,12 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackNominationDraftSchema } from '@/lib/validations'
-import { canManageFeedbackTarget, getNominationAggregateStatus } from '@/server/feedback-360-workflow'
+import {
+  canManageFeedbackTarget,
+  getNominationAggregateStatus,
+  parseFeedbackSelectionSettings,
+  validatePeerReviewerSelection,
+} from '@/server/feedback-360-workflow'
 
 export async function GET(
   request: Request,
@@ -112,6 +117,12 @@ export async function POST(
 
     const round = await prisma.multiFeedbackRound.findUnique({
       where: { id: roundId },
+      select: {
+        id: true,
+        status: true,
+        maxRaters: true,
+        selectionSettings: true,
+      },
     })
 
     if (!round) {
@@ -156,6 +167,25 @@ export async function POST(
     if (reviewerCount !== reviewerIds.length) {
       throw new AppError(400, 'INVALID_REVIEWER', '선택한 리뷰어 중 활성 상태가 아닌 사용자가 있습니다.')
     }
+
+    const teamMembers = await prisma.employee.findMany({
+      where: {
+        status: 'ACTIVE',
+        OR: [{ teamLeaderId: target.id }, { sectionChiefId: target.id }, { divisionHeadId: target.id }],
+      },
+      select: {
+        id: true,
+      },
+    })
+
+    validatePeerReviewerSelection({
+      actorId: session.user.id,
+      actorRole: session.user.role,
+      target,
+      reviewers: validated.data.reviewers,
+      teamMemberIds: teamMembers.map((member) => member.id),
+      selectionSettings: parseFeedbackSelectionSettings(round.selectionSettings),
+    })
 
     await prisma.$transaction(async (tx) => {
       await tx.feedbackNomination.deleteMany({

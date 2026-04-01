@@ -58,6 +58,16 @@ run('org KPI client opens real bulk upload modal', () => {
   assert.equal(file.includes('/api/kpi/org/ai'), true)
 })
 
+run('org KPI client exposes clone flow with carry-over options and clone metadata detail', () => {
+  const file = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.equal(file.includes('CloneOrgKpiModal'), true)
+  assert.equal(file.includes('/api/kpi/org/${selectedKpi.id}/clone'), true)
+  assert.equal(file.includes('includeProgress'), true)
+  assert.equal(file.includes('includeCheckins'), true)
+  assert.equal(file.includes('cloneInfo'), true)
+})
+
 run('org KPI client resets stale selection and AI state when year or department context changes', () => {
   const file = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
@@ -78,14 +88,65 @@ run('notification ops client uses real test send and dead-letter actions', () =>
   assert.equal(file.includes('/api/cron/notifications'), true)
 })
 
+run('notification ops client supports targeted goal and checkpoint reminder runs', () => {
+  const file = read('src/components/notifications/NotificationOpsClient.tsx')
+  const routeSource = read('src/app/api/cron/notifications/route.ts')
+
+  assert.equal(file.includes("reminderTypes: ['goal']"), true)
+  assert.equal(file.includes("reminderTypes: ['checkpoint']"), true)
+  assert.equal(file.includes('목표 수립 리마인드 전체 발송'), true)
+  assert.equal(file.includes('체크인 현황 리마인드 전체 발송'), true)
+  assert.equal(routeSource.includes('reminderTypes: validated.data.reminderTypes'), true)
+})
+
+run('admin performance calendar route is wired from dashboard and navigation', () => {
+  const dashboardSource = read('src/server/dashboard-page.ts')
+  const clientSource = read('src/components/admin/PerformanceCalendarClient.tsx')
+  const pageSource = read('src/app/(main)/admin/performance-calendar/page.tsx')
+
+  assert.equal(existsSync(path.resolve(process.cwd(), 'src/app/(main)/admin/performance-calendar/page.tsx')), true)
+  assert.equal(dashboardSource.includes('/admin/performance-calendar'), true)
+  assert.equal(clientSource.includes('router.push(`/admin/performance-calendar?${params.toString()}`)'), true)
+  assert.equal(pageSource.includes('getPerformanceCalendarPageData'), true)
+})
+
 run('evaluation workbench clears stale notices when cycle or evaluation context changes', () => {
   const file = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
 
   assert.equal(file.includes('const workbenchContextKey ='), true)
   assert.equal(file.includes('previousWorkbenchContextKey'), true)
+  assert.equal(file.includes("const [assistMode, setAssistMode] = useState<EvaluationAssistMode>('draft')"), true)
+  assert.equal(file.includes('const [copiedPreviewMode, setCopiedPreviewMode] = useState<EvaluationAssistMode | null>(null)'), true)
+  assert.equal(file.includes("const [selectedEvidenceSection, setSelectedEvidenceSection] = useState<EvidenceSectionKey>('highlights')"), true)
+  assert.equal(file.includes("const [guideStatus, setGuideStatus] = useState({ viewed: false, confirmed: false })"), true)
   assert.equal(file.includes("setNotice('')"), true)
   assert.equal(file.includes("setErrorNotice('')"), true)
   assert.equal(file.includes('setDecisionBusy(false)'), true)
+  assert.equal(file.includes('setGuideBusy(false)'), true)
+  assert.equal(file.includes('setPreview(null)'), true)
+  assert.equal(file.includes("setSelectedEvidenceSection('highlights')"), true)
+  assert.equal(file.includes("setAssistMode('draft')"), true)
+})
+
+run('evaluation workbench exposes integrated guide and guide audit route for evaluator education', () => {
+  const file = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
+  const guideRoute = read('src/app/api/evaluation/[id]/guide/route.ts')
+
+  assert.equal(file.includes('평가 가이드'), true)
+  assert.equal(file.includes("activeTab === 'guide' ? ("), true)
+  assert.equal(file.includes('guideStatus.confirmed'), true)
+  assert.equal(file.includes("props.currentUser?.role === 'ROLE_ADMIN' && props.adminSummary ? ("), true)
+  assert.equal(guideRoute.includes('EVALUATION_GUIDE_VIEWED'), true)
+  assert.equal(guideRoute.includes('EVALUATION_GUIDE_CONFIRMED'), true)
+  assert.equal(guideRoute.includes("evaluation.evaluatorId === session.user.id || session.user.role === 'ROLE_ADMIN'"), true)
+})
+
+run('evaluation workbench quality warnings guide without blocking the existing save flow', () => {
+  const file = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
+
+  assert.equal(file.includes('QualityWarningPanel'), true)
+  assert.equal(file.includes('buildEvaluationQualityWarnings'), true)
+  assert.equal(file.includes("disabled={!selected?.permissions.canEdit || isPending}"), true)
 })
 
 run('personal KPI create CTA transition opens editor even outside ready state', () => {

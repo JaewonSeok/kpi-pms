@@ -72,6 +72,7 @@ export type PersonalKpiAiLogItem = {
 export type PersonalKpiViewModel = {
   id: string
   title: string
+  tags: string[]
   employeeId: string
   employeeName: string
   departmentName: string
@@ -79,6 +80,11 @@ export type PersonalKpiViewModel = {
   orgKpiTitle?: string | null
   orgKpiCategory?: string | null
   orgKpiDefinition?: string | null
+  orgLineage: Array<{
+    id: string
+    title: string
+    departmentName: string
+  }>
   type: KpiType
   definition?: string
   formula?: string
@@ -98,6 +104,18 @@ export type PersonalKpiViewModel = {
   hasRejectedRevision: boolean
   linkedMonthlyCount: number
   riskFlags: string[]
+  cloneInfo?: {
+    sourceId: string
+    sourceTitle: string
+    sourceOwnerName?: string
+    sourceEvalYear: number
+    includedProgress: boolean
+    includedCheckins: boolean
+    progressEntryCount: number
+    checkinEntryCount: number
+    assignedToSelf: boolean
+    clonedAt?: string
+  }
   recentMonthlyRecords: Array<{
     id: string
     month: string
@@ -114,6 +132,7 @@ export type PersonalKpiReviewQueueItem = {
   employeeName: string
   departmentName: string
   title: string
+  tags: string[]
   status: 'SUBMITTED' | 'MANAGER_REVIEW'
   changedFields: string[]
   previousValueSummary?: string
@@ -190,6 +209,18 @@ type PersonalKpiWithRelations = Prisma.PersonalKpiGetPayload<{
       }
       take: 6
     }
+    copiedFromPersonalKpi: {
+      select: {
+        id: true
+        kpiName: true
+        evalYear: true
+        employee: {
+          select: {
+            empName: true
+          }
+        }
+      }
+    }
   }
 }>
 
@@ -213,6 +244,19 @@ type ReviewQueueKpi = Prisma.PersonalKpiGetPayload<{
 type OrgKpiRecord = Prisma.OrgKpiGetPayload<{
   include: {
     department: true
+    parentOrgKpi: {
+      select: {
+        id: true
+        kpiName: true
+        deptId: true
+        parentOrgKpiId: true
+        department: {
+          select: {
+            deptName: true
+          }
+        }
+      }
+    }
   }
 }>
 
@@ -410,6 +454,36 @@ function deriveRiskFlags(kpi: PersonalKpiWithRelations, hasRejectedRevision: boo
   return flags
 }
 
+function parseCloneInfo(kpi: PersonalKpiWithRelations): PersonalKpiViewModel['cloneInfo'] {
+  if (!kpi.copiedFromPersonalKpiId || !kpi.copiedFromPersonalKpi) {
+    return undefined
+  }
+
+  const metadata = asRecord(kpi.copyMetadata)
+  const progressSnapshot = Array.isArray(metadata?.progressSnapshot) ? metadata.progressSnapshot : []
+  const checkinSnapshot = Array.isArray(metadata?.checkinSnapshot) ? metadata.checkinSnapshot : []
+
+  return {
+    sourceId: kpi.copiedFromPersonalKpi.id,
+    sourceTitle: kpi.copiedFromPersonalKpi.kpiName,
+    sourceOwnerName: kpi.copiedFromPersonalKpi.employee.empName,
+    sourceEvalYear:
+      typeof metadata?.sourceEvalYear === 'number'
+        ? metadata.sourceEvalYear
+        : kpi.copiedFromPersonalKpi.evalYear,
+    includedProgress: metadata?.includedProgress === true,
+    includedCheckins: metadata?.includedCheckins === true,
+    progressEntryCount: progressSnapshot.length,
+    checkinEntryCount: checkinSnapshot.length,
+    assignedToSelf: metadata?.assignedToSelf === true,
+    clonedAt: typeof metadata?.clonedAt === 'string' ? metadata.clonedAt : undefined,
+  }
+}
+
+function parseTags(value: Prisma.JsonValue | null): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
 function deriveOverallStatus(items: PersonalKpiViewModel[]): PersonalKpiPageData['summary']['overallStatus'] {
   if (!items.length) return 'DRAFT'
   const statuses = Array.from(new Set(items.map((item) => item.status)))
@@ -483,7 +557,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           alerts,
           title: '대상자 부서 정보를 모두 불러오지 못했습니다.',
           description: '대상자 목록은 유지하고, 확인되지 않은 부서는 미지정으로 표시합니다.',
-          fallback: [] as Array<{ id: string; deptName: string | null }>,
+          fallback: [] as Array<{ id: string; deptName: string | null; parentDeptId: string | null }>,
           loader: () =>
             prisma.department.findMany({
               where: {
@@ -494,12 +568,25 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
               select: {
                 id: true,
                 deptName: true,
+                parentDeptId: true,
               },
             }),
         })
       : []
     const departmentNameMap = new Map(departments.map((department) => [department.id, department.deptName]))
+    const departmentsById = new Map(departments.map((department) => [department.id, department]))
     const employeesById = new Map(employees.map((employee) => [employee.id, employee]))
+    const collectAncestorDepartmentIds = (deptId: string) => {
+      const ids: string[] = []
+      let current = departmentsById.get(deptId)
+
+      while (current?.parentDeptId) {
+        ids.push(current.parentDeptId)
+        current = departmentsById.get(current.parentDeptId)
+      }
+
+      return ids
+    }
     const employeeOptions = employees.map((employee) => ({
       id: employee.id,
       name: employee.empName,
@@ -589,6 +676,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         cycleName: string
         evalYear: number
         status: string
+        goalEditMode?: string
       }>,
       loader: async () => {
         const selectedDepartment = await prisma.department.findUnique({
@@ -622,6 +710,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       params.cycleId && cycleOptions.some((cycle) => cycle.id === params.cycleId)
         ? params.cycleId
         : cycleOptions[0]?.id
+    const selectedCycleRecord = cycleRecords.find((cycle) => cycle.id === selectedCycleId)
 
     failureStage = 'available-years'
     const availableYearsRaw = await loadPersonalKpiSection({
@@ -676,6 +765,18 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
                 yearMonth: 'desc',
               },
               take: 6,
+            },
+            copiedFromPersonalKpi: {
+              select: {
+                id: true,
+                kpiName: true,
+                evalYear: true,
+                employee: {
+                  select: {
+                    empName: true,
+                  },
+                },
+              },
             },
           },
           orderBy: [{ createdAt: 'asc' }],
@@ -756,6 +857,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     const linkedOrgKpiDeptIds = Array.from(
       new Set([
         targetEmployee.deptId,
+        ...collectAncestorDepartmentIds(targetEmployee.deptId),
         ...mine.map((item) => item.linkedOrgKpi?.deptId).filter((value): value is string => Boolean(value)),
       ])
     )
@@ -771,7 +873,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           where: {
             evalYear: selectedYear,
             deptId: {
-              in: scopeDepartmentIds ?? linkedOrgKpiDeptIds,
+              in: Array.from(new Set([...(scopeDepartmentIds ?? [targetEmployee.deptId]), ...linkedOrgKpiDeptIds])),
             },
             status: {
               not: 'ARCHIVED',
@@ -779,10 +881,41 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           },
           include: {
             department: true,
+            parentOrgKpi: {
+              select: {
+                id: true,
+                kpiName: true,
+                deptId: true,
+                department: {
+                  select: {
+                    deptName: true,
+                  },
+                },
+                parentOrgKpiId: true,
+              },
+            },
           },
           orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
         }),
     })
+    const orgKpiById = new Map(orgKpiRecords.map((item) => [item.id, item]))
+    const buildOrgLineage = (orgKpiId?: string | null) => {
+      const lineage: PersonalKpiViewModel['orgLineage'] = []
+      let current = orgKpiId ? orgKpiById.get(orgKpiId) : undefined
+      const visited = new Set<string>()
+
+      while (current && !visited.has(current.id)) {
+        visited.add(current.id)
+        lineage.unshift({
+          id: current.id,
+          title: current.kpiName,
+          departmentName: resolveDepartmentLabel(current.department),
+        })
+        current = current.parentOrgKpiId ? orgKpiById.get(current.parentOrgKpiId) : undefined
+      }
+
+      return lineage
+    }
 
     failureStage = 'ai-logs'
     const aiLogRecords = await loadPersonalKpiSection({
@@ -873,6 +1006,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         return {
           id: kpi.id,
           title: kpi.kpiName,
+          tags: parseTags(kpi.tags),
           employeeId: kpi.employeeId,
           employeeName: kpi.employee.empName,
           departmentName: resolveDepartmentLabel(kpi.employee.department),
@@ -880,6 +1014,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           orgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
           orgKpiCategory: kpi.linkedOrgKpi?.kpiCategory ?? null,
           orgKpiDefinition: kpi.linkedOrgKpi?.definition ?? null,
+          orgLineage: buildOrgLineage(kpi.linkedOrgKpiId),
           type: kpi.kpiType,
           definition: kpi.definition ?? undefined,
           formula: kpi.formula ?? undefined,
@@ -896,6 +1031,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           hasRejectedRevision,
           linkedMonthlyCount: kpi.monthlyRecords.length,
           riskFlags: deriveRiskFlags(kpi, hasRejectedRevision),
+          cloneInfo: parseCloneInfo(kpi),
           recentMonthlyRecords: kpi.monthlyRecords.map((record) => ({
             id: record.id,
             month: record.yearMonth,
@@ -940,6 +1076,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           employeeName: kpi.employee.empName,
           departmentName: resolveDepartmentLabel(kpi.employee.department),
           title: kpi.kpiName,
+          tags: parseTags(kpi.tags),
           status,
           changedFields: getChangedFields(logs),
           previousValueSummary: buildSummaryText(asRecord(updateLog?.oldValue)),
@@ -990,6 +1127,21 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       : 0
 
     const pageState: PersonalKpiPageState = mappedMine.length || mappedReviewQueue.length ? 'ready' : 'empty'
+    const basePermissions = buildPersonalKpiPermissions({
+      actorId: params.session.user.id,
+      actorRole: params.session.user.role,
+      targetEmployeeId: targetEmployee.id,
+      pageState,
+      aiAccess,
+    })
+    const goalEditLocked = selectedCycleRecord?.goalEditMode === 'CHECKIN_ONLY'
+
+    if (goalEditLocked) {
+      alerts.push({
+        title: '현재 목표는 읽기 전용 모드입니다.',
+        description: '목표 생성/수정/삭제는 막혀 있으며 체크인과 코멘트만 이어갈 수 있습니다.',
+      })
+    }
 
     return {
       state: pageState,
@@ -1025,13 +1177,12 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       reviewQueue: mappedReviewQueue,
       history: mappedHistory,
       aiLogs: mappedAiLogs,
-      permissions: buildPersonalKpiPermissions({
-        actorId: params.session.user.id,
-        actorRole: params.session.user.role,
-        targetEmployeeId: targetEmployee.id,
-        pageState,
-        aiAccess,
-      }),
+      permissions: {
+        ...basePermissions,
+        canCreate: goalEditLocked ? false : basePermissions.canCreate,
+        canEdit: goalEditLocked ? false : basePermissions.canEdit,
+        canSubmit: goalEditLocked ? false : basePermissions.canSubmit,
+      },
       actor,
     }
   } catch (error) {

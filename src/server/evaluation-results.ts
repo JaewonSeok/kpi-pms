@@ -1349,7 +1349,7 @@ function buildGrowthActions(improvements: string[]) {
   return improvements.slice(0, 3).map((item, index) => {
     if (index === 0) return `${item}와 관련된 실행 사례를 다음 월간 체크인에서 1건 이상 공유하세요.`
     if (index === 1) return `${item} 향상을 위한 구체적 행동 목표를 다음 반기 KPI와 연결해 보세요.`
-    return `${item}에 대한 피드백을 리더와 1:1에서 확인하고 보완 계획을 합의하세요.`
+    return `${item}에 대한 피드백을 평가권자와 1:1에서 확인하고 보완 계획을 합의하세요.`
   })
 }
 
@@ -1357,7 +1357,7 @@ function buildDiscussionQuestions(improvements: string[], strengths: string[]) {
   return [
     `${improvements[0] ?? '보완 역량'}을 개선하기 위해 다음 분기에 가장 먼저 바꿔야 할 일은 무엇인가요?`,
     `${strengths[0] ?? '강점'}을 팀 전체 성과로 확장하려면 어떤 지원이 필요할까요?`,
-    '리더와의 1:1에서 확인하고 싶은 기준이나 기대치가 더 있나요?',
+    '평가권자와의 1:1에서 확인하고 싶은 기준이나 기대치가 더 있나요?',
   ]
 }
 

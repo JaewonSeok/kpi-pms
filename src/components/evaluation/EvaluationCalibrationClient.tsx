@@ -55,6 +55,14 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
   const [adjustmentFilter, setAdjustmentFilter] = useState<'all' | 'adjusted' | 'pending'>('all')
   const [missingReasonOnly, setMissingReasonOnly] = useState(false)
   const [draftEdits, setDraftEdits] = useState<Record<string, CandidateEditState>>({})
+  const [targetConfigOpen, setTargetConfigOpen] = useState(false)
+  const [peopleConfigOpen, setPeopleConfigOpen] = useState(false)
+  const [bulkImportOpen, setBulkImportOpen] = useState(false)
+  const [targetConfigIntent, setTargetConfigIntent] = useState<'add' | 'remove'>('add')
+  const [excludedTargetIdsDraft, setExcludedTargetIdsDraft] = useState<string[]>([])
+  const [participantIdsDraft, setParticipantIdsDraft] = useState<string[]>([])
+  const [evaluatorIdsDraft, setEvaluatorIdsDraft] = useState<string[]>([])
+  const [bulkImportText, setBulkImportText] = useState('')
 
   const viewModel = props.viewModel
   const cycleOptions = props.availableCycles
@@ -66,9 +74,24 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
 
   useEffect(() => {
     if (!viewModel) return
+    setActiveTab('distribution')
+    setNotice('')
     setDepartmentFilter(viewModel.cycle.selectedScopeId)
+    setJobGroupFilter('all')
+    setOriginalGradeFilter('all')
+    setAdjustedGradeFilter('all')
+    setAdjustmentFilter('all')
+    setMissingReasonOnly(false)
     setSelectedCandidateId(viewModel.candidates[0]?.id ?? '')
     setDraftEdits({})
+    setTargetConfigIntent('add')
+    setExcludedTargetIdsDraft(viewModel.sessionConfig.excludedTargetIds)
+    setParticipantIdsDraft(viewModel.sessionConfig.participantIds)
+    setEvaluatorIdsDraft(viewModel.sessionConfig.evaluatorIds)
+    setTargetConfigOpen(false)
+    setPeopleConfigOpen(false)
+    setBulkImportOpen(false)
+    setBulkImportText('')
   }, [viewModel])
 
   const filteredCandidates = useMemo(() => {
@@ -289,6 +312,77 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     }
   }
 
+  async function handleSaveSessionConfig(nextConfig: {
+    excludedTargetIds: string[]
+    participantIds: string[]
+    evaluatorIds: string[]
+  }) {
+    if (!viewModel) return
+
+    setIsSubmitting(true)
+    try {
+      await fetch('/api/evaluation/calibration', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update-session-config',
+          cycleId: viewModel.cycle.id,
+          sessionConfig: nextConfig,
+        }),
+      }).then(assertJsonSuccess)
+
+      setNotice('세션 대상자 / 평가자 / 참여자 구성을 저장했습니다.')
+      router.refresh()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '세션 구성을 저장하지 못했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleBulkImport() {
+    if (!viewModel) return
+
+    const lines = bulkImportText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+    const rows = lines
+      .map((line) => line.split(/\t|,/).map((cell) => cell.trim()))
+      .map(([employeeId, gradeLabel, adjustReason]) => {
+        const target = viewModel.sessionOptions.targets.find((item) => item.employeeId === employeeId || item.name === employeeId)
+        const grade = viewModel.gradeOptions.find((item) => item.grade === gradeLabel)
+        return {
+          targetId: target?.id ?? '',
+          gradeId: grade?.id ?? '',
+          adjustReason: adjustReason ?? '',
+        }
+      })
+
+    setIsSubmitting(true)
+    try {
+      await fetch('/api/evaluation/calibration', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'bulk-import',
+          cycleId: viewModel.cycle.id,
+          rows,
+        }),
+      }).then(assertJsonSuccess)
+
+      setBulkImportOpen(false)
+      setBulkImportText('')
+      setNotice(`${rows.length}건의 최종 등급 / 코멘트를 일괄 반영했습니다.`)
+      router.refresh()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '일괄 입력을 적용하지 못했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   if (props.state !== 'ready' || !viewModel) {
     return (
       <div className="space-y-6">
@@ -344,30 +438,42 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
       ) : null}
 
       {activeTab === 'candidates' ? (
-        <CalibrationCandidatesSection
-          viewModel={viewModel}
-          candidates={filteredCandidates}
-          selectedCandidate={selectedCandidate}
-          departmentFilter={departmentFilter}
-          setDepartmentFilter={setDepartmentFilter}
-          jobGroupFilter={jobGroupFilter}
-          setJobGroupFilter={setJobGroupFilter}
-          originalGradeFilter={originalGradeFilter}
-          setOriginalGradeFilter={setOriginalGradeFilter}
-          adjustedGradeFilter={adjustedGradeFilter}
-          setAdjustedGradeFilter={setAdjustedGradeFilter}
-          adjustmentFilter={adjustmentFilter}
-          setAdjustmentFilter={setAdjustmentFilter}
-          missingReasonOnly={missingReasonOnly}
-          setMissingReasonOnly={setMissingReasonOnly}
-          onSelectCandidate={setSelectedCandidateId}
-          getDraft={(candidate) => getCandidateDraft(viewModel, draftEdits, candidate)}
-          onDraftChange={updateCandidateEdit}
-          onSaveCandidate={handleSaveCandidate}
-          onClearAdjustment={handleClearAdjustment}
-          readOnly={Boolean(isLocked)}
-          isSubmitting={isSubmitting}
-        />
+        <div className="space-y-6">
+          <CalibrationOpsToolbar
+            sessionConfig={viewModel.sessionConfig}
+            isSubmitting={isSubmitting}
+            onOpenTargetConfig={(intent) => {
+              setTargetConfigIntent(intent)
+              setTargetConfigOpen(true)
+            }}
+            onOpenPeopleConfig={() => setPeopleConfigOpen(true)}
+            onOpenBulkImport={() => setBulkImportOpen(true)}
+          />
+          <CalibrationCandidatesSection
+            viewModel={viewModel}
+            candidates={filteredCandidates}
+            selectedCandidate={selectedCandidate}
+            departmentFilter={departmentFilter}
+            setDepartmentFilter={setDepartmentFilter}
+            jobGroupFilter={jobGroupFilter}
+            setJobGroupFilter={setJobGroupFilter}
+            originalGradeFilter={originalGradeFilter}
+            setOriginalGradeFilter={setOriginalGradeFilter}
+            adjustedGradeFilter={adjustedGradeFilter}
+            setAdjustedGradeFilter={setAdjustedGradeFilter}
+            adjustmentFilter={adjustmentFilter}
+            setAdjustmentFilter={setAdjustmentFilter}
+            missingReasonOnly={missingReasonOnly}
+            setMissingReasonOnly={setMissingReasonOnly}
+            onSelectCandidate={setSelectedCandidateId}
+            getDraft={(candidate) => getCandidateDraft(viewModel, draftEdits, candidate)}
+            onDraftChange={updateCandidateEdit}
+            onSaveCandidate={handleSaveCandidate}
+            onClearAdjustment={handleClearAdjustment}
+            readOnly={Boolean(isLocked)}
+            isSubmitting={isSubmitting}
+          />
+        </div>
       ) : null}
 
       {activeTab === 'history' ? <CalibrationTimelineSection viewModel={viewModel} /> : null}
@@ -382,6 +488,112 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
         />
       ) : null}
       {activeTab === 'policy' ? <CalibrationPolicySection /> : null}
+
+      {activeTab === 'candidates' && targetConfigOpen ? (
+        <ConfigModal
+          title={targetConfigIntent === 'add' ? '대상자 추가' : '대상자 삭제'}
+          description={
+            targetConfigIntent === 'add'
+              ? '세션 진행 중에도 캘리브레이션 대상자를 다시 포함할 수 있습니다. 체크를 해제하면 현재 세션 대상에 다시 들어옵니다.'
+              : '세션 진행 중에도 캘리브레이션 대상자를 제외할 수 있습니다. 체크한 대상자는 현재 세션 목록에서 빠집니다.'
+          }
+          onClose={() => setTargetConfigOpen(false)}
+          onSave={() =>
+            void handleSaveSessionConfig({
+              excludedTargetIds: excludedTargetIdsDraft,
+              participantIds: participantIdsDraft,
+              evaluatorIds: evaluatorIdsDraft,
+            })
+          }
+          isSubmitting={isSubmitting}
+        >
+          <div className="space-y-3">
+            {viewModel.sessionOptions.targets.map((target) => {
+              const checked = excludedTargetIdsDraft.includes(target.id)
+              return (
+                <label key={target.id} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) =>
+                      setExcludedTargetIdsDraft((current) =>
+                        event.target.checked
+                          ? Array.from(new Set([...current, target.id]))
+                          : current.filter((item) => item !== target.id)
+                      )
+                    }
+                    className="mt-1 h-4 w-4 rounded border-gray-300"
+                  />
+                  <span className="text-sm text-slate-700">
+                    <span className="block font-semibold text-slate-900">{target.name}</span>
+                    <span className="mt-1 block text-xs text-slate-500">
+                      {target.department} · {target.employeeId}{' '}
+                      {checked ? '· 현재 제외됨' : '· 현재 포함됨'}
+                    </span>
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </ConfigModal>
+      ) : null}
+
+      {activeTab === 'candidates' && peopleConfigOpen ? (
+        <ConfigModal
+          title="평가자 및 참여자"
+          description="세션 운영 중 구성 변동이 생겨도 평가자 / 참여자를 즉시 수정할 수 있습니다."
+          onClose={() => setPeopleConfigOpen(false)}
+          onSave={() =>
+            void handleSaveSessionConfig({
+              excludedTargetIds: excludedTargetIdsDraft,
+              participantIds: participantIdsDraft,
+              evaluatorIds: evaluatorIdsDraft,
+            })
+          }
+          isSubmitting={isSubmitting}
+        >
+          <div className="grid gap-4 lg:grid-cols-2">
+            <SelectionColumn
+              title="평가자"
+              items={viewModel.sessionOptions.people}
+              selectedIds={evaluatorIdsDraft}
+              onToggle={(personId, checked) =>
+                setEvaluatorIdsDraft((current) =>
+                  checked ? Array.from(new Set([...current, personId])) : current.filter((item) => item !== personId)
+                )
+              }
+            />
+            <SelectionColumn
+              title="참여자"
+              items={viewModel.sessionOptions.people}
+              selectedIds={participantIdsDraft}
+              onToggle={(personId, checked) =>
+                setParticipantIdsDraft((current) =>
+                  checked ? Array.from(new Set([...current, personId])) : current.filter((item) => item !== personId)
+                )
+              }
+            />
+          </div>
+        </ConfigModal>
+      ) : null}
+
+      {activeTab === 'candidates' && bulkImportOpen ? (
+        <ConfigModal
+          title="엑셀로 등급 / 코멘트 입력"
+          description="세션을 생성하지 않아도 데이터 시트에서 최종 등급과 코멘트를 일괄 반영할 수 있습니다. 형식: 사번, 등급, 코멘트"
+          onClose={() => setBulkImportOpen(false)}
+          onSave={() => void handleBulkImport()}
+          saveLabel="일괄 반영"
+          isSubmitting={isSubmitting}
+        >
+          <textarea
+            value={bulkImportText}
+            onChange={(event) => setBulkImportText(event.target.value)}
+            className="min-h-72 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+            placeholder={`예시\nM-1001\tA\t성과 달성률과 협업 영향도를 고려해 A로 조정합니다. 분포 기준과 비교해도 수용 가능한 범위입니다.\nM-1002\tB\t원점수는 경계 구간이지만 최근 월간 실적과 체크인 근거를 검토해 B로 유지합니다.`}
+          />
+        </ConfigModal>
+      ) : null}
     </div>
   )
 }
@@ -569,6 +781,154 @@ function Tabs({
             {TAB_LABELS[tab]}
           </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function CalibrationOpsToolbar(props: {
+  sessionConfig: CalibrationViewModel['sessionConfig']
+  isSubmitting: boolean
+  onOpenTargetConfig: (intent: 'add' | 'remove') => void
+  onOpenPeopleConfig: () => void
+  onOpenBulkImport: () => void
+}) {
+  return (
+    <SectionCard
+      title="세션 운영 도구"
+      description="진행 중에도 대상자 / 평가자 / 참여자 구성을 바꾸고, 엑셀 행 붙여넣기로 최종 등급과 코멘트를 빠르게 수정할 수 있습니다."
+    >
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-wrap gap-2 text-sm">
+          <InfoBadge label={`제외 대상 ${props.sessionConfig.excludedTargetIds.length}명`} />
+          <InfoBadge label={`평가자 ${props.sessionConfig.evaluatorIds.length}명`} />
+          <InfoBadge label={`참여자 ${props.sessionConfig.participantIds.length}명`} />
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <details className="relative">
+            <summary className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+              대상자 설정
+            </summary>
+            <div className="absolute right-0 z-20 mt-2 min-w-[180px] rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+              <button
+                type="button"
+                onClick={() => props.onOpenTargetConfig('add')}
+                className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+              >
+                대상자 추가
+              </button>
+              <button
+                type="button"
+                onClick={() => props.onOpenTargetConfig('remove')}
+                className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+              >
+                대상자 삭제
+              </button>
+            </div>
+          </details>
+          <details className="relative">
+            <summary className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+              더보기
+            </summary>
+            <div className="absolute right-0 z-20 mt-2 min-w-[220px] rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+              <button
+                type="button"
+                onClick={props.onOpenPeopleConfig}
+                className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50"
+              >
+                평가자 및 참여자
+              </button>
+            </div>
+          </details>
+          <ActionButton
+            icon={<FileSearch className="h-4 w-4" />}
+            label="엑셀로 등급/코멘트 입력"
+            onClick={props.onOpenBulkImport}
+            disabled={props.isSubmitting}
+          />
+        </div>
+      </div>
+    </SectionCard>
+  )
+}
+
+function ConfigModal(props: {
+  title: string
+  description: string
+  children: ReactNode
+  onClose: () => void
+  onSave: () => void
+  saveLabel?: string
+  isSubmitting: boolean
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-8">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">{props.title}</h3>
+            <p className="mt-1 text-sm text-slate-500">{props.description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+          >
+            ×
+          </button>
+        </div>
+        <div className="mt-5">{props.children}</div>
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            닫기
+          </button>
+          <button
+            type="button"
+            onClick={props.onSave}
+            disabled={props.isSubmitting}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+          >
+            {props.saveLabel ?? '저장'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SelectionColumn(props: {
+  title: string
+  items: CalibrationViewModel['sessionOptions']['people']
+  selectedIds: string[]
+  onToggle: (personId: string, checked: boolean) => void
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-sm font-semibold text-slate-900">{props.title}</div>
+      <div className="mt-4 max-h-80 space-y-2 overflow-y-auto">
+        {props.items.map((person) => {
+          const checked = props.selectedIds.includes(person.id)
+          return (
+            <label key={person.id} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={(event) => props.onToggle(person.id, event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-gray-300"
+              />
+              <span className="text-sm text-slate-700">
+                <span className="block font-semibold text-slate-900">{person.name}</span>
+                <span className="mt-1 block text-xs text-slate-500">
+                  {person.department} · {person.role}
+                </span>
+              </span>
+            </label>
+          )
+        })}
       </div>
     </div>
   )
@@ -799,18 +1159,17 @@ function CalibrationCandidatesSection({
                       <th className="px-4 py-3 font-medium">부서</th>
                       <th className="px-4 py-3 font-medium">원점수</th>
                       <th className="px-4 py-3 font-medium">원등급</th>
-                      <th className="px-4 py-3 font-medium">조정등급</th>
+                      <th className="px-4 py-3 font-medium">최종 등급</th>
+                      <th className="px-4 py-3 font-medium">최종 코멘트</th>
                       <th className="px-4 py-3 font-medium">조정 여부</th>
                       <th className="px-4 py-3 font-medium">사유 상태</th>
+                      <th className="px-4 py-3 font-medium">저장</th>
+                      <th className="px-4 py-3 font-medium">참고정보</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {candidates.map((candidate) => {
                       const draft = getDraft(candidate)
-                      const draftGrade =
-                        viewModel.gradeOptions.find((grade) => grade.id === draft.gradeId)?.grade ??
-                        candidate.adjustedGrade ??
-                        candidate.originalGrade
 
                       return (
                         <tr
@@ -827,7 +1186,39 @@ function CalibrationCandidatesSection({
                           <td className="px-4 py-3">{candidate.department}</td>
                           <td className="px-4 py-3">{candidate.rawScore.toFixed(1)}</td>
                           <td className="px-4 py-3">{candidate.originalGrade}</td>
-                          <td className="px-4 py-3">{draftGrade}</td>
+                          <td className="px-4 py-3">
+                            <select
+                              value={draft.gradeId}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) =>
+                                onDraftChange(candidate.id, {
+                                  gradeId: event.target.value,
+                                })
+                              }
+                              disabled={readOnly || isSubmitting}
+                              className="min-h-10 min-w-28 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                            >
+                              {viewModel.gradeOptions.map((grade) => (
+                                <option key={grade.id} value={grade.id}>
+                                  {grade.grade}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              value={draft.reason}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) =>
+                                onDraftChange(candidate.id, {
+                                  reason: event.target.value,
+                                })
+                              }
+                              disabled={readOnly || isSubmitting}
+                              className="min-h-10 w-56 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                              placeholder={candidate.suggestedReason ?? '최종 코멘트를 입력해 주세요.'}
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             {candidate.adjusted ? (
                               <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
@@ -849,6 +1240,31 @@ function CalibrationCandidatesSection({
                             ) : (
                               <span className="text-slate-500">{candidate.reason ? '입력됨' : '미입력'}</span>
                             )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void onSaveCandidate(candidate.id)
+                              }}
+                              disabled={readOnly || isSubmitting}
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              저장
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                onSelectCandidate(candidate.id)
+                              }}
+                              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                            >
+                              참고정보
+                            </button>
                           </td>
                         </tr>
                       )
@@ -902,6 +1318,7 @@ function CalibrationCandidatesSection({
 
         {selectedCandidate ? (
           <CandidateDetailPanel
+            key={selectedCandidate.id}
             candidate={selectedCandidate}
             draft={getDraft(selectedCandidate)}
             gradeOptions={viewModel.gradeOptions}
@@ -936,11 +1353,12 @@ function CandidateDetailPanel({
   readOnly: boolean
   isSubmitting: boolean
 }) {
+  const [detailTab, setDetailTab] = useState<'review' | 'memo'>('review')
   const selectedGradeLabel =
     gradeOptions.find((grade) => grade.id === draft.gradeId)?.grade ?? candidate.adjustedGrade ?? candidate.originalGrade
 
   return (
-    <SectionCard title="후보 상세" description="조정 전후 비교, 평가 코멘트, 월간 실적 근거를 함께 보면서 사유를 입력합니다.">
+    <SectionCard title="참고정보" description="조정 전후 비교, 평가 코멘트, 월간 실적 근거를 함께 보면서 최종 등급과 코멘트를 검토합니다.">
       <div className="space-y-5">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -1014,58 +1432,84 @@ function CandidateDetailPanel({
           </div>
         </div>
 
-        <SubSection title="평가 코멘트">
-          <InfoNotice icon={<Layers3 className="h-4 w-4" />} title="최종 평가 코멘트" description={candidate.evaluationComment ?? '최종 평가 코멘트가 없습니다.'} />
-          <InfoNotice icon={<BriefcaseBusiness className="h-4 w-4" />} title="상위 평가자 코멘트" description={candidate.reviewerComment ?? '상위 평가자 코멘트가 없습니다.'} />
-        </SubSection>
-
-        <SubSection title="월간 실적 / 근거 요약">
-          <div className="space-y-3">
-            {candidate.kpiSummary.map((kpi) => (
-              <div key={kpi.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="font-semibold text-slate-900">{kpi.title}</div>
-                <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
-                  <MiniMetric label="목표" value={formatMetric(kpi.target, kpi.unit)} />
-                  <MiniMetric label="실적" value={formatMetric(kpi.actual, kpi.unit)} />
-                  <MiniMetric label="달성률" value={kpi.achievementRate !== undefined ? `${kpi.achievementRate.toFixed(1)}%` : '-'} />
-                </div>
-              </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex gap-2">
+            {([
+              ['review', '리뷰'],
+              ['memo', '평가 메모'],
+            ] as const).map(([tab, label]) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setDetailTab(tab)}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  detailTab === tab
+                    ? 'bg-slate-900 text-white'
+                    : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {label}
+              </button>
             ))}
           </div>
-          <div className="space-y-3">
-            {candidate.monthlySummary.map((record) => (
-              <div key={record.month} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="font-semibold text-slate-900">{record.month}</div>
-                  <div className="text-sm text-slate-500">
-                    {record.achievementRate !== undefined ? `${record.achievementRate.toFixed(1)}%` : '달성률 없음'}
-                  </div>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{record.comment ?? '월간 코멘트가 없습니다.'}</p>
-              </div>
-            ))}
-          </div>
-        </SubSection>
 
-        <SubSection title="체크인 / 1:1 요약">
-          <div className="space-y-3">
-            {candidate.checkins.length ? (
-              candidate.checkins.map((checkin, index) => (
-                <div key={`${checkin.date}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-semibold text-slate-900">{formatDateTime(checkin.date)}</div>
-                    <div className="text-xs text-slate-500">
-                      {checkin.type} / {checkin.status}
+          {detailTab === 'review' ? (
+            <div className="mt-4 space-y-4">
+              <InfoNotice icon={<Layers3 className="h-4 w-4" />} title="최종 평가 코멘트" description={candidate.evaluationComment ?? '최종 평가 코멘트가 없습니다.'} />
+              <InfoNotice icon={<BriefcaseBusiness className="h-4 w-4" />} title="직속 리더 / 상위 평가자 코멘트" description={candidate.reviewerComment ?? '직속 리더 코멘트가 없습니다.'} />
+            </div>
+          ) : (
+            <div className="mt-4 space-y-5">
+              <SubSection title="월간 실적 / 근거 요약">
+                <div className="space-y-3">
+                  {candidate.kpiSummary.map((kpi) => (
+                    <div key={kpi.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="font-semibold text-slate-900">{kpi.title}</div>
+                      <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
+                        <MiniMetric label="목표" value={formatMetric(kpi.target, kpi.unit)} />
+                        <MiniMetric label="실적" value={formatMetric(kpi.actual, kpi.unit)} />
+                        <MiniMetric label="달성률" value={kpi.achievementRate !== undefined ? `${kpi.achievementRate.toFixed(1)}%` : '-'} />
+                      </div>
                     </div>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">{checkin.summary}</p>
+                  ))}
                 </div>
-              ))
-            ) : (
-              <EmptyCard title="최근 체크인 기록이 없습니다" description="관련 1:1 또는 체크인 기록이 생기면 이곳에 함께 노출됩니다." />
-            )}
-          </div>
-        </SubSection>
+                <div className="space-y-3">
+                  {candidate.monthlySummary.map((record) => (
+                    <div key={record.month} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold text-slate-900">{record.month}</div>
+                        <div className="text-sm text-slate-500">
+                          {record.achievementRate !== undefined ? `${record.achievementRate.toFixed(1)}%` : '달성률 없음'}
+                        </div>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">{record.comment ?? '월간 코멘트가 없습니다.'}</p>
+                    </div>
+                  ))}
+                </div>
+              </SubSection>
+
+              <SubSection title="체크인 / 1:1 요약">
+                <div className="space-y-3">
+                  {candidate.checkins.length ? (
+                    candidate.checkins.map((checkin, index) => (
+                      <div key={`${checkin.date}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold text-slate-900">{formatDateTime(checkin.date)}</div>
+                          <div className="text-xs text-slate-500">
+                            {checkin.type} / {checkin.status}
+                          </div>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{checkin.summary}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyCard title="최근 체크인 기록이 없습니다" description="관련 1:1 또는 체크인 기록이 생기면 이곳에 함께 노출됩니다." />
+                  )}
+                </div>
+              </SubSection>
+            </div>
+          )}
+        </div>
       </div>
     </SectionCard>
   )

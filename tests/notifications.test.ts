@@ -21,6 +21,7 @@ async function main() {
     getRetryDelayMinutes,
     isWithinQuietHours,
   } = await import('../src/lib/notification-service')
+  const { NotificationCronSchema } = await import('../src/lib/validations')
 
   run('idempotency key prevents duplicate reminder identity drift', () => {
     const first = buildNotificationIdempotencyKey({
@@ -68,6 +69,20 @@ async function main() {
     assert.equal(getRetryDelayMinutes(1), 15)
     assert.equal(getRetryDelayMinutes(2), 60)
     assert.equal(getRetryDelayMinutes(5), 60)
+  })
+
+  run('notification cron schema accepts targeted goal and checkpoint reminder runs', () => {
+    const goalOnly = NotificationCronSchema.parse({
+      mode: 'schedule',
+      reminderTypes: ['goal'],
+    })
+    const checkpointOnly = NotificationCronSchema.parse({
+      mode: 'schedule',
+      reminderTypes: ['checkpoint'],
+    })
+
+    assert.deepEqual(goalOnly.reminderTypes, ['goal'])
+    assert.deepEqual(checkpointOnly.reminderTypes, ['checkpoint'])
   })
 
   console.log('Notification tests completed')

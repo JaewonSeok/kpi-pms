@@ -12,6 +12,8 @@ import {
   canEditPersonalKpiByOperationalStatus,
   resolvePersonalKpiOperationalStatus,
 } from '@/server/personal-kpi-workflow'
+import { canAccessEmployee } from '@/server/auth/authorize'
+import { validatePersonalOrgLink } from '@/server/goal-alignment'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -146,6 +148,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.unit !== undefined ||
       data.weight !== undefined ||
       data.difficulty !== undefined ||
+      data.tags !== undefined ||
       data.linkedOrgKpiId !== undefined
 
     if (hasFieldUpdates && !canEditPersonalKpiByOperationalStatus(operationalStatus)) {
@@ -164,23 +167,52 @@ export async function PATCH(request: Request, context: RouteContext) {
       throw new AppError(403, 'FORBIDDEN', '다른 직원으로 KPI를 이동할 권한이 없습니다.')
     }
 
-    if (data.linkedOrgKpiId) {
-      const orgKpi = await prisma.orgKpi.findUnique({
-        where: { id: data.linkedOrgKpiId },
-        select: { id: true, evalYear: true, status: true },
+    let nextEmployeeDeptId = current.employee.deptId
+    if (nextEmployeeId !== current.employeeId) {
+      const targetEmployee = await prisma.employee.findUnique({
+        where: { id: nextEmployeeId },
+        select: { id: true, deptId: true },
       })
 
-      if (!orgKpi) {
-        throw new AppError(404, 'ORG_KPI_NOT_FOUND', '연결할 조직 KPI를 찾을 수 없습니다.')
+      if (!targetEmployee || !canAccessEmployee(session, targetEmployee)) {
+        throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 직원입니다.')
       }
 
-      if (orgKpi.evalYear !== nextEvalYear) {
-        throw new AppError(400, 'ORG_KPI_YEAR_MISMATCH', '같은 연도의 조직 KPI만 연결할 수 있습니다.')
-      }
+      nextEmployeeDeptId = targetEmployee.deptId
+    }
 
-      if (orgKpi.status === 'ARCHIVED') {
-        throw new AppError(400, 'ORG_KPI_ARCHIVED', '보관된 조직 KPI에는 연결할 수 없습니다.')
-      }
+    const nextDepartment = await prisma.department.findUnique({
+      where: { id: nextEmployeeDeptId },
+      select: { orgId: true },
+    })
+
+    const targetCycle = nextDepartment
+      ? await prisma.evalCycle.findFirst({
+          where: {
+            orgId: nextDepartment.orgId,
+            evalYear: nextEvalYear,
+          },
+          orderBy: { createdAt: 'desc' },
+          select: { goalEditMode: true },
+        })
+      : null
+
+    const linkedOrgKpiId =
+      data.linkedOrgKpiId !== undefined || data.employeeId !== undefined || data.evalYear !== undefined
+        ? await validatePersonalOrgLink({
+            linkedOrgKpiId:
+              data.linkedOrgKpiId !== undefined ? data.linkedOrgKpiId ?? null : current.linkedOrgKpiId,
+            targetEvalYear: nextEvalYear,
+            targetEmployeeDeptId: nextEmployeeDeptId,
+          })
+        : current.linkedOrgKpiId
+
+    if ((hasFieldUpdates || data.status === 'ARCHIVED') && targetCycle?.goalEditMode === 'CHECKIN_ONLY') {
+      throw new AppError(
+        400,
+        'GOAL_EDIT_LOCKED',
+        '현재 주기는 읽기 전용 모드입니다. 목표 생성/수정/삭제는 막혀 있으며 체크인과 코멘트만 허용됩니다.'
+      )
     }
 
     if (hasFieldUpdates || data.employeeId !== undefined || data.evalYear !== undefined || data.weight !== undefined) {
@@ -209,7 +241,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     if (data.status === 'ARCHIVED' && !canManagePersonalKpi(session.user.role)) {
-      throw new AppError(403, 'FORBIDDEN', '보관 처리할 권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '보관 처리 권한이 없습니다.')
     }
 
     const updated = await prisma.personalKpi.update({
@@ -225,7 +257,10 @@ export async function PATCH(request: Request, context: RouteContext) {
         ...(data.unit !== undefined ? { unit: data.unit || null } : {}),
         ...(data.weight !== undefined ? { weight: data.weight } : {}),
         ...(data.difficulty !== undefined ? { difficulty: data.difficulty } : {}),
-        ...(data.linkedOrgKpiId !== undefined ? { linkedOrgKpiId: data.linkedOrgKpiId || null } : {}),
+        ...(data.tags !== undefined ? { tags: data.tags } : {}),
+        ...(data.linkedOrgKpiId !== undefined || data.employeeId !== undefined || data.evalYear !== undefined
+          ? { linkedOrgKpiId }
+          : {}),
         ...(data.status !== undefined ? { status: data.status } : {}),
       },
       include: {
@@ -262,6 +297,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         unit: current.unit,
         weight: current.weight,
         difficulty: current.difficulty,
+        tags: current.tags,
         linkedOrgKpiId: current.linkedOrgKpiId,
         status: current.status,
         workflowStatus: operationalStatus,
@@ -277,6 +313,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         unit: updated.unit,
         weight: updated.weight,
         difficulty: updated.difficulty,
+        tags: updated.tags,
         linkedOrgKpiId: updated.linkedOrgKpiId,
         status: updated.status,
       },

@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
@@ -17,18 +17,32 @@ import {
 } from 'lucide-react'
 import {
   applyEvaluationAssistResult,
+  buildEvaluationAssistEvidenceView,
+  formatEvaluationAssistPreviewForClipboard,
   getEvaluationAssistActionLabel,
   getEvaluationAssistDisabledReason,
+  getEvaluationAssistEvidenceLevelLabel,
   getEvaluationAssistModeLabel,
+  getEvaluationAssistModeDescription,
   getEvaluationAssistRequestErrorMessage,
+  normalizeEvaluationAssistEvidenceView,
   normalizeEvaluationAssistResult,
   type EvaluationAssistMode,
+  type EvaluationAssistEvidenceView,
   type EvaluationAssistPreview,
   type EvaluationAssistResult,
 } from '@/lib/evaluation-ai-assist'
+import {
+  buildEvaluationQualityWarnings,
+  EVALUATION_GUIDE_EXAMPLES,
+  EVALUATION_GUIDE_SECTIONS,
+  type EvaluationGuideExample,
+  type EvaluationGuideSection,
+  type EvaluationQualityWarning,
+} from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 
-type WorkbenchTab = 'workbench' | 'evidence' | 'feedback' | 'ai' | 'history'
+type WorkbenchTab = 'workbench' | 'guide' | 'evidence' | 'feedback' | 'ai' | 'history'
 
 type DraftItemState = {
   personalKpiId: string
@@ -40,8 +54,11 @@ type DraftItemState = {
   itemComment?: string
 }
 
+type EvidenceSectionKey = 'highlights' | 'kpi' | 'notes' | 'warnings'
+
 const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '평가 실행',
+  guide: '평가 가이드',
   evidence: '근거 자료',
   feedback: '다면 피드백',
   ai: 'AI 보조',
@@ -52,11 +69,16 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [activeTab, setActiveTab] = useState<WorkbenchTab>('workbench')
+  const [assistMode, setAssistMode] = useState<EvaluationAssistMode>('draft')
   const [notice, setNotice] = useState('')
   const [errorNotice, setErrorNotice] = useState('')
   const [decisionBusy, setDecisionBusy] = useState(false)
   const [assistLoadingMode, setAssistLoadingMode] = useState<EvaluationAssistMode | null>(null)
   const [preview, setPreview] = useState<EvaluationAssistPreview | null>(null)
+  const [copiedPreviewMode, setCopiedPreviewMode] = useState<EvaluationAssistMode | null>(null)
+  const [selectedEvidenceSection, setSelectedEvidenceSection] = useState<EvidenceSectionKey>('highlights')
+  const [guideBusy, setGuideBusy] = useState(false)
+  const [guideStatus, setGuideStatus] = useState({ viewed: false, confirmed: false })
   const [draftComment, setDraftComment] = useState('')
   const [draftGradeId, setDraftGradeId] = useState<string>('')
   const [growthMemo, setGrowthMemo] = useState('')
@@ -65,8 +87,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const workbenchContextKey = `${props.selectedCycleId ?? ''}:${props.selectedEvaluationId ?? ''}`
   const previousWorkbenchContextKey = useRef(workbenchContextKey)
   const previousCycleId = useRef(props.selectedCycleId ?? '')
+  const guideViewRequestRef = useRef<string | null>(null)
 
   const selected = props.selected
+  const displaySettings = props.displaySettings ?? {
+    showQuestionWeight: true,
+    showScoreSummary: true,
+  }
 
   useEffect(() => {
     if (previousWorkbenchContextKey.current === workbenchContextKey) {
@@ -80,6 +107,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setNotice('')
     setErrorNotice('')
     setDecisionBusy(false)
+    setGuideBusy(false)
+    setPreview(null)
+    setAssistLoadingMode(null)
+    setCopiedPreviewMode(null)
+    setSelectedEvidenceSection('highlights')
+    setAssistMode('draft')
+    setGuideStatus({ viewed: false, confirmed: false })
+    guideViewRequestRef.current = null
 
     if (cycleChanged) {
       setActiveTab('workbench')
@@ -94,16 +129,27 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setRejectReason('')
       setPreview(null)
       setAssistLoadingMode(null)
+      setCopiedPreviewMode(null)
+      setSelectedEvidenceSection('highlights')
+      setAssistMode('draft')
+      setGuideBusy(false)
+      setGuideStatus({ viewed: false, confirmed: false })
       setDraftItems({})
       return
     }
 
+    setGuideStatus(selected.guideStatus)
     setDraftComment(selected.comment ?? '')
     setDraftGradeId(selected.gradeId ?? '')
     setGrowthMemo('')
     setRejectReason('')
     setPreview(null)
     setAssistLoadingMode(null)
+    setCopiedPreviewMode(null)
+    setSelectedEvidenceSection('highlights')
+    setAssistMode('draft')
+    setGuideBusy(false)
+    guideViewRequestRef.current = null
     setDraftItems(
       Object.fromEntries(
         selected.items.map((item) => [
@@ -154,6 +200,136 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       }, 0),
     [editableItems]
   )
+
+  const workspaceEvidence = useMemo<EvaluationAssistEvidenceView>(() => {
+    if (!selected) {
+      return normalizeEvaluationAssistEvidenceView(null)
+    }
+
+    return buildEvaluationAssistEvidenceView({
+      kpiSummaries: selected.items.map((item) => {
+        const parts = [
+          item.title,
+          `가중치 ${item.weight}%`,
+          typeof item.recentAchievementRate === 'number' ? `최근 달성률 ${item.recentAchievementRate}%` : '달성률 미집계',
+        ]
+
+        if (item.linkedOrgKpiTitle) {
+          parts.push(`연결 목표 ${item.linkedOrgKpiTitle}`)
+        }
+
+        if (item.latestMonthlyComment) {
+          parts.push(item.latestMonthlyComment)
+        }
+
+        return parts.join(' / ')
+      }),
+      monthlySummaries: selected.evidence.monthlyRecords.map((record) =>
+        [
+          `${record.title} / ${record.yearMonth}`,
+          typeof record.achievementRate === 'number' ? `달성률 ${record.achievementRate}%` : '달성률 미집계',
+          record.activities || record.obstacles || '상세 메모 없음',
+        ].join(' / ')
+      ),
+      noteSummaries: [
+        ...selected.evidence.checkins.map((checkin) => `체크인 / ${checkin.scheduledDate} / ${checkin.summary}`),
+        ...selected.evidence.feedbackRounds.map(
+          (round) =>
+            `${round.roundName} / ${round.roundType} / 제출 ${round.submittedCount}건 / ${
+              round.summary || '요약 없음'
+            }`
+        ),
+      ],
+      keyPoints: selected.evidence.highlights,
+      alerts: props.alerts ?? [],
+    })
+  }, [props.alerts, selected])
+
+  const previewEvidence = preview?.evidence ?? workspaceEvidence
+  const draftQualityWarnings = useMemo(
+    () =>
+      buildEvaluationQualityWarnings({
+        comment: draftComment,
+        evidence: workspaceEvidence,
+        mode: 'draft',
+      }),
+    [draftComment, workspaceEvidence]
+  )
+  const previewQualityWarnings = useMemo(
+    () =>
+      preview
+        ? buildEvaluationQualityWarnings({
+            comment: preview.result.draftText,
+            evidence: preview.evidence,
+            mode: preview.mode,
+          })
+        : [],
+    [preview]
+  )
+
+  const persistGuideAction = useCallback(async (action: 'view' | 'confirm', options?: { silent?: boolean }) => {
+    if (!selected) return
+
+    if (action === 'confirm') {
+      setGuideBusy(true)
+    }
+
+    try {
+      const response = await fetch(`/api/evaluation/${selected.id}/guide`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      const json = await response.json().catch(() => null)
+
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '평가 가이드 상태를 저장하지 못했습니다.')
+      }
+
+      setGuideStatus((current) => ({
+        viewed: current.viewed || action === 'view' || action === 'confirm',
+        confirmed: current.confirmed || action === 'confirm',
+      }))
+
+      if (!options?.silent) {
+        setNotice(
+          action === 'confirm'
+            ? '평가 가이드 확인 상태를 기록했습니다.'
+            : '평가 가이드 열람 이력을 기록했습니다.'
+        )
+      }
+    } catch (error) {
+      console.error('[evaluation-workbench-guide]', error)
+      if (!options?.silent) {
+        setErrorNotice('평가 가이드 상태를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.')
+      }
+      throw error
+    } finally {
+      if (action === 'confirm') {
+        setGuideBusy(false)
+      }
+    }
+  }, [selected])
+
+  useEffect(() => {
+    if (
+      activeTab !== 'guide' ||
+      !selected?.id ||
+      !selected.permissions.canEdit ||
+      guideStatus.viewed
+    ) {
+      return
+    }
+
+    if (guideViewRequestRef.current === selected.id) {
+      return
+    }
+
+    guideViewRequestRef.current = selected.id
+    void persistGuideAction('view', { silent: true }).catch(() => {
+      guideViewRequestRef.current = null
+    })
+  }, [activeTab, guideStatus.viewed, persistGuideAction, selected?.id, selected?.permissions.canEdit])
 
   async function runMutation(
     action: 'createSelf' | 'saveDraft' | 'submit' | 'reject',
@@ -207,6 +383,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setNotice('')
     setErrorNotice('')
     setPreview(null)
+    setCopiedPreviewMode(null)
+    setSelectedEvidenceSection('highlights')
     setAssistLoadingMode(mode)
 
     try {
@@ -242,13 +420,30 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         fallbackReason: json.data.fallbackReason ?? null,
         mode,
         result: normalizeEvaluationAssistResult(json.data.result),
+        evidence: normalizeEvaluationAssistEvidenceView(json.data.evidence),
       })
       setActiveTab('ai')
     } catch (error) {
-      setErrorNotice(error instanceof Error ? error.message : getEvaluationAssistRequestErrorMessage())
+      console.error('[evaluation-workbench-ai]', error)
+      setErrorNotice(getEvaluationAssistRequestErrorMessage())
     } finally {
       setAssistLoadingMode(null)
     }
+  }
+
+  async function handleAssistMode(mode: EvaluationAssistMode) {
+    const changed = assistMode !== mode
+    setAssistMode(mode)
+
+    if (changed) {
+      setNotice('')
+      setErrorNotice('')
+      setPreview(null)
+      setCopiedPreviewMode(null)
+      setSelectedEvidenceSection('highlights')
+    }
+
+    await runAssist(mode)
   }
 
   async function handlePreviewDecision(action: 'approve' | 'reject') {
@@ -285,12 +480,30 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         setNotice('AI 제안을 반려했습니다.')
       }
 
+      setCopiedPreviewMode(null)
       setPreview(null)
       startTransition(() => router.refresh())
     } catch (error) {
       setErrorNotice(error instanceof Error ? error.message : 'AI 결과 상태를 변경하지 못했습니다.')
     } finally {
       setDecisionBusy(false)
+    }
+  }
+
+  async function handleCopyPreview() {
+    if (!preview || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      setErrorNotice('현재 환경에서는 미리보기 복사를 지원하지 않습니다.')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(
+        formatEvaluationAssistPreviewForClipboard(preview.mode, preview.result, preview.evidence)
+      )
+      setCopiedPreviewMode(preview.mode)
+      setNotice('AI 미리보기를 복사했습니다. 필요한 영역에 붙여넣어 검토하세요.')
+    } catch {
+      setErrorNotice('AI 미리보기를 복사하지 못했습니다. 다시 시도해 주세요.')
     }
   }
 
@@ -362,6 +575,21 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
               <MetricCard label="반려 건수" value={String(props.summary?.rejectedCount ?? 0)} help="보완이 필요한 평가" />
               <MetricCard label="다면 피드백" value={String(props.summary?.feedbackRoundCount ?? 0)} help={props.summary?.evidenceFreshnessLabel ?? '근거 데이터 상태'} />
             </div>
+            {props.currentUser?.role === 'ROLE_ADMIN' && props.adminSummary ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  평가 품질 운영 요약
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                  <MetricCard label="가이드 열람" value={String(props.adminSummary.guideViewedCount)} help="가이드를 연 평가 건수" compact />
+                  <MetricCard label="가이드 확인" value={String(props.adminSummary.guideConfirmedCount)} help="확인 완료 처리된 평가" compact />
+                  <MetricCard label="AI 사용" value={String(props.adminSummary.aiUsedCount)} help="AI 보조를 실행한 평가" compact />
+                  <MetricCard label="근거 부족" value={String(props.adminSummary.insufficientEvidenceWarningCount)} help="근거 보강이 필요한 평가" compact />
+                  <MetricCard label="편향 주의" value={String(props.adminSummary.biasWarningCount)} help="표현 점검이 필요한 평가" compact />
+                  <MetricCard label="코칭 보완" value={String(props.adminSummary.coachingGapCount)} help="다음 행동 제안이 약한 평가" compact />
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-[440px]">
@@ -458,6 +686,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       {notice ? <Banner tone="success" message={notice} /> : null}
       {errorNotice ? <Banner tone="error" message={errorNotice} /> : null}
+      {props.alerts?.map((alert) => <Banner key={alert} tone="warn" message={alert} />)}
 
       <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -512,11 +741,17 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                       {selected.cycle.year} / {selected.cycle.name} · 평가자 {selected.evaluator.name}
                     </p>
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <MetricCard label="초안 총점" value={computedTotal.toFixed(1)} help="입력 중 계산값" compact />
-                    <MetricCard label="저장 점수" value={selected.totalScore?.toFixed(1) ?? '-'} help="마지막 저장 기준" compact />
-                    <MetricCard label="근거 하이라이트" value={String(selected.evidence.highlights.length)} help="빠르게 읽을 핵심 근거" compact />
-                  </div>
+                  {displaySettings.showScoreSummary ? (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <MetricCard label="초안 총점" value={computedTotal.toFixed(1)} help="입력 중 계산값" compact />
+                      <MetricCard label="저장 점수" value={selected.totalScore?.toFixed(1) ?? '-'} help="마지막 저장 기준" compact />
+                      <MetricCard label="근거 하이라이트" value={String(selected.evidence.highlights.length)} help="빠르게 읽을 핵심 근거" compact />
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                      현재 주기 설정에 따라 점수 요약 카드는 평가권자 화면에서 숨겨집니다.
+                    </div>
+                  )}
                 </div>
               </section>
 
@@ -578,6 +813,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                         />
                       </label>
                     </div>
+                    <div className="mt-4">
+                      <QualityWarningPanel
+                        title="평가 품질 점검"
+                        description="현재 입력한 종합 의견을 기준으로 근거, 편향, 코칭 요소를 함께 점검합니다."
+                        warnings={draftQualityWarnings}
+                      />
+                    </div>
                   </Panel>
 
                   <Panel title="KPI별 점수 입력" description="정량은 점수 입력, 정성은 PDCA와 코멘트를 함께 남깁니다.">
@@ -589,7 +831,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                               <div className="flex flex-wrap items-center gap-2">
                                 <h4 className="text-sm font-semibold text-slate-900">{item.title}</h4>
                                 <Badge tone="neutral">{item.type === 'QUANTITATIVE' ? '정량' : '정성'}</Badge>
-                                <Badge tone="neutral">가중치 {item.weight}%</Badge>
+                                {displaySettings.showQuestionWeight ? (
+                                  <Badge tone="neutral">가중치 {item.weight}%</Badge>
+                                ) : null}
                                 {typeof item.recentAchievementRate === 'number' ? (
                                   <Badge tone={item.recentAchievementRate < 80 ? 'warn' : 'success'}>최근 달성률 {item.recentAchievementRate}%</Badge>
                                 ) : null}
@@ -599,10 +843,12 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                                 연결 조직 KPI: {item.linkedOrgKpiTitle ?? '연결 없음'} · 목표값 {item.targetValue ?? '-'} {item.unit ?? ''}
                               </p>
                             </div>
-                            <div className="rounded-2xl bg-slate-50 px-4 py-3 text-right">
-                              <div className="text-xs text-slate-400">가중 반영 점수</div>
-                              <div className="mt-1 text-lg font-semibold text-slate-900">{formatWeighted(item).toFixed(1)}</div>
-                            </div>
+                            {displaySettings.showScoreSummary ? (
+                              <div className="rounded-2xl bg-slate-50 px-4 py-3 text-right">
+                                <div className="text-xs text-slate-400">가중 반영 점수</div>
+                                <div className="mt-1 text-lg font-semibold text-slate-900">{formatWeighted(item).toFixed(1)}</div>
+                              </div>
+                            ) : null}
                           </div>
 
                           {item.type === 'QUANTITATIVE' ? (
@@ -678,6 +924,67 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                 </div>
               ) : null}
 
+              {activeTab === 'guide' ? (
+                <div className="space-y-6">
+                  <Panel
+                    title="평가 가이드"
+                    description="평가 화면을 벗어나지 않고 목표 정렬, 근거 확인, 편향 점검, 코칭형 문장 원칙을 함께 확인합니다."
+                  >
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                      AI는 초안과 보조를 제공할 뿐이며, 최종 판단과 제출 책임은 평가자에게 있습니다. 평가 코멘트를 작성하기 전에 목표와 근거, 편향 가능성을 먼저 확인해 주세요.
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <Badge tone={guideStatus.viewed ? 'success' : 'neutral'}>
+                        {guideStatus.viewed ? '가이드 열람 완료' : '가이드 열람 전'}
+                      </Badge>
+                      <Badge tone={guideStatus.confirmed ? 'success' : 'warn'}>
+                        {guideStatus.confirmed ? '가이드 확인 완료' : '확인 체크 필요'}
+                      </Badge>
+                      <button
+                        type="button"
+                        onClick={() => void persistGuideAction('confirm')}
+                        disabled={!selected.permissions.canEdit || guideBusy || guideStatus.confirmed}
+                        className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {guideStatus.confirmed ? '확인 완료됨' : guideBusy ? '기록 중...' : '가이드 확인 완료'}
+                      </button>
+                    </div>
+                  </Panel>
+
+                  <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                    <Panel
+                      title="좋은 평가 작성 원칙"
+                      description="목표와 역할, 지속 피드백, 편향 주의, 좋은 예시를 현재 평가 건에 바로 적용해 보세요."
+                    >
+                      <div className="space-y-4">
+                        {EVALUATION_GUIDE_SECTIONS.map((section) => (
+                          <GuideSectionCard key={section.id} section={section} />
+                        ))}
+                      </div>
+                    </Panel>
+
+                    <div className="space-y-6">
+                      <Panel
+                        title="좋은 코멘트 / 주의할 코멘트"
+                        description="모호한 일반론이나 비난형 표현보다, 근거와 다음 행동이 함께 드러나는 문장이 좋습니다."
+                      >
+                        <div className="space-y-4">
+                          {EVALUATION_GUIDE_EXAMPLES.map((example) => (
+                            <GuideExampleCard key={example.id} example={example} />
+                          ))}
+                        </div>
+                      </Panel>
+
+                      <QualityWarningPanel
+                        title="현재 평가 코멘트 품질 경고"
+                        description="지금 작성 중인 종합 의견을 기준으로 편향, 근거, 코칭 요소를 점검합니다."
+                        warnings={draftQualityWarnings}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {activeTab === 'evidence' ? (
                 <Panel title="근거 자료" description="월간 실적, 체크인, 연결 조직 KPI를 함께 검토합니다.">
                   <SectionTitle title="하이라이트" />
@@ -744,61 +1051,97 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
               {activeTab === 'ai' ? (
                 <div className="space-y-6">
-                  <Panel title="평가 AI 보조" description="OpenAI 기반 제안은 미리보기로만 제공되고 승인 후에만 초안에 반영됩니다.">
-                    <div className="grid gap-3 md:grid-cols-3">
+                  <Panel title="근거 기반 평가 AI 워크벤치" description="AI는 초안 보조 도구이며, 최종 판단과 제출 책임은 평가자에게 있습니다.">
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                      AI는 근거를 요약해 초안을 제안하지만, 최종 판단과 제출 책임은 사람에게 있습니다. 근거 부족 경고와 편향 가능성 경고를 함께 확인해 주세요.
+                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
                       <AiCard
                         icon={<MessageSquareMore className="h-5 w-5" />}
-                        title="코멘트 초안"
-                        description="종합 의견 초안을 만듭니다."
-                        onClick={() => runAssist('draft')}
+                        title={getEvaluationAssistModeLabel('draft')}
+                        description={getEvaluationAssistModeDescription('draft')}
+                        onClick={() => handleAssistMode('draft')}
                         disabled={Boolean(assistLoadingMode)}
                         loading={assistLoadingMode === 'draft'}
+                        active={assistMode === 'draft'}
                       />
                       <AiCard
                         icon={<ShieldAlert className="h-5 w-5" />}
-                        title="편향 점검"
-                        description="표현을 균형 있게 다듬습니다."
-                        onClick={() => runAssist('bias')}
+                        title={getEvaluationAssistModeLabel('bias')}
+                        description={getEvaluationAssistModeDescription('bias')}
+                        onClick={() => handleAssistMode('bias')}
                         disabled={Boolean(assistLoadingMode)}
                         loading={assistLoadingMode === 'bias'}
+                        active={assistMode === 'bias'}
                       />
                       <AiCard
                         icon={<Bot className="h-5 w-5" />}
-                        title="성장 제안"
-                        description="성장과 후속 논의 포인트를 제안합니다."
-                        onClick={() => runAssist('growth')}
+                        title={getEvaluationAssistModeLabel('growth')}
+                        description={getEvaluationAssistModeDescription('growth')}
+                        onClick={() => handleAssistMode('growth')}
                         disabled={Boolean(assistLoadingMode)}
                         loading={assistLoadingMode === 'growth'}
+                        active={assistMode === 'growth'}
                       />
                     </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                      <Badge tone={previewEvidence.sufficiency === 'strong' ? 'success' : previewEvidence.sufficiency === 'partial' ? 'warn' : 'error'}>
+                        {getEvaluationAssistEvidenceLevelLabel(previewEvidence.sufficiency)}
+                      </Badge>
+                      <span>{getEvaluationAssistModeDescription(assistMode)}</span>
+                    </div>
                   </Panel>
-                  {preview ? (
+                  <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_360px]">
                     <Panel
-                      title={`${getEvaluationAssistModeLabel(preview.mode)} 미리보기`}
+                      title={`${getEvaluationAssistModeLabel(preview?.mode ?? assistMode)} 미리보기`}
                       description={
-                        preview.source === 'ai'
-                          ? '생성된 AI 제안을 검토한 뒤 반영할 수 있습니다.'
-                          : getEvaluationAssistDisabledReason(preview.fallbackReason)
+                        preview
+                          ? preview.source === 'ai'
+                            ? '생성된 AI 초안을 검토하고 필요한 경우만 반영하세요.'
+                            : getEvaluationAssistDisabledReason(preview.fallbackReason)
+                          : '모드를 선택해 AI 초안을 생성하면 평가 코멘트, 코칭 포인트, 개선 과제를 함께 검토할 수 있습니다.'
                       }
                     >
-                      {preview.source === 'disabled' ? (
+                      {preview?.source === 'disabled' ? (
                         <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                           {getEvaluationAssistDisabledReason(preview.fallbackReason)}
                         </div>
                       ) : null}
-                      <AssistPreviewDetails mode={preview.mode} result={preview.result} />
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <button type="button" onClick={() => handlePreviewDecision('approve')} disabled={decisionBusy} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                          적용
-                        </button>
-                        <button type="button" onClick={() => handlePreviewDecision('reject')} disabled={decisionBusy} className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
-                          반려
-                        </button>
-                      </div>
+                      {preview ? (
+                        <>
+                          <AssistPreviewDetails mode={preview.mode} result={preview.result} />
+                          <div className="mt-4">
+                            <QualityWarningPanel
+                              title="AI 초안 품질 경고"
+                              description="AI 결과도 그대로 제출하지 말고 근거, 편향, 코칭 요소를 먼저 점검하세요."
+                              warnings={previewQualityWarnings}
+                            />
+                          </div>
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            <button type="button" onClick={() => handlePreviewDecision('approve')} disabled={decisionBusy} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">
+                              <CheckCircle2 className="mr-2 h-4 w-4" />
+                              적용
+                            </button>
+                            <button type="button" onClick={() => handlePreviewDecision('reject')} disabled={decisionBusy} className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
+                              반려
+                            </button>
+                            <button type="button" onClick={handleCopyPreview} disabled={decisionBusy} className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
+                              {copiedPreviewMode === preview.mode ? '복사됨' : '복사'}
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <EmptyBlock message="모드를 선택하면 근거 기반 초안이 이 영역에 표시됩니다." />
+                      )}
                     </Panel>
-                  ) : null}
-                  <Panel title="성장 메모" description="성장 제안과 후속 1:1 포인트를 임시 메모로 정리합니다.">
+                    <EvidencePanel
+                      selected={selected}
+                      evidence={previewEvidence}
+                      selectedSection={selectedEvidenceSection}
+                      onSelectSection={setSelectedEvidenceSection}
+                    />
+                  </div>
+                  <Panel title="코칭 / 성장 메모" description="코칭 대화 초안과 성장 과제를 저장 전 메모 형태로 다듬을 수 있습니다.">
                     <textarea
                       value={growthMemo}
                       onChange={(event) => setGrowthMemo(event.target.value)}
@@ -886,9 +1229,16 @@ function MetricCard(props: { label: string; value: string; help: string; compact
   )
 }
 
-function Banner(props: { tone: 'success' | 'error'; message: string }) {
+function Banner(props: { tone: 'success' | 'error' | 'warn'; message: string }) {
+  const palette =
+    props.tone === 'success'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      : props.tone === 'warn'
+        ? 'border-amber-200 bg-amber-50 text-amber-800'
+        : 'border-rose-200 bg-rose-50 text-rose-800'
+
   return (
-    <div className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${props.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+    <div className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${palette}`}>
       {props.tone === 'success' ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
       <span>{props.message}</span>
     </div>
@@ -923,13 +1273,18 @@ function AiCard(props: {
   onClick: () => void
   disabled?: boolean
   loading?: boolean
+  active?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={props.onClick}
       disabled={props.disabled}
-      className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+      className={`rounded-2xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+        props.active
+          ? 'border-blue-300 bg-blue-50 shadow-sm'
+          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+      }`}
     >
       <div className="flex items-center gap-2 text-slate-900">
         {props.icon}
@@ -948,16 +1303,135 @@ function AssistPreviewDetails(props: {
   return (
     <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">핵심 포인트</div>
-        <p className="mt-2 text-sm text-slate-800">{props.result.focusArea}</p>
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          {getEvaluationAssistActionLabel(props.mode)}
+        </div>
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{props.result.draftText}</p>
       </div>
-      <PreviewList title={getEvaluationAssistActionLabel(props.mode)} items={props.result.recommendedActions} />
-      <PreviewList title="필요 지원" items={props.result.supportNeeded} />
+      <PreviewList title="강점 포인트" items={props.result.strengths} />
+      <PreviewList title="우려 포인트" items={props.result.concerns} />
+      <PreviewList title="코칭 포인트" items={props.result.coachingPoints} />
       <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">마일스톤</div>
-        <p className="mt-2 text-sm text-slate-800">{props.result.milestone}</p>
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">다음 단계</div>
+        <p className="mt-2 text-sm text-slate-800">{props.result.nextStep}</p>
       </div>
     </div>
+  )
+}
+
+function EvidencePanel(props: {
+  selected: NonNullable<EvaluationWorkbenchPageData['selected']>
+  evidence: EvaluationAssistEvidenceView
+  selectedSection: EvidenceSectionKey
+  onSelectSection: (section: EvidenceSectionKey) => void
+}) {
+  const sections: Array<{ key: EvidenceSectionKey; label: string }> = [
+    { key: 'highlights', label: '핵심 근거' },
+    { key: 'kpi', label: 'KPI / 월간 실적' },
+    { key: 'notes', label: '피드백 / 메모' },
+    { key: 'warnings', label: '품질 경고' },
+  ]
+
+  return (
+    <Panel
+      title="근거 패널"
+      description="KPI, 월간 실적, 피드백, 체크인 메모 중 현재 확인 가능한 자료를 기반으로 초안을 검토합니다."
+    >
+      <div className="mb-4 flex flex-wrap gap-2">
+        {sections.map((section) => (
+          <button
+            key={section.key}
+            type="button"
+            onClick={() => props.onSelectSection(section.key)}
+            className={`rounded-full px-3 py-2 text-xs font-semibold transition ${
+              props.selectedSection === section.key
+                ? 'bg-slate-900 text-white'
+                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {section.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={props.evidence.sufficiency === 'strong' ? 'success' : props.evidence.sufficiency === 'partial' ? 'warn' : 'error'}>
+            {getEvaluationAssistEvidenceLevelLabel(props.evidence.sufficiency)}
+          </Badge>
+          <span className="text-sm text-slate-600">
+            {props.selected.target.name}님의 현재 평가 근거와 코멘트 초안 품질을 함께 검토합니다.
+          </span>
+        </div>
+        {props.evidence.alerts.length ? (
+          <div className="mt-3 space-y-2">
+            {props.evidence.alerts.map((alert) => (
+              <div key={alert} className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {alert}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {props.selectedSection === 'highlights' ? (
+        <PreviewList
+          title="AI 작성에 사용한 핵심 포인트"
+          items={props.evidence.keyPoints.length ? props.evidence.keyPoints : ['확인 가능한 핵심 포인트가 아직 없습니다.']}
+        />
+      ) : null}
+
+      {props.selectedSection === 'kpi' ? (
+        <div className="space-y-3">
+          {props.evidence.kpiSummaries.length ? (
+            props.evidence.kpiSummaries.map((item) => (
+              <div key={item} className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                {item}
+              </div>
+            ))
+          ) : (
+            <EmptyBlock message="연결된 KPI 근거가 부족합니다." />
+          )}
+          {props.evidence.monthlySummaries.length ? (
+            <details className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-900">월간 실적 상세 펼치기</summary>
+              <div className="mt-3 space-y-3">
+                {props.evidence.monthlySummaries.map((item) => (
+                  <div key={item} className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      ) : null}
+
+      {props.selectedSection === 'notes' ? (
+        <div className="space-y-3">
+          {props.evidence.noteSummaries.length ? (
+            props.evidence.noteSummaries.map((item) => (
+              <div key={item} className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                {item}
+              </div>
+            ))
+          ) : (
+            <EmptyBlock message="최근 피드백과 메모가 부족합니다." />
+          )}
+        </div>
+      ) : null}
+
+      {props.selectedSection === 'warnings' ? (
+        <PreviewList
+          title="품질 경고"
+          items={
+            props.evidence.warnings.length
+              ? props.evidence.warnings
+              : ['현재 확인된 근거 범위에서는 별도 품질 경고가 없습니다.']
+          }
+        />
+      ) : null}
+    </Panel>
   )
 }
 
@@ -972,6 +1446,73 @@ function PreviewList(props: { title: string; items: string[] }) {
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+function QualityWarningPanel(props: {
+  title: string
+  description: string
+  warnings: EvaluationQualityWarning[]
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="mb-3">
+        <h4 className="text-sm font-semibold text-slate-900">{props.title}</h4>
+        <p className="mt-1 text-sm text-slate-500">{props.description}</p>
+      </div>
+      {props.warnings.length ? (
+        <div className="space-y-3">
+          {props.warnings.map((warning) => (
+            <div key={warning.key} className="rounded-2xl border border-amber-200 bg-white px-4 py-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                <AlertTriangle className="h-4 w-4" />
+                <span>{warning.title}</span>
+              </div>
+              <p className="mt-2 text-sm text-slate-700">{warning.message}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm text-emerald-800">
+          현재 입력과 근거 기준으로는 추가 품질 경고가 없습니다.
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GuideSectionCard(props: { section: EvaluationGuideSection }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <h4 className="text-sm font-semibold text-slate-900">{props.section.title}</h4>
+      <p className="mt-1 text-sm text-slate-500">{props.section.description}</p>
+      <ul className="mt-3 space-y-2">
+        {props.section.items.map((item) => (
+          <li key={`${props.section.id}-${item}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function GuideExampleCard(props: { example: EvaluationGuideExample }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-sm font-semibold text-slate-900">{props.example.title}</div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-2xl border border-rose-200 bg-white px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-500">주의 문장</div>
+          <p className="mt-2 text-sm text-slate-700">{props.example.bad}</p>
+        </div>
+        <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-500">권장 문장</div>
+          <p className="mt-2 text-sm text-slate-700">{props.example.good}</p>
+        </div>
+      </div>
+      <p className="mt-3 text-sm text-slate-600">{props.example.takeaway}</p>
     </div>
   )
 }

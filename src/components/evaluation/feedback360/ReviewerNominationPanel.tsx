@@ -280,6 +280,29 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
         </div>
       ) : null}
 
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="text-sm font-semibold text-slate-900">현재 동료 선택 규칙</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <RuleChip active={props.nomination.selectionSettings.requireLeaderApproval} label="리더 승인 필요" />
+            <RuleChip active={props.nomination.selectionSettings.allowPreferredPeers} label="선호 동료 선택 가능" />
+            <RuleChip active={props.nomination.selectionSettings.excludeLeaderFromPeerSelection} label="리더 제외" />
+            <RuleChip active={props.nomination.selectionSettings.excludeDirectReportsFromPeerSelection} label="팀원 제외" />
+          </div>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="text-sm font-semibold text-slate-900">공개 범위 요약</div>
+          <div className="mt-3 space-y-2 text-sm text-slate-600">
+            {Object.entries(props.nomination.visibilitySettings).map(([relationship, visibility]) => (
+              <div key={relationship} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <span>{relationship}</span>
+                <span className="font-medium text-slate-900">{visibility}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {preview ? (
         <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -383,5 +406,19 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
         ))}
       </div>
     </section>
+  )
+}
+
+function RuleChip(props: { active: boolean; label: string }) {
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+        props.active
+          ? 'bg-slate-900 text-white'
+          : 'bg-slate-200 text-slate-500'
+      }`}
+    >
+      {props.label}
+    </span>
   )
 }

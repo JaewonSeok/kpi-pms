@@ -1,20 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  ArrowRight,
-  CheckCircle2,
-  Users,
-} from 'lucide-react'
+import { ArrowRight, CheckCircle2, Users } from 'lucide-react'
 import type { Feedback360PageData } from '@/server/feedback-360'
 import { MultiRaterCycleHeader } from './MultiRaterCycleHeader'
 import { ResponseRateCard } from './ResponseRateCard'
 import { ReviewerNominationPanel } from './ReviewerNominationPanel'
 import { FeedbackThemesSection } from './FeedbackThemesSection'
 import { DevelopmentPlanPreview } from './DevelopmentPlanPreview'
-import { MultiRaterTimeline } from './MultiRaterTimeline'
+import { Feedback360AdminPanel } from './Feedback360AdminPanel'
+import { FeedbackReferencePanel } from './FeedbackReferencePanel'
 
 export function Feedback360WorkspaceClient(props: { data: Feedback360PageData }) {
   const router = useRouter()
@@ -37,6 +34,13 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
       ])
     )
   )
+
+  useEffect(() => {
+    setResultsNotice('')
+    setResultsError('')
+    setRespondNotice('')
+    setRespondError('')
+  }, [props.data.mode, props.data.selectedCycleId, props.data.selectedRoundId])
 
   const resultsAiPayload = useMemo(() => {
     if (!props.data.results) return null
@@ -354,6 +358,11 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
             </Panel>
           </section>
 
+          <FeedbackReferencePanel
+            groupedResponses={props.data.results.groupedResponses}
+            warnings={props.data.results.warnings}
+          />
+
           <DevelopmentPlanPreview
             employeeId={props.data.results.targetEmployee.id}
             sourceId={`${props.data.selectedRoundId ?? 'unknown'}:${props.data.results.targetEmployee.id}`}
@@ -368,64 +377,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
       ) : null}
 
       {props.data.mode === 'admin' ? (
-        <div className="space-y-6">
-          <section className="grid gap-4 lg:grid-cols-3">
-            {props.data.admin?.roundHealth.length ? (
-              props.data.admin.roundHealth.map((item) => (
-                <ResponseRateCard
-                  key={item.roundId}
-                  title={item.roundName}
-                  responseRate={item.responseRate}
-                  submittedCount={item.submittedCount}
-                  pendingCount={item.pendingCount}
-                  thresholdMet={item.thresholdMet}
-                  description={`품질 리스크 ${item.qualityRiskCount}건`}
-                />
-              ))
-            ) : (
-              <div className="lg:col-span-3">
-                <EmptyBlock message="관리할 360 라운드가 아직 없습니다." />
-              </div>
-            )}
-          </section>
-
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <Panel
-              title="운영 알림"
-              description="응답률 저하, careless review 의심, 익명 기준 미달 라운드를 우선 확인합니다."
-            >
-              <div className="space-y-3">
-                {props.data.admin?.alerts.length ? (
-                  props.data.admin.alerts.map((item) => (
-                    <div key={item} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      {item}
-                    </div>
-                  ))
-                ) : (
-                  <EmptyBlock message="현재 운영상 큰 경고는 없습니다." />
-                )}
-              </div>
-            </Panel>
-
-            <Panel
-              title="운영 연계"
-              description="알림 운영, 평가 결과, Admin Ops로 바로 이동할 수 있습니다."
-            >
-              <div className="space-y-3">
-                <ActionLink href="/admin/notifications" label="알림 운영" />
-                <ActionLink href="/admin/ops" label="운영 / 관제" />
-                <ActionLink href="/evaluation/results" label="평가 결과 리포트" />
-              </div>
-            </Panel>
-          </section>
-
-          <Panel
-            title="운영 타임라인"
-            description="라운드 상태와 응답률 변화, 주요 watchout을 시간 순서로 확인합니다."
-          >
-            <MultiRaterTimeline items={props.data.admin?.timeline ?? []} />
-          </Panel>
-        </div>
+        <Feedback360AdminPanel data={props.data} />
       ) : null}
 
       {props.data.mode === 'respond' && props.data.respond ? (

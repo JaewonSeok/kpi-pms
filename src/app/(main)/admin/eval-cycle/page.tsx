@@ -30,6 +30,8 @@ export default async function AdminEvalCyclePage() {
 
   const serializedCycles = cycles.map((cycle) => ({
     ...cycle,
+    showQuestionWeight: cycle.showQuestionWeight,
+    showScoreSummary: cycle.showScoreSummary,
     kpiSetupStart: cycle.kpiSetupStart?.toISOString() ?? null,
     kpiSetupEnd: cycle.kpiSetupEnd?.toISOString() ?? null,
     selfEvalStart: cycle.selfEvalStart?.toISOString() ?? null,

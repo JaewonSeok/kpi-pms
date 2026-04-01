@@ -8,6 +8,7 @@ type Tab = 'templates' | 'executions' | 'failures' | 'tools' | 'ai'
 type Period = 'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS'
 type Channel = 'ALL' | 'IN_APP' | 'EMAIL'
 type RunMode = 'all' | 'schedule' | 'dispatch'
+type ReminderType = 'goal' | 'checkpoint'
 type Banner = { tone: 'success' | 'error' | 'info'; message: string }
 type AiAction = 'summarize-ops' | 'summarize-dead-letters' | 'validate-template-variables' | 'generate-ops-report'
 
@@ -252,9 +253,21 @@ export function NotificationOpsClient() {
   })
 
   const runMutation = useMutation({
-    mutationFn: async () => parseJson(await (await fetch('/api/cron/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: runMode }) })).json()),
-    onSuccess: () => {
-      setBanner({ tone: 'success', message: '알림 작업을 즉시 실행했습니다.' })
+    mutationFn: async (input: { mode: RunMode; reminderTypes?: ReminderType[]; successMessage: string }) =>
+      parseJson(
+        await (
+          await fetch('/api/cron/notifications', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: input.mode,
+              reminderTypes: input.reminderTypes,
+            }),
+          })
+        ).json()
+      ),
+    onSuccess: (_data, input) => {
+      setBanner({ tone: 'success', message: input.successMessage })
       void queryClient.invalidateQueries({ queryKey: ['admin-job-executions'] })
       void queryClient.invalidateQueries({ queryKey: ['admin-notification-dead-letters'] })
     },
@@ -327,6 +340,10 @@ export function NotificationOpsClient() {
     testSendMutation.mutate()
   }
 
+  function handleRunJob(input: { mode: RunMode; reminderTypes?: ReminderType[]; successMessage: string }) {
+    runMutation.mutate(input)
+  }
+
   const loading = templatesQuery.isLoading || executionsQuery.isLoading || failuresQuery.isLoading
   const statusTone = summary.deadLetterCount > 0 || summary.successRate < 90 ? 'error' : summary.failureCount > 0 || summary.successRate < 98 ? 'warn' : 'ok'
 
@@ -366,11 +383,43 @@ export function NotificationOpsClient() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
-            <ActionButton label="즉시 실행" onClick={() => runMutation.mutate()} disabled={runMutation.isPending} primary />
+            <ActionButton
+              label="즉시 실행"
+              onClick={() =>
+                handleRunJob({
+                  mode: runMode,
+                  successMessage: '알림 작업을 즉시 실행했습니다.',
+                })
+              }
+              disabled={runMutation.isPending}
+              primary
+            />
             <ActionButton label="템플릿 저장" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || !templates.length} />
             <ActionButton label={testSendMutation.isPending ? 'Test Send 실행 중...' : 'Test Send'} onClick={handleTestSend} disabled={testSendMutation.isPending || !currentTemplate} />
             <ActionButton label="dead letter 재처리" onClick={() => failureMutation.mutate({ action: 'retry', ids: filteredFailures.map((item) => item.id) })} disabled={failureMutation.isPending || !filteredFailures.length} />
             <ActionButton label="실행 이력 보기" onClick={() => setTab('executions')} disabled={false} />
+            <ActionButton
+              label="목표 수립 리마인드"
+              onClick={() =>
+                handleRunJob({
+                  mode: 'schedule',
+                  reminderTypes: ['goal'],
+                  successMessage: '목표 수립 리마인드를 전체 대상자 기준으로 큐에 등록했습니다.',
+                })
+              }
+              disabled={runMutation.isPending}
+            />
+            <ActionButton
+              label="체크인 현황 리마인드"
+              onClick={() =>
+                handleRunJob({
+                  mode: 'schedule',
+                  reminderTypes: ['checkpoint'],
+                  successMessage: '체크인 현황 리마인드를 전체 대상자 기준으로 큐에 등록했습니다.',
+                })
+              }
+              disabled={runMutation.isPending}
+            />
           </div>
         </div>
       </section>
@@ -399,7 +448,7 @@ export function NotificationOpsClient() {
       ) : null}
 
       {tab === 'tools' ? (
-        <Split left={<Panel title="설정 / 도구"><div className="space-y-4"><Field label="run mode"><select value={runMode} onChange={(event) => setRunMode(event.target.value as RunMode)} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"><option value="all">전체 실행</option><option value="schedule">Schedule only</option><option value="dispatch">Dispatch only</option></select></Field><div className="grid gap-3 sm:grid-cols-2"><MetricCard label="queued" value={queue.queued.toLocaleString('ko-KR')} /><MetricCard label="retry pending" value={queue.retryPending.toLocaleString('ko-KR')} /><MetricCard label="dead letter" value={queue.deadLetter.toLocaleString('ko-KR')} /><MetricCard label="suppressed" value={queue.suppressed.toLocaleString('ko-KR')} /></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><div className="font-semibold text-slate-900">운영 참고</div><ul className="mt-3 space-y-2"><li>Retry 정책은 dead letter 재처리 버튼으로 즉시 복구할 수 있습니다.</li><li>Test Send는 실제 job 이력과 함께 기록됩니다.</li><li>템플릿 저장 후에는 preview와 test send로 변수 누락을 다시 점검해 주세요.</li></ul></div></div></Panel>} right={<Panel title="Template Preview / Test Send">{currentDraft ? <div className="space-y-4"><textarea value={previewPayloadText} onChange={(event) => setPreviewPayloadText(event.target.value)} rows={8} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 font-mono text-xs" /><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-semibold text-slate-900">{renderTemplate(currentDraft.subjectTemplate, previewVariables)}</div><div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{renderTemplate(currentDraft.bodyTemplate, previewVariables)}</div></div><div className="flex flex-wrap gap-2"><ActionButton label={testSendMutation.isPending ? 'Test Send 실행 중...' : 'Test Send'} onClick={handleTestSend} disabled={testSendMutation.isPending} /><ActionButton label="AI 운영 보고 초안" onClick={() => aiMutation.mutate('generate-ops-report')} disabled={aiMutation.isPending} /></div></div> : <Empty message="템플릿을 선택하면 preview와 test send를 실행할 수 있습니다." />}</Panel>} />
+        <Split left={<Panel title="설정 / 도구"><div className="space-y-4"><Field label="run mode"><select value={runMode} onChange={(event) => setRunMode(event.target.value as RunMode)} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"><option value="all">전체 실행</option><option value="schedule">Schedule only</option><option value="dispatch">Dispatch only</option></select></Field><div className="grid gap-3 sm:grid-cols-2"><MetricCard label="queued" value={queue.queued.toLocaleString('ko-KR')} /><MetricCard label="retry pending" value={queue.retryPending.toLocaleString('ko-KR')} /><MetricCard label="dead letter" value={queue.deadLetter.toLocaleString('ko-KR')} /><MetricCard label="suppressed" value={queue.suppressed.toLocaleString('ko-KR')} /></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><div className="font-semibold text-slate-900">운영 참고</div><ul className="mt-3 space-y-2"><li>Retry 정책은 dead letter 재처리 버튼으로 즉시 복구할 수 있습니다.</li><li>Test Send는 실제 job 이력과 함께 기록됩니다.</li><li>템플릿 저장 후에는 preview와 test send로 변수 누락을 다시 점검해 주세요.</li></ul></div><div className="grid gap-3 md:grid-cols-2"><ActionButton label="목표 수립 리마인드 전체 발송" onClick={() => handleRunJob({ mode: 'schedule', reminderTypes: ['goal'], successMessage: '목표 수립 리마인드를 전체 대상자 기준으로 큐에 등록했습니다.' })} disabled={runMutation.isPending} /><ActionButton label="체크인 현황 리마인드 전체 발송" onClick={() => handleRunJob({ mode: 'schedule', reminderTypes: ['checkpoint'], successMessage: '체크인 현황 리마인드를 전체 대상자 기준으로 큐에 등록했습니다.' })} disabled={runMutation.isPending} /></div></div></Panel>} right={<Panel title="Template Preview / Test Send">{currentDraft ? <div className="space-y-4"><textarea value={previewPayloadText} onChange={(event) => setPreviewPayloadText(event.target.value)} rows={8} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 font-mono text-xs" /><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-semibold text-slate-900">{renderTemplate(currentDraft.subjectTemplate, previewVariables)}</div><div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{renderTemplate(currentDraft.bodyTemplate, previewVariables)}</div></div><div className="flex flex-wrap gap-2"><ActionButton label={testSendMutation.isPending ? 'Test Send 실행 중...' : 'Test Send'} onClick={handleTestSend} disabled={testSendMutation.isPending} /><ActionButton label="AI 운영 보고 초안" onClick={() => aiMutation.mutate('generate-ops-report')} disabled={aiMutation.isPending} /></div></div> : <Empty message="템플릿을 선택하면 preview와 test send를 실행할 수 있습니다." />}</Panel>} />
       ) : null}
 
       {tab === 'ai' ? (

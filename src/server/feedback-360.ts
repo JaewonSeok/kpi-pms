@@ -10,7 +10,13 @@ import type {
 import type { Session } from 'next-auth'
 import { prisma } from '@/lib/prisma'
 import { formatDate } from '@/lib/utils'
-import { canApproveFeedbackTarget, getNominationAggregateStatus, parsePersistedReportPayload } from './feedback-360-workflow'
+import {
+  canApproveFeedbackTarget,
+  getNominationAggregateStatus,
+  parseFeedbackSelectionSettings,
+  parseFeedbackVisibilitySettings,
+  parsePersistedReportPayload,
+} from './feedback-360-workflow'
 
 export type Feedback360RouteMode = 'overview' | 'nomination' | 'results' | 'admin' | 'respond'
 
@@ -47,6 +53,15 @@ export type Feedback360PageData = {
     status: FeedbackRoundStatus
     isAnonymous: boolean
     minRaters: number
+    folderId?: string | null
+    folderName?: string | null
+    selectionSettings: {
+      requireLeaderApproval: boolean
+      allowPreferredPeers: boolean
+      excludeLeaderFromPeerSelection: boolean
+      excludeDirectReportsFromPeerSelection: boolean
+    }
+    visibilitySettings: Record<string, 'FULL' | 'ANONYMOUS' | 'PRIVATE'>
     startDate: string
     endDate: string
     targetCount: number
@@ -79,6 +94,13 @@ export type Feedback360PageData = {
       position: string
     }
     savedDraftCount: number
+    selectionSettings: {
+      requireLeaderApproval: boolean
+      allowPreferredPeers: boolean
+      excludeLeaderFromPeerSelection: boolean
+      excludeDirectReportsFromPeerSelection: boolean
+    }
+    visibilitySettings: Record<string, 'FULL' | 'ANONYMOUS' | 'PRIVATE'>
     reviewerGroups: Array<{
       key: 'self' | 'supervisor' | 'peer' | 'subordinate'
       label: string
@@ -127,6 +149,19 @@ export type Feedback360PageData = {
     improvements: string[]
     anonymousSummary: string
     textHighlights: string[]
+    groupedResponses: Array<{
+      questionId: string
+      category: string
+      questionText: string
+      answers: Array<{
+        feedbackId: string
+        relationship: string
+        authorLabel: string
+        ratingValue?: number | null
+        textValue?: string | null
+      }>
+    }>
+    warnings: string[]
     developmentPlan: {
       focusArea: string
       actions: string[]
@@ -166,6 +201,31 @@ export type Feedback360PageData = {
       at: string
     }>
     alerts: string[]
+    folders: Array<{
+      id: string
+      name: string
+      description?: string | null
+      color?: string | null
+      roundCount: number
+    }>
+    reminderTargets: Array<{
+      kind: 'review-reminder' | 'peer-selection-reminder' | 'result-share'
+      recipientId: string
+      recipientName: string
+      departmentName?: string
+      roundId: string
+      roundName: string
+      detail: string
+    }>
+    settings?: {
+      selectionSettings: {
+        requireLeaderApproval: boolean
+        allowPreferredPeers: boolean
+        excludeLeaderFromPeerSelection: boolean
+        excludeDirectReportsFromPeerSelection: boolean
+      }
+      visibilitySettings: Record<string, 'FULL' | 'ANONYMOUS' | 'PRIVATE'>
+    }
     nominationQueue?: Array<{
       targetId: string
       targetName: string
@@ -260,6 +320,89 @@ function getPositionLabel(position: string) {
   return labels[position] ?? position
 }
 
+function buildGroupedResponses(params: {
+  feedbacks: Array<{
+    id: string
+    relationship: string
+    giver: { empName: string }
+    responses: Array<{
+      questionId: string
+      ratingValue: number | null
+      textValue: string | null
+      question: {
+        category: string
+        questionText?: string | null
+      }
+    }>
+  }>
+  thresholdMet: boolean
+  visibilitySettings: Record<string, 'FULL' | 'ANONYMOUS' | 'PRIVATE'>
+}) {
+  const questionMap = new Map<
+    string,
+    {
+      questionId: string
+      category: string
+      questionText: string
+      answers: Array<{
+        feedbackId: string
+        relationship: string
+        authorLabel: string
+        ratingValue?: number | null
+        textValue?: string | null
+      }>
+    }
+  >()
+
+  for (const feedback of params.feedbacks) {
+    const visibility = params.visibilitySettings[feedback.relationship] ?? 'ANONYMOUS'
+    if (visibility === 'PRIVATE') continue
+
+    for (const response of feedback.responses) {
+      const current = questionMap.get(response.questionId) ?? {
+        questionId: response.questionId,
+        category: response.question.category,
+        questionText: response.question.questionText ?? '문항 정보 없음',
+        answers: [],
+      }
+
+      current.answers.push({
+        feedbackId: feedback.id,
+        relationship: feedback.relationship,
+        authorLabel:
+          visibility === 'FULL' || !params.thresholdMet
+            ? `${feedback.relationship} · ${feedback.giver.empName}`
+            : `${feedback.relationship} · 익명`,
+        ratingValue: response.ratingValue,
+        textValue: response.textValue,
+      })
+
+      questionMap.set(response.questionId, current)
+    }
+  }
+
+  return [...questionMap.values()]
+}
+
+function buildResultWarnings(params: {
+  thresholdMet: boolean
+  feedbackCount: number
+  strengths: string[]
+  improvements: string[]
+}) {
+  const warnings: string[] = []
+  if (!params.thresholdMet) {
+    warnings.push('익명 기준을 아직 충족하지 못해 일부 문항은 제한적으로만 해석해야 합니다.')
+  }
+  if (params.feedbackCount < 3) {
+    warnings.push('응답 수가 적어 해석 편차가 클 수 있습니다.')
+  }
+  if (!params.strengths.length || !params.improvements.length) {
+    warnings.push('텍스트 근거가 충분하지 않아 자동 요약의 구체성이 낮을 수 있습니다.')
+  }
+  return warnings
+}
+
 function parseAuditRecord(value: unknown) {
   if (!value || typeof value !== 'object') {
     return null
@@ -301,6 +444,7 @@ export async function getFeedback360PageData(
       orderBy: [{ evalYear: 'desc' }, { createdAt: 'desc' }],
       select: {
         id: true,
+        orgId: true,
         cycleName: true,
         evalYear: true,
         status: true,
@@ -341,6 +485,14 @@ export async function getFeedback360PageData(
     const rounds = await prisma.multiFeedbackRound.findMany({
       where: { evalCycleId: selectedCycle.id },
       include: {
+        folder: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            color: true,
+          },
+        },
         feedbacks: {
           include: {
             receiver: {
@@ -366,6 +518,7 @@ export async function getFeedback360PageData(
                 question: {
                   select: {
                     category: true,
+                    questionText: true,
                     questionType: true,
                   },
                 },
@@ -377,7 +530,20 @@ export async function getFeedback360PageData(
           select: {
             id: true,
             category: true,
+            questionText: true,
             questionType: true,
+          },
+        },
+        nominations: {
+          select: {
+            targetId: true,
+            reviewerId: true,
+            status: true,
+          },
+        },
+        reportCaches: {
+          select: {
+            targetId: true,
           },
         },
       },
@@ -417,6 +583,8 @@ export async function getFeedback360PageData(
       const totalCount = round.feedbacks.length
       const submittedCount = round.feedbacks.filter((feedback) => feedback.status === 'SUBMITTED').length
       const uniqueTargets = new Set(round.feedbacks.map((feedback) => feedback.receiverId))
+      const selectionSettings = parseFeedbackSelectionSettings(round.selectionSettings)
+      const visibilitySettings = parseFeedbackVisibilitySettings(round.visibilitySettings)
 
       return {
         id: round.id,
@@ -425,6 +593,10 @@ export async function getFeedback360PageData(
         status: round.status,
         isAnonymous: round.isAnonymous,
         minRaters: round.minRaters,
+        folderId: round.folderId,
+        folderName: round.folder?.name ?? null,
+        selectionSettings,
+        visibilitySettings,
         startDate: formatDate(round.startDate),
         endDate: formatDate(round.endDate),
         targetCount: uniqueTargets.size,
@@ -438,6 +610,21 @@ export async function getFeedback360PageData(
           availableRounds.reduce((sum, round) => sum + round.responseRate, 0) / availableRounds.length
         )
       : 0
+
+    const folders =
+      employee.role === 'ROLE_ADMIN'
+        ? await prisma.feedbackFolder.findMany({
+            where: { orgId: selectedCycle.orgId },
+            include: {
+              _count: {
+                select: {
+                  rounds: true,
+                },
+              },
+            },
+            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+          })
+        : []
 
     const pendingRequests = rounds
       .flatMap((round) =>
@@ -579,6 +766,8 @@ export async function getFeedback360PageData(
     const nominationWorkflowStatus = getNominationAggregateStatus(persistedNominations.map((item) => item.status))
 
     if (params.mode === 'nomination') {
+      const selectionSettings = parseFeedbackSelectionSettings(selectedRound.selectionSettings)
+      const visibilitySettings = parseFeedbackVisibilitySettings(selectedRound.visibilitySettings)
       const sameDepartmentEmployees = await prisma.employee.findMany({
         where: {
           deptId: target.deptId,
@@ -624,6 +813,19 @@ export async function getFeedback360PageData(
           })
         : []
 
+      const directReportIds = new Set(subordinateEmployees.map((reviewer) => reviewer.id))
+      const filteredPeerReviewers = sameDepartmentEmployees.filter((reviewer) => {
+        if (selectionSettings.excludeLeaderFromPeerSelection && supervisorIds.includes(reviewer.id)) {
+          return false
+        }
+
+        if (selectionSettings.excludeDirectReportsFromPeerSelection && directReportIds.has(reviewer.id)) {
+          return false
+        }
+
+        return true
+      })
+
       return {
         ...baseData,
         nomination: {
@@ -634,6 +836,8 @@ export async function getFeedback360PageData(
             position: getPositionLabel(target.position),
           },
           savedDraftCount: nominationSavedReviewers.length,
+          selectionSettings,
+          visibilitySettings,
           reviewerGroups: [
             {
               key: 'self',
@@ -663,7 +867,7 @@ export async function getFeedback360PageData(
               key: 'peer',
               label: '동료',
               description: '같은 조직 안에서 협업 맥락이 있는 동료를 추천합니다.',
-              reviewers: sameDepartmentEmployees.map((reviewer) => ({
+              reviewers: filteredPeerReviewers.map((reviewer) => ({
                 employeeId: reviewer.id,
                 name: reviewer.empName,
                 department: reviewer.department.deptName,
@@ -759,6 +963,30 @@ export async function getFeedback360PageData(
       ? (persistedPayload.textHighlights as string[])
       : textHighlights
     const persistedDevelopmentPlan = parsePersistedReportPayload(persistedPayload?.developmentPlan)
+    const groupedResponses = buildGroupedResponses({
+      feedbacks: submittedTargetFeedbacks.map((feedback) => ({
+        id: feedback.id,
+        relationship: feedback.relationship,
+        giver: { empName: feedback.giver.empName },
+        responses: feedback.responses.map((response) => ({
+          questionId: response.questionId,
+          ratingValue: response.ratingValue,
+          textValue: response.textValue,
+          question: {
+            category: response.question.category,
+            questionText: response.question.questionText ?? null,
+          },
+        })),
+      })),
+      thresholdMet,
+      visibilitySettings: parseFeedbackVisibilitySettings(selectedRound.visibilitySettings),
+    })
+    const warnings = buildResultWarnings({
+      thresholdMet,
+      feedbackCount: submittedTargetFeedbacks.length,
+      strengths,
+      improvements,
+    })
 
     if (params.mode === 'results') {
       return {
@@ -780,6 +1008,8 @@ export async function getFeedback360PageData(
             ? '익명성을 유지한 상태로 강점, blind spot, 개발 포인트를 요약할 준비가 되었습니다.'
             : `현재 응답 수는 ${submittedTargetFeedbacks.length}건이며, 익명 요약 공개 기준 ${selectedRound.minRaters}건에 아직 미달합니다.`,
           textHighlights: persistedTextHighlights,
+          groupedResponses,
+          warnings,
           developmentPlan: {
             focusArea: `${developmentFocus} 역량 강화`,
             actions: [
@@ -917,6 +1147,50 @@ export async function getFeedback360PageData(
         }))
         .slice(0, 12)
 
+      const reminderTargets = [
+        ...rounds.flatMap((round) =>
+          round.feedbacks
+            .filter((feedback) => feedback.status !== 'SUBMITTED')
+            .map((feedback) => ({
+              kind: 'review-reminder' as const,
+              recipientId: feedback.giverId,
+              recipientName: feedback.giver.empName,
+              departmentName: feedback.giver.department.deptName,
+              roundId: round.id,
+              roundName: round.roundName,
+              detail: `${feedback.receiver.empName} · ${feedback.relationship} · 마감 ${formatDate(round.endDate)}`,
+            }))
+        ),
+        ...nominationQueue
+          .filter((item) => item.status !== 'PUBLISHED')
+          .map((item) => ({
+            kind: 'peer-selection-reminder' as const,
+            recipientId: item.targetId,
+            recipientName: item.targetName,
+            roundId: item.roundId,
+            roundName: item.roundName,
+            detail: `현재 상태 ${item.status} · 승인 ${item.approvedCount}/${item.totalCount}`,
+          })),
+        ...rounds.flatMap((round) => {
+          const uniqueReceivers = new Map<string, (typeof round.feedbacks)[number]>()
+          for (const feedback of round.feedbacks.filter((item) => item.status === 'SUBMITTED')) {
+            if (!uniqueReceivers.has(feedback.receiverId)) {
+              uniqueReceivers.set(feedback.receiverId, feedback)
+            }
+          }
+
+          return [...uniqueReceivers.values()].map((feedback) => ({
+            kind: 'result-share' as const,
+            recipientId: feedback.receiverId,
+            recipientName: feedback.receiver.empName,
+            departmentName: feedback.receiver.department.deptName,
+            roundId: round.id,
+            roundName: round.roundName,
+            detail: `제출 ${round.feedbacks.filter((item) => item.receiverId === feedback.receiverId && item.status === 'SUBMITTED').length}건`,
+          }))
+        }),
+      ]
+
       return {
         ...baseData,
         admin: {
@@ -933,9 +1207,23 @@ export async function getFeedback360PageData(
             }
             if (item.qualityRiskCount > 0) {
               alerts.push(`${item.roundName}에서 careless review 의심 응답 ${item.qualityRiskCount}건이 감지되었습니다.`)
-            }
-            return alerts
-          }),
+              }
+              return alerts
+            }),
+          folders: folders.map((folder) => ({
+            id: folder.id,
+            name: folder.name,
+            description: folder.description,
+            color: folder.color,
+            roundCount: folder._count.rounds,
+          })),
+          reminderTargets,
+          settings: selectedRound
+            ? {
+                selectionSettings: parseFeedbackSelectionSettings(selectedRound.selectionSettings),
+                visibilitySettings: parseFeedbackVisibilitySettings(selectedRound.visibilitySettings),
+              }
+            : undefined,
           nominationQueue,
         },
       }
