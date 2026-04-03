@@ -20,6 +20,9 @@ type RespondData = NonNullable<Feedback360PageData['respond']>
 type RespondRatingGuide = NonNullable<RespondData['ratingGuide']>
 type RespondPriorScoreSummary = NonNullable<RespondData['priorScoreSummary']>
 
+const DISTRIBUTION_LIMIT_EXCEEDED_MESSAGE =
+  '등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.'
+
 function buildRespondQuestionState(
   questions: RespondData['questions'] | undefined
 ) {
@@ -89,6 +92,12 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
       selectedDistributionEntry.headcountLimit != null &&
       selectedDistributionEntry.displayCurrentCount > selectedDistributionEntry.headcountLimit
   )
+
+  useEffect(() => {
+    if (!distributionLimitExceeded && respondError === DISTRIBUTION_LIMIT_EXCEEDED_MESSAGE) {
+      setRespondError('')
+    }
+  }, [distributionLimitExceeded, respondError])
 
   const resultTargetId = props.data.mode === 'results' ? props.data.results?.targetEmployee.id ?? '' : ''
   const resultViewContextKey =
@@ -214,6 +223,13 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
 
   async function handleSubmitResponse() {
     if (!respondData) return
+
+    if (distributionLimitExceeded) {
+      setRespondNotice('')
+      setRespondError(DISTRIBUTION_LIMIT_EXCEEDED_MESSAGE)
+      return
+    }
+
     setSubmitBusy(true)
     setRespondNotice('')
     setRespondError('')
@@ -717,7 +733,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                   <button
                     type="button"
                     onClick={handleSubmitResponse}
-                    disabled={submitBusy}
+                    disabled={submitBusy || distributionLimitExceeded}
                     className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
                   >
                     <CheckCircle2 className="h-4 w-4" />

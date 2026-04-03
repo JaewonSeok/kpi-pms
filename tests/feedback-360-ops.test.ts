@@ -472,6 +472,13 @@ async function main() {
     assert.equal(workspace.includes('RespondReferenceSummary'), true)
     assert.equal(workspace.includes('RespondRatingGuideCard'), true)
     assert.equal(workspace.includes('distributionLimitExceeded'), true)
+    assert.equal(workspace.includes('DISTRIBUTION_LIMIT_EXCEEDED_MESSAGE'), true)
+    assert.equal(workspace.includes('if (distributionLimitExceeded)'), true)
+    assert.equal(workspace.includes('disabled={submitBusy || distributionLimitExceeded}'), true)
+    assert.equal(
+      workspace.includes("if (!distributionLimitExceeded && respondError === DISTRIBUTION_LIMIT_EXCEEDED_MESSAGE)"),
+      true
+    )
     assert.equal(workspace.includes('등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.'), true)
     assert.equal(workspace.includes('respondData.reference'), true)
     assert.equal(workspace.includes('[respondFeedbackId, respondOverallComment, respondQuestions]'), true)
