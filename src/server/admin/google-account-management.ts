@@ -940,6 +940,52 @@ export async function loadEmployeeDirectory(params: {
   }
 }
 
+export async function loadMasterLoginTargetPreview(targetEmployeeId: string) {
+  const employee = await prisma.employee.findUnique({
+    where: { id: targetEmployeeId },
+    select: {
+      id: true,
+      empId: true,
+      empName: true,
+      gwsEmail: true,
+      status: true,
+      role: true,
+      department: {
+        select: {
+          deptName: true,
+          deptCode: true,
+        },
+      },
+    },
+  })
+
+  if (!employee) {
+    throw new AppError(404, 'MASTER_LOGIN_TARGET_NOT_FOUND', '접속할 구성원 계정을 찾을 수 없습니다.')
+  }
+
+  if (employee.status !== 'ACTIVE') {
+    throw new AppError(
+      409,
+      'MASTER_LOGIN_TARGET_INACTIVE',
+      '재직 중인 구성원 계정으로만 마스터 로그인을 시작할 수 있습니다.'
+    )
+  }
+
+  return {
+    employee: {
+      id: employee.id,
+      employeeNumber: employee.empId,
+      name: employee.empName,
+      googleEmail: employee.gwsEmail,
+      role: employee.role,
+      employmentStatus: employee.status as EmployeeManagementStatus,
+      departmentName: employee.department.deptName,
+      departmentCode: employee.department.deptCode,
+      loginEnabled: true,
+    },
+  }
+}
+
 async function resolveDepartmentOrThrow(deptId: string) {
   const department = await prisma.department.findUnique({
     where: { id: deptId },

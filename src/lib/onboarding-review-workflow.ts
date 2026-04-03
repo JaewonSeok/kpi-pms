@@ -47,6 +47,30 @@ export type OnboardingWorkflowTargetEmployee = {
   managerId: string | null
 }
 
+export type OnboardingGeneratedReviewListItem = {
+  id: string
+  workflowId: string
+  workflowName: string
+  stepId: string
+  stepName: string
+  roundId: string
+  roundName: string
+  targetId: string
+  targetName: string
+  targetDepartment: string
+  status: string
+  feedbackStatus: string
+  createdAt: string
+  createdDateLabel: string
+  scheduledDateKey: string
+}
+
+export type OnboardingGeneratedReviewSort =
+  | 'CREATED_DESC'
+  | 'CREATED_ASC'
+  | 'TARGET_ASC'
+  | 'STATUS_ASC'
+
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000
 
 export const ONBOARDING_CONDITION_FIELD_LABELS: Record<
@@ -233,4 +257,27 @@ export function planOnboardingWorkflowGeneration(params: {
     scheduledLaterCount,
     ineligibleCount,
   }
+}
+
+export function sortOnboardingGeneratedReviews(
+  reviews: OnboardingGeneratedReviewListItem[],
+  sort: OnboardingGeneratedReviewSort
+) {
+  return [...reviews].sort((left, right) => {
+    if (sort === 'CREATED_ASC') {
+      return left.createdAt.localeCompare(right.createdAt)
+    }
+
+    if (sort === 'TARGET_ASC') {
+      return left.targetName.localeCompare(right.targetName, 'ko')
+    }
+
+    if (sort === 'STATUS_ASC') {
+      const statusCompare = left.status.localeCompare(right.status, 'en')
+      if (statusCompare !== 0) return statusCompare
+      return right.createdAt.localeCompare(left.createdAt)
+    }
+
+    return right.createdAt.localeCompare(left.createdAt)
+  })
 }

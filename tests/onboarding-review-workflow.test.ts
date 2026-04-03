@@ -4,6 +4,7 @@ import path from 'node:path'
 import {
   buildOnboardingReviewNamePreview,
   planOnboardingWorkflowGeneration,
+  sortOnboardingGeneratedReviews,
 } from '../src/lib/onboarding-review-workflow'
 import {
   OnboardingReviewWorkflowRunSchema,
@@ -219,6 +220,62 @@ async function main() {
     assert.equal(plan.duplicateCount, 1)
   })
 
+  await run('generated review list sorting supports created date, target, and status orderings', () => {
+    const reviews = [
+      {
+        id: 'generation-1',
+        workflowId: 'workflow-1',
+        workflowName: '입사 30일 리뷰',
+        stepId: 'step-1',
+        stepName: '1단계',
+        roundId: 'round-1',
+        roundName: '입사 30일 리뷰 / 김나은',
+        targetId: 'emp-2',
+        targetName: '박세린',
+        targetDepartment: '제품팀',
+        status: 'COMPLETED',
+        feedbackStatus: 'SUBMITTED',
+        createdAt: '2026-03-10T00:00:00.000Z',
+        createdDateLabel: '2026-03-10',
+        scheduledDateKey: '2026-03-10',
+      },
+      {
+        id: 'generation-2',
+        workflowId: 'workflow-1',
+        workflowName: '입사 30일 리뷰',
+        stepId: 'step-2',
+        stepName: '2단계',
+        roundId: 'round-2',
+        roundName: '입사 60일 리뷰 / 김나은',
+        targetId: 'emp-1',
+        targetName: '김나은',
+        targetDepartment: '제품팀',
+        status: 'IN_PROGRESS',
+        feedbackStatus: 'PENDING',
+        createdAt: '2026-03-12T00:00:00.000Z',
+        createdDateLabel: '2026-03-12',
+        scheduledDateKey: '2026-03-12',
+      },
+    ]
+
+    assert.deepEqual(
+      sortOnboardingGeneratedReviews(reviews, 'CREATED_DESC').map((item) => item.id),
+      ['generation-2', 'generation-1']
+    )
+    assert.deepEqual(
+      sortOnboardingGeneratedReviews(reviews, 'CREATED_ASC').map((item) => item.id),
+      ['generation-1', 'generation-2']
+    )
+    assert.deepEqual(
+      sortOnboardingGeneratedReviews(reviews, 'TARGET_ASC').map((item) => item.targetName),
+      ['김나은', '박세린']
+    )
+    assert.deepEqual(
+      sortOnboardingGeneratedReviews(reviews, 'STATUS_ASC').map((item) => item.status),
+      ['COMPLETED', 'IN_PROGRESS']
+    )
+  })
+
   await run('workflow run schema and admin panel expose onboarding workflow controls and generated review list', () => {
     const runSchema = OnboardingReviewWorkflowRunSchema.safeParse({
       cycleId: 'cycle-1',
@@ -232,6 +289,7 @@ async function main() {
     assert.equal(panelSource.includes('selectedWorkflowId'), true)
     assert.equal(panelSource.includes('generatedReviewSearch'), true)
     assert.equal(panelSource.includes('generatedReviewStatusFilter'), true)
+    assert.equal(panelSource.includes('generatedReviewSort'), true)
     assert.equal(panelSource.includes('handleRunOnboardingWorkflow'), true)
   })
 

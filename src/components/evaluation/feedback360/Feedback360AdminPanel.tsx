@@ -6,10 +6,34 @@ import { useRouter } from 'next/navigation'
 import { FolderPlus, Mail, Play, Plus, Settings2, Trash2, X } from 'lucide-react'
 import type { Feedback360PageData } from '@/server/feedback-360'
 import {
+  DEFAULT_FEEDBACK_RESULT_PRESENTATION_SETTINGS,
+  FEEDBACK_RESULT_PROFILE_LABELS,
+  type FeedbackResultPresentationSettings,
+  type FeedbackResultRecipientProfile,
+} from '@/lib/feedback-result-presentation'
+import {
+  DEFAULT_FEEDBACK_REPORT_ANALYSIS_SETTINGS,
+  FEEDBACK_ANALYSIS_STRENGTH_LABELS,
+  FEEDBACK_REPORT_ANALYSIS_SECTIONS,
+  type FeedbackReportAnalysisSettings,
+  type FeedbackReportAnalysisStrength,
+} from '@/lib/feedback-report-analysis'
+import {
+  DEFAULT_FEEDBACK_RATING_GUIDE_SETTINGS,
+  annotateFeedbackRatingScaleEntries,
+  buildFeedbackRatingScaleEntries,
+  parseFeedbackRatingGuideSettings,
+  type FeedbackRatingGuideRule,
+  type FeedbackRatingGuideScaleEntry,
+  type FeedbackRatingGuideSettings,
+} from '@/lib/feedback-rating-guide'
+import {
   ONBOARDING_REVIEW_DEFAULT_TEMPLATE,
   POSITION_LABELS_KO,
   buildOnboardingReviewNamePreview,
   formatScheduleHourLabel,
+  sortOnboardingGeneratedReviews,
+  type OnboardingGeneratedReviewSort,
 } from '@/lib/onboarding-review-workflow'
 import { reviewEmailHtmlToText } from '@/lib/review-email-editor'
 import { MultiRaterTimeline } from './MultiRaterTimeline'
@@ -33,6 +57,12 @@ type ResultShareSummary = NonNullable<NonNullable<Feedback360PageData['admin']>[
 type OnboardingAdmin = NonNullable<NonNullable<Feedback360PageData['admin']>['onboarding']>
 type OnboardingWorkflow = OnboardingAdmin['workflows'][number]
 type OnboardingCondition = OnboardingWorkflow['targetConditions'][number]
+type ReviewAdminState = NonNullable<NonNullable<Feedback360PageData['admin']>['reviewAdmin']>
+type ReviewAdminGroup = ReviewAdminState['groups'][number]
+type ReviewAdminCandidate = ReviewAdminState['candidateMembers'][number]
+type ReviewAdminScope = ReviewAdminGroup['reviewScope']
+type RoundQuestion = Feedback360PageData['availableRounds'][number]['questions'][number]
+type RatingGuideDisplayEntry = ReturnType<typeof annotateFeedbackRatingScaleEntries>[number]
 
 type OnboardingWorkflowDraft = {
   id?: string
@@ -52,6 +82,38 @@ type OnboardingWorkflowDraft = {
     includeHireDateInName: boolean
   }>
 }
+
+const REVIEW_ADMIN_SCOPE_OPTIONS: Array<{
+  value: ReviewAdminScope
+  label: string
+  description: string
+}> = [
+  {
+    value: 'NONE',
+    label: '해당 없음',
+    description: '리뷰 관리자 권한을 부여하지 않습니다.',
+  },
+  {
+    value: 'ALL_REVIEWS_MANAGE',
+    label: '모든 리뷰 사이클/템플릿 관리',
+    description: '조직 전체 리뷰 사이클과 템플릿을 관리할 수 있습니다.',
+  },
+  {
+    value: 'ALL_REVIEWS_MANAGE_AND_CONTENT',
+    label: '모든 리뷰 사이클/템플릿 관리 + 모든 리뷰 내용 열람 및 수정',
+    description: '조직 전체 리뷰 설정과 리뷰 내용을 모두 열람하고 수정할 수 있습니다.',
+  },
+  {
+    value: 'COLLABORATOR_REVIEWS_MANAGE',
+    label: '공동 작업자인 리뷰 사이클/템플릿 관리',
+    description: '공동 작업자로 지정된 리뷰 사이클과 템플릿만 관리할 수 있습니다.',
+  },
+  {
+    value: 'COLLABORATOR_REVIEWS_MANAGE_AND_CONTENT',
+    label: '공동 작업자인 리뷰 사이클/템플릿 관리 + 공동 작업자인 리뷰 내용 열람 및 수정',
+    description: '공동 작업자로 지정된 리뷰만 관리하고 해당 리뷰 내용도 열람 및 수정할 수 있습니다.',
+  },
+]
 
 const DEFAULT_SELECTION_SETTINGS = {
   requireLeaderApproval: false,
@@ -90,6 +152,109 @@ function createLocalId(prefix: string) {
   }
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
+
+function createEmptyRatingGuideRule(): FeedbackRatingGuideRule {
+  return {
+    id: createLocalId('rating-guide-rule'),
+    label: '새 등급 가이드',
+    headline: '',
+    guidance: '',
+    filters: {},
+    gradeDescriptions: {},
+  }
+}
+
+function getRatingQuestionOptions(round?: Feedback360PageData['availableRounds'][number] | null) {
+  return (round?.questions ?? [])
+    .filter((question) => question.questionType === 'RATING_SCALE')
+    .map((question) => ({
+      id: question.id,
+      questionText: question.questionText,
+      scaleMin: question.scaleMin,
+      scaleMax: question.scaleMax,
+    }))
+}
+
+function hydrateRatingGuideSettings(params: {
+  round?: Feedback360PageData['availableRounds'][number] | null
+  settings?: FeedbackRatingGuideSettings
+}) {
+  return parseFeedbackRatingGuideSettings(params.settings ?? DEFAULT_FEEDBACK_RATING_GUIDE_SETTINGS, getRatingQuestionOptions(params.round))
+}
+
+const RESULT_PRESENTATION_FIELDS: Array<{
+  key: keyof FeedbackResultPresentationSettings['REVIEWEE']
+  label: string
+  description: string
+}> = [
+  {
+    key: 'showLeaderComment',
+    label: '팀장 평가 코멘트 공개',
+    description: '직속 리더의 코멘트 본문을 결과지에 포함합니다.',
+  },
+  {
+    key: 'showLeaderScore',
+    label: '팀장 평가 등급 / 총점 공개',
+    description: '직속 리더가 남긴 등급 또는 총점을 결과지에 표시합니다.',
+  },
+  {
+    key: 'showExecutiveComment',
+    label: '상위 평가 코멘트 공개',
+    description: '실장 / 본부장 / 경영진 관점의 코멘트를 결과지에 포함합니다.',
+  },
+  {
+    key: 'showExecutiveScore',
+    label: '상위 평가 등급 / 총점 공개',
+    description: '상위 평가자가 남긴 등급 또는 총점을 결과지에 표시합니다.',
+  },
+  {
+    key: 'showFinalScore',
+    label: '최종 결과 등급 / 총점 공개',
+    description: '최종 합산 결과의 등급과 총점을 결과지에 노출합니다.',
+  },
+  {
+    key: 'showFinalComment',
+    label: '최종 결과 코멘트 공개',
+    description: '종합 결과와 익명 요약 코멘트를 결과지에 포함합니다.',
+  },
+]
+
+const REPORT_ANALYSIS_WORDING_FIELDS: Array<{
+  key: keyof FeedbackReportAnalysisSettings['wording']
+  label: string
+  description: string
+}> = [
+  {
+    key: 'strengthLabel',
+    label: '강점 라벨',
+    description: '질문별 인사이트에서 강점으로 표시할 용어입니다.',
+  },
+  {
+    key: 'improvementLabel',
+    label: '보완점 라벨',
+    description: '기본 약점 표현 대신 조직 언어에 맞는 보완점 용어를 사용할 수 있습니다.',
+  },
+  {
+    key: 'selfAwarenessLabel',
+    label: '자기객관화 라벨',
+    description: '셀프 평가와 타인 평균 비교 섹션에 사용할 표현입니다.',
+  },
+  {
+    key: 'selfHighLabel',
+    label: '자기 인식 높음 라벨',
+    description: '셀프 점수가 타인 평균보다 높을 때 표시할 표현입니다.',
+  },
+  {
+    key: 'selfLowLabel',
+    label: '자기 인식 낮음 라벨',
+    description: '셀프 점수가 타인 평균보다 낮을 때 표시할 표현입니다.',
+  },
+  {
+    key: 'balancedLabel',
+    label: '균형 라벨',
+    description: '큰 차이가 없을 때 표시할 표현입니다.',
+  },
+]
 
 function createEmptyCondition(field: 'JOIN_DATE' | 'POSITION'): OnboardingCondition {
   if (field === 'POSITION') {
@@ -199,11 +364,28 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const [banner, setBanner] = useState<Banner | null>(null)
   const [folderFilter, setFolderFilter] = useState<'ALL' | 'UNCATEGORIZED' | string>('ALL')
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [reminderDialogOpen, setReminderDialogOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [selectedRoundId, setSelectedRoundId] = useState(props.data.selectedRoundId ?? rounds[0]?.id ?? '')
   const [folderDraft, setFolderDraft] = useState({ id: '', name: '', description: '' })
+  const [groupSearch, setGroupSearch] = useState('')
+  const [collaboratorSearch, setCollaboratorSearch] = useState('')
+  const [collaboratorIds, setCollaboratorIds] = useState<string[]>([])
+  const [groupDraft, setGroupDraft] = useState<{
+    id: string
+    groupName: string
+    description: string
+    reviewScope: ReviewAdminScope
+    memberIds: string[]
+  }>({
+    id: '',
+    groupName: '',
+    description: '',
+    reviewScope: 'COLLABORATOR_REVIEWS_MANAGE',
+    memberIds: [],
+  })
   const [reminderAction, setReminderAction] = useState<ReminderAction>('send-review-reminder')
   const [shareAudience, setShareAudience] = useState<'REVIEWEE' | 'LEADER' | 'LEADER_AND_REVIEWEE'>('REVIEWEE')
   const [reminderStatusFilter, setReminderStatusFilter] = useState<'ALL' | string>('ALL')
@@ -214,19 +396,56 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const [testEmail, setTestEmail] = useState('')
   const [selectionSettings, setSelectionSettings] = useState(DEFAULT_SELECTION_SETTINGS)
   const [visibilitySettings, setVisibilitySettings] = useState<Record<string, VisibilityLevel>>(DEFAULT_VISIBILITY_SETTINGS)
+  const [resultPresentationSettings, setResultPresentationSettings] = useState<FeedbackResultPresentationSettings>(
+    DEFAULT_FEEDBACK_RESULT_PRESENTATION_SETTINGS
+  )
+  const [reportAnalysisSettings, setReportAnalysisSettings] = useState<FeedbackReportAnalysisSettings>(
+    DEFAULT_FEEDBACK_REPORT_ANALYSIS_SETTINGS
+  )
+  const [ratingGuideSettings, setRatingGuideSettings] = useState<FeedbackRatingGuideSettings>(
+    DEFAULT_FEEDBACK_RATING_GUIDE_SETTINGS
+  )
+  const [selectedResultVersionProfile, setSelectedResultVersionProfile] =
+    useState<FeedbackResultRecipientProfile>('REVIEWEE')
+  const [selectedResultShareTargetIds, setSelectedResultShareTargetIds] = useState<string[]>([])
+  const [pendingReminderPrefillIds, setPendingReminderPrefillIds] = useState<string[] | null>(null)
+  const [questionDrafts, setQuestionDrafts] = useState<Array<{ id: string; category: string; questionText: string }>>([])
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>('new')
   const [workflowDraft, setWorkflowDraft] = useState<OnboardingWorkflowDraft>(
     createEmptyWorkflowDraft(props.data.selectedCycleId ?? '')
   )
   const [generatedReviewSearch, setGeneratedReviewSearch] = useState('')
   const [generatedReviewStatusFilter, setGeneratedReviewStatusFilter] = useState<'ALL' | string>('ALL')
+  const [generatedReviewSort, setGeneratedReviewSort] =
+    useState<OnboardingGeneratedReviewSort>('CREATED_DESC')
 
   const selectedRound = rounds.find((round) => round.id === selectedRoundId) ?? rounds[0] ?? null
+  const reviewAdmin = admin?.reviewAdmin
   const selectedReminderKind = getReminderKind(reminderAction)
   const hasReminderBodyContent = reviewEmailHtmlToText(reminderBody).trim().length > 0
   const selectedWorkflow =
     onboarding?.workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null
   const resultShare = admin?.resultShare
+  const resultShareRows = resultShare?.rows ?? []
+  const currentUserRole = props.data.currentUser?.role ?? 'ROLE_MEMBER'
+  const canManageAllReviewRounds =
+    reviewAdmin?.currentAccess.canManageAllRounds ?? currentUserRole === 'ROLE_ADMIN'
+  const canManageCollaboratorReviewRounds =
+    reviewAdmin?.currentAccess.canManageCollaboratorRounds ?? canManageAllReviewRounds
+  const canEditReviewAdminGroups = currentUserRole === 'ROLE_ADMIN'
+  const canManageFolders = canManageAllReviewRounds
+  const ratingQuestionOptions = useMemo(() => getRatingQuestionOptions(selectedRound), [selectedRound])
+  const ratingGuideScaleEntries = useMemo(
+    () => annotateFeedbackRatingScaleEntries(ratingGuideSettings.scaleEntries),
+    [ratingGuideSettings.scaleEntries]
+  )
+  const visibleResultShareTargetIds = useMemo(
+    () => resultShareRows.map((row) => row.targetId),
+    [resultShareRows]
+  )
+  const allResultShareSelected =
+    visibleResultShareTargetIds.length > 0 &&
+    visibleResultShareTargetIds.every((id) => selectedResultShareTargetIds.includes(id))
 
   const folderCards = useMemo(
     () => [
@@ -240,6 +459,49 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     ],
     [admin?.folders, rounds]
   )
+
+  const reviewAdminCandidates = reviewAdmin?.candidateMembers ?? []
+  const filteredReviewAdminCandidates = useMemo(() => {
+    const keyword = groupSearch.trim()
+    if (!keyword) return reviewAdminCandidates
+    return reviewAdminCandidates.filter((candidate) =>
+      [candidate.name, candidate.departmentName, candidate.position, candidate.email]
+        .filter(Boolean)
+        .some((value) => value.includes(keyword))
+    )
+  }, [groupSearch, reviewAdminCandidates])
+
+  const eligibleCollaboratorCandidates = useMemo(
+    () =>
+      reviewAdminCandidates.filter(
+        (candidate) => candidate.canManageCollaboratorRounds || currentUserRole === 'ROLE_ADMIN'
+      ),
+    [currentUserRole, reviewAdminCandidates]
+  )
+
+  const filteredCollaboratorCandidates = useMemo(() => {
+    const keyword = collaboratorSearch.trim()
+    if (!keyword) return eligibleCollaboratorCandidates
+    return eligibleCollaboratorCandidates.filter((candidate) =>
+      [candidate.name, candidate.departmentName, candidate.position, candidate.email]
+        .filter(Boolean)
+        .some((value) => value.includes(keyword))
+    )
+  }, [collaboratorSearch, eligibleCollaboratorCandidates])
+
+  const selectedCollaborators = useMemo(() => {
+    const candidateMap = new Map(reviewAdminCandidates.map((candidate) => [candidate.employeeId, candidate] as const))
+    return collaboratorIds
+      .map((employeeId) => candidateMap.get(employeeId))
+      .filter((candidate): candidate is ReviewAdminCandidate => Boolean(candidate))
+  }, [collaboratorIds, reviewAdminCandidates])
+
+  const selectedGroupMembers = useMemo(() => {
+    const candidateMap = new Map(reviewAdminCandidates.map((candidate) => [candidate.employeeId, candidate] as const))
+    return groupDraft.memberIds
+      .map((employeeId) => candidateMap.get(employeeId))
+      .filter((candidate): candidate is ReviewAdminCandidate => Boolean(candidate))
+  }, [groupDraft.memberIds, reviewAdminCandidates])
 
   const filteredRounds = useMemo(
     () =>
@@ -336,7 +598,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   )
 
   const filteredGeneratedReviews = useMemo(() => {
-    return (onboarding?.generatedReviews ?? []).filter((review) => {
+    const filtered = (onboarding?.generatedReviews ?? []).filter((review) => {
       if (generatedReviewStatusFilter !== 'ALL' && review.status !== generatedReviewStatusFilter) {
         return false
       }
@@ -351,27 +613,75 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         review.stepName.includes(keyword)
       )
     })
-  }, [generatedReviewSearch, generatedReviewStatusFilter, onboarding?.generatedReviews])
+
+    return sortOnboardingGeneratedReviews(filtered, generatedReviewSort)
+  }, [generatedReviewSearch, generatedReviewSort, generatedReviewStatusFilter, onboarding?.generatedReviews])
 
   useEffect(() => {
     setBanner(null)
     setFolderDialogOpen(false)
+    setGroupDialogOpen(false)
     setSettingsDialogOpen(false)
     setReminderDialogOpen(false)
+    setGroupSearch('')
+    setCollaboratorSearch('')
+    setCollaboratorIds([])
+    setGeneratedReviewSearch('')
+    setGeneratedReviewStatusFilter('ALL')
+    setGeneratedReviewSort('CREATED_DESC')
     setSelectedRoundId(props.data.selectedRoundId ?? rounds[0]?.id ?? '')
   }, [props.data.selectedCycleId, props.data.selectedRoundId, rounds])
 
   useEffect(() => {
     const nextSelection = selectedRound?.selectionSettings ?? admin?.settings?.selectionSettings ?? DEFAULT_SELECTION_SETTINGS
     const nextVisibility = selectedRound?.visibilitySettings ?? admin?.settings?.visibilitySettings ?? DEFAULT_VISIBILITY_SETTINGS
+    const nextPresentation =
+      selectedRound?.resultPresentationSettings ??
+      admin?.settings?.resultPresentationSettings ??
+      DEFAULT_FEEDBACK_RESULT_PRESENTATION_SETTINGS
+    const nextReportAnalysis =
+      selectedRound?.reportAnalysisSettings ??
+      admin?.settings?.reportAnalysisSettings ??
+      DEFAULT_FEEDBACK_REPORT_ANALYSIS_SETTINGS
+    const nextRatingGuide = hydrateRatingGuideSettings({
+      round: selectedRound,
+      settings: selectedRound?.ratingGuideSettings ?? admin?.settings?.ratingGuideSettings,
+    })
+    const nextCollaboratorIds =
+      selectedRound?.collaborators.map((collaborator) => collaborator.employeeId) ??
+      admin?.settings?.collaboratorIds ??
+      []
     setSelectionSettings(nextSelection)
     setVisibilitySettings(nextVisibility)
-  }, [admin?.settings?.selectionSettings, admin?.settings?.visibilitySettings, selectedRound])
+    setResultPresentationSettings(nextPresentation)
+    setReportAnalysisSettings(nextReportAnalysis)
+    setRatingGuideSettings(nextRatingGuide)
+    setCollaboratorIds(nextCollaboratorIds)
+    setQuestionDrafts(
+      (selectedRound?.questions ?? []).map((question) => ({
+        id: question.id,
+        category: question.category,
+        questionText: question.questionText,
+      }))
+    )
+  }, [
+    admin?.settings?.resultPresentationSettings,
+    admin?.settings?.reportAnalysisSettings,
+    admin?.settings?.ratingGuideSettings,
+    admin?.settings?.selectionSettings,
+    admin?.settings?.visibilitySettings,
+    selectedRound,
+  ])
 
   useEffect(() => {
     const availableIds = new Set(filteredReminderTargets.map((item) => item.recipientId))
     setSelectedTargetIds((current) => current.filter((item) => availableIds.has(item)))
   }, [filteredReminderTargets])
+
+  useEffect(() => {
+    const availableIds = new Set(visibleResultShareTargetIds)
+    setSelectedResultShareTargetIds((current) => current.filter((item) => availableIds.has(item)))
+  }, [visibleResultShareTargetIds])
 
   useEffect(() => {
     const template = getReminderTemplate(selectedRound?.roundName ?? '360 리뷰', reminderAction)
@@ -385,6 +695,20 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     setSelectedTargetIds([])
     setShareAudience('REVIEWEE')
   }, [selectedRoundId, reminderAction])
+
+  useEffect(() => {
+    setSelectedResultShareTargetIds([])
+    setSelectedResultVersionProfile('REVIEWEE')
+  }, [selectedRoundId])
+
+  useEffect(() => {
+    if (!reminderDialogOpen || reminderAction !== 'send-result-share' || !pendingReminderPrefillIds) {
+      return
+    }
+
+    setSelectedTargetIds(pendingReminderPrefillIds)
+    setPendingReminderPrefillIds(null)
+  }, [pendingReminderPrefillIds, reminderAction, reminderDialogOpen])
 
   useEffect(() => {
     setSelectedWorkflowId('new')
@@ -418,6 +742,33 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         ? current.filter((item) => item !== recipientId)
         : [...current, recipientId]
     )
+  }
+
+  function selectAllResultShareTargets() {
+    setSelectedResultShareTargetIds(visibleResultShareTargetIds)
+  }
+
+  function toggleAllResultShareTargets() {
+    setSelectedResultShareTargetIds((current) =>
+      allResultShareSelected
+        ? current.filter((item) => !visibleResultShareTargetIds.includes(item))
+        : visibleResultShareTargetIds
+    )
+  }
+
+  function toggleResultShareTarget(targetId: string) {
+    setSelectedResultShareTargetIds((current) =>
+      current.includes(targetId)
+        ? current.filter((item) => item !== targetId)
+        : [...current, targetId]
+    )
+  }
+
+  function openResultShareReminder(targetIds: string[]) {
+    setSelectedRoundId(resultShare?.roundId ?? selectedRoundId)
+    setPendingReminderPrefillIds(targetIds)
+    setReminderAction('send-result-share')
+    setReminderDialogOpen(true)
   }
 
   function updateWorkflowCondition(conditionId: string, nextValue: Partial<OnboardingCondition>) {
@@ -631,6 +982,111 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     }
   }
 
+  function openReviewAdminGroupDialog(group?: ReviewAdminGroup | null) {
+    if (!group) {
+      setGroupDraft({
+        id: '',
+        groupName: '',
+        description: '',
+        reviewScope: 'COLLABORATOR_REVIEWS_MANAGE',
+        memberIds: [],
+      })
+    } else {
+      setGroupDraft({
+        id: group.id,
+        groupName: group.groupName,
+        description: group.description ?? '',
+        reviewScope: group.reviewScope,
+        memberIds: group.members.map((member) => member.employeeId),
+      })
+    }
+    setGroupSearch('')
+    setGroupDialogOpen(true)
+  }
+
+  function toggleGroupMember(employeeId: string) {
+    setGroupDraft((current) => ({
+      ...current,
+      memberIds: current.memberIds.includes(employeeId)
+        ? current.memberIds.filter((item) => item !== employeeId)
+        : [...current.memberIds, employeeId],
+    }))
+  }
+
+  function toggleCollaborator(employeeId: string) {
+    setCollaboratorIds((current) =>
+      current.includes(employeeId) ? current.filter((item) => item !== employeeId) : [...current, employeeId]
+    )
+  }
+
+  async function handleSaveReviewAdminGroup() {
+    if (!groupDraft.groupName.trim()) {
+      setBanner({
+        tone: 'error',
+        message: '그룹 이름을 입력해 주세요.',
+      })
+      return
+    }
+
+    setBusy(true)
+    try {
+      const response = await fetch('/api/feedback/admin-groups', {
+        method: groupDraft.id ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(groupDraft.id ? { id: groupDraft.id } : {}),
+          groupName: groupDraft.groupName,
+          description: groupDraft.description,
+          reviewScope: groupDraft.reviewScope,
+          memberIds: groupDraft.memberIds,
+        }),
+      })
+      const json = await response.json()
+      if (!json.success) {
+        throw new Error(json.error?.message || '리뷰 권한 그룹을 저장하지 못했습니다.')
+      }
+
+      setGroupDialogOpen(false)
+      await refreshWithMessage(
+        groupDraft.id ? '리뷰 권한 그룹을 수정했습니다.' : '리뷰 권한 그룹을 만들었습니다.'
+      )
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '리뷰 권한 그룹을 저장하지 못했습니다.',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleDeleteReviewAdminGroup(groupId: string) {
+    setBusy(true)
+    try {
+      const response = await fetch('/api/feedback/admin-groups', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: groupId }),
+      })
+      const json = await response.json()
+      if (!json.success) {
+        throw new Error(json.error?.message || '리뷰 권한 그룹을 삭제하지 못했습니다.')
+      }
+
+      if (groupDraft.id === groupId) {
+        setGroupDialogOpen(false)
+      }
+      await refreshWithMessage('리뷰 권한 그룹을 삭제했습니다.')
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '리뷰 권한 그룹을 삭제하지 못했습니다.',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleSaveSettings() {
     if (!selectedRound) return
 
@@ -640,17 +1096,22 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          folderId: selectedRound.folderId ?? null,
-          selectionSettings,
-          visibilitySettings,
-        }),
-      })
+            folderId: selectedRound.folderId ?? null,
+            selectionSettings,
+            visibilitySettings,
+            resultPresentationSettings,
+            reportAnalysisSettings,
+            ratingGuideSettings,
+            collaboratorIds,
+            questions: questionDrafts.map(({ id, questionText }) => ({ id, questionText })),
+          }),
+        })
       const json = await response.json()
       if (!json.success) {
         throw new Error(json.error?.message || '라운드 설정을 저장하지 못했습니다.')
       }
       setSettingsDialogOpen(false)
-      await refreshWithMessage('동료 선택 규칙과 익명 공개 범위를 저장했습니다.')
+      await refreshWithMessage('동료 선택 규칙, 익명 공개 범위, 결과지 버전 설정, 리뷰 문항 수정을 저장했습니다.')
     } catch (error) {
       setBanner({
         tone: 'error',
@@ -688,6 +1149,9 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
       if (mode === 'test') {
         setBanner({ tone: 'info', message: '테스트 발송을 완료했습니다.' })
       } else {
+        if (reminderAction === 'send-result-share') {
+          setSelectedResultShareTargetIds([])
+        }
         setReminderDialogOpen(false)
         await refreshWithMessage(json.data?.message ?? '리마인드 발송을 예약했습니다.')
       }
@@ -705,6 +1169,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     <div className="space-y-6">
       {banner ? <BannerBox banner={banner} onClose={() => setBanner(null)} /> : null}
 
+      {/*
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <ResponseRateCard
           title="운영 전체 상태"
@@ -717,11 +1182,107 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         <MetricCard label="품질 위험 응답" value={`${healthSummary.riskCount}건`} tone="rose" />
         <MetricCard label="남은 미응답" value={`${healthSummary.pendingCount}건`} tone="slate" />
       </section>
+      */}
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <ResponseRateCard
+          title="운영 전체 상태"
+          responseRate={props.data.summary.averageResponseRate}
+          submittedCount={props.data.summary.submittedResponses}
+          pendingCount={props.data.summary.pendingResponses}
+          description={`활성 라운드 ${props.data.summary.activeRounds}개`}
+        />
+        <MetricCard label="응답률 주의 라운드" value={`${healthSummary.lowResponseCount}개`} tone="amber" />
+        <MetricCard label="익명성 위험 응답" value={`${healthSummary.riskCount}건`} tone="rose" />
+        <MetricCard label="미응답 건수" value={`${healthSummary.pendingCount}건`} tone="slate" />
+      </section>
+
+      {reviewAdmin ? (
+        <Panel
+          title="리뷰 권한 범위"
+          description="전역 리뷰 권한과 공동 작업자 권한을 분리해, 내가 접근 가능한 리뷰 범위를 확인하고 공동 작업자 권한 그룹을 관리합니다."
+          action={
+            canEditReviewAdminGroups ? (
+              <button
+                type="button"
+                onClick={() => openReviewAdminGroupDialog(null)}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                <Plus className="h-4 w-4" />
+                권한 그룹 추가
+              </button>
+            ) : undefined
+          }
+        >
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+            <div className="text-sm font-semibold text-blue-900">{reviewAdmin.currentAccess.summaryLabel}</div>
+            <p className="mt-1 text-sm leading-6 text-blue-800">{reviewAdmin.currentAccess.summaryDescription}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Badge tone={reviewAdmin.currentAccess.canManageAllRounds ? 'emerald' : 'slate'}>
+                전체 리뷰 관리 {reviewAdmin.currentAccess.canManageAllRounds ? '가능' : '불가'}
+              </Badge>
+              <Badge tone={reviewAdmin.currentAccess.canManageCollaboratorRounds ? 'blue' : 'slate'}>
+                공동 작업 리뷰 관리 {reviewAdmin.currentAccess.canManageCollaboratorRounds ? '가능' : '불가'}
+              </Badge>
+              <Badge tone={reviewAdmin.currentAccess.canReadAllContent ? 'emerald' : 'slate'}>
+                전체 리뷰 내용 {reviewAdmin.currentAccess.canReadAllContent ? '열람 가능' : '열람 제한'}
+              </Badge>
+              <Badge tone={reviewAdmin.currentAccess.canReadCollaboratorContent ? 'blue' : 'slate'}>
+                공동 작업 리뷰 내용 {reviewAdmin.currentAccess.canReadCollaboratorContent ? '열람 가능' : '열람 제한'}
+              </Badge>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            {reviewAdmin.groups.length ? (
+              reviewAdmin.groups.map((group) => (
+                <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">{group.groupName}</div>
+                      <div className="mt-1 text-sm text-slate-500">{group.description || '설명 없음'}</div>
+                    </div>
+                    <Badge tone="blue">{group.memberCount}명</Badge>
+                  </div>
+                  <div className="mt-3 text-sm font-medium text-slate-700">{group.reviewScopeLabel}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {group.members.slice(0, 4).map((member) => (
+                      <Badge key={member.employeeId}>
+                        {member.name} · {member.position}
+                      </Badge>
+                    ))}
+                    {group.members.length > 4 ? <Badge>+{group.members.length - 4}명</Badge> : null}
+                  </div>
+                  {canEditReviewAdminGroups ? (
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openReviewAdminGroupDialog(group)}
+                        className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-white"
+                      >
+                        수정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteReviewAdminGroup(group.id)}
+                        className="inline-flex min-h-10 items-center justify-center rounded-xl border border-rose-200 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            ) : (
+              <EmptyBlock message="아직 리뷰 권한 그룹이 없습니다. 공동 작업자형 권한을 부여하려면 권한 그룹을 먼저 만들어 주세요." />
+            )}
+          </div>
+        </Panel>
+      ) : null}
 
       <Panel
         title="리뷰 폴더"
         description="상단 폴더 strip으로 라운드를 묶어 보고, 미분류 버킷과 새 폴더 생성을 함께 운영합니다."
-        action={
+        action={canManageFolders ? (
           <button
             type="button"
             onClick={() => {
@@ -733,7 +1294,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
             <FolderPlus className="h-4 w-4" />
             새 폴더
           </button>
-        }
+        ) : null}
       >
         <div className="flex gap-3 overflow-x-auto pb-2">
           {folderCards.map((folder) => (
@@ -780,6 +1341,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                       </button>
                       <Badge>{round.roundType}</Badge>
                       <Badge tone={round.status === 'IN_PROGRESS' ? 'emerald' : 'slate'}>{round.status}</Badge>
+                      {round.collaborators.length ? <Badge tone="blue">공동 작업자 {round.collaborators.length}명</Badge> : null}
                       {round.folderName ? <Badge tone="blue">{round.folderName}</Badge> : <Badge>미분류</Badge>}
                     </div>
                     <div className="text-sm text-slate-500">
@@ -793,6 +1355,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                   </div>
 
                   <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
+                    {canManageFolders ? (
                     <select
                       value={round.folderId ?? ''}
                       onChange={(event) => void handleAssignFolder(round.id, event.target.value)}
@@ -805,6 +1368,11 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                         </option>
                       ))}
                     </select>
+                    ) : (
+                      <div className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-500">
+                        폴더 이동은 전체 리뷰 관리자만 가능합니다.
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -840,7 +1408,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
       <Panel
         title="온보딩 리뷰 워크플로우"
         description="입사일과 직군 조건에 맞는 구성원에게 다단계 온보딩 리뷰를 자동 생성합니다. 실제 반영은 저장 후 수동 실행 또는 스케줄러 실행으로 처리됩니다."
-        action={
+        action={!canManageFolders ? null : (
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -868,7 +1436,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
               워크플로우 저장
             </button>
           </div>
-        }
+        )}
       >
         {selectedCycle ? (
           <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
@@ -1217,11 +1785,28 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
             <span className="font-semibold text-slate-900">{onboarding?.generatedReviews.length ?? 0}</span>건
           </div>
           <div className="flex flex-col gap-3 md:flex-row">
+            {/* legacy search input removed during RC recovery
+            {/* normalized generated review search input
             <input
               value={generatedReviewSearch}
               onChange={(event) => setGeneratedReviewSearch(event.target.value)}
               className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900 md:w-72"
               placeholder="리뷰 이름, 대상자, 조직 검색"
+            />
+            */}
+            {/* corrupted duplicate input removed during RC recovery
+            <input
+              value={generatedReviewSearch}
+              onChange={(event) => setGeneratedReviewSearch(event.target.value)}
+              className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900 md:w-72"
+              placeholder="리뷰 이름, 대상자, 조직 검색"
+            />
+            */}
+            <input
+              value={generatedReviewSearch}
+              onChange={(event) => setGeneratedReviewSearch(event.target.value)}
+              className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900 md:w-72"
+              placeholder={'\uB9AC\uBDF0 \uC774\uB984, \uB300\uC0C1\uC790, \uC870\uC9C1 \uAC80\uC0C9'}
             />
             <select
               value={generatedReviewStatusFilter}
@@ -1236,6 +1821,19 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="mt-2 flex justify-end">
+          <select
+            value={generatedReviewSort}
+            onChange={(event) => setGeneratedReviewSort(event.target.value as OnboardingGeneratedReviewSort)}
+            className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+          >
+            <option value="CREATED_DESC">생성일 최신순</option>
+            <option value="CREATED_ASC">생성일 오래된순</option>
+            <option value="TARGET_ASC">대상자 이름순</option>
+            <option value="STATUS_ASC">상태순</option>
+          </select>
         </div>
 
         <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
@@ -1338,6 +1936,32 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         <Panel
           title="결과 공유 / 열람 확인"
           description={`${resultShare.roundName} 결과 공유 이후 리더와 리뷰 대상자의 열람 여부를 함께 추적합니다.`}
+          action={
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  openResultShareReminder(
+                    selectedResultShareTargetIds.length
+                      ? selectedResultShareTargetIds
+                      : visibleResultShareTargetIds
+                  )
+                }
+                disabled={busy || !visibleResultShareTargetIds.length}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                {selectedResultShareTargetIds.length ? '선택 대상 공유' : '전원 공유'}
+              </button>
+              <button
+                type="button"
+                onClick={() => openResultShareReminder(visibleResultShareTargetIds)}
+                disabled={busy || !visibleResultShareTargetIds.length}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                결과 공유 열기
+              </button>
+            </div>
+          }
         >
           {resultShare.rows.length ? (
             <div className="space-y-4">
@@ -1363,8 +1987,42 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                 />
               </div>
 
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="text-sm text-slate-700">
+                    현재 선택 <span className="font-semibold text-slate-900">{selectedResultShareTargetIds.length}</span>명 · 표시{' '}
+                    <span className="font-semibold text-slate-900">{visibleResultShareTargetIds.length}</span>명 · 전체{' '}
+                    <span className="font-semibold text-slate-900">{resultShare.totalTargets}</span>명
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAllResultShareTargets}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-white"
+                    >
+                      전체 {visibleResultShareTargetIds.length}명 선택
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedResultShareTargetIds([])}
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-white"
+                    >
+                      선택 취소
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                <div className="grid min-w-[940px] grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_190px_190px_120px] items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div className="grid min-w-[980px] grid-cols-[52px_minmax(0,1.2fr)_minmax(0,1fr)_190px_190px_120px] items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  <label className="inline-flex items-center justify-center">
+                    <input
+                      type="checkbox"
+                      checked={allResultShareSelected}
+                      onChange={toggleAllResultShareTargets}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                  </label>
                   <span>대상자</span>
                   <span>리더</span>
                   <span>리더 공유 상태</span>
@@ -1375,8 +2033,16 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                   {resultShare.rows.map((row) => (
                     <div
                       key={row.targetId}
-                      className="grid min-w-[940px] grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_190px_190px_120px] items-start gap-3 px-4 py-3 text-sm text-slate-700"
+                      className="grid min-w-[980px] grid-cols-[52px_minmax(0,1.2fr)_minmax(0,1fr)_190px_190px_120px] items-start gap-3 px-4 py-3 text-sm text-slate-700"
                     >
+                      <label className="inline-flex items-center justify-center pt-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedResultShareTargetIds.includes(row.targetId)}
+                          onChange={() => toggleResultShareTarget(row.targetId)}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                      </label>
                       <div className="min-w-0">
                         <div className="truncate font-semibold text-slate-900">{row.targetName}</div>
                         <div className="mt-1 text-xs text-slate-500">{row.departmentName}</div>
@@ -1526,6 +2192,185 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         </ModalFrame>
       ) : null}
 
+      {groupDialogOpen ? (
+        <ModalFrame
+          title={groupDraft.id ? '리뷰 권한 그룹 수정' : '리뷰 권한 그룹 추가'}
+          onClose={() => setGroupDialogOpen(false)}
+        >
+          <div className="space-y-6">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-4">
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">그룹 이름</span>
+                  <input
+                    value={groupDraft.groupName}
+                    onChange={(event) =>
+                      setGroupDraft((current) => ({ ...current, groupName: event.target.value }))
+                    }
+                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                    placeholder="예: 일부 리뷰 열람 및 수정"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">설명</span>
+                  <textarea
+                    value={groupDraft.description}
+                    onChange={(event) =>
+                      setGroupDraft((current) => ({ ...current, description: event.target.value }))
+                    }
+                    className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm text-slate-900"
+                    placeholder="이 그룹이 어떤 리뷰 범위를 다루는지 설명을 남겨 주세요."
+                  />
+                </label>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-semibold text-slate-900">권한 범위</div>
+                <div className="mt-3 space-y-3">
+                  {REVIEW_ADMIN_SCOPE_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${
+                        groupDraft.reviewScope === option.value
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-200 bg-white text-slate-700'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="review-admin-scope"
+                        checked={groupDraft.reviewScope === option.value}
+                        onChange={() =>
+                          setGroupDraft((current) => ({ ...current, reviewScope: option.value }))
+                        }
+                        className="mt-1 h-4 w-4 border-slate-300"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold">{option.label}</div>
+                        <p
+                          className={`mt-1 text-sm leading-6 ${
+                            groupDraft.reviewScope === option.value ? 'text-slate-200' : 'text-slate-500'
+                          }`}
+                        >
+                          {option.description}
+                        </p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-3">
+                {/*
+                <div className="text-sm font-semibold text-slate-900">그룹 구성원</div>
+                <input
+                  value={groupSearch}
+                  onChange={(event) => setGroupSearch(event.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                  placeholder="이름, 조직, 역할, 이메일로 검색"
+                />
+                */}
+                <div className="text-sm font-semibold text-slate-900">{'\uADF8\uB8F9 \uAD6C\uC131\uC6D0'}</div>
+                <input
+                  value={groupSearch}
+                  onChange={(event) => setGroupSearch(event.target.value)}
+                  className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                  placeholder={'\uC774\uB984, \uC870\uC9C1, \uC5ED\uD560, \uC774\uBA54\uC77C\uB85C \uAC80\uC0C9'}
+                />
+                <div className="max-h-80 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  {filteredReviewAdminCandidates.length ? (
+                    filteredReviewAdminCandidates.map((candidate) => {
+                      const checked = groupDraft.memberIds.includes(candidate.employeeId)
+                      return (
+                        <label
+                          key={candidate.employeeId}
+                          className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleGroupMember(candidate.employeeId)}
+                            className="mt-1 h-4 w-4 rounded border-slate-300"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-900">{candidate.name}</span>
+                              <Badge tone={candidate.canReadCollaboratorContent ? 'emerald' : 'blue'}>
+                                {candidate.summaryLabel}
+                              </Badge>
+                            </div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {candidate.departmentName} · {candidate.position}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-400">{candidate.email}</div>
+                          </div>
+                        </label>
+                      )
+                    })
+                  ) : (
+                    <EmptyBlock message="추가할 수 있는 구성원이 없습니다." />
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-900">선택된 구성원</div>
+                  <Badge tone={selectedGroupMembers.length ? 'blue' : 'slate'}>{selectedGroupMembers.length}명</Badge>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {selectedGroupMembers.length ? (
+                    selectedGroupMembers.map((candidate) => (
+                      <div key={candidate.employeeId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{candidate.name}</div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {candidate.departmentName} · {candidate.position}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupMember(candidate.employeeId)}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-white"
+                            aria-label={`${candidate.name} 제거`}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <div className="mt-3 text-xs text-slate-500">{candidate.summaryLabel}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <EmptyBlock message="아직 그룹 구성원을 선택하지 않았습니다." />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setGroupDialogOpen(false)}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                닫기
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveReviewAdminGroup()}
+                disabled={busy || !groupDraft.groupName.trim()}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {groupDraft.id ? '권한 그룹 수정' : '권한 그룹 생성'}
+              </button>
+            </div>
+          </div>
+        </ModalFrame>
+      ) : null}
+
       {settingsDialogOpen && selectedRound ? (
         <ModalFrame title={`${selectedRound.roundName} 설정`} onClose={() => setSettingsDialogOpen(false)}>
           <div className="space-y-6">
@@ -1568,6 +2413,500 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">등급 가이드 / 상대평가 배분</div>
+              <p className="mt-1 text-sm text-slate-500">
+                등급형 질문을 기준으로 대상자 맞춤 가이드와 평가자·조직 기준 배분 정책을 함께 설정합니다.
+              </p>
+
+              {ratingQuestionOptions.length ? (
+                <div className="mt-4 space-y-4">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_220px_220px]">
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        등급 질문
+                      </span>
+                      <select
+                        value={ratingGuideSettings.distributionQuestionId ?? ratingQuestionOptions[0]?.id ?? ''}
+                        onChange={(event) => {
+                          const nextQuestion = ratingQuestionOptions.find((question) => question.id === event.target.value)
+                          setRatingGuideSettings((current) => ({
+                            ...current,
+                            distributionQuestionId: nextQuestion?.id,
+                            scaleEntries: nextQuestion
+                              ? buildFeedbackRatingScaleEntries({
+                                  scaleMin: nextQuestion.scaleMin,
+                                  scaleMax: nextQuestion.scaleMax,
+                                  existingEntries: current.scaleEntries,
+                                })
+                              : [],
+                          }))
+                        }}
+                        className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900"
+                      >
+                        {ratingQuestionOptions.map((question) => (
+                          <option key={question.id} value={question.id}>
+                            {question.questionText}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        배분 방식
+                      </span>
+                      <select
+                        value={ratingGuideSettings.distributionMode}
+                        onChange={(event) =>
+                          setRatingGuideSettings((current) => ({
+                            ...current,
+                            distributionMode: event.target.value as FeedbackRatingGuideSettings['distributionMode'],
+                          }))
+                        }
+                        className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900"
+                      >
+                        <option value="NONE">가이드 없음</option>
+                        <option value="RATIO">비율 기준</option>
+                        <option value="HEADCOUNT">인원 기준</option>
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        적용 범위
+                      </span>
+                      <select
+                        value={ratingGuideSettings.distributionScope}
+                        onChange={(event) =>
+                          setRatingGuideSettings((current) => ({
+                            ...current,
+                            distributionScope: event.target.value as FeedbackRatingGuideSettings['distributionScope'],
+                          }))
+                        }
+                        disabled={ratingGuideSettings.distributionMode === 'NONE'}
+                        className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900 disabled:bg-slate-100"
+                      >
+                        <option value="EVALUATOR">평가자 기준</option>
+                        <option value="DEPARTMENT">조직 기준</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap gap-2">
+                      <Badge tone="emerald">가장 높은 등급 / 가장 낮은 등급은 자동 표시됩니다.</Badge>
+                      <Badge tone="slate">비평가 등급은 배분 계산에서 제외됩니다.</Badge>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {ratingGuideScaleEntries.map((entry) => (
+                        <div key={entry.value} className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-semibold text-slate-900">등급 값 {entry.value}</div>
+                            {entry.isHighest ? <Badge tone="emerald">가장 높은 등급</Badge> : null}
+                            {entry.isLowest ? <Badge tone="blue">가장 낮은 등급</Badge> : null}
+                            {entry.isNonEvaluative ? <Badge tone="slate">비평가 등급</Badge> : null}
+                          </div>
+
+                          <div className="mt-3 grid gap-3 xl:grid-cols-[140px_minmax(0,1fr)_140px_140px]">
+                            <label className="block">
+                              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                라벨
+                              </span>
+                              <input
+                                value={entry.label}
+                                onChange={(event) =>
+                                  setRatingGuideSettings((current) => ({
+                                    ...current,
+                                    scaleEntries: current.scaleEntries.map((item) =>
+                                      item.value === entry.value ? { ...item, label: event.target.value } : item
+                                    ),
+                                  }))
+                                }
+                                className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                기본 설명
+                              </span>
+                              <textarea
+                                value={entry.description}
+                                onChange={(event) =>
+                                  setRatingGuideSettings((current) => ({
+                                    ...current,
+                                    scaleEntries: current.scaleEntries.map((item) =>
+                                      item.value === entry.value ? { ...item, description: event.target.value } : item
+                                    ),
+                                  }))
+                                }
+                                className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                비율(%)
+                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={entry.targetRatio ?? ''}
+                                onChange={(event) =>
+                                  setRatingGuideSettings((current) => ({
+                                    ...current,
+                                    scaleEntries: current.scaleEntries.map((item) =>
+                                      item.value === entry.value
+                                        ? {
+                                            ...item,
+                                            targetRatio: event.target.value === '' ? null : Number(event.target.value),
+                                          }
+                                        : item
+                                    ),
+                                  }))
+                                }
+                                disabled={ratingGuideSettings.distributionMode === 'NONE' || entry.isNonEvaluative}
+                                className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900 disabled:bg-slate-100"
+                              />
+                            </label>
+                            <label className="block">
+                              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                제한 인원
+                              </span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={999}
+                                value={entry.headcountLimit ?? ''}
+                                onChange={(event) =>
+                                  setRatingGuideSettings((current) => ({
+                                    ...current,
+                                    scaleEntries: current.scaleEntries.map((item) =>
+                                      item.value === entry.value
+                                        ? {
+                                            ...item,
+                                            headcountLimit:
+                                              event.target.value === '' ? null : Number(event.target.value),
+                                          }
+                                        : item
+                                    ),
+                                  }))
+                                }
+                                disabled={ratingGuideSettings.distributionMode !== 'HEADCOUNT' || entry.isNonEvaluative}
+                                className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900 disabled:bg-slate-100"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="mt-3">
+                            <ToggleLine
+                              label="비평가 등급으로 처리"
+                              description="비평가 등급은 최고/최저 표시와 배분 계산에서 제외됩니다."
+                              checked={entry.isNonEvaluative}
+                              onChange={(checked) =>
+                                setRatingGuideSettings((current) => ({
+                                  ...current,
+                                  scaleEntries: current.scaleEntries.map((item) =>
+                                    item.value === entry.value
+                                      ? {
+                                          ...item,
+                                          isNonEvaluative: checked,
+                                          targetRatio: checked ? null : item.targetRatio,
+                                          headcountLimit: checked ? null : item.headcountLimit,
+                                        }
+                                      : item
+                                  ),
+                                }))
+                              }
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">대상자 인사정보별 가이드</div>
+                        <p className="mt-1 text-sm text-slate-500">
+                          조직 / 역할 / 직책 / 직급 / 팀 키워드에 따라 다른 가이드 문구를 보여줍니다.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRatingGuideSettings((current) => ({
+                            ...current,
+                            guideRules: [...current.guideRules, createEmptyRatingGuideRule()],
+                          }))
+                        }
+                        className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-white"
+                      >
+                        가이드 추가
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-4">
+                      {ratingGuideSettings.guideRules.length ? (
+                        ratingGuideSettings.guideRules.map((rule) => (
+                          <div key={rule.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-slate-900">{rule.label}</div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  더 구체적인 조건을 가진 가이드가 우선 적용됩니다.
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setRatingGuideSettings((current) => ({
+                                    ...current,
+                                    guideRules: current.guideRules.filter((item) => item.id !== rule.id),
+                                  }))
+                                }
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+                                aria-label={`${rule.label} 삭제`}
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+
+                            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                              <label className="block">
+                                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  가이드 이름
+                                </span>
+                                <input
+                                  value={rule.label}
+                                  onChange={(event) =>
+                                    setRatingGuideSettings((current) => ({
+                                      ...current,
+                                      guideRules: current.guideRules.map((item) =>
+                                        item.id === rule.id ? { ...item, label: event.target.value } : item
+                                      ),
+                                    }))
+                                  }
+                                  className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  헤드라인
+                                </span>
+                                <input
+                                  value={rule.headline}
+                                  onChange={(event) =>
+                                    setRatingGuideSettings((current) => ({
+                                      ...current,
+                                      guideRules: current.guideRules.map((item) =>
+                                        item.id === rule.id ? { ...item, headline: event.target.value } : item
+                                      ),
+                                    }))
+                                  }
+                                  className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                                />
+                              </label>
+                              <label className="block xl:col-span-2">
+                                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                  안내 문구
+                                </span>
+                                <textarea
+                                  value={rule.guidance}
+                                  onChange={(event) =>
+                                    setRatingGuideSettings((current) => ({
+                                      ...current,
+                                      guideRules: current.guideRules.map((item) =>
+                                        item.id === rule.id ? { ...item, guidance: event.target.value } : item
+                                      ),
+                                    }))
+                                  }
+                                  className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900"
+                                />
+                              </label>
+                            </div>
+
+                            <div className="mt-4 grid gap-3 xl:grid-cols-5">
+                              {([
+                                ['departmentKeyword', '조직 키워드'],
+                                ['roleKeyword', '역할 키워드'],
+                                ['position', '직책'],
+                                ['jobTitleKeyword', '직급/직군'],
+                                ['teamNameKeyword', '팀명 키워드'],
+                              ] as const).map(([field, label]) => (
+                                <label key={field} className="block">
+                                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                    {label}
+                                  </span>
+                                  <input
+                                    value={rule.filters[field] ?? ''}
+                                    onChange={(event) =>
+                                      setRatingGuideSettings((current) => ({
+                                        ...current,
+                                        guideRules: current.guideRules.map((item) =>
+                                          item.id === rule.id
+                                            ? {
+                                                ...item,
+                                                filters: {
+                                                  ...item.filters,
+                                                  [field]: event.target.value,
+                                                },
+                                              }
+                                            : item
+                                        ),
+                                      }))
+                                    }
+                                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                                  />
+                                </label>
+                              ))}
+                            </div>
+
+                            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                              {ratingGuideScaleEntries.map((entry) => (
+                                <label key={`${rule.id}-${entry.value}`} className="block rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                  <span className="text-sm font-semibold text-slate-900">{entry.label} 설명</span>
+                                  <textarea
+                                    value={rule.gradeDescriptions[String(entry.value)] ?? ''}
+                                    onChange={(event) =>
+                                      setRatingGuideSettings((current) => ({
+                                        ...current,
+                                        guideRules: current.guideRules.map((item) =>
+                                          item.id === rule.id
+                                            ? {
+                                                ...item,
+                                                gradeDescriptions: {
+                                                  ...item.gradeDescriptions,
+                                                  [String(entry.value)]: event.target.value,
+                                                },
+                                              }
+                                            : item
+                                        ),
+                                      }))
+                                    }
+                                    className="mt-3 min-h-24 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <EmptyBlock message="아직 대상자 인사정보별 등급 가이드가 없습니다." />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <EmptyBlock message="현재 라운드에는 등급형 질문이 없어 등급 가이드를 설정할 수 없습니다." />
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">공동 작업자</div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    이 리뷰 사이클을 함께 관리할 어드민을 지정하세요. 공동 작업자 변경은 저장 즉시 반영되며,
+                    지정된 리뷰에만 권한이 적용됩니다.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-medium leading-5 text-blue-800">
+                  공동 작업자에게는 리뷰 관리 권한이 바로 반영되고, 내용 열람 범위는 권한 그룹 설정을 따릅니다.
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="space-y-3">
+                  <input
+                    value={collaboratorSearch}
+                    onChange={(event) => setCollaboratorSearch(event.target.value)}
+                    className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                    placeholder="이름, 조직, 역할, 이메일로 공동 작업자 검색"
+                  />
+                  <div className="max-h-72 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    {filteredCollaboratorCandidates.length ? (
+                      filteredCollaboratorCandidates.map((candidate) => {
+                        const checked = collaboratorIds.includes(candidate.employeeId)
+                        return (
+                          <label
+                            key={candidate.employeeId}
+                            className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleCollaborator(candidate.employeeId)}
+                              className="mt-1 h-4 w-4 rounded border-slate-300"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-semibold text-slate-900">{candidate.name}</span>
+                                <Badge tone={candidate.canReadCollaboratorContent ? 'emerald' : 'blue'}>
+                                  {candidate.summaryLabel}
+                                </Badge>
+                              </div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {candidate.departmentName} · {candidate.position}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-400">{candidate.email}</div>
+                            </div>
+                          </label>
+                        )
+                      })
+                    ) : (
+                      <EmptyBlock message="공동 작업자로 지정할 수 있는 어드민이 없습니다." />
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-slate-900">지정된 공동 작업자</div>
+                    <Badge tone={selectedCollaborators.length ? 'blue' : 'slate'}>
+                      {selectedCollaborators.length}명
+                    </Badge>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {selectedCollaborators.length ? (
+                      selectedCollaborators.map((candidate) => (
+                        <div key={candidate.employeeId} className="rounded-2xl border border-slate-200 bg-white p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900">{candidate.name}</div>
+                              <div className="mt-1 text-sm text-slate-500">
+                                {candidate.departmentName} · {candidate.position}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleCollaborator(candidate.employeeId)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-100"
+                              aria-label={`${candidate.name} 제거`}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                            <Badge tone={candidate.canManageCollaboratorRounds ? 'emerald' : 'slate'}>
+                              리뷰 관리 {candidate.canManageCollaboratorRounds ? '가능' : '불가'}
+                            </Badge>
+                            <Badge tone={candidate.canReadCollaboratorContent ? 'blue' : 'slate'}>
+                              내용 열람 {candidate.canReadCollaboratorContent ? '가능' : '불가'}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <EmptyBlock message="아직 공동 작업자를 지정하지 않았습니다." />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="text-sm font-semibold text-slate-900">진행 중 익명 / 공개 범위</div>
               <p className="mt-1 text-sm text-slate-500">
                 리뷰가 진행 중이어도 reviewer type별로 공개 범위를 즉시 조정할 수 있습니다.
@@ -1598,6 +2937,273 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">결과지 버전 / 공개 항목</div>
+              <p className="mt-1 text-sm text-slate-500">
+                한 라운드 결과에서 공유 대상별 결과지 버전을 나누고, 공개/비공개 항목을 세밀하게 조정합니다.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {(Object.entries(FEEDBACK_RESULT_PROFILE_LABELS) as Array<
+                  [FeedbackResultRecipientProfile, string]
+                >).map(([profile, label]) => (
+                  <button
+                    key={profile}
+                    type="button"
+                    onClick={() => setSelectedResultVersionProfile(profile)}
+                    className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                      selectedResultVersionProfile === profile
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                현재 편집 중: <span className="font-semibold text-slate-900">{FEEDBACK_RESULT_PROFILE_LABELS[selectedResultVersionProfile]}</span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {RESULT_PRESENTATION_FIELDS.map((field) => (
+                  <ToggleLine
+                    key={field.key}
+                    label={field.label}
+                    description={field.description}
+                    checked={resultPresentationSettings[selectedResultVersionProfile][field.key]}
+                    onChange={(checked) =>
+                      setResultPresentationSettings((current) => ({
+                        ...current,
+                        [selectedResultVersionProfile]: {
+                          ...current[selectedResultVersionProfile],
+                          [field.key]: checked,
+                        },
+                      }))
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">개인별 리포트 / 분석 설정</div>
+              <p className="mt-1 text-sm text-slate-500">
+                개요 문구, 좌측 메뉴, 워딩, 분석 강도를 함께 조정해 개인별 리포트 화면을 조직 언어와 활용 방식에 맞게 구성할 수 있습니다.
+              </p>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm font-semibold text-slate-900">리포트 개요 문구</div>
+                  <div className="mt-4 space-y-3">
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        회사 / 조직 메시지
+                      </span>
+                      <textarea
+                        value={reportAnalysisSettings.overview.companyMessage}
+                        onChange={(event) =>
+                          setReportAnalysisSettings((current) => ({
+                            ...current,
+                            overview: {
+                              ...current.overview,
+                              companyMessage: event.target.value,
+                            },
+                          }))
+                        }
+                        className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
+                        placeholder="리포트 상단에 보여줄 조직 메시지를 입력해 주세요."
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        리포트 활용 취지
+                      </span>
+                      <textarea
+                        value={reportAnalysisSettings.overview.purposeMessage}
+                        onChange={(event) =>
+                          setReportAnalysisSettings((current) => ({
+                            ...current,
+                            overview: {
+                              ...current.overview,
+                              purposeMessage: event.target.value,
+                            },
+                          }))
+                        }
+                        className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
+                        placeholder="리포트 활용 취지를 입력해 주세요."
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        수용도 가이드
+                      </span>
+                      <textarea
+                        value={reportAnalysisSettings.overview.acceptanceGuide}
+                        onChange={(event) =>
+                          setReportAnalysisSettings((current) => ({
+                            ...current,
+                            overview: {
+                              ...current.overview,
+                              acceptanceGuide: event.target.value,
+                            },
+                          }))
+                        }
+                        className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
+                        placeholder="수신자에게 보여줄 안내 문구를 입력해 주세요."
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm font-semibold text-slate-900">분석 강도 / 워딩</div>
+                  <div className="mt-4 space-y-4">
+                    <label className="block">
+                      <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        분석 강도
+                      </span>
+                      <select
+                        value={reportAnalysisSettings.strength}
+                        onChange={(event) =>
+                          setReportAnalysisSettings((current) => ({
+                            ...current,
+                            strength: event.target.value as FeedbackReportAnalysisStrength,
+                          }))
+                        }
+                        className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-900"
+                      >
+                        {(Object.entries(FEEDBACK_ANALYSIS_STRENGTH_LABELS) as Array<
+                          [FeedbackReportAnalysisStrength, string]
+                        >).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="grid gap-3">
+                      {REPORT_ANALYSIS_WORDING_FIELDS.map((field) => (
+                        <label key={field.key} className="block rounded-2xl border border-slate-200 bg-white p-4">
+                          <span className="text-sm font-semibold text-slate-900">{field.label}</span>
+                          <span className="mt-1 block text-sm leading-6 text-slate-500">{field.description}</span>
+                          <input
+                            value={reportAnalysisSettings.wording[field.key]}
+                            onChange={(event) =>
+                              setReportAnalysisSettings((current) => ({
+                                ...current,
+                                wording: {
+                                  ...current.wording,
+                                  [field.key]: event.target.value,
+                                },
+                              }))
+                            }
+                            className="mt-3 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                            placeholder={`${field.label}을 입력해 주세요.`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-semibold text-slate-900">메뉴 표시 / 이름 설정</div>
+                <p className="mt-1 text-sm text-slate-500">
+                  개요, 질문별 인사이트, 상대 비교, 자기객관화 등 리포트 메뉴를 숨기거나 메뉴명을 조직 용어에 맞게 바꿀 수 있습니다.
+                </p>
+                <div className="mt-4 space-y-3">
+                  {FEEDBACK_REPORT_ANALYSIS_SECTIONS.map((sectionKey) => {
+                    const config = reportAnalysisSettings.menu[sectionKey]
+                    return (
+                      <div key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)_120px] lg:items-center">
+                          <div className="text-sm font-semibold text-slate-900">{sectionKey}</div>
+                          <label className="block">
+                            <span className="sr-only">{sectionKey} 메뉴 이름</span>
+                            <input
+                              value={config.label}
+                              onChange={(event) =>
+                                setReportAnalysisSettings((current) => ({
+                                  ...current,
+                                  menu: {
+                                    ...current.menu,
+                                    [sectionKey]: {
+                                      ...current.menu[sectionKey],
+                                      label: event.target.value,
+                                    },
+                                  },
+                                }))
+                              }
+                              className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
+                              placeholder="메뉴 이름"
+                            />
+                          </label>
+                          <label className="inline-flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                            <span className="text-sm font-semibold text-slate-700">표시</span>
+                            <input
+                              type="checkbox"
+                              checked={config.visible}
+                              onChange={(event) =>
+                                setReportAnalysisSettings((current) => ({
+                                  ...current,
+                                  menu: {
+                                    ...current.menu,
+                                    [sectionKey]: {
+                                      ...current.menu[sectionKey],
+                                      visible: event.target.checked,
+                                    },
+                                  },
+                                }))
+                              }
+                              className="h-4 w-4 rounded border-slate-300"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">리뷰 문항 수정</div>
+              <p className="mt-1 text-sm text-slate-500">
+                업적 평가 템플릿을 포함한 현재 라운드 문항을 운영자가 바로 보정할 수 있습니다. 저장 시 기존 질문 텍스트와 변경 내용이 함께 기록됩니다.
+              </p>
+              <div className="mt-4 space-y-3">
+                {questionDrafts.length ? (
+                  questionDrafts.map((question, index) => (
+                    <label key={question.id} className="block rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                          {index + 1}번 문항
+                        </span>
+                        <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+                          {question.category}
+                        </span>
+                      </div>
+                      <textarea
+                        value={question.questionText}
+                        onChange={(event) =>
+                          setQuestionDrafts((current) =>
+                            current.map((item) =>
+                              item.id === question.id ? { ...item, questionText: event.target.value } : item
+                            )
+                          )
+                        }
+                        className="mt-3 min-h-24 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
+                        placeholder="문항을 입력해 주세요."
+                      />
+                    </label>
+                  ))
+                ) : (
+                  <EmptyBlock message="현재 라운드에 수정 가능한 문항이 없습니다." />
+                )}
               </div>
             </div>
 

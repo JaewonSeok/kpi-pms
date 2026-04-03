@@ -10,6 +10,10 @@ import {
   resolveFeedbackResultPrimaryLeaderId,
   resolveFeedbackResultRecipientIds,
 } from '@/server/feedback-360-admin'
+import {
+  canManageFeedbackRoundByAccess,
+  getFeedbackReviewAdminAccess,
+} from '@/server/feedback-360-access'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackRoundReminderSchema } from '@/lib/validations'
 
@@ -40,14 +44,15 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
-    if (session.user.role !== 'ROLE_ADMIN') {
-      throw new AppError(403, 'FORBIDDEN', '리마인드 발송은 관리자만 실행할 수 있습니다.')
-    }
 
     const { id } = await context.params
     const validated = FeedbackRoundReminderSchema.safeParse(await request.json())
     if (!validated.success) {
-      throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '발송 대상을 확인해 주세요.')
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        validated.error.issues[0]?.message ?? '발송 대상을 확인해 주세요.'
+      )
     }
 
     if (validated.data.roundId !== id) {
@@ -60,6 +65,12 @@ export async function POST(request: Request, context: RouteContext) {
     if (!employee) {
       throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '직원 정보를 찾을 수 없습니다.')
     }
+
+    const reviewAdminAccess = await getFeedbackReviewAdminAccess({
+      employeeId: employee.id,
+      actorRole: employee.role,
+      orgId: employee.department.orgId,
+    })
 
     const round = await prisma.multiFeedbackRound.findUnique({
       where: { id },
@@ -90,8 +101,18 @@ export async function POST(request: Request, context: RouteContext) {
     if (!round) {
       throw new AppError(404, 'ROUND_NOT_FOUND', '360 리뷰 라운드를 찾을 수 없습니다.')
     }
-    if (round.evalCycle.orgId !== employee.department.orgId) {
+    if (round.evalCycle.orgId !== employee.department.orgId && session.user.role !== 'ROLE_ADMIN') {
       throw new AppError(403, 'FORBIDDEN', '현재 조직에서 관리할 수 없는 리뷰 라운드입니다.')
+    }
+
+    const canManageRound = await canManageFeedbackRoundByAccess({
+      access: reviewAdminAccess,
+      employeeId: employee.id,
+      roundId: round.id,
+    })
+
+    if (!canManageRound) {
+      throw new AppError(403, 'FORBIDDEN', '이 리뷰 라운드의 알림을 발송할 권한이 없습니다.')
     }
 
     if (validated.data.action === 'test-send') {
@@ -116,7 +137,11 @@ export async function POST(request: Request, context: RouteContext) {
     )
     const invalidTargetIds = validated.data.targetIds.filter((item) => !eligibleTargetIds.has(item))
     if (invalidTargetIds.length) {
-      throw new AppError(400, 'INVALID_REMINDER_TARGET', '현재 조건에서 발송할 수 없는 대상자가 포함되어 있습니다.')
+      throw new AppError(
+        400,
+        'INVALID_REMINDER_TARGET',
+        '현재 조건에서 발송할 수 없는 대상자가 포함되어 있습니다.'
+      )
     }
 
     const type = resolveNotificationType(validated.data.action)

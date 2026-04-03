@@ -21,6 +21,7 @@ model Organization {
   gradeSettings GradeSetting[]
   compensationRuleSets CompensationRuleSet[]
   feedbackFolders FeedbackFolder[]
+  feedbackAdminGroups FeedbackAdminGroup[]
   aiCompetencyExternalCertMasters AiCompetencyExternalCertMaster[]
   wordCloud360Keywords WordCloud360Keyword[]
   wordCloud360Cycles   WordCloud360Cycle[]
@@ -88,6 +89,8 @@ model Employee {
   feedbackNominationApprovers   FeedbackNomination[] @relation("FeedbackNominationApprover")
   feedbackReportTargets         FeedbackReportCache[] @relation("FeedbackReportTarget")
   feedbackReportGenerators      FeedbackReportCache[] @relation("FeedbackReportGenerator")
+  feedbackAdminGroupMemberships FeedbackAdminGroupMember[]
+  feedbackRoundCollaborations   FeedbackRoundCollaborator[]
   onboardingReviewGenerations   OnboardingReviewGeneration[]
   developmentPlans              DevelopmentPlan[] @relation("DevelopmentPlanEmployee")
   createdDevelopmentPlans       DevelopmentPlan[] @relation("DevelopmentPlanCreator")
@@ -551,6 +554,9 @@ model MultiFeedbackRound {
   weightInFinal Float               @default(0)
   selectionSettings Json?
   visibilitySettings Json?
+  resultPresentationSettings Json?
+  reportAnalysisSettings Json?
+  ratingGuideSettings Json?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
@@ -558,6 +564,7 @@ model MultiFeedbackRound {
   questions FeedbackQuestion[]
   nominations FeedbackNomination[]
   reportCaches FeedbackReportCache[]
+  collaborators FeedbackRoundCollaborator[]
   onboardingReviewGeneration OnboardingReviewGeneration?
 
   @@map("multi_feedback_rounds")
@@ -636,6 +643,58 @@ enum FeedbackRoundStatus {
   IN_PROGRESS
   COMPLETED
   CLOSED
+}
+
+enum FeedbackAdminReviewScope {
+  NONE
+  ALL_REVIEWS_MANAGE
+  ALL_REVIEWS_MANAGE_AND_CONTENT
+  COLLABORATOR_REVIEWS_MANAGE
+  COLLABORATOR_REVIEWS_MANAGE_AND_CONTENT
+}
+
+model FeedbackAdminGroup {
+  id          String                   @id @default(cuid())
+  orgId       String
+  organization Organization            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  groupName   String
+  description String?
+  reviewScope FeedbackAdminReviewScope @default(NONE)
+  createdById String?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+
+  members FeedbackAdminGroupMember[]
+
+  @@unique([orgId, groupName])
+  @@index([orgId, reviewScope])
+  @@map("feedback_admin_groups")
+}
+
+model FeedbackAdminGroupMember {
+  id         String             @id @default(cuid())
+  groupId    String
+  group      FeedbackAdminGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime           @default(now())
+
+  @@unique([groupId, employeeId])
+  @@index([employeeId, groupId])
+  @@map("feedback_admin_group_members")
+}
+
+model FeedbackRoundCollaborator {
+  id         String             @id @default(cuid())
+  roundId    String
+  round      MultiFeedbackRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdAt  DateTime           @default(now())
+
+  @@unique([roundId, employeeId])
+  @@index([employeeId, roundId])
+  @@map("feedback_round_collaborators")
 }
 
 enum GoalEditMode {

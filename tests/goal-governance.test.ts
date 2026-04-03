@@ -79,6 +79,23 @@ async function main() {
     assert.equal(clientSource.includes('goalEditLocked'), true)
   })
 
+  await run('personal KPI workspace supports weight approval context, re-request labels, and bulk goal edit flow', () => {
+    const clientSource = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const bulkRoute = read('src/app/api/kpi/personal/bulk/route.ts')
+    const workflowRoute = read('src/app/api/kpi/personal/[id]/workflow/route.ts')
+
+    assert.equal(clientSource.includes('WeightApprovalSummaryCard'), true)
+    assert.equal(clientSource.includes('BulkEditPersonalKpiModal'), true)
+    assert.equal(clientSource.includes('handleSaveBulkEdit'), true)
+    assert.equal(clientSource.includes('/api/kpi/personal/bulk'), true)
+    assert.equal(clientSource.includes('current weight'), false)
+    assert.equal(clientSource.includes('orgLineage'), true)
+    assert.equal(clientSource.includes('submitLabel'), true)
+    assert.equal(clientSource.includes('수정 후 승인 재요청'), true)
+    assert.equal(bulkRoute.includes('PERSONAL_KPI_BULK_UPDATED'), true)
+    assert.equal(workflowRoute.includes("weightApprovalStatus: 'REQUESTED'"), true)
+  })
+
   await run('org KPI loader and client reflect read-only gating, team approval state, and tag context in the live workspace', () => {
     const loaderSource = read('src/server/org-kpi-page.ts')
     const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
@@ -93,6 +110,31 @@ async function main() {
     assert.equal(clientSource.includes('kpi.linkedConfirmedPersonalKpiCount'), true)
     assert.equal(clientSource.includes('kpi.linkedPersonalKpis.length'), true)
     assert.equal(clientSource.includes("goalEditLocked || !['DRAFT', 'SUBMITTED', 'LOCKED'].includes(kpi.status)"), true)
+  })
+
+  await run('org KPI workspace supports bulk edit and export mode selection routes', () => {
+    const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
+    const bulkRoute = read('src/app/api/kpi/org/bulk-edit/route.ts')
+    const exportRoute = read('src/app/api/kpi/export/route.ts')
+    const exportService = read('src/server/kpi-export.ts')
+
+    assert.equal(clientSource.includes('handleSaveBulkEdit'), true)
+    assert.equal(clientSource.includes('handleExportGoals'), true)
+    assert.equal(clientSource.includes('OrgBulkEditModal'), true)
+    assert.equal(clientSource.includes('GoalExportModal'), true)
+    assert.equal(clientSource.includes('/api/kpi/org/bulk-edit'), true)
+    assert.equal(clientSource.includes('/api/kpi/export?'), true)
+    assert.equal(clientSource.includes("mode: 'goal'"), true)
+    assert.equal(clientSource.includes("mode: 'employee'"), true)
+    assert.equal(bulkRoute.includes('ORG_KPI_BULK_UPDATED'), true)
+    assert.equal(exportRoute.includes('GoalExportSchema'), true)
+    assert.equal(exportService.includes("mode === 'goal'"), true)
+  })
+
+  await run('review reference goal context uses shared goal weight display formatting', () => {
+    const source = read('src/server/feedback-360.ts')
+
+    assert.equal(source.includes('formatGoalWeightLabel'), true)
   })
 
   console.log('Goal governance tests completed')

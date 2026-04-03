@@ -246,6 +246,74 @@ export type WordCloudKeywordCsvImportResult = {
   }
 }
 
+export type WordCloudTargetUploadResult = {
+  fileName: string
+  summary: {
+    totalRows: number
+    validRows: number
+    invalidRows: number
+    targetCount: number
+    createdAssignmentCount: number
+    existingAssignmentCount: number
+  }
+  rows: Array<{
+    rowNumber: number
+    employeeNumber: string
+    employeeName?: string
+    department?: string
+    valid: boolean
+    issues: WordCloudKeywordCsvImportIssue[]
+    createdAssignmentCount: number
+    existingAssignmentCount: number
+    groups: WordCloudEvaluatorGroup[]
+  }>
+  uploadHistoryId?: string
+}
+
+export type WordCloudComparisonReport = {
+  fileName: string
+  summary: {
+    currentCycleName: string
+    baselineDepartmentCount: number
+    currentDepartmentCount: number
+    comparedDepartmentCount: number
+    baselineResponseCount: number
+    currentResponseCount: number
+    hiddenBaselineRows: number
+    hiddenCurrentDepartments: number
+    largestResponseChange?: {
+      department: string
+      delta: number
+    }
+    largestPositiveShift?: {
+      department: string
+      keyword: string
+      delta: number
+    }
+    largestNegativeShift?: {
+      department: string
+      keyword: string
+      delta: number
+    }
+  }
+  departments: Array<{
+    department: string
+    baselineResponseCount: number
+    currentResponseCount: number
+    responseDelta: number
+    baselineTopPositiveKeywords: string[]
+    currentTopPositiveKeywords: string[]
+    baselineTopNegativeKeywords: string[]
+    currentTopNegativeKeywords: string[]
+    changedKeywords: Array<{
+      keyword: string
+      polarity: WordCloudKeywordPolarity
+      delta: number
+    }>
+    insight: string
+  }>
+}
+
 type ParsedWordCloudKeywordImportRow = {
   rowNumber: number
   keywordCode?: string
@@ -289,6 +357,8 @@ const WORD_CLOUD_KEYWORD_IMPORT_HEADERS = [
 
 const WORD_CLOUD_KEYWORD_REQUIRED_HEADERS = ['keyword', 'polarity', 'active'] as const
 export const WORD_CLOUD_KEYWORD_MAX_UPLOAD_SIZE = 5 * 1024 * 1024
+export const WORD_CLOUD_TARGET_UPLOAD_MAX_SIZE = 5 * 1024 * 1024
+export const WORD_CLOUD_COMPARISON_UPLOAD_MAX_SIZE = 5 * 1024 * 1024
 
 function toIso(value?: Date | null) {
   return value ? value.toISOString() : undefined
@@ -320,6 +390,75 @@ function escapeCsvCell(value: string | number | boolean | null | undefined) {
     return `"${text.replace(/"/g, '""')}"`
   }
   return text
+}
+
+function normalizeSpreadsheetHeader(value: string) {
+  return value.trim().toLowerCase().replace(/[\s_-]+/g, '')
+}
+
+function readSpreadsheetRows(params: {
+  fileName: string
+  buffer: Buffer
+  requiredHeaders: string[]
+  emptyFileMessage: string
+  invalidFileMessage: string
+}) {
+  if (!/\.(csv|xlsx|xls)$/i.test(params.fileName)) {
+    throw new AppError(400, 'INVALID_UPLOAD_FILE', params.invalidFileMessage)
+  }
+
+  const workbook = XLSX.read(params.buffer, {
+    type: 'buffer',
+    raw: false,
+    codepage: 65001,
+  })
+  const sheetName = workbook.SheetNames[0]
+  const sheet = sheetName ? workbook.Sheets[sheetName] : undefined
+
+  if (!sheet) {
+    throw new AppError(400, 'EMPTY_UPLOAD_FILE', params.emptyFileMessage)
+  }
+
+  const rows = XLSX.utils.sheet_to_json<Array<string | number | boolean>>(sheet, {
+    header: 1,
+    raw: false,
+    blankrows: false,
+    defval: '',
+  })
+
+  const [headerRow, ...dataRows] = rows
+  const normalizedHeaders = (headerRow ?? []).map((value) => normalizeSpreadsheetHeader(String(value ?? '')))
+  const missingHeaders = params.requiredHeaders.filter((header) => !normalizedHeaders.includes(header))
+
+  if (missingHeaders.length > 0) {
+    throw new AppError(
+      400,
+      'INVALID_UPLOAD_HEADERS',
+      `필수 헤더가 누락되었습니다. ${missingHeaders.join(', ')}`
+    )
+  }
+
+  const headerIndex = new Map<string, number>()
+  normalizedHeaders.forEach((header, index) => {
+    if (header) headerIndex.set(header, index)
+  })
+
+  return dataRows
+    .map((row, rowIndex) => {
+      const values = Array.isArray(row) ? row.map((cell) => String(cell ?? '').trim()) : []
+      if (!values.some((value) => value !== '')) return null
+
+      const mapped: Record<string, string> = {}
+      for (const [header, index] of headerIndex.entries()) {
+        mapped[header] = values[index] ?? ''
+      }
+
+      return {
+        rowNumber: rowIndex + 2,
+        values: mapped,
+      }
+    })
+    .filter((row): row is { rowNumber: number; values: Record<string, string> } => Boolean(row))
 }
 
 function parseImportBoolean(value: string | undefined, field: string): { value: boolean | undefined; error?: string } {
@@ -833,6 +972,543 @@ export async function applyWordCloudKeywordCsvImport(params: {
       uploadHistoryId: uploadHistory.id,
     },
   }
+}
+
+const WORD_CLOUD_TARGET_REQUIRED_HEADERS = ['employeenumber'] as const
+const WORD_CLOUD_COMPARISON_REQUIRED_HEADERS = [
+  'employeenumber',
+  'department',
+  'responsecount',
+  'thresholdmet',
+  'polarity',
+  'keyword',
+  'count',
+] as const
+
+function parseThresholdMet(value: string) {
+  const normalized = value.trim().toUpperCase()
+  return ['Y', 'YES', 'TRUE', '1'].includes(normalized)
+}
+
+function buildTopKeywordLabels(
+  counts: Map<string, { polarity: WordCloudKeywordPolarity; count: number }>,
+  polarity: WordCloudKeywordPolarity
+) {
+  return Array.from(counts.entries())
+    .filter(([, value]) => value.polarity === polarity)
+    .sort((left, right) => {
+      if (right[1].count !== left[1].count) return right[1].count - left[1].count
+      return left[0].localeCompare(right[0], 'ko-KR')
+    })
+    .slice(0, 3)
+    .map(([keyword]) => keyword)
+}
+
+function buildComparisonInsight(params: {
+  responseDelta: number
+  topPositive?: { keyword: string; delta: number }
+  topNegative?: { keyword: string; delta: number }
+}) {
+  const parts: string[] = []
+
+  if (params.responseDelta > 0) {
+    parts.push(`응답 수가 ${params.responseDelta}건 늘었습니다.`)
+  } else if (params.responseDelta < 0) {
+    parts.push(`응답 수가 ${Math.abs(params.responseDelta)}건 줄었습니다.`)
+  }
+
+  if (params.topPositive && params.topPositive.delta > 0) {
+    parts.push(`긍정 키워드 '${params.topPositive.keyword}' 언급이 증가했습니다.`)
+  }
+
+  if (params.topNegative && params.topNegative.delta > 0) {
+    parts.push(`부정 키워드 '${params.topNegative.keyword}' 언급이 늘어 확인이 필요합니다.`)
+  }
+
+  return parts.join(' ') || '현재 기준으로 두드러진 변화는 크지 않습니다.'
+}
+
+async function buildCurrentWordCloudDepartmentReport(params: {
+  cycleId: string
+  minimumResponses: number
+}) {
+  const responses = await prisma.wordCloud360Response.findMany({
+    where: {
+      cycleId: params.cycleId,
+      status: 'SUBMITTED',
+    },
+    include: {
+      evaluatee: {
+        include: {
+          department: true,
+        },
+      },
+      items: true,
+    },
+  })
+
+  const grouped = new Map<string, typeof responses>()
+  for (const response of responses) {
+    const department = response.evaluatee.department.deptName
+    const bucket = grouped.get(department) ?? []
+    bucket.push(response)
+    grouped.set(department, bucket)
+  }
+
+  return Array.from(grouped.entries())
+    .map(([department, departmentResponses]) => {
+      const aggregated = aggregateWordCloudResponses({
+        responses: departmentResponses.map((response) => ({
+          status: response.status,
+          evaluatorGroup: response.items[0]?.evaluatorGroup ?? 'PEER',
+          items: response.items.map((item) => ({
+            keywordId: item.keywordId,
+            keywordTextSnapshot: item.keywordTextSnapshot,
+            polarity: item.polarity,
+            category: item.category,
+            evaluatorGroup: item.evaluatorGroup,
+          })),
+        })),
+        minimumResponses: params.minimumResponses,
+      })
+
+      const keywordCounts = new Map<string, { polarity: WordCloudKeywordPolarity; count: number }>()
+      for (const item of [...aggregated.positiveKeywords, ...aggregated.negativeKeywords]) {
+        keywordCounts.set(item.keyword, {
+          polarity: item.polarity,
+          count: item.count,
+        })
+      }
+
+      return {
+        department,
+        responseCount: aggregated.responseCount,
+        thresholdMet: aggregated.thresholdMet,
+        keywordCounts,
+      }
+    })
+    .sort((left, right) => left.department.localeCompare(right.department, 'ko-KR'))
+}
+
+export async function applyWordCloud360TargetUpload(params: {
+  actorId: string
+  cycleId: string
+  fileName: string
+  buffer: Buffer
+}): Promise<WordCloudTargetUploadResult> {
+  const { actor, cycle } = await ensureCycleAccess({ cycleId: params.cycleId, actorId: params.actorId })
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '관리자만 대상자 업로드를 처리할 수 있습니다.')
+  }
+
+  const parsedRows = readSpreadsheetRows({
+    fileName: params.fileName,
+    buffer: params.buffer,
+    requiredHeaders: [...WORD_CLOUD_TARGET_REQUIRED_HEADERS],
+    emptyFileMessage: '업로드할 대상자 파일을 선택해 주세요.',
+    invalidFileMessage: 'CSV, XLSX, XLS 형식만 업로드할 수 있습니다.',
+  })
+
+  const employees = await prisma.employee.findMany({
+    where: {
+      department: {
+        orgId: actor.department.orgId,
+      },
+      status: {
+        in: ['ACTIVE', 'ON_LEAVE'],
+      },
+    },
+    include: {
+      department: true,
+    },
+    orderBy: [{ deptId: 'asc' }, { empName: 'asc' }],
+  })
+
+  const employeesByNumber = new Map(
+    employees.map((employee) => [employee.empId.trim().toUpperCase(), employee])
+  )
+  const duplicateTargetNumbers = new Set<string>()
+  const seenTargetNumbers = new Set<string>()
+  for (const row of parsedRows) {
+    const employeeNumber = row.values.employeenumber?.trim().toUpperCase() ?? ''
+    if (!employeeNumber) continue
+    if (seenTargetNumbers.has(employeeNumber)) duplicateTargetNumbers.add(employeeNumber)
+    seenTargetNumbers.add(employeeNumber)
+  }
+
+  const cycleGroups = Array.isArray(cycle.evaluatorGroups)
+    ? (cycle.evaluatorGroups as WordCloudEvaluatorGroup[])
+    : ['MANAGER', 'PEER', 'SUBORDINATE']
+
+  const suggestionPool = buildSuggestedWordCloudAssignments({
+    cycleId: cycle.id,
+    employees: employees.map((employee) => ({
+      id: employee.id,
+      deptId: employee.deptId,
+      managerId: employee.managerId,
+      status: employee.status,
+    })),
+    includeSelf: cycleGroups.includes('SELF'),
+    peerLimit: 3,
+    subordinateLimit: 3,
+  }).filter((assignment) => cycleGroups.includes(assignment.evaluatorGroup))
+
+  const validTargets: Array<{ rowNumber: number; employee: (typeof employees)[number] }> = []
+  const rows = parsedRows.map((row) => {
+    const employeeNumber = row.values.employeenumber?.trim().toUpperCase() ?? ''
+    const issues: WordCloudKeywordCsvImportIssue[] = []
+
+    if (!employeeNumber) {
+      issues.push({ field: 'employee_number', message: '사번을 입력해 주세요.' })
+    }
+    if (employeeNumber && duplicateTargetNumbers.has(employeeNumber)) {
+      issues.push({ field: 'employee_number', message: '같은 사번이 파일에 중복되어 있습니다.' })
+    }
+
+    const employee = employeeNumber ? employeesByNumber.get(employeeNumber) : undefined
+    if (employeeNumber && !employee) {
+      issues.push({ field: 'employee_number', message: '조직 내에서 일치하는 구성원을 찾을 수 없습니다.' })
+    }
+
+    if (!issues.length && employee) {
+      validTargets.push({ rowNumber: row.rowNumber, employee })
+    }
+
+    return {
+      rowNumber: row.rowNumber,
+      employeeNumber,
+      employeeName: employee?.empName,
+      department: employee?.department.deptName,
+      valid: issues.length === 0,
+      issues,
+      createdAssignmentCount: 0,
+      existingAssignmentCount: 0,
+      groups: [] as WordCloudEvaluatorGroup[],
+    }
+  })
+
+  const uniqueTargetIds = Array.from(new Set(validTargets.map((item) => item.employee.id)))
+  const existingAssignments = uniqueTargetIds.length
+    ? await prisma.wordCloud360Assignment.findMany({
+        where: {
+          cycleId: cycle.id,
+          evaluateeId: { in: uniqueTargetIds },
+        },
+        select: {
+          evaluatorId: true,
+          evaluateeId: true,
+          evaluatorGroup: true,
+        },
+      })
+    : []
+  const existingKeys = new Set(
+    existingAssignments.map(
+      (assignment) =>
+        `${cycle.id}:${assignment.evaluatorId}:${assignment.evaluateeId}:${assignment.evaluatorGroup}`
+    )
+  )
+
+  const assignmentsToSave = suggestionPool.filter((assignment) => uniqueTargetIds.includes(assignment.evaluateeId))
+  const createdAssignments = assignmentsToSave.filter(
+    (assignment) =>
+      !existingKeys.has(
+        `${assignment.cycleId}:${assignment.evaluatorId}:${assignment.evaluateeId}:${assignment.evaluatorGroup}`
+      )
+  )
+
+  if (assignmentsToSave.length > 0) {
+    await saveWordCloud360Assignments({
+      actorId: params.actorId,
+      cycleId: cycle.id,
+      assignments: assignmentsToSave,
+    })
+  }
+
+  const createdByTarget = new Map<string, number>()
+  const existingByTarget = new Map<string, number>()
+  const groupsByTarget = new Map<string, Set<WordCloudEvaluatorGroup>>()
+  for (const assignment of assignmentsToSave) {
+    const key = `${assignment.cycleId}:${assignment.evaluatorId}:${assignment.evaluateeId}:${assignment.evaluatorGroup}`
+    const targetMap = existingKeys.has(key) ? existingByTarget : createdByTarget
+    targetMap.set(assignment.evaluateeId, (targetMap.get(assignment.evaluateeId) ?? 0) + 1)
+    const groupBucket = groupsByTarget.get(assignment.evaluateeId) ?? new Set<WordCloudEvaluatorGroup>()
+    groupBucket.add(assignment.evaluatorGroup)
+    groupsByTarget.set(assignment.evaluateeId, groupBucket)
+  }
+
+  const completedRows = rows.map((row) => {
+    const employee = row.employeeNumber ? employeesByNumber.get(row.employeeNumber) : undefined
+    if (!row.valid || !employee) return row
+
+    return {
+      ...row,
+      createdAssignmentCount: createdByTarget.get(employee.id) ?? 0,
+      existingAssignmentCount: existingByTarget.get(employee.id) ?? 0,
+      groups: Array.from(groupsByTarget.get(employee.id) ?? []),
+    }
+  })
+
+  const summary = completedRows.reduce(
+    (accumulator, row) => {
+      accumulator.totalRows += 1
+      if (row.valid) {
+        accumulator.validRows += 1
+        accumulator.targetCount += 1
+        accumulator.createdAssignmentCount += row.createdAssignmentCount
+        accumulator.existingAssignmentCount += row.existingAssignmentCount
+      } else {
+        accumulator.invalidRows += 1
+      }
+      return accumulator
+    },
+    {
+      totalRows: 0,
+      validRows: 0,
+      invalidRows: 0,
+      targetCount: 0,
+      createdAssignmentCount: 0,
+      existingAssignmentCount: 0,
+    }
+  )
+
+  const uploadHistory = await prisma.uploadHistory.create({
+    data: {
+      uploadType: 'WORD_CLOUD_360_TARGET_UPLOAD',
+      uploaderId: actor.id,
+      fileName: params.fileName,
+      totalRows: summary.totalRows,
+      successCount: summary.validRows,
+      failCount: summary.invalidRows,
+      errorDetails: {
+        createdAssignmentCount: summary.createdAssignmentCount,
+        existingAssignmentCount: summary.existingAssignmentCount,
+        rows: completedRows.filter((row) => !row.valid).slice(0, 100),
+      },
+    },
+  })
+
+  await createAuditLog({
+    userId: actor.id,
+    action: 'WORD_CLOUD_360_TARGET_UPLOAD',
+    entityType: 'WORD_CLOUD_360_ASSIGNMENT',
+    entityId: cycle.id,
+    newValue: {
+      fileName: params.fileName,
+      targetCount: summary.targetCount,
+      createdAssignmentCount: summary.createdAssignmentCount,
+      existingAssignmentCount: summary.existingAssignmentCount,
+      failedRows: summary.invalidRows,
+      uploadHistoryId: uploadHistory.id,
+    },
+  })
+
+  return {
+    fileName: params.fileName,
+    summary,
+    rows: completedRows,
+    uploadHistoryId: uploadHistory.id,
+  }
+}
+
+export async function generateWordCloudComparisonReport(params: {
+  actorId: string
+  cycleId: string
+  fileName: string
+  buffer: Buffer
+}): Promise<WordCloudComparisonReport> {
+  const { actor, cycle } = await ensureCycleAccess({ cycleId: params.cycleId, actorId: params.actorId })
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '관리자만 비교 리포트를 만들 수 있습니다.')
+  }
+
+  const parsedRows = readSpreadsheetRows({
+    fileName: params.fileName,
+    buffer: params.buffer,
+    requiredHeaders: [...WORD_CLOUD_COMPARISON_REQUIRED_HEADERS],
+    emptyFileMessage: '비교할 서베이 결과 파일을 선택해 주세요.',
+    invalidFileMessage: 'CSV, XLSX, XLS 형식만 업로드할 수 있습니다.',
+  })
+
+  const baselineDepartments = new Map<
+    string,
+    {
+      people: Map<string, number>
+      keywordCounts: Map<string, { polarity: WordCloudKeywordPolarity; count: number }>
+    }
+  >()
+  let hiddenBaselineRows = 0
+
+  for (const row of parsedRows) {
+    const employeeNumber = row.values.employeenumber?.trim()
+    const department = row.values.department?.trim()
+    const responseCountText = row.values.responsecount?.trim()
+    const thresholdMet = parseThresholdMet(row.values.thresholdmet ?? '')
+    const polarity = (row.values.polarity?.trim().toUpperCase() ?? '') as WordCloudKeywordPolarity
+    const keyword = row.values.keyword?.trim()
+    const countText = row.values.count?.trim()
+
+    if (!employeeNumber || !responseCountText || !keyword || !countText) {
+      continue
+    }
+
+    if (!thresholdMet || !department) {
+      hiddenBaselineRows += 1
+      continue
+    }
+
+    if (polarity !== 'POSITIVE' && polarity !== 'NEGATIVE') {
+      continue
+    }
+
+    const responseCount = Number(responseCountText)
+    const count = Number(countText)
+    if (!Number.isFinite(responseCount) || !Number.isFinite(count)) {
+      continue
+    }
+
+    const bucket = baselineDepartments.get(department) ?? {
+      people: new Map<string, number>(),
+      keywordCounts: new Map<string, { polarity: WordCloudKeywordPolarity; count: number }>(),
+    }
+    if (!bucket.people.has(employeeNumber)) {
+      bucket.people.set(employeeNumber, responseCount)
+    }
+    const keywordBucket = bucket.keywordCounts.get(keyword)
+    if (keywordBucket) {
+      keywordBucket.count += count
+    } else {
+      bucket.keywordCounts.set(keyword, { polarity, count })
+    }
+    baselineDepartments.set(department, bucket)
+  }
+
+  const currentDepartmentsRaw = await buildCurrentWordCloudDepartmentReport({
+    cycleId: cycle.id,
+    minimumResponses: cycle.resultPrivacyThreshold,
+  })
+  const currentDepartments = new Map(
+    currentDepartmentsRaw.map((department) => [department.department, department])
+  )
+
+  const allDepartmentNames = Array.from(
+    new Set([...baselineDepartments.keys(), ...currentDepartments.keys()])
+  ).sort((left, right) => left.localeCompare(right, 'ko-KR'))
+
+  const departments = allDepartmentNames.map((department) => {
+    const baseline = baselineDepartments.get(department)
+    const current = currentDepartments.get(department)
+
+    const baselineResponseCount = baseline
+      ? Array.from(baseline.people.values()).reduce((sum, value) => sum + value, 0)
+      : 0
+    const currentResponseCount = current?.responseCount ?? 0
+    const changedKeywords = Array.from(
+      new Set([
+        ...Array.from(baseline?.keywordCounts.keys() ?? []),
+        ...Array.from(current?.keywordCounts.keys() ?? []),
+      ])
+    )
+      .map((keyword) => {
+        const baselineValue = baseline?.keywordCounts.get(keyword)
+        const currentValue = current?.keywordCounts.get(keyword)
+        const polarity = currentValue?.polarity ?? baselineValue?.polarity ?? 'POSITIVE'
+        return {
+          keyword,
+          polarity,
+          delta: (currentValue?.count ?? 0) - (baselineValue?.count ?? 0),
+        }
+      })
+      .filter((item) => item.delta !== 0)
+      .sort((left, right) => Math.abs(right.delta) - Math.abs(left.delta))
+      .slice(0, 5)
+
+    const topPositive = changedKeywords.find((item) => item.polarity === 'POSITIVE' && item.delta > 0)
+    const topNegative = changedKeywords.find((item) => item.polarity === 'NEGATIVE' && item.delta > 0)
+
+    return {
+      department,
+      baselineResponseCount,
+      currentResponseCount,
+      responseDelta: currentResponseCount - baselineResponseCount,
+      baselineTopPositiveKeywords: buildTopKeywordLabels(baseline?.keywordCounts ?? new Map(), 'POSITIVE'),
+      currentTopPositiveKeywords: buildTopKeywordLabels(current?.keywordCounts ?? new Map(), 'POSITIVE'),
+      baselineTopNegativeKeywords: buildTopKeywordLabels(baseline?.keywordCounts ?? new Map(), 'NEGATIVE'),
+      currentTopNegativeKeywords: buildTopKeywordLabels(current?.keywordCounts ?? new Map(), 'NEGATIVE'),
+      changedKeywords,
+      insight: buildComparisonInsight({
+        responseDelta: currentResponseCount - baselineResponseCount,
+        topPositive,
+        topNegative,
+      }),
+    }
+  })
+
+  const responseShift = departments
+    .filter((department) => department.responseDelta !== 0)
+    .sort((left, right) => Math.abs(right.responseDelta) - Math.abs(left.responseDelta))[0]
+  const positiveShift = departments
+    .flatMap((department) =>
+      department.changedKeywords
+        .filter((keyword) => keyword.polarity === 'POSITIVE' && keyword.delta > 0)
+        .map((keyword) => ({ department: department.department, keyword: keyword.keyword, delta: keyword.delta }))
+    )
+    .sort((left, right) => right.delta - left.delta)[0]
+  const negativeShift = departments
+    .flatMap((department) =>
+      department.changedKeywords
+        .filter((keyword) => keyword.polarity === 'NEGATIVE' && keyword.delta > 0)
+        .map((keyword) => ({ department: department.department, keyword: keyword.keyword, delta: keyword.delta }))
+    )
+    .sort((left, right) => right.delta - left.delta)[0]
+
+  const report: WordCloudComparisonReport = {
+    fileName: params.fileName,
+    summary: {
+      currentCycleName: cycle.cycleName,
+      baselineDepartmentCount: baselineDepartments.size,
+      currentDepartmentCount: currentDepartments.size,
+      comparedDepartmentCount: departments.length,
+      baselineResponseCount: departments.reduce((sum, department) => sum + department.baselineResponseCount, 0),
+      currentResponseCount: departments.reduce((sum, department) => sum + department.currentResponseCount, 0),
+      hiddenBaselineRows,
+      hiddenCurrentDepartments: currentDepartmentsRaw.filter((department) => !department.thresholdMet).length,
+      largestResponseChange: responseShift
+        ? { department: responseShift.department, delta: responseShift.responseDelta }
+        : undefined,
+      largestPositiveShift: positiveShift,
+      largestNegativeShift: negativeShift,
+    },
+    departments,
+  }
+
+  const uploadHistory = await prisma.uploadHistory.create({
+    data: {
+      uploadType: 'WORD_CLOUD_360_COMPARISON_UPLOAD',
+      uploaderId: actor.id,
+      fileName: params.fileName,
+      totalRows: parsedRows.length,
+      successCount: departments.length,
+      failCount: hiddenBaselineRows,
+      errorDetails: {
+        comparedDepartmentCount: departments.length,
+        hiddenBaselineRows,
+      },
+    },
+  })
+
+  await createAuditLog({
+    userId: actor.id,
+    action: 'GENERATE_WORD_CLOUD_360_COMPARISON_REPORT',
+    entityType: 'WORD_CLOUD_360_CYCLE',
+    entityId: cycle.id,
+    newValue: {
+      fileName: params.fileName,
+      comparedDepartmentCount: departments.length,
+      uploadHistoryId: uploadHistory.id,
+    },
+  })
+
+  return report
 }
 
 async function loadWordCloudSection<T>(params: {
@@ -1871,7 +2547,10 @@ export async function exportWordCloud360Results(params: {
   cycleId: string
   format: 'csv' | 'xlsx'
 }) {
-  const { cycle } = await ensureCycleAccess({ cycleId: params.cycleId, actorId: params.actorId })
+  const { actor, cycle } = await ensureCycleAccess({ cycleId: params.cycleId, actorId: params.actorId })
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '관리자만 서베이 결과를 다운로드할 수 있습니다.')
+  }
 
   const responses = await prisma.wordCloud360Response.findMany({
     where: {
@@ -1912,13 +2591,29 @@ export async function exportWordCloud360Results(params: {
       minimumResponses: cycle.resultPrivacyThreshold,
     })
 
-    return [...aggregated.positiveKeywords.slice(0, 10), ...aggregated.negativeKeywords.slice(0, 10)].map((item) => ({
+    const baseRow = {
       cycleName: cycle.cycleName,
       employeeNumber: evaluatee?.empId ?? '',
       employeeName: evaluatee?.empName ?? '',
-      department: evaluatee?.department.deptName ?? '',
+      department: aggregated.thresholdMet ? (evaluatee?.department.deptName ?? '') : '',
       responseCount: aggregated.responseCount,
       thresholdMet: aggregated.thresholdMet ? 'Y' : 'N',
+    }
+
+    if (!aggregated.thresholdMet) {
+      return [
+        {
+          ...baseRow,
+          polarity: '',
+          keyword: '',
+          category: '',
+          count: 0,
+        },
+      ]
+    }
+
+    return [...aggregated.positiveKeywords.slice(0, 10), ...aggregated.negativeKeywords.slice(0, 10)].map((item) => ({
+      ...baseRow,
       polarity: WORD_CLOUD_POLARITY_LABELS[item.polarity],
       keyword: item.keyword,
       category: WORD_CLOUD_CATEGORY_LABELS[item.category],

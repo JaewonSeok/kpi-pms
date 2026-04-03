@@ -9,6 +9,12 @@ import {
   resolveFeedbackResultRecipientIds,
   resolveFeedbackFolderId,
 } from '../src/server/feedback-360-admin'
+import { calculateFeedbackResponseTotalScore } from '../src/lib/feedback-score'
+import {
+  DEFAULT_FEEDBACK_RESULT_PRESENTATION_SETTINGS,
+  parseFeedbackResultPresentationSettings,
+  resolveFeedbackResultPresentationProfile,
+} from '../src/lib/feedback-result-presentation'
 import { FeedbackRoundReminderSchema, FeedbackRoundSettingsSchema } from '../src/lib/validations'
 import {
   buildReviewEmailContent,
@@ -37,29 +43,29 @@ async function main() {
       action: 'send-peer-selection-reminder',
       roundId: 'round-1',
       targetIds: ['emp-1', 'emp-2'],
-      subject: '동료 선택 리마인드',
-      body: '이번 주 안에 리뷰 작성자를 선택해 주세요.',
+      subject: 'Peer selection reminder',
+      body: '<p>Please complete your peer selection this week.</p>',
     })
     const resultShare = FeedbackRoundReminderSchema.safeParse({
       action: 'send-result-share',
       roundId: 'round-1',
       targetIds: ['emp-1'],
-      subject: '결과 공유',
-      body: '<p>결과를 확인해 주세요.</p>',
+      subject: 'Result shared',
+      body: '<p>Your review result is ready.</p>',
       shareAudience: 'LEADER_AND_REVIEWEE',
     })
     const missingTestEmail = FeedbackRoundReminderSchema.safeParse({
       action: 'test-send',
       roundId: 'round-1',
       targetIds: ['emp-1'],
-      subject: '테스트',
-      body: '본문',
+      subject: 'Test send',
+      body: '<p>Hello</p>',
     })
     const emptyRichText = FeedbackRoundReminderSchema.safeParse({
       action: 'send-review-reminder',
       roundId: 'round-1',
       targetIds: ['emp-1'],
-      subject: '리마인드',
+      subject: 'Reminder',
       body: '<p><br></p>',
     })
 
@@ -69,7 +75,7 @@ async function main() {
     assert.equal(emptyRichText.success, false)
   })
 
-  await run('feedback 360 settings schema supports team-member exclusion and reviewer-type visibility groups', () => {
+  await run('feedback 360 settings schema supports selection visibility and report analysis settings', () => {
     const parsed = FeedbackRoundSettingsSchema.safeParse({
       roundId: 'round-1',
       selectionSettings: {
@@ -86,9 +92,123 @@ async function main() {
         CROSS_TEAM_PEER: 'ANONYMOUS',
         CROSS_DEPT: 'PRIVATE',
       },
+      reportAnalysisSettings: {
+        overview: {
+          companyMessage: 'Company message for the report',
+          purposeMessage: 'Purpose guidance for using the report',
+          acceptanceGuide: 'Acceptance guide for reading the report',
+        },
+        menu: {
+          overview: { label: 'Overview', visible: true },
+          questionInsights: { label: 'Question Insights', visible: true },
+          relativeComparison: { label: 'Relative Comparison', visible: true },
+          selfAwareness: { label: 'Self Awareness', visible: true },
+          reviewDetails: { label: 'Review Details', visible: true },
+          questionScores: { label: 'Question Scores', visible: true },
+          objectiveAnswers: { label: 'Objective Answers', visible: true },
+          resultLink: { label: 'Result Link', visible: true },
+        },
+        wording: {
+          strengthLabel: 'Strength',
+          improvementLabel: 'Improvement',
+          selfAwarenessLabel: 'Self Awareness',
+          selfHighLabel: 'Self Higher',
+          selfLowLabel: 'Self Lower',
+          balancedLabel: 'Balanced',
+        },
+        strength: 'DEFAULT',
+      },
+      ratingGuideSettings: {
+        distributionQuestionId: 'question-1',
+        distributionMode: 'HEADCOUNT',
+        distributionScope: 'EVALUATOR',
+        scaleEntries: [
+          {
+            value: 5,
+            label: 'S',
+            description: '최상위 등급',
+            targetRatio: 10,
+            headcountLimit: 1,
+            isNonEvaluative: false,
+          },
+          {
+            value: 4,
+            label: 'A',
+            description: '상위 등급',
+            targetRatio: 30,
+            headcountLimit: 2,
+            isNonEvaluative: false,
+          },
+        ],
+        guideRules: [
+          {
+            id: 'rule-1',
+            label: '플랫폼 팀장',
+            headline: '플랫폼 팀장 등급 가이드',
+            guidance: '팀장 기준으로 육성과 성과 균형을 함께 확인합니다.',
+            filters: {
+              departmentKeyword: '플랫폼',
+              position: '팀장',
+            },
+            gradeDescriptions: {
+              '5': '최상위 기준',
+            },
+          },
+        ],
+      },
     })
 
     assert.equal(parsed.success, true)
+  })
+
+  await run('feedback result presentation defaults, overrides, and profile resolution stay consistent', () => {
+    const parsedDefaults = parseFeedbackResultPresentationSettings(null)
+    const parsedOverride = parseFeedbackResultPresentationSettings({
+      REVIEWEE: {
+        showLeaderComment: false,
+        showLeaderScore: true,
+      },
+    })
+
+    assert.deepEqual(parsedDefaults, DEFAULT_FEEDBACK_RESULT_PRESENTATION_SETTINGS)
+    assert.equal(parsedOverride.REVIEWEE.showLeaderComment, false)
+    assert.equal(parsedOverride.REVIEWEE.showLeaderScore, true)
+    assert.equal(parsedOverride.LEADER.showLeaderComment, true)
+
+    const target = {
+      id: 'target-1',
+      teamLeaderId: 'leader-1',
+      sectionChiefId: 'section-1',
+      divisionHeadId: 'division-1',
+    }
+
+    assert.equal(
+      resolveFeedbackResultPresentationProfile({
+        actorId: 'target-1',
+        actorRole: 'ROLE_MEMBER',
+        target,
+        requestedProfile: 'EXECUTIVE',
+      }),
+      'REVIEWEE'
+    )
+    assert.equal(
+      resolveFeedbackResultPresentationProfile({
+        actorId: 'leader-1',
+        actorRole: 'ROLE_MEMBER',
+        target,
+        requestedProfile: 'REVIEWEE',
+      }),
+      'LEADER'
+    )
+    assert.equal(
+      resolveFeedbackResultPresentationProfile({
+        actorId: 'admin-1',
+        actorRole: 'ROLE_ADMIN',
+        target,
+        requestedProfile: 'EXECUTIVE',
+      }),
+      'EXECUTIVE'
+    )
   })
 
   await run('feedback admin helpers resolve folder ids and bulk reminder recipients from live review state', () => {
@@ -157,21 +277,21 @@ async function main() {
     assert.equal(adminPanel.includes('setSelectedTargetIds(visibleReminderRecipientIds)'), true)
     assert.equal(adminPanel.includes('reminderStatusFilter'), true)
     assert.equal(adminPanel.includes('visibleReminderRecipientIds.length'), true)
-    assert.equal(adminPanel.includes('현재 선택'), true)
-    assert.equal(adminPanel.includes('상태 전체'), true)
     assert.equal(adminPanel.includes('RichTextEmailEditor'), true)
     assert.equal(adminPanel.includes('send-peer-selection-reminder'), true)
     assert.equal(adminPanel.includes('send-result-share'), true)
     assert.equal(adminPanel.includes('excludeDirectReportsFromPeerSelection'), true)
     assert.equal(adminPanel.includes('visibilitySettings'), true)
     assert.equal(adminPanel.includes("body: JSON.stringify({ id: folderId })"), true)
-    assert.equal(editorSource.includes("document.execCommand('bold')"), false)
+
     assert.equal(editorSource.includes("runCommand('bold')"), true)
-    assert.equal(editorSource.includes('글자 크기'), true)
-    assert.equal(editorSource.includes('글자 색상'), true)
-    assert.equal(editorSource.includes('들여쓰기'), true)
-    assert.equal(editorSource.includes('내어쓰기'), true)
-    assert.equal(editorSource.includes('링크 삽입'), true)
+    assert.equal(editorSource.includes("runCommand('insertUnorderedList')"), true)
+    assert.equal(editorSource.includes("runCommand('undo')"), true)
+    assert.equal(editorSource.includes("runCommand('redo')"), true)
+    assert.equal(editorSource.includes('adjustIndent(24)'), true)
+    assert.equal(editorSource.includes('adjustIndent(-24)'), true)
+    assert.equal(editorSource.includes('type="color"'), true)
+    assert.equal(editorSource.includes("tagName === 'a'"), true)
   })
 
   await run('feedback 360 admin panel exposes onboarding workflow setup and generated review list controls', () => {
@@ -183,9 +303,57 @@ async function main() {
     assert.equal(adminPanel.includes('selectedWorkflowId'), true)
     assert.equal(adminPanel.includes('generatedReviewSearch'), true)
     assert.equal(adminPanel.includes('generatedReviewStatusFilter'), true)
+    assert.equal(adminPanel.includes('generatedReviewSort'), true)
     assert.equal(adminPanel.includes('buildOnboardingReviewNamePreview'), true)
     assert.equal(serviceSource.includes('runScheduledOnboardingReviewGeneration'), true)
     assert.equal(serviceSource.includes('OnboardingReviewGeneration'), true)
+  })
+
+  await run('feedback review admin source wires collaborator-scoped permissions through schema, UI, and routes', () => {
+    const schemaSource = read('prisma/schema.prisma')
+    const validationSource = read('src/lib/validations.ts')
+    const accessSource = read('src/server/feedback-360-access.ts')
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const settingsRoute = read('src/app/api/feedback/rounds/[id]/settings/route.ts')
+    const workflowRoute = read('src/app/api/feedback/rounds/[id]/workflow/route.ts')
+    const reportRoute = read('src/app/api/feedback/rounds/[id]/report/route.ts')
+    const roundsRoute = read('src/app/api/feedback/rounds/route.ts')
+    const adminGroupsRoute = read('src/app/api/feedback/admin-groups/route.ts')
+    const loaderSource = read('src/server/feedback-360.ts')
+
+    assert.equal(schemaSource.includes('enum FeedbackAdminReviewScope'), true)
+    assert.equal(schemaSource.includes('model FeedbackAdminGroup'), true)
+    assert.equal(schemaSource.includes('model FeedbackRoundCollaborator'), true)
+    assert.equal(validationSource.includes('FeedbackAdminGroupSchema'), true)
+    assert.equal(validationSource.includes('collaboratorIds'), true)
+    assert.equal(accessSource.includes('COLLABORATOR_REVIEWS_MANAGE_AND_CONTENT'), true)
+    assert.equal(accessSource.includes('canReadCollaboratorContent'), true)
+    assert.equal(adminPanel.includes('/api/feedback/admin-groups'), true)
+    assert.equal(adminPanel.includes('groupDialogOpen'), true)
+    assert.equal(adminPanel.includes('collaboratorIds'), true)
+    assert.equal(adminPanel.includes('filteredCollaboratorCandidates'), true)
+    assert.equal(adminPanel.includes('selectedCollaborators'), true)
+    assert.equal(adminPanel.includes('selectedGroupMembers'), true)
+    assert.equal(adminPanel.includes('공동 작업자'), true)
+    assert.equal(adminPanel.includes('모든 리뷰 사이클/템플릿 관리'), true)
+    assert.equal(adminPanel.includes('모든 리뷰 사이클/템플릿 관리 + 모든 리뷰 내용 열람 및 수정'), true)
+    assert.equal(adminPanel.includes('공동 작업자인 리뷰 사이클/템플릿 관리'), true)
+    assert.equal(adminPanel.includes('공동 작업자인 리뷰 사이클/템플릿 관리 + 공동 작업자인 리뷰 내용 열람 및 수정'), true)
+    assert.equal(settingsRoute.includes('feedbackRoundCollaborator'), true)
+    assert.equal(settingsRoute.includes('canManageFeedbackRoundByAccess'), true)
+    assert.equal(settingsRoute.includes('collaboratorIds'), true)
+    assert.equal(settingsRoute.includes('deleteMany'), true)
+    assert.equal(settingsRoute.includes('createMany'), true)
+    assert.equal(workflowRoute.includes('getFeedbackReviewAdminAccess'), true)
+    assert.equal(workflowRoute.includes('canManageFeedbackRoundByAccess'), true)
+    assert.equal(reportRoute.includes('canReadFeedbackRoundContentByAccess'), true)
+    assert.equal(roundsRoute.includes('getCollaboratorRoundIds'), true)
+    assert.equal(adminGroupsRoute.includes('FEEDBACK_ADMIN_GROUP_CREATED'), true)
+    assert.equal(adminGroupsRoute.includes('FEEDBACK_ADMIN_GROUP_UPDATED'), true)
+    assert.equal(adminGroupsRoute.includes('FEEDBACK_ADMIN_GROUP_DELETED'), true)
+    assert.equal(loaderSource.includes('buildReviewAdminState'), true)
+    assert.equal(loaderSource.includes('collaborators:'), true)
+    assert.equal(loaderSource.includes('canReadCollaboratorContent'), true)
   })
 
   await run('feedback 360 routes align delete and reminder actions with server-side review ownership checks', () => {
@@ -212,13 +380,55 @@ async function main() {
 
     assert.equal(adminPanel.includes('shareAudience'), true)
     assert.equal(adminPanel.includes('resultShare.rows'), true)
-    assert.equal(adminPanel.includes('열람 완료'), true)
-    assert.equal(adminPanel.includes('결과 보기'), true)
-    assert.equal(workspace.includes('/api/feedback/rounds/${encodeURIComponent(props.data.selectedRoundId!)}/result-view'), true)
+    assert.equal(adminPanel.includes('leaderStatus'), true)
+    assert.equal(adminPanel.includes('revieweeStatus'), true)
+    assert.equal(
+      workspace.includes('/api/feedback/rounds/${encodeURIComponent(props.data.selectedRoundId!)}/result-view'),
+      true
+    )
     assert.equal(workspace.includes('recordedResultViewKey'), true)
     assert.equal(loaderSource.includes('FEEDBACK_RESULT_SHARED'), true)
     assert.equal(loaderSource.includes('FEEDBACK_RESULT_VIEWED'), true)
     assert.equal(loaderSource.includes('resultShare:'), true)
+  })
+
+  await run('feedback result presentation settings are saved and rendered through admin and result workspace flows', () => {
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
+    const settingsRoute = read('src/app/api/feedback/rounds/[id]/settings/route.ts')
+    const exportRoute = read('src/app/api/feedback/rounds/[id]/results-export/route.ts')
+
+    assert.equal(adminPanel.includes('selectedResultVersionProfile'), true)
+    assert.equal(adminPanel.includes('resultPresentationSettings'), true)
+    assert.equal(adminPanel.includes('selectedResultShareTargetIds'), true)
+    assert.equal(workspace.includes('buildResultVersionHref'), true)
+    assert.equal(workspace.includes('pdfHref'), true)
+    assert.equal(workspace.includes('FEEDBACK_RESULT_PROFILE_LABELS'), true)
+    assert.equal(settingsRoute.includes('resultPresentationSettings'), true)
+    assert.equal(exportRoute.includes('buildFeedback360ResultPdf'), true)
+    assert.equal(exportRoute.includes("searchParams.get('download') === '1'"), true)
+  })
+
+  await run('feedback report analysis settings and personalized report view are wired through admin and results flows', () => {
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
+    const reportView = read('src/components/evaluation/feedback360/FeedbackReportAnalysisView.tsx')
+    const loaderSource = read('src/server/feedback-360.ts')
+    const settingsRoute = read('src/app/api/feedback/rounds/[id]/settings/route.ts')
+
+    assert.equal(adminPanel.includes('reportAnalysisSettings'), true)
+    assert.equal(adminPanel.includes('FEEDBACK_REPORT_ANALYSIS_SECTIONS'), true)
+    assert.equal(adminPanel.includes('FEEDBACK_ANALYSIS_STRENGTH_LABELS'), true)
+    assert.equal(adminPanel.includes('개인별 리포트 / 분석 설정'), true)
+    assert.equal(workspace.includes('FeedbackReportAnalysisView'), true)
+    assert.equal(reportView.includes('selectedInsight'), true)
+    assert.equal(reportView.includes('questionInsights'), true)
+    assert.equal(reportView.includes('objectiveAnswers'), true)
+    assert.equal(reportView.includes('BarChart'), true)
+    assert.equal(loaderSource.includes('buildFeedbackReportAnalysis'), true)
+    assert.equal(loaderSource.includes('reportAnalysisSettings'), true)
+    assert.equal(loaderSource.includes("employee.role === 'ROLE_ADMIN'"), true)
+    assert.equal(settingsRoute.includes('parseFeedbackReportAnalysisSettings'), true)
   })
 
   await run('feedback 360 nomination workflow enforces evaluator and direct-report exclusion in both loader and server validation', () => {
@@ -228,11 +438,20 @@ async function main() {
 
     assert.equal(loaderSource.includes('excludeDirectReportsFromPeerSelection'), true)
     assert.equal(loaderSource.includes('directReportIds.has(reviewer.id)'), true)
-    assert.equal(loaderSource.includes('본인, 본인의 평가권자, 상위 평가권자는 동료 후보에서 자동 제외됩니다.'), true)
-    assert.equal(workflowSource.includes('selectionSettings.excludeDirectReportsFromPeerSelection'), true)
+    assert.equal(loaderSource.includes('supervisorIds.includes(reviewer.id)'), true)
     assert.equal(workflowSource.includes('EVALUATOR_PEER_EXCLUDED'), true)
+    assert.equal(workflowSource.includes('selectionSettings.excludeDirectReportsFromPeerSelection'), true)
     assert.equal(nominationPanel.includes('selectionSettings.excludeDirectReportsFromPeerSelection'), true)
     assert.equal(nominationPanel.includes('group.helpMessage'), true)
+  })
+
+  await run('feedback nomination UI surfaces disabled reviewer reasons and blocks non-selectable candidates', () => {
+    const nominationPanel = read('src/components/evaluation/feedback360/ReviewerNominationPanel.tsx')
+
+    assert.equal(nominationPanel.includes('reviewer.disabledReason'), true)
+    assert.equal(nominationPanel.includes('disabled={!selectable}'), true)
+    assert.equal(nominationPanel.includes('toggleReviewer(reviewer.employeeId, selectable)'), true)
+    assert.equal(nominationPanel.includes('cursor-not-allowed'), true)
   })
 
   await run('feedback reference panel groups repeated questions under one question card and keeps warnings separate', () => {
@@ -244,22 +463,95 @@ async function main() {
     assert.equal(panelSource.includes('props.warnings'), true)
   })
 
+  await run('feedback respond workspace exposes goal context, prior total scores, and stale reset hooks', () => {
+    const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
+    const respondPanel = read('src/components/evaluation/feedback360/FeedbackRespondReferencePanel.tsx')
+    const loaderSource = read('src/server/feedback-360.ts')
+
+    assert.equal(workspace.includes("import { FeedbackRespondReferencePanel } from './FeedbackRespondReferencePanel'"), true)
+    assert.equal(workspace.includes('RespondReferenceSummary'), true)
+    assert.equal(workspace.includes('RespondRatingGuideCard'), true)
+    assert.equal(workspace.includes('distributionLimitExceeded'), true)
+    assert.equal(workspace.includes('등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.'), true)
+    assert.equal(workspace.includes('respondData.reference'), true)
+    assert.equal(workspace.includes('[respondFeedbackId, respondOverallComment, respondQuestions]'), true)
+    assert.equal(workspace.includes("key={`${respondData.feedbackId}:${props.data.selectedRoundId ?? ''}`}"), true)
+    assert.equal(respondPanel.includes("type ReferenceTab = 'goals' | 'reviews' | 'scores'"), true)
+    assert.equal(respondPanel.includes('props.reference.priorScores.length'), true)
+    assert.equal(respondPanel.includes('target="_blank"'), true)
+    assert.equal(loaderSource.includes('employeeId: feedback.receiverId'), true)
+    assert.equal(loaderSource.includes('calculateFeedbackResponseTotalScore'), true)
+    assert.equal(loaderSource.includes('reference: {'), true)
+  })
+
+  await run('feedback rating guide settings and submit route enforce headcount quota in Korean', () => {
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const submitRoute = read('src/app/api/feedback/route.ts')
+    const loaderSource = read('src/server/feedback-360.ts')
+
+    assert.equal(adminPanel.includes('등급 가이드 / 상대평가 배분'), true)
+    assert.equal(adminPanel.includes('distributionQuestionId'), true)
+    assert.equal(adminPanel.includes('가장 높은 등급'), true)
+    assert.equal(adminPanel.includes('가장 낮은 등급'), true)
+    assert.equal(adminPanel.includes('비평가 등급으로 처리'), true)
+
+    assert.equal(submitRoute.includes('parseFeedbackRatingGuideSettings'), true)
+    assert.equal(submitRoute.includes('RATING_GUIDE_HEADCOUNT_EXCEEDED'), true)
+    assert.equal(submitRoute.includes('등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.'), true)
+
+    assert.equal(loaderSource.includes('priorScoreSummary'), true)
+    assert.equal(loaderSource.includes('ratingGuide: {'), true)
+    assert.equal(loaderSource.includes('targetProfileLabel'), true)
+  })
+
+  await run('self review goal context is limited to the review target own goals', () => {
+    const loaderSource = read('src/server/feedback-360.ts')
+
+    assert.equal(loaderSource.includes('employeeId: feedback.receiverId'), true)
+    assert.equal(loaderSource.includes('reviewerId: feedback.receiverId'), false)
+  })
+
+  await run('feedback total score helper keeps mixed template calculations consistent by ignoring non-scored items', () => {
+    const totalScore = calculateFeedbackResponseTotalScore({
+      responses: [
+        { ratingValue: 4, question: { questionType: 'RATING_SCALE' } },
+        { ratingValue: 5, question: { questionType: 'RATING_SCALE' } },
+        { ratingValue: null, question: { questionType: 'TEXT_LONG' } },
+      ],
+    })
+
+    assert.equal(totalScore, 90)
+  })
+
+  await run('feedback round settings support editable question text through admin settings flow', () => {
+    const schemaSource = read('src/lib/validations.ts')
+    const routeSource = read('src/app/api/feedback/rounds/[id]/settings/route.ts')
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+
+    assert.equal(schemaSource.includes('questions: z'), true)
+    assert.equal(routeSource.includes('feedbackQuestion.update'), true)
+    assert.equal(routeSource.includes('INVALID_QUESTION'), true)
+    assert.equal(adminPanel.includes('questionDrafts'), true)
+    assert.equal(adminPanel.includes('questions: questionDrafts.map'), true)
+    assert.equal(adminPanel.includes('/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/settings'), true)
+  })
+
   await run('review email editor utilities preserve safe formatting and strip unsafe markup', () => {
-    const html = plainTextToReviewEmailHtml('안녕하세요.\n리뷰를 부탁드립니다.\n\n감사합니다.')
+    const html = plainTextToReviewEmailHtml('Hello\nPlease review the draft.\n\nThank you')
     const content = buildReviewEmailContent(
-      `${html}<ul><li><strong>강점</strong>을 한 줄로 정리해 주세요.</li></ul><p><a href="https://example.com">가이드</a></p><script>alert(1)</script>`
+      `${html}<ul><li><strong>Strength</strong> summarize key points</li></ul><p><a href="https://example.com">Guide</a></p><script>alert(1)</script>`
     )
-    const sanitized = sanitizeReviewEmailHtml('<p onclick="bad()">본문</p><a href="javascript:alert(1)">위험</a>')
+    const sanitized = sanitizeReviewEmailHtml('<p onclick="bad()">Body</p><a href="javascript:alert(1)">Unsafe</a>')
     const roundTrip = reviewEmailHtmlToText(content.html)
 
     assert.equal(content.html.includes('<script'), false)
-    assert.equal(content.html.includes('<strong>강점</strong>'), true)
+    assert.equal(content.html.includes('<strong>Strength</strong>'), true)
     assert.equal(content.html.includes('href="https://example.com"'), true)
     assert.equal(sanitized.includes('onclick'), false)
     assert.equal(sanitized.includes('javascript:'), false)
-    assert.equal(roundTrip.includes('강점'), true)
-    assert.equal(roundTrip.includes('가이드 (https://example.com)'), true)
-    assert.equal(roundTrip.includes('•'), true)
+    assert.equal(roundTrip.includes('Strength'), true)
+    assert.equal(roundTrip.includes('Guide (https://example.com)'), true)
+    assert.equal(roundTrip.includes('Please review the draft.'), true)
   })
 
   console.log('Feedback 360 ops tests completed')

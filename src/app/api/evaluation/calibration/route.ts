@@ -4,6 +4,10 @@ import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { CalibrationCandidateUpdateSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
+import {
+  parseCalibrationSessionConfig,
+  toCalibrationSessionConfigJson,
+} from '@/server/evaluation-calibration-session'
 
 export async function PATCH(request: Request) {
   try {
@@ -52,11 +56,21 @@ export async function PATCH(request: Request) {
       throw new AppError(400, 'CALIBRATION_LOCKED', '잠금 상태에서는 조정을 수정할 수 없습니다.')
     }
 
+    const currentSessionConfig = parseCalibrationSessionConfig(cycle.calibrationSessionConfig)
+
     if (body.action === 'update-session-config') {
+      const nextSessionConfig = {
+        ...currentSessionConfig,
+        excludedTargetIds: body.sessionConfig?.excludedTargetIds ?? currentSessionConfig.excludedTargetIds,
+        participantIds: body.sessionConfig?.participantIds ?? currentSessionConfig.participantIds,
+        evaluatorIds: body.sessionConfig?.evaluatorIds ?? currentSessionConfig.evaluatorIds,
+        externalColumns: body.sessionConfig?.externalColumns ?? currentSessionConfig.externalColumns,
+      }
+
       await prisma.evalCycle.update({
         where: { id: cycle.id },
         data: {
-          calibrationSessionConfig: body.sessionConfig,
+          calibrationSessionConfig: toCalibrationSessionConfigJson(nextSessionConfig),
         },
       })
 
@@ -65,13 +79,82 @@ export async function PATCH(request: Request) {
         action: 'CALIBRATION_SESSION_CONFIG_UPDATED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
-        newValue: body.sessionConfig,
+        newValue: nextSessionConfig,
         ...client,
       })
 
       return successResponse({
         cycleId: cycle.id,
-        sessionConfig: body.sessionConfig,
+        sessionConfig: nextSessionConfig,
+      })
+    }
+
+    if (body.action === 'upload-external-data') {
+      const targetIds = Array.from(new Set((body.externalData?.rows ?? []).map((row) => row.targetId)))
+      const matchedTargets = await prisma.evaluation.findMany({
+        where: {
+          evalCycleId: cycle.id,
+          targetId: { in: targetIds },
+          evalStage: {
+            in: ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'],
+          },
+        },
+        select: {
+          targetId: true,
+        },
+        distinct: ['targetId'],
+      })
+
+      const validTargetIds = new Set(matchedTargets.map((item) => item.targetId))
+      const failedRows: Array<{ rowNumber?: number; identifier?: string; message: string }> = []
+      const nextExternalRowsByTargetId: Record<string, Record<string, string>> = {}
+
+      for (const row of body.externalData?.rows ?? []) {
+        if (!validTargetIds.has(row.targetId)) {
+          failedRows.push({
+            rowNumber: row.rowNumber,
+            identifier: row.identifier ?? row.targetId,
+            message: '캘리브레이션 대상자와 매칭되지 않아 업로드하지 못했습니다.',
+          })
+          continue
+        }
+
+        nextExternalRowsByTargetId[row.targetId] = Object.fromEntries(
+          body.externalData?.columns.map((column) => [column.key, row.values[column.key] ?? '']) ?? []
+        )
+      }
+
+      const nextSessionConfig = {
+        ...currentSessionConfig,
+        externalColumns: body.externalData?.columns ?? [],
+        externalRowsByTargetId: nextExternalRowsByTargetId,
+      }
+
+      await prisma.evalCycle.update({
+        where: { id: cycle.id },
+        data: {
+          calibrationSessionConfig: toCalibrationSessionConfigJson(nextSessionConfig),
+        },
+      })
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'CALIBRATION_EXTERNAL_DATA_UPLOADED',
+        entityType: 'EvalCycle',
+        entityId: cycle.id,
+        newValue: {
+          columnCount: nextSessionConfig.externalColumns.length,
+          appliedCount: Object.keys(nextExternalRowsByTargetId).length,
+          failedCount: failedRows.length,
+        },
+        ...client,
+      })
+
+      return successResponse({
+        cycleId: cycle.id,
+        columnCount: nextSessionConfig.externalColumns.length,
+        appliedCount: Object.keys(nextExternalRowsByTargetId).length,
+        failedRows,
       })
     }
 
@@ -127,6 +210,63 @@ export async function PATCH(request: Request) {
         grouped.set(evaluation.targetId, current)
       }
 
+      const validRows: Array<{
+        rowNumber?: number
+        identifier?: string
+        targetId: string
+        gradeId: string
+        adjustReason: string
+        gradeName: string
+        originalGrade: string
+        finalEvaluation: (typeof evaluations)[number]
+        adjustedEvaluation: (typeof evaluations)[number] | null
+      }> = []
+      const failedRows: Array<{ rowNumber?: number; identifier?: string; message: string }> = []
+
+      for (const row of body.rows ?? []) {
+        const grade = gradeSettings.find((item) => item.id === row.gradeId)
+        const entry = grouped.get(row.targetId)
+        const finalEvaluation = entry?.finalEvaluation
+        const adjustedEvaluation = entry?.adjustedEvaluation ?? null
+
+        if (!grade) {
+          failedRows.push({
+            rowNumber: row.rowNumber,
+            identifier: row.identifier ?? row.targetId,
+            message: '선택한 조정 등급을 찾지 못했습니다.',
+          })
+          continue
+        }
+
+        if (!finalEvaluation) {
+          failedRows.push({
+            rowNumber: row.rowNumber,
+            identifier: row.identifier ?? row.targetId,
+            message: '원 평가 결과를 찾지 못했습니다.',
+          })
+          continue
+        }
+
+        const originalGrade =
+          resolveGradeName(
+            adjustedEvaluation?.gradeId ?? finalEvaluation.gradeId,
+            finalEvaluation.totalScore,
+            gradeSettings
+          ) ?? '미확정'
+
+        validRows.push({
+          rowNumber: row.rowNumber,
+          identifier: row.identifier,
+          targetId: row.targetId,
+          gradeId: row.gradeId,
+          adjustReason: row.adjustReason.trim(),
+          gradeName: grade.gradeName,
+          originalGrade,
+          finalEvaluation,
+          adjustedEvaluation,
+        })
+      }
+
       const savedRows: Array<{
         targetId: string
         targetName: string
@@ -138,81 +278,72 @@ export async function PATCH(request: Request) {
         evaluationId: string
       }> = []
 
-      await prisma.$transaction(async (tx) => {
-        for (const row of body.rows ?? []) {
-          const grade = gradeSettings.find((item) => item.id === row.gradeId)
-          if (!grade) {
-            throw new AppError(404, 'GRADE_NOT_FOUND', '선택한 조정 등급을 찾지 못했습니다.')
-          }
-
-          const entry = grouped.get(row.targetId)
-          const finalEvaluation = entry?.finalEvaluation
-          const adjustedEvaluation = entry?.adjustedEvaluation
-
-          if (!finalEvaluation) {
-            throw new AppError(404, 'FINAL_EVALUATION_NOT_FOUND', '원 평가 결과를 찾지 못했습니다.')
-          }
-
-          const originalGrade =
-            resolveGradeName(
-              adjustedEvaluation?.gradeId ?? finalEvaluation.gradeId,
-              finalEvaluation.totalScore,
-              gradeSettings
-            ) ?? '미확정'
-
-          const savedEvaluation = adjustedEvaluation
-            ? await tx.evaluation.update({
-                where: { id: adjustedEvaluation.id },
+      for (const row of validRows) {
+        try {
+          const savedEvaluation = await prisma.$transaction(async (tx) => {
+            if (row.adjustedEvaluation) {
+              return tx.evaluation.update({
+                where: { id: row.adjustedEvaluation.id },
                 data: {
-                  gradeId: grade.id,
-                  totalScore: finalEvaluation.totalScore,
-                  comment: row.adjustReason.trim(),
+                  gradeId: row.gradeId,
+                  totalScore: row.finalEvaluation.totalScore,
+                  comment: row.adjustReason,
                   evaluatorId: session.user.id,
                   status: 'CONFIRMED',
                   isDraft: false,
                   submittedAt: new Date(),
                 },
               })
-            : await tx.evaluation.create({
-                data: {
-                  evalCycleId: cycle.id,
-                  targetId: row.targetId,
-                  evaluatorId: session.user.id,
-                  evalStage: 'CEO_ADJUST',
-                  totalScore: finalEvaluation.totalScore,
-                  gradeId: grade.id,
-                  comment: row.adjustReason.trim(),
-                  status: 'CONFIRMED',
-                  isDraft: false,
-                  submittedAt: new Date(),
-                  items: {
-                    create: finalEvaluation.items.map((item) => ({
-                      personalKpiId: item.personalKpiId,
-                      quantScore: item.quantScore,
-                      planScore: item.planScore,
-                      doScore: item.doScore,
-                      checkScore: item.checkScore,
-                      actScore: item.actScore,
-                      qualScore: item.qualScore,
-                      itemComment: item.itemComment,
-                      weightedScore: item.weightedScore,
-                    })),
-                  },
+            }
+
+            return tx.evaluation.create({
+              data: {
+                evalCycleId: cycle.id,
+                targetId: row.targetId,
+                evaluatorId: session.user.id,
+                evalStage: 'CEO_ADJUST',
+                totalScore: row.finalEvaluation.totalScore,
+                gradeId: row.gradeId,
+                comment: row.adjustReason,
+                status: 'CONFIRMED',
+                isDraft: false,
+                submittedAt: new Date(),
+                items: {
+                  create: row.finalEvaluation.items.map((item) => ({
+                    personalKpiId: item.personalKpiId,
+                    quantScore: item.quantScore,
+                    planScore: item.planScore,
+                    doScore: item.doScore,
+                    checkScore: item.checkScore,
+                    actScore: item.actScore,
+                    qualScore: item.qualScore,
+                    itemComment: item.itemComment,
+                    weightedScore: item.weightedScore,
+                  })),
                 },
-              })
+              },
+            })
+          })
 
           savedRows.push({
             targetId: row.targetId,
-            targetName: finalEvaluation.target.empName,
-            department: finalEvaluation.target.department.deptName,
-            fromGrade: originalGrade,
-            toGrade: grade.gradeName,
-            rawScore: finalEvaluation.totalScore ?? 0,
-            reason: row.adjustReason.trim(),
+            targetName: row.finalEvaluation.target.empName,
+            department: row.finalEvaluation.target.department.deptName,
+            fromGrade: row.originalGrade,
+            toGrade: row.gradeName,
+            rawScore: row.finalEvaluation.totalScore ?? 0,
+            reason: row.adjustReason,
             evaluationId: savedEvaluation.id,
           })
+        } catch (error) {
+          console.error('[calibration bulk-import] row apply failed', error)
+          failedRows.push({
+            rowNumber: row.rowNumber,
+            identifier: row.identifier ?? row.targetId,
+            message: '이 행을 반영하지 못했습니다. 등급/사유 값을 다시 확인해 주세요.',
+          })
         }
-      })
+      }
 
       for (const row of savedRows) {
         await createAuditLog({
@@ -246,7 +377,9 @@ export async function PATCH(request: Request) {
         entityType: 'EvalCycle',
         entityId: cycle.id,
         newValue: {
-          rowCount: savedRows.length,
+          rowCount: body.rows?.length ?? 0,
+          appliedCount: savedRows.length,
+          failedCount: failedRows.length,
           targetIds: savedRows.map((item) => item.targetId),
         },
         ...client,
@@ -254,7 +387,9 @@ export async function PATCH(request: Request) {
 
       return successResponse({
         cycleId: cycle.id,
-        rowCount: savedRows.length,
+        rowCount: body.rows?.length ?? 0,
+        appliedCount: savedRows.length,
+        failedRows,
       })
     }
 

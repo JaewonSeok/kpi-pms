@@ -9,6 +9,7 @@ import type {
 import { calcPdcaScore } from '@/lib/utils'
 import { prisma } from '@/lib/prisma'
 import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
+import { parseCalibrationSessionConfig } from '@/server/evaluation-calibration-session'
 
 export type CalibrationPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 export type CalibrationStatus = 'READY' | 'CALIBRATING' | 'REVIEW_CONFIRMED' | 'FINAL_LOCKED'
@@ -20,6 +21,8 @@ export type CalibrationCandidate = {
   departmentId: string
   department: string
   jobGroup?: string
+  sourceStage: 'FIRST' | 'SECOND' | 'FINAL'
+  hasMergedCalibration: boolean
   rawScore: number
   originalGrade: string
   adjustedGrade?: string
@@ -53,6 +56,11 @@ export type CalibrationCandidate = {
     status: CheckInStatus
     summary: string
   }>
+  externalData: Array<{
+    key: string
+    label: string
+    value: string
+  }>
 }
 
 export type CalibrationViewModel = {
@@ -71,6 +79,17 @@ export type CalibrationViewModel = {
     excludedTargetIds: string[]
     participantIds: string[]
     evaluatorIds: string[]
+    externalColumns: Array<{
+      key: string
+      label: string
+    }>
+    lastMergeSummary?: {
+      mergedAt: string
+      mergedBy: string
+      createdCount: number
+      skippedCount: number
+      scopeId?: string
+    } | null
   }
   sessionOptions: {
     targets: Array<{
@@ -444,6 +463,12 @@ export async function getEvaluationCalibrationPageData(params: {
     }
 
     const sessionConfig = parseCalibrationSessionConfig(selectedCycle.calibrationSessionConfig)
+    const latestSessionDeleteLog = [...auditLogs]
+      .reverse()
+      .find((log) => log.entityType === 'EvalCycle' && log.action === 'CALIBRATION_SESSION_DELETED')
+    const effectiveAuditLogs = latestSessionDeleteLog
+      ? auditLogs.filter((log) => log.timestamp >= latestSessionDeleteLog.timestamp)
+      : auditLogs
     const groups = groupEvaluationsByTarget(evaluations)
     const scopeOptions = buildScopeOptions(groups)
     const selectedScopeId =
@@ -484,15 +509,17 @@ export async function getEvaluationCalibrationPageData(params: {
         checkIns: checkInMap.get(group.target.id) ?? [],
         departmentOutlierMap: outlierDepartmentIds,
         aiCompetencyScore: aiCompetencyResults.get(`${selectedCycle.id}:${group.target.id}`)?.finalScore,
+        externalColumns: sessionConfig.externalColumns,
+        externalRow: sessionConfig.externalRowsByTargetId[group.target.id] ?? {},
       })
     )
 
     const summary = buildSummary(decoratedCandidates, byDepartment)
-    const cycleStatus = resolveCalibrationStatus(selectedCycle, auditLogs, summary.adjustedCount)
+    const cycleStatus = resolveCalibrationStatus(selectedCycle, effectiveAuditLogs, summary.adjustedCount)
     const checklist = buildChecklist(decoratedCandidates)
     const timeline = buildCalibrationTimeline({
       cycle: selectedCycle,
-      auditLogs,
+      auditLogs: effectiveAuditLogs,
       groups: filteredGroups,
       gradeSettings,
     })
@@ -510,11 +537,17 @@ export async function getEvaluationCalibrationPageData(params: {
           year: selectedCycle.evalYear,
           status: cycleStatus,
           rawStatus: selectedCycle.status,
-          lockedAt: resolveLockedAt(selectedCycle, auditLogs),
+          lockedAt: resolveLockedAt(selectedCycle, effectiveAuditLogs),
           organizationName: employee.department.organization.name,
           selectedScopeId,
         },
-        sessionConfig,
+        sessionConfig: {
+          excludedTargetIds: sessionConfig.excludedTargetIds,
+          participantIds: sessionConfig.participantIds,
+          evaluatorIds: sessionConfig.evaluatorIds,
+          externalColumns: sessionConfig.externalColumns,
+          lastMergeSummary: sessionConfig.lastMergeSummary,
+        },
         sessionOptions: {
           targets: groups.map((group) => ({
             id: group.target.id,
@@ -606,6 +639,12 @@ function filterGroupsByScope(groups: CandidateGroup[], selectedScopeId: string) 
   return groups.filter((group) => group.target.department.id === selectedScopeId)
 }
 
+function resolveSourceStage(group: CandidateGroup): CalibrationCandidate['sourceStage'] {
+  if (group.finalEvaluation?.evalStage === 'FINAL') return 'FINAL'
+  if (group.finalEvaluation?.evalStage === 'SECOND' || group.reviewerEvaluation) return 'SECOND'
+  return 'FIRST'
+}
+
 function buildCheckInMap(checkIns: CheckInRecord[]) {
   const map = new Map<string, CheckInRecord[]>()
   for (const record of checkIns) {
@@ -622,10 +661,13 @@ function buildCalibrationCandidate(params: {
   checkIns: CheckInRecord[]
   departmentOutlierMap: Set<string>
   aiCompetencyScore?: number
+  externalColumns: Array<{ key: string; label: string }>
+  externalRow: Record<string, string>
 }) {
   const { group, gradeSettings } = params
   const baseEvaluation = group.finalEvaluation ?? group.adjustedEvaluation
   const adjustedEvaluation = group.adjustedEvaluation
+  const sourceStage = resolveSourceStage(group)
   const rawScore = calculateEffectiveEvaluationScore({
     evaluation: baseEvaluation ?? adjustedEvaluation ?? null,
     fallback: baseEvaluation?.totalScore ?? adjustedEvaluation?.totalScore ?? 0,
@@ -665,6 +707,13 @@ function buildCalibrationCandidate(params: {
   const nearBoundary = isNearGradeBoundary(rawScore, gradeSettings)
   const needsAttention =
     reasonMissing || nearBoundary || params.departmentOutlierMap.has(group.target.department.id)
+  const externalData = params.externalColumns
+    .map((column) => ({
+      key: column.key,
+      label: column.label,
+      value: params.externalRow[column.key] ?? '',
+    }))
+    .filter((item) => item.value.trim().length > 0)
 
   return {
     id: group.target.id,
@@ -673,6 +722,8 @@ function buildCalibrationCandidate(params: {
     departmentId: group.target.department.id,
     department: group.target.department.deptName,
     jobGroup: resolvePositionLabel(group.target.position),
+    sourceStage,
+    hasMergedCalibration: Boolean(adjustedEvaluation),
     rawScore: roundToSingle(rawScore),
     originalGrade: originalGrade ?? '미확정',
     adjustedGrade: adjustedGrade ?? originalGrade ?? '미확정',
@@ -701,6 +752,7 @@ function buildCalibrationCandidate(params: {
     monthlySummary,
     kpiSummary,
     checkins,
+    externalData,
   } satisfies CalibrationCandidate
 }
 
@@ -787,6 +839,8 @@ function buildDepartmentDistributions(
         gradeSettings,
         checkIns: [],
         departmentOutlierMap: new Set<string>(),
+        externalColumns: [],
+        externalRow: {},
       })
     )
     const grades = buildGradeDistribution(candidates, gradeSettings)
@@ -910,6 +964,7 @@ function resolveCalibrationStatus(
     .find((log) => log.entityType === 'EvalCycle' && log.action.startsWith('CALIBRATION_'))?.action
 
   if (latestCycleAction === 'CALIBRATION_LOCKED') return 'FINAL_LOCKED'
+  if (latestCycleAction === 'CALIBRATION_SESSION_DELETED') return 'READY'
   if (latestCycleAction === 'CALIBRATION_REVIEW_CONFIRMED') return 'REVIEW_CONFIRMED'
   if (latestCycleAction === 'CALIBRATION_REOPEN_REQUESTED') return 'CALIBRATING'
   if (adjustedCount > 0 || cycle.status === 'CEO_ADJUST') return 'CALIBRATING'
@@ -1116,36 +1171,20 @@ function parseCalibrationPayload(value: Prisma.JsonValue | null) {
   return value as CalibrationAuditPayload
 }
 
-function parseCalibrationSessionConfig(value: Prisma.JsonValue | null): CalibrationViewModel['sessionConfig'] {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {
-      excludedTargetIds: [],
-      participantIds: [],
-      evaluatorIds: [],
-    }
-  }
-
-  const record = value as Record<string, unknown>
-
-  return {
-    excludedTargetIds: Array.isArray(record.excludedTargetIds)
-      ? record.excludedTargetIds.filter((item): item is string => typeof item === 'string')
-      : [],
-    participantIds: Array.isArray(record.participantIds)
-      ? record.participantIds.filter((item): item is string => typeof item === 'string')
-      : [],
-    evaluatorIds: Array.isArray(record.evaluatorIds)
-      ? record.evaluatorIds.filter((item): item is string => typeof item === 'string')
-      : [],
-  }
-}
-
 function humanizeCalibrationAction(action: string) {
   switch (action) {
     case 'CALIBRATION_UPDATED':
       return '등급 조정 저장'
     case 'CALIBRATION_CLEARED':
       return '조정 해제'
+    case 'CALIBRATION_BULK_IMPORTED':
+      return '최종 등급 일괄 업로드'
+    case 'CALIBRATION_EXTERNAL_DATA_UPLOADED':
+      return '외부 데이터 업로드'
+    case 'CALIBRATION_MERGED':
+      return '다단계 결과 병합'
+    case 'CALIBRATION_SESSION_DELETED':
+      return '세션 삭제'
     case 'CALIBRATION_REVIEW_CONFIRMED':
       return '리뷰 확정'
     case 'CALIBRATION_LOCKED':
@@ -1161,6 +1200,7 @@ function resolveTimelineActionType(action: string) {
   if (action === 'CALIBRATION_LOCKED') return 'lock'
   if (action === 'CALIBRATION_REOPEN_REQUESTED') return 'reopen'
   if (action === 'CALIBRATION_REVIEW_CONFIRMED') return 'review'
+  if (action === 'CALIBRATION_SESSION_DELETED') return 'system'
   if (action.startsWith('CALIBRATION_')) return 'adjust'
   return 'system'
 }

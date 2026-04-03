@@ -58,6 +58,24 @@ export type PersonalKpiTimelineItem = {
   note?: string
 }
 
+export type PersonalKpiWeightApprovalHistoryItem = {
+  id: string
+  at: string
+  actor: string
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED'
+  note?: string
+}
+
+export type PersonalKpiWeightApprovalSummary = {
+  status: 'NOT_REQUESTED' | 'PENDING' | 'APPROVED' | 'REJECTED'
+  label: string
+  requestedAt?: string
+  reviewedAt?: string
+  reviewerName?: string
+  reviewNote?: string
+  history: PersonalKpiWeightApprovalHistoryItem[]
+}
+
 export type PersonalKpiAiLogItem = {
   id: string
   createdAt: string
@@ -123,6 +141,7 @@ export type PersonalKpiViewModel = {
     activities?: string | null
     obstacles?: string | null
   }>
+  weightApproval: PersonalKpiWeightApprovalSummary
   history: PersonalKpiTimelineItem[]
 }
 
@@ -139,6 +158,14 @@ export type PersonalKpiReviewQueueItem = {
   currentValueSummary?: string
   submittedAt?: string
   reviewComment?: string
+  weight: number
+  orgKpiTitle?: string | null
+  orgLineage: Array<{
+    id: string
+    title: string
+    departmentName: string
+  }>
+  weightApproval: PersonalKpiWeightApprovalSummary
 }
 
 export type OrgKpiOption = {
@@ -386,6 +413,68 @@ function parseReviewComment(logs: AuditLogLite[]) {
   )
   const nextValue = asRecord(reviewLog?.newValue)
   return typeof nextValue?.note === 'string' ? nextValue.note : undefined
+}
+
+function buildWeightApprovalSummary(
+  logs: AuditLogLite[],
+  employeesById: Map<string, EmployeeLite>
+): PersonalKpiWeightApprovalSummary {
+  const approvalLogs = logs.filter((log) =>
+    ['PERSONAL_KPI_SUBMITTED', 'PERSONAL_KPI_APPROVED', 'PERSONAL_KPI_REJECTED'].includes(log.action)
+  )
+
+  const history = approvalLogs.slice(0, 6).map((log) => {
+    const nextValue = asRecord(log.newValue)
+    const status =
+      log.action === 'PERSONAL_KPI_APPROVED'
+        ? 'APPROVED'
+        : log.action === 'PERSONAL_KPI_REJECTED'
+          ? 'REJECTED'
+          : 'REQUESTED'
+
+    return {
+      id: log.id,
+      at: log.timestamp.toISOString(),
+      actor: employeesById.get(log.userId)?.empName ?? '시스템',
+      status,
+      note: typeof nextValue?.note === 'string' ? nextValue.note : undefined,
+    } satisfies PersonalKpiWeightApprovalHistoryItem
+  })
+
+  const latest = history[0]
+  const requested = history.find((item) => item.status === 'REQUESTED')
+  const reviewed = history.find((item) => item.status === 'APPROVED' || item.status === 'REJECTED')
+
+  if (!latest) {
+    return {
+      status: 'NOT_REQUESTED',
+      label: '가중치 승인 요청 전',
+      history: [],
+    }
+  }
+
+  return {
+    status:
+      latest.status === 'REQUESTED'
+        ? 'PENDING'
+        : latest.status === 'APPROVED'
+          ? 'APPROVED'
+          : 'REJECTED',
+    label:
+      latest.status === 'REQUESTED'
+        ? '승인 대기'
+        : latest.status === 'APPROVED'
+          ? '승인 완료'
+          : '반려',
+    requestedAt: requested?.at,
+    reviewedAt: reviewed?.at,
+    reviewerName:
+      reviewed && reviewed.status !== 'REQUESTED'
+        ? reviewed.actor
+        : undefined,
+    reviewNote: reviewed?.note,
+    history,
+  }
 }
 
 function getChangedFields(logs: AuditLogLite[]) {
@@ -1000,6 +1089,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           status: kpi.status,
           logs,
         })
+        const weightApproval = buildWeightApprovalSummary(logs, employeesById)
         const hasRejectedRevision = hasRejectedRevisionPending(logs)
         const latestRecord = kpi.monthlyRecords[0]
 
@@ -1025,6 +1115,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           status,
           persistedStatus: kpi.status,
           reviewComment: parseReviewComment(logs),
+          weightApproval,
           reviewer: getReviewerCandidate(kpi.employee, employeesById),
           monthlyAchievementRate: latestRecord?.achievementRate ?? undefined,
           updatedAt: kpi.updatedAt.toISOString(),
@@ -1069,6 +1160,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
 
         const lastSubmit = logs.find((log) => log.action === 'PERSONAL_KPI_SUBMITTED')
         const updateLog = logs.find((log) => log.action === 'PERSONAL_KPI_UPDATED')
+        const weightApproval = buildWeightApprovalSummary(logs, employeesById)
 
         return {
           id: kpi.id,
@@ -1078,11 +1170,15 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           title: kpi.kpiName,
           tags: parseTags(kpi.tags),
           status,
+          weight: kpi.weight,
+          orgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
+          orgLineage: buildOrgLineage(kpi.linkedOrgKpiId),
           changedFields: getChangedFields(logs),
           previousValueSummary: buildSummaryText(asRecord(updateLog?.oldValue)),
           currentValueSummary: buildSummaryText(asRecord(updateLog?.newValue)) ?? `${kpi.kpiName} · ${kpi.weight}%`,
           submittedAt: lastSubmit?.timestamp.toISOString() ?? kpi.updatedAt.toISOString(),
           reviewComment: parseReviewComment(logs),
+          weightApproval,
         } satisfies PersonalKpiReviewQueueItem
       },
     })

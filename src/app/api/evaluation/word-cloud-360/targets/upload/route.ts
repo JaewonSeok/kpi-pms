@@ -1,0 +1,47 @@
+import { authorizeMenu } from '@/server/auth/authorize'
+import { AppError, errorResponse, successResponse } from '@/lib/utils'
+import {
+  applyWordCloud360TargetUpload,
+  WORD_CLOUD_TARGET_UPLOAD_MAX_SIZE,
+} from '@/server/word-cloud-360'
+
+export async function POST(request: Request) {
+  try {
+    const session = await authorizeMenu('WORD_CLOUD_360')
+    if (session.user.role !== 'ROLE_ADMIN') {
+      throw new AppError(403, 'FORBIDDEN', '관리자만 서베이 대상자를 업로드할 수 있습니다.')
+    }
+
+    const formData = await request.formData()
+    const cycleId = String(formData.get('cycleId') ?? '')
+    const file = formData.get('file')
+
+    if (!cycleId) {
+      throw new AppError(400, 'VALIDATION_ERROR', '대상자를 반영할 서베이 주기를 선택해 주세요.')
+    }
+    if (!(file instanceof File)) {
+      throw new AppError(400, 'UPLOAD_FILE_MISSING', '업로드할 대상자 파일을 선택해 주세요.')
+    }
+    if (file.size <= 0) {
+      throw new AppError(400, 'EMPTY_UPLOAD_FILE', '빈 파일은 업로드할 수 없습니다.')
+    }
+    if (file.size > WORD_CLOUD_TARGET_UPLOAD_MAX_SIZE) {
+      throw new AppError(
+        400,
+        'UPLOAD_FILE_TOO_LARGE',
+        `업로드 파일은 ${Math.round(WORD_CLOUD_TARGET_UPLOAD_MAX_SIZE / 1024 / 1024)}MB 이하여야 합니다.`
+      )
+    }
+
+    const result = await applyWordCloud360TargetUpload({
+      actorId: session.user.id,
+      cycleId,
+      fileName: file.name,
+      buffer: Buffer.from(await file.arrayBuffer()),
+    })
+
+    return successResponse(result)
+  } catch (error) {
+    return errorResponse(error, '서베이 대상자 업로드를 처리하지 못했습니다.')
+  }
+}

@@ -3,8 +3,9 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, CheckCircle2, Users } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, Download, ExternalLink, Info, Sparkles, Users } from 'lucide-react'
 import type { Feedback360PageData } from '@/server/feedback-360'
+import { FEEDBACK_RESULT_PROFILE_LABELS } from '@/lib/feedback-result-presentation'
 import { MultiRaterCycleHeader } from './MultiRaterCycleHeader'
 import { ResponseRateCard } from './ResponseRateCard'
 import { ReviewerNominationPanel } from './ReviewerNominationPanel'
@@ -12,6 +13,26 @@ import { FeedbackThemesSection } from './FeedbackThemesSection'
 import { DevelopmentPlanPreview } from './DevelopmentPlanPreview'
 import { Feedback360AdminPanel } from './Feedback360AdminPanel'
 import { FeedbackReferencePanel } from './FeedbackReferencePanel'
+import { FeedbackReportAnalysisView } from './FeedbackReportAnalysisView'
+import { FeedbackRespondReferencePanel } from './FeedbackRespondReferencePanel'
+
+type RespondData = NonNullable<Feedback360PageData['respond']>
+type RespondRatingGuide = NonNullable<RespondData['ratingGuide']>
+type RespondPriorScoreSummary = NonNullable<RespondData['priorScoreSummary']>
+
+function buildRespondQuestionState(
+  questions: RespondData['questions'] | undefined
+) {
+  return Object.fromEntries(
+    (questions ?? []).map((question) => [
+      question.id,
+      {
+        ratingValue: question.ratingValue ?? null,
+        textValue: question.textValue ?? null,
+      },
+    ])
+  )
+}
 
 export function Feedback360WorkspaceClient(props: { data: Feedback360PageData }) {
   const router = useRouter()
@@ -23,17 +44,13 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   const [resultsNotice, setResultsNotice] = useState('')
   const [resultsError, setResultsError] = useState('')
   const [recordedResultViewKey, setRecordedResultViewKey] = useState('')
-  const [overallComment, setOverallComment] = useState(props.data.respond?.overallComment ?? '')
+  const respondData = props.data.mode === 'respond' ? props.data.respond : undefined
+  const respondFeedbackId = respondData?.feedbackId ?? ''
+  const respondOverallComment = respondData?.overallComment ?? ''
+  const respondQuestions = respondData?.questions
+  const [overallComment, setOverallComment] = useState(respondOverallComment)
   const [questionState, setQuestionState] = useState<Record<string, { ratingValue?: number | null; textValue?: string | null }>>(
-    Object.fromEntries(
-      (props.data.respond?.questions ?? []).map((question) => [
-        question.id,
-        {
-          ratingValue: question.ratingValue ?? null,
-          textValue: question.textValue ?? null,
-        },
-      ])
-    )
+    buildRespondQuestionState(respondQuestions)
   )
 
   useEffect(() => {
@@ -42,6 +59,36 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
     setRespondNotice('')
     setRespondError('')
   }, [props.data.mode, props.data.selectedCycleId, props.data.selectedRoundId])
+
+  useEffect(() => {
+    setOverallComment(respondOverallComment)
+    setQuestionState(buildRespondQuestionState(respondQuestions))
+  }, [respondFeedbackId, respondOverallComment, respondQuestions])
+
+  const respondRatingGuide = respondData?.ratingGuide
+  const selectedDistributionValue =
+    respondRatingGuide?.questionId != null
+      ? (questionState[respondRatingGuide.questionId]?.ratingValue ?? null)
+      : null
+  const respondRatingGuideEntries = useMemo(() => {
+    if (!respondRatingGuide) return []
+
+    return respondRatingGuide.scaleEntries.map((entry) => ({
+      ...entry,
+      displayCurrentCount: entry.currentCount + (selectedDistributionValue === entry.value ? 1 : 0),
+    }))
+  }, [respondRatingGuide, selectedDistributionValue])
+  const selectedDistributionEntry = useMemo(() => {
+    if (selectedDistributionValue == null) return null
+    return respondRatingGuideEntries.find((entry) => entry.value === selectedDistributionValue) ?? null
+  }, [respondRatingGuideEntries, selectedDistributionValue])
+  const distributionLimitExceeded = Boolean(
+    respondRatingGuide?.distributionMode === 'HEADCOUNT' &&
+      selectedDistributionEntry &&
+      !selectedDistributionEntry.isNonEvaluative &&
+      selectedDistributionEntry.headcountLimit != null &&
+      selectedDistributionEntry.displayCurrentCount > selectedDistributionEntry.headcountLimit
+  )
 
   const resultTargetId = props.data.mode === 'results' ? props.data.results?.targetEmployee.id ?? '' : ''
   const resultViewContextKey =
@@ -143,8 +190,30 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
     }
   }, [props.data.results])
 
+  const resultPresentationHighlights = useMemo(() => {
+    if (!props.data.results) return []
+
+    return [
+      props.data.results.presentationSettings.showLeaderComment ? '팀장 평가 코멘트 공개' : '팀장 평가 코멘트 비공개',
+      props.data.results.presentationSettings.showLeaderScore ? '팀장 평가 등급 공개' : '팀장 평가 등급 비공개',
+      props.data.results.presentationSettings.showExecutiveComment ? '상위 평가 코멘트 공개' : '상위 평가 코멘트 비공개',
+      props.data.results.presentationSettings.showExecutiveScore ? '상위 평가 등급 공개' : '상위 평가 등급 비공개',
+      props.data.results.presentationSettings.showFinalScore ? '최종 결과 등급 공개' : '최종 결과 등급 비공개',
+      props.data.results.presentationSettings.showFinalComment ? '최종 결과 코멘트 공개' : '최종 결과 코멘트 비공개',
+    ]
+  }, [props.data.results])
+
+  function buildResultVersionHref(version: NonNullable<Feedback360PageData['results']>['recipientProfile']) {
+    const search = new URLSearchParams()
+    if (props.data.selectedCycleId) search.set('cycleId', props.data.selectedCycleId)
+    if (props.data.selectedRoundId) search.set('roundId', props.data.selectedRoundId)
+    if (props.data.results?.targetEmployee.id) search.set('empId', props.data.results.targetEmployee.id)
+    search.set('version', version)
+    return `/evaluation/360/results?${search.toString()}`
+  }
+
   async function handleSubmitResponse() {
-    if (!props.data.respond) return
+    if (!respondData) return
     setSubmitBusy(true)
     setRespondNotice('')
     setRespondError('')
@@ -154,11 +223,11 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          roundId: props.data.respond.roundId,
-          receiverId: props.data.respond.receiverId,
-          relationship: props.data.respond.relationship,
+          roundId: respondData.roundId,
+          receiverId: respondData.receiverId,
+          relationship: respondData.relationship,
           overallComment,
-          responses: props.data.respond.questions.map((question) => ({
+          responses: respondData.questions.map((question) => ({
             questionId: question.id,
             ratingValue: questionState[question.id]?.ratingValue ?? undefined,
             textValue: questionState[question.id]?.textValue ?? undefined,
@@ -318,6 +387,110 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
 
       {props.data.mode === 'results' && props.data.results ? (
         <div className="space-y-6">
+          <Panel
+            title="결과지 버전 / 공유 구성"
+            description={`${props.data.results.roundName} 결과를 현재 수신자 기준으로 구성해 보여줍니다.`}
+          >
+            <div className="space-y-4">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="space-y-4">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <StatCard
+                      label="현재 결과지"
+                      value={FEEDBACK_RESULT_PROFILE_LABELS[props.data.results.recipientProfile]}
+                    />
+                    <StatCard label="대상자" value={props.data.results.targetEmployee.name} />
+                    <StatCard label="최종 반영 가중치" value={`${props.data.results.roundWeight}%`} />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {props.data.results.availableProfiles.map((profile) => {
+                      const active = profile.value === props.data.results!.recipientProfile
+                      return (
+                        <Link
+                          key={profile.value}
+                          href={buildResultVersionHref(profile.value)}
+                          className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                            active
+                              ? 'border-slate-900 bg-slate-900 text-white'
+                              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          {profile.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {props.data.results.summaryCards.length ? (
+                      props.data.results.summaryCards.map((card) => (
+                        <div key={card.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                            {card.relationshipLabel}
+                          </div>
+                          <div className="mt-2 text-base font-semibold text-slate-900">{card.title}</div>
+                          <div className="mt-1 text-sm text-slate-500">{card.reviewerName ?? '평가자 정보 없음'}</div>
+                          <div className="mt-3 space-y-2 text-sm text-slate-700">
+                            <div>
+                              총점:{' '}
+                              <span className="font-semibold text-slate-900">
+                                {card.showScore && typeof card.totalScore === 'number'
+                                  ? `${card.totalScore.toFixed(1)}점`
+                                  : '비공개'}
+                              </span>
+                            </div>
+                            <div className="rounded-xl bg-white px-3 py-2 text-sm leading-6 text-slate-600">
+                              {card.showComment
+                                ? card.comment?.trim() || '등록된 코멘트가 없습니다.'
+                                : '비공개 설정으로 코멘트를 표시하지 않습니다.'}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <EmptyBlock message="현재 결과지 버전에서 공개되는 요약 카드가 없습니다." />
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm font-semibold text-slate-900">공개 항목 요약</div>
+                  <div className="space-y-2">
+                    {resultPresentationHighlights.map((item) => (
+                      <div key={item} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid gap-2 pt-2">
+                    <a
+                      href={props.data.results.pdfHref}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      PDF 열기
+                    </a>
+                    <a
+                      href={`${props.data.results.pdfHref}&download=1`}
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+                    >
+                      <Download className="h-4 w-4" />
+                      PDF 다운로드
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Panel>
+
+          <FeedbackReportAnalysisView
+            key={`${props.data.selectedRoundId ?? 'round'}:${props.data.results.targetEmployee.id}:${props.data.results.recipientProfile}`}
+            results={props.data.results}
+          />
+
           <FeedbackThemesSection
             threshold={props.data.results.anonymityThreshold}
             feedbackCount={props.data.results.feedbackCount}
@@ -429,21 +602,21 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
         <Feedback360AdminPanel data={props.data} />
       ) : null}
 
-      {props.data.mode === 'respond' && props.data.respond ? (
+      {props.data.mode === 'respond' && respondData ? (
         <div className="space-y-6">
           <Panel
             title="다면평가 응답 작성"
-            description={`${props.data.respond.receiverName}에 대한 ${props.data.respond.relationship} 관점 피드백입니다.`}
+            description={`${respondData.receiverName}에 대한 ${respondData.relationship} 관점 피드백입니다.`}
           >
             <div className="grid gap-4 md:grid-cols-4">
-              <StatCard label="라운드" value={props.data.respond.roundName} />
-              <StatCard label="문항 수" value={String(props.data.respond.questionCount)} />
-              <StatCard label="현재 응답 수" value={String(props.data.respond.answeredCount)} />
-              <StatCard label="상태" value={props.data.respond.status} />
+              <StatCard label="라운드" value={respondData.roundName} />
+              <StatCard label="문항 수" value={String(respondData.questionCount)} />
+              <StatCard label="현재 응답 수" value={String(respondData.answeredCount)} />
+              <StatCard label="상태" value={respondData.status} />
             </div>
 
             <div className="mt-5 space-y-2">
-              {props.data.respond.instructions.map((item) => (
+              {respondData.instructions.map((item) => (
                 <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                   {item}
                 </div>
@@ -461,82 +634,108 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
               </div>
             ) : null}
 
-            <div className="mt-5 space-y-4">
-              {props.data.respond.questions.map((question) => (
-                <div key={question.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                      {question.category}
-                    </span>
-                    {question.isRequired ? (
-                      <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700">
-                        필수
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 text-sm font-semibold text-slate-900">{question.questionText}</div>
+            <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-5">
+                {respondData.priorScoreSummary || respondData.ratingGuide ? (
+                  <RespondReferenceSummary
+                    targetProfile={respondData.targetProfile}
+                    priorScoreSummary={respondData.priorScoreSummary}
+                  />
+                ) : null}
 
-                  {question.questionType === 'RATING_SCALE' ? (
-                    <div className="mt-4 grid grid-cols-5 gap-2">
-                      {Array.from(
-                        {
-                          length:
-                            (question.scaleMax ?? 5) - (question.scaleMin ?? 1) + 1,
-                        },
-                        (_, index) => (question.scaleMin ?? 1) + index
-                      ).map((value) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => updateQuestion(question.id, { ratingValue: value })}
-                          className={`min-h-11 rounded-xl border text-sm font-semibold transition ${
-                            questionState[question.id]?.ratingValue === value
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          {value}
-                        </button>
-                      ))}
+                <div className="space-y-4">
+                  {respondData.questions.map((question) => (
+                    <div key={question.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                          {question.category}
+                        </span>
+                        {question.isRequired ? (
+                          <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700">
+                            필수
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 text-sm font-semibold text-slate-900">{question.questionText}</div>
+
+                      {respondData.ratingGuide?.questionId === question.id ? (
+                        <RespondRatingGuideCard
+                          ratingGuide={respondData.ratingGuide}
+                          priorScoreSummary={respondData.priorScoreSummary}
+                          targetProfile={respondData.targetProfile}
+                          scaleEntries={respondRatingGuideEntries}
+                          limitExceeded={distributionLimitExceeded}
+                        />
+                      ) : null}
+
+                      {question.questionType === 'RATING_SCALE' ? (
+                        <div className="mt-4 grid grid-cols-5 gap-2">
+                          {Array.from(
+                            {
+                              length:
+                                (question.scaleMax ?? 5) - (question.scaleMin ?? 1) + 1,
+                            },
+                            (_, index) => (question.scaleMin ?? 1) + index
+                          ).map((value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => updateQuestion(question.id, { ratingValue: value })}
+                              className={`min-h-11 rounded-xl border text-sm font-semibold transition ${
+                                questionState[question.id]?.ratingValue === value
+                                  ? 'border-slate-900 bg-slate-900 text-white'
+                                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              {value}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <textarea
+                          value={questionState[question.id]?.textValue ?? ''}
+                          onChange={(event) => updateQuestion(question.id, { textValue: event.target.value })}
+                          className="mt-4 min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                          placeholder="구체적인 행동 사례와 관찰 근거를 중심으로 작성해 주세요."
+                        />
+                      )}
                     </div>
-                  ) : (
-                    <textarea
-                      value={questionState[question.id]?.textValue ?? ''}
-                      onChange={(event) => updateQuestion(question.id, { textValue: event.target.value })}
-                      className="mt-4 min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-                      placeholder="구체적인 행동 사례와 관찰 근거를 중심으로 작성해 주세요."
-                    />
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            <label className="mt-5 block">
-              <span className="text-sm font-semibold text-slate-900">종합 코멘트</span>
-              <textarea
-                value={overallComment}
-                onChange={(event) => setOverallComment(event.target.value)}
-                className="mt-3 min-h-32 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-                placeholder="강점, 개선 포인트, 협업 관찰을 종합해서 작성해 주세요."
+                <label className="block">
+                  <span className="text-sm font-semibold text-slate-900">종합 코멘트</span>
+                  <textarea
+                    value={overallComment}
+                    onChange={(event) => setOverallComment(event.target.value)}
+                    className="mt-3 min-h-32 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                    placeholder="강점, 개선 포인트, 협업 관찰을 종합해서 작성해 주세요."
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSubmitResponse}
+                    disabled={submitBusy}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {submitBusy ? '응답 제출 중...' : '응답 제출'}
+                  </button>
+                  <Link
+                    href="/evaluation/360"
+                    className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    360 개요로 돌아가기
+                  </Link>
+                </div>
+              </div>
+
+              <FeedbackRespondReferencePanel
+                key={`${respondData.feedbackId}:${props.data.selectedRoundId ?? ''}`}
+                reference={respondData.reference}
               />
-            </label>
-
-            <div className="mt-5 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleSubmitResponse}
-                disabled={submitBusy}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                {submitBusy ? '응답 제출 중...' : '응답 제출'}
-              </button>
-              <Link
-                href="/evaluation/360"
-                className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                360 개요로 돌아가기
-              </Link>
             </div>
           </Panel>
         </div>
@@ -582,5 +781,228 @@ function StatCard(props: { label: string; value: string }) {
       <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{props.label}</div>
       <div className="mt-2 text-lg font-semibold text-slate-900">{props.value}</div>
     </div>
+  )
+}
+
+function RespondReferenceSummary(props: {
+  targetProfile: RespondData['targetProfile']
+  priorScoreSummary?: RespondPriorScoreSummary
+}) {
+  const profileItems = [
+    props.targetProfile.departmentName,
+    props.targetProfile.role,
+    props.targetProfile.position,
+    props.targetProfile.jobTitle,
+    props.targetProfile.teamName,
+  ].filter(Boolean)
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <Info className="h-4 w-4 text-blue-500" />
+          대상자 인사 정보
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {profileItems.length ? (
+            profileItems.map((item) => (
+              <span
+                key={item}
+                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700"
+              >
+                {item}
+              </span>
+            ))
+          ) : (
+            <span className="text-sm text-slate-500">등급 가이드를 매칭할 인사 정보가 아직 없습니다.</span>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <Sparkles className="h-4 w-4 text-amber-500" />
+          이전 차수 종합 점수 참고
+        </div>
+        {props.priorScoreSummary ? (
+          <>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  {props.priorScoreSummary.authorLabel}
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-slate-900">
+                  {props.priorScoreSummary.totalScore.toFixed(1)}점
+                </div>
+              </div>
+              {props.priorScoreSummary.submittedAt ? (
+                <div className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+                  {props.priorScoreSummary.submittedAt}
+                </div>
+              ) : null}
+            </div>
+            <p className="mt-3 text-sm text-slate-600">
+              앞선 차수 또는 선행 평가자의 종합 점수를 참고해 현재 등급과 코멘트를 더 일관되게 작성할 수 있습니다.
+            </p>
+          </>
+        ) : (
+          <p className="mt-3 text-sm text-slate-500">
+            현재 라운드에서 참고할 이전 종합 점수가 아직 없습니다.
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RespondRatingGuideCard(props: {
+  ratingGuide: RespondRatingGuide
+  priorScoreSummary?: RespondPriorScoreSummary
+  targetProfile: RespondData['targetProfile']
+  scaleEntries: Array<RespondRatingGuide['scaleEntries'][number] & { displayCurrentCount: number }>
+  limitExceeded: boolean
+}) {
+  const profileSummary =
+    props.ratingGuide.targetProfileLabel ||
+    [
+      props.targetProfile.departmentName,
+      props.targetProfile.position,
+      props.targetProfile.jobTitle,
+      props.targetProfile.teamName,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Sparkles className="h-4 w-4 text-amber-500" />
+            등급 가이드
+          </div>
+          <p className="mt-1 text-sm text-slate-500">{props.ratingGuide.distributionModeDescription}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <GuideBadge tone="blue">{props.ratingGuide.distributionModeLabel}</GuideBadge>
+          <GuideBadge tone="slate">{props.ratingGuide.distributionScopeLabel}</GuideBadge>
+        </div>
+      </div>
+
+      {props.ratingGuide.matchedRule ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="text-sm font-semibold text-amber-900">{props.ratingGuide.matchedRule.headline}</div>
+          <p className="mt-2 whitespace-pre-line text-sm leading-6 text-amber-900/90">
+            {props.ratingGuide.matchedRule.guidance}
+          </p>
+          <div className="mt-3 text-xs font-medium text-amber-700">
+            적용 가이드: {props.ratingGuide.matchedRule.label}
+            {profileSummary ? ` · ${profileSummary}` : ''}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+          대상자의 조직/역할 정보에 맞는 별도 가이드가 없어서 기본 등급 설명을 보여드립니다.
+        </div>
+      )}
+
+      {props.priorScoreSummary ? (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">앞선 차수 종합 점수</div>
+          <div className="mt-2 text-sm font-semibold text-slate-900">
+            {props.priorScoreSummary.authorLabel} · {props.priorScoreSummary.totalScore.toFixed(1)}점
+          </div>
+        </div>
+      ) : null}
+
+      {props.limitExceeded ? (
+        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-4 w-4" />
+            등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold">등급명</th>
+              {props.ratingGuide.distributionMode === 'RATIO' ? (
+                <th className="px-4 py-3 text-left font-semibold">배분 비율</th>
+              ) : null}
+              {props.ratingGuide.distributionMode === 'RATIO' ? (
+                <th className="px-4 py-3 text-left font-semibold">권장 인원</th>
+              ) : null}
+              {props.ratingGuide.distributionMode === 'HEADCOUNT' ? (
+                <th className="px-4 py-3 text-left font-semibold">제한 인원</th>
+              ) : null}
+              <th className="px-4 py-3 text-left font-semibold">현재 인원</th>
+            </tr>
+          </thead>
+          <tbody>
+            {props.scaleEntries.map((entry) => {
+              const exceedsLimit =
+                props.ratingGuide.distributionMode === 'HEADCOUNT' &&
+                entry.headcountLimit != null &&
+                !entry.isNonEvaluative &&
+                entry.displayCurrentCount > entry.headcountLimit
+
+              return (
+                <tr key={entry.value} className="border-t border-slate-200">
+                  <td className="px-4 py-3 align-top">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-slate-900">{entry.label}</span>
+                      {entry.isHighest ? <GuideBadge tone="emerald">가장 높은 등급</GuideBadge> : null}
+                      {entry.isLowest ? <GuideBadge tone="blue">가장 낮은 등급</GuideBadge> : null}
+                      {entry.isNonEvaluative ? <GuideBadge tone="slate">비평가 등급</GuideBadge> : null}
+                    </div>
+                    {entry.description ? (
+                      <div className="mt-2 whitespace-pre-line text-xs leading-5 text-slate-500">
+                        {entry.description}
+                      </div>
+                    ) : null}
+                  </td>
+                  {props.ratingGuide.distributionMode === 'RATIO' ? (
+                    <td className="px-4 py-3 text-slate-700">
+                      {entry.targetRatio != null ? `${entry.targetRatio}%` : '-'}
+                    </td>
+                  ) : null}
+                  {props.ratingGuide.distributionMode === 'RATIO' ? (
+                    <td className="px-4 py-3 text-slate-700">
+                      {entry.recommendedCount != null ? `${entry.recommendedCount}명` : '-'}
+                    </td>
+                  ) : null}
+                  {props.ratingGuide.distributionMode === 'HEADCOUNT' ? (
+                    <td className="px-4 py-3 text-slate-700">
+                      {entry.isNonEvaluative ? '-' : entry.headcountLimit != null ? `${entry.headcountLimit}명` : '-'}
+                    </td>
+                  ) : null}
+                  <td className={`px-4 py-3 font-semibold ${exceedsLimit ? 'text-rose-600' : 'text-slate-700'}`}>
+                    {entry.displayCurrentCount}명
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function GuideBadge(props: { children: React.ReactNode; tone: 'slate' | 'blue' | 'emerald' }) {
+  const toneClassName =
+    props.tone === 'emerald'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : props.tone === 'blue'
+        ? 'border-blue-200 bg-blue-50 text-blue-700'
+        : 'border-slate-200 bg-slate-100 text-slate-700'
+
+  return (
+    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${toneClassName}`}>
+      {props.children}
+    </span>
   )
 }

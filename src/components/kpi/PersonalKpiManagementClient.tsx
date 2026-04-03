@@ -30,7 +30,7 @@ type Banner = {
 }
 
 type EditorMode = 'create' | 'edit'
-type BusyAction = 'save-form' | 'submit' | 'workflow' | 'ai' | 'ai-decision' | null
+type BusyAction = 'save-form' | 'submit' | 'workflow' | 'ai' | 'ai-decision' | 'bulk-edit' | null
 
 type KpiForm = {
   employeeId: string
@@ -55,6 +55,19 @@ type PersonalCloneForm = {
   includeCheckins: boolean
   assignToSelf: boolean
 }
+
+type PersonalBulkEditForm = {
+  applyAssignee: boolean
+  employeeId: string
+  applyOrgKpi: boolean
+  linkedOrgKpiId: string
+  applyDifficulty: boolean
+  difficulty: KpiForm['difficulty']
+  applyTags: boolean
+  tags: string
+}
+
+type WeightApprovalView = PersonalKpiViewModel['weightApproval'] | PersonalKpiReviewQueueItem['weightApproval']
 
 type AiAction =
   | 'generate-draft'
@@ -251,6 +264,26 @@ function buildCloneForm(props: Props, selectedKpi?: PersonalKpiViewModel): Perso
   }
 }
 
+function buildBulkEditForm(props: Props): PersonalBulkEditForm {
+  return {
+    applyAssignee: false,
+    employeeId: props.selectedEmployeeId,
+    applyOrgKpi: false,
+    linkedOrgKpiId: '',
+    applyDifficulty: false,
+    difficulty: 'MEDIUM',
+    applyTags: false,
+    tags: '',
+  }
+}
+
+function getSubmitActionLabel(kpi?: PersonalKpiViewModel) {
+  if (!kpi) return '승인 요청'
+  return kpi.weightApproval.status === 'REJECTED' || kpi.hasRejectedRevision
+    ? '수정 후 승인 재요청'
+    : '승인 요청'
+}
+
 function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
   return {
     employeeId: kpi.employeeId,
@@ -426,6 +459,8 @@ export function PersonalKpiManagementClient(props: Props) {
   const [form, setForm] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
   const [cloneOpen, setCloneOpen] = useState(false)
   const [cloneForm, setCloneForm] = useState<PersonalCloneForm>(buildCloneForm(props))
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [bulkEditForm, setBulkEditForm] = useState<PersonalBulkEditForm>(buildBulkEditForm(props))
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
@@ -475,6 +510,8 @@ export function PersonalKpiManagementClient(props: Props) {
     setEditorMode('create')
     setCloneOpen(false)
     setCloneForm(buildCloneForm(props))
+    setBulkEditOpen(false)
+    setBulkEditForm(buildBulkEditForm(props))
     setAiPreview(null)
     setBanner(null)
     setReviewNote('')
@@ -489,6 +526,7 @@ export function PersonalKpiManagementClient(props: Props) {
     () => props.reviewQueue.find((item) => item.id === selectedReviewId) ?? props.reviewQueue[0],
     [props.reviewQueue, selectedReviewId]
   )
+  const bulkTargetIds = useMemo(() => props.mine.map((item) => item.id), [props.mine])
   const canEditSelectedKpi = Boolean(selectedKpi && props.permissions.canEdit && isDraftStatus(selectedKpi.status))
   const selectedKpiEditReason =
     !selectedKpi
@@ -576,6 +614,22 @@ export function PersonalKpiManagementClient(props: Props) {
           ? '조회 가능한 대상자나 운영 설정이 없어 이력을 확인할 수 없습니다.'
           : undefined
 
+  const bulkEditDisabledReason =
+    props.state === 'error'
+      ? '개인 KPI 화면이 아직 준비되지 않아 일괄 수정을 진행할 수 없습니다.'
+      : props.state === 'no-target'
+        ? '대상자를 먼저 선택해야 목표 일괄 수정을 진행할 수 있습니다.'
+        : props.state === 'setup-required'
+          ? '운영 설정이 없어 목표 일괄 수정을 진행할 수 없습니다.'
+          : goalEditLocked
+            ? '현재 주기는 체크인과 코멘트만 허용되어 목표 일괄 수정이 잠겨 있습니다.'
+            : !bulkTargetIds.length
+              ? '일괄 수정할 목표가 없습니다.'
+              : !props.permissions.canEdit && !props.permissions.canOverride
+                ? '현재 범위에서는 목표 일괄 수정 권한이 없습니다.'
+                : undefined
+  const submitLabel = getSubmitActionLabel(selectedKpi)
+
   const setActiveTab = (nextTab: PersonalKpiTabKey) => {
     setActiveTabState(nextTab)
     const query = buildSearch({
@@ -630,6 +684,17 @@ export function PersonalKpiManagementClient(props: Props) {
 
     setCloneForm(buildCloneForm(props, selectedKpi))
     setCloneOpen(true)
+    setBanner(null)
+  }
+
+  function handleOpenBulkEdit() {
+    if (bulkEditDisabledReason) {
+      setBanner({ tone: 'error', message: bulkEditDisabledReason })
+      return
+    }
+
+    setBulkEditForm(buildBulkEditForm(props))
+    setBulkEditOpen(true)
     setBanner(null)
   }
 
@@ -690,6 +755,72 @@ export function PersonalKpiManagementClient(props: Props) {
       router.refresh()
     } catch (error) {
       setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'KPI 제출에 실패했습니다.' })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleSaveBulkEdit() {
+    if (bulkEditDisabledReason) {
+      setBanner({ tone: 'error', message: bulkEditDisabledReason })
+      return
+    }
+
+    const payload: {
+      ids: string[]
+      employeeId?: string
+      linkedOrgKpiId?: string | null
+      difficulty?: PersonalBulkEditForm['difficulty']
+      tags?: string[]
+    } = {
+      ids: bulkTargetIds,
+    }
+
+    if (bulkEditForm.applyAssignee) {
+      payload.employeeId = bulkEditForm.employeeId
+    }
+    if (bulkEditForm.applyOrgKpi) {
+      payload.linkedOrgKpiId = bulkEditForm.linkedOrgKpiId || null
+    }
+    if (bulkEditForm.applyDifficulty) {
+      payload.difficulty = bulkEditForm.difficulty
+    }
+    if (bulkEditForm.applyTags) {
+      payload.tags = parseTagInput(bulkEditForm.tags)
+    }
+
+    if (
+      payload.employeeId === undefined &&
+      payload.linkedOrgKpiId === undefined &&
+      payload.difficulty === undefined &&
+      payload.tags === undefined
+    ) {
+      setBanner({ tone: 'error', message: '일괄 수정할 항목을 하나 이상 선택해 주세요.' })
+      return
+    }
+
+    setBusyAction('bulk-edit')
+    setBanner(null)
+
+    try {
+      const response = await fetch('/api/kpi/personal/bulk', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await parseJsonOrThrow<{ updatedCount: number }>(response)
+      setBulkEditOpen(false)
+      setBulkEditForm(buildBulkEditForm(props))
+      setBanner({
+        tone: 'success',
+        message: `개인 목표 ${data.updatedCount}건을 일괄 수정했습니다.`,
+      })
+      router.refresh()
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '개인 목표 일괄 수정에 실패했습니다.',
+      })
     } finally {
       setBusyAction(null)
     }
@@ -1021,7 +1152,9 @@ export function PersonalKpiManagementClient(props: Props) {
         summary={props.summary}
         rejectedCount={props.summary.rejectedCount}
         submitState={submitCtaState}
+        submitLabel={submitLabel}
         createDisabledReason={createDisabledReason}
+        bulkEditDisabledReason={bulkEditDisabledReason}
         aiDisabledReason={aiDisabledReason}
         reviewDisabledReason={reviewDisabledReason}
         historyDisabledReason={historyDisabledReason}
@@ -1029,6 +1162,7 @@ export function PersonalKpiManagementClient(props: Props) {
         onChangeCycle={(cycleId) => handleRouteSelection({ cycleId, tab: 'mine', kpiId: '' })}
         onChangeEmployee={(employeeId) => handleRouteSelection({ employeeId, tab: 'mine', kpiId: '' })}
         onOpenCreate={handleOpenCreate}
+        onOpenBulkEdit={handleOpenBulkEdit}
         onOpenAiDraft={handleOpenAiDraft}
         onOpenHistory={handleOpenHistory}
         onOpenReview={handleOpenReview}
@@ -1056,7 +1190,7 @@ export function PersonalKpiManagementClient(props: Props) {
             />
           ) : null}
           {activeTab === 'review' ? (
-            <ReviewQueueSection
+            <GoalReviewQueueSection
               items={props.reviewQueue}
               selectedId={selectedReviewId}
               onSelect={setSelectedReviewId}
@@ -1091,7 +1225,7 @@ export function PersonalKpiManagementClient(props: Props) {
           <StatePanel state={props.state} message={props.message} />
           <Tabs activeTab={activeTab} onChange={setActiveTab} />
           {activeTab === 'review' ? (
-            <ReviewQueueSection
+            <GoalReviewQueueSection
               items={props.reviewQueue}
               selectedId={selectedReviewId}
               onSelect={setSelectedReviewId}
@@ -1148,6 +1282,18 @@ export function PersonalKpiManagementClient(props: Props) {
           onSubmit={handleCloneKpi}
         />
       ) : null}
+      {bulkEditOpen ? (
+        <BulkEditPersonalKpiModal
+          targetCount={bulkTargetIds.length}
+          form={bulkEditForm}
+          employeeOptions={props.employeeOptions}
+          orgKpiOptions={props.orgKpiOptions}
+          busy={busyAction === 'bulk-edit'}
+          onChange={setBulkEditForm}
+          onClose={() => setBulkEditOpen(false)}
+          onSubmit={handleSaveBulkEdit}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1178,7 +1324,9 @@ function HeroSection(props: {
   summary: Props['summary']
   rejectedCount: number
   submitState: PersonalKpiSubmitCtaState
+  submitLabel: string
   createDisabledReason?: string
+  bulkEditDisabledReason?: string
   aiDisabledReason?: string
   reviewDisabledReason?: string
   historyDisabledReason?: string
@@ -1186,6 +1334,7 @@ function HeroSection(props: {
   onChangeCycle: (cycleId: string) => void
   onChangeEmployee: (employeeId: string) => void
   onOpenCreate: () => void
+  onOpenBulkEdit: () => void
   onOpenAiDraft: () => void
   onOpenHistory: () => void
   onOpenReview: () => void
@@ -1281,6 +1430,15 @@ function HeroSection(props: {
             KPI 추가
           </ActionButton>
           <ActionButton
+            icon={<ClipboardList className="h-4 w-4" />}
+            variant="secondary"
+            onClick={props.onOpenBulkEdit}
+            disabled={Boolean(props.bulkEditDisabledReason)}
+            title={props.bulkEditDisabledReason}
+          >
+            목표 일괄 수정
+          </ActionButton>
+          <ActionButton
             icon={<Sparkles className="h-4 w-4" />}
             variant="secondary"
             onClick={props.onOpenAiDraft}
@@ -1309,6 +1467,7 @@ function HeroSection(props: {
           </ActionButton>
           <ActionButton
             icon={<Send className="h-4 w-4" />}
+            label={props.submitLabel}
             variant="secondary"
             onClick={props.onSubmit}
             disabled={props.submitState.disabled}
@@ -1449,7 +1608,7 @@ function MineSection(props: {
         </div>
       </SectionCard>
 
-      <DetailPanel
+      <GoalDetailPanel
         selectedKpi={props.selectedKpi}
         canEdit={props.canEdit}
         editDisabledReason={props.editDisabledReason}
@@ -1677,6 +1836,9 @@ function ReviewQueueSection(props: {
     </div>
   )
 }
+
+void DetailPanel
+void ReviewQueueSection
 
 function HistorySection(props: { history: PersonalKpiTimelineItem[]; aiLogs: PersonalKpiAiLogItem[] }) {
   return (
@@ -2026,6 +2188,455 @@ function QuickLinks() {
   )
 }
 
+function WeightApprovalSummaryCard(props: {
+  approval: WeightApprovalView
+  weight?: number
+  orgLineage?: PersonalKpiViewModel['orgLineage']
+  compact?: boolean
+}) {
+  const historyStatusLabel = (status: WeightApprovalView['history'][number]['status']) => {
+    switch (status) {
+      case 'REQUESTED':
+        return '승인 요청'
+      case 'APPROVED':
+        return '승인 완료'
+      case 'REJECTED':
+        return '반려'
+      default:
+        return status
+    }
+  }
+
+  const toneClass =
+    props.approval.status === 'APPROVED'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : props.approval.status === 'REJECTED'
+        ? 'border-rose-200 bg-rose-50 text-rose-700'
+        : props.approval.status === 'PENDING'
+          ? 'border-amber-200 bg-amber-50 text-amber-700'
+          : 'border-slate-200 bg-slate-50 text-slate-700'
+
+  return (
+    <Block title="가중치 승인">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${toneClass}`}>{props.approval.label}</span>
+          <span className="text-xs text-slate-500">
+            {typeof props.weight === 'number' ? `현재 가중치 ${props.weight}%` : '가중치 미설정'}
+          </span>
+          {props.approval.reviewerName ? (
+            <span className="text-xs text-slate-500">검토자 {props.approval.reviewerName}</span>
+          ) : null}
+        </div>
+
+        {props.orgLineage?.length ? (
+          <div className="flex flex-wrap gap-2">
+            {props.orgLineage.map((segment) => (
+              <span key={segment.id} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                {segment.departmentName} 쨌 {segment.title}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {props.approval.reviewNote ? (
+          <div className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
+            {props.approval.reviewNote}
+          </div>
+        ) : (
+          <EmptyInline text="승인 메모가 아직 없습니다." />
+        )}
+
+        {props.approval.history.length ? (
+          <div className="space-y-2">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">승인 이력</div>
+            {props.approval.history.slice(0, props.compact ? 2 : 4).map((history) => (
+              <div key={history.id} className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-slate-900">{historyStatusLabel(history.status)}</span>
+                  <span className="text-xs text-slate-500">{formatDateTime(history.at)}</span>
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {history.actor}
+                  {history.note ? ` 쨌 ${history.note}` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </Block>
+  )
+}
+
+function GoalDetailPanel(props: {
+  selectedKpi?: PersonalKpiViewModel
+  canEdit: boolean
+  editDisabledReason?: string
+  onEdit: (kpi: PersonalKpiViewModel) => void
+  canClone: boolean
+  cloneDisabledReason?: string
+  onClone: () => void
+}) {
+  if (!props.selectedKpi) {
+    return <EmptyState title="선택한 KPI가 없습니다." description="왼쪽 목록에서 KPI를 선택하면 상세 정보가 표시됩니다." />
+  }
+
+  const item = props.selectedKpi
+
+  return (
+    <SectionCard title="KPI 상세" description="정의, 승인 맥락, 최근 월간 실적을 함께 확인합니다.">
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">{item.title}</h3>
+            <p className="text-sm text-slate-500">{item.departmentName}</p>
+          </div>
+          <div className="flex gap-2">
+            <StatusBadge status={item.status} />
+            {props.canEdit ? (
+              <ActionButton variant="secondary" onClick={() => props.onEdit(item)}>
+                수정
+              </ActionButton>
+            ) : props.editDisabledReason ? (
+              <InfoPill>{props.editDisabledReason}</InfoPill>
+            ) : null}
+            <ActionButton
+              icon={<Copy className="h-4 w-4" />}
+              variant="secondary"
+              onClick={props.onClone}
+              disabled={!props.canClone}
+              title={props.cloneDisabledReason}
+            >
+              복제
+            </ActionButton>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="KPI 유형" value={KPI_TYPE_LABELS[item.type]} />
+          <Field label="가중치" value={`${item.weight}%`} />
+          <Field label="난이도" value={item.difficulty ? DIFFICULTY_LABELS[item.difficulty as KpiForm['difficulty']] : '-'} />
+          <Field label="최근 달성률" value={formatPercent(item.monthlyAchievementRate)} />
+          <Field label="목표값" value={item.targetValue ? `${item.targetValue}${item.unit ? ` ${item.unit}` : ''}` : '-'} />
+          <Field label="조직 KPI 연결" value={item.orgKpiTitle ?? '미연결'} />
+        </div>
+
+        {item.tags.length ? (
+          <Block title="목표 태그">
+            <div className="flex flex-wrap gap-2">
+              {item.tags.map((tag) => (
+                <span key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </Block>
+        ) : null}
+
+        {item.orgLineage.length ? (
+          <Block title="목표 정렬 경로">
+            <div className="flex flex-wrap gap-2">
+              {item.orgLineage.map((segment) => (
+                <span key={segment.id} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                  {segment.departmentName} 쨌 {segment.title}
+                </span>
+              ))}
+            </div>
+          </Block>
+        ) : null}
+
+        <WeightApprovalSummaryCard approval={item.weightApproval} weight={item.weight} orgLineage={item.orgLineage} />
+
+        <Block title="정의">{item.definition || '정의가 아직 작성되지 않았습니다.'}</Block>
+        <Block title="산식">{item.formula || '산식이 아직 작성되지 않았습니다.'}</Block>
+        <Block title="검토 코멘트">{item.reviewComment || '검토 코멘트가 아직 없습니다.'}</Block>
+
+        {item.cloneInfo ? (
+          <Block title="복제 정보">
+            {`${item.cloneInfo.sourceOwnerName ?? '원본'}의 "${item.cloneInfo.sourceTitle}"에서 복제되었습니다. 진행 snapshot ${item.cloneInfo.progressEntryCount}건, 체크인 snapshot ${item.cloneInfo.checkinEntryCount}건을 포함했습니다.`}
+          </Block>
+        ) : null}
+
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold text-slate-900">최근 월간 실적</h4>
+          {item.recentMonthlyRecords.length ? (
+            <div className="space-y-2">
+              {item.recentMonthlyRecords.map((record) => (
+                <div key={record.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-900">{record.month}</span>
+                    <span className="text-slate-600">{formatPercent(record.achievementRate)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">{record.activities || record.obstacles || '요약 메모 없음'}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyInline text="최근 월간 실적이 아직 없습니다." />
+          )}
+        </div>
+      </div>
+    </SectionCard>
+  )
+}
+
+function GoalReviewQueueSection(props: {
+  items: PersonalKpiReviewQueueItem[]
+  selectedId: string
+  onSelect: (id: string) => void
+  selectedItem?: PersonalKpiReviewQueueItem
+  canReview: boolean
+  busy: boolean
+  reviewNote: string
+  onReviewNoteChange: (value: string) => void
+  onAction: (kpiId: string, action: 'START_REVIEW' | 'APPROVE' | 'REJECT' | 'LOCK' | 'REOPEN') => void
+}) {
+  const selectedItem = props.selectedItem
+  const startReviewState = selectedItem ? getReviewActionState(selectedItem.status, 'START_REVIEW') : { disabled: true }
+  const approveState = selectedItem ? getReviewActionState(selectedItem.status, 'APPROVE') : { disabled: true }
+  const rejectState = selectedItem ? getReviewActionState(selectedItem.status, 'REJECT') : { disabled: true }
+
+  if (!props.items.length) {
+    return (
+      <EmptyState
+        title="검토할 KPI가 없습니다."
+        description="제출된 KPI가 생기면 여기에서 승인, 반려, 가중치 검토를 이어갈 수 있습니다."
+      />
+    )
+  }
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <SectionCard title="검토 대기" description="변경된 항목과 승인 상태를 먼저 확인하고 대상을 선택하세요.">
+        <div className="space-y-3">
+          {props.items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => props.onSelect(item.id)}
+              className={`w-full rounded-2xl border p-4 text-left transition ${
+                props.selectedId === item.id
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 bg-white text-slate-900 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="font-semibold">{item.title}</div>
+                  <div className={`text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
+                    {item.employeeName} 쨌 {item.departmentName}
+                  </div>
+                </div>
+                <StatusBadge status={item.status} />
+              </div>
+              <div className={`mt-2 flex flex-wrap gap-2 text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
+                {item.changedFields.length ? item.changedFields.map((field) => <InfoPill key={field}>{field}</InfoPill>) : <span>변경 필드 정보 없음</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      </SectionCard>
+
+      <SectionCard title="검토 상세" description="가중치 승인 이력과 메모를 보고 다음 단계를 진행합니다.">
+        {selectedItem ? (
+          <div className="space-y-4">
+            <CompareCard label="이전 값" value={selectedItem.previousValueSummary || '이전 기록 없음'} />
+            <CompareCard label="현재 값" value={selectedItem.currentValueSummary || '현재 요약 없음'} />
+            <Block title="기존 반려 사유">{selectedItem.reviewComment || '반려 또는 검토 메모가 아직 없습니다.'}</Block>
+            {selectedItem.tags.length ? (
+              <Block title="목표 태그">
+                <div className="flex flex-wrap gap-2">
+                  {selectedItem.tags.map((tag) => (
+                    <span key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </Block>
+            ) : null}
+            <WeightApprovalSummaryCard
+              approval={selectedItem.weightApproval}
+              weight={selectedItem.weight}
+              orgLineage={selectedItem.orgLineage}
+              compact
+            />
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-900">검토 메모</span>
+              <textarea
+                value={props.reviewNote}
+                onChange={(event) => props.onReviewNoteChange(event.target.value)}
+                rows={4}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                placeholder="승인 또는 반려 이유를 남기면 구성원이 바로 확인할 수 있습니다."
+              />
+            </label>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <ActionButton variant="secondary" disabled={!props.canReview || props.busy || startReviewState.disabled} title={startReviewState.reason} onClick={() => props.onAction(selectedItem.id, 'START_REVIEW')}>
+                검토 시작
+              </ActionButton>
+              <ActionButton disabled={!props.canReview || props.busy || approveState.disabled} title={approveState.reason} onClick={() => props.onAction(selectedItem.id, 'APPROVE')}>
+                승인
+              </ActionButton>
+              <ActionButton variant="secondary" disabled={!props.canReview || props.busy || rejectState.disabled} title={rejectState.reason} onClick={() => props.onAction(selectedItem.id, 'REJECT')}>
+                반려
+              </ActionButton>
+            </div>
+          </div>
+        ) : (
+          <EmptyInline text="검토 대상을 선택하면 상세와 승인 메모 영역이 표시됩니다." />
+        )}
+      </SectionCard>
+    </div>
+  )
+}
+
+function BulkEditPersonalKpiModal(props: {
+  targetCount: number
+  form: PersonalBulkEditForm
+  employeeOptions: Props['employeeOptions']
+  orgKpiOptions: Props['orgKpiOptions']
+  busy: boolean
+  onChange: (next: PersonalBulkEditForm | ((current: PersonalBulkEditForm) => PersonalBulkEditForm)) => void
+  onClose: () => void
+  onSubmit: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">목표 일괄 수정</h2>
+            <p className="mt-1 text-sm text-slate-500">현재 화면에 표시된 KPI {props.targetCount}건에 같은 메타데이터를 한 번에 반영합니다.</p>
+          </div>
+          <button type="button" onClick={props.onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <label className="space-y-3 rounded-2xl border border-slate-200 p-4">
+            <span className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={props.form.applyAssignee}
+                onChange={(event) => props.onChange((current) => ({ ...current, applyAssignee: event.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-slate-900">담당자 일괄 변경</span>
+                <span className="mt-1 block text-xs text-slate-500">조직 이동이나 담당 변경이 필요한 목표를 한 번에 조정합니다.</span>
+              </span>
+            </span>
+            <select
+              value={props.form.employeeId}
+              onChange={(event) => props.onChange((current) => ({ ...current, employeeId: event.target.value }))}
+              disabled={!props.form.applyAssignee}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+            >
+              {props.employeeOptions.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.name} 쨌 {employee.departmentName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="space-y-3 rounded-2xl border border-slate-200 p-4">
+            <span className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={props.form.applyOrgKpi}
+                onChange={(event) => props.onChange((current) => ({ ...current, applyOrgKpi: event.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-slate-900">상위 조직 KPI 재연결</span>
+                <span className="mt-1 block text-xs text-slate-500">평가 참고정보와 연결된 상위 목표 맥락을 함께 정리합니다.</span>
+              </span>
+            </span>
+            <select
+              value={props.form.linkedOrgKpiId}
+              onChange={(event) => props.onChange((current) => ({ ...current, linkedOrgKpiId: event.target.value }))}
+              disabled={!props.form.applyOrgKpi}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+            >
+              <option value="">연결 해제</option>
+              {props.orgKpiOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.title} 쨌 {option.departmentName}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-3 rounded-2xl border border-slate-200 p-4">
+              <span className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={props.form.applyDifficulty}
+                  onChange={(event) => props.onChange((current) => ({ ...current, applyDifficulty: event.target.checked }))}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-slate-900">난이도 일괄 변경</span>
+                  <span className="mt-1 block text-xs text-slate-500">운영 우선순위와 난이도 기준을 맞춥니다.</span>
+                </span>
+              </span>
+              <select
+                value={props.form.difficulty}
+                onChange={(event) => props.onChange((current) => ({ ...current, difficulty: event.target.value as KpiForm['difficulty'] }))}
+                disabled={!props.form.applyDifficulty}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+              >
+                <option value="HIGH">높음</option>
+                <option value="MEDIUM">중간</option>
+                <option value="LOW">낮음</option>
+              </select>
+            </label>
+
+            <label className="space-y-3 rounded-2xl border border-slate-200 p-4">
+              <span className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={props.form.applyTags}
+                  onChange={(event) => props.onChange((current) => ({ ...current, applyTags: event.target.checked }))}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-slate-900">태그 일괄 변경</span>
+                  <span className="mt-1 block text-xs text-slate-500">쉼표로 구분해 같은 운영 태그를 한 번에 적용합니다.</span>
+                </span>
+              </span>
+              <input
+                value={props.form.tags}
+                onChange={(event) => props.onChange((current) => ({ ...current, tags: event.target.value }))}
+                disabled={!props.form.applyTags}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+                placeholder="예: 매출, 고객, 개선"
+              />
+            </label>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            저장 전에는 원본 KPI가 바뀌지 않으며, 저장 시 일괄 수정 이력이 함께 기록됩니다.
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <ActionButton variant="secondary" onClick={props.onClose}>
+              취소
+            </ActionButton>
+            <ActionButton onClick={props.onSubmit} disabled={props.busy}>
+              {props.busy ? '일괄 수정 중...' : '일괄 수정 저장'}
+            </ActionButton>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function EditorModal(props: {
   mode: EditorMode
   form: KpiForm
@@ -2322,6 +2933,7 @@ function LoadAlerts(props: {
 
 function ActionButton(props: {
   children: ReactNode
+  label?: ReactNode
   onClick?: () => void
   disabled?: boolean
   variant?: 'primary' | 'secondary'
@@ -2341,7 +2953,7 @@ function ActionButton(props: {
       } disabled:cursor-not-allowed disabled:opacity-50`}
     >
       {props.icon}
-      {props.children}
+      {props.label ?? props.children}
     </button>
   )
 }

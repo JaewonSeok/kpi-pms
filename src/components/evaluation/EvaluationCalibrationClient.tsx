@@ -1,14 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import * as XLSX from 'xlsx'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
   CheckCircle2,
+  Download,
   Clock3,
   FileSearch,
   Layers3,
@@ -17,7 +19,9 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   Unlock,
+  Upload,
   Users,
 } from 'lucide-react'
 import type {
@@ -32,6 +36,32 @@ type CalibrationTab = 'distribution' | 'candidates' | 'history' | 'lock' | 'poli
 type CandidateEditState = {
   gradeId: string
   reason: string
+}
+
+type UploadIssue = {
+  rowNumber?: number
+  identifier?: string
+  message: string
+}
+
+type CalibrationBulkImportRow = {
+  targetId: string
+  gradeId: string
+  adjustReason: string
+  rowNumber?: number
+  identifier?: string
+}
+
+type CalibrationExternalUploadColumn = {
+  key: string
+  label: string
+}
+
+type CalibrationExternalUploadRow = {
+  targetId: string
+  rowNumber?: number
+  identifier?: string
+  values: Record<string, string>
 }
 
 const TAB_LABELS: Record<CalibrationTab, string> = {
@@ -63,6 +93,18 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
   const [participantIdsDraft, setParticipantIdsDraft] = useState<string[]>([])
   const [evaluatorIdsDraft, setEvaluatorIdsDraft] = useState<string[]>([])
   const [bulkImportText, setBulkImportText] = useState('')
+  const [bulkImportRows, setBulkImportRows] = useState<CalibrationBulkImportRow[]>([])
+  const [bulkImportIssues, setBulkImportIssues] = useState<UploadIssue[]>([])
+  const [bulkImportFileName, setBulkImportFileName] = useState('')
+  const [externalUploadOpen, setExternalUploadOpen] = useState(false)
+  const [externalUploadColumns, setExternalUploadColumns] = useState<CalibrationExternalUploadColumn[]>([])
+  const [externalUploadRows, setExternalUploadRows] = useState<CalibrationExternalUploadRow[]>([])
+  const [externalUploadIssues, setExternalUploadIssues] = useState<UploadIssue[]>([])
+  const [externalUploadFileName, setExternalUploadFileName] = useState('')
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportMode, setExportMode] = useState<'basic' | 'all'>('basic')
+  const [mergeOpen, setMergeOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const viewModel = props.viewModel
   const cycleOptions = props.availableCycles
@@ -92,6 +134,18 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     setPeopleConfigOpen(false)
     setBulkImportOpen(false)
     setBulkImportText('')
+    setBulkImportRows([])
+    setBulkImportIssues([])
+    setBulkImportFileName('')
+    setExternalUploadOpen(false)
+    setExternalUploadColumns([])
+    setExternalUploadRows([])
+    setExternalUploadIssues([])
+    setExternalUploadFileName('')
+    setExportOpen(false)
+    setExportMode('basic')
+    setMergeOpen(false)
+    setDeleteOpen(false)
   }, [viewModel])
 
   const filteredCandidates = useMemo(() => {
@@ -141,6 +195,15 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
   const unsavedCount = Object.keys(draftEdits).length
   const isLocked = viewModel?.cycle.status === 'FINAL_LOCKED'
   const canLock = viewModel?.actorRole === 'ROLE_CEO'
+  const mergePreview = useMemo(() => {
+    const mergeableCount = filteredCandidates.filter((candidate) => !candidate.hasMergedCalibration).length
+    return {
+      mergeableCount,
+      skippedCount: filteredCandidates.length - mergeableCount,
+    }
+  }, [filteredCandidates])
+  const selectedScopeLabel =
+    viewModel?.scopeOptions.find((scope) => scope.id === departmentFilter)?.label ?? '전체 조직'
 
   function handleYearChange(year: number) {
     const nextCycle = cycleOptions.find((cycle) => cycle.year === year)
@@ -283,27 +346,43 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     }
   }
 
-  async function handleWorkflow(action: 'CONFIRM_REVIEW' | 'LOCK' | 'REOPEN_REQUEST') {
+  async function handleWorkflow(
+    action: 'CONFIRM_REVIEW' | 'LOCK' | 'REOPEN_REQUEST' | 'MERGE' | 'DELETE_SESSION',
+    options?: { scopeId?: string }
+  ) {
     if (!viewModel) return
 
     setIsSubmitting(true)
     try {
-      await fetch('/api/evaluation/calibration/workflow', {
+      const data = await fetch('/api/evaluation/calibration/workflow', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cycleId: viewModel.cycle.id,
           action,
+          scopeId: options?.scopeId,
         }),
       }).then(assertJsonSuccess)
 
-      setNotice(
-        action === 'CONFIRM_REVIEW'
-          ? '리뷰 확정 상태로 전환했습니다.'
-          : action === 'LOCK'
-            ? '최종 잠금을 완료했습니다.'
-            : '재오픈 요청을 등록했습니다.'
-      )
+      if (action === 'CONFIRM_REVIEW') {
+        setNotice('리뷰 확정 상태로 전환했습니다.')
+      } else if (action === 'LOCK') {
+        setNotice('최종 잠금을 완료했습니다.')
+      } else if (action === 'MERGE') {
+        setMergeOpen(false)
+        setNotice(
+          `${data.createdCount ?? 0}건을 최종 캘리브레이션으로 병합했고 ${
+            data.skippedCount ?? 0
+          }건은 기존 조정 결과를 유지했습니다.`
+        )
+      } else if (action === 'DELETE_SESSION') {
+        setDeleteOpen(false)
+        setNotice(
+          `세션 데이터를 정리했습니다. ${(data.deletedCount ?? 0) as number}건의 최종 조정 결과를 삭제했습니다.`
+        )
+      } else {
+        setNotice('재오픈 요청을 등록했습니다.')
+      }
       router.refresh()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '워크플로 처리 중 오류가 발생했습니다.')
@@ -343,26 +422,23 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
   async function handleBulkImport() {
     if (!viewModel) return
 
-    const lines = bulkImportText
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
+    const parsedFromText = parseCalibrationBulkImportText(
+      bulkImportText,
+      viewModel.sessionOptions.targets,
+      viewModel.gradeOptions
+    )
+    const rows = bulkImportRows.length ? bulkImportRows : parsedFromText.rows
+    const preflightIssues = bulkImportRows.length ? bulkImportIssues : parsedFromText.issues
 
-    const rows = lines
-      .map((line) => line.split(/\t|,/).map((cell) => cell.trim()))
-      .map(([employeeId, gradeLabel, adjustReason]) => {
-        const target = viewModel.sessionOptions.targets.find((item) => item.employeeId === employeeId || item.name === employeeId)
-        const grade = viewModel.gradeOptions.find((item) => item.grade === gradeLabel)
-        return {
-          targetId: target?.id ?? '',
-          gradeId: grade?.id ?? '',
-          adjustReason: adjustReason ?? '',
-        }
-      })
+    if (!rows.length) {
+      setBulkImportIssues(preflightIssues.length ? preflightIssues : [{ message: '반영할 최종 등급 행이 없습니다.' }])
+      setNotice('일괄 반영할 유효한 행이 없습니다.')
+      return
+    }
 
     setIsSubmitting(true)
     try {
-      await fetch('/api/evaluation/calibration', {
+      const data = await fetch('/api/evaluation/calibration', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -372,15 +448,171 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
         }),
       }).then(assertJsonSuccess)
 
-      setBulkImportOpen(false)
-      setBulkImportText('')
-      setNotice(`${rows.length}건의 최종 등급 / 코멘트를 일괄 반영했습니다.`)
+      const responseIssues = [
+        ...preflightIssues,
+        ...(((data.failedRows ?? []) as UploadIssue[]) || []),
+      ]
+
+      setBulkImportIssues(responseIssues)
+      if (responseIssues.length === 0) {
+        setBulkImportOpen(false)
+        setBulkImportText('')
+        setBulkImportRows([])
+        setBulkImportFileName('')
+      }
+      setNotice(
+        responseIssues.length
+          ? `${data.appliedCount ?? 0}건 반영, ${responseIssues.length}건은 확인이 필요합니다.`
+          : `${data.appliedCount ?? rows.length}건의 최종 등급 / 코멘트를 일괄 반영했습니다.`
+      )
       router.refresh()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '일괄 입력을 적용하지 못했습니다.')
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  async function handleBulkImportFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (!viewModel) return
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setIsSubmitting(true)
+    try {
+      const parsed = await parseCalibrationBulkImportFile(
+        file,
+        viewModel.sessionOptions.targets,
+        viewModel.gradeOptions
+      )
+      setBulkImportRows(parsed.rows)
+      setBulkImportIssues(parsed.issues)
+      setBulkImportFileName(file.name)
+      setBulkImportText(
+        parsed.rows
+          .map((row) => {
+            const target = viewModel.sessionOptions.targets.find((item) => item.id === row.targetId)
+            const grade = viewModel.gradeOptions.find((item) => item.id === row.gradeId)
+            return `${target?.employeeId ?? row.identifier ?? row.targetId}\t${grade?.grade ?? ''}\t${row.adjustReason}`
+          })
+          .join('\n')
+      )
+      setNotice(
+        parsed.issues.length
+          ? `${parsed.rows.length}건을 읽었지만 ${parsed.issues.length}건은 검증이 필요합니다.`
+          : `${parsed.rows.length}건의 최종 등급 업로드 미리보기를 준비했습니다.`
+      )
+    } catch (error) {
+      setBulkImportIssues([
+        {
+          message: error instanceof Error ? error.message : '업로드 파일을 읽지 못했습니다.',
+        },
+      ])
+      setNotice(error instanceof Error ? error.message : '업로드 파일을 읽지 못했습니다.')
+    } finally {
+      setIsSubmitting(false)
+      event.target.value = ''
+    }
+  }
+
+  async function handleExternalUploadFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (!viewModel) return
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setIsSubmitting(true)
+    try {
+      const parsed = await parseCalibrationExternalDataFile(file, viewModel.sessionOptions.targets)
+      setExternalUploadColumns(parsed.columns)
+      setExternalUploadRows(parsed.rows)
+      setExternalUploadIssues(parsed.issues)
+      setExternalUploadFileName(file.name)
+      setNotice(
+        parsed.issues.length
+          ? `${parsed.rows.length}건의 외부 데이터를 읽었지만 ${parsed.issues.length}건은 확인이 필요합니다.`
+          : `${parsed.rows.length}건의 외부 데이터 업로드 미리보기를 준비했습니다.`
+      )
+    } catch (error) {
+      setExternalUploadIssues([
+        {
+          message: error instanceof Error ? error.message : '외부 데이터 파일을 읽지 못했습니다.',
+        },
+      ])
+      setNotice(error instanceof Error ? error.message : '외부 데이터 파일을 읽지 못했습니다.')
+    } finally {
+      setIsSubmitting(false)
+      event.target.value = ''
+    }
+  }
+
+  async function handleExternalUpload() {
+    if (!viewModel) return
+    if (!externalUploadColumns.length || !externalUploadRows.length) {
+      setExternalUploadIssues([{ message: '업로드할 외부 데이터가 없습니다.' }])
+      setNotice('업로드할 외부 데이터를 먼저 불러와 주세요.')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      const data = await fetch('/api/evaluation/calibration', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'upload-external-data',
+          cycleId: viewModel.cycle.id,
+          externalData: {
+            columns: externalUploadColumns,
+            rows: externalUploadRows,
+          },
+        }),
+      }).then(assertJsonSuccess)
+
+      const responseIssues = [
+        ...externalUploadIssues,
+        ...((((data.failedRows ?? []) as UploadIssue[]) || []).slice()),
+      ]
+      setExternalUploadIssues(responseIssues)
+      if (responseIssues.length === 0) {
+        setExternalUploadOpen(false)
+        setExternalUploadColumns([])
+        setExternalUploadRows([])
+        setExternalUploadFileName('')
+      }
+      setNotice(
+        responseIssues.length
+          ? `${data.appliedCount ?? 0}건 반영, ${responseIssues.length}건은 외부 데이터 매칭을 확인해 주세요.`
+          : `${data.appliedCount ?? 0}건의 외부 데이터를 반영했습니다.`
+      )
+      router.refresh()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '외부 데이터를 업로드하지 못했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  function handleExport(disposition: 'inline' | 'attachment') {
+    if (!viewModel) return
+    const query = new URLSearchParams({
+      cycleId: viewModel.cycle.id,
+      mode: exportMode,
+      disposition,
+    })
+    if (departmentFilter !== 'all') {
+      query.set('scopeId', departmentFilter)
+    }
+
+    const href = `/api/evaluation/calibration/export?${query.toString()}`
+    if (disposition === 'inline') {
+      window.open(href, '_blank', 'noopener,noreferrer')
+      return
+    }
+
+    const anchor = document.createElement('a')
+    anchor.href = href
+    anchor.download = `calibration-${viewModel.cycle.year}-${exportMode}.xlsx`
+    anchor.click()
   }
 
   if (props.state !== 'ready' || !viewModel) {
@@ -442,12 +674,17 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
           <CalibrationOpsToolbar
             sessionConfig={viewModel.sessionConfig}
             isSubmitting={isSubmitting}
+            scopeLabel={selectedScopeLabel}
             onOpenTargetConfig={(intent) => {
               setTargetConfigIntent(intent)
               setTargetConfigOpen(true)
             }}
             onOpenPeopleConfig={() => setPeopleConfigOpen(true)}
             onOpenBulkImport={() => setBulkImportOpen(true)}
+            onOpenExternalUpload={() => setExternalUploadOpen(true)}
+            onOpenExport={() => setExportOpen(true)}
+            onOpenMerge={() => setMergeOpen(true)}
+            onOpenDelete={() => setDeleteOpen(true)}
           />
           <CalibrationCandidatesSection
             viewModel={viewModel}
@@ -580,18 +817,189 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
       {activeTab === 'candidates' && bulkImportOpen ? (
         <ConfigModal
           title="엑셀로 등급 / 코멘트 입력"
-          description="세션을 생성하지 않아도 데이터 시트에서 최종 등급과 코멘트를 일괄 반영할 수 있습니다. 형식: 사번, 등급, 코멘트"
+          description="세션을 생성하지 않아도 데이터 시트에서 최종 등급과 코멘트를 일괄 반영할 수 있습니다. `.xlsx`, `.xls`, `.csv` 업로드 또는 사번, 등급, 코멘트 붙여넣기를 지원합니다."
           onClose={() => setBulkImportOpen(false)}
           onSave={() => void handleBulkImport()}
           saveLabel="일괄 반영"
           isSubmitting={isSubmitting}
         >
-          <textarea
-            value={bulkImportText}
-            onChange={(event) => setBulkImportText(event.target.value)}
-            className="min-h-72 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
-            placeholder={`예시\nM-1001\tA\t성과 달성률과 협업 영향도를 고려해 A로 조정합니다. 분포 기준과 비교해도 수용 가능한 범위입니다.\nM-1002\tB\t원점수는 경계 구간이지만 최근 월간 실적과 체크인 근거를 검토해 B로 유지합니다.`}
-          />
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="font-semibold text-slate-900">파일 업로드</div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    첫 번째 시트를 기준으로 읽습니다. 헤더 예시: 사번, 등급, 코멘트
+                  </p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+                  <Upload className="mr-2 h-4 w-4" />
+                  엑셀 파일 불러오기
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={handleBulkImportFileChange}
+                  />
+                </label>
+              </div>
+              {bulkImportFileName ? (
+                <p className="mt-3 text-xs text-slate-500">불러온 파일: {bulkImportFileName}</p>
+              ) : null}
+            </div>
+
+            <textarea
+              value={bulkImportText}
+              onChange={(event) => setBulkImportText(event.target.value)}
+              className="min-h-72 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+              placeholder={`예시\nM-1001\tA\t성과 달성률과 협업 영향도를 고려해 A로 조정합니다. 분포 기준과 비교해도 수용 가능한 범위입니다.\nM-1002\tB\t원점수는 경계 구간이지만 최근 월간 실적과 체크인 근거를 검토해 B로 유지합니다.`}
+            />
+
+            <UploadIssueList issues={bulkImportIssues} emptyMessage="현재 업로드 이슈가 없습니다." />
+          </div>
+        </ConfigModal>
+      ) : null}
+
+      {activeTab === 'candidates' && externalUploadOpen ? (
+        <ConfigModal
+          title="외부 데이터 업로드"
+          description="Job Level, 연봉 인상률 등 외부 데이터를 업로드해 데이터 시트와 참고정보에서 함께 볼 수 있습니다."
+          onClose={() => setExternalUploadOpen(false)}
+          onSave={() => void handleExternalUpload()}
+          saveLabel="외부 데이터 반영"
+          isSubmitting={isSubmitting}
+        >
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="font-semibold text-slate-900">외부 데이터 파일 업로드</div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    첫 번째 열은 사번 또는 이름으로 매칭하고, 나머지 열은 외부 참고 컬럼으로 저장합니다.
+                  </p>
+                </div>
+                <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+                  <Upload className="mr-2 h-4 w-4" />
+                  외부 데이터 파일 불러오기
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={handleExternalUploadFileChange}
+                  />
+                </label>
+              </div>
+              {externalUploadFileName ? (
+                <p className="mt-3 text-xs text-slate-500">불러온 파일: {externalUploadFileName}</p>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">업로드 컬럼 미리보기</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {externalUploadColumns.length ? (
+                  externalUploadColumns.map((column) => <InfoBadge key={column.key} label={column.label} />)
+                ) : (
+                  <span className="text-sm text-slate-500">아직 불러온 외부 데이터 컬럼이 없습니다.</span>
+                )}
+              </div>
+              {externalUploadRows.length ? (
+                <p className="mt-3 text-sm text-slate-500">대상자 {externalUploadRows.length}명과 매칭할 준비가 되었습니다.</p>
+              ) : null}
+            </div>
+
+            <UploadIssueList issues={externalUploadIssues} emptyMessage="현재 외부 데이터 업로드 이슈가 없습니다." />
+          </div>
+        </ConfigModal>
+      ) : null}
+
+      {activeTab === 'candidates' && exportOpen ? (
+        <ConfigModal
+          title="캘리브레이션 엑셀 다운로드"
+          description="기본 컬럼 세트 또는 외부 데이터가 포함된 전체 컬럼 세트로 데이터 시트를 다운로드할 수 있습니다."
+          onClose={() => setExportOpen(false)}
+          onSave={() => handleExport('attachment')}
+          saveLabel="엑셀 다운로드"
+          isSubmitting={isSubmitting}
+        >
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              {([
+                ['basic', '기본 컬럼', '핵심 조정 정보, 점수, 최종 등급, 코멘트를 다운로드합니다.'],
+                ['all', '모든 컬럼', '외부 데이터, KPI/체크인 요약까지 함께 다운로드합니다.'],
+              ] as const).map(([mode, label, description]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setExportMode(mode)}
+                  className={`rounded-2xl border p-4 text-left transition ${
+                    exportMode === mode ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="font-semibold text-slate-900">{label}</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
+                </button>
+              ))}
+            </div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              대상자 수가 많거나 외부 데이터 컬럼이 많은 경우 다운로드 준비에 수십 초 정도 걸릴 수 있습니다.
+            </div>
+            <button
+              type="button"
+              onClick={() => handleExport('inline')}
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              브라우저에서 열기
+            </button>
+          </div>
+        </ConfigModal>
+      ) : null}
+
+      {activeTab === 'candidates' && mergeOpen ? (
+        <ConfigModal
+          title="다단계 캘리브레이션 병합"
+          description="현재 범위의 다단계 평가 결과를 한 번에 최종 캘리브레이션으로 모읍니다. 이미 병합된 대상은 유지합니다."
+          onClose={() => setMergeOpen(false)}
+          onSave={() => void handleWorkflow('MERGE', { scopeId: departmentFilter })}
+          saveLabel="평가 병합"
+          isSubmitting={isSubmitting}
+        >
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <CompareCard title="병합 범위" value={selectedScopeLabel} tone="neutral" />
+              <CompareCard title="새로 병합" value={`${mergePreview.mergeableCount}명`} tone="attention" />
+              <CompareCard title="유지 / 제외" value={`${mergePreview.skippedCount}명`} tone="neutral" />
+            </div>
+            {viewModel.sessionConfig.lastMergeSummary ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                마지막 병합: {formatDateTime(viewModel.sessionConfig.lastMergeSummary.mergedAt)} ·{' '}
+                {viewModel.sessionConfig.lastMergeSummary.mergedBy}
+              </div>
+            ) : null}
+          </div>
+        </ConfigModal>
+      ) : null}
+
+      {activeTab === 'candidates' && deleteOpen ? (
+        <ConfigModal
+          title="캘리브레이션 세션 삭제"
+          description="현재 주기의 최종 캘리브레이션 결과, 외부 데이터, 병합 요약, 세션 구성을 정리합니다."
+          onClose={() => setDeleteOpen(false)}
+          onSave={() => void handleWorkflow('DELETE_SESSION')}
+          saveLabel="세션 삭제"
+          isSubmitting={isSubmitting}
+        >
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-900">
+              삭제 후에는 CEO_ADJUST 결과와 업로드된 외부 데이터가 비워지고, 다시 병합/업로드를 실행해야 합니다.
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <MiniMetric label="현재 조정 건수" value={`${viewModel.summary.adjustedCount}건`} />
+              <MiniMetric label="외부 데이터 컬럼" value={`${viewModel.sessionConfig.externalColumns.length}개`} />
+              <MiniMetric label="세션 대상 제외" value={`${viewModel.sessionConfig.excludedTargetIds.length}명`} />
+            </div>
+          </div>
         </ConfigModal>
       ) : null}
     </div>
@@ -789,20 +1197,28 @@ function Tabs({
 function CalibrationOpsToolbar(props: {
   sessionConfig: CalibrationViewModel['sessionConfig']
   isSubmitting: boolean
+  scopeLabel: string
   onOpenTargetConfig: (intent: 'add' | 'remove') => void
   onOpenPeopleConfig: () => void
   onOpenBulkImport: () => void
+  onOpenExternalUpload: () => void
+  onOpenExport: () => void
+  onOpenMerge: () => void
+  onOpenDelete: () => void
 }) {
   return (
     <SectionCard
       title="세션 운영 도구"
-      description="진행 중에도 대상자 / 평가자 / 참여자 구성을 바꾸고, 엑셀 행 붙여넣기로 최종 등급과 코멘트를 빠르게 수정할 수 있습니다."
+      description="진행 중에도 대상자 / 평가자 / 참여자 구성을 바꾸고, 엑셀 업로드 / 외부 데이터 업로드 / 병합 / 세션 삭제까지 한 화면에서 운영할 수 있습니다."
     >
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap gap-2 text-sm">
+          <InfoBadge label={`현재 범위 ${props.scopeLabel}`} />
           <InfoBadge label={`제외 대상 ${props.sessionConfig.excludedTargetIds.length}명`} />
           <InfoBadge label={`평가자 ${props.sessionConfig.evaluatorIds.length}명`} />
           <InfoBadge label={`참여자 ${props.sessionConfig.participantIds.length}명`} />
+          <InfoBadge label={`외부 컬럼 ${props.sessionConfig.externalColumns.length}개`} />
+          {props.sessionConfig.lastMergeSummary ? <InfoBadge label="병합 이력 있음" /> : null}
         </div>
         <div className="flex flex-wrap gap-3">
           <details className="relative">
@@ -838,12 +1254,37 @@ function CalibrationOpsToolbar(props: {
               >
                 평가자 및 참여자
               </button>
+              <button
+                type="button"
+                onClick={props.onOpenDelete}
+                className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-rose-700 transition hover:bg-rose-50"
+              >
+                세션 삭제
+              </button>
             </div>
           </details>
           <ActionButton
             icon={<FileSearch className="h-4 w-4" />}
             label="엑셀로 등급/코멘트 입력"
             onClick={props.onOpenBulkImport}
+            disabled={props.isSubmitting}
+          />
+          <ActionButton
+            icon={<Upload className="h-4 w-4" />}
+            label="외부 데이터 업로드"
+            onClick={props.onOpenExternalUpload}
+            disabled={props.isSubmitting}
+          />
+          <ActionButton
+            icon={<Layers3 className="h-4 w-4" />}
+            label="평가 병합"
+            onClick={props.onOpenMerge}
+            disabled={props.isSubmitting}
+          />
+          <ActionButton
+            icon={<Download className="h-4 w-4" />}
+            label="엑셀 다운로드"
+            onClick={props.onOpenExport}
             disabled={props.isSubmitting}
           />
         </div>
@@ -1161,6 +1602,7 @@ function CalibrationCandidatesSection({
                       <th className="px-4 py-3 font-medium">원등급</th>
                       <th className="px-4 py-3 font-medium">최종 등급</th>
                       <th className="px-4 py-3 font-medium">최종 코멘트</th>
+                      <th className="px-4 py-3 font-medium">외부 데이터</th>
                       <th className="px-4 py-3 font-medium">조정 여부</th>
                       <th className="px-4 py-3 font-medium">사유 상태</th>
                       <th className="px-4 py-3 font-medium">저장</th>
@@ -1218,6 +1660,18 @@ function CalibrationCandidatesSection({
                               className="min-h-10 w-56 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                               placeholder={candidate.suggestedReason ?? '최종 코멘트를 입력해 주세요.'}
                             />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-xs leading-5 text-slate-500">
+                              {candidate.externalData.length
+                                ? `${candidate.externalData
+                                    .slice(0, 2)
+                                    .map((item) => `${item.label}:${item.value}`)
+                                    .join(' / ')}${
+                                    candidate.externalData.length > 2 ? ` 외 ${candidate.externalData.length - 2}개` : ''
+                                  }`
+                                : '없음'}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             {candidate.adjusted ? (
@@ -1306,6 +1760,11 @@ function CalibrationCandidatesSection({
                         <MiniMetric label="원등급" value={candidate.originalGrade} />
                         <MiniMetric label="조정등급" value={draftGrade} />
                       </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <InfoBadge label={`기준 ${candidate.sourceStage}`} />
+                        {candidate.hasMergedCalibration ? <InfoBadge label="병합 반영됨" /> : null}
+                        {candidate.externalData.length ? <InfoBadge label={`외부 데이터 ${candidate.externalData.length}개`} /> : null}
+                      </div>
                     </button>
                   )
                 })}
@@ -1368,7 +1827,11 @@ function CandidateDetailPanel({
                 {candidate.department} · {candidate.jobGroup} · 평가자 {candidate.evaluatorName ?? '미지정'}
               </div>
             </div>
-            {candidate.needsAttention ? <WarningBadge label="검토 우선" /> : <InfoBadge label="안정 구간" />}
+            <div className="flex flex-wrap gap-2">
+              <InfoBadge label={`기준 ${candidate.sourceStage}`} />
+              {candidate.hasMergedCalibration ? <InfoBadge label="병합 반영됨" /> : null}
+              {candidate.needsAttention ? <WarningBadge label="검토 우선" /> : <InfoBadge label="안정 구간" />}
+            </div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <MiniMetric label="원점수" value={candidate.rawScore.toFixed(1)} />
@@ -1506,6 +1969,24 @@ function CandidateDetailPanel({
                     <EmptyCard title="최근 체크인 기록이 없습니다" description="관련 1:1 또는 체크인 기록이 생기면 이곳에 함께 노출됩니다." />
                   )}
                 </div>
+              </SubSection>
+
+              <SubSection title="외부 참고 데이터">
+                {candidate.externalData.length ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {candidate.externalData.map((item) => (
+                      <div key={item.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{item.label}</div>
+                        <div className="mt-2 text-sm font-medium text-slate-900">{item.value || '-'}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyCard
+                    title="업로드된 외부 데이터가 없습니다"
+                    description="Job Level, 연봉 인상률 같은 외부 정보를 업로드하면 이 패널에서 함께 볼 수 있습니다."
+                  />
+                )}
               </SubSection>
             </div>
           )}
@@ -2024,6 +2505,42 @@ function RelatedLinks() {
   )
 }
 
+function UploadIssueList({
+  issues,
+  emptyMessage,
+}: {
+  issues: UploadIssue[]
+  emptyMessage: string
+}) {
+  if (!issues.length) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+        {emptyMessage}
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+        <AlertTriangle className="h-4 w-4" />
+        확인이 필요한 행
+      </div>
+      <div className="mt-3 space-y-2 text-sm text-amber-900">
+        {issues.map((issue, index) => (
+          <div key={`${issue.identifier ?? issue.rowNumber ?? 'issue'}-${index}`} className="rounded-xl bg-white/70 px-3 py-2">
+            <span className="font-semibold">
+              {issue.rowNumber ? `${issue.rowNumber}행` : '행 정보 없음'}
+              {issue.identifier ? ` · ${issue.identifier}` : ''}
+            </span>{' '}
+            {issue.message}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function getCandidateDraft(
   viewModel: CalibrationViewModel,
   draftEdits: Record<string, CandidateEditState>,
@@ -2037,6 +2554,218 @@ function getCandidateDraft(
       reason: candidate.reason ?? '',
     }
   )
+}
+
+function parseCalibrationBulkImportText(
+  text: string,
+  targets: CalibrationViewModel['sessionOptions']['targets'],
+  gradeOptions: CalibrationViewModel['gradeOptions']
+) {
+  const issues: UploadIssue[] = []
+  const rows: CalibrationBulkImportRow[] = []
+
+  for (const [index, rawLine] of text.split(/\r?\n/).entries()) {
+    const line = rawLine.trim()
+    if (!line) continue
+
+    const rowNumber = index + 1
+    const cells = line.split(/\t|,/).map((cell) => cell.trim())
+    const [identifier = '', gradeLabel = '', ...reasonCells] = cells
+    const target = targets.find((targetItem) => targetItem.employeeId === identifier || targetItem.name === identifier)
+    const grade = gradeOptions.find((option) => option.grade === gradeLabel)
+    const reason = reasonCells.join(',').trim()
+
+    if (!target) {
+      issues.push({
+        rowNumber,
+        identifier,
+        message: '사번 또는 이름으로 캘리브레이션 대상자를 찾지 못했습니다.',
+      })
+      continue
+    }
+
+    if (!grade) {
+      issues.push({
+        rowNumber,
+        identifier,
+        message: '조정 등급을 찾지 못했습니다.',
+      })
+      continue
+    }
+
+    if (reason.length < 30) {
+      issues.push({
+        rowNumber,
+        identifier,
+        message: '조정 사유는 30자 이상 입력해 주세요.',
+      })
+      continue
+    }
+
+    rows.push({
+      targetId: target.id,
+      gradeId: grade.id,
+      adjustReason: reason,
+      rowNumber,
+      identifier,
+    })
+  }
+
+  return { rows, issues }
+}
+
+async function parseCalibrationBulkImportFile(
+  file: File,
+  targets: CalibrationViewModel['sessionOptions']['targets'],
+  gradeOptions: CalibrationViewModel['gradeOptions']
+) {
+  const rows = await readSpreadsheetRows(file)
+  const issues: UploadIssue[] = []
+  const parsedRows: CalibrationBulkImportRow[] = []
+
+  for (const [index, record] of rows.entries()) {
+    const rowNumber = index + 2
+    const identifier = pickSpreadsheetValue(record, ['사번', 'employeeid', 'empid', '이름', 'name'])
+    const gradeLabel = pickSpreadsheetValue(record, ['등급', 'grade', '최종등급', 'finalgrade'])
+    const reason = pickSpreadsheetValue(record, ['코멘트', 'comment', '사유', 'reason', '최종코멘트', 'adjustreason'])
+    const target = targets.find((item) => item.employeeId === identifier || item.name === identifier)
+    const grade = gradeOptions.find((item) => item.grade === gradeLabel)
+
+    if (!identifier && !gradeLabel && !reason) continue
+
+    if (!target) {
+      issues.push({
+        rowNumber,
+        identifier,
+        message: '대상자를 찾지 못했습니다.',
+      })
+      continue
+    }
+
+    if (!grade) {
+      issues.push({
+        rowNumber,
+        identifier: identifier || target.employeeId,
+        message: '등급 라벨이 유효하지 않습니다.',
+      })
+      continue
+    }
+
+    if (reason.trim().length < 30) {
+      issues.push({
+        rowNumber,
+        identifier: identifier || target.employeeId,
+        message: '조정 사유는 30자 이상 입력해 주세요.',
+      })
+      continue
+    }
+
+    parsedRows.push({
+      targetId: target.id,
+      gradeId: grade.id,
+      adjustReason: reason.trim(),
+      rowNumber,
+      identifier: identifier || target.employeeId,
+    })
+  }
+
+  return {
+    rows: parsedRows,
+    issues,
+  }
+}
+
+async function parseCalibrationExternalDataFile(
+  file: File,
+  targets: CalibrationViewModel['sessionOptions']['targets']
+) {
+  const rows = await readSpreadsheetRows(file)
+  const headers = Array.from(
+    rows.reduce((set, row) => {
+      Object.keys(row).forEach((key) => set.add(key))
+      return set
+    }, new Set<string>())
+  )
+
+  const identifierHeader = headers.find((header) =>
+    ['사번', 'employeeid', 'empid', '이름', 'name'].includes(normalizeSpreadsheetHeader(header))
+  )
+
+  if (!identifierHeader) {
+    throw new Error('첫 번째 기준 열에 사번 또는 이름 헤더가 필요합니다.')
+  }
+
+  const externalHeaders = headers.filter((header) => header !== identifierHeader && header.trim().length > 0)
+  if (!externalHeaders.length) {
+    throw new Error('업로드할 외부 데이터 컬럼이 없습니다.')
+  }
+
+  const columns = externalHeaders.map((header, index) => ({
+    key: makeExternalColumnKey(header, index),
+    label: header.trim(),
+  }))
+
+  const issues: UploadIssue[] = []
+  const parsedRows: CalibrationExternalUploadRow[] = []
+
+  for (const [index, record] of rows.entries()) {
+    const rowNumber = index + 2
+    const identifier = String(record[identifierHeader] ?? '').trim()
+    const target = targets.find((item) => item.employeeId === identifier || item.name === identifier)
+
+    if (!identifier) continue
+
+    if (!target) {
+      issues.push({
+        rowNumber,
+        identifier,
+        message: '사번 또는 이름으로 캘리브레이션 대상자를 찾지 못했습니다.',
+      })
+      continue
+    }
+
+    const values = Object.fromEntries(
+      externalHeaders.map((header, columnIndex) => [
+        columns[columnIndex].key,
+        String(record[header] ?? '').trim(),
+      ])
+    )
+
+    parsedRows.push({
+      targetId: target.id,
+      rowNumber,
+      identifier,
+      values,
+    })
+  }
+
+  return {
+    columns,
+    rows: parsedRows,
+    issues,
+  }
+}
+
+async function readSpreadsheetRows(file: File) {
+  const buffer = await file.arrayBuffer()
+  const workbook = XLSX.read(buffer, { type: 'array' })
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: '' })
+}
+
+function normalizeSpreadsheetHeader(header: string) {
+  return header.trim().toLowerCase().replace(/[\s_-]+/g, '')
+}
+
+function pickSpreadsheetValue(record: Record<string, unknown>, aliases: string[]) {
+  const normalizedAliases = aliases.map((alias) => normalizeSpreadsheetHeader(alias))
+  const matchedKey = Object.keys(record).find((key) => normalizedAliases.includes(normalizeSpreadsheetHeader(key)))
+  return matchedKey ? String(record[matchedKey] ?? '').trim() : ''
+}
+
+function makeExternalColumnKey(label: string, index: number) {
+  const normalized = normalizeSpreadsheetHeader(label).slice(0, 24)
+  return `external_${index + 1}_${normalized || 'column'}`
 }
 
 function getGradeTone(grade: string) {

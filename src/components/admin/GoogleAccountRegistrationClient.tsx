@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { EvaluatorAssignmentAdminPanel } from './EvaluatorAssignmentAdminPanel'
+import { MasterLoginAdminPanel } from './MasterLoginAdminPanel'
 import { OrgMemberManagementPanel } from './OrgMemberManagementPanel'
 
 type EmployeeRole =
@@ -318,8 +319,11 @@ export function GoogleAccountRegistrationClient() {
   const queryClient = useQueryClient()
   const currentTab = searchParams.get('tab')
   const [activeTab, setActiveTab] = useState(
-    currentTab === 'org-chart' || currentTab === 'upload' || currentTab === 'evaluator'
-      ? (currentTab as 'org-chart' | 'upload' | 'evaluator')
+    currentTab === 'org-chart' ||
+      currentTab === 'upload' ||
+      currentTab === 'evaluator' ||
+      currentTab === 'master-login'
+      ? (currentTab as 'org-chart' | 'upload' | 'evaluator' | 'master-login')
       : 'manage'
   )
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
@@ -516,7 +520,7 @@ export function GoogleAccountRegistrationClient() {
   const uploadRowsToShow = uploadResult?.rows.slice(0, 80) ?? []
 
   const applyTab = (
-    nextTab: 'manage' | 'upload' | 'org-chart' | 'evaluator',
+    nextTab: 'manage' | 'upload' | 'org-chart' | 'evaluator' | 'master-login',
     nextDepartmentId = departmentFilter
   ) => {
     setActiveTab(nextTab)
@@ -659,8 +663,9 @@ export function GoogleAccountRegistrationClient() {
         {[
           { key: 'manage' as const, label: '목록 관리' },
           { key: 'upload' as const, label: '일괄 업로드' },
-          { key: 'org-chart' as const, label: '조직도' },
+          { key: 'org-chart' as const, label: '조직 · 구성원' },
           { key: 'evaluator' as const, label: '평가권자 관리' },
+          { key: 'master-login' as const, label: '마스터 로그인' },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -1133,6 +1138,10 @@ export function GoogleAccountRegistrationClient() {
 
       {activeTab === 'evaluator' && (
         <EvaluatorAssignmentAdminPanel onFeedback={setFeedback} onRefresh={refreshQueries} />
+      )}
+
+      {activeTab === 'master-login' && (
+        <MasterLoginAdminPanel employees={employees} onFeedback={setFeedback} />
       )}
 
       {activeTab === 'org-chart' && (

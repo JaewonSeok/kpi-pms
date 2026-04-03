@@ -48,6 +48,7 @@ await run('feedback 360 api routes exist', () => {
     'src/app/api/feedback/rounds/[id]/workflow/route.ts',
     'src/app/api/feedback/rounds/[id]/report/route.ts',
     'src/app/api/feedback/rounds/[id]/result-view/route.ts',
+    'src/app/api/feedback/rounds/[id]/results-export/route.ts',
     'src/app/api/feedback/onboarding-workflows/route.ts',
     'src/app/api/feedback/onboarding-workflows/run/route.ts',
     'src/app/api/cron/feedback-onboarding/route.ts',

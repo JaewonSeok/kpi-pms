@@ -50,6 +50,77 @@ type KeywordImportResult = {
   }
 }
 
+type TargetUploadResult = {
+  fileName: string
+  summary: {
+    totalRows: number
+    validRows: number
+    invalidRows: number
+    targetCount: number
+    createdAssignmentCount: number
+    existingAssignmentCount: number
+  }
+  rows: Array<{
+    rowNumber: number
+    employeeNumber: string
+    employeeName?: string
+    department?: string
+    valid: boolean
+    issues: Array<{
+      field: string
+      message: string
+    }>
+    createdAssignmentCount: number
+    existingAssignmentCount: number
+    groups: string[]
+  }>
+  uploadHistoryId?: string
+}
+
+type ComparisonReport = {
+  fileName: string
+  summary: {
+    currentCycleName: string
+    baselineDepartmentCount: number
+    currentDepartmentCount: number
+    comparedDepartmentCount: number
+    baselineResponseCount: number
+    currentResponseCount: number
+    hiddenBaselineRows: number
+    hiddenCurrentDepartments: number
+    largestResponseChange?: {
+      department: string
+      delta: number
+    }
+    largestPositiveShift?: {
+      department: string
+      keyword: string
+      delta: number
+    }
+    largestNegativeShift?: {
+      department: string
+      keyword: string
+      delta: number
+    }
+  }
+  departments: Array<{
+    department: string
+    baselineResponseCount: number
+    currentResponseCount: number
+    responseDelta: number
+    baselineTopPositiveKeywords: string[]
+    currentTopPositiveKeywords: string[]
+    baselineTopNegativeKeywords: string[]
+    currentTopNegativeKeywords: string[]
+    changedKeywords: Array<{
+      keyword: string
+      polarity: 'POSITIVE' | 'NEGATIVE'
+      delta: number
+    }>
+    insight: string
+  }>
+}
+
 function initialTab(data: WordCloud360PageData): TabKey {
   if (data.permissions?.canManage) return 'admin'
   if (data.permissions?.canEvaluate) return 'evaluator'
@@ -115,6 +186,56 @@ async function uploadKeywordCsv(mode: 'preview' | 'apply', file: File) {
     throw new Error(body.error?.message ?? 'CSV 업로드를 처리하지 못했습니다.')
   }
   return body.data as KeywordImportResult
+}
+
+async function uploadWordCloudAdminFile<T>(endpoint: string, cycleId: string, file: File) {
+  const formData = new FormData()
+  formData.set('cycleId', cycleId)
+  formData.set('file', file)
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    body: formData,
+  })
+  const body = readApiBody(await response.json())
+  if (!response.ok || !body.success) {
+    throw new Error(body.error?.message ?? '파일 업로드를 처리하지 못했습니다.')
+  }
+  return body.data as T
+}
+
+async function downloadWordCloudExport(params: {
+  cycleId: string
+  format: 'csv' | 'xlsx'
+  reason: string
+}) {
+  const searchParams = new URLSearchParams({
+    format: params.format,
+    reason: params.reason,
+  })
+  const response = await fetch(
+    `/api/evaluation/word-cloud-360/export/${encodeURIComponent(params.cycleId)}?${searchParams.toString()}`
+  )
+
+  if (!response.ok) {
+    const body = readApiBody(await response.json().catch(() => ({})))
+    throw new Error(body.error?.message ?? '서베이 결과를 다운로드하지 못했습니다.')
+  }
+
+  const blob = await response.blob()
+  const disposition = response.headers.get('content-disposition') ?? ''
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1]
+  const fallbackName = params.format === 'csv' ? 'word-cloud-360.csv' : 'word-cloud-360.xlsx'
+  const fileName = encodedName ? decodeURIComponent(encodedName) : fallbackName
+
+  const objectUrl = window.URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.URL.revokeObjectURL(objectUrl)
 }
 
 function StateBox(props: { title: string; description: string }) {
@@ -228,6 +349,13 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   })
   const [keywordUploadFile, setKeywordUploadFile] = useState<File | null>(null)
   const [keywordImportResult, setKeywordImportResult] = useState<KeywordImportResult | null>(null)
+  const [targetUploadFile, setTargetUploadFile] = useState<File | null>(null)
+  const [targetUploadResult, setTargetUploadResult] = useState<TargetUploadResult | null>(null)
+  const [comparisonUploadFile, setComparisonUploadFile] = useState<File | null>(null)
+  const [comparisonReport, setComparisonReport] = useState<ComparisonReport | null>(null)
+  const [exportModalOpen, setExportModalOpen] = useState(false)
+  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('xlsx')
+  const [exportReason, setExportReason] = useState('')
   const [assignmentForm, setAssignmentForm] = useState({
     evaluatorId: '',
     evaluateeId: '',
@@ -258,6 +386,8 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   )
   const keywordImportRowsToShow = keywordImportResult?.rows.slice(0, 100) ?? []
   const canApplyKeywordImport = Boolean(keywordUploadFile && keywordImportResult?.mode === 'preview' && keywordImportResult.summary.validRows > 0)
+  const targetUploadRowsToShow = targetUploadResult?.rows.slice(0, 100) ?? []
+  const comparisonRowsToShow = comparisonReport?.departments.slice(0, 20) ?? []
 
   function updateCycle(nextCycleId: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -330,6 +460,123 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   function resetKeywordImport() {
     setKeywordUploadFile(null)
     setKeywordImportResult(null)
+  }
+
+  function runTargetUpload() {
+    const cycleId = data.selectedCycleId
+    if (!cycleId) {
+      setNotice({ tone: 'error', message: '대상자를 반영할 서베이 주기를 먼저 선택해 주세요.' })
+      return
+    }
+    if (!targetUploadFile) {
+      setNotice({ tone: 'error', message: '업로드할 대상자 파일을 선택해 주세요.' })
+      return
+    }
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          setNotice(null)
+          const result = await uploadWordCloudAdminFile<TargetUploadResult>(
+            '/api/evaluation/word-cloud-360/targets/upload',
+            cycleId,
+            targetUploadFile
+          )
+          setTargetUploadResult(result)
+          setNotice({
+            tone: 'success',
+            message:
+              result.summary.invalidRows > 0
+                ? '일부 대상자는 반영되지 않았습니다. 오류 행을 확인해 주세요.'
+                : '대상자 일괄 지정이 반영되었습니다.',
+          })
+          router.refresh()
+        } catch (error) {
+          setNotice({
+            tone: 'error',
+            message: error instanceof Error ? error.message : '대상자 업로드를 처리하지 못했습니다.',
+          })
+        }
+      })()
+    })
+  }
+
+  function resetTargetUpload() {
+    setTargetUploadFile(null)
+    setTargetUploadResult(null)
+  }
+
+  function runComparisonReport() {
+    const cycleId = data.selectedCycleId
+    if (!cycleId) {
+      setNotice({ tone: 'error', message: '비교할 현재 서베이 주기를 먼저 선택해 주세요.' })
+      return
+    }
+    if (!comparisonUploadFile) {
+      setNotice({ tone: 'error', message: '비교할 과거 결과 파일을 선택해 주세요.' })
+      return
+    }
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          setNotice(null)
+          const report = await uploadWordCloudAdminFile<ComparisonReport>(
+            '/api/evaluation/word-cloud-360/comparison/upload',
+            cycleId,
+            comparisonUploadFile
+          )
+          setComparisonReport(report)
+          setNotice({
+            tone: 'success',
+            message: '현재 서베이와 업로드한 과거 결과를 비교한 리포트를 생성했습니다.',
+          })
+        } catch (error) {
+          setNotice({
+            tone: 'error',
+            message: error instanceof Error ? error.message : '비교 리포트를 생성하지 못했습니다.',
+          })
+        }
+      })()
+    })
+  }
+
+  function openExportModal(format: 'csv' | 'xlsx') {
+    setExportFormat(format)
+    setExportReason('')
+    setExportModalOpen(true)
+  }
+
+  function handleExportDownload() {
+    const cycleId = data.selectedCycleId
+    if (!cycleId) {
+      setNotice({ tone: 'error', message: '다운로드할 서베이 주기를 먼저 선택해 주세요.' })
+      return
+    }
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          setNotice(null)
+          await downloadWordCloudExport({
+            cycleId,
+            format: exportFormat,
+            reason: exportReason,
+          })
+          setExportModalOpen(false)
+          setExportReason('')
+          setNotice({
+            tone: 'success',
+            message: '다운로드 사유를 기록하고 결과 파일을 준비했습니다.',
+          })
+        } catch (error) {
+          setNotice({
+            tone: 'error',
+            message: error instanceof Error ? error.message : '서베이 결과 다운로드를 처리하지 못했습니다.',
+          })
+        }
+      })()
+    })
   }
 
   function toggleSelection(kind: 'positive' | 'negative', keywordId: string, limit: number) {
@@ -744,7 +991,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">공개 최소 응답 수</label>
-                  <input className={inputClassName} type="number" min={1} max={20} value={cycleForm.resultPrivacyThreshold} onChange={(event) => setCycleForm((current) => ({ ...current, resultPrivacyThreshold: Number(event.target.value) }))} />
+                  <input className={inputClassName} type="number" min={3} max={10} value={cycleForm.resultPrivacyThreshold} onChange={(event) => setCycleForm((current) => ({ ...current, resultPrivacyThreshold: Number(event.target.value) }))} />
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700">상태</label>
@@ -780,9 +1027,9 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                     <button type="button" disabled={isPending} className={secondaryButtonClassName} onClick={() => mutate(() => callAction('publishResults', { cycleId: data.selectedCycleId, publish: true }), '결과를 공개했습니다.')}>
                       결과 공개
                     </button>
-                    <a className={secondaryButtonClassName} href={`/api/evaluation/word-cloud-360/export/${encodeURIComponent(data.selectedCycleId)}?format=xlsx`}>
+                    <button type="button" className={secondaryButtonClassName} onClick={() => openExportModal('xlsx')}>
                       XLSX 내보내기
-                    </a>
+                    </button>
                   </>
                 ) : null}
               </div>
@@ -1096,6 +1343,242 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 </tbody>
               </table>
             </div>
+
+            <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-950">대상자 엑셀 일괄 지정</h3>
+                  <div className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
+                    <p>- `employee_number` 컬럼이 포함된 CSV, XLSX, XLS 파일을 지원합니다.</p>
+                    <p>- 정상 행만 반영하고, 실패한 행은 아래 표에서 확인할 수 있습니다.</p>
+                    <p>- 기존 수동 배정은 유지하고, 필요한 배정만 추가로 생성합니다.</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className={secondaryButtonClassName} disabled={!targetUploadFile && !targetUploadResult} onClick={resetTargetUpload}>
+                    초기화
+                  </button>
+                  <button
+                    type="button"
+                    className={primaryButtonClassName}
+                    disabled={isPending || !targetUploadFile || !data.selectedCycleId}
+                    onClick={runTargetUpload}
+                  >
+                    대상자 업로드
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_240px]">
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className={inputClassName}
+                  onChange={(event) => {
+                    setTargetUploadFile(event.target.files?.[0] ?? null)
+                    setTargetUploadResult(null)
+                  }}
+                />
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                  {targetUploadFile ? `선택 파일: ${targetUploadFile.name}` : '업로드할 대상자 파일을 선택해 주세요.'}
+                </div>
+              </div>
+
+              {targetUploadResult ? (
+                <div className="mt-4 space-y-4">
+                  <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <MetricCard label="전체 행" value={`${targetUploadResult.summary.totalRows}`} description="빈 행은 자동으로 제외됩니다." />
+                    <MetricCard label="정상 행" value={`${targetUploadResult.summary.validRows}`} description="배정 계산 대상 행입니다." />
+                    <MetricCard label="실패 행" value={`${targetUploadResult.summary.invalidRows}`} description="오류가 있는 행은 반영하지 않습니다." />
+                    <MetricCard label="대상자 수" value={`${targetUploadResult.summary.targetCount}`} description="중복을 제거한 실제 대상자 수입니다." />
+                    <MetricCard label="신규 배정" value={`${targetUploadResult.summary.createdAssignmentCount}`} description="이번 업로드로 새로 만든 배정입니다." />
+                    <MetricCard label="기존 유지" value={`${targetUploadResult.summary.existingAssignmentCount}`} description="이미 있던 배정은 그대로 유지합니다." />
+                  </div>
+
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+                    <table className="min-w-full text-sm">
+                      <thead className="text-left text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2">행</th>
+                          <th className="px-3 py-2">사번</th>
+                          <th className="px-3 py-2">이름</th>
+                          <th className="px-3 py-2">조직</th>
+                          <th className="px-3 py-2">신규 배정</th>
+                          <th className="px-3 py-2">기존 유지</th>
+                          <th className="px-3 py-2">결과</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {targetUploadRowsToShow.map((row) => (
+                          <tr key={`${row.rowNumber}-${row.employeeNumber}`} className="border-t border-slate-100 align-top">
+                            <td className="px-3 py-3 text-slate-700">{row.rowNumber}</td>
+                            <td className="px-3 py-3 text-slate-700">{row.employeeNumber || '-'}</td>
+                            <td className="px-3 py-3 font-medium text-slate-900">{row.employeeName ?? '-'}</td>
+                            <td className="px-3 py-3 text-slate-700">{row.department ?? '-'}</td>
+                            <td className="px-3 py-3 text-slate-700">{row.createdAssignmentCount}</td>
+                            <td className="px-3 py-3 text-slate-700">{row.existingAssignmentCount}</td>
+                            <td className="px-3 py-3">
+                              <div className="space-y-1">
+                                <div className={row.valid ? 'text-emerald-700' : 'text-rose-700'}>
+                                  {row.valid ? `반영 완료 (${row.groups.join(', ') || '배정 없음'})` : '오류 있음'}
+                                </div>
+                                {row.issues.map((issue, index) => (
+                                  <div key={`${row.rowNumber}-${issue.field}-${index}`} className="text-rose-700">
+                                    [{issue.field}] {issue.message}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {!targetUploadRowsToShow.length ? (
+                          <tr>
+                            <td colSpan={7} className="px-3 py-10 text-center text-sm text-slate-500">
+                              표시할 업로드 결과가 없습니다.
+                            </td>
+                          </tr>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-950">과거/현재 서베이 비교</h3>
+                    <div className="mt-2 space-y-1 text-sm leading-6 text-slate-600">
+                      <p>- 과거 서베이 결과 파일을 업로드하면 현재 주기와 조직별 비교 리포트를 생성합니다.</p>
+                      <p>- `employee_number`, `department`, `response_count`, `threshold_met`, `polarity`, `keyword`, `count` 컬럼을 확인합니다.</p>
+                      <p>- 익명성 기준을 만족하지 않은 과거/현재 데이터는 비교 인사이트에서 자동으로 제외합니다.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className={secondaryButtonClassName}
+                      disabled={!comparisonUploadFile && !comparisonReport}
+                      onClick={() => {
+                        setComparisonUploadFile(null)
+                        setComparisonReport(null)
+                      }}
+                    >
+                      초기화
+                    </button>
+                    <button
+                      type="button"
+                      className={primaryButtonClassName}
+                      disabled={isPending || !comparisonUploadFile || !data.selectedCycleId}
+                      onClick={runComparisonReport}
+                    >
+                      비교 리포트 생성
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_240px]">
+                  <input
+                    type="file"
+                    accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    className={inputClassName}
+                    onChange={(event) => {
+                      setComparisonUploadFile(event.target.files?.[0] ?? null)
+                      setComparisonReport(null)
+                    }}
+                  />
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    {comparisonUploadFile
+                      ? `선택 파일: ${comparisonUploadFile.name}`
+                      : '비교할 과거 결과 파일을 선택해 주세요.'}
+                  </div>
+                </div>
+
+                {comparisonReport ? (
+                  <div className="mt-4 space-y-4">
+                    <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                      <MetricCard
+                        label="비교 조직 수"
+                        value={`${comparisonReport.summary.comparedDepartmentCount}`}
+                        description="과거와 현재를 모두 비교할 수 있는 조직 수입니다."
+                      />
+                      <MetricCard
+                        label="과거 응답 수"
+                        value={`${comparisonReport.summary.baselineResponseCount}`}
+                        description="업로드한 과거 결과에서 익명성 기준을 통과한 응답 수입니다."
+                      />
+                      <MetricCard
+                        label="현재 응답 수"
+                        value={`${comparisonReport.summary.currentResponseCount}`}
+                        description="현재 주기에서 비교에 활용한 응답 수입니다."
+                      />
+                      <MetricCard
+                        label="과거 비공개 행"
+                        value={`${comparisonReport.summary.hiddenBaselineRows}`}
+                        description="익명성 기준을 충족하지 못해 제외한 과거 행 수입니다."
+                      />
+                      <MetricCard
+                        label="현재 비공개 조직"
+                        value={`${comparisonReport.summary.hiddenCurrentDepartments}`}
+                        description="현재 주기에서 익명성 기준 미달로 제외한 조직 수입니다."
+                      />
+                      <MetricCard
+                        label="응답 변화 최대"
+                        value={
+                          comparisonReport.summary.largestResponseChange
+                            ? `${comparisonReport.summary.largestResponseChange.department} (${comparisonReport.summary.largestResponseChange.delta > 0 ? '+' : ''}${comparisonReport.summary.largestResponseChange.delta})`
+                            : '-'
+                        }
+                        description="응답 수 변화가 가장 큰 조직입니다."
+                      />
+                    </div>
+
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+                      <table className="min-w-full text-sm">
+                        <thead className="text-left text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2">조직</th>
+                            <th className="px-3 py-2">과거 응답</th>
+                            <th className="px-3 py-2">현재 응답</th>
+                            <th className="px-3 py-2">변화</th>
+                            <th className="px-3 py-2">긍정 상위 키워드</th>
+                            <th className="px-3 py-2">부정 상위 키워드</th>
+                            <th className="px-3 py-2">인사이트</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {comparisonRowsToShow.map((department) => (
+                            <tr key={department.department} className="border-t border-slate-100 align-top">
+                              <td className="px-3 py-3 font-medium text-slate-900">{department.department}</td>
+                              <td className="px-3 py-3 text-slate-700">{department.baselineResponseCount}</td>
+                              <td className="px-3 py-3 text-slate-700">{department.currentResponseCount}</td>
+                              <td className="px-3 py-3 text-slate-700">
+                                {department.responseDelta > 0 ? '+' : ''}
+                                {department.responseDelta}
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">
+                                {department.currentTopPositiveKeywords.join(', ') || '-'}
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">
+                                {department.currentTopNegativeKeywords.join(', ') || '-'}
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">{department.insight}</td>
+                            </tr>
+                          ))}
+                          {!comparisonRowsToShow.length ? (
+                            <tr>
+                              <td colSpan={7} className="px-3 py-10 text-center text-sm text-slate-500">
+                                비교 리포트 결과가 없습니다.
+                              </td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </section>
 
           <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -1194,9 +1677,9 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-slate-950">결과 관리</h2>
               {data.selectedCycleId ? (
-                <a className={secondaryButtonClassName} href={`/api/evaluation/word-cloud-360/export/${encodeURIComponent(data.selectedCycleId)}?format=csv`}>
+                <button type="button" className={secondaryButtonClassName} onClick={() => openExportModal('csv')}>
                   CSV 내보내기
-                </a>
+                </button>
               ) : null}
             </div>
             <div className="mt-4 overflow-x-auto">
@@ -1233,6 +1716,67 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
               </table>
             </div>
           </section>
+        </div>
+      ) : null}
+
+      {exportModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-950">다운로드 사유 입력</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  주요 데이터를 다운로드하기 전에 사유를 남겨 주세요. 입력한 내용은 감사 로그에 함께 저장됩니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                className={secondaryButtonClassName}
+                onClick={() => {
+                  setExportModalOpen(false)
+                  setExportReason('')
+                }}
+              >
+                닫기
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              다운로드 형식: <span className="font-semibold text-slate-900">{exportFormat.toUpperCase()}</span>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-sm font-medium text-slate-700">다운로드 사유</label>
+              <textarea
+                className={`${inputClassName} min-h-28`}
+                value={exportReason}
+                onChange={(event) => setExportReason(event.target.value)}
+                placeholder="예: 2026년 상반기 서베이 조직별 비교 보고서 작성"
+              />
+              <p className="mt-2 text-xs text-slate-500">5자 이상 200자 이하로 입력해 주세요.</p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                className={secondaryButtonClassName}
+                onClick={() => {
+                  setExportModalOpen(false)
+                  setExportReason('')
+                }}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className={primaryButtonClassName}
+                disabled={isPending || exportReason.trim().length < 5}
+                onClick={handleExportDownload}
+              >
+                다운로드
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

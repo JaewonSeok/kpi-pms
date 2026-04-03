@@ -9,6 +9,7 @@ type PageProps = {
     cycleId?: string
     roundId?: string
     empId?: string
+    version?: 'REVIEWEE' | 'LEADER' | 'EXECUTIVE'
   }>
 }
 
@@ -23,6 +24,7 @@ export default async function Feedback360ResultsPage({ searchParams }: PageProps
     cycleId: resolvedSearchParams.cycleId,
     roundId: resolvedSearchParams.roundId,
     empId: resolvedSearchParams.empId,
+    resultVersion: resolvedSearchParams.version,
   })
 
   return <Feedback360WorkspaceClient data={data} />

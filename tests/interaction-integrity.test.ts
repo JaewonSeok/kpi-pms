@@ -25,7 +25,9 @@ run('critical interaction routes exist', () => {
   const requiredRoutes = [
     'src/app/api/evaluation/results/[cycleId]/acknowledge/route.ts',
     'src/app/api/evaluation/results/[cycleId]/export/route.ts',
-    'src/app/api/kpi/org/bulk/route.ts',
+    'src/app/api/kpi/org/bulk-edit/route.ts',
+    'src/app/api/kpi/personal/bulk/route.ts',
+    'src/app/api/kpi/export/route.ts',
     'src/app/api/admin/notification-templates/test-send/route.ts',
   ]
 

@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { parseFeedbackRatingGuideSettings } from '@/lib/feedback-rating-guide'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { SubmitFeedbackSchema } from '@/lib/validations'
@@ -80,6 +81,90 @@ export async function POST(request: Request) {
       const response = responses.find((item) => item.questionId === question.id)
       if (!response || (!response.ratingValue && !response.textValue)) {
         throw new AppError(400, 'MISSING_REQUIRED', `필수 질문에 아직 답하지 않았습니다: ${question.questionText}`)
+      }
+    }
+
+    const ratingGuideSettings = parseFeedbackRatingGuideSettings(
+      round.ratingGuideSettings,
+      round.questions
+        .filter((question) => question.questionType === 'RATING_SCALE')
+        .map((question) => ({
+          id: question.id,
+          questionText: question.questionText,
+          scaleMin: question.scaleMin,
+          scaleMax: question.scaleMax,
+        }))
+    )
+
+    if (ratingGuideSettings.distributionMode === 'HEADCOUNT' && ratingGuideSettings.distributionQuestionId) {
+      const distributionQuestion = round.questions.find(
+        (question) => question.id === ratingGuideSettings.distributionQuestionId
+      )
+      const selectedDistributionResponse = responses.find(
+        (response) => response.questionId === ratingGuideSettings.distributionQuestionId
+      )
+      const selectedRatingValue = selectedDistributionResponse?.ratingValue ?? null
+      const selectedScaleEntry =
+        selectedRatingValue == null
+          ? null
+          : ratingGuideSettings.scaleEntries.find((entry) => entry.value === selectedRatingValue) ?? null
+
+      if (
+        distributionQuestion &&
+        selectedRatingValue != null &&
+        selectedScaleEntry &&
+        !selectedScaleEntry.isNonEvaluative &&
+        selectedScaleEntry.headcountLimit != null
+      ) {
+        const receiverDepartment = await prisma.employee.findUnique({
+          where: { id: receiverId },
+          select: { deptId: true },
+        })
+
+        const distributionScopeFilter =
+          ratingGuideSettings.distributionScope === 'DEPARTMENT'
+            ? receiverDepartment?.deptId
+              ? {
+                  receiver: {
+                    deptId: receiverDepartment.deptId,
+                  },
+                }
+              : null
+            : {
+                giverId: session.user.id,
+              }
+
+        if (!distributionScopeFilter) {
+          throw new AppError(
+            400,
+            'RATING_GUIDE_SCOPE_UNAVAILABLE',
+            '대상자의 조직 정보가 없어 등급 배분 가이드를 확인할 수 없습니다. 관리자에게 문의해 주세요.'
+          )
+        }
+
+        const submittedDistributionCount = await prisma.multiFeedback.count({
+          where: {
+            roundId,
+            relationship,
+            status: 'SUBMITTED',
+            id: { not: existingFeedback.id },
+            ...distributionScopeFilter,
+            responses: {
+              some: {
+                questionId: distributionQuestion.id,
+                ratingValue: selectedRatingValue,
+              },
+            },
+          },
+        })
+
+        if (submittedDistributionCount + 1 > selectedScaleEntry.headcountLimit) {
+          throw new AppError(
+            400,
+            'RATING_GUIDE_HEADCOUNT_EXCEEDED',
+            '등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.'
+          )
+        }
       }
     }
 

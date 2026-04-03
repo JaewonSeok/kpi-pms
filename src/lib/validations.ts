@@ -119,6 +119,52 @@ export const ClonePersonalKpiSchema = z.object({
   includeCheckins: z.boolean().default(false),
 })
 
+export const BulkPersonalKpiEditSchema = z
+  .object({
+    ids: z.array(z.string().min(1)).min(1).max(100),
+    employeeId: z.string().min(1).optional(),
+    linkedOrgKpiId: z.string().nullable().optional(),
+    difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
+    tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
+  })
+  .refine(
+    (data) =>
+      data.employeeId !== undefined ||
+      data.linkedOrgKpiId !== undefined ||
+      data.difficulty !== undefined ||
+      data.tags !== undefined,
+    {
+      message: '일괄 수정할 항목을 하나 이상 선택해 주세요.',
+      path: ['ids'],
+    }
+  )
+
+export const BulkOrgKpiEditSchema = z
+  .object({
+    ids: z.array(z.string().min(1)).min(1).max(100),
+    deptId: z.string().min(1).optional(),
+    kpiCategory: z.string().min(1).max(50).optional(),
+    parentOrgKpiId: z.string().nullable().optional(),
+    tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
+  })
+  .refine(
+    (data) =>
+      data.deptId !== undefined ||
+      data.kpiCategory !== undefined ||
+      data.parentOrgKpiId !== undefined ||
+      data.tags !== undefined,
+    {
+      message: '일괄 수정할 항목을 하나 이상 선택해 주세요.',
+      path: ['ids'],
+    }
+  )
+
+export const GoalExportSchema = z.object({
+  mode: z.enum(['goal', 'employee']),
+  year: z.coerce.number().int().min(2020).max(2100),
+  departmentId: z.string().min(1).optional(),
+})
+
 export const PersonalKpiWorkflowActionSchema = z.object({
   action: z.enum(['SAVE_DRAFT', 'SUBMIT', 'START_REVIEW', 'APPROVE', 'REJECT', 'LOCK', 'REOPEN']),
   note: z.string().max(1000).optional(),
@@ -311,8 +357,90 @@ export const FeedbackRoundFolderAssignSchema = z.object({
   folderId: z.string().nullable(),
 })
 
+const EmptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => {
+    if (value === null || value === undefined) {
+      return undefined
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      return trimmed === '' ? undefined : trimmed
+    }
+    return value
+  }, schema.optional())
+
+export const FeedbackAdminReviewScopeSchema = z.enum([
+  'NONE',
+  'ALL_REVIEWS_MANAGE',
+  'ALL_REVIEWS_MANAGE_AND_CONTENT',
+  'COLLABORATOR_REVIEWS_MANAGE',
+  'COLLABORATOR_REVIEWS_MANAGE_AND_CONTENT',
+])
+
+export const FeedbackAdminGroupSchema = z.object({
+  id: z.string().min(1).optional(),
+  groupName: z.string().trim().min(1).max(80),
+  description: z.string().trim().max(200).optional().or(z.literal('')),
+  reviewScope: FeedbackAdminReviewScopeSchema,
+  memberIds: z.array(z.string().min(1)).max(50),
+})
+
+export const FeedbackRatingGuideScaleEntrySchema = z.object({
+  value: z.number().int().min(0).max(20),
+  label: z.string().trim().min(1).max(40),
+  description: z.string().trim().max(500).default(''),
+  targetRatio: z.number().min(0).max(100).nullable().optional(),
+  headcountLimit: z.number().int().min(0).max(999).nullable().optional(),
+  isNonEvaluative: z.boolean().default(false),
+})
+
+export const FeedbackRatingGuideRuleSchema = z.object({
+  id: z.string().min(1).max(100),
+  label: z.string().trim().min(1).max(60),
+  headline: z.string().trim().min(1).max(200),
+  guidance: z.string().trim().min(1).max(2000),
+  filters: z
+    .object({
+      departmentKeyword: EmptyStringToUndefined(z.string().max(100)).optional(),
+      roleKeyword: EmptyStringToUndefined(z.string().max(100)).optional(),
+      position: EmptyStringToUndefined(z.string().max(40)).optional(),
+      jobTitleKeyword: EmptyStringToUndefined(z.string().max(100)).optional(),
+      teamNameKeyword: EmptyStringToUndefined(z.string().max(100)).optional(),
+    })
+    .default({}),
+  gradeDescriptions: z.record(z.string(), z.string().trim().max(500)).default({}),
+})
+
+export const FeedbackRatingGuideSettingsSchema = z
+  .object({
+    distributionQuestionId: z.string().min(1).optional(),
+    distributionMode: z.enum(['NONE', 'RATIO', 'HEADCOUNT']).default('NONE'),
+    distributionScope: z.enum(['EVALUATOR', 'DEPARTMENT']).default('EVALUATOR'),
+    scaleEntries: z.array(FeedbackRatingGuideScaleEntrySchema).max(10).default([]),
+    guideRules: z.array(FeedbackRatingGuideRuleSchema).max(20).default([]),
+  })
+  .superRefine((data, ctx) => {
+    const values = data.scaleEntries.map((entry) => entry.value)
+    if (new Set(values).size !== values.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['scaleEntries'],
+        message: '등급 값은 중복 없이 한 번씩만 설정할 수 있습니다.',
+      })
+    }
+
+    if (data.distributionMode !== 'NONE' && !data.distributionQuestionId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['distributionQuestionId'],
+        message: '배분 정책을 적용할 등급 질문을 선택해 주세요.',
+      })
+    }
+  })
+
 export const FeedbackRoundSettingsSchema = z.object({
   folderId: z.string().nullable().optional(),
+  collaboratorIds: z.array(z.string().min(1)).max(50).optional(),
   selectionSettings: z
     .object({
       requireLeaderApproval: z.boolean().default(false),
@@ -330,6 +458,78 @@ export const FeedbackRoundSettingsSchema = z.object({
       CROSS_TEAM_PEER: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
       CROSS_DEPT: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('ANONYMOUS'),
     })
+    .optional(),
+  resultPresentationSettings: z
+    .object({
+      REVIEWEE: z.object({
+        showLeaderComment: z.boolean().default(true),
+        showLeaderScore: z.boolean().default(false),
+        showExecutiveComment: z.boolean().default(false),
+        showExecutiveScore: z.boolean().default(false),
+        showFinalScore: z.boolean().default(true),
+        showFinalComment: z.boolean().default(true),
+      }),
+      LEADER: z.object({
+        showLeaderComment: z.boolean().default(true),
+        showLeaderScore: z.boolean().default(true),
+        showExecutiveComment: z.boolean().default(false),
+        showExecutiveScore: z.boolean().default(false),
+        showFinalScore: z.boolean().default(true),
+        showFinalComment: z.boolean().default(true),
+      }),
+      EXECUTIVE: z.object({
+        showLeaderComment: z.boolean().default(true),
+        showLeaderScore: z.boolean().default(true),
+        showExecutiveComment: z.boolean().default(true),
+        showExecutiveScore: z.boolean().default(true),
+        showFinalScore: z.boolean().default(true),
+        showFinalComment: z.boolean().default(true),
+      }),
+      })
+      .optional(),
+  reportAnalysisSettings: z
+    .object({
+      overview: z
+        .object({
+          companyMessage: z.string().trim().min(10).max(1200),
+          purposeMessage: z.string().trim().min(10).max(1200),
+          acceptanceGuide: z.string().trim().min(10).max(1200),
+        })
+        .optional(),
+      menu: z
+        .object({
+          overview: z.object({ label: z.string().trim().min(1).max(40), visible: z.boolean() }),
+          questionInsights: z.object({ label: z.string().trim().min(1).max(40), visible: z.boolean() }),
+          relativeComparison: z.object({ label: z.string().trim().min(1).max(40), visible: z.boolean() }),
+          selfAwareness: z.object({ label: z.string().trim().min(1).max(40), visible: z.boolean() }),
+          reviewDetails: z.object({ label: z.string().trim().min(1).max(40), visible: z.boolean() }),
+          questionScores: z.object({ label: z.string().trim().min(1).max(40), visible: z.boolean() }),
+          objectiveAnswers: z.object({ label: z.string().trim().min(1).max(40), visible: z.boolean() }),
+          resultLink: z.object({ label: z.string().trim().min(1).max(40), visible: z.boolean() }),
+        })
+        .optional(),
+      wording: z
+        .object({
+          strengthLabel: z.string().trim().min(1).max(40),
+          improvementLabel: z.string().trim().min(1).max(40),
+          selfAwarenessLabel: z.string().trim().min(1).max(40),
+          selfHighLabel: z.string().trim().min(1).max(40),
+          selfLowLabel: z.string().trim().min(1).max(40),
+          balancedLabel: z.string().trim().min(1).max(40),
+        })
+        .optional(),
+      strength: z.enum(['LIGHT', 'DEFAULT', 'STRONG']).optional(),
+    })
+    .optional(),
+  ratingGuideSettings: FeedbackRatingGuideSettingsSchema.optional(),
+  questions: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        questionText: z.string().trim().min(5).max(500),
+      })
+    )
+    .max(50)
     .optional(),
 })
 
@@ -847,18 +1047,6 @@ const EmployeeDateSchema = z
     message: '날짜 형식이 올바르지 않습니다.',
   })
 
-const EmptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess((value) => {
-    if (value === null || value === undefined) {
-      return undefined
-    }
-    if (typeof value === 'string') {
-      const trimmed = value.trim()
-      return trimmed === '' ? undefined : trimmed
-    }
-    return value
-  }, schema.optional())
-
 const SortOrderSchema = z.preprocess((value) => {
   if (value === null || value === undefined || value === '') {
     return undefined
@@ -965,6 +1153,10 @@ export const AdminEvaluatorAssignmentActionSchema = z.object({
   action: z.enum(['preview', 'apply']),
 })
 
+export const AdminMasterLoginSchema = z.object({
+  targetEmployeeId: z.string().min(1),
+})
+
 export const AdminEmployeeUploadRowSchema = z.object({
   employeeNumber: z.string().trim().min(1).max(50),
   name: z.string().trim().min(1).max(100),
@@ -989,7 +1181,7 @@ export const BulkAdminEmployeeUploadSchema = z.object({
 
 export const CalibrationCandidateUpdateSchema = z
   .object({
-    action: z.enum(['save', 'clear', 'bulk-import', 'update-session-config']),
+    action: z.enum(['save', 'clear', 'bulk-import', 'update-session-config', 'upload-external-data']),
     cycleId: z.string().min(1),
     targetId: z.string().min(1).optional(),
     gradeId: z.string().optional(),
@@ -1000,6 +1192,8 @@ export const CalibrationCandidateUpdateSchema = z
           targetId: z.string().min(1),
           gradeId: z.string().min(1),
           adjustReason: z.string().trim().min(30).max(500),
+          rowNumber: z.number().int().min(1).optional(),
+          identifier: z.string().trim().min(1).max(100).optional(),
         })
       )
       .max(300)
@@ -1009,6 +1203,38 @@ export const CalibrationCandidateUpdateSchema = z
         excludedTargetIds: z.array(z.string().min(1)).max(500).default([]),
         participantIds: z.array(z.string().min(1)).max(100).default([]),
         evaluatorIds: z.array(z.string().min(1)).max(100).default([]),
+        externalColumns: z
+          .array(
+            z.object({
+              key: z.string().trim().min(1).max(60),
+              label: z.string().trim().min(1).max(60),
+            })
+          )
+          .max(20)
+          .default([]),
+      })
+      .optional(),
+    externalData: z
+      .object({
+        columns: z
+          .array(
+            z.object({
+              key: z.string().trim().min(1).max(60),
+              label: z.string().trim().min(1).max(60),
+            })
+          )
+          .min(1)
+          .max(20),
+        rows: z
+          .array(
+            z.object({
+              targetId: z.string().min(1),
+              rowNumber: z.number().int().min(1).optional(),
+              identifier: z.string().trim().min(1).max(100).optional(),
+              values: z.record(z.string(), z.string().max(200)),
+            })
+          )
+          .max(500),
       })
       .optional(),
   })
@@ -1044,6 +1270,17 @@ export const CalibrationCandidateUpdateSchema = z
       return
     }
 
+    if (data.action === 'upload-external-data') {
+      if (!data.externalData) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['externalData'],
+          message: '업로드할 외부 데이터가 없습니다.',
+        })
+      }
+      return
+    }
+
     if (data.action !== 'save') return
 
     if (!data.targetId) {
@@ -1073,7 +1310,14 @@ export const CalibrationCandidateUpdateSchema = z
 
 export const CalibrationWorkflowSchema = z.object({
   cycleId: z.string().min(1),
-  action: z.enum(['CONFIRM_REVIEW', 'LOCK', 'REOPEN_REQUEST']),
+  action: z.enum(['CONFIRM_REVIEW', 'LOCK', 'REOPEN_REQUEST', 'MERGE', 'DELETE_SESSION']),
+  scopeId: z.string().min(1).optional(),
+})
+
+export const CalibrationExportSchema = z.object({
+  cycleId: z.string().min(1),
+  scopeId: z.string().min(1).optional(),
+  mode: z.enum(['basic', 'all']).default('basic'),
 })
 
 export const AiCompetencyTrackSchema = z.enum([
@@ -1393,7 +1637,7 @@ export const WordCloud360CycleSchema = z
     endDate: EmptyStringToUndefined(z.string().datetime()),
     positiveSelectionLimit: z.number().int().min(1).max(30).default(10),
     negativeSelectionLimit: z.number().int().min(1).max(30).default(10),
-    resultPrivacyThreshold: z.number().int().min(1).max(20).default(3),
+    resultPrivacyThreshold: z.number().int().min(3).max(10).default(3),
     evaluatorGroups: z.array(WordCloudEvaluatorGroupSchema).min(1).max(4),
     notes: EmptyStringToUndefined(z.string().max(1000)),
     status: WordCloud360CycleStatusSchema.default('DRAFT'),
@@ -1407,6 +1651,10 @@ export const WordCloud360CycleSchema = z
       })
     }
   })
+
+export const ExportReasonSchema = z.object({
+  reason: z.string().trim().min(5, '다운로드 사유를 5자 이상 입력해 주세요.').max(200, '다운로드 사유는 200자 이하로 입력해 주세요.'),
+})
 
 export const WordCloud360KeywordSchema = z.object({
   keywordId: z.string().min(1).optional(),

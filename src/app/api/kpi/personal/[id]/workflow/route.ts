@@ -149,7 +149,11 @@ export async function POST(request: Request, context: RouteContext) {
         entityType: 'PersonalKpi',
         entityId: id,
         oldValue: { workflowStatus: operationalStatus },
-        newValue: { workflowStatus: 'SUBMITTED', note: validated.data.note },
+        newValue: {
+          workflowStatus: 'SUBMITTED',
+          note: validated.data.note,
+          weightApprovalStatus: 'REQUESTED',
+        },
         ...clientInfo,
       })
 
@@ -200,7 +204,12 @@ export async function POST(request: Request, context: RouteContext) {
         entityType: 'PersonalKpi',
         entityId: id,
         oldValue: { workflowStatus: operationalStatus, status: kpi.status },
-        newValue: { workflowStatus: 'DRAFT', status: 'DRAFT', note: validated.data.note },
+        newValue: {
+          workflowStatus: 'DRAFT',
+          status: 'DRAFT',
+          note: validated.data.note,
+          weightApprovalStatus: 'REJECTED',
+        },
         ...clientInfo,
       })
 
@@ -229,7 +238,12 @@ export async function POST(request: Request, context: RouteContext) {
         entityType: 'PersonalKpi',
         entityId: id,
         oldValue: { workflowStatus: operationalStatus, status: kpi.status },
-        newValue: { workflowStatus: 'CONFIRMED', status: 'CONFIRMED', note: validated.data.note },
+        newValue: {
+          workflowStatus: 'CONFIRMED',
+          status: 'CONFIRMED',
+          note: validated.data.note,
+          weightApprovalStatus: 'APPROVED',
+        },
         ...clientInfo,
       })
 

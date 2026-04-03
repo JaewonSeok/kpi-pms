@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bot, CheckCircle2 } from 'lucide-react'
 import type { Feedback360PageData } from '@/server/feedback-360'
@@ -45,20 +45,38 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
   const [errorNotice, setErrorNotice] = useState('')
   const [preview, setPreview] = useState<AiPreview | null>(null)
 
+  useEffect(() => {
+    setSelectedIds(initialSelection)
+    setNotice('')
+    setErrorNotice('')
+    setPreview(null)
+  }, [initialSelection, props.nomination.targetEmployee.id, props.roundId])
+
   const reviewerDirectory = useMemo(() => {
-    const entries = props.nomination.reviewerGroups.flatMap((group) =>
-      group.reviewers.map((reviewer) => [
-        reviewer.employeeId,
-        {
+    const directory = new Map<
+      string,
+      {
+        employeeId: string
+        name: string
+        relationship: string
+        department: string
+      }
+    >()
+
+    for (const group of props.nomination.reviewerGroups) {
+      for (const reviewer of group.reviewers) {
+        if (directory.has(reviewer.employeeId)) continue
+
+        directory.set(reviewer.employeeId, {
           employeeId: reviewer.employeeId,
           name: reviewer.name,
           relationship: reviewer.relationship,
           department: reviewer.department,
-        },
-      ] as const)
-    )
+        })
+      }
+    }
 
-    return new Map(entries)
+    return directory
   }, [props.nomination.reviewerGroups])
 
   const selectedReviewers = selectedIds
@@ -70,7 +88,21 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
       relationship: reviewer.relationship,
     }))
 
-  function toggleReviewer(employeeId: string) {
+  const selectableReviewerIds = useMemo(
+    () =>
+      new Set(
+        props.nomination.reviewerGroups.flatMap((group) =>
+          group.reviewers
+            .filter((reviewer) => reviewer.selectable !== false)
+            .map((reviewer) => reviewer.employeeId)
+        )
+      ),
+    [props.nomination.reviewerGroups]
+  )
+
+  function toggleReviewer(employeeId: string, selectable = true) {
+    if (!selectable) return
+
     setSelectedIds((current) =>
       current.includes(employeeId)
         ? current.filter((id) => id !== employeeId)
@@ -177,7 +209,7 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
 
     const nextIds = preview.result.recommendations
       .map((reviewer) => reviewer.employeeId)
-      .filter((id) => reviewerDirectory.has(id))
+      .filter((id) => reviewerDirectory.has(id) && selectableReviewerIds.has(id))
 
     setSelectedIds(Array.from(new Set(nextIds)))
     setPreview(null)
@@ -353,24 +385,38 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
             <div className="mt-4 space-y-2">
               {group.reviewers.length ? (
                 group.reviewers.map((reviewer) => {
-                  const checked = selectedIds.includes(reviewer.employeeId)
+                  const selectable = reviewer.selectable !== false
+                  const checked = selectable && selectedIds.includes(reviewer.employeeId)
 
                   return (
                     <label
                       key={reviewer.employeeId}
-                      className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
+                      className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-sm ${
+                        selectable
+                          ? 'cursor-pointer border-slate-200 bg-white text-slate-700'
+                          : 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500'
+                      }`}
+                      title={reviewer.disabledReason ?? undefined}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={() => toggleReviewer(reviewer.employeeId)}
+                        disabled={!selectable}
+                        onChange={() => toggleReviewer(reviewer.employeeId, selectable)}
                         className="mt-1 h-4 w-4 rounded border-slate-300"
                       />
                       <span>
-                        <span className="font-medium text-slate-900">{reviewer.name}</span>
+                        <span className={`font-medium ${selectable ? 'text-slate-900' : 'text-slate-500'}`}>
+                          {reviewer.name}
+                        </span>
                         <span className="mt-1 block text-xs text-slate-500">
                           {reviewer.department} · {reviewer.relationship}
                         </span>
+                        {reviewer.disabledReason ? (
+                          <span className="mt-2 block text-xs leading-5 text-amber-700">
+                            {reviewer.disabledReason}
+                          </span>
+                        ) : null}
                       </span>
                     </label>
                   )

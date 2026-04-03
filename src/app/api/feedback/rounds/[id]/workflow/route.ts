@@ -5,6 +5,10 @@ import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackNominationWorkflowSchema } from '@/lib/validations'
 import {
+  canManageFeedbackRoundByAccess,
+  getFeedbackReviewAdminAccess,
+} from '@/server/feedback-360-access'
+import {
   canApproveFeedbackTarget,
   canManageFeedbackTarget,
 } from '@/server/feedback-360-workflow'
@@ -15,20 +19,46 @@ export async function POST(
 ) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
+    if (!session) {
+      throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
+    }
 
     const { id: roundId } = await params
     const body = await request.json()
     const validated = FeedbackNominationWorkflowSchema.safeParse(body)
     if (!validated.success) {
-      throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message || '요청 형식을 확인해 주세요.')
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        validated.error.issues[0]?.message ?? '요청 값을 확인해 주세요.'
+      )
     }
 
     const round = await prisma.multiFeedbackRound.findUnique({
       where: { id: roundId },
+      select: {
+        id: true,
+        status: true,
+        minRaters: true,
+        evalCycle: {
+          select: {
+            orgId: true,
+          },
+        },
+      },
     })
+
     if (!round) {
-      throw new AppError(404, 'ROUND_NOT_FOUND', '360 라운드를 찾을 수 없습니다.')
+      throw new AppError(404, 'ROUND_NOT_FOUND', '360 리뷰 라운드를 찾을 수 없습니다.')
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: session.user.id },
+      include: { department: true },
+    })
+
+    if (!employee) {
+      throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '직원 정보를 찾을 수 없습니다.')
     }
 
     const target = await prisma.employee.findUnique({
@@ -41,6 +71,7 @@ export async function POST(
         divisionHeadId: true,
       },
     })
+
     if (!target) {
       throw new AppError(404, 'TARGET_NOT_FOUND', '대상자를 찾을 수 없습니다.')
     }
@@ -53,7 +84,7 @@ export async function POST(
     })
 
     if (!nominations.length) {
-      throw new AppError(400, 'NOMINATION_EMPTY', '승인/발행할 nomination draft가 없습니다.')
+      throw new AppError(400, 'NOMINATION_EMPTY', '발행할 리뷰어 nomination 초안이 없습니다.')
     }
 
     const action = validated.data.action
@@ -106,7 +137,7 @@ export async function POST(
     }
 
     if (!canApproveFeedbackTarget(session.user.id, session.user.role, target)) {
-      throw new AppError(403, 'FORBIDDEN', '이 nomination을 승인/반려할 권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '이 nomination을 승인하거나 반려할 권한이 없습니다.')
     }
 
     if (action === 'approve') {
@@ -180,16 +211,29 @@ export async function POST(
       })
     }
 
-    if (session.user.role !== 'ROLE_ADMIN') {
-      throw new AppError(403, 'FORBIDDEN', '라운드 발행은 관리자만 수행할 수 있습니다.')
+    const reviewAdminAccess = await getFeedbackReviewAdminAccess({
+      employeeId: employee.id,
+      actorRole: employee.role,
+      orgId: round.evalCycle.orgId,
+    })
+    const canPublishRound = await canManageFeedbackRoundByAccess({
+      access: reviewAdminAccess,
+      employeeId: employee.id,
+      roundId,
+    })
+
+    if (!canPublishRound) {
+      throw new AppError(403, 'FORBIDDEN', '해당 리뷰 라운드를 발행할 권한이 없습니다.')
     }
 
-    const approvedNominations = nominations.filter((item) => item.status === 'APPROVED' || item.status === 'PUBLISHED')
+    const approvedNominations = nominations.filter(
+      (item) => item.status === 'APPROVED' || item.status === 'PUBLISHED'
+    )
     if (approvedNominations.length < round.minRaters) {
       throw new AppError(
         400,
         'MIN_RATERS_NOT_MET',
-        `발행 전 승인된 리뷰어 수가 anonymity threshold ${round.minRaters}명 이상이어야 합니다.`
+        `발행 전 승인된 리뷰어가 anonymity threshold ${round.minRaters}명 이상이어야 합니다.`
       )
     }
 

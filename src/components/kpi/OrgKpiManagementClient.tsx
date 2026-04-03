@@ -35,6 +35,20 @@ type OrgCloneForm = {
   includeProgress: boolean
   includeCheckins: boolean
 }
+type OrgBulkEditForm = {
+  applyDepartment: boolean
+  deptId: string
+  applyCategory: boolean
+  kpiCategory: string
+  applyParent: boolean
+  parentOrgKpiId: string
+  applyTags: boolean
+  tags: string
+}
+type GoalExportForm = {
+  mode: 'goal' | 'employee'
+  departmentId: string
+}
 type AiAction =
   | 'generate-draft'
   | 'improve-wording'
@@ -162,6 +176,26 @@ function buildCloneForm(pageData: Props, selectedKpi?: OrgKpiViewModel): OrgClon
   }
 }
 
+function buildOrgBulkEditForm(pageData: Props, selectedDepartmentId: string): OrgBulkEditForm {
+  return {
+    applyDepartment: false,
+    deptId: selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId,
+    applyCategory: false,
+    kpiCategory: '',
+    applyParent: false,
+    parentOrgKpiId: '',
+    applyTags: false,
+    tags: '',
+  }
+}
+
+function buildGoalExportForm(pageData: Props, selectedDepartmentId: string): GoalExportForm {
+  return {
+    mode: 'goal',
+    departmentId: selectedDepartmentId === 'ALL' ? '' : selectedDepartmentId,
+  }
+}
+
 async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
   const response = await fetch(input, init)
   const json = (await response.json()) as {
@@ -208,9 +242,17 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const [showForm, setShowForm] = useState(false)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [showClone, setShowClone] = useState(false)
+  const [showBulkEdit, setShowBulkEdit] = useState(false)
+  const [showExport, setShowExport] = useState(false)
   const [editingKpiId, setEditingKpiId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
   const [cloneForm, setCloneForm] = useState<OrgCloneForm>(buildCloneForm(pageData, pageData.list[0]))
+  const [bulkEditForm, setBulkEditForm] = useState<OrgBulkEditForm>(
+    buildOrgBulkEditForm(pageData, defaultDepartmentSelection)
+  )
+  const [exportForm, setExportForm] = useState<GoalExportForm>(
+    buildGoalExportForm(pageData, defaultDepartmentSelection)
+  )
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busy, setBusy] = useState(false)
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
@@ -251,9 +293,13 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setShowForm(false)
     setShowBulkUpload(false)
     setShowClone(false)
+    setShowBulkEdit(false)
+    setShowExport(false)
     setEditingKpiId(null)
     setForm(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
     setCloneForm(buildCloneForm(pageData, pageData.list[0]))
+    setBulkEditForm(buildOrgBulkEditForm(pageData, defaultDepartmentSelection))
+    setExportForm(buildGoalExportForm(pageData, defaultDepartmentSelection))
     setBanner(null)
     setAiPreview(null)
     setSearch('')
@@ -277,10 +323,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setShowForm(false)
     setShowBulkUpload(false)
     setShowClone(false)
+    setShowBulkEdit(false)
+    setShowExport(false)
     setEditingKpiId(null)
     setBanner(null)
     setAiPreview(null)
     setCloneForm(buildCloneForm(pageData))
+    setBulkEditForm(buildOrgBulkEditForm(pageData, selectedDepartmentId))
+    setExportForm(buildGoalExportForm(pageData, selectedDepartmentId))
     setTab('map')
   }, [pageData, viewContextKey])
 
@@ -311,6 +361,21 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
         : busy
           ? '다른 작업을 처리하는 중입니다.'
           : undefined
+  const bulkTargetIds = useMemo(() => filteredList.map((item) => item.id), [filteredList])
+  const bulkEditDisabledReason =
+    goalEditLocked
+      ? '읽기 전용 모드에서는 목표 일괄 수정을 진행할 수 없습니다.'
+      : !pageData.permissions.canManage
+        ? '현재 권한으로는 목표 일괄 수정을 진행할 수 없습니다.'
+        : !bulkTargetIds.length
+          ? '현재 필터 조건에 맞는 조직 KPI가 없습니다.'
+          : undefined
+  const exportDisabledReason =
+    !pageData.permissions.canManage
+      ? '현재 권한으로는 목표 엑셀을 내려받을 수 없습니다.'
+      : !bulkTargetIds.length && selectedDepartmentId !== 'ALL'
+        ? '현재 필터 조건에 맞는 조직 KPI가 없습니다.'
+        : undefined
 
   async function saveKpi() {
     if (goalEditLocked) {
@@ -506,6 +571,108 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     }
   }
 
+  function handleOpenBulkEdit() {
+    if (bulkEditDisabledReason) {
+      setBanner({ tone: 'error', message: bulkEditDisabledReason })
+      return
+    }
+
+    setBulkEditForm(buildOrgBulkEditForm(pageData, selectedDepartmentId))
+    setShowBulkEdit(true)
+  }
+
+  async function handleSaveBulkEdit() {
+    if (!bulkTargetIds.length) {
+      setBanner({ tone: 'error', message: '일괄 수정할 조직 KPI가 없습니다.' })
+      return
+    }
+
+    const payload: Record<string, unknown> = {
+      ids: bulkTargetIds,
+    }
+
+    if (bulkEditForm.applyDepartment) {
+      payload.deptId = bulkEditForm.deptId
+    }
+    if (bulkEditForm.applyCategory) {
+      payload.kpiCategory = bulkEditForm.kpiCategory.trim()
+    }
+    if (bulkEditForm.applyParent) {
+      payload.parentOrgKpiId = bulkEditForm.parentOrgKpiId || null
+    }
+    if (bulkEditForm.applyTags) {
+      payload.tags = parseTagInput(bulkEditForm.tags)
+    }
+
+    if (Object.keys(payload).length === 1) {
+      setBanner({ tone: 'error', message: '최소 한 가지 수정 항목을 선택해 주세요.' })
+      return
+    }
+
+    setBusy(true)
+    try {
+      const data = await fetchJson<{ updatedCount: number }>('/api/kpi/org/bulk-edit', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      setBanner({
+        tone: 'success',
+        message: `조직 KPI ${data.updatedCount}건을 일괄 수정했습니다.`,
+      })
+      setShowBulkEdit(false)
+      router.refresh()
+    } catch (error) {
+      setBanner({ tone: 'error', message: error instanceof Error ? error.message : '조직 KPI 일괄 수정에 실패했습니다.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleOpenExport() {
+    if (exportDisabledReason) {
+      setBanner({ tone: 'error', message: exportDisabledReason })
+      return
+    }
+
+    setExportForm(buildGoalExportForm(pageData, selectedDepartmentId))
+    setShowExport(true)
+  }
+
+  async function handleExportGoals() {
+    setBusy(true)
+    try {
+      const params = new URLSearchParams({
+        mode: exportForm.mode,
+        year: String(pageData.selectedYear),
+      })
+
+      if (exportForm.departmentId) {
+        params.set('departmentId', exportForm.departmentId)
+      }
+
+      const response = await fetch(`/api/kpi/export?${params.toString()}`)
+      if (!response.ok) {
+        const json = (await response.json()) as { error?: { message?: string } }
+        throw new Error(json.error?.message || '목표 엑셀 다운로드에 실패했습니다.')
+      }
+
+      const blob = await response.blob()
+      const href = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.download = `goals-${pageData.selectedYear}-${exportForm.mode}.xlsx`
+      anchor.click()
+      window.URL.revokeObjectURL(href)
+      setBanner({ tone: 'success', message: '목표 엑셀 다운로드를 시작했습니다.' })
+      setShowExport(false)
+    } catch (error) {
+      setBanner({ tone: 'error', message: error instanceof Error ? error.message : '목표 엑셀 다운로드에 실패했습니다.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function decideAi(action: 'approve' | 'reject') {
     if (!aiPreview) return
     setBusy(true)
@@ -615,6 +782,8 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
             <ActionButton label="조직 KPI 추가" icon={<Plus className="h-4 w-4" />} onClick={() => { setEditingKpiId(null); setForm(buildEmptyForm(pageData.selectedYear, selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId)); setShowForm(true) }} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
             <ActionButton label="일괄 업로드" icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
+            <ActionButton label="목표 일괄 수정" icon={<FilePenLine className="h-4 w-4" />} onClick={handleOpenBulkEdit} disabled={Boolean(bulkEditDisabledReason) || busy} />
+            <ActionButton label="엑셀 다운로드" icon={<Archive className="h-4 w-4" />} onClick={handleOpenExport} disabled={Boolean(exportDisabledReason) || busy} />
             <ActionButton label="제출" icon={<Send className="h-4 w-4" />} onClick={() => void runWorkflow('SUBMIT')} disabled={!selectedKpi || !pageData.permissions.canManage || busy} />
             <ActionButton label="확정" icon={<ShieldCheck className="h-4 w-4" />} onClick={() => void changeStatus('CONFIRMED')} disabled={!selectedKpi || !pageData.permissions.canConfirm || busy} />
             <ActionButton label="잠금" icon={<Lock className="h-4 w-4" />} onClick={() => void runWorkflow('LOCK')} disabled={!selectedKpi || !pageData.permissions.canLock || busy} />
@@ -791,6 +960,29 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           onChange={setCloneForm}
           onClose={() => setShowClone(false)}
           onSubmit={() => void handleClone()}
+        />
+      ) : null}
+      {showBulkEdit ? (
+        <OrgBulkEditModal
+          form={bulkEditForm}
+          targetCount={bulkTargetIds.length}
+          departments={pageData.departments}
+          parentGoalOptions={pageData.parentGoalOptions}
+          busy={busy}
+          onChange={setBulkEditForm}
+          onClose={() => setShowBulkEdit(false)}
+          onSubmit={() => void handleSaveBulkEdit()}
+        />
+      ) : null}
+      {showExport ? (
+        <GoalExportModal
+          form={exportForm}
+          year={pageData.selectedYear}
+          departments={pageData.departments}
+          busy={busy}
+          onChange={setExportForm}
+          onClose={() => setShowExport(false)}
+          onSubmit={() => void handleExportGoals()}
         />
       ) : null}
     </div>
@@ -1148,6 +1340,235 @@ function CloneOrgKpiModal(props: {
             <ActionButton
               label={props.busy ? '蹂듭젣 以?..' : '蹂듭젣 ?ㅽ뻾'}
               icon={<Copy className="h-4 w-4" />}
+              onClick={props.onSubmit}
+              disabled={props.busy}
+              primary
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OrgBulkEditModal(props: {
+  form: OrgBulkEditForm
+  targetCount: number
+  departments: Props['departments']
+  parentGoalOptions: Props['parentGoalOptions']
+  busy: boolean
+  onChange: (next: OrgBulkEditForm | ((current: OrgBulkEditForm) => OrgBulkEditForm)) => void
+  onClose: () => void
+  onSubmit: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">목표 일괄 수정</h2>
+            <p className="mt-1 text-sm text-slate-500">현재 필터 결과 {props.targetCount}건에 같은 메타데이터를 적용합니다.</p>
+          </div>
+          <button type="button" onClick={props.onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <label className="space-y-3 rounded-2xl border border-slate-200 p-4">
+            <span className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={props.form.applyDepartment}
+                onChange={(event) => props.onChange((current) => ({ ...current, applyDepartment: event.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-slate-900">담당 조직 일괄 변경</span>
+                <span className="mt-1 block text-xs text-slate-500">조직 개편 시 같은 묶음의 KPI를 한 번에 이동할 수 있습니다.</span>
+              </span>
+            </span>
+            <select
+              value={props.form.deptId}
+              onChange={(event) => props.onChange((current) => ({ ...current, deptId: event.target.value }))}
+              disabled={!props.form.applyDepartment}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+            >
+              {props.departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {'- '.repeat(department.level)}
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-3 rounded-2xl border border-slate-200 p-4">
+              <span className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={props.form.applyCategory}
+                  onChange={(event) => props.onChange((current) => ({ ...current, applyCategory: event.target.checked }))}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-slate-900">카테고리 일괄 변경</span>
+                  <span className="mt-1 block text-xs text-slate-500">조직 목표군을 재정리할 때 같은 분류로 맞춥니다.</span>
+                </span>
+              </span>
+              <input
+                value={props.form.kpiCategory}
+                onChange={(event) => props.onChange((current) => ({ ...current, kpiCategory: event.target.value }))}
+                disabled={!props.form.applyCategory}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+                placeholder="예: 매출 성장, 고객 경험"
+              />
+            </label>
+
+            <label className="space-y-3 rounded-2xl border border-slate-200 p-4">
+              <span className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={props.form.applyParent}
+                  onChange={(event) => props.onChange((current) => ({ ...current, applyParent: event.target.checked }))}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-slate-900">상위 목표 일괄 정렬</span>
+                  <span className="mt-1 block text-xs text-slate-500">정렬 구조를 바꿀 때 같은 parent goal을 일괄 적용합니다.</span>
+                </span>
+              </span>
+              <select
+                value={props.form.parentOrgKpiId}
+                onChange={(event) => props.onChange((current) => ({ ...current, parentOrgKpiId: event.target.value }))}
+                disabled={!props.form.applyParent}
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+              >
+                <option value="">상위 목표 연결 해제</option>
+                {props.parentGoalOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.departmentName} 쨌 {option.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <label className="space-y-3 rounded-2xl border border-slate-200 p-4">
+            <span className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                checked={props.form.applyTags}
+                onChange={(event) => props.onChange((current) => ({ ...current, applyTags: event.target.checked }))}
+                className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-slate-900">태그 일괄 변경</span>
+                <span className="mt-1 block text-xs text-slate-500">쉼표로 구분된 태그를 같은 기준으로 반영합니다.</span>
+              </span>
+            </span>
+            <input
+              value={props.form.tags}
+              onChange={(event) => props.onChange((current) => ({ ...current, tags: event.target.value }))}
+              disabled={!props.form.applyTags}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-50"
+              placeholder="예: 전사, 고객, 개선"
+            />
+          </label>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            저장하기 전에는 실제 KPI가 바뀌지 않으며, 저장 후 일괄 수정 이력이 남습니다.
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <ActionButton label="취소" icon={<Archive className="h-4 w-4" />} onClick={props.onClose} disabled={false} />
+            <ActionButton
+              label={props.busy ? '일괄 수정 중...' : '일괄 수정 저장'}
+              icon={<FilePenLine className="h-4 w-4" />}
+              onClick={props.onSubmit}
+              disabled={props.busy}
+              primary
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function GoalExportModal(props: {
+  form: GoalExportForm
+  year: number
+  departments: Props['departments']
+  busy: boolean
+  onChange: (next: GoalExportForm | ((current: GoalExportForm) => GoalExportForm)) => void
+  onClose: () => void
+  onSubmit: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div className="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">모든 목표 엑셀 다운로드</h2>
+            <p className="mt-1 text-sm text-slate-500">{props.year}년 목표를 어떤 기준으로 내릴지 선택합니다.</p>
+          </div>
+          <button type="button" onClick={props.onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-5 px-6 py-5">
+          <div className="grid gap-3 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => props.onChange((current) => ({ ...current, mode: 'goal' }))}
+              className={`rounded-2xl border p-4 text-left transition ${
+                props.form.mode === 'goal' ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-sm font-semibold text-slate-900">목표 기준</div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">조직 목표별 가중치, 승인 상태, 연결된 개인 목표 수를 중심으로 내립니다.</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => props.onChange((current) => ({ ...current, mode: 'employee' }))}
+              className={`rounded-2xl border p-4 text-left transition ${
+                props.form.mode === 'employee' ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <div className="text-sm font-semibold text-slate-900">구성원 기준</div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">구성원별 개인 목표, 연결된 조직 목표, 최근 달성률을 묶어서 내립니다.</p>
+            </button>
+          </div>
+
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-900">조직 범위</span>
+            <select
+              value={props.form.departmentId}
+              onChange={(event) => props.onChange((current) => ({ ...current, departmentId: event.target.value }))}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+            >
+              <option value="">전체 조직</option>
+              {props.departments.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {'- '.repeat(department.level)}
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            목표 수가 많으면 다운로드 준비에 1~2분 이상 걸릴 수 있습니다. 브라우저 다운로드가 차단되지 않았는지 함께 확인해 주세요.
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <ActionButton label="취소" icon={<Archive className="h-4 w-4" />} onClick={props.onClose} disabled={false} />
+            <ActionButton
+              label={props.busy ? '다운로드 준비 중...' : '다운로드'}
+              icon={<Archive className="h-4 w-4" />}
               onClick={props.onSubmit}
               disabled={props.busy}
               primary

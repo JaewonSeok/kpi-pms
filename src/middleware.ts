@@ -10,6 +10,9 @@ export default withAuth(
       nextauth: {
         token: {
           role?: string
+          masterLogin?: {
+            active?: boolean
+          } | null
         } | null
       }
     }
@@ -27,6 +30,24 @@ export default withAuth(
 
     if (!token) {
       return NextResponse.redirect(new URL('/login', req.url))
+    }
+
+    const isSafeMethod = req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS'
+    if (token.masterLogin?.active && !isSafeMethod) {
+      if (pathname.startsWith('/api/')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'MASTER_LOGIN_READ_ONLY',
+              message: '마스터 로그인 중에는 읽기 전용으로만 사용할 수 있습니다.',
+            },
+          },
+          { status: 403 }
+        )
+      }
+
+      return NextResponse.redirect(new URL('/dashboard', req.url))
     }
 
     const role = token.role ?? ''

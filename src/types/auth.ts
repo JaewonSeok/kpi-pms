@@ -54,4 +54,14 @@ export type SessionUserClaims = {
   managerId: string | null
   orgPath: string
   accessibleDepartmentIds: string[]
+  masterLoginAvailable?: boolean
+  masterLogin?: {
+    active: boolean
+    readOnly: true
+    actorName: string
+    actorEmail: string
+    startedAt: string
+    targetName: string
+    targetEmail: string
+  } | null
 }
