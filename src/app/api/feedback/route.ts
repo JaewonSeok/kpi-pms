@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     })
 
     if (!existingFeedback) {
-      throw new AppError(403, 'FEEDBACK_ASSIGNMENT_NOT_FOUND', '발행된 리뷰 요청이 없어서 응답을 제출할 수 없습니다.')
+      throw new AppError(403, 'FEEDBACK_ASSIGNMENT_NOT_FOUND', '발행된 리뷰 요청이 없어 응답을 제출할 수 없습니다.')
     }
 
     if (relationship === 'SELF' && receiverId !== session.user.id) {
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
     for (const question of requiredQuestions) {
       const response = responses.find((item) => item.questionId === question.id)
       if (!response || (!response.ratingValue && !response.textValue)) {
-        throw new AppError(400, 'MISSING_REQUIRED', `필수 질문에 아직 답하지 않았습니다: ${question.questionText}`)
+        throw new AppError(400, 'MISSING_REQUIRED', `필수 질문이 아직 통하지 않았습니다. ${question.questionText}`)
       }
     }
 
@@ -194,7 +194,27 @@ export async function POST(request: Request) {
       })
     }
 
-    return successResponse({ message: '다면평가 응답이 제출되었습니다.' })
+    if (round.roundType === 'ANYTIME') {
+      const remainingOpenFeedbacks = await prisma.multiFeedback.count({
+        where: {
+          roundId,
+          status: {
+            not: 'SUBMITTED',
+          },
+        },
+      })
+
+      if (remainingOpenFeedbacks === 0) {
+        await prisma.multiFeedbackRound.update({
+          where: { id: roundId },
+          data: {
+            status: 'COMPLETED',
+          },
+        })
+      }
+    }
+
+    return successResponse({ message: '다면평가 응답을 제출했습니다.' })
   } catch (error) {
     return errorResponse(error)
   }

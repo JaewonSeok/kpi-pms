@@ -1,4 +1,18 @@
 import type { FeedbackNominationStatus, Prisma } from '@prisma/client'
+import {
+  DEFAULT_FEEDBACK_MANAGER_EFFECTIVENESS_SETTINGS,
+  isRelationshipEnabledForManagerEffectiveness,
+  parseFeedbackManagerEffectivenessSettings,
+  type FeedbackManagerEffectivenessSettings,
+} from '@/lib/feedback-manager-effectiveness'
+import {
+  DEFAULT_FEEDBACK_AI_COPILOT_SETTINGS,
+  DEFAULT_FEEDBACK_SKILL_ARCHITECTURE_SETTINGS,
+  parseFeedbackAiCopilotSettings,
+  parseFeedbackSkillArchitectureSettings,
+  type FeedbackAiCopilotSettings,
+  type FeedbackSkillArchitectureSettings,
+} from '@/lib/feedback-skill-architecture'
 import { prisma } from '@/lib/prisma'
 import { AppError } from '@/lib/utils'
 
@@ -7,6 +21,9 @@ export type FeedbackSelectionSettings = {
   allowPreferredPeers: boolean
   excludeLeaderFromPeerSelection: boolean
   excludeDirectReportsFromPeerSelection: boolean
+  managerEffectiveness: FeedbackManagerEffectivenessSettings
+  skillArchitecture: FeedbackSkillArchitectureSettings
+  aiCopilot: FeedbackAiCopilotSettings
 }
 
 export type FeedbackVisibilitySettings = Record<
@@ -19,6 +36,9 @@ export const DEFAULT_FEEDBACK_SELECTION_SETTINGS: FeedbackSelectionSettings = {
   allowPreferredPeers: false,
   excludeLeaderFromPeerSelection: false,
   excludeDirectReportsFromPeerSelection: false,
+  managerEffectiveness: DEFAULT_FEEDBACK_MANAGER_EFFECTIVENESS_SETTINGS,
+  skillArchitecture: DEFAULT_FEEDBACK_SKILL_ARCHITECTURE_SETTINGS,
+  aiCopilot: DEFAULT_FEEDBACK_AI_COPILOT_SETTINGS,
 }
 
 export const DEFAULT_FEEDBACK_VISIBILITY_SETTINGS: FeedbackVisibilitySettings = {
@@ -55,6 +75,9 @@ export function parseFeedbackSelectionSettings(value: unknown): FeedbackSelectio
       typeof record.excludeDirectReportsFromPeerSelection === 'boolean'
         ? record.excludeDirectReportsFromPeerSelection
         : DEFAULT_FEEDBACK_SELECTION_SETTINGS.excludeDirectReportsFromPeerSelection,
+    managerEffectiveness: parseFeedbackManagerEffectivenessSettings(record.managerEffectiveness),
+    skillArchitecture: parseFeedbackSkillArchitectureSettings(record.skillArchitecture),
+    aiCopilot: parseFeedbackAiCopilotSettings(record.aiCopilot),
   }
 }
 
@@ -296,8 +319,20 @@ export function validatePeerReviewerSelection(params: {
 
   const leaderIds = [target.teamLeaderId, target.sectionChiefId, target.divisionHeadId].filter(Boolean) as string[]
   const teamMemberIdSet = new Set(teamMemberIds)
+  const managerEffectiveness = selectionSettings.managerEffectiveness
 
   for (const reviewer of reviewers) {
+    if (
+      managerEffectiveness.enabled &&
+      !isRelationshipEnabledForManagerEffectiveness(reviewer.relationship, managerEffectiveness)
+    ) {
+      throw new AppError(
+        400,
+        'MANAGER_EFFECTIVENESS_RELATIONSHIP_DISABLED',
+        '이 리더 효과성 리뷰에서는 선택할 수 없는 평가자 조합입니다.'
+      )
+    }
+
     if (reviewer.relationship !== 'PEER') continue
 
     if (reviewer.employeeId === target.id) {

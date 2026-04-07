@@ -11,6 +11,7 @@ import { ResponseRateCard } from './ResponseRateCard'
 import { ReviewerNominationPanel } from './ReviewerNominationPanel'
 import { FeedbackThemesSection } from './FeedbackThemesSection'
 import { DevelopmentPlanPreview } from './DevelopmentPlanPreview'
+import { GrowthCopilotPanel } from './GrowthCopilotPanel'
 import { Feedback360AdminPanel } from './Feedback360AdminPanel'
 import { FeedbackReferencePanel } from './FeedbackReferencePanel'
 import { FeedbackReportAnalysisView } from './FeedbackReportAnalysisView'
@@ -19,6 +20,7 @@ import { FeedbackRespondReferencePanel } from './FeedbackRespondReferencePanel'
 type RespondData = NonNullable<Feedback360PageData['respond']>
 type RespondRatingGuide = NonNullable<RespondData['ratingGuide']>
 type RespondPriorScoreSummary = NonNullable<RespondData['priorScoreSummary']>
+type RespondRoleGuide = NonNullable<RespondData['roleGuide']>
 
 const DISTRIBUTION_LIMIT_EXCEEDED_MESSAGE =
   '등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.'
@@ -502,6 +504,158 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
             </div>
           </Panel>
 
+          {props.data.results.managerEffectiveness?.enabled ? (
+            <Panel
+              title="Manager Effectiveness / 리더 코칭"
+              description="리더 효과성 결과를 요약하고 다음 1:1, 성장 액션, HR 코칭 메모까지 한 화면에서 확인합니다."
+            >
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-4">
+                  <StatCard
+                    label="종합 점수"
+                    value={
+                      props.data.results.managerEffectiveness.overallScore != null
+                        ? props.data.results.managerEffectiveness.overallScore.toFixed(1)
+                        : '미집계'
+                    }
+                  />
+                  <StatCard
+                    label="비교 평균"
+                    value={
+                      props.data.results.managerEffectiveness.benchmarkAverage != null
+                        ? props.data.results.managerEffectiveness.benchmarkAverage.toFixed(1)
+                        : '-'
+                    }
+                  />
+                  <StatCard
+                    label="평균 대비"
+                    value={
+                      props.data.results.managerEffectiveness.benchmarkDelta != null
+                        ? `${props.data.results.managerEffectiveness.benchmarkDelta > 0 ? '+' : ''}${props.data.results.managerEffectiveness.benchmarkDelta.toFixed(1)}`
+                        : '-'
+                    }
+                  />
+                  <StatCard
+                    label="리스크"
+                    value={props.data.results.managerEffectiveness.riskLevel}
+                  />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-sm font-semibold text-slate-900">평가 조합 / 역량 축</div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {props.data.results.managerEffectiveness.reviewerSummary.map((item) => (
+                          <span
+                            key={item}
+                            className="inline-flex items-center rounded-full bg-white px-3 py-2 text-sm font-medium text-slate-700"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {props.data.results.managerEffectiveness.competencyLabels.map((item) => (
+                          <span
+                            key={item}
+                            className="inline-flex items-center rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                        <div className="text-sm font-semibold text-emerald-900">강점</div>
+                        <div className="mt-3 space-y-2">
+                          {props.data.results.managerEffectiveness.strengths.length ? (
+                            props.data.results.managerEffectiveness.strengths.map((item) => (
+                              <div key={item} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                                {item}
+                              </div>
+                            ))
+                          ) : (
+                            <EmptyBlock message="아직 강점 인사이트가 충분하지 않습니다." />
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <div className="text-sm font-semibold text-amber-900">보완점</div>
+                        <div className="mt-3 space-y-2">
+                          {props.data.results.managerEffectiveness.improvements.length ? (
+                            props.data.results.managerEffectiveness.improvements.map((item) => (
+                              <div key={item} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                                {item}
+                              </div>
+                            ))
+                          ) : (
+                            <EmptyBlock message="아직 보완점 인사이트가 충분하지 않습니다." />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                      <Sparkles className="h-4 w-4 text-slate-500" />
+                      코칭 팩
+                    </div>
+
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          coaching points
+                        </div>
+                        <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                          {props.data.results.managerEffectiveness.coachingPack.coachingPoints.map((item) => (
+                            <li key={item} className="rounded-xl bg-white px-3 py-2">
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          next 1:1
+                        </div>
+                        <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                          {props.data.results.managerEffectiveness.coachingPack.nextOneOnOneQuestions.map((item) => (
+                            <li key={item} className="rounded-xl bg-white px-3 py-2">
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                          growth actions
+                        </div>
+                        <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                          {props.data.results.managerEffectiveness.coachingPack.growthActions.map((item) => (
+                            <li key={item} className="rounded-xl bg-white px-3 py-2">
+                              {item}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="rounded-xl bg-white px-4 py-3 text-sm leading-6 text-slate-600">
+                        {props.data.results.managerEffectiveness.coachingPack.hrMemo}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Panel>
+          ) : null}
+
           <FeedbackReportAnalysisView
             key={`${props.data.selectedRoundId ?? 'round'}:${props.data.results.targetEmployee.id}:${props.data.results.recipientProfile}`}
             results={props.data.results}
@@ -601,6 +755,18 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
             warnings={props.data.results.warnings}
           />
 
+          {props.data.results.growthCopilot?.enabled && props.data.results.growthCopilot.canView ? (
+            <GrowthCopilotPanel
+              sourceId={`${props.data.selectedRoundId ?? 'unknown'}:${props.data.results.targetEmployee.id}:growth`}
+              disclaimer={props.data.results.growthCopilot.disclaimer}
+              recommendedCompetencies={props.data.results.growthCopilot.recommendedCompetencies}
+              recentGoals={props.data.results.growthCopilot.recentGoals}
+              recentCheckins={props.data.results.growthCopilot.recentCheckins}
+              feedbackSignals={props.data.results.growthCopilot.feedbackSignals}
+              aiPayload={props.data.results.growthCopilot.aiPayload}
+            />
+          ) : null}
+
           <DevelopmentPlanPreview
             employeeId={props.data.results.targetEmployee.id}
             sourceId={`${props.data.selectedRoundId ?? 'unknown'}:${props.data.results.targetEmployee.id}`}
@@ -608,6 +774,8 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
             actions={props.data.results.developmentPlan.actions}
             managerSupport={props.data.results.developmentPlan.managerSupport}
             nextCheckinTopics={props.data.results.developmentPlan.nextCheckinTopics}
+            recommendedCompetencies={props.data.results.developmentPlan.recommendedCompetencies}
+            linkedEvidence={props.data.results.developmentPlan.linkedEvidence}
             existingPlan={props.data.results.developmentPlanRecord}
             aiPayload={developmentAiPayload ?? undefined}
           />
@@ -658,6 +826,8 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                     priorScoreSummary={respondData.priorScoreSummary}
                   />
                 ) : null}
+
+                {respondData.roleGuide ? <RespondRoleGuideCard roleGuide={respondData.roleGuide} /> : null}
 
                 <div className="space-y-4">
                   {respondData.questions.map((question) => (
@@ -865,6 +1035,72 @@ function RespondReferenceSummary(props: {
           <p className="mt-3 text-sm text-slate-500">
             현재 라운드에서 참고할 이전 종합 점수가 아직 없습니다.
           </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RespondRoleGuideCard(props: { roleGuide: RespondRoleGuide }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-amber-50 p-4">
+      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <Sparkles className="h-4 w-4 text-amber-500" />
+        직무/직급 가이드
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <span className="rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-medium text-amber-700">
+          {props.roleGuide.label}
+        </span>
+        {props.roleGuide.jobFamily ? (
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+            {props.roleGuide.jobFamily}
+          </span>
+        ) : null}
+        {props.roleGuide.level ? (
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+            {props.roleGuide.level}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{props.roleGuide.guideText}</p>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+        <GuideListCard
+          title="기대 역량"
+          items={props.roleGuide.expectedCompetencies}
+          emptyMessage="등록된 기대 역량이 없습니다."
+        />
+        <GuideListCard
+          title="다음 레벨 기대"
+          items={props.roleGuide.nextLevelExpectations}
+          emptyMessage="다음 레벨 기대가 아직 없습니다."
+        />
+        <GuideListCard
+          title="추천 목표 라이브러리"
+          items={props.roleGuide.goalLibrary}
+          emptyMessage="연결된 목표 라이브러리가 없습니다."
+        />
+      </div>
+    </div>
+  )
+}
+
+function GuideListCard(props: { title: string; items: string[]; emptyMessage: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="text-sm font-semibold text-slate-900">{props.title}</div>
+      <div className="mt-3 space-y-2">
+        {props.items.length ? (
+          props.items.map((item) => (
+            <div key={item} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              {item}
+            </div>
+          ))
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+            {props.emptyMessage}
+          </div>
         )}
       </div>
     </div>

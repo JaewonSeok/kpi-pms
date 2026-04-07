@@ -31,9 +31,11 @@ run('service worker registration is limited to production and aggressively appli
 })
 
 run('service worker bypasses login, auth, and document requests', () => {
-  assert.match(serviceWorkerSource, /AUTH_BYPASS_PATH_PREFIXES = \['\/login', '\/api\/auth'\]/)
+  assert.match(serviceWorkerSource, /FULL_BYPASS_PATHS = new Set\(\['\/manifest\.webmanifest', '\/sw\.js'\]\)/)
+  assert.match(serviceWorkerSource, /FULL_BYPASS_PATH_PREFIXES = \['\/login', '\/signin', '\/api\/auth'\]/)
   assert.match(serviceWorkerSource, /request\.mode === 'navigate'/)
-  assert.match(serviceWorkerSource, /isAuthCriticalPath\(url\.pathname\)/)
+  assert.match(serviceWorkerSource, /shouldFullyBypassRequest\(url\)/)
+  assert.match(serviceWorkerSource, /if \(shouldFullyBypassRequest\(url\)\) \{\s*return\s*\}/)
   assert.match(serviceWorkerSource, /event\.respondWith\(fetchNetworkOnly\(event\.request\)\)/)
 })
 
@@ -46,10 +48,15 @@ run('old cache names are deleted on activate and known cache prefixes stay detec
 })
 
 run('safe static assets remain cacheable for PWA support', () => {
-  assert.match(serviceWorkerSource, /CORE_ASSET_PATHS = new Set/)
+  assert.match(serviceWorkerSource, /CORE_ASSET_PATHS = new Set\(\['\/favicon\.ico', '\/icon-192\.svg', '\/icon-512\.svg'\]\)/)
   assert.match(serviceWorkerSource, /if \(!CORE_ASSET_PATHS\.has\(url\.pathname\)\) \{\s*return\s*\}/)
   assert.match(serviceWorkerSource, /caches\.open\(STATIC_CACHE_NAME\)/)
   assert.match(serviceWorkerSource, /cache\.put\(event\.request, clone\)/)
+})
+
+run('manifest stays network-only and is never used as an offline cache fallback', () => {
+  assert.doesNotMatch(serviceWorkerSource, /CORE_ASSET_PATHS = new Set\(\[[^\]]*manifest\.webmanifest/)
+  assert.doesNotMatch(serviceWorkerSource, /caches\.match\('\/manifest\.webmanifest'\)/)
 })
 
 run('service worker exposes a version handshake and supports skip waiting', () => {
@@ -59,10 +66,13 @@ run('service worker exposes a version handshake and supports skip waiting', () =
   assert.match(serviceWorkerSource, /type: 'SW_VERSION'/)
 })
 
-run('login, auth callbacks, and sw script are marked no-store at the framework layer', () => {
+run('login, signin, auth callbacks, manifest, and sw script are marked safe at the framework layer', () => {
   assert.match(nextConfigSource, /source: '\/login'/)
+  assert.match(nextConfigSource, /source: '\/signin'/)
   assert.match(nextConfigSource, /source: '\/api\/auth\/:path\*'/)
+  assert.match(nextConfigSource, /source: '\/manifest\.webmanifest'/)
   assert.match(nextConfigSource, /source: '\/sw\.js'/)
+  assert.match(nextConfigSource, /application\/manifest\+json; charset=utf-8/)
   assert.match(nextConfigSource, /no-store, no-cache, must-revalidate/)
 })
 

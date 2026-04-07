@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { isManagerEffectivenessTarget } from '@/lib/feedback-manager-effectiveness'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackNominationDraftSchema } from '@/lib/validations'
@@ -28,6 +29,7 @@ export async function GET(
       select: {
         id: true,
         empName: true,
+        position: true,
         teamLeaderId: true,
         sectionChiefId: true,
         divisionHeadId: true,
@@ -138,6 +140,7 @@ export async function POST(
       select: {
         id: true,
         empName: true,
+        position: true,
         teamLeaderId: true,
         sectionChiefId: true,
         divisionHeadId: true,
@@ -168,6 +171,27 @@ export async function POST(
       throw new AppError(400, 'INVALID_REVIEWER', '선택한 리뷰어 중 활성 상태가 아닌 사용자가 있습니다.')
     }
 
+    const selectionSettings = parseFeedbackSelectionSettings(round.selectionSettings)
+
+    const directReportCount = await prisma.employee.count({
+      where: {
+        status: 'ACTIVE',
+        OR: [{ teamLeaderId: target.id }, { sectionChiefId: target.id }, { divisionHeadId: target.id }],
+      },
+    })
+
+    if (
+      selectionSettings.managerEffectiveness.enabled &&
+      selectionSettings.managerEffectiveness.targetScope === 'MANAGERS_ONLY' &&
+      !isManagerEffectivenessTarget({ position: target.position, directReportCount })
+    ) {
+      throw new AppError(
+        400,
+        'MANAGER_TARGET_REQUIRED',
+        '리더 효과성 리뷰는 리더만 대상자로 지정할 수 있습니다.'
+      )
+    }
+
     const teamMembers = await prisma.employee.findMany({
       where: {
         status: 'ACTIVE',
@@ -184,7 +208,7 @@ export async function POST(
       target,
       reviewers: validated.data.reviewers,
       teamMemberIds: teamMembers.map((member) => member.id),
-      selectionSettings: parseFeedbackSelectionSettings(round.selectionSettings),
+      selectionSettings,
     })
 
     await prisma.$transaction(async (tx) => {

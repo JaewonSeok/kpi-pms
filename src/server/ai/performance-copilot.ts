@@ -96,6 +96,16 @@ export function suggestDevelopmentPlan(params: BaseParams) {
   return kpiAssist(params.requesterId, 'Feedback360DevelopmentPlan', params.sourceId, params.payload)
 }
 
+export function suggestGrowthCopilot(params: BaseParams) {
+  return generateAiAssist({
+    requesterId: params.requesterId,
+    requestType: AIRequestType.GROWTH_PLAN,
+    sourceType: 'Feedback360GrowthCopilot',
+    sourceId: params.sourceId,
+    payload: params.payload,
+  })
+}
+
 export function summarizeCalibrationRisk(params: BaseParams) {
   return kpiAssist(params.requesterId, 'CalibrationRiskSummary', params.sourceId, params.payload)
 }

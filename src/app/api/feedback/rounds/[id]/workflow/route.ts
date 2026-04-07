@@ -1,6 +1,10 @@
 import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import {
+  isManagerEffectivenessTarget,
+  isRelationshipEnabledForManagerEffectiveness,
+} from '@/lib/feedback-manager-effectiveness'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackNominationWorkflowSchema } from '@/lib/validations'
@@ -11,6 +15,7 @@ import {
 import {
   canApproveFeedbackTarget,
   canManageFeedbackTarget,
+  parseFeedbackSelectionSettings,
 } from '@/server/feedback-360-workflow'
 
 export async function POST(
@@ -40,6 +45,7 @@ export async function POST(
         id: true,
         status: true,
         minRaters: true,
+        selectionSettings: true,
         evalCycle: {
           select: {
             orgId: true,
@@ -66,6 +72,7 @@ export async function POST(
       select: {
         id: true,
         empName: true,
+        position: true,
         teamLeaderId: true,
         sectionChiefId: true,
         divisionHeadId: true,
@@ -89,6 +96,25 @@ export async function POST(
 
     const action = validated.data.action
     const note = validated.data.note
+    const selectionSettings = parseFeedbackSelectionSettings(round.selectionSettings)
+    const directReportCount = await prisma.employee.count({
+      where: {
+        status: 'ACTIVE',
+        OR: [{ teamLeaderId: target.id }, { sectionChiefId: target.id }, { divisionHeadId: target.id }],
+      },
+    })
+
+    if (
+      selectionSettings.managerEffectiveness.enabled &&
+      selectionSettings.managerEffectiveness.targetScope === 'MANAGERS_ONLY' &&
+      !isManagerEffectivenessTarget({ position: target.position, directReportCount })
+    ) {
+      throw new AppError(
+        400,
+        'MANAGER_TARGET_REQUIRED',
+        '리더 효과성 리뷰는 리더만 대상자로 지정할 수 있습니다.'
+      )
+    }
 
     if (action === 'submit') {
       if (!canManageFeedbackTarget(session.user.id, session.user.role, target)) {
@@ -229,6 +255,22 @@ export async function POST(
     const approvedNominations = nominations.filter(
       (item) => item.status === 'APPROVED' || item.status === 'PUBLISHED'
     )
+    if (
+      selectionSettings.managerEffectiveness.enabled &&
+      approvedNominations.some(
+        (item) =>
+          !isRelationshipEnabledForManagerEffectiveness(
+            item.relationship,
+            selectionSettings.managerEffectiveness
+          )
+      )
+    ) {
+      throw new AppError(
+        400,
+        'MANAGER_EFFECTIVENESS_RELATIONSHIP_DISABLED',
+        '이 리더 효과성 리뷰에서는 허용되지 않는 평가자 조합이 포함되어 있습니다.'
+      )
+    }
     if (approvedNominations.length < round.minRaters) {
       throw new AppError(
         400,

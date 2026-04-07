@@ -545,6 +545,7 @@ model MultiFeedbackRound {
   folder        FeedbackFolder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
   roundName     String
   roundType     FeedbackRoundType
+  documentKind  FeedbackDocumentKind?
   startDate     DateTime
   endDate       DateTime
   status        FeedbackRoundStatus @default(DRAFT)
@@ -552,11 +553,13 @@ model MultiFeedbackRound {
   minRaters     Int                 @default(3)
   maxRaters     Int                 @default(8)
   weightInFinal Float               @default(0)
+  createdById   String?
   selectionSettings Json?
   visibilitySettings Json?
   resultPresentationSettings Json?
   reportAnalysisSettings Json?
   ratingGuideSettings Json?
+  documentSettings Json?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
 
@@ -635,6 +638,15 @@ enum FeedbackRoundType {
   UPWARD
   CROSS_DEPT
   FULL_360
+  ANYTIME
+}
+
+enum FeedbackDocumentKind {
+  ANYTIME
+  PROJECT
+  PIP
+  ROLE_CHANGE
+  PROBATION
 }
 
 enum FeedbackRoundStatus {
@@ -643,6 +655,7 @@ enum FeedbackRoundStatus {
   IN_PROGRESS
   COMPLETED
   CLOSED
+  CANCELLED
 }
 
 enum FeedbackAdminReviewScope {
@@ -1029,8 +1042,10 @@ model DevelopmentPlan {
   title             String
   focusArea         String
   actions           Json
+  recommendedCompetencies Json?
   managerSupport    Json?
   nextCheckinTopics Json?
+  linkedEvidence    Json?
   note              String?
   dueDate           DateTime?
   status            DevelopmentPlanStatus     @default(DRAFT)

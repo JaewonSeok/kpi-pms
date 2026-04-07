@@ -1,7 +1,8 @@
 const SERVICE_WORKER_VERSION = 'kpi-pms-sw-v3'
 const STATIC_CACHE_NAME = 'kpi-pms-static-v3'
-const CORE_ASSET_PATHS = new Set(['/favicon.ico', '/manifest.webmanifest', '/icon-192.svg', '/icon-512.svg'])
-const AUTH_BYPASS_PATH_PREFIXES = ['/login', '/api/auth']
+const CORE_ASSET_PATHS = new Set(['/favicon.ico', '/icon-192.svg', '/icon-512.svg'])
+const FULL_BYPASS_PATHS = new Set(['/manifest.webmanifest', '/sw.js'])
+const FULL_BYPASS_PATH_PREFIXES = ['/login', '/signin', '/api/auth']
 const LEGACY_CACHE_NAMES = new Set(['kpi-pms-v1', 'kpi-pms-static-v2'])
 const CACHE_PREFIXES = ['kpi-pms']
 
@@ -13,12 +14,15 @@ function isDocumentRequest(request) {
   return request.mode === 'navigate' || request.destination === 'document'
 }
 
-function isAuthCriticalPath(pathname) {
-  return AUTH_BYPASS_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+function shouldFullyBypassRequest(url) {
+  return (
+    FULL_BYPASS_PATHS.has(url.pathname) ||
+    FULL_BYPASS_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix))
+  )
 }
 
 function shouldBypassCache(request, url) {
-  return isDocumentRequest(request) || isAuthCriticalPath(url.pathname)
+  return isDocumentRequest(request) || shouldFullyBypassRequest(url)
 }
 
 function createNoStoreRequest(request) {
@@ -88,6 +92,10 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  if (shouldFullyBypassRequest(url)) {
+    return
+  }
+
   if (shouldBypassCache(event.request, url)) {
     event.respondWith(fetchNetworkOnly(event.request))
     return
@@ -110,11 +118,7 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() =>
         caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse
-          }
-
-          return caches.match('/manifest.webmanifest')
+          return cachedResponse || Response.error()
         })
       )
   )

@@ -1,6 +1,7 @@
-import type {
+﻿import type {
   DevelopmentPlanStatus,
   FeedbackAdminReviewScope,
+  FeedbackDocumentKind,
   FeedbackRoundStatus,
   FeedbackRoundType,
   FeedbackStatus,
@@ -11,7 +12,12 @@ import type {
   SystemRole,
 } from '@prisma/client'
 import type { Session } from 'next-auth'
+import type { FeedbackAnytimeDocumentSettings } from '@/lib/feedback-anytime-review'
 import { calculateFeedbackResponseTotalScore } from '@/lib/feedback-score'
+import {
+  getFeedbackAnytimeDocumentKindLabel,
+  parseFeedbackAnytimeDocumentSettings,
+} from '@/lib/feedback-anytime-review'
 import type {
   FeedbackReportAnalysisPayload,
   FeedbackReportAnalysisSettings,
@@ -34,6 +40,22 @@ import {
   parseFeedbackRatingGuideSettings,
   resolveFeedbackRatingGuideRule,
 } from '@/lib/feedback-rating-guide'
+import {
+  resolveFeedbackRoleGuide,
+  type FeedbackAiCopilotSettings,
+  type FeedbackSkillArchitectureSettings,
+} from '@/lib/feedback-skill-architecture'
+import type {
+  FeedbackManagerEffectivenessSettings,
+  ManagerEffectivenessCoachingPack,
+  ManagerEffectivenessRiskLevel,
+} from '@/lib/feedback-manager-effectiveness'
+import {
+  buildManagerEffectivenessCoachingPack,
+  getManagerEffectivenessReviewerSummary,
+  getManagerEffectivenessRiskLevel,
+  isManagerEffectivenessTarget,
+} from '@/lib/feedback-manager-effectiveness'
 import type {
   FeedbackResultPresentationSettings,
   FeedbackResultRecipientProfile,
@@ -44,6 +66,14 @@ import {
   parseFeedbackResultPresentationSettings,
   resolveFeedbackResultPresentationProfile,
 } from '@/lib/feedback-result-presentation'
+import {
+  calculateDevelopmentPlanProgress,
+  normalizeDevelopmentPlanActionItems,
+  normalizeDevelopmentPlanLinkedEvidence,
+  normalizeDevelopmentPlanStringArray,
+  type DevelopmentPlanActionItem,
+  type DevelopmentPlanLinkedEvidence,
+} from '@/lib/development-plan'
 import { formatGoalWeightLabel } from '@/lib/goal-display'
 import { prisma } from '@/lib/prisma'
 import { formatDate } from '@/lib/utils'
@@ -66,6 +96,28 @@ import { getOnboardingReviewAdminSnapshot } from './onboarding-review-workflow'
 export type Feedback360RouteMode = 'overview' | 'nomination' | 'results' | 'admin' | 'respond'
 
 export type Feedback360PageState = 'ready' | 'empty' | 'permission-denied' | 'error'
+
+type FeedbackRoleGuideViewModel = {
+  label: string
+  jobFamily?: string
+  level?: string
+  guideText: string
+  expectedCompetencies: string[]
+  nextLevelExpectations: string[]
+  goalLibrary: string[]
+}
+
+type FeedbackGrowthCopilotViewModel = {
+  enabled: boolean
+  canView: boolean
+  disclaimer: string
+  roleGuideLabel?: string
+  recommendedCompetencies: string[]
+  recentGoals: string[]
+  recentCheckins: string[]
+  feedbackSignals: string[]
+  aiPayload?: Record<string, unknown>
+}
 
 export type Feedback360PageData = {
   mode: Feedback360RouteMode
@@ -95,6 +147,10 @@ export type Feedback360PageData = {
     id: string
     roundName: string
     roundType: FeedbackRoundType
+    documentKind?: FeedbackDocumentKind | null
+    documentKindLabel?: string | null
+    createdById?: string | null
+    documentSettings?: FeedbackAnytimeDocumentSettings
     status: FeedbackRoundStatus
     isAnonymous: boolean
     minRaters: number
@@ -105,6 +161,9 @@ export type Feedback360PageData = {
       allowPreferredPeers: boolean
       excludeLeaderFromPeerSelection: boolean
       excludeDirectReportsFromPeerSelection: boolean
+      managerEffectiveness: FeedbackManagerEffectivenessSettings
+      skillArchitecture: FeedbackSkillArchitectureSettings
+      aiCopilot: FeedbackAiCopilotSettings
     }
     visibilitySettings: Record<string, 'FULL' | 'ANONYMOUS' | 'PRIVATE'>
     resultPresentationSettings: FeedbackResultPresentationSettings
@@ -161,6 +220,9 @@ export type Feedback360PageData = {
       allowPreferredPeers: boolean
       excludeLeaderFromPeerSelection: boolean
       excludeDirectReportsFromPeerSelection: boolean
+      managerEffectiveness: FeedbackManagerEffectivenessSettings
+      skillArchitecture: FeedbackSkillArchitectureSettings
+      aiCopilot: FeedbackAiCopilotSettings
     }
     visibilitySettings: Record<string, 'FULL' | 'ANONYMOUS' | 'PRIVATE'>
     reviewerGroups: Array<{
@@ -250,6 +312,8 @@ export type Feedback360PageData = {
       actions: string[]
       managerSupport: string[]
       nextCheckinTopics: string[]
+      recommendedCompetencies: string[]
+      linkedEvidence: DevelopmentPlanLinkedEvidence[]
     }
     reportCache?: {
       id: string
@@ -261,7 +325,17 @@ export type Feedback360PageData = {
       title: string
       status: DevelopmentPlanStatus
       updatedAt: string
+      actions: DevelopmentPlanActionItem[]
+      recommendedCompetencies: string[]
+      managerSupport: string[]
+      nextCheckinTopics: string[]
+      linkedEvidence: DevelopmentPlanLinkedEvidence[]
+      note?: string | null
+      dueDate?: string | null
+      progressRate: number
     }
+    roleGuide?: FeedbackRoleGuideViewModel
+    growthCopilot?: FeedbackGrowthCopilotViewModel
     linkage: Array<{
       label: string
       href: string
@@ -269,6 +343,18 @@ export type Feedback360PageData = {
     }>
     pdfHref: string
     analysis: FeedbackReportAnalysisPayload
+    managerEffectiveness?: {
+      enabled: boolean
+      overallScore: number | null
+      benchmarkAverage: number | null
+      benchmarkDelta: number | null
+      riskLevel: ManagerEffectivenessRiskLevel
+      reviewerSummary: string[]
+      competencyLabels: string[]
+      strengths: string[]
+      improvements: string[]
+      coachingPack: ManagerEffectivenessCoachingPack
+    }
   }
   admin?: {
     roundHealth: Array<{
@@ -311,12 +397,51 @@ export type Feedback360PageData = {
         allowPreferredPeers: boolean
         excludeLeaderFromPeerSelection: boolean
         excludeDirectReportsFromPeerSelection: boolean
+        managerEffectiveness: FeedbackManagerEffectivenessSettings
+        skillArchitecture: FeedbackSkillArchitectureSettings
+        aiCopilot: FeedbackAiCopilotSettings
       }
       visibilitySettings: Record<string, 'FULL' | 'ANONYMOUS' | 'PRIVATE'>
       resultPresentationSettings: FeedbackResultPresentationSettings
       reportAnalysisSettings: FeedbackReportAnalysisSettings
       ratingGuideSettings: FeedbackRatingGuideSettings
       collaboratorIds: string[]
+    }
+    managerEffectiveness?: {
+      enabled: boolean
+      targetScope: FeedbackManagerEffectivenessSettings['targetScope']
+      reviewerSummary: string[]
+      competencyLabels: string[]
+      summary: {
+        leaderCount: number
+        averageScore: number | null
+        highRiskCount: number
+        coachingReadyCount: number
+      }
+      heatmap: Array<{
+        departmentName: string
+        leaderCount: number
+        averageScore: number | null
+        highRiskCount: number
+      }>
+      topImprovementThemes: Array<{
+        label: string
+        count: number
+      }>
+      leaders: Array<{
+        employeeId: string
+        name: string
+        departmentName: string
+        position: string
+        overallScore: number | null
+        benchmarkAverage: number | null
+        benchmarkDelta: number | null
+        riskLevel: ManagerEffectivenessRiskLevel
+        strengths: string[]
+        improvements: string[]
+        coachingPack: ManagerEffectivenessCoachingPack
+        resultHref: string
+      }>
     }
     reviewAdmin?: {
       currentAccess: {
@@ -447,6 +572,59 @@ export type Feedback360PageData = {
         scheduledDateKey: string
       }>
     }
+    anytimeReview?: {
+      summary: {
+        totalCount: number
+        activeCount: number
+        overdueCount: number
+        pipCount: number
+        projectCount: number
+      }
+      employeeOptions: Array<{
+        employeeId: string
+        name: string
+        departmentName: string
+        position: string
+        email: string
+      }>
+      templateOptions: Array<{
+        roundId: string
+        roundName: string
+        roundType: FeedbackRoundType
+        documentKind?: FeedbackDocumentKind | null
+        documentKindLabel?: string | null
+        questionCount: number
+      }>
+      documents: Array<{
+        roundId: string
+        roundName: string
+        documentKind: FeedbackDocumentKind | null
+        documentKindLabel: string
+        status: FeedbackRoundStatus
+        lifecycleState: 'ACTIVE' | 'CLOSED' | 'CANCELLED'
+        startDate: string
+        endDate: string
+        createdAt: string
+        targetId?: string
+        targetName: string
+        targetDepartmentName: string
+        reviewerId?: string
+        reviewerName: string
+        reviewerDepartmentName: string
+        reason: string
+        projectName?: string | null
+        projectCode?: string | null
+        templateRoundName?: string | null
+        feedbackStatus?: FeedbackStatus
+        collaboratorCount: number
+        pip?: FeedbackAnytimeDocumentSettings['pip']
+        history: Array<{
+          action: string
+          summary: string
+          at: string
+        }>
+      }>
+    }
   }
   respond?: {
     feedbackId: string
@@ -471,6 +649,7 @@ export type Feedback360PageData = {
       totalScore: number
       submittedAt?: string
     }
+    roleGuide?: FeedbackRoleGuideViewModel
     ratingGuide?: {
       questionId?: string
       questionText?: string
@@ -606,7 +785,7 @@ function getPositionLabel(position: string) {
   const labels: Record<string, string> = {
     MEMBER: '구성원',
     TEAM_LEADER: '팀장',
-    SECTION_CHIEF: '부서장',
+    SECTION_CHIEF: '실장',
     DIV_HEAD: '본부장',
     CEO: 'CEO',
   }
@@ -690,7 +869,7 @@ function buildGroupedResponses(params: {
       const current = questionMap.get(response.questionId) ?? {
         questionId: response.questionId,
         category: response.question.category,
-        questionText: response.question.questionText ?? '문항 정보 없음',
+        questionText: response.question.questionText ?? '臾명빆 ?뺣낫 ?놁쓬',
         answers: [],
       }
 
@@ -699,8 +878,8 @@ function buildGroupedResponses(params: {
         relationship: feedback.relationship,
         authorLabel:
           visibility === 'FULL' || !params.thresholdMet
-            ? `${feedback.relationship} · ${feedback.giver.empName}`
-            : `${feedback.relationship} · 익명`,
+            ? `${feedback.relationship} 쨌 ${feedback.giver.empName}`
+            : `${feedback.relationship} 쨌 ?듬챸`,
         ratingValue: response.ratingValue,
         textValue: response.textValue,
       })
@@ -720,13 +899,13 @@ function buildResultWarnings(params: {
 }) {
   const warnings: string[] = []
   if (!params.thresholdMet) {
-    warnings.push('익명 기준을 아직 충족하지 못해 일부 문항은 제한적으로만 해석해야 합니다.')
+    warnings.push('?듬챸 湲곗????꾩쭅 異⑹”?섏? 紐삵빐 ?쇰? 臾명빆? ?쒗븳?곸쑝濡쒕쭔 ?댁꽍?댁빞 ?⑸땲??')
   }
   if (params.feedbackCount < 3) {
-    warnings.push('응답 수가 적어 해석 편차가 클 수 있습니다.')
+    warnings.push('?묐떟 ?섍? ?곸뼱 ?댁꽍 ?몄감媛 ?????덉뒿?덈떎.')
   }
   if (!params.strengths.length || !params.improvements.length) {
-    warnings.push('텍스트 근거가 충분하지 않아 자동 요약의 구체성이 낮을 수 있습니다.')
+    warnings.push('?띿뒪??洹쇨굅媛 異⑸텇?섏? ?딆븘 ?먮룞 ?붿빟??援ъ껜?깆씠 ??쓣 ???덉뒿?덈떎.')
   }
   return warnings
 }
@@ -748,6 +927,169 @@ function averageFeedbackTotalScores(
   if (!scores.length) return null
 
   return Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 10) / 10
+}
+
+function averageNumber(values: Array<number | null | undefined>) {
+  const normalized = values.filter((value): value is number => typeof value === 'number')
+  if (!normalized.length) return null
+  return Math.round((normalized.reduce((sum, value) => sum + value, 0) / normalized.length) * 10) / 10
+}
+
+type ManagerEffectivenessRoundFeedback = {
+  id: string
+  roundId: string
+  status: FeedbackStatus
+  receiverId: string
+  receiver: {
+    id: string
+    empName: string
+    position: string
+    department: {
+      deptName: string
+    }
+  }
+  responses: Array<{
+    question: {
+      category: string
+      questionText: string
+      questionType: QuestionType
+    }
+    ratingValue: number | null
+    textValue: string | null
+  }>
+}
+
+type ManagerEffectivenessLeaderSummary = {
+  employeeId: string
+  name: string
+  departmentName: string
+  position: string
+  overallScore: number | null
+  benchmarkAverage: number | null
+  benchmarkDelta: number | null
+  riskLevel: ManagerEffectivenessRiskLevel
+  strengths: string[]
+  improvements: string[]
+  coachingPack: ManagerEffectivenessCoachingPack
+  resultHref: string
+}
+
+function buildManagerEffectivenessLeaderSummaries(params: {
+  feedbacks: ManagerEffectivenessRoundFeedback[]
+  competencyLabels: string[]
+  targetScope: FeedbackManagerEffectivenessSettings['targetScope']
+}) {
+  const grouped = params.feedbacks
+    .filter((feedback) => feedback.status === 'SUBMITTED')
+    .reduce((map, feedback) => {
+      if (
+        params.targetScope === 'MANAGERS_ONLY' &&
+        !isManagerEffectivenessTarget({ position: feedback.receiver.position })
+      ) {
+        return map
+      }
+
+      const current = map.get(feedback.receiverId) ?? []
+      current.push(feedback)
+      map.set(feedback.receiverId, current)
+      return map
+    }, new Map<string, ManagerEffectivenessRoundFeedback[]>())
+
+  const leaderSummaries = Array.from(grouped.entries()).map(([receiverId, feedbacks]) => {
+    const receiver = feedbacks[0]?.receiver
+    const scoreByFeedback = feedbacks.map((feedback) =>
+      calculateFeedbackResponseTotalScore({ responses: feedback.responses })
+    )
+    const overallScore = averageNumber(scoreByFeedback)
+
+    const categoryStats = feedbacks.reduce(
+      (map, feedback) => {
+        feedback.responses.forEach((response) => {
+          if (typeof response.ratingValue !== 'number') return
+          const key = response.question.category?.trim() || response.question.questionText?.trim() || '湲고?'
+          const current = map.get(key) ?? { total: 0, count: 0 }
+          current.total += response.ratingValue
+          current.count += 1
+          map.set(key, current)
+        })
+        return map
+      },
+      new Map<string, { total: number; count: number }>()
+    )
+
+    const rankedCategories = Array.from(categoryStats.entries())
+      .map(([label, stats]) => ({
+        label,
+        average: stats.count ? stats.total / stats.count : 0,
+      }))
+      .sort((a, b) => b.average - a.average)
+
+    const fallbackStrength = params.competencyLabels[0] ?? '코칭'
+    const fallbackImprovement =
+      params.competencyLabels[Math.min(1, Math.max(params.competencyLabels.length - 1, 0))] ?? '피드백'
+
+    const strengths =
+      rankedCategories.slice(0, 2).map((item) => item.label) ||
+      (fallbackStrength ? [fallbackStrength] : [])
+    const improvements =
+      rankedCategories.slice(-2).reverse().map((item) => item.label) ||
+      (fallbackImprovement ? [fallbackImprovement] : [])
+
+    return {
+      employeeId: receiverId,
+      name: receiver?.empName ?? '이름 없음',
+      departmentName: receiver?.department.deptName ?? '조직 없음',
+      position: getPositionLabel(receiver?.position ?? 'MEMBER'),
+      overallScore,
+      benchmarkAverage: null,
+      benchmarkDelta: null,
+      riskLevel: 'LOW' as ManagerEffectivenessRiskLevel,
+      strengths: strengths.length ? strengths : [fallbackStrength],
+      improvements: improvements.length ? improvements : [fallbackImprovement],
+      coachingPack: buildManagerEffectivenessCoachingPack({
+        leaderName: receiver?.empName ?? '由щ뜑',
+        strengths: strengths.length ? strengths : [fallbackStrength],
+        improvements: improvements.length ? improvements : [fallbackImprovement],
+        competencyLabels: params.competencyLabels,
+        overallScore,
+        benchmarkDelta: null,
+      }),
+      resultHref: `/evaluation/360/results?roundId=${encodeURIComponent(feedbacks[0]?.roundId ?? '')}&empId=${encodeURIComponent(receiverId)}`,
+    }
+  })
+
+  return leaderSummaries.map((summary) => {
+    const peerBenchmarks = leaderSummaries
+      .filter((item) => item.employeeId !== summary.employeeId)
+      .map((item) => item.overallScore)
+    const benchmarkAverage = averageNumber(
+      peerBenchmarks.length ? peerBenchmarks : leaderSummaries.map((item) => item.overallScore)
+    )
+    const benchmarkDelta =
+      typeof summary.overallScore === 'number' && typeof benchmarkAverage === 'number'
+        ? Math.round((summary.overallScore - benchmarkAverage) * 10) / 10
+        : null
+    const riskLevel = getManagerEffectivenessRiskLevel({
+      overallScore: summary.overallScore,
+      benchmarkDelta,
+      improvementCount: summary.improvements.length,
+    })
+
+    return {
+      ...summary,
+      benchmarkAverage,
+      benchmarkDelta,
+      riskLevel,
+      coachingPack: buildManagerEffectivenessCoachingPack({
+        leaderName: summary.name,
+        strengths: summary.strengths,
+        improvements: summary.improvements,
+        competencyLabels: params.competencyLabels,
+        overallScore: summary.overallScore,
+        benchmarkDelta,
+      }),
+    }
+  })
 }
 
 type FeedbackGoalReferenceLink = {
@@ -813,7 +1155,7 @@ function parseFeedbackGoalContextLinks(value: Prisma.JsonValue | null | undefine
     return [
       {
         id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `goal-link-${index + 1}`,
-        label: labelCandidate || `관련 링크 ${index + 1}`,
+        label: labelCandidate || `愿??留곹겕 ${index + 1}`,
         href: hrefCandidate,
         uploadedBy,
       },
@@ -877,14 +1219,14 @@ function buildFeedbackGoalPeriodLabel(params: {
     const ordered = [...params.records].map((record) => record.yearMonth).sort((left, right) => left.localeCompare(right))
     const first = formatFeedbackGoalMonthLabel(ordered[0]!)
     const last = formatFeedbackGoalMonthLabel(ordered[ordered.length - 1]!)
-    return first === last ? `${first} 기준` : `${first} ~ ${last}`
+    return first === last ? `${first} 湲곗?` : `${first} ~ ${last}`
   }
 
   if (params.checkins.length) {
     const ordered = [...params.checkins].sort((left, right) => left.scheduledDate.getTime() - right.scheduledDate.getTime())
     const first = formatDate(ordered[0]!.scheduledDate)
     const last = formatDate(ordered[ordered.length - 1]!.scheduledDate)
-    return first === last ? `${first} 체크인 기준` : `${first} ~ ${last}`
+    return first === last ? `${first} 泥댄겕??湲곗?` : `${first} ~ ${last}`
   }
 
   return `${params.cycleYear}년 평가 주기`
@@ -894,7 +1236,7 @@ function getFeedbackGoalApprovalStatus(status: KpiStatus | null | undefined) {
   if (status === 'CONFIRMED') return '승인 완료'
   if (status === 'ARCHIVED') return '보관'
   if (status === 'DRAFT') return '승인 요청 전'
-  return '미확인'
+  return '미확정'
 }
 
 function buildFeedbackGoalAchievementSummary(params: {
@@ -1024,7 +1366,7 @@ export async function getFeedback360PageData(
       return {
         mode: params.mode,
         state: 'permission-denied',
-        message: '로그인 세션을 확인할 수 없습니다.',
+        message: '濡쒓렇???몄뀡???뺤씤?????놁뒿?덈떎.',
         availableCycles: [],
         availableRounds: [],
         summary: {
@@ -1048,7 +1390,7 @@ export async function getFeedback360PageData(
       return {
         mode: params.mode,
         state: 'permission-denied',
-        message: '직원 정보를 찾을 수 없습니다.',
+        message: '吏곸썝 ?뺣낫瑜?李얠쓣 ???놁뒿?덈떎.',
         availableCycles: [],
         availableRounds: [],
         summary: {
@@ -1084,7 +1426,7 @@ export async function getFeedback360PageData(
       return {
         mode: params.mode,
         state: 'empty',
-        message: '360 다면평가를 볼 수 있는 평가 주기가 없습니다.',
+        message: '360 ?ㅻ㈃?됯?瑜?蹂????덈뒗 ?됯? 二쇨린媛 ?놁뒿?덈떎.',
         currentUser: {
           id: employee.id,
           name: employee.empName,
@@ -1253,7 +1595,7 @@ export async function getFeedback360PageData(
       return {
         mode: params.mode,
         state: 'permission-denied',
-        message: '공동 작업자로 지정된 리뷰만 관리할 수 있습니다. 접근 가능한 리뷰가 없으면 관리자 화면이 열리지 않습니다.',
+        message: '怨듬룞 ?묒뾽?먮줈 吏?뺣맂 由щ럭留?愿由ы븷 ???덉뒿?덈떎. ?묎렐 媛?ν븳 由щ럭媛 ?놁쑝硫?愿由ъ옄 ?붾㈃???대━吏 ?딆뒿?덈떎.',
         currentUser,
         permissions: {
           canManageRounds: false,
@@ -1305,6 +1647,7 @@ export async function getFeedback360PageData(
       const totalCount = round.feedbacks.length
       const submittedCount = round.feedbacks.filter((feedback) => feedback.status === 'SUBMITTED').length
       const uniqueTargets = new Set(round.feedbacks.map((feedback) => feedback.receiverId))
+      const documentSettings = parseFeedbackAnytimeDocumentSettings(round.documentSettings)
       const selectionSettings = parseFeedbackSelectionSettings(round.selectionSettings)
       const visibilitySettings = parseFeedbackVisibilitySettings(round.visibilitySettings)
       const resultPresentationSettings = parseFeedbackResultPresentationSettings(
@@ -1327,6 +1670,10 @@ export async function getFeedback360PageData(
         id: round.id,
         roundName: round.roundName,
         roundType: round.roundType,
+        documentKind: round.documentKind,
+        documentKindLabel: getFeedbackAnytimeDocumentKindLabel(round.documentKind),
+        createdById: round.createdById,
+        documentSettings,
         status: round.status,
         isAnonymous: round.isAnonymous,
         minRaters: round.minRaters,
@@ -1505,6 +1852,140 @@ export async function getFeedback360PageData(
       }
     }
 
+    async function buildAnytimeReviewAdminState(
+      reviewAdminState: Awaited<ReturnType<typeof buildReviewAdminState>>
+    ) {
+      const anytimeRounds = scopedRounds.filter((round) => round.roundType === 'ANYTIME')
+      const anytimeRoundIds = anytimeRounds.map((round) => round.id)
+      const anytimeAuditLogs = anytimeRoundIds.length
+        ? await prisma.auditLog.findMany({
+            where: {
+              entityType: 'MultiFeedbackRound',
+              entityId: {
+                in: anytimeRoundIds,
+              },
+              action: {
+                in: [
+                  'FEEDBACK_ANYTIME_REVIEW_CREATED',
+                  'FEEDBACK_ANYTIME_DUE_DATE_CHANGED',
+                  'FEEDBACK_ANYTIME_REVIEWER_TRANSFERRED',
+                  'FEEDBACK_ANYTIME_REVIEW_CANCELLED',
+                  'FEEDBACK_ANYTIME_REVIEW_CLOSED',
+                  'FEEDBACK_ANYTIME_REVIEW_REOPENED',
+                ],
+              },
+            },
+            orderBy: [{ timestamp: 'desc' }],
+            select: {
+              entityId: true,
+              action: true,
+              timestamp: true,
+              newValue: true,
+            },
+          })
+        : []
+
+      const historySummary = (action: string, record: Record<string, unknown> | null) => {
+        if (action === 'FEEDBACK_ANYTIME_REVIEW_CREATED') {
+          return `문서 생성 · ${String(record?.targetName ?? '')}`.trim()
+        }
+        if (action === 'FEEDBACK_ANYTIME_DUE_DATE_CHANGED') {
+          return `기한 변경 · ${String(record?.dueDate ?? '')}`.trim()
+        }
+        if (action === 'FEEDBACK_ANYTIME_REVIEWER_TRANSFERRED') {
+          return `리뷰어 이관 · ${String(record?.reviewerName ?? '')}`.trim()
+        }
+        if (action === 'FEEDBACK_ANYTIME_REVIEW_CANCELLED') {
+          return '문서 취소'
+        }
+        if (action === 'FEEDBACK_ANYTIME_REVIEW_CLOSED') {
+          return '문서 종료'
+        }
+        if (action === 'FEEDBACK_ANYTIME_REVIEW_REOPENED') {
+          return '문서 재오픈'
+        }
+        return '문서 이력'
+      }
+
+      const historyByRoundId = anytimeAuditLogs.reduce(
+        (map, log) => {
+          if (!log.entityId) return map
+          const list = map.get(log.entityId) ?? []
+          const record = parseAuditRecord(log.newValue)
+          list.push({
+            action: log.action,
+            summary: historySummary(log.action, record),
+            at: formatDate(log.timestamp),
+          })
+          map.set(log.entityId, list.slice(0, 5))
+          return map
+        },
+        new Map<string, Array<{ action: string; summary: string; at: string }>>()
+      )
+
+      const now = new Date()
+      return {
+        summary: {
+          totalCount: anytimeRounds.length,
+          activeCount: anytimeRounds.filter((round) => round.status === 'IN_PROGRESS').length,
+          overdueCount: anytimeRounds.filter((round) => round.status === 'IN_PROGRESS' && round.endDate < now).length,
+          pipCount: anytimeRounds.filter((round) => round.documentKind === 'PIP').length,
+          projectCount: anytimeRounds.filter((round) => round.documentKind === 'PROJECT').length,
+        },
+        employeeOptions: reviewAdminState.candidateMembers.map((candidate) => ({
+          employeeId: candidate.employeeId,
+          name: candidate.name,
+          departmentName: candidate.departmentName,
+          position: candidate.position,
+          email: candidate.email,
+        })),
+        templateOptions: scopedRounds
+          .filter((round) => round.roundType !== 'ANYTIME')
+          .map((round) => ({
+            roundId: round.id,
+            roundName: round.roundName,
+            roundType: round.roundType,
+            documentKind: round.documentKind,
+            documentKindLabel: getFeedbackAnytimeDocumentKindLabel(round.documentKind),
+            questionCount: round.questions.length,
+          }))
+          .sort((a, b) => a.roundName.localeCompare(b.roundName, 'ko-KR')),
+        documents: anytimeRounds
+          .slice()
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .map((round) => {
+            const feedback = round.feedbacks[0]
+            const settings = parseFeedbackAnytimeDocumentSettings(round.documentSettings)
+
+            return {
+              roundId: round.id,
+              roundName: round.roundName,
+              documentKind: round.documentKind,
+              documentKindLabel: getFeedbackAnytimeDocumentKindLabel(round.documentKind),
+              status: round.status,
+              lifecycleState: settings.lifecycleState ?? 'ACTIVE',
+              startDate: formatDate(round.startDate),
+              endDate: formatDate(round.endDate),
+              createdAt: formatDate(round.createdAt),
+              targetId: feedback?.receiverId,
+              targetName: feedback?.receiver.empName ?? '-',
+              targetDepartmentName: feedback?.receiver.department.deptName ?? '-',
+              reviewerId: feedback?.giverId,
+              reviewerName: feedback?.giver.empName ?? '-',
+              reviewerDepartmentName: feedback?.giver.department.deptName ?? '-',
+              reason: settings.reason,
+              projectName: settings.projectName ?? null,
+              projectCode: settings.projectCode ?? null,
+              templateRoundName: settings.templateRoundName ?? null,
+              feedbackStatus: feedback?.status,
+              collaboratorCount: round.collaborators.length,
+              pip: settings.pip,
+              history: historyByRoundId.get(round.id) ?? [],
+            }
+          }),
+      }
+    }
+
     const pendingRequests = scopedRounds
       .flatMap((round) =>
         round.feedbacks
@@ -1531,10 +2012,10 @@ export async function getFeedback360PageData(
     const baseData: Feedback360PageData = {
       mode: params.mode,
       state: scopedRounds.length ? 'ready' : 'empty',
-      message: rounds.length ? undefined : '생성된 다면평가 라운드가 아직 없습니다. 먼저 평가 주기와 360 라운드를 설정하세요.',
+      message: rounds.length ? undefined : '?앹꽦???ㅻ㈃?됯? ?쇱슫?쒓? ?꾩쭅 ?놁뒿?덈떎. 癒쇱? ?됯? 二쇨린? 360 ?쇱슫?쒕? ?ㅼ젙?섏꽭??',
       currentUser,
       ...(rounds.length && params.mode === 'admin' && !scopedRounds.length
-        ? { message: '공동 작업자로 지정된 리뷰만 관리할 수 있습니다. 현재 접근 가능한 리뷰가 없습니다.' }
+        ? { message: '怨듬룞 ?묒뾽?먮줈 吏?뺣맂 由щ럭留?愿由ы븷 ???덉뒿?덈떎. ?꾩옱 ?묎렐 媛?ν븳 由щ럭媛 ?놁뒿?덈떎.' }
         : {}),
       permissions: {
         canManageRounds:
@@ -1567,6 +2048,12 @@ export async function getFeedback360PageData(
       pendingRequests,
     }
 
+    const reviewAdminState = params.mode === 'admin' ? await buildReviewAdminState() : undefined
+    const anytimeReviewState =
+      params.mode === 'admin' && reviewAdminState
+        ? await buildAnytimeReviewAdminState(reviewAdminState)
+        : undefined
+
     if (!selectedRound) {
       if (params.mode === 'admin') {
         return {
@@ -1584,9 +2071,10 @@ export async function getFeedback360PageData(
             })),
             reminderTargets: [],
             settings: undefined,
-            reviewAdmin: await buildReviewAdminState(),
+            reviewAdmin: reviewAdminState,
             nominationQueue: [],
             resultShare: undefined,
+            anytimeReview: anytimeReviewState,
             onboarding: undefined,
           },
         }
@@ -1668,7 +2156,7 @@ export async function getFeedback360PageData(
           .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
           .map((item) => ({
             employeeId: String(item.employeeId ?? ''),
-            name: String(item.name ?? '이름 없음'),
+            name: String(item.name ?? '?대쫫 ?놁쓬'),
             relationship: String(item.relationship ?? 'PEER'),
           }))
       : []
@@ -1729,12 +2217,12 @@ export async function getFeedback360PageData(
         let disabledReason: string | null = null
 
         if (supervisorIds.includes(reviewer.id)) {
-          disabledReason = '본인의 평가권자 및 상위 평가권자는 동료 리뷰 작성자로 선택할 수 없습니다.'
+          disabledReason = '蹂몄씤???됯?沅뚯옄 諛??곸쐞 ?됯?沅뚯옄???숇즺 由щ럭 ?묒꽦?먮줈 ?좏깮?????놁뒿?덈떎.'
         } else if (
           selectionSettings.excludeDirectReportsFromPeerSelection &&
           directReportIds.has(reviewer.id)
         ) {
-          disabledReason = '현재 설정에서는 리뷰 대상자의 팀원을 동료 리뷰 작성자로 선택할 수 없습니다.'
+          disabledReason = '?꾩옱 ?ㅼ젙?먯꽌??由щ럭 ??곸옄????먯쓣 ?숇즺 由щ럭 ?묒꽦?먮줈 ?좏깮?????놁뒿?덈떎.'
         }
 
         return {
@@ -1748,9 +2236,9 @@ export async function getFeedback360PageData(
       })
 
       const peerGroupHelp = [
-        '본인, 본인의 평가권자, 상위 평가권자는 동료 후보에서 자동 제외됩니다.',
+        '蹂몄씤, 蹂몄씤???됯?沅뚯옄, ?곸쐞 ?됯?沅뚯옄???숇즺 ?꾨낫?먯꽌 ?먮룞 ?쒖쇅?⑸땲??',
         selectionSettings.excludeDirectReportsFromPeerSelection
-          ? '현재 설정에서는 본인의 팀원도 함께 동료 후보에서 제외됩니다.'
+          ? '?꾩옱 ?ㅼ젙?먯꽌??蹂몄씤????먮룄 ?④퍡 ?숇즺 ?꾨낫?먯꽌 ?쒖쇅?⑸땲??'
           : null,
       ]
         .filter(Boolean)
@@ -1771,8 +2259,8 @@ export async function getFeedback360PageData(
           reviewerGroups: [
             {
               key: 'self',
-              label: '자기',
-              description: '자기 인식 비교용으로 자기 응답을 함께 확인할 수 있습니다.',
+              label: '?먭린',
+              description: '?먭린 ?몄떇 鍮꾧탳?⑹쑝濡??먭린 ?묐떟???④퍡 ?뺤씤?????덉뒿?덈떎.',
               reviewers: [
                 {
                   employeeId: target.id,
@@ -1813,9 +2301,9 @@ export async function getFeedback360PageData(
             },
           ],
           guidance: [
-            '기본 anonymity threshold는 3명이며, 기준 미달 시 익명 요약과 텍스트 응답은 숨겨집니다.',
-            '상사 1명, 동료 3명, 부하 3명 기준의 균형을 먼저 맞추고 필요 시 HR이 예외를 승인합니다.',
-            '이번 1차 구현에서는 nomination draft를 저장해 운영 검토 흐름에 연결하는 기반까지 제공합니다.',
+            '기본 anonymity threshold가 3명이며, 기준 미달 시 익명 요약과 텍스트 응답은 비공개 처리됩니다.',
+            '상사 1명, 동료 3명, 부하 3명 기준으로 균형을 맞추고 필요한 경우 HR 예외를 확인합니다.',
+            '이번 1차 구성원 단계에서는 nomination draft를 저장해 운영 검토와 승인 흐름을 연결하는 기반까지 제공합니다.',
           ],
           workflowStatus: nominationWorkflowStatus,
           counts: {
@@ -1870,10 +2358,15 @@ export async function getFeedback360PageData(
     }))
       .sort((a, b) => b.average - a.average)
 
-    const strengths = categoryScores.slice(0, 3).map((item) => `${item.category} 영역에서 평균 ${item.average}점으로 상대적 강점이 보입니다.`)
-    const improvements = categoryScores.slice(-3).reverse().map((item) => `${item.category} 영역은 평균 ${item.average}점으로 추가 코칭이 필요합니다.`)
+    const strengths = categoryScores
+      .slice(0, 3)
+      .map((item) => `${item.category} 영역에서 평균 ${item.average}점으로 상대적 강점이 보입니다.`)
+    const improvements = categoryScores
+      .slice(-3)
+      .reverse()
+      .map((item) => `${item.category} 영역은 평균 ${item.average}점으로 추가 코칭이 필요합니다.`)
 
-    const developmentFocus = improvements[0]?.split(' 영역')[0] ?? '협업과 영향력'
+    const developmentFocus = improvements[0]?.split(' 영역')[0] ?? '조직과 성장'
 
     const persistedPayload = parsePersistedReportPayload(reportCache?.reportPayload)
     const persistedCategoryScores = Array.isArray(persistedPayload?.categoryScores)
@@ -1891,10 +2384,10 @@ export async function getFeedback360PageData(
     const persistedDevelopmentPlan = parsePersistedReportPayload(persistedPayload?.developmentPlan)
     const resolvedStrengths = persistedStrengths.length
       ? persistedStrengths
-      : ['?꾩쭅 異⑸텇???묐떟???놁뼱 媛뺤젏 ?뚮쭏瑜??앹꽦?섏? 紐삵뻽?듬땲??']
+      : ['?袁⑹춦 ?겸뫖????臾먮뼗????곷선 揶쏅벡?????춳????밴쉐??? 筌륁궢六??щ빍??']
     const resolvedImprovements = persistedImprovements.length
       ? persistedImprovements
-      : ['?묐떟 ?섍? anonymity threshold瑜?異⑹”?섎㈃ 媛쒖꽑 ?ъ씤?몃? ???좊챸?섍쾶 蹂????덉뒿?덈떎.']
+      : ['?臾먮뼗 ??? anonymity threshold???겸뫗???롢늺 揶쏆뮇苑?????紐? ???醫딆구??띿쓺 癰?????됰뮸??덈뼄.']
     const resolvedDevelopmentPlan =
       persistedDevelopmentPlan &&
       typeof persistedDevelopmentPlan.focusArea === 'string' &&
@@ -1912,6 +2405,12 @@ export async function getFeedback360PageData(
             nextCheckinTopics: persistedDevelopmentPlan.nextCheckinTopics.filter(
               (item): item is string => typeof item === 'string' && item.trim().length > 0
             ),
+            recommendedCompetencies: Array.isArray(persistedDevelopmentPlan.recommendedCompetencies)
+              ? persistedDevelopmentPlan.recommendedCompetencies.filter(
+                  (item): item is string => typeof item === 'string' && item.trim().length > 0
+                )
+              : [],
+            linkedEvidence: normalizeDevelopmentPlanLinkedEvidence(persistedDevelopmentPlan.linkedEvidence),
           }
         : null
     const groupedResponses = buildGroupedResponses({
@@ -1938,12 +2437,79 @@ export async function getFeedback360PageData(
       strengths: resolvedStrengths,
       improvements: resolvedImprovements,
     })
+    const resultSelectionSettings = parseFeedbackSelectionSettings(selectedRound.selectionSettings)
     const resultPresentationSettings = parseFeedbackResultPresentationSettings(
       selectedRound.resultPresentationSettings
     )
     const reportAnalysisSettings = parseFeedbackReportAnalysisSettings(
       selectedRound.reportAnalysisSettings
     )
+    const resolvedRoleGuide = resolveFeedbackRoleGuide({
+      settings: resultSelectionSettings.skillArchitecture,
+      target: {
+        departmentName: target.department.deptName,
+        role: target.role,
+        position: target.position,
+        jobTitle: target.jobTitle ?? undefined,
+        teamName: target.teamName ?? undefined,
+      },
+    })
+    const recentGoalRecords = resultSelectionSettings.aiCopilot.enabled
+      ? await prisma.personalKpi.findMany({
+          where: {
+            employeeId: target.id,
+            evalYear: selectedCycle.evalYear,
+          },
+          orderBy: [{ weight: 'desc' }, { updatedAt: 'desc' }],
+          take: 5,
+          select: {
+            id: true,
+            kpiName: true,
+            weight: true,
+            status: true,
+          },
+        })
+      : []
+    const recentCheckinRecords = resultSelectionSettings.aiCopilot.enabled
+      ? await prisma.checkIn.findMany({
+          where: {
+            ownerId: target.id,
+            status: {
+              in: ['IN_PROGRESS', 'COMPLETED', 'RESCHEDULED'],
+            },
+          },
+          orderBy: [{ updatedAt: 'desc' }],
+          take: 3,
+          select: {
+            scheduledDate: true,
+            ownerNotes: true,
+            managerNotes: true,
+            actionItems: true,
+          },
+        })
+      : []
+    const roleGuideViewModel: FeedbackRoleGuideViewModel | undefined = resolvedRoleGuide
+      ? {
+          label: resolvedRoleGuide.label,
+          jobFamily: resolvedRoleGuide.jobFamily,
+          level: resolvedRoleGuide.level,
+          guideText: resolvedRoleGuide.guideText,
+          expectedCompetencies: resolvedRoleGuide.expectedCompetencies,
+          nextLevelExpectations: resolvedRoleGuide.nextLevelExpectations,
+          goalLibrary: resolvedRoleGuide.goalLibrary,
+        }
+      : undefined
+    const recentGoals = recentGoalRecords.map(
+      (goal) => `${goal.kpiName} · ${formatGoalWeightLabel(goal.weight)} · ${goal.status}`
+    )
+    const recentCheckins = recentCheckinRecords
+      .flatMap((checkin) =>
+        [checkin.ownerNotes, checkin.managerNotes]
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .map((item) => `${formatDate(checkin.scheduledDate)} · ${item}`)
+      )
+      .slice(0, 4)
+    const feedbackSignals = [...resolvedStrengths, ...resolvedImprovements, ...persistedTextHighlights].slice(0, 6)
     const recipientProfile = resolveFeedbackResultPresentationProfile({
       actorId: employee.id,
       actorRole: employee.role,
@@ -1968,12 +2534,60 @@ export async function getFeedback360PageData(
       typeof persistedPayload?.anonymousSummary === 'string'
         ? persistedPayload.anonymousSummary
         : persistedTextHighlights[0] ?? null
+    const managerEffectivenessLeaderSummaries = resultSelectionSettings.managerEffectiveness.enabled
+      ? buildManagerEffectivenessLeaderSummaries({
+          feedbacks: selectedRound.feedbacks as ManagerEffectivenessRoundFeedback[],
+          competencyLabels: resultSelectionSettings.managerEffectiveness.competencyLabels,
+          targetScope: resultSelectionSettings.managerEffectiveness.targetScope,
+        })
+      : []
+    const managerEffectivenessResult =
+      resultSelectionSettings.managerEffectiveness.enabled &&
+      (resultSelectionSettings.managerEffectiveness.targetScope !== 'MANAGERS_ONLY' ||
+        isManagerEffectivenessTarget({ position: target.position }))
+        ? managerEffectivenessLeaderSummaries.find((item) => item.employeeId === target.id)
+            ? {
+                enabled: true,
+                overallScore:
+                  managerEffectivenessLeaderSummaries.find((item) => item.employeeId === target.id)?.overallScore ??
+                  null,
+                benchmarkAverage:
+                  managerEffectivenessLeaderSummaries.find((item) => item.employeeId === target.id)
+                    ?.benchmarkAverage ?? null,
+                benchmarkDelta:
+                  managerEffectivenessLeaderSummaries.find((item) => item.employeeId === target.id)?.benchmarkDelta ??
+                  null,
+                riskLevel:
+                  managerEffectivenessLeaderSummaries.find((item) => item.employeeId === target.id)?.riskLevel ??
+                  'LOW',
+                reviewerSummary: getManagerEffectivenessReviewerSummary(
+                  resultSelectionSettings.managerEffectiveness
+                ),
+                competencyLabels: resultSelectionSettings.managerEffectiveness.competencyLabels,
+                strengths:
+                  managerEffectivenessLeaderSummaries.find((item) => item.employeeId === target.id)?.strengths ?? [],
+                improvements:
+                  managerEffectivenessLeaderSummaries.find((item) => item.employeeId === target.id)?.improvements ??
+                  [],
+                coachingPack:
+                  managerEffectivenessLeaderSummaries.find((item) => item.employeeId === target.id)?.coachingPack ??
+                  buildManagerEffectivenessCoachingPack({
+                    leaderName: target.empName,
+                    strengths: [],
+                    improvements: [],
+                    competencyLabels: resultSelectionSettings.managerEffectiveness.competencyLabels,
+                    overallScore: null,
+                    benchmarkDelta: null,
+                  }),
+              }
+            : undefined
+        : undefined
     const summaryCards = [
       {
         id: 'LEADER_REVIEW' as const,
-        title: '팀장 평가',
+        title: '????됯?',
         reviewerName: leaderFeedback?.giver.empName,
-        relationshipLabel: '직속 리더',
+        relationshipLabel: '吏곸냽 由щ뜑',
         totalScore: leaderFeedback
           ? calculateFeedbackResponseTotalScore({ responses: leaderFeedback.responses })
           : null,
@@ -1983,9 +2597,9 @@ export async function getFeedback360PageData(
       },
       {
         id: 'EXECUTIVE_REVIEW' as const,
-        title: '상위 평가',
+        title: '?곸쐞 ?됯?',
         reviewerName: executiveFeedback?.giver.empName,
-        relationshipLabel: '상위 평가권자',
+        relationshipLabel: '?곸쐞 ?됯?沅뚯옄',
         totalScore: executiveFeedback
           ? calculateFeedbackResponseTotalScore({ responses: executiveFeedback.responses })
           : null,
@@ -1995,8 +2609,8 @@ export async function getFeedback360PageData(
       },
       {
         id: 'FINAL_RESULT' as const,
-        title: '최종 결과',
-        relationshipLabel: '종합 결과',
+        title: '理쒖쥌 寃곌낵',
+        relationshipLabel: '醫낇빀 寃곌낵',
         totalScore: finalTotalScore,
         comment: thresholdMet ? finalComment : null,
         showScore: presentationSettings.showFinalScore,
@@ -2011,14 +2625,14 @@ export async function getFeedback360PageData(
       pdfHref: `/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/results-export?targetId=${encodeURIComponent(target.id)}&profile=${encodeURIComponent(recipientProfile)}`,
       links: [
         {
-          label: '리뷰 결과 화면',
+          label: '由щ럭 寃곌낵 ?붾㈃',
           href: '/evaluation/results',
-          description: '기존 평가 결과 화면과 연결해 결과 안내 흐름을 이어갑니다.',
+          description: '湲곗〈 ?됯? 寃곌낵 ?붾㈃怨??곌껐??寃곌낵 ?덈궡 ?먮쫫???댁뼱媛묐땲??',
         },
         {
-          label: '360 결과 PDF',
+          label: '360 寃곌낵 PDF',
           href: `/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/results-export?targetId=${encodeURIComponent(target.id)}&profile=${encodeURIComponent(recipientProfile)}&download=1`,
-          description: '현재 결과지 버전 기준 PDF를 바로 내려받을 수 있습니다.',
+          description: '?꾩옱 寃곌낵吏 踰꾩쟾 湲곗? PDF瑜?諛붾줈 ?대젮諛쏆쓣 ???덉뒿?덈떎.',
         },
       ],
       questions: selectedRound.questions.map((question) => ({
@@ -2096,30 +2710,58 @@ export async function getFeedback360PageData(
           roundWeight: selectedRound.weightInFinal,
           summaryCards,
           categoryScores: persistedCategoryScores,
-          strengths: strengths.length ? strengths : ['아직 충분한 응답이 없어 강점 테마를 생성하지 못했습니다.'],
-          improvements: improvements.length ? improvements : ['응답 수가 anonymity threshold를 충족하면 개선 포인트를 더 선명하게 볼 수 있습니다.'],
+          strengths: strengths.length ? strengths : ['?꾩쭅 異⑸텇???묐떟???놁뼱 媛뺤젏 ?뚮쭏瑜??앹꽦?섏? 紐삵뻽?듬땲??'],
+          improvements: improvements.length ? improvements : ['?묐떟 ?섍? anonymity threshold瑜?異⑹”?섎㈃ 媛쒖꽑 ?ъ씤?몃? ???좊챸?섍쾶 蹂????덉뒿?덈떎.'],
           anonymousSummary: thresholdMet
-            ? '익명성을 유지한 상태로 강점, blind spot, 개발 포인트를 요약할 준비가 되었습니다.'
-            : `현재 응답 수는 ${submittedTargetFeedbacks.length}건이며, 익명 요약 공개 기준 ${selectedRound.minRaters}건에 아직 미달합니다.`,
+            ? '?듬챸?깆쓣 ?좎????곹깭濡?媛뺤젏, blind spot, 媛쒕컻 ?ъ씤?몃? ?붿빟??以鍮꾧? ?섏뿀?듬땲??'
+            : `?꾩옱 ?묐떟 ?섎뒗 ${submittedTargetFeedbacks.length}嫄댁씠硫? ?듬챸 ?붿빟 怨듦컻 湲곗? ${selectedRound.minRaters}嫄댁뿉 ?꾩쭅 誘몃떖?⑸땲??`,
           textHighlights: persistedTextHighlights,
           groupedResponses,
           warnings,
           developmentPlan: {
-            focusArea: `${developmentFocus} 역량 강화`,
-            actions: [
-              '다음 체크인에서 360 blind spot과 최근 월간 실적을 함께 검토합니다.',
-              '다음 분기 개인 KPI 중 하나를 협업 또는 리더십 개선 목표와 연결합니다.',
-              '피드백에서 반복된 주제를 기준으로 작은 실행 실험을 2주 단위로 설계합니다.',
-            ],
-            managerSupport: [
-              '리더는 행동 예시 기반 피드백을 월 1회 이상 제공합니다.',
-              '리더는 체크인에서 성과와 역량 피드백을 분리해 기록합니다.',
-            ],
-            nextCheckinTopics: [
-              '360 강점과 현재 KPI 실행 방식의 연결',
-              'blind spot이 실제 협업 장면에서 드러나는 순간',
-              '다음 달 실천 항목과 증빙 방식',
-            ],
+            focusArea: resolvedDevelopmentPlan?.focusArea ?? `${developmentFocus} 성장 강화`,
+            actions:
+              resolvedDevelopmentPlan?.actions ?? [
+                '다음 체크인에서 blind spot 한 가지를 실제 사례와 함께 점검합니다.',
+                '다음 분기 개인 목표 중 하나를 성장 과제와 직접 연결합니다.',
+                '반복해서 나온 피드백 한 항목을 2주 단위 실험으로 관리합니다.',
+              ],
+            managerSupport:
+              resolvedDevelopmentPlan?.managerSupport ?? [
+                '리더는 행동 예시 기반 피드백을 최소 월 1회 제공합니다.',
+                '다음 1:1에서 실행 결과와 체감 변화를 함께 점검합니다.',
+              ],
+            nextCheckinTopics:
+              resolvedDevelopmentPlan?.nextCheckinTopics ?? [
+                '최근 강점과 현재 목표 실행 방식을 어떻게 연결할지',
+                'blind spot를 줄이기 위한 다음 행동 실험',
+                '다음 달 확인할 구체적 증거와 점검 방식',
+              ],
+            recommendedCompetencies:
+              resolvedDevelopmentPlan?.recommendedCompetencies ??
+              roleGuideViewModel?.expectedCompetencies.slice(0, 4) ??
+              [],
+            linkedEvidence: resolvedDevelopmentPlan?.linkedEvidence.length
+              ? resolvedDevelopmentPlan.linkedEvidence
+              : normalizeDevelopmentPlanLinkedEvidence(developmentPlanRecord?.linkedEvidence).length
+                ? normalizeDevelopmentPlanLinkedEvidence(developmentPlanRecord?.linkedEvidence)
+                : [
+                    ...recentGoalRecords.slice(0, 2).map((goal) => ({
+                      type: 'GOAL' as const,
+                      label: goal.kpiName,
+                      description: `${formatGoalWeightLabel(goal.weight)} · ${goal.status}`,
+                    })),
+                    ...recentCheckinRecords.slice(0, 2).map((checkin) => ({
+                      type: 'CHECKIN' as const,
+                      label: `${formatDate(checkin.scheduledDate)} 1:1`,
+                      description: checkin.managerNotes || checkin.ownerNotes || '최근 점검 기록',
+                    })),
+                    ...persistedTextHighlights.slice(0, 1).map((item) => ({
+                      type: 'REVIEW' as const,
+                      label: '최근 리뷰 핵심 문장',
+                      description: item,
+                    })),
+                  ],
           },
           reportCache: reportCache
             ? {
@@ -2134,13 +2776,55 @@ export async function getFeedback360PageData(
                 title: developmentPlanRecord.title,
                 status: developmentPlanRecord.status,
                 updatedAt: formatDate(developmentPlanRecord.updatedAt),
+                actions: normalizeDevelopmentPlanActionItems(developmentPlanRecord.actions),
+                recommendedCompetencies: normalizeDevelopmentPlanStringArray(
+                  developmentPlanRecord.recommendedCompetencies
+                ),
+                managerSupport: normalizeDevelopmentPlanStringArray(developmentPlanRecord.managerSupport),
+                nextCheckinTopics: normalizeDevelopmentPlanStringArray(developmentPlanRecord.nextCheckinTopics),
+                linkedEvidence: normalizeDevelopmentPlanLinkedEvidence(developmentPlanRecord.linkedEvidence),
+                note: developmentPlanRecord.note,
+                dueDate: developmentPlanRecord.dueDate ? formatDate(developmentPlanRecord.dueDate) : null,
+                progressRate: calculateDevelopmentPlanProgress(
+                  normalizeDevelopmentPlanActionItems(developmentPlanRecord.actions)
+                ).progressRate,
+              }
+            : undefined,
+          roleGuide: roleGuideViewModel,
+          growthCopilot: resultSelectionSettings.aiCopilot.enabled
+            ? {
+                enabled: true,
+                canView:
+                  employee.role === 'ROLE_ADMIN' ||
+                  (recipientProfile === 'LEADER' && resultSelectionSettings.aiCopilot.allowManagerView) ||
+                  (recipientProfile === 'REVIEWEE' && resultSelectionSettings.aiCopilot.allowSelfView),
+                disclaimer: resultSelectionSettings.aiCopilot.disclaimer,
+                roleGuideLabel: roleGuideViewModel?.label,
+                recommendedCompetencies:
+                  roleGuideViewModel?.expectedCompetencies.length
+                    ? roleGuideViewModel.expectedCompetencies.slice(0, 5)
+                    : normalizeDevelopmentPlanStringArray(developmentPlanRecord?.recommendedCompetencies),
+                recentGoals,
+                recentCheckins,
+                feedbackSignals,
+                aiPayload: {
+                  employeeId: target.id,
+                  employeeName: target.empName,
+                  roleGuide: roleGuideViewModel,
+                  recentGoals,
+                  recentCheckins,
+                  feedbackSignals,
+                  categoryScores: persistedCategoryScores,
+                  strengths: resolvedStrengths,
+                  improvements: resolvedImprovements,
+                },
               }
             : undefined,
           linkage: [
             {
               label: '평가 워크벤치로 이동',
               href: `/evaluation/workbench?cycleId=${encodeURIComponent(selectedCycle.id)}`,
-              description: '다면피드백을 평가 근거로 함께 검토합니다.',
+              description: '서면 피드백을 평가 근거로 다시 검토할 수 있습니다.',
             },
             {
               label: '평가 결과 보기',
@@ -2150,16 +2834,17 @@ export async function getFeedback360PageData(
             {
               label: '이의 신청 정책 확인',
               href: '/evaluation/appeal',
-              description: '다면피드백은 익명성 기준을 지키며 결과 설명의 보조 근거로만 사용합니다.',
+              description: '서면 피드백은 익명 기준을 지키며 결과 설명의 보조 근거로만 사용합니다.',
             },
             {
               label: '다음 체크인 준비',
               href: '/checkin',
-              description: '개발 계획 초안을 체크인 아젠다로 이어갑니다.',
+              description: '개발 계획 초안을 체크인 액션으로 이어갑니다.',
             },
           ],
           pdfHref: `/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/results-export?targetId=${encodeURIComponent(target.id)}&profile=${encodeURIComponent(recipientProfile)}`,
           analysis: reportAnalysis,
+          managerEffectiveness: managerEffectivenessResult,
         },
       }
     }
@@ -2374,6 +3059,60 @@ export async function getFeedback360PageData(
           }
         : undefined
 
+      const managerEffectivenessAdmin = resultSelectionSettings.managerEffectiveness.enabled
+        ? {
+            enabled: true,
+            targetScope: resultSelectionSettings.managerEffectiveness.targetScope,
+            reviewerSummary: getManagerEffectivenessReviewerSummary(
+              resultSelectionSettings.managerEffectiveness
+            ),
+            competencyLabels: resultSelectionSettings.managerEffectiveness.competencyLabels,
+            summary: {
+              leaderCount: managerEffectivenessLeaderSummaries.length,
+              averageScore: averageNumber(
+                managerEffectivenessLeaderSummaries.map((leader) => leader.overallScore)
+              ),
+              highRiskCount: managerEffectivenessLeaderSummaries.filter(
+                (leader) => leader.riskLevel === 'HIGH'
+              ).length,
+              coachingReadyCount: managerEffectivenessLeaderSummaries.filter(
+                (leader) => leader.coachingPack.nextOneOnOneQuestions.length > 0
+              ).length,
+            },
+            heatmap: Array.from(
+              managerEffectivenessLeaderSummaries.reduce(
+                (map, leader) => {
+                  const current = map.get(leader.departmentName) ?? []
+                  current.push(leader)
+                  map.set(leader.departmentName, current)
+                  return map
+                },
+                new Map<string, ManagerEffectivenessLeaderSummary[]>()
+              )
+            ).map(([departmentName, leaders]) => ({
+              departmentName,
+              leaderCount: leaders.length,
+              averageScore: averageNumber(leaders.map((leader) => leader.overallScore)),
+              highRiskCount: leaders.filter((leader) => leader.riskLevel === 'HIGH').length,
+            })),
+            topImprovementThemes: Array.from(
+              managerEffectivenessLeaderSummaries.reduce(
+                (map, leader) => {
+                  leader.improvements.forEach((label) => {
+                    map.set(label, (map.get(label) ?? 0) + 1)
+                  })
+                  return map
+                },
+                new Map<string, number>()
+              )
+            )
+              .map(([label, count]) => ({ label, count }))
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 6),
+            leaders: managerEffectivenessLeaderSummaries,
+          }
+        : undefined
+
       const reminderTargets = [
         ...scopedRounds.flatMap((round) =>
           round.feedbacks
@@ -2390,7 +3129,7 @@ export async function getFeedback360PageData(
                 statusKey: status.key,
                 statusLabel: status.label,
                 statusTone: status.tone,
-                detail: `${feedback.receiver.empName} · ${feedback.relationship} · 마감 ${formatDate(round.endDate)}`,
+                detail: `${feedback.receiver.empName} 쨌 ${feedback.relationship} 쨌 留덇컧 ${formatDate(round.endDate)}`,
               }
             })
         ),
@@ -2407,7 +3146,7 @@ export async function getFeedback360PageData(
               statusKey: status.key,
               statusLabel: status.label,
               statusTone: status.tone,
-              detail: `현재 상태 ${item.status} · 승인 ${item.approvedCount}/${item.totalCount}`,
+              detail: `?꾩옱 ?곹깭 ${item.status} 쨌 ?뱀씤 ${item.approvedCount}/${item.totalCount}`,
             }
           }),
         ...scopedRounds.flatMap((round) => {
@@ -2445,8 +3184,8 @@ export async function getFeedback360PageData(
                 data: null,
                 alert:
                   error instanceof Error
-                    ? `온보딩 리뷰 워크플로우를 일부 불러오지 못했습니다. ${error.message}`
-                    : '온보딩 리뷰 워크플로우를 일부 불러오지 못했습니다.',
+                    ? `온보딩 리뷰 워크플로우 정보를 불러오지 못했습니다. ${error.message}`
+                    : '온보딩 리뷰 워크플로우 정보를 불러오지 못했습니다.',
               }))
           : { data: null, alert: null as string | null }
 
@@ -2455,19 +3194,19 @@ export async function getFeedback360PageData(
         admin: {
           roundHealth,
           timeline: scopedRounds.slice(0, 6).map((round) => ({
-            title: round.roundName,
-            description: `${round.status} · 응답률 ${toResponseRate(round.feedbacks.filter((feedback) => feedback.status === 'SUBMITTED').length, round.feedbacks.length)}%`,
-            at: formatDate(round.endDate),
-          })),
+              title: round.roundName,
+              description: `${round.status} · 응답률 ${toResponseRate(round.feedbacks.filter((feedback) => feedback.status === 'SUBMITTED').length, round.feedbacks.length)}%`,
+              at: formatDate(round.endDate),
+            })),
           alerts: [
             ...roundHealth.flatMap((item) => {
             const alerts: string[] = []
             if (item.responseRate < 60) {
-              alerts.push(`${item.roundName}의 응답률이 낮아 reminder cadence 점검이 필요합니다.`)
+              alerts.push(`${item.roundName}의 응답률이 낮아 reminder cadence 조정이 필요합니다.`)
             }
             if (item.qualityRiskCount > 0) {
-              alerts.push(`${item.roundName}에서 careless review 의심 응답 ${item.qualityRiskCount}건이 감지되었습니다.`)
-              }
+              alerts.push(`${item.roundName}에서 careless review로 보이는 응답 ${item.qualityRiskCount}건이 감지되었습니다.`)
+               }
               return alerts
             }),
             ...(onboardingSnapshotResult.alert ? [onboardingSnapshotResult.alert] : []),
@@ -2504,9 +3243,11 @@ export async function getFeedback360PageData(
                   collaboratorIds: selectedRound.collaborators.map((collaborator) => collaborator.employeeId),
                 }
               : undefined,
-          reviewAdmin: await buildReviewAdminState(),
+          reviewAdmin: reviewAdminState,
           nominationQueue,
           resultShare: resultShareSummary,
+          managerEffectiveness: managerEffectivenessAdmin,
+          anytimeReview: anytimeReviewState,
           onboarding: onboardingSnapshotResult.data ?? undefined,
         },
       }
@@ -2551,7 +3292,7 @@ export async function getFeedback360PageData(
         return {
           ...baseData,
           state: 'permission-denied',
-          message: '응답 화면에 접근할 권한이 없습니다.',
+          message: '?묐떟 ?붾㈃???묎렐??沅뚰븳???놁뒿?덈떎.',
         }
       }
 
@@ -2725,9 +3466,14 @@ export async function getFeedback360PageData(
         departmentName: feedback.receiver.department?.deptName ?? '',
         role: feedback.receiver.role,
         position: feedback.receiver.position,
-        jobTitle: feedback.receiver.jobTitle,
-        teamName: feedback.receiver.teamName,
+        jobTitle: feedback.receiver.jobTitle ?? undefined,
+        teamName: feedback.receiver.teamName ?? undefined,
       }
+      const respondSelectionSettings = parseFeedbackSelectionSettings(feedback.round.selectionSettings)
+      const respondRoleGuide = resolveFeedbackRoleGuide({
+        settings: respondSelectionSettings.skillArchitecture,
+        target: targetProfile,
+      })
       const ratingQuestions = feedback.round.questions
         .filter((question) => question.questionType === 'RATING_SCALE')
         .map((question) => ({
@@ -2872,7 +3618,7 @@ export async function getFeedback360PageData(
       const referenceWarnings = [
         goals.length
           ? null
-          : '연결된 목표 정보가 아직 없어 리뷰 작성 시 성과 맥락이 제한됩니다.',
+          : '연결된 목표 정보가 아직 없어 리뷰 작성 시 참고 맥락이 제한됩니다.',
         submittedReferenceFeedbacks.length
           ? null
           : '이전에 제출된 리뷰가 없어 비교 참고 정보가 제한됩니다.',
@@ -2902,6 +3648,17 @@ export async function getFeedback360PageData(
             teamName: targetProfile.teamName,
           },
           priorScoreSummary,
+          roleGuide: respondRoleGuide
+            ? {
+                label: respondRoleGuide.label,
+                jobFamily: respondRoleGuide.jobFamily,
+                level: respondRoleGuide.level,
+                guideText: respondRoleGuide.guideText,
+                expectedCompetencies: respondRoleGuide.expectedCompetencies,
+                nextLevelExpectations: respondRoleGuide.nextLevelExpectations,
+                goalLibrary: respondRoleGuide.goalLibrary,
+              }
+            : undefined,
           ratingGuide: {
             questionId: distributionQuestion?.id,
             questionText: distributionQuestion?.questionText,
@@ -2949,8 +3706,8 @@ export async function getFeedback360PageData(
             }
           }),
           instructions: [
-            '행동 기반으로 작성하고 개인 신상이나 감정 표현은 최소화합니다.',
-            '익명 라운드는 threshold 충족 전까지 텍스트 응답이 보고서에 공개되지 않습니다.',
+            '행동 기반으로 작성하고 개인 추정이나 감정 표현은 최소화합니다.',
+            '익명 응답은 threshold 충족 전까지 텍스트 응답이 보고서에 공개되지 않습니다.',
             '참고 정보 패널에서 연결 목표, 이전 리뷰, 종합 점수를 함께 확인할 수 있습니다.',
           ],
           reference: {
@@ -2970,7 +3727,7 @@ export async function getFeedback360PageData(
     return {
       mode: params.mode,
       state: 'error',
-      message: '360 다면평가 화면 데이터를 불러오지 못했습니다.',
+      message: '360 서면평가 화면 데이터를 불러오지 못했습니다.',
       availableCycles: [],
       availableRounds: [],
       summary: {

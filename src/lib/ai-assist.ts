@@ -619,6 +619,36 @@ const FEEDBACK_360_DEVELOPMENT_PLAN_SCHEMA = {
   },
 } satisfies JsonRecord
 
+const FEEDBACK_360_GROWTH_COPILOT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'summary',
+    'growthAreas',
+    'recommendedCompetencies',
+    'oneOnOneQuestions',
+    'coachingDraft',
+    'promotionReadinessHint',
+  ],
+  properties: {
+    summary: { type: 'string' },
+    growthAreas: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    recommendedCompetencies: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    oneOnOneQuestions: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    coachingDraft: { type: 'string' },
+    promotionReadinessHint: { type: 'string' },
+  },
+} satisfies JsonRecord
+
 const CALIBRATION_RISK_SUMMARY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1115,6 +1145,12 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     systemPrompt:
       'You are a development planning assistant. Reply in Korean. Convert 360 feedback themes into a focused development plan with practical actions, manager support, and next check-in topics.',
   },
+  'GROWTH_PLAN:Feedback360GrowthCopilot': {
+    schemaName: 'feedback_360_growth_copilot',
+    schema: FEEDBACK_360_GROWTH_COPILOT_SCHEMA,
+    systemPrompt:
+      'You are a leadership growth copilot. Reply in Korean. Use recent review, goal, feedback, and one-on-one context to summarize growth areas, suggest one-on-one questions, draft a coaching message, and provide a cautious promotion-readiness hint. You are only a draft assistant and must not make final personnel decisions.',
+  },
   'KPI_ASSIST:CalibrationRiskSummary': {
     schemaName: 'calibration_risk_summary',
     schema: CALIBRATION_RISK_SUMMARY_SCHEMA,
@@ -1586,6 +1622,29 @@ export function buildFallbackResult(
         '협업 맥락에서 가장 자주 나온 강점의 재현 방법',
         'blind spot을 줄이기 위한 다음 행동 실험',
       ],
+    }
+  }
+
+  if (requestType === AIRequestType.GROWTH_PLAN && sourceType === 'Feedback360GrowthCopilot') {
+    return {
+      summary:
+        summary ||
+        '최근 리뷰, 목표, 1:1 기록을 종합하면 강점은 유지되고 있지만 코칭의 명확성, 실행 점검, 기대치 정렬을 더 구조적으로 관리할 필요가 있습니다.',
+      growthAreas: [
+        '우선순위와 기대치를 더 선명하게 전달합니다.',
+        '1:1에서 행동 단위의 피드백과 후속 질문을 더 자주 남깁니다.',
+        '목표와 성장 과제를 연결해 분기 단위로 진행 상황을 점검합니다.',
+      ],
+      recommendedCompetencies: ['코칭', '기대치 설정', '피드백 품질'],
+      oneOnOneQuestions: [
+        '최근 가장 막히는 업무 상황에서 내가 더 구체적으로 도와줄 수 있는 부분은 무엇인가요?',
+        '이번 분기 목표 중 우선순위가 가장 불명확한 항목은 무엇인가요?',
+        '다음 한 달 안에 행동으로 확인할 수 있는 성장 신호는 무엇인가요?',
+      ],
+      coachingDraft:
+        '최근 성과와 피드백을 보면 강점은 분명합니다. 다음 단계에서는 기대치를 더 명확히 정리하고, 1:1에서 실행 결과를 짧은 주기로 확인하면 성장 속도를 높일 수 있습니다.',
+      promotionReadinessHint:
+        '현재 역할 확장은 검토 가능하지만, 기대치 정렬과 코칭 일관성이 더 쌓이면 다음 레벨 준비도가 더 명확해질 수 있습니다.',
     }
   }
 

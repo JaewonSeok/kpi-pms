@@ -25,8 +25,22 @@ const nextConfig: NextConfig = {
         headers: AUTH_NO_STORE_HEADERS,
       },
       {
+        source: '/signin',
+        headers: AUTH_NO_STORE_HEADERS,
+      },
+      {
         source: '/api/auth/:path*',
         headers: AUTH_NO_STORE_HEADERS,
+      },
+      {
+        source: '/manifest.webmanifest',
+        headers: [
+          ...AUTH_NO_STORE_HEADERS,
+          {
+            key: 'Content-Type',
+            value: 'application/manifest+json; charset=utf-8',
+          },
+        ],
       },
       {
         source: '/sw.js',

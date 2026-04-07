@@ -293,7 +293,7 @@ export const CeoAdjustSchema = z.object({
 export const CreateFeedbackRoundSchema = z.object({
   evalCycleId: z.string().min(1),
   roundName: z.string().min(1).max(100),
-  roundType: z.enum(['PEER', 'UPWARD', 'CROSS_DEPT', 'FULL_360']),
+  roundType: z.enum(['PEER', 'UPWARD', 'CROSS_DEPT', 'FULL_360', 'ANYTIME']),
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
   isAnonymous: z.boolean().default(true),
@@ -301,14 +301,7 @@ export const CreateFeedbackRoundSchema = z.object({
   maxRaters: z.number().int().min(1).max(20).default(8),
   weightInFinal: z.number().min(0).max(100).default(0),
   folderId: z.string().nullable().optional(),
-  selectionSettings: z
-    .object({
-      requireLeaderApproval: z.boolean().default(false),
-      allowPreferredPeers: z.boolean().default(false),
-      excludeLeaderFromPeerSelection: z.boolean().default(false),
-      excludeDirectReportsFromPeerSelection: z.boolean().default(false),
-    })
-    .optional(),
+  selectionSettings: z.lazy(() => FeedbackSelectionSettingsSchema).optional(),
   visibilitySettings: z
     .object({
       SELF: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('FULL'),
@@ -385,6 +378,111 @@ export const FeedbackAdminGroupSchema = z.object({
   memberIds: z.array(z.string().min(1)).max(50),
 })
 
+export const FeedbackManagerEffectivenessSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  targetScope: z.enum(['ALL', 'MANAGERS_ONLY']).default('MANAGERS_ONLY'),
+  reviewerCombination: z
+    .object({
+      self: z.boolean().default(true),
+      supervisor: z.boolean().default(true),
+      peer: z.boolean().default(false),
+      subordinate: z.boolean().default(true),
+    })
+    .default({
+      self: true,
+      supervisor: true,
+      peer: false,
+      subordinate: true,
+    }),
+  competencyLabels: z.array(z.string().trim().min(1).max(40)).max(10).default([
+    '코칭',
+    '피드백',
+    '기대치 설정',
+    '의사결정',
+    '팀 운영',
+    '성장 지원',
+  ]),
+})
+
+export const FeedbackSelectionSettingsSchema = z.object({
+  requireLeaderApproval: z.boolean().default(false),
+  allowPreferredPeers: z.boolean().default(false),
+  excludeLeaderFromPeerSelection: z.boolean().default(false),
+  excludeDirectReportsFromPeerSelection: z.boolean().default(false),
+  managerEffectiveness: FeedbackManagerEffectivenessSettingsSchema.default({
+    enabled: false,
+    targetScope: 'MANAGERS_ONLY',
+    reviewerCombination: {
+      self: true,
+      supervisor: true,
+      peer: false,
+      subordinate: true,
+    },
+    competencyLabels: ['코칭', '피드백', '기대치 설정', '의사결정', '팀 운영', '성장 지원'],
+  }),
+  skillArchitecture: z
+    .object({
+      enabled: z.boolean().default(false),
+      roleProfiles: z
+        .array(
+          z.object({
+            id: z.string().min(1).max(100),
+            label: z.string().trim().min(1).max(80),
+            jobFamily: z.string().trim().min(1).max(80),
+            level: z.string().trim().min(1).max(80),
+            guideText: z.string().trim().min(10).max(4000),
+            expectedCompetencies: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+            nextLevelExpectations: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+            goalLibrary: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+            filters: z
+              .object({
+                departmentKeyword: EmptyStringToUndefined(z.string().max(100)).optional(),
+                roleKeyword: EmptyStringToUndefined(z.string().max(100)).optional(),
+                position: EmptyStringToUndefined(z.string().max(40)).optional(),
+                jobTitleKeyword: EmptyStringToUndefined(z.string().max(100)).optional(),
+                teamNameKeyword: EmptyStringToUndefined(z.string().max(100)).optional(),
+              })
+              .default({}),
+          })
+        )
+        .max(50)
+        .default([]),
+    })
+    .default({
+      enabled: false,
+      roleProfiles: [],
+    }),
+  aiCopilot: z
+    .object({
+      enabled: z.boolean().default(false),
+      allowManagerView: z.boolean().default(true),
+      allowSelfView: z.boolean().default(true),
+      includeGoals: z.boolean().default(true),
+      includeCheckins: z.boolean().default(true),
+      includeFeedback: z.boolean().default(true),
+      includeResults: z.boolean().default(true),
+      disclaimer: z
+        .string()
+        .trim()
+        .min(10)
+        .max(1000)
+        .default(
+          'AI 코파일럿은 최근 리뷰, 목표, 1:1, 피드백을 바탕으로 성장 포인트와 코칭 초안을 제안하는 보조 기능입니다. 최종 판단과 활용 결정은 리더와 HR이 수행합니다.'
+        ),
+    })
+    .default({
+      enabled: false,
+      allowManagerView: true,
+      allowSelfView: true,
+      includeGoals: true,
+      includeCheckins: true,
+      includeFeedback: true,
+      includeResults: true,
+      disclaimer:
+        'AI 코파일럿은 최근 리뷰, 목표, 1:1, 피드백을 바탕으로 성장 포인트와 코칭 초안을 제안하는 보조 기능입니다. 최종 판단과 활용 결정은 리더와 HR이 수행합니다.',
+    }),
+})
+
 export const FeedbackRatingGuideScaleEntrySchema = z.object({
   value: z.number().int().min(0).max(20),
   label: z.string().trim().min(1).max(40),
@@ -441,14 +539,7 @@ export const FeedbackRatingGuideSettingsSchema = z
 export const FeedbackRoundSettingsSchema = z.object({
   folderId: z.string().nullable().optional(),
   collaboratorIds: z.array(z.string().min(1)).max(50).optional(),
-  selectionSettings: z
-    .object({
-      requireLeaderApproval: z.boolean().default(false),
-      allowPreferredPeers: z.boolean().default(false),
-      excludeLeaderFromPeerSelection: z.boolean().default(false),
-      excludeDirectReportsFromPeerSelection: z.boolean().default(false),
-    })
-    .optional(),
+  selectionSettings: FeedbackSelectionSettingsSchema.optional(),
   visibilitySettings: z
     .object({
       SELF: z.enum(['FULL', 'ANONYMOUS', 'PRIVATE']).default('FULL'),
@@ -533,6 +624,64 @@ export const FeedbackRoundSettingsSchema = z.object({
     .optional(),
 })
 
+export const FeedbackAnytimeDocumentKindSchema = z.enum([
+  'ANYTIME',
+  'PROJECT',
+  'PIP',
+  'ROLE_CHANGE',
+  'PROBATION',
+])
+
+export const FeedbackAnytimePipCheckpointSchema = z.object({
+  label: z.string().trim().min(1).max(200),
+  dueDate: z.string().trim().max(40).optional(),
+  note: z.string().trim().max(400).optional(),
+})
+
+export const FeedbackAnytimePipSchema = z.object({
+  goals: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
+  expectedBehaviors: z.array(z.string().trim().min(1).max(300)).max(10).default([]),
+  checkpoints: z.array(FeedbackAnytimePipCheckpointSchema).max(10).default([]),
+  midReview: z.string().trim().max(1000).optional(),
+  endJudgement: z.string().trim().max(1000).optional(),
+})
+
+export const CreateFeedbackAnytimeReviewSchema = z.object({
+  evalCycleId: z.string().min(1),
+  roundName: z.string().trim().min(2).max(120),
+  documentKind: FeedbackAnytimeDocumentKindSchema,
+  dueDate: z.string().datetime(),
+  reviewerId: z.string().min(1),
+  targetIds: z.array(z.string().min(1)).min(1).max(100),
+  reason: z.string().trim().min(5).max(1000),
+  templateRoundId: z.string().min(1).optional(),
+  collaboratorIds: z.array(z.string().min(1)).max(50).optional(),
+  folderId: z.string().nullable().optional(),
+  projectName: z.string().trim().max(120).optional(),
+  projectCode: z.string().trim().max(80).optional(),
+  pip: FeedbackAnytimePipSchema.optional(),
+})
+
+export const FeedbackAnytimeBulkActionSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('change-due-date'),
+    roundIds: z.array(z.string().min(1)).min(1).max(100),
+    dueDate: z.string().datetime(),
+    reason: z.string().trim().min(5).max(1000),
+  }),
+  z.object({
+    action: z.literal('transfer-reviewer'),
+    roundIds: z.array(z.string().min(1)).min(1).max(100),
+    reviewerId: z.string().min(1),
+    reason: z.string().trim().min(5).max(1000),
+  }),
+  z.object({
+    action: z.enum(['cancel', 'close', 'reopen']),
+    roundIds: z.array(z.string().min(1)).min(1).max(100),
+    reason: z.string().trim().min(5).max(1000),
+  }),
+])
+
 export const FeedbackRoundReminderSchema = z
   .object({
     action: z.enum(['send-review-reminder', 'send-peer-selection-reminder', 'send-result-share', 'test-send']),
@@ -567,6 +716,7 @@ export const Feedback360AiActionSchema = z.object({
     'summarize-themes',
     'detect-careless-reviews',
     'suggest-development-plan',
+    'suggest-growth-copilot',
   ]),
   sourceId: z.string().max(100).optional(),
   payload: z.record(z.string(), z.unknown()).default({}),
@@ -586,18 +736,73 @@ export const FeedbackResultViewReceiptSchema = z.object({
   targetId: z.string().min(1).max(100),
 })
 
+const DevelopmentPlanActionStatusSchema = z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE'])
+
+const DevelopmentPlanActionItemSchema = z.object({
+  id: z.string().min(1).max(100).optional(),
+  title: z.string().trim().min(1).max(500),
+  status: DevelopmentPlanActionStatusSchema.default('NOT_STARTED'),
+  note: z.string().trim().max(1000).optional(),
+  dueDate: z.string().datetime().optional(),
+})
+
+const DevelopmentPlanLinkedEvidenceSchema = z.object({
+  type: z.enum(['REVIEW', 'GOAL', 'CHECKIN', 'FEEDBACK', 'MANUAL']),
+  label: z.string().trim().min(1).max(200),
+  href: z.string().trim().max(1000).optional(),
+  note: z.string().trim().max(500).optional(),
+})
+
 export const DevelopmentPlanCreateSchema = z.object({
   employeeId: z.string().min(1).max(100),
   sourceType: z.enum(['FEEDBACK_360', 'EVALUATION', 'CHECKIN', 'MANUAL']).default('FEEDBACK_360'),
   sourceId: z.string().max(100).optional(),
   title: z.string().min(1).max(200),
   focusArea: z.string().min(1).max(200),
-  actions: z.array(z.string().min(1).max(500)).min(1).max(10),
+  actions: z.array(z.union([z.string().trim().min(1).max(500), DevelopmentPlanActionItemSchema])).min(1).max(10),
+  recommendedCompetencies: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
   managerSupport: z.array(z.string().min(1).max(500)).max(10).optional(),
   nextCheckinTopics: z.array(z.string().min(1).max(500)).max(10).optional(),
+  linkedEvidence: z.array(DevelopmentPlanLinkedEvidenceSchema).max(20).optional(),
   note: z.string().max(1000).optional(),
   dueDate: z.string().datetime().optional(),
 })
+
+export const DevelopmentPlanUpdateSchema = z
+  .object({
+    id: z.string().min(1).max(100),
+    title: z.string().min(1).max(200).optional(),
+    focusArea: z.string().min(1).max(200).optional(),
+    actions: z
+      .array(z.union([z.string().trim().min(1).max(500), DevelopmentPlanActionItemSchema]))
+      .min(1)
+      .max(10)
+      .optional(),
+    recommendedCompetencies: z.array(z.string().trim().min(1).max(200)).max(20).optional(),
+    managerSupport: z.array(z.string().min(1).max(500)).max(10).optional(),
+    nextCheckinTopics: z.array(z.string().min(1).max(500)).max(10).optional(),
+    linkedEvidence: z.array(DevelopmentPlanLinkedEvidenceSchema).max(20).optional(),
+    note: z.string().max(1000).optional(),
+    dueDate: z.string().datetime().nullable().optional(),
+    status: z.enum(['DRAFT', 'ACTIVE', 'COMPLETED', 'ARCHIVED']).optional(),
+  })
+  .refine(
+    (data) =>
+      data.title !== undefined ||
+      data.focusArea !== undefined ||
+      data.actions !== undefined ||
+      data.recommendedCompetencies !== undefined ||
+      data.managerSupport !== undefined ||
+      data.nextCheckinTopics !== undefined ||
+      data.linkedEvidence !== undefined ||
+      data.note !== undefined ||
+      data.dueDate !== undefined ||
+      data.status !== undefined,
+    {
+      message: '수정할 항목을 하나 이상 입력해 주세요.',
+      path: ['id'],
+    }
+  )
 
 export const OnboardingReviewConditionSchema = z.discriminatedUnion('field', [
   z.object({

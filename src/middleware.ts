@@ -21,7 +21,7 @@ export default withAuth(
     const token = req.nextauth.token
 
     if (isAuthPublicPath(pathname)) {
-      if (pathname.startsWith('/login') && token) {
+      if ((pathname.startsWith('/login') || pathname.startsWith('/signin')) && token) {
         return NextResponse.redirect(new URL('/dashboard', req.url))
       }
 
@@ -67,5 +67,5 @@ export default withAuth(
 )
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|login|403|api/auth).*)'],
+  matcher: ['/((?!_next|favicon.ico|manifest.webmanifest|sw.js|icons|login|signin|403|api/auth).*)'],
 }

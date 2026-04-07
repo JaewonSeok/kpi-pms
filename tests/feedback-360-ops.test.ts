@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict'
+﻿import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import './register-path-aliases'
@@ -126,7 +126,7 @@ async function main() {
           {
             value: 5,
             label: 'S',
-            description: '최상위 등급',
+            description: '理쒖긽???깃툒',
             targetRatio: 10,
             headcountLimit: 1,
             isNonEvaluative: false,
@@ -134,7 +134,7 @@ async function main() {
           {
             value: 4,
             label: 'A',
-            description: '상위 등급',
+            description: '?곸쐞 ?깃툒',
             targetRatio: 30,
             headcountLimit: 2,
             isNonEvaluative: false,
@@ -143,15 +143,15 @@ async function main() {
         guideRules: [
           {
             id: 'rule-1',
-            label: '플랫폼 팀장',
-            headline: '플랫폼 팀장 등급 가이드',
-            guidance: '팀장 기준으로 육성과 성과 균형을 함께 확인합니다.',
+            label: '팀장 대상',
+            headline: '팀장 대상 등급 가이드',
+            guidance: '대상자 기준으로 육성과 성과 균형을 함께 확인합니다.',
             filters: {
-              departmentKeyword: '플랫폼',
-              position: '팀장',
+              departmentKeyword: '팀',
+              position: 'TEAM_LEADER',
             },
             gradeDescriptions: {
-              '5': '최상위 기준',
+              '5': '理쒖긽??湲곗?',
             },
           },
         ],
@@ -309,6 +309,39 @@ async function main() {
     assert.equal(serviceSource.includes('OnboardingReviewGeneration'), true)
   })
 
+  await run('feedback 360 source wires anytime review document creation, bulk actions, and admin rendering', () => {
+    const validationSource = read('src/lib/validations.ts')
+    const roundsRoute = read('src/app/api/feedback/rounds/route.ts')
+    const submitRoute = read('src/app/api/feedback/route.ts')
+    const loaderSource = read('src/server/feedback-360.ts')
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+
+    assert.equal(validationSource.includes('CreateFeedbackAnytimeReviewSchema'), true)
+    assert.equal(validationSource.includes('FeedbackAnytimeBulkActionSchema'), true)
+    assert.equal(roundsRoute.includes("roundType: 'ANYTIME'"), true)
+    assert.equal(roundsRoute.includes('documentKind'), true)
+    assert.equal(roundsRoute.includes('FEEDBACK_ANYTIME_REVIEW_CREATED'), true)
+    assert.equal(roundsRoute.includes('transfer-reviewer'), true)
+    assert.equal(roundsRoute.includes('change-due-date'), true)
+    assert.equal(roundsRoute.includes('FEEDBACK_ANYTIME_REVIEWER_TRANSFERRED'), true)
+    assert.equal(roundsRoute.includes('FEEDBACK_ANYTIME_DUE_DATE_CHANGED'), true)
+    assert.equal(roundsRoute.includes('FEEDBACK_ANYTIME_REVIEW_CANCELLED'), true)
+    assert.equal(roundsRoute.includes('FEEDBACK_ANYTIME_REVIEW_CLOSED'), true)
+    assert.equal(roundsRoute.includes('FEEDBACK_ANYTIME_REVIEW_REOPENED'), true)
+    assert.equal(submitRoute.includes("if (round.roundType === 'ANYTIME')"), true)
+    assert.equal(loaderSource.includes('anytimeReview:'), true)
+    assert.equal(loaderSource.includes('documentKindLabel'), true)
+    assert.equal(loaderSource.includes('parseFeedbackAnytimeDocumentSettings'), true)
+    assert.equal(adminPanel.includes('수시 리뷰 문서'), true)
+    assert.equal(adminPanel.includes('프로젝트 리뷰'), true)
+    assert.equal(adminPanel.includes('PIP 문서'), true)
+    assert.equal(adminPanel.includes('리뷰어 이관'), true)
+    assert.equal(adminPanel.includes('기한 변경'), true)
+    assert.equal(adminPanel.includes('handleCreateAnytimeReview'), true)
+    assert.equal(adminPanel.includes('handleAnytimeBulkAction'), true)
+    assert.equal(adminPanel.includes("/api/feedback/rounds"), true)
+  })
+
   await run('feedback review admin source wires collaborator-scoped permissions through schema, UI, and routes', () => {
     const schemaSource = read('prisma/schema.prisma')
     const validationSource = read('src/lib/validations.ts')
@@ -334,11 +367,11 @@ async function main() {
     assert.equal(adminPanel.includes('filteredCollaboratorCandidates'), true)
     assert.equal(adminPanel.includes('selectedCollaborators'), true)
     assert.equal(adminPanel.includes('selectedGroupMembers'), true)
-    assert.equal(adminPanel.includes('공동 작업자'), true)
-    assert.equal(adminPanel.includes('모든 리뷰 사이클/템플릿 관리'), true)
-    assert.equal(adminPanel.includes('모든 리뷰 사이클/템플릿 관리 + 모든 리뷰 내용 열람 및 수정'), true)
-    assert.equal(adminPanel.includes('공동 작업자인 리뷰 사이클/템플릿 관리'), true)
-    assert.equal(adminPanel.includes('공동 작업자인 리뷰 사이클/템플릿 관리 + 공동 작업자인 리뷰 내용 열람 및 수정'), true)
+    assert.equal(adminPanel.includes('REVIEW_ADMIN_SCOPE_OPTIONS'), true)
+    assert.equal(adminPanel.includes("value: 'ALL_REVIEWS_MANAGE'"), true)
+    assert.equal(adminPanel.includes("value: 'ALL_REVIEWS_MANAGE_AND_CONTENT'"), true)
+    assert.equal(adminPanel.includes("value: 'COLLABORATOR_REVIEWS_MANAGE'"), true)
+    assert.equal(adminPanel.includes("value: 'COLLABORATOR_REVIEWS_MANAGE_AND_CONTENT'"), true)
     assert.equal(settingsRoute.includes('feedbackRoundCollaborator'), true)
     assert.equal(settingsRoute.includes('canManageFeedbackRoundByAccess'), true)
     assert.equal(settingsRoute.includes('collaboratorIds'), true)
@@ -419,7 +452,7 @@ async function main() {
     assert.equal(adminPanel.includes('reportAnalysisSettings'), true)
     assert.equal(adminPanel.includes('FEEDBACK_REPORT_ANALYSIS_SECTIONS'), true)
     assert.equal(adminPanel.includes('FEEDBACK_ANALYSIS_STRENGTH_LABELS'), true)
-    assert.equal(adminPanel.includes('개인별 리포트 / 분석 설정'), true)
+    assert.equal(adminPanel.includes('媛쒖씤蹂?由ы룷??/ 遺꾩꽍 ?ㅼ젙'), true)
     assert.equal(workspace.includes('FeedbackReportAnalysisView'), true)
     assert.equal(reportView.includes('selectedInsight'), true)
     assert.equal(reportView.includes('questionInsights'), true)
@@ -479,7 +512,7 @@ async function main() {
       workspace.includes("if (!distributionLimitExceeded && respondError === DISTRIBUTION_LIMIT_EXCEEDED_MESSAGE)"),
       true
     )
-    assert.equal(workspace.includes('등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.'), true)
+    assert.equal(workspace.includes('setRespondError(DISTRIBUTION_LIMIT_EXCEEDED_MESSAGE)'), true)
     assert.equal(workspace.includes('respondData.reference'), true)
     assert.equal(workspace.includes('[respondFeedbackId, respondOverallComment, respondQuestions]'), true)
     assert.equal(workspace.includes("key={`${respondData.feedbackId}:${props.data.selectedRoundId ?? ''}`}"), true)
@@ -496,19 +529,97 @@ async function main() {
     const submitRoute = read('src/app/api/feedback/route.ts')
     const loaderSource = read('src/server/feedback-360.ts')
 
-    assert.equal(adminPanel.includes('등급 가이드 / 상대평가 배분'), true)
     assert.equal(adminPanel.includes('distributionQuestionId'), true)
-    assert.equal(adminPanel.includes('가장 높은 등급'), true)
-    assert.equal(adminPanel.includes('가장 낮은 등급'), true)
-    assert.equal(adminPanel.includes('비평가 등급으로 처리'), true)
+    assert.equal(adminPanel.includes('distributionMode'), true)
+    assert.equal(adminPanel.includes('distributionScope'), true)
+    assert.equal(adminPanel.includes('headcountLimit'), true)
+    assert.equal(adminPanel.includes('isNonEvaluative'), true)
+    assert.equal(adminPanel.includes('annotateFeedbackRatingScaleEntries'), true)
 
     assert.equal(submitRoute.includes('parseFeedbackRatingGuideSettings'), true)
     assert.equal(submitRoute.includes('RATING_GUIDE_HEADCOUNT_EXCEEDED'), true)
-    assert.equal(submitRoute.includes('등급 배분 가이드의 제한 인원을 초과했습니다. 가이드를 확인해 주세요.'), true)
+    assert.equal(submitRoute.includes('submittedDistributionCount + 1 > selectedScaleEntry.headcountLimit'), true)
 
     assert.equal(loaderSource.includes('priorScoreSummary'), true)
     assert.equal(loaderSource.includes('ratingGuide: {'), true)
     assert.equal(loaderSource.includes('targetProfileLabel'), true)
+  })
+
+  await run('manager effectiveness settings are wired through admin, loader, workflow, and nomination routes', () => {
+    const schemaSource = read('src/lib/validations.ts')
+    const helperSource = read('src/lib/feedback-manager-effectiveness.ts')
+    const loaderSource = read('src/server/feedback-360.ts')
+    const workflowSource = read('src/server/feedback-360-workflow.ts')
+    const nominationRoute = read('src/app/api/feedback/rounds/[id]/nominations/route.ts')
+    const publishRoute = read('src/app/api/feedback/rounds/[id]/workflow/route.ts')
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
+
+    assert.equal(schemaSource.includes('FeedbackManagerEffectivenessSettingsSchema'), true)
+    assert.equal(helperSource.includes('DEFAULT_FEEDBACK_MANAGER_EFFECTIVENESS_SETTINGS'), true)
+    assert.equal(helperSource.includes('buildManagerEffectivenessCoachingPack'), true)
+    assert.equal(loaderSource.includes('buildManagerEffectivenessLeaderSummaries'), true)
+    assert.equal(loaderSource.includes('managerEffectiveness: managerEffectivenessResult'), true)
+    assert.equal(loaderSource.includes('managerEffectiveness: managerEffectivenessAdmin'), true)
+    assert.equal(loaderSource.includes('topImprovementThemes'), true)
+    assert.equal(workflowSource.includes('MANAGER_EFFECTIVENESS_RELATIONSHIP_DISABLED'), true)
+    assert.equal(nominationRoute.includes('MANAGER_TARGET_REQUIRED'), true)
+    assert.equal(publishRoute.includes('MANAGER_TARGET_REQUIRED'), true)
+    assert.equal(adminPanel.includes('selectionSettings.managerEffectiveness.enabled'), true)
+    assert.equal(adminPanel.includes('managerEffectivenessAdmin?.enabled'), true)
+    assert.equal(adminPanel.includes('getManagerEffectivenessReviewerSummary'), true)
+    assert.equal(workspace.includes('props.data.results.managerEffectiveness?.enabled'), true)
+    assert.equal(workspace.includes('coachingPack.nextOneOnOneQuestions'), true)
+  })
+
+  await run('manager effectiveness dashboard exposes heatmap, leader coaching packs, and result links', () => {
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
+
+    assert.equal(adminPanel.includes('managerEffectivenessAdmin.heatmap'), true)
+    assert.equal(adminPanel.includes('managerEffectivenessAdmin.topImprovementThemes'), true)
+    assert.equal(adminPanel.includes('leader.coachingPack.hrMemo'), true)
+    assert.equal(adminPanel.includes('leader.resultHref'), true)
+    assert.equal(workspace.includes('managerEffectiveness.benchmarkAverage'), true)
+    assert.equal(workspace.includes('managerEffectiveness.riskLevel'), true)
+    assert.equal(workspace.includes('managerEffectiveness.coachingPack.growthActions'), true)
+  })
+
+  await run('skill architecture and AI copilot settings are wired through admin, loader, results, and respond flows', () => {
+    const schemaSource = read('src/lib/validations.ts')
+    const helperSource = read('src/lib/feedback-skill-architecture.ts')
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
+    const loaderSource = read('src/server/feedback-360.ts')
+    const aiRoute = read('src/app/api/feedback/360/ai/route.ts')
+
+    assert.equal(schemaSource.includes('skillArchitecture'), true)
+    assert.equal(schemaSource.includes('aiCopilot'), true)
+    assert.equal(helperSource.includes('resolveFeedbackRoleGuide'), true)
+    assert.equal(helperSource.includes('DEFAULT_FEEDBACK_AI_COPILOT_SETTINGS'), true)
+    assert.equal(adminPanel.includes('직무/직급 역할 아키텍처'), true)
+    assert.equal(adminPanel.includes('AI 코파일럿'), true)
+    assert.equal(adminPanel.includes('selectionSettings.skillArchitecture.enabled'), true)
+    assert.equal(adminPanel.includes('selectionSettings.aiCopilot.enabled'), true)
+    assert.equal(workspace.includes('GrowthCopilotPanel'), true)
+    assert.equal(workspace.includes('RespondRoleGuideCard'), true)
+    assert.equal(loaderSource.includes('roleGuide:'), true)
+    assert.equal(loaderSource.includes('growthCopilot:'), true)
+    assert.equal(loaderSource.includes('allowManagerView'), true)
+    assert.equal(loaderSource.includes('allowSelfView'), true)
+    assert.equal(aiRoute.includes('suggest-growth-copilot'), true)
+  })
+
+  await run('development plan preview supports competencies, linked evidence, progress, and PATCH saves', () => {
+    const previewSource = read('src/components/evaluation/feedback360/DevelopmentPlanPreview.tsx')
+    const routeSource = read('src/app/api/development-plans/route.ts')
+
+    assert.equal(previewSource.includes('recommendedCompetencies'), true)
+    assert.equal(previewSource.includes('linkedEvidence'), true)
+    assert.equal(previewSource.includes('progressRate'), true)
+    assert.equal(previewSource.includes("method: props.existingPlan?.id ? 'PATCH' : 'POST'"), true)
+    assert.equal(routeSource.includes('export async function PATCH'), true)
+    assert.equal(routeSource.includes('DEVELOPMENT_PLAN_UPDATED'), true)
   })
 
   await run('self review goal context is limited to the review target own goals', () => {

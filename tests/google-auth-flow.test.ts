@@ -22,6 +22,7 @@ function run(name: string, fn: () => void) {
 
 const loginPageSource = readFileSync(path.resolve(process.cwd(), 'src/app/login/page.tsx'), 'utf8')
 const authSource = readFileSync(path.resolve(process.cwd(), 'src/lib/auth.ts'), 'utf8')
+const middlewareSource = readFileSync(path.resolve(process.cwd(), 'src/middleware.ts'), 'utf8')
 
 run('login page starts Google sign-in without redirect:false misuse', () => {
   assert.match(loginPageSource, /buildGoogleSignInRequest/)
@@ -116,10 +117,34 @@ run('redirect callback resolves only relative or same-origin URLs', () => {
   )
 })
 
-run('middleware keeps auth callback routes public', () => {
+run('middleware keeps auth routes and PWA assets public while protecting app pages', () => {
+  assert.equal(isAuthPublicPath('/manifest.webmanifest'), true)
+  assert.equal(isAuthPublicPath('/sw.js'), true)
+  assert.equal(isAuthPublicPath('/favicon.ico'), true)
+  assert.equal(isAuthPublicPath('/icons/app-icon.png'), true)
+  assert.equal(isAuthPublicPath('/_next/static/chunks/app.js'), true)
+  assert.equal(isAuthPublicPath('/signin'), true)
   assert.equal(isAuthPublicPath('/api/auth/callback/google'), true)
   assert.equal(isAuthPublicPath('/api/auth/signin/google'), true)
   assert.equal(isAuthPublicPath('/dashboard'), false)
+  assert.equal(isAuthPublicPath('/evaluation/workbench'), false)
+  assert.match(
+    middlewareSource,
+    /matcher: \['\/\(\(\?!_next\|favicon\.ico\|manifest\.webmanifest\|sw\.js\|icons\|login\|signin\|403\|api\/auth\)\.\*\)'\]/
+  )
+})
+
+run('authenticated users are redirected away from both login entry points', () => {
+  assert.match(
+    middlewareSource,
+    /\(pathname\.startsWith\('\/login'\) \|\| pathname\.startsWith\('\/signin'\)\) && token/
+  )
+})
+
+run('manifest requests stay outside the signin redirect path', () => {
+  assert.equal(isAuthPublicPath('/manifest.webmanifest'), true)
+  assert.match(middlewareSource, /if \(isAuthPublicPath\(pathname\)\)/)
+  assert.match(middlewareSource, /if \(!token\) \{\s*return NextResponse\.redirect\(new URL\('\/login', req\.url\)\)/)
 })
 
 run('auth employee lookup uses a minimal select instead of loading the full employee row', () => {

@@ -23,32 +23,32 @@ async function run(name: string, fn: () => void | Promise<void>) {
 const analysis = buildFeedbackReportAnalysis({
   settings: parseFeedbackReportAnalysisSettings({
     overview: {
-      companyMessage: '회사가 전하는 메시지',
-      purposeMessage: '이 리포트는 성장 대화에 활용하기 위한 요약입니다.',
-      acceptanceGuide: '차이가 큰 문항부터 확인하고 다음 액션으로 연결해 주세요.',
+      companyMessage: 'Company message',
+      purposeMessage: 'Use this report to support growth conversations and follow-up actions.',
+      acceptanceGuide: 'Review differences by question and connect them to the next action.',
     },
   }),
-  roundName: '2026 상반기 360 리뷰',
+  roundName: '2026 H1 360 Review',
   recipientProfile: 'REVIEWEE',
   pdfHref: '/api/feedback/rounds/round-1/results-export?targetId=emp-1&profile=REVIEWEE',
   links: [
     {
-      label: '리뷰 결과',
+      label: 'Evaluation result',
       href: '/evaluation/results',
-      description: '기존 결과 화면으로 이동',
+      description: 'Go to the result summary page.',
     },
   ],
   questions: [
     {
       id: 'q-rating',
-      category: '리더십',
-      questionText: '우선순위를 명확하게 정리합니다.',
+      category: 'Leadership',
+      questionText: 'Clarifies priorities for the team.',
       questionType: 'RATING_SCALE',
     },
     {
       id: 'q-choice',
-      category: '강점 선택',
-      questionText: '가장 자주 관찰되는 강점을 선택해 주세요.',
+      category: 'Observed strengths',
+      questionText: 'Select the strengths you observed most often.',
       questionType: 'MULTIPLE_CHOICE',
     },
   ],
@@ -56,8 +56,8 @@ const analysis = buildFeedbackReportAnalysis({
     {
       id: 'fb-self',
       relationship: 'SELF',
-      giverName: '본인',
-      overallComment: '스스로도 우선순위 정리가 강점이라고 느낍니다.',
+      giverName: 'Self',
+      overallComment: 'I believe priority alignment is one of my strengths.',
       submittedAt: '2026-04-02T09:00:00.000Z',
       responses: [
         {
@@ -65,18 +65,18 @@ const analysis = buildFeedbackReportAnalysis({
           ratingValue: 5,
           textValue: null,
           question: {
-            category: '리더십',
-            questionText: '우선순위를 명확하게 정리합니다.',
+            category: 'Leadership',
+            questionText: 'Clarifies priorities for the team.',
             questionType: 'RATING_SCALE',
           },
         },
         {
           questionId: 'q-choice',
           ratingValue: null,
-          textValue: '["우선순위 정리","실행력"]',
+          textValue: '["Priority alignment","Execution discipline"]',
           question: {
-            category: '강점 선택',
-            questionText: '가장 자주 관찰되는 강점을 선택해 주세요.',
+            category: 'Observed strengths',
+            questionText: 'Select the strengths you observed most often.',
             questionType: 'MULTIPLE_CHOICE',
           },
         },
@@ -85,8 +85,8 @@ const analysis = buildFeedbackReportAnalysis({
     {
       id: 'fb-peer',
       relationship: 'PEER',
-      giverName: '동료',
-      overallComment: 'response speed is high and priorities stay clear.',
+      giverName: 'Peer',
+      overallComment: 'Response speed is high and priorities stay clear.',
       submittedAt: '2026-04-02T10:00:00.000Z',
       responses: [
         {
@@ -94,18 +94,18 @@ const analysis = buildFeedbackReportAnalysis({
           ratingValue: 4,
           textValue: null,
           question: {
-            category: '리더십',
-            questionText: '우선순위를 명확하게 정리합니다.',
+            category: 'Leadership',
+            questionText: 'Clarifies priorities for the team.',
             questionType: 'RATING_SCALE',
           },
         },
         {
           questionId: 'q-choice',
           ratingValue: null,
-          textValue: '우선순위 정리',
+          textValue: 'Priority alignment',
           question: {
-            category: '강점 선택',
-            questionText: '가장 자주 관찰되는 강점을 선택해 주세요.',
+            category: 'Observed strengths',
+            questionText: 'Select the strengths you observed most often.',
             questionType: 'MULTIPLE_CHOICE',
           },
         },
@@ -114,8 +114,8 @@ const analysis = buildFeedbackReportAnalysis({
     {
       id: 'fb-supervisor',
       relationship: 'SUPERVISOR',
-      giverName: '리더',
-      overallComment: 'clear priorities help the team move faster.',
+      giverName: 'Leader',
+      overallComment: 'Clear priorities help the team move faster.',
       submittedAt: '2026-04-02T11:00:00.000Z',
       responses: [
         {
@@ -123,18 +123,18 @@ const analysis = buildFeedbackReportAnalysis({
           ratingValue: 4,
           textValue: null,
           question: {
-            category: '리더십',
-            questionText: '우선순위를 명확하게 정리합니다.',
+            category: 'Leadership',
+            questionText: 'Clarifies priorities for the team.',
             questionType: 'RATING_SCALE',
           },
         },
         {
           questionId: 'q-choice',
           ratingValue: null,
-          textValue: '실행력',
+          textValue: 'Execution discipline',
           question: {
-            category: '강점 선택',
-            questionText: '가장 자주 관찰되는 강점을 선택해 주세요.',
+            category: 'Observed strengths',
+            questionText: 'Select the strengths you observed most often.',
             questionType: 'MULTIPLE_CHOICE',
           },
         },
@@ -145,7 +145,7 @@ const analysis = buildFeedbackReportAnalysis({
     {
       id: 'fb-benchmark-1',
       relationship: 'PEER',
-      giverName: '비교군',
+      giverName: 'Benchmark peer',
       overallComment: null,
       submittedAt: null,
       responses: [
@@ -154,8 +154,8 @@ const analysis = buildFeedbackReportAnalysis({
           ratingValue: 3,
           textValue: null,
           question: {
-            category: '리더십',
-            questionText: '우선순위를 명확하게 정리합니다.',
+            category: 'Leadership',
+            questionText: 'Clarifies priorities for the team.',
             questionType: 'RATING_SCALE',
           },
         },
@@ -165,15 +165,15 @@ const analysis = buildFeedbackReportAnalysis({
 })
 
 const baseViewModel: Feedback360ResultPdfModel = {
-  roundName: '2026 상반기 360 리뷰',
+  roundName: '2026 H1 360 Review',
   targetEmployee: {
     id: 'emp-1',
-    name: '김하늘',
-    department: '제품본부',
-    position: '매니저',
+    name: 'Kim Sky',
+    department: 'Product',
+    position: 'Manager',
   },
   recipientProfile: 'REVIEWEE',
-  availableProfiles: [{ value: 'REVIEWEE', label: '구성원용 결과지' }],
+  availableProfiles: [{ value: 'REVIEWEE', label: 'Reviewee result' }],
   presentationSettings: {
     showLeaderComment: true,
     showLeaderScore: false,
@@ -189,61 +189,63 @@ const baseViewModel: Feedback360ResultPdfModel = {
   summaryCards: [
     {
       id: 'LEADER_REVIEW',
-      title: '팀장 평가',
-      reviewerName: '정지원',
-      relationshipLabel: '직속 리더',
+      title: 'Leader review',
+      reviewerName: 'Manager',
+      relationshipLabel: 'Direct leader',
       totalScore: null,
-      comment: 'clear priorities help the team move faster.',
+      comment: 'Clear priorities help the team move faster.',
       showScore: false,
       showComment: true,
     },
     {
       id: 'FINAL_RESULT',
-      title: '최종 결과',
-      relationshipLabel: '종합 결과',
+      title: 'Final result',
+      relationshipLabel: 'Overall result',
       totalScore: 87.5,
-      comment: '다음 반기에는 우선순위 변경 이유를 더 자주 공유하면 좋겠습니다.',
+      comment: 'Next half, share the reasons behind priority changes more often.',
       showScore: true,
       showComment: true,
     },
   ],
   categoryScores: [
-    { category: '리더십', average: 92.1, count: 4 },
-    { category: '문제 해결', average: 88.4, count: 4 },
+    { category: 'Leadership', average: 92.1, count: 4 },
+    { category: 'Problem solving', average: 88.4, count: 4 },
   ],
-  strengths: ['이해관계자와 우선순위를 명확하게 맞추고 공유합니다.'],
-  improvements: ['우선순위 변경 이유를 더 짧은 주기로 설명하면 좋습니다.'],
-  anonymousSummary: '익명 요약',
-  textHighlights: ['업무 강점', '우선순위 정렬 보완'],
+  strengths: ['Aligns stakeholders around a clear priority order.'],
+  improvements: ['Explain why priorities changed more explicitly.'],
+  anonymousSummary: 'Anonymous summary',
+  textHighlights: ['Leadership strength', 'Priority alignment follow-up'],
   groupedResponses: [
     {
       questionId: 'q-1',
-      category: '업무',
-      questionText: '업무 수행 과정에서 가장 돋보였던 강점은 무엇인가요?',
+      category: 'Work',
+      questionText: 'What is the strongest observed behavior in day-to-day execution?',
       answers: [
         {
           feedbackId: 'feedback-1',
           relationship: 'LEADER',
-          authorLabel: '리더 1차',
+          authorLabel: 'Leader 1st review',
           ratingValue: 5,
-          textValue: 'clear priorities help the team move faster.',
+          textValue: 'Clear priorities help the team move faster.',
         },
         {
           feedbackId: 'feedback-2',
           relationship: 'PEER',
-          authorLabel: '동료',
+          authorLabel: 'Peer',
           ratingValue: 4,
-          textValue: 'response speed is high and priorities stay clear.',
+          textValue: 'Response speed is high and priorities stay clear.',
         },
       ],
     },
   ],
-  warnings: ['익명 요약은 최소 응답 수를 충족한 항목만 공개됩니다.'],
+  warnings: ['Anonymous summaries are shown only when the minimum response threshold is met.'],
   developmentPlan: {
-    focusArea: '우선순위 정렬',
-    actions: ['체크인에서 우선순위 변경 이유를 먼저 공유합니다.'],
-    managerSupport: ['리더가 월 1회 피드백을 제공합니다.'],
-    nextCheckinTopics: ['업무 우선순위 변경과 의사결정 기준'],
+    focusArea: 'Priority alignment',
+    actions: ['Share the reason behind priority changes earlier in check-ins.'],
+    recommendedCompetencies: ['Priority alignment', 'Feedback follow-through'],
+    managerSupport: ['Leader provides weekly feedback.'],
+    nextCheckinTopics: ['Priority changes and decision criteria'],
+    linkedEvidence: [],
   },
   reportCache: {
     id: 'report-1',
@@ -252,15 +254,29 @@ const baseViewModel: Feedback360ResultPdfModel = {
   },
   developmentPlanRecord: {
     id: 'plan-1',
-    title: '업무 리더십 강화',
+    title: 'Build a steadier work rhythm',
     status: 'ACTIVE',
     updatedAt: '2026-04-02',
+    actions: [
+      {
+        id: 'action-1',
+        title: 'Share priority changes with the team first.',
+        status: 'IN_PROGRESS',
+      },
+    ],
+    recommendedCompetencies: ['Priority alignment'],
+    managerSupport: ['Leader gives weekly feedback.'],
+    nextCheckinTopics: ['Decision criteria and priority changes'],
+    linkedEvidence: [],
+    note: null,
+    dueDate: null,
+    progressRate: 0,
   },
   linkage: [
     {
-      label: '평가 결과',
+      label: 'Evaluation result',
       href: '/evaluation/results',
-      description: '결과 요약 화면',
+      description: 'Result summary',
     },
   ],
   pdfHref: '/api/feedback/rounds/round-1/results-export?targetId=emp-1&profile=REVIEWEE',
@@ -275,18 +291,14 @@ async function main() {
     assert.equal(sections.fileName.endsWith('.pdf'), true)
     assert.equal(sections.summaryRows.length >= 4, true)
     assert.equal(
-      sections.summaryCards.some(
-        (card) =>
-          card.relationshipLabel === '직속 리더' &&
-          card.comment.includes('clear priorities')
-      ),
+      sections.summaryCards.some((card) => card.comment.toLowerCase().includes('clear priorities')),
       true
     )
     assert.equal(
       sections.groupedResponses.some(
         (group) =>
-          group.questionText.includes('강점') &&
-          group.answers.some((answer) => answer.comment.includes('response speed'))
+          group.questionText.includes('strongest') &&
+          group.answers.some((answer) => answer.comment.includes('Response speed'))
       ),
       true
     )

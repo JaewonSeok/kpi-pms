@@ -6,6 +6,7 @@ import {
   detectCarelessReviews,
   recommend360Reviewers,
   suggestDevelopmentPlan,
+  suggestGrowthCopilot,
   summarize360Themes,
 } from '@/server/ai/performance-copilot'
 
@@ -33,7 +34,9 @@ export async function POST(request: Request) {
           ? await summarize360Themes(params)
           : validated.data.action === 'detect-careless-reviews'
             ? await detectCarelessReviews(params)
-            : await suggestDevelopmentPlan(params)
+            : validated.data.action === 'suggest-growth-copilot'
+              ? await suggestGrowthCopilot(params)
+              : await suggestDevelopmentPlan(params)
 
     return successResponse(result)
   } catch (error) {
