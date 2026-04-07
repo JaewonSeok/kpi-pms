@@ -159,6 +159,21 @@ function readApiBody(body: unknown) {
   return body as { success: boolean; data?: unknown; error?: { message?: string } }
 }
 
+function toFriendlyErrorMessage(message: string | undefined, fallback: string) {
+  const trimmed = message?.trim()
+  if (!trimmed) return fallback
+  if (trimmed.includes('Too small: expected string to have >=1 characters')) {
+    return '선택 가능한 주기가 없습니다. 아래에서 첫 주기를 생성해 주세요.'
+  }
+  if (trimmed.includes('Invalid datetime')) {
+    return '시작일과 종료일 형식을 확인해 주세요.'
+  }
+  if (/^(Too small|Too big|Invalid input|expected )/i.test(trimmed)) {
+    return fallback
+  }
+  return trimmed
+}
+
 async function callAction(action: string, payload: unknown) {
   const response = await fetch('/api/evaluation/word-cloud-360/actions', {
     method: 'POST',
@@ -388,6 +403,9 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   const canApplyKeywordImport = Boolean(keywordUploadFile && keywordImportResult?.mode === 'preview' && keywordImportResult.summary.validRows > 0)
   const targetUploadRowsToShow = targetUploadResult?.rows.slice(0, 100) ?? []
   const comparisonRowsToShow = comparisonReport?.departments.slice(0, 20) ?? []
+  const hasSelectedCycle = Boolean(data.selectedCycleId)
+  const hasCycleOptions = data.availableCycles.length > 0
+  const isCreateMode = Boolean(data.permissions?.canManage && !hasSelectedCycle)
 
   function updateCycle(nextCycleId: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -417,6 +435,39 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
           setNotice({
             tone: 'error',
             message: error instanceof Error ? error.message : '작업을 처리하지 못했습니다.',
+          })
+        }
+      })()
+    })
+  }
+
+  function saveCycle() {
+    startTransition(() => {
+      void (async () => {
+        try {
+          setNotice(null)
+          const savedCycle = (await callAction('upsertCycle', cycleForm)) as { id: string }
+          const createdFirstCycle = !cycleForm.cycleId
+
+          setCycleForm((current) => ({ ...current, cycleId: savedCycle.id }))
+          setNotice({
+            tone: 'success',
+            message: createdFirstCycle ? '주기를 생성했습니다.' : '주기 정보를 수정했습니다.',
+          })
+
+          if (savedCycle.id !== data.selectedCycleId) {
+            updateCycle(savedCycle.id)
+            return
+          }
+
+          router.refresh()
+        } catch (error) {
+          setNotice({
+            tone: 'error',
+            message: toFriendlyErrorMessage(
+              error instanceof Error ? error.message : undefined,
+              '주기 정보를 저장하지 못했습니다.'
+            ),
           })
         }
       })()
@@ -625,8 +676,13 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
           </div>
           <div className="w-full max-w-xs">
             <label className="mb-2 block text-sm font-medium text-slate-700">주기 선택</label>
-            <select className={inputClassName} value={data.selectedCycleId ?? ''} onChange={(event) => updateCycle(event.target.value)}>
-              <option value="">주기를 선택해 주세요</option>
+            <select
+              className={inputClassName}
+              value={data.selectedCycleId ?? ''}
+              onChange={(event) => updateCycle(event.target.value)}
+              disabled={!hasCycleOptions}
+            >
+              <option value="">{hasCycleOptions ? '주기를 선택해 주세요' : '선택 가능한 주기가 없습니다.'}</option>
               {data.availableCycles.map((cycle) => (
                 <option key={cycle.id} value={cycle.id}>
                   {cycle.year ? `${cycle.year}년 / ` : ''}
@@ -634,6 +690,11 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 </option>
               ))}
             </select>
+            {isCreateMode ? (
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                선택 가능한 주기가 없습니다. 아래에서 첫 주기를 생성해 주세요.
+              </p>
+            ) : null}
           </div>
         </div>
       </section>
@@ -659,7 +720,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
         </section>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      {hasSelectedCycle ? <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label="대상자 수" value={`${data.summary?.targetCount ?? 0}명`} description="이번 주기에 편성된 피평가자 수입니다." />
         <MetricCard label="편성 수" value={`${data.summary?.assignmentCount ?? 0}건`} description="평가자-피평가자 편성 건수입니다." />
         <MetricCard label="제출 응답" value={`${data.summary?.submittedResponseCount ?? 0}건`} description="최종 제출된 응답 수입니다." />
@@ -668,7 +729,14 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
           value={data.summary?.published ? '공개됨' : '비공개'}
           description={`공개 기준 ${data.summary?.privacyThreshold ?? 0}명 / 선택 규칙 ${data.summary?.positiveSelectionLimit ?? 10}+${data.summary?.negativeSelectionLimit ?? 10}`}
         />
-      </section>
+      </section> : (
+        <section className={cardClassName}>
+          <h2 className="text-lg font-semibold text-slate-950">아직 선택된 주기가 없습니다.</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            선택 가능한 주기가 없습니다. 아래에서 첫 주기를 생성해 주세요.
+          </p>
+        </section>
+      )}
 
       <section className="flex flex-wrap gap-2">
         {tabs.map((tab) => (
@@ -1009,10 +1077,20 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 <textarea className={`${inputClassName} min-h-24`} value={cycleForm.notes} onChange={(event) => setCycleForm((current) => ({ ...current, notes: event.target.value }))} />
               </div>
               <div className="mt-4 flex flex-wrap gap-3">
+                {isCreateMode ? (
+                  <button
+                    type="button"
+                    disabled={isPending || !cycleForm.cycleName.trim()}
+                    className={primaryButtonClassName}
+                    onClick={saveCycle}
+                  >
+                    저장
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   disabled={isPending || !cycleForm.cycleName.trim()}
-                  className={primaryButtonClassName}
+                  className={isCreateMode ? 'hidden' : primaryButtonClassName}
                   onClick={() =>
                     mutate(
                       () => callAction('upsertCycle', cycleForm),

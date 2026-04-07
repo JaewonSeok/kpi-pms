@@ -276,9 +276,25 @@ async function main() {
 
         assert.equal(data.state, 'ready')
         assert.equal(data.permissions?.canManage, true)
+        assert.equal(Boolean(data.selectedCycleId), false)
+        assert.equal(Boolean(data.summary), false)
+        assert.equal(Boolean(data.adminView?.cycle), false)
         assert.equal(data.availableEvalCycles?.length, 1)
       }
     )
+  })
+
+  await run('existing cycle auto-selects the first option and loads summary only after selection exists', async () => {
+    await withStubbedWordCloudData({}, async () => {
+      const data = await getWordCloud360PageData({
+        session: makeSession({ role: 'ROLE_ADMIN' }),
+      })
+
+      assert.equal(data.state, 'ready')
+      assert.equal(data.availableCycles.length, 1)
+      assert.equal(data.selectedCycleId, 'wc-cycle-1')
+      assert.equal(Boolean(data.summary), true)
+    })
   })
 
   await run('evaluatee results stay hidden when publication threshold is not met', async () => {
@@ -351,6 +367,12 @@ async function main() {
     assert.equal(pageSource.includes('점수형 다면평가와 분리된 키워드 선택 기반 평가'), true)
     assert.equal(pageSource.includes('긍정 워드클라우드'), true)
     assert.equal(pageSource.includes('부정 워드클라우드'), true)
+  })
+
+  await run('client source separates create mode and hides selected-cycle summary until a cycle exists', () => {
+    assert.equal(pageSource.includes('선택 가능한 주기가 없습니다. 아래에서 첫 주기를 생성해 주세요.'), true)
+    assert.equal(pageSource.includes('const isCreateMode = Boolean(data.permissions?.canManage && !hasSelectedCycle)'), true)
+    assert.equal(pageSource.includes('{hasSelectedCycle ? <section className=\"grid gap-4 md:grid-cols-2 xl:grid-cols-4\">'), true)
   })
 
   console.log('Word cloud 360 tests completed')

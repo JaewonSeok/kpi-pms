@@ -1835,7 +1835,7 @@ export const WordCloudEvaluatorGroupSchema = z.enum(['MANAGER', 'PEER', 'SUBORDI
 
 export const WordCloud360CycleSchema = z
   .object({
-    cycleId: z.string().min(1).optional(),
+    cycleId: EmptyStringToUndefined(z.string().min(1)),
     evalCycleId: EmptyStringToUndefined(z.string().min(1)),
     cycleName: z.string().trim().min(1).max(100),
     startDate: EmptyStringToUndefined(z.string().datetime()),

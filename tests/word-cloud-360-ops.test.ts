@@ -450,6 +450,27 @@ async function main() {
     assert.equal(auditCalls[0]?.data?.newValue?.format, 'xlsx')
   })
 
+  await run('cycle schema accepts blank cycleId for create mode', () => {
+    const result = WordCloud360CycleSchema.safeParse({
+      cycleId: '',
+      evalCycleId: '',
+      cycleName: '2026 상반기 워드클라우드',
+      startDate: '',
+      endDate: '',
+      positiveSelectionLimit: 10,
+      negativeSelectionLimit: 10,
+      resultPrivacyThreshold: 3,
+      evaluatorGroups: ['MANAGER', 'PEER'],
+      notes: '',
+      status: 'DRAFT',
+    })
+
+    assert.equal(result.success, true)
+    if (result.success) {
+      assert.equal(result.data.cycleId, undefined)
+    }
+  })
+
   await run('survey workspace source wires upload endpoints and export reason modal', () => {
     const clientSource = readFileSync(
       path.resolve(process.cwd(), 'src/components/evaluation/wordcloud360/WordCloud360WorkspaceClient.tsx'),
@@ -464,6 +485,9 @@ async function main() {
     assert.equal(clientSource.includes('/api/evaluation/word-cloud-360/comparison/upload'), true)
     assert.equal(clientSource.includes('다운로드 사유 입력'), true)
     assert.equal(clientSource.includes('과거/현재 서베이 비교'), true)
+    assert.equal(clientSource.includes('const hasSelectedCycle = Boolean(data.selectedCycleId)'), true)
+    assert.equal(clientSource.includes('const isCreateMode = Boolean(data.permissions?.canManage && !hasSelectedCycle)'), true)
+    assert.equal(clientSource.includes('updateCycle(savedCycle.id)'), true)
     assert.equal(exportRouteSource.includes('parseExportReason'), true)
     assert.equal(exportRouteSource.includes('createExportAuditLog'), true)
   })
