@@ -16,7 +16,7 @@ import {
   aggregateWordCloudResponses,
   buildSuggestedWordCloudAssignments,
   DEFAULT_WORD_CLOUD_KEYWORDS,
-  validateWordCloudSelections,
+  validateWordCloudSubmitSelections,
   WORD_CLOUD_CATEGORY_LABELS,
   WORD_CLOUD_GROUP_LABELS,
   WORD_CLOUD_POLARITY_LABELS,
@@ -2412,7 +2412,7 @@ export async function saveWordCloud360Response(params: {
   }
 
   if (params.input.submitFinal) {
-    const validation = validateWordCloudSelections({
+    const validation = validateWordCloudSubmitSelections({
       positiveKeywordIds: params.input.positiveKeywordIds,
       negativeKeywordIds: params.input.negativeKeywordIds,
       positiveLimit: assignment.cycle.positiveSelectionLimit,

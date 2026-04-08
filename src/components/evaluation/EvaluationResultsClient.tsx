@@ -18,6 +18,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import type { EvaluationResultPageData, EvaluationResultViewModel } from '@/server/evaluation-results'
+import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 
 type ResultTab = 'summary' | 'details' | 'evidence' | 'history' | 'growth'
 
@@ -42,6 +43,7 @@ const TAB_LABELS: Record<ResultTab, string> = {
 
 export function EvaluationResultsClient(props: EvaluationResultPageData) {
   const router = useRouter()
+  const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const [activeTab, setActiveTab] = useState<ResultTab>('summary')
   const [localNotice, setLocalNotice] = useState<{ tone: 'success' | 'error' | 'info'; message: string } | null>(null)
   const [busyAction, setBusyAction] = useState<'download' | 'acknowledge' | null>(null)
@@ -151,11 +153,23 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
     }
     setBusyAction('download')
     try {
+      const riskHeaders = await requestRiskConfirmation({
+        actionName: 'DOWNLOAD_EXPORT',
+        actionLabel: '평가 결과 PDF 다운로드',
+        targetLabel: viewModel.employee.name,
+        detail: '현재 마스터 로그인 상태에서 평가 결과 PDF를 다운로드합니다.',
+        confirmationText: '다운로드',
+      })
+      if (riskHeaders === null) {
+        return
+      }
+
       const query = buildResultsQuery({ employeeId: selectedEmployeeId || undefined })
       const response = await fetch(
         `/api/evaluation/results/${encodeURIComponent(viewModel.cycle.id)}/export${query ? `?${query}` : ''}`,
         {
           cache: 'no-store',
+          headers: riskHeaders,
         }
       )
       if (!response.ok) {
@@ -284,6 +298,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
       {activeTab === 'growth' ? <GrowthRecommendationSection viewModel={viewModel} /> : null}
       {activeTab === 'details' ? <DetailPanel item={selectedDetail} /> : null}
       <RelatedActionLinks />
+      {riskDialog}
     </div>
   )
 }

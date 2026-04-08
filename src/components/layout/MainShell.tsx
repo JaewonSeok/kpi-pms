@@ -4,27 +4,11 @@ import { type ReactNode, useState } from 'react'
 import { MasterLoginBanner } from '@/components/layout/MasterLoginBanner'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
+import type { SessionUserClaims } from '@/types/auth'
 
 type MainShellProps = {
   session: {
-    user: {
-      id: string
-      name?: string | null
-      email?: string | null
-      image?: string | null
-      role: string
-      empId: string
-      deptName: string
-      masterLogin?: {
-        active: boolean
-        readOnly: true
-        actorName: string
-        actorEmail: string
-        startedAt: string
-        targetName: string
-        targetEmail: string
-      } | null
-    }
+    user: SessionUserClaims
   }
   children: ReactNode
 }

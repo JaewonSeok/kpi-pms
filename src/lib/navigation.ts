@@ -64,6 +64,7 @@ export const NAV_ITEMS: NavigationItem[] = [
       { label: '등급 설정', href: '/admin/grades', menuKey: 'GRADE_SETTING' },
       { label: '평가 주기', href: '/admin/eval-cycle', menuKey: 'EVAL_CYCLE' },
       { label: '성과 관리 일정', href: '/admin/performance-calendar', menuKey: 'EVAL_CYCLE' },
+      { label: '성과 설계', href: '/admin/performance-design', menuKey: 'EVAL_CYCLE' },
       { label: '성과 얼라인먼트', href: '/admin/goal-alignment', menuKey: 'EVAL_CYCLE' },
       { label: 'Google 계정 등록', href: '/admin/google-access', menuKey: 'SYSTEM_SETTING' },
       { label: '알림 운영', href: '/admin/notifications', menuKey: 'SYSTEM_SETTING' },

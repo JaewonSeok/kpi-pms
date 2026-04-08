@@ -1,8 +1,13 @@
-import { authorizeMenu } from '@/server/auth/authorize'
-import { AppError, errorResponse } from '@/lib/utils'
-import { exportWordCloud360Results } from '@/server/word-cloud-360'
-import { parseExportReason, createExportAuditLog } from '@/lib/export-audit'
 import { getClientInfo } from '@/lib/audit'
+import { parseExportReason, createExportAuditLog } from '@/lib/export-audit'
+import { AppError, errorResponse } from '@/lib/utils'
+import { authorizeMenu } from '@/server/auth/authorize'
+import {
+  logImpersonationRiskExecution,
+  validateImpersonationRiskRequest,
+  type ValidatedImpersonationRiskContext,
+} from '@/server/impersonation'
+import { exportWordCloud360Results } from '@/server/word-cloud-360'
 
 type RouteContext = {
   params: Promise<{
@@ -11,15 +16,29 @@ type RouteContext = {
 }
 
 export async function GET(request: Request, context: RouteContext) {
+  let session = null as Awaited<ReturnType<typeof authorizeMenu>> | null
+  let riskContext: ValidatedImpersonationRiskContext | null = null
+
   try {
-    const session = await authorizeMenu('WORD_CLOUD_360')
+    session = await authorizeMenu('WORD_CLOUD_360')
     if (session.user.role !== 'ROLE_ADMIN') {
       throw new AppError(403, 'FORBIDDEN', '관리자만 서베이 결과를 다운로드할 수 있습니다.')
     }
+
     const { cycleId } = await context.params
     const url = new URL(request.url)
     const format = url.searchParams.get('format') === 'csv' ? 'csv' : 'xlsx'
     const reason = parseExportReason(url.searchParams.get('reason'))
+
+    riskContext = await validateImpersonationRiskRequest({
+      session,
+      request,
+      actionName: 'DOWNLOAD_EXPORT',
+      targetResourceType: 'WordCloud360Cycle',
+      targetResourceId: cycleId,
+      confirmationText: '다운로드',
+    })
+
     const clientInfo = getClientInfo(request)
     const exported = await exportWordCloud360Results({
       actorId: session.user.id,
@@ -41,6 +60,17 @@ export async function GET(request: Request, context: RouteContext) {
       },
     })
 
+    await logImpersonationRiskExecution({
+      session,
+      request,
+      riskContext,
+      success: true,
+      metadata: {
+        cycleId,
+        format,
+      },
+    })
+
     return new Response(new Uint8Array(exported.body), {
       headers: {
         'Content-Type': exported.contentType,
@@ -48,6 +78,18 @@ export async function GET(request: Request, context: RouteContext) {
       },
     })
   } catch (error) {
-    return errorResponse(error, '워드클라우드형 다면평가 결과를 내보내지 못했습니다.')
+    if (session && riskContext) {
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+      }).catch(() => undefined)
+    }
+
+    return errorResponse(error, '워드클라우드 서베이 결과를 내보내지 못했습니다.')
   }
 }

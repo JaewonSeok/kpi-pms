@@ -6,8 +6,14 @@ import {
 } from '@/lib/personal-kpi-access'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import type { AuthSession } from '@/types/auth'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { PersonalKpiWorkflowActionSchema } from '@/lib/validations'
+import {
+  logImpersonationRiskExecution,
+  validateImpersonationRiskRequest,
+  type ValidatedImpersonationRiskContext,
+} from '@/server/impersonation'
 import {
   canApprovePersonalKpi,
   canLockPersonalKpi,
@@ -45,8 +51,11 @@ async function isGoalEditLocked(employeeDeptId: string, evalYear: number) {
 }
 
 export async function POST(request: Request, context: RouteContext) {
+  let session: AuthSession | null = null
+  let riskContext: ValidatedImpersonationRiskContext | null = null
+
   try {
-    const session = await getServerSession(authOptions)
+    session = (await getServerSession(authOptions)) as AuthSession | null
     if (!session) {
       throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
     }
@@ -109,6 +118,26 @@ export async function POST(request: Request, context: RouteContext) {
       logs,
     })
 
+    const riskActionConfig = {
+      SUBMIT: { actionName: 'FINAL_SUBMIT', confirmationText: '제출' },
+      APPROVE: { actionName: 'APPROVE_RECORD', confirmationText: '승인' },
+      REJECT: { actionName: 'REJECT_RECORD', confirmationText: '반려' },
+      LOCK: { actionName: 'LOCK_RECORD', confirmationText: '잠금' },
+      REOPEN: { actionName: 'REOPEN_RECORD', confirmationText: '재개' },
+    } as const
+
+    const riskConfig = riskActionConfig[validated.data.action as keyof typeof riskActionConfig]
+    if (riskConfig) {
+      riskContext = await validateImpersonationRiskRequest({
+        session,
+        request,
+        actionName: riskConfig.actionName,
+        targetResourceType: 'PersonalKpi',
+        targetResourceId: id,
+        confirmationText: riskConfig.confirmationText,
+      })
+    }
+
     const clientInfo = getClientInfo(request)
 
     if (validated.data.action === 'SAVE_DRAFT') {
@@ -155,6 +184,18 @@ export async function POST(request: Request, context: RouteContext) {
           weightApprovalStatus: 'REQUESTED',
         },
         ...clientInfo,
+      })
+
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: true,
+        metadata: {
+          personalKpiId: id,
+          action: validated.data.action,
+          employeeId: kpi.employeeId,
+        },
       })
 
       return successResponse({ id, workflowStatus: 'SUBMITTED' })
@@ -213,6 +254,18 @@ export async function POST(request: Request, context: RouteContext) {
         ...clientInfo,
       })
 
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: true,
+        metadata: {
+          personalKpiId: id,
+          action: validated.data.action,
+          employeeId: kpi.employeeId,
+        },
+      })
+
       return successResponse({ id, workflowStatus: 'DRAFT' })
     }
 
@@ -247,6 +300,18 @@ export async function POST(request: Request, context: RouteContext) {
         ...clientInfo,
       })
 
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: true,
+        metadata: {
+          personalKpiId: id,
+          action: validated.data.action,
+          employeeId: kpi.employeeId,
+        },
+      })
+
       return successResponse({ id, workflowStatus: 'CONFIRMED' })
     }
 
@@ -267,6 +332,18 @@ export async function POST(request: Request, context: RouteContext) {
         oldValue: { workflowStatus: operationalStatus },
         newValue: { workflowStatus: 'LOCKED', note: validated.data.note },
         ...clientInfo,
+      })
+
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: true,
+        metadata: {
+          personalKpiId: id,
+          action: validated.data.action,
+          employeeId: kpi.employeeId,
+        },
       })
 
       return successResponse({ id, workflowStatus: 'LOCKED' })
@@ -298,8 +375,31 @@ export async function POST(request: Request, context: RouteContext) {
       ...clientInfo,
     })
 
+    await logImpersonationRiskExecution({
+      session,
+      request,
+      riskContext,
+      success: true,
+      metadata: {
+        personalKpiId: id,
+        action: validated.data.action,
+        employeeId: kpi.employeeId,
+      },
+    })
+
     return successResponse({ id, workflowStatus: 'DRAFT' })
   } catch (error) {
+    if (session && riskContext) {
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+      }).catch(() => undefined)
+    }
     return errorResponse(error)
   }
 }

@@ -26,6 +26,7 @@ import {
   DEFAULT_FEEDBACK_AI_COPILOT_SETTINGS,
   DEFAULT_FEEDBACK_SKILL_ARCHITECTURE_SETTINGS,
 } from '@/lib/feedback-skill-architecture'
+import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 import {
   FEEDBACK_ANYTIME_DOCUMENT_KIND_LABELS,
   type FeedbackAnytimeDocumentKind,
@@ -374,6 +375,7 @@ function getReminderTemplate(roundName: string, action: ReminderAction) {
 
 export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const router = useRouter()
+  const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const rounds = props.data.availableRounds
   const admin = props.data.admin
   const onboarding = admin?.onboarding
@@ -1436,9 +1438,24 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
 
     setBusy(true)
     try {
+      let riskHeaders: HeadersInit | undefined
+      if (mode === 'send' && reminderAction === 'send-result-share') {
+        const confirmedHeaders = await requestRiskConfirmation({
+          actionName: 'SHARE_RESULT',
+          actionLabel: '다면 리뷰 결과 공유',
+          targetLabel: selectedRound.roundName,
+          detail: '현재 마스터 로그인 상태에서 다면 리뷰 결과를 실제 대상자에게 공유합니다.',
+          confirmationText: '공유',
+        })
+        if (confirmedHeaders === null) {
+          return
+        }
+        riskHeaders = confirmedHeaders
+      }
+
       const response = await fetch(`/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/notifications`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(riskHeaders ?? {}) },
         body: JSON.stringify({
           action: mode === 'test' ? 'test-send' : reminderAction,
           roundId: selectedRound.id,
@@ -5163,6 +5180,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
           </div>
         </ModalFrame>
       ) : null}
+      {riskDialog}
     </div>
   )
 }

@@ -32,6 +32,7 @@ import {
   type EvaluationAssistPreview,
   type EvaluationAssistResult,
 } from '@/lib/evaluation-ai-assist'
+import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 import {
   buildEvaluationQualityWarnings,
   EVALUATION_GUIDE_EXAMPLES,
@@ -71,6 +72,7 @@ const TAB_LABELS: Record<WorkbenchTab, string> = {
 export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
+  const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const [activeTab, setActiveTab] = useState<WorkbenchTab>('workbench')
   const [assistMode, setAssistMode] = useState<EvaluationAssistMode>('draft')
   const [notice, setNotice] = useState('')
@@ -371,9 +373,32 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
             ? `/api/evaluation/${selected.id}/submit`
             : `/api/evaluation/${selected.id}/review`
 
+      let riskHeaders: Record<string, string> = {}
+      if (action === 'submit') {
+        const confirmed = await requestRiskConfirmation({
+          actionName: 'FINAL_SUBMIT',
+          actionLabel: '평가 최종 제출',
+          targetLabel: selected.target.name,
+          detail: '현재 마스터 로그인 상태에서 평가를 최종 제출합니다.',
+          confirmationText: '제출',
+        })
+        if (confirmed === null) return
+        riskHeaders = confirmed
+      } else if (action === 'reject') {
+        const confirmed = await requestRiskConfirmation({
+          actionName: 'REJECT_RECORD',
+          actionLabel: '평가 반려',
+          targetLabel: selected.target.name,
+          detail: '현재 마스터 로그인 상태에서 평가를 반려하고 보완을 요청합니다.',
+          confirmationText: '반려',
+        })
+        if (confirmed === null) return
+        riskHeaders = confirmed
+      }
+
       const response = await fetch(url, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...riskHeaders },
         body: JSON.stringify(payload ?? {}),
       })
       const json = await response.json().catch(() => null)
@@ -1197,6 +1222,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
             </section>
           )}
         </section>
+        {riskDialog}
       </div>
     </div>
   )

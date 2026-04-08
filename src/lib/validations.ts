@@ -1024,6 +1024,194 @@ export const UpdateEvalCycleSchema = z.object({
   appealDeadline: z.string().datetime().optional(),
 })
 
+const EvaluationGroupSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1).max(60),
+    description: z.string().max(300),
+    quantitativeWeight: z.number().min(0).max(100),
+    qualitativeWeight: z.number().min(0).max(100),
+    comparisonMode: z.enum(['WITHIN_GROUP', 'SEPARATE_TRACK', 'CROSS_GROUP']),
+    comparisonTargetLabel: z.string().max(120),
+    departmentIds: z.array(z.string().min(1)).default([]),
+  })
+  .refine((value) => value.quantitativeWeight + value.qualitativeWeight === 100, {
+    message: '계량/비계량 비중 합계는 100이어야 합니다.',
+    path: ['qualitativeWeight'],
+  })
+
+const IndicatorSmartDiagnosisSchema = z.object({
+  specific: z.number().min(1).max(5),
+  measurable: z.number().min(1).max(5),
+  achievable: z.number().min(1).max(5),
+  relevant: z.number().min(1).max(5),
+  timeBound: z.number().min(1).max(5),
+  total: z.number().min(5).max(25),
+  note: z.string().max(200),
+})
+
+const IndicatorRolloverHistoryItemSchema = z.object({
+  id: z.string().min(1),
+  action: z.enum(['KEEP', 'HOLD', 'IMPROVE', 'DELETE', 'NEW']),
+  comment: z.string().max(500),
+  decidedBy: z.string().max(60),
+  decidedAt: z.string().datetime(),
+  targetCycleId: z.string().min(1).optional(),
+  targetCycleName: z.string().max(100).optional(),
+})
+
+const PerformanceIndicatorDesignSchema = z.object({
+  key: z.string().min(1),
+  source: z.enum(['ORG_KPI', 'PERSONAL_KPI', 'MANUAL']),
+  sourceId: z.string().min(1).optional(),
+  name: z.string().min(1).max(120),
+  metricType: z.enum(['QUANTITATIVE', 'QUALITATIVE', 'COLLABORATION']),
+  departmentId: z.string().min(1).optional(),
+  departmentName: z.string().max(80).optional(),
+  ownerLabel: z.string().max(120).optional(),
+  evaluationGroupId: z.string().min(1).optional(),
+  strategicAlignmentScore: z.number().min(1).max(5),
+  jobRepresentativenessScore: z.number().min(1).max(5),
+  smartDiagnosis: IndicatorSmartDiagnosisSchema.optional(),
+  selectionStatus: z.enum(['KEEP', 'HOLD', 'IMPROVE', 'DELETE', 'NEW']),
+  lifecycleAction: z.enum(['KEEP', 'HOLD', 'IMPROVE', 'DELETE', 'NEW']),
+  departmentComment: z.string().max(500),
+  managerComment: z.string().max(500),
+  evidenceTemplate: z.string().max(500),
+  pageLimit: z.number().int().min(1).max(20),
+  rolloverHistory: z.array(IndicatorRolloverHistoryItemSchema),
+  carriedFromCycleId: z.string().min(1).optional(),
+})
+
+const NonQuantitativeTemplateSectionSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1).max(80),
+  focusPoint: z.string().max(500),
+  checklist: z.array(z.string().min(1).max(160)).max(10),
+})
+
+const NonQuantitativeTemplateSchema = z.object({
+  name: z.string().min(1).max(80),
+  guidance: z.string().min(1).max(2000),
+  reportFormat: z.string().min(1).max(300),
+  pageLimit: z.number().int().min(1).max(20),
+  sections: z.array(NonQuantitativeTemplateSectionSchema).min(1).max(8),
+  allowInternalEvidence: z.boolean(),
+  evidenceGuide: z.array(z.string().min(1).max(120)).max(10),
+})
+
+const PerformanceSelectionMatrixSchema = z
+  .object({
+    strategicWeight: z.number().int().min(0).max(100),
+    jobWeight: z.number().int().min(0).max(100),
+    smartWeight: z.number().int().min(0).max(100),
+    keepThreshold: z.number().min(0).max(100),
+    holdThreshold: z.number().min(0).max(100),
+    improveThreshold: z.number().min(0).max(100),
+  })
+  .superRefine((data, ctx) => {
+    if (data.strategicWeight + data.jobWeight + data.smartWeight !== 100) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['smartWeight'],
+        message: '선정 매트릭스 가중치 합계는 100이어야 합니다.',
+      })
+    }
+    if (!(data.keepThreshold > data.holdThreshold && data.holdThreshold > data.improveThreshold)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['keepThreshold'],
+        message: '선정 기준 점수는 유지 > 유보 > 보완 순으로 설정해 주세요.',
+      })
+    }
+  })
+
+const NonQuantitativeTemplateBindingSchema = z
+  .object({
+    id: z.string().min(1),
+    evaluationGroupId: z.string().min(1),
+    pageMin: z.number().int().min(1).max(20),
+    pageMax: z.number().int().min(1).max(20),
+    guidanceOverride: z.string().max(2000),
+    reportFormatOverride: z.string().max(300),
+    evidenceGuideOverride: z.array(z.string().min(1).max(120)).max(10),
+  })
+  .superRefine((data, ctx) => {
+    if (data.pageMin > data.pageMax) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['pageMax'],
+        message: '비계량 작성 분량은 최소 페이지가 최대 페이지보다 클 수 없습니다.',
+      })
+    }
+  })
+
+const PerformanceMilestoneSchema = z.object({
+  id: z.string().min(1),
+  key: z.enum([
+    'HANDBOOK_FINALIZED',
+    'GOAL_FINALIZED',
+    'MID_CHECK',
+    'QUALITATIVE_SUBMISSION',
+    'FINAL_EVALUATION',
+    'RESULT_FINALIZED',
+  ]),
+  label: z.string().min(1).max(80),
+  ownerRole: z.enum(['HR', 'MANAGER', 'DEPARTMENT']),
+  startAt: z.string().datetime().optional(),
+  endAt: z.string().datetime().optional(),
+  description: z.string().max(300),
+})
+
+const CollaborationCaseEvaluationSchema = z.object({
+  impactScore: z.number().min(0).max(5),
+  executionScore: z.number().min(0).max(5),
+  collaborationScore: z.number().min(0).max(5),
+  spreadScore: z.number().min(0).max(5),
+  comment: z.string().max(1000),
+})
+
+const CollaborationCaseSchema = z.object({
+  id: z.string().min(1),
+  departmentId: z.string().min(1),
+  departmentName: z.string().max(80).optional(),
+  title: z.string().min(1).max(120),
+  summary: z.string().min(1).max(1500),
+  impact: z.string().min(1).max(1000),
+  collaborationPartners: z.array(z.string().min(1).max(80)).max(10),
+  evidenceNotes: z.string().max(1000),
+  submittedBy: z.string().max(60),
+  status: z.enum(['DRAFT', 'SUBMITTED', 'REVIEWED', 'SHARED']),
+  evaluation: CollaborationCaseEvaluationSchema,
+  highlighted: z.boolean(),
+})
+
+const EnvironmentAdjustmentConfigSchema = z.object({
+  enabled: z.boolean(),
+  effortGuide: z.string().max(800),
+  targetAdjustmentGuide: z.string().max(800),
+  fallbackIndicators: z.array(z.string().min(1).max(120)).max(20),
+})
+
+export const PerformanceDesignConfigSchema = z.object({
+  evaluationGroups: z.array(EvaluationGroupSchema).min(1).max(12),
+  indicatorDesigns: z.array(PerformanceIndicatorDesignSchema).max(400),
+  selectionMatrix: PerformanceSelectionMatrixSchema,
+  nonQuantitativeTemplate: NonQuantitativeTemplateSchema,
+  nonQuantitativeTemplateBindings: z.array(NonQuantitativeTemplateBindingSchema).max(20),
+  milestones: z.array(PerformanceMilestoneSchema).min(1).max(12),
+  collaborationCases: z.array(CollaborationCaseSchema).max(80),
+  environmentAdjustment: EnvironmentAdjustmentConfigSchema,
+})
+
+export const UpdatePerformanceDesignSchema = z.object({
+  config: PerformanceDesignConfigSchema,
+})
+
+export const PerformanceDesignRolloverSchema = z.object({
+  indicatorKeys: z.array(z.string().min(1)).min(1),
+})
+
 // ============================================
 // Compensation
 // ============================================
@@ -1359,7 +1547,8 @@ export const AdminEvaluatorAssignmentActionSchema = z.object({
 })
 
 export const AdminMasterLoginSchema = z.object({
-  targetEmployeeId: z.string().min(1),
+  targetEmployeeId: z.string().min(1, '대상 유저를 선택해 주세요.'),
+  reason: z.string().trim().min(10, '마스터 로그인 사유를 10자 이상 입력해 주세요.').max(500),
 })
 
 export const AdminEmployeeUploadRowSchema = z.object({

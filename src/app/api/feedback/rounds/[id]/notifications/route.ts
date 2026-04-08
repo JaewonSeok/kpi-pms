@@ -5,6 +5,12 @@ import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { queueNotification, sendAdhocNotificationTest } from '@/lib/notification-service'
 import { buildReviewEmailContent } from '@/lib/review-email-editor'
+import type { AuthSession } from '@/types/auth'
+import {
+  logImpersonationRiskExecution,
+  validateImpersonationRiskRequest,
+  type ValidatedImpersonationRiskContext,
+} from '@/server/impersonation'
 import {
   getEligibleReminderRecipientIds,
   resolveFeedbackResultPrimaryLeaderId,
@@ -41,8 +47,11 @@ async function getAdminEmployee(userId: string) {
 }
 
 export async function POST(request: Request, context: RouteContext) {
+  let session: AuthSession | null = null
+  let riskContext: ValidatedImpersonationRiskContext | null = null
+
   try {
-    const session = await getServerSession(authOptions)
+    session = (await getServerSession(authOptions)) as AuthSession | null
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
 
     const { id } = await context.params
@@ -113,6 +122,17 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!canManageRound) {
       throw new AppError(403, 'FORBIDDEN', '이 리뷰 라운드의 알림을 발송할 권한이 없습니다.')
+    }
+
+    if (validated.data.action === 'send-result-share') {
+      riskContext = await validateImpersonationRiskRequest({
+        session,
+        request,
+        actionName: 'SHARE_RESULT',
+        targetResourceType: 'MultiFeedbackRound',
+        targetResourceId: round.id,
+        confirmationText: '공유',
+      })
     }
 
     if (validated.data.action === 'test-send') {
@@ -333,6 +353,20 @@ export async function POST(request: Request, context: RouteContext) {
       ...getClientInfo(request),
     })
 
+    await logImpersonationRiskExecution({
+      session,
+      request,
+      riskContext,
+      success: true,
+      metadata: {
+        roundId: round.id,
+        action: validated.data.action,
+        shareAudience: validated.data.action === 'send-result-share' ? validated.data.shareAudience : null,
+        targetCount: uniqueTargetIds.length,
+        recipientCount: recipients.length,
+      },
+    })
+
     return successResponse({
       message:
         validated.data.action === 'send-result-share'
@@ -343,6 +377,18 @@ export async function POST(request: Request, context: RouteContext) {
       duplicateCount,
     })
   } catch (error) {
+    if (session && riskContext) {
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+      }).catch(() => undefined)
+    }
+
     return errorResponse(error)
   }
 }

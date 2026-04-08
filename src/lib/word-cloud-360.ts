@@ -167,6 +167,44 @@ export function validateWordCloudSelections(params: {
   } satisfies WordCloudSelectionValidation
 }
 
+export function validateWordCloudSubmitSelections(params: {
+  positiveKeywordIds: string[]
+  negativeKeywordIds: string[]
+  positiveLimit: number
+  negativeLimit: number
+}) {
+  const errors: string[] = []
+
+  if (new Set(params.positiveKeywordIds).size !== params.positiveKeywordIds.length) {
+    errors.push('긍정 키워드는 중복 선택할 수 없습니다.')
+  }
+
+  if (new Set(params.negativeKeywordIds).size !== params.negativeKeywordIds.length) {
+    errors.push('부정 키워드는 중복 선택할 수 없습니다.')
+  }
+
+  if (params.positiveKeywordIds.length > params.positiveLimit) {
+    errors.push(`긍정 키워드는 최대 ${params.positiveLimit}개까지 선택할 수 있습니다.`)
+  }
+
+  if (params.negativeKeywordIds.length > params.negativeLimit) {
+    errors.push(`부정 키워드는 최대 ${params.negativeLimit}개까지 선택할 수 있습니다.`)
+  }
+
+  if (params.positiveKeywordIds.length < 1) {
+    errors.push('긍정 키워드와 부정 키워드는 각각 1개 이상 선택해 주세요.')
+  }
+
+  if (params.negativeKeywordIds.length < 1) {
+    errors.push('긍정 키워드와 부정 키워드는 각각 1개 이상 선택해 주세요.')
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  } satisfies WordCloudSelectionValidation
+}
+
 export function buildSuggestedWordCloudAssignments(params: {
   cycleId: string
   employees: WordCloudEmployeeNode[]

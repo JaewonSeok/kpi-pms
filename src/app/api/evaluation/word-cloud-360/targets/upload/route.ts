@@ -1,13 +1,21 @@
-import { authorizeMenu } from '@/server/auth/authorize'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
+import { authorizeMenu } from '@/server/auth/authorize'
+import {
+  logImpersonationRiskExecution,
+  validateImpersonationRiskRequest,
+  type ValidatedImpersonationRiskContext,
+} from '@/server/impersonation'
 import {
   applyWordCloud360TargetUpload,
   WORD_CLOUD_TARGET_UPLOAD_MAX_SIZE,
 } from '@/server/word-cloud-360'
 
 export async function POST(request: Request) {
+  let session = null as Awaited<ReturnType<typeof authorizeMenu>> | null
+  let riskContext: ValidatedImpersonationRiskContext | null = null
+
   try {
-    const session = await authorizeMenu('WORD_CLOUD_360')
+    session = await authorizeMenu('WORD_CLOUD_360')
     if (session.user.role !== 'ROLE_ADMIN') {
       throw new AppError(403, 'FORBIDDEN', '관리자만 서베이 대상자를 업로드할 수 있습니다.')
     }
@@ -33,6 +41,15 @@ export async function POST(request: Request) {
       )
     }
 
+    riskContext = await validateImpersonationRiskRequest({
+      session,
+      request,
+      actionName: 'UPLOAD_APPLY',
+      targetResourceType: 'WordCloud360TargetUpload',
+      targetResourceId: cycleId,
+      confirmationText: '업로드',
+    })
+
     const result = await applyWordCloud360TargetUpload({
       actorId: session.user.id,
       cycleId,
@@ -40,8 +57,31 @@ export async function POST(request: Request) {
       buffer: Buffer.from(await file.arrayBuffer()),
     })
 
+    await logImpersonationRiskExecution({
+      session,
+      request,
+      riskContext,
+      success: true,
+      metadata: {
+        cycleId,
+        fileName: file.name,
+      },
+    })
+
     return successResponse(result)
   } catch (error) {
+    if (session && riskContext) {
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+      }).catch(() => undefined)
+    }
+
     return errorResponse(error, '서베이 대상자 업로드를 처리하지 못했습니다.')
   }
 }

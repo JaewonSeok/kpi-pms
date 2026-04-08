@@ -1,3 +1,5 @@
+import type { Session } from 'next-auth'
+
 export const AUTH_ROLES = [
   'ROLE_ADMIN',
   'ROLE_CEO',
@@ -57,11 +59,19 @@ export type SessionUserClaims = {
   masterLoginAvailable?: boolean
   masterLogin?: {
     active: boolean
-    readOnly: true
+    sessionId: string
+    actorId: string
     actorName: string
     actorEmail: string
+    targetId: string
     startedAt: string
+    expiresAt: string
+    reason: string
     targetName: string
     targetEmail: string
   } | null
+}
+
+export type AuthSession = Session & {
+  user: SessionUserClaims
 }

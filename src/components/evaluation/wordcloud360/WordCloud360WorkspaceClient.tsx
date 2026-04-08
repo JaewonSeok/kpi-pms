@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useDeferredValue, useMemo, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
+import { isImpersonationRiskCancelledError } from '@/lib/impersonation'
 import type { WordCloud360PageData } from '@/server/word-cloud-360'
 import { buildWordCloudCycleFormState, toWordCloudCyclePayload } from '@/lib/word-cloud-360-cycle-form'
 import { WordCloudCloud } from './WordCloudCloud'
@@ -178,10 +180,10 @@ function toFriendlyErrorMessage(message: string | undefined, fallback: string) {
   return trimmed
 }
 
-async function callAction(action: string, payload: unknown) {
+async function callAction(action: string, payload: unknown, headers?: HeadersInit) {
   const response = await fetch('/api/evaluation/word-cloud-360/actions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(headers ?? {}) },
     body: JSON.stringify({ action, payload }),
   })
   const body = readApiBody(await response.json())
@@ -207,13 +209,14 @@ async function uploadKeywordCsv(mode: 'preview' | 'apply', file: File) {
   return body.data as KeywordImportResult
 }
 
-async function uploadWordCloudAdminFile<T>(endpoint: string, cycleId: string, file: File) {
+async function uploadWordCloudAdminFile<T>(endpoint: string, cycleId: string, file: File, headers?: HeadersInit) {
   const formData = new FormData()
   formData.set('cycleId', cycleId)
   formData.set('file', file)
 
   const response = await fetch(endpoint, {
     method: 'POST',
+    headers,
     body: formData,
   })
   const body = readApiBody(await response.json())
@@ -227,13 +230,15 @@ async function downloadWordCloudExport(params: {
   cycleId: string
   format: 'csv' | 'xlsx'
   reason: string
+  headers?: HeadersInit
 }) {
   const searchParams = new URLSearchParams({
     format: params.format,
     reason: params.reason,
   })
   const response = await fetch(
-    `/api/evaluation/word-cloud-360/export/${encodeURIComponent(params.cycleId)}?${searchParams.toString()}`
+    `/api/evaluation/word-cloud-360/export/${encodeURIComponent(params.cycleId)}?${searchParams.toString()}`,
+    { headers: params.headers }
   )
 
   if (!response.ok) {
@@ -332,6 +337,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab(data))
   const [notice, setNotice] = useState<Notice>(null)
   const [isPending, startTransition] = useTransition()
+  const { requestRiskConfirmation, riskDialog, createCancelledError } = useImpersonationRiskAction()
   const [assignmentSearch, setAssignmentSearch] = useState('')
   const deferredAssignmentSearch = useDeferredValue(assignmentSearch)
   const [selectedAssignmentId, setSelectedAssignmentId] = useState(data.evaluatorView?.assignments[0]?.assignmentId ?? '')
@@ -382,6 +388,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
         .toLowerCase()
         .includes(query)
     }) ?? []
+  const canSubmitFinal = positiveSelections.length >= 1 && negativeSelections.length >= 1
 
   const categoryChartData = useMemo(
     () =>
@@ -398,6 +405,11 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   const hasSelectedCycle = Boolean(data.selectedCycleId)
   const hasCycleOptions = data.availableCycles.length > 0
   const isCreateMode = Boolean(data.permissions?.canManage && !hasSelectedCycle)
+  const selectedCycleName =
+    data.availableCycles.find((cycle) => cycle.id === data.selectedCycleId)?.name ??
+    data.adminView?.cycle?.cycleName ??
+    data.selectedCycleId ??
+    ''
 
   function updateCycle(nextCycleId: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -424,6 +436,9 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
           setNotice({ tone: 'success', message: successMessage })
           router.refresh()
         } catch (error) {
+          if (isImpersonationRiskCancelledError(error)) {
+            return
+          }
           setNotice({
             tone: 'error',
             message: error instanceof Error ? error.message : '작업을 처리하지 못했습니다.',
@@ -520,10 +535,21 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
       void (async () => {
         try {
           setNotice(null)
+          const riskHeaders = await requestRiskConfirmation({
+            actionName: 'UPLOAD_APPLY',
+            actionLabel: '서베이 대상자 일괄 지정 업로드',
+            targetLabel: selectedCycleName || cycleId,
+            detail: '현재 마스터 로그인 상태에서 대상자 업로드를 실제 데이터에 반영합니다.',
+            confirmationText: '업로드',
+          })
+          if (riskHeaders === null) {
+            throw createCancelledError()
+          }
           const result = await uploadWordCloudAdminFile<TargetUploadResult>(
             '/api/evaluation/word-cloud-360/targets/upload',
             cycleId,
-            targetUploadFile
+            targetUploadFile,
+            riskHeaders
           )
           setTargetUploadResult(result)
           setNotice({
@@ -564,10 +590,21 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
       void (async () => {
         try {
           setNotice(null)
+          const riskHeaders = await requestRiskConfirmation({
+            actionName: 'UPLOAD_APPLY',
+            actionLabel: '서베이 비교 리포트 업로드',
+            targetLabel: selectedCycleName || cycleId,
+            detail: '현재 마스터 로그인 상태에서 비교 리포트 업로드를 실제 데이터에 반영합니다.',
+            confirmationText: '업로드',
+          })
+          if (riskHeaders === null) {
+            throw createCancelledError()
+          }
           const report = await uploadWordCloudAdminFile<ComparisonReport>(
             '/api/evaluation/word-cloud-360/comparison/upload',
             cycleId,
-            comparisonUploadFile
+            comparisonUploadFile,
+            riskHeaders
           )
           setComparisonReport(report)
           setNotice({
@@ -601,10 +638,21 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
       void (async () => {
         try {
           setNotice(null)
+          const riskHeaders = await requestRiskConfirmation({
+            actionName: 'DOWNLOAD_EXPORT',
+            actionLabel: '서베이 결과 다운로드',
+            targetLabel: selectedCycleName || cycleId,
+            detail: '현재 마스터 로그인 상태에서 서베이 결과 파일을 다운로드합니다.',
+            confirmationText: '다운로드',
+          })
+          if (riskHeaders === null) {
+            throw createCancelledError()
+          }
           await downloadWordCloudExport({
             cycleId,
             format: exportFormat,
             reason: exportReason,
+            headers: riskHeaders,
           })
           setExportModalOpen(false)
           setExportReason('')
@@ -662,7 +710,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
             <p className="text-sm font-medium text-slate-500">평가관리</p>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950">워드클라우드형 다면평가</h1>
             <p className="max-w-3xl text-sm leading-6 text-slate-600">
-              점수형 다면평가와 분리된 키워드 선택 기반 평가입니다. 평가자는 긍정 10개, 부정 10개 키워드를 선택하고,
+              점수형 다면평가와 분리된 키워드 선택 기반 평가입니다. 평가자는 긍정과 부정 키워드를 각각 1개 이상 선택해 제출할 수 있고,
               피평가자는 공개 시점 이후 워드클라우드와 빈도표 중심으로 결과를 확인합니다.
             </p>
           </div>
@@ -820,6 +868,11 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                   </div>
                 </div>
 
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <p>긍정 키워드와 부정 키워드는 각각 1개 이상 선택해 주세요.</p>
+                  <p className="mt-1">최대 선택 가능 개수는 운영 설정을 따릅니다.</p>
+                </div>
+
                 <div className="grid gap-6 xl:grid-cols-2">
                   <div>
                     <h3 className="mb-3 text-lg font-semibold text-slate-950">긍정 키워드 선택</h3>
@@ -891,17 +944,33 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                   </button>
                   <button
                     type="button"
-                    disabled={isPending || selectedAssignment.responseStatus === 'SUBMITTED'}
+                    disabled={isPending || selectedAssignment.responseStatus === 'SUBMITTED' || !canSubmitFinal}
                     className={primaryButtonClassName}
                     onClick={() =>
                       mutate(
-                        () =>
-                          callAction('saveResponse', {
-                            assignmentId: selectedAssignment.assignmentId,
-                            positiveKeywordIds: positiveSelections,
-                            negativeKeywordIds: negativeSelections,
-                            submitFinal: true,
-                          }),
+                        async () => {
+                          const riskHeaders = await requestRiskConfirmation({
+                            actionName: 'FINAL_SUBMIT',
+                            actionLabel: '워드클라우드 360 최종 제출',
+                            targetLabel: selectedAssignment.evaluateeName,
+                            detail:
+                              '현재 마스터 로그인 상태에서 워드클라우드 360 응답을 최종 제출합니다.',
+                            confirmationText: '제출',
+                          })
+                          if (riskHeaders === null) {
+                            throw createCancelledError()
+                          }
+                          return callAction(
+                            'saveResponse',
+                            {
+                              assignmentId: selectedAssignment.assignmentId,
+                              positiveKeywordIds: positiveSelections,
+                              negativeKeywordIds: negativeSelections,
+                              submitFinal: true,
+                            },
+                            riskHeaders
+                          )
+                        },
                         '응답을 최종 제출했습니다.'
                       )
                     }
@@ -1094,7 +1163,34 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 </button>
                 {data.selectedCycleId ? (
                   <>
-                    <button type="button" disabled={isPending} className={secondaryButtonClassName} onClick={() => mutate(() => callAction('publishResults', { cycleId: data.selectedCycleId, publish: true }), '결과를 공개했습니다.')}>
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      className={secondaryButtonClassName}
+                      onClick={() =>
+                        mutate(
+                          async () => {
+                            const riskHeaders = await requestRiskConfirmation({
+                              actionName: 'PUBLISH_RESULT',
+                              actionLabel: '워드클라우드 결과 공개',
+                              targetLabel: selectedCycleName,
+                              detail:
+                                '현재 마스터 로그인 상태에서 워드클라우드 결과 공개 상태를 변경합니다.',
+                              confirmationText: '공개',
+                            })
+                            if (riskHeaders === null) {
+                              throw createCancelledError()
+                            }
+                            return callAction(
+                              'publishResults',
+                              { cycleId: data.selectedCycleId, publish: true },
+                              riskHeaders
+                            )
+                          },
+                          '결과를 공개했습니다.'
+                        )
+                      }
+                    >
                       결과 공개
                     </button>
                     <button type="button" className={secondaryButtonClassName} onClick={() => openExportModal('xlsx')}>
@@ -1326,13 +1422,29 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                   className={secondaryButtonClassName}
                   onClick={() =>
                     mutate(
-                      () =>
-                        callAction('autoAssign', {
-                          cycleId: data.selectedCycleId,
-                          includeSelf: false,
-                          peerLimit: 3,
-                          subordinateLimit: 3,
-                        }),
+                      async () => {
+                        const riskHeaders = await requestRiskConfirmation({
+                          actionName: 'UPLOAD_APPLY',
+                          actionLabel: '워드클라우드 기본 편성 생성',
+                          targetLabel: selectedCycleName,
+                          detail:
+                            '현재 마스터 로그인 상태에서 기본 편성을 생성하고 실제 데이터에 반영합니다.',
+                          confirmationText: '적용',
+                        })
+                        if (riskHeaders === null) {
+                          throw createCancelledError()
+                        }
+                        return callAction(
+                          'autoAssign',
+                          {
+                            cycleId: data.selectedCycleId,
+                            includeSelf: false,
+                            peerLimit: 3,
+                            subordinateLimit: 3,
+                          },
+                          riskHeaders
+                        )
+                      },
                       '기본 편성을 생성했습니다.'
                     )
                   }
@@ -1366,18 +1478,34 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 className={primaryButtonClassName}
                 onClick={() =>
                   mutate(
-                    () =>
-                      callAction('saveAssignments', {
-                        cycleId: data.selectedCycleId,
-                        assignments: [
+                      async () => {
+                        const riskHeaders = await requestRiskConfirmation({
+                          actionName: 'UPLOAD_APPLY',
+                          actionLabel: '워드클라우드 평가자 편성 저장',
+                          targetLabel: selectedCycleName,
+                          detail:
+                            '현재 마스터 로그인 상태에서 평가자 편성 변경 내용을 실제 데이터에 반영합니다.',
+                          confirmationText: '적용',
+                        })
+                        if (riskHeaders === null) {
+                          throw createCancelledError()
+                        }
+                        return callAction(
+                          'saveAssignments',
                           {
                             cycleId: data.selectedCycleId,
-                            evaluatorId: assignmentForm.evaluatorId,
-                            evaluateeId: assignmentForm.evaluateeId,
-                            evaluatorGroup: assignmentForm.evaluatorGroup,
+                            assignments: [
+                              {
+                                cycleId: data.selectedCycleId,
+                                evaluatorId: assignmentForm.evaluatorId,
+                                evaluateeId: assignmentForm.evaluateeId,
+                                evaluatorGroup: assignmentForm.evaluatorGroup,
+                              },
+                            ],
                           },
-                        ],
-                      }),
+                          riskHeaders
+                        )
+                      },
                     '편성을 저장했습니다.'
                   )
                 }
@@ -1404,7 +1532,34 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                       <td className="py-2 pr-4 text-slate-700">{groupLabels[assignment.evaluatorGroup] ?? assignment.evaluatorGroup}</td>
                       <td className="py-2 pr-4 text-slate-500">{assignment.status}</td>
                       <td className="py-2 text-right">
-                        <button type="button" className={secondaryButtonClassName} disabled={isPending} onClick={() => mutate(() => callAction('deleteAssignment', { assignmentId: assignment.assignmentId }), '편성을 삭제했습니다.')}>
+                        <button
+                          type="button"
+                          className={secondaryButtonClassName}
+                          disabled={isPending}
+                          onClick={() =>
+                            mutate(
+                              async () => {
+                                const riskHeaders = await requestRiskConfirmation({
+                                  actionName: 'DELETE_RECORD',
+                                  actionLabel: '워드클라우드 평가자 편성 삭제',
+                                  targetLabel: `${assignment.evaluateeName} / ${assignment.evaluatorName}`,
+                                  detail:
+                                    '현재 마스터 로그인 상태에서 평가자 편성을 삭제합니다. 이 작업은 실제 데이터에 반영됩니다.',
+                                  confirmationText: '삭제',
+                                })
+                                if (riskHeaders === null) {
+                                  throw createCancelledError()
+                                }
+                                return callAction(
+                                  'deleteAssignment',
+                                  { assignmentId: assignment.assignmentId },
+                                  riskHeaders
+                                )
+                              },
+                              '편성을 삭제했습니다.'
+                            )
+                          }
+                        >
                           삭제
                         </button>
                       </td>
@@ -1857,6 +2012,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
           </div>
         </div>
       ) : null}
+      {riskDialog}
     </div>
   )
 }

@@ -25,7 +25,8 @@ function parseTypes(value?: string): PerformanceCalendarEventType[] | undefined 
         item === 'review' ||
         item === 'survey' ||
         item === 'calibration' ||
-        item === 'anniversary'
+        item === 'anniversary' ||
+        item === 'milestone'
     )
 }
 

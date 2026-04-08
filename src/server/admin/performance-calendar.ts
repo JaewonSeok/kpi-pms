@@ -1,5 +1,6 @@
-import type { FeedbackRoundStatus, FeedbackRoundType, SystemRole } from '@prisma/client'
+import type { FeedbackRoundStatus, FeedbackRoundType, Prisma, SystemRole } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { parsePerformanceDesignConfig } from '@/lib/performance-design'
 
 type CalendarSession = {
   user?: {
@@ -13,6 +14,7 @@ export type PerformanceCalendarEventType =
   | 'survey'
   | 'calibration'
   | 'anniversary'
+  | 'milestone'
 
 export type PerformanceCalendarPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -86,6 +88,7 @@ type EvalCycleLite = {
   resultOpenStart: Date | null
   resultOpenEnd: Date | null
   appealDeadline: Date | null
+  performanceDesignConfig: Prisma.JsonValue | null
   organization: {
     name: string
   }
@@ -150,6 +153,7 @@ const FILTER_LABELS: Record<PerformanceCalendarEventType, string> = {
   survey: '서베이',
   calibration: '캘리브레이션',
   anniversary: '입사일',
+  milestone: '운영 일정',
 }
 
 function parseMonthKey(input?: string) {
@@ -295,6 +299,7 @@ function buildDefaultDeps(): CalendarDeps {
           resultOpenStart: true,
           resultOpenEnd: true,
           appealDeadline: true,
+          performanceDesignConfig: true,
           organization: {
             select: {
               name: true,
@@ -409,6 +414,24 @@ function buildEvents(params: {
       monthStart: params.monthStart,
       monthEnd: params.monthEnd,
     })
+
+    const designConfig = parsePerformanceDesignConfig(cycle.performanceDesignConfig)
+    designConfig.milestones.forEach((milestone) =>
+      pushRangeEvent(events, {
+        id: `${cycle.id}:milestone:${milestone.id}`,
+        type: 'milestone',
+        title: `${cycle.cycleName} ${milestone.label}`,
+        subtitle: cycle.organization.name,
+        description: milestone.description,
+        startsAt: milestone.startAt ? new Date(milestone.startAt) : null,
+        endsAt: milestone.endAt ? new Date(milestone.endAt) : null,
+        href: `/admin/performance-design?cycleId=${encodeURIComponent(cycle.id)}`,
+        hrefLabel: '성과 설계 화면으로 이동',
+        sourceLabel: '운영 일정',
+        monthStart: params.monthStart,
+        monthEnd: params.monthEnd,
+      })
+    )
 
     ;[
       {

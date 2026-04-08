@@ -296,6 +296,7 @@ model EvalCycle {
   showScoreSummary   Boolean   @default(true)
   goalEditMode    GoalEditMode @default(FULL)
   calibrationSessionConfig Json?
+  performanceDesignConfig Json?
   kpiSetupStart   DateTime?
   kpiSetupEnd     DateTime?
   selfEvalStart   DateTime?
@@ -1974,6 +1975,25 @@ model AuditLog {
 // ============================================
 // 10. 이의신청
 // ============================================
+
+model ImpersonationSession {
+  id                  String   @id @default(cuid())
+  impersonatorAdminId String
+  impersonatedUserId  String
+  reason              String
+  startedAt           DateTime @default(now())
+  expiresAt           DateTime
+  endedAt             DateTime?
+  isActive            Boolean  @default(true)
+  metadata            Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([impersonatorAdminId, startedAt])
+  @@index([impersonatedUserId, startedAt])
+  @@index([isActive, expiresAt])
+  @@map("impersonation_sessions")
+}
 
 model Appeal {
   id            String       @id @default(cuid())

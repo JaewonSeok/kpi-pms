@@ -53,12 +53,12 @@ async function run(name: string, fn: () => Promise<void> | void) {
 }
 
 async function main() {
-  await run('performance calendar merges multiple event sources and applies month/type filters', async () => {
+  await run('performance calendar merges multiple event sources and milestone filters', async () => {
     const data = await getPerformanceCalendarPageData(
       makeSession(),
       {
         month: '2026-03',
-        types: ['goal', 'anniversary'],
+        types: ['goal', 'anniversary', 'milestone'],
       },
       {
         loadEvalCycles: async () => [
@@ -81,7 +81,20 @@ async function main() {
             resultOpenStart: null,
             resultOpenEnd: null,
             appealDeadline: null,
-            organization: { name: '알서포트' },
+            performanceDesignConfig: {
+              milestones: [
+                {
+                  id: 'milestone-goal',
+                  key: 'GOAL_FINALIZED',
+                  label: '목표 확정',
+                  ownerRole: 'MANAGER',
+                  startAt: '2026-03-09T00:00:00.000Z',
+                  endAt: '2026-03-11T00:00:00.000Z',
+                  description: '목표 확정 회의',
+                },
+              ],
+            },
+            organization: { name: 'RSUPPORT' },
           },
         ],
         loadFeedbackRounds: async () => [
@@ -95,7 +108,7 @@ async function main() {
             evalCycle: {
               id: 'cycle-1',
               cycleName: '2026 상반기',
-              organization: { name: '알서포트' },
+              organization: { name: 'RSUPPORT' },
             },
           },
         ],
@@ -113,7 +126,7 @@ async function main() {
             evalCycle: {
               id: 'cycle-1',
               cycleName: '2026 상반기',
-              organization: { name: '알서포트' },
+              organization: { name: 'RSUPPORT' },
             },
           },
         ],
@@ -122,19 +135,23 @@ async function main() {
             id: 'emp-1',
             empName: '홍길동',
             joinDate: new Date('2022-03-21T00:00:00.000Z'),
-            department: { deptName: '경영지원' },
+            department: { deptName: '경영지원부' },
           },
         ],
       }
     )
 
     assert.equal(data.state, 'ready')
-    assert.deepEqual(data.selectedTypes, ['goal', 'anniversary'])
-    assert.equal(data.events.length, 2)
-    assert.equal(data.events.every((item) => item.type === 'goal' || item.type === 'anniversary'), true)
+    assert.deepEqual(data.selectedTypes, ['goal', 'anniversary', 'milestone'])
+    assert.equal(data.events.length, 3)
+    assert.equal(data.events.some((item) => item.type === 'milestone'), true)
     assert.equal(data.filters.find((item) => item.type === 'survey')?.count, 1)
-    assert.equal(data.summary.totalCount, 2)
-    assert.equal(data.summary.nextUpcoming?.href, '/admin/eval-cycle')
+    assert.equal(data.summary.totalCount, 3)
+    assert.equal(
+      data.summary.nextUpcoming?.href === '/admin/eval-cycle' ||
+        data.summary.nextUpcoming?.href === '/admin/performance-design',
+      true
+    )
   })
 
   await run('performance calendar tolerates one failing source and reports a degraded alert', async () => {
@@ -166,7 +183,8 @@ async function main() {
               resultOpenStart: null,
               resultOpenEnd: null,
               appealDeadline: null,
-              organization: { name: '알서포트' },
+              performanceDesignConfig: null,
+              organization: { name: 'RSUPPORT' },
             },
           ],
           loadFeedbackRounds: async () => {
@@ -197,11 +215,14 @@ async function main() {
     const clientSource = read('src/components/admin/PerformanceCalendarClient.tsx')
     const dashboardSource = read('src/server/dashboard-page.ts')
     const navigationSource = read('src/lib/navigation.ts')
+    const pageSource = read('src/app/(main)/admin/performance-calendar/page.tsx')
 
     assert.equal(existsSync(path.resolve(process.cwd(), 'src/app/(main)/admin/performance-calendar/page.tsx')), true)
     assert.equal(clientSource.includes('/admin/performance-calendar?'), true)
+    assert.equal(clientSource.includes("milestone: 'border-slate-300"), true)
     assert.equal(dashboardSource.includes('/admin/performance-calendar'), true)
     assert.equal(navigationSource.includes('/admin/performance-calendar'), true)
+    assert.equal(pageSource.includes("item === 'milestone'"), true)
   })
 
   console.log('Performance calendar tests completed')

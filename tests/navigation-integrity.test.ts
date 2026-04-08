@@ -87,6 +87,7 @@ run('admin sidebar exposes every admin and setup route', () => {
     '/admin/grades',
     '/admin/eval-cycle',
     '/admin/performance-calendar',
+    '/admin/performance-design',
     '/admin/goal-alignment',
     '/admin/google-access',
     '/admin/notifications',

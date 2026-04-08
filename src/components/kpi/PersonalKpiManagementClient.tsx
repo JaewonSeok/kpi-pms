@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bot, ClipboardList, Copy, History, Link2, Plus, Send, Sparkles, X } from 'lucide-react'
+import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 import type {
   PersonalKpiAiLogItem,
   PersonalKpiPageData,
@@ -451,6 +452,7 @@ function validateKpiForm(form: KpiForm) {
 
 export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
+  const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
   const [selectedKpiId, setSelectedKpiId] = useState(props.initialKpiId ?? props.mine[0]?.id ?? '')
   const [selectedReviewId, setSelectedReviewId] = useState(props.reviewQueue[0]?.id ?? '')
@@ -745,9 +747,18 @@ export function PersonalKpiManagementClient(props: Props) {
     setBanner(null)
 
     try {
+      const riskHeaders = await requestRiskConfirmation({
+        actionName: 'FINAL_SUBMIT',
+        actionLabel: '개인 KPI 제출',
+        targetLabel: selectedKpi.title,
+        detail: '현재 마스터 로그인 상태에서 개인 KPI를 제출합니다.',
+        confirmationText: '제출',
+      })
+      if (riskHeaders === null) return
+
       const response = await fetch(`/api/kpi/personal/${selectedKpi.id}/workflow`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...riskHeaders },
         body: JSON.stringify({ action: 'SUBMIT' }),
       })
       await parseJsonOrThrow(response)
@@ -978,9 +989,52 @@ export function PersonalKpiManagementClient(props: Props) {
     setBanner(null)
 
     try {
+      let riskHeaders: Record<string, string> = {}
+      if (action === 'APPROVE') {
+        const confirmed = await requestRiskConfirmation({
+          actionName: 'APPROVE_RECORD',
+          actionLabel: '개인 KPI 승인',
+          targetLabel: selectedKpi?.title,
+          detail: '현재 마스터 로그인 상태에서 개인 KPI를 승인합니다.',
+          confirmationText: '승인',
+        })
+        if (confirmed === null) return
+        riskHeaders = confirmed
+      } else if (action === 'REJECT') {
+        const confirmed = await requestRiskConfirmation({
+          actionName: 'REJECT_RECORD',
+          actionLabel: '개인 KPI 반려',
+          targetLabel: selectedKpi?.title,
+          detail: '현재 마스터 로그인 상태에서 개인 KPI를 반려합니다.',
+          confirmationText: '반려',
+        })
+        if (confirmed === null) return
+        riskHeaders = confirmed
+      } else if (action === 'LOCK') {
+        const confirmed = await requestRiskConfirmation({
+          actionName: 'LOCK_RECORD',
+          actionLabel: '개인 KPI 잠금',
+          targetLabel: selectedKpi?.title,
+          detail: '현재 마스터 로그인 상태에서 개인 KPI를 잠금 처리합니다.',
+          confirmationText: '잠금',
+        })
+        if (confirmed === null) return
+        riskHeaders = confirmed
+      } else if (action === 'REOPEN') {
+        const confirmed = await requestRiskConfirmation({
+          actionName: 'REOPEN_RECORD',
+          actionLabel: '개인 KPI 재개',
+          targetLabel: selectedKpi?.title,
+          detail: '현재 마스터 로그인 상태에서 개인 KPI를 다시 편집 가능한 상태로 되돌립니다.',
+          confirmationText: '재개',
+        })
+        if (confirmed === null) return
+        riskHeaders = confirmed
+      }
+
       const response = await fetch(`/api/kpi/personal/${kpiId}/workflow`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...riskHeaders },
         body: JSON.stringify({ action, note: reviewNote.trim() || undefined }),
       })
       await parseJsonOrThrow(response)
@@ -1294,6 +1348,7 @@ export function PersonalKpiManagementClient(props: Props) {
           onSubmit={handleSaveBulkEdit}
         />
       ) : null}
+      {riskDialog}
     </div>
   )
 }

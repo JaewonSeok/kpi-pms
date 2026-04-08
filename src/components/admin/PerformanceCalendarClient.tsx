@@ -23,6 +23,7 @@ const TYPE_STYLES: Record<PerformanceCalendarEventType, string> = {
   survey: 'border-violet-200 bg-violet-50 text-violet-700',
   calibration: 'border-amber-200 bg-amber-50 text-amber-700',
   anniversary: 'border-rose-200 bg-rose-50 text-rose-700',
+  milestone: 'border-slate-300 bg-slate-100 text-slate-700',
 }
 
 const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토']

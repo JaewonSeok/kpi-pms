@@ -9,6 +9,11 @@ import {
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { authorizeMenu } from '@/server/auth/authorize'
 import {
+  logImpersonationRiskExecution,
+  validateImpersonationRiskRequest,
+  type ValidatedImpersonationRiskContext,
+} from '@/server/impersonation'
+import {
   autoAssignWordCloud360Participants,
   deleteWordCloud360Assignment,
   publishWordCloud360Results,
@@ -55,8 +60,11 @@ function ensureAdmin(role: string) {
 }
 
 export async function POST(request: Request) {
+  let session = null as Awaited<ReturnType<typeof authorizeMenu>> | null
+  let riskContext: ValidatedImpersonationRiskContext | null = null
+
   try {
-    const session = await authorizeMenu('WORD_CLOUD_360')
+    session = await authorizeMenu('WORD_CLOUD_360')
     const body = (await request.json()) as JsonEnvelope
 
     switch (body.action) {
@@ -105,11 +113,32 @@ export async function POST(request: Request) {
           throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '편성 데이터가 올바르지 않습니다.')
         }
 
+        riskContext = await validateImpersonationRiskRequest({
+          session,
+          request,
+          actionName: 'UPLOAD_APPLY',
+          targetResourceType: 'WordCloud360AssignmentBatch',
+          targetResourceId: validated.data.cycleId,
+          confirmationText: '적용',
+        })
+
         const saved = await saveWordCloud360Assignments({
           actorId: session.user.id,
           cycleId: validated.data.cycleId,
           assignments: validated.data.assignments,
         })
+
+        await logImpersonationRiskExecution({
+          session,
+          request,
+          riskContext,
+          success: true,
+          metadata: {
+            cycleId: validated.data.cycleId,
+            assignmentCount: validated.data.assignments.length,
+          },
+        })
+
         return successResponse(saved)
       }
 
@@ -120,6 +149,15 @@ export async function POST(request: Request) {
           throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '자동 편성 설정이 올바르지 않습니다.')
         }
 
+        riskContext = await validateImpersonationRiskRequest({
+          session,
+          request,
+          actionName: 'UPLOAD_APPLY',
+          targetResourceType: 'WordCloud360AutoAssign',
+          targetResourceId: validated.data.cycleId,
+          confirmationText: '적용',
+        })
+
         const result = await autoAssignWordCloud360Participants({
           actorId: session.user.id,
           cycleId: validated.data.cycleId,
@@ -127,6 +165,18 @@ export async function POST(request: Request) {
           peerLimit: validated.data.peerLimit,
           subordinateLimit: validated.data.subordinateLimit,
         })
+
+        await logImpersonationRiskExecution({
+          session,
+          request,
+          riskContext,
+          success: true,
+          metadata: {
+            cycleId: validated.data.cycleId,
+            includeSelf: validated.data.includeSelf,
+          },
+        })
+
         return successResponse(result)
       }
 
@@ -136,10 +186,31 @@ export async function POST(request: Request) {
         if (!assignmentId) {
           throw new AppError(400, 'VALIDATION_ERROR', '삭제할 편성을 선택해 주세요.')
         }
+
+        riskContext = await validateImpersonationRiskRequest({
+          session,
+          request,
+          actionName: 'DELETE_RECORD',
+          targetResourceType: 'WordCloud360Assignment',
+          targetResourceId: assignmentId,
+          confirmationText: '삭제',
+        })
+
         await deleteWordCloud360Assignment({
           actorId: session.user.id,
           assignmentId,
         })
+
+        await logImpersonationRiskExecution({
+          session,
+          request,
+          riskContext,
+          success: true,
+          metadata: {
+            assignmentId,
+          },
+        })
+
         return successResponse({ ok: true })
       }
 
@@ -149,10 +220,33 @@ export async function POST(request: Request) {
           throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '응답 데이터가 올바르지 않습니다.')
         }
 
+        if (validated.data.submitFinal) {
+          riskContext = await validateImpersonationRiskRequest({
+            session,
+            request,
+            actionName: 'FINAL_SUBMIT',
+            targetResourceType: 'WordCloud360Response',
+            targetResourceId: validated.data.assignmentId,
+            confirmationText: '제출',
+          })
+        }
+
         const response = await saveWordCloud360Response({
           actorId: session.user.id,
           input: validated.data,
         })
+
+        await logImpersonationRiskExecution({
+          session,
+          request,
+          riskContext,
+          success: true,
+          metadata: {
+            assignmentId: validated.data.assignmentId,
+            submitFinal: validated.data.submitFinal,
+          },
+        })
+
         return successResponse(response)
       }
 
@@ -163,18 +257,51 @@ export async function POST(request: Request) {
           throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '결과 공개 설정이 올바르지 않습니다.')
         }
 
+        riskContext = await validateImpersonationRiskRequest({
+          session,
+          request,
+          actionName: 'PUBLISH_RESULT',
+          targetResourceType: 'WordCloud360Cycle',
+          targetResourceId: validated.data.cycleId,
+          confirmationText: '공개',
+        })
+
         const result = await publishWordCloud360Results({
           actorId: session.user.id,
           cycleId: validated.data.cycleId,
           publish: validated.data.publish,
         })
+
+        await logImpersonationRiskExecution({
+          session,
+          request,
+          riskContext,
+          success: true,
+          metadata: {
+            cycleId: validated.data.cycleId,
+            publish: validated.data.publish,
+          },
+        })
+
         return successResponse(result)
       }
 
       default:
-        throw new AppError(400, 'UNKNOWN_ACTION', '지원하지 않는 워드클라우드 다면평가 작업입니다.')
+        throw new AppError(400, 'UNKNOWN_ACTION', '지원하지 않는 워드클라우드 액션입니다.')
     }
   } catch (error) {
-    return errorResponse(error, '워드클라우드형 다면평가 요청을 처리하지 못했습니다.')
+    if (session && riskContext) {
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+      }).catch(() => undefined)
+    }
+
+    return errorResponse(error, '워드클라우드 요청을 처리하지 못했습니다.')
   }
 }

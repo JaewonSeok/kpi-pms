@@ -2,8 +2,14 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { parseFeedbackRatingGuideSettings } from '@/lib/feedback-rating-guide'
 import { prisma } from '@/lib/prisma'
+import type { AuthSession } from '@/types/auth'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { SubmitFeedbackSchema } from '@/lib/validations'
+import {
+  logImpersonationRiskExecution,
+  validateImpersonationRiskRequest,
+  type ValidatedImpersonationRiskContext,
+} from '@/server/impersonation'
 
 export async function GET(request: Request) {
   try {
@@ -32,8 +38,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let session: AuthSession | null = null
+  let riskContext: ValidatedImpersonationRiskContext | null = null
+
   try {
-    const session = await getServerSession(authOptions)
+    session = (await getServerSession(authOptions)) as AuthSession | null
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
 
     const body = await request.json()
@@ -68,6 +77,15 @@ export async function POST(request: Request) {
       throw new AppError(403, 'FEEDBACK_ASSIGNMENT_NOT_FOUND', '발행된 리뷰 요청이 없어 응답을 제출할 수 없습니다.')
     }
 
+    riskContext = await validateImpersonationRiskRequest({
+      session,
+      request,
+      actionName: 'FINAL_SUBMIT',
+      targetResourceType: 'MultiFeedback',
+      targetResourceId: existingFeedback.id,
+      confirmationText: '제출',
+    })
+
     if (relationship === 'SELF' && receiverId !== session.user.id) {
       throw new AppError(400, 'INVALID_SELF_FEEDBACK', 'SELF 관계는 자기 자신에게만 제출할 수 있습니다.')
     }
@@ -80,7 +98,7 @@ export async function POST(request: Request) {
     for (const question of requiredQuestions) {
       const response = responses.find((item) => item.questionId === question.id)
       if (!response || (!response.ratingValue && !response.textValue)) {
-        throw new AppError(400, 'MISSING_REQUIRED', `필수 질문이 아직 통하지 않았습니다. ${question.questionText}`)
+        throw new AppError(400, 'MISSING_REQUIRED', `필수 질문에 아직 응답하지 않았습니다. ${question.questionText}`)
       }
     }
 
@@ -214,8 +232,32 @@ export async function POST(request: Request) {
       }
     }
 
-    return successResponse({ message: '다면평가 응답을 제출했습니다.' })
+    await logImpersonationRiskExecution({
+      session,
+      request,
+      riskContext,
+      success: true,
+      metadata: {
+        roundId,
+        receiverId,
+        relationship,
+      },
+    })
+
+    return successResponse({ message: '다면평가 응답이 제출되었습니다.' })
   } catch (error) {
+    if (session && riskContext) {
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+      }).catch(() => undefined)
+    }
+
     return errorResponse(error)
   }
 }

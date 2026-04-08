@@ -3,9 +3,19 @@ import type { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { createAuditLog } from '@/lib/audit'
+import {
+  buildImpersonationExpiry,
+  isImpersonationExpired,
+  type ImpersonationSessionState,
+} from '@/lib/impersonation'
 import { canUseMasterLogin } from '@/lib/master-login'
 import { prisma } from '@/lib/prisma'
 import { buildOrgPath, getAccessibleDeptIds } from '@/server/auth/org-scope'
+import {
+  createImpersonationSessionRecord,
+  endImpersonationSessionRecord,
+  findActiveImpersonationSession,
+} from '@/server/impersonation'
 import { normalizeGoogleWorkspaceEmail } from './google-workspace'
 import { readAuthEnv } from './auth-env'
 import { decideGoogleAccess, resolveAuthRedirect } from './auth-flow'
@@ -96,20 +106,9 @@ type AuthClaims = {
   accessibleDepartmentIds: string[]
 }
 
-type MasterLoginSessionState = {
-  active: boolean
-  readOnly: true
-  actorName: string
-  actorEmail: string
-  startedAt: string
-  targetName: string
-  targetEmail: string
-}
+type MasterLoginSessionState = ImpersonationSessionState
 
-type MasterLoginTokenState = {
-  active: true
-  readOnly: true
-  startedAt: string
+type MasterLoginTokenState = ImpersonationSessionState & {
   actor: AuthClaims
   target: {
     id: string
@@ -124,6 +123,7 @@ type MasterLoginUpdatePayload =
   | {
       action: 'start'
       targetEmployeeId: string
+      reason: string
     }
   | {
       action: 'stop'
@@ -252,7 +252,10 @@ function isMasterLoginUpdatePayload(value: unknown): value is { masterLogin: Mas
   }
 
   if (action === 'start') {
-    return typeof (masterLogin as { targetEmployeeId?: unknown }).targetEmployeeId === 'string'
+    return (
+      typeof (masterLogin as { targetEmployeeId?: unknown }).targetEmployeeId === 'string' &&
+      typeof (masterLogin as { reason?: unknown }).reason === 'string'
+    )
   }
 
   return false
@@ -265,13 +268,44 @@ function toSessionMasterLoginState(masterLogin: MasterLoginTokenState | null | u
 
   return {
     active: true,
-    readOnly: true,
+    sessionId: masterLogin.sessionId,
+    actorId: masterLogin.actor.id,
     actorName: masterLogin.actor.name,
     actorEmail: masterLogin.actor.email,
+    targetId: masterLogin.target.id,
     startedAt: masterLogin.startedAt,
+    expiresAt: masterLogin.expiresAt,
+    reason: masterLogin.reason,
     targetName: masterLogin.target.name,
     targetEmail: masterLogin.target.email,
   } satisfies MasterLoginSessionState
+}
+
+function restoreActorClaims(
+  token: {
+    masterLogin?: MasterLoginTokenState | null
+    sub?: string | null
+    email?: string | null
+    name?: string | null
+    role?: SystemRole
+    empId?: string
+    position?: string
+    deptId?: string
+    deptName?: string
+    departmentCode?: string
+    managerId?: string | null
+    orgPath?: string
+    accessibleDepartmentIds?: string[]
+  }
+) {
+  if (!token.masterLogin?.actor) {
+    return null
+  }
+
+  const actorClaims = token.masterLogin.actor
+  applyAuthClaimsToToken(token, actorClaims)
+  token.masterLogin = null
+  return actorClaims
 }
 
 async function findAuthEmployee(where: Prisma.EmployeeWhereUniqueInput) {
@@ -468,28 +502,91 @@ export const authOptions: NextAuthOptions = {
         }
       }
 
+      if (token.masterLogin?.active) {
+        const currentMasterLogin = token.masterLogin
+        const now = new Date()
+        let expiredAction: 'MASTER_LOGIN_EXPIRED' | 'MASTER_LOGIN_FORCE_ENDED' | null = null
+
+        if (isImpersonationExpired(currentMasterLogin, now)) {
+          await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
+            endedBy: 'ttl',
+            expiredAt: now.toISOString(),
+          })
+          expiredAction = 'MASTER_LOGIN_EXPIRED'
+        } else {
+          const persistedSession = await findActiveImpersonationSession(currentMasterLogin.sessionId)
+          if (
+            !persistedSession ||
+            !persistedSession.isActive ||
+            persistedSession.endedAt ||
+            persistedSession.expiresAt.getTime() <= now.getTime()
+          ) {
+            if (persistedSession?.isActive) {
+              await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
+                endedBy: 'server-check',
+                expiredAt: now.toISOString(),
+              })
+            }
+            expiredAction = 'MASTER_LOGIN_FORCE_ENDED'
+          }
+        }
+
+        if (expiredAction) {
+          const actorClaims = restoreActorClaims(token)
+          if (actorClaims) {
+            await createAuditLog({
+              userId: actorClaims.id,
+              action: expiredAction,
+              entityType: 'ImpersonationSession',
+              entityId: currentMasterLogin.sessionId,
+              newValue: {
+                actorEmail: actorClaims.email,
+                targetEmail: currentMasterLogin.target.email,
+                impersonationSessionId: currentMasterLogin.sessionId,
+                expiredAt: now.toISOString(),
+              },
+            })
+          }
+
+          authLog('warn', expiredAction, {
+            sessionId: currentMasterLogin.sessionId,
+            actorEmail: maskEmail(currentMasterLogin.actor.email),
+            targetEmail: maskEmail(currentMasterLogin.target.email),
+          })
+        }
+      }
+
       if (trigger === 'update' && isMasterLoginUpdatePayload(session)) {
         const command = session.masterLogin
 
         if (command.action === 'stop') {
           if (token.masterLogin?.actor) {
-            const actorClaims = token.masterLogin.actor
+            const currentMasterLogin = token.masterLogin
+            const actorClaims = restoreActorClaims(token)
 
-            applyAuthClaimsToToken(token, actorClaims)
-            token.masterLogin = null
+            await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
+              endedBy: 'actor',
+              endedAt: new Date().toISOString(),
+            })
 
             await createAuditLog({
-              userId: actorClaims.id,
+              userId: actorClaims?.id ?? currentMasterLogin.actor.id,
               action: 'MASTER_LOGIN_ENDED',
-              entityType: 'Employee',
-              entityId: actorClaims.id,
+              entityType: 'ImpersonationSession',
+              entityId: currentMasterLogin.sessionId,
               newValue: {
-                actorEmail: actorClaims.email,
+                actorAdminId: currentMasterLogin.actor.id,
+                actorEmail: currentMasterLogin.actor.email,
+                impersonatedUserId: currentMasterLogin.target.id,
+                targetEmail: currentMasterLogin.target.email,
+                impersonationSessionId: currentMasterLogin.sessionId,
               },
             })
 
             authLog('info', 'MASTER_LOGIN_ENDED', {
-              actorEmail: maskEmail(actorClaims.email),
+              sessionId: currentMasterLogin.sessionId,
+              actorEmail: maskEmail(currentMasterLogin.actor.email),
+              targetEmail: maskEmail(currentMasterLogin.target.email),
             })
           }
 
@@ -529,10 +626,28 @@ export const authOptions: NextAuthOptions = {
         }
 
         const targetClaims = await buildAuthClaims(targetEmployee)
+        const normalizedReason = command.reason.trim()
+        const impersonationSession = await createImpersonationSessionRecord({
+          impersonatorAdminId: actorClaims.id,
+          impersonatedUserId: targetClaims.id,
+          reason: normalizedReason,
+          metadata: {
+            actorEmail: actorClaims.email,
+            targetEmail: targetClaims.email,
+          },
+        })
         token.masterLogin = {
           active: true,
-          readOnly: true,
-          startedAt: new Date().toISOString(),
+          sessionId: impersonationSession.id,
+          actorId: actorClaims.id,
+          actorName: actorClaims.name,
+          actorEmail: actorClaims.email,
+          targetId: targetClaims.id,
+          targetName: targetClaims.name,
+          targetEmail: targetClaims.email,
+          reason: normalizedReason,
+          startedAt: impersonationSession.startedAt.toISOString(),
+          expiresAt: impersonationSession.expiresAt.toISOString(),
           actor: actorClaims,
           target: {
             id: targetClaims.id,
@@ -547,16 +662,21 @@ export const authOptions: NextAuthOptions = {
         await createAuditLog({
           userId: actorClaims.id,
           action: 'MASTER_LOGIN_STARTED',
-          entityType: 'Employee',
-          entityId: targetClaims.id,
+          entityType: 'ImpersonationSession',
+          entityId: impersonationSession.id,
           newValue: {
+            impersonationSessionId: impersonationSession.id,
+            actorAdminId: actorClaims.id,
             actorEmail: actorClaims.email,
+            impersonatedUserId: targetClaims.id,
             targetEmail: targetClaims.email,
-            readOnly: true,
+            reason: normalizedReason,
+            expiresAt: impersonationSession.expiresAt.toISOString(),
           },
         })
 
         authLog('info', 'MASTER_LOGIN_STARTED', {
+          sessionId: impersonationSession.id,
           actorEmail: maskEmail(actorClaims.email),
           targetEmail: maskEmail(targetClaims.email),
         })

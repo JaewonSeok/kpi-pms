@@ -61,12 +61,31 @@ run('master login permission requires ROLE_ADMIN and configured email', () => {
   )
 })
 
-run('master login request schema requires a target employee id', () => {
-  assert.equal(AdminMasterLoginSchema.safeParse({ targetEmployeeId: 'emp-1' }).success, true)
-  assert.equal(AdminMasterLoginSchema.safeParse({ targetEmployeeId: '' }).success, false)
+run('master login request schema requires a target employee id and reason', () => {
+  assert.equal(
+    AdminMasterLoginSchema.safeParse({
+      targetEmployeeId: 'emp-1',
+      reason: '운영 검증을 위해 대상 계정으로 로그인합니다.',
+    }).success,
+    true
+  )
+  assert.equal(
+    AdminMasterLoginSchema.safeParse({
+      targetEmployeeId: '',
+      reason: '운영 검증을 위해 대상 계정으로 로그인합니다.',
+    }).success,
+    false
+  )
+  assert.equal(
+    AdminMasterLoginSchema.safeParse({
+      targetEmployeeId: 'emp-1',
+      reason: '짧음',
+    }).success,
+    false
+  )
 })
 
-run('master login route, auth, and shell sources expose read-only guardrails', () => {
+run('master login route, auth, and shell sources expose impersonation safeguards', () => {
   const routeSource = readFileSync(
     path.resolve(
       process.cwd(),
@@ -76,8 +95,8 @@ run('master login route, auth, and shell sources expose read-only guardrails', (
   )
   const authSource = readFileSync(path.resolve(process.cwd(), 'src/lib/auth.ts'), 'utf8')
   const middlewareSource = readFileSync(path.resolve(process.cwd(), 'src/middleware.ts'), 'utf8')
-  const registrationClientSource = readFileSync(
-    path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
+  const panelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/MasterLoginAdminPanel.tsx'),
     'utf8'
   )
   const bannerSource = readFileSync(
@@ -86,17 +105,31 @@ run('master login route, auth, and shell sources expose read-only guardrails', (
   )
 
   assert.match(routeSource, /authorizeMenu\('SYSTEM_SETTING'\)/)
-  assert.match(routeSource, /MASTER_LOGIN_FORBIDDEN/)
   assert.match(routeSource, /MASTER_LOGIN_PREVIEW/)
+  assert.match(routeSource, /reason/)
+
   assert.match(authSource, /MASTER_LOGIN_STARTED/)
   assert.match(authSource, /MASTER_LOGIN_ENDED/)
-  assert.match(authSource, /trigger === 'update'/)
-  assert.match(authSource, /masterLoginAvailable/)
-  assert.match(middlewareSource, /MASTER_LOGIN_READ_ONLY/)
-  assert.match(registrationClientSource, /마스터 로그인/)
-  assert.match(bannerSource, /마스터 로그인 중입니다\./)
-  assert.match(bannerSource, /읽기 전용/)
+  assert.match(authSource, /MASTER_LOGIN_EXPIRED/)
+  assert.match(authSource, /createImpersonationSessionRecord/)
+  assert.match(authSource, /endImpersonationSessionRecord/)
+  assert.match(authSource, /sessionId:/)
+  assert.match(authSource, /expiresAt:/)
+
+  assert.doesNotMatch(middlewareSource, /MASTER_LOGIN_READ_ONLY/)
+
+  assert.match(panelSource, /대상 유저 권한으로 시스템을 사용합니다/)
+  assert.match(panelSource, /모든 행동은 감사 로그에 기록됩니다/)
+  assert.match(panelSource, /위험 동작에는 추가 확인이 필요합니다/)
+  assert.match(panelSource, /masterLogin:\s*\{/)
+  assert.match(panelSource, /reason/)
+
+  assert.match(bannerSource, /마스터 로그인 중입니다/)
+  assert.match(bannerSource, /현재 권한은 대상 유저 기준으로 적용됩니다/)
+  assert.match(bannerSource, /위험 동작에는 추가 확인이 필요합니다/)
+  assert.match(bannerSource, /사유:/)
   assert.match(bannerSource, /종료/)
+  assert.match(bannerSource, /IMPERSONATION_SYNC_STORAGE_KEY/)
 })
 
 run('master login API path stays under SYSTEM_SETTING authz', () => {

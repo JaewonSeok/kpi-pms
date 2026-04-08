@@ -46,18 +46,19 @@ export async function POST(request: Request) {
       newValue: {
         targetEmployeeId: preview.employee.id,
         targetEmployeeNumber: preview.employee.employeeNumber,
+        reason: validated.data.reason,
       },
       ...getClientInfo(request),
     })
 
     return successResponse({
-      readOnly: true as const,
       employee: preview.employee,
       actor: {
         id: session.user.id,
         name: session.user.name,
         email: session.user.email,
       },
+      reason: validated.data.reason,
     })
   } catch (error) {
     return errorResponse(error)

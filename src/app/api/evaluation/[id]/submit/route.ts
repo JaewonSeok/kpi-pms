@@ -1,18 +1,27 @@
+import { EvalStage } from '@prisma/client'
 import { getServerSession } from 'next-auth'
+import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { errorResponse, successResponse, AppError, calcPdcaScore, calcWeightedScore } from '@/lib/utils'
+import type { AuthSession } from '@/types/auth'
 import { SubmitEvaluationSchema } from '@/lib/validations'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
-import { EvalStage } from '@prisma/client'
+import { errorResponse, successResponse, AppError, calcPdcaScore, calcWeightedScore } from '@/lib/utils'
+import {
+  logImpersonationRiskExecution,
+  validateImpersonationRiskRequest,
+  type ValidatedImpersonationRiskContext,
+} from '@/server/impersonation'
 
 // PATCH /api/evaluation/[id]/submit
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let session: AuthSession | null = null
+  let riskContext: ValidatedImpersonationRiskContext | null = null
+
   try {
-    const session = await getServerSession(authOptions)
+    session = (await getServerSession(authOptions)) as AuthSession | null
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
 
     const { id } = await params
@@ -35,6 +44,15 @@ export async function PATCH(
       throw new AppError(400, 'ALREADY_SUBMITTED', '이미 제출된 평가입니다.')
     }
 
+    riskContext = await validateImpersonationRiskRequest({
+      session,
+      request,
+      actionName: 'FINAL_SUBMIT',
+      targetResourceType: 'Evaluation',
+      targetResourceId: id,
+      confirmationText: '제출',
+    })
+
     const body = await request.json()
     const validated = SubmitEvaluationSchema.safeParse(body)
     if (!validated.success) {
@@ -42,13 +60,11 @@ export async function PATCH(
     }
 
     const { comment, gradeId, items } = validated.data
-
-    // 점수 계산 및 업데이트
     let totalScore = 0
 
     await prisma.$transaction(async (tx) => {
       for (const itemInput of items) {
-        const evalItem = evaluation.items.find(i => i.personalKpiId === itemInput.personalKpiId)
+        const evalItem = evaluation.items.find((item) => item.personalKpiId === itemInput.personalKpiId)
         if (!evalItem) continue
 
         const kpi = evalItem.personalKpi
@@ -57,14 +73,12 @@ export async function PATCH(
         if (kpi.kpiType === 'QUANTITATIVE') {
           itemScore = itemInput.quantScore || 0
         } else {
-          // PDCA 점수 계산
-          const pdcaScore = calcPdcaScore(
+          itemScore = calcPdcaScore(
             itemInput.planScore || 0,
             itemInput.doScore || 0,
             itemInput.checkScore || 0,
-            itemInput.actScore || 0,
+            itemInput.actScore || 0
           )
-          itemScore = pdcaScore
         }
 
         const weightedScore = calcWeightedScore(itemScore, kpi.weight)
@@ -78,12 +92,15 @@ export async function PATCH(
             doScore: itemInput.doScore,
             checkScore: itemInput.checkScore,
             actScore: itemInput.actScore,
-            qualScore: kpi.kpiType === 'QUALITATIVE' ? calcPdcaScore(
-              itemInput.planScore || 0,
-              itemInput.doScore || 0,
-              itemInput.checkScore || 0,
-              itemInput.actScore || 0,
-            ) : null,
+            qualScore:
+              kpi.kpiType === 'QUALITATIVE'
+                ? calcPdcaScore(
+                    itemInput.planScore || 0,
+                    itemInput.doScore || 0,
+                    itemInput.checkScore || 0,
+                    itemInput.actScore || 0
+                  )
+                : null,
             itemComment: itemInput.itemComment,
             weightedScore,
           },
@@ -91,7 +108,7 @@ export async function PATCH(
       }
 
       await tx.evaluation.update({
-        where: { id: id },
+        where: { id },
         data: {
           totalScore,
           gradeId,
@@ -102,7 +119,6 @@ export async function PATCH(
         },
       })
 
-      // 다음 단계 평가 생성 (자동 이관)
       await createNextStageEvaluation(tx, evaluation, totalScore)
     })
 
@@ -116,31 +132,47 @@ export async function PATCH(
       ...clientInfo,
     })
 
+    await logImpersonationRiskExecution({
+      session,
+      request,
+      riskContext,
+      success: true,
+      metadata: {
+        evalStage: evaluation.evalStage,
+        targetId: evaluation.targetId,
+      },
+    })
+
     return successResponse({ message: '평가가 제출되었습니다.', totalScore })
   } catch (error) {
+    if (session && riskContext) {
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+      }).catch(() => undefined)
+    }
+
     return errorResponse(error)
   }
 }
 
-// 다음 단계 평가자에게 평가 이관
-async function createNextStageEvaluation(
-  tx: any,
-  evaluation: any,
-  totalScore: number
-) {
+async function createNextStageEvaluation(tx: any, evaluation: any, totalScore: number) {
   const stageOrder: EvalStage[] = ['SELF', 'FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']
   const currentIndex = stageOrder.indexOf(evaluation.evalStage)
   if (currentIndex >= stageOrder.length - 1) return
 
   const nextStage = stageOrder[currentIndex + 1]
 
-  // 피평가자 정보 조회
   const target = await tx.employee.findUnique({
     where: { id: evaluation.targetId },
   })
   if (!target) return
 
-  // 다음 단계 평가자 결정
   let nextEvaluatorId: string | null = null
   if (nextStage === 'FIRST') nextEvaluatorId = target.teamLeaderId
   else if (nextStage === 'SECOND') nextEvaluatorId = target.sectionChiefId
@@ -148,9 +180,7 @@ async function createNextStageEvaluation(
 
   if (!nextEvaluatorId && nextStage !== 'CEO_ADJUST') return
 
-  // CEO 조정은 별도 처리
   if (nextStage === 'CEO_ADJUST') {
-    // CEO가 있는지 확인
     const ceo = await tx.employee.findFirst({
       where: { position: 'CEO', status: 'ACTIVE' },
     })
@@ -160,7 +190,6 @@ async function createNextStageEvaluation(
 
   if (!nextEvaluatorId) return
 
-  // 이미 다음 단계 평가가 있으면 스킵
   const existing = await tx.evaluation.findUnique({
     where: {
       evalCycleId_targetId_evalStage: {
@@ -172,7 +201,6 @@ async function createNextStageEvaluation(
   })
   if (existing) return
 
-  // 다음 단계 평가 아이템 (이전 단계 KPI 동일하게 복사)
   const prevItems = await tx.evaluationItem.findMany({
     where: { evaluationId: evaluation.id },
   })
@@ -193,7 +221,6 @@ async function createNextStageEvaluation(
     },
   })
 
-  // 알림 생성
   await tx.notification.create({
     data: {
       recipientId: nextEvaluatorId,
@@ -206,7 +233,7 @@ async function createNextStageEvaluation(
   })
 }
 
-function getStageLabel(stage: EvalStage): string {
+function getStageLabel(stage: EvalStage) {
   const labels: Record<EvalStage, string> = {
     SELF: '자기평가',
     FIRST: '1차',

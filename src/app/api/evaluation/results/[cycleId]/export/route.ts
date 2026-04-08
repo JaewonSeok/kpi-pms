@@ -1,8 +1,14 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import {
+  logImpersonationRiskExecution,
+  validateImpersonationRiskRequest,
+  type ValidatedImpersonationRiskContext,
+} from '@/server/impersonation'
 import { getEvaluationResultsPageData } from '@/server/evaluation-results'
 import { buildEvaluationResultPdf, buildEvaluationResultPdfSections } from '@/server/evaluation-results-pdf'
 import { AppError, errorResponse } from '@/lib/utils'
+import type { AuthSession } from '@/types/auth'
 
 export async function GET(
   request: Request,
@@ -12,12 +18,24 @@ export async function GET(
     }>
   }
 ) {
+  let session: AuthSession | null = null
+  let riskContext: ValidatedImpersonationRiskContext | null = null
+
   try {
-    const session = await getServerSession(authOptions)
+    session = (await getServerSession(authOptions)) as AuthSession | null
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
 
     const { cycleId } = await context.params
     const { searchParams } = new URL(request.url)
+    riskContext = await validateImpersonationRiskRequest({
+      session,
+      request,
+      actionName: 'DOWNLOAD_EXPORT',
+      targetResourceType: 'EvaluationResultExport',
+      targetResourceId: cycleId,
+      confirmationText: '다운로드',
+    })
+
     const data = await getEvaluationResultsPageData({
       session,
       cycleId,
@@ -32,6 +50,17 @@ export async function GET(
     const bytes = await buildEvaluationResultPdf(data.viewModel)
     const pdfBody = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 
+    await logImpersonationRiskExecution({
+      session,
+      request,
+      riskContext,
+      success: true,
+      metadata: {
+        cycleId,
+        employeeId: searchParams.get('employeeId') ?? null,
+      },
+    })
+
     return new Response(pdfBody, {
       headers: {
         'Content-Type': 'application/pdf',
@@ -41,6 +70,18 @@ export async function GET(
     })
   } catch (error) {
     console.error('[evaluation-results-export]', error)
+
+    if (session && riskContext) {
+      await logImpersonationRiskExecution({
+        session,
+        request,
+        riskContext,
+        success: false,
+        metadata: {
+          error: error instanceof Error ? error.message : 'unknown',
+        },
+      }).catch(() => undefined)
+    }
 
     if (error instanceof AppError) {
       return errorResponse(error)

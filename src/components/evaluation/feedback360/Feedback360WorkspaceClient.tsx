@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, ArrowRight, CheckCircle2, Download, ExternalLink, Info, Sparkles, Users } from 'lucide-react'
 import type { Feedback360PageData } from '@/server/feedback-360'
+import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 import { FEEDBACK_RESULT_PROFILE_LABELS } from '@/lib/feedback-result-presentation'
 import { MultiRaterCycleHeader } from './MultiRaterCycleHeader'
 import { ResponseRateCard } from './ResponseRateCard'
@@ -42,6 +43,7 @@ function buildRespondQuestionState(
 export function Feedback360WorkspaceClient(props: { data: Feedback360PageData }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
+  const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const [submitBusy, setSubmitBusy] = useState(false)
   const [reportBusy, setReportBusy] = useState(false)
   const [respondNotice, setRespondNotice] = useState('')
@@ -237,9 +239,18 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
     setRespondError('')
 
     try {
+      const riskHeaders = await requestRiskConfirmation({
+        actionName: 'FINAL_SUBMIT',
+        actionLabel: '다면 리뷰 최종 제출',
+        targetLabel: respondData.receiverName,
+        detail: '현재 마스터 로그인 상태에서 다면 리뷰 응답을 최종 제출합니다.',
+        confirmationText: '제출',
+      })
+      if (riskHeaders === null) return
+
       const response = await fetch('/api/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...riskHeaders },
         body: JSON.stringify({
           roundId: respondData.roundId,
           receiverId: respondData.receiverId,
@@ -926,6 +937,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
           </Panel>
         </div>
       ) : null}
+      {riskDialog}
     </div>
   )
 }
