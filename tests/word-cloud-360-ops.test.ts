@@ -32,6 +32,10 @@ const {
 } = require('../src/server/word-cloud-360') as typeof import('../src/server/word-cloud-360')
 const { parseExportReason, createExportAuditLog } = require('../src/lib/export-audit') as typeof import('../src/lib/export-audit')
 const { WordCloud360CycleSchema } = require('../src/lib/validations') as typeof import('../src/lib/validations')
+const {
+  buildWordCloudCycleFormState,
+  toWordCloudCyclePayload,
+} = require('../src/lib/word-cloud-360-cycle-form') as typeof import('../src/lib/word-cloud-360-cycle-form')
 
 type PrismaMethod = (...args: any[]) => any
 type Snapshot = {
@@ -471,9 +475,41 @@ async function main() {
     }
   })
 
+  await run('cycle form helper keeps localized display values separate from ISO payload values', () => {
+    const formState = buildWordCloudCycleFormState({
+      id: 'cycle-1',
+      evalCycleId: 'eval-1',
+      cycleName: '2026 상반기 워드클라우드 360',
+      startDate: '2026-04-07T08:33:00.000Z',
+      endDate: '2026-04-08T09:15:00.000Z',
+      positiveSelectionLimit: 10,
+      negativeSelectionLimit: 10,
+      resultPrivacyThreshold: 3,
+      evaluatorGroups: ['MANAGER', 'PEER'],
+      notes: '',
+      status: 'DRAFT',
+    })
+
+    assert.equal(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(formState.startDate), true)
+    assert.equal(formState.startDate.includes('오후'), false)
+
+    const payload = toWordCloudCyclePayload(formState)
+    assert.equal(payload.cycleId, 'cycle-1')
+    assert.equal(payload.evalCycleId, 'eval-1')
+    assert.equal(typeof payload.startDate, 'string')
+    assert.equal(typeof payload.endDate, 'string')
+    assert.equal(String(payload.startDate).includes('오후'), false)
+    assert.equal(String(payload.startDate).includes('T'), true)
+    assert.equal(String(payload.startDate).endsWith('Z'), true)
+  })
+
   await run('survey workspace source wires upload endpoints and export reason modal', () => {
     const clientSource = readFileSync(
       path.resolve(process.cwd(), 'src/components/evaluation/wordcloud360/WordCloud360WorkspaceClient.tsx'),
+      'utf8'
+    )
+    const actionRouteSource = readFileSync(
+      path.resolve(process.cwd(), 'src/app/api/evaluation/word-cloud-360/actions/route.ts'),
       'utf8'
     )
     const exportRouteSource = readFileSync(
@@ -488,6 +524,12 @@ async function main() {
     assert.equal(clientSource.includes('const hasSelectedCycle = Boolean(data.selectedCycleId)'), true)
     assert.equal(clientSource.includes('const isCreateMode = Boolean(data.permissions?.canManage && !hasSelectedCycle)'), true)
     assert.equal(clientSource.includes('updateCycle(savedCycle.id)'), true)
+    assert.equal(clientSource.includes('buildWordCloudCycleFormState(data.adminView?.cycle)'), true)
+    assert.equal(clientSource.includes("toWordCloudCyclePayload(cycleForm)"), true)
+    assert.equal(clientSource.includes('Invalid ISO datetime'), true)
+    assert.equal(clientSource.includes('!hasSelectedCycle ? ('), true)
+    assert.equal(actionRouteSource.includes('getCycleValidationMessage'), true)
+    assert.equal(actionRouteSource.includes('연결할 PMS 평가 주기를 선택해 주세요.'), true)
     assert.equal(exportRouteSource.includes('parseExportReason'), true)
     assert.equal(exportRouteSource.includes('createExportAuditLog'), true)
   })

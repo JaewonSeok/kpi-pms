@@ -5,6 +5,7 @@ import { useDeferredValue, useMemo, useState, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { WordCloud360PageData } from '@/server/word-cloud-360'
+import { buildWordCloudCycleFormState, toWordCloudCyclePayload } from '@/lib/word-cloud-360-cycle-form'
 import { WordCloudCloud } from './WordCloudCloud'
 
 type TabKey = 'overview' | 'evaluator' | 'results' | 'admin'
@@ -164,6 +165,9 @@ function toFriendlyErrorMessage(message: string | undefined, fallback: string) {
   if (!trimmed) return fallback
   if (trimmed.includes('Too small: expected string to have >=1 characters')) {
     return '선택 가능한 주기가 없습니다. 아래에서 첫 주기를 생성해 주세요.'
+  }
+  if (trimmed.includes('Invalid ISO datetime')) {
+    return '?쒖옉?쇨낵 醫낅즺???뺤떇???뺤씤??二쇱꽭??'
   }
   if (trimmed.includes('Invalid datetime')) {
     return '시작일과 종료일 형식을 확인해 주세요.'
@@ -337,19 +341,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   const [negativeSelections, setNegativeSelections] = useState<string[]>(
     data.evaluatorView?.assignments[0]?.selectedNegativeKeywordIds ?? []
   )
-  const [cycleForm, setCycleForm] = useState({
-    cycleId: data.adminView?.cycle?.id ?? '',
-    evalCycleId: data.adminView?.cycle?.evalCycleId ?? '',
-    cycleName: data.adminView?.cycle?.cycleName ?? '',
-    startDate: data.adminView?.cycle?.startDate?.slice(0, 16) ?? '',
-    endDate: data.adminView?.cycle?.endDate?.slice(0, 16) ?? '',
-    positiveSelectionLimit: data.adminView?.cycle?.positiveSelectionLimit ?? 10,
-    negativeSelectionLimit: data.adminView?.cycle?.negativeSelectionLimit ?? 10,
-    resultPrivacyThreshold: data.adminView?.cycle?.resultPrivacyThreshold ?? 3,
-    evaluatorGroups: data.adminView?.cycle?.evaluatorGroups ?? ['MANAGER', 'PEER', 'SUBORDINATE'],
-    notes: data.adminView?.cycle?.notes ?? '',
-    status: data.adminView?.cycle?.status ?? 'DRAFT',
-  })
+  const [cycleForm, setCycleForm] = useState(() => buildWordCloudCycleFormState(data.adminView?.cycle))
   const [keywordForm, setKeywordForm] = useState({
     keywordId: '',
     keywordCode: '',
@@ -446,7 +438,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
       void (async () => {
         try {
           setNotice(null)
-          const savedCycle = (await callAction('upsertCycle', cycleForm)) as { id: string }
+          const savedCycle = (await callAction('upsertCycle', toWordCloudCyclePayload(cycleForm))) as { id: string }
           const createdFirstCycle = !cycleForm.cycleId
 
           setCycleForm((current) => ({ ...current, cycleId: savedCycle.id }))
@@ -1093,7 +1085,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                   className={isCreateMode ? 'hidden' : primaryButtonClassName}
                   onClick={() =>
                     mutate(
-                      () => callAction('upsertCycle', cycleForm),
+                      () => callAction('upsertCycle', toWordCloudCyclePayload(cycleForm)),
                       cycleForm.cycleId ? '주기 정보를 수정했습니다.' : '주기를 생성했습니다.'
                     )
                   }
@@ -1462,6 +1454,10 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 </div>
               </div>
 
+              {!hasSelectedCycle ? (
+                <p className="mt-3 text-sm text-slate-500">??곸옄 ?쇨큵 ?낅줈?쒕뒗 二쇨린瑜??앹꽦?섍굹 ?좏깮?????덈낫?멸린 ?꾨줈 ?쒖슜???덉뒿?덈떎.</p>
+              ) : null}
+
               {targetUploadResult ? (
                 <div className="mt-4 space-y-4">
                   <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
@@ -1571,6 +1567,10 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                       : '비교할 과거 결과 파일을 선택해 주세요.'}
                   </div>
                 </div>
+
+                {!hasSelectedCycle ? (
+                  <p className="mt-3 text-sm text-slate-500">鍮꾧탳 由ы룷?몃뒗 ?꾩옱 二쇨린瑜??앹꽦?섍굹 ?좏깮?????덈줈 ?앹꽦?????덉뒿?덈떎.</p>
+                ) : null}
 
                 {comparisonReport ? (
                   <div className="mt-4 space-y-4">

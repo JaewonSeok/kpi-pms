@@ -24,6 +24,30 @@ type JsonEnvelope = {
   payload?: unknown
 }
 
+function getCycleValidationMessage(error: {
+  issues?: Array<{
+    path?: Array<PropertyKey>
+    message?: string
+  }>
+}) {
+  const issue = error.issues?.[0]
+  const field = String(issue?.path?.[0] ?? '')
+
+  switch (field) {
+    case 'cycleName':
+      return '주기명을 입력해 주세요.'
+    case 'startDate':
+    case 'endDate':
+      return '시작일과 종료일 형식을 확인해 주세요.'
+    case 'evalCycleId':
+      return '연결할 PMS 평가 주기를 선택해 주세요.'
+    case 'status':
+      return '주기 상태를 확인해 주세요.'
+    default:
+      return '주기 정보가 올바르지 않습니다.'
+  }
+}
+
 function ensureAdmin(role: string) {
   if (role !== 'ROLE_ADMIN') {
     throw new AppError(403, 'FORBIDDEN', '관리자만 처리할 수 있는 작업입니다.')
@@ -39,6 +63,10 @@ export async function POST(request: Request) {
       case 'upsertCycle': {
         ensureAdmin(session.user.role)
         const validated = WordCloud360CycleSchema.safeParse(body.payload)
+        const cycleValidationMessage = !validated.success ? getCycleValidationMessage(validated.error) : null
+        if (cycleValidationMessage) {
+          throw new AppError(400, 'VALIDATION_ERROR', cycleValidationMessage)
+        }
         if (!validated.success) {
           throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '주기 정보가 올바르지 않습니다.')
         }
