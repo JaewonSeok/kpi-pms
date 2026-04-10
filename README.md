@@ -134,6 +134,9 @@ Google Cloud Console checklist:
 
 ## Runbooks
 
+- `docs/operations/working-rules.md`
+- `docs/operations/current-handoff.md`
+- `docs/operations/next-chat-prompt.md`
 - `docs/auth-rbac-matrix.md`
 - `docs/operations/admin-runbook.md`
 - `docs/operations/data-migration-and-launch-plan.md`

@@ -29,6 +29,9 @@ const {
   applyWordCloud360TargetUpload,
   generateWordCloudComparisonReport,
   exportWordCloud360Results,
+  revertWordCloud360FinalSubmit,
+  restoreWordCloud360ResponseFromHistory,
+  saveWordCloud360Response,
 } = require('../src/server/word-cloud-360') as typeof import('../src/server/word-cloud-360')
 const { parseExportReason, createExportAuditLog } = require('../src/lib/export-audit') as typeof import('../src/lib/export-audit')
 const { WordCloud360CycleSchema } = require('../src/lib/validations') as typeof import('../src/lib/validations')
@@ -43,8 +46,17 @@ type Snapshot = {
   employeeFindMany: PrismaMethod
   cycleFindUnique: PrismaMethod
   assignmentFindMany: PrismaMethod
+  assignmentFindUnique: PrismaMethod
   assignmentUpsert: PrismaMethod
+  assignmentUpdate: PrismaMethod
   responseFindMany: PrismaMethod
+  responseUpdate: PrismaMethod
+  responseCreate: PrismaMethod
+  responseItemDeleteMany: PrismaMethod
+  responseItemCreateMany: PrismaMethod
+  keywordFindMany: PrismaMethod
+  auditLogFindFirst: PrismaMethod
+  auditLogFindMany: PrismaMethod
   uploadHistoryCreate: PrismaMethod
   auditLogCreate: PrismaMethod
   transaction: PrismaMethod
@@ -82,8 +94,17 @@ function captureSnapshot(): Snapshot {
     employeeFindMany: prismaAny.employee.findMany,
     cycleFindUnique: prismaAny.wordCloud360Cycle.findUnique,
     assignmentFindMany: prismaAny.wordCloud360Assignment.findMany,
+    assignmentFindUnique: prismaAny.wordCloud360Assignment.findUnique,
     assignmentUpsert: prismaAny.wordCloud360Assignment.upsert,
+    assignmentUpdate: prismaAny.wordCloud360Assignment.update,
     responseFindMany: prismaAny.wordCloud360Response.findMany,
+    responseUpdate: prismaAny.wordCloud360Response.update,
+    responseCreate: prismaAny.wordCloud360Response.create,
+    responseItemDeleteMany: prismaAny.wordCloud360ResponseItem.deleteMany,
+    responseItemCreateMany: prismaAny.wordCloud360ResponseItem.createMany,
+    keywordFindMany: prismaAny.wordCloud360Keyword.findMany,
+    auditLogFindFirst: prismaAny.auditLog.findFirst,
+    auditLogFindMany: prismaAny.auditLog.findMany,
     uploadHistoryCreate: prismaAny.uploadHistory.create,
     auditLogCreate: prismaAny.auditLog.create,
     transaction: prismaAny.$transaction,
@@ -96,8 +117,17 @@ function restoreSnapshot(snapshot: Snapshot) {
   prismaAny.employee.findMany = snapshot.employeeFindMany
   prismaAny.wordCloud360Cycle.findUnique = snapshot.cycleFindUnique
   prismaAny.wordCloud360Assignment.findMany = snapshot.assignmentFindMany
+  prismaAny.wordCloud360Assignment.findUnique = snapshot.assignmentFindUnique
   prismaAny.wordCloud360Assignment.upsert = snapshot.assignmentUpsert
+  prismaAny.wordCloud360Assignment.update = snapshot.assignmentUpdate
   prismaAny.wordCloud360Response.findMany = snapshot.responseFindMany
+  prismaAny.wordCloud360Response.update = snapshot.responseUpdate
+  prismaAny.wordCloud360Response.create = snapshot.responseCreate
+  prismaAny.wordCloud360ResponseItem.deleteMany = snapshot.responseItemDeleteMany
+  prismaAny.wordCloud360ResponseItem.createMany = snapshot.responseItemCreateMany
+  prismaAny.wordCloud360Keyword.findMany = snapshot.keywordFindMany
+  prismaAny.auditLog.findFirst = snapshot.auditLogFindFirst
+  prismaAny.auditLog.findMany = snapshot.auditLogFindMany
   prismaAny.uploadHistory.create = snapshot.uploadHistoryCreate
   prismaAny.auditLog.create = snapshot.auditLogCreate
   prismaAny.$transaction = snapshot.transaction
@@ -109,8 +139,17 @@ async function withWordCloudOpsContext(
     employees: any[]
     cycle: any
     existingAssignments: any[]
+    assignmentRecord: any
     responses: any[]
+    keywords: any[]
+    latestAuditLog: any
+    auditLogs: any[]
     onUpsert: (args: any) => void
+    onAssignmentUpdate: (args: any) => void
+    onResponseUpdate: (args: any) => void
+    onResponseCreate: (args: any) => void
+    onResponseItemDeleteMany: (args: any) => void
+    onResponseItemCreateMany: (args: any) => void
     onAuditCreate: (args: any) => void
   }>,
   fn: () => Promise<void>
@@ -172,11 +211,39 @@ async function withWordCloudOpsContext(
     }
 
   prismaAny.wordCloud360Assignment.findMany = async () => overrides.existingAssignments ?? []
+  prismaAny.wordCloud360Assignment.findUnique = async () => overrides.assignmentRecord ?? null
   prismaAny.wordCloud360Assignment.upsert = async (args: any) => {
     overrides.onUpsert?.(args)
     return args.create
   }
+  prismaAny.wordCloud360Assignment.update = async (args: any) => {
+    overrides.onAssignmentUpdate?.(args)
+    return { id: args.where.id, ...args.data }
+  }
   prismaAny.wordCloud360Response.findMany = async () => overrides.responses ?? []
+  prismaAny.wordCloud360Response.update = async (args: any) => {
+    overrides.onResponseUpdate?.(args)
+    return { id: args.where.id, ...args.data }
+  }
+  prismaAny.wordCloud360Response.create = async (args: any) => {
+    overrides.onResponseCreate?.(args)
+    return { id: 'response-1', ...args.data }
+  }
+  prismaAny.wordCloud360ResponseItem.deleteMany = async (args: any) => {
+    overrides.onResponseItemDeleteMany?.(args)
+    return { count: 0 }
+  }
+  prismaAny.wordCloud360ResponseItem.createMany = async (args: any) => {
+    overrides.onResponseItemCreateMany?.(args)
+    return { count: args.data?.length ?? 0 }
+  }
+  prismaAny.wordCloud360Keyword.findMany = async () =>
+    overrides.keywords ?? [
+      { id: 'p1', orgId: 'org-1', polarity: 'POSITIVE', category: 'ATTITUDE', keyword: '협업' },
+      { id: 'n1', orgId: 'org-1', polarity: 'NEGATIVE', category: 'ABILITY', keyword: '지연' },
+    ]
+  prismaAny.auditLog.findFirst = async () => overrides.latestAuditLog ?? null
+  prismaAny.auditLog.findMany = async () => overrides.auditLogs ?? []
   prismaAny.uploadHistory.create = async () => ({ id: 'upload-1' })
   prismaAny.auditLog.create = async (args: any) => {
     overrides.onAuditCreate?.(args)
@@ -454,6 +521,565 @@ async function main() {
     assert.equal(auditCalls[0]?.data?.newValue?.format, 'xlsx')
   })
 
+  await run('draft save and final submit audits store restorable selection snapshots', async () => {
+    const draftAuditCalls: any[] = []
+    const submitAuditCalls: any[] = []
+
+    await withWordCloudOpsContext(
+      {
+        actor: {
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: 'Alice',
+          role: 'ROLE_MEMBER',
+          department: {
+            id: 'dept-a',
+            deptName: 'Dept A',
+            orgId: 'org-1',
+          },
+        },
+        assignmentRecord: {
+          id: 'assign-1',
+          cycleId: 'cycle-1',
+          evaluatorId: 'emp-1',
+          evaluateeId: 'emp-2',
+          status: 'IN_PROGRESS',
+          draftSavedAt: new Date('2026-04-10T09:00:00.000Z'),
+          cycle: {
+            id: 'cycle-1',
+            orgId: 'org-1',
+            status: 'OPEN',
+            positiveSelectionLimit: 10,
+            negativeSelectionLimit: 10,
+          },
+          evaluatorGroup: 'PEER',
+          response: {
+            id: 'response-1',
+            status: 'DRAFT',
+            submittedAt: null,
+            items: [],
+          },
+        },
+        keywords: [{ id: 'p1', orgId: 'org-1', polarity: 'POSITIVE', category: 'ATTITUDE', keyword: '업무 몰입' }],
+        onAuditCreate: (args) => draftAuditCalls.push(args),
+      },
+      async () => {
+        await saveWordCloud360Response({
+          actorId: 'emp-1',
+          input: {
+            assignmentId: 'assign-1',
+            positiveKeywordIds: ['p1'],
+            negativeKeywordIds: [],
+            submitFinal: false,
+          },
+        })
+      }
+    )
+
+    assert.equal(draftAuditCalls[draftAuditCalls.length - 1]?.data?.action, 'SAVE_WORD_CLOUD_360_RESPONSE_DRAFT')
+    assert.equal(draftAuditCalls[draftAuditCalls.length - 1]?.data?.newValue?.positiveSelections?.[0]?.keywordId, 'p1')
+    assert.equal(draftAuditCalls[draftAuditCalls.length - 1]?.data?.newValue?.negativeSelections?.length, 0)
+    assert.equal(draftAuditCalls[draftAuditCalls.length - 1]?.data?.newValue?.nextStatus, 'IN_PROGRESS')
+
+    await withWordCloudOpsContext(
+      {
+        actor: {
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: 'Alice',
+          role: 'ROLE_MEMBER',
+          department: {
+            id: 'dept-a',
+            deptName: 'Dept A',
+            orgId: 'org-1',
+          },
+        },
+        assignmentRecord: {
+          id: 'assign-1',
+          cycleId: 'cycle-1',
+          evaluatorId: 'emp-1',
+          evaluateeId: 'emp-2',
+          status: 'IN_PROGRESS',
+          draftSavedAt: new Date('2026-04-10T09:00:00.000Z'),
+          cycle: {
+            id: 'cycle-1',
+            orgId: 'org-1',
+            status: 'OPEN',
+            positiveSelectionLimit: 10,
+            negativeSelectionLimit: 10,
+          },
+          evaluatorGroup: 'PEER',
+          response: {
+            id: 'response-1',
+            status: 'DRAFT',
+            submittedAt: null,
+            items: [
+              {
+                keywordId: 'p1',
+                keywordTextSnapshot: '업무 몰입',
+                polarity: 'POSITIVE',
+                category: 'ATTITUDE',
+                evaluatorGroup: 'PEER',
+              },
+            ],
+          },
+        },
+        onAuditCreate: (args) => submitAuditCalls.push(args),
+      },
+      async () => {
+        await saveWordCloud360Response({
+          actorId: 'emp-1',
+          input: {
+            assignmentId: 'assign-1',
+            positiveKeywordIds: ['p1'],
+            negativeKeywordIds: ['n1'],
+            submitFinal: true,
+          },
+        })
+      }
+    )
+
+    assert.equal(submitAuditCalls[submitAuditCalls.length - 1]?.data?.action, 'SUBMIT_WORD_CLOUD_360_RESPONSE')
+    assert.equal(submitAuditCalls[submitAuditCalls.length - 1]?.data?.newValue?.positiveSelections?.[0]?.keywordId, 'p1')
+    assert.equal(submitAuditCalls[submitAuditCalls.length - 1]?.data?.newValue?.negativeSelections?.[0]?.keywordId, 'n1')
+    assert.equal(submitAuditCalls[submitAuditCalls.length - 1]?.data?.newValue?.nextStatus, 'SUBMITTED')
+  })
+
+  await run('admin can revert final submitted response to in-progress and keep audit metadata', async () => {
+    const assignmentUpdates: any[] = []
+    const responseUpdates: any[] = []
+    const auditCalls: any[] = []
+
+    await withWordCloudOpsContext(
+      {
+        assignmentRecord: {
+          id: 'assign-1',
+          cycleId: 'cycle-1',
+          evaluatorId: 'emp-1',
+          evaluateeId: 'emp-2',
+          status: 'SUBMITTED',
+          draftSavedAt: new Date('2026-04-10T07:00:00.000Z'),
+          cycle: {
+            id: 'cycle-1',
+            orgId: 'org-1',
+            status: 'PUBLISHED',
+          },
+          evaluator: { id: 'emp-1', empName: 'Alice' },
+          evaluatee: { id: 'emp-2', empName: 'Bob' },
+          response: {
+            id: 'response-1',
+            status: 'SUBMITTED',
+            submittedAt: new Date('2026-04-10T08:00:00.000Z'),
+            items: [
+              {
+                keywordId: 'p1',
+                keywordTextSnapshot: '업무 몰입',
+                polarity: 'POSITIVE',
+                category: 'ATTITUDE',
+                evaluatorGroup: 'PEER',
+              },
+              {
+                keywordId: 'n1',
+                keywordTextSnapshot: '지원 부족',
+                polarity: 'NEGATIVE',
+                category: 'ABILITY',
+                evaluatorGroup: 'PEER',
+              },
+            ],
+          },
+        },
+        onAssignmentUpdate: (args) => assignmentUpdates.push(args),
+        onResponseUpdate: (args) => responseUpdates.push(args),
+        onAuditCreate: (args) => auditCalls.push(args),
+      },
+      async () => {
+        const result = await revertWordCloud360FinalSubmit({
+          actorId: 'admin-1',
+          input: {
+            assignmentId: 'assign-1',
+            reason: '평가자 요청으로 응답을 다시 열어 수정',
+          },
+        })
+
+        assert.equal(result.assignmentId, 'assign-1')
+        assert.equal(result.previousStatus, 'SUBMITTED')
+        assert.equal(result.nextStatus, 'IN_PROGRESS')
+        assert.equal(result.responseStatus, 'DRAFT')
+      }
+    )
+
+    assert.equal(responseUpdates[0]?.data?.status, 'DRAFT')
+    assert.equal(responseUpdates[0]?.data?.submittedAt, null)
+    assert.equal(assignmentUpdates[0]?.data?.status, 'IN_PROGRESS')
+    assert.equal(assignmentUpdates[0]?.data?.submittedAt, null)
+    assert.equal(auditCalls.length, 1)
+    assert.equal(auditCalls[0]?.data?.action, 'WORD_CLOUD_360_FINAL_SUBMIT_REVERTED')
+    assert.equal(auditCalls[0]?.data?.newValue?.eventType, 'wordcloud_final_submit_reverted')
+    assert.equal(auditCalls[0]?.data?.newValue?.previousStatus, 'SUBMITTED')
+    assert.equal(auditCalls[0]?.data?.newValue?.nextStatus, 'IN_PROGRESS')
+    assert.equal(auditCalls[0]?.data?.newValue?.targetResponseId, 'response-1')
+    assert.equal(auditCalls[0]?.data?.newValue?.targetEvaluatorId, 'emp-1')
+    assert.equal(auditCalls[0]?.data?.newValue?.positiveSelections?.[0]?.keywordId, 'p1')
+    assert.equal(auditCalls[0]?.data?.newValue?.negativeSelections?.[0]?.keywordId, 'n1')
+    assert.equal(auditCalls[0]?.data?.newValue?.reason, '평가자 요청으로 응답을 다시 열어 수정')
+  })
+
+  await run('revert final submit is blocked for non-admin actors', async () => {
+    await withWordCloudOpsContext(
+      {
+        actor: {
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: '일반 사용자',
+          role: 'ROLE_MEMBER',
+          department: {
+            id: 'dept-a',
+            deptName: 'Dept A',
+            orgId: 'org-1',
+          },
+        },
+        assignmentRecord: {
+          id: 'assign-1',
+          cycleId: 'cycle-1',
+          evaluatorId: 'emp-1',
+          evaluateeId: 'emp-2',
+          status: 'SUBMITTED',
+          cycle: {
+            id: 'cycle-1',
+            orgId: 'org-1',
+            status: 'PUBLISHED',
+          },
+          evaluator: { id: 'emp-1', empName: 'Alice' },
+          evaluatee: { id: 'emp-2', empName: 'Bob' },
+          response: {
+            id: 'response-1',
+            status: 'SUBMITTED',
+            submittedAt: new Date('2026-04-10T08:00:00.000Z'),
+            items: [{ keywordId: 'p1' }],
+          },
+        },
+      },
+      async () => {
+        await assert.rejects(
+          () =>
+            revertWordCloud360FinalSubmit({
+              actorId: 'emp-1',
+              input: {
+                assignmentId: 'assign-1',
+                reason: '권한 없는 사용자의 취소 시도',
+              },
+            }),
+          /최종 제출 취소 권한이 없습니다\./
+        )
+      }
+    )
+  })
+
+  await run('admin can restore a response from history and keep audit metadata', async () => {
+    const assignmentUpdates: any[] = []
+    const responseUpdates: any[] = []
+    const deletedItems: any[] = []
+    const createdItems: any[] = []
+    const auditCalls: any[] = []
+
+    await withWordCloudOpsContext(
+      {
+        assignmentRecord: {
+          id: 'assign-1',
+          cycleId: 'cycle-1',
+          evaluatorId: 'emp-1',
+          evaluateeId: 'emp-2',
+          status: 'SUBMITTED',
+          draftSavedAt: new Date('2026-04-10T07:00:00.000Z'),
+          cycle: {
+            id: 'cycle-1',
+            orgId: 'org-1',
+            status: 'PUBLISHED',
+          },
+          evaluator: { id: 'emp-1', empName: 'Alice' },
+          evaluatee: { id: 'emp-2', empName: 'Bob' },
+          response: {
+            id: 'response-1',
+            status: 'SUBMITTED',
+            submittedAt: new Date('2026-04-10T08:00:00.000Z'),
+            items: [
+              {
+                keywordId: 'p1',
+                keywordTextSnapshot: '현재 긍정',
+                polarity: 'POSITIVE',
+                category: 'ATTITUDE',
+                evaluatorGroup: 'PEER',
+              },
+              {
+                keywordId: 'n1',
+                keywordTextSnapshot: '현재 부정',
+                polarity: 'NEGATIVE',
+                category: 'ABILITY',
+                evaluatorGroup: 'PEER',
+              },
+            ],
+          },
+        },
+        auditLogs: [
+          {
+            id: 'audit-restore-target',
+            userId: 'emp-1',
+            action: 'SUBMIT_WORD_CLOUD_360_RESPONSE',
+            entityType: 'WORD_CLOUD_360_RESPONSE',
+            entityId: 'response-1',
+            oldValue: {},
+            newValue: {
+              actorUserId: 'emp-1',
+              previousStatus: 'IN_PROGRESS',
+              nextStatus: 'SUBMITTED',
+              responseStatus: 'SUBMITTED',
+              positiveCount: 1,
+              negativeCount: 1,
+              positiveSelections: [
+                {
+                  keywordId: 'p-old',
+                  keyword: '이전 긍정',
+                  category: 'ATTITUDE',
+                  polarity: 'POSITIVE',
+                  evaluatorGroup: 'PEER',
+                },
+              ],
+              negativeSelections: [
+                {
+                  keywordId: 'n-old',
+                  keyword: '이전 부정',
+                  category: 'ABILITY',
+                  polarity: 'NEGATIVE',
+                  evaluatorGroup: 'PEER',
+                },
+              ],
+            },
+            timestamp: new Date('2026-04-10T07:30:00.000Z'),
+          },
+        ],
+        onAssignmentUpdate: (args) => assignmentUpdates.push(args),
+        onResponseUpdate: (args) => responseUpdates.push(args),
+        onResponseItemDeleteMany: (args) => deletedItems.push(args),
+        onResponseItemCreateMany: (args) => createdItems.push(args),
+        onAuditCreate: (args) => auditCalls.push(args),
+      },
+      async () => {
+        const result = await restoreWordCloud360ResponseFromHistory({
+          actorId: 'admin-1',
+          input: {
+            assignmentId: 'assign-1',
+            revisionId: 'audit-restore-target',
+            reason: '이전 제출 기준으로 다시 평가할 수 있게 복원',
+          },
+        })
+
+        assert.equal(result.assignmentId, 'assign-1')
+        assert.equal(result.restoredFromRevisionId, 'audit-restore-target')
+        assert.equal(result.nextStatus, 'IN_PROGRESS')
+        assert.equal(result.responseStatus, 'DRAFT')
+      }
+    )
+
+    assert.equal(deletedItems[0]?.where?.responseId, 'response-1')
+    assert.equal(createdItems[0]?.data?.[0]?.keywordId, 'p-old')
+    assert.equal(createdItems[0]?.data?.[1]?.keywordId, 'n-old')
+    assert.equal(responseUpdates[0]?.data?.status, 'DRAFT')
+    assert.equal(assignmentUpdates[0]?.data?.status, 'IN_PROGRESS')
+    assert.equal(auditCalls[0]?.data?.action, 'WORD_CLOUD_360_RESPONSE_RESTORED')
+    assert.equal(auditCalls[0]?.data?.newValue?.restoredFromRevisionId, 'audit-restore-target')
+    assert.equal(auditCalls[0]?.data?.newValue?.positiveSelections?.[0]?.keywordId, 'p-old')
+  })
+
+  await run('restore response history is blocked for non-admin actors', async () => {
+    await withWordCloudOpsContext(
+      {
+        actor: {
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: 'Alice',
+          role: 'ROLE_MEMBER',
+          department: {
+            id: 'dept-a',
+            deptName: 'Dept A',
+            orgId: 'org-1',
+          },
+        },
+        assignmentRecord: {
+          id: 'assign-1',
+          cycleId: 'cycle-1',
+          evaluatorId: 'emp-1',
+          evaluateeId: 'emp-2',
+          status: 'SUBMITTED',
+          cycle: {
+            id: 'cycle-1',
+            orgId: 'org-1',
+            status: 'PUBLISHED',
+          },
+          evaluator: { id: 'emp-1', empName: 'Alice' },
+          evaluatee: { id: 'emp-2', empName: 'Bob' },
+          response: {
+            id: 'response-1',
+            status: 'SUBMITTED',
+            submittedAt: new Date('2026-04-10T08:00:00.000Z'),
+            items: [],
+          },
+        },
+        auditLogs: [
+          {
+            id: 'audit-restore-target',
+            userId: 'emp-1',
+            action: 'SUBMIT_WORD_CLOUD_360_RESPONSE',
+            entityType: 'WORD_CLOUD_360_RESPONSE',
+            entityId: 'response-1',
+            oldValue: {},
+            newValue: {
+              actorUserId: 'emp-1',
+              previousStatus: 'IN_PROGRESS',
+              nextStatus: 'SUBMITTED',
+              responseStatus: 'SUBMITTED',
+              positiveSelections: [],
+              negativeSelections: [],
+            },
+            timestamp: new Date('2026-04-10T07:30:00.000Z'),
+          },
+        ],
+      },
+      async () => {
+        await assert.rejects(
+          () =>
+            restoreWordCloud360ResponseFromHistory({
+              actorId: 'emp-1',
+              input: {
+                assignmentId: 'assign-1',
+                revisionId: 'audit-restore-target',
+                reason: '권한 없는 복원 시도',
+              },
+            }),
+          /관리자|권한|沅뚰븳/
+        )
+      }
+    )
+  })
+
+  await run('reopened draft can be submitted again outside the normal open window', async () => {
+    const assignmentUpdates: any[] = []
+    const responseUpdates: any[] = []
+    const auditCalls: any[] = []
+
+    await withWordCloudOpsContext(
+      {
+        actor: {
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: 'Alice',
+          role: 'ROLE_MEMBER',
+          department: {
+            id: 'dept-a',
+            deptName: 'Dept A',
+            orgId: 'org-1',
+          },
+        },
+        assignmentRecord: {
+          id: 'assign-1',
+          cycleId: 'cycle-1',
+          evaluatorId: 'emp-1',
+          evaluateeId: 'emp-2',
+          status: 'IN_PROGRESS',
+          draftSavedAt: new Date('2026-04-10T09:00:00.000Z'),
+          cycle: {
+            id: 'cycle-1',
+            orgId: 'org-1',
+            status: 'PUBLISHED',
+            positiveSelectionLimit: 10,
+            negativeSelectionLimit: 10,
+          },
+          response: {
+            id: 'response-1',
+            status: 'DRAFT',
+            submittedAt: null,
+            items: [{ keywordId: 'p1' }, { keywordId: 'n1' }],
+          },
+        },
+        latestAuditLog: {
+          id: 'audit-reopen-1',
+          action: 'WORD_CLOUD_360_FINAL_SUBMIT_REVERTED',
+        },
+        onAssignmentUpdate: (args) => assignmentUpdates.push(args),
+        onResponseUpdate: (args) => responseUpdates.push(args),
+        onAuditCreate: (args) => auditCalls.push(args),
+      },
+      async () => {
+        await saveWordCloud360Response({
+          actorId: 'emp-1',
+          input: {
+            assignmentId: 'assign-1',
+            positiveKeywordIds: ['p1'],
+            negativeKeywordIds: ['n1'],
+            submitFinal: true,
+          },
+        })
+      }
+    )
+
+    assert.equal(responseUpdates[0]?.data?.status, 'SUBMITTED')
+    assert.equal(assignmentUpdates[0]?.data?.status, 'SUBMITTED')
+    assert.equal(auditCalls[auditCalls.length - 1]?.data?.action, 'SUBMIT_WORD_CLOUD_360_RESPONSE')
+  })
+
+  await run('non-reopened draft stays blocked when the cycle is not open', async () => {
+    await withWordCloudOpsContext(
+      {
+        actor: {
+          id: 'emp-1',
+          empId: 'EMP-001',
+          empName: 'Alice',
+          role: 'ROLE_MEMBER',
+          department: {
+            id: 'dept-a',
+            deptName: 'Dept A',
+            orgId: 'org-1',
+          },
+        },
+        assignmentRecord: {
+          id: 'assign-1',
+          cycleId: 'cycle-1',
+          evaluatorId: 'emp-1',
+          evaluateeId: 'emp-2',
+          status: 'IN_PROGRESS',
+          cycle: {
+            id: 'cycle-1',
+            orgId: 'org-1',
+            status: 'PUBLISHED',
+            positiveSelectionLimit: 10,
+            negativeSelectionLimit: 10,
+          },
+          response: {
+            id: 'response-1',
+            status: 'DRAFT',
+            submittedAt: null,
+            items: [{ keywordId: 'p1' }],
+          },
+        },
+        latestAuditLog: null,
+      },
+      async () => {
+        await assert.rejects(
+          () =>
+            saveWordCloud360Response({
+              actorId: 'emp-1',
+              input: {
+                assignmentId: 'assign-1',
+                positiveKeywordIds: ['p1'],
+                negativeKeywordIds: ['n1'],
+                submitFinal: false,
+              },
+            }),
+          /현재 주기는 응답 작성 기간이 아닙니다\./
+        )
+      }
+    )
+  })
+
   await run('cycle schema accepts blank cycleId for create mode', () => {
     const result = WordCloud360CycleSchema.safeParse({
       cycleId: '',
@@ -528,8 +1154,20 @@ async function main() {
     assert.equal(clientSource.includes("toWordCloudCyclePayload(cycleForm)"), true)
     assert.equal(clientSource.includes('Invalid ISO datetime'), true)
     assert.equal(clientSource.includes('!hasSelectedCycle ? ('), true)
+    assert.equal(clientSource.includes('최종 제출 취소'), true)
+    assert.equal(clientSource.includes('최종 제출을 취소하면 평가자가 다시 응답을 수정하고 제출할 수 있습니다.'), true)
+    assert.equal(clientSource.includes('제출 이력'), true)
+    assert.equal(clientSource.includes('이 시점으로 되돌리기'), true)
+    assert.equal(clientSource.includes("'revertFinalSubmit'"), true)
+    assert.equal(clientSource.includes("'restoreResponseRevision'"), true)
     assert.equal(actionRouteSource.includes('getCycleValidationMessage'), true)
     assert.equal(actionRouteSource.includes('연결할 PMS 평가 주기를 선택해 주세요.'), true)
+    assert.equal(actionRouteSource.includes("case 'revertFinalSubmit'"), true)
+    assert.equal(actionRouteSource.includes('WordCloud360RevertResponseSchema'), true)
+    assert.equal(actionRouteSource.includes("case 'restoreResponseRevision'"), true)
+    assert.equal(actionRouteSource.includes('WordCloud360RestoreResponseSchema'), true)
+    assert.equal(actionRouteSource.includes('restoreWordCloud360ResponseFromHistory'), true)
+    assert.equal(actionRouteSource.includes("actionName: 'REOPEN_RECORD'"), true)
     assert.equal(exportRouteSource.includes('parseExportReason'), true)
     assert.equal(exportRouteSource.includes('createExportAuditLog'), true)
   })

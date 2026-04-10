@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { buildCalibrationSetupReadiness } from '@/lib/calibration-session-setup'
 import { prisma } from '@/lib/prisma'
 import { CalibrationWorkflowSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
           in: [
             'CALIBRATION_REVIEW_CONFIRMED',
             'CALIBRATION_LOCKED',
+            'CALIBRATION_SESSION_STARTED',
             'CALIBRATION_REOPEN_REQUESTED',
             'CALIBRATION_SESSION_DELETED',
             'CALIBRATION_MERGED',
@@ -68,6 +70,44 @@ export async function POST(request: Request) {
     })
 
     const client = getClientInfo(request)
+
+    if (action === 'START_SESSION') {
+      if (isPublishedCycle(cycle.status)) {
+        throw new AppError(400, 'RESULT_ALREADY_PUBLISHED', '결과 공개 이후에는 세션 시작 상태를 변경할 수 없습니다.')
+      }
+
+      const sessionConfig = parseCalibrationSessionConfig(cycle.calibrationSessionConfig)
+      const readiness = buildCalibrationSetupReadiness({
+        setup: sessionConfig.setup,
+        participantIds: sessionConfig.participantIds,
+      })
+
+      if (!readiness.readyToStart) {
+        throw new AppError(
+          400,
+          'SETUP_INCOMPLETE',
+          `세션 시작 전 아래 설정을 완료해 주세요.\n- ${readiness.blockingItems.join('\n- ')}`
+        )
+      }
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'CALIBRATION_SESSION_STARTED',
+        entityType: 'EvalCycle',
+        entityId: cycle.id,
+        newValue: {
+          status: 'CALIBRATING',
+          startedBy: session.user.name,
+          sessionOwnerId: sessionConfig.setup.ownerId,
+          facilitatorId: sessionConfig.setup.facilitatorId,
+          timeboxMinutes: sessionConfig.setup.timeboxMinutes,
+          decisionPolicy: sessionConfig.setup.decisionPolicy,
+        },
+        ...client,
+      })
+
+      return successResponse({ status: 'CALIBRATING' })
+    }
 
     if (action === 'CONFIRM_REVIEW') {
       if (isPublishedCycle(cycle.status)) {

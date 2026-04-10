@@ -48,6 +48,33 @@ type KeywordOption = {
   warningFlag: boolean
 }
 
+export type WordCloud360SelectionSnapshot = {
+  keywordId: string
+  keyword: string
+  category: WordCloudKeywordCategory
+  polarity: WordCloudKeywordPolarity
+  evaluatorGroup: WordCloudEvaluatorGroup
+}
+
+export type WordCloud360ResponseHistoryEntry = {
+  revisionId: string
+  revisionNumber: number
+  eventType: 'draft_saved' | 'final_submitted' | 'final_submission_reverted' | 'restored'
+  createdAt: string
+  actorUserId?: string
+  actorName?: string
+  previousStatus?: string
+  nextStatus?: string
+  responseStatus?: 'DRAFT' | 'SUBMITTED'
+  positiveCount: number
+  negativeCount: number
+  positiveSelections: WordCloud360SelectionSnapshot[]
+  negativeSelections: WordCloud360SelectionSnapshot[]
+  reason?: string
+  restoredFromRevisionId?: string
+  canRestore: boolean
+}
+
 export type WordCloud360PageData = {
   state: WordCloud360PageState
   message?: string
@@ -83,6 +110,7 @@ export type WordCloud360PageData = {
     assignmentCount: number
     submittedResponseCount: number
     published: boolean
+    thresholdMetTargetCount: number
     positiveSelectionLimit: number
     negativeSelectionLimit: number
     privacyThreshold: number
@@ -179,6 +207,11 @@ export type WordCloud360PageData = {
       department: string
       evaluatorGroup: WordCloudEvaluatorGroup
       status: WordCloudAssignmentStatus
+      responseId?: string
+      responseStatus?: 'DRAFT' | 'SUBMITTED'
+      positiveSelectionCount: number
+      negativeSelectionCount: number
+      history: WordCloud360ResponseHistoryEntry[]
       submittedAt?: string
     }>
     progress: {
@@ -362,6 +395,193 @@ export const WORD_CLOUD_COMPARISON_UPLOAD_MAX_SIZE = 5 * 1024 * 1024
 
 function toIso(value?: Date | null) {
   return value ? value.toISOString() : undefined
+}
+
+const WORD_CLOUD_360_HISTORY_ACTIONS = [
+  'SAVE_WORD_CLOUD_360_RESPONSE_DRAFT',
+  'SUBMIT_WORD_CLOUD_360_RESPONSE',
+  'WORD_CLOUD_360_FINAL_SUBMIT_REVERTED',
+  'WORD_CLOUD_360_RESPONSE_RESTORED',
+] as const
+
+const WORD_CLOUD_360_REOPEN_ACTIONS = ['WORD_CLOUD_360_FINAL_SUBMIT_REVERTED', 'WORD_CLOUD_360_RESPONSE_RESTORED'] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : undefined
+}
+
+function readNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function isWordCloudPolarity(value: string): value is WordCloudKeywordPolarity {
+  return value === 'POSITIVE' || value === 'NEGATIVE'
+}
+
+function isWordCloudCategory(value: string): value is WordCloudKeywordCategory {
+  return value in WORD_CLOUD_CATEGORY_LABELS
+}
+
+function isWordCloudEvaluatorGroup(value: string): value is WordCloudEvaluatorGroup {
+  return value in WORD_CLOUD_GROUP_LABELS
+}
+
+function buildWordCloud360SelectionSnapshot(params: {
+  keywords: Array<{
+    id: string
+    keyword: string
+    category: WordCloudKeywordCategory
+    polarity: WordCloudKeywordPolarity
+  }>
+  positiveKeywordIds: string[]
+  negativeKeywordIds: string[]
+  evaluatorGroup: WordCloudEvaluatorGroup
+}) {
+  const keywordById = new Map(params.keywords.map((keyword) => [keyword.id, keyword]))
+  const mapSelection = (keywordIds: string[], polarity: WordCloudKeywordPolarity) =>
+    keywordIds.flatMap((keywordId) => {
+      const keyword = keywordById.get(keywordId)
+      if (!keyword || keyword.polarity !== polarity) return []
+      return {
+        keywordId: keyword.id,
+        keyword: keyword.keyword,
+        category: keyword.category,
+        polarity: keyword.polarity,
+        evaluatorGroup: params.evaluatorGroup,
+      } satisfies WordCloud360SelectionSnapshot
+    })
+
+  return {
+    positiveSelections: mapSelection(params.positiveKeywordIds, 'POSITIVE'),
+    negativeSelections: mapSelection(params.negativeKeywordIds, 'NEGATIVE'),
+  }
+}
+
+function buildWordCloud360SelectionSnapshotFromItems(
+  items: Array<{
+    keywordId: string
+    keywordTextSnapshot?: string | null
+    category?: WordCloudKeywordCategory | null
+    polarity?: WordCloudKeywordPolarity | null
+    evaluatorGroup?: WordCloudEvaluatorGroup | null
+  }>
+) {
+  const positiveSelections: WordCloud360SelectionSnapshot[] = []
+  const negativeSelections: WordCloud360SelectionSnapshot[] = []
+
+  for (const item of items) {
+    if (item.polarity !== 'POSITIVE' && item.polarity !== 'NEGATIVE') continue
+
+    const snapshot = {
+      keywordId: item.keywordId,
+      keyword: item.keywordTextSnapshot ?? item.keywordId,
+      category: item.category ?? 'OTHER',
+      polarity: item.polarity,
+      evaluatorGroup: item.evaluatorGroup ?? 'PEER',
+    } satisfies WordCloud360SelectionSnapshot
+
+    if (item.polarity === 'POSITIVE') positiveSelections.push(snapshot)
+    else negativeSelections.push(snapshot)
+  }
+
+  return { positiveSelections, negativeSelections }
+}
+
+function parseWordCloud360SelectionSnapshotList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return {
+      present: false,
+      selections: [] as WordCloud360SelectionSnapshot[],
+    }
+  }
+
+  const selections = value.flatMap((entry) => {
+    if (!isRecord(entry)) return []
+
+    const keywordId = readString(entry.keywordId)
+    const keyword = readString(entry.keyword)
+    const category = readString(entry.category)
+    const polarity = readString(entry.polarity)
+    const evaluatorGroup = readString(entry.evaluatorGroup)
+
+    if (!keywordId || !keyword || !category || !polarity || !evaluatorGroup) return []
+    if (!isWordCloudCategory(category) || !isWordCloudPolarity(polarity) || !isWordCloudEvaluatorGroup(evaluatorGroup)) return []
+
+    return {
+      keywordId,
+      keyword,
+      category,
+      polarity,
+      evaluatorGroup,
+    } satisfies WordCloud360SelectionSnapshot
+  })
+
+  return {
+    present: true,
+    selections,
+  }
+}
+
+function mapWordCloud360HistoryEventType(action: string): WordCloud360ResponseHistoryEntry['eventType'] | null {
+  switch (action) {
+    case 'SAVE_WORD_CLOUD_360_RESPONSE_DRAFT':
+      return 'draft_saved'
+    case 'SUBMIT_WORD_CLOUD_360_RESPONSE':
+      return 'final_submitted'
+    case 'WORD_CLOUD_360_FINAL_SUBMIT_REVERTED':
+      return 'final_submission_reverted'
+    case 'WORD_CLOUD_360_RESPONSE_RESTORED':
+      return 'restored'
+    default:
+      return null
+  }
+}
+
+function parseWordCloud360HistoryEntry(params: {
+  log: {
+    id: string
+    userId: string
+    action: string
+    oldValue: unknown
+    newValue: unknown
+    timestamp: Date
+  }
+  actorNameById: Map<string, string>
+}) {
+  const eventType = mapWordCloud360HistoryEventType(params.log.action)
+  if (!eventType) return null
+
+  const oldValue = isRecord(params.log.oldValue) ? params.log.oldValue : null
+  const newValue = isRecord(params.log.newValue) ? params.log.newValue : null
+  const positiveSelections = parseWordCloud360SelectionSnapshotList(newValue?.positiveSelections)
+  const negativeSelections = parseWordCloud360SelectionSnapshotList(newValue?.negativeSelections)
+  const actorUserId = readString(newValue?.actorUserId) ?? params.log.userId
+  const responseStatus = readString(newValue?.responseStatus)
+  const positiveCount = readNumber(newValue?.positiveCount) ?? positiveSelections.selections.length
+  const negativeCount = readNumber(newValue?.negativeCount) ?? negativeSelections.selections.length
+
+  return {
+    revisionId: params.log.id,
+    revisionNumber: 0,
+    eventType,
+    createdAt: params.log.timestamp.toISOString(),
+    actorUserId,
+    actorName: actorUserId ? params.actorNameById.get(actorUserId) ?? actorUserId : undefined,
+    previousStatus: readString(newValue?.previousStatus) ?? readString(oldValue?.previousStatus) ?? readString(oldValue?.status),
+    nextStatus: readString(newValue?.nextStatus) ?? readString(newValue?.status),
+    responseStatus: responseStatus === 'DRAFT' || responseStatus === 'SUBMITTED' ? responseStatus : undefined,
+    positiveCount,
+    negativeCount,
+    positiveSelections: positiveSelections.selections,
+    negativeSelections: negativeSelections.selections,
+    reason: readString(newValue?.reason),
+    restoredFromRevisionId: readString(newValue?.restoredFromRevisionId),
+    canRestore: positiveSelections.present && negativeSelections.present,
+  } satisfies WordCloud360ResponseHistoryEntry
 }
 
 function mapCloudItems(items: Array<{ keywordId: string; keyword: string; category: WordCloudKeywordCategory; count: number; weight: number }>) {
@@ -658,10 +878,35 @@ function summarizeWordCloudKeywordImportRows(rows: WordCloudKeywordCsvImportRowR
 }
 
 async function validateWordCloudKeywordCsvImport(params: { actorId: string; fileName: string; buffer: Buffer }) {
-  const actor = await getWordCloudAdminActor(params.actorId)
+  const adminActor = await getWordCloudAdminActor(params.actorId)
+  const actor = await prisma.employee.findUnique({
+    where: { id: params.actorId },
+    include: { department: true },
+  })
+
+  if (!actor) {
+    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '현재 사용자 정보를 찾을 수 없습니다.')
+  }
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '관리자만 이 기능을 사용할 수 있습니다.')
+  }
+
+  if (!actor) {
+    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '현재 사용자 정보를 찾을 수 없습니다.')
+  }
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '관리자만 이 기능을 사용할 수 있습니다.')
+  }
+
+  if (!actor) {
+    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '?꾩옱 ?ъ슜???뺣낫瑜?李얠쓣 ???놁뒿?덈떎.')
+  }
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '?대? 湲곕뒫??ъ슜???좏븳???놁뒿?덈떎.')
+  }
   const parsed = parseWordCloudKeywordCsv(params)
   const existingKeywords = await prisma.wordCloud360Keyword.findMany({
-    where: { orgId: actor.department.orgId },
+    where: { orgId: adminActor.department.orgId },
     orderBy: [{ createdAt: 'asc' }],
   })
 
@@ -1209,12 +1454,6 @@ export async function applyWordCloud360TargetUpload(params: {
   )
 
   const assignmentsToSave = suggestionPool.filter((assignment) => uniqueTargetIds.includes(assignment.evaluateeId))
-  const createdAssignments = assignmentsToSave.filter(
-    (assignment) =>
-      !existingKeys.has(
-        `${assignment.cycleId}:${assignment.evaluatorId}:${assignment.evaluateeId}:${assignment.evaluatorGroup}`
-      )
-  )
 
   if (assignmentsToSave.length > 0) {
     await saveWordCloud360Assignments({
@@ -1547,6 +1786,21 @@ async function ensureCycleAccess(params: { cycleId: string; actorId: string }) {
   return { actor, cycle }
 }
 
+async function findLatestWordCloud360ReopenAudit(responseId: string) {
+  return prisma.auditLog.findFirst({
+    where: {
+      entityType: 'WORD_CLOUD_360_RESPONSE',
+      entityId: responseId,
+      action: {
+        in: [...WORD_CLOUD_360_REOPEN_ACTIONS],
+      },
+    },
+    orderBy: {
+      timestamp: 'desc',
+    },
+  })
+}
+
 async function buildAdminView(params: {
   actorOrgId: string
   selectedCycle: Awaited<ReturnType<typeof prisma.wordCloud360Cycle.findMany>>[number] | null
@@ -1631,27 +1885,111 @@ async function buildAdminView(params: {
     alerts: params.alerts,
     fallback: [] as NonNullable<WordCloud360PageData['adminView']>['assignments'],
     loader: async () => {
+      const actorNameById = new Map(employees.map((employee) => [employee.id, employee.name]))
       const records = await prisma.wordCloud360Assignment.findMany({
         where: { cycleId: selectedCycle.id },
         include: {
           evaluator: { include: { department: true } },
           evaluatee: { include: { department: true } },
-          response: true,
+          response: {
+            include: {
+              items: true,
+            },
+          },
         },
         orderBy: [{ evaluatee: { empName: 'asc' } }, { evaluatorGroup: 'asc' }, { evaluator: { empName: 'asc' } }],
       })
 
-      return records.map((record) => ({
-        assignmentId: record.id,
-        evaluatorId: record.evaluatorId,
-        evaluatorName: record.evaluator.empName,
-        evaluateeId: record.evaluateeId,
-        evaluateeName: record.evaluatee.empName,
-        department: record.evaluatee.department.deptName,
-        evaluatorGroup: record.evaluatorGroup,
-        status: record.status,
-        submittedAt: toIso(record.submittedAt),
-      }))
+      const responseIds = records.flatMap((record) => (record.response?.id ? [record.response.id] : []))
+      const historyLogs =
+        responseIds.length > 0
+          ? await prisma.auditLog.findMany({
+              where: {
+                entityType: 'WORD_CLOUD_360_RESPONSE',
+                entityId: {
+                  in: responseIds,
+                },
+                action: {
+                  in: [...WORD_CLOUD_360_HISTORY_ACTIONS],
+                },
+              },
+              orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
+            })
+          : []
+
+      const historyByResponseId = new Map<string, typeof historyLogs>()
+      for (const log of historyLogs) {
+        if (!log.entityId) continue
+        const bucket = historyByResponseId.get(log.entityId) ?? []
+        bucket.push(log)
+        historyByResponseId.set(log.entityId, bucket)
+      }
+
+      return records.map((record) => {
+        const currentSnapshot = record.response?.items
+          ? buildWordCloud360SelectionSnapshotFromItems(record.response.items)
+          : { positiveSelections: [] as WordCloud360SelectionSnapshot[], negativeSelections: [] as WordCloud360SelectionSnapshot[] }
+        const parsedHistoryEntries = record.response?.id
+          ? ((historyByResponseId.get(record.response.id) ?? [])
+              .map((log) =>
+                parseWordCloud360HistoryEntry({
+                  log,
+                  actorNameById,
+                })
+              )
+              .filter(Boolean) as WordCloud360ResponseHistoryEntry[])
+          : []
+        const historyEntries: WordCloud360ResponseHistoryEntry[] = parsedHistoryEntries
+          .map((entry, index) => ({
+            ...entry,
+            revisionNumber: index + 1,
+          }))
+          .reverse()
+
+        const history =
+          historyEntries.length > 0
+            ? historyEntries
+            : record.response
+              ? [
+                  {
+                    revisionId: `current-${record.response.id}`,
+                    revisionNumber: 1,
+                    eventType: record.response.status === 'SUBMITTED' ? 'final_submitted' : 'draft_saved',
+                    createdAt:
+                      toIso(record.response.submittedAt) ??
+                      toIso(record.draftSavedAt) ??
+                      toIso(record.submittedAt) ??
+                      new Date().toISOString(),
+                    actorUserId: record.evaluatorId,
+                    actorName: record.evaluator.empName,
+                    nextStatus: record.status === 'SUBMITTED' ? 'SUBMITTED' : 'IN_PROGRESS',
+                    responseStatus: record.response.status,
+                    positiveCount: currentSnapshot.positiveSelections.length,
+                    negativeCount: currentSnapshot.negativeSelections.length,
+                    positiveSelections: currentSnapshot.positiveSelections,
+                    negativeSelections: currentSnapshot.negativeSelections,
+                    canRestore: false,
+                  } satisfies WordCloud360ResponseHistoryEntry,
+                ]
+              : []
+
+        return {
+          assignmentId: record.id,
+          evaluatorId: record.evaluatorId,
+          evaluatorName: record.evaluator.empName,
+          evaluateeId: record.evaluateeId,
+          evaluateeName: record.evaluatee.empName,
+          department: record.evaluatee.department.deptName,
+          evaluatorGroup: record.evaluatorGroup,
+          status: record.status,
+          responseId: record.response?.id ?? undefined,
+          responseStatus: record.response?.status ?? undefined,
+          positiveSelectionCount: currentSnapshot.positiveSelections.length,
+          negativeSelectionCount: currentSnapshot.negativeSelections.length,
+          history,
+          submittedAt: toIso(record.submittedAt),
+        }
+      })
     },
   })
 
@@ -2026,6 +2364,12 @@ export async function getWordCloud360PageData(params: {
     const submittedResponseCount =
       adminView?.progress.submittedCount ?? evaluatorAssignments.filter((item) => item.status === 'SUBMITTED').length
     const targetCount = adminView?.progress.targetCount ?? new Set(evaluatorAssignments.map((item) => item.evaluateeId)).size
+    const thresholdMetTargetCount = adminView
+      ? adminView.results.filter((item) => item.thresholdMet).length
+      : evaluateeView.resultVisible
+        ? 1
+        : 0
+    const published = selectedCycle.status === 'PUBLISHED' && thresholdMetTargetCount > 0
 
     return {
       state: 'ready',
@@ -2048,7 +2392,8 @@ export async function getWordCloud360PageData(params: {
         targetCount,
         assignmentCount,
         submittedResponseCount,
-        published: selectedCycle.status === 'PUBLISHED',
+        published,
+        thresholdMetTargetCount,
         positiveSelectionLimit: selectedCycle.positiveSelectionLimit,
         negativeSelectionLimit: selectedCycle.negativeSelectionLimit,
         privacyThreshold: selectedCycle.resultPrivacyThreshold,
@@ -2404,7 +2749,12 @@ export async function saveWordCloud360Response(params: {
   if (assignment.evaluatorId !== params.actorId) {
     throw new AppError(403, 'FORBIDDEN', '본인에게 배정된 평가만 작성할 수 있습니다.')
   }
-  if (assignment.cycle.status !== 'OPEN') {
+  const reopenedAudit =
+    assignment.cycle.status === 'OPEN' || assignment.response?.status !== 'DRAFT' || !assignment.response?.id
+      ? null
+      : await findLatestWordCloud360ReopenAudit(assignment.response.id)
+
+  if (assignment.cycle.status !== 'OPEN' && !reopenedAudit) {
     throw new AppError(409, 'CYCLE_CLOSED', '현재 주기는 응답 작성 기간이 아닙니다.')
   }
   if (assignment.response?.status === 'SUBMITTED') {
@@ -2448,6 +2798,19 @@ export async function saveWordCloud360Response(params: {
     }
   }
 
+  const previousSnapshot = assignment.response?.items
+    ? buildWordCloud360SelectionSnapshotFromItems(assignment.response.items)
+    : { positiveSelections: [] as WordCloud360SelectionSnapshot[], negativeSelections: [] as WordCloud360SelectionSnapshot[] }
+  const nextSnapshot = buildWordCloud360SelectionSnapshot({
+    keywords,
+    positiveKeywordIds: params.input.positiveKeywordIds,
+    negativeKeywordIds: params.input.negativeKeywordIds,
+    evaluatorGroup: assignment.evaluatorGroup,
+  })
+  const transitionAt = new Date()
+  const nextAssignmentStatus = params.input.submitFinal ? 'SUBMITTED' : 'IN_PROGRESS'
+  const nextResponseStatus = params.input.submitFinal ? 'SUBMITTED' : 'DRAFT'
+
   const saved = await prisma.$transaction(async (tx) => {
     const response =
       assignment.response ??
@@ -2481,17 +2844,17 @@ export async function saveWordCloud360Response(params: {
     const updatedResponse = await tx.wordCloud360Response.update({
       where: { id: response.id },
       data: {
-        status: params.input.submitFinal ? 'SUBMITTED' : 'DRAFT',
-        submittedAt: params.input.submitFinal ? new Date() : null,
+        status: nextResponseStatus,
+        submittedAt: params.input.submitFinal ? transitionAt : null,
       },
     })
 
     await tx.wordCloud360Assignment.update({
       where: { id: assignment.id },
       data: {
-        status: params.input.submitFinal ? 'SUBMITTED' : 'IN_PROGRESS',
-        draftSavedAt: params.input.submitFinal ? assignment.draftSavedAt : new Date(),
-        submittedAt: params.input.submitFinal ? new Date() : null,
+        status: nextAssignmentStatus,
+        draftSavedAt: params.input.submitFinal ? assignment.draftSavedAt : transitionAt,
+        submittedAt: params.input.submitFinal ? transitionAt : null,
       },
     })
 
@@ -2503,14 +2866,341 @@ export async function saveWordCloud360Response(params: {
     action: params.input.submitFinal ? 'SUBMIT_WORD_CLOUD_360_RESPONSE' : 'SAVE_WORD_CLOUD_360_RESPONSE_DRAFT',
     entityType: 'WORD_CLOUD_360_RESPONSE',
     entityId: saved.id,
+    oldValue: {
+      previousStatus: assignment.status,
+      previousResponseStatus: assignment.response?.status ?? null,
+      positiveSelections: previousSnapshot.positiveSelections,
+      negativeSelections: previousSnapshot.negativeSelections,
+    },
     newValue: {
-      positiveCount: params.input.positiveKeywordIds.length,
-      negativeCount: params.input.negativeKeywordIds.length,
-      status: saved.status,
+      eventType: params.input.submitFinal ? 'wordcloud_final_submitted' : 'wordcloud_draft_saved',
+      actorUserId: params.actorId,
+      targetResponseId: saved.id,
+      targetEvaluatorId: assignment.evaluatorId,
+      cycleId: assignment.cycleId,
+      previousStatus: assignment.status,
+      nextStatus: nextAssignmentStatus,
+      responseStatus: saved.status,
+      positiveCount: nextSnapshot.positiveSelections.length,
+      negativeCount: nextSnapshot.negativeSelections.length,
+      positiveSelections: nextSnapshot.positiveSelections,
+      negativeSelections: nextSnapshot.negativeSelections,
+      changedAt: transitionAt.toISOString(),
     },
   })
 
   return saved
+}
+
+export async function revertWordCloud360FinalSubmit(params: {
+  actorId: string
+  input: {
+    assignmentId: string
+    reason: string
+  }
+}) {
+  const actor = await prisma.employee.findUnique({
+    where: { id: params.actorId },
+    include: { department: true },
+  })
+  if (!actor) {
+    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '현재 사용자 정보를 찾을 수 없습니다.')
+  }
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '최종 제출 취소 권한이 없습니다.')
+  }
+
+  const assignment = await prisma.wordCloud360Assignment.findUnique({
+    where: { id: params.input.assignmentId },
+    include: {
+      cycle: true,
+      evaluator: true,
+      evaluatee: true,
+      response: {
+        include: {
+          items: true,
+        },
+      },
+    },
+  })
+
+  if (!assignment || assignment.cycle.orgId !== actor.department.orgId) {
+    throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', '복원할 응답을 찾을 수 없습니다.')
+  }
+  if (!assignment.response) {
+    throw new AppError(404, 'RESPONSE_NOT_FOUND', '복원할 이력 응답이 없습니다.')
+  }
+
+  if (!assignment || assignment.cycle.orgId !== actor.department.orgId) {
+    throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', '복원할 응답을 찾을 수 없습니다.')
+  }
+  if (!assignment.response) {
+    throw new AppError(404, 'RESPONSE_NOT_FOUND', '복원할 이력 응답이 없습니다.')
+  }
+
+  if (!assignment || assignment.cycle.orgId !== actor.department.orgId) {
+    throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', '최종 제출을 취소할 응답을 찾을 수 없습니다.')
+  }
+
+  if (!assignment.response || assignment.status !== 'SUBMITTED' || assignment.response.status !== 'SUBMITTED') {
+    throw new AppError(409, 'NOT_SUBMITTED', '최종 제출된 응답만 취소할 수 있습니다.')
+  }
+
+  const reopenedAt = new Date()
+  const reason = params.input.reason.trim()
+  const snapshot = buildWordCloud360SelectionSnapshotFromItems(assignment.response.items)
+
+  const updatedResponse = await prisma.$transaction(async (tx) => {
+    const response = await tx.wordCloud360Response.update({
+      where: { id: assignment.response!.id },
+      data: {
+        status: 'DRAFT',
+        submittedAt: null,
+      },
+    })
+
+    await tx.wordCloud360Assignment.update({
+      where: { id: assignment.id },
+      data: {
+        status: 'IN_PROGRESS',
+        draftSavedAt: reopenedAt,
+        submittedAt: null,
+      },
+    })
+
+    return response
+  })
+
+  await createAuditLog({
+    userId: params.actorId,
+    action: 'WORD_CLOUD_360_FINAL_SUBMIT_REVERTED',
+    entityType: 'WORD_CLOUD_360_RESPONSE',
+    entityId: assignment.response.id,
+    oldValue: {
+      previousStatus: assignment.status,
+      previousAssignmentStatus: assignment.status,
+      submittedAt: assignment.response.submittedAt?.toISOString() ?? null,
+      positiveSelections: snapshot.positiveSelections,
+      negativeSelections: snapshot.negativeSelections,
+    },
+    newValue: {
+      eventType: 'wordcloud_final_submit_reverted',
+      actorUserId: params.actorId,
+      targetResponseId: assignment.response.id,
+      targetEvaluatorId: assignment.evaluatorId,
+      cycleId: assignment.cycleId,
+      previousStatus: assignment.status,
+      nextStatus: 'IN_PROGRESS',
+      responseStatus: updatedResponse.status,
+      positiveCount: snapshot.positiveSelections.length,
+      negativeCount: snapshot.negativeSelections.length,
+      positiveSelections: snapshot.positiveSelections,
+      negativeSelections: snapshot.negativeSelections,
+      reason,
+      reopenedAt: reopenedAt.toISOString(),
+      reopenedBy: actor.empName,
+    },
+  })
+
+  return {
+    assignmentId: assignment.id,
+    responseId: updatedResponse.id,
+    cycleId: assignment.cycleId,
+    evaluatorId: assignment.evaluatorId,
+    evaluateeId: assignment.evaluateeId,
+    previousStatus: assignment.response.status,
+    nextStatus: 'IN_PROGRESS' as const,
+    responseStatus: updatedResponse.status,
+    reopenedAt: reopenedAt.toISOString(),
+  }
+}
+
+export async function restoreWordCloud360ResponseFromHistory(params: {
+  actorId: string
+  input: {
+    assignmentId: string
+    revisionId: string
+    reason: string
+  }
+}) {
+  const actor = await prisma.employee.findUnique({
+    where: { id: params.actorId },
+    include: { department: true },
+  })
+  if (!actor) {
+    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '현재 사용자 정보를 찾을 수 없습니다.')
+  }
+  if (actor.role !== 'ROLE_ADMIN') {
+    throw new AppError(403, 'FORBIDDEN', '관리자만 이 기능을 사용할 수 있습니다.')
+  }
+  const assignment = await prisma.wordCloud360Assignment.findUnique({
+    where: { id: params.input.assignmentId },
+    include: {
+      cycle: true,
+      evaluator: true,
+      evaluatee: true,
+      response: {
+        include: {
+          items: true,
+        },
+      },
+    },
+  })
+
+  if (!assignment || assignment.cycle.orgId !== actor.department.orgId) {
+    throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', '蹂듭썝???묐떟???李얠쓣 ???놁뒿?덈떎.')
+  }
+  if (!assignment.response) {
+    throw new AppError(404, 'RESPONSE_NOT_FOUND', '蹂듭썝??댁뼱 ?묐떟 ?대젰???놁뒿?덈떎.')
+  }
+
+  if (!assignment || assignment.cycle.orgId !== actor.department.orgId) {
+    throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', '복원할 응답을 찾을 수 없습니다.')
+  }
+  if (!assignment.response) {
+    throw new AppError(404, 'RESPONSE_NOT_FOUND', '복원할 이력 응답이 없습니다.')
+  }
+
+  const historyLogs = await prisma.auditLog.findMany({
+    where: {
+      entityType: 'WORD_CLOUD_360_RESPONSE',
+      entityId: assignment.response.id,
+      action: {
+        in: [...WORD_CLOUD_360_HISTORY_ACTIONS],
+      },
+    },
+    orderBy: [{ timestamp: 'asc' }, { id: 'asc' }],
+  })
+
+  const actorNameById = new Map<string, string>([
+    [actor.id, actor.empName],
+    [assignment.evaluatorId, assignment.evaluator.empName],
+    [assignment.evaluateeId, assignment.evaluatee.empName],
+  ])
+  const revision = historyLogs
+    .map((log) =>
+      parseWordCloud360HistoryEntry({
+        log,
+        actorNameById,
+      })
+    )
+    .find((entry) => entry?.revisionId === params.input.revisionId)
+
+  if (!revision) {
+    throw new AppError(404, 'HISTORY_NOT_FOUND', '복원할 이력 시점을 찾을 수 없습니다.')
+  }
+  if (!revision.canRestore) {
+    throw new AppError(409, 'HISTORY_NOT_RESTORABLE', '선택한 이력은 복원할 수 없습니다.')
+  }
+
+  if (!revision) {
+    throw new AppError(404, 'HISTORY_NOT_FOUND', '복원할 이력 시점을 찾을 수 없습니다.')
+  }
+  if (!revision.canRestore) {
+    throw new AppError(409, 'HISTORY_NOT_RESTORABLE', '선택한 이력은 복원할 수 없습니다.')
+  }
+
+  if (!revision) {
+    throw new AppError(404, 'HISTORY_NOT_FOUND', '蹂듭썝???댁뼱 ?대젰 ???쒖젏??李얠쓣 ???놁뒿?덈떎.')
+  }
+  if (!revision.canRestore) {
+    throw new AppError(409, 'HISTORY_NOT_RESTORABLE', '?좏깮???대젰??蹂듭썝???섏쓣 ???놁뒿?덈떎.')
+  }
+
+  if (!revision) {
+    throw new AppError(404, 'HISTORY_NOT_FOUND', '복원할 이력 시점을 찾을 수 없습니다.')
+  }
+  if (!revision.canRestore) {
+    throw new AppError(409, 'HISTORY_NOT_RESTORABLE', '선택한 이력은 복원할 수 없습니다.')
+  }
+
+  const restoredAt = new Date()
+  const reason = params.input.reason.trim()
+  const currentSnapshot = buildWordCloud360SelectionSnapshotFromItems(assignment.response.items)
+  const restoredSelections = [...revision.positiveSelections, ...revision.negativeSelections]
+
+  const updatedResponse = await prisma.$transaction(async (tx) => {
+    await tx.wordCloud360ResponseItem.deleteMany({
+      where: { responseId: assignment.response!.id },
+    })
+
+    if (restoredSelections.length > 0) {
+      await tx.wordCloud360ResponseItem.createMany({
+        data: restoredSelections.map((selection) => ({
+          responseId: assignment.response!.id,
+          keywordId: selection.keywordId,
+          polarity: selection.polarity,
+          category: selection.category,
+          keywordTextSnapshot: selection.keyword,
+          evaluatorGroup: selection.evaluatorGroup,
+        })),
+      })
+    }
+
+    const response = await tx.wordCloud360Response.update({
+      where: { id: assignment.response!.id },
+      data: {
+        status: 'DRAFT',
+        submittedAt: null,
+      },
+    })
+
+    await tx.wordCloud360Assignment.update({
+      where: { id: assignment.id },
+      data: {
+        status: 'IN_PROGRESS',
+        draftSavedAt: restoredAt,
+        submittedAt: null,
+      },
+    })
+
+    return response
+  })
+
+  await createAuditLog({
+    userId: params.actorId,
+    action: 'WORD_CLOUD_360_RESPONSE_RESTORED',
+    entityType: 'WORD_CLOUD_360_RESPONSE',
+    entityId: assignment.response.id,
+    oldValue: {
+      previousStatus: assignment.status,
+      previousResponseStatus: assignment.response.status,
+      submittedAt: assignment.response.submittedAt?.toISOString() ?? null,
+      positiveSelections: currentSnapshot.positiveSelections,
+      negativeSelections: currentSnapshot.negativeSelections,
+    },
+    newValue: {
+      eventType: 'wordcloud_response_restored',
+      actorUserId: params.actorId,
+      targetResponseId: assignment.response.id,
+      targetEvaluatorId: assignment.evaluatorId,
+      cycleId: assignment.cycleId,
+      previousStatus: assignment.status,
+      nextStatus: 'IN_PROGRESS',
+      responseStatus: updatedResponse.status,
+      positiveCount: revision.positiveSelections.length,
+      negativeCount: revision.negativeSelections.length,
+      positiveSelections: revision.positiveSelections,
+      negativeSelections: revision.negativeSelections,
+      restoredFromRevisionId: revision.revisionId,
+      reason,
+      restoredAt: restoredAt.toISOString(),
+      restoredBy: actor.empName,
+    },
+  })
+
+  return {
+    assignmentId: assignment.id,
+    responseId: updatedResponse.id,
+    cycleId: assignment.cycleId,
+    evaluatorId: assignment.evaluatorId,
+    evaluateeId: assignment.evaluateeId,
+    restoredFromRevisionId: revision.revisionId,
+    previousStatus: assignment.status,
+    nextStatus: 'IN_PROGRESS' as const,
+    responseStatus: updatedResponse.status,
+    restoredAt: restoredAt.toISOString(),
+  }
 }
 
 export async function publishWordCloud360Results(params: {

@@ -2,17 +2,45 @@ import type {
   CheckInStatus,
   CheckInType,
   CycleStatus,
+  AppealStatus,
   Position,
   Prisma,
+  RaterRelationship,
   SystemRole,
 } from '@prisma/client'
+import {
+  CALIBRATION_COMMUNICATION_GUIDE,
+  collectCalibrationFollowUpThemes,
+  createDefaultCalibrationCommentHandoff,
+  type CalibrationFollowUpValue,
+} from '@/lib/calibration-follow-up'
+import {
+  CALIBRATION_DEFAULT_FACILITATOR_PROMPTS,
+  isResolvedCalibrationDiscussionStatus,
+  type CalibrationWorkspaceCandidateState,
+  normalizeCalibrationWorkspaceCandidateState,
+} from '@/lib/calibration-workspace'
 import { calcPdcaScore } from '@/lib/utils'
+import {
+  buildCalibrationSetupReadiness,
+  CALIBRATION_GROUND_RULE_PRESETS,
+  CALIBRATION_VISIBLE_COLUMN_OPTIONS,
+  type CalibrationGroundRulePolicy,
+} from '@/lib/calibration-session-setup'
 import { prisma } from '@/lib/prisma'
 import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
-import { parseCalibrationSessionConfig } from '@/server/evaluation-calibration-session'
+import {
+  parseCalibrationSessionConfig,
+  type CalibrationSessionConfigValue,
+} from '@/server/evaluation-calibration-session'
 
 export type CalibrationPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 export type CalibrationStatus = 'READY' | 'CALIBRATING' | 'REVIEW_CONFIRMED' | 'FINAL_LOCKED'
+export type CalibrationFollowUpObjectionStatus =
+  | 'SUBMITTED'
+  | 'REVIEWING'
+  | 'RESPONDED'
+  | 'CLOSED'
 
 export type CalibrationCandidate = {
   id: string
@@ -61,10 +89,43 @@ export type CalibrationCandidate = {
     label: string
     value: string
   }>
+  threeYearHistory: Array<{
+    year: number
+    cycleName: string
+    grade: string
+    score?: number
+  }>
+  feedbackSummary: {
+    selfMean?: number
+    managerMean?: number
+    peerMean?: number
+    peerVariance?: number
+  }
+  outlierFlag: boolean
+  newlyJoined: boolean
+  newlyPromoted: boolean | null
+  promotionCandidate: boolean | null
+  seniorLevel: boolean
+  currentManagerRating: string
+  priorTrendSummary?: string
+  priorRatingDelta?: number
+  workspace: CalibrationWorkspaceCandidateState
 }
 
 export type CalibrationViewModel = {
-  actorRole: 'ROLE_ADMIN' | 'ROLE_CEO'
+  actor: {
+    userId: string
+    role: SystemRole
+    sessionRole: 'CEO' | 'ADMIN' | 'OWNER' | 'FACILITATOR' | 'RECORDER' | 'PARTICIPANT' | 'OBSERVER'
+    canManageFlow: boolean
+    canFinalizeAdjustments: boolean
+    canRecordPrivateNote: boolean
+    canWritePublicComment: boolean
+    canFinalizeFollowUpComment: boolean
+    canSubmitFollowUpSurvey: boolean
+    canRecordLeaderFeedback: boolean
+  }
+  actorRole: SystemRole
   cycle: {
     id: string
     name: string
@@ -72,6 +133,7 @@ export type CalibrationViewModel = {
     status: CalibrationStatus
     rawStatus: CycleStatus
     lockedAt?: string
+    sessionStartedAt?: string
     organizationName: string
     selectedScopeId: string
   }
@@ -79,6 +141,7 @@ export type CalibrationViewModel = {
     excludedTargetIds: string[]
     participantIds: string[]
     evaluatorIds: string[]
+    observerIds: string[]
     externalColumns: Array<{
       key: string
       label: string
@@ -90,6 +153,61 @@ export type CalibrationViewModel = {
       skippedCount: number
       scopeId?: string
     } | null
+    setup: {
+      sessionName: string
+      sessionType: 'SINGLE_TEAM' | 'MULTI_TEAM' | 'ROLLUP' | 'EXECUTIVE'
+      scopeMode: 'ORGANIZATION' | 'REVIEW_CYCLE' | 'LEADER_GROUP'
+      scopeDepartmentIds: string[]
+      scopeLeaderIds: string[]
+      ownerId: string | null
+      facilitatorId: string | null
+      recorderId: string | null
+      observerIds: string[]
+      preReadDeadline: string | null
+      scheduledStart: string | null
+      scheduledEnd: string | null
+      timeboxMinutes: number
+      decisionPolicy: 'OWNER_DECIDES' | 'CONSENSUS_PREFERRED' | 'ESCALATION_REQUIRED'
+      referenceDistributionUse: 'OFF' | 'GUIDELINE_ONLY'
+      referenceDistributionVisibility: 'VISIBLE_ONLY' | 'WARNING_ONLY'
+      referenceDistributionRatios: Array<{
+        gradeId: string
+        gradeLabel: string
+        ratio: number
+      }>
+      ratingGuideUse: boolean
+      ratingGuideLinks: Array<{
+        id: string
+        scopeType: 'POSITION' | 'JOB_GROUP' | 'LEVEL'
+        scopeValue: string
+        memo?: string
+      }>
+      expectationAlignmentMemo: string
+      visibleDataColumns: string[]
+      memoCommentPolicyPreset: 'PRIVATE_MEMO_DEFAULT' | 'OWNER_REVIEW_REQUIRED' | 'STRICT_SEPARATION'
+      objectionWindowOpenAt: string | null
+      objectionWindowCloseAt: string | null
+      followUpOwnerId: string | null
+      groundRules: Array<{
+        key: string
+        label: string
+        description: string
+        enabled: boolean
+      }>
+      groundRuleAcknowledgementPolicy: CalibrationGroundRulePolicy
+      facilitatorCanFinalize: boolean
+    }
+    workspace: {
+      currentCandidateId: string | null
+      timer: {
+        candidateId: string | null
+        startedAt: string | null
+        durationMinutes: number
+        extendedMinutes: number
+        startedById: string | null
+      } | null
+      customPrompts: string[]
+    }
   }
   sessionOptions: {
     targets: Array<{
@@ -103,6 +221,20 @@ export type CalibrationViewModel = {
       name: string
       department: string
       role: string
+    }>
+    departments: Array<{
+      id: string
+      label: string
+    }>
+    visibleColumnOptions: Array<{
+      key: string
+      label: string
+      description: string
+    }>
+    groundRulePresets: Array<{
+      key: string
+      label: string
+      description: string
     }>
   }
   scopeOptions: Array<{
@@ -156,6 +288,121 @@ export type CalibrationViewModel = {
     missingReasonCount: number
     unresolvedCandidateCount: number
     readyToLock: boolean
+  }
+  setupReadiness: {
+    readyToStart: boolean
+    blockingItems: string[]
+    warningItems: string[]
+  }
+  followUp: {
+    review: {
+      changedRatingCount: number
+      outlierRecheckCount: number
+      newlyJoinedCount: number
+      newlyPromotedCount: number
+      promotionCandidateCount: number
+      compensationSensitiveCount: number
+      departmentComparisons: Array<{
+        departmentId: string
+        department: string
+        leaderName: string
+        originalAverageOrder: number
+        finalAverageOrder: number
+        changedCount: number
+        isOutlier: boolean
+      }>
+      topBottomRecheck: Array<{
+        targetId: string
+        employeeName: string
+        finalGrade: string
+        outlierFlag: boolean
+      }>
+      changeHistory: Array<{
+        id: string
+        at: string
+        actor: string
+        employeeName?: string
+        fromGrade?: string
+        toGrade?: string
+        reason?: string
+      }>
+    }
+    communicationGuide: {
+      purpose: string
+      sequence: string[]
+      goodExample: string
+      badExample: string
+      avoidPhrases: string[]
+      managerDo: string[]
+      packets: Array<{
+        targetId: string
+        employeeName: string
+        department: string
+        finalGrade: string
+        changed: boolean
+        contextSummary: string
+        draftComment: string
+        finalizedComment?: string
+        revisionCount: number
+        packetGeneratedAt?: string
+        finalizedAt?: string
+        compensationSensitive: boolean
+        finalCheckNote: string
+        revisions: Array<{
+          id: string
+          stage: 'DRAFT' | 'FINALIZED'
+          comment: string
+          createdAt: string
+          actorName: string
+        }>
+      }>
+    }
+    objections: {
+      windowOpenAt: string | null
+      windowCloseAt: string | null
+      summary: Record<CalibrationFollowUpObjectionStatus, number>
+      cases: Array<{
+        id: string
+        appealerName: string
+        targetName: string
+        targetDepartment: string
+        status: CalibrationFollowUpObjectionStatus
+        reason: string
+        requestedAction?: string
+        adminResponse?: string
+        createdAt: string
+        updatedAt: string
+      }>
+    }
+    surveys: {
+      responseCount: number
+      responses: Array<{
+        id: string
+        respondentName: string
+        submittedAt: string
+        hardestPart: string
+        missingData: string
+        rulesAndTimebox: string
+        positives: string
+        improvements: string
+        nextCycleNeeds: string
+        leniencyFeedback: string
+      }>
+      aggregates: {
+        hardestThemes: string[]
+        missingDataThemes: string[]
+        improvementThemes: string[]
+      }
+    }
+    leaderFeedback: Array<{
+      leaderId: string
+      leaderName: string
+      summary: string
+      suggestions: string
+      visibility: 'LEADER_ONLY'
+      updatedAt?: string
+      updatedByName?: string
+    }>
   }
 }
 
@@ -240,6 +487,7 @@ type GradeSettingLite = {
 
 type CandidateGroup = {
   target: EvaluationRecord['target']
+  selfEvaluation: EvaluationRecord | null
   finalEvaluation: EvaluationRecord | null
   adjustedEvaluation: EvaluationRecord | null
   reviewerEvaluation: EvaluationRecord | null
@@ -254,6 +502,45 @@ type CalibrationAuditPayload = {
   rawScore?: number
   reason?: string
   confirmedBy?: string
+}
+
+type HistoricalEvaluationRecord = {
+  targetId: string
+  evalStage: string
+  totalScore: number | null
+  gradeId: string | null
+  updatedAt: Date
+  evalCycle: {
+    id: string
+    evalYear: number
+    cycleName: string
+  }
+}
+
+type FeedbackSummaryRecord = {
+  receiverId: string
+  relationship: RaterRelationship
+  ratings: number[]
+}
+
+type CalibrationAppealRecord = {
+  id: string
+  reason: string
+  status: AppealStatus
+  adminResponse: string | null
+  createdAt: Date
+  updatedAt: Date
+  appealer: {
+    empName: string
+  }
+  evaluation: {
+    target: {
+      empName: string
+      department: {
+        deptName: string
+      }
+    }
+  }
 }
 
 export async function getEvaluationCalibrationPageData(params: {
@@ -348,7 +635,7 @@ export async function getEvaluationCalibrationPageData(params: {
         where: {
           evalCycleId: selectedCycle.id,
           evalStage: {
-            in: ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'],
+            in: ['SELF', 'FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'],
           },
         },
         include: {
@@ -408,6 +695,10 @@ export async function getEvaluationCalibrationPageData(params: {
           id: true,
           empName: true,
           position: true,
+          jobTitle: true,
+          teamName: true,
+          joinDate: true,
+          notes: true,
           department: {
             select: {
               deptName: true,
@@ -489,21 +780,145 @@ export async function getEvaluationCalibrationPageData(params: {
       }
     }
 
+    const targetIds = filteredGroups.map((group) => group.target.id)
+    const orgEmployeeMap = new Map(orgEmployees.map((employee) => [employee.id, employee]))
+    const [historicalEvaluations, feedbackSummaries, departments, appeals] = await Promise.all([
+      prisma.evaluation.findMany({
+        where: {
+          targetId: {
+            in: targetIds,
+          },
+          evalStage: {
+            in: ['FINAL', 'CEO_ADJUST', 'SECOND', 'FIRST'],
+          },
+          evalCycle: {
+            orgId: selectedCycle.orgId,
+            evalYear: {
+              gte: selectedCycle.evalYear - 2,
+              lte: selectedCycle.evalYear,
+            },
+          },
+        },
+        select: {
+          targetId: true,
+          evalStage: true,
+          totalScore: true,
+          gradeId: true,
+          updatedAt: true,
+          evalCycle: {
+            select: {
+              id: true,
+              evalYear: true,
+              cycleName: true,
+            },
+          },
+        },
+        orderBy: [{ evalCycle: { evalYear: 'desc' } }, { updatedAt: 'desc' }],
+      }),
+      prisma.multiFeedback.findMany({
+        where: {
+          receiverId: {
+            in: targetIds,
+          },
+          status: 'SUBMITTED',
+          relationship: {
+            in: ['SELF', 'SUPERVISOR', 'PEER', 'CROSS_TEAM_PEER'],
+          },
+          round: {
+            evalCycleId: selectedCycle.id,
+          },
+        },
+        select: {
+          receiverId: true,
+          relationship: true,
+          responses: {
+            select: {
+              ratingValue: true,
+            },
+          },
+        },
+      }),
+      prisma.department.findMany({
+        where: {
+          orgId: selectedCycle.orgId,
+        },
+        select: {
+          id: true,
+          deptName: true,
+          leaderEmployeeId: true,
+          leaderEmployee: {
+            select: {
+              empName: true,
+            },
+          },
+        },
+      }),
+      prisma.appeal.findMany({
+        where: {
+          evaluation: {
+            evalCycleId: selectedCycle.id,
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        select: {
+          id: true,
+          reason: true,
+          status: true,
+          adminResponse: true,
+          createdAt: true,
+          updatedAt: true,
+          appealer: {
+            select: {
+              empName: true,
+            },
+          },
+          evaluation: {
+            select: {
+              target: {
+                select: {
+                  empName: true,
+                  department: {
+                    select: {
+                      deptName: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ])
+
     const aiCompetencyResults = await loadAiCompetencySyncedResults({
       evalCycleIds: [selectedCycle.id],
-      employeeIds: filteredGroups.map((group) => group.target.id),
+      employeeIds: targetIds,
     }).catch((error) => {
       console.error('[evaluation-calibration] AI competency sync fallback', error)
       return new Map()
     })
 
     const checkInMap = buildCheckInMap(checkIns)
+    const historicalEvaluationMap = buildHistoricalEvaluationMap(
+      historicalEvaluations,
+      gradeSettings
+    )
+    const feedbackSummaryMap = buildFeedbackSummaryMap(feedbackSummaries)
+    const departmentLeaderMap = new Map(
+      departments.map((department) => [
+        department.id,
+        department.leaderEmployee?.empName ?? department.deptName,
+      ])
+    )
     const byDepartment = buildDepartmentDistributions(filteredGroups, gradeSettings)
     const outlierDepartmentIds = new Set(
       byDepartment.filter((department) => department.isOutlier).map((department) => department.departmentId)
     )
     const decoratedCandidates = filteredGroups.map((group) =>
       buildCalibrationCandidate({
+        cycleYear: selectedCycle.evalYear,
         group,
         gradeSettings,
         checkIns: checkInMap.get(group.target.id) ?? [],
@@ -511,17 +926,40 @@ export async function getEvaluationCalibrationPageData(params: {
         aiCompetencyScore: aiCompetencyResults.get(`${selectedCycle.id}:${group.target.id}`)?.finalScore,
         externalColumns: sessionConfig.externalColumns,
         externalRow: sessionConfig.externalRowsByTargetId[group.target.id] ?? {},
+        employeeRecord: orgEmployeeMap.get(group.target.id),
+        historicalEvaluations: historicalEvaluationMap.get(group.target.id) ?? [],
+        feedbackSummary: feedbackSummaryMap.get(group.target.id),
+        workspaceState: sessionConfig.workspace.candidateStates[group.target.id],
       })
     )
 
     const summary = buildSummary(decoratedCandidates, byDepartment)
     const cycleStatus = resolveCalibrationStatus(selectedCycle, effectiveAuditLogs, summary.adjustedCount)
     const checklist = buildChecklist(decoratedCandidates)
+    const setupReadiness = buildCalibrationSetupReadiness({
+      setup: sessionConfig.setup,
+      participantIds: sessionConfig.participantIds,
+    })
     const timeline = buildCalibrationTimeline({
       cycle: selectedCycle,
       auditLogs: effectiveAuditLogs,
       groups: filteredGroups,
       gradeSettings,
+    })
+    const actorCapabilities = buildCalibrationActorCapabilities({
+      userId: params.userId,
+      role: params.role,
+      sessionConfig,
+    })
+    const followUp = buildCalibrationFollowUp({
+      candidates: decoratedCandidates,
+      byDepartment,
+      timeline,
+      sessionConfig: sessionConfig.followUp,
+      departmentLeaderMap,
+      setup: sessionConfig.setup,
+      appeals,
+      gradeOptions: gradeSettings,
     })
 
     return {
@@ -530,7 +968,8 @@ export async function getEvaluationCalibrationPageData(params: {
       selectedCycleId: selectedCycle.id,
       selectedScopeId,
       viewModel: {
-        actorRole: params.role === 'ROLE_CEO' ? 'ROLE_CEO' : 'ROLE_ADMIN',
+        actor: actorCapabilities,
+        actorRole: params.role,
         cycle: {
           id: selectedCycle.id,
           name: selectedCycle.cycleName,
@@ -538,6 +977,7 @@ export async function getEvaluationCalibrationPageData(params: {
           status: cycleStatus,
           rawStatus: selectedCycle.status,
           lockedAt: resolveLockedAt(selectedCycle, effectiveAuditLogs),
+          sessionStartedAt: resolveSessionStartedAt(effectiveAuditLogs),
           organizationName: employee.department.organization.name,
           selectedScopeId,
         },
@@ -545,8 +985,17 @@ export async function getEvaluationCalibrationPageData(params: {
           excludedTargetIds: sessionConfig.excludedTargetIds,
           participantIds: sessionConfig.participantIds,
           evaluatorIds: sessionConfig.evaluatorIds,
+          observerIds: sessionConfig.observerIds,
           externalColumns: sessionConfig.externalColumns,
           lastMergeSummary: sessionConfig.lastMergeSummary,
+          setup: sessionConfig.setup,
+          workspace: {
+            currentCandidateId: sessionConfig.workspace.currentCandidateId,
+            timer: sessionConfig.workspace.timer,
+            customPrompts: sessionConfig.workspace.customPrompts.length
+              ? sessionConfig.workspace.customPrompts
+              : [...CALIBRATION_DEFAULT_FACILITATOR_PROMPTS],
+          },
         },
         sessionOptions: {
           targets: groups.map((group) => ({
@@ -560,6 +1009,22 @@ export async function getEvaluationCalibrationPageData(params: {
             name: person.empName,
             department: person.department.deptName,
             role: resolvePositionLabel(person.position),
+          })),
+          departments: scopeOptions
+            .filter((option) => option.id !== 'all')
+            .map((option) => ({
+              id: option.id,
+              label: option.label,
+            })),
+          visibleColumnOptions: CALIBRATION_VISIBLE_COLUMN_OPTIONS.map((option) => ({
+            key: option.key,
+            label: option.label,
+            description: option.description,
+          })),
+          groundRulePresets: CALIBRATION_GROUND_RULE_PRESETS.map((rule) => ({
+            key: rule.key,
+            label: rule.label,
+            description: rule.description,
           })),
         },
         scopeOptions,
@@ -577,6 +1042,8 @@ export async function getEvaluationCalibrationPageData(params: {
         candidates: decoratedCandidates,
         timeline,
         checklist,
+        setupReadiness,
+        followUp,
       },
     }
   } catch (error) {
@@ -597,11 +1064,13 @@ function groupEvaluationsByTarget(evaluations: EvaluationRecord[]) {
       grouped.get(evaluation.targetId) ??
       ({
         target: evaluation.target,
+        selfEvaluation: null,
         finalEvaluation: null,
         adjustedEvaluation: null,
         reviewerEvaluation: null,
       } satisfies CandidateGroup)
 
+    if (evaluation.evalStage === 'SELF') current.selfEvaluation = evaluation
     if (evaluation.evalStage === 'FINAL') current.finalEvaluation = evaluation
     if (evaluation.evalStage === 'CEO_ADJUST') current.adjustedEvaluation = evaluation
     if (evaluation.evalStage === 'SECOND') current.reviewerEvaluation = evaluation
@@ -656,6 +1125,7 @@ function buildCheckInMap(checkIns: CheckInRecord[]) {
 }
 
 function buildCalibrationCandidate(params: {
+  cycleYear: number
   group: CandidateGroup
   gradeSettings: GradeSettingLite[]
   checkIns: CheckInRecord[]
@@ -663,6 +1133,26 @@ function buildCalibrationCandidate(params: {
   aiCompetencyScore?: number
   externalColumns: Array<{ key: string; label: string }>
   externalRow: Record<string, string>
+  employeeRecord?: {
+    id: string
+    empName: string
+    position: Position
+    jobTitle: string | null
+    teamName: string | null
+    joinDate: Date
+    notes: string | null
+    department: {
+      deptName: string
+    }
+  }
+  historicalEvaluations: Array<{
+    year: number
+    cycleName: string
+    grade: string
+    score?: number
+  }>
+  feedbackSummary?: CalibrationCandidate['feedbackSummary']
+  workspaceState?: CalibrationWorkspaceCandidateState
 }) {
   const { group, gradeSettings } = params
   const baseEvaluation = group.finalEvaluation ?? group.adjustedEvaluation
@@ -714,6 +1204,19 @@ function buildCalibrationCandidate(params: {
       value: params.externalRow[column.key] ?? '',
     }))
     .filter((item) => item.value.trim().length > 0)
+  const threeYearHistory = params.historicalEvaluations
+  const priorEvaluation = threeYearHistory.find((entry) => entry.year < params.cycleYear)
+  const priorRatingDelta =
+    typeof priorEvaluation?.score === 'number' ? roundToSingle(rawScore - priorEvaluation.score) : undefined
+  const workspace = normalizeCalibrationWorkspaceCandidateState(params.workspaceState)
+  const newlyJoined = Boolean(
+    params.employeeRecord?.joinDate &&
+      new Date(params.employeeRecord.joinDate).getUTCFullYear() >= params.cycleYear - 1
+  )
+  const newlyPromoted = resolveBooleanFlagFromExternalData(externalData, ['recently promoted', 'newly promoted', '승진'])
+  const promotionCandidate = resolveBooleanFlagFromExternalData(externalData, ['promotion', '승진'])
+  const seniorLevel = ['SECTION_CHIEF', 'DIV_HEAD', 'CEO'].includes(String(group.target.position))
+  const outlierFlag = params.departmentOutlierMap.has(group.target.department.id)
 
   return {
     id: group.target.id,
@@ -753,7 +1256,152 @@ function buildCalibrationCandidate(params: {
     kpiSummary,
     checkins,
     externalData,
+    threeYearHistory,
+    feedbackSummary: params.feedbackSummary ?? {},
+    outlierFlag,
+    newlyJoined,
+    newlyPromoted,
+    promotionCandidate,
+    seniorLevel,
+    currentManagerRating: adjustedGrade ?? originalGrade ?? '미확정',
+    priorTrendSummary: buildPriorTrendSummary(threeYearHistory),
+    priorRatingDelta,
+    workspace,
   } satisfies CalibrationCandidate
+}
+
+function buildHistoricalEvaluationMap(
+  evaluations: HistoricalEvaluationRecord[],
+  gradeSettings: GradeSettingLite[]
+) {
+  const grouped = new Map<string, Map<string, HistoricalEvaluationRecord>>()
+
+  for (const evaluation of evaluations) {
+    const targetMap = grouped.get(evaluation.targetId) ?? new Map<string, HistoricalEvaluationRecord>()
+    const cycleKey = evaluation.evalCycle.id
+    const current = targetMap.get(cycleKey)
+
+    if (!current || getCalibrationStagePriority(evaluation.evalStage) > getCalibrationStagePriority(current.evalStage)) {
+      targetMap.set(cycleKey, evaluation)
+    }
+
+    grouped.set(evaluation.targetId, targetMap)
+  }
+
+  return new Map(
+    [...grouped.entries()].map(([targetId, cycleMap]) => [
+      targetId,
+      [...cycleMap.values()]
+        .sort((a, b) => b.evalCycle.evalYear - a.evalCycle.evalYear)
+        .slice(0, 3)
+        .map((evaluation) => ({
+          year: evaluation.evalCycle.evalYear,
+          cycleName: evaluation.evalCycle.cycleName,
+          grade:
+            resolveGradeName(evaluation.gradeId, evaluation.totalScore, gradeSettings) ?? '미확정',
+          score: evaluation.totalScore ?? undefined,
+        })),
+    ])
+  )
+}
+
+function buildFeedbackSummaryMap(records: Array<{
+  receiverId: string
+  relationship: RaterRelationship
+  responses: Array<{ ratingValue: number | null }>
+}>) {
+  const grouped = new Map<string, FeedbackSummaryRecord[]>()
+
+  for (const record of records) {
+    const ratings = record.responses
+      .map((response) => response.ratingValue)
+      .filter((value): value is number => typeof value === 'number')
+
+    if (!ratings.length) continue
+
+    const current = grouped.get(record.receiverId) ?? []
+    current.push({
+      receiverId: record.receiverId,
+      relationship: record.relationship,
+      ratings,
+    })
+    grouped.set(record.receiverId, current)
+  }
+
+  return new Map(
+    [...grouped.entries()].map(([targetId, summaries]) => {
+      const selfRatings = flattenFeedbackRatings(summaries, ['SELF'])
+      const managerRatings = flattenFeedbackRatings(summaries, ['SUPERVISOR'])
+      const peerRatings = flattenFeedbackRatings(summaries, ['PEER', 'CROSS_TEAM_PEER'])
+
+      return [
+        targetId,
+        {
+          selfMean: selfRatings.length ? roundToSingle(average(selfRatings)) : undefined,
+          managerMean: managerRatings.length ? roundToSingle(average(managerRatings)) : undefined,
+          peerMean: peerRatings.length ? roundToSingle(average(peerRatings)) : undefined,
+          peerVariance: peerRatings.length > 1 ? roundToSingle(variance(peerRatings)) : undefined,
+        } satisfies CalibrationCandidate['feedbackSummary'],
+      ]
+    })
+  )
+}
+
+function flattenFeedbackRatings(
+  records: FeedbackSummaryRecord[],
+  relationships: RaterRelationship[]
+) {
+  return records
+    .filter((record) => relationships.includes(record.relationship))
+    .flatMap((record) => record.ratings)
+}
+
+function average(values: number[]) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function variance(values: number[]) {
+  const mean = average(values)
+  return values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length
+}
+
+function getCalibrationStagePriority(stage: string) {
+  if (stage === 'CEO_ADJUST') return 4
+  if (stage === 'FINAL') return 3
+  if (stage === 'SECOND') return 2
+  if (stage === 'FIRST') return 1
+  return 0
+}
+
+function buildPriorTrendSummary(
+  history: Array<{
+    year: number
+    cycleName: string
+    grade: string
+    score?: number
+  }>
+) {
+  if (history.length <= 1) return undefined
+
+  const grades = history.map((entry) => `${entry.year} ${entry.grade}`).join(' → ')
+  return `최근 3년 흐름: ${grades}`
+}
+
+function resolveBooleanFlagFromExternalData(
+  externalData: Array<{ key: string; label: string; value: string }>,
+  keywords: string[]
+) {
+  const matched = externalData.find((item) =>
+    keywords.some((keyword) =>
+      `${item.key} ${item.label}`.toLowerCase().includes(keyword.toLowerCase())
+    )
+  )
+
+  if (!matched) return null
+
+  return ['y', 'yes', 'true', '1', '대상', '예', 'candidate'].includes(
+    matched.value.trim().toLowerCase()
+  )
 }
 
 function buildSummary(
@@ -794,9 +1442,17 @@ function buildSummary(
 
 function buildChecklist(candidates: CalibrationCandidate[]) {
   const missingReasonCount = candidates.filter((candidate) => candidate.adjusted && !candidate.reason?.trim()).length
-  const unresolvedCandidateCount = candidates.filter(
-    (candidate) => candidate.needsAttention && !candidate.adjusted
-  ).length
+  const hasWorkspaceProgress = candidates.some(
+    (candidate) =>
+      candidate.workspace.status !== 'PENDING' ||
+      candidate.workspace.shortReason.length > 0 ||
+      candidate.workspace.discussionMemo.length > 0 ||
+      candidate.workspace.privateNote.length > 0 ||
+      candidate.workspace.publicComment.length > 0
+  )
+  const unresolvedCandidateCount = hasWorkspaceProgress
+    ? candidates.filter((candidate) => !isResolvedCalibrationDiscussionStatus(candidate.workspace.status)).length
+    : candidates.filter((candidate) => candidate.needsAttention && !candidate.adjusted).length
 
   return {
     missingReasonCount,
@@ -836,8 +1492,13 @@ function buildDepartmentDistributions(
     const candidates = items.map((group) =>
       buildCalibrationCandidate({
         group,
+        cycleYear: new Date().getFullYear(),
         gradeSettings,
         checkIns: [],
+        employeeRecord: undefined,
+        historicalEvaluations: [],
+        feedbackSummary: undefined,
+        workspaceState: undefined,
         departmentOutlierMap: new Set<string>(),
         externalColumns: [],
         externalRow: {},
@@ -878,6 +1539,53 @@ function buildJobGroupDistributions(
   }))
 }
 
+function formatCalibrationTimelineAction(action: string) {
+  switch (action) {
+    case 'CALIBRATION_DISCUSSION_UPDATED':
+      return '토론 상태 저장'
+    case 'CALIBRATION_CURRENT_CANDIDATE_CHANGED':
+      return '현재 논의 대상 변경'
+    case 'CALIBRATION_TIMER_STARTED':
+      return '타이머 시작'
+    case 'CALIBRATION_TIMER_RESET':
+      return '타이머 리셋'
+    case 'CALIBRATION_TIMER_EXTENDED':
+      return '타이머 연장'
+    case 'CALIBRATION_FACILITATOR_PROMPT_ADDED':
+      return '퍼실리테이터 질문 추가'
+    case 'CALIBRATION_FACILITATOR_PROMPT_REMOVED':
+      return '퍼실리테이터 질문 제거'
+    case 'CALIBRATION_PUBLIC_COMMENT_HANDOFF_SAVED':
+      return '공개용 코멘트 초안 저장'
+    case 'CALIBRATION_PUBLIC_COMMENT_FINALIZED':
+      return '공개용 코멘트 확정'
+    case 'CALIBRATION_COMMUNICATION_PACKET_GENERATED':
+      return '커뮤니케이션 패킷 생성'
+    case 'CALIBRATION_FOLLOW_UP_REVIEW_FLAG_UPDATED':
+      return '후속 점검 플래그 저장'
+    case 'CALIBRATION_RETROSPECTIVE_SURVEY_SUBMITTED':
+      return '회고 설문 제출'
+    case 'CALIBRATION_LEADER_FEEDBACK_RECORDED':
+      return '리더 피드백 저장'
+    default:
+      return humanizeCalibrationActionLabel(action)
+  }
+}
+
+function resolveExtendedTimelineActionKind(
+  action: string
+): CalibrationViewModel['timeline'][number]['actionType'] {
+  if (action.startsWith('CALIBRATION_TIMER_')) return 'system'
+  if (action === 'CALIBRATION_CURRENT_CANDIDATE_CHANGED') return 'system'
+  if (action.startsWith('CALIBRATION_FACILITATOR_PROMPT_')) return 'system'
+  if (action.startsWith('CALIBRATION_PUBLIC_COMMENT_')) return 'review'
+  if (action === 'CALIBRATION_COMMUNICATION_PACKET_GENERATED') return 'review'
+  if (action === 'CALIBRATION_FOLLOW_UP_REVIEW_FLAG_UPDATED') return 'review'
+  if (action === 'CALIBRATION_RETROSPECTIVE_SURVEY_SUBMITTED') return 'system'
+  if (action === 'CALIBRATION_LEADER_FEEDBACK_RECORDED') return 'review'
+  return resolveTimelineActionKind(action)
+}
+
 function buildCalibrationTimeline(params: {
   cycle: {
     id: string
@@ -897,12 +1605,12 @@ function buildCalibrationTimeline(params: {
       id: log.id,
       at: log.timestamp.toISOString(),
       actor: payload.confirmedBy ?? payload.targetName ?? log.userId,
-      action: humanizeCalibrationAction(log.action),
+        action: formatCalibrationTimelineAction(log.action),
       employeeName: payload.targetName,
       fromGrade: payload.fromGrade,
       toGrade: payload.toGrade,
       reason: payload.reason,
-      actionType: resolveTimelineActionType(log.action),
+        actionType: resolveExtendedTimelineActionKind(log.action),
     }
   })
 
@@ -948,6 +1656,227 @@ function buildCalibrationTimeline(params: {
   return timeline.sort((a, b) => b.at.localeCompare(a.at))
 }
 
+function mapAppealStatusToCalibrationFollowUpStatus(
+  status: AppealStatus
+): CalibrationFollowUpObjectionStatus {
+  if (status === 'SUBMITTED') return 'SUBMITTED'
+  if (status === 'UNDER_REVIEW') return 'REVIEWING'
+  if (status === 'CLOSED') return 'CLOSED'
+  return 'RESPONDED'
+}
+
+function buildCommunicationContextSummary(candidate: CalibrationCandidate) {
+  const parts = [
+    candidate.adjusted
+      ? `등급 변경 ${candidate.originalGrade} -> ${candidate.adjustedGrade ?? candidate.originalGrade}`
+      : '등급 변경 없음',
+    candidate.outlierFlag ? 'outlier 재확인 필요' : null,
+    candidate.newlyJoined ? '신규 입사자 맥락 확인' : null,
+    candidate.newlyPromoted ? '최근 승진 맥락 확인' : null,
+    candidate.promotionCandidate ? '승진 후보 관점 설명 필요' : null,
+  ].filter((item): item is string => Boolean(item))
+
+  return parts.join(' / ')
+}
+
+function buildCalibrationFollowUp(params: {
+  candidates: CalibrationCandidate[]
+  byDepartment: CalibrationViewModel['distributions']['byDepartment']
+  timeline: CalibrationViewModel['timeline']
+  sessionConfig: CalibrationFollowUpValue
+  departmentLeaderMap: Map<string, string>
+  setup: CalibrationViewModel['sessionConfig']['setup']
+  appeals: CalibrationAppealRecord[]
+  gradeOptions: Array<{
+    id: string
+    gradeName: string
+    gradeOrder: number
+  }>
+}): CalibrationViewModel['followUp'] {
+  const gradeOrderMap = new Map(
+    params.gradeOptions.map((grade) => [grade.gradeName, grade.gradeOrder])
+  )
+  const departmentComparisons = params.byDepartment.map((department) => {
+    const departmentCandidates = params.candidates.filter(
+      (candidate) => candidate.departmentId === department.departmentId
+    )
+    const originalOrders = departmentCandidates
+      .map((candidate) => gradeOrderMap.get(candidate.originalGrade))
+      .filter((value): value is number => typeof value === 'number')
+    const finalOrders = departmentCandidates
+      .map((candidate) => gradeOrderMap.get(candidate.adjustedGrade ?? candidate.originalGrade))
+      .filter((value): value is number => typeof value === 'number')
+
+    return {
+      departmentId: department.departmentId,
+      department: department.department,
+      leaderName:
+        params.departmentLeaderMap.get(department.departmentId) ?? department.department,
+      originalAverageOrder: average(originalOrders) ?? 0,
+      finalAverageOrder: average(finalOrders) ?? 0,
+      changedCount: departmentCandidates.filter((candidate) => candidate.adjusted).length,
+      isOutlier: department.isOutlier,
+    }
+  })
+
+  const topBottomRecheck = params.candidates
+    .slice()
+    .sort((left, right) => {
+      const leftOrder = gradeOrderMap.get(left.adjustedGrade ?? left.originalGrade) ?? 999
+      const rightOrder = gradeOrderMap.get(right.adjustedGrade ?? right.originalGrade) ?? 999
+      if (left.outlierFlag !== right.outlierFlag) return left.outlierFlag ? -1 : 1
+      return leftOrder - rightOrder
+    })
+    .slice(0, 6)
+    .map((candidate) => ({
+      targetId: candidate.id,
+      employeeName: candidate.employeeName,
+      finalGrade: candidate.adjustedGrade ?? candidate.originalGrade,
+      outlierFlag: candidate.outlierFlag,
+    }))
+  const changeHistory = params.timeline
+    .filter((item) => item.actionType === 'adjust' || item.action.includes('코멘트') || item.action.includes('패킷'))
+    .slice(0, 10)
+    .map((item) => ({
+      id: item.id,
+      at: item.at,
+      actor: item.actor,
+      employeeName: item.employeeName,
+      fromGrade: item.fromGrade,
+      toGrade: item.toGrade,
+      reason: item.reason,
+    }))
+
+  const packets = params.candidates.map((candidate) => {
+    const handoff =
+      params.sessionConfig.commentHandoffsByTargetId[candidate.id] ??
+      createDefaultCalibrationCommentHandoff(candidate.workspace.publicComment)
+    const reviewFlag = params.sessionConfig.reviewFlagsByTargetId[candidate.id]
+    return {
+      targetId: candidate.id,
+      employeeName: candidate.employeeName,
+      department: candidate.department,
+      finalGrade: candidate.adjustedGrade ?? candidate.originalGrade,
+      changed: candidate.adjusted,
+      contextSummary: buildCommunicationContextSummary(candidate),
+      draftComment: handoff.draftComment || candidate.workspace.publicComment,
+      finalizedComment: handoff.finalizedComment ?? undefined,
+      revisionCount: handoff.revisions.length,
+      packetGeneratedAt: handoff.packetGeneratedAt ?? undefined,
+      finalizedAt: handoff.finalizedAt ?? undefined,
+      compensationSensitive: Boolean(reviewFlag?.compensationSensitive),
+      finalCheckNote: reviewFlag?.finalCheckNote ?? '',
+      revisions: handoff.revisions.map((revision) => ({
+        id: revision.id,
+        stage: revision.stage,
+        comment: revision.comment,
+        createdAt: revision.createdAt,
+        actorName: revision.actorName,
+      })),
+    }
+  })
+
+  const objectionCases = params.appeals.map((appeal) => ({
+    id: appeal.id,
+    appealerName: appeal.appealer.empName,
+    targetName: appeal.evaluation.target.empName,
+    targetDepartment: appeal.evaluation.target.department.deptName,
+    status: mapAppealStatusToCalibrationFollowUpStatus(appeal.status),
+    reason: appeal.reason,
+    requestedAction: undefined,
+    adminResponse: appeal.adminResponse ?? undefined,
+    createdAt: appeal.createdAt.toISOString(),
+    updatedAt: appeal.updatedAt.toISOString(),
+  }))
+  const objectionSummary = objectionCases.reduce(
+    (summary, objection) => {
+      summary[objection.status] += 1
+      return summary
+    },
+    {
+      SUBMITTED: 0,
+      REVIEWING: 0,
+      RESPONDED: 0,
+      CLOSED: 0,
+    } as Record<CalibrationFollowUpObjectionStatus, number>
+  )
+
+  const surveyResponses = params.sessionConfig.retrospectiveSurveys
+    .slice()
+    .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt))
+    .map((response) => ({
+      id: response.id,
+      respondentName: response.respondentName,
+      submittedAt: response.submittedAt,
+      hardestPart: response.hardestPart,
+      missingData: response.missingData,
+      rulesAndTimebox: response.rulesAndTimebox,
+      positives: response.positives,
+      improvements: response.improvements,
+      nextCycleNeeds: response.nextCycleNeeds,
+      leniencyFeedback: response.leniencyFeedback,
+    }))
+
+  const leaderFeedback = Object.values(params.sessionConfig.leaderFeedbackByLeaderId)
+    .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? ''))
+    .map((feedback) => ({
+      leaderId: feedback.leaderId,
+      leaderName: feedback.leaderName,
+      summary: feedback.summary,
+      suggestions: feedback.suggestions,
+      visibility: feedback.visibility,
+      updatedAt: feedback.updatedAt ?? undefined,
+      updatedByName: feedback.updatedByName ?? undefined,
+    }))
+
+  return {
+    review: {
+      changedRatingCount: params.candidates.filter((candidate) => candidate.adjusted).length,
+      outlierRecheckCount: params.candidates.filter((candidate) => candidate.outlierFlag).length,
+      newlyJoinedCount: params.candidates.filter((candidate) => candidate.newlyJoined).length,
+      newlyPromotedCount: params.candidates.filter((candidate) => candidate.newlyPromoted).length,
+      promotionCandidateCount: params.candidates.filter((candidate) => candidate.promotionCandidate).length,
+      compensationSensitiveCount: Object.values(params.sessionConfig.reviewFlagsByTargetId).filter(
+        (flag) => flag.compensationSensitive
+      ).length,
+      departmentComparisons,
+      topBottomRecheck,
+      changeHistory,
+    },
+    communicationGuide: {
+      purpose: CALIBRATION_COMMUNICATION_GUIDE.purpose,
+      sequence: [...CALIBRATION_COMMUNICATION_GUIDE.sequence],
+      goodExample: CALIBRATION_COMMUNICATION_GUIDE.goodExample,
+      badExample: CALIBRATION_COMMUNICATION_GUIDE.badExample,
+      avoidPhrases: [...CALIBRATION_COMMUNICATION_GUIDE.avoidPhrases],
+      managerDo: [...CALIBRATION_COMMUNICATION_GUIDE.managerDo],
+      packets,
+    },
+    objections: {
+      windowOpenAt: params.setup.objectionWindowOpenAt,
+      windowCloseAt: params.setup.objectionWindowCloseAt,
+      summary: objectionSummary,
+      cases: objectionCases,
+    },
+    surveys: {
+      responseCount: surveyResponses.length,
+      responses: surveyResponses,
+      aggregates: {
+        hardestThemes: collectCalibrationFollowUpThemes(
+          surveyResponses.map((response) => response.hardestPart)
+        ),
+        missingDataThemes: collectCalibrationFollowUpThemes(
+          surveyResponses.map((response) => response.missingData)
+        ),
+        improvementThemes: collectCalibrationFollowUpThemes(
+          surveyResponses.map((response) => response.improvements)
+        ),
+      },
+    },
+    leaderFeedback,
+  }
+}
+
 function resolveCalibrationStatus(
   cycle: {
     status: CycleStatus
@@ -966,6 +1895,7 @@ function resolveCalibrationStatus(
   if (latestCycleAction === 'CALIBRATION_LOCKED') return 'FINAL_LOCKED'
   if (latestCycleAction === 'CALIBRATION_SESSION_DELETED') return 'READY'
   if (latestCycleAction === 'CALIBRATION_REVIEW_CONFIRMED') return 'REVIEW_CONFIRMED'
+  if (latestCycleAction === 'CALIBRATION_SESSION_STARTED') return 'CALIBRATING'
   if (latestCycleAction === 'CALIBRATION_REOPEN_REQUESTED') return 'CALIBRATING'
   if (adjustedCount > 0 || cycle.status === 'CEO_ADJUST') return 'CALIBRATING'
   return 'READY'
@@ -987,6 +1917,71 @@ function resolveLockedAt(
     .find((log) => log.entityType === 'EvalCycle' && log.action === 'CALIBRATION_LOCKED')
 
   return lockedLog?.timestamp.toISOString()
+}
+
+function resolveSessionStartedAt(auditLogs: AuditLogRecord[]) {
+  return [...auditLogs]
+    .reverse()
+    .find((log) => log.entityType === 'EvalCycle' && log.action === 'CALIBRATION_SESSION_STARTED')
+    ?.timestamp.toISOString()
+}
+
+function buildCalibrationActorCapabilities(params: {
+  userId: string
+  role: SystemRole
+  sessionConfig: CalibrationSessionConfigValue
+}): CalibrationViewModel['actor'] {
+  if (params.role === 'ROLE_CEO') {
+    return {
+      userId: params.userId,
+      role: 'ROLE_CEO',
+      sessionRole: 'CEO',
+      canManageFlow: true,
+      canFinalizeAdjustments: true,
+      canRecordPrivateNote: true,
+      canWritePublicComment: true,
+      canFinalizeFollowUpComment: true,
+      canSubmitFollowUpSurvey: true,
+      canRecordLeaderFeedback: true,
+    }
+  }
+
+  const { setup, participantIds, observerIds } = params.sessionConfig
+  const sessionRole =
+    setup.ownerId === params.userId
+      ? 'OWNER'
+      : setup.facilitatorId === params.userId
+        ? 'FACILITATOR'
+        : setup.recorderId === params.userId
+          ? 'RECORDER'
+          : participantIds.includes(params.userId)
+            ? 'PARTICIPANT'
+            : observerIds.includes(params.userId)
+              ? 'OBSERVER'
+              : 'ADMIN'
+
+  return {
+    userId: params.userId,
+    role: params.role,
+    sessionRole,
+    canManageFlow: ['OWNER', 'FACILITATOR', 'ADMIN'].includes(sessionRole),
+    canFinalizeAdjustments:
+      sessionRole === 'OWNER' ||
+      sessionRole === 'ADMIN' ||
+      (sessionRole === 'FACILITATOR' && setup.facilitatorCanFinalize),
+    canRecordPrivateNote: ['OWNER', 'FACILITATOR', 'RECORDER', 'PARTICIPANT', 'ADMIN'].includes(
+      sessionRole
+    ),
+    canWritePublicComment: ['OWNER', 'FACILITATOR', 'PARTICIPANT', 'ADMIN'].includes(sessionRole),
+    canFinalizeFollowUpComment:
+      sessionRole === 'OWNER' ||
+      sessionRole === 'ADMIN' ||
+      (sessionRole === 'FACILITATOR' && setup.facilitatorCanFinalize),
+    canSubmitFollowUpSurvey: ['OWNER', 'FACILITATOR', 'RECORDER', 'PARTICIPANT', 'OBSERVER', 'ADMIN'].includes(
+      sessionRole
+    ),
+    canRecordLeaderFeedback: ['FACILITATOR', 'ADMIN', 'OWNER'].includes(sessionRole),
+  }
 }
 
 function calcEvaluationAxisScore(
@@ -1171,6 +2166,7 @@ function parseCalibrationPayload(value: Prisma.JsonValue | null) {
   return value as CalibrationAuditPayload
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function humanizeCalibrationAction(action: string) {
   switch (action) {
     case 'CALIBRATION_UPDATED':
@@ -1196,10 +2192,48 @@ function humanizeCalibrationAction(action: string) {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function resolveTimelineActionType(action: string) {
   if (action === 'CALIBRATION_LOCKED') return 'lock'
   if (action === 'CALIBRATION_REOPEN_REQUESTED') return 'reopen'
   if (action === 'CALIBRATION_REVIEW_CONFIRMED') return 'review'
+  if (action === 'CALIBRATION_SESSION_DELETED') return 'system'
+  if (action.startsWith('CALIBRATION_')) return 'adjust'
+  return 'system'
+}
+
+function humanizeCalibrationActionLabel(action: string) {
+  switch (action) {
+    case 'CALIBRATION_UPDATED':
+      return '등급 조정 저장'
+    case 'CALIBRATION_CLEARED':
+      return '조정 해제'
+    case 'CALIBRATION_BULK_IMPORTED':
+      return '최종 등급 일괄 업로드'
+    case 'CALIBRATION_EXTERNAL_DATA_UPLOADED':
+      return '외부 데이터 업로드'
+    case 'CALIBRATION_MERGED':
+      return '하위 단계 결과 병합'
+    case 'CALIBRATION_SESSION_STARTED':
+      return '세션 시작'
+    case 'CALIBRATION_SESSION_DELETED':
+      return '세션 삭제'
+    case 'CALIBRATION_REVIEW_CONFIRMED':
+      return '리뷰 확정'
+    case 'CALIBRATION_LOCKED':
+      return '최종 잠금'
+    case 'CALIBRATION_REOPEN_REQUESTED':
+      return '재오픈 요청'
+    default:
+      return action
+  }
+}
+
+function resolveTimelineActionKind(action: string) {
+  if (action === 'CALIBRATION_LOCKED') return 'lock'
+  if (action === 'CALIBRATION_REOPEN_REQUESTED') return 'reopen'
+  if (action === 'CALIBRATION_REVIEW_CONFIRMED') return 'review'
+  if (action === 'CALIBRATION_SESSION_STARTED') return 'system'
   if (action === 'CALIBRATION_SESSION_DELETED') return 'system'
   if (action.startsWith('CALIBRATION_')) return 'adjust'
   return 'system'

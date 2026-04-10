@@ -1,4 +1,19 @@
 import type { Prisma } from '@prisma/client'
+import {
+  type CalibrationFollowUpValue,
+  createEmptyCalibrationFollowUp,
+  normalizeCalibrationFollowUp,
+} from '@/lib/calibration-follow-up'
+import {
+  type CalibrationWorkspaceValue,
+  createEmptyCalibrationWorkspace,
+  normalizeCalibrationWorkspace,
+} from '@/lib/calibration-workspace'
+import {
+  type CalibrationSessionSetupValue,
+  createDefaultCalibrationSessionSetup,
+  normalizeCalibrationSessionSetup,
+} from '@/lib/calibration-session-setup'
 
 export type CalibrationExternalColumn = {
   key: string
@@ -19,19 +34,28 @@ export type CalibrationSessionConfigValue = {
   excludedTargetIds: string[]
   participantIds: string[]
   evaluatorIds: string[]
+  observerIds: string[]
   externalColumns: CalibrationExternalColumn[]
   externalRowsByTargetId: Record<string, CalibrationExternalRow>
   lastMergeSummary: CalibrationMergeSummary | null
+  setup: CalibrationSessionSetupValue
+  workspace: CalibrationWorkspaceValue
+  followUp: CalibrationFollowUpValue
 }
 
 export function createEmptyCalibrationSessionConfig(): CalibrationSessionConfigValue {
+  const setup = createDefaultCalibrationSessionSetup()
   return {
     excludedTargetIds: [],
     participantIds: [],
     evaluatorIds: [],
+    observerIds: [],
     externalColumns: [],
     externalRowsByTargetId: {},
     lastMergeSummary: null,
+    setup,
+    workspace: createEmptyCalibrationWorkspace(setup.timeboxMinutes),
+    followUp: createEmptyCalibrationFollowUp(),
   }
 }
 
@@ -95,6 +119,20 @@ export function parseCalibrationSessionConfig(
         }
       : null
 
+  const rawSetup =
+    record.setup && typeof record.setup === 'object' && !Array.isArray(record.setup)
+      ? (record.setup as Partial<CalibrationSessionSetupValue>)
+      : null
+  const setup = normalizeCalibrationSessionSetup(rawSetup)
+  const rawWorkspace =
+    record.workspace && typeof record.workspace === 'object' && !Array.isArray(record.workspace)
+      ? (record.workspace as Partial<CalibrationWorkspaceValue>)
+      : null
+  const rawFollowUp =
+    record.followUp && typeof record.followUp === 'object' && !Array.isArray(record.followUp)
+      ? (record.followUp as Partial<CalibrationFollowUpValue>)
+      : null
+
   return {
     excludedTargetIds: Array.isArray(record.excludedTargetIds)
       ? record.excludedTargetIds.filter((item): item is string => typeof item === 'string')
@@ -105,9 +143,15 @@ export function parseCalibrationSessionConfig(
     evaluatorIds: Array.isArray(record.evaluatorIds)
       ? record.evaluatorIds.filter((item): item is string => typeof item === 'string')
       : [],
+    observerIds: Array.isArray(record.observerIds)
+      ? record.observerIds.filter((item): item is string => typeof item === 'string')
+      : [],
     externalColumns,
     externalRowsByTargetId,
     lastMergeSummary,
+    setup,
+    workspace: normalizeCalibrationWorkspace(rawWorkspace, setup.timeboxMinutes),
+    followUp: normalizeCalibrationFollowUp(rawFollowUp),
   }
 }
 
@@ -118,8 +162,12 @@ export function toCalibrationSessionConfigJson(
     excludedTargetIds: value.excludedTargetIds,
     participantIds: value.participantIds,
     evaluatorIds: value.evaluatorIds,
+    observerIds: value.observerIds,
     externalColumns: value.externalColumns,
     externalRowsByTargetId: value.externalRowsByTargetId,
     lastMergeSummary: value.lastMergeSummary,
+    setup: value.setup,
+    workspace: value.workspace,
+    followUp: value.followUp,
   }
 }

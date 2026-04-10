@@ -1,5 +1,15 @@
 import { z } from 'zod'
 import { reviewEmailHtmlToText } from './review-email-editor'
+import { CALIBRATION_DISCUSSION_STATUS_OPTIONS } from './calibration-workspace'
+import {
+  CALIBRATION_DECISION_POLICY_OPTIONS,
+  CALIBRATION_MEMO_COMMENT_POLICY_OPTIONS,
+  CALIBRATION_REFERENCE_DISTRIBUTION_USE_OPTIONS,
+  CALIBRATION_REFERENCE_DISTRIBUTION_VISIBILITY_OPTIONS,
+  CALIBRATION_SCOPE_MODE_OPTIONS,
+  CALIBRATION_SESSION_TYPE_OPTIONS,
+  CALIBRATION_VISIBLE_COLUMN_OPTIONS,
+} from './calibration-session-setup'
 
 // ============================================
 // 조직도 관련
@@ -1573,9 +1583,98 @@ export const BulkAdminEmployeeUploadSchema = z.object({
   rows: z.array(AdminEmployeeUploadRowSchema).min(1).max(500),
 })
 
+const CalibrationWorkspaceStatusSchema = z.enum(
+  CALIBRATION_DISCUSSION_STATUS_OPTIONS.map((option) => option.value) as [string, ...string[]]
+)
+
+const CalibrationWorkspaceCommandSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('set-current-candidate'),
+    targetId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('save-candidate-workspace'),
+    targetId: z.string().min(1),
+    status: CalibrationWorkspaceStatusSchema,
+    shortReason: z.string().trim().max(300).default(''),
+    discussionMemo: z.string().trim().max(2000).default(''),
+    privateNote: z.string().trim().max(2000).default(''),
+    publicComment: z.string().trim().max(1000).default(''),
+  }),
+  z.object({
+    type: z.literal('start-timer'),
+    targetId: z.string().min(1),
+    durationMinutes: z.number().int().min(5).max(10).optional(),
+  }),
+  z.object({
+    type: z.literal('reset-timer'),
+    targetId: z.string().min(1).optional(),
+  }),
+  z.object({
+    type: z.literal('extend-timer'),
+    minutes: z.number().int().min(1).max(5),
+  }),
+  z.object({
+    type: z.literal('add-custom-prompt'),
+    prompt: z.string().trim().min(1).max(200),
+  }),
+  z.object({
+    type: z.literal('remove-custom-prompt'),
+    prompt: z.string().trim().min(1).max(200),
+  }),
+])
+
+const CalibrationFollowUpCommandSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('save-comment-draft'),
+    targetId: z.string().min(1),
+    comment: z.string().trim().min(1).max(1000),
+  }),
+  z.object({
+    type: z.literal('finalize-comment'),
+    targetId: z.string().min(1),
+    comment: z.string().trim().min(10).max(1000),
+  }),
+  z.object({
+    type: z.literal('generate-communication-packet'),
+    targetId: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal('set-review-flag'),
+    targetId: z.string().min(1),
+    compensationSensitive: z.boolean().default(false),
+    note: z.string().trim().max(500).default(''),
+  }),
+  z.object({
+    type: z.literal('submit-survey'),
+    hardestPart: z.string().trim().min(10).max(500),
+    missingData: z.string().trim().min(10).max(500),
+    rulesAndTimebox: z.string().trim().min(5).max(500),
+    positives: z.string().trim().min(10).max(500),
+    improvements: z.string().trim().min(10).max(500),
+    nextCycleNeeds: z.string().trim().min(10).max(500),
+    leniencyFeedback: z.string().trim().max(500).default(''),
+  }),
+  z.object({
+    type: z.literal('save-leader-feedback'),
+    leaderId: z.string().min(1),
+    leaderName: z.string().trim().min(1).max(100),
+    summary: z.string().trim().min(10).max(1000),
+    suggestions: z.string().trim().max(1000).default(''),
+  }),
+])
+
 export const CalibrationCandidateUpdateSchema = z
   .object({
-    action: z.enum(['save', 'clear', 'bulk-import', 'update-session-config', 'upload-external-data']),
+    action: z.enum([
+      'save',
+      'clear',
+      'bulk-import',
+      'update-session-config',
+      'upload-external-data',
+      'update-workspace',
+      'update-follow-up',
+    ]),
     cycleId: z.string().min(1),
     targetId: z.string().min(1).optional(),
     gradeId: z.string().optional(),
@@ -1597,6 +1696,7 @@ export const CalibrationCandidateUpdateSchema = z
         excludedTargetIds: z.array(z.string().min(1)).max(500).default([]),
         participantIds: z.array(z.string().min(1)).max(100).default([]),
         evaluatorIds: z.array(z.string().min(1)).max(100).default([]),
+        observerIds: z.array(z.string().min(1)).max(100).default([]),
         externalColumns: z
           .array(
             z.object({
@@ -1606,6 +1706,76 @@ export const CalibrationCandidateUpdateSchema = z
           )
           .max(20)
           .default([]),
+        setup: z
+          .object({
+            sessionName: z.string().trim().max(100).default(''),
+            sessionType: z.enum(CALIBRATION_SESSION_TYPE_OPTIONS.map((option) => option.value) as [string, ...string[]]).default('SINGLE_TEAM'),
+            scopeMode: z.enum(CALIBRATION_SCOPE_MODE_OPTIONS.map((option) => option.value) as [string, ...string[]]).default('ORGANIZATION'),
+            scopeDepartmentIds: z.array(z.string().min(1)).max(100).default([]),
+            scopeLeaderIds: z.array(z.string().min(1)).max(100).default([]),
+            ownerId: z.string().min(1).nullable().optional(),
+            facilitatorId: z.string().min(1).nullable().optional(),
+            recorderId: z.string().min(1).nullable().optional(),
+            observerIds: z.array(z.string().min(1)).max(100).default([]),
+            preReadDeadline: z.string().datetime().nullable().optional(),
+            scheduledStart: z.string().datetime().nullable().optional(),
+            scheduledEnd: z.string().datetime().nullable().optional(),
+            timeboxMinutes: z.number().int().min(5).max(10).default(5),
+            decisionPolicy: z.enum(CALIBRATION_DECISION_POLICY_OPTIONS.map((option) => option.value) as [string, ...string[]]).default('OWNER_DECIDES'),
+            referenceDistributionUse: z.enum(CALIBRATION_REFERENCE_DISTRIBUTION_USE_OPTIONS.map((option) => option.value) as [string, ...string[]]).default('OFF'),
+            referenceDistributionVisibility: z.enum(CALIBRATION_REFERENCE_DISTRIBUTION_VISIBILITY_OPTIONS.map((option) => option.value) as [string, ...string[]]).default('VISIBLE_ONLY'),
+            referenceDistributionRatios: z.array(
+              z.object({
+                gradeId: z.string().min(1),
+                gradeLabel: z.string().trim().min(1).max(20),
+                ratio: z.number().min(0).max(100),
+              })
+            ).max(20).default([]),
+            ratingGuideUse: z.boolean().default(true),
+            ratingGuideLinks: z.array(
+              z.object({
+                id: z.string().trim().min(1).max(50),
+                scopeType: z.enum(['POSITION', 'JOB_GROUP', 'LEVEL']),
+                scopeValue: z.string().trim().min(1).max(100),
+                memo: z.string().trim().max(300).optional(),
+              })
+            ).max(50).default([]),
+            expectationAlignmentMemo: z.string().trim().max(2000).default(''),
+            visibleDataColumns: z.array(
+              z.enum(CALIBRATION_VISIBLE_COLUMN_OPTIONS.map((option) => option.key) as [string, ...string[]])
+            ).max(20).default([]),
+            memoCommentPolicyPreset: z.enum(CALIBRATION_MEMO_COMMENT_POLICY_OPTIONS.map((option) => option.value) as [string, ...string[]]).default('OWNER_REVIEW_REQUIRED'),
+            objectionWindowOpenAt: z.string().datetime().nullable().optional(),
+            objectionWindowCloseAt: z.string().datetime().nullable().optional(),
+            followUpOwnerId: z.string().min(1).nullable().optional(),
+            groundRules: z.array(
+              z.object({
+                key: z.enum(['LAS_VEGAS_RULE', 'WORKING_AS_A_TEAM', 'INTELLECTUAL_HONESTY', 'PSYCHOLOGICAL_SAFETY']),
+                label: z.string().trim().min(1).max(100),
+                description: z.string().trim().min(1).max(500),
+                enabled: z.boolean().default(true),
+              })
+            ).min(1).max(20).default([]),
+            groundRuleAcknowledgementPolicy: z.enum(['NOT_SET', 'REQUIRED', 'OPTIONAL']).default('NOT_SET'),
+            facilitatorCanFinalize: z.boolean().default(false),
+          })
+          .superRefine((setup, ctx) => {
+            if (setup.scheduledStart && setup.scheduledEnd && setup.scheduledStart >= setup.scheduledEnd) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['scheduledEnd'],
+                message: '세션 종료 시각은 시작 시각보다 뒤여야 합니다.',
+              })
+            }
+            if (setup.objectionWindowOpenAt && setup.objectionWindowCloseAt && setup.objectionWindowOpenAt >= setup.objectionWindowCloseAt) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['objectionWindowCloseAt'],
+                message: '이의제기 종료 시각은 시작 시각보다 뒤여야 합니다.',
+              })
+            }
+          })
+          .optional(),
       })
       .optional(),
     externalData: z
@@ -1629,8 +1799,10 @@ export const CalibrationCandidateUpdateSchema = z
             })
           )
           .max(500),
-      })
+        })
       .optional(),
+    workspaceCommand: CalibrationWorkspaceCommandSchema.optional(),
+    followUpCommand: CalibrationFollowUpCommandSchema.optional(),
   })
   .superRefine((data, ctx) => {
     if (data.action === 'clear' && !data.targetId) {
@@ -1675,6 +1847,45 @@ export const CalibrationCandidateUpdateSchema = z
       return
     }
 
+    if (data.action === 'update-workspace') {
+      if (!data.workspaceCommand) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['workspaceCommand'],
+          message: '워크스페이스 변경 내용을 확인해 주세요.',
+        })
+        return
+      }
+
+      if (
+        ['NO', 'ESCALATED'].includes(data.workspaceCommand.type === 'save-candidate-workspace' ? data.workspaceCommand.status : '')
+      ) {
+        const reason =
+          data.workspaceCommand.type === 'save-candidate-workspace'
+            ? data.workspaceCommand.shortReason.trim()
+            : ''
+        if (reason.length < 5) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['workspaceCommand', 'shortReason'],
+            message: 'No 또는 상위 검토는 짧은 사유를 함께 남겨 주세요.',
+          })
+        }
+      }
+      return
+    }
+
+    if (data.action === 'update-follow-up') {
+      if (!data.followUpCommand) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['followUpCommand'],
+          message: '?뚰괎濡쒖뾽 蹂寃??댁슜???뺤씤??二쇱꽭??',
+        })
+      }
+      return
+    }
+
     if (data.action !== 'save') return
 
     if (!data.targetId) {
@@ -1704,7 +1915,7 @@ export const CalibrationCandidateUpdateSchema = z
 
 export const CalibrationWorkflowSchema = z.object({
   cycleId: z.string().min(1),
-  action: z.enum(['CONFIRM_REVIEW', 'LOCK', 'REOPEN_REQUEST', 'MERGE', 'DELETE_SESSION']),
+  action: z.enum(['START_SESSION', 'CONFIRM_REVIEW', 'LOCK', 'REOPEN_REQUEST', 'MERGE', 'DELETE_SESSION']),
   scopeId: z.string().min(1).optional(),
 })
 
@@ -2119,6 +2330,17 @@ export const WordCloud360ResponseSchema = z
       })
     }
   })
+
+export const WordCloud360RevertResponseSchema = z.object({
+  assignmentId: z.string().min(1, '최종 제출을 취소할 응답을 선택해 주세요.'),
+  reason: z.string().trim().min(5, '취소 사유를 5자 이상 입력해 주세요.').max(500, '취소 사유는 500자 이하로 입력해 주세요.'),
+})
+
+export const WordCloud360RestoreResponseSchema = z.object({
+  assignmentId: z.string().min(1, '복원할 응답을 선택해 주세요.'),
+  revisionId: z.string().min(1, '복원할 이력 시점을 선택해 주세요.'),
+  reason: z.string().trim().min(5, '복원 사유를 5자 이상 입력해 주세요.').max(500, '복원 사유는 500자 이하로 입력해 주세요.'),
+})
 
 export const WordCloud360PublishSchema = z.object({
   cycleId: z.string().min(1),

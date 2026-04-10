@@ -11,6 +11,8 @@ import { buildWordCloudCycleFormState, toWordCloudCyclePayload } from '@/lib/wor
 import { WordCloudCloud } from './WordCloudCloud'
 
 type TabKey = 'overview' | 'evaluator' | 'results' | 'admin'
+type AdminAssignment = NonNullable<NonNullable<WordCloud360PageData['adminView']>['assignments']>[number]
+type AdminHistoryEntry = AdminAssignment['history'][number]
 
 type Notice = {
   tone: 'success' | 'error'
@@ -156,6 +158,20 @@ const sourceTypeLabels: Record<string, string> = {
   ADMIN_ADDED: '관리자 추가',
   IMPORTED: 'CSV 업로드',
 }
+const assignmentStatusLabels: Record<string, string> = {
+  PENDING: '미응답',
+  IN_PROGRESS: '수정 가능',
+  SUBMITTED: '최종 제출',
+}
+
+assignmentStatusLabels.DRAFT = '임시 저장'
+
+const historyEventLabels: Record<AdminHistoryEntry['eventType'], string> = {
+  draft_saved: '임시 저장',
+  final_submitted: '최종 제출',
+  final_submission_reverted: '최종 제출 취소',
+  restored: '이력 복원',
+}
 
 function readApiBody(body: unknown) {
   if (!body || typeof body !== 'object') return { success: false, error: { message: '응답 형식이 올바르지 않습니다.' } }
@@ -178,6 +194,26 @@ function toFriendlyErrorMessage(message: string | undefined, fallback: string) {
     return fallback
   }
   return trimmed
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return '-'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  return parsed.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function selectionPreview(selections: Array<{ keyword: string }>) {
+  if (!selections.length) return '-'
+  const keywords = selections.map((selection) => selection.keyword)
+  const preview = keywords.slice(0, 4).join(', ')
+  return keywords.length > 4 ? `${preview} 외 ${keywords.length - 4}개` : preview
 }
 
 async function callAction(action: string, payload: unknown, headers?: HeadersInit) {
@@ -369,6 +405,12 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
   const [exportModalOpen, setExportModalOpen] = useState(false)
   const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('xlsx')
   const [exportReason, setExportReason] = useState('')
+  const [revertModalAssignmentId, setRevertModalAssignmentId] = useState('')
+  const [revertReason, setRevertReason] = useState('')
+  const [historyModalAssignmentId, setHistoryModalAssignmentId] = useState('')
+  const [restoreModalAssignmentId, setRestoreModalAssignmentId] = useState('')
+  const [restoreModalRevisionId, setRestoreModalRevisionId] = useState('')
+  const [restoreReason, setRestoreReason] = useState('')
   const [assignmentForm, setAssignmentForm] = useState({
     evaluatorId: '',
     evaluateeId: '',
@@ -410,6 +452,14 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
     data.adminView?.cycle?.cycleName ??
     data.selectedCycleId ??
     ''
+  const revertTargetAssignment =
+    data.adminView?.assignments.find((assignment) => assignment.assignmentId === revertModalAssignmentId) ?? null
+  const historyTargetAssignment =
+    data.adminView?.assignments.find((assignment) => assignment.assignmentId === historyModalAssignmentId) ?? null
+  const restoreTargetAssignment =
+    data.adminView?.assignments.find((assignment) => assignment.assignmentId === restoreModalAssignmentId) ?? null
+  const restoreTargetRevision =
+    restoreTargetAssignment?.history.find((revision) => revision.revisionId === restoreModalRevisionId) ?? null
 
   function updateCycle(nextCycleId: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -627,6 +677,37 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
     setExportModalOpen(true)
   }
 
+  function openRevertModal(assignment: AdminAssignment) {
+    setRevertModalAssignmentId(assignment.assignmentId)
+    setRevertReason('')
+  }
+
+  function closeRevertModal() {
+    setRevertModalAssignmentId('')
+    setRevertReason('')
+  }
+
+  function openHistoryModal(assignment: AdminAssignment) {
+    setHistoryModalAssignmentId(assignment.assignmentId)
+  }
+
+  function closeHistoryModal() {
+    setHistoryModalAssignmentId('')
+  }
+
+  function openRestoreModal(assignment: AdminAssignment, revision: AdminHistoryEntry) {
+    setHistoryModalAssignmentId('')
+    setRestoreModalAssignmentId(assignment.assignmentId)
+    setRestoreModalRevisionId(revision.revisionId)
+    setRestoreReason('')
+  }
+
+  function closeRestoreModal() {
+    setRestoreModalAssignmentId('')
+    setRestoreModalRevisionId('')
+    setRestoreReason('')
+  }
+
   function handleExportDownload() {
     const cycleId = data.selectedCycleId
     if (!cycleId) {
@@ -664,6 +745,121 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
           setNotice({
             tone: 'error',
             message: error instanceof Error ? error.message : '서베이 결과 다운로드를 처리하지 못했습니다.',
+          })
+        }
+      })()
+    })
+  }
+
+  function handleRevertFinalSubmit() {
+    if (!revertTargetAssignment) {
+      setNotice({ tone: 'error', message: '최종 제출을 취소할 응답을 찾을 수 없습니다.' })
+      return
+    }
+
+    const trimmedReason = revertReason.trim()
+    if (trimmedReason.length < 5) {
+      setNotice({ tone: 'error', message: '취소 사유를 5자 이상 입력해 주세요.' })
+      return
+    }
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          setNotice(null)
+          const riskHeaders = await requestRiskConfirmation({
+            actionName: 'REOPEN_RECORD',
+            actionLabel: '워드클라우드 최종 제출 취소',
+            targetLabel: `${revertTargetAssignment.evaluateeName} / ${revertTargetAssignment.evaluatorName}`,
+            detail: '현재 마스터 로그인 상태에서 최종 제출된 응답을 다시 수정 가능 상태로 되돌립니다.',
+            confirmationText: '재개',
+          })
+          if (riskHeaders === null) {
+            throw createCancelledError()
+          }
+
+          await callAction(
+            'revertFinalSubmit',
+            {
+              assignmentId: revertTargetAssignment.assignmentId,
+              reason: trimmedReason,
+            },
+            riskHeaders
+          )
+
+          closeRevertModal()
+          setNotice({
+            tone: 'success',
+            message: '최종 제출이 취소되었습니다. 평가자가 다시 수정할 수 있습니다.',
+          })
+          router.refresh()
+        } catch (error) {
+          if (isImpersonationRiskCancelledError(error)) {
+            return
+          }
+          setNotice({
+            tone: 'error',
+            message:
+              error instanceof Error
+                ? error.message
+                : '최종 제출 취소에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+          })
+        }
+      })()
+    })
+  }
+
+  function handleRestoreResponseRevision() {
+    if (!restoreTargetAssignment || !restoreTargetRevision) {
+      setNotice({ tone: 'error', message: '복원할 이력 시점을 찾을 수 없습니다.' })
+      return
+    }
+
+    const trimmedReason = restoreReason.trim()
+    if (trimmedReason.length < 5) {
+      setNotice({ tone: 'error', message: '복원 사유를 5자 이상 입력해 주세요.' })
+      return
+    }
+
+    startTransition(() => {
+      void (async () => {
+        try {
+          setNotice(null)
+          const riskHeaders = await requestRiskConfirmation({
+            actionName: 'REOPEN_RECORD',
+            actionLabel: '워드클라우드 응답 이력 복원',
+            targetLabel: `${restoreTargetAssignment.evaluateeName} / ${restoreTargetAssignment.evaluatorName}`,
+            detail: '선택한 제출 이력 시점의 키워드 선택값으로 응답을 복원하고, 평가자가 다시 수정할 수 있게 엽니다.',
+            confirmationText: '재개',
+          })
+          if (riskHeaders === null) {
+            throw createCancelledError()
+          }
+
+          await callAction(
+            'restoreResponseRevision',
+            {
+              assignmentId: restoreTargetAssignment.assignmentId,
+              revisionId: restoreTargetRevision.revisionId,
+              reason: trimmedReason,
+            },
+            riskHeaders
+          )
+
+          closeRestoreModal()
+          setNotice({
+            tone: 'success',
+            message: '선택한 이력 시점으로 응답이 복원되었습니다.',
+          })
+          router.refresh()
+        } catch (error) {
+          if (isImpersonationRiskCancelledError(error)) {
+            return
+          }
+          setNotice({
+            tone: 'error',
+            message:
+              error instanceof Error ? error.message : '응답 되돌리기에 실패했습니다. 잠시 후 다시 시도해 주세요.',
           })
         }
       })()
@@ -767,7 +963,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
         <MetricCard
           label="공개 상태"
           value={data.summary?.published ? '공개됨' : '비공개'}
-          description={`공개 기준 ${data.summary?.privacyThreshold ?? 0}명 / 선택 규칙 ${data.summary?.positiveSelectionLimit ?? 10}+${data.summary?.negativeSelectionLimit ?? 10}`}
+          description={`공개 기준 ${data.summary?.privacyThreshold ?? 0}명 / 기준 충족 대상 ${data.summary?.thresholdMetTargetCount ?? 0}명 / 선택 규칙 ${data.summary?.positiveSelectionLimit ?? 10}+${data.summary?.negativeSelectionLimit ?? 10}`}
         />
       </section> : (
         <section className={cardClassName}>
@@ -1530,38 +1726,60 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                       <td className="py-2 pr-4 text-slate-900">{assignment.evaluateeName}</td>
                       <td className="py-2 pr-4 text-slate-700">{assignment.evaluatorName}</td>
                       <td className="py-2 pr-4 text-slate-700">{groupLabels[assignment.evaluatorGroup] ?? assignment.evaluatorGroup}</td>
-                      <td className="py-2 pr-4 text-slate-500">{assignment.status}</td>
+                      <td className="py-2 pr-4 text-slate-500">{assignmentStatusLabels[assignment.status] ?? assignment.status}</td>
                       <td className="py-2 text-right">
-                        <button
-                          type="button"
-                          className={secondaryButtonClassName}
-                          disabled={isPending}
-                          onClick={() =>
-                            mutate(
-                              async () => {
-                                const riskHeaders = await requestRiskConfirmation({
-                                  actionName: 'DELETE_RECORD',
-                                  actionLabel: '워드클라우드 평가자 편성 삭제',
-                                  targetLabel: `${assignment.evaluateeName} / ${assignment.evaluatorName}`,
-                                  detail:
-                                    '현재 마스터 로그인 상태에서 평가자 편성을 삭제합니다. 이 작업은 실제 데이터에 반영됩니다.',
-                                  confirmationText: '삭제',
-                                })
-                                if (riskHeaders === null) {
-                                  throw createCancelledError()
-                                }
-                                return callAction(
-                                  'deleteAssignment',
-                                  { assignmentId: assignment.assignmentId },
-                                  riskHeaders
-                                )
-                              },
-                              '편성을 삭제했습니다.'
-                            )
-                          }
-                        >
-                          삭제
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          {assignment.responseId ? (
+                            <button
+                              type="button"
+                              className={secondaryButtonClassName}
+                              disabled={isPending}
+                              onClick={() => openHistoryModal(assignment)}
+                            >
+                              제출 이력
+                            </button>
+                          ) : null}
+                          {assignment.status === 'SUBMITTED' ? (
+                            <button
+                              type="button"
+                              className={secondaryButtonClassName}
+                              disabled={isPending}
+                              onClick={() => openRevertModal(assignment)}
+                            >
+                              최종 제출 취소
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className={secondaryButtonClassName}
+                            disabled={isPending}
+                            onClick={() =>
+                              mutate(
+                                async () => {
+                                  const riskHeaders = await requestRiskConfirmation({
+                                    actionName: 'DELETE_RECORD',
+                                    actionLabel: '워드클라우드 평가자 편성 삭제',
+                                    targetLabel: `${assignment.evaluateeName} / ${assignment.evaluatorName}`,
+                                    detail:
+                                      '현재 마스터 로그인 상태에서 평가자 편성을 삭제합니다. 이 작업은 실제 데이터에 반영됩니다.',
+                                    confirmationText: '삭제',
+                                  })
+                                  if (riskHeaders === null) {
+                                    throw createCancelledError()
+                                  }
+                                  return callAction(
+                                    'deleteAssignment',
+                                    { assignmentId: assignment.assignmentId },
+                                    riskHeaders
+                                  )
+                                },
+                                '편성을 삭제했습니다.'
+                              )
+                            }
+                          >
+                            삭제
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1949,6 +2167,276 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
               </table>
             </div>
           </section>
+        </div>
+      ) : null}
+
+      {historyTargetAssignment ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+          <div className="w-full max-w-5xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-950">제출 이력</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  응답 내용은 유지한 채 변경 이력을 확인하고, 필요한 시점으로 다시 열 수 있습니다.
+                </p>
+              </div>
+              <button type="button" className={secondaryButtonClassName} onClick={closeHistoryModal}>
+                닫기
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">평가 응답</div>
+                <div className="mt-2 text-slate-900">{historyTargetAssignment.evaluateeName}</div>
+                <div className="mt-1 text-xs text-slate-500">평가자 {historyTargetAssignment.evaluatorName}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">현재 주기</div>
+                <div className="mt-2 text-slate-900">{data.adminView?.cycle?.cycleName ?? selectedCycleName}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">현재 상태</div>
+                <div className="mt-2 text-slate-900">
+                  {assignmentStatusLabels[historyTargetAssignment.status] ?? historyTargetAssignment.status}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">현재 선택</div>
+                <div className="mt-2 text-slate-900">
+                  긍정 {historyTargetAssignment.positiveSelectionCount}개 / 부정 {historyTargetAssignment.negativeSelectionCount}개
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+              {historyTargetAssignment.history.map((revision) => (
+                <article key={revision.revisionId} className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        v{revision.revisionNumber}
+                      </div>
+                      <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                        {historyEventLabels[revision.eventType] ?? revision.eventType}
+                      </h3>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {formatDateTime(revision.createdAt)} · {revision.actorName ?? revision.actorUserId ?? '-'}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {revision.canRestore ? (
+                        <button
+                          type="button"
+                          className={secondaryButtonClassName}
+                          disabled={isPending}
+                          onClick={() => openRestoreModal(historyTargetAssignment, revision)}
+                        >
+                          이 시점으로 되돌리기
+                        </button>
+                      ) : (
+                        <span className="inline-flex min-h-11 items-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-400">
+                          복원 정보 없음
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-4">
+                    <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-slate-600">
+                      <div className="font-medium text-slate-700">당시 상태</div>
+                      <div className="mt-2 text-slate-900">{assignmentStatusLabels[revision.nextStatus ?? ''] ?? revision.nextStatus ?? '-'}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-slate-600">
+                      <div className="font-medium text-slate-700">이전 상태</div>
+                      <div className="mt-2 text-slate-900">
+                        {assignmentStatusLabels[revision.previousStatus ?? ''] ?? revision.previousStatus ?? '-'}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-slate-600">
+                      <div className="font-medium text-slate-700">긍정 선택</div>
+                      <div className="mt-2 text-slate-900">{revision.positiveCount}개</div>
+                    </div>
+                    <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-slate-600">
+                      <div className="font-medium text-slate-700">부정 선택</div>
+                      <div className="mt-2 text-slate-900">{revision.negativeCount}개</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-slate-600">
+                      <div className="font-medium text-slate-700">긍정 키워드 미리보기</div>
+                      <div className="mt-2 text-slate-900">{selectionPreview(revision.positiveSelections)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white bg-white px-4 py-3 text-sm text-slate-600">
+                      <div className="font-medium text-slate-700">부정 키워드 미리보기</div>
+                      <div className="mt-2 text-slate-900">{selectionPreview(revision.negativeSelections)}</div>
+                    </div>
+                  </div>
+
+                  {revision.reason ? (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                      사유: {revision.reason}
+                    </div>
+                  ) : null}
+
+                  {revision.restoredFromRevisionId ? (
+                    <div className="mt-3 text-xs text-slate-500">복원 기준 이력 ID: {revision.restoredFromRevisionId}</div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {restoreTargetAssignment && restoreTargetRevision ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+          <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-950">이 시점으로 되돌리기</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  선택한 이력의 키워드 선택값으로 복원하고, 평가자가 다시 수정할 수 있게 상태를 엽니다.
+                </p>
+              </div>
+              <button type="button" className={secondaryButtonClassName} onClick={closeRestoreModal}>
+                닫기
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">평가 응답</div>
+                <div className="mt-2 text-slate-900">{restoreTargetAssignment.evaluateeName}</div>
+                <div className="mt-1 text-xs text-slate-500">평가자 {restoreTargetAssignment.evaluatorName}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">현재 주기</div>
+                <div className="mt-2 text-slate-900">{data.adminView?.cycle?.cycleName ?? selectedCycleName}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">현재 상태</div>
+                <div className="mt-2 text-slate-900">
+                  {assignmentStatusLabels[restoreTargetAssignment.status] ?? restoreTargetAssignment.status}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">복원 기준</div>
+                <div className="mt-2 text-slate-900">
+                  v{restoreTargetRevision.revisionNumber} ·{' '}
+                  {historyEventLabels[restoreTargetRevision.eventType] ?? restoreTargetRevision.eventType}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+              <p>이 작업을 수행하면 평가자가 다시 응답을 수정하고 제출할 수 있습니다.</p>
+              <p className="mt-1">기존 응답 내용은 삭제되지 않으며, 변경 이력이 기록됩니다.</p>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">긍정 키워드</div>
+                <div className="mt-2 text-slate-900">{selectionPreview(restoreTargetRevision.positiveSelections)}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">부정 키워드</div>
+                <div className="mt-2 text-slate-900">{selectionPreview(restoreTargetRevision.negativeSelections)}</div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-sm font-medium text-slate-700">복원 사유</label>
+              <textarea
+                className={`${inputClassName} min-h-28`}
+                value={restoreReason}
+                onChange={(event) => setRestoreReason(event.target.value)}
+                placeholder="예: 평가자가 이전 선택값 기준으로 다시 검토할 수 있게 복원합니다."
+              />
+              <p className="mt-2 text-xs text-slate-500">5자 이상 500자 이하로 입력하면 감사 로그에 함께 남습니다.</p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button type="button" className={secondaryButtonClassName} onClick={closeRestoreModal}>
+                취소
+              </button>
+              <button
+                type="button"
+                className={primaryButtonClassName}
+                disabled={isPending || restoreReason.trim().length < 5}
+                onClick={handleRestoreResponseRevision}
+              >
+                이 시점으로 되돌리기
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {revertTargetAssignment ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+          <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-950">최종 제출 취소</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  제출을 되돌리기 전에 대상 응답과 사유를 확인해 주세요.
+                </p>
+              </div>
+              <button type="button" className={secondaryButtonClassName} onClick={closeRevertModal}>
+                닫기
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">평가 응답</div>
+                <div className="mt-2 text-slate-900">{revertTargetAssignment.evaluateeName}</div>
+                <div className="mt-1 text-xs text-slate-500">평가자: {revertTargetAssignment.evaluatorName}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">현재 주기</div>
+                <div className="mt-2 text-slate-900">{data.adminView?.cycle?.cycleName ?? selectedCycleName}</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <div className="font-medium text-slate-700">현재 상태</div>
+                <div className="mt-2 text-slate-900">
+                  {assignmentStatusLabels[revertTargetAssignment.status] ?? revertTargetAssignment.status}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+              <p>최종 제출을 취소하면 평가자가 다시 응답을 수정하고 제출할 수 있습니다.</p>
+              <p className="mt-1">기존에 선택한 키워드는 유지되며, 최종 제출 상태만 해제됩니다.</p>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-sm font-medium text-slate-700">취소 사유</label>
+              <textarea
+                className={`${inputClassName} min-h-28`}
+                value={revertReason}
+                onChange={(event) => setRevertReason(event.target.value)}
+                placeholder="예: 평가자 요청으로 응답을 다시 열어 수정할 수 있게 합니다."
+              />
+              <p className="mt-2 text-xs text-slate-500">5자 이상 500자 이하로 입력하면 감사 로그에 함께 남습니다.</p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button type="button" className={secondaryButtonClassName} onClick={closeRevertModal}>
+                취소
+              </button>
+              <button
+                type="button"
+                className={primaryButtonClassName}
+                disabled={isPending || revertReason.trim().length < 5}
+                onClick={handleRevertFinalSubmit}
+              >
+                최종 제출 취소 실행
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

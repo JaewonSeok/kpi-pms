@@ -4,6 +4,8 @@ import {
   WordCloud360CycleSchema,
   WordCloud360KeywordSchema,
   WordCloud360PublishSchema,
+  WordCloud360RevertResponseSchema,
+  WordCloud360RestoreResponseSchema,
   WordCloud360ResponseSchema,
 } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -17,6 +19,8 @@ import {
   autoAssignWordCloud360Participants,
   deleteWordCloud360Assignment,
   publishWordCloud360Results,
+  revertWordCloud360FinalSubmit,
+  restoreWordCloud360ResponseFromHistory,
   saveWordCloud360Assignments,
   saveWordCloud360Response,
   seedDefaultWordCloudKeywords,
@@ -248,6 +252,85 @@ export async function POST(request: Request) {
         })
 
         return successResponse(response)
+      }
+
+      case 'revertFinalSubmit': {
+        if (session.user.role !== 'ROLE_ADMIN') {
+          throw new AppError(403, 'FORBIDDEN', '최종 제출 취소 권한이 없습니다.')
+        }
+        const validated = WordCloud360RevertResponseSchema.safeParse(body.payload)
+        if (!validated.success) {
+          throw new AppError(
+            400,
+            'VALIDATION_ERROR',
+            validated.error.issues[0]?.message ?? '최종 제출 취소 정보가 올바르지 않습니다.'
+          )
+        }
+
+        riskContext = await validateImpersonationRiskRequest({
+          session,
+          request,
+          actionName: 'REOPEN_RECORD',
+          targetResourceType: 'WordCloud360Response',
+          targetResourceId: validated.data.assignmentId,
+          confirmationText: '재개',
+        })
+
+        const result = await revertWordCloud360FinalSubmit({
+          actorId: session.user.id,
+          input: validated.data,
+        })
+
+        await logImpersonationRiskExecution({
+          session,
+          request,
+          riskContext,
+          success: true,
+          metadata: {
+            assignmentId: validated.data.assignmentId,
+            reason: validated.data.reason,
+          },
+        })
+
+        return successResponse(result)
+      }
+
+      case 'restoreResponseRevision': {
+        if (session.user.role !== 'ROLE_ADMIN') {
+          throw new AppError(403, 'FORBIDDEN', '이 기능을 사용할 권한이 없습니다.')
+        }
+        const validated = WordCloud360RestoreResponseSchema.safeParse(body.payload)
+        if (!validated.success) {
+          throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '복원 정보가 올바르지 않습니다.')
+        }
+
+        riskContext = await validateImpersonationRiskRequest({
+          session,
+          request,
+          actionName: 'REOPEN_RECORD',
+          targetResourceType: 'WordCloud360Response',
+          targetResourceId: validated.data.assignmentId,
+          confirmationText: '재개',
+        })
+
+        const result = await restoreWordCloud360ResponseFromHistory({
+          actorId: session.user.id,
+          input: validated.data,
+        })
+
+        await logImpersonationRiskExecution({
+          session,
+          request,
+          riskContext,
+          success: true,
+          metadata: {
+            assignmentId: validated.data.assignmentId,
+            revisionId: validated.data.revisionId,
+            reason: validated.data.reason,
+          },
+        })
+
+        return successResponse(result)
       }
 
       case 'publishResults': {

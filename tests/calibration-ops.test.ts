@@ -3,6 +3,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import './register-path-aliases'
 import {
+  createEmptyCalibrationWorkspace,
+  normalizeCalibrationWorkspace,
+} from '../src/lib/calibration-workspace'
+import {
+  buildCalibrationSetupReadiness,
+  createDefaultCalibrationSessionSetup,
+} from '../src/lib/calibration-session-setup'
+import {
   CalibrationCandidateUpdateSchema,
   CalibrationExportSchema,
   CalibrationWorkflowSchema,
@@ -23,7 +31,7 @@ async function run(name: string, fn: () => void | Promise<void>) {
 }
 
 async function main() {
-  await run('calibration update schema accepts bulk import, external upload, export, and merge/delete workflow payloads', () => {
+  await run('calibration update schema accepts bulk import, external upload, workspace update, follow-up update, export, and merge/delete workflow payloads', () => {
     const bulkImport = CalibrationCandidateUpdateSchema.safeParse({
       action: 'bulk-import',
       cycleId: 'cycle-1',
@@ -54,10 +62,32 @@ async function main() {
         ],
       },
     })
+    const workspaceUpdate = CalibrationCandidateUpdateSchema.safeParse({
+      action: 'update-workspace',
+      cycleId: 'cycle-1',
+      workspaceCommand: {
+        type: 'save-candidate-workspace',
+        targetId: 'target-1',
+        status: 'ESCALATED',
+        shortReason: '추가 논의가 필요합니다.',
+        discussionMemo: 'owner 재확인이 필요합니다.',
+        privateNote: '비공개 note',
+        publicComment: '공유 후보 comment',
+      },
+    })
     const workflowMerge = CalibrationWorkflowSchema.safeParse({
       cycleId: 'cycle-1',
       action: 'MERGE',
       scopeId: 'dept-1',
+    })
+    const followUpUpdate = CalibrationCandidateUpdateSchema.safeParse({
+      action: 'update-follow-up',
+      cycleId: 'cycle-1',
+      followUpCommand: {
+        type: 'finalize-comment',
+        targetId: 'target-1',
+        comment: '결과 전달 시 사용할 공개용 코멘트를 확정하고 다음 기대치를 함께 설명합니다.',
+      },
     })
     const workflowDelete = CalibrationWorkflowSchema.safeParse({
       cycleId: 'cycle-1',
@@ -71,6 +101,8 @@ async function main() {
 
     assert.equal(bulkImport.success, true)
     assert.equal(externalUpload.success, true)
+    assert.equal(workspaceUpdate.success, true)
+    assert.equal(followUpUpdate.success, true)
     assert.equal(workflowMerge.success, true)
     assert.equal(workflowDelete.success, true)
     assert.equal(exportMode.success, true)
@@ -86,6 +118,16 @@ async function main() {
     assert.equal(routeSource.includes('CALIBRATION_EXTERNAL_DATA_UPLOADED'), true)
     assert.equal(routeSource.includes('toCalibrationSessionConfigJson'), true)
     assert.equal(routeSource.includes('calibrationSessionConfig: toCalibrationSessionConfigJson(nextSessionConfig)'), true)
+    assert.equal(routeSource.includes("body.action === 'update-workspace'"), true)
+    assert.equal(routeSource.includes('CALIBRATION_DISCUSSION_UPDATED'), true)
+    assert.equal(routeSource.includes('CALIBRATION_TIMER_STARTED'), true)
+    assert.equal(routeSource.includes('CALIBRATION_TIMER_EXTENDED'), true)
+    assert.equal(routeSource.includes('CALIBRATION_FACILITATOR_PROMPT_ADDED'), true)
+    assert.equal(routeSource.includes("body.action === 'update-follow-up'"), true)
+    assert.equal(routeSource.includes('CALIBRATION_PUBLIC_COMMENT_FINALIZED'), true)
+    assert.equal(routeSource.includes('CALIBRATION_COMMUNICATION_PACKET_GENERATED'), true)
+    assert.equal(routeSource.includes('CALIBRATION_RETROSPECTIVE_SURVEY_SUBMITTED'), true)
+    assert.equal(routeSource.includes('CALIBRATION_LEADER_FEEDBACK_RECORDED'), true)
   })
 
   await run('calibration workflow route supports merge and session delete with audit-safe handling', () => {
@@ -125,6 +167,189 @@ async function main() {
     assert.equal(loaderSource.includes('hasMergedCalibration'), true)
     assert.equal(loaderSource.includes('sourceStage'), true)
     assert.equal(loaderSource.includes('CALIBRATION_SESSION_DELETED'), true)
+    assert.equal(loaderSource.includes('threeYearHistory'), true)
+    assert.equal(loaderSource.includes('feedbackSummary'), true)
+    assert.equal(loaderSource.includes('sessionStartedAt'), true)
+    assert.equal(loaderSource.includes('buildCalibrationActorCapabilities'), true)
+    assert.equal(loaderSource.includes('buildCalibrationFollowUp'), true)
+    assert.equal(loaderSource.includes('communicationGuide'), true)
+    assert.equal(loaderSource.includes('objections'), true)
+    assert.equal(loaderSource.includes('retrospectiveSurveys'), true)
+    assert.equal(loaderSource.includes('leaderFeedback'), true)
+  })
+
+  await run('calibration session setup schema persists owner facilitator recorder distribution columns and ground rules', () => {
+    const parsed = CalibrationCandidateUpdateSchema.safeParse({
+      action: 'update-session-config',
+      cycleId: 'cycle-1',
+      sessionConfig: {
+        excludedTargetIds: ['target-1'],
+        participantIds: ['person-1', 'person-2'],
+        evaluatorIds: ['person-3'],
+        observerIds: ['person-4'],
+        setup: {
+          sessionName: '연간 캘리브레이션 1차',
+          sessionType: 'MULTI_TEAM',
+          scopeMode: 'LEADER_GROUP',
+          scopeDepartmentIds: ['dept-1'],
+          scopeLeaderIds: ['leader-1'],
+          ownerId: 'owner-1',
+          facilitatorId: 'facilitator-1',
+          recorderId: 'recorder-1',
+          observerIds: ['observer-1'],
+          preReadDeadline: '2026-04-09T01:00:00.000Z',
+          scheduledStart: '2026-04-10T01:00:00.000Z',
+          scheduledEnd: '2026-04-10T03:00:00.000Z',
+          timeboxMinutes: 7,
+          decisionPolicy: 'CONSENSUS_PREFERRED',
+          referenceDistributionUse: 'GUIDELINE_ONLY',
+          referenceDistributionVisibility: 'WARNING_ONLY',
+          referenceDistributionRatios: [{ gradeId: 'grade-a', gradeLabel: 'A', ratio: 30 }],
+          ratingGuideUse: true,
+          ratingGuideLinks: [
+            { id: 'guide-1', scopeType: 'JOB_GROUP', scopeValue: '경영관리군', memo: '직군 기준' },
+          ],
+          expectationAlignmentMemo: '최상/최하 기준을 회의 전 공유합니다.',
+          visibleDataColumns: ['name', 'department', 'threeYearHistory'],
+          memoCommentPolicyPreset: 'OWNER_REVIEW_REQUIRED',
+          objectionWindowOpenAt: '2026-04-11T01:00:00.000Z',
+          objectionWindowCloseAt: '2026-04-12T01:00:00.000Z',
+          followUpOwnerId: 'owner-2',
+          groundRules: [
+            {
+              key: 'LAS_VEGAS_RULE',
+              label: 'Las Vegas Rule',
+              description: '세션 외부 공유 금지',
+              enabled: true,
+            },
+          ],
+          groundRuleAcknowledgementPolicy: 'REQUIRED',
+          facilitatorCanFinalize: false,
+        },
+      },
+    })
+
+    assert.equal(parsed.success, true)
+  })
+
+  await run('calibration session setup readiness blocks missing required setup and keeps HR finalizer off by default', () => {
+    const defaults = createDefaultCalibrationSessionSetup()
+    const readiness = buildCalibrationSetupReadiness({
+      setup: defaults,
+      participantIds: [],
+    })
+
+    assert.equal(defaults.facilitatorCanFinalize, false)
+    assert.equal(readiness.readyToStart, false)
+    assert.equal(readiness.blockingItems.some((item) => item.includes('owner')), true)
+    assert.equal(readiness.blockingItems.some((item) => item.includes('participant')), true)
+    assert.equal(readiness.blockingItems.some((item) => item.includes('pre-read')), true)
+    assert.equal(readiness.blockingItems.some((item) => item.includes('acknowledgement')), true)
+
+    const warningReadiness = buildCalibrationSetupReadiness({
+      setup: {
+        ...defaults,
+        ownerId: 'owner-1',
+        facilitatorId: 'owner-1',
+        preReadDeadline: '2026-04-09T01:00:00.000Z',
+        scheduledStart: '2026-04-10T01:00:00.000Z',
+        scheduledEnd: '2026-04-10T03:00:00.000Z',
+        groundRuleAcknowledgementPolicy: 'REQUIRED',
+        ratingGuideUse: true,
+        ratingGuideLinks: [],
+      },
+      participantIds: ['person-1'],
+    })
+
+    assert.equal(warningReadiness.readyToStart, true)
+    assert.equal(warningReadiness.warningItems.some((item) => item.includes('등급 가이드')), true)
+    assert.equal(warningReadiness.warningItems.some((item) => item.includes('owner') && item.includes('facilitator')), true)
+  })
+
+  await run('calibration workflow and client wire session setup hub with start-session completeness handling', () => {
+    const workflowSource = read('src/app/api/evaluation/calibration/workflow/route.ts')
+    const clientSource = read('src/components/evaluation/EvaluationCalibrationClient.tsx')
+    const hubSource = read('src/components/evaluation/CalibrationSessionSetupHub.tsx')
+
+    assert.equal(workflowSource.includes("action === 'START_SESSION'"), true)
+    assert.equal(workflowSource.includes('SETUP_INCOMPLETE'), true)
+    assert.equal(workflowSource.includes('CALIBRATION_SESSION_STARTED'), true)
+    assert.equal(clientSource.includes('CalibrationSessionSetupHub'), true)
+    assert.equal(clientSource.includes("handleWorkflow('START_SESSION')"), true)
+    assert.equal(hubSource.includes('groundRuleAcknowledgementPolicy'), true)
+    assert.equal(hubSource.includes('referenceDistributionVisibility'), true)
+    assert.equal(hubSource.includes('visibleDataColumns'), true)
+    assert.equal(hubSource.includes('facilitatorCanFinalize'), true)
+  })
+
+  await run('calibration workspace schema helpers normalize timer discussion state and custom prompts', () => {
+    const empty = createEmptyCalibrationWorkspace(7)
+    const normalized = normalizeCalibrationWorkspace(
+      {
+        currentCandidateId: 'target-1',
+        candidateStates: {
+          'target-1': {
+            status: 'ANYWAY_YES',
+            shortReason: '결론 우선',
+            discussionMemo: '긴 메모',
+            privateNote: '비공개 note',
+            publicComment: '공개 comment',
+            updatedAt: '2026-04-10T01:00:00.000Z',
+            updatedBy: 'user-1',
+          },
+        },
+        timer: {
+          candidateId: 'target-1',
+          startedAt: '2026-04-10T01:00:00.000Z',
+          durationMinutes: 9,
+          extendedMinutes: 2,
+          startedById: 'user-1',
+        },
+        customPrompts: ['질문 1', '질문 1', '질문 2'],
+      },
+      7
+    )
+
+    assert.equal(empty.timer?.durationMinutes, 7)
+    assert.equal(normalized.currentCandidateId, 'target-1')
+    assert.equal(normalized.candidateStates['target-1']?.status, 'ANYWAY_YES')
+    assert.equal(normalized.timer?.extendedMinutes, 2)
+    assert.deepEqual(normalized.customPrompts, ['질문 1', '질문 2'])
+  })
+
+  await run('calibration workspace client renders discussion workspace timer note-comment separation and nudges', () => {
+    const clientSource = read('src/components/evaluation/EvaluationCalibrationClient.tsx')
+
+    assert.equal(clientSource.includes('세션 워크스페이스'), true)
+    assert.equal(clientSource.includes('현재 논의 대상'), true)
+    assert.equal(clientSource.includes('Parking Lot'), true)
+    assert.equal(clientSource.includes('Timebox / Timer'), true)
+    assert.equal(clientSource.includes('Final Rating First'), true)
+    assert.equal(clientSource.includes('Decision helper'), true)
+    assert.equal(clientSource.includes('Note'), true)
+    assert.equal(clientSource.includes('Comment'), true)
+    assert.equal(clientSource.includes('Visible Data / Decision Context'), true)
+    assert.equal(clientSource.includes('ReferenceDistributionNudgeCard'), true)
+    assert.equal(clientSource.includes('FacilitatorPromptCard'), true)
+    assert.equal(clientSource.includes('No 또는 상위 검토는 짧은 사유'), true)
+  })
+
+  await run('calibration follow-up client renders final review communication objection survey and leader feedback flows', () => {
+    const clientSource = read('src/components/evaluation/EvaluationCalibrationClient.tsx')
+    const serverSource = read('src/server/evaluation-calibration.ts')
+
+    assert.equal(clientSource.includes('Post-session Review / Final Check'), true)
+    assert.equal(clientSource.includes('Result Communication Guide'), true)
+    assert.equal(clientSource.includes('Note-to-Comment Handoff'), true)
+    assert.equal(clientSource.includes('Objection Workflow'), true)
+    assert.equal(clientSource.includes('Participant Survey / Retrospective'), true)
+    assert.equal(clientSource.includes('Leader Feedback'), true)
+    assert.equal(clientSource.includes('comment finalized'), true)
+    assert.equal(clientSource.includes('communication packet generated'), true)
+    assert.equal(clientSource.includes('survey submitted'), true)
+    assert.equal(clientSource.includes('leader feedback 저장'), true)
+    assert.equal(serverSource.includes('CALIBRATION_PUBLIC_COMMENT_FINALIZED'), true)
+    assert.equal(serverSource.includes('CALIBRATION_RETROSPECTIVE_SURVEY_SUBMITTED'), true)
   })
 
   await run('calibration client renders upload, export, merge, delete, and degraded feedback affordances', () => {

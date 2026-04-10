@@ -19,11 +19,18 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
-  Trash2,
   Unlock,
   Upload,
   Users,
 } from 'lucide-react'
+import { CalibrationSessionSetupHub } from '@/components/evaluation/CalibrationSessionSetupHub'
+import {
+  CALIBRATION_DEFAULT_FACILITATOR_PROMPTS,
+  CALIBRATION_DISCUSSION_STATUS_OPTIONS,
+  getCalibrationDiscussionStatusMeta,
+  requiresDecisionReason,
+  type CalibrationDiscussionStatus,
+} from '@/lib/calibration-workspace'
 import type {
   CalibrationCandidate,
   CalibrationPageData,
@@ -32,11 +39,94 @@ import type {
 } from '@/server/evaluation-calibration'
 
 type EvaluationCalibrationClientProps = CalibrationPageData
-type CalibrationTab = 'distribution' | 'candidates' | 'history' | 'lock' | 'policy'
+type CalibrationTab = 'distribution' | 'candidates' | 'followup' | 'history' | 'lock' | 'policy'
 type CandidateEditState = {
   gradeId: string
   reason: string
 }
+
+type CandidateWorkspaceEditState = {
+  status: CalibrationDiscussionStatus
+  shortReason: string
+  discussionMemo: string
+  privateNote: string
+  publicComment: string
+}
+
+type CalibrationWorkspaceCommandPayload =
+  | {
+      type: 'set-current-candidate'
+      targetId: string
+    }
+  | {
+      type: 'save-candidate-workspace'
+      targetId: string
+      status: CalibrationDiscussionStatus
+      shortReason: string
+      discussionMemo: string
+      privateNote: string
+      publicComment: string
+    }
+  | {
+      type: 'start-timer'
+      targetId: string
+      durationMinutes?: number
+    }
+  | {
+      type: 'reset-timer'
+      targetId?: string
+    }
+  | {
+      type: 'extend-timer'
+      minutes: number
+    }
+  | {
+      type: 'add-custom-prompt'
+      prompt: string
+    }
+  | {
+      type: 'remove-custom-prompt'
+      prompt: string
+    }
+
+type CalibrationFollowUpCommandPayload =
+  | {
+      type: 'save-comment-draft'
+      targetId: string
+      comment: string
+    }
+  | {
+      type: 'finalize-comment'
+      targetId: string
+      comment: string
+    }
+  | {
+      type: 'generate-communication-packet'
+      targetId: string
+    }
+  | {
+      type: 'set-review-flag'
+      targetId: string
+      compensationSensitive: boolean
+      note: string
+    }
+  | {
+      type: 'submit-survey'
+      hardestPart: string
+      missingData: string
+      rulesAndTimebox: string
+      positives: string
+      improvements: string
+      nextCycleNeeds: string
+      leniencyFeedback: string
+    }
+  | {
+      type: 'save-leader-feedback'
+      leaderId: string
+      leaderName: string
+      summary: string
+      suggestions: string
+    }
 
 type UploadIssue = {
   rowNumber?: number
@@ -64,9 +154,19 @@ type CalibrationExternalUploadRow = {
   values: Record<string, string>
 }
 
-const TAB_LABELS: Record<CalibrationTab, string> = {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const TAB_LABELS: Partial<Record<CalibrationTab, string>> = {
   distribution: '분포 현황',
   candidates: '조정 대상',
+  history: '조정 이력',
+  lock: '잠금/확정',
+  policy: '정책 안내',
+}
+
+const CALIBRATION_TAB_LABELS: Record<CalibrationTab, string> = {
+  distribution: '분포 현황',
+  candidates: '조정 대상',
+  followup: '팔로우업',
   history: '조정 이력',
   lock: '잠금/확정',
   policy: '정책 안내',
@@ -85,6 +185,21 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
   const [adjustmentFilter, setAdjustmentFilter] = useState<'all' | 'adjusted' | 'pending'>('all')
   const [missingReasonOnly, setMissingReasonOnly] = useState(false)
   const [draftEdits, setDraftEdits] = useState<Record<string, CandidateEditState>>({})
+  const [workspaceDrafts, setWorkspaceDrafts] = useState<Record<string, CandidateWorkspaceEditState>>({})
+  const [followUpCommentDrafts, setFollowUpCommentDrafts] = useState<Record<string, string>>({})
+  const [followUpReviewNotes, setFollowUpReviewNotes] = useState<Record<string, string>>({})
+  const [leaderFeedbackDrafts, setLeaderFeedbackDrafts] = useState<Record<string, { summary: string; suggestions: string }>>({})
+  const [surveyDraft, setSurveyDraft] = useState({
+    hardestPart: '',
+    missingData: '',
+    rulesAndTimebox: '',
+    positives: '',
+    improvements: '',
+    nextCycleNeeds: '',
+    leniencyFeedback: '',
+  })
+  const [customPromptInput, setCustomPromptInput] = useState('')
+  const [nowTick, setNowTick] = useState(() => Date.now())
   const [targetConfigOpen, setTargetConfigOpen] = useState(false)
   const [peopleConfigOpen, setPeopleConfigOpen] = useState(false)
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
@@ -126,6 +241,20 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     setMissingReasonOnly(false)
     setSelectedCandidateId(viewModel.candidates[0]?.id ?? '')
     setDraftEdits({})
+    setWorkspaceDrafts({})
+    setFollowUpCommentDrafts({})
+    setFollowUpReviewNotes({})
+    setLeaderFeedbackDrafts({})
+    setSurveyDraft({
+      hardestPart: '',
+      missingData: '',
+      rulesAndTimebox: '',
+      positives: '',
+      improvements: '',
+      nextCycleNeeds: '',
+      leniencyFeedback: '',
+    })
+    setCustomPromptInput('')
     setTargetConfigIntent('add')
     setExcludedTargetIdsDraft(viewModel.sessionConfig.excludedTargetIds)
     setParticipantIdsDraft(viewModel.sessionConfig.participantIds)
@@ -147,6 +276,14 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     setMergeOpen(false)
     setDeleteOpen(false)
   }, [viewModel])
+
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setNowTick(Date.now())
+    }, 1000)
+
+    return () => window.clearInterval(timerId)
+  }, [])
 
   const filteredCandidates = useMemo(() => {
     if (!viewModel) return []
@@ -191,9 +328,47 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     filteredCandidates[0] ??
     viewModel?.candidates[0] ??
     null
+  const currentDiscussionCandidate =
+    filteredCandidates.find((candidate) => candidate.id === viewModel?.sessionConfig.workspace.currentCandidateId) ??
+    selectedCandidate ??
+    filteredCandidates[0] ??
+    null
+  const parkingLotCandidates = filteredCandidates.filter((candidate) => candidate.workspace.status === 'PARKED')
+  const unresolvedCount = filteredCandidates.filter((candidate) =>
+    !['AGREED', 'ANYWAY_YES', 'NO'].includes(candidate.workspace.status)
+  ).length
+  const fastAgreeCandidates = filteredCandidates.filter((candidate) =>
+    ['AGREED', 'ANYWAY_YES'].includes(candidate.workspace.status)
+  )
+  const needsDiscussionCandidates = filteredCandidates.filter((candidate) =>
+    ['PENDING', 'IN_DISCUSSION', 'ESCALATED', 'PARKED'].includes(candidate.workspace.status)
+  )
+  const currentDiscussionIndex = currentDiscussionCandidate
+    ? filteredCandidates.findIndex((candidate) => candidate.id === currentDiscussionCandidate.id)
+    : -1
+  const nextCandidate =
+    currentDiscussionIndex >= 0
+      ? filteredCandidates
+          .slice(currentDiscussionIndex + 1)
+          .find((candidate) => !['AGREED', 'ANYWAY_YES', 'NO'].includes(candidate.workspace.status)) ??
+        filteredCandidates[currentDiscussionIndex + 1] ??
+        null
+      : filteredCandidates[0] ?? null
+  const sessionTimerState = viewModel
+    ? getSessionTimerState(viewModel.sessionConfig.workspace.timer, nowTick)
+    : getSessionTimerState(null, nowTick)
+  const facilitatorPrompts = viewModel
+    ? viewModel.sessionConfig.workspace.customPrompts.length
+      ? viewModel.sessionConfig.workspace.customPrompts
+      : [...CALIBRATION_DEFAULT_FACILITATOR_PROMPTS]
+    : [...CALIBRATION_DEFAULT_FACILITATOR_PROMPTS]
+  const sessionElapsedMinutes = getElapsedMinutes(viewModel?.cycle.sessionStartedAt, nowTick)
+  const showBreakReminder = sessionElapsedMinutes >= 50
+  const showLongSessionWarning = sessionElapsedMinutes >= 120
 
   const unsavedCount = Object.keys(draftEdits).length
   const isLocked = viewModel?.cycle.status === 'FINAL_LOCKED'
+  const readOnly = Boolean(isLocked)
   const canLock = viewModel?.actorRole === 'ROLE_CEO'
   const mergePreview = useMemo(() => {
     const mergeableCount = filteredCandidates.filter((candidate) => !candidate.hasMergedCalibration).length
@@ -242,6 +417,150 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
       ...currentState,
       [candidateId]: { ...current, ...next },
     }))
+  }
+
+  function updateWorkspaceDraft(candidateId: string, next: Partial<CandidateWorkspaceEditState>) {
+    const candidate = viewModel?.candidates.find((item) => item.id === candidateId)
+    if (!candidate) return
+    const current = workspaceDrafts[candidateId] ?? getWorkspaceDraft(candidate, workspaceDrafts)
+
+    setWorkspaceDrafts((currentState) => ({
+      ...currentState,
+      [candidateId]: {
+        ...current,
+        ...next,
+      },
+    }))
+  }
+
+  async function handleWorkspaceCommand(command: CalibrationWorkspaceCommandPayload) {
+    if (!viewModel) return
+
+    setIsSubmitting(true)
+    try {
+      await fetch('/api/evaluation/calibration', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update-workspace',
+          cycleId: viewModel.cycle.id,
+          workspaceCommand: command,
+        }),
+      }).then(assertJsonSuccess)
+
+      if (command.type === 'set-current-candidate') {
+        const candidate = viewModel.candidates.find((item) => item.id === command.targetId)
+        setNotice(
+          candidate
+            ? `${candidate.employeeName}님을 현재 논의 대상으로 지정했습니다.`
+            : '현재 논의 대상을 변경했습니다.'
+        )
+      } else if (command.type === 'save-candidate-workspace') {
+        const candidate = viewModel.candidates.find((item) => item.id === command.targetId)
+        setNotice(
+          candidate
+            ? `${candidate.employeeName}님의 토론 상태와 메모를 저장했습니다.`
+            : '워크스페이스 변경사항을 저장했습니다.'
+        )
+      } else if (command.type === 'start-timer') {
+        setNotice('타이머를 시작했습니다.')
+      } else if (command.type === 'reset-timer') {
+        setNotice('타이머를 리셋했습니다.')
+      } else if (command.type === 'extend-timer') {
+        setNotice(`타이머를 ${command.minutes ?? 0}분 연장했습니다.`)
+      } else if (command.type === 'add-custom-prompt') {
+        setCustomPromptInput('')
+        setNotice('퍼실리테이터 질문을 추가했습니다.')
+      } else if (command.type === 'remove-custom-prompt') {
+        setNotice('퍼실리테이터 질문을 제거했습니다.')
+      }
+
+      router.refresh()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '워크스페이스 변경 중 오류가 발생했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleFollowUpCommand(command: CalibrationFollowUpCommandPayload) {
+    if (!viewModel) return
+
+    setIsSubmitting(true)
+    try {
+      await fetch('/api/evaluation/calibration', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update-follow-up',
+          cycleId: viewModel.cycle.id,
+          followUpCommand: command,
+        }),
+      }).then(assertJsonSuccess)
+
+      if (command.type === 'save-comment-draft') {
+        setNotice('공개용 코멘트 초안을 저장했습니다.')
+      } else if (command.type === 'finalize-comment') {
+        setNotice('공유 코멘트를 확정했습니다. 결과 커뮤니케이션에 사용할 수 있습니다.')
+      } else if (command.type === 'generate-communication-packet') {
+        setNotice('커뮤니케이션 가이드 패킷 생성 이력을 남겼습니다.')
+      } else if (command.type === 'set-review-flag') {
+        setNotice('후속 점검 플래그를 저장했습니다.')
+      } else if (command.type === 'submit-survey') {
+        setNotice('팔로우업 회고 설문을 제출했습니다.')
+        setSurveyDraft({
+          hardestPart: '',
+          missingData: '',
+          rulesAndTimebox: '',
+          positives: '',
+          improvements: '',
+          nextCycleNeeds: '',
+          leniencyFeedback: '',
+        })
+      } else if (command.type === 'save-leader-feedback') {
+        setNotice('리더 피드백을 저장했습니다.')
+      }
+
+      router.refresh()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : '팔로우업 저장 중 오류가 발생했습니다.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleSaveWorkspaceCandidate(
+    candidateId: string,
+    overrides?: Partial<CandidateWorkspaceEditState>
+  ) {
+    const candidate = viewModel?.candidates.find((item) => item.id === candidateId)
+    if (!candidate) return
+
+    const draft = {
+      ...getWorkspaceDraft(candidate, workspaceDrafts),
+      ...(workspaceDrafts[candidateId] ?? {}),
+      ...(overrides ?? {}),
+    }
+
+    if (requiresDecisionReason(draft.status) && draft.shortReason.trim().length < 5) {
+      setNotice('No 또는 상위 검토 상태는 짧은 사유를 함께 입력해 주세요.')
+      return
+    }
+
+    setWorkspaceDrafts((currentState) => ({
+      ...currentState,
+      [candidateId]: draft,
+    }))
+
+    await handleWorkspaceCommand({
+      type: 'save-candidate-workspace',
+      targetId: candidateId,
+      status: draft.status,
+      shortReason: draft.shortReason,
+      discussionMemo: draft.discussionMemo,
+      privateNote: draft.privateNote,
+      publicComment: draft.publicComment,
+    })
   }
 
   async function handleSaveCandidate(candidateId: string) {
@@ -347,7 +666,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
   }
 
   async function handleWorkflow(
-    action: 'CONFIRM_REVIEW' | 'LOCK' | 'REOPEN_REQUEST' | 'MERGE' | 'DELETE_SESSION',
+    action: 'START_SESSION' | 'CONFIRM_REVIEW' | 'LOCK' | 'REOPEN_REQUEST' | 'MERGE' | 'DELETE_SESSION',
     options?: { scopeId?: string }
   ) {
     if (!viewModel) return
@@ -364,7 +683,9 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
         }),
       }).then(assertJsonSuccess)
 
-      if (action === 'CONFIRM_REVIEW') {
+      if (action === 'START_SESSION') {
+        setNotice('캘리브레이션 세션을 시작했습니다.')
+      } else if (action === 'CONFIRM_REVIEW') {
         setNotice('리뷰 확정 상태로 전환했습니다.')
       } else if (action === 'LOCK') {
         setNotice('최종 잠금을 완료했습니다.')
@@ -391,11 +712,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     }
   }
 
-  async function handleSaveSessionConfig(nextConfig: {
-    excludedTargetIds: string[]
-    participantIds: string[]
-    evaluatorIds: string[]
-  }) {
+  async function handleSaveSessionConfig(nextConfig: Partial<CalibrationViewModel['sessionConfig']>) {
     if (!viewModel) return
 
     setIsSubmitting(true)
@@ -410,7 +727,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
         }),
       }).then(assertJsonSuccess)
 
-      setNotice('세션 대상자 / 평가자 / 참여자 구성을 저장했습니다.')
+      setNotice('세션 설정을 저장했습니다.')
       router.refresh()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '세션 구성을 저장하지 못했습니다.')
@@ -628,6 +945,168 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
   return (
     <div className="space-y-6">
       <PageHeader selectedCycle={selectedCycle} />
+      {activeTab === 'candidates' ? (
+      <SectionCard
+        title="세션 워크스페이스"
+        description="D-day 토론 흐름, 시간 관리, 파킹 이슈, 참고 분포 넛지를 한 화면에서 운영합니다."
+      >
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-4">
+              <MiniMetric label="총 후보자" value={`${filteredCandidates.length}명`} />
+              <MiniMetric label="미해결 안건" value={`${unresolvedCount}명`} />
+              <MiniMetric label="빠른 합의" value={`${fastAgreeCandidates.length}명`} />
+              <MiniMetric label="파킹" value={`${parkingLotCandidates.length}명`} />
+            </div>
+
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
+                    현재 논의 대상
+                  </div>
+                  <div className="mt-2 text-lg font-semibold text-slate-900">
+                    {currentDiscussionCandidate?.employeeName ?? '선택된 대상이 없습니다.'}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    {currentDiscussionCandidate
+                      ? `${currentDiscussionCandidate.department} · ${currentDiscussionCandidate.jobGroup ?? '-'}`
+                      : '후보자를 선택하면 현재 논의 대상으로 지정할 수 있습니다.'}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {currentDiscussionCandidate ? (
+                    <ActionButton
+                      icon={<Users className="h-4 w-4" />}
+                      label="현재 안건으로 지정"
+                      onClick={() =>
+                        void handleWorkspaceCommand({
+                          type: 'set-current-candidate',
+                          targetId: currentDiscussionCandidate.id,
+                        })
+                      }
+                      disabled={readOnly || isSubmitting || !viewModel.actor.canManageFlow}
+                    />
+                  ) : null}
+                  {nextCandidate ? (
+                    <ActionButton
+                      icon={<ArrowRight className="h-4 w-4" />}
+                      label="다음 대상"
+                      onClick={() => {
+                        setSelectedCandidateId(nextCandidate.id)
+                        void handleWorkspaceCommand({
+                          type: 'set-current-candidate',
+                          targetId: nextCandidate.id,
+                        })
+                      }}
+                      disabled={readOnly || isSubmitting || !viewModel.actor.canManageFlow}
+                      variant="primary"
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <WorkspaceHintCard
+                title="회의 흐름 지원"
+                items={[
+                  showBreakReminder ? '50분 이상 진행 중입니다. 휴식 여부를 확인해 주세요.' : '집중도가 떨어지기 전 50분 단위로 휴식을 제안합니다.',
+                  showLongSessionWarning ? '장시간 세션 경고: 결론 중심 진행으로 전환이 필요합니다.' : '장시간 세션 경고는 120분 이상일 때 표시됩니다.',
+                  `빠른 합의 큐 ${fastAgreeCandidates.length}명 / 추가 논의 큐 ${needsDiscussionCandidates.length}명`,
+                ]}
+              />
+              <WorkspaceHintCard
+                title="HR Guardrail"
+                items={[
+                  'HR과 facilitator는 흐름을 돕고 기준을 지키는 역할입니다.',
+                  '최종 등급 확정은 owner 또는 별도 확정 권한자 기준으로 운영합니다.',
+                  '참고 분포는 넛지일 뿐이며 강제 분포나 hard block으로 사용하지 않습니다.',
+                ]}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <TimerCard
+              timer={sessionTimerState}
+              currentCandidate={currentDiscussionCandidate}
+              canManage={viewModel.actor.canManageFlow && !readOnly}
+              isSubmitting={isSubmitting}
+              onStart={() =>
+                currentDiscussionCandidate
+                  ? void handleWorkspaceCommand({
+                      type: 'start-timer',
+                      targetId: currentDiscussionCandidate.id,
+                      durationMinutes: viewModel.sessionConfig.setup.timeboxMinutes,
+                    })
+                  : undefined
+              }
+              onReset={() =>
+                void handleWorkspaceCommand({
+                  type: 'reset-timer',
+                  targetId: currentDiscussionCandidate?.id,
+                })
+              }
+              onExtend={(minutes) =>
+                void handleWorkspaceCommand({
+                  type: 'extend-timer',
+                  minutes,
+                })
+              }
+            />
+
+            <ReferenceDistributionNudgeCard viewModel={viewModel} />
+
+            <FacilitatorPromptCard
+              prompts={facilitatorPrompts}
+              customPromptInput={customPromptInput}
+              onCustomPromptInputChange={setCustomPromptInput}
+              onAddPrompt={() => {
+                if (!customPromptInput.trim()) return
+                void handleWorkspaceCommand({
+                  type: 'add-custom-prompt',
+                  prompt: customPromptInput.trim(),
+                })
+              }}
+              onRemovePrompt={(prompt) =>
+                void handleWorkspaceCommand({
+                  type: 'remove-custom-prompt',
+                  prompt,
+                })
+              }
+              disabled={readOnly || isSubmitting || !viewModel.actor.canManageFlow}
+            />
+          </div>
+        </div>
+
+        {parkingLotCandidates.length ? (
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="text-sm font-semibold text-amber-900">Parking Lot</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {parkingLotCandidates.map((candidate) => (
+                <button
+                  key={candidate.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCandidateId(candidate.id)
+                    void handleSaveWorkspaceCandidate(candidate.id, { status: 'IN_DISCUSSION' })
+                    void handleWorkspaceCommand({
+                      type: 'set-current-candidate',
+                      targetId: candidate.id,
+                    })
+                  }}
+                  className="rounded-full border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100"
+                >
+                  {candidate.employeeName}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </SectionCard>
+      ) : null}
+
       <CalibrationHero
         viewModel={viewModel}
         cycleOptions={cycleOptions}
@@ -704,13 +1183,59 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
             setMissingReasonOnly={setMissingReasonOnly}
             onSelectCandidate={setSelectedCandidateId}
             getDraft={(candidate) => getCandidateDraft(viewModel, draftEdits, candidate)}
+            getWorkspaceDraft={(candidate) => getWorkspaceDraft(candidate, workspaceDrafts)}
             onDraftChange={updateCandidateEdit}
+            onWorkspaceDraftChange={updateWorkspaceDraft}
             onSaveCandidate={handleSaveCandidate}
             onClearAdjustment={handleClearAdjustment}
+            onSaveWorkspaceCandidate={handleSaveWorkspaceCandidate}
+            onWorkspaceCommand={handleWorkspaceCommand}
             readOnly={Boolean(isLocked)}
             isSubmitting={isSubmitting}
+            nowTick={nowTick}
           />
         </div>
+      ) : null}
+
+      {activeTab === 'followup' ? (
+        <CalibrationFollowUpSection
+          viewModel={viewModel}
+          selectedCandidate={selectedCandidate}
+          commentDraft={selectedCandidate ? getFollowUpCommentDraft(viewModel, selectedCandidate.id, followUpCommentDrafts) : ''}
+          reviewNoteDraft={selectedCandidate ? getFollowUpReviewNoteDraft(viewModel, selectedCandidate.id, followUpReviewNotes) : ''}
+          onCommentDraftChange={(targetId, comment) =>
+            setFollowUpCommentDrafts((current) => ({
+              ...current,
+              [targetId]: comment,
+            }))
+          }
+          onReviewNoteDraftChange={(targetId, note) =>
+            setFollowUpReviewNotes((current) => ({
+              ...current,
+              [targetId]: note,
+            }))
+          }
+          surveyDraft={surveyDraft}
+          onSurveyDraftChange={(field, value) =>
+            setSurveyDraft((current) => ({
+              ...current,
+              [field]: value,
+            }))
+          }
+          leaderFeedbackDrafts={leaderFeedbackDrafts}
+          onLeaderFeedbackDraftChange={(leaderId, next) =>
+            setLeaderFeedbackDrafts((current) => ({
+              ...current,
+              [leaderId]: {
+                summary: current[leaderId]?.summary ?? '',
+                suggestions: current[leaderId]?.suggestions ?? '',
+                ...next,
+              },
+            }))
+          }
+          onFollowUpCommand={handleFollowUpCommand}
+          isSubmitting={isSubmitting}
+        />
       ) : null}
 
       {activeTab === 'history' ? <CalibrationTimelineSection viewModel={viewModel} /> : null}
@@ -724,7 +1249,15 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
           onReopen={() => handleWorkflow('REOPEN_REQUEST')}
         />
       ) : null}
-      {activeTab === 'policy' ? <CalibrationPolicySection /> : null}
+      {activeTab === 'policy' ? (
+        <CalibrationSessionSetupHub
+          key={JSON.stringify(viewModel.sessionConfig)}
+          viewModel={viewModel}
+          isSubmitting={isSubmitting}
+          onSave={(nextConfig) => void handleSaveSessionConfig(nextConfig)}
+          onStartSession={() => void handleWorkflow('START_SESSION')}
+        />
+      ) : null}
 
       {activeTab === 'candidates' && targetConfigOpen ? (
         <ConfigModal
@@ -1175,7 +1708,7 @@ function Tabs({
   return (
     <div className="overflow-x-auto">
       <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        {(Object.keys(TAB_LABELS) as CalibrationTab[]).map((tab) => (
+        {(Object.keys(CALIBRATION_TAB_LABELS) as CalibrationTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
@@ -1186,7 +1719,7 @@ function Tabs({
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
-            {TAB_LABELS[tab]}
+            {CALIBRATION_TAB_LABELS[tab]}
           </button>
         ))}
       </div>
@@ -1497,11 +2030,16 @@ function CalibrationCandidatesSection({
   setMissingReasonOnly,
   onSelectCandidate,
   getDraft,
+  getWorkspaceDraft,
   onDraftChange,
+  onWorkspaceDraftChange,
   onSaveCandidate,
   onClearAdjustment,
+  onSaveWorkspaceCandidate,
+  onWorkspaceCommand,
   readOnly,
   isSubmitting,
+  nowTick,
 }: {
   viewModel: CalibrationViewModel
   candidates: CalibrationCandidate[]
@@ -1520,11 +2058,19 @@ function CalibrationCandidatesSection({
   setMissingReasonOnly: (value: boolean) => void
   onSelectCandidate: (candidateId: string) => void
   getDraft: (candidate: CalibrationCandidate) => CandidateEditState
+  getWorkspaceDraft: (candidate: CalibrationCandidate) => CandidateWorkspaceEditState
   onDraftChange: (candidateId: string, next: Partial<CandidateEditState>) => void
+  onWorkspaceDraftChange: (candidateId: string, next: Partial<CandidateWorkspaceEditState>) => void
   onSaveCandidate: (candidateId: string) => void
   onClearAdjustment: (candidateId: string) => void
+  onSaveWorkspaceCandidate: (
+    candidateId: string,
+    overrides?: Partial<CandidateWorkspaceEditState>
+  ) => void | Promise<void>
+  onWorkspaceCommand: (command: CalibrationWorkspaceCommandPayload) => void | Promise<void>
   readOnly: boolean
   isSubmitting: boolean
+  nowTick: number
 }) {
   const departmentOptions = [
     { value: 'all', label: '전체 조직' },
@@ -1536,7 +2082,6 @@ function CalibrationCandidatesSection({
   const jobGroups = Array.from(new Set(viewModel.candidates.map((candidate) => candidate.jobGroup).filter(Boolean)))
   const originalGrades = Array.from(new Set(viewModel.candidates.map((candidate) => candidate.originalGrade)))
   const adjustedGrades = viewModel.gradeOptions.map((grade) => grade.grade)
-
   return (
     <div className="space-y-6">
       <SectionCard title="조정 대상 필터" description="조직, 직군, 원등급, 조정등급, 사유 누락 여부로 후보군을 빠르게 좁힙니다.">
@@ -1617,13 +2162,22 @@ function CalibrationCandidatesSection({
                         <tr
                           key={candidate.id}
                           className={`cursor-pointer transition hover:bg-slate-50 ${
-                            selectedCandidate?.id === candidate.id ? 'bg-blue-50' : ''
+                            selectedCandidate?.id === candidate.id
+                              ? 'bg-blue-50'
+                              : viewModel.sessionConfig.workspace.currentCandidateId === candidate.id
+                                ? 'bg-amber-50'
+                                : ''
                           }`}
                           onClick={() => onSelectCandidate(candidate.id)}
                         >
                           <td className="px-4 py-3">
                             <div className="font-semibold text-slate-900">{candidate.employeeName}</div>
                             <div className="text-xs text-slate-500">{candidate.employeeId}</div>
+                            {viewModel.sessionConfig.workspace.currentCandidateId === candidate.id ? (
+                              <div className="mt-2">
+                                <InfoBadge label="현재 논의 중" />
+                              </div>
+                            ) : null}
                           </td>
                           <td className="px-4 py-3">{candidate.department}</td>
                           <td className="px-4 py-3">{candidate.rawScore.toFixed(1)}</td>
@@ -1778,14 +2332,20 @@ function CalibrationCandidatesSection({
         {selectedCandidate ? (
           <CandidateDetailPanel
             key={selectedCandidate.id}
+            viewModel={viewModel}
             candidate={selectedCandidate}
             draft={getDraft(selectedCandidate)}
+            workspaceDraft={getWorkspaceDraft(selectedCandidate)}
             gradeOptions={viewModel.gradeOptions}
             onDraftChange={onDraftChange}
+            onWorkspaceDraftChange={onWorkspaceDraftChange}
             onSaveCandidate={onSaveCandidate}
             onClearAdjustment={onClearAdjustment}
+            onSaveWorkspaceCandidate={onSaveWorkspaceCandidate}
+            onWorkspaceCommand={onWorkspaceCommand}
             readOnly={readOnly}
             isSubmitting={isSubmitting}
+            nowTick={nowTick}
           />
         ) : null}
       </div>
@@ -1794,27 +2354,49 @@ function CalibrationCandidatesSection({
 }
 
 function CandidateDetailPanel({
+  viewModel,
   candidate,
   draft,
+  workspaceDraft,
   gradeOptions,
   onDraftChange,
+  onWorkspaceDraftChange,
   onSaveCandidate,
   onClearAdjustment,
+  onSaveWorkspaceCandidate,
+  onWorkspaceCommand,
   readOnly,
   isSubmitting,
+  nowTick,
 }: {
+  viewModel: CalibrationViewModel
   candidate: CalibrationCandidate
   draft: CandidateEditState
+  workspaceDraft: CandidateWorkspaceEditState
   gradeOptions: CalibrationViewModel['gradeOptions']
   onDraftChange: (candidateId: string, next: Partial<CandidateEditState>) => void
+  onWorkspaceDraftChange: (
+    candidateId: string,
+    next: Partial<CandidateWorkspaceEditState>
+  ) => void
   onSaveCandidate: (candidateId: string) => void
   onClearAdjustment: (candidateId: string) => void
+  onSaveWorkspaceCandidate: (
+    candidateId: string,
+    overrides?: Partial<CandidateWorkspaceEditState>
+  ) => void | Promise<void>
+  onWorkspaceCommand: (command: CalibrationWorkspaceCommandPayload) => void | Promise<void>
   readOnly: boolean
   isSubmitting: boolean
+  nowTick: number
 }) {
   const [detailTab, setDetailTab] = useState<'review' | 'memo'>('review')
   const selectedGradeLabel =
     gradeOptions.find((grade) => grade.id === draft.gradeId)?.grade ?? candidate.adjustedGrade ?? candidate.originalGrade
+  const timerState = getSessionTimerState(viewModel.sessionConfig.workspace.timer, nowTick)
+  const canManageFlow = viewModel.actor.canManageFlow && !readOnly
+  const canFinalizeAdjustments = viewModel.actor.canFinalizeAdjustments && !readOnly
+  const visibleColumns = new Set(viewModel.sessionConfig.setup.visibleDataColumns)
 
   return (
     <SectionCard title="참고정보" description="조정 전후 비교, 평가 코멘트, 월간 실적 근거를 함께 보면서 최종 등급과 코멘트를 검토합니다.">
@@ -1840,6 +2422,171 @@ function CandidateDetailPanel({
           </div>
         </div>
 
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(280px,0.95fr)]">
+          <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Final Rating First</div>
+                <p className="mt-1 text-sm text-slate-500">
+                  결론부터 말하고, 짧은 사유와 긴 토론 메모를 분리해서 기록합니다.
+                </p>
+              </div>
+              <DiscussionStatusBadge status={workspaceDraft.status} />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <FieldLabel>Proposed final rating</FieldLabel>
+                <select
+                  value={draft.gradeId}
+                  onChange={(event) => onDraftChange(candidate.id, { gradeId: event.target.value })}
+                  disabled={!canFinalizeAdjustments}
+                  className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+                >
+                  {gradeOptions.map((grade) => (
+                    <option key={grade.id} value={grade.id}>
+                      {grade.grade}
+                      {grade.targetRatio !== undefined ? ` (기준 ${grade.targetRatio.toFixed(1)}%)` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>짧은 사유</FieldLabel>
+                <input
+                  value={workspaceDraft.shortReason}
+                  onChange={(event) =>
+                    onWorkspaceDraftChange(candidate.id, {
+                      shortReason: event.target.value,
+                    })
+                  }
+                  disabled={readOnly}
+                  className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+                  placeholder="결론을 먼저 말할 수 있도록 한 줄 사유를 남겨 주세요."
+                />
+              </div>
+            </div>
+
+            <div>
+              <FieldLabel>Decision helper</FieldLabel>
+              <div className="flex flex-wrap gap-2">
+                {CALIBRATION_DISCUSSION_STATUS_OPTIONS.filter((option) => option.value !== 'PENDING').map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      void onSaveWorkspaceCandidate(candidate.id, {
+                        status: option.value,
+                      })
+                    }
+                    disabled={readOnly || isSubmitting}
+                    className={`rounded-full border px-3 py-2 text-sm font-semibold transition ${
+                      workspaceDraft.status === option.value
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {requiresDecisionReason(workspaceDraft.status) ? (
+                <p className="mt-2 text-xs text-amber-700">
+                  No 또는 상위 검토는 짧은 사유를 함께 남겨야 저장됩니다.
+                </p>
+              ) : null}
+            </div>
+
+            <div>
+              <FieldLabel>Long discussion memo</FieldLabel>
+              <textarea
+                value={workspaceDraft.discussionMemo}
+                onChange={(event) =>
+                  onWorkspaceDraftChange(candidate.id, {
+                    discussionMemo: event.target.value,
+                  })
+                }
+                disabled={readOnly}
+                className="min-h-32 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+                placeholder="긴 토론 메모는 여기 남기고, 공개 코멘트와 비공개 노트는 아래에서 분리합니다."
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <ActionButton
+                icon={<Save className="h-4 w-4" />}
+                label="토론 상태 저장"
+                onClick={() => void onSaveWorkspaceCandidate(candidate.id)}
+                disabled={readOnly || isSubmitting}
+                variant="primary"
+              />
+              <ActionButton
+                icon={<Clock3 className="h-4 w-4" />}
+                label="현재 대상 타이머 시작"
+                onClick={() =>
+                  void onWorkspaceCommand({
+                    type: 'start-timer',
+                    targetId: candidate.id,
+                    durationMinutes: viewModel.sessionConfig.setup.timeboxMinutes,
+                  })
+                }
+                disabled={!canManageFlow || isSubmitting}
+              />
+              <ActionButton
+                icon={<ArrowRight className="h-4 w-4" />}
+                label="파킹"
+                onClick={() =>
+                  void onSaveWorkspaceCandidate(candidate.id, {
+                    status: 'PARKED',
+                  })
+                }
+                disabled={!canManageFlow || isSubmitting}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <TimerCard
+              timer={timerState}
+              currentCandidate={candidate}
+              canManage={canManageFlow}
+              isSubmitting={isSubmitting}
+              onStart={() =>
+                void onWorkspaceCommand({
+                  type: 'start-timer',
+                  targetId: candidate.id,
+                  durationMinutes: viewModel.sessionConfig.setup.timeboxMinutes,
+                })
+              }
+              onReset={() =>
+                void onWorkspaceCommand({
+                  type: 'reset-timer',
+                  targetId: candidate.id,
+                })
+              }
+              onExtend={(minutes) =>
+                void onWorkspaceCommand({
+                  type: 'extend-timer',
+                  minutes,
+                })
+              }
+            />
+
+            <WorkspaceHintCard
+              title="권한 안내"
+              items={[
+                `현재 세션 역할: ${viewModel.actor.sessionRole}`,
+                viewModel.actor.canManageFlow
+                  ? 'Facilitator/owner 권한으로 흐름 관리가 가능합니다.'
+                  : '현재 계정은 흐름 관리용 컨트롤이 제한됩니다.',
+                viewModel.actor.canFinalizeAdjustments
+                  ? '최종 등급 제안 저장 권한이 있습니다.'
+                  : '최종 등급 제안 저장은 owner 또는 확정 권한자 기준으로 운영합니다.',
+              ]}
+            />
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2">
           <CompareCard title="원등급" value={candidate.originalGrade} tone="neutral" />
           <CompareCard title="조정등급" value={selectedGradeLabel} tone={candidate.originalGrade === selectedGradeLabel ? 'neutral' : 'attention'} />
@@ -1851,7 +2598,7 @@ function CandidateDetailPanel({
             <select
               value={draft.gradeId}
               onChange={(event) => onDraftChange(candidate.id, { gradeId: event.target.value })}
-              disabled={readOnly}
+              disabled={!canFinalizeAdjustments}
               className="min-h-11 w-full rounded-xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
             >
               {gradeOptions.map((grade) => (
@@ -1867,7 +2614,7 @@ function CandidateDetailPanel({
             <textarea
               value={draft.reason}
               onChange={(event) => onDraftChange(candidate.id, { reason: event.target.value })}
-              disabled={readOnly}
+              disabled={!canFinalizeAdjustments}
               className="min-h-36 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
               placeholder={candidate.suggestedReason}
             />
@@ -1881,7 +2628,7 @@ function CandidateDetailPanel({
               icon={<Save className="h-4 w-4" />}
               label="이 후보 저장"
               onClick={() => onSaveCandidate(candidate.id)}
-              disabled={readOnly || isSubmitting}
+              disabled={!canFinalizeAdjustments || isSubmitting}
               variant="primary"
             />
             {candidate.adjusted ? (
@@ -1889,9 +2636,190 @@ function CandidateDetailPanel({
                 icon={<span className="text-base">↺</span>}
                 label="조정 해제"
                 onClick={() => onClearAdjustment(candidate.id)}
-                disabled={readOnly || isSubmitting}
+                disabled={!canFinalizeAdjustments || isSubmitting}
               />
             ) : null}
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Note</div>
+                <p className="mt-1 text-sm text-slate-500">
+                  note는 평가자, 참여자, HR, recorder가 보는 비공개 메모입니다. 대상자에게 공개되지 않습니다.
+                </p>
+              </div>
+              <InfoBadge label="비공개" />
+            </div>
+            <textarea
+              value={workspaceDraft.privateNote}
+              onChange={(event) =>
+                onWorkspaceDraftChange(candidate.id, {
+                  privateNote: event.target.value,
+                })
+              }
+              disabled={readOnly || !viewModel.actor.canRecordPrivateNote}
+              className="mt-4 min-h-32 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+              placeholder="내부 회의용 note를 남겨 주세요. 이 내용은 결과 공유 대상으로 노출되지 않습니다."
+            />
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Comment</div>
+                <p className="mt-1 text-sm text-slate-500">
+                  comment는 결과 공유 시 사용할 수 있는 공개 후보 문구입니다. note와 반드시 분리해 관리합니다.
+                </p>
+              </div>
+              <InfoBadge label="공유 후보" />
+            </div>
+            <textarea
+              value={workspaceDraft.publicComment}
+              onChange={(event) =>
+                onWorkspaceDraftChange(candidate.id, {
+                  publicComment: event.target.value,
+                })
+              }
+              disabled={readOnly || !viewModel.actor.canWritePublicComment}
+              className="mt-4 min-h-32 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+              placeholder="결과 공유용 comment 후보 문구를 남겨 주세요."
+            />
+            <div className="mt-3 text-xs leading-5 text-slate-500">
+              note와 comment는 다른 저장 필드에 보관되며, note가 실수로 공개되지 않도록 분리됩니다.
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Visible Data / Decision Context</div>
+              <p className="mt-1 text-sm text-slate-500">
+                세션 설정에서 선택한 컬럼만 노출합니다. 데이터가 없으면 비어 있는 상태로 안내합니다.
+              </p>
+            </div>
+            <InfoBadge label={`${visibleColumns.size}개 컬럼 설정`} />
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <VisibleContextTile
+              visible={
+                visibleColumns.has('name') ||
+                visibleColumns.has('role') ||
+                visibleColumns.has('position') ||
+                visibleColumns.has('gradeLevel') ||
+                visibleColumns.has('department') ||
+                visibleColumns.has('jobFamily')
+              }
+              label="기본 정보"
+              value={`${candidate.employeeName} · ${candidate.department} · ${candidate.jobGroup ?? '-'}${
+                candidate.seniorLevel ? ' · senior level' : ''
+              }`}
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('currentManagerRating')}
+              label="Current manager rating"
+              value={candidate.currentManagerRating}
+            />
+            <VisibleContextTile
+              visible={
+                visibleColumns.has('currentManagerRating') ||
+                visibleColumns.has('peerReviewMean') ||
+                visibleColumns.has('peerReviewVariance')
+              }
+              label="Review summary"
+              value={`manager ${candidate.currentManagerRating} / self ${
+                candidate.feedbackSummary.selfMean !== undefined
+                  ? `${candidate.feedbackSummary.selfMean.toFixed(1)}점`
+                  : '데이터 없음'
+              } / peer ${
+                candidate.feedbackSummary.peerMean !== undefined
+                  ? `${candidate.feedbackSummary.peerMean.toFixed(1)}점`
+                  : '데이터 없음'
+              }`}
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('threeYearHistory')}
+              label="최근 3년 평가 이력"
+              value={
+                candidate.threeYearHistory.length
+                  ? candidate.threeYearHistory
+                      .map((entry) => `${entry.year} ${entry.grade}`)
+                      .join(' / ')
+                  : '최근 3년 평가 이력이 없습니다.'
+              }
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('peerReviewMean')}
+              label="Peer review 평균"
+              value={
+                candidate.feedbackSummary.peerMean !== undefined
+                  ? `${candidate.feedbackSummary.peerMean.toFixed(1)}점`
+                  : 'peer review 평균 데이터가 없습니다.'
+              }
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('peerReviewVariance')}
+              label="Peer review 분산"
+              value={
+                candidate.feedbackSummary.peerVariance !== undefined
+                  ? `${candidate.feedbackSummary.peerVariance.toFixed(1)}`
+                  : 'peer review 분산 데이터가 없습니다.'
+              }
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('outlierBadge')}
+              label="Outlier flag"
+              value={candidate.outlierFlag ? '부서 분포 기준 주의 대상' : '특이점 경고 없음'}
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('newlyJoined')}
+              label="Newly joined"
+              value={candidate.newlyJoined ? '최근 입사자' : '해당 없음'}
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('newlyPromoted')}
+              label="Newly promoted"
+              value={
+                candidate.newlyPromoted === null
+                  ? '신규 승진 데이터가 없습니다.'
+                  : candidate.newlyPromoted
+                    ? '최근 승진'
+                    : '해당 없음'
+              }
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('promotionCandidate')}
+              label="Promotion candidate"
+              value={
+                candidate.promotionCandidate === null
+                  ? '승진 후보 데이터가 없습니다.'
+                  : candidate.promotionCandidate
+                    ? '승진 후보'
+                    : '해당 없음'
+              }
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('seniorLevel')}
+              label="Senior level"
+              value={candidate.seniorLevel ? 'Senior level' : '해당 없음'}
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('priorTrendSummary')}
+              label="Prior trend summary"
+              value={candidate.priorTrendSummary ?? '직전 추세 요약 데이터가 없습니다.'}
+            />
+            <VisibleContextTile
+              visible={visibleColumns.has('priorTrendSummary')}
+              label="Prior rating delta"
+              value={
+                candidate.priorRatingDelta !== undefined
+                  ? `${candidate.priorRatingDelta > 0 ? '+' : ''}${candidate.priorRatingDelta.toFixed(1)}점`
+                  : '직전 등급 대비 delta 데이터가 없습니다.'
+              }
+            />
           </div>
         </div>
 
@@ -2034,6 +2962,486 @@ function CalibrationTimelineSection({ viewModel }: { viewModel: CalibrationViewM
   )
 }
 
+function CalibrationFollowUpSection({
+  viewModel,
+  selectedCandidate,
+  commentDraft,
+  reviewNoteDraft,
+  onCommentDraftChange,
+  onReviewNoteDraftChange,
+  surveyDraft,
+  onSurveyDraftChange,
+  leaderFeedbackDrafts,
+  onLeaderFeedbackDraftChange,
+  onFollowUpCommand,
+  isSubmitting,
+}: {
+  viewModel: CalibrationViewModel
+  selectedCandidate: CalibrationCandidate | null
+  commentDraft: string
+  reviewNoteDraft: string
+  onCommentDraftChange: (targetId: string, comment: string) => void
+  onReviewNoteDraftChange: (targetId: string, note: string) => void
+  surveyDraft: {
+    hardestPart: string
+    missingData: string
+    rulesAndTimebox: string
+    positives: string
+    improvements: string
+    nextCycleNeeds: string
+    leniencyFeedback: string
+  }
+  onSurveyDraftChange: (
+    field:
+      | 'hardestPart'
+      | 'missingData'
+      | 'rulesAndTimebox'
+      | 'positives'
+      | 'improvements'
+      | 'nextCycleNeeds'
+      | 'leniencyFeedback',
+    value: string
+  ) => void
+  leaderFeedbackDrafts: Record<string, { summary: string; suggestions: string }>
+  onLeaderFeedbackDraftChange: (
+    leaderId: string,
+    next: Partial<{ summary: string; suggestions: string }>
+  ) => void
+  onFollowUpCommand: (command: CalibrationFollowUpCommandPayload) => void | Promise<void>
+  isSubmitting: boolean
+}) {
+  const selectedPacket = selectedCandidate
+    ? viewModel.followUp.communicationGuide.packets.find(
+        (packet) => packet.targetId === selectedCandidate.id
+      )
+    : null
+
+  return (
+    <div className="space-y-6">
+      <SectionCard
+        title="Post-session Review / Final Check"
+        description="세션 종료 후 전체 최적화 관점에서 변경 건, 부서 평균, outlier, 신규자/승진자, 보상 민감 플래그를 다시 점검합니다."
+      >
+        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+          <MiniMetric label="Changed rating count" value={`${viewModel.followUp.review.changedRatingCount}건`} />
+          <MiniMetric label="Outlier recheck" value={`${viewModel.followUp.review.outlierRecheckCount}명`} />
+          <MiniMetric label="Newly joined" value={`${viewModel.followUp.review.newlyJoinedCount}명`} />
+          <MiniMetric label="Newly promoted" value={`${viewModel.followUp.review.newlyPromotedCount}명`} />
+          <MiniMetric label="Promotion candidate" value={`${viewModel.followUp.review.promotionCandidateCount}명`} />
+          <MiniMetric label="Comp-sensitive flag" value={`${viewModel.followUp.review.compensationSensitiveCount}명`} />
+        </div>
+        <div className="mt-5 grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-sm font-semibold text-slate-900">부서별 평균 비교</div>
+            <div className="mt-4 space-y-3">
+              {viewModel.followUp.review.departmentComparisons.map((department) => (
+                <div key={department.departmentId} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-900">{department.department}</div>
+                      <div className="mt-1 text-sm text-slate-500">리더 {department.leaderName}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {department.isOutlier ? <WarningBadge label="outlier 재확인" /> : null}
+                      <InfoBadge label={`변경 ${department.changedCount}건`} />
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <CompareCard title="원안 평균 등급 순서" value={department.originalAverageOrder.toFixed(1)} tone="neutral" />
+                    <CompareCard title="최종 평균 등급 순서" value={department.finalAverageOrder.toFixed(1)} tone="attention" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-slate-900">최상 / 최하 recheck</div>
+              <div className="mt-3 space-y-2">
+                {viewModel.followUp.review.topBottomRecheck.map((candidate) => (
+                  <div key={candidate.targetId} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                    <div>
+                      <div className="font-medium text-slate-900">{candidate.employeeName}</div>
+                      <div className="text-xs text-slate-500">{candidate.finalGrade}</div>
+                    </div>
+                    {candidate.outlierFlag ? <WarningBadge label="outlier" /> : <InfoBadge label="recheck" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-slate-900">변경 이력과 변경 사유</div>
+              <div className="mt-3 space-y-2">
+                {viewModel.followUp.review.changeHistory.length ? (
+                  viewModel.followUp.review.changeHistory.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-medium text-slate-900">{item.employeeName ?? '후속 이력'}</div>
+                        <div className="text-xs text-slate-500">{formatDateTime(item.at)}</div>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">{item.actor}</div>
+                      {item.fromGrade || item.toGrade ? (
+                        <div className="mt-2 text-sm text-slate-700">
+                          {item.fromGrade ?? '-'} → {item.toGrade ?? '-'}
+                        </div>
+                      ) : null}
+                      {item.reason ? <div className="mt-2 text-sm leading-6 text-slate-600">{item.reason}</div> : null}
+                    </div>
+                  ))
+                ) : (
+                  <EmptyCard title="아직 후속 이력이 없습니다" description="등급 변경, comment 확정, objection 응답 이력이 여기에 쌓입니다." />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+        <SectionCard
+          title="Result Communication Guide"
+          description="결과를 바로 말하기 전 맥락을 정리하고, acceptance를 높이는 대화 순서와 금지 표현을 함께 제공합니다."
+        >
+          <div className="space-y-4">
+            <InfoNotice icon={<BriefcaseBusiness className="h-4 w-4" />} title="커뮤니케이션 목적" description={viewModel.followUp.communicationGuide.purpose} />
+            <ActionInfoCard title="대화 순서" items={viewModel.followUp.communicationGuide.sequence} />
+            <div className="grid gap-4 md:grid-cols-2">
+              <InfoNotice icon={<CheckCircle2 className="h-4 w-4" />} title="Good example snippet" description={viewModel.followUp.communicationGuide.goodExample} />
+              <InfoNotice icon={<AlertTriangle className="h-4 w-4" />} title="Bad example snippet" description={viewModel.followUp.communicationGuide.badExample} />
+            </div>
+            <ActionInfoCard title="리더가 피해야 할 표현" items={viewModel.followUp.communicationGuide.avoidPhrases} />
+            <ActionInfoCard title="Manager guide packet" items={viewModel.followUp.communicationGuide.managerDo} />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-slate-900">후속 대상 요약</div>
+              <div className="mt-3 space-y-3">
+                {viewModel.followUp.communicationGuide.packets.slice(0, 8).map((packet) => (
+                  <div key={packet.targetId} className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{packet.employeeName}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {packet.department} · {packet.finalGrade}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {packet.changed ? <InfoBadge label="등급 변경" /> : null}
+                        {packet.finalizedComment ? <InfoBadge label="comment finalized" /> : <WarningBadge label="comment handoff 필요" />}
+                      </div>
+                    </div>
+                    <div className="mt-3 text-sm leading-6 text-slate-600">{packet.contextSummary}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Note-to-Comment Handoff"
+          description="private memo는 비공개로 유지하고, public comment만 결과 공유용으로 선택/작성/수정합니다."
+        >
+          {selectedCandidate && selectedPacket ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-slate-900">{selectedCandidate.employeeName}</div>
+                    <div className="mt-1 text-sm text-slate-500">{selectedPacket.contextSummary}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedPacket.compensationSensitive ? <WarningBadge label="comp-sensitive final check" /> : null}
+                    {selectedPacket.packetGeneratedAt ? <InfoBadge label="packet generated" /> : null}
+                  </div>
+                </div>
+              </div>
+              <FieldLabel>공개용 comment</FieldLabel>
+              <textarea
+                value={commentDraft}
+                onChange={(event) => onCommentDraftChange(selectedCandidate.id, event.target.value)}
+                className="min-h-36 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+                placeholder="결과 공유 시 사용할 comment를 정리하세요."
+              />
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <FieldLabel>최종 검토 메모</FieldLabel>
+                  <textarea
+                    value={reviewNoteDraft}
+                    onChange={(event) => onReviewNoteDraftChange(selectedCandidate.id, event.target.value)}
+                    className="min-h-28 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+                    placeholder="등급 변경 맥락과 D+3 전달 포인트를 정리합니다."
+                  />
+                  <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedPacket.compensationSensitive}
+                      onChange={(event) =>
+                        void onFollowUpCommand({
+                          type: 'set-review-flag',
+                          targetId: selectedCandidate.id,
+                          compensationSensitive: event.target.checked,
+                          note: reviewNoteDraft,
+                        })
+                      }
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    compensation-sensitive final check flag
+                  </label>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm font-semibold text-slate-900">Comment revision history</div>
+                  <div className="mt-3 space-y-2">
+                    {selectedPacket.revisions.length ? (
+                      selectedPacket.revisions.map((revision) => (
+                        <div key={revision.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <InfoBadge label={revision.stage === 'FINALIZED' ? 'finalized' : 'draft'} />
+                            <span className="text-xs text-slate-500">{formatDateTime(revision.createdAt)}</span>
+                          </div>
+                          <div className="mt-2 text-xs text-slate-500">{revision.actorName}</div>
+                          <div className="mt-2 text-sm leading-6 text-slate-700">{revision.comment}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <EmptyCard title="아직 comment revision이 없습니다" description="초안 저장 또는 확정 후 이력이 누적됩니다." />
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <ActionButton
+                  icon={<ShieldCheck className="h-4 w-4" />}
+                  label="final check 저장"
+                  onClick={() =>
+                    void onFollowUpCommand({
+                      type: 'set-review-flag',
+                      targetId: selectedCandidate.id,
+                      compensationSensitive: selectedPacket.compensationSensitive,
+                      note: reviewNoteDraft,
+                    })
+                  }
+                  disabled={isSubmitting}
+                />
+                <ActionButton
+                  icon={<Save className="h-4 w-4" />}
+                  label="comment handoff 저장"
+                  onClick={() =>
+                    void onFollowUpCommand({
+                      type: 'save-comment-draft',
+                      targetId: selectedCandidate.id,
+                      comment: commentDraft,
+                    })
+                  }
+                  disabled={isSubmitting || !commentDraft.trim()}
+                />
+                <ActionButton
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  label="comment finalized"
+                  onClick={() =>
+                    void onFollowUpCommand({
+                      type: 'finalize-comment',
+                      targetId: selectedCandidate.id,
+                      comment: commentDraft,
+                    })
+                  }
+                  disabled={isSubmitting || !commentDraft.trim() || !viewModel.actor.canFinalizeFollowUpComment}
+                  variant="primary"
+                />
+                <ActionButton
+                  icon={<FileSearch className="h-4 w-4" />}
+                  label="communication packet generated"
+                  onClick={() =>
+                    void onFollowUpCommand({
+                      type: 'generate-communication-packet',
+                      targetId: selectedCandidate.id,
+                    })
+                  }
+                  disabled={isSubmitting || !(selectedPacket.finalizedComment || commentDraft.trim())}
+                />
+              </div>
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+                HR은 동일한 메시지가 전달되도록 guide와 supporting material을 정리합니다. 실제 결과 커뮤니케이션 주체는 owner / manager이며, “위에서 그렇게 정했다” 식의 전달은 피해야 합니다.
+              </div>
+            </div>
+          ) : (
+            <EmptyCard title="후속 커뮤니케이션 대상을 선택해 주세요" description="선택된 대상자 기준으로 comment handoff와 final check를 정리합니다." />
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+        <SectionCard
+          title="Objection Workflow"
+          description="다른 동료와의 단순 비교 기반 objection은 허용하지 않고, direct manager first 이후 calibration owner / HR review로 이어집니다."
+        >
+          <div className="grid gap-4 md:grid-cols-4">
+            <MiniMetric label="submitted" value={`${viewModel.followUp.objections.summary.SUBMITTED}건`} />
+            <MiniMetric label="reviewing" value={`${viewModel.followUp.objections.summary.REVIEWING}건`} />
+            <MiniMetric label="responded" value={`${viewModel.followUp.objections.summary.RESPONDED}건`} />
+            <MiniMetric label="closed" value={`${viewModel.followUp.objections.summary.CLOSED}건`} />
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <InfoNotice icon={<Clock3 className="h-4 w-4" />} title="Objection window open / close" description={`${viewModel.followUp.objections.windowOpenAt ? formatDateTime(viewModel.followUp.objections.windowOpenAt) : '미정'} ~ ${viewModel.followUp.objections.windowCloseAt ? formatDateTime(viewModel.followUp.objections.windowCloseAt) : '미정'}`} />
+            <ActionInfoCard title="Review path" items={['direct manager first', 'calibration owner / HR review', '상세한 설명과 향후 기대치를 함께 남기기', '2차 이의제기는 별도 정책이 없으면 지원하지 않음']} />
+          </div>
+          <div className="mt-4">
+            <ActionLink
+              icon={<FileSearch className="h-4 w-4" />}
+              label="이의신청 화면 열기"
+              href="/evaluation/appeal"
+              description="기존 결과 이의신청 흐름을 재사용해 objection submit / review / respond / close 상태를 관리합니다."
+            />
+          </div>
+          <div className="mt-4 space-y-3">
+            {viewModel.followUp.objections.cases.length ? (
+              viewModel.followUp.objections.cases.map((objection) => (
+                <div key={objection.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-900">{objection.appealerName} → {objection.targetName}</div>
+                      <div className="mt-1 text-xs text-slate-500">{objection.targetDepartment} · {formatDateTime(objection.createdAt)}</div>
+                    </div>
+                    <InfoBadge label={objection.status.toLowerCase()} />
+                  </div>
+                  <div className="mt-3 text-sm leading-6 text-slate-700">{objection.reason}</div>
+                  {objection.adminResponse ? <div className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">{objection.adminResponse}</div> : null}
+                </div>
+              ))
+            ) : (
+              <EmptyCard title="현재 연결된 objection이 없습니다" description="기존 이의신청 흐름에서 접수된 건이 있으면 이곳에서 follow-up 상태를 모니터링합니다." />
+            )}
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Participant Survey / Retrospective"
+          description="참여자 대상 회고 설문과 aggregate report를 모아 다음 번 개선 포인트를 정리합니다."
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <MiniMetric label="survey response" value={`${viewModel.followUp.surveys.responseCount}건`} />
+            <MiniMetric label="hardest themes" value={`${viewModel.followUp.surveys.aggregates.hardestThemes.length}개`} />
+            <MiniMetric label="improvement themes" value={`${viewModel.followUp.surveys.aggregates.improvementThemes.length}개`} />
+          </div>
+          <div className="mt-4 space-y-3">
+            <FieldLabel>캘리브레이션에서 무엇이 가장 어려웠나?</FieldLabel>
+            <textarea value={surveyDraft.hardestPart} onChange={(event) => onSurveyDraftChange('hardestPart', event.target.value)} className="min-h-24 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900" />
+            <FieldLabel>어떤 데이터가 부족했나?</FieldLabel>
+            <textarea value={surveyDraft.missingData} onChange={(event) => onSurveyDraftChange('missingData', event.target.value)} className="min-h-24 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900" />
+            <FieldLabel>미팅 규칙과 시간 운영은 적절했나?</FieldLabel>
+            <textarea value={surveyDraft.rulesAndTimebox} onChange={(event) => onSurveyDraftChange('rulesAndTimebox', event.target.value)} className="min-h-24 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900" />
+            <FieldLabel>좋았던 점 / 아쉬운 점 / 아이디어</FieldLabel>
+            <textarea value={surveyDraft.positives} onChange={(event) => onSurveyDraftChange('positives', event.target.value)} className="min-h-24 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900" />
+            <textarea value={surveyDraft.improvements} onChange={(event) => onSurveyDraftChange('improvements', event.target.value)} className="min-h-24 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900" placeholder="다음 번 개선이 필요한 부분" />
+            <textarea value={surveyDraft.nextCycleNeeds} onChange={(event) => onSurveyDraftChange('nextCycleNeeds', event.target.value)} className="min-h-24 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900" placeholder="다음 사이클에 필요한 지원" />
+            <textarea value={surveyDraft.leniencyFeedback} onChange={(event) => onSurveyDraftChange('leniencyFeedback', event.target.value)} className="min-h-24 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900" placeholder="특정 리더의 평가 관대화/엄격화 경향 feedback" />
+            <ActionButton
+              icon={<Save className="h-4 w-4" />}
+              label="survey submitted"
+              onClick={() =>
+                void onFollowUpCommand({
+                  type: 'submit-survey',
+                  hardestPart: surveyDraft.hardestPart,
+                  missingData: surveyDraft.missingData,
+                  rulesAndTimebox: surveyDraft.rulesAndTimebox,
+                  positives: surveyDraft.positives,
+                  improvements: surveyDraft.improvements,
+                  nextCycleNeeds: surveyDraft.nextCycleNeeds,
+                  leniencyFeedback: surveyDraft.leniencyFeedback,
+                })
+              }
+              disabled={
+                isSubmitting ||
+                !viewModel.actor.canSubmitFollowUpSurvey ||
+                !surveyDraft.hardestPart.trim() ||
+                !surveyDraft.missingData.trim() ||
+                !surveyDraft.rulesAndTimebox.trim() ||
+                !surveyDraft.positives.trim() ||
+                !surveyDraft.improvements.trim() ||
+                !surveyDraft.nextCycleNeeds.trim()
+              }
+              variant="primary"
+            />
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-slate-900">Aggregate report</div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <ActionInfoCard title="Hardest themes" items={viewModel.followUp.surveys.aggregates.hardestThemes.length ? viewModel.followUp.surveys.aggregates.hardestThemes : ['아직 응답 없음']} />
+                <ActionInfoCard title="Missing data" items={viewModel.followUp.surveys.aggregates.missingDataThemes.length ? viewModel.followUp.surveys.aggregates.missingDataThemes : ['아직 응답 없음']} />
+                <ActionInfoCard title="Improvement themes" items={viewModel.followUp.surveys.aggregates.improvementThemes.length ? viewModel.followUp.surveys.aggregates.improvementThemes : ['아직 응답 없음']} />
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard
+        title="Leader Feedback"
+        description="HR / facilitator가 리더별 follow-up feedback을 기록하고 leader-only visibility로 정리합니다."
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          {viewModel.followUp.review.departmentComparisons.map((department) => {
+            const currentDraft = getLeaderFeedbackDraft(
+              viewModel,
+              department.leaderName,
+              department.leaderName,
+              leaderFeedbackDrafts
+            )
+            return (
+              <div key={department.departmentId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-slate-900">{department.leaderName}</div>
+                    <div className="mt-1 text-sm text-slate-500">{department.department}</div>
+                  </div>
+                  <InfoBadge label="leader-only" />
+                </div>
+                <div className="mt-3 space-y-3">
+                  <textarea
+                    value={currentDraft.summary}
+                    onChange={(event) =>
+                      onLeaderFeedbackDraftChange(department.leaderName, {
+                        summary: event.target.value,
+                      })
+                    }
+                    className="min-h-28 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+                    placeholder="예: 팀원 5명 중 3명이 하향 조정되어 기준 재정렬이 필요합니다."
+                  />
+                  <textarea
+                    value={currentDraft.suggestions}
+                    onChange={(event) =>
+                      onLeaderFeedbackDraftChange(department.leaderName, {
+                        suggestions: event.target.value,
+                      })
+                    }
+                    className="min-h-24 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+                    placeholder="다음 사이클 개선 제안"
+                  />
+                  <ActionButton
+                    icon={<Save className="h-4 w-4" />}
+                    label="leader feedback 저장"
+                    onClick={() =>
+                      void onFollowUpCommand({
+                        type: 'save-leader-feedback',
+                        leaderId: department.leaderName,
+                        leaderName: department.leaderName,
+                        summary: currentDraft.summary,
+                        suggestions: currentDraft.suggestions,
+                      })
+                    }
+                    disabled={
+                      isSubmitting ||
+                      !viewModel.actor.canRecordLeaderFeedback ||
+                      currentDraft.summary.trim().length < 10
+                    }
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </SectionCard>
+    </div>
+  )
+}
+
 function CalibrationLockSection({
   viewModel,
   canLock,
@@ -2087,6 +3495,8 @@ function CalibrationLockSection({
   )
 }
 
+// Kept temporarily as reference content while the setup hub replaces the old policy tab.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CalibrationPolicySection() {
   const faqs = [
     {
@@ -2230,6 +3640,267 @@ function InfoBadge({ label }: { label: string }) {
 
 function WarningBadge({ label }: { label: string }) {
   return <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">{label}</span>
+}
+
+function DiscussionStatusBadge({ status }: { status: CalibrationDiscussionStatus }) {
+  const meta = getCalibrationDiscussionStatusMeta(status)
+  const className =
+    meta.tone === 'blue'
+      ? 'bg-blue-100 text-blue-700'
+      : meta.tone === 'emerald'
+        ? 'bg-emerald-100 text-emerald-700'
+        : meta.tone === 'violet'
+          ? 'bg-violet-100 text-violet-700'
+          : meta.tone === 'rose'
+            ? 'bg-rose-100 text-rose-700'
+            : meta.tone === 'amber'
+              ? 'bg-amber-100 text-amber-800'
+              : meta.tone === 'orange'
+                ? 'bg-orange-100 text-orange-700'
+                : 'bg-slate-100 text-slate-700'
+
+  return <span className={`rounded-full px-3 py-1 text-xs font-semibold ${className}`}>{meta.label}</span>
+}
+
+function WorkspaceHintCard({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="font-semibold text-slate-900">{title}</div>
+      <div className="mt-3 space-y-2 text-sm text-slate-600">
+        {items.map((item) => (
+          <div key={item} className="flex gap-2">
+            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
+            <span>{item}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TimerCard({
+  timer,
+  currentCandidate,
+  canManage,
+  isSubmitting,
+  onStart,
+  onReset,
+  onExtend,
+}: {
+  timer: ReturnType<typeof getSessionTimerState>
+  currentCandidate: CalibrationCandidate | null
+  canManage: boolean
+  isSubmitting: boolean
+  onStart: () => void
+  onReset: () => void
+  onExtend: (minutes: number) => void
+}) {
+  const toneClass =
+    timer && timer.overdueSeconds > 0
+      ? 'border-rose-200 bg-rose-50'
+      : timer && timer.isRunning
+        ? 'border-blue-200 bg-blue-50'
+        : 'border-slate-200 bg-white'
+
+  return (
+    <div className={`rounded-2xl border p-4 ${toneClass}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-900">Timebox / Timer</div>
+          <p className="mt-1 text-sm text-slate-500">
+            {currentCandidate
+              ? `${currentCandidate.employeeName} · 기본 ${timer?.baseMinutes ?? 5}분`
+              : '현재 대상자를 지정하면 타이머를 시작할 수 있습니다.'}
+          </p>
+        </div>
+        <Clock3 className="h-5 w-5 text-slate-500" />
+      </div>
+      <div className="mt-4 flex items-end justify-between gap-3">
+        <div>
+          <div className="text-3xl font-bold text-slate-900">
+            {timer ? timer.remainingLabel : '05:00'}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            {timer?.overdueSeconds
+              ? `시간 초과 ${Math.floor(timer.overdueSeconds / 60)}분`
+              : timer?.isRunning
+                ? '남은 시간'
+                : '대기 중'}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ActionButton
+            icon={<Clock3 className="h-4 w-4" />}
+            label={timer?.isRunning ? '다시 시작' : '시작'}
+            onClick={onStart}
+            disabled={!canManage || isSubmitting || !currentCandidate}
+            variant="primary"
+          />
+          <ActionButton
+            icon={<span className="text-base">↺</span>}
+            label="리셋"
+            onClick={onReset}
+            disabled={!canManage || isSubmitting || !currentCandidate}
+          />
+          <ActionButton
+            icon={<span className="text-base">+2</span>}
+            label="2분 연장"
+            onClick={() => onExtend(2)}
+            disabled={!canManage || isSubmitting || !timer?.isRunning}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ReferenceDistributionNudgeCard({ viewModel }: { viewModel: CalibrationViewModel }) {
+  const referenceRatios = viewModel.sessionConfig.setup.referenceDistributionRatios.length
+    ? viewModel.sessionConfig.setup.referenceDistributionRatios
+    : viewModel.gradeOptions
+        .filter((grade) => grade.targetRatio !== undefined)
+        .map((grade) => ({
+          gradeId: grade.id,
+          gradeLabel: grade.grade,
+          ratio: grade.targetRatio ?? 0,
+        }))
+  const warnings = referenceRatios.length
+    ? referenceRatios
+        .map((reference) => {
+          const current = viewModel.distributions.company.find((item) => item.grade === reference.gradeLabel)
+          if (!current) return null
+          const delta = current.ratio - reference.ratio
+          if (Math.abs(delta) < 8) return null
+          return `${reference.gradeLabel} 구간이 참고 분포 대비 ${delta > 0 ? '+' : ''}${delta.toFixed(1)}pt 차이납니다.`
+        })
+        .filter((item): item is string => Boolean(item))
+    : []
+  const leniencyWarning =
+    viewModel.summary.highGradeRatio >= 45 ? '상위 등급 비중이 높아 leniency self-check가 필요합니다.' : null
+  const severityWarning =
+    viewModel.summary.lowGradeRatio >= 35 ? '하위 등급 비중이 높아 severity self-check가 필요합니다.' : null
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-900">Reference Distribution Nudge</div>
+          <p className="mt-1 text-sm text-slate-500">
+            {viewModel.sessionConfig.setup.referenceDistributionUse === 'GUIDELINE_ONLY'
+              ? '참고 분포는 guideline only로 표시됩니다. mismatch가 있어도 hard block 되지 않습니다.'
+              : '세션 설정에서 참고 분포를 끄면 현재 분포만 보여 줍니다.'}
+          </p>
+        </div>
+        <InfoBadge
+          label={
+            viewModel.sessionConfig.setup.referenceDistributionUse === 'GUIDELINE_ONLY'
+              ? 'guideline only'
+              : 'off'
+          }
+        />
+      </div>
+      <div className="mt-4 space-y-3">
+        {viewModel.distributions.company.map((grade) => (
+          <div key={grade.grade} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-slate-900">{grade.grade}</span>
+              <span className="text-slate-500">
+                현재 {grade.ratio.toFixed(1)}%
+                {referenceRatios.find((item) => item.gradeLabel === grade.grade)
+                  ? ` / 참고 ${referenceRatios.find((item) => item.gradeLabel === grade.grade)?.ratio.toFixed(1)}%`
+                  : ''}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {[...warnings, leniencyWarning, severityWarning]
+        .filter((item): item is string => Boolean(item))
+        .slice(0, 3)
+        .map((item) => (
+          <div key={item} className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {item}
+          </div>
+        ))}
+    </div>
+  )
+}
+
+function FacilitatorPromptCard({
+  prompts,
+  customPromptInput,
+  onCustomPromptInputChange,
+  onAddPrompt,
+  onRemovePrompt,
+  disabled,
+}: {
+  prompts: string[]
+  customPromptInput: string
+  onCustomPromptInputChange: (value: string) => void
+  onAddPrompt: () => void
+  onRemovePrompt: (prompt: string) => void
+  disabled: boolean
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="text-sm font-semibold text-slate-900">Facilitator Prompt Panel</div>
+      <p className="mt-1 text-sm text-slate-500">
+        HR과 facilitator가 좋은 질문을 빠르게 던질 수 있도록 기본 질문과 custom question을 함께 둡니다.
+      </p>
+      <div className="mt-4 space-y-2">
+        {prompts.map((prompt) => (
+          <div key={prompt} className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
+            <span className="flex-1">{prompt}</span>
+            {!(CALIBRATION_DEFAULT_FACILITATOR_PROMPTS as readonly string[]).includes(prompt) ? (
+              <button
+                type="button"
+                onClick={() => onRemovePrompt(prompt)}
+                disabled={disabled}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-60"
+              >
+                삭제
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex gap-2">
+        <input
+          value={customPromptInput}
+          onChange={(event) => onCustomPromptInputChange(event.target.value)}
+          disabled={disabled}
+          className="min-h-11 flex-1 rounded-xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
+          placeholder="custom question을 추가해 보세요."
+        />
+        <ActionButton
+          icon={<span className="text-base">+</span>}
+          label="추가"
+          onClick={onAddPrompt}
+          disabled={disabled || customPromptInput.trim().length === 0}
+        />
+      </div>
+    </div>
+  )
+}
+
+function VisibleContextTile({
+  visible,
+  label,
+  value,
+}: {
+  visible: boolean
+  label: string
+  value: string
+}) {
+  if (!visible) return null
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
+      <div className="mt-2 text-sm leading-6 text-slate-800">{value}</div>
+    </div>
+  )
 }
 
 function GradeDeltaBadge({ delta }: { delta: string }) {
@@ -2541,6 +4212,44 @@ function UploadIssueList({
   )
 }
 
+function getFollowUpCommentDraft(
+  viewModel: CalibrationViewModel,
+  targetId: string,
+  drafts: Record<string, string>
+) {
+  const packet = viewModel.followUp.communicationGuide.packets.find(
+    (item) => item.targetId === targetId
+  )
+  return drafts[targetId] ?? packet?.draftComment ?? packet?.finalizedComment ?? ''
+}
+
+function getFollowUpReviewNoteDraft(
+  viewModel: CalibrationViewModel,
+  targetId: string,
+  drafts: Record<string, string>
+) {
+  const packet = viewModel.followUp.communicationGuide.packets.find(
+    (item) => item.targetId === targetId
+  )
+  return drafts[targetId] ?? packet?.finalCheckNote ?? ''
+}
+
+function getLeaderFeedbackDraft(
+  viewModel: CalibrationViewModel,
+  leaderId: string,
+  leaderName: string,
+  drafts: Record<string, { summary: string; suggestions: string }>
+) {
+  const current = drafts[leaderId]
+  if (current) return current
+
+  const existing = viewModel.followUp.leaderFeedback.find((item) => item.leaderId === leaderId)
+  return {
+    summary: existing?.summary ?? '',
+    suggestions: existing?.suggestions ?? '',
+  }
+}
+
 function getCandidateDraft(
   viewModel: CalibrationViewModel,
   draftEdits: Record<string, CandidateEditState>,
@@ -2554,6 +4263,64 @@ function getCandidateDraft(
       reason: candidate.reason ?? '',
     }
   )
+}
+
+function getWorkspaceDraft(
+  candidate: CalibrationCandidate,
+  workspaceDrafts: Record<string, CandidateWorkspaceEditState>
+) {
+  return (
+    workspaceDrafts[candidate.id] ?? {
+      status: candidate.workspace.status,
+      shortReason: candidate.workspace.shortReason,
+      discussionMemo: candidate.workspace.discussionMemo,
+      privateNote: candidate.workspace.privateNote,
+      publicComment: candidate.workspace.publicComment,
+    }
+  )
+}
+
+function getSessionTimerState(
+  timer: CalibrationViewModel['sessionConfig']['workspace']['timer'],
+  nowTick: number
+) {
+  if (!timer?.startedAt) {
+    return {
+      isRunning: false,
+      remainingSeconds: timer ? timer.durationMinutes * 60 : 5 * 60,
+      overdueSeconds: 0,
+      remainingLabel: formatSeconds(timer ? timer.durationMinutes * 60 : 5 * 60),
+      baseMinutes: timer?.durationMinutes ?? 5,
+    }
+  }
+
+  const totalSeconds = (timer.durationMinutes + timer.extendedMinutes) * 60
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((nowTick - new Date(timer.startedAt).getTime()) / 1000)
+  )
+  const remainingSeconds = Math.max(0, totalSeconds - elapsedSeconds)
+  const overdueSeconds = Math.max(0, elapsedSeconds - totalSeconds)
+
+  return {
+    isRunning: true,
+    remainingSeconds,
+    overdueSeconds,
+    remainingLabel:
+      overdueSeconds > 0 ? `+${formatSeconds(overdueSeconds)}` : formatSeconds(remainingSeconds),
+    baseMinutes: timer.durationMinutes,
+  }
+}
+
+function getElapsedMinutes(startedAt: string | undefined, nowTick: number) {
+  if (!startedAt) return 0
+  return Math.max(0, Math.floor((nowTick - new Date(startedAt).getTime()) / 60000))
+}
+
+function formatSeconds(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 function parseCalibrationBulkImportText(

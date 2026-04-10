@@ -1,6 +1,20 @@
+import { randomUUID } from 'node:crypto'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import {
+  createDefaultCalibrationCommentHandoff,
+  normalizeCalibrationCommentHandoff,
+  normalizeCalibrationFollowUpReviewFlag,
+} from '@/lib/calibration-follow-up'
+import {
+  normalizeCalibrationWorkspaceCandidateState,
+  type CalibrationDiscussionStatus,
+} from '@/lib/calibration-workspace'
+import {
+  normalizeCalibrationSessionSetup,
+  type CalibrationSessionSetupValue,
+} from '@/lib/calibration-session-setup'
 import { prisma } from '@/lib/prisma'
 import { CalibrationCandidateUpdateSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -35,7 +49,7 @@ export async function PATCH(request: Request) {
       throw new AppError(404, 'CYCLE_NOT_FOUND', '평가 주기를 찾지 못했습니다.')
     }
 
-    if (isLockedCycle(cycle.status)) {
+    if (body.action !== 'update-follow-up' && isLockedCycle(cycle.status)) {
       throw new AppError(400, 'CALIBRATION_LOCKED', '이미 잠긴 주기라 조정할 수 없습니다.')
     }
 
@@ -52,7 +66,7 @@ export async function PATCH(request: Request) {
       },
     })
 
-    if (latestCycleAction?.action === 'CALIBRATION_LOCKED') {
+    if (body.action !== 'update-follow-up' && latestCycleAction?.action === 'CALIBRATION_LOCKED') {
       throw new AppError(400, 'CALIBRATION_LOCKED', '잠금 상태에서는 조정을 수정할 수 없습니다.')
     }
 
@@ -64,7 +78,11 @@ export async function PATCH(request: Request) {
         excludedTargetIds: body.sessionConfig?.excludedTargetIds ?? currentSessionConfig.excludedTargetIds,
         participantIds: body.sessionConfig?.participantIds ?? currentSessionConfig.participantIds,
         evaluatorIds: body.sessionConfig?.evaluatorIds ?? currentSessionConfig.evaluatorIds,
+        observerIds: body.sessionConfig?.observerIds ?? currentSessionConfig.observerIds,
         externalColumns: body.sessionConfig?.externalColumns ?? currentSessionConfig.externalColumns,
+        setup: normalizeCalibrationSessionSetup(
+          (body.sessionConfig?.setup ?? currentSessionConfig.setup) as Partial<CalibrationSessionSetupValue>
+        ),
       }
 
       await prisma.evalCycle.update({
@@ -86,6 +104,336 @@ export async function PATCH(request: Request) {
       return successResponse({
         cycleId: cycle.id,
         sessionConfig: nextSessionConfig,
+      })
+    }
+
+    if (body.action === 'update-workspace') {
+      if (!body.workspaceCommand) {
+        throw new AppError(400, 'WORKSPACE_COMMAND_REQUIRED', '워크스페이스 변경 내용을 확인해 주세요.')
+      }
+
+      const command = body.workspaceCommand
+      const now = new Date().toISOString()
+      const nextWorkspace = {
+        ...currentSessionConfig.workspace,
+        candidateStates: {
+          ...currentSessionConfig.workspace.candidateStates,
+        },
+      }
+
+      let auditAction = 'CALIBRATION_WORKSPACE_UPDATED'
+      let auditValue: Record<string, unknown> = {}
+
+      if (command.type === 'set-current-candidate') {
+        nextWorkspace.currentCandidateId = command.targetId
+        auditAction = 'CALIBRATION_CURRENT_CANDIDATE_CHANGED'
+        auditValue = {
+          currentCandidateId: command.targetId,
+        }
+      } else if (command.type === 'save-candidate-workspace') {
+        nextWorkspace.candidateStates[command.targetId] = normalizeCalibrationWorkspaceCandidateState({
+          ...nextWorkspace.candidateStates[command.targetId],
+          status: command.status as CalibrationDiscussionStatus,
+          shortReason: command.shortReason,
+          discussionMemo: command.discussionMemo,
+          privateNote: command.privateNote,
+          publicComment: command.publicComment,
+          updatedAt: now,
+          updatedBy: session.user.name ?? session.user.id,
+        })
+        auditAction = 'CALIBRATION_DISCUSSION_UPDATED'
+        auditValue = {
+          targetId: command.targetId,
+          status: command.status,
+          shortReason: command.shortReason,
+          hasDiscussionMemo: command.discussionMemo.trim().length > 0,
+          hasPrivateNote: command.privateNote.trim().length > 0,
+          hasPublicComment: command.publicComment.trim().length > 0,
+        }
+      } else if (command.type === 'start-timer') {
+        nextWorkspace.currentCandidateId = command.targetId
+        nextWorkspace.timer = {
+          candidateId: command.targetId,
+          startedAt: now,
+          durationMinutes: command.durationMinutes ?? currentSessionConfig.setup.timeboxMinutes,
+          extendedMinutes: 0,
+          startedById: session.user.id,
+        }
+        auditAction = 'CALIBRATION_TIMER_STARTED'
+        auditValue = {
+          targetId: command.targetId,
+          durationMinutes: nextWorkspace.timer.durationMinutes,
+        }
+      } else if (command.type === 'reset-timer') {
+        nextWorkspace.timer = {
+          candidateId:
+            command.targetId ??
+            nextWorkspace.timer?.candidateId ??
+            nextWorkspace.currentCandidateId ??
+            null,
+          startedAt: now,
+          durationMinutes: nextWorkspace.timer?.durationMinutes ?? currentSessionConfig.setup.timeboxMinutes,
+          extendedMinutes: 0,
+          startedById: session.user.id,
+        }
+        auditAction = 'CALIBRATION_TIMER_RESET'
+        auditValue = {
+          targetId: nextWorkspace.timer.candidateId,
+          durationMinutes: nextWorkspace.timer.durationMinutes,
+        }
+      } else if (command.type === 'extend-timer') {
+        if (!nextWorkspace.timer?.startedAt) {
+          throw new AppError(400, 'TIMER_NOT_STARTED', '먼저 타이머를 시작해 주세요.')
+        }
+        nextWorkspace.timer = {
+          ...nextWorkspace.timer,
+          extendedMinutes: Math.min(15, nextWorkspace.timer.extendedMinutes + command.minutes),
+        }
+        auditAction = 'CALIBRATION_TIMER_EXTENDED'
+        auditValue = {
+          targetId: nextWorkspace.timer.candidateId,
+          extendedMinutes: nextWorkspace.timer.extendedMinutes,
+        }
+      } else if (command.type === 'add-custom-prompt') {
+        nextWorkspace.customPrompts = Array.from(
+          new Set([...nextWorkspace.customPrompts, command.prompt.trim()])
+        ).slice(0, 10)
+        auditAction = 'CALIBRATION_FACILITATOR_PROMPT_ADDED'
+        auditValue = {
+          prompt: command.prompt.trim(),
+          promptCount: nextWorkspace.customPrompts.length,
+        }
+      } else if (command.type === 'remove-custom-prompt') {
+        nextWorkspace.customPrompts = nextWorkspace.customPrompts.filter(
+          (prompt) => prompt !== command.prompt.trim()
+        )
+        auditAction = 'CALIBRATION_FACILITATOR_PROMPT_REMOVED'
+        auditValue = {
+          prompt: command.prompt.trim(),
+          promptCount: nextWorkspace.customPrompts.length,
+        }
+      }
+
+      const nextSessionConfig = {
+        ...currentSessionConfig,
+        workspace: nextWorkspace,
+      }
+
+      await prisma.evalCycle.update({
+        where: { id: cycle.id },
+        data: {
+          calibrationSessionConfig: toCalibrationSessionConfigJson(nextSessionConfig),
+        },
+      })
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: auditAction,
+        entityType: 'EvalCycle',
+        entityId: cycle.id,
+        newValue: auditValue,
+        ...client,
+      })
+
+      return successResponse({
+        cycleId: cycle.id,
+        workspace: nextWorkspace,
+      })
+    }
+
+    if (body.action === 'update-follow-up') {
+      if (!body.followUpCommand) {
+        throw new AppError(400, 'FOLLOW_UP_COMMAND_REQUIRED', '?뚰괎濡쒖뾽 蹂寃??댁슜???뺤씤??二쇱꽭??')
+      }
+
+      const command = body.followUpCommand
+      const now = new Date().toISOString()
+      const nextFollowUp = {
+        ...currentSessionConfig.followUp,
+        commentHandoffsByTargetId: {
+          ...currentSessionConfig.followUp.commentHandoffsByTargetId,
+        },
+        reviewFlagsByTargetId: {
+          ...currentSessionConfig.followUp.reviewFlagsByTargetId,
+        },
+        leaderFeedbackByLeaderId: {
+          ...currentSessionConfig.followUp.leaderFeedbackByLeaderId,
+        },
+        retrospectiveSurveys: [...currentSessionConfig.followUp.retrospectiveSurveys],
+      }
+
+      let auditAction = 'CALIBRATION_FOLLOW_UP_UPDATED'
+      let auditValue: Record<string, unknown> = {}
+
+      if (command.type === 'save-comment-draft' || command.type === 'finalize-comment') {
+        const currentHandoff = normalizeCalibrationCommentHandoff(
+          nextFollowUp.commentHandoffsByTargetId[command.targetId] ??
+            createDefaultCalibrationCommentHandoff(
+              currentSessionConfig.workspace.candidateStates[command.targetId]?.publicComment ?? ''
+            )
+        )
+        const trimmedComment = command.comment.trim()
+        const revisions = [
+          ...currentHandoff.revisions,
+          {
+            id: randomUUID(),
+            stage: (command.type === 'finalize-comment' ? 'FINALIZED' : 'DRAFT') as 'DRAFT' | 'FINALIZED',
+            comment: trimmedComment,
+            createdAt: now,
+            actorUserId: session.user.id,
+            actorName: session.user.name ?? session.user.id,
+          },
+        ]
+
+        nextFollowUp.commentHandoffsByTargetId[command.targetId] = {
+          ...currentHandoff,
+          draftComment: trimmedComment,
+          finalizedComment:
+            command.type === 'finalize-comment'
+              ? trimmedComment
+              : currentHandoff.finalizedComment,
+          finalizedAt:
+            command.type === 'finalize-comment' ? now : currentHandoff.finalizedAt,
+          finalizedById:
+            command.type === 'finalize-comment'
+              ? session.user.id
+              : currentHandoff.finalizedById,
+          finalizedByName:
+            command.type === 'finalize-comment'
+              ? session.user.name ?? session.user.id
+              : currentHandoff.finalizedByName,
+          revisions,
+        }
+
+        auditAction =
+          command.type === 'finalize-comment'
+            ? 'CALIBRATION_PUBLIC_COMMENT_FINALIZED'
+            : 'CALIBRATION_PUBLIC_COMMENT_HANDOFF_SAVED'
+        auditValue = {
+          targetId: command.targetId,
+          commentLength: trimmedComment.length,
+          revisionCount: revisions.length,
+        }
+      } else if (command.type === 'generate-communication-packet') {
+        const currentHandoff = normalizeCalibrationCommentHandoff(
+          nextFollowUp.commentHandoffsByTargetId[command.targetId] ??
+            createDefaultCalibrationCommentHandoff(
+              currentSessionConfig.workspace.candidateStates[command.targetId]?.publicComment ?? ''
+            )
+        )
+        const packetComment =
+          currentHandoff.finalizedComment ??
+          currentHandoff.draftComment ??
+          currentSessionConfig.workspace.candidateStates[command.targetId]?.publicComment ??
+          ''
+
+        if (!packetComment.trim()) {
+          throw new AppError(
+            400,
+            'COMMENT_REQUIRED',
+            '?듭쑀?슜 肄붾찘?멸? ?놁뒿?덈떎. ?뚰괎濡쒖뾽?먯꽌 怨듭쑀 肄붾찘?몃? ?낅젰??二쇱꽭??'
+          )
+        }
+
+        nextFollowUp.commentHandoffsByTargetId[command.targetId] = {
+          ...currentHandoff,
+          draftComment: packetComment.trim(),
+          packetGeneratedAt: now,
+          packetGeneratedById: session.user.id,
+          packetGeneratedByName: session.user.name ?? session.user.id,
+        }
+        auditAction = 'CALIBRATION_COMMUNICATION_PACKET_GENERATED'
+        auditValue = {
+          targetId: command.targetId,
+          finalized: Boolean(currentHandoff.finalizedComment),
+        }
+      } else if (command.type === 'set-review-flag') {
+        nextFollowUp.reviewFlagsByTargetId[command.targetId] =
+          normalizeCalibrationFollowUpReviewFlag({
+            ...nextFollowUp.reviewFlagsByTargetId[command.targetId],
+            compensationSensitive: command.compensationSensitive,
+            finalCheckNote: command.note,
+            updatedAt: now,
+            updatedById: session.user.id,
+            updatedByName: session.user.name ?? session.user.id,
+          })
+        auditAction = 'CALIBRATION_FOLLOW_UP_REVIEW_FLAG_UPDATED'
+        auditValue = {
+          targetId: command.targetId,
+          compensationSensitive: command.compensationSensitive,
+          noteLength: command.note.trim().length,
+        }
+      } else if (command.type === 'submit-survey') {
+        const surveyResponse = {
+          id:
+            nextFollowUp.retrospectiveSurveys.find(
+              (response) => response.respondentId === session.user.id
+            )?.id ?? randomUUID(),
+          respondentId: session.user.id,
+          respondentName: session.user.name ?? session.user.id,
+          hardestPart: command.hardestPart.trim(),
+          missingData: command.missingData.trim(),
+          rulesAndTimebox: command.rulesAndTimebox.trim(),
+          positives: command.positives.trim(),
+          improvements: command.improvements.trim(),
+          nextCycleNeeds: command.nextCycleNeeds.trim(),
+          leniencyFeedback: command.leniencyFeedback.trim(),
+          submittedAt: now,
+        }
+
+        nextFollowUp.retrospectiveSurveys = [
+          ...nextFollowUp.retrospectiveSurveys.filter(
+            (response) => response.respondentId !== session.user.id
+          ),
+          surveyResponse,
+        ]
+        auditAction = 'CALIBRATION_RETROSPECTIVE_SURVEY_SUBMITTED'
+        auditValue = {
+          respondentId: session.user.id,
+          responseCount: nextFollowUp.retrospectiveSurveys.length,
+        }
+      } else if (command.type === 'save-leader-feedback') {
+        nextFollowUp.leaderFeedbackByLeaderId[command.leaderId] = {
+          leaderId: command.leaderId,
+          leaderName: command.leaderName.trim(),
+          summary: command.summary.trim(),
+          suggestions: command.suggestions.trim(),
+          visibility: 'LEADER_ONLY',
+          updatedAt: now,
+          updatedById: session.user.id,
+          updatedByName: session.user.name ?? session.user.id,
+        }
+        auditAction = 'CALIBRATION_LEADER_FEEDBACK_RECORDED'
+        auditValue = {
+          leaderId: command.leaderId,
+          leaderName: command.leaderName.trim(),
+        }
+      }
+
+      const nextSessionConfig = {
+        ...currentSessionConfig,
+        followUp: nextFollowUp,
+      }
+
+      await prisma.evalCycle.update({
+        where: { id: cycle.id },
+        data: {
+          calibrationSessionConfig: toCalibrationSessionConfigJson(nextSessionConfig),
+        },
+      })
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: auditAction,
+        entityType: 'EvalCycle',
+        entityId: cycle.id,
+        newValue: auditValue,
+        ...client,
+      })
+
+      return successResponse({
+        cycleId: cycle.id,
+        followUp: nextFollowUp,
       })
     }
 
