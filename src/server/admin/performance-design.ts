@@ -241,7 +241,7 @@ function loadPerformanceSection<T>(alerts: PerformanceDesignAlert[], title: stri
     console.error(`[performance-design] ${title}`, error)
     alerts.push({
       title,
-      description: '?쇰? ?ㅺ퀎 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵빐 湲곕낯媛믪쑝濡??쒖떆?⑸땲??',
+      description: '일부 설계 정보를 불러오지 못해 기본값으로 표시합니다.',
     })
     return fallback
   })
@@ -265,8 +265,10 @@ function resolveEvaluationGroupId(
 ) {
   const explicit = groups.find((group) => deptId && group.departmentIds.includes(deptId))
   if (explicit) return explicit.id
-  if (metricType === 'QUALITATIVE') return groups.find((group) => group.name.includes('援먯쑁') || group.name.includes('?곌뎄'))?.id ?? groups[0]?.id
-  if (metricType === 'COLLABORATION') return groups.find((group) => group.name.includes('蹂꾨룄'))?.id ?? groups[0]?.id
+  if (metricType === 'QUALITATIVE') {
+    return groups.find((group) => group.name.includes('교육') || group.name.includes('연구'))?.id ?? groups[0]?.id
+  }
+  if (metricType === 'COLLABORATION') return groups.find((group) => group.name.includes('별도'))?.id ?? groups[0]?.id
   return groups[0]?.id
 }
 
@@ -307,7 +309,7 @@ function buildBaseIndicatorFromOrgKpi(
     metricType: overrides?.metricType ?? kpi.kpiType,
     departmentId: kpi.deptId,
     departmentName: kpi.department.deptName,
-    ownerLabel: `${kpi.department.deptName} 議곗쭅 KPI`,
+    ownerLabel: `${kpi.department.deptName} 조직 KPI`,
     evaluationGroupId: overrides?.evaluationGroupId ?? resolveEvaluationGroupId(groups, kpi.deptId, kpi.kpiType),
     strategicAlignmentScore,
     jobRepresentativenessScore,
@@ -316,7 +318,7 @@ function buildBaseIndicatorFromOrgKpi(
     lifecycleAction: overrides?.lifecycleAction ?? selectionStatus,
     departmentComment: overrides?.departmentComment ?? '',
     managerComment: overrides?.managerComment ?? '',
-    evidenceTemplate: overrides?.evidenceTemplate ?? '?꾨왂 怨쇱젣 洹쇨굅, 紐⑺몴 ?뺤쓽, ?ㅽ뻾 洹쇨굅, 寃곌낵 鍮꾧탳',
+    evidenceTemplate: overrides?.evidenceTemplate ?? '핵심 과제 근거, 목표 정의, 실행 근거, 결과 비교',
     pageLimit: overrides?.pageLimit ?? 5,
     rolloverHistory: overrides?.rolloverHistory ?? [],
     carriedFromCycleId: overrides?.carriedFromCycleId,
@@ -362,7 +364,7 @@ function buildBaseIndicatorFromPersonalKpi(
     metricType: overrides?.metricType ?? kpi.kpiType,
     departmentId: kpi.employee.deptId,
     departmentName: kpi.employee.department?.deptName,
-    ownerLabel: `${kpi.employee.empName} 媛쒖씤 KPI`,
+    ownerLabel: `${kpi.employee.empName} 개인 KPI`,
     evaluationGroupId:
       overrides?.evaluationGroupId ??
       resolveEvaluationGroupId(groups, kpi.employee.deptId, kpi.kpiType),
@@ -397,7 +399,7 @@ export async function getPerformanceDesignPageData(
   if (!session?.user) {
     return {
       state: 'permission-denied',
-      message: '濡쒓렇?몄씠 ?꾩슂?⑸땲??',
+      message: '로그인이 필요합니다.',
         selectedCycleId: undefined,
         cycleOptions: [],
         evaluationGroups: [],
@@ -424,7 +426,7 @@ export async function getPerformanceDesignPageData(
   if (!isAdmin(session)) {
     return {
       state: 'permission-denied',
-      message: '愿由ъ옄 沅뚰븳???꾩슂?⑸땲??',
+      message: '관리자 권한이 필요합니다.',
         selectedCycleId: undefined,
         cycleOptions: [],
         evaluationGroups: [],
@@ -453,14 +455,14 @@ export async function getPerformanceDesignPageData(
   try {
     const [cycles, departments] = await Promise.all([
       loadPerformanceSection(alerts, '평가 사이클', [] as CycleLite[], () => deps.loadCycles()),
-      loadPerformanceSection(alerts, '遺??紐⑸줉', [] as DepartmentLite[], () => deps.loadDepartments()),
+      loadPerformanceSection(alerts, '부서 목록', [] as DepartmentLite[], () => deps.loadDepartments()),
     ])
 
     if (!cycles.length) {
       const defaults = createDefaultPerformanceDesignConfig()
       return {
         state: 'empty',
-        message: '?깃낵 ?ㅺ퀎瑜??곸슜???됯? ?ъ씠?댁씠 ?놁뒿?덈떎. 癒쇱? ?됯? ?ъ씠?댁쓣 ?앹꽦??二쇱꽭??',
+        message: '성과 설계를 적용할 평가 사이클이 없습니다. 먼저 평가 사이클을 생성해 주세요.',
         selectedCycleId: undefined,
         cycleOptions: [],
         evaluationGroups: defaults.evaluationGroups,
@@ -489,7 +491,7 @@ export async function getPerformanceDesignPageData(
       cycles[0]
     const cycleOptions = cycles.map((cycle) => ({
       id: cycle.id,
-      label: `${cycle.evalYear} 쨌 ${cycle.organization.name} 쨌 ${cycle.cycleName}`,
+      label: `${cycle.evalYear}년 · ${cycle.organization.name} · ${cycle.cycleName}`,
       year: cycle.evalYear,
     }))
 
@@ -503,9 +505,9 @@ export async function getPerformanceDesignPageData(
       config.nonQuantitativeTemplateBindings
     )
     const [orgKpis, personalKpis, evaluations] = await Promise.all([
-      loadPerformanceSection(alerts, '議곗쭅 KPI', [] as OrgKpiLite[], () => deps.loadOrgKpis(selectedCycle.evalYear)),
-      loadPerformanceSection(alerts, '媛쒖씤 KPI', [] as PersonalKpiLite[], () => deps.loadPersonalKpis(selectedCycle.evalYear)),
-      loadPerformanceSection(alerts, '?됯? ?먯닔', [] as EvaluationLite[], () => deps.loadEvaluations(selectedCycle.id)),
+      loadPerformanceSection(alerts, '조직 KPI', [] as OrgKpiLite[], () => deps.loadOrgKpis(selectedCycle.evalYear)),
+      loadPerformanceSection(alerts, '개인 KPI', [] as PersonalKpiLite[], () => deps.loadPersonalKpis(selectedCycle.evalYear)),
+      loadPerformanceSection(alerts, '평가 점수', [] as EvaluationLite[], () => deps.loadEvaluations(selectedCycle.id)),
     ])
 
     const overridesByKey = new Map(config.indicatorDesigns.map((design) => [design.key, design]))
@@ -609,7 +611,6 @@ export async function getPerformanceDesignPageData(
 
     indicators.sort((left, right) => right.matrixScore - left.matrixScore || left.name.localeCompare(right.name, 'ko'))
 
-    const personalKpiLookup = new Map(personalKpis.map((kpi) => [kpi.id, kpi]))
     const linkedCounts = new Map<string, number>()
     for (const item of personalKpis) {
       if (!item.linkedOrgKpiId) continue
@@ -648,7 +649,7 @@ export async function getPerformanceDesignPageData(
     return {
       state: 'ready',
       selectedCycleId: selectedCycle.id,
-      selectedCycleName: `${selectedCycle.evalYear} 쨌 ${selectedCycle.cycleName}`,
+      selectedCycleName: `${selectedCycle.evalYear}년 · ${selectedCycle.cycleName}`,
       selectedYear: selectedCycle.evalYear,
       nextCycleId: nextCycle?.id,
       cycleOptions,
@@ -681,7 +682,7 @@ export async function getPerformanceDesignPageData(
     const defaults = createDefaultPerformanceDesignConfig()
     return {
       state: 'error',
-      message: '?깃낵 ?ㅺ퀎 ?붾㈃??遺덈윭?ㅼ? 紐삵뻽?듬땲??',
+      message: '성과 설계 화면을 불러오지 못했습니다.',
       selectedCycleId: undefined,
       cycleOptions: [],
       evaluationGroups: defaults.evaluationGroups,

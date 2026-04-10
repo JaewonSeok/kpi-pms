@@ -314,6 +314,40 @@ const DEFAULT_ENVIRONMENT_ADJUSTMENT: EnvironmentAdjustmentConfig = {
   fallbackIndicators: [],
 }
 
+const PERFORMANCE_DESIGN_TEXT_REPAIRS: Record<string, string> = {
+  '?좉퇋 吏???꾨낫': '신규 지표 후보',
+  '吏???뺤쓽, ?쒖텧 洹쇨굅, ?댁쁺 由ъ뒪?? 媛쒖꽑 諛⑹븞': '지표 정의, 제출 근거, 운영 리스크, 개선 방안',
+  '?좉퇋 ?됯? ??ぉ': '신규 평가 항목',
+  '?곗닔 ?묒뾽?щ?': '협업 BP 사례',
+}
+
+function repairPerformanceDesignText(value: string) {
+  if (value.endsWith(' 議곗쭅 KPI')) {
+    return `${value.slice(0, -' 議곗쭅 KPI'.length)} 조직 KPI`
+  }
+  if (value.endsWith(' 媛쒖씤 KPI')) {
+    return `${value.slice(0, -' 媛쒖씤 KPI'.length)} 개인 KPI`
+  }
+  return PERFORMANCE_DESIGN_TEXT_REPAIRS[value] ?? value
+}
+
+export function repairPerformanceDesignPersistedConfig<T>(value: T): T {
+  if (typeof value === 'string') {
+    return repairPerformanceDesignText(value) as T
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => repairPerformanceDesignPersistedConfig(item)) as T
+  }
+  if (isPlainObject(value)) {
+    const repaired: Record<string, unknown> = {}
+    for (const [key, nestedValue] of Object.entries(value)) {
+      repaired[key] = repairPerformanceDesignPersistedConfig(nestedValue)
+    }
+    return repaired as T
+  }
+  return value
+}
+
 function createDefaultTemplateBinding(evaluationGroupId: string, pageMin: number, pageMax: number): NonQuantitativeTemplateBinding {
   return {
     id: `binding-${evaluationGroupId}`,
@@ -582,7 +616,7 @@ export function parsePerformanceDesignConfig(input: unknown): PerformanceDesignC
       }
     : defaults.environmentAdjustment
 
-  return {
+  return repairPerformanceDesignPersistedConfig({
     evaluationGroups,
     indicatorDesigns,
     selectionMatrix,
@@ -591,7 +625,7 @@ export function parsePerformanceDesignConfig(input: unknown): PerformanceDesignC
     milestones,
     collaborationCases,
     environmentAdjustment,
-  }
+  })
 }
 
 export function buildIndicatorDesignKey(source: IndicatorSourceType, sourceId?: string, name?: string) {
@@ -623,11 +657,11 @@ export function diagnoseSmartIndicator(params: {
   const timeBound = boundedScore((params.hasDeadline ? 3 : 1) + (params.targetValue != null ? 1 : 0) + (formulaLength > 0 ? 1 : 0))
   const total = specific + measurable + achievable + relevant + timeBound
 
-  let note = '유지 검토'
-  if (total <= 11) note = '삭제 또는 신규 수립 검토'
-  else if (total <= 15) note = '보완 필요'
-  else if (total <= 19) note = '유보 없이 유지 가능'
-  else note = '핵심 KPI로 유지 권장'
+  let note = '자동 권고 유지'
+  if (total <= 11) note = '신규 지표 검토 필요'
+  else if (total <= 15) note = '부분 보완 권장'
+  else if (total <= 19) note = '자동 권고 유보'
+  else note = '현행 KPI로 유지 권장'
 
   return {
     specific,

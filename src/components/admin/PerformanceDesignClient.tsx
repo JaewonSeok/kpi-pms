@@ -185,6 +185,12 @@ function buildIndicatorInsight(
   }
 }
 
+function getIndicatorSourceLabel(source: PerformanceIndicatorDesign['source']) {
+  if (source === 'ORG_KPI') return '조직 KPI'
+  if (source === 'PERSONAL_KPI') return '개인 KPI'
+  return '수동 등록'
+}
+
 export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageData }) {
   const router = useRouter()
   const [isSaving, startSaveTransition] = useTransition()
@@ -343,7 +349,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
         {
           key: `MANUAL:indicator-${Date.now()}`,
           source: 'MANUAL',
-          name: '?좉퇋 吏???꾨낫',
+          name: '신규 지표 후보',
           metricType: 'QUANTITATIVE',
           strategicAlignmentScore: 3,
           jobRepresentativenessScore: 3,
@@ -351,7 +357,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
           lifecycleAction: 'NEW',
           departmentComment: '',
           managerComment: '',
-          evidenceTemplate: '吏???뺤쓽, ?쒖텧 洹쇨굅, ?댁쁺 由ъ뒪?? 媛쒖꽑 諛⑹븞',
+          evidenceTemplate: '지표 정의, 제출 근거, 운영 리스크, 개선 방안',
           pageLimit: draft.nonQuantitativeTemplate.pageLimit,
           rolloverHistory: [],
         },
@@ -391,7 +397,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
         ...template.sections,
         {
           id: `section-${Date.now()}`,
-          title: '?좉퇋 ?됯? ??ぉ',
+          title: '신규 평가 항목',
           focusPoint: '',
           checklist: [''],
         },
@@ -432,7 +438,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
           id: `case-${Date.now()}`,
           departmentId: data.departments[0]?.id ?? '',
           departmentName: data.departments[0]?.name,
-          title: '?곗닔 ?묒뾽?щ?',
+          title: '협업 BP 사례',
           summary: '',
           impact: '',
           collaborationPartners: [],
@@ -461,7 +467,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
 
   async function handleSave() {
     if (!data.selectedCycleId) {
-      setMessage('?깃낵 ?ㅺ퀎瑜???ν븯?ㅻ㈃ 癒쇱? ?됯? 二쇨린瑜??앹꽦??二쇱꽭??')
+      setMessage('성과 설계를 저장하려면 먼저 평가 주기를 생성해 주세요.')
       return
     }
 
@@ -486,19 +492,19 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
         )
         const json = (await response.json()) as unknown
         if (!response.ok) {
-          throw new Error(extractErrorMessage(json, '?깃낵 ?ㅺ퀎瑜???ν븯吏 紐삵뻽?듬땲??'))
+          throw new Error(extractErrorMessage(json, '성과 설계 저장에 실패했습니다.'))
         }
-        setMessage('?깃낵 ?ㅺ퀎媛 ??λ릺?덉뒿?덈떎.')
+        setMessage('성과 설계가 저장되었습니다.')
         router.refresh()
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : '?깃낵 ?ㅺ퀎瑜???ν븯吏 紐삵뻽?듬땲??')
+        setMessage(error instanceof Error ? error.message : '성과 설계 저장에 실패했습니다.')
       }
     })
   }
 
   async function handleRollover() {
     if (!data.selectedCycleId || !selectedRolloverKeys.length) {
-      setMessage('?닿???吏?쒕? 癒쇱? ?좏깮??二쇱꽭??')
+      setMessage('이월할 지표를 먼저 선택해 주세요.')
       return
     }
 
@@ -515,13 +521,13 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
         )
         const json = (await response.json()) as unknown
         if (!response.ok) {
-          throw new Error(extractErrorMessage(json, '吏???섎쪟瑜?諛섏쁺?섏? 紐삵뻽?듬땲??'))
+          throw new Error(extractErrorMessage(json, '지표 이월 반영에 실패했습니다.'))
         }
-        setMessage('?좏깮??吏?쒕? ?ㅼ쓬 ?곕룄 ?ㅺ퀎濡??닿??덉뒿?덈떎.')
+        setMessage('선택한 지표를 다음 연도 설계로 이월했습니다.')
         setSelectedRolloverKeys([])
         router.refresh()
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : '吏???섎쪟瑜?諛섏쁺?섏? 紐삵뻽?듬땲??')
+        setMessage(error instanceof Error ? error.message : '지표 이월 반영에 실패했습니다.')
       }
     })
   }
@@ -540,8 +546,8 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
         </div>
         <h1 className="mt-4 text-center text-xl font-semibold text-slate-900">
           {data.state === 'permission-denied'
-            ? '?깃낵 ?ㅺ퀎 ?붾㈃???묎렐?????놁뒿?덈떎.'
-            : '?깃낵 ?ㅺ퀎 ?붾㈃??遺덈윭?ㅼ? 紐삵뻽?듬땲??'}
+            ? '성과 설계 화면에 접근할 수 없습니다.'
+            : '성과 설계 화면을 불러오지 못했습니다.'}
         </h1>
         <p className="mt-2 text-center text-sm text-slate-500">{data.message}</p>
       </section>
@@ -554,10 +560,9 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">Performance Design</p>
-            <h1 className="mt-2 text-2xl font-bold text-slate-900">議곗쭅?됯? / ?깃낵 ?ㅺ퀎</h1>
+            <h1 className="mt-2 text-2xl font-bold text-slate-900">성과 설계</h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
-              ?됯?援??ㅺ퀎, KPI Pool, SMART 吏꾨떒, 鍮꾧퀎???쒗뵆由? 吏???섎쪟, ?묒뾽 BP ?щ?, ?댁쁺 ?쇱젙?????붾㈃?먯꽌
-              愿由ы빀?덈떎.
+              평가군, KPI Pool, SMART 진단, 비계량 지표, 협업 BP 사례, 건강도 이상 징후를 설계합니다.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -588,7 +593,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
             >
               <ArrowRight className="h-4 w-4" />
-              {isRollingOver ? '?닿? 以?..' : '?ㅼ쓬 ?곕룄 ?섎쪟'}
+              {isRollingOver ? '이월 중...' : '다음 연도 이월'}
             </button>
             <button
               type="button"
@@ -596,7 +601,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               <RefreshCcw className="h-4 w-4" />
-              ?덈줈怨좎묠
+              새로고침
             </button>
           </div>
         </div>
@@ -634,7 +639,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
         <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
             <AlertTriangle className="h-4 w-4" />
-            ?쇰? ?ㅺ퀎 ?곗씠?곕? 遺덈윭?ㅼ? 紐삵빐 湲곕낯媛??먮뒗 遺遺??곗씠?곕줈 ?쒖떆?섍퀬 ?덉뒿?덈떎.
+            일부 설계 데이터를 불러오지 못해 기본값 또는 부분 데이터로 표시하고 있습니다.
           </div>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             {data.alerts.map((alert) => (
@@ -652,7 +657,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
 
       <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="space-y-6">
-          <Panel title="?됯?援?/ 鍮꾧탳援??ㅼ젙" description="援곕퀎 怨꾨웾 / 鍮꾧퀎??鍮꾩쨷怨?鍮꾧탳 ??곸쓣 遺꾨━???ㅺ퀎?⑸땲??">
+          <Panel title="평가군 설정" description="비교 기준, 비교 관점, 참여 부서를 함께 설정합니다.">
             <div className="space-y-4">
               {draft.evaluationGroups.map((group) => (
                 <div key={group.id} className="rounded-2xl border border-slate-200 p-4">
@@ -682,11 +687,11 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                       onClick={() => removeEvaluationGroup(group.id)}
                       className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50"
                     >
-                      ??젣
+                      삭제
                     </button>
                   </div>
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
-                    <LabelField label="怨꾨웾 鍮꾩쨷">
+                    <LabelField label="계량 비중">
                       <input
                         type="number"
                         min={0}
@@ -701,7 +706,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                         className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                       />
                     </LabelField>
-                    <LabelField label="鍮꾧퀎??鍮꾩쨷">
+                    <LabelField label="비계량 비중">
                       <input
                         type="number"
                         min={0}
@@ -716,7 +721,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                         className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                       />
                     </LabelField>
-                    <LabelField label="鍮꾧탳 諛⑹떇">
+                    <LabelField label="비교 관점">
                       <select
                         value={group.comparisonMode}
                         onChange={(event) =>
@@ -727,13 +732,13 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                         }
                         className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                       >
-                        <option value="WITHIN_GROUP">援???鍮꾧탳</option>
-                        <option value="SEPARATE_TRACK">蹂꾨룄 ?몃옓</option>
-                        <option value="CROSS_GROUP">援?媛?鍮꾧탳</option>
+                        <option value="WITHIN_GROUP">군 내 비교</option>
+                        <option value="SEPARATE_TRACK">별도 트랙</option>
+                        <option value="CROSS_GROUP">군 간 비교</option>
                       </select>
                     </LabelField>
                   </div>
-                  <LabelField label="鍮꾧탳 ????ㅻ챸" className="mt-3">
+                  <LabelField label="비교 기준" className="mt-3">
                     <input
                       value={group.comparisonTargetLabel}
                       onChange={(event) =>
@@ -742,11 +747,12 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                           comparisonTargetLabel: event.target.value,
                         }))
                       }
+                      placeholder="비교 기준을 선택해 주세요"
                       className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                     />
                   </LabelField>
                   <div className="mt-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">???議곗쭅</div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">참여 부서</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {data.departments.map((department) => {
                         const selected = group.departmentIds.includes(department.id)
@@ -774,17 +780,17 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                 onClick={addEvaluationGroup}
                 className="w-full rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
               >
-                ?됯?援?異붽?
+                평가군 추가
               </button>
             </div>
           </Panel>
-          <Panel title="吏???섎쪟 ?꾨줈?몄뒪" description="?좎? / ?좊낫 / 蹂댁셿 / ??젣 / ?좉퇋 ?섎┰ 吏?쒕? ?ㅼ쓬 ?곕룄濡??닿??⑸땲??">
+          <Panel title="지표 이월 프로세스" description="유지 / 유보 / 보완 / 삭제 / 신규 상태 지표를 다음 연도로 넘깁니다.">
             <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-              <div className="font-semibold text-slate-900">?ㅼ쓬 ?곕룄 ?곌껐</div>
+              <div className="font-semibold text-slate-900">다음 연도 연결</div>
               <p className="mt-1">
                 {data.nextCycleId
-                  ? '?좏깮??吏?쒕? ?ㅼ쓬 ?곕룄 ?됯? 二쇨린濡??섎쪟?????덉뒿?덈떎.'
-                  : '?ㅼ쓬 ?곕룄 ?됯? 二쇨린媛 ?꾩쭅 ?놁뼱???섎쪟瑜??ㅽ뻾?????놁뒿?덈떎.'}
+                  ? '선택한 지표를 다음 연도 평가 주기로 이월할 수 있습니다.'
+                  : '다음 연도 평가 주기가 아직 없어 이월을 실행할 수 없습니다.'}
               </p>
               {data.nextCycleId ? (
                 <p className="mt-2 text-xs text-slate-500">선택한 지표 {selectedRolloverKeys.length}건</p>
@@ -821,7 +827,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                   )
                 })
               ) : (
-                <EmptyMini description="?좎? ???곹깭??吏?쒓? ?놁뼱???섎쪟 ??곸씠 ?놁뒿?덈떎." />
+                <EmptyMini description="유지 외 상태의 지표가 없어 이월 대상이 없습니다." />
               )}
             </div>
           </Panel>
@@ -829,15 +835,15 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
 
         <div className="space-y-6">
           <Panel
-            title="KPI Pool / SMART 吏꾨떒 / ?좎젙 留ㅽ듃由?뒪"
-            description="?꾨왂?곌퀎??횞 吏곷Т??쒖꽦 留ㅽ듃由?뒪濡??좎? / ?좊낫 / 蹂댁셿 / ??젣 吏?쒕? 援щ텇?⑸땲??"
+            title="KPI Pool / SMART 진단 및 우선순위 설계"
+            description="전략연계성, 직무대표성, SMART 점수를 기준으로 유지 / 유보 / 보완 / 삭제 지표를 구분합니다."
             actions={
               <button
                 type="button"
                 onClick={addManualIndicator}
                 className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
               >
-                ?좉퇋 吏???꾨낫 異붽?
+                신규 지표 후보 추가
               </button>
             }
           >
@@ -853,7 +859,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                 onChange={(event) => setDepartmentFilter(event.target.value)}
                 className="rounded-2xl border border-slate-200 px-4 py-2.5 text-sm"
               >
-                <option value="ALL">?꾩껜 議곗쭅</option>
+                <option value="ALL">전체 조직</option>
                 {data.departments.map((department) => (
                   <option key={department.id} value={department.id}>
                     {department.name}
@@ -945,10 +951,10 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                   <tr>
                     <th className="px-3 py-3 text-left">지표</th>
                     <th className="px-3 py-3 text-left">평가군</th>
-                    <th className="px-3 py-3 text-left">SMART</th>
-                    <th className="px-3 py-3 text-left">?좎젙</th>
-                    <th className="px-3 py-3 text-left">?섎쪟</th>
-                    <th className="px-3 py-3 text-left">코멘트</th>
+                    <th className="px-3 py-3 text-left">SMART 점수</th>
+                    <th className="px-3 py-3 text-left">선정</th>
+                    <th className="px-3 py-3 text-left">이월</th>
+                    <th className="px-3 py-3 text-left">부서 의견 / 관리자 의견</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -965,7 +971,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                           <td className="px-3 py-3">
                             <div className="font-medium text-slate-900">{indicator.name}</div>
                             <div className="mt-1 text-xs text-slate-500">
-                              {indicator.source} / {indicator.ownerLabel ?? '담당자 미지정'} / matrix {indicator.strategicAlignmentScore} x{' '}
+                              {getIndicatorSourceLabel(indicator.source)} / {indicator.ownerLabel ?? '담당자 미지정'} / matrix {indicator.strategicAlignmentScore} x{' '}
                               {indicator.jobRepresentativenessScore}
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2 text-xs">
@@ -987,7 +993,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                                 onClick={() => removeManualIndicator(indicator.key)}
                                 className="mt-2 text-xs font-semibold text-rose-600 hover:text-rose-700"
                               >
-                                ?섎룞 ?꾨낫 ??젣
+                                수동 지표 삭제
                               </button>
                             ) : null}
                           </td>
@@ -1002,7 +1008,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                               }
                               className="w-44 rounded-xl border border-slate-200 px-3 py-2 text-sm"
                             >
-                              <option value="">평가군 미지정</option>
+                                <option value="">평가군을 선택해 주세요</option>
                               {draft.evaluationGroups.map((group) => (
                                 <option key={group.id} value={group.id}>
                                   {group.name}
@@ -1012,7 +1018,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                           </td>
                           <td className="px-3 py-3">
                             <div className="font-semibold text-slate-900">{smartTotal}점</div>
-                            <div className="mt-1 text-xs text-slate-500">{indicator.smartDiagnosis?.note ?? 'SMART ?뺣낫 ?놁쓬'}</div>
+                            <div className="mt-1 text-xs text-slate-500">{indicator.smartDiagnosis?.note ?? 'SMART 정보 없음'}</div>
                           </td>
                           <td className="px-3 py-3">
                             <select
@@ -1061,7 +1067,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                                   }))
                                 }
                                 rows={2}
-                                placeholder={'\uBD80\uC11C \uC758\uACAC'}
+                                placeholder="부서 의견"
                                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                               />
                               <textarea
@@ -1073,7 +1079,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                                   }))
                                 }
                                 rows={3}
-                                placeholder={'\uAD00\uB9AC\uC790 \uC758\uACAC'}
+                                placeholder="관리자 의견"
                                 className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
                               />
                               {indicator.rolloverHistory.length ? (
@@ -1093,7 +1099,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                   ) : (
                     <tr>
                       <td colSpan={6} className="px-3 py-10">
-                        <EmptyMini description="議곌굔??留욌뒗 KPI Pool ??ぉ???놁뒿?덈떎." />
+                        <EmptyMini description="조건에 맞는 KPI Pool 항목이 없습니다." />
                       </td>
                     </tr>
                   )}
@@ -1106,14 +1112,14 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
             description="PDCA 기반 평가 항목, 체크리스트, 실적보고서 양식과 작성 지침을 통합합니다."
           >
             <div className="grid gap-4 md:grid-cols-2">
-              <LabelField label="?쒗뵆由??대쫫">
+              <LabelField label="템플릿 이름">
                 <input
                   value={draft.nonQuantitativeTemplate.name}
                   onChange={(event) => updateTemplate((current) => ({ ...current, name: event.target.value }))}
                   className="w-full rounded-2xl border border-slate-200 px-4 py-2.5 text-sm"
                 />
               </LabelField>
-              <LabelField label="?섏씠吏 ?쒗븳">
+              <LabelField label="페이지 제한">
                 <input
                   type="number"
                   min={1}
@@ -1134,7 +1140,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
               />
             </LabelField>
-            <LabelField label="?ㅼ쟻蹂닿퀬???뺤떇" className="mt-4">
+            <LabelField label="실적보고서 형식" className="mt-4">
               <textarea
                 value={draft.nonQuantitativeTemplate.reportFormat}
                 onChange={(event) => updateTemplate((current) => ({ ...current, reportFormat: event.target.value }))}
@@ -1142,7 +1148,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
               />
             </LabelField>
-            <LabelField label="Evidence 媛?대뱶" className="mt-4">
+            <LabelField label="증빙 가이드" className="mt-4">
               <textarea
                 value={joinMultilineInput(draft.nonQuantitativeTemplate.evidenceGuide)}
                 onChange={(event) =>
@@ -1161,7 +1167,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                 }
                 className="h-4 w-4 rounded border-slate-300"
               />
-              ?대? 臾몄꽌 / 諛⑹묠 臾몄꽌 evidence ?ъ궗???덉슜
+              내부 문서와 방침 문서도 증빙으로 사용
             </label>
             <div className="mt-5 space-y-3">
               <div>
@@ -1221,6 +1227,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                             }))
                           }
                           rows={3}
+                          placeholder="메모를 입력해 주세요"
                           className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                         />
                       </LabelField>
@@ -1234,6 +1241,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                             }))
                           }
                           rows={2}
+                          placeholder="메모를 입력해 주세요"
                           className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                         />
                       </LabelField>
@@ -1247,6 +1255,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                             }))
                           }
                           rows={3}
+                          placeholder="메모를 입력해 주세요"
                           className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                         />
                       </LabelField>
@@ -1269,7 +1278,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                           className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                         />
                       </LabelField>
-                      <LabelField label="李⑹븞 ?ы빆">
+                      <LabelField label="초점 사항">
                         <input
                           value={section.focusPoint}
                           onChange={(event) =>
@@ -1287,7 +1296,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                       onClick={() => removeTemplateSection(section.id)}
                       className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50"
                     >
-                      ??젣
+                      삭제
                     </button>
                   </div>
                   <LabelField label="체크리스트" className="mt-3">
@@ -1311,11 +1320,11 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
               onClick={addTemplateSection}
               className="mt-4 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
             >
-              鍮꾧퀎???됯? ??ぉ 異붽?
+              비계량 평가 항목 추가
             </button>
           </Panel>
 
-          <Panel title="?댁쁺 ?쇱젙 ?붿쭊" description="?몃엺 ?뺤젙?? 紐⑺몴 ?뺤젙?? 以묎컙?먭?, 寃곌낵 ?뺤젙?쇱쓣 蹂꾨룄 ?쇱젙?쇰줈 愿由ы빀?덈떎.">
+          <Panel title="운영 일정 로드맵" description="편람 확정, 목표 확정, 중간점검, 결과 확정 일정을 별도 일정으로 관리합니다.">
             <div className="space-y-4">
               {draft.milestones.map((milestone) => (
                 <div key={milestone.id} className="rounded-2xl border border-slate-200 p-4">
@@ -1329,7 +1338,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                         className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                       />
                     </LabelField>
-                    <LabelField label="遺꾨쪟">
+                    <LabelField label="분류">
                       <select
                         value={milestone.key}
                         onChange={(event) =>
@@ -1368,21 +1377,22 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                       />
                     </LabelField>
                   </div>
-                  <LabelField label="?ㅻ챸" className="mt-3">
-                    <textarea
-                      value={milestone.description}
-                      onChange={(event) =>
-                        updateMilestone(milestone.id, (current) => ({ ...current, description: event.target.value }))
-                      }
-                      rows={2}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
-                    />
+                  <LabelField label="설명" className="mt-3">
+                      <textarea
+                        value={milestone.description}
+                        onChange={(event) =>
+                          updateMilestone(milestone.id, (current) => ({ ...current, description: event.target.value }))
+                        }
+                        rows={2}
+                        placeholder="메모를 입력해 주세요"
+                        className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
+                      />
                   </LabelField>
                 </div>
               ))}
             </div>
           </Panel>
-          <Panel title="?묒뾽 BP ?щ? ?됯?" description="遺?쒕퀎 ?곗닔 ?묒뾽?щ?瑜??쒖텧?섍퀬 ?됯??꾩썝 ?뺤꽦?됯?瑜?湲곕줉?⑸땲??">
+          <Panel title="협업 BP 사례 평가" description="부서간 우수 협업사례를 제출하고 평가위원 정성평가를 기록합니다.">
             <div className="space-y-4">
               {draft.collaborationCases.length ? (
                 draft.collaborationCases.map((caseItem) => (
@@ -1410,7 +1420,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                             ))}
                           </select>
                         </LabelField>
-                        <LabelField label="?곹깭">
+                        <LabelField label="상태">
                           <select
                             value={caseItem.status}
                             onChange={(event) =>
@@ -1421,10 +1431,10 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                             }
                             className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                           >
-                            <option value="DRAFT">珥덉븞</option>
-                            <option value="SUBMITTED">?쒖텧</option>
-                            <option value="REVIEWED">?됯??꾨즺</option>
-                            <option value="SHARED">怨듭쑀?꾨즺</option>
+                            <option value="DRAFT">초안</option>
+                            <option value="SUBMITTED">제출</option>
+                            <option value="REVIEWED">평가 완료</option>
+                            <option value="SHARED">공유 완료</option>
                           </select>
                         </LabelField>
                       </div>
@@ -1433,7 +1443,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                         onClick={() => removeCollaborationCase(caseItem.id)}
                         className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-slate-50"
                       >
-                        ??젣
+                        삭제
                       </button>
                     </div>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -1468,7 +1478,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                       />
                     </LabelField>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
-                      <LabelField label="?щ? ?붿빟">
+                      <LabelField label="사례 요약">
                         <textarea
                           value={caseItem.summary}
                           onChange={(event) => updateCase(caseItem.id, (current) => ({ ...current, summary: event.target.value }))}
@@ -1476,7 +1486,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                           className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
                         />
                       </LabelField>
-                      <LabelField label="?깃낵 ?곹뼢">
+                      <LabelField label="성과 영향">
                         <textarea
                           value={caseItem.impact}
                           onChange={(event) => updateCase(caseItem.id, (current) => ({ ...current, impact: event.target.value }))}
@@ -1545,7 +1555,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                           }
                           className="h-4 w-4 rounded border-slate-300"
                         />
-                        ?곗닔?щ? 怨듭쑀
+                        사례 공유
                       </label>
                     </div>
                     <LabelField label="평가위원 코멘트" className="mt-3">
@@ -1564,7 +1574,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                   </div>
                 ))
               ) : (
-                <EmptyMini description="?꾩쭅 ?쒖텧???묒뾽 BP ?щ?媛 ?놁뒿?덈떎." />
+                <EmptyMini description="아직 제출된 협업 BP 사례가 없습니다." />
               )}
             </div>
             <button
@@ -1572,7 +1582,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
               onClick={addCollaborationCase}
               className="mt-4 rounded-2xl border border-dashed border-slate-300 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
             >
-              ?묒뾽 ?щ? 異붽?
+              협업 사례 추가
             </button>
           </Panel>
           <Panel title="지표 건강도 대시보드" description="평균 점수 과다, 만점률 과다, 분산 부족, 중복 반영 위험을 자동 탐지합니다.">
@@ -1594,22 +1604,22 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                               : 'bg-slate-100 text-slate-600'
                         }`}
                       >
-                        {finding.severity === 'high' ? '?믪쓬' : finding.severity === 'medium' ? '以묎컙' : '??쓬'}
+                        {finding.severity === 'high' ? '높음' : finding.severity === 'medium' ? '중간' : '낮음'}
                       </span>
                     </div>
                     <ul className="mt-3 space-y-1 text-sm text-slate-600">
                       {finding.reasons.map((reason) => (
-                        <li key={reason}>??{reason}</li>
+                        <li key={reason}>• {reason}</li>
                       ))}
                     </ul>
                   </div>
                 ))}
               </div>
             ) : (
-              <EmptyMini description="?꾩옱 ?먯???嫄닿컯???댁긽 吏뺥썑媛 ?놁뒿?덈떎." />
+              <EmptyMini description="현재 지표 건강도 이상 징후가 없습니다." />
             )}
           </Panel>
-          <Panel title="議곗쭅 / ?꾩옣 ?섍꼍 蹂댁젙 紐⑤뜽" description="?꾩슂??議곗쭅???쒗빐 ?낅Т?섍꼍 李⑥씠瑜?諛섏쁺?????덈룄濡?援ъ“瑜??ㅺ퀎?⑸땲??">
+          <Panel title="조직 / 환경 보정 모델" description="필요한 조직별 현장 환경 차이를 반영할 수 있도록 기준을 설계합니다.">
             <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -1622,9 +1632,9 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                 }
                 className="h-4 w-4 rounded border-slate-300"
               />
-              議곗쭅 / ?꾩옣 ?섍꼍 蹂댁젙 紐⑤뜽 ?ъ슜
+              조직 / 환경 보정 모델 사용
             </label>
-            <LabelField label="?낅Т異붿쭊 ?몃젰??媛?대뱶" className="mt-4">
+            <LabelField label="업무추진 노력도 가이드" className="mt-4">
               <textarea
                 value={draft.environmentAdjustment.effortGuide}
                 onChange={(event) =>
@@ -1637,7 +1647,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
               />
             </LabelField>
-            <LabelField label="紐⑺몴移?議곗젙 媛?대뱶" className="mt-4">
+            <LabelField label="목표치 조정 가이드" className="mt-4">
               <textarea
                 value={draft.environmentAdjustment.targetAdjustmentGuide}
                 onChange={(event) =>
@@ -1653,7 +1663,7 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm"
               />
             </LabelField>
-            <LabelField label="?泥?吏??Pool" className="mt-4">
+            <LabelField label="대체 지표 Pool" className="mt-4">
               <textarea
                 value={joinMultilineInput(draft.environmentAdjustment.fallbackIndicators)}
                 onChange={(event) =>
@@ -1677,12 +1687,12 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-500">Quick links</p>
-            <h2 className="mt-2 text-lg font-semibold text-slate-900">?댁쁺 ?곌퀎</h2>
+            <h2 className="mt-2 text-lg font-semibold text-slate-900">운영 연결</h2>
           </div>
           <div className="flex flex-wrap gap-2">
-            <LinkTile href="/admin/eval-cycle" label="?됯? 二쇨린" />
-            <LinkTile href="/admin/performance-calendar" label="?댁쁺 ?쇱젙" />
-            <LinkTile href="/admin/goal-alignment" label="紐⑺몴 ?곌퀎" />
+            <LinkTile href="/admin/eval-cycle" label="평가 주기" />
+            <LinkTile href="/admin/performance-calendar" label="운영 일정" />
+            <LinkTile href="/admin/goal-alignment" label="목표 연계" />
           </div>
         </div>
       </section>
