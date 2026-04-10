@@ -52,7 +52,7 @@ import { reviewEmailHtmlToText } from '@/lib/review-email-editor'
 import { MultiRaterTimeline } from './MultiRaterTimeline'
 import { ResponseRateCard } from './ResponseRateCard'
 import { RichTextEmailEditor } from './RichTextEmailEditor'
-// 媛쒖씤蹂?由ы룷??/ 遺꾩꽍 ?ㅼ젙
+// Personal report and analysis settings
 
 type Banner = {
   tone: 'success' | 'error' | 'info'

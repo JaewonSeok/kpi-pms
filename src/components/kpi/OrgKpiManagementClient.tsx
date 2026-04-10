@@ -1054,8 +1054,8 @@ function KpiDetailCard(props: {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <EmptyState
-          title="?좏깮??KPI媛 ?놁뒿?덈떎"
-          description="紐⑺몴 留듭씠??紐⑸줉?먯꽌 KPI瑜??좏깮?섎㈃ ?곸꽭 ?뺣낫媛 ?쒖떆?⑸땲??"
+          title="선택한 KPI가 없습니다"
+          description="목표 맵이나 목록에서 KPI를 선택하면 상세 정보가 표시됩니다."
         />
       </div>
     )
@@ -1071,20 +1071,20 @@ function KpiDetailCard(props: {
               <StatusBadge status={kpi.status} />
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              {kpi.departmentName} 쨌 {kpi.category ?? '移댄뀒怨좊━ 誘몄젙'}
+              {kpi.departmentName} · {kpi.category ?? '카테고리 미지정'}
             </p>
           </div>
           <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
             <div className="text-xs text-slate-500">owner</div>
-            <div className="text-sm font-semibold text-slate-900">{kpi.owner?.name ?? '誘몄젙'}</div>
+            <div className="text-sm font-semibold text-slate-900">{kpi.owner?.name ?? '미지정'}</div>
           </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <InfoPill label="紐⑺몴媛?" value={formatValue(kpi.targetValue, kpi.unit)} />
-          <InfoPill label="媛以묒튂" value={formatValue(kpi.weight)} />
-          <InfoPill label="媛쒖씤 KPI ?곌껐" value={`${kpi.linkedPersonalKpiCount}媛?`} />
-          <InfoPill label="理쒓렐 ?ъ꽦瑜?" value={formatPercent(kpi.monthlyAchievementRate)} />
+          <InfoPill label="목표값" value={formatValue(kpi.targetValue, kpi.unit)} />
+          <InfoPill label="가중치" value={formatValue(kpi.weight)} />
+          <InfoPill label="개인 KPI 연결" value={`${kpi.linkedPersonalKpiCount}개`} />
+          <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
         </div>
 
         {kpi.tags.length ? (
@@ -1100,14 +1100,14 @@ function KpiDetailCard(props: {
           </div>
         ) : null}
 
-        <InfoBox title="?뺤쓽" value={kpi.definition ?? '?뺤쓽媛 ?꾩쭅 ?놁뒿?덈떎.'} />
-        <InfoBox title="?곗떇" value={kpi.formula ?? '?곗떇???꾩쭅 ?놁뒿?덈떎.'} />
+        <InfoBox title="정의" value={kpi.definition ?? '정의가 아직 없습니다.'} />
+        <InfoBox title="산식" value={kpi.formula ?? '산식이 아직 없습니다.'} />
         <InfoBox
-          title="?곸쐞 KPI 異붿쿇"
+          title="상위 KPI 추천"
           value={
             kpi.suggestedParent
-              ? `${kpi.suggestedParent.departmentName} 쨌 ${kpi.suggestedParent.title}`
-              : '異붿쿇 媛?ν븳 ?곸쐞 KPI媛 ?놁뒿?덈떎.'
+              ? `${kpi.suggestedParent.departmentName} · ${kpi.suggestedParent.title}`
+              : '추천 가능한 상위 KPI가 없습니다.'
           }
         />
 
@@ -1137,7 +1137,7 @@ function KpiDetailCard(props: {
 
         {kpi.cloneInfo ? (
           <InfoBox
-            title="蹂듭젣 ?뺣낫"
+            title="복제 정보"
             value={`${kpi.cloneInfo.sourceDepartmentName ?? '원본 조직'}의 "${kpi.cloneInfo.sourceTitle}"에서 복제되었습니다. 진행 snapshot ${kpi.cloneInfo.progressEntryCount}건, 체크인 snapshot ${kpi.cloneInfo.checkinEntryCount}건을 이관했습니다.`}
           />
         ) : null}
@@ -1201,43 +1201,43 @@ function KpiDetailCard(props: {
 
         <div className="grid gap-3 sm:grid-cols-2">
           <ActionButton
-            label="?섏젙"
+            label="수정"
             icon={<FilePenLine className="h-4 w-4" />}
             onClick={() => props.onEdit(kpi)}
             disabled={!props.permissions.canManage || goalEditLocked || kpi.status !== 'DRAFT' || props.busy}
           />
           <ActionButton
-            label="蹂듭젣"
+            label="복제"
             icon={<Copy className="h-4 w-4" />}
             onClick={props.onClone}
             disabled={Boolean(props.cloneDisabledReason)}
           />
           <ActionButton
-            label={kpi.status === 'SUBMITTED' || kpi.status === 'LOCKED' ? '?ㅼ떆 ?닿린' : '?쒖텧'}
+            label={kpi.status === 'SUBMITTED' || kpi.status === 'LOCKED' ? '다시 열기' : '제출'}
             icon={<Send className="h-4 w-4" />}
             onClick={() => props.onWorkflow(kpi.status === 'SUBMITTED' || kpi.status === 'LOCKED' ? 'REOPEN' : 'SUBMIT')}
             disabled={!props.permissions.canManage || props.busy || goalEditLocked || !['DRAFT', 'SUBMITTED', 'LOCKED'].includes(kpi.status)}
           />
           <ActionButton
-            label="?뺤젙"
+            label="확정"
             icon={<ShieldCheck className="h-4 w-4" />}
             onClick={() => props.onStatus('CONFIRMED')}
             disabled={!props.permissions.canConfirm || props.busy || ['CONFIRMED', 'LOCKED'].includes(kpi.status)}
           />
           <ActionButton
-            label="?좉툑"
+            label="잠금"
             icon={<Lock className="h-4 w-4" />}
             onClick={() => props.onWorkflow('LOCK')}
             disabled={!props.permissions.canLock || props.busy || kpi.status !== 'CONFIRMED'}
           />
           <ActionButton
-            label="蹂닿?"
+            label="보관"
             icon={<Archive className="h-4 w-4" />}
             onClick={() => props.onStatus('ARCHIVED')}
             disabled={!props.permissions.canArchive || goalEditLocked || props.busy || kpi.status === 'ARCHIVED'}
           />
           <ActionButton
-            label="AI 媛쒖꽑"
+            label="AI 개선"
             icon={<Sparkles className="h-4 w-4" />}
             onClick={() => props.onAi('improve-wording')}
             disabled={!props.permissions.canUseAi || goalEditLocked}
@@ -1247,10 +1247,10 @@ function KpiDetailCard(props: {
         {props.cloneDisabledReason ? <p className="text-xs text-slate-500">{props.cloneDisabledReason}</p> : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Link href="/kpi/personal" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">媛쒖씤 KPI 蹂닿린</Link>
-          <Link href="/kpi/monthly" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">?붽컙 ?ㅼ쟻 蹂닿린</Link>
-          <Link href="/evaluation/results" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">?됯? 寃곌낵 蹂닿린</Link>
-          <Link href="/evaluation/workbench" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">AI ?됯? 蹂댁“</Link>
+          <Link href="/kpi/personal" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">개인 KPI 보기</Link>
+          <Link href="/kpi/monthly" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">월간 실적 보기</Link>
+          <Link href="/evaluation/results" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">평가 결과 보기</Link>
+          <Link href="/evaluation/workbench" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">AI 평가 보조</Link>
         </div>
       </div>
     </div>
@@ -1270,9 +1270,9 @@ function CloneOrgKpiModal(props: {
       <div className="w-full max-w-2xl rounded-3xl bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">議곗쭅 KPI 蹂듭젣</h2>
+            <h2 className="text-xl font-semibold text-slate-900">조직 KPI 복제</h2>
             <p className="mt-1 text-sm text-slate-500">
-              媛以묒튂? KPI ?뺤쓽瑜?洹몃? 吏?ㅻ떎硫?, 吏꾩쿃? 泥댄겕???좏깮?곸쑝濡??닿????ㅼ쓬 ?곕룄??諛붾줈 ?댁뼱媛???덉뒿?덈떎.
+              가중치와 KPI 정의를 그대로 유지하면서, 진행률과 체크인 정보는 선택적으로 다음 연도로 바로 이어갈 수 있습니다.
             </p>
           </div>
           <button type="button" onClick={props.onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
@@ -1298,7 +1298,7 @@ function CloneOrgKpiModal(props: {
               </select>
             </label>
             <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-900">????곕룄</span>
+              <span className="text-sm font-medium text-slate-900">대상 연도</span>
               <input
                 type="number"
                 value={props.form.targetEvalYear}
@@ -1317,8 +1317,8 @@ function CloneOrgKpiModal(props: {
                 className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
               />
               <span>
-                <span className="block font-semibold text-slate-900">吏꾩쿃??snapshot ?ы븿</span>
-                <span className="mt-1 block text-slate-500">理쒓렐 留ㅼ텧/?ъ꽦 metadata瑜?carry-over ?뺣낫濡??닿??⑸땲??</span>
+                <span className="block font-semibold text-slate-900">진행률 snapshot 포함</span>
+                <span className="mt-1 block text-slate-500">최근 실적과 달성률 metadata를 carry-over 정보로 남깁니다.</span>
               </span>
             </label>
             <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
@@ -1329,16 +1329,16 @@ function CloneOrgKpiModal(props: {
                 className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900"
               />
               <span>
-                <span className="block font-semibold text-slate-900">泥댄겕??snapshot ?ы븿</span>
-                <span className="mt-1 block text-slate-500">?곌껐??媛쒖씤 KPI? ?대뒪?좎뒪?좏깉 discussion snapshot??湲곕줉?⑸땲??</span>
+                <span className="block font-semibold text-slate-900">체크인 snapshot 포함</span>
+                <span className="mt-1 block text-slate-500">연결된 개인 KPI와 최근 discussion snapshot을 기록합니다.</span>
               </span>
             </label>
           </div>
 
           <div className="flex flex-wrap justify-end gap-3">
-            <ActionButton label="痍⑥냼" icon={<Archive className="h-4 w-4" />} onClick={props.onClose} disabled={false} />
+            <ActionButton label="취소" icon={<Archive className="h-4 w-4" />} onClick={props.onClose} disabled={false} />
             <ActionButton
-              label={props.busy ? '蹂듭젣 以?..' : '蹂듭젣 ?ㅽ뻾'}
+              label={props.busy ? '복제 중...' : '복제 실행'}
               icon={<Copy className="h-4 w-4" />}
               onClick={props.onSubmit}
               disabled={props.busy}
@@ -1448,7 +1448,7 @@ function OrgBulkEditModal(props: {
                 <option value="">상위 목표 연결 해제</option>
                 {props.parentGoalOptions.map((option) => (
                   <option key={option.id} value={option.id}>
-                    {option.departmentName} 쨌 {option.title}
+                    {option.departmentName} · {option.title}
                   </option>
                 ))}
               </select>

@@ -400,8 +400,8 @@ export async function getEvaluationResultsPageData(params: {
 
     const scopedEmployees = await loadEvaluationResultSection({
       alerts,
-      title: '?됯? 寃곌낵 議고쉶 ????곸옄 紐⑸줉???щ윭?ㅼ? 紐삵뻽?듬땲??',
-      description: '??곸옄 ?꾪꽣???遺? ?곌낵 ?붾㈃?쇰줈 ?쒖떆?⑸땲??',
+      title: '평가 결과 조회 대상자 목록을 불러오지 못했습니다.',
+      description: '대상자 필터는 기본 결과 화면으로 표시됩니다.',
       fallback: [] as ResultScopeEmployee[],
       loader: () =>
         prisma.employee.findMany({
@@ -452,7 +452,7 @@ export async function getEvaluationResultsPageData(params: {
         selectedEmployeeId: defaultTargetEmployee?.id,
         canSelectEmployee,
         alerts,
-        message: '?붾㈃???뺤씤?????놁뒗 ??곸옄瑜?議고쉶?섍퀬 ?덉뒿?덈떎.',
+        message: '화면에서 확인할 수 없는 대상자를 조회하고 있습니다.',
       }
     }
 
@@ -468,8 +468,8 @@ export async function getEvaluationResultsPageData(params: {
         canSelectEmployee,
         alerts,
         message: canSelectEmployee
-          ? '?댁쓽 踰붿쐞?먯꽌 議고쉶?????덈뒗 ?됯? ??곸옄媛 ?놁뒿?덈떎.'
-          : '?곌껐??吏곸썝 ?됯? 寃곌낵媛 ?놁뼱 ?꾩옱 怨꾩젙?쇰줈 ?뺤씤??寃곌낵媛 ?놁뒿?덈떎.',
+          ? '현재 범위에서 조회할 수 있는 평가 대상자가 없습니다.'
+          : '연결된 직원 평가 결과가 없어 현재 계정으로 확인할 결과가 없습니다.',
       }
     }
 
@@ -960,7 +960,7 @@ function buildEvaluationResultViewModel(params: {
   const canAcknowledge = params.actorId === params.employee.id
   const acknowledgeMessage = canAcknowledge
     ? undefined
-    : '??곸옄 蹂몄씤留??됯? 寃곌낵瑜??뺤씤 ?꾨즺濡?泥섎━?????덉뒿?덈떎.'
+    : '대상자 본인만 평가 결과를 확인 완료로 처리할 수 있습니다.'
   const evaluatorPreview =
     finalEvaluation?.comment ||
     feedbacks.find((feedback) => feedback.author !== '시스템')?.content ||
@@ -1084,7 +1084,7 @@ function buildEvaluationResultViewModel(params: {
       canAcknowledge,
       acknowledgeMessage,
       canExport: params.canExport,
-      exportMessage: params.canExport ? undefined : '?꾩옱 ?곹깭?먯꽌??由ы룷?몃? ?ㅼ슫濡쒕뱶?????놁뒿?덈떎.',
+      exportMessage: params.canExport ? undefined : '현재 상태에서는 리포트를 다운로드할 수 없습니다.',
     },
   } satisfies EvaluationResultViewModel
 }

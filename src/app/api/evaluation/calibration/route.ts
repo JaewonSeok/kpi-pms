@@ -243,7 +243,7 @@ export async function PATCH(request: Request) {
 
     if (body.action === 'update-follow-up') {
       if (!body.followUpCommand) {
-        throw new AppError(400, 'FOLLOW_UP_COMMAND_REQUIRED', '?뚰괎濡쒖뾽 蹂寃??댁슜???뺤씤??二쇱꽭??')
+        throw new AppError(400, 'FOLLOW_UP_COMMAND_REQUIRED', '팔로우업 변경 내용을 확인해 주세요.')
       }
 
       const command = body.followUpCommand
@@ -331,7 +331,7 @@ export async function PATCH(request: Request) {
           throw new AppError(
             400,
             'COMMENT_REQUIRED',
-            '?듭쑀?슜 肄붾찘?멸? ?놁뒿?덈떎. ?뚰괎濡쒖뾽?먯꽌 怨듭쑀 肄붾찘?몃? ?낅젰??二쇱꽭??'
+            '공유용 코멘트가 없습니다. 팔로우업에서 공유 코멘트를 입력해 주세요.'
           )
         }
 
@@ -786,7 +786,7 @@ export async function PATCH(request: Request) {
     }
 
     if (!targetId) {
-      throw new AppError(400, 'TARGET_REQUIRED', '?깃툒 議곗젙 ??곸옄瑜?李얠? 紐삵뻽?듬땲??')
+      throw new AppError(400, 'TARGET_REQUIRED', '등급 조정 대상자를 찾지 못했습니다.')
     }
 
     const originalGrade =

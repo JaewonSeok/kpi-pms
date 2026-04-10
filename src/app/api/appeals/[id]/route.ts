@@ -96,9 +96,9 @@ export async function PATCH(
     const currentStatus = deriveAppealWorkflowStatus(appeal.status, auditLogs)
 
     if (action === 'save_draft') {
-      if (!isOwner) throw new AppError(403, 'FORBIDDEN', '?좎껌?먮쭔 珥덉븞????ν븷 ???덉뒿?덈떎.')
+      if (!isOwner) throw new AppError(403, 'FORBIDDEN', '신청자만 초안을 저장할 수 있습니다.')
       if (currentStatus !== 'INFO_REQUESTED') {
-        throw new AppError(409, 'INVALID_STATUS', '蹂댁셿 ?붿껌 ?곹깭?먯꽌留?珥덉븞????ν븷 ???덉뒿?덈떎.')
+        throw new AppError(409, 'INVALID_STATUS', '보완 요청 상태에서만 초안을 저장할 수 있습니다.')
       }
 
       const payload = normalizeAppealPayload(body as Record<string, unknown>)
@@ -127,7 +127,7 @@ export async function PATCH(
 
     if (action === 'withdraw') {
       if (!['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(currentStatus)) {
-        throw new AppError(409, 'INVALID_STATUS', '?꾩옱 ?곹깭?먯꽌???댁쓽 ?좎껌??泥좏쉶?????놁뒿?덈떎.')
+        throw new AppError(409, 'INVALID_STATUS', '현재 상태에서는 이의 신청을 철회할 수 없습니다.')
       }
       if (!isOwner) throw new AppError(403, 'FORBIDDEN', '신청자만 철회할 수 있습니다.')
 
@@ -154,7 +154,7 @@ export async function PATCH(
 
     if (action === 'resubmit') {
       if (currentStatus !== 'INFO_REQUESTED') {
-        throw new AppError(409, 'INVALID_STATUS', '蹂댁셿 ?붿껌 ?곹깭?먯꽌留?다시 제출할 수 있습니다.')
+        throw new AppError(409, 'INVALID_STATUS', '보완 요청 상태에서만 다시 제출할 수 있습니다.')
       }
       if (!isOwner) throw new AppError(403, 'FORBIDDEN', '신청자만 재제출할 수 있습니다.')
 
@@ -198,7 +198,7 @@ export async function PATCH(
 
     if (action === 'start_review') {
       if (currentStatus !== 'SUBMITTED') {
-        throw new AppError(409, 'INVALID_STATUS', '?쒖텧 ?곹깭?먯꽌留?寃???쒖옉?????덉뒿?덈떎.')
+        throw new AppError(409, 'INVALID_STATUS', '제출 상태에서만 검토를 시작할 수 있습니다.')
       }
       const updated = await prisma.appeal.update({
         where: { id },
@@ -225,7 +225,7 @@ export async function PATCH(
 
     if (action === 'request_info') {
       if (!['SUBMITTED', 'UNDER_REVIEW'].includes(currentStatus)) {
-        throw new AppError(409, 'INVALID_STATUS', '?쒖텧 ?먮뒗 寃??以??곹깭?먯꽌留?蹂댁셿 ?붿껌?????덉뒿?덈떎.')
+        throw new AppError(409, 'INVALID_STATUS', '제출 또는 검토 중 상태에서만 보완 요청할 수 있습니다.')
       }
       const note = String(body.note ?? '').trim()
       if (!note) throw new AppError(400, 'MISSING_NOTE', '보완 요청 사유를 입력해 주세요.')
@@ -257,7 +257,7 @@ export async function PATCH(
 
     if (action === 'resolve' || action === 'reject') {
       if (!['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(currentStatus)) {
-        throw new AppError(409, 'INVALID_STATUS', '?꾩옱 ?곹깭?먯꽌??寃곗젙 ?곗뾽?????놁뒿?덈떎.')
+        throw new AppError(409, 'INVALID_STATUS', '현재 상태에서는 결정 작업을 할 수 없습니다.')
       }
       const note = String(body.note ?? '').trim()
       if (!note) throw new AppError(400, 'MISSING_NOTE', '결정 사유를 입력해 주세요.')

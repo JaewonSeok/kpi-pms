@@ -869,7 +869,7 @@ function buildGroupedResponses(params: {
       const current = questionMap.get(response.questionId) ?? {
         questionId: response.questionId,
         category: response.question.category,
-        questionText: response.question.questionText ?? '臾명빆 ?뺣낫 ?놁쓬',
+        questionText: response.question.questionText ?? '문항 정보 없음',
         answers: [],
       }
 
@@ -878,8 +878,8 @@ function buildGroupedResponses(params: {
         relationship: feedback.relationship,
         authorLabel:
           visibility === 'FULL' || !params.thresholdMet
-            ? `${feedback.relationship} 쨌 ${feedback.giver.empName}`
-            : `${feedback.relationship} 쨌 ?듬챸`,
+            ? `${feedback.relationship} · ${feedback.giver.empName}`
+            : `${feedback.relationship} · 익명`,
         ratingValue: response.ratingValue,
         textValue: response.textValue,
       })
@@ -899,13 +899,13 @@ function buildResultWarnings(params: {
 }) {
   const warnings: string[] = []
   if (!params.thresholdMet) {
-    warnings.push('?듬챸 湲곗????꾩쭅 異⑹”?섏? 紐삵빐 ?쇰? 臾명빆? ?쒗븳?곸쑝濡쒕쭔 ?댁꽍?댁빞 ?⑸땲??')
+    warnings.push('익명 기준을 아직 충족하지 못해 일부 문항은 제한적으로만 해석해야 합니다.')
   }
   if (params.feedbackCount < 3) {
-    warnings.push('?묐떟 ?섍? ?곸뼱 ?댁꽍 ?몄감媛 ?????덉뒿?덈떎.')
+    warnings.push('응답 수가 적어 해석 민감도가 높을 수 있습니다.')
   }
   if (!params.strengths.length || !params.improvements.length) {
-    warnings.push('?띿뒪??洹쇨굅媛 異⑸텇?섏? ?딆븘 ?먮룞 ?붿빟??援ъ껜?깆씠 ??쓣 ???덉뒿?덈떎.')
+    warnings.push('텍스트 근거가 충분하지 않아 자동 요약의 구체성이 낮을 수 있습니다.')
   }
   return warnings
 }
@@ -1006,7 +1006,7 @@ function buildManagerEffectivenessLeaderSummaries(params: {
       (map, feedback) => {
         feedback.responses.forEach((response) => {
           if (typeof response.ratingValue !== 'number') return
-          const key = response.question.category?.trim() || response.question.questionText?.trim() || '湲고?'
+          const key = response.question.category?.trim() || response.question.questionText?.trim() || '기타'
           const current = map.get(key) ?? { total: 0, count: 0 }
           current.total += response.ratingValue
           current.count += 1
@@ -1047,7 +1047,7 @@ function buildManagerEffectivenessLeaderSummaries(params: {
       strengths: strengths.length ? strengths : [fallbackStrength],
       improvements: improvements.length ? improvements : [fallbackImprovement],
       coachingPack: buildManagerEffectivenessCoachingPack({
-        leaderName: receiver?.empName ?? '由щ뜑',
+        leaderName: receiver?.empName ?? '리더',
         strengths: strengths.length ? strengths : [fallbackStrength],
         improvements: improvements.length ? improvements : [fallbackImprovement],
         competencyLabels: params.competencyLabels,
@@ -1155,7 +1155,7 @@ function parseFeedbackGoalContextLinks(value: Prisma.JsonValue | null | undefine
     return [
       {
         id: typeof record.id === 'string' && record.id.trim() ? record.id.trim() : `goal-link-${index + 1}`,
-        label: labelCandidate || `愿??留곹겕 ${index + 1}`,
+        label: labelCandidate || `관련 링크 ${index + 1}`,
         href: hrefCandidate,
         uploadedBy,
       },
@@ -1219,14 +1219,14 @@ function buildFeedbackGoalPeriodLabel(params: {
     const ordered = [...params.records].map((record) => record.yearMonth).sort((left, right) => left.localeCompare(right))
     const first = formatFeedbackGoalMonthLabel(ordered[0]!)
     const last = formatFeedbackGoalMonthLabel(ordered[ordered.length - 1]!)
-    return first === last ? `${first} 湲곗?` : `${first} ~ ${last}`
+    return first === last ? `${first} 기준` : `${first} ~ ${last}`
   }
 
   if (params.checkins.length) {
     const ordered = [...params.checkins].sort((left, right) => left.scheduledDate.getTime() - right.scheduledDate.getTime())
     const first = formatDate(ordered[0]!.scheduledDate)
     const last = formatDate(ordered[ordered.length - 1]!.scheduledDate)
-    return first === last ? `${first} 泥댄겕??湲곗?` : `${first} ~ ${last}`
+    return first === last ? `${first} 체크인 기준` : `${first} ~ ${last}`
   }
 
   return `${params.cycleYear}년 평가 주기`
@@ -1366,7 +1366,7 @@ export async function getFeedback360PageData(
       return {
         mode: params.mode,
         state: 'permission-denied',
-        message: '濡쒓렇???몄뀡???뺤씤?????놁뒿?덈떎.',
+        message: '로그인 정보를 확인할 수 없습니다.',
         availableCycles: [],
         availableRounds: [],
         summary: {
@@ -1390,7 +1390,7 @@ export async function getFeedback360PageData(
       return {
         mode: params.mode,
         state: 'permission-denied',
-        message: '吏곸썝 ?뺣낫瑜?李얠쓣 ???놁뒿?덈떎.',
+        message: '직원 정보를 찾을 수 없습니다.',
         availableCycles: [],
         availableRounds: [],
         summary: {
@@ -1426,7 +1426,7 @@ export async function getFeedback360PageData(
       return {
         mode: params.mode,
         state: 'empty',
-        message: '360 ?ㅻ㈃?됯?瑜?蹂????덈뒗 ?됯? 二쇨린媛 ?놁뒿?덈떎.',
+        message: '360 다면평가를 볼 수 있는 평가 주기가 없습니다.',
         currentUser: {
           id: employee.id,
           name: employee.empName,
@@ -1595,7 +1595,7 @@ export async function getFeedback360PageData(
       return {
         mode: params.mode,
         state: 'permission-denied',
-        message: '怨듬룞 ?묒뾽?먮줈 吏?뺣맂 由щ럭留?愿由ы븷 ???덉뒿?덈떎. ?묎렐 媛?ν븳 由щ럭媛 ?놁쑝硫?愿由ъ옄 ?붾㈃???대━吏 ?딆뒿?덈떎.',
+        message: '공동 작업자로 지정된 리뷰만 관리할 수 있습니다. 열람 가능한 리뷰가 없으면 관리자 화면은 열리지 않습니다.',
         currentUser,
         permissions: {
           canManageRounds: false,
@@ -2012,10 +2012,10 @@ export async function getFeedback360PageData(
     const baseData: Feedback360PageData = {
       mode: params.mode,
       state: scopedRounds.length ? 'ready' : 'empty',
-      message: rounds.length ? undefined : '?앹꽦???ㅻ㈃?됯? ?쇱슫?쒓? ?꾩쭅 ?놁뒿?덈떎. 癒쇱? ?됯? 二쇨린? 360 ?쇱슫?쒕? ?ㅼ젙?섏꽭??',
+      message: rounds.length ? undefined : '새로운 라운드를 생성하거나 기존 평가 워크벤치, 평가 결과, 체크인 일정을 확인해 주세요.',
       currentUser,
       ...(rounds.length && params.mode === 'admin' && !scopedRounds.length
-        ? { message: '怨듬룞 ?묒뾽?먮줈 吏?뺣맂 由щ럭留?愿由ы븷 ???덉뒿?덈떎. ?꾩옱 ?묎렐 媛?ν븳 由щ럭媛 ?놁뒿?덈떎.' }
+        ? { message: '공동 작업자로 지정된 리뷰만 관리할 수 있습니다. 현재 열람 가능한 리뷰가 없습니다.' }
         : {}),
       permissions: {
         canManageRounds:
@@ -2156,7 +2156,7 @@ export async function getFeedback360PageData(
           .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
           .map((item) => ({
             employeeId: String(item.employeeId ?? ''),
-            name: String(item.name ?? '?대쫫 ?놁쓬'),
+            name: String(item.name ?? '이름 없음'),
             relationship: String(item.relationship ?? 'PEER'),
           }))
       : []
@@ -2217,12 +2217,12 @@ export async function getFeedback360PageData(
         let disabledReason: string | null = null
 
         if (supervisorIds.includes(reviewer.id)) {
-          disabledReason = '蹂몄씤???됯?沅뚯옄 諛??곸쐞 ?됯?沅뚯옄???숇즺 由щ럭 ?묒꽦?먮줈 ?좏깮?????놁뒿?덈떎.'
+          disabledReason = '본인 평가권자 및 상위 평가권자는 동료 리뷰 작성자로 선택할 수 없습니다.'
         } else if (
           selectionSettings.excludeDirectReportsFromPeerSelection &&
           directReportIds.has(reviewer.id)
         ) {
-          disabledReason = '?꾩옱 ?ㅼ젙?먯꽌??由щ럭 ??곸옄????먯쓣 ?숇즺 由щ럭 ?묒꽦?먮줈 ?좏깮?????놁뒿?덈떎.'
+          disabledReason = '현재 설정에서는 리뷰 대상자의 직속 구성원을 동료 리뷰 작성자로 선택할 수 없습니다.'
         }
 
         return {
@@ -2236,9 +2236,9 @@ export async function getFeedback360PageData(
       })
 
       const peerGroupHelp = [
-        '蹂몄씤, 蹂몄씤???됯?沅뚯옄, ?곸쐞 ?됯?沅뚯옄???숇즺 ?꾨낫?먯꽌 ?먮룞 ?쒖쇅?⑸땲??',
+        '본인, 본인 평가권자, 상위 평가권자는 동료 후보에서 자동 제외됩니다.',
         selectionSettings.excludeDirectReportsFromPeerSelection
-          ? '?꾩옱 ?ㅼ젙?먯꽌??蹂몄씤????먮룄 ?④퍡 ?숇즺 ?꾨낫?먯꽌 ?쒖쇅?⑸땲??'
+          ? '현재 설정에서는 본인의 직속 구성원도 후보에서 제외됩니다.'
           : null,
       ]
         .filter(Boolean)
@@ -2259,8 +2259,8 @@ export async function getFeedback360PageData(
           reviewerGroups: [
             {
               key: 'self',
-              label: '?먭린',
-              description: '?먭린 ?몄떇 鍮꾧탳?⑹쑝濡??먭린 ?묐떟???④퍡 ?뺤씤?????덉뒿?덈떎.',
+              label: '본인',
+              description: '자기 인식 비교용으로 본인 응답도 함께 확인합니다.',
               reviewers: [
                 {
                   employeeId: target.id,
@@ -2384,10 +2384,10 @@ export async function getFeedback360PageData(
     const persistedDevelopmentPlan = parsePersistedReportPayload(persistedPayload?.developmentPlan)
     const resolvedStrengths = persistedStrengths.length
       ? persistedStrengths
-      : ['?袁⑹춦 ?겸뫖????臾먮뼗????곷선 揶쏅벡?????춳????밴쉐??? 筌륁궢六??щ빍??']
+      : ['아직 충분한 응답이 없어 강점 테마를 생성하지 못했습니다.']
     const resolvedImprovements = persistedImprovements.length
       ? persistedImprovements
-      : ['?臾먮뼗 ??? anonymity threshold???겸뫗???롢늺 揶쏆뮇苑?????紐? ???醫딆구??띿쓺 癰?????됰뮸??덈뼄.']
+      : ['익명 기준을 충족하면 개선 신호를 더 선명하게 볼 수 있습니다.']
     const resolvedDevelopmentPlan =
       persistedDevelopmentPlan &&
       typeof persistedDevelopmentPlan.focusArea === 'string' &&
@@ -2585,9 +2585,9 @@ export async function getFeedback360PageData(
     const summaryCards = [
       {
         id: 'LEADER_REVIEW' as const,
-        title: '????됯?',
+        title: '팀장 평가',
         reviewerName: leaderFeedback?.giver.empName,
-        relationshipLabel: '吏곸냽 由щ뜑',
+        relationshipLabel: '직속 리더',
         totalScore: leaderFeedback
           ? calculateFeedbackResponseTotalScore({ responses: leaderFeedback.responses })
           : null,
@@ -2597,9 +2597,9 @@ export async function getFeedback360PageData(
       },
       {
         id: 'EXECUTIVE_REVIEW' as const,
-        title: '?곸쐞 ?됯?',
+        title: '상위 평가',
         reviewerName: executiveFeedback?.giver.empName,
-        relationshipLabel: '?곸쐞 ?됯?沅뚯옄',
+        relationshipLabel: '상위 평가권자',
         totalScore: executiveFeedback
           ? calculateFeedbackResponseTotalScore({ responses: executiveFeedback.responses })
           : null,
@@ -2609,8 +2609,8 @@ export async function getFeedback360PageData(
       },
       {
         id: 'FINAL_RESULT' as const,
-        title: '理쒖쥌 寃곌낵',
-        relationshipLabel: '醫낇빀 寃곌낵',
+        title: '최종 결과',
+        relationshipLabel: '종합 결과',
         totalScore: finalTotalScore,
         comment: thresholdMet ? finalComment : null,
         showScore: presentationSettings.showFinalScore,
@@ -2625,14 +2625,14 @@ export async function getFeedback360PageData(
       pdfHref: `/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/results-export?targetId=${encodeURIComponent(target.id)}&profile=${encodeURIComponent(recipientProfile)}`,
       links: [
         {
-          label: '由щ럭 寃곌낵 ?붾㈃',
+          label: '평가 결과 화면',
           href: '/evaluation/results',
-          description: '湲곗〈 ?됯? 寃곌낵 ?붾㈃怨??곌껐??寃곌낵 ?덈궡 ?먮쫫???댁뼱媛묐땲??',
+          description: '기존 평가 결과 화면과 연결해 결과 안내 흐름으로 이어갑니다.',
         },
         {
-          label: '360 寃곌낵 PDF',
+          label: '360 결과 PDF',
           href: `/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/results-export?targetId=${encodeURIComponent(target.id)}&profile=${encodeURIComponent(recipientProfile)}&download=1`,
-          description: '?꾩옱 寃곌낵吏 踰꾩쟾 湲곗? PDF瑜?諛붾줈 ?대젮諛쏆쓣 ???덉뒿?덈떎.',
+          description: '현재 결과지 버전 기준 PDF를 바로 내려받을 수 있습니다.',
         },
       ],
       questions: selectedRound.questions.map((question) => ({
@@ -2710,11 +2710,11 @@ export async function getFeedback360PageData(
           roundWeight: selectedRound.weightInFinal,
           summaryCards,
           categoryScores: persistedCategoryScores,
-          strengths: strengths.length ? strengths : ['?꾩쭅 異⑸텇???묐떟???놁뼱 媛뺤젏 ?뚮쭏瑜??앹꽦?섏? 紐삵뻽?듬땲??'],
-          improvements: improvements.length ? improvements : ['?묐떟 ?섍? anonymity threshold瑜?異⑹”?섎㈃ 媛쒖꽑 ?ъ씤?몃? ???좊챸?섍쾶 蹂????덉뒿?덈떎.'],
+          strengths: strengths.length ? strengths : ['아직 충분한 응답이 없어 강점 테마를 생성하지 못했습니다.'],
+          improvements: improvements.length ? improvements : ['익명 기준을 충족하면 개선 신호를 더 선명하게 볼 수 있습니다.'],
           anonymousSummary: thresholdMet
-            ? '?듬챸?깆쓣 ?좎????곹깭濡?媛뺤젏, blind spot, 媛쒕컻 ?ъ씤?몃? ?붿빟??以鍮꾧? ?섏뿀?듬땲??'
-            : `?꾩옱 ?묐떟 ?섎뒗 ${submittedTargetFeedbacks.length}嫄댁씠硫? ?듬챸 ?붿빟 怨듦컻 湲곗? ${selectedRound.minRaters}嫄댁뿉 ?꾩쭅 誘몃떖?⑸땲??`,
+            ? '익명성을 유지한 상태로 강점, blind spot, 개발 시그널을 요약해 제공합니다.'
+            : `현재 응답 수는 ${submittedTargetFeedbacks.length}건이며 익명 요약 공개 기준 ${selectedRound.minRaters}건에 아직 미달합니다.`,
           textHighlights: persistedTextHighlights,
           groupedResponses,
           warnings,
@@ -3129,7 +3129,7 @@ export async function getFeedback360PageData(
                 statusKey: status.key,
                 statusLabel: status.label,
                 statusTone: status.tone,
-                detail: `${feedback.receiver.empName} 쨌 ${feedback.relationship} 쨌 留덇컧 ${formatDate(round.endDate)}`,
+                detail: `${feedback.receiver.empName} · ${feedback.relationship} · 마감 ${formatDate(round.endDate)}`,
               }
             })
         ),
@@ -3146,7 +3146,7 @@ export async function getFeedback360PageData(
               statusKey: status.key,
               statusLabel: status.label,
               statusTone: status.tone,
-              detail: `?꾩옱 ?곹깭 ${item.status} 쨌 ?뱀씤 ${item.approvedCount}/${item.totalCount}`,
+              detail: `현재 상태 ${item.status} · 승인 ${item.approvedCount}/${item.totalCount}`,
             }
           }),
         ...scopedRounds.flatMap((round) => {
@@ -3292,7 +3292,7 @@ export async function getFeedback360PageData(
         return {
           ...baseData,
           state: 'permission-denied',
-          message: '?묐떟 ?붾㈃???묎렐??沅뚰븳???놁뒿?덈떎.',
+          message: '응답 화면에 접근할 권한이 없습니다.',
         }
       }
 

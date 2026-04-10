@@ -16,6 +16,29 @@ Base commit: `1324382`
 
 The active in-progress feature is calibration session setup hardening for the evaluation calibration page.
 
+Additional hotfix completed on 2026-04-10:
+
+- Repaired user-facing Korean mojibake strings across:
+  - `/evaluation/360`
+  - `/evaluation/appeal`
+  - `/evaluation/results`
+  - `/evaluation/word-cloud-360`
+  - `/admin/performance-design`
+  - `/kpi/org`
+- The root causes were page-scoped source string corruption plus one persisted config path for `performanceDesignConfig`.
+- Added `tests/korean-copy-hotfix.test.ts` to catch representative broken Korean tokens in affected route copy sources.
+- Verified:
+  - `tests/korean-copy-hotfix.test.ts`
+  - `tests/performance-design.test.ts`
+  - `tests/feedback-360-foundation.test.ts`
+  - `tests/evaluation-appeal-workspace.test.ts`
+  - `tests/evaluation-results-workspace.test.ts`
+  - `tests/word-cloud-360.test.ts`
+  - `tests/word-cloud-360-ops.test.ts`
+  - `pnpm typecheck`
+  - `pnpm lint`
+  - `pnpm build`
+
 Implemented in the worktree:
 
 - Added a dedicated session setup model in `src/lib/calibration-session-setup.ts`.

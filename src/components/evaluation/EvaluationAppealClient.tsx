@@ -67,17 +67,17 @@ type DisabledState = {
 
 function getDraftSaveState(viewModel: AppealViewModel | undefined, isReady: boolean): DisabledState {
   if (!isReady || !viewModel) {
-    return { disabled: true, reason: '?댁쓽 ?좎껌 ?붾㈃??以鍮?以묒엯?덈떎.' }
+    return { disabled: true, reason: '이의 신청 화면을 준비 중입니다.' }
   }
   if (viewModel.actorMode === 'admin') {
-    return { disabled: true, reason: '?댁쁺?먮뒗 耳?댁뒪瑜?泥섎━留??섏닔 ?덉뒿?덈떎.' }
+    return { disabled: true, reason: '운영자는 케이스를 처리만 할 수 있습니다.' }
   }
   if (!viewModel.case.canEdit) {
     return {
       disabled: true,
       reason: viewModel.cycle.appealOpen
-        ? '?꾩옱 ?곹깭?먯꽌???꾩떆??섏쓣 ???놁뒿?덈떎.'
-        : '?댁쓽 ?좎껌 媛??湲곌컙???꾨땲?쇰㈃ 珥덉븞 ??ν뵫???놁뒿?덈떎.',
+        ? '현재 상태에서는 임시저장할 수 없습니다.'
+        : '이의 신청 가능 기간이 아니면 초안 저장도 할 수 없습니다.',
     }
   }
   return { disabled: false }
@@ -85,65 +85,65 @@ function getDraftSaveState(viewModel: AppealViewModel | undefined, isReady: bool
 
 function getSubmitState(viewModel: AppealViewModel | undefined, draft: DraftSnapshot | null, isReady: boolean): DisabledState {
   if (!isReady || !viewModel || !draft) {
-    return { disabled: true, reason: '?댁쓽 ?좎껌 ?붾㈃??以鍮?以묒엯?덈떎.' }
+    return { disabled: true, reason: '이의 신청 화면을 준비 중입니다.' }
   }
   if (viewModel.actorMode === 'admin') {
-    return { disabled: true, reason: '?댁쁺?먮뒗 ?좎껌???쒖텧?섏? ?딆뒿?덈떎.' }
+    return { disabled: true, reason: '운영자는 요청을 제출할 수 없습니다.' }
   }
   if (!viewModel.case.canSubmit) {
     return {
       disabled: true,
       reason: viewModel.cycle.appealOpen
-        ? '?꾩옱 ?곹깭?먯꽌???쒖텧?????놁뒿?덈떎.'
-        : '?댁쓽 ?좎껌 媛??湲곌컙???꾨떃?섏뿀?듬땲??',
+        ? '현재 상태에서는 제출할 수 없습니다.'
+        : '이의 신청 가능 기간이 종료되었습니다.',
     }
   }
   if (!draft.reason.trim()) {
-    return { disabled: true, reason: '?댁쓽 ?좎껌 ?ъ쑀瑜??낅젰??二쇱꽭??' }
+    return { disabled: true, reason: '이의 신청 사유를 입력해 주세요.' }
   }
   if (draft.reason.trim().length < 20) {
-    return { disabled: true, reason: '?댁쓽 ?좎껌 ?ъ쑀??20???댁긽 ?낅젰??二쇱꽭??' }
+    return { disabled: true, reason: '이의 신청 사유는 20자 이상 입력해 주세요.' }
   }
   if (!draft.relatedTargets.length) {
-    return { disabled: true, reason: '愿????ぉ???쒖냼 1媛?紐낆? ?좏깮??二쇱꽭??' }
+    return { disabled: true, reason: '관련 항목을 최소 1개 선택해 주세요.' }
   }
   if (!draft.confirmed) {
-    return { disabled: true, reason: '?쒖텧 ?꾨줈 ?뺤씤 ?숈쓽瑜??좏깮??二쇱꽭??' }
+    return { disabled: true, reason: '제출 전 확인 체크박스를 선택해 주세요.' }
   }
   return { disabled: false }
 }
 
 function getWithdrawState(viewModel: AppealViewModel | undefined, isReady: boolean): DisabledState {
   if (!isReady || !viewModel) {
-    return { disabled: true, reason: '?댁쓽 ?좎껌 ?붾㈃??以鍮?以묒엯?덈떎.' }
+    return { disabled: true, reason: '이의 신청 화면을 준비 중입니다.' }
   }
   if (viewModel.actorMode === 'admin') {
-    return { disabled: true, reason: '?댁쁺?먮뒗 泥좏쉶???섑뻾?섏? ?딆뒿?덈떎.' }
+    return { disabled: true, reason: '운영자는 철회를 실행할 수 없습니다.' }
   }
   if (!viewModel.case.canWithdraw) {
-    return { disabled: true, reason: '?꾩옱 ?곹깭?먯꽌???좏쉶?????놁뒿?덈떎.' }
+    return { disabled: true, reason: '현재 상태에서는 철회할 수 없습니다.' }
   }
   return { disabled: false }
 }
 
 function getAdminActionState(viewModel: AppealViewModel | undefined, action: AppealAdminAction, note: string): DisabledState {
   if (!viewModel || viewModel.actorMode !== 'admin') {
-    return { disabled: true, reason: '?댁쁺 ?먯떊留??ъ슜?????덉뒿?덈떎.' }
+    return { disabled: true, reason: '운영자만 사용할 수 있습니다.' }
   }
 
   const status = viewModel.case.status
   const noteRequired = action === 'request_info' || action === 'resolve' || action === 'reject'
   if (action === 'start_review' && status !== 'SUBMITTED') {
-    return { disabled: true, reason: '?쒖텧 ?곹깭?먯꽌留?寃???쒖옉?????덉뒿?덈떎.' }
+    return { disabled: true, reason: '제출 상태에서만 검토를 시작할 수 있습니다.' }
   }
   if (action === 'request_info' && !['SUBMITTED', 'UNDER_REVIEW'].includes(status)) {
-    return { disabled: true, reason: '?쒖텧 ?먮뒗 寃??以??곹깭?먯꽌留?蹂댁셿 ?붿껌?????덉뒿?덈떎.' }
+    return { disabled: true, reason: '제출 또는 검토 중 상태에서만 보완 요청할 수 있습니다.' }
   }
   if ((action === 'resolve' || action === 'reject') && !['SUBMITTED', 'UNDER_REVIEW', 'INFO_REQUESTED'].includes(status)) {
-    return { disabled: true, reason: '?꾩옱 ?곹깭?먯꽌??寃곗젙 ?곗뾽?????놁뒿?덈떎.' }
+    return { disabled: true, reason: '현재 상태에서는 결정 작업을 할 수 없습니다.' }
   }
   if (noteRequired && note.trim().length < 3) {
-    return { disabled: true, reason: '?댁쁺 硫붾え瑜?3???댁긽 ?낅젰??二쇱꽭??' }
+    return { disabled: true, reason: '운영 메모를 3자 이상 입력해 주세요.' }
   }
   return { disabled: false }
 }
@@ -263,7 +263,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
     if (draftSaveState.disabled) {
       setBanner({
         tone: 'info',
-        message: draftSaveState.reason ?? '?꾩옱 ?곹깭?먯꽌???꾩떆??섏쓣 ???놁뒿?덈떎.',
+        message: draftSaveState.reason ?? '현재 상태에서는 임시저장할 수 없습니다.',
       })
       return
     }
@@ -285,7 +285,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
           }),
         }
       )
-      await assertJsonSuccess(response, '?꾩떆??섎뒗 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.')
+      await assertJsonSuccess(response, '임시저장 중 오류가 발생했습니다.')
       setBanner({
         tone: 'success',
         message: '임시저장했습니다. 같은 브라우저에서 이어서 작성할 수 있습니다.',
@@ -294,7 +294,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
     } catch (error) {
       setBanner({
         tone: 'error',
-        message: error instanceof Error ? error.message : '?꾩떆??섎뒗 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.',
+        message: error instanceof Error ? error.message : '임시저장 중 오류가 발생했습니다.',
       })
     } finally {
       setBusyAction(null)
@@ -309,7 +309,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
     if (submitState.disabled) {
       setBanner({
         tone: 'error',
-        message: submitState.reason ?? '?꾩옱 ?곹깭?먯꽌???쒖텧?????놁뒿?덈떎.',
+        message: submitState.reason ?? '현재 상태에서는 제출할 수 없습니다.',
       })
       return
       setBanner({ tone: 'error', message: '제출 전 확인 체크박스를 선택해 주세요.' })
@@ -380,7 +380,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
     if (withdrawState.disabled) {
       setBanner({
         tone: 'info',
-        message: withdrawState.reason ?? '?꾩옱 ?곹깭?먯꽌???좏쉶?????놁뒿?덈떎.',
+        message: withdrawState.reason ?? '현재 상태에서는 철회할 수 없습니다.',
       })
       return
     }
@@ -412,7 +412,7 @@ export function EvaluationAppealClient(props: AppealPageData) {
     if (actionState.disabled) {
       setBanner({
         tone: 'error',
-        message: actionState.reason ?? '?꾩옱 ?곹깭?먯꽌??泥섎━ ?곗뾽?????놁뒿?덈떎.',
+        message: actionState.reason ?? '현재 상태에서는 처리 작업을 할 수 없습니다.',
       })
       return
     }
@@ -774,10 +774,10 @@ function AppealHero({
               canStartNew
                 ? undefined
                 : String(viewModel.actorMode) === 'admin'
-                  ? '?댁쁺?먮뒗 耳?댁뒪瑜?寃?듯븯怨?泥섎━留??섏닔 ?덉뒿?덈떎.'
+                  ? '운영자는 케이스를 검토하고 처리만 할 수 있습니다.'
                   : viewModel.cycle.appealOpen
-                    ? '?덉씠 誘몃━ ?쒖텧?섎맂 ?댁쓽 ?좎껌 ?먮뒗 泥섎━ 以묒씤 耳?댁뒪媛 ?덉뒿?덈떎.'
-                    : '?댁쓽 ?좎껌 媛??湲곌컙???꾨땲?쇰㈃ ?깈?쒖옉?????놁뒿?덈떎.'
+                    ? '이미 제출된 이의 신청 또는 처리 중인 케이스가 있습니다.'
+                    : '이의 신청 가능 기간이 아니면 새로 시작할 수 없습니다.'
             }
           />
           <ActionButton
@@ -1624,9 +1624,9 @@ function CompareCard({ title, lines }: { title: string; lines: string[] }) {
 function StatePanel({ state, message }: { state: AppealPageData['state']; message?: string }) {
   const config =
     state === 'window-closed'
-      ? { title: '?꾩옱???댁쓽 ?좎껌 媛??湲곌컙???꾨떃?덈떎.', tone: 'amber' }
+      ? { title: '현재는 이의 신청 가능 기간이 아닙니다.', tone: 'amber' }
       : state === 'no-result-yet'
-        ? { title: '?댁쓽 ?좎껌 ????됯? 寃곌낵媛 ?꾩쭅 溲?닔 ?놁뒿?덈떎.', tone: 'slate' }
+        ? { title: '이의 신청 대상 평가 결과가 아직 접수되지 않았습니다.', tone: 'slate' }
       : state === 'hidden'
       ? { title: '현재는 이의 신청 가능 기간이 아닙니다.', tone: 'amber' }
       : state === 'permission-denied'

@@ -457,8 +457,8 @@ async function buildApplicantAppealPage(params: {
 
   const draftAuditLogs = await loadAppealSection({
     alerts: params.alerts,
-    title: '?댁쓽 ?좎껌 珥덉븞???遺덈윭?ㅼ? 紐삵뻽?듬땲??',
-    description: '濡쒖뭅?댁뿉??怨꾩냽 ?묒꽦 ???덈룄濡?湲곗〈 珥덉븞??諛섏쁺?섏? 紐삵뻽?듬땲??',
+    title: '이의 신청 초안 이력을 불러오지 못했습니다.',
+    description: '이어서 작성할 수 있도록 기존 초안 저장 이력을 반영하지 못했습니다.',
     fallback: [] as AppealAuditLogRecord[],
     loader: () =>
       prisma.auditLog.findMany({
@@ -480,7 +480,7 @@ async function buildApplicantAppealPage(params: {
       availableCycles: params.availableCycles,
       selectedCycleId: params.selectedCycle.id,
       alerts: params.alerts,
-      message: '?꾩옱 二쇨린???댁쓽 ?좎껌 湲곌컙???꾨떃?덈떎.',
+      message: '현재 주기의 이의 신청 기간이 아닙니다.',
     }
   }
 

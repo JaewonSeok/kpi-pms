@@ -92,9 +92,9 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
   const loadAlerts = props.alerts?.length ? <LoadAlerts alerts={props.alerts} /> : null
   const acknowledgeDisabledReason =
     !viewModel
-      ? '?뺤씤?????덈뒗 寃곌낵媛 ?놁뒿?덈떎.'
+      ? '확인할 수 있는 결과가 없습니다.'
       : acknowledged
-        ? '?대? ?뺤씤 ?꾨즺???됯? 寃곌낵?낅땲??'
+        ? '이미 확인 완료한 평가 결과입니다.'
         : viewModel.actions.acknowledgeMessage
   const exportDisabledReason = viewModel?.actions.exportMessage
 
@@ -147,7 +147,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
     if (!viewModel || !viewModel.actions.canExport) {
       setLocalNotice({
         tone: 'info',
-        message: exportDisabledReason ?? '?꾩옱 ?곹깭?먯꽌??由ы룷?몃? ?ㅼ슫濡쒕뱶?????놁뒿?덈떎.',
+        message: exportDisabledReason ?? '현재 상태에서는 리포트를 다운로드할 수 없습니다.',
       })
       return
     }
@@ -207,7 +207,7 @@ export function EvaluationResultsClient(props: EvaluationResultPageData) {
     if (!viewModel || acknowledged || !viewModel.actions.canAcknowledge) {
       setLocalNotice({
         tone: 'info',
-        message: acknowledgeDisabledReason ?? '?꾩옱 ?곹깭?먯꽌???뺤씤 ?꾨즺濡?泥섎━?????놁뒿?덈떎.',
+        message: acknowledgeDisabledReason ?? '현재 상태에서는 확인 완료로 처리할 수 없습니다.',
       })
       return
     }
@@ -330,7 +330,7 @@ function ScopeSelectors({ cycleOptions, selectedCycle, availableYears, available
       <SelectorCard label="연도" value={selectedCycle?.year ? String(selectedCycle.year) : ''} options={availableYears.map((year) => ({ value: String(year), label: `${year}년` }))} onChange={(value) => onYearChange(Number(value))} />
       <SelectorCard label="주기" value={selectedCycle?.id ?? ''} options={(filteredCycles.length ? filteredCycles : selectedCycle ? [selectedCycle] : []).map((cycle) => ({ value: cycle.id, label: cycle.name }))} onChange={onCycleChange} />
       <SelectorCard label="조직" value={selectedScopeKey} options={availableScopes.map((scope) => ({ value: scope.key, label: `${scope.organizationName} / ${scope.departmentName}` }))} onChange={onScopeChange} />
-      <SelectorCard label="??곸옄" value={selectedEmployeeId ?? ''} options={employeeOptions.map((employee) => ({ value: employee.id, label: `${employee.name} / ${employee.departmentName}` }))} onChange={onEmployeeChange} disabled={!canSelectEmployee || employeeOptions.length <= 1} />
+      <SelectorCard label="대상자" value={selectedEmployeeId ?? ''} options={employeeOptions.map((employee) => ({ value: employee.id, label: `${employee.name} / ${employee.departmentName}` }))} onChange={onEmployeeChange} disabled={!canSelectEmployee || employeeOptions.length <= 1} />
     </div>
   )
 }

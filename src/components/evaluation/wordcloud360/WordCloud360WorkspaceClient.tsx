@@ -185,7 +185,7 @@ function toFriendlyErrorMessage(message: string | undefined, fallback: string) {
     return '선택 가능한 주기가 없습니다. 아래에서 첫 주기를 생성해 주세요.'
   }
   if (trimmed.includes('Invalid ISO datetime')) {
-    return '?쒖옉?쇨낵 醫낅즺???뺤떇???뺤씤??二쇱꽭??'
+    return '시작일과 종료일 형식을 확인해 주세요.'
   }
   if (trimmed.includes('Invalid datetime')) {
     return '시작일과 종료일 형식을 확인해 주세요.'
@@ -1828,7 +1828,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
               </div>
 
               {!hasSelectedCycle ? (
-                <p className="mt-3 text-sm text-slate-500">??곸옄 ?쇨큵 ?낅줈?쒕뒗 二쇨린瑜??앹꽦?섍굹 ?좏깮?????덈낫?멸린 ?꾨줈 ?쒖슜???덉뒿?덈떎.</p>
+                <p className="mt-3 text-sm text-slate-500">대상자 일괄 업로드는 주기를 생성하거나 선택한 뒤에만 사용할 수 있습니다.</p>
               ) : null}
 
               {targetUploadResult ? (
@@ -1942,7 +1942,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
                 </div>
 
                 {!hasSelectedCycle ? (
-                  <p className="mt-3 text-sm text-slate-500">鍮꾧탳 由ы룷?몃뒗 ?꾩옱 二쇨린瑜??앹꽦?섍굹 ?좏깮?????덈줈 ?앹꽦?????덉뒿?덈떎.</p>
+                  <p className="mt-3 text-sm text-slate-500">비교 리포트는 현재 주기를 생성하거나 선택한 뒤에만 생성할 수 있습니다.</p>
                 ) : null}
 
                 {comparisonReport ? (

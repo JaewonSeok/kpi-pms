@@ -898,12 +898,6 @@ async function validateWordCloudKeywordCsvImport(params: { actorId: string; file
     throw new AppError(403, 'FORBIDDEN', '관리자만 이 기능을 사용할 수 있습니다.')
   }
 
-  if (!actor) {
-    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '?꾩옱 ?ъ슜???뺣낫瑜?李얠쓣 ???놁뒿?덈떎.')
-  }
-  if (actor.role !== 'ROLE_ADMIN') {
-    throw new AppError(403, 'FORBIDDEN', '?대? 湲곕뒫??ъ슜???좏븳???놁뒿?덈떎.')
-  }
   const parsed = parseWordCloudKeywordCsv(params)
   const existingKeywords = await prisma.wordCloud360Keyword.findMany({
     where: { orgId: adminActor.department.orgId },
@@ -3048,13 +3042,6 @@ export async function restoreWordCloud360ResponseFromHistory(params: {
   })
 
   if (!assignment || assignment.cycle.orgId !== actor.department.orgId) {
-    throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', '蹂듭썝???묐떟???李얠쓣 ???놁뒿?덈떎.')
-  }
-  if (!assignment.response) {
-    throw new AppError(404, 'RESPONSE_NOT_FOUND', '蹂듭썝??댁뼱 ?묐떟 ?대젰???놁뒿?덈떎.')
-  }
-
-  if (!assignment || assignment.cycle.orgId !== actor.department.orgId) {
     throw new AppError(404, 'ASSIGNMENT_NOT_FOUND', '복원할 응답을 찾을 수 없습니다.')
   }
   if (!assignment.response) {
@@ -3091,20 +3078,6 @@ export async function restoreWordCloud360ResponseFromHistory(params: {
   }
   if (!revision.canRestore) {
     throw new AppError(409, 'HISTORY_NOT_RESTORABLE', '선택한 이력은 복원할 수 없습니다.')
-  }
-
-  if (!revision) {
-    throw new AppError(404, 'HISTORY_NOT_FOUND', '복원할 이력 시점을 찾을 수 없습니다.')
-  }
-  if (!revision.canRestore) {
-    throw new AppError(409, 'HISTORY_NOT_RESTORABLE', '선택한 이력은 복원할 수 없습니다.')
-  }
-
-  if (!revision) {
-    throw new AppError(404, 'HISTORY_NOT_FOUND', '蹂듭썝???댁뼱 ?대젰 ???쒖젏??李얠쓣 ???놁뒿?덈떎.')
-  }
-  if (!revision.canRestore) {
-    throw new AppError(409, 'HISTORY_NOT_RESTORABLE', '?좏깮???대젰??蹂듭썝???섏쓣 ???놁뒿?덈떎.')
   }
 
   if (!revision) {
