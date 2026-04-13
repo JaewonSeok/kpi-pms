@@ -12,6 +12,18 @@ export default async function MainLayout({
   children: ReactNode
 }) {
   const session = await getServerSession(authOptions)
+  if (session?.authState === 'AUTHENTICATED_BUT_CLAIMS_MISSING') {
+    authTrace('warn', 'AUTH_CLAIMS_PENDING_REDIRECT', {
+      route: '(main)/layout',
+      reason: session.authErrorCode ?? 'AuthenticatedButClaimsMissing',
+      authErrorReason: session.authErrorReason ?? null,
+      sessionPresent: true,
+      hasUserId: Boolean(session.user?.id),
+      hasRole: Boolean(session.user?.role),
+    })
+    redirect('/access-pending?reason=AuthenticatedButClaimsMissing')
+  }
+
   if (!session || !hasFullAppSessionUserClaims(session.user)) {
     authTrace('warn', 'LOGIN_REDIRECT_TRIGGERED', {
       route: '(main)/layout',

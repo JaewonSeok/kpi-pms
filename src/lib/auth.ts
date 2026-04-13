@@ -90,6 +90,12 @@ type AuthClaims = {
 }
 
 type MasterLoginSessionState = ImpersonationSessionState
+type AuthClaimsResolutionState = 'READY' | 'AUTHENTICATED_BUT_CLAIMS_MISSING'
+type AuthClaimsTokenState = Parameters<typeof extractAuthClaimsFromToken>[0] & {
+  authState?: AuthClaimsResolutionState
+  authErrorCode?: 'AuthenticatedButClaimsMissing' | null
+  authErrorReason?: string | null
+}
 
 type MasterLoginTokenState = ImpersonationSessionState & {
   actor: AuthClaims
@@ -315,6 +321,16 @@ function restoreActorClaims(
   return actorClaims
 }
 
+function markClaimsResolutionState(
+  token: AuthClaimsTokenState,
+  state: AuthClaimsResolutionState,
+  reason?: string | null
+) {
+  token.authState = state
+  token.authErrorCode = state === 'AUTHENTICATED_BUT_CLAIMS_MISSING' ? 'AuthenticatedButClaimsMissing' : null
+  token.authErrorReason = state === 'AUTHENTICATED_BUT_CLAIMS_MISSING' ? reason ?? 'unknown' : null
+}
+
 async function findAuthEmployee(where: Prisma.EmployeeWhereUniqueInput) {
   return prisma.employee.findUnique({
     where,
@@ -336,28 +352,43 @@ async function findEmployeeForToken(token: { sub?: string | null; email?: string
 }
 
 async function hydrateTokenClaimsFromDirectory(
-  token: Parameters<typeof extractAuthClaimsFromToken>[0],
+  token: AuthClaimsTokenState,
   reason: 'jwt-rehydration' | 'session-rehydration'
 ) {
-  const employee = await findEmployeeForToken(token)
-  if (!employee) {
-    authTrace('warn', 'AUTH_EMPLOYEE_REHYDRATION_FAILED', {
+  try {
+    const employee = await findEmployeeForToken(token)
+    if (!employee) {
+      markClaimsResolutionState(token, 'AUTHENTICATED_BUT_CLAIMS_MISSING', 'employee-not-found')
+      authTrace('warn', 'AUTH_EMPLOYEE_REHYDRATION_FAILED', {
+        reason,
+        tokenSub: token.sub ?? null,
+        email: maskAuthEmail(token.email),
+      })
+      return null
+    }
+
+    const claims = await buildAuthClaims(employee)
+    applyAuthClaimsToToken(token, claims)
+    markClaimsResolutionState(token, 'READY')
+    authTrace('info', 'AUTH_CLAIMS_REHYDRATED', {
+      reason,
+      employeeId: claims.id,
+      email: maskAuthEmail(claims.email),
+      role: claims.role,
+    })
+    return claims
+  } catch (error) {
+    markClaimsResolutionState(token, 'AUTHENTICATED_BUT_CLAIMS_MISSING', 'directory-query-failed')
+    authTrace('error', 'AUTH_CLAIMS_REHYDRATION_ERROR', {
       reason,
       tokenSub: token.sub ?? null,
       email: maskAuthEmail(token.email),
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      errorMessage:
+        error instanceof Error ? error.message.slice(0, 160) : 'Unknown auth claims rehydration error',
     })
     return null
   }
-
-  const claims = await buildAuthClaims(employee)
-  applyAuthClaimsToToken(token, claims)
-  authTrace('info', 'AUTH_CLAIMS_REHYDRATED', {
-    reason,
-    employeeId: claims.id,
-    email: maskAuthEmail(claims.email),
-    role: claims.role,
-  })
-  return claims
 }
 
 async function resolveSessionAccessibleDepartmentIds(claims: AuthClaims) {
@@ -370,6 +401,9 @@ async function resolveSessionAccessibleDepartmentIds(claims: AuthClaims) {
 
 declare module 'next-auth' {
   interface Session {
+    authState?: AuthClaimsResolutionState
+    authErrorCode?: 'AuthenticatedButClaimsMissing' | null
+    authErrorReason?: string | null
     user: {
       id: string
       email: string
@@ -391,6 +425,9 @@ declare module 'next-auth' {
   }
 
   interface User {
+    authState?: AuthClaimsResolutionState
+    authErrorCode?: 'AuthenticatedButClaimsMissing' | null
+    authErrorReason?: string | null
     id: string
     email: string
     name: string
@@ -411,6 +448,9 @@ declare module 'next-auth' {
 
 declare module 'next-auth/jwt' {
   interface JWT {
+    authState?: AuthClaimsResolutionState
+    authErrorCode?: 'AuthenticatedButClaimsMissing' | null
+    authErrorReason?: string | null
     role: SystemRole
     empId: string
     position: string
@@ -536,6 +576,7 @@ export const authOptions: NextAuthOptions = {
       if (user && isAuthClaimsUser(user)) {
         applyAuthClaimsToToken(token, user)
         token.masterLogin = null
+        markClaimsResolutionState(token, 'READY')
         authTrace('info', 'JWT_CREATED', {
           source: account?.provider ?? 'session-user',
           employeeId: user.id,
@@ -557,6 +598,7 @@ export const authOptions: NextAuthOptions = {
           const claims = await buildAuthClaims(employee)
           applyAuthClaimsToToken(token, claims)
           token.masterLogin = null
+          markClaimsResolutionState(token, 'READY')
           authTrace('info', 'GOOGLE_JWT_CLAIMS_APPLIED', {
             employeeId: claims.id,
             email: maskAuthEmail(claims.email),
@@ -811,13 +853,25 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!claims) {
+          session.authState = token.authState ?? 'AUTHENTICATED_BUT_CLAIMS_MISSING'
+          session.authErrorCode = token.authErrorCode ?? 'AuthenticatedButClaimsMissing'
+          session.authErrorReason = token.authErrorReason ?? 'session-rehydration-failed'
+          session.user.id = typeof token.sub === 'string' ? token.sub : ''
+          session.user.email = typeof token.email === 'string' ? token.email : ''
+          session.user.name = typeof token.name === 'string' ? token.name : session.user.name ?? ''
           authTrace('error', 'SESSION_RESOLUTION_FAILED', {
             tokenSub: token.sub ?? null,
             email: maskAuthEmail(token.email),
+            authState: session.authState,
+            authErrorCode: session.authErrorCode,
+            authErrorReason: session.authErrorReason,
           })
           return session
         }
 
+        session.authState = 'READY'
+        session.authErrorCode = null
+        session.authErrorReason = null
         session.user.id = claims.id
         session.user.email = claims.email
         session.user.name = claims.name

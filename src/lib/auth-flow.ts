@@ -17,6 +17,10 @@ export const LOGIN_ERROR_MESSAGES: Record<string, string> = {
   OAuthCallback: 'Google 인증 응답을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
   Callback: '로그인 결과를 확인하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
   SessionRequired: '세션 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+  AuthenticatedButClaimsMissing:
+    'Google 로그인은 완료됐지만 사내 권한 정보를 확인하지 못했습니다. 잠시 후 다시 시도하거나 HR 관리자에게 문의해 주세요.',
+  CookieNotPersisted:
+    '로그인 쿠키를 유지하지 못했습니다. 브라우저 쿠키 설정을 확인한 뒤 다시 시도해 주세요.',
   Default: '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.',
 }
 
@@ -41,6 +45,8 @@ const LOGIN_ERROR_KINDS: Record<string, LoginFeedbackKind> = {
   SessionRequired: 'session',
   OAuthCallback: 'session',
   Callback: 'session',
+  AuthenticatedButClaimsMissing: 'session',
+  CookieNotPersisted: 'session',
 }
 
 function normalizeAllowedDomain(domain: string) {

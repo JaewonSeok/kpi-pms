@@ -17,7 +17,7 @@ type AuthRequestLike =
       nextUrl?: {
         origin?: string | null
       } | null
-    }
+}
 
 export type AuthRequestDiagnostics = {
   host: string | null
@@ -27,6 +27,19 @@ export type AuthRequestDiagnostics = {
   nodeEnv: string | null
   vercelEnv: string | null
   vercel: boolean
+}
+
+type SessionPayloadUserLike = {
+  id?: string | null
+  email?: string | null
+  name?: string | null
+  role?: string | null
+  empId?: string | null
+  position?: string | null
+  deptId?: string | null
+  deptName?: string | null
+  departmentCode?: string | null
+  orgPath?: string | null
 }
 
 type AuthCookieOption = {
@@ -298,13 +311,26 @@ export function extractSetCookieNames(headers: HeaderMapLike) {
 export function summarizeSessionPayload(payload: unknown) {
   const user =
     payload && typeof payload === 'object' && 'user' in payload
-      ? (payload as { user?: Record<string, unknown> | null }).user
+      ? (payload as { user?: SessionPayloadUserLike | null }).user
       : null
 
   return {
     sessionPresent: Boolean(payload && typeof payload === 'object' && user),
     hasUserId: Boolean(user && typeof user.id === 'string' && user.id.length > 0),
     hasRole: Boolean(user && typeof user.role === 'string' && user.role.length > 0),
+    hasFullClaims: Boolean(
+      user &&
+        user.id &&
+        user.email &&
+        user.name &&
+        user.role &&
+        user.empId &&
+        user.position &&
+        user.deptId &&
+        user.deptName &&
+        user.departmentCode &&
+        user.orgPath
+    ),
   }
 }
 

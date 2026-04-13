@@ -15,6 +15,12 @@ function buildLoginRedirect(request: NextRequest) {
   return loginUrl
 }
 
+function buildAccessPendingRedirect(request: NextRequest) {
+  const pendingUrl = new URL('/access-pending', request.url)
+  pendingUrl.searchParams.set('reason', 'AuthenticatedButClaimsMissing')
+  return pendingUrl
+}
+
 export default async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const requestDiagnostics = resolveAuthRequestDiagnostics(request)
@@ -27,6 +33,7 @@ export default async function middleware(request: NextRequest) {
 
   const hasCoreClaims = hasCoreAuthTokenClaims(token)
   const hasRecoverableIdentity = hasRecoverableAuthTokenIdentity(token)
+  const claimsPending = token?.authState === 'AUTHENTICATED_BUT_CLAIMS_MISSING'
   const role = typeof token?.role === 'string' ? token.role : ''
   const menuKey = resolveMenuFromPath(pathname)
   const menuAuthorized = menuKey ? canAccessMenu(role, menuKey) : null
@@ -35,6 +42,7 @@ export default async function middleware(request: NextRequest) {
     tokenPresent: Boolean(token),
     hasCoreClaims,
     hasRecoverableIdentity,
+    claimsPending,
     menuAuthorized,
   })
   const tracePayload = {
@@ -52,6 +60,7 @@ export default async function middleware(request: NextRequest) {
     sessionPresent: Boolean(token),
     hasCoreClaims,
     hasRecoverableIdentity,
+    claimsPending,
     menuKey,
     role,
   }
@@ -69,6 +78,15 @@ export default async function middleware(request: NextRequest) {
   if (decision.action === 'redirect-403') {
     authTrace('warn', 'MIDDLEWARE_SESSION_REJECTED', tracePayload)
     return NextResponse.redirect(new URL('/403', request.url))
+  }
+
+  if (decision.action === 'redirect-pending') {
+    const pendingUrl = buildAccessPendingRedirect(request)
+    authTrace('warn', 'AUTH_CLAIMS_PENDING_REDIRECT', {
+      ...tracePayload,
+      redirect: pendingUrl.toString(),
+    })
+    return NextResponse.redirect(pendingUrl)
   }
 
   const loginUrl = buildLoginRedirect(request)

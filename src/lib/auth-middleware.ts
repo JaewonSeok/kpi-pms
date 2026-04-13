@@ -8,6 +8,7 @@ import {
 export const AUTH_PUBLIC_PATHS = [
   '/login',
   '/signin',
+  '/access-pending',
   '/403',
   '/manifest.webmanifest',
   '/sw.js',
@@ -26,6 +27,7 @@ export type MiddlewareDecisionReason =
   | 'PUBLIC_PATH'
   | 'TOKEN_MISSING'
   | 'PARTIAL_TOKEN_REHYDRATE'
+  | 'AUTHENTICATED_BUT_CLAIMS_MISSING'
   | 'SESSION_REQUIRED'
   | 'UNAUTHORIZED_MENU'
   | 'LOGIN_ALREADY_AUTHENTICATED'
@@ -38,6 +40,10 @@ export type MiddlewareDecision =
   | {
       action: 'redirect-login'
       reason: Extract<MiddlewareDecisionReason, 'TOKEN_MISSING' | 'SESSION_REQUIRED'>
+    }
+  | {
+      action: 'redirect-pending'
+      reason: 'AUTHENTICATED_BUT_CLAIMS_MISSING'
     }
   | {
       action: 'redirect-403'
@@ -89,9 +95,17 @@ export function resolveMiddlewareAccessDecision(params: {
   tokenPresent: boolean
   hasCoreClaims: boolean
   hasRecoverableIdentity: boolean
+  claimsPending?: boolean | null
   menuAuthorized?: boolean | null
 }) {
   if (isAuthPublicPath(params.pathname)) {
+    if (isLoginPath(params.pathname) && params.claimsPending) {
+      return {
+        action: 'redirect-pending',
+        reason: 'AUTHENTICATED_BUT_CLAIMS_MISSING',
+      } satisfies MiddlewareDecision
+    }
+
     if (isLoginPath(params.pathname) && params.hasCoreClaims) {
       return {
         action: 'redirect-dashboard',
@@ -113,6 +127,13 @@ export function resolveMiddlewareAccessDecision(params: {
   }
 
   if (!params.hasCoreClaims) {
+    if (params.claimsPending) {
+      return {
+        action: 'redirect-pending',
+        reason: 'AUTHENTICATED_BUT_CLAIMS_MISSING',
+      } satisfies MiddlewareDecision
+    }
+
     if (params.hasRecoverableIdentity) {
       return {
         action: 'allow',

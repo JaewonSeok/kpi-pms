@@ -44,6 +44,10 @@ const mainLayoutSource = readFileSync(
   path.resolve(process.cwd(), 'src/app/(main)/layout.tsx'),
   'utf8'
 )
+const accessPendingPageSource = readFileSync(
+  path.resolve(process.cwd(), 'src/app/access-pending/page.tsx'),
+  'utf8'
+)
 
 run('login page starts Google sign-in without redirect:false misuse', () => {
   assert.match(loginPageSource, /buildGoogleSignInRequest/)
@@ -160,6 +164,7 @@ run('middleware keeps auth routes and PWA assets public while protecting app pag
   assert.equal(isAuthPublicPath('/manifest.webmanifest'), true)
   assert.equal(isAuthPublicPath('/sw.js'), true)
   assert.equal(isAuthPublicPath('/favicon.ico'), true)
+  assert.equal(isAuthPublicPath('/access-pending'), true)
   assert.equal(isAuthPublicPath('/icons/app-icon.png'), true)
   assert.equal(isAuthPublicPath('/_next/static/chunks/app.js'), true)
   assert.equal(isAuthPublicPath('/signin'), true)
@@ -176,6 +181,7 @@ run('middleware allows recoverable callback tokens to pass the first protected r
   assert.match(middlewareSource, /hasRecoverableAuthTokenIdentity/)
   assert.match(middlewareSource, /resolveMiddlewareAccessDecision/)
   assert.match(middlewareSource, /resolveRequestAuthToken/)
+  assert.match(middlewareSource, /AUTH_CLAIMS_PENDING_REDIRECT/)
   assert.match(middlewareSource, /matchedSessionCookieName/)
   assert.match(middlewareSource, /presentSessionCookieNames/)
   assert.match(middlewareSource, /MIDDLEWARE_SESSION_ACCEPTED/)
@@ -194,6 +200,32 @@ run('middleware decision helper distinguishes missing, partial, authorized, and 
     {
       action: 'redirect-login',
       reason: 'TOKEN_MISSING',
+    }
+  )
+  assert.deepEqual(
+    resolveMiddlewareAccessDecision({
+      pathname: '/login',
+      tokenPresent: true,
+      hasCoreClaims: false,
+      hasRecoverableIdentity: true,
+      claimsPending: true,
+    }),
+    {
+      action: 'redirect-pending',
+      reason: 'AUTHENTICATED_BUT_CLAIMS_MISSING',
+    }
+  )
+  assert.deepEqual(
+    resolveMiddlewareAccessDecision({
+      pathname: '/dashboard',
+      tokenPresent: true,
+      hasCoreClaims: false,
+      hasRecoverableIdentity: true,
+      claimsPending: true,
+    }),
+    {
+      action: 'redirect-pending',
+      reason: 'AUTHENTICATED_BUT_CLAIMS_MISSING',
     }
   )
   assert.deepEqual(
@@ -325,12 +357,21 @@ run('google auth flow keeps Korean login errors and detailed trace hooks', () =>
     getLoginErrorMessage('AccessDenied'),
     '로그인에 성공했지만 사용자 권한을 확인하지 못했습니다. 관리자에게 문의해 주세요.'
   )
+  assert.equal(
+    getLoginErrorMessage('AuthenticatedButClaimsMissing'),
+    'Google 로그인은 완료됐지만 사내 권한 정보를 확인하지 못했습니다. 잠시 후 다시 시도하거나 HR 관리자에게 문의해 주세요.'
+  )
+  assert.equal(
+    getLoginErrorMessage('CookieNotPersisted'),
+    '로그인 쿠키를 유지하지 못했습니다. 브라우저 쿠키 설정을 확인한 뒤 다시 시도해 주세요.'
+  )
   assert.match(authSource, /GOOGLE_CALLBACK_RECEIVED/)
   assert.match(authSource, /APP_USER_MATCH_STARTED/)
   assert.match(authSource, /APP_USER_MATCH_SUCCEEDED/)
   assert.match(authSource, /GOOGLE_JWT_CLAIMS_APPLIED/)
   assert.match(authSource, /JWT_CREATED/)
   assert.match(authSource, /JWT_TOKEN_STATE_EVALUATED/)
+  assert.match(authSource, /AUTH_CLAIMS_REHYDRATION_ERROR/)
   assert.match(authSource, /SESSION_USER_RESOLVED/)
 })
 
@@ -360,11 +401,13 @@ run('auth callback and session traces summarize cookie names and session boolean
     sessionPresent: true,
     hasUserId: true,
     hasRole: true,
+    hasFullClaims: false,
   })
   assert.deepEqual(emptySessionSummary, {
     sessionPresent: false,
     hasUserId: false,
     hasRole: false,
+    hasFullClaims: false,
   })
   assert.match(nextAuthRouteSource, /SESSION_COOKIE_SET/)
   assert.match(nextAuthRouteSource, /AUTH_SESSION_TRACE/)
@@ -375,14 +418,18 @@ run('auth callback and session traces summarize cookie names and session boolean
 run('landing routes trace success and redirect failures', () => {
   assert.match(mainLayoutSource, /LANDING_ROUTE_ENTERED/)
   assert.match(mainLayoutSource, /LOGIN_REDIRECT_TRIGGERED/)
+  assert.match(mainLayoutSource, /AUTH_CLAIMS_PENDING_REDIRECT/)
   assert.match(dashboardPageSource, /LANDING_ROUTE_ENTERED/)
   assert.match(dashboardPageSource, /DASHBOARD_SESSION_INVARIANT_BROKEN/)
+  assert.match(dashboardPageSource, /AUTH_CLAIMS_PENDING_REDIRECT/)
 })
 
 run('login page uses session escape hatch without auto re-triggering sign-in', () => {
   const feedback = resolveLoginFeedback('SessionRequired')
+  const claimsFeedback = resolveLoginFeedback('AuthenticatedButClaimsMissing')
 
   assert.equal(feedback?.kind, 'session')
+  assert.equal(claimsFeedback?.kind, 'session')
   assert.match(loginPageSource, /useSession/)
   assert.match(loginPageSource, /hasFullAppSessionUserClaims/)
   assert.match(loginPageSource, /router\.replace/)
@@ -395,6 +442,12 @@ run('login page uses Korean admin and fallback messages', () => {
   assert.match(loginPageSource, /관리자 계정으로 로그인\(GWS 비활성 대비\)/)
   assert.match(loginPageSource, /로그인에 실패했습니다\. 이메일과 비밀번호를 확인해 주세요\./)
   assert.match(loginPageSource, /사내 Google Workspace 계정으로만 접속 가능합니다\./)
+})
+
+run('authenticated but claims-missing users are routed to the pending page instead of login', () => {
+  assert.match(accessPendingPageSource, /AuthenticatedButClaimsMissing/)
+  assert.match(accessPendingPageSource, /권한 정보를 확인하고 있습니다/)
+  assert.match(accessPendingPageSource, /login\?error=AuthenticatedButClaimsMissing/)
 })
 
 run('auth env reader accepts NEXTAUTH and AUTH aliases safely', () => {
