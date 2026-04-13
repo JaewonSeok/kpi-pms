@@ -2,11 +2,11 @@
 
 ## Release checklist
 
-1. `npm run db:generate`
-2. `npm run db:push` in stage
-3. `npm run test:ai`
-4. `npm run test:compensation`
-5. `npm run test:notifications`
+1. `pnpm run db:generate`
+2. `pnpm run db:push` in stage
+3. `pnpm run test:ai`
+4. `pnpm run test:compensation`
+5. `pnpm run test:notifications`
 6. target lint for changed files
 7. smoke test `/api/health/live` and `/api/health/ready`
 8. confirm feature flags for release scope

@@ -8,6 +8,26 @@ const PLACEHOLDER_ENV_VALUES = new Set([
 
 type AuthEnvKey = 'NEXTAUTH_URL' | 'AUTH_URL' | 'NEXTAUTH_SECRET' | 'AUTH_SECRET'
 type AuthEnvSource = Record<string, string | undefined>
+type HeaderMapLike = Pick<Headers, 'get'>
+type AuthRequestLike =
+  | HeaderMapLike
+  | {
+      headers?: HeaderMapLike | null
+      url?: string | URL | null
+      nextUrl?: {
+        origin?: string | null
+      } | null
+    }
+
+export type AuthRequestDiagnostics = {
+  host: string | null
+  forwardedHost: string | null
+  forwardedProto: string | null
+  originCandidate: string | null
+  nodeEnv: string | null
+  vercelEnv: string | null
+  vercel: boolean
+}
 
 type AuthCookieOption = {
   name: string
@@ -38,6 +58,36 @@ export type AuthRuntimePolicy = {
   cookiePrefix: string
 }
 
+export type AuthCookieNameCandidates = {
+  sessionToken: readonly string[]
+  callbackUrl: readonly string[]
+  csrfToken: readonly string[]
+  pkceCodeVerifier: readonly string[]
+  state: readonly string[]
+  nonce: readonly string[]
+}
+
+const AUTH_COOKIE_NAME_CANDIDATES: AuthCookieNameCandidates = {
+  sessionToken: ['__Secure-next-auth.session-token', 'next-auth.session-token'],
+  callbackUrl: ['__Secure-next-auth.callback-url', 'next-auth.callback-url'],
+  csrfToken: ['__Host-next-auth.csrf-token', 'next-auth.csrf-token'],
+  pkceCodeVerifier: ['__Secure-next-auth.pkce.code_verifier', 'next-auth.pkce.code_verifier'],
+  state: ['__Secure-next-auth.state', 'next-auth.state'],
+  nonce: ['__Secure-next-auth.nonce', 'next-auth.nonce'],
+}
+
+const SET_COOKIE_ATTRIBUTE_NAMES = new Set([
+  'expires',
+  'max-age',
+  'domain',
+  'path',
+  'secure',
+  'httponly',
+  'samesite',
+  'priority',
+  'partitioned',
+])
+
 function warnOnMismatch(env: AuthEnvSource, primaryKey: AuthEnvKey, aliasKey: AuthEnvKey) {
   const primaryValue = env[primaryKey]?.trim()
   const aliasValue = env[aliasKey]?.trim()
@@ -52,6 +102,53 @@ function warnOnMismatch(env: AuthEnvSource, primaryKey: AuthEnvKey, aliasKey: Au
 
 function isTruthyEnvValue(value: string | undefined) {
   return /^(1|true|yes|on)$/i.test(value?.trim() ?? '')
+}
+
+function normalizeHeaderValue(value: string | null | undefined) {
+  const normalized = value
+    ?.split(',')[0]
+    ?.trim()
+
+  return normalized ? normalized : null
+}
+
+function resolveHeaders(request?: AuthRequestLike | null): HeaderMapLike | null {
+  if (!request) {
+    return null
+  }
+
+  if ('headers' in request && request.headers) {
+    return request.headers
+  }
+
+  if ('get' in request) {
+    return request
+  }
+
+  return null
+}
+
+function readRequestOrigin(request?: AuthRequestLike | null) {
+  if (!request) {
+    return null
+  }
+
+  const nextUrlOrigin =
+    'nextUrl' in request && request.nextUrl?.origin ? request.nextUrl.origin : null
+  if (nextUrlOrigin) {
+    return nextUrlOrigin
+  }
+
+  const requestUrl = 'url' in request ? request.url : null
+  if (!requestUrl) {
+    return null
+  }
+
+  try {
+    return new URL(requestUrl.toString()).origin
+  } catch {
+    return null
+  }
 }
 
 function readRequiredValue(key: string, value: string | undefined) {
@@ -115,6 +212,10 @@ function readRequiredSecret(env: AuthEnvSource) {
   }
 }
 
+export function readAuthSecretValue(env: AuthEnvSource = process.env) {
+  return readRequiredSecret(env).value
+}
+
 export function resolveAuthRuntimePolicy(env: AuthEnvSource = process.env): AuthRuntimePolicy {
   const normalizedBaseUrl = env.NEXTAUTH_URL?.trim() || env.AUTH_URL?.trim() || ''
   const isProduction = env.NODE_ENV === 'production'
@@ -137,6 +238,100 @@ export function resolveAuthRuntimePolicy(env: AuthEnvSource = process.env): Auth
     csrfTokenCookieName: useSecureCookies
       ? '__Host-next-auth.csrf-token'
       : 'next-auth.csrf-token',
+  }
+}
+
+export function buildAuthCookieNameCandidates(): AuthCookieNameCandidates {
+  return {
+    sessionToken: [...AUTH_COOKIE_NAME_CANDIDATES.sessionToken],
+    callbackUrl: [...AUTH_COOKIE_NAME_CANDIDATES.callbackUrl],
+    csrfToken: [...AUTH_COOKIE_NAME_CANDIDATES.csrfToken],
+    pkceCodeVerifier: [...AUTH_COOKIE_NAME_CANDIDATES.pkceCodeVerifier],
+    state: [...AUTH_COOKIE_NAME_CANDIDATES.state],
+    nonce: [...AUTH_COOKIE_NAME_CANDIDATES.nonce],
+  }
+}
+
+export function isAuthCookieCandidateMatch(cookieName: string, candidateName: string) {
+  return cookieName === candidateName || cookieName.startsWith(`${candidateName}.`)
+}
+
+export function collectPresentAuthCookieNames(
+  cookieNames: readonly string[],
+  candidateNames: readonly string[]
+) {
+  return [...new Set(cookieNames.filter((cookieName) =>
+    candidateNames.some((candidateName) => isAuthCookieCandidateMatch(cookieName, candidateName))
+  ))]
+}
+
+export function resolveMatchedAuthCookieCandidate(
+  cookieNames: readonly string[],
+  candidateNames: readonly string[]
+) {
+  return (
+    candidateNames.find((candidateName) =>
+      cookieNames.some((cookieName) => isAuthCookieCandidateMatch(cookieName, candidateName))
+    ) ?? null
+  )
+}
+
+export function extractSetCookieNames(headers: HeaderMapLike) {
+  const headerBag = headers as HeaderMapLike & {
+    getSetCookie?: () => string[]
+  }
+  if (typeof headerBag.getSetCookie === 'function') {
+    return [...new Set(headerBag
+      .getSetCookie()
+      .map((value) => value.split('=')[0]?.trim() ?? '')
+      .filter((value) => value.length > 0))]
+  }
+
+  const rawHeader = headers.get('set-cookie') ?? ''
+  const cookieNames = [...rawHeader.matchAll(/(?:^|,\s*)([A-Za-z0-9!#$%&'*+.^_`|~-]+)=/g)]
+    .map((match) => match[1]?.trim() ?? '')
+    .filter((value) => value.length > 0 && !SET_COOKIE_ATTRIBUTE_NAMES.has(value.toLowerCase()))
+
+  return [...new Set(cookieNames)]
+}
+
+export function summarizeSessionPayload(payload: unknown) {
+  const user =
+    payload && typeof payload === 'object' && 'user' in payload
+      ? (payload as { user?: Record<string, unknown> | null }).user
+      : null
+
+  return {
+    sessionPresent: Boolean(payload && typeof payload === 'object' && user),
+    hasUserId: Boolean(user && typeof user.id === 'string' && user.id.length > 0),
+    hasRole: Boolean(user && typeof user.role === 'string' && user.role.length > 0),
+  }
+}
+
+export function resolveAuthRequestDiagnostics(
+  request?: AuthRequestLike | null,
+  env: AuthEnvSource = process.env
+): AuthRequestDiagnostics {
+  const headers = resolveHeaders(request)
+  const requestOrigin = readRequestOrigin(request)
+  const host = normalizeHeaderValue(headers?.get('host'))
+  const forwardedHost = normalizeHeaderValue(headers?.get('x-forwarded-host'))
+  const forwardedProto = normalizeHeaderValue(headers?.get('x-forwarded-proto'))
+  const originCandidate =
+    forwardedHost && forwardedProto
+      ? `${forwardedProto}://${forwardedHost}`
+      : host
+        ? `${forwardedProto ?? (requestOrigin?.startsWith('https://') ? 'https' : 'http')}://${host}`
+        : requestOrigin
+
+  return {
+    host,
+    forwardedHost,
+    forwardedProto,
+    originCandidate,
+    nodeEnv: env.NODE_ENV ?? null,
+    vercelEnv: env.VERCEL_ENV ?? null,
+    vercel: Boolean(env.VERCEL),
   }
 }
 

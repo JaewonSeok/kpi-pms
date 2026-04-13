@@ -17,11 +17,21 @@ const registerSource = readFileSync(
   path.resolve(process.cwd(), 'src/components/pwa/PWARegister.tsx'),
   'utf8'
 )
+const providersSource = readFileSync(
+  path.resolve(process.cwd(), 'src/components/providers.tsx'),
+  'utf8'
+)
+const rootLayoutSource = readFileSync(path.resolve(process.cwd(), 'src/app/layout.tsx'), 'utf8')
 const serviceWorkerSource = readFileSync(path.resolve(process.cwd(), 'public/sw.js'), 'utf8')
 const nextConfigSource = readFileSync(path.resolve(process.cwd(), 'next.config.ts'), 'utf8')
 const loginPageSource = readFileSync(path.resolve(process.cwd(), 'src/app/login/page.tsx'), 'utf8')
 
 run('service worker registration is limited to production and aggressively applies updates', () => {
+  assert.match(rootLayoutSource, /isFeatureEnabled\('pwaShell'\)/)
+  assert.match(providersSource, /PWARegister enabled=\{pwaEnabled\}/)
+  assert.match(registerSource, /export function PWARegister\(\{ enabled \}: \{ enabled: boolean \}\)/)
+  assert.match(registerSource, /!enabled \|\| process\.env\.NODE_ENV !== 'production'/)
+  assert.match(registerSource, /disableServiceWorkerCaching\(\)/)
   assert.match(registerSource, /process\.env\.NODE_ENV !== 'production'/)
   assert.match(registerSource, /recoverAuthServiceWorkerIfNeeded\(window\.location\.pathname\)/)
   assert.match(registerSource, /updateViaCache:\s*'none'/)
@@ -35,15 +45,21 @@ run('service worker bypasses login, auth, and document requests', () => {
   assert.match(serviceWorkerSource, /FULL_BYPASS_PATH_PREFIXES = \['\/login', '\/signin', '\/api\/auth'\]/)
   assert.match(serviceWorkerSource, /request\.mode === 'navigate'/)
   assert.match(serviceWorkerSource, /shouldFullyBypassRequest\(url\)/)
-  assert.match(serviceWorkerSource, /if \(shouldFullyBypassRequest\(url\)\) \{\s*return\s*\}/)
+  assert.match(serviceWorkerSource, /logBypass\('AUTH_OR_SW_BYPASS', url\)/)
+  assert.match(serviceWorkerSource, /DOCUMENT_NETWORK_ONLY/)
+  assert.match(serviceWorkerSource, /CALLBACK_NETWORK_ONLY/)
+  assert.match(serviceWorkerSource, /url\.searchParams\.has\('callbackUrl'\)/)
   assert.match(serviceWorkerSource, /event\.respondWith\(fetchNetworkOnly\(event\.request\)\)/)
 })
 
 run('old cache names are deleted on activate and known cache prefixes stay detectable', () => {
-  assert.match(serviceWorkerSource, /LEGACY_CACHE_NAMES = new Set\(\['kpi-pms-v1', 'kpi-pms-static-v2'\]\)/)
+  assert.match(
+    serviceWorkerSource,
+    /LEGACY_CACHE_NAMES = new Set\(\['kpi-pms-v1', 'kpi-pms-static-v2', 'kpi-pms-static-v3'\]\)/
+  )
   assert.match(serviceWorkerSource, /if \(isKnownCacheName\(key\)\) \{\s*return caches\.delete\(key\)/)
   assert.equal(isKnownServiceWorkerCacheKey('kpi-pms-v1'), true)
-  assert.equal(isKnownServiceWorkerCacheKey('kpi-pms-static-v3'), true)
+  assert.equal(isKnownServiceWorkerCacheKey('kpi-pms-static-v4'), true)
   assert.equal(isKnownServiceWorkerCacheKey('another-app-cache'), false)
 })
 
@@ -52,6 +68,7 @@ run('safe static assets remain cacheable for PWA support', () => {
   assert.match(serviceWorkerSource, /if \(!CORE_ASSET_PATHS\.has\(url\.pathname\)\) \{\s*return\s*\}/)
   assert.match(serviceWorkerSource, /caches\.open\(STATIC_CACHE_NAME\)/)
   assert.match(serviceWorkerSource, /cache\.put\(event\.request, clone\)/)
+  assert.match(serviceWorkerSource, /isCacheableResponse\(networkResponse\)/)
 })
 
 run('manifest stays network-only and is never used as an offline cache fallback', () => {
@@ -60,7 +77,7 @@ run('manifest stays network-only and is never used as an offline cache fallback'
 })
 
 run('service worker exposes a version handshake and supports skip waiting', () => {
-  assert.equal(SERVICE_WORKER_VERSION, 'kpi-pms-sw-v3')
+  assert.equal(SERVICE_WORKER_VERSION, 'kpi-pms-sw-v4')
   assert.match(serviceWorkerSource, /message\.type === 'SKIP_WAITING'/)
   assert.match(serviceWorkerSource, /message\.type === 'GET_VERSION'/)
   assert.match(serviceWorkerSource, /type: 'SW_VERSION'/)

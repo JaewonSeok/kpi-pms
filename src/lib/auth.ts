@@ -18,6 +18,7 @@ import {
 import {
   compressDepartmentScopeForToken,
   hasCoreAuthTokenClaims,
+  hasFullAppSessionUserClaims,
   resolveDepartmentAccessMode,
   type DepartmentAccessMode,
 } from './auth-session'
@@ -772,6 +773,15 @@ export const authOptions: NextAuthOptions = {
         })
       }
 
+      authTrace('info', 'JWT_TOKEN_STATE_EVALUATED', {
+        trigger,
+        provider: account?.provider ?? null,
+        hasCoreClaims: hasCoreAuthTokenClaims(token),
+        hasMasterLogin: Boolean(token.masterLogin?.active),
+        tokenSub: token.sub ?? null,
+        hasEmail: typeof token.email === 'string' && token.email.length > 0,
+      })
+
       return token
     },
 
@@ -834,6 +844,12 @@ export const authOptions: NextAuthOptions = {
           email: maskAuthEmail(claims.email),
           role: claims.role,
           departmentAccessMode: claims.departmentAccessMode,
+          hasFullClaims: hasFullAppSessionUserClaims(session.user),
+          hasMasterLogin: Boolean(session.user.masterLogin?.active),
+        })
+      } else {
+        authTrace('warn', 'SESSION_TOKEN_MISSING', {
+          hasSessionUser: Boolean(session.user),
         })
       }
 

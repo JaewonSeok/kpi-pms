@@ -61,8 +61,8 @@
 ## Migration day
 
 1. Confirm backup complete.
-2. Run `npm run db:generate`
-3. Run `npm run db:push`
+2. Run `pnpm run db:generate`
+3. Run `pnpm run db:push`
 4. Follow cutover order in `docs/operations/data-migration-and-launch-plan.md`
 5. Run health checks.
 6. Smoke test critical admin/member flows.

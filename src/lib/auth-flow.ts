@@ -31,6 +31,18 @@ export type GoogleAccessDecision =
       errorCode: keyof typeof LOGIN_ERROR_MESSAGES
     }
 
+export type LoginFeedbackKind = 'auth' | 'access' | 'session'
+
+const LOGIN_ERROR_KINDS: Record<string, LoginFeedbackKind> = {
+  InvalidDomain: 'access',
+  NotRegistered: 'access',
+  InactiveAccount: 'access',
+  AccessDenied: 'access',
+  SessionRequired: 'session',
+  OAuthCallback: 'session',
+  Callback: 'session',
+}
+
 function normalizeAllowedDomain(domain: string) {
   return domain.trim().toLowerCase().replace(/^@/, '')
 }
@@ -55,6 +67,19 @@ export function getLoginErrorMessage(errorCode?: string | null) {
   }
 
   return LOGIN_ERROR_MESSAGES[errorCode] ?? LOGIN_ERROR_MESSAGES.Default
+}
+
+export function resolveLoginFeedback(errorCode?: string | null) {
+  const message = getLoginErrorMessage(errorCode)
+  if (!message) {
+    return null
+  }
+
+  return {
+    code: errorCode,
+    kind: LOGIN_ERROR_KINDS[errorCode ?? ''] ?? 'auth',
+    message,
+  }
 }
 
 export function resolveClientCallbackUrl(

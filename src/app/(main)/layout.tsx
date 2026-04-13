@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import type { ReactNode } from 'react'
 import { authOptions } from '@/lib/auth'
+import { hasFullAppSessionUserClaims } from '@/lib/auth-session'
 import { authTrace, maskAuthEmail } from '@/lib/auth-trace'
 import { redirect } from 'next/navigation'
 import { MainShell } from '@/components/layout/MainShell'
@@ -11,12 +12,15 @@ export default async function MainLayout({
   children: ReactNode
 }) {
   const session = await getServerSession(authOptions)
-  if (!session) {
+  if (!session || !hasFullAppSessionUserClaims(session.user)) {
     authTrace('warn', 'LOGIN_REDIRECT_TRIGGERED', {
       route: '(main)/layout',
-      reason: 'MAIN_LAYOUT_SESSION_MISSING',
+      reason: session ? 'MAIN_LAYOUT_SESSION_INCOMPLETE' : 'MAIN_LAYOUT_SESSION_MISSING',
+      sessionPresent: Boolean(session),
+      hasUserId: Boolean(session?.user?.id),
+      hasRole: Boolean(session?.user?.role),
     })
-    redirect('/login')
+    redirect('/login?error=SessionRequired')
   }
 
   authTrace('info', 'LANDING_ROUTE_ENTERED', {

@@ -5,14 +5,19 @@ import {
   buildGoogleSignInRequest,
   decideGoogleAccess,
   getLoginErrorMessage,
+  resolveLoginFeedback,
   resolveAuthRedirect,
 } from '../src/lib/auth-flow'
 import {
+  buildAuthCookieNameCandidates,
   buildAuthCookiePolicy,
+  extractSetCookieNames,
   readAuthEnv,
+  resolveAuthRequestDiagnostics,
   resolveAuthRuntimePolicy,
+  summarizeSessionPayload,
 } from '../src/lib/auth-env'
-import { isAuthPublicPath } from '../src/lib/auth-middleware'
+import { isAuthPublicPath, resolveMiddlewareAccessDecision } from '../src/lib/auth-middleware'
 
 function run(name: string, fn: () => void) {
   try {
@@ -160,21 +165,74 @@ run('middleware keeps auth routes and PWA assets public while protecting app pag
   assert.equal(isAuthPublicPath('/signin'), true)
   assert.equal(isAuthPublicPath('/api/auth/callback/google'), true)
   assert.equal(isAuthPublicPath('/api/auth/signin/google'), true)
+  assert.equal(isAuthPublicPath('/manifest.json'), true)
+  assert.equal(isAuthPublicPath('/styles/app.css'), true)
   assert.equal(isAuthPublicPath('/dashboard'), false)
   assert.equal(isAuthPublicPath('/evaluation/workbench'), false)
-  assert.match(
-    middlewareSource,
-    /matcher: \['\/\(\(\?!_next\|favicon\.ico\|manifest\.webmanifest\|sw\.js\|icons\|login\|signin\|403\|api\/auth\)\.\*\)'\]/
-  )
+  assert.match(middlewareSource, /_next\/static\|_next\/image/)
 })
 
 run('middleware allows recoverable callback tokens to pass the first protected request', () => {
   assert.match(middlewareSource, /hasRecoverableAuthTokenIdentity/)
-  assert.match(middlewareSource, /RECOVERABLE_TOKEN_REHYDRATION/)
-  assert.match(middlewareSource, /SESSION_COOKIE_DETECTED_IN_REQUEST/)
+  assert.match(middlewareSource, /resolveMiddlewareAccessDecision/)
+  assert.match(middlewareSource, /resolveRequestAuthToken/)
+  assert.match(middlewareSource, /matchedSessionCookieName/)
+  assert.match(middlewareSource, /presentSessionCookieNames/)
   assert.match(middlewareSource, /MIDDLEWARE_SESSION_ACCEPTED/)
   assert.match(middlewareSource, /MIDDLEWARE_SESSION_REJECTED/)
   assert.match(middlewareSource, /LOGIN_REDIRECT_TRIGGERED/)
+})
+
+run('middleware decision helper distinguishes missing, partial, authorized, and login escape states', () => {
+  assert.deepEqual(
+    resolveMiddlewareAccessDecision({
+      pathname: '/dashboard',
+      tokenPresent: false,
+      hasCoreClaims: false,
+      hasRecoverableIdentity: false,
+    }),
+    {
+      action: 'redirect-login',
+      reason: 'TOKEN_MISSING',
+    }
+  )
+  assert.deepEqual(
+    resolveMiddlewareAccessDecision({
+      pathname: '/dashboard',
+      tokenPresent: true,
+      hasCoreClaims: false,
+      hasRecoverableIdentity: true,
+    }),
+    {
+      action: 'allow',
+      reason: 'PARTIAL_TOKEN_REHYDRATE',
+    }
+  )
+  assert.deepEqual(
+    resolveMiddlewareAccessDecision({
+      pathname: '/dashboard',
+      tokenPresent: true,
+      hasCoreClaims: true,
+      hasRecoverableIdentity: true,
+      menuAuthorized: false,
+    }),
+    {
+      action: 'redirect-403',
+      reason: 'UNAUTHORIZED_MENU',
+    }
+  )
+  assert.deepEqual(
+    resolveMiddlewareAccessDecision({
+      pathname: '/login',
+      tokenPresent: true,
+      hasCoreClaims: true,
+      hasRecoverableIdentity: true,
+    }),
+    {
+      action: 'redirect-dashboard',
+      reason: 'LOGIN_ALREADY_AUTHENTICATED',
+    }
+  )
 })
 
 run('auth runtime policy keeps dev cookies non-secure even when NEXTAUTH_URL points to https', () => {
@@ -204,11 +262,58 @@ run('auth runtime policy keeps production cookies secure and yields a shared coo
   assert.equal(cookies.sessionToken.options.path, '/')
 })
 
+run('auth runtime diagnostics expose secure/plain candidates and forwarded host context', () => {
+  const candidates = buildAuthCookieNameCandidates()
+  const previewDiagnostics = resolveAuthRequestDiagnostics(
+    {
+      headers: new Headers({
+        host: 'kpi-pms-git-feature-rsupport.vercel.app',
+        'x-forwarded-host': 'kpi-pms.vercel.app',
+        'x-forwarded-proto': 'https',
+      }),
+      url: 'https://kpi-pms-git-feature-rsupport.vercel.app/api/auth/callback/google',
+    },
+    {
+      NODE_ENV: 'production',
+      VERCEL: '1',
+      VERCEL_ENV: 'preview',
+    }
+  )
+  const localhostDiagnostics = resolveAuthRequestDiagnostics(
+    {
+      headers: new Headers({
+        host: 'localhost:3000',
+        'x-forwarded-proto': 'http',
+      }),
+      url: 'http://localhost:3000/login',
+    },
+    {
+      NODE_ENV: 'development',
+    }
+  )
+
+  assert.deepEqual(candidates.sessionToken, [
+    '__Secure-next-auth.session-token',
+    'next-auth.session-token',
+  ])
+  assert.deepEqual(candidates.callbackUrl, [
+    '__Secure-next-auth.callback-url',
+    'next-auth.callback-url',
+  ])
+  assert.equal(previewDiagnostics.host, 'kpi-pms-git-feature-rsupport.vercel.app')
+  assert.equal(previewDiagnostics.forwardedHost, 'kpi-pms.vercel.app')
+  assert.equal(previewDiagnostics.forwardedProto, 'https')
+  assert.equal(previewDiagnostics.originCandidate, 'https://kpi-pms.vercel.app')
+  assert.equal(previewDiagnostics.vercelEnv, 'preview')
+  assert.equal(localhostDiagnostics.originCandidate, 'http://localhost:3000')
+})
+
 run('middleware and auth options share the same auth cookie policy hooks', () => {
   assert.match(authSource, /const authRuntimePolicy = applyAuthRuntimeEnvironment\(\)/)
   assert.match(authSource, /const authCookiePolicy = buildAuthCookiePolicy\(authRuntimePolicy\)/)
   assert.match(authSource, /cookies: authCookiePolicy/)
-  assert.match(middlewareSource, /sessionToken:\s*\{\s*name: authRuntimePolicy\.sessionTokenCookieName,/)
+  assert.match(middlewareSource, /buildAuthCookieNameCandidates/)
+  assert.match(middlewareSource, /resolveRequestAuthToken/)
 })
 
 run('google auth flow keeps Korean login errors and detailed trace hooks', () => {
@@ -225,20 +330,64 @@ run('google auth flow keeps Korean login errors and detailed trace hooks', () =>
   assert.match(authSource, /APP_USER_MATCH_SUCCEEDED/)
   assert.match(authSource, /GOOGLE_JWT_CLAIMS_APPLIED/)
   assert.match(authSource, /JWT_CREATED/)
+  assert.match(authSource, /JWT_TOKEN_STATE_EVALUATED/)
   assert.match(authSource, /SESSION_USER_RESOLVED/)
 })
 
-run('auth callback route traces whether the session cookie was actually written', () => {
+run('auth callback and session traces summarize cookie names and session booleans', () => {
+  const cookieNames = extractSetCookieNames(
+    {
+      get: () => null,
+      getSetCookie: () => [
+        '__Secure-next-auth.session-token=abc; Path=/; HttpOnly; Secure',
+        '__Secure-next-auth.callback-url=https%3A%2F%2Fkpi-pms.vercel.app%2Fdashboard; Path=/; Secure',
+      ],
+    } as unknown as Headers
+  )
+  const validSessionSummary = summarizeSessionPayload({
+    user: {
+      id: 'emp-1',
+      role: 'ROLE_ADMIN',
+    },
+  })
+  const emptySessionSummary = summarizeSessionPayload(null)
+
+  assert.deepEqual(cookieNames, [
+    '__Secure-next-auth.session-token',
+    '__Secure-next-auth.callback-url',
+  ])
+  assert.deepEqual(validSessionSummary, {
+    sessionPresent: true,
+    hasUserId: true,
+    hasRole: true,
+  })
+  assert.deepEqual(emptySessionSummary, {
+    sessionPresent: false,
+    hasUserId: false,
+    hasRole: false,
+  })
   assert.match(nextAuthRouteSource, /SESSION_COOKIE_SET/)
-  assert.match(nextAuthRouteSource, /wroteSessionCookie/)
-  assert.match(nextAuthRouteSource, /sessionCookieName/)
+  assert.match(nextAuthRouteSource, /AUTH_SESSION_TRACE/)
+  assert.match(nextAuthRouteSource, /setCookieNames/)
+  assert.match(nextAuthRouteSource, /requestAuthCookieNames/)
 })
 
 run('landing routes trace success and redirect failures', () => {
   assert.match(mainLayoutSource, /LANDING_ROUTE_ENTERED/)
   assert.match(mainLayoutSource, /LOGIN_REDIRECT_TRIGGERED/)
   assert.match(dashboardPageSource, /LANDING_ROUTE_ENTERED/)
-  assert.match(dashboardPageSource, /LOGIN_REDIRECT_TRIGGERED/)
+  assert.match(dashboardPageSource, /DASHBOARD_SESSION_INVARIANT_BROKEN/)
+})
+
+run('login page uses session escape hatch without auto re-triggering sign-in', () => {
+  const feedback = resolveLoginFeedback('SessionRequired')
+
+  assert.equal(feedback?.kind, 'session')
+  assert.match(loginPageSource, /useSession/)
+  assert.match(loginPageSource, /hasFullAppSessionUserClaims/)
+  assert.match(loginPageSource, /router\.replace/)
+  assert.match(loginPageSource, /data-auth-feedback-kind/)
+  assert.doesNotMatch(loginPageSource, /useEffect[\s\S]{0,240}signIn\(/)
 })
 
 run('login page uses Korean admin and fallback messages', () => {

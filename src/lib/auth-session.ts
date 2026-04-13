@@ -17,6 +17,19 @@ type TokenLike = {
   departmentAccessMode?: DepartmentAccessMode | null
 }
 
+type SessionUserLike = {
+  id?: string | null
+  email?: string | null
+  name?: string | null
+  role?: SystemRole | string | null
+  empId?: string | null
+  position?: string | null
+  deptId?: string | null
+  deptName?: string | null
+  departmentCode?: string | null
+  orgPath?: string | null
+}
+
 type CoreAuthTokenClaimKey =
   | 'sub'
   | 'email'
@@ -93,6 +106,25 @@ export function hasRecoverableAuthTokenIdentity(token?: TokenLike | null) {
   return Boolean(
     (typeof token.sub === 'string' && token.sub.trim().length > 0) ||
       (typeof token.email === 'string' && token.email.trim().length > 0)
+  )
+}
+
+export function hasFullAppSessionUserClaims(user?: SessionUserLike | null) {
+  if (!user) {
+    return false
+  }
+
+  return Boolean(
+    user.id &&
+      user.email &&
+      user.name &&
+      user.role &&
+      user.empId &&
+      user.position &&
+      user.deptId &&
+      user.deptName &&
+      user.departmentCode &&
+      user.orgPath
   )
 }
 

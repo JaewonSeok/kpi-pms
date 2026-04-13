@@ -5,7 +5,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { type ReactNode, useState } from 'react'
 import { PWARegister } from '@/components/pwa/PWARegister'
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({
+  children,
+  pwaEnabled,
+}: {
+  children: ReactNode
+  pwaEnabled: boolean
+}) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -21,7 +27,7 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
-        <PWARegister />
+        <PWARegister enabled={pwaEnabled} />
         {children}
       </QueryClientProvider>
     </SessionProvider>

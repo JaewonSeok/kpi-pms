@@ -1,6 +1,6 @@
 'use client'
 
-export const SERVICE_WORKER_VERSION = 'kpi-pms-sw-v3'
+export const SERVICE_WORKER_VERSION = 'kpi-pms-sw-v4'
 export const AUTH_SERVICE_WORKER_RESET_KEY = 'kpi-pms-auth-sw-reset'
 const CONTROLLER_CHANGE_RELOAD_KEY = 'kpi-pms-sw-controller-reload'
 const KNOWN_CACHE_PREFIXES = ['kpi-pms']
@@ -16,16 +16,21 @@ export async function clearKnownServiceWorkerCaches() {
   }
 
   const cacheKeys = await caches.keys()
+  const knownCacheKeys = cacheKeys.filter((cacheKey) => isKnownServiceWorkerCacheKey(cacheKey))
   await Promise.all(
-    cacheKeys
-      .filter((cacheKey) => isKnownServiceWorkerCacheKey(cacheKey))
-      .map((cacheKey) => caches.delete(cacheKey))
+    knownCacheKeys.map((cacheKey) => caches.delete(cacheKey))
   )
+  console.info('[pwa] Cleared service worker caches', {
+    cacheKeys: knownCacheKeys,
+  })
 }
 
 export async function unregisterServiceWorkers() {
   const registrations = await navigator.serviceWorker.getRegistrations()
   await Promise.all(registrations.map((registration) => registration.unregister()))
+  console.info('[pwa] Unregistered service workers', {
+    count: registrations.length,
+  })
   return registrations.length
 }
 

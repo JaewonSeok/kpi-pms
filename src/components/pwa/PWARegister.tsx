@@ -14,7 +14,7 @@ async function disableServiceWorkerCaching() {
   await Promise.all([unregisterServiceWorkers(), clearKnownServiceWorkerCaches()])
 }
 
-export function PWARegister() {
+export function PWARegister({ enabled }: { enabled: boolean }) {
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
       return
@@ -27,8 +27,12 @@ export function PWARegister() {
     clearPendingControllerReloadFlag()
 
     const registerServiceWorker = async () => {
-      if (process.env.NODE_ENV !== 'production') {
+      if (!enabled || process.env.NODE_ENV !== 'production') {
         await disableServiceWorkerCaching()
+        console.info('[pwa] Skipping service worker registration', {
+          enabled,
+          nodeEnv: process.env.NODE_ENV,
+        })
         return
       }
 
@@ -54,7 +58,7 @@ export function PWARegister() {
       releaseWaitingWorkerListener()
       releaseControllerChangeReload()
     }
-  }, [])
+  }, [enabled])
 
   return null
 }

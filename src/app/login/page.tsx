@@ -1,17 +1,20 @@
 'use client'
 
-import { signIn } from 'next-auth/react'
+import { signIn, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import {
   buildGoogleSignInRequest,
   getLoginErrorMessage,
+  resolveLoginFeedback,
   resolveClientCallbackUrl,
 } from '@/lib/auth-flow'
+import { hasFullAppSessionUserClaims } from '@/lib/auth-session'
 
 function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { data: session, status } = useSession()
   const error = searchParams.get('error')
   const requestedCallbackUrl = searchParams.get('callbackUrl')
   const [adminEmail, setAdminEmail] = useState('')
@@ -20,8 +23,20 @@ function LoginContent() {
   const [adminMode, setAdminMode] = useState(false)
   const [adminError, setAdminError] = useState('')
   const [googleError, setGoogleError] = useState('')
+  const loginFeedback = resolveLoginFeedback(error)
+  const hasFullSession = hasFullAppSessionUserClaims(session?.user)
 
-  const visibleGoogleError = googleError || getLoginErrorMessage(error)
+  const visibleGoogleError = googleError || loginFeedback?.message || getLoginErrorMessage(error)
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || status !== 'authenticated' || !hasFullSession) {
+      return
+    }
+
+    router.replace(
+      resolveClientCallbackUrl(requestedCallbackUrl, window.location.origin, '/dashboard')
+    )
+  }, [hasFullSession, requestedCallbackUrl, router, status])
 
   const handleGoogleLogin = async () => {
     setLoading(true)
@@ -75,6 +90,14 @@ function LoginContent() {
     }
   }
 
+  if (status === 'authenticated' && hasFullSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-blue-700">
+        <div className="text-white">로그인 정보를 확인하고 있습니다...</div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="min-h-screen flex items-center justify-center"
@@ -100,7 +123,10 @@ function LoginContent() {
           <h2 className="text-xl font-semibold text-gray-800 mb-6 text-center">로그인</h2>
 
           {visibleGoogleError && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <div
+              className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
+              data-auth-feedback-kind={googleError ? 'auth' : loginFeedback?.kind ?? 'auth'}
+            >
               {visibleGoogleError}
             </div>
           )}

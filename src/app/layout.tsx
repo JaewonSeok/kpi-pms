@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import './globals.css'
 import { Providers } from '@/components/providers'
+import { isFeatureEnabled } from '@/lib/feature-flags'
 
 export const metadata: Metadata = {
   title: 'KPI Performance System',
@@ -30,10 +31,12 @@ export default function RootLayout({
 }: {
   children: ReactNode
 }) {
+  const pwaEnabled = isFeatureEnabled('pwaShell')
+
   return (
     <html lang="ko">
       <body>
-        <Providers>{children}</Providers>
+        <Providers pwaEnabled={pwaEnabled}>{children}</Providers>
       </body>
     </html>
   )

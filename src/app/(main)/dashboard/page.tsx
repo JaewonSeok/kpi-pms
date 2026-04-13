@@ -2,18 +2,20 @@ import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
 import { authTrace, maskAuthEmail } from '@/lib/auth-trace'
+import { hasFullAppSessionUserClaims } from '@/lib/auth-session'
 import { getDashboardPageData } from '@/server/dashboard-page'
 import { DashboardPageShell } from '@/components/dashboard/DashboardPageShell'
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions)
 
-  if (!session) {
-    authTrace('warn', 'LOGIN_REDIRECT_TRIGGERED', {
+  if (!session || !hasFullAppSessionUserClaims(session.user)) {
+    authTrace('error', 'DASHBOARD_SESSION_INVARIANT_BROKEN', {
       route: '/dashboard',
-      reason: 'DASHBOARD_SESSION_MISSING',
+      reason: session ? 'DASHBOARD_SESSION_INCOMPLETE' : 'DASHBOARD_SESSION_MISSING',
+      sessionPresent: Boolean(session),
     })
-    redirect('/login')
+    redirect('/login?error=SessionRequired')
   }
 
   authTrace('info', 'LANDING_ROUTE_ENTERED', {

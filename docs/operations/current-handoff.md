@@ -1,122 +1,108 @@
 # Current Handoff
 
-Last updated: 2026-04-10
+Last updated: 2026-04-13
 Branch: `main`
-Base commit: `1324382`
+Base commit: `c45c116`
 
 ## Must-Read First
 
 1. `docs/operations/working-rules.md`
 2. `docs/operations/current-handoff.md`
 3. `README.md`
-4. `docs/ai-assistant-operations.md`
-5. `docs/product/implementation-backlog.md`
+4. `docs/auth-rbac-matrix.md`
+5. `docs/operations/deployment-and-env.md`
+6. `docs/ai-assistant-operations.md` if the task touches AI features
+7. `docs/product/implementation-backlog.md` if the task changes scope or backlog priority
 
 ## Current Focus
 
-The active in-progress feature is calibration session setup hardening for the evaluation calibration page.
+There is no active uncommitted WIP in the repo right now. The current handoff focus is a clean continuation point after two recent completed workstreams:
 
-Additional hotfix completed on 2026-04-10:
+- Calibration session setup hardening for the evaluation calibration page
+- Login / auth stabilization after repeated Google sign-in issues
 
-- Repaired user-facing Korean mojibake strings across:
-  - `/evaluation/360`
-  - `/evaluation/appeal`
-  - `/evaluation/results`
-  - `/evaluation/word-cloud-360`
-  - `/admin/performance-design`
-  - `/kpi/org`
-- The root causes were page-scoped source string corruption plus one persisted config path for `performanceDesignConfig`.
-- Added `tests/korean-copy-hotfix.test.ts` to catch representative broken Korean tokens in affected route copy sources.
-- Verified:
-  - `tests/korean-copy-hotfix.test.ts`
-  - `tests/performance-design.test.ts`
-  - `tests/feedback-360-foundation.test.ts`
-  - `tests/evaluation-appeal-workspace.test.ts`
-  - `tests/evaluation-results-workspace.test.ts`
-  - `tests/word-cloud-360.test.ts`
-  - `tests/word-cloud-360-ops.test.ts`
-  - `pnpm typecheck`
-  - `pnpm lint`
-  - `pnpm build`
+Most recent auth/login work completed by commits `aa24904`, `9bfb070`, and `c45c116`:
 
-Implemented in the worktree:
+- Hardened auth env parsing around `NEXTAUTH_URL` / `AUTH_URL` and `NEXTAUTH_SECRET` / `AUTH_SECRET`
+- Centralized auth runtime cookie policy so middleware and Auth.js use the same secure-cookie behavior
+- Preserved only safe same-origin callback URLs and blocked redirects back into `/login`
+- Added first-request recovery for identity-only callback tokens before full claims are rehydrated
+- Kept the login page on the Google Workspace flow while preserving the emergency admin fallback path
+- Kept Korean login copy and auth trace hooks covered by tests
 
-- Added a dedicated session setup model in `src/lib/calibration-session-setup.ts`.
-- Extended calibration session config parsing/serialization with `observerIds` and `setup`.
-- Added validation schema coverage for session setup fields and `START_SESSION`.
-- Added workflow guard that blocks session start when required setup is incomplete.
-- Added audit log support for `CALIBRATION_SESSION_STARTED`.
-- Replaced the old calibration policy panel entry with `CalibrationSessionSetupHub`.
-- Exposed setup readiness, department options, visible column options, and ground rule presets through the calibration view model.
-- Added calibration tests for schema, readiness, workflow wiring, and UI integration.
+Calibration session setup work already present in the repo:
 
-## Files Currently Changed
+- Dedicated session setup model in `src/lib/calibration-session-setup.ts`
+- Session config parsing / serialization with `observerIds` and `setup`
+- Validation coverage for setup fields and `START_SESSION`
+- Workflow guard that blocks session start when required setup is incomplete
+- Audit log support for `CALIBRATION_SESSION_STARTED`
+- `CalibrationSessionSetupHub` wired into the calibration client
 
-Tracked modified files:
+## Current Worktree Status
 
-- `src/app/api/evaluation/calibration/route.ts`
-- `src/app/api/evaluation/calibration/workflow/route.ts`
-- `src/components/evaluation/EvaluationCalibrationClient.tsx`
-- `src/lib/validations.ts`
-- `src/server/evaluation-calibration-session.ts`
-- `src/server/evaluation-calibration.ts`
-- `tests/calibration-ops.test.ts`
-
-Untracked files:
-
-- `src/components/evaluation/CalibrationSessionSetupHub.tsx`
-- `src/lib/calibration-session-setup.ts`
-- `tmp-session1.pdf`
-- `tmp-session2.pdf`
+- `git status --short --untracked-files=all` is clean as of 2026-04-13.
+- There are no tracked modified files waiting to be committed.
+- `tmp-session1.pdf` and `tmp-session2.pdf` exist in the repo and are tracked files, not current untracked temp artifacts.
 
 ## Verified Status
 
-Verified on 2026-04-10:
+Verified on 2026-04-13:
 
+- `pnpm test:auth` passed.
+- `pnpm exec ts-node -P tsconfig.seed.json tests/auth-session.test.ts` passed.
 - `pnpm test:calibration-ops` passed.
 - `pnpm typecheck` passed.
-- targeted `eslint` completed with warnings only, no errors.
 
-Current lint warnings to clean up later:
+Not rerun during this handoff refresh:
 
-- `src/components/evaluation/CalibrationSessionSetupHub.tsx`
-  - `react-hooks/set-state-in-effect` warning for resetting draft from props.
-- `src/components/evaluation/EvaluationCalibrationClient.tsx`
-  - unused `Trash2`
-  - unused `CalibrationPolicySection`
-- `src/server/evaluation-calibration.ts`
-  - unused `humanizeCalibrationAction`
-  - unused `resolveTimelineActionType`
+- `pnpm lint`
+- `pnpm build`
+- live browser QA for `/login`
+- live browser QA for the calibration setup flow
 
 ## Detailed Remaining Work
 
-### P1. Browser QA for the new setup flow
+### P1. Browser QA for login/auth flow
 
-- Open the calibration page and verify the `정책 안내` tab now renders `CalibrationSessionSetupHub`.
+- Open `/login` and verify Google sign-in launches correctly.
+- Complete a successful Google callback and confirm the app lands on `/dashboard` or another same-origin callback target instead of looping back to `/login`.
+- Verify the emergency admin login form still works.
+- Confirm Korean error messages still render correctly for failed admin login and blocked Google login cases.
+- Confirm the first protected page request after callback does not bounce because of incomplete token claims.
+
+### P1. Environment and OAuth configuration audit
+
+- Check `NEXTAUTH_URL` and `AUTH_URL` match exactly if both are set.
+- Check `NEXTAUTH_SECRET` and `AUTH_SECRET` match exactly if both are set.
+- Confirm `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are real values, not placeholders.
+- Confirm Google Cloud Console still uses the correct OAuth client, client type `Web application`, and registered callback URLs.
+- Confirm `ALLOWED_DOMAIN` matches the intended Workspace domain and actual employee `gwsEmail` data.
+
+### P1. Broader verification before release
+
+- Run `pnpm lint`.
+- Run `pnpm build`.
+- Smoke test `/api/health/live`, `/api/health/ready`, `/login`, and the main dashboard after deploy or before release.
+
+### P2. Calibration manual QA still pending
+
+- Open the calibration page and verify the setup hub renders in the policy/setup area.
 - Save session setup fields and confirm refresh preserves values.
 - Try `세션 시작` with incomplete setup and verify the blocking message is shown.
 - Complete required fields, start the session, and verify the timeline and status reflect `CALIBRATING`.
 
-### P1. Decide whether to clean the current lint warnings now
+### P2. Decide what to do with tracked PDF fixtures
 
-- The code is type-safe and tests pass, but the worktree still has five lint warnings.
-- The main one is the draft reset pattern in `CalibrationSessionSetupHub`; decide whether to refactor state sync or accept it temporarily.
-
-### P1. Review untracked artifacts before commit
-
-- `tmp-session1.pdf` and `tmp-session2.pdf` appear to be temp files from prior work.
-- Do not delete them automatically; confirm whether they should stay, move, or be removed.
-
-### P2. Commit / snapshot after QA
-
-- Once manual QA is complete, create a clean commit for the calibration session setup slice.
-- Keep the handoff doc updated if scope changes before commit.
+- `tmp-session1.pdf` and `tmp-session2.pdf` are now tracked in the repository.
+- Before deleting, moving, or renaming them, confirm whether they are intentional fixtures or stale artifacts that should be replaced with better-named assets.
 
 ## Important Notes
 
-- The project-level rule is still to use `pnpm`, even though some older runbooks still show `npm` examples.
-- For this repo, workflow pages are expected to preserve auditability and Korean UI copy.
-- If the next task expands calibration fairness further, the related backlog documents point to:
-  - `docs/product/implementation-backlog.md`
-  - `docs/product/global-benchmark-gap-analysis.md`
-  - `docs/product/implementation-roadmap-world-class.md`
+- The project rule is `pnpm` first. Older runbooks that still said `npm` were updated during this handoff refresh, but keep watching for drift.
+- Credentials login remains an emergency admin path backed by env credentials, not a general employee password flow.
+- Current auth/RBAC limits still documented in `docs/auth-rbac-matrix.md`:
+  - password reset is not implemented
+  - failed-login lockout is not implemented
+  - Google Workspace sync is not implemented
+- Keep Korean UI copy, English code/comments/tests, and preserve auditability on workflow pages.

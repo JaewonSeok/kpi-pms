@@ -1,9 +1,9 @@
-const SERVICE_WORKER_VERSION = 'kpi-pms-sw-v3'
-const STATIC_CACHE_NAME = 'kpi-pms-static-v3'
+const SERVICE_WORKER_VERSION = 'kpi-pms-sw-v4'
+const STATIC_CACHE_NAME = 'kpi-pms-static-v4'
 const CORE_ASSET_PATHS = new Set(['/favicon.ico', '/icon-192.svg', '/icon-512.svg'])
 const FULL_BYPASS_PATHS = new Set(['/manifest.webmanifest', '/sw.js'])
 const FULL_BYPASS_PATH_PREFIXES = ['/login', '/signin', '/api/auth']
-const LEGACY_CACHE_NAMES = new Set(['kpi-pms-v1', 'kpi-pms-static-v2'])
+const LEGACY_CACHE_NAMES = new Set(['kpi-pms-v1', 'kpi-pms-static-v2', 'kpi-pms-static-v3'])
 const CACHE_PREFIXES = ['kpi-pms']
 
 function isKnownCacheName(cacheName) {
@@ -22,7 +22,11 @@ function shouldFullyBypassRequest(url) {
 }
 
 function shouldBypassCache(request, url) {
-  return isDocumentRequest(request) || shouldFullyBypassRequest(url)
+  return (
+    isDocumentRequest(request) ||
+    shouldFullyBypassRequest(url) ||
+    url.searchParams.has('callbackUrl')
+  )
 }
 
 function createNoStoreRequest(request) {
@@ -31,6 +35,24 @@ function createNoStoreRequest(request) {
 
 function fetchNetworkOnly(request) {
   return fetch(createNoStoreRequest(request)).catch(() => fetch(request))
+}
+
+function logBypass(reason, url) {
+  console.info(
+    `[sw] bypass ${JSON.stringify({
+      reason,
+      path: url.pathname,
+    })}`
+  )
+}
+
+function isCacheableResponse(response) {
+  return Boolean(
+    response &&
+      response.status === 200 &&
+      !response.redirected &&
+      !response.headers.get('location')
+  )
 }
 
 self.addEventListener('install', (event) => {
@@ -93,10 +115,12 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (shouldFullyBypassRequest(url)) {
+    logBypass('AUTH_OR_SW_BYPASS', url)
     return
   }
 
   if (shouldBypassCache(event.request, url)) {
+    logBypass(isDocumentRequest(event.request) ? 'DOCUMENT_NETWORK_ONLY' : 'CALLBACK_NETWORK_ONLY', url)
     event.respondWith(fetchNetworkOnly(event.request))
     return
   }
@@ -108,7 +132,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetchNetworkOnly(event.request)
       .then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200) {
+        if (!isCacheableResponse(networkResponse)) {
           return networkResponse
         }
 

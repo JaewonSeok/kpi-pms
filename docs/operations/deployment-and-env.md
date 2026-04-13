@@ -70,8 +70,8 @@
 1. Build image
    - `docker build -t kpi-pms:release .`
 2. Run database migration
-   - `npm run db:generate`
-   - `npm run db:push`
+   - `pnpm run db:generate`
+   - `pnpm run db:push`
 3. Start stack
    - `docker compose -f docker-compose.prod.yml up -d --build`
 4. Verify health
@@ -92,8 +92,8 @@ If the team prefers Vercel:
 
 1. Freeze schema-changing releases.
 2. Confirm database backup completed.
-3. Run `npm run db:generate`.
-4. Run `npm run db:push` in stage first.
+3. Run `pnpm run db:generate`.
+4. Run `pnpm run db:push` in stage first.
 5. Validate:
    - auth
    - KPI create
