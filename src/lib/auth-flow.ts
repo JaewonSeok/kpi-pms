@@ -10,7 +10,8 @@ export const LOGIN_ERROR_MESSAGES: Record<string, string> = {
   OAuthAccountNotLinked: '다른 로그인 방식으로 이미 연결된 계정입니다.',
   OAuthProfileMissing:
     'Google 계정 이메일을 확인하지 못했습니다. 다른 계정으로 다시 시도해 주세요.',
-  AccessDenied: '로그인에 성공했지만 사용자 권한을 확인하지 못했습니다. 관리자에게 문의해 주세요.',
+  AccessDenied:
+    '로그인에 성공했지만 사용자 권한을 확인하지 못했습니다. 관리자에게 문의해 주세요.',
   Configuration: '로그인 설정에 문제가 있습니다. 관리자에게 문의해 주세요.',
   OAuthSignin: 'Google 로그인 시작 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
   OAuthCallback: 'Google 인증 응답을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',

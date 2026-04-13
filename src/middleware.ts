@@ -2,8 +2,11 @@ import { withAuth } from 'next-auth/middleware'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { canAccessMenu, resolveMenuFromPath } from '@/lib/auth/permissions'
+import { resolveAuthRuntimePolicy } from '@/lib/auth-env'
 import { isAuthPublicPath } from '@/lib/auth-middleware'
 import { hasCoreAuthTokenClaims } from '@/lib/auth-session'
+
+const authRuntimePolicy = resolveAuthRuntimePolicy()
 
 export default withAuth(
   function middleware(
@@ -50,6 +53,11 @@ export default withAuth(
     return NextResponse.next()
   },
   {
+    cookies: {
+      sessionToken: {
+        name: authRuntimePolicy.sessionTokenCookieName,
+      },
+    },
     callbacks: {
       authorized: () => true,
     },

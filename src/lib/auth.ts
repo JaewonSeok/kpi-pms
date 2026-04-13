@@ -22,15 +22,18 @@ import {
   type DepartmentAccessMode,
 } from './auth-session'
 import { normalizeGoogleWorkspaceEmail } from './google-workspace'
-import { readAuthEnv } from './auth-env'
+import { applyAuthRuntimeEnvironment, readAuthEnv } from './auth-env'
 import { decideGoogleAccess, resolveAuthRedirect } from './auth-flow'
 
 function buildGoogleCallbackUrl(baseUrl: string) {
   return new URL('/api/auth/callback/google', baseUrl).toString()
 }
 
+const authRuntimePolicy = applyAuthRuntimeEnvironment()
 const authEnv = readAuthEnv()
-const googleCallbackUrl = buildGoogleCallbackUrl(authEnv.baseUrl)
+const googleCallbackUrl = authRuntimePolicy.shouldTrustHost
+  ? 'request-host/api/auth/callback/google'
+  : buildGoogleCallbackUrl(authEnv.baseUrl)
 
 function maskEmail(email?: string | null) {
   if (!email) {
@@ -450,6 +453,7 @@ declare module 'next-auth/jwt' {
 
 export const authOptions: NextAuthOptions = {
   secret: authEnv.secret,
+  useSecureCookies: authRuntimePolicy.useSecureCookies,
   providers: [
     GoogleProvider({
       clientId: authEnv.googleClientId,

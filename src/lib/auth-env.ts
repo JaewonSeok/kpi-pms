@@ -9,6 +9,12 @@ const PLACEHOLDER_ENV_VALUES = new Set([
 type AuthEnvKey = 'NEXTAUTH_URL' | 'AUTH_URL' | 'NEXTAUTH_SECRET' | 'AUTH_SECRET'
 type AuthEnvSource = Record<string, string | undefined>
 
+export type AuthRuntimePolicy = {
+  shouldTrustHost: boolean
+  useSecureCookies: boolean
+  sessionTokenCookieName: string
+}
+
 function warnOnMismatch(env: AuthEnvSource, primaryKey: AuthEnvKey, aliasKey: AuthEnvKey) {
   const primaryValue = env[primaryKey]?.trim()
   const aliasValue = env[aliasKey]?.trim()
@@ -21,6 +27,10 @@ function warnOnMismatch(env: AuthEnvSource, primaryKey: AuthEnvKey, aliasKey: Au
   }
 }
 
+function isTruthyEnvValue(value: string | undefined) {
+  return /^(1|true|yes|on)$/i.test(value?.trim() ?? '')
+}
+
 function readRequiredValue(key: string, value: string | undefined) {
   if (!value) {
     throw new Error(
@@ -30,7 +40,10 @@ function readRequiredValue(key: string, value: string | undefined) {
   }
 
   if (
-    (key === 'GOOGLE_CLIENT_ID' || key === 'GOOGLE_CLIENT_SECRET' || key === 'NEXTAUTH_SECRET' || key === 'AUTH_SECRET') &&
+    (key === 'GOOGLE_CLIENT_ID' ||
+      key === 'GOOGLE_CLIENT_SECRET' ||
+      key === 'NEXTAUTH_SECRET' ||
+      key === 'AUTH_SECRET') &&
     PLACEHOLDER_ENV_VALUES.has(value)
   ) {
     throw new Error(
@@ -79,6 +92,34 @@ function readRequiredSecret(env: AuthEnvSource) {
   }
 }
 
+export function resolveAuthRuntimePolicy(env: AuthEnvSource = process.env): AuthRuntimePolicy {
+  const normalizedBaseUrl = env.NEXTAUTH_URL?.trim() || env.AUTH_URL?.trim() || ''
+  const isProduction = env.NODE_ENV === 'production'
+  const shouldTrustHost =
+    isTruthyEnvValue(env.AUTH_TRUST_HOST) || Boolean(env.VERCEL) || !isProduction
+  const useSecureCookies =
+    isProduction &&
+    (shouldTrustHost || normalizedBaseUrl.toLowerCase().startsWith('https://'))
+
+  return {
+    shouldTrustHost,
+    useSecureCookies,
+    sessionTokenCookieName: useSecureCookies
+      ? '__Secure-next-auth.session-token'
+      : 'next-auth.session-token',
+  }
+}
+
+export function applyAuthRuntimeEnvironment(env: AuthEnvSource = process.env) {
+  const policy = resolveAuthRuntimePolicy(env)
+
+  if (policy.shouldTrustHost && !env.AUTH_TRUST_HOST) {
+    env.AUTH_TRUST_HOST = 'true'
+  }
+
+  return policy
+}
+
 export function readAuthEnv(env: AuthEnvSource = process.env) {
   const baseUrl = readRequiredUrl(env)
   const secret = readRequiredSecret(env)
@@ -89,7 +130,10 @@ export function readAuthEnv(env: AuthEnvSource = process.env) {
     secret: secret.value,
     secretSource: secret.source,
     googleClientId: readRequiredValue('GOOGLE_CLIENT_ID', env.GOOGLE_CLIENT_ID?.trim()),
-    googleClientSecret: readRequiredValue('GOOGLE_CLIENT_SECRET', env.GOOGLE_CLIENT_SECRET?.trim()),
+    googleClientSecret: readRequiredValue(
+      'GOOGLE_CLIENT_SECRET',
+      env.GOOGLE_CLIENT_SECRET?.trim()
+    ),
     allowedDomain: readRequiredValue('ALLOWED_DOMAIN', env.ALLOWED_DOMAIN?.trim())
       .toLowerCase()
       .replace(/^@/, ''),

@@ -7,7 +7,7 @@ import {
   getLoginErrorMessage,
   resolveAuthRedirect,
 } from '../src/lib/auth-flow'
-import { readAuthEnv } from '../src/lib/auth-env'
+import { readAuthEnv, resolveAuthRuntimePolicy } from '../src/lib/auth-env'
 import { isAuthPublicPath } from '../src/lib/auth-middleware'
 
 function run(name: string, fn: () => void) {
@@ -152,6 +152,34 @@ run('middleware redirects only fully authenticated sessions away from login and 
   assert.match(middlewareSource, /authorized: \(\) => true/)
 })
 
+run('auth runtime policy keeps dev cookies non-secure even when NEXTAUTH_URL points to https', () => {
+  const policy = resolveAuthRuntimePolicy({
+    NODE_ENV: 'development',
+    NEXTAUTH_URL: 'https://kpi-pms.vercel.app',
+  })
+
+  assert.equal(policy.shouldTrustHost, true)
+  assert.equal(policy.useSecureCookies, false)
+  assert.equal(policy.sessionTokenCookieName, 'next-auth.session-token')
+})
+
+run('auth runtime policy keeps production cookies secure', () => {
+  const policy = resolveAuthRuntimePolicy({
+    NODE_ENV: 'production',
+    NEXTAUTH_URL: 'https://kpi-pms.vercel.app',
+  })
+
+  assert.equal(policy.useSecureCookies, true)
+  assert.equal(policy.sessionTokenCookieName, '__Secure-next-auth.session-token')
+})
+
+run('middleware and auth options share the same auth cookie policy hooks', () => {
+  assert.match(authSource, /const authRuntimePolicy = applyAuthRuntimeEnvironment\(\)/)
+  assert.match(authSource, /useSecureCookies: authRuntimePolicy\.useSecureCookies/)
+  assert.match(middlewareSource, /sessionTokenCookieName/)
+  assert.match(middlewareSource, /sessionToken:\s*\{\s*name: authRuntimePolicy\.sessionTokenCookieName,/)
+})
+
 run('auth employee lookup uses a minimal select instead of loading the full employee row', () => {
   assert.match(authSource, /const authEmployeeSelect = \{/)
   assert.match(authSource, /select: authEmployeeSelect/)
@@ -187,7 +215,7 @@ run('admin session payload is compressed before it reaches the auth cookie', () 
 
 run('login page uses Korean admin and fallback messages', () => {
   assert.match(loginPageSource, /KPI 성과관리/)
-  assert.match(loginPageSource, /관리자 계정으로 로그인\(GWS 비활성 시\)/)
+  assert.match(loginPageSource, /관리자 계정으로 로그인\(GWS 비활성 대비\)/)
   assert.match(loginPageSource, /로그인에 실패했습니다\. 이메일과 비밀번호를 확인해 주세요\./)
   assert.match(loginPageSource, /사내 Google Workspace 계정으로만 접속 가능합니다\./)
 })

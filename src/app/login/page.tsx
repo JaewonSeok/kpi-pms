@@ -33,7 +33,8 @@ function LoginContent() {
       console.error('[auth][client] Google sign-in start failed', signInError)
       setLoading(false)
       setGoogleError(
-        getLoginErrorMessage('OAuthSignin') || '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.'
+        getLoginErrorMessage('OAuthSignin') ||
+          '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.'
       )
     }
   }
@@ -140,7 +141,7 @@ function LoginContent() {
                   }}
                   className="text-sm text-gray-400 hover:text-gray-600 underline"
                 >
-                  관리자 계정으로 로그인(GWS 비활성 시)
+                  관리자 계정으로 로그인(GWS 비활성 대비)
                 </button>
               </div>
             </>

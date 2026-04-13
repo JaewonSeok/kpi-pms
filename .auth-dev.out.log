@@ -1,0 +1,17 @@
+
+> kpi-pms@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://10.2.27.35:3000
+- Environments: .env
+
+✓ Starting...
+Creating turbopack project {
+  dir: 'C:\\Users\\RSUPPORT\\Desktop\\성과관리 및 평가시스템\\kpi-pms',
+  testMode: true
+}
+✓ Ready in 3.2s
+ GET /api/auth/csrf 200 in 3.4s (compile: 3.3s, render: 88ms)
+✓ Compiled in 10ms
