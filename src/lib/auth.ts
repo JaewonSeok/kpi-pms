@@ -15,6 +15,12 @@ import {
   endImpersonationSessionRecord,
   findActiveImpersonationSession,
 } from '@/server/impersonation'
+import {
+  compressDepartmentScopeForToken,
+  hasCoreAuthTokenClaims,
+  resolveDepartmentAccessMode,
+  type DepartmentAccessMode,
+} from './auth-session'
 import { normalizeGoogleWorkspaceEmail } from './google-workspace'
 import { readAuthEnv } from './auth-env'
 import { decideGoogleAccess, resolveAuthRedirect } from './auth-flow'
@@ -103,6 +109,7 @@ type AuthClaims = {
   managerId: string | null
   orgPath: string
   accessibleDepartmentIds: string[]
+  departmentAccessMode: DepartmentAccessMode
 }
 
 type MasterLoginSessionState = ImpersonationSessionState
@@ -138,6 +145,16 @@ async function loadDepartmentScope() {
   }) as Promise<DepartmentScopeNode[]>
 }
 
+async function loadAllDepartmentIds() {
+  const departments = await prisma.department.findMany({
+    select: {
+      id: true,
+    },
+  })
+
+  return departments.map((department) => department.id)
+}
+
 async function buildAuthClaims(employee: AuthEmployeeRecord): Promise<AuthClaims> {
   const departments = await loadDepartmentScope()
 
@@ -154,7 +171,12 @@ async function buildAuthClaims(employee: AuthEmployeeRecord): Promise<AuthClaims
     managerId: null,
     orgPath: buildOrgPath(employee, departments),
     accessibleDepartmentIds: getAccessibleDeptIds(employee, departments),
+    departmentAccessMode: resolveDepartmentAccessMode(employee.role),
   }
+}
+
+function isAuthClaimsUser(value: unknown): value is AuthClaims {
+  return hasCoreAuthTokenClaims(value as Parameters<typeof hasCoreAuthTokenClaims>[0])
 }
 
 function applyAuthClaimsToToken(
@@ -171,9 +193,15 @@ function applyAuthClaimsToToken(
     managerId?: string | null
     orgPath?: string
     accessibleDepartmentIds?: string[]
+    departmentAccessMode?: DepartmentAccessMode
   },
   claims: AuthClaims
 ) {
+  const scope = compressDepartmentScopeForToken({
+    role: claims.role,
+    accessibleDepartmentIds: claims.accessibleDepartmentIds,
+  })
+
   token.sub = claims.id
   token.email = claims.email
   token.name = claims.name
@@ -185,7 +213,16 @@ function applyAuthClaimsToToken(
   token.departmentCode = claims.departmentCode
   token.managerId = claims.managerId
   token.orgPath = claims.orgPath
-  token.accessibleDepartmentIds = claims.accessibleDepartmentIds
+  token.accessibleDepartmentIds = scope.accessibleDepartmentIds
+  token.departmentAccessMode = scope.departmentAccessMode
+
+  if (scope.departmentAccessMode === 'GLOBAL' && claims.accessibleDepartmentIds.length) {
+    authLog('info', 'JWT_SCOPE_COMPRESSED', {
+      employeeId: claims.id,
+      role: claims.role,
+      departmentCount: claims.accessibleDepartmentIds.length,
+    })
+  }
 }
 
 function extractAuthClaimsFromToken(token: {
@@ -201,21 +238,13 @@ function extractAuthClaimsFromToken(token: {
   managerId?: string | null
   orgPath?: string
   accessibleDepartmentIds?: string[]
+  departmentAccessMode?: DepartmentAccessMode
 }) {
-  if (
-    !token.sub ||
-    !token.email ||
-    !token.name ||
-    !token.role ||
-    !token.empId ||
-    !token.position ||
-    !token.deptId ||
-    !token.deptName ||
-    !token.departmentCode ||
-    !token.orgPath
-  ) {
+  if (!hasCoreAuthTokenClaims(token)) {
     return null
   }
+
+  const departmentAccessMode = token.departmentAccessMode ?? resolveDepartmentAccessMode(token.role)
 
   return {
     id: token.sub,
@@ -232,6 +261,7 @@ function extractAuthClaimsFromToken(token: {
     accessibleDepartmentIds: Array.isArray(token.accessibleDepartmentIds)
       ? token.accessibleDepartmentIds
       : [],
+    departmentAccessMode,
   } satisfies AuthClaims
 }
 
@@ -295,6 +325,7 @@ function restoreActorClaims(
     managerId?: string | null
     orgPath?: string
     accessibleDepartmentIds?: string[]
+    departmentAccessMode?: DepartmentAccessMode
   }
 ) {
   if (!token.masterLogin?.actor) {
@@ -327,6 +358,39 @@ async function findEmployeeForToken(token: { sub?: string | null; email?: string
   return null
 }
 
+async function hydrateTokenClaimsFromDirectory(
+  token: Parameters<typeof extractAuthClaimsFromToken>[0],
+  reason: 'jwt-rehydration' | 'session-rehydration'
+) {
+  const employee = await findEmployeeForToken(token)
+  if (!employee) {
+    authLog('warn', 'AUTH_EMPLOYEE_REHYDRATION_FAILED', {
+      reason,
+      tokenSub: token.sub ?? null,
+      email: maskEmail(token.email),
+    })
+    return null
+  }
+
+  const claims = await buildAuthClaims(employee)
+  applyAuthClaimsToToken(token, claims)
+  authLog('info', 'AUTH_CLAIMS_REHYDRATED', {
+    reason,
+    employeeId: claims.id,
+    email: maskEmail(claims.email),
+    role: claims.role,
+  })
+  return claims
+}
+
+async function resolveSessionAccessibleDepartmentIds(claims: AuthClaims) {
+  if (claims.departmentAccessMode === 'GLOBAL') {
+    return loadAllDepartmentIds()
+  }
+
+  return claims.accessibleDepartmentIds
+}
+
 declare module 'next-auth' {
   interface Session {
     user: {
@@ -343,6 +407,7 @@ declare module 'next-auth' {
       managerId: string | null
       orgPath: string
       accessibleDepartmentIds: string[]
+      departmentAccessMode?: DepartmentAccessMode
       masterLoginAvailable: boolean
       masterLogin: MasterLoginSessionState | null
     }
@@ -361,6 +426,7 @@ declare module 'next-auth' {
     managerId: string | null
     orgPath: string
     accessibleDepartmentIds: string[]
+    departmentAccessMode?: DepartmentAccessMode
     masterLoginAvailable?: boolean
     masterLogin?: MasterLoginSessionState | null
   }
@@ -377,6 +443,7 @@ declare module 'next-auth/jwt' {
     managerId: string | null
     orgPath: string
     accessibleDepartmentIds: string[]
+    departmentAccessMode?: DepartmentAccessMode
     masterLogin?: MasterLoginTokenState | null
   }
 }
@@ -425,11 +492,22 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }) {
       if (account?.provider === 'google') {
         const email = profile?.email || user.email
+        authLog('info', 'GOOGLE_CALLBACK_RECEIVED', {
+          provider: account.provider,
+          email: maskEmail(email),
+        })
 
         const normalizedEmail = email ? normalizeGoogleWorkspaceEmail(email) : null
         const employee = normalizedEmail
           ? await findAuthEmployee({ gwsEmail: normalizedEmail })
           : null
+
+        authLog('info', 'GOOGLE_PROFILE_RESOLVED', {
+          email: maskEmail(normalizedEmail),
+          employeeId: employee?.id ?? null,
+          employeeStatus: employee?.status ?? null,
+          role: employee?.role ?? null,
+        })
 
         const decision = decideGoogleAccess({
           email,
@@ -459,9 +537,14 @@ export const authOptions: NextAuthOptions = {
     },
 
     async jwt({ token, user, account, profile, trigger, session }) {
-      if (user) {
+      if (user && isAuthClaimsUser(user)) {
         applyAuthClaimsToToken(token, user)
         token.masterLogin = null
+      } else if (user) {
+        authLog('info', 'JWT_SKIPPED_NON_APP_USER', {
+          provider: account?.provider ?? 'unknown',
+          email: maskEmail(user.email),
+        })
       }
 
       if (account?.provider === 'google' && profile?.email) {
@@ -472,33 +555,19 @@ export const authOptions: NextAuthOptions = {
           const claims = await buildAuthClaims(employee)
           applyAuthClaimsToToken(token, claims)
           token.masterLogin = null
+          authLog('info', 'GOOGLE_JWT_CLAIMS_APPLIED', {
+            employeeId: claims.id,
+            email: maskEmail(claims.email),
+            role: claims.role,
+            departmentAccessMode: claims.departmentAccessMode,
+          })
         } else {
           authLog('error', 'GOOGLE_JWT_EMPLOYEE_MISSING', {
             email: maskEmail(normalizedEmail),
           })
         }
-      } else if (!account && (!token.departmentCode || !token.orgPath)) {
-        const employee = await findEmployeeForToken(token)
-        if (employee) {
-          const claims = await buildAuthClaims(employee)
-          token.sub = claims.id
-          token.email = claims.email
-          token.name = claims.name
-          token.role = claims.role
-          token.empId = claims.empId
-          token.position = claims.position
-          token.deptId = claims.deptId
-          token.deptName = claims.deptName
-          token.departmentCode = claims.departmentCode
-          token.managerId = claims.managerId
-          token.orgPath = claims.orgPath
-          token.accessibleDepartmentIds = claims.accessibleDepartmentIds
-        } else {
-          authLog('warn', 'JWT_REHYDRATION_EMPLOYEE_MISSING', {
-            tokenSub: token.sub ?? null,
-            email: maskEmail(token.email),
-          })
-        }
+      } else if (!account && (!hasCoreAuthTokenClaims(token) || !token.departmentAccessMode)) {
+        await hydrateTokenClaimsFromDirectory(token, 'jwt-rehydration')
       }
 
       if (token.masterLogin?.active) {
@@ -634,6 +703,13 @@ export const authOptions: NextAuthOptions = {
 
         const targetClaims = await buildAuthClaims(targetEmployee)
         const normalizedReason = command.reason.trim()
+        const persistedActorClaims: AuthClaims = {
+          ...actorClaims,
+          ...compressDepartmentScopeForToken({
+            role: actorClaims.role,
+            accessibleDepartmentIds: actorClaims.accessibleDepartmentIds,
+          }),
+        }
         const impersonationSession = await createImpersonationSessionRecord({
           impersonatorAdminId: actorClaims.id,
           impersonatedUserId: targetClaims.id,
@@ -655,7 +731,7 @@ export const authOptions: NextAuthOptions = {
           reason: normalizedReason,
           startedAt: impersonationSession.startedAt.toISOString(),
           expiresAt: impersonationSession.expiresAt.toISOString(),
-          actor: actorClaims,
+          actor: persistedActorClaims,
           target: {
             id: targetClaims.id,
             email: targetClaims.email,
@@ -707,31 +783,43 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (token) {
-        if (!token.sub || !token.role) {
+        let claims = extractAuthClaimsFromToken(token)
+
+        if (!claims) {
           authLog('warn', 'SESSION_CLAIMS_INCOMPLETE', {
             tokenSub: token.sub ?? null,
             email: maskEmail(token.email),
           })
+          claims = await hydrateTokenClaimsFromDirectory(token, 'session-rehydration')
         }
 
-        session.user.id = token.sub!
-        session.user.email = token.email ?? session.user.email
-        session.user.name = token.name ?? session.user.name
-        session.user.role = token.role
-        session.user.empId = token.empId
-        session.user.position = token.position
-        session.user.deptId = token.deptId
-        session.user.deptName = token.deptName
-        session.user.departmentCode = token.departmentCode
-        session.user.managerId = token.managerId
-        session.user.orgPath = token.orgPath
-        session.user.accessibleDepartmentIds = token.accessibleDepartmentIds ?? []
+        if (!claims) {
+          authLog('error', 'SESSION_RESOLUTION_FAILED', {
+            tokenSub: token.sub ?? null,
+            email: maskEmail(token.email),
+          })
+          return session
+        }
+
+        session.user.id = claims.id
+        session.user.email = claims.email
+        session.user.name = claims.name
+        session.user.role = claims.role
+        session.user.empId = claims.empId
+        session.user.position = claims.position
+        session.user.deptId = claims.deptId
+        session.user.deptName = claims.deptName
+        session.user.departmentCode = claims.departmentCode
+        session.user.managerId = claims.managerId
+        session.user.orgPath = claims.orgPath
+        session.user.accessibleDepartmentIds = await resolveSessionAccessibleDepartmentIds(claims)
+        session.user.departmentAccessMode = claims.departmentAccessMode
         session.user.masterLoginAvailable = token.masterLogin?.active
           ? true
           : await canUseMasterLoginForActor({
-              employeeId: token.sub,
-              role: token.role,
-              email: token.email,
+              employeeId: claims.id,
+              role: claims.role,
+              email: claims.email,
             })
         session.user.masterLogin = toSessionMasterLoginState(token.masterLogin)
       }

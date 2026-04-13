@@ -28,7 +28,8 @@ run('login page starts Google sign-in without redirect:false misuse', () => {
   assert.match(loginPageSource, /buildGoogleSignInRequest/)
   assert.match(loginPageSource, /await signIn\(request\.provider/)
   assert.doesNotMatch(loginPageSource, /signIn\('google'[\s\S]{0,160}redirect:\s*false/)
-  assert.doesNotMatch(loginPageSource, /Google 로그인 시작에 실패했습니다\. 다시 시도해주세요\./)
+  assert.match(loginPageSource, /Google Workspace로 로그인/)
+  assert.match(loginPageSource, /로그인 중\.\.\./)
 })
 
 run('allowed Google user with active employee status passes access check', () => {
@@ -44,7 +45,7 @@ run('allowed Google user with active employee status passes access check', () =>
   }
 })
 
-run('disallowed Google domain fails with a specific error', () => {
+run('disallowed Google domain fails with a specific Korean error', () => {
   const decision = decideGoogleAccess({
     email: 'member1@gmail.com',
     allowedDomain: 'rsupport.com',
@@ -56,7 +57,7 @@ run('disallowed Google domain fails with a specific error', () => {
     assert.equal(decision.errorCode, 'InvalidDomain')
     assert.equal(
       getLoginErrorMessage(decision.errorCode),
-      '사내 Google Workspace 계정으로만 로그인 가능합니다.'
+      '사내 Google Workspace 계정으로만 로그인할 수 있습니다.'
     )
   }
 })
@@ -77,9 +78,17 @@ run('inactive or unregistered employees fail with clear reasons', () => {
   assert.equal(missingDecision.allowed, false)
   if (!inactiveDecision.allowed) {
     assert.equal(inactiveDecision.errorCode, 'InactiveAccount')
+    assert.equal(
+      getLoginErrorMessage(inactiveDecision.errorCode),
+      '비활성화된 계정입니다. HR 관리자에게 문의해 주세요.'
+    )
   }
   if (!missingDecision.allowed) {
     assert.equal(missingDecision.errorCode, 'NotRegistered')
+    assert.equal(
+      getLoginErrorMessage(missingDecision.errorCode),
+      'Google 계정은 확인되었지만 시스템 사용 권한이 없습니다. HR 관리자에게 문의해 주세요.'
+    )
   }
 })
 
@@ -134,17 +143,13 @@ run('middleware keeps auth routes and PWA assets public while protecting app pag
   )
 })
 
-run('authenticated users are redirected away from both login entry points', () => {
+run('middleware redirects only fully authenticated sessions away from login and marks broken tokens as session-required', () => {
   assert.match(
     middlewareSource,
-    /\(pathname\.startsWith\('\/login'\) \|\| pathname\.startsWith\('\/signin'\)\) && token/
+    /\(pathname\.startsWith\('\/login'\) \|\| pathname\.startsWith\('\/signin'\)\) && hasValidSessionToken/
   )
-})
-
-run('manifest requests stay outside the signin redirect path', () => {
-  assert.equal(isAuthPublicPath('/manifest.webmanifest'), true)
-  assert.match(middlewareSource, /if \(isAuthPublicPath\(pathname\)\)/)
-  assert.match(middlewareSource, /if \(!token\) \{\s*return NextResponse\.redirect\(new URL\('\/login', req\.url\)\)/)
+  assert.match(middlewareSource, /loginUrl\.searchParams\.set\('error', 'SessionRequired'\)/)
+  assert.match(middlewareSource, /authorized: \(\) => true/)
 })
 
 run('auth employee lookup uses a minimal select instead of loading the full employee row', () => {
@@ -158,15 +163,33 @@ run('auth employee lookup uses a minimal select instead of loading the full empl
   assert.doesNotMatch(authSource, /notes:\s*true/)
 })
 
-run('login error messages stay specific for callback and access failures', () => {
+run('google auth flow keeps Korean login errors and detailed trace hooks', () => {
   assert.equal(
     getLoginErrorMessage('OAuthCallback'),
-    'Google 인증 응답을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.'
+    'Google 인증 응답을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.'
   )
   assert.equal(
     getLoginErrorMessage('AccessDenied'),
-    '로그인이 허용되지 않은 계정입니다. 사내 계정과 권한을 확인해주세요.'
+    '로그인에 성공했지만 사용자 권한을 확인하지 못했습니다. 관리자에게 문의해 주세요.'
   )
+  assert.match(authSource, /GOOGLE_CALLBACK_RECEIVED/)
+  assert.match(authSource, /GOOGLE_PROFILE_RESOLVED/)
+  assert.match(authSource, /GOOGLE_JWT_CLAIMS_APPLIED/)
+  assert.match(authSource, /SESSION_RESOLUTION_FAILED/)
+})
+
+run('admin session payload is compressed before it reaches the auth cookie', () => {
+  assert.match(authSource, /compressDepartmentScopeForToken/)
+  assert.match(authSource, /JWT_SCOPE_COMPRESSED/)
+  assert.match(authSource, /departmentAccessMode/)
+  assert.match(authSource, /loadAllDepartmentIds/)
+})
+
+run('login page uses Korean admin and fallback messages', () => {
+  assert.match(loginPageSource, /KPI 성과관리/)
+  assert.match(loginPageSource, /관리자 계정으로 로그인\(GWS 비활성 시\)/)
+  assert.match(loginPageSource, /로그인에 실패했습니다\. 이메일과 비밀번호를 확인해 주세요\./)
+  assert.match(loginPageSource, /사내 Google Workspace 계정으로만 접속 가능합니다\./)
 })
 
 run('auth env reader accepts NEXTAUTH and AUTH aliases safely', () => {

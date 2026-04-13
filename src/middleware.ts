@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { canAccessMenu, resolveMenuFromPath } from '@/lib/auth/permissions'
 import { isAuthPublicPath } from '@/lib/auth-middleware'
+import { hasCoreAuthTokenClaims } from '@/lib/auth-session'
 
 export default withAuth(
   function middleware(
@@ -19,9 +20,10 @@ export default withAuth(
   ) {
     const { pathname } = req.nextUrl
     const token = req.nextauth.token
+    const hasValidSessionToken = hasCoreAuthTokenClaims(token)
 
     if (isAuthPublicPath(pathname)) {
-      if ((pathname.startsWith('/login') || pathname.startsWith('/signin')) && token) {
+      if ((pathname.startsWith('/login') || pathname.startsWith('/signin')) && hasValidSessionToken) {
         return NextResponse.redirect(new URL('/dashboard', req.url))
       }
 
@@ -30,6 +32,12 @@ export default withAuth(
 
     if (!token) {
       return NextResponse.redirect(new URL('/login', req.url))
+    }
+
+    if (!hasValidSessionToken) {
+      const loginUrl = new URL('/login', req.url)
+      loginUrl.searchParams.set('error', 'SessionRequired')
+      return NextResponse.redirect(loginUrl)
     }
 
     const role = token.role ?? ''
@@ -43,7 +51,7 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: () => true,
     },
   }
 )

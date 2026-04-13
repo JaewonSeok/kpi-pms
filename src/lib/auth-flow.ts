@@ -3,18 +3,20 @@ import { normalizeGoogleWorkspaceEmail } from './google-workspace'
 export const DEFAULT_POST_LOGIN_PATH = '/dashboard'
 
 export const LOGIN_ERROR_MESSAGES: Record<string, string> = {
-  InvalidDomain: '사내 Google Workspace 계정으로만 로그인 가능합니다.',
-  NotRegistered: '등록되지 않은 사내 계정입니다. HR팀에 문의해주세요.',
-  InactiveAccount: '비활성화된 계정입니다. HR팀에 문의해주세요.',
-  OAuthAccountNotLinked: '다른 방법으로 이미 가입된 이메일입니다.',
-  OAuthProfileMissing: 'Google 계정 이메일을 확인하지 못했습니다. 다른 계정으로 다시 시도해주세요.',
-  AccessDenied: '로그인이 허용되지 않은 계정입니다. 사내 계정과 권한을 확인해주세요.',
-  Configuration: '로그인 설정에 문제가 있습니다. 관리자에게 문의해주세요.',
-  OAuthSignin: 'Google 로그인 시작 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
-  OAuthCallback: 'Google 인증 응답을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
-  Callback: '로그인 결과를 확인하는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
-  SessionRequired: '세션을 확인하지 못했습니다. 다시 로그인해주세요.',
-  Default: '로그인 중 오류가 발생했습니다. 다시 시도해주세요.',
+  InvalidDomain: '사내 Google Workspace 계정으로만 로그인할 수 있습니다.',
+  NotRegistered:
+    'Google 계정은 확인되었지만 시스템 사용 권한이 없습니다. HR 관리자에게 문의해 주세요.',
+  InactiveAccount: '비활성화된 계정입니다. HR 관리자에게 문의해 주세요.',
+  OAuthAccountNotLinked: '다른 로그인 방식으로 이미 연결된 계정입니다.',
+  OAuthProfileMissing:
+    'Google 계정 이메일을 확인하지 못했습니다. 다른 계정으로 다시 시도해 주세요.',
+  AccessDenied: '로그인에 성공했지만 사용자 권한을 확인하지 못했습니다. 관리자에게 문의해 주세요.',
+  Configuration: '로그인 설정에 문제가 있습니다. 관리자에게 문의해 주세요.',
+  OAuthSignin: 'Google 로그인 시작 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+  OAuthCallback: 'Google 인증 응답을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+  Callback: '로그인 결과를 확인하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+  SessionRequired: '세션 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.',
+  Default: '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.',
 }
 
 export type GoogleAccessDecision =
@@ -102,7 +104,7 @@ export function decideGoogleAccess(params: {
   email?: string | null
   allowedDomain: string
   employeeStatus?: string | null
-}) : GoogleAccessDecision {
+}): GoogleAccessDecision {
   if (!params.email) {
     return {
       allowed: false,

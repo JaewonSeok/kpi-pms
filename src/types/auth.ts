@@ -56,6 +56,7 @@ export type SessionUserClaims = {
   managerId: string | null
   orgPath: string
   accessibleDepartmentIds: string[]
+  departmentAccessMode?: 'GLOBAL' | 'SCOPED'
   masterLoginAvailable?: boolean
   masterLogin?: {
     active: boolean

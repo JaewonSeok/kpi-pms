@@ -33,7 +33,7 @@ function LoginContent() {
       console.error('[auth][client] Google sign-in start failed', signInError)
       setLoading(false)
       setGoogleError(
-        getLoginErrorMessage('OAuthSignin') || '로그인 중 오류가 발생했습니다. 다시 시도해주세요.'
+        getLoginErrorMessage('OAuthSignin') || '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.'
       )
     }
   }
@@ -57,12 +57,12 @@ function LoginContent() {
       if (result?.ok) {
         router.push(result.url || '/dashboard')
       } else {
-        setAdminError('로그인 실패. 이메일과 비밀번호를 확인해주세요.')
+        setAdminError('로그인에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.')
       }
     } catch (signInError) {
       console.error('Admin sign-in failed:', signInError)
       setLoading(false)
-      setAdminError('로그인 중 오류가 발생했습니다. 다시 시도해주세요.')
+      setAdminError('로그인 중 오류가 발생했습니다. 다시 시도해 주세요.')
     }
   }
 
@@ -140,7 +140,7 @@ function LoginContent() {
                   }}
                   className="text-sm text-gray-400 hover:text-gray-600 underline"
                 >
-                  관리자 계정으로 로그인 (GWS 장애 시)
+                  관리자 계정으로 로그인(GWS 비활성 시)
                 </button>
               </div>
             </>
@@ -185,7 +185,7 @@ function LoginContent() {
                 }}
                 className="mt-4 text-sm text-gray-400 hover:text-gray-600 underline w-full text-center"
               >
-                ← Google 로그인으로 돌아가기
+                Google 로그인으로 돌아가기
               </button>
             </>
           )}
@@ -193,7 +193,7 @@ function LoginContent() {
           <p className="mt-6 text-xs text-gray-400 text-center">
             사내 Google Workspace 계정으로만 접속 가능합니다.
             <br />
-            계정 문의: HR팀 내선 1234
+            계정 문의: HR 내선 1234
           </p>
         </div>
       </div>
@@ -206,7 +206,7 @@ export default function LoginPage() {
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center bg-blue-700">
-          <div className="text-white">로딩중...</div>
+          <div className="text-white">로딩 중...</div>
         </div>
       }
     >
