@@ -3,7 +3,11 @@
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense, useState } from 'react'
-import { buildGoogleSignInRequest, getLoginErrorMessage } from '@/lib/auth-flow'
+import {
+  buildGoogleSignInRequest,
+  getLoginErrorMessage,
+  resolveClientCallbackUrl,
+} from '@/lib/auth-flow'
 
 function LoginContent() {
   const router = useRouter()
@@ -50,7 +54,11 @@ function LoginContent() {
         email: adminEmail,
         password: adminPassword,
         redirect: false,
-        callbackUrl: requestedCallbackUrl || '/dashboard',
+        callbackUrl: resolveClientCallbackUrl(
+          requestedCallbackUrl,
+          window.location.origin,
+          '/dashboard'
+        ),
       })
 
       setLoading(false)

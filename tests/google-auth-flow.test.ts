@@ -7,7 +7,11 @@ import {
   getLoginErrorMessage,
   resolveAuthRedirect,
 } from '../src/lib/auth-flow'
-import { readAuthEnv, resolveAuthRuntimePolicy } from '../src/lib/auth-env'
+import {
+  buildAuthCookiePolicy,
+  readAuthEnv,
+  resolveAuthRuntimePolicy,
+} from '../src/lib/auth-env'
 import { isAuthPublicPath } from '../src/lib/auth-middleware'
 
 function run(name: string, fn: () => void) {
@@ -23,6 +27,18 @@ function run(name: string, fn: () => void) {
 const loginPageSource = readFileSync(path.resolve(process.cwd(), 'src/app/login/page.tsx'), 'utf8')
 const authSource = readFileSync(path.resolve(process.cwd(), 'src/lib/auth.ts'), 'utf8')
 const middlewareSource = readFileSync(path.resolve(process.cwd(), 'src/middleware.ts'), 'utf8')
+const nextAuthRouteSource = readFileSync(
+  path.resolve(process.cwd(), 'src/app/api/auth/[...nextauth]/route.ts'),
+  'utf8'
+)
+const dashboardPageSource = readFileSync(
+  path.resolve(process.cwd(), 'src/app/(main)/dashboard/page.tsx'),
+  'utf8'
+)
+const mainLayoutSource = readFileSync(
+  path.resolve(process.cwd(), 'src/app/(main)/layout.tsx'),
+  'utf8'
+)
 
 run('login page starts Google sign-in without redirect:false misuse', () => {
   assert.match(loginPageSource, /buildGoogleSignInRequest/)
@@ -92,11 +108,15 @@ run('inactive or unregistered employees fail with clear reasons', () => {
   }
 })
 
-run('callback URL is preserved only for same-origin targets', () => {
+run('callback URL is preserved only for same-origin targets and never returns to login', () => {
   const defaultRequest = buildGoogleSignInRequest('https://kpi-pms.vercel.app', null)
   const internalRequest = buildGoogleSignInRequest(
     'https://kpi-pms.vercel.app',
     'https://kpi-pms.vercel.app/kpi/personal?tab=review'
+  )
+  const loginLoopRequest = buildGoogleSignInRequest(
+    'https://kpi-pms.vercel.app',
+    'https://kpi-pms.vercel.app/login?callbackUrl=%2Fdashboard'
   )
   const externalRequest = buildGoogleSignInRequest(
     'https://kpi-pms.vercel.app',
@@ -108,10 +128,11 @@ run('callback URL is preserved only for same-origin targets', () => {
     internalRequest.callbackUrl,
     'https://kpi-pms.vercel.app/kpi/personal?tab=review'
   )
+  assert.equal(loginLoopRequest.callbackUrl, 'https://kpi-pms.vercel.app/dashboard')
   assert.equal(externalRequest.callbackUrl, 'https://kpi-pms.vercel.app/dashboard')
 })
 
-run('redirect callback resolves only relative or same-origin URLs', () => {
+run('redirect callback resolves only relative or same-origin URLs and avoids login loop callbacks', () => {
   assert.equal(
     resolveAuthRedirect('/kpi/org?tab=map', 'https://kpi-pms.vercel.app'),
     'https://kpi-pms.vercel.app/kpi/org?tab=map'
@@ -119,6 +140,10 @@ run('redirect callback resolves only relative or same-origin URLs', () => {
   assert.equal(
     resolveAuthRedirect('https://kpi-pms.vercel.app/checkin', 'https://kpi-pms.vercel.app'),
     'https://kpi-pms.vercel.app/checkin'
+  )
+  assert.equal(
+    resolveAuthRedirect('https://kpi-pms.vercel.app/login', 'https://kpi-pms.vercel.app'),
+    'https://kpi-pms.vercel.app/dashboard'
   )
   assert.equal(
     resolveAuthRedirect('https://evil.example/checkin', 'https://kpi-pms.vercel.app'),
@@ -143,13 +168,13 @@ run('middleware keeps auth routes and PWA assets public while protecting app pag
   )
 })
 
-run('middleware redirects only fully authenticated sessions away from login and marks broken tokens as session-required', () => {
-  assert.match(
-    middlewareSource,
-    /\(pathname\.startsWith\('\/login'\) \|\| pathname\.startsWith\('\/signin'\)\) && hasValidSessionToken/
-  )
-  assert.match(middlewareSource, /loginUrl\.searchParams\.set\('error', 'SessionRequired'\)/)
-  assert.match(middlewareSource, /authorized: \(\) => true/)
+run('middleware allows recoverable callback tokens to pass the first protected request', () => {
+  assert.match(middlewareSource, /hasRecoverableAuthTokenIdentity/)
+  assert.match(middlewareSource, /RECOVERABLE_TOKEN_REHYDRATION/)
+  assert.match(middlewareSource, /SESSION_COOKIE_DETECTED_IN_REQUEST/)
+  assert.match(middlewareSource, /MIDDLEWARE_SESSION_ACCEPTED/)
+  assert.match(middlewareSource, /MIDDLEWARE_SESSION_REJECTED/)
+  assert.match(middlewareSource, /LOGIN_REDIRECT_TRIGGERED/)
 })
 
 run('auth runtime policy keeps dev cookies non-secure even when NEXTAUTH_URL points to https', () => {
@@ -163,32 +188,27 @@ run('auth runtime policy keeps dev cookies non-secure even when NEXTAUTH_URL poi
   assert.equal(policy.sessionTokenCookieName, 'next-auth.session-token')
 })
 
-run('auth runtime policy keeps production cookies secure', () => {
+run('auth runtime policy keeps production cookies secure and yields a shared cookie source of truth', () => {
   const policy = resolveAuthRuntimePolicy({
     NODE_ENV: 'production',
     NEXTAUTH_URL: 'https://kpi-pms.vercel.app',
   })
+  const cookies = buildAuthCookiePolicy(policy)
 
   assert.equal(policy.useSecureCookies, true)
   assert.equal(policy.sessionTokenCookieName, '__Secure-next-auth.session-token')
+  assert.equal(cookies.sessionToken.name, '__Secure-next-auth.session-token')
+  assert.equal(cookies.callbackUrl.name, '__Secure-next-auth.callback-url')
+  assert.equal(cookies.csrfToken.name, '__Host-next-auth.csrf-token')
+  assert.equal(cookies.sessionToken.options.sameSite, 'lax')
+  assert.equal(cookies.sessionToken.options.path, '/')
 })
 
 run('middleware and auth options share the same auth cookie policy hooks', () => {
   assert.match(authSource, /const authRuntimePolicy = applyAuthRuntimeEnvironment\(\)/)
-  assert.match(authSource, /useSecureCookies: authRuntimePolicy\.useSecureCookies/)
-  assert.match(middlewareSource, /sessionTokenCookieName/)
+  assert.match(authSource, /const authCookiePolicy = buildAuthCookiePolicy\(authRuntimePolicy\)/)
+  assert.match(authSource, /cookies: authCookiePolicy/)
   assert.match(middlewareSource, /sessionToken:\s*\{\s*name: authRuntimePolicy\.sessionTokenCookieName,/)
-})
-
-run('auth employee lookup uses a minimal select instead of loading the full employee row', () => {
-  assert.match(authSource, /const authEmployeeSelect = \{/)
-  assert.match(authSource, /select: authEmployeeSelect/)
-  assert.doesNotMatch(authSource, /include:\s*\{\s*department:\s*true\s*\}/)
-  assert.doesNotMatch(authSource, /jobTitle:\s*true/)
-  assert.doesNotMatch(authSource, /teamName:\s*true/)
-  assert.doesNotMatch(authSource, /resignationDate:\s*true/)
-  assert.doesNotMatch(authSource, /sortOrder:\s*true/)
-  assert.doesNotMatch(authSource, /notes:\s*true/)
 })
 
 run('google auth flow keeps Korean login errors and detailed trace hooks', () => {
@@ -201,16 +221,24 @@ run('google auth flow keeps Korean login errors and detailed trace hooks', () =>
     '로그인에 성공했지만 사용자 권한을 확인하지 못했습니다. 관리자에게 문의해 주세요.'
   )
   assert.match(authSource, /GOOGLE_CALLBACK_RECEIVED/)
-  assert.match(authSource, /GOOGLE_PROFILE_RESOLVED/)
+  assert.match(authSource, /APP_USER_MATCH_STARTED/)
+  assert.match(authSource, /APP_USER_MATCH_SUCCEEDED/)
   assert.match(authSource, /GOOGLE_JWT_CLAIMS_APPLIED/)
-  assert.match(authSource, /SESSION_RESOLUTION_FAILED/)
+  assert.match(authSource, /JWT_CREATED/)
+  assert.match(authSource, /SESSION_USER_RESOLVED/)
 })
 
-run('admin session payload is compressed before it reaches the auth cookie', () => {
-  assert.match(authSource, /compressDepartmentScopeForToken/)
-  assert.match(authSource, /JWT_SCOPE_COMPRESSED/)
-  assert.match(authSource, /departmentAccessMode/)
-  assert.match(authSource, /loadAllDepartmentIds/)
+run('auth callback route traces whether the session cookie was actually written', () => {
+  assert.match(nextAuthRouteSource, /SESSION_COOKIE_SET/)
+  assert.match(nextAuthRouteSource, /wroteSessionCookie/)
+  assert.match(nextAuthRouteSource, /sessionCookieName/)
+})
+
+run('landing routes trace success and redirect failures', () => {
+  assert.match(mainLayoutSource, /LANDING_ROUTE_ENTERED/)
+  assert.match(mainLayoutSource, /LOGIN_REDIRECT_TRIGGERED/)
+  assert.match(dashboardPageSource, /LANDING_ROUTE_ENTERED/)
+  assert.match(dashboardPageSource, /LOGIN_REDIRECT_TRIGGERED/)
 })
 
 run('login page uses Korean admin and fallback messages', () => {

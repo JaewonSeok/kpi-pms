@@ -9,10 +9,33 @@ const PLACEHOLDER_ENV_VALUES = new Set([
 type AuthEnvKey = 'NEXTAUTH_URL' | 'AUTH_URL' | 'NEXTAUTH_SECRET' | 'AUTH_SECRET'
 type AuthEnvSource = Record<string, string | undefined>
 
+type AuthCookieOption = {
+  name: string
+  options: {
+    httpOnly: boolean
+    sameSite: 'lax'
+    path: '/'
+    secure: boolean
+    maxAge?: number
+  }
+}
+
+export type AuthCookiePolicy = {
+  sessionToken: AuthCookieOption
+  callbackUrl: AuthCookieOption
+  csrfToken: AuthCookieOption
+  pkceCodeVerifier: AuthCookieOption
+  state: AuthCookieOption
+  nonce: AuthCookieOption
+}
+
 export type AuthRuntimePolicy = {
   shouldTrustHost: boolean
   useSecureCookies: boolean
   sessionTokenCookieName: string
+  callbackUrlCookieName: string
+  csrfTokenCookieName: string
+  cookiePrefix: string
 }
 
 function warnOnMismatch(env: AuthEnvSource, primaryKey: AuthEnvKey, aliasKey: AuthEnvKey) {
@@ -104,9 +127,16 @@ export function resolveAuthRuntimePolicy(env: AuthEnvSource = process.env): Auth
   return {
     shouldTrustHost,
     useSecureCookies,
+    cookiePrefix: useSecureCookies ? '__Secure-' : '',
     sessionTokenCookieName: useSecureCookies
       ? '__Secure-next-auth.session-token'
       : 'next-auth.session-token',
+    callbackUrlCookieName: useSecureCookies
+      ? '__Secure-next-auth.callback-url'
+      : 'next-auth.callback-url',
+    csrfTokenCookieName: useSecureCookies
+      ? '__Host-next-auth.csrf-token'
+      : 'next-auth.csrf-token',
   }
 }
 
@@ -118,6 +148,51 @@ export function applyAuthRuntimeEnvironment(env: AuthEnvSource = process.env) {
   }
 
   return policy
+}
+
+export function buildAuthCookiePolicy(
+  runtimePolicy: AuthRuntimePolicy = resolveAuthRuntimePolicy()
+): AuthCookiePolicy {
+  const secure = runtimePolicy.useSecureCookies
+  const sharedOptions = {
+    httpOnly: true,
+    sameSite: 'lax' as const,
+    path: '/' as const,
+    secure,
+  }
+
+  return {
+    sessionToken: {
+      name: runtimePolicy.sessionTokenCookieName,
+      options: sharedOptions,
+    },
+    callbackUrl: {
+      name: runtimePolicy.callbackUrlCookieName,
+      options: sharedOptions,
+    },
+    csrfToken: {
+      name: runtimePolicy.csrfTokenCookieName,
+      options: sharedOptions,
+    },
+    pkceCodeVerifier: {
+      name: `${runtimePolicy.cookiePrefix}next-auth.pkce.code_verifier`,
+      options: {
+        ...sharedOptions,
+        maxAge: 60 * 15,
+      },
+    },
+    state: {
+      name: `${runtimePolicy.cookiePrefix}next-auth.state`,
+      options: {
+        ...sharedOptions,
+        maxAge: 60 * 15,
+      },
+    },
+    nonce: {
+      name: `${runtimePolicy.cookiePrefix}next-auth.nonce`,
+      options: sharedOptions,
+    },
+  }
 }
 
 export function readAuthEnv(env: AuthEnvSource = process.env) {

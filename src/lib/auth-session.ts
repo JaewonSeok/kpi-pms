@@ -85,6 +85,17 @@ export function hasCoreAuthTokenClaims(token?: TokenLike | null): token is CoreA
   )
 }
 
+export function hasRecoverableAuthTokenIdentity(token?: TokenLike | null) {
+  if (!token) {
+    return false
+  }
+
+  return Boolean(
+    (typeof token.sub === 'string' && token.sub.trim().length > 0) ||
+      (typeof token.email === 'string' && token.email.trim().length > 0)
+  )
+}
+
 export function estimateSerializedPayloadBytes(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(value)).length
 }

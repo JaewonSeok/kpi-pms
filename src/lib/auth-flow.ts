@@ -39,6 +39,16 @@ function buildAbsoluteUrl(origin: string, path: string) {
   return new URL(path, origin).toString()
 }
 
+function isUnsafePostLoginPath(pathname: string) {
+  return (
+    pathname === '/login' ||
+    pathname === '/signin' ||
+    pathname.startsWith('/login?') ||
+    pathname.startsWith('/signin?') ||
+    pathname.startsWith('/api/auth')
+  )
+}
+
 export function getLoginErrorMessage(errorCode?: string | null) {
   if (!errorCode) {
     return null
@@ -58,7 +68,7 @@ export function resolveClientCallbackUrl(
     }
 
     const resolved = new URL(requestedCallbackUrl, origin)
-    if (resolved.origin !== origin) {
+    if (resolved.origin !== origin || isUnsafePostLoginPath(resolved.pathname)) {
       return buildAbsoluteUrl(origin, fallbackPath)
     }
 
@@ -91,7 +101,10 @@ export function resolveAuthRedirect(
     }
 
     const resolved = new URL(url)
-    if (resolved.origin === new URL(baseUrl).origin) {
+    if (
+      resolved.origin === new URL(baseUrl).origin &&
+      !isUnsafePostLoginPath(resolved.pathname)
+    ) {
       return resolved.toString()
     }
   } catch {

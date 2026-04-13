@@ -22,8 +22,9 @@ import {
   type DepartmentAccessMode,
 } from './auth-session'
 import { normalizeGoogleWorkspaceEmail } from './google-workspace'
-import { applyAuthRuntimeEnvironment, readAuthEnv } from './auth-env'
+import { applyAuthRuntimeEnvironment, buildAuthCookiePolicy, readAuthEnv } from './auth-env'
 import { decideGoogleAccess, resolveAuthRedirect } from './auth-flow'
+import { authTrace, maskAuthEmail } from './auth-trace'
 
 function buildGoogleCallbackUrl(baseUrl: string) {
   return new URL('/api/auth/callback/google', baseUrl).toString()
@@ -31,46 +32,18 @@ function buildGoogleCallbackUrl(baseUrl: string) {
 
 const authRuntimePolicy = applyAuthRuntimeEnvironment()
 const authEnv = readAuthEnv()
+const authCookiePolicy = buildAuthCookiePolicy(authRuntimePolicy)
 const googleCallbackUrl = authRuntimePolicy.shouldTrustHost
   ? 'request-host/api/auth/callback/google'
   : buildGoogleCallbackUrl(authEnv.baseUrl)
 
-function maskEmail(email?: string | null) {
-  if (!email) {
-    return null
-  }
-
-  const [localPart, domain] = email.split('@')
-  if (!domain) {
-    return email
-  }
-
-  if (localPart.length <= 2) {
-    return `${localPart[0] ?? '*'}*@${domain}`
-  }
-
-  return `${localPart.slice(0, 2)}***@${domain}`
-}
-
-function authLog(level: 'info' | 'warn' | 'error', event: string, metadata?: Record<string, unknown>) {
-  const payload = {
-    event,
-    ...(metadata ?? {}),
-  }
-
-  const message = `[auth] ${event} ${JSON.stringify(payload)}`
-  if (level === 'error') {
-    console.error(message)
-    return
-  }
-
-  if (level === 'warn') {
-    console.warn(message)
-    return
-  }
-
-  console.log(message)
-}
+authTrace('info', 'AUTH_RUNTIME_POLICY_RESOLVED', {
+  baseUrlSource: authEnv.baseUrlSource,
+  secretSource: authEnv.secretSource,
+  shouldTrustHost: authRuntimePolicy.shouldTrustHost,
+  useSecureCookies: authRuntimePolicy.useSecureCookies,
+  sessionCookieName: authRuntimePolicy.sessionTokenCookieName,
+})
 
 type DepartmentScopeNode = {
   id: string
@@ -220,7 +193,7 @@ function applyAuthClaimsToToken(
   token.departmentAccessMode = scope.departmentAccessMode
 
   if (scope.departmentAccessMode === 'GLOBAL' && claims.accessibleDepartmentIds.length) {
-    authLog('info', 'JWT_SCOPE_COMPRESSED', {
+    authTrace('info', 'JWT_SCOPE_COMPRESSED', {
       employeeId: claims.id,
       role: claims.role,
       departmentCount: claims.accessibleDepartmentIds.length,
@@ -367,20 +340,20 @@ async function hydrateTokenClaimsFromDirectory(
 ) {
   const employee = await findEmployeeForToken(token)
   if (!employee) {
-    authLog('warn', 'AUTH_EMPLOYEE_REHYDRATION_FAILED', {
+    authTrace('warn', 'AUTH_EMPLOYEE_REHYDRATION_FAILED', {
       reason,
       tokenSub: token.sub ?? null,
-      email: maskEmail(token.email),
+      email: maskAuthEmail(token.email),
     })
     return null
   }
 
   const claims = await buildAuthClaims(employee)
   applyAuthClaimsToToken(token, claims)
-  authLog('info', 'AUTH_CLAIMS_REHYDRATED', {
+  authTrace('info', 'AUTH_CLAIMS_REHYDRATED', {
     reason,
     employeeId: claims.id,
-    email: maskEmail(claims.email),
+    email: maskAuthEmail(claims.email),
     role: claims.role,
   })
   return claims
@@ -454,6 +427,7 @@ declare module 'next-auth/jwt' {
 export const authOptions: NextAuthOptions = {
   secret: authEnv.secret,
   useSecureCookies: authRuntimePolicy.useSecureCookies,
+  cookies: authCookiePolicy,
   providers: [
     GoogleProvider({
       clientId: authEnv.googleClientId,
@@ -496,22 +470,39 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }) {
       if (account?.provider === 'google') {
         const email = profile?.email || user.email
-        authLog('info', 'GOOGLE_CALLBACK_RECEIVED', {
+        authTrace('info', 'GOOGLE_CALLBACK_RECEIVED', {
           provider: account.provider,
-          email: maskEmail(email),
+          email: maskAuthEmail(email),
         })
 
         const normalizedEmail = email ? normalizeGoogleWorkspaceEmail(email) : null
+        authTrace('info', 'APP_USER_MATCH_STARTED', {
+          provider: account.provider,
+          email: maskAuthEmail(normalizedEmail),
+        })
         const employee = normalizedEmail
           ? await findAuthEmployee({ gwsEmail: normalizedEmail })
           : null
 
-        authLog('info', 'GOOGLE_PROFILE_RESOLVED', {
-          email: maskEmail(normalizedEmail),
+        authTrace('info', 'GOOGLE_PROFILE_RESOLVED', {
+          email: maskAuthEmail(normalizedEmail),
           employeeId: employee?.id ?? null,
           employeeStatus: employee?.status ?? null,
           role: employee?.role ?? null,
         })
+
+        if (employee) {
+          authTrace('info', 'APP_USER_MATCH_SUCCEEDED', {
+            employeeId: employee.id,
+            email: maskAuthEmail(normalizedEmail),
+            employeeStatus: employee.status,
+            role: employee.role,
+          })
+        } else {
+          authTrace('warn', 'APP_USER_MATCH_FAILED', {
+            email: maskAuthEmail(normalizedEmail),
+          })
+        }
 
         const decision = decideGoogleAccess({
           email,
@@ -520,16 +511,16 @@ export const authOptions: NextAuthOptions = {
         })
 
         if (!decision.allowed) {
-          authLog('warn', 'GOOGLE_SIGNIN_REJECTED', {
+          authTrace('warn', 'GOOGLE_SIGNIN_REJECTED', {
             reason: decision.errorCode,
-            email: maskEmail(decision.normalizedEmail),
+            email: maskAuthEmail(decision.normalizedEmail),
             provider: account.provider,
           })
           return `/login?error=${decision.errorCode}`
         }
 
-        authLog('info', 'GOOGLE_SIGNIN_ALLOWED', {
-          email: maskEmail(decision.normalizedEmail),
+        authTrace('info', 'GOOGLE_SIGNIN_ALLOWED', {
+          email: maskAuthEmail(decision.normalizedEmail),
           employeeId: employee?.id,
           role: employee?.role,
         })
@@ -544,10 +535,16 @@ export const authOptions: NextAuthOptions = {
       if (user && isAuthClaimsUser(user)) {
         applyAuthClaimsToToken(token, user)
         token.masterLogin = null
+        authTrace('info', 'JWT_CREATED', {
+          source: account?.provider ?? 'session-user',
+          employeeId: user.id,
+          email: maskAuthEmail(user.email),
+          role: user.role,
+        })
       } else if (user) {
-        authLog('info', 'JWT_SKIPPED_NON_APP_USER', {
+        authTrace('info', 'JWT_SKIPPED_NON_APP_USER', {
           provider: account?.provider ?? 'unknown',
-          email: maskEmail(user.email),
+          email: maskAuthEmail(user.email),
         })
       }
 
@@ -559,15 +556,21 @@ export const authOptions: NextAuthOptions = {
           const claims = await buildAuthClaims(employee)
           applyAuthClaimsToToken(token, claims)
           token.masterLogin = null
-          authLog('info', 'GOOGLE_JWT_CLAIMS_APPLIED', {
+          authTrace('info', 'GOOGLE_JWT_CLAIMS_APPLIED', {
             employeeId: claims.id,
-            email: maskEmail(claims.email),
+            email: maskAuthEmail(claims.email),
             role: claims.role,
             departmentAccessMode: claims.departmentAccessMode,
           })
+          authTrace('info', 'JWT_CREATED', {
+            source: 'google-callback',
+            employeeId: claims.id,
+            email: maskAuthEmail(claims.email),
+            role: claims.role,
+          })
         } else {
-          authLog('error', 'GOOGLE_JWT_EMPLOYEE_MISSING', {
-            email: maskEmail(normalizedEmail),
+          authTrace('error', 'GOOGLE_JWT_EMPLOYEE_MISSING', {
+            email: maskAuthEmail(normalizedEmail),
           })
         }
       } else if (!account && (!hasCoreAuthTokenClaims(token) || !token.departmentAccessMode)) {
@@ -620,10 +623,10 @@ export const authOptions: NextAuthOptions = {
             })
           }
 
-          authLog('warn', expiredAction, {
+          authTrace('warn', expiredAction, {
             sessionId: currentMasterLogin.sessionId,
-            actorEmail: maskEmail(currentMasterLogin.actor.email),
-            targetEmail: maskEmail(currentMasterLogin.target.email),
+            actorEmail: maskAuthEmail(currentMasterLogin.actor.email),
+            targetEmail: maskAuthEmail(currentMasterLogin.target.email),
           })
         }
       }
@@ -655,10 +658,10 @@ export const authOptions: NextAuthOptions = {
               },
             })
 
-            authLog('info', 'MASTER_LOGIN_ENDED', {
+            authTrace('info', 'MASTER_LOGIN_ENDED', {
               sessionId: currentMasterLogin.sessionId,
-              actorEmail: maskEmail(currentMasterLogin.actor.email),
-              targetEmail: maskEmail(currentMasterLogin.target.email),
+              actorEmail: maskAuthEmail(currentMasterLogin.actor.email),
+              targetEmail: maskAuthEmail(currentMasterLogin.target.email),
             })
           }
 
@@ -666,9 +669,9 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (token.masterLogin?.active) {
-          authLog('warn', 'MASTER_LOGIN_ALREADY_ACTIVE', {
-            actorEmail: maskEmail(token.masterLogin.actor.email),
-            targetEmail: maskEmail(token.masterLogin.target.email),
+          authTrace('warn', 'MASTER_LOGIN_ALREADY_ACTIVE', {
+            actorEmail: maskAuthEmail(token.masterLogin.actor.email),
+            targetEmail: maskAuthEmail(token.masterLogin.target.email),
           })
           return token
         }
@@ -683,23 +686,23 @@ export const authOptions: NextAuthOptions = {
           : false
 
         if (!actorClaims || !actorCanUseMasterLogin) {
-          authLog('warn', 'MASTER_LOGIN_FORBIDDEN', {
-            actorEmail: maskEmail(actorClaims?.email ?? token.email),
+          authTrace('warn', 'MASTER_LOGIN_FORBIDDEN', {
+            actorEmail: maskAuthEmail(actorClaims?.email ?? token.email),
           })
           return token
         }
 
         if (command.targetEmployeeId === actorClaims.id) {
-          authLog('warn', 'MASTER_LOGIN_SELF_TARGET', {
-            actorEmail: maskEmail(actorClaims.email),
+          authTrace('warn', 'MASTER_LOGIN_SELF_TARGET', {
+            actorEmail: maskAuthEmail(actorClaims.email),
           })
           return token
         }
 
         const targetEmployee = await findAuthEmployee({ id: command.targetEmployeeId })
         if (!targetEmployee || targetEmployee.status !== 'ACTIVE') {
-          authLog('warn', 'MASTER_LOGIN_TARGET_INVALID', {
-            actorEmail: maskEmail(actorClaims.email),
+          authTrace('warn', 'MASTER_LOGIN_TARGET_INVALID', {
+            actorEmail: maskAuthEmail(actorClaims.email),
             targetId: command.targetEmployeeId,
           })
           return token
@@ -762,10 +765,10 @@ export const authOptions: NextAuthOptions = {
           },
         })
 
-        authLog('info', 'MASTER_LOGIN_STARTED', {
+        authTrace('info', 'MASTER_LOGIN_STARTED', {
           sessionId: impersonationSession.id,
-          actorEmail: maskEmail(actorClaims.email),
-          targetEmail: maskEmail(targetClaims.email),
+          actorEmail: maskAuthEmail(actorClaims.email),
+          targetEmail: maskAuthEmail(targetClaims.email),
         })
       }
 
@@ -775,7 +778,7 @@ export const authOptions: NextAuthOptions = {
     async redirect({ url, baseUrl }) {
       const resolvedUrl = resolveAuthRedirect(url, baseUrl)
       if (resolvedUrl !== url) {
-        authLog('warn', 'REDIRECT_FALLBACK_APPLIED', {
+        authTrace('warn', 'REDIRECT_FALLBACK_APPLIED', {
           requestedUrl: url,
           resolvedUrl,
           baseUrl,
@@ -790,17 +793,17 @@ export const authOptions: NextAuthOptions = {
         let claims = extractAuthClaimsFromToken(token)
 
         if (!claims) {
-          authLog('warn', 'SESSION_CLAIMS_INCOMPLETE', {
+          authTrace('warn', 'SESSION_CLAIMS_INCOMPLETE', {
             tokenSub: token.sub ?? null,
-            email: maskEmail(token.email),
+            email: maskAuthEmail(token.email),
           })
           claims = await hydrateTokenClaimsFromDirectory(token, 'session-rehydration')
         }
 
         if (!claims) {
-          authLog('error', 'SESSION_RESOLUTION_FAILED', {
+          authTrace('error', 'SESSION_RESOLUTION_FAILED', {
             tokenSub: token.sub ?? null,
-            email: maskEmail(token.email),
+            email: maskAuthEmail(token.email),
           })
           return session
         }
@@ -826,6 +829,12 @@ export const authOptions: NextAuthOptions = {
               email: claims.email,
             })
         session.user.masterLogin = toSessionMasterLoginState(token.masterLogin)
+        authTrace('info', 'SESSION_USER_RESOLVED', {
+          employeeId: claims.id,
+          email: maskAuthEmail(claims.email),
+          role: claims.role,
+          departmentAccessMode: claims.departmentAccessMode,
+        })
       }
 
       return session

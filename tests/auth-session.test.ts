@@ -3,6 +3,7 @@ import {
   compressDepartmentScopeForToken,
   estimateSerializedPayloadBytes,
   hasCoreAuthTokenClaims,
+  hasRecoverableAuthTokenIdentity,
   resolveDepartmentAccessMode,
 } from '../src/lib/auth-session'
 
@@ -80,6 +81,29 @@ run('middleware auth check requires complete app claims instead of any token she
       email: 'member1@rsupport.com',
       name: '구성원',
       role: 'ROLE_MEMBER',
+    }),
+    false
+  )
+})
+
+run('first post-callback request can recover from identity-only token claims', () => {
+  assert.equal(
+    hasRecoverableAuthTokenIdentity({
+      sub: 'emp-1',
+    }),
+    true
+  )
+
+  assert.equal(
+    hasRecoverableAuthTokenIdentity({
+      email: 'member1@rsupport.com',
+    }),
+    true
+  )
+
+  assert.equal(
+    hasRecoverableAuthTokenIdentity({
+      role: 'ROLE_ADMIN',
     }),
     false
   )
