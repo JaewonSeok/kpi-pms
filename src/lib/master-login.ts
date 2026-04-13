@@ -2,9 +2,24 @@ import type { SystemRole } from '@prisma/client'
 
 type MasterLoginEnvSource = Record<string, string | undefined>
 
-type MasterLoginAccessInput = {
+export const MASTER_LOGIN_PERMISSION_KEY = 'MASTER_LOGIN_ALLOWED' as const
+
+export type MasterLoginAccessSource =
+  | 'owner'
+  | 'legacy_admin'
+  | 'granted_hr_admin'
+  | 'none'
+
+export type MasterLoginAccessInput = {
   role?: SystemRole | string | null
   email?: string | null
+  employeeId?: string | null
+  masterLoginPermissionGranted?: boolean | null
+}
+
+type MasterLoginActorRecord = {
+  role: SystemRole
+  masterLoginPermissionGranted: boolean
 }
 
 function normalizeEmail(email?: string | null) {
@@ -44,28 +59,112 @@ export function readMasterLoginConfig(env: MasterLoginEnvSource = process.env) {
   }
 }
 
-export function canUseMasterLogin(
-  input: MasterLoginAccessInput,
+export function resolveMasterLoginAccess(
+  input: Pick<MasterLoginAccessInput, 'role' | 'email' | 'masterLoginPermissionGranted'>,
   env: MasterLoginEnvSource = process.env
 ) {
   if (input.role !== 'ROLE_ADMIN') {
-    return false
+    return {
+      allowed: false,
+      source: 'none' as MasterLoginAccessSource,
+    }
   }
 
   const email = normalizeEmail(input.email)
   if (!email) {
-    return false
+    return {
+      allowed: false,
+      source: 'none' as MasterLoginAccessSource,
+    }
   }
 
   const config = readMasterLoginConfig(env)
-  if (!config.enabled) {
-    return false
+
+  if (config.ownerEmail && email === config.ownerEmail) {
+    return {
+      allowed: true,
+      source: 'owner' as MasterLoginAccessSource,
+    }
   }
 
-  return config.allowedEmailSet.has(email)
+  if (config.allowedEmailSet.has(email)) {
+    return {
+      allowed: true,
+      source: 'legacy_admin' as MasterLoginAccessSource,
+    }
+  }
+
+  if (input.masterLoginPermissionGranted) {
+    return {
+      allowed: true,
+      source: 'granted_hr_admin' as MasterLoginAccessSource,
+    }
+  }
+
+  return {
+    allowed: false,
+    source: 'none' as MasterLoginAccessSource,
+  }
 }
 
-export function getMasterLoginActorLabel(input: MasterLoginAccessInput) {
+export function canUseMasterLogin(
+  input: Pick<MasterLoginAccessInput, 'role' | 'email' | 'masterLoginPermissionGranted'>,
+  env: MasterLoginEnvSource = process.env
+) {
+  return resolveMasterLoginAccess(input, env).allowed
+}
+
+async function loadMasterLoginActorRecord(employeeId: string) {
+  const { prisma } = await import('@/lib/prisma')
+  return prisma.employee.findUnique({
+    where: { id: employeeId },
+    select: {
+      role: true,
+      masterLoginPermissionGranted: true,
+    },
+  }) as Promise<MasterLoginActorRecord | null>
+}
+
+export async function resolveMasterLoginAvailability(
+  input: Pick<MasterLoginAccessInput, 'employeeId' | 'role' | 'email'>,
+  env: MasterLoginEnvSource = process.env
+) {
+  const directAccess = resolveMasterLoginAccess(
+    {
+      role: input.role,
+      email: input.email,
+      masterLoginPermissionGranted: false,
+    },
+    env
+  )
+
+  if (directAccess.allowed) {
+    return directAccess
+  }
+
+  if (input.role !== 'ROLE_ADMIN' || !input.employeeId) {
+    return directAccess
+  }
+
+  const actor = await loadMasterLoginActorRecord(input.employeeId)
+  return resolveMasterLoginAccess(
+    {
+      role: actor?.role ?? input.role,
+      email: input.email,
+      masterLoginPermissionGranted: actor?.masterLoginPermissionGranted ?? false,
+    },
+    env
+  )
+}
+
+export async function canUseMasterLoginForActor(
+  input: Pick<MasterLoginAccessInput, 'employeeId' | 'role' | 'email'>,
+  env: MasterLoginEnvSource = process.env
+) {
+  return (await resolveMasterLoginAvailability(input, env)).allowed
+}
+
+export function getMasterLoginActorLabel(input: Pick<MasterLoginAccessInput, 'email'>) {
   const email = normalizeEmail(input.email)
   if (!email) {
     return '권한 있는 관리자'

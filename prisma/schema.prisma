@@ -22,6 +22,7 @@ model Organization {
   compensationRuleSets CompensationRuleSet[]
   feedbackFolders FeedbackFolder[]
   feedbackAdminGroups FeedbackAdminGroup[]
+  upwardReviewTemplates UpwardReviewTemplate[]
   aiCompetencyExternalCertMasters AiCompetencyExternalCertMaster[]
   wordCloud360Keywords WordCloud360Keyword[]
   wordCloud360Cycles   WordCloud360Cycle[]
@@ -68,6 +69,7 @@ model Employee {
   resignationDate DateTime?
   sortOrder       Int?
   notes           String?
+  masterLoginPermissionGranted Boolean      @default(false)
   currentSalary   Float          @default(0)
   status          EmployeeStatus @default(ACTIVE)
   profileImageUrl String?
@@ -634,6 +636,48 @@ model FeedbackFolder {
   @@map("feedback_folders")
 }
 
+model UpwardReviewTemplate {
+  id                  String         @id @default(cuid())
+  orgId               String
+  organization        Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name                String
+  description         String?
+  isActive            Boolean        @default(true)
+  defaultMinResponses Int            @default(3)
+  defaultSettings     Json?
+  createdById         String?
+  updatedById         String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  questions UpwardReviewTemplateQuestion[]
+
+  @@unique([orgId, name])
+  @@index([orgId, isActive, updatedAt])
+  @@map("upward_review_templates")
+}
+
+model UpwardReviewTemplateQuestion {
+  id           String               @id @default(cuid())
+  templateId    String
+  template      UpwardReviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  category      String?
+  questionText  String
+  description   String?
+  questionType  QuestionType
+  scaleMin      Int?                 @default(1)
+  scaleMax      Int?                 @default(5)
+  isRequired    Boolean              @default(true)
+  isActive      Boolean              @default(true)
+  choiceOptions Json?
+  sortOrder     Int
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([templateId, sortOrder])
+  @@map("upward_review_template_questions")
+}
+
 enum FeedbackRoundType {
   PEER
   UPWARD
@@ -722,10 +766,13 @@ model FeedbackQuestion {
   round        MultiFeedbackRound @relation(fields: [roundId], references: [id])
   category     String
   questionText String
+  description  String?
   questionType QuestionType
   scaleMin     Int?               @default(1)
   scaleMax     Int?               @default(5)
   isRequired   Boolean            @default(true)
+  isActive     Boolean            @default(true)
+  choiceOptions Json?
   sortOrder    Int
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt

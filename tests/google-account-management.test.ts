@@ -614,4 +614,32 @@ run('legacy JSON bulk and preview routes are removed from the evaluation module 
   assert.doesNotMatch(routeListing, /\/api\/admin\/employees\/google-account\/preview/)
 })
 
+run('master login tab exposes HR admin permission controls and directory permission fields', () => {
+  const registrationClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
+    'utf8'
+  )
+  const masterLoginPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/MasterLoginAdminPanel.tsx'),
+    'utf8'
+  )
+  const serverSource = readFileSync(
+    path.resolve(process.cwd(), 'src/server/admin/google-account-management.ts'),
+    'utf8'
+  )
+
+  assert.match(registrationClientSource, /MasterLoginAdminPanel/)
+  assert.match(registrationClientSource, /onRefresh=\{refreshQueries\}/)
+
+  assert.match(masterLoginPanelSource, /마스터 로그인 권한/)
+  assert.match(masterLoginPanelSource, /권한이 저장되었습니다\./)
+  assert.match(masterLoginPanelSource, /type="checkbox"/)
+  assert.match(masterLoginPanelSource, /masterLoginPermissionGranted/)
+  assert.match(masterLoginPanelSource, /소유자 기본 권한/)
+
+  assert.match(serverSource, /masterLoginPermissionGranted/)
+  assert.match(serverSource, /masterLoginAccessSource/)
+  assert.match(serverSource, /masterLoginAvailable/)
+})
+
 console.log('Google account management tests completed')

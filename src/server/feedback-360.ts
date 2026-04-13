@@ -2,6 +2,7 @@
   DevelopmentPlanStatus,
   FeedbackAdminReviewScope,
   FeedbackDocumentKind,
+  FeedbackNominationStatus,
   FeedbackRoundStatus,
   FeedbackRoundType,
   FeedbackStatus,
@@ -1455,7 +1456,12 @@ export async function getFeedback360PageData(
     }
 
     const rounds = await prisma.multiFeedbackRound.findMany({
-      where: { evalCycleId: selectedCycle.id },
+      where: {
+        evalCycleId: selectedCycle.id,
+        roundType: {
+          not: 'UPWARD',
+        },
+      },
       include: {
         folder: {
           select: {
@@ -2908,20 +2914,20 @@ export async function getFeedback360PageData(
             targetName: item.target.empName,
             roundId: item.roundId,
             roundName: item.round.roundName,
-            statuses: [] as string[],
+            statuses: [] as FeedbackNominationStatus[],
           }
 
           current.statuses.push(item.status)
           map.set(key, current)
           return map
-        }, new Map<string, { targetId: string; targetName: string; roundId: string; roundName: string; statuses: string[] }>())
+        }, new Map<string, { targetId: string; targetName: string; roundId: string; roundName: string; statuses: FeedbackNominationStatus[] }>())
       )
         .map(([, item]) => ({
           targetId: item.targetId,
           targetName: item.targetName,
           roundId: item.roundId,
           roundName: item.roundName,
-          status: getNominationAggregateStatus(item.statuses as any),
+          status: getNominationAggregateStatus(item.statuses),
           totalCount: item.statuses.length,
           approvedCount: item.statuses.filter((status) => status === 'APPROVED' || status === 'PUBLISHED').length,
           publishedCount: item.statuses.filter((status) => status === 'PUBLISHED').length,
@@ -3288,7 +3294,11 @@ export async function getFeedback360PageData(
           })
         : null
 
-      if (!feedback || (feedback.giverId !== employee.id && employee.role !== 'ROLE_ADMIN')) {
+      if (
+        !feedback ||
+        feedback.round.roundType === 'UPWARD' ||
+        (feedback.giverId !== employee.id && employee.role !== 'ROLE_ADMIN')
+      ) {
         return {
           ...baseData,
           state: 'permission-denied',

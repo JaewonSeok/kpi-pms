@@ -28,6 +28,7 @@ async function loadEmployeeAuditSnapshot(employeeId: string) {
       jobTitle: true,
       role: true,
       status: true,
+      masterLoginPermissionGranted: true,
       managerId: true,
       joinDate: true,
       resignationDate: true,

@@ -137,6 +137,8 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/evaluation/assistant', menuKey: 'AI_ASSIST' },
   { prefix: '/evaluation/ai-competency', menuKey: 'AI_COMPETENCY' },
   { prefix: '/evaluation/360', menuKey: 'FEEDBACK_360' },
+  { prefix: '/evaluation/upward', menuKey: 'FEEDBACK_360' },
+  { prefix: '/api/feedback/upward', menuKey: 'FEEDBACK_360' },
   { prefix: '/evaluation/word-cloud-360', menuKey: 'WORD_CLOUD_360' },
   { prefix: '/evaluation/results', menuKey: 'EVAL_RESULT' },
   { prefix: '/evaluation/appeal', menuKey: 'APPEAL' },

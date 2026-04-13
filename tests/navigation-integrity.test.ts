@@ -58,6 +58,8 @@ run('member sidebar hides admin-only and restricted KPI routes', () => {
   assert.equal(memberHrefs.includes('/kpi/monthly'), true)
   assert.equal(memberHrefs.includes('/evaluation/ai-competency'), true)
   assert.equal(memberHrefs.includes('/evaluation/360'), true)
+  assert.equal(memberHrefs.includes('/evaluation/upward/respond'), true)
+  assert.equal(memberHrefs.includes('/evaluation/upward/admin'), false)
   assert.equal(memberHrefs.includes('/evaluation/word-cloud-360'), true)
 })
 
@@ -79,6 +81,8 @@ run('admin sidebar exposes every admin and setup route', () => {
     '/kpi/monthly',
     '/evaluation/ai-competency',
     '/evaluation/360',
+    '/evaluation/upward/respond',
+    '/evaluation/upward/admin',
     '/evaluation/word-cloud-360',
     '/evaluation/results',
     '/evaluation/appeal',

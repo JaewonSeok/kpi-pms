@@ -3,8 +3,16 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import './register-path-aliases'
 import { resolveMenuFromPath } from '../src/lib/auth/permissions'
-import { AdminMasterLoginSchema } from '../src/lib/validations'
-import { canUseMasterLogin, readMasterLoginConfig } from '../src/lib/master-login'
+import {
+  AdminMasterLoginPermissionSchema,
+  AdminMasterLoginSchema,
+} from '../src/lib/validations'
+import {
+  MASTER_LOGIN_PERMISSION_KEY,
+  canUseMasterLogin,
+  readMasterLoginConfig,
+  resolveMasterLoginAccess,
+} from '../src/lib/master-login'
 
 function run(name: string, fn: () => void) {
   try {
@@ -37,31 +45,57 @@ run('master login config falls back to ADMIN_EMAIL when owner email is omitted',
   assert.equal(config.enabled, true)
 })
 
-run('master login permission requires ROLE_ADMIN and configured email', () => {
+run('master login permission allows owner, legacy admins, and granted HR admins only', () => {
   const env = {
     MASTER_LOGIN_OWNER_EMAIL: 'owner@rsupport.com',
     MASTER_LOGIN_ALLOWED_EMAILS: 'ops-admin@rsupport.com',
   }
 
+  assert.deepEqual(
+    resolveMasterLoginAccess(
+      { role: 'ROLE_ADMIN', email: 'owner@rsupport.com', masterLoginPermissionGranted: false },
+      env
+    ),
+    { allowed: true, source: 'owner' }
+  )
+  assert.deepEqual(
+    resolveMasterLoginAccess(
+      { role: 'ROLE_ADMIN', email: 'ops-admin@rsupport.com', masterLoginPermissionGranted: false },
+      env
+    ),
+    { allowed: true, source: 'legacy_admin' }
+  )
+  assert.deepEqual(
+    resolveMasterLoginAccess(
+      { role: 'ROLE_ADMIN', email: 'hr-admin@rsupport.com', masterLoginPermissionGranted: true },
+      env
+    ),
+    { allowed: true, source: 'granted_hr_admin' }
+  )
   assert.equal(
-    canUseMasterLogin({ role: 'ROLE_ADMIN', email: 'owner@rsupport.com' }, env),
+    canUseMasterLogin(
+      { role: 'ROLE_ADMIN', email: 'hr-admin@rsupport.com', masterLoginPermissionGranted: true },
+      env
+    ),
     true
   )
   assert.equal(
-    canUseMasterLogin({ role: 'ROLE_ADMIN', email: 'ops-admin@rsupport.com' }, env),
-    true
-  )
-  assert.equal(
-    canUseMasterLogin({ role: 'ROLE_MEMBER', email: 'owner@rsupport.com' }, env),
+    canUseMasterLogin(
+      { role: 'ROLE_ADMIN', email: 'hr-admin@rsupport.com', masterLoginPermissionGranted: false },
+      env
+    ),
     false
   )
   assert.equal(
-    canUseMasterLogin({ role: 'ROLE_ADMIN', email: 'other@rsupport.com' }, env),
+    canUseMasterLogin(
+      { role: 'ROLE_MEMBER', email: 'owner@rsupport.com', masterLoginPermissionGranted: true },
+      env
+    ),
     false
   )
 })
 
-run('master login request schema requires a target employee id and reason', () => {
+run('master login schemas require preview reason and permission toggle payload', () => {
   assert.equal(
     AdminMasterLoginSchema.safeParse({
       targetEmployeeId: 'emp-1',
@@ -77,15 +111,22 @@ run('master login request schema requires a target employee id and reason', () =
     false
   )
   assert.equal(
-    AdminMasterLoginSchema.safeParse({
-      targetEmployeeId: 'emp-1',
-      reason: '짧음',
+    AdminMasterLoginPermissionSchema.safeParse({
+      targetEmployeeId: 'emp-2',
+      enabled: true,
+    }).success,
+    true
+  )
+  assert.equal(
+    AdminMasterLoginPermissionSchema.safeParse({
+      targetEmployeeId: '',
+      enabled: false,
     }).success,
     false
   )
 })
 
-run('master login route, auth, and shell sources expose impersonation safeguards', () => {
+run('master login route, auth, and UI sources expose permission management safeguards', () => {
   const routeSource = readFileSync(
     path.resolve(
       process.cwd(),
@@ -94,7 +135,6 @@ run('master login route, auth, and shell sources expose impersonation safeguards
     'utf8'
   )
   const authSource = readFileSync(path.resolve(process.cwd(), 'src/lib/auth.ts'), 'utf8')
-  const middlewareSource = readFileSync(path.resolve(process.cwd(), 'src/middleware.ts'), 'utf8')
   const panelSource = readFileSync(
     path.resolve(process.cwd(), 'src/components/admin/MasterLoginAdminPanel.tsx'),
     'utf8'
@@ -106,27 +146,27 @@ run('master login route, auth, and shell sources expose impersonation safeguards
 
   assert.match(routeSource, /authorizeMenu\('SYSTEM_SETTING'\)/)
   assert.match(routeSource, /MASTER_LOGIN_PREVIEW/)
-  assert.match(routeSource, /reason/)
+  assert.match(routeSource, /MASTER_LOGIN_PERMISSION_GRANTED/)
+  assert.match(routeSource, /MASTER_LOGIN_PERMISSION_REVOKED/)
+  assert.match(routeSource, /AdminMasterLoginPermissionSchema/)
+  assert.match(routeSource, /MASTER_LOGIN_PERMISSION_KEY/)
+  assert.match(routeSource, /소유자 또는 권한이 부여된 HR관리자만 수행할 수 있습니다\./)
 
+  assert.match(authSource, /canUseMasterLoginForActor/)
   assert.match(authSource, /MASTER_LOGIN_STARTED/)
   assert.match(authSource, /MASTER_LOGIN_ENDED/)
   assert.match(authSource, /MASTER_LOGIN_EXPIRED/)
   assert.match(authSource, /createImpersonationSessionRecord/)
   assert.match(authSource, /endImpersonationSessionRecord/)
-  assert.match(authSource, /sessionId:/)
-  assert.match(authSource, /expiresAt:/)
 
-  assert.doesNotMatch(middlewareSource, /MASTER_LOGIN_READ_ONLY/)
+  assert.match(panelSource, /마스터 로그인 권한/)
+  assert.match(panelSource, /소유자 또는 권한이 부여된 HR관리자만/)
+  assert.match(panelSource, /권한이 저장되었습니다\./)
+  assert.match(panelSource, /이 계정으로 시작/)
+  assert.match(panelSource, /masterLoginPermissionGranted/)
 
-  assert.match(panelSource, /대상 유저 권한으로 시스템을 사용합니다/)
-  assert.match(panelSource, /모든 행동은 감사 로그에 기록됩니다/)
-  assert.match(panelSource, /위험 동작에는 추가 확인이 필요합니다/)
-  assert.match(panelSource, /masterLogin:\s*\{/)
-  assert.match(panelSource, /reason/)
-
-  assert.match(bannerSource, /마스터 로그인 중입니다/)
-  assert.match(bannerSource, /현재 권한은 대상 유저 기준으로 적용됩니다/)
-  assert.match(bannerSource, /위험 동작에는 추가 확인이 필요합니다/)
+  assert.match(bannerSource, /마스터 로그인 중입니다\./)
+  assert.match(bannerSource, /현재 권한은 대상자 기준으로 적용됩니다\./)
   assert.match(bannerSource, /사유:/)
   assert.match(bannerSource, /종료/)
   assert.match(bannerSource, /IMPERSONATION_SYNC_STORAGE_KEY/)
@@ -137,6 +177,10 @@ run('master login API path stays under SYSTEM_SETTING authz', () => {
     resolveMenuFromPath('/api/admin/employees/google-account/master-login'),
     'SYSTEM_SETTING'
   )
+})
+
+run('master login permission key stays stable', () => {
+  assert.equal(MASTER_LOGIN_PERMISSION_KEY, 'MASTER_LOGIN_ALLOWED')
 })
 
 console.log('Master login tests completed')

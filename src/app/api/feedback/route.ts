@@ -22,6 +22,11 @@ export async function GET(request: Request) {
     const feedbacks = await prisma.multiFeedback.findMany({
       where: {
         giverId: session.user.id,
+        round: {
+          roundType: {
+            not: 'UPWARD',
+          },
+        },
         ...(type === 'pending' ? { status: { in: ['PENDING', 'IN_PROGRESS'] } } : {}),
       },
       include: {
@@ -58,6 +63,13 @@ export async function POST(request: Request) {
       include: { questions: true },
     })
     if (!round) throw new AppError(404, 'ROUND_NOT_FOUND', '다면평가 라운드를 찾을 수 없습니다.')
+    if (round.roundType === 'UPWARD') {
+      throw new AppError(
+        400,
+        'UPWARD_REVIEW_ROUTE_REQUIRED',
+        '상향 평가는 상향 평가 응답 화면에서 제출해 주세요.'
+      )
+    }
     if (round.status !== 'IN_PROGRESS') {
       throw new AppError(400, 'ROUND_NOT_ACTIVE', '현재 응답 가능한 다면평가 라운드가 아닙니다.')
     }

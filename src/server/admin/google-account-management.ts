@@ -6,6 +6,7 @@ import {
   getAllowedGoogleWorkspaceDomain,
   normalizeGoogleWorkspaceEmail,
 } from '../../lib/google-workspace'
+import { resolveMasterLoginAccess } from '../../lib/master-login'
 import { AppError } from '../../lib/utils'
 
 export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
@@ -103,6 +104,7 @@ export const EMPLOYEE_STATUS_VALUES = ['ACTIVE', 'INACTIVE', 'ON_LEAVE', 'RESIGN
 
 export type EmployeeManagementStatus = (typeof EMPLOYEE_STATUS_VALUES)[number]
 export type EmployeeUploadTemplateKey = (typeof EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS)[number]['key']
+type MasterLoginAccessSource = ReturnType<typeof resolveMasterLoginAccess>['source']
 
 type ExistingEmployeeSnapshot = {
   id: string
@@ -196,6 +198,9 @@ export type EmployeeDirectoryItem = {
   notes: string | null
   directReportCount: number
   loginEnabled: boolean
+  masterLoginPermissionGranted: boolean
+  masterLoginAccessSource: MasterLoginAccessSource
+  masterLoginAvailable: boolean
 }
 
 export type DepartmentDirectoryItem = {
@@ -455,6 +460,18 @@ function compareMembers(
   }
 
   return a.name.localeCompare(b.name, 'ko')
+}
+
+function resolveMasterLoginStateForEmployee(employee: {
+  role: SystemRole
+  gwsEmail: string
+  masterLoginPermissionGranted: boolean
+}) {
+  return resolveMasterLoginAccess({
+    role: employee.role,
+    email: employee.gwsEmail,
+    masterLoginPermissionGranted: employee.masterLoginPermissionGranted,
+  })
 }
 
 export function buildEmployeeTemplateWorkbook() {
@@ -868,28 +885,37 @@ export async function loadEmployeeDirectory(params: {
 
       return target.includes(normalizedQuery)
     })
-    .map((employee) => ({
-      id: employee.id,
-      employeeNumber: employee.empId,
-      name: employee.empName,
-      googleEmail: employee.gwsEmail,
-      departmentId: employee.department.id,
-      departmentCode: employee.department.deptCode,
-      departmentName: employee.department.deptName,
-      teamName: employee.teamName,
-      jobTitle: employee.jobTitle,
-      role: employee.role,
-      employmentStatus: employee.status as EmployeeManagementStatus,
-      joinDate: employee.joinDate.toISOString().slice(0, 10),
-      resignationDate: employee.resignationDate ? employee.resignationDate.toISOString().slice(0, 10) : null,
-      managerId: employee.managerId,
-      managerEmployeeNumber: employee.managerId ? employeeNumberById.get(employee.managerId) ?? null : null,
-      managerName: employee.managerId ? employeeNameById.get(employee.managerId) ?? null : null,
-      sortOrder: employee.sortOrder,
-      notes: employee.notes,
-      directReportCount: directReportCountByManagerId.get(employee.id) ?? 0,
-      loginEnabled: employee.status === 'ACTIVE',
-    }))
+    .map((employee) => {
+      const masterLoginAccess = resolveMasterLoginStateForEmployee(employee)
+
+      return {
+        id: employee.id,
+        employeeNumber: employee.empId,
+        name: employee.empName,
+        googleEmail: employee.gwsEmail,
+        departmentId: employee.department.id,
+        departmentCode: employee.department.deptCode,
+        departmentName: employee.department.deptName,
+        teamName: employee.teamName,
+        jobTitle: employee.jobTitle,
+        role: employee.role,
+        employmentStatus: employee.status as EmployeeManagementStatus,
+        joinDate: employee.joinDate.toISOString().slice(0, 10),
+        resignationDate: employee.resignationDate
+          ? employee.resignationDate.toISOString().slice(0, 10)
+          : null,
+        managerId: employee.managerId,
+        managerEmployeeNumber: employee.managerId ? employeeNumberById.get(employee.managerId) ?? null : null,
+        managerName: employee.managerId ? employeeNameById.get(employee.managerId) ?? null : null,
+        sortOrder: employee.sortOrder,
+        notes: employee.notes,
+        directReportCount: directReportCountByManagerId.get(employee.id) ?? 0,
+        loginEnabled: employee.status === 'ACTIVE',
+        masterLoginPermissionGranted: employee.masterLoginPermissionGranted,
+        masterLoginAccessSource: masterLoginAccess.source,
+        masterLoginAvailable: masterLoginAccess.allowed,
+      }
+    })
 
   return {
     allowedDomain: getAllowedGoogleWorkspaceDomain(),
@@ -1305,6 +1331,7 @@ export async function upsertEmployeeRecord(params: {
               : null,
           sortOrder: params.sortOrder ?? null,
           notes: params.notes?.trim() || null,
+          ...(params.role === 'ROLE_ADMIN' ? {} : { masterLoginPermissionGranted: false }),
         },
         include: {
           department: {
@@ -1335,6 +1362,7 @@ export async function upsertEmployeeRecord(params: {
               : null,
           sortOrder: params.sortOrder ?? null,
           notes: params.notes?.trim() || null,
+          masterLoginPermissionGranted: false,
         },
         include: {
           department: {
@@ -1348,6 +1376,7 @@ export async function upsertEmployeeRecord(params: {
       })
 
   const hierarchyResult = await recalculateLeadershipLinks()
+  const employeeMasterLoginAccess = resolveMasterLoginStateForEmployee(employee)
 
   return {
     employee: {
@@ -1371,6 +1400,9 @@ export async function upsertEmployeeRecord(params: {
       notes: employee.notes,
       directReportCount: await prisma.employee.count({ where: { managerId: employee.id } }),
       loginEnabled: employee.status === 'ACTIVE',
+      masterLoginPermissionGranted: employee.masterLoginPermissionGranted,
+      masterLoginAccessSource: employeeMasterLoginAccess.source,
+      masterLoginAvailable: employeeMasterLoginAccess.allowed,
     },
     hierarchyUpdatedCount: hierarchyResult.updatedCount,
   }
@@ -1440,6 +1472,7 @@ export async function applyEmployeeLifecycleAction(params: {
       : null,
     prisma.employee.count({ where: { managerId: updatedEmployee.id } }),
   ])
+  const updatedEmployeeMasterLoginAccess = resolveMasterLoginStateForEmployee(updatedEmployee)
 
   return {
     employee: {
@@ -1465,6 +1498,9 @@ export async function applyEmployeeLifecycleAction(params: {
       notes: updatedEmployee.notes,
       directReportCount,
       loginEnabled: updatedEmployee.status === 'ACTIVE',
+      masterLoginPermissionGranted: updatedEmployee.masterLoginPermissionGranted,
+      masterLoginAccessSource: updatedEmployeeMasterLoginAccess.source,
+      masterLoginAvailable: updatedEmployeeMasterLoginAccess.allowed,
     },
     impactedDirectReports: directReportCount,
     hierarchyUpdatedCount: hierarchyResult.updatedCount,
@@ -1699,6 +1735,7 @@ export async function applyEmployeeUpload(params: {
               : null,
           sortOrder: row.sortOrder,
           notes: row.notes,
+          ...(row.role === 'ROLE_ADMIN' ? {} : { masterLoginPermissionGranted: false }),
         },
       })
       updatedCount += 1
@@ -1723,6 +1760,7 @@ export async function applyEmployeeUpload(params: {
             : null,
         sortOrder: row.sortOrder,
         notes: row.notes,
+        masterLoginPermissionGranted: false,
       },
     })
     createdCount += 1

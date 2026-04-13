@@ -59,7 +59,10 @@ export function MasterLoginBanner({ session }: MasterLoginBannerProps) {
     : null
 
   const expiryLabel = useMemo(
-    () => (masterLogin ? `${formatDateTime(masterLogin.expiresAt)} · ${formatRemaining(masterLogin.expiresAt)}` : ''),
+    () =>
+      masterLogin
+        ? `${formatDateTime(masterLogin.expiresAt)} · ${formatRemaining(masterLogin.expiresAt)}`
+        : '',
     [masterLogin]
   )
 
@@ -170,21 +173,18 @@ export function MasterLoginBanner({ session }: MasterLoginBannerProps) {
               원래 관리자 <strong>{masterLogin.actorName}</strong> ({masterLogin.actorEmail})
             </span>
             <span>
-              현재 대상 유저 <strong>{masterLogin.targetName}</strong> ({masterLogin.targetEmail})
+              현재 대상자 <strong>{masterLogin.targetName}</strong> ({masterLogin.targetEmail})
             </span>
           </div>
           <div className="text-amber-950/90">
-            현재 권한은 대상 유저 기준으로 적용됩니다. 위험 동작에는 추가 확인이 필요합니다.
+            현재 권한은 대상자 기준으로 적용됩니다. 위험 동작에는 추가 확인이 필요합니다.
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs text-amber-950/80">
             <span className="inline-flex items-center gap-1">
               <Clock3 className="h-3.5 w-3.5" />
               만료 예정 {expiryLabel}
             </span>
-            <span
-              className="inline-flex items-center gap-1"
-              title={masterLogin.reason}
-            >
+            <span className="inline-flex items-center gap-1" title={masterLogin.reason}>
               <AlertTriangle className="h-3.5 w-3.5" />
               사유: {masterLogin.reason}
             </span>

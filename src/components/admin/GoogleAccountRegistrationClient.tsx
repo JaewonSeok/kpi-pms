@@ -18,6 +18,8 @@ type EmployeeRole =
 
 type EmployeeStatus = 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE' | 'RESIGNED'
 
+type MasterLoginAccessSource = 'owner' | 'legacy_admin' | 'granted_hr_admin' | 'none'
+
 type DepartmentOption = {
   id: string
   deptCode: string
@@ -59,6 +61,9 @@ type EmployeeListItem = {
   notes: string | null
   directReportCount: number
   loginEnabled: boolean
+  masterLoginPermissionGranted: boolean
+  masterLoginAccessSource: MasterLoginAccessSource
+  masterLoginAvailable: boolean
 }
 
 type EmployeeDirectoryResponse = {
@@ -1141,7 +1146,11 @@ export function GoogleAccountRegistrationClient() {
       )}
 
       {activeTab === 'master-login' && (
-        <MasterLoginAdminPanel employees={employees} onFeedback={setFeedback} />
+        <MasterLoginAdminPanel
+          employees={employees}
+          onFeedback={setFeedback}
+          onRefresh={refreshQueries}
+        />
       )}
 
       {activeTab === 'org-chart' && (

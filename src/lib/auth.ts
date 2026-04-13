@@ -4,11 +4,10 @@ import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { createAuditLog } from '@/lib/audit'
 import {
-  buildImpersonationExpiry,
   isImpersonationExpired,
   type ImpersonationSessionState,
 } from '@/lib/impersonation'
-import { canUseMasterLogin } from '@/lib/master-login'
+import { canUseMasterLoginForActor } from '@/lib/master-login'
 import { prisma } from '@/lib/prisma'
 import { buildOrgPath, getAccessibleDeptIds } from '@/server/auth/org-scope'
 import {
@@ -602,7 +601,15 @@ export const authOptions: NextAuthOptions = {
         }
 
         const actorClaims = extractAuthClaimsFromToken(token)
-        if (!actorClaims || !canUseMasterLogin({ role: actorClaims.role, email: actorClaims.email })) {
+        const actorCanUseMasterLogin = actorClaims
+          ? await canUseMasterLoginForActor({
+              employeeId: actorClaims.id,
+              role: actorClaims.role,
+              email: actorClaims.email,
+            })
+          : false
+
+        if (!actorClaims || !actorCanUseMasterLogin) {
           authLog('warn', 'MASTER_LOGIN_FORBIDDEN', {
             actorEmail: maskEmail(actorClaims?.email ?? token.email),
           })
@@ -721,7 +728,11 @@ export const authOptions: NextAuthOptions = {
         session.user.accessibleDepartmentIds = token.accessibleDepartmentIds ?? []
         session.user.masterLoginAvailable = token.masterLogin?.active
           ? true
-          : canUseMasterLogin({ role: token.role, email: token.email })
+          : await canUseMasterLoginForActor({
+              employeeId: token.sub,
+              role: token.role,
+              email: token.email,
+            })
         session.user.masterLogin = toSessionMasterLoginState(token.masterLogin)
       }
 

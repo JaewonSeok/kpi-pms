@@ -355,6 +355,85 @@ export const FeedbackFolderSchema = z.object({
   sortOrder: z.number().int().min(0).max(999).default(0),
 })
 
+export const UpwardReviewTemplateQuestionSchema = z.object({
+  templateId: z.string().min(1),
+  questionId: z.string().optional(),
+  category: z.string().trim().max(50).optional(),
+  questionText: z.string().trim().min(1, '질문 내용을 입력해 주세요.').max(500),
+  description: z.string().trim().max(500).optional(),
+  questionType: z.enum(['TEXT', 'RATING_SCALE', 'MULTIPLE_CHOICE']),
+  scaleMin: z.number().int().min(1).max(5).optional(),
+  scaleMax: z.number().int().min(1).max(10).optional(),
+  isRequired: z.boolean().default(true),
+  isActive: z.boolean().default(true),
+  choiceOptions: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
+})
+
+export const UpwardReviewTemplateSchema = z.object({
+  templateId: z.string().optional(),
+  name: z.string().trim().min(1, '템플릿 이름을 입력해 주세요.').max(100),
+  description: z.string().trim().max(500).optional(),
+  isActive: z.boolean().default(true),
+  defaultMinResponses: z.number().int().min(1).max(10).default(3),
+  defaultTargetTypes: z
+    .array(z.enum(['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM', 'CUSTOM']))
+    .min(1, '최소 한 개 이상의 평가 대상 유형을 선택해 주세요.'),
+})
+
+export const UpwardReviewRoundSchema = z.object({
+  roundId: z.string().optional(),
+  evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
+  roundName: z.string().trim().min(1, '라운드명을 입력해 주세요.').max(100),
+  templateId: z.string().min(1, '질문 템플릿을 선택해 주세요.'),
+  startDate: z.string().datetime(),
+  endDate: z.string().datetime(),
+  minRaters: z.number().int().min(1).max(10).default(3),
+  targetTypes: z
+    .array(z.enum(['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM', 'CUSTOM']))
+    .min(1, '최소 한 개 이상의 평가 대상 유형을 선택해 주세요.'),
+  resultViewerMode: z.enum(['TARGET_ONLY', 'TARGET_AND_PRIMARY_MANAGER']).default('TARGET_ONLY'),
+  rawResponsePolicy: z.enum(['ADMIN_ONLY', 'REVIEW_ADMIN_CONTENT']).default('ADMIN_ONLY'),
+})
+
+export const UpwardReviewAssignmentSchema = z.object({
+  roundId: z.string().min(1),
+  evaluatorId: z.string().min(1, '평가자를 선택해 주세요.'),
+  evaluateeId: z.string().min(1, '피평가자를 선택해 주세요.'),
+  relationship: z.enum(['SUBORDINATE', 'PEER', 'CROSS_DEPT']).default('SUBORDINATE'),
+})
+
+export const UpwardReviewSuggestionSchema = z.object({
+  roundId: z.string().min(1),
+  evaluateeId: z.string().min(1, '추천을 생성할 피평가자를 선택해 주세요.').optional(),
+})
+
+export const UpwardReviewResponseSchema = z.object({
+  overallComment: z.string().max(1000, '공통 의견은 1000자 이내로 입력해 주세요.').optional(),
+  responses: z.array(
+    z.object({
+      questionId: z.string().min(1, '문항 정보가 올바르지 않습니다.'),
+      ratingValue: z
+        .number()
+        .int('척도형 응답은 정수로 입력해 주세요.')
+        .min(1, '척도형 응답은 1점 이상이어야 합니다.')
+        .max(10, '척도형 응답이 허용 범위를 초과했습니다.')
+        .nullable()
+        .optional(),
+      textValue: z.string().max(4000, '서술형 응답은 4000자 이내로 입력해 주세요.').nullable().optional(),
+    })
+  ).max(200, '응답 문항 수가 너무 많습니다. 다시 시도해 주세요.'),
+})
+
+export const UpwardReviewResultReleaseSchema = z.object({
+  roundId: z.string().min(1),
+  released: z.boolean(),
+})
+
+export const UpwardReviewRoundWorkflowSchema = z.object({
+  roundId: z.string().min(1),
+  action: z.enum(['START', 'CLOSE', 'REOPEN']),
+})
+
 export const FeedbackRoundFolderAssignSchema = z.object({
   roundId: z.string().min(1),
   folderId: z.string().nullable(),
@@ -1559,6 +1638,11 @@ export const AdminEvaluatorAssignmentActionSchema = z.object({
 export const AdminMasterLoginSchema = z.object({
   targetEmployeeId: z.string().min(1, '대상 유저를 선택해 주세요.'),
   reason: z.string().trim().min(10, '마스터 로그인 사유를 10자 이상 입력해 주세요.').max(500),
+})
+
+export const AdminMasterLoginPermissionSchema = z.object({
+  targetEmployeeId: z.string().min(1, '권한을 변경할 HR관리자를 선택해 주세요.'),
+  enabled: z.boolean(),
 })
 
 export const AdminEmployeeUploadRowSchema = z.object({
