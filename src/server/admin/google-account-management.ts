@@ -1679,6 +1679,8 @@ export async function safeDeleteEmployeeRecord(
 ) {
   const db = deps.prisma ?? prisma
   const runLeadershipRecalculation = deps.recalculateLeadershipLinks ?? recalculateLeadershipLinks
+  const transactionTimeoutMs = 30_000
+  const transactionMaxWaitMs = 10_000
 
   const employee = await db.employee.findUnique({
     where: { id: employeeId },
@@ -1717,6 +1719,13 @@ export async function safeDeleteEmployeeRecord(
       return result
     } catch (error) {
       const errorInfo = extractEmployeeDeleteErrorInfo(error)
+      logEmployeeDelete(`EMPLOYEE_DELETE_STEP_${stepName}_FAILED`, {
+        employeeId,
+        stepName,
+        prismaCode: errorInfo.code,
+        errorName: errorInfo.name,
+        shortMessage: errorInfo.message,
+      })
       logEmployeeDelete('EMPLOYEE_DELETE_CAUGHT_ERROR', {
         employeeId,
         stepName,
@@ -1734,6 +1743,8 @@ export async function safeDeleteEmployeeRecord(
   try {
     logEmployeeDelete('EMPLOYEE_DELETE_TX_BEGIN', {
       employeeId,
+      transactionTimeoutMs,
+      transactionMaxWaitMs,
     })
     const result = await db.$transaction(async (tx) => {
       const ownedPersonalKpis = await withDeleteStep(
@@ -1806,6 +1817,9 @@ export async function safeDeleteEmployeeRecord(
         deletedAiCompetencyAssignmentCount: 0,
         deletedAiCompetencyAttemptCount: 0,
         deletedAiCompetencyGeneratedExamSetCount: 0,
+        deletedAiCompetencySecondRoundSubmissionCount: 0,
+        deletedAiCompetencyExternalCertClaimCount: 0,
+        deletedAiCompetencyResultCount: 0,
         deletedAiCompetencySubmissionReviewCount: 0,
         clearedAiCompetencyAnswerReviewCount: 0,
         clearedAiCompetencyDecisionActorCount: 0,
@@ -2271,6 +2285,39 @@ export async function safeDeleteEmployeeRecord(
         )
       ).count
 
+      cleanupSummary.deletedAiCompetencyResultCount = (
+        await withDeleteStep(
+          'deleteAiCompetencyResults',
+          () =>
+            tx.aiCompetencyResult.deleteMany({
+              where: { employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
+      ).count
+
+      cleanupSummary.deletedAiCompetencyExternalCertClaimCount = (
+        await withDeleteStep(
+          'deleteAiCompetencyExternalCertClaims',
+          () =>
+            tx.aiCompetencyExternalCertClaim.deleteMany({
+              where: { employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
+      ).count
+
+      cleanupSummary.deletedAiCompetencySecondRoundSubmissionCount = (
+        await withDeleteStep(
+          'deleteAiCompetencySecondRoundSubmissions',
+          () =>
+            tx.aiCompetencySecondRoundSubmission.deleteMany({
+              where: { employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
+      ).count
+
       cleanupSummary.deletedAiCompetencyAttemptCount = (
         await withDeleteStep(
           'deleteAiCompetencyAttempts',
@@ -2329,6 +2376,13 @@ export async function safeDeleteEmployeeRecord(
         deletedEmployee,
         cleanupSummary,
       }
+    }, {
+      timeout: transactionTimeoutMs,
+      maxWait: transactionMaxWaitMs,
+    })
+    logEmployeeDelete('EMPLOYEE_DELETE_TX_SUCCESS', {
+      employeeId,
+      deletedEmployeeId: result.deletedEmployee.id,
     })
 
     let hierarchyUpdatedCount = 0
@@ -2366,6 +2420,13 @@ export async function safeDeleteEmployeeRecord(
     const errorInfo = extractEmployeeDeleteErrorInfo(error)
     const failingStep = readEmployeeDeleteStep(error) ?? 'unknown'
 
+    logEmployeeDelete('EMPLOYEE_DELETE_TX_FAILED', {
+      employeeId,
+      stepName: failingStep,
+      prismaCode: errorInfo.code,
+      errorName: errorInfo.name,
+      shortMessage: errorInfo.message,
+    })
     logEmployeeDelete('EMPLOYEE_DELETE_CAUGHT_ERROR', {
       employeeId,
       stepName: failingStep,
@@ -2383,6 +2444,14 @@ export async function safeDeleteEmployeeRecord(
         409,
         'EMPLOYEE_DELETE_CLEANUP_FAILED',
         '연결된 데이터를 정리하는 중 문제가 발생해 직원을 삭제하지 못했습니다.'
+      )
+    }
+
+    if (isPrismaKnownRequestError(error) && error.code === 'P2028') {
+      throw new AppError(
+        503,
+        'EMPLOYEE_DELETE_TX_TIMEOUT',
+        '?곌껐???곗씠?곕? ?뺣━?섎뒗 以??쒓컙??珥덇낵?섏뿬 吏곸썝 ??젣瑜?留덈Т由ы븯吏?紐삵뻽?듬땲?? ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??'
       )
     }
 

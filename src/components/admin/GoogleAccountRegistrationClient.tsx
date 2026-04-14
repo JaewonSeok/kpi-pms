@@ -624,7 +624,7 @@ export function GoogleAccountRegistrationClient() {
       notes: employee.notes ?? '',
     })
     setFeedback(null)
-    applyTab('manage', employee.departmentId)
+    applyTab('manage')
   }
 
   const resetForm = () => {

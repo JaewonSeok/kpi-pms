@@ -688,8 +688,9 @@ run('org-chart entry points resolve to the org-chart tab instead of falling back
 
   assert.match(registrationClientSource, /resolveAdminGoogleAccessTab\(searchParams\.get\('tab'\)\)/)
   assert.match(registrationClientSource, /buildAdminGoogleAccessHref\(nextTab/)
-  assert.match(navigationSource, /href: '\/admin\/org-chart'/)
-  assert.match(calendarSource, /href: '\/admin\/google-access\?tab=org-chart'/)
+  assert.doesNotMatch(registrationClientSource, /applyTab\('manage', employee\.departmentId\)/)
+  assert.match(navigationSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
+  assert.match(calendarSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
   assert.match(orgChartPageSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
 })
 

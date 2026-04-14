@@ -58,6 +58,7 @@ function createEmployeeForceDeletePrismaMock(options?: {
     status: string
   } | null
   deleteError?: Error
+  notificationJobDeleteError?: Error
 }) {
   const current =
     options && 'current' in options
@@ -138,12 +139,15 @@ function createEmployeeForceDeletePrismaMock(options?: {
     },
     aiCompetencySecondRoundSubmission: {
       updateMany: createUpdateManyDelegate(calls, 'aiCompetencySecondRoundSubmission', () => 1),
+      deleteMany: createDeleteManyDelegate(calls, 'aiCompetencySecondRoundSubmission', 2),
     },
     aiCompetencyExternalCertClaim: {
       updateMany: createUpdateManyDelegate(calls, 'aiCompetencyExternalCertClaim', () => 1),
+      deleteMany: createDeleteManyDelegate(calls, 'aiCompetencyExternalCertClaim', 2),
     },
     aiCompetencyResult: {
       updateMany: createUpdateManyDelegate(calls, 'aiCompetencyResult', () => 1),
+      deleteMany: createDeleteManyDelegate(calls, 'aiCompetencyResult', 2),
     },
     wordCloud360Assignment: {
       deleteMany: createDeleteManyDelegate(calls, 'wordCloud360Assignment', 2),
@@ -188,7 +192,13 @@ function createEmployeeForceDeletePrismaMock(options?: {
       deleteMany: createDeleteManyDelegate(calls, 'notificationDeadLetter', 1),
     },
     notificationJob: {
-      deleteMany: createDeleteManyDelegate(calls, 'notificationJob', 1),
+      deleteMany: async (args: unknown) => {
+        calls.push({ delegate: 'notificationJob', method: 'deleteMany', args })
+        if (options?.notificationJobDeleteError) {
+          throw options.notificationJobDeleteError
+        }
+        return { count: 1 }
+      },
     },
     session: {
       deleteMany: createDeleteManyDelegate(calls, 'session', 1),
@@ -214,14 +224,26 @@ function createEmployeeForceDeletePrismaMock(options?: {
     },
   }
 
+  let transactionOptions: unknown = null
+
   const prismaMock = {
     employee: {
       findUnique: async () => current,
     },
-    $transaction: async <T>(callback: (txArg: typeof tx) => Promise<T>) => callback(tx),
+    $transaction: async <T>(
+      callback: (txArg: typeof tx) => Promise<T>,
+      optionsArg?: unknown
+    ) => {
+      transactionOptions = optionsArg ?? null
+      return callback(tx)
+    },
   }
 
-  return { prismaMock, calls }
+  return {
+    prismaMock,
+    calls,
+    getTransactionOptions: () => transactionOptions,
+  }
 }
 
 async function expectAppError(promise: Promise<unknown>, expectedCode: string, expectedStatus: number) {
@@ -283,7 +305,7 @@ async function main() {
   })
 
   await run('employee delete service removes blockers by cleaning linked data before deleting the employee', async () => {
-    const { prismaMock, calls } = createEmployeeForceDeletePrismaMock()
+    const { prismaMock, calls, getTransactionOptions } = createEmployeeForceDeletePrismaMock()
 
     const result = await safeDeleteEmployeeRecord('emp-1', {
       prisma: prismaMock as any,
@@ -299,10 +321,17 @@ async function main() {
     assert.equal(result.cleanupSummary.deletedAuthSessionCount, 1)
     assert.equal(result.cleanupSummary.deletedAuthAccountCount, 1)
     assert.equal(result.cleanupSummary.clearedAiRequestApprovalActorCount, 1)
+    assert.equal(result.cleanupSummary.deletedAiCompetencyResultCount, 2)
+    assert.equal(result.cleanupSummary.deletedAiCompetencyExternalCertClaimCount, 2)
+    assert.equal(result.cleanupSummary.deletedAiCompetencySecondRoundSubmissionCount, 2)
     assert.equal(result.cleanupSummary.deletedAiCompetencyAttemptCount, 2)
     assert.equal(result.cleanupSummary.deletedAiCompetencyGeneratedExamSetCount, 2)
     assert.equal(result.cleanupSummary.deletedImpersonationSessionCount, 2)
     assert.equal(result.hierarchyUpdatedCount, 4)
+    assert.deepEqual(getTransactionOptions(), {
+      timeout: 30_000,
+      maxWait: 10_000,
+    })
 
     const calledDelegates = calls.map((entry) => `${entry.delegate}.${entry.method}`)
     assert.ok(calledDelegates.includes('employee.updateMany'))
@@ -321,6 +350,9 @@ async function main() {
     assert.ok(calledDelegates.includes('account.deleteMany'))
     assert.ok(calledDelegates.includes('aiRequestLog.updateMany'))
     assert.ok(calledDelegates.includes('impersonationSession.deleteMany'))
+    assert.ok(calledDelegates.includes('aiCompetencyResult.deleteMany'))
+    assert.ok(calledDelegates.includes('aiCompetencyExternalCertClaim.deleteMany'))
+    assert.ok(calledDelegates.includes('aiCompetencySecondRoundSubmission.deleteMany'))
     assert.ok(calledDelegates.includes('aiCompetencyAssignment.deleteMany'))
     assert.ok(calledDelegates.includes('aiCompetencyAttempt.deleteMany'))
     assert.ok(calledDelegates.includes('aiCompetencyGeneratedExamSet.deleteMany'))
@@ -357,6 +389,24 @@ async function main() {
     )
   })
 
+  await run('employee delete service maps transaction timeout failures to a typed timeout error', async () => {
+    const { prismaMock } = createEmployeeForceDeletePrismaMock({
+      notificationJobDeleteError: Object.assign(new Error('expired transaction'), {
+        code: 'P2028',
+        name: 'PrismaClientKnownRequestError',
+      }),
+    })
+
+    await expectAppError(
+      safeDeleteEmployeeRecord('emp-1', {
+        prisma: prismaMock as any,
+        recalculateLeadershipLinks: async () => ({ updatedCount: 0 }),
+      }),
+      'EMPLOYEE_DELETE_TX_TIMEOUT',
+      503
+    )
+  })
+
   await run('employee delete service stays successful when leadership refresh fails after delete', async () => {
     const { prismaMock } = createEmployeeForceDeletePrismaMock()
 
@@ -381,6 +431,10 @@ async function main() {
     )
     assert.equal(serverSource.includes('EMPLOYEE_DELETE_FAILED'), false)
     assert.equal(serverSource.includes('EMPLOYEE_DELETE_TX_FAILED'), true)
+    assert.equal(serverSource.includes('EMPLOYEE_DELETE_TX_TIMEOUT'), true)
+    assert.equal(serverSource.includes('EMPLOYEE_DELETE_TX_SUCCESS'), true)
+    assert.equal(serverSource.includes('EMPLOYEE_DELETE_STEP_employeeDelete_FAILED'), false)
+    assert.equal(serverSource.includes('EMPLOYEE_DELETE_STEP_deleteAiCompetencyResults_START'), false)
     assert.equal(serverSource.includes("'employeeDelete'"), true)
     assert.equal(serverSource.includes('cleanupSummary'), true)
   })

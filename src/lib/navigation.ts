@@ -1,3 +1,4 @@
+import { buildAdminGoogleAccessHref } from './admin-google-access-tabs'
 import { canAccessMenu } from './auth/permissions'
 import type { MenuKey } from '../types/auth'
 
@@ -73,7 +74,7 @@ export const NAV_ITEMS: NavigationItem[] = [
     children: [
       {
         label: '조직도 관리',
-        href: '/admin/org-chart',
+        href: buildAdminGoogleAccessHref('org-chart'),
         menuKey: 'ORG_MANAGE',
       },
       { label: '등급 설정', href: '/admin/grades', menuKey: 'GRADE_SETTING' },

@@ -1,4 +1,5 @@
 import type { FeedbackRoundStatus, FeedbackRoundType, Prisma, SystemRole } from '@prisma/client'
+import { buildAdminGoogleAccessHref } from '@/lib/admin-google-access-tabs'
 import { prisma } from '@/lib/prisma'
 import { parsePerformanceDesignConfig } from '@/lib/performance-design'
 
@@ -581,7 +582,7 @@ function buildEvents(params: {
       subtitle: employee.department?.deptName ?? '부서 미지정',
       description: `${employee.empName} 구성원의 입사일/입사기념일입니다.`,
       startsAt: anniversary,
-      href: '/admin/google-access?tab=org-chart',
+      href: buildAdminGoogleAccessHref('org-chart'),
       hrefLabel: '조직도 관리로 이동',
       sourceLabel: '입사일',
       monthStart: params.monthStart,
