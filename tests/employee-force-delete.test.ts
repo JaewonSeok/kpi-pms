@@ -187,6 +187,12 @@ function createEmployeeForceDeletePrismaMock(options?: {
     notificationJob: {
       deleteMany: createDeleteManyDelegate(calls, 'notificationJob', 1),
     },
+    session: {
+      deleteMany: createDeleteManyDelegate(calls, 'session', 1),
+    },
+    account: {
+      deleteMany: createDeleteManyDelegate(calls, 'account', 1),
+    },
     aiRequestLog: {
       updateMany: createUpdateManyDelegate(calls, 'aiRequestLog', () => 1),
       deleteMany: createDeleteManyDelegate(calls, 'aiRequestLog', 1),
@@ -281,6 +287,8 @@ async function main() {
     assert.equal(result.cleanupSummary.deletedMonthlyRecordCount, 2)
     assert.equal(result.cleanupSummary.deletedEvaluationCount, 1)
     assert.equal(result.cleanupSummary.deletedCheckInCount, 2)
+    assert.equal(result.cleanupSummary.deletedAuthSessionCount, 1)
+    assert.equal(result.cleanupSummary.deletedAuthAccountCount, 1)
     assert.equal(result.cleanupSummary.clearedAiRequestApprovalActorCount, 1)
     assert.equal(result.cleanupSummary.deletedImpersonationSessionCount, 2)
     assert.equal(result.hierarchyUpdatedCount, 4)
@@ -298,6 +306,8 @@ async function main() {
     assert.ok(calledDelegates.includes('developmentPlan.deleteMany'))
     assert.ok(calledDelegates.includes('personalKpi.updateMany'))
     assert.ok(calledDelegates.includes('personalKpi.deleteMany'))
+    assert.ok(calledDelegates.includes('session.deleteMany'))
+    assert.ok(calledDelegates.includes('account.deleteMany'))
     assert.ok(calledDelegates.includes('aiRequestLog.updateMany'))
     assert.ok(calledDelegates.includes('impersonationSession.deleteMany'))
     assert.ok(calledDelegates.includes('aiCompetencyAssignment.deleteMany'))
@@ -331,6 +341,20 @@ async function main() {
       'EMPLOYEE_DELETE_REFERENCE_CLEANUP_FAILED',
       409
     )
+  })
+
+  await run('employee delete service stays successful when leadership refresh fails after delete', async () => {
+    const { prismaMock } = createEmployeeForceDeletePrismaMock()
+
+    const result = await safeDeleteEmployeeRecord('emp-1', {
+      prisma: prismaMock as any,
+      recalculateLeadershipLinks: async () => {
+        throw new Error('leadership refresh failed')
+      },
+    })
+
+    assert.equal(result.deletedEmployee.id, 'emp-1')
+    assert.equal(result.hierarchyUpdatedCount, 0)
   })
 
   await run('legacy employee delete blocker messaging is removed from the delete service source', () => {

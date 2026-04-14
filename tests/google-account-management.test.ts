@@ -6,6 +6,10 @@ import * as XLSX from 'xlsx'
 import './register-path-aliases'
 import { resolveMenuFromPath } from '../src/lib/auth/permissions'
 import {
+  buildAdminGoogleAccessHref,
+  resolveAdminGoogleAccessTab,
+} from '../src/lib/admin-google-access-tabs'
+import {
   AdminDepartmentRecordSchema,
   AdminEmployeeLifecycleActionSchema,
   AdminEvaluatorAssignmentActionSchema,
@@ -642,6 +646,51 @@ run('master login tab exposes HR admin permission controls and directory permiss
   assert.match(serverSource, /masterLoginPermissionGranted/)
   assert.match(serverSource, /masterLoginAccessSource/)
   assert.match(serverSource, /masterLoginAvailable/)
+})
+
+run('admin google access tab parser keeps org-chart and clears invalid fallback', () => {
+  assert.equal(resolveAdminGoogleAccessTab('org-chart'), 'org-chart')
+  assert.equal(resolveAdminGoogleAccessTab('manage'), 'manage')
+  assert.equal(resolveAdminGoogleAccessTab('unknown'), 'manage')
+  assert.equal(resolveAdminGoogleAccessTab(null), 'manage')
+})
+
+run('admin google access href builder keeps org-chart tab and department filter only when relevant', () => {
+  assert.equal(
+    buildAdminGoogleAccessHref('org-chart', { departmentId: 'dept-1' }),
+    '/admin/google-access?tab=org-chart&departmentId=dept-1'
+  )
+  assert.equal(
+    buildAdminGoogleAccessHref('manage', {
+      search: '홍길동',
+      status: 'ACTIVE',
+      departmentId: 'dept-1',
+    }),
+    '/admin/google-access?tab=manage&q=%ED%99%8D%EA%B8%B8%EB%8F%99&status=ACTIVE&departmentId=dept-1'
+  )
+  assert.equal(buildAdminGoogleAccessHref('upload', { departmentId: 'dept-1' }), '/admin/google-access?tab=upload')
+})
+
+run('org-chart entry points resolve to the org-chart tab instead of falling back to manage', () => {
+  const registrationClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
+    'utf8'
+  )
+  const navigationSource = readFileSync(path.resolve(process.cwd(), 'src/lib/navigation.ts'), 'utf8')
+  const calendarSource = readFileSync(
+    path.resolve(process.cwd(), 'src/server/admin/performance-calendar.ts'),
+    'utf8'
+  )
+  const orgChartPageSource = readFileSync(
+    path.resolve(process.cwd(), 'src/app/(main)/admin/org-chart/page.tsx'),
+    'utf8'
+  )
+
+  assert.match(registrationClientSource, /resolveAdminGoogleAccessTab\(searchParams\.get\('tab'\)\)/)
+  assert.match(registrationClientSource, /buildAdminGoogleAccessHref\(nextTab/)
+  assert.match(navigationSource, /href: '\/admin\/org-chart'/)
+  assert.match(calendarSource, /href: '\/admin\/google-access\?tab=org-chart'/)
+  assert.match(orgChartPageSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
 })
 
 console.log('Google account management tests completed')

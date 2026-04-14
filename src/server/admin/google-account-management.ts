@@ -1687,6 +1687,8 @@ export async function safeDeleteEmployeeRecord(
         deletedNotificationPreferenceCount: 0,
         deletedNotificationJobCount: 0,
         deletedNotificationDeadLetterCount: 0,
+        deletedAuthAccountCount: 0,
+        deletedAuthSessionCount: 0,
         deletedAiRequestLogCount: 0,
         clearedAiRequestApprovalActorCount: 0,
         deletedAiCompetencyAssignmentCount: 0,
@@ -1946,6 +1948,18 @@ export async function safeDeleteEmployeeRecord(
         })
       ).count
 
+      cleanupSummary.deletedAuthSessionCount = (
+        await tx.session.deleteMany({
+          where: { userId: employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedAuthAccountCount = (
+        await tx.account.deleteMany({
+          where: { userId: employeeId },
+        })
+      ).count
+
       cleanupSummary.deletedAiRequestLogCount = (
         await tx.aiRequestLog.deleteMany({
           where: { requesterId: employeeId },
@@ -1991,7 +2005,16 @@ export async function safeDeleteEmployeeRecord(
       }
     })
 
-    const hierarchyResult = await runLeadershipRecalculation()
+    let hierarchyUpdatedCount = 0
+    try {
+      const hierarchyResult = await runLeadershipRecalculation()
+      hierarchyUpdatedCount = hierarchyResult.updatedCount
+    } catch (error) {
+      console.warn('[admin-google-account] EMPLOYEE_DELETE_LEADERSHIP_REFRESH_FAILED', {
+        employeeId,
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+    }
 
     return {
       deletedEmployee: {
@@ -2000,7 +2023,7 @@ export async function safeDeleteEmployeeRecord(
         name: result.deletedEmployee.empName,
       },
       cleanupSummary: result.cleanupSummary,
-      hierarchyUpdatedCount: hierarchyResult.updatedCount,
+      hierarchyUpdatedCount,
     }
   } catch (error) {
     if (isPrismaKnownRequestError(error) && error.code === 'P2003') {

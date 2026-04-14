@@ -5,6 +5,11 @@ import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2, X } from 'lucide-react'
+import {
+  buildAdminGoogleAccessHref,
+  resolveAdminGoogleAccessTab,
+  type AdminGoogleAccessTab,
+} from '@/lib/admin-google-access-tabs'
 import { EvaluatorAssignmentAdminPanel } from './EvaluatorAssignmentAdminPanel'
 import { MasterLoginAdminPanel } from './MasterLoginAdminPanel'
 import { OrgMemberManagementPanel } from './OrgMemberManagementPanel'
@@ -377,15 +382,7 @@ export function GoogleAccountRegistrationClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
-  const currentTab = searchParams.get('tab')
-  const [activeTab, setActiveTab] = useState(
-    currentTab === 'org-chart' ||
-      currentTab === 'upload' ||
-      currentTab === 'evaluator' ||
-      currentTab === 'master-login'
-      ? (currentTab as 'org-chart' | 'upload' | 'evaluator' | 'master-login')
-      : 'manage'
-  )
+  const activeTab = resolveAdminGoogleAccessTab(searchParams.get('tab'))
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? 'ALL')
   const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('departmentId') ?? '')
@@ -593,20 +590,15 @@ export function GoogleAccountRegistrationClient() {
 
   const uploadRowsToShow = uploadResult?.rows.slice(0, 80) ?? []
 
-  const applyTab = (
-    nextTab: 'manage' | 'upload' | 'org-chart' | 'evaluator' | 'master-login',
-    nextDepartmentId = departmentFilter
-  ) => {
-    setActiveTab(nextTab)
+  const applyTab = (nextTab: AdminGoogleAccessTab, nextDepartmentId = departmentFilter) => {
     setDepartmentFilter(nextDepartmentId)
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('tab', nextTab)
-    if (nextDepartmentId) {
-      params.set('departmentId', nextDepartmentId)
-    } else {
-      params.delete('departmentId')
-    }
-    router.replace(`/admin/google-access?${params.toString()}`)
+    router.replace(
+      buildAdminGoogleAccessHref(nextTab, {
+        search,
+        status: statusFilter,
+        departmentId: nextDepartmentId,
+      })
+    )
   }
 
   const startEdit = (employeeId: string) => {

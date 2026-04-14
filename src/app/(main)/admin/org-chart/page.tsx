@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
+import { buildAdminGoogleAccessHref } from '@/lib/admin-google-access-tabs'
 
 export default async function AdminOrgChartPage() {
   const session = await getServerSession(authOptions)
@@ -9,5 +10,5 @@ export default async function AdminOrgChartPage() {
     redirect('/dashboard')
   }
 
-  redirect('/admin/google-access?tab=org-chart')
+  redirect(buildAdminGoogleAccessHref('org-chart'))
 }
