@@ -8,7 +8,12 @@ export function cn(...inputs: ClassValue[]) {
 export type ApiResponse<T> = {
   success: boolean
   data?: T
-  error?: { code: string; message: string }
+  error?: {
+    code: string
+    message: string
+    step?: string
+    prismaCode?: string
+  }
   pagination?: { page: number; pageSize: number; total: number }
 }
 
@@ -16,7 +21,11 @@ export class AppError extends Error {
   constructor(
     public statusCode: number,
     public code: string,
-    message: string
+    message: string,
+    public details?: {
+      step?: string
+      prismaCode?: string
+    }
   ) {
     super(message)
     this.name = 'AppError'
@@ -37,7 +46,15 @@ export function errorResponse(
     )
 
     return Response.json(
-      { success: false, error: { code: error.code, message: error.message } },
+      {
+        success: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          ...(error.details?.step ? { step: error.details.step } : {}),
+          ...(error.details?.prismaCode ? { prismaCode: error.details.prismaCode } : {}),
+        },
+      },
       { status: error.statusCode }
     )
   }

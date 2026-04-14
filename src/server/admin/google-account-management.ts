@@ -2439,7 +2439,45 @@ export async function safeDeleteEmployeeRecord(
       throw error
     }
 
-    if (isPrismaKnownRequestError(error) && error.code === 'P2003') {
+    if (isPrismaKnownRequestError(error) && (error as { code?: string }).code === 'P2003') {
+      throw new AppError(
+        409,
+        'EMPLOYEE_DELETE_CLEANUP_FAILED',
+        '?곌껐???곗씠?곕? ?뺣━?섎뒗 以?臾몄젣媛 諛쒖깮??吏곸썝????젣?섏? 紐삵뻽?듬땲??',
+        {
+          step: failingStep,
+          prismaCode: error.code,
+        }
+      )
+    }
+
+    if (isPrismaKnownRequestError(error) && (error as { code?: string }).code === 'P2028') {
+      throw new AppError(
+        503,
+        'EMPLOYEE_DELETE_TX_TIMEOUT',
+        '?怨뚭퍙???怨쀬뵠?怨? ?類ｂ봺??롫뮉 餓???볦퍢???λ뜃???뤿연 筌욊낯?????ｇ몴?筌띾뜄龜?귐뗫릭筌?筌륁궢六??щ빍?? ?醫롫뻻 ????쇰뻻 ??뺣즲??雅뚯눘苑??',
+        {
+          step: failingStep,
+          prismaCode: error.code,
+        }
+      )
+    }
+
+    throw new AppError(
+      500,
+      'EMPLOYEE_DELETE_TX_FAILED',
+      '吏곸썝 ??젣 以??덉긽?섏? 紐삵븳 臾몄젣媛 諛쒖깮?덉뒿?덈떎. ?좎떆 ???ㅼ떆 ?쒕룄??二쇱꽭??',
+      {
+        step: failingStep,
+        prismaCode: errorInfo.code,
+      }
+    )
+
+    if (error instanceof AppError) {
+      throw error
+    }
+
+    if (isPrismaKnownRequestError(error) && (error as { code?: string }).code === 'P2003') {
       throw new AppError(
         409,
         'EMPLOYEE_DELETE_CLEANUP_FAILED',
@@ -2447,7 +2485,7 @@ export async function safeDeleteEmployeeRecord(
       )
     }
 
-    if (isPrismaKnownRequestError(error) && error.code === 'P2028') {
+    if (isPrismaKnownRequestError(error) && (error as { code?: string }).code === 'P2028') {
       throw new AppError(
         503,
         'EMPLOYEE_DELETE_TX_TIMEOUT',

@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { DeleteGoogleAccountEmployeeSchema } from '../src/lib/validations'
 
-const { AppError } = require('../src/lib/utils') as typeof import('../src/lib/utils')
+const { AppError, errorResponse } = require('../src/lib/utils') as typeof import('../src/lib/utils')
 const {
   safeDeleteEmployeeRecord,
 } = require('../src/server/admin/google-account-management') as typeof import('../src/server/admin/google-account-management')
@@ -407,6 +407,32 @@ async function main() {
     )
   })
 
+  await run('employee delete typed errors preserve step and prisma metadata in API responses', async () => {
+    const response = errorResponse(
+      new AppError(503, 'EMPLOYEE_DELETE_TX_TIMEOUT', '직원 삭제 트랜잭션 시간이 초과되었습니다.', {
+        step: 'deleteNotificationJobs',
+        prismaCode: 'P2028',
+      })
+    )
+
+    assert.equal(response.status, 503)
+
+    const payload = (await response.json()) as {
+      success: boolean
+      error?: {
+        code?: string
+        message?: string
+        step?: string
+        prismaCode?: string
+      }
+    }
+
+    assert.equal(payload.success, false)
+    assert.equal(payload.error?.code, 'EMPLOYEE_DELETE_TX_TIMEOUT')
+    assert.equal(payload.error?.step, 'deleteNotificationJobs')
+    assert.equal(payload.error?.prismaCode, 'P2028')
+  })
+
   await run('employee delete service stays successful when leadership refresh fails after delete', async () => {
     const { prismaMock } = createEmployeeForceDeletePrismaMock()
 
@@ -436,6 +462,7 @@ async function main() {
     assert.equal(serverSource.includes('EMPLOYEE_DELETE_STEP_employeeDelete_FAILED'), false)
     assert.equal(serverSource.includes('EMPLOYEE_DELETE_STEP_deleteAiCompetencyResults_START'), false)
     assert.equal(serverSource.includes("'employeeDelete'"), true)
+    assert.equal(serverSource.includes("'deleteNotificationJobs'"), true)
     assert.equal(serverSource.includes('cleanupSummary'), true)
   })
 

@@ -671,6 +671,29 @@ run('admin google access href builder keeps org-chart tab and department filter 
   assert.equal(buildAdminGoogleAccessHref('upload', { departmentId: 'dept-1' }), '/admin/google-access?tab=upload')
 })
 
+run('admin google access page renders a dedicated org-chart screen for tab=org-chart', () => {
+  const googleAccessPageSource = readFileSync(
+    path.resolve(process.cwd(), 'src/app/(main)/admin/google-access/page.tsx'),
+    'utf8'
+  )
+  const orgChartScreenSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/AdminOrgChartScreen.tsx'),
+    'utf8'
+  )
+
+  assert.match(googleAccessPageSource, /resolveAdminGoogleAccessTab/)
+  assert.match(googleAccessPageSource, /if \(activeTab === 'org-chart'\)/)
+  assert.match(googleAccessPageSource, /<AdminOrgChartScreen/)
+  assert.match(googleAccessPageSource, /<GoogleAccountRegistrationClient \/>/)
+  assert.match(googleAccessPageSource, /resolvedSearchParams\.departmentId/)
+
+  assert.match(orgChartScreenSource, /export async function AdminOrgChartScreen/)
+  assert.match(orgChartScreenSource, /loadEmployeeDirectory/)
+  assert.match(orgChartScreenSource, /fetchEmployeeOrgChart/)
+  assert.match(orgChartScreenSource, /OrgChartDepartmentSection/)
+  assert.match(orgChartScreenSource, /buildAdminGoogleAccessHref\('upload'\)/)
+})
+
 run('org-chart entry points resolve to the org-chart tab instead of falling back to manage', () => {
   const registrationClientSource = readFileSync(
     path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
