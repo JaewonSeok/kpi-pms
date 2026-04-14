@@ -223,7 +223,11 @@ export async function DELETE(request: Request) {
       entityType: 'Employee',
       entityId: validated.data.employeeId,
       oldValue: previousEmployee,
-      newValue: result.deletedEmployee,
+      newValue: {
+        ...result.deletedEmployee,
+        forceDelete: true,
+        cleanupSummary: result.cleanupSummary,
+      },
       ...getClientInfo(request),
     })
 

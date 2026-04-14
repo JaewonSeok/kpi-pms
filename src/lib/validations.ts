@@ -1634,9 +1634,15 @@ export const AdminEmployeeLifecycleActionSchema = z
     }
   })
 
-export const DeleteGoogleAccountEmployeeSchema = z.object({
-  employeeId: z.string().min(1),
-})
+export const DeleteGoogleAccountEmployeeSchema = z
+  .object({
+    employeeId: z.string().min(1, '삭제할 직원을 선택해 주세요.'),
+    confirmDelete: z.boolean(),
+  })
+  .refine((data) => data.confirmDelete, {
+    message: '직원 삭제 확인이 필요합니다.',
+    path: ['confirmDelete'],
+  })
 
 export const CreateAdminEmployeeSchema = AdminEmployeeRecordSchema
 

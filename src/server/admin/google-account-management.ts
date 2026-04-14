@@ -1,4 +1,4 @@
-import type { EmployeeStatus, Position, SystemRole } from '@prisma/client'
+import { Prisma, type EmployeeStatus, type Position, type SystemRole } from '@prisma/client'
 import * as XLSX from 'xlsx'
 import { prisma } from '../../lib/prisma'
 import {
@@ -439,6 +439,16 @@ async function recalculateLeadershipLinks() {
 async function previewLeadershipLinks() {
   const hierarchyModule = await import('./employeeHierarchy')
   return hierarchyModule.previewEmployeeLeadershipLinks()
+}
+
+function isPrismaKnownRequestError(error: unknown): error is Prisma.PrismaClientKnownRequestError | { code: string } {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      typeof (error as { code?: unknown }).code === 'string')
+  )
 }
 
 function compareMembers(
@@ -1601,128 +1611,413 @@ export async function applyEmployeeLifecycleAction(params: {
   }
 }
 
-export async function safeDeleteEmployeeRecord(employeeId: string) {
-  const [employee, notificationPreferenceCount, directReportCount] = await Promise.all([
-    prisma.employee.findUnique({
-      where: { id: employeeId },
-      select: {
-        id: true,
-        empId: true,
-        empName: true,
-        _count: {
-          select: {
-            personalKpis: true,
-            monthlyRecords: true,
-            selfEvaluations: true,
-            givenEvaluations: true,
-            checkInsAsOwner: true,
-            checkInsAsManager: true,
-            feedbackGiven: true,
-            feedbackReceived: true,
-            feedbackNominationTargets: true,
-            feedbackNominationReviewers: true,
-            feedbackNominationSubmitters: true,
-            feedbackNominationApprovers: true,
-            feedbackReportTargets: true,
-            feedbackReportGenerators: true,
-            developmentPlans: true,
-            createdDevelopmentPlans: true,
-            notifications: true,
-            appeals: true,
-            compensationSnapshots: true,
-            notificationJobs: true,
-            notificationDeadLetters: true,
-            aiRequestLogs: true,
-          },
-        },
-      },
-    }),
-    prisma.notificationPreference.count({
-      where: {
-        employeeId,
-      },
-    }),
-    prisma.employee.count({
-      where: {
-        OR: [
-          { managerId: employeeId },
-          { teamLeaderId: employeeId },
-          { sectionChiefId: employeeId },
-          { divisionHeadId: employeeId },
-        ],
-      },
-    }),
-  ])
+export async function safeDeleteEmployeeRecord(
+  employeeId: string,
+  deps: {
+    prisma?: typeof prisma
+    recalculateLeadershipLinks?: typeof recalculateLeadershipLinks
+  } = {}
+) {
+  const db = deps.prisma ?? prisma
+  const runLeadershipRecalculation = deps.recalculateLeadershipLinks ?? recalculateLeadershipLinks
+
+  const employee = await db.employee.findUnique({
+    where: { id: employeeId },
+    select: {
+      id: true,
+      empId: true,
+      empName: true,
+      gwsEmail: true,
+      deptId: true,
+      role: true,
+      status: true,
+    },
+  })
 
   if (!employee) {
     throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '직원 정보를 찾을 수 없습니다.')
   }
 
-  const blockers: string[] = []
-  if (directReportCount > 0) blockers.push(`직속 또는 리더 참조 ${directReportCount}건`)
-  if (employee._count.personalKpis > 0) blockers.push(`개인 KPI ${employee._count.personalKpis}건`)
-  if (employee._count.monthlyRecords > 0) blockers.push(`월간 실적 ${employee._count.monthlyRecords}건`)
-  if (employee._count.selfEvaluations + employee._count.givenEvaluations > 0) {
-    blockers.push(`평가 데이터 ${employee._count.selfEvaluations + employee._count.givenEvaluations}건`)
-  }
-  if (employee._count.checkInsAsOwner + employee._count.checkInsAsManager > 0) {
-    blockers.push(`체크인 데이터 ${employee._count.checkInsAsOwner + employee._count.checkInsAsManager}건`)
-  }
-  if (employee._count.feedbackGiven + employee._count.feedbackReceived > 0) {
-    blockers.push(`360 피드백 ${employee._count.feedbackGiven + employee._count.feedbackReceived}건`)
-  }
-  if (
-    employee._count.feedbackNominationTargets +
-      employee._count.feedbackNominationReviewers +
-      employee._count.feedbackNominationSubmitters +
-      employee._count.feedbackNominationApprovers >
-    0
-  ) {
-    blockers.push('360 피드백 지명 이력')
-  }
-  if (employee._count.feedbackReportTargets + employee._count.feedbackReportGenerators > 0) {
-    blockers.push('360 리포트 캐시')
-  }
-  if (employee._count.developmentPlans + employee._count.createdDevelopmentPlans > 0) {
-    blockers.push('성장 계획')
-  }
-  if (employee._count.notifications + employee._count.notificationJobs + employee._count.notificationDeadLetters > 0) {
-    blockers.push('알림 기록')
-  }
-  if (employee._count.appeals > 0) blockers.push('이의 신청')
-  if (employee._count.compensationSnapshots > 0) blockers.push('보상 시뮬레이션')
-  if (employee._count.aiRequestLogs > 0) blockers.push('AI 사용 기록')
-  if (notificationPreferenceCount > 0) blockers.push('알림 환경설정')
-
-  if (blockers.length > 0) {
-    throw new AppError(
-      409,
-      'EMPLOYEE_DELETE_BLOCKED',
-      `이 직원은 바로 삭제할 수 없습니다. ${blockers.join(', ')}이(가) 남아 있어 비활성화 또는 퇴사 처리 후 정리해 주세요.`
-    )
-  }
-
   try {
-    await prisma.employee.delete({
-      where: { id: employeeId },
+    const result = await db.$transaction(async (tx) => {
+      const ownedPersonalKpis = await tx.personalKpi.findMany({
+        where: { employeeId },
+        select: { id: true },
+      })
+      const ownedPersonalKpiIds = ownedPersonalKpis.map((item) => item.id)
+
+      const relatedEvaluations = await tx.evaluation.findMany({
+        where: {
+          OR: [{ targetId: employeeId }, { evaluatorId: employeeId }],
+        },
+        select: { id: true },
+      })
+      const relatedEvaluationIds = relatedEvaluations.map((item) => item.id)
+
+      const relatedFeedbacks = await tx.multiFeedback.findMany({
+        where: {
+          OR: [{ giverId: employeeId }, { receiverId: employeeId }],
+        },
+        select: { id: true },
+      })
+      const relatedFeedbackIds = relatedFeedbacks.map((item) => item.id)
+
+      const cleanupSummary = {
+        clearedManagerReferenceCount: 0,
+        clearedLeadershipReferenceCount: 0,
+        clearedDepartmentLeaderCount: 0,
+        deletedPersonalKpiCount: 0,
+        detachedClonedPersonalKpiCount: 0,
+        deletedMonthlyRecordCount: 0,
+        deletedEvaluationCount: 0,
+        deletedEvaluationItemCount: 0,
+        deletedAppealCount: 0,
+        deletedCheckInCount: 0,
+        deletedFeedbackCount: 0,
+        deletedFeedbackResponseCount: 0,
+        deletedFeedbackNominationCount: 0,
+        deletedFeedbackReportCacheCount: 0,
+        deletedFeedbackAdminGroupMembershipCount: 0,
+        deletedFeedbackRoundCollaborationCount: 0,
+        deletedOnboardingReviewGenerationCount: 0,
+        deletedDevelopmentPlanCount: 0,
+        deletedWordCloudAssignmentCount: 0,
+        deletedCompensationSnapshotCount: 0,
+        deletedNotificationCount: 0,
+        deletedNotificationPreferenceCount: 0,
+        deletedNotificationJobCount: 0,
+        deletedNotificationDeadLetterCount: 0,
+        deletedAiRequestLogCount: 0,
+        clearedAiRequestApprovalActorCount: 0,
+        deletedAiCompetencyAssignmentCount: 0,
+        deletedAiCompetencySubmissionReviewCount: 0,
+        clearedAiCompetencyAnswerReviewCount: 0,
+        clearedAiCompetencyDecisionActorCount: 0,
+        clearedAiCompetencyCertApproverCount: 0,
+        clearedAiCompetencyResultSyncActorCount: 0,
+        deletedImpersonationSessionCount: 0,
+      }
+
+      cleanupSummary.clearedManagerReferenceCount = (
+        await tx.employee.updateMany({
+          where: { managerId: employeeId },
+          data: { managerId: null },
+        })
+      ).count
+
+      const [teamLeaderReferences, sectionChiefReferences, divisionHeadReferences] = await Promise.all([
+        tx.employee.updateMany({
+          where: { teamLeaderId: employeeId },
+          data: { teamLeaderId: null },
+        }),
+        tx.employee.updateMany({
+          where: { sectionChiefId: employeeId },
+          data: { sectionChiefId: null },
+        }),
+        tx.employee.updateMany({
+          where: { divisionHeadId: employeeId },
+          data: { divisionHeadId: null },
+        }),
+      ])
+
+      cleanupSummary.clearedLeadershipReferenceCount =
+        teamLeaderReferences.count + sectionChiefReferences.count + divisionHeadReferences.count
+
+      cleanupSummary.clearedDepartmentLeaderCount = (
+        await tx.department.updateMany({
+          where: { leaderEmployeeId: employeeId },
+          data: { leaderEmployeeId: null },
+        })
+      ).count
+
+      cleanupSummary.deletedFeedbackAdminGroupMembershipCount = (
+        await tx.feedbackAdminGroupMember.deleteMany({
+          where: { employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedFeedbackRoundCollaborationCount = (
+        await tx.feedbackRoundCollaborator.deleteMany({
+          where: { employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedOnboardingReviewGenerationCount = (
+        await tx.onboardingReviewGeneration.deleteMany({
+          where: { employeeId },
+        })
+      ).count
+
+      cleanupSummary.clearedAiCompetencyAnswerReviewCount = (
+        await tx.aiCompetencyAnswer.updateMany({
+          where: { reviewerId: employeeId },
+          data: {
+            reviewerId: null,
+            reviewerNote: null,
+            scoredAt: null,
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedAiCompetencySubmissionReviewCount = (
+        await tx.aiCompetencySubmissionReview.deleteMany({
+          where: { reviewerId: employeeId },
+        })
+      ).count
+
+      cleanupSummary.clearedAiCompetencyDecisionActorCount = (
+        await tx.aiCompetencySecondRoundSubmission.updateMany({
+          where: { finalDecisionById: employeeId },
+          data: {
+            finalDecisionById: null,
+            finalDecisionNote: null,
+            decidedAt: null,
+          },
+        })
+      ).count
+
+      cleanupSummary.clearedAiCompetencyCertApproverCount = (
+        await tx.aiCompetencyExternalCertClaim.updateMany({
+          where: { decidedById: employeeId },
+          data: {
+            decidedById: null,
+            decidedAt: null,
+            rejectionReason: null,
+          },
+        })
+      ).count
+
+      cleanupSummary.clearedAiCompetencyResultSyncActorCount = (
+        await tx.aiCompetencyResult.updateMany({
+          where: { syncActorId: employeeId },
+          data: {
+            syncActorId: null,
+            syncedAt: null,
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedWordCloudAssignmentCount = (
+        await tx.wordCloud360Assignment.deleteMany({
+          where: {
+            OR: [{ evaluatorId: employeeId }, { evaluateeId: employeeId }],
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedFeedbackNominationCount = (
+        await tx.feedbackNomination.deleteMany({
+          where: {
+            OR: [
+              { targetId: employeeId },
+              { reviewerId: employeeId },
+              { submittedById: employeeId },
+              { approvedById: employeeId },
+            ],
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedFeedbackReportCacheCount = (
+        await tx.feedbackReportCache.deleteMany({
+          where: {
+            OR: [{ targetId: employeeId }, { generatedById: employeeId }],
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedDevelopmentPlanCount = (
+        await tx.developmentPlan.deleteMany({
+          where: {
+            OR: [{ employeeId }, { createdById: employeeId }],
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedCheckInCount = (
+        await tx.checkIn.deleteMany({
+          where: {
+            OR: [{ ownerId: employeeId }, { managerId: employeeId }],
+          },
+        })
+      ).count
+
+      if (relatedFeedbackIds.length > 0) {
+        cleanupSummary.deletedFeedbackResponseCount = (
+          await tx.feedbackResponse.deleteMany({
+            where: {
+              feedbackId: {
+                in: relatedFeedbackIds,
+              },
+            },
+          })
+        ).count
+      }
+
+      cleanupSummary.deletedFeedbackCount = (
+        await tx.multiFeedback.deleteMany({
+          where: {
+            OR: [{ giverId: employeeId }, { receiverId: employeeId }],
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedMonthlyRecordCount = (
+        await tx.monthlyRecord.deleteMany({
+          where: {
+            OR: [{ employeeId }, { personalKpiId: { in: ownedPersonalKpiIds } }],
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedEvaluationItemCount = (
+        await tx.evaluationItem.deleteMany({
+          where: {
+            OR: [
+              { evaluationId: { in: relatedEvaluationIds } },
+              { personalKpiId: { in: ownedPersonalKpiIds } },
+            ],
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedAppealCount = (
+        await tx.appeal.deleteMany({
+          where: {
+            OR: [{ appealerId: employeeId }, { evaluationId: { in: relatedEvaluationIds } }],
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedEvaluationCount = (
+        await tx.evaluation.deleteMany({
+          where: {
+            OR: [{ targetId: employeeId }, { evaluatorId: employeeId }],
+          },
+        })
+      ).count
+
+      cleanupSummary.detachedClonedPersonalKpiCount = (
+        await tx.personalKpi.updateMany({
+          where: {
+            copiedFromPersonalKpiId: {
+              in: ownedPersonalKpiIds,
+            },
+          },
+          data: {
+            copiedFromPersonalKpiId: null,
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedPersonalKpiCount = (
+        await tx.personalKpi.deleteMany({
+          where: { employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedCompensationSnapshotCount = (
+        await tx.compensationScenarioEmployee.deleteMany({
+          where: { employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedNotificationPreferenceCount = (
+        await tx.notificationPreference.deleteMany({
+          where: { employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedNotificationCount = (
+        await tx.notification.deleteMany({
+          where: { recipientId: employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedNotificationDeadLetterCount = (
+        await tx.notificationDeadLetter.deleteMany({
+          where: { recipientId: employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedNotificationJobCount = (
+        await tx.notificationJob.deleteMany({
+          where: { recipientId: employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedAiRequestLogCount = (
+        await tx.aiRequestLog.deleteMany({
+          where: { requesterId: employeeId },
+        })
+      ).count
+
+      cleanupSummary.clearedAiRequestApprovalActorCount = (
+        await tx.aiRequestLog.updateMany({
+          where: { approvedById: employeeId },
+          data: {
+            approvedById: null,
+            approvedAt: null,
+          },
+        })
+      ).count
+
+      cleanupSummary.deletedAiCompetencyAssignmentCount = (
+        await tx.aiCompetencyAssignment.deleteMany({
+          where: { employeeId },
+        })
+      ).count
+
+      cleanupSummary.deletedImpersonationSessionCount = (
+        await tx.impersonationSession.deleteMany({
+          where: {
+            OR: [{ impersonatorAdminId: employeeId }, { impersonatedUserId: employeeId }],
+          },
+        })
+      ).count
+
+      const deletedEmployee = await tx.employee.delete({
+        where: { id: employeeId },
+        select: {
+          id: true,
+          empId: true,
+          empName: true,
+        },
+      })
+
+      return {
+        deletedEmployee,
+        cleanupSummary,
+      }
     })
-  } catch {
-    throw new AppError(
-      409,
-      'EMPLOYEE_DELETE_BLOCKED',
-      '다른 데이터와 연결되어 있어 삭제할 수 없습니다. 비활성화 또는 퇴사 처리로 관리해 주세요.'
-    )
-  }
 
-  const hierarchyResult = await recalculateLeadershipLinks()
+    const hierarchyResult = await runLeadershipRecalculation()
 
-  return {
-    deletedEmployee: {
-      id: employee.id,
-      employeeNumber: employee.empId,
-      name: employee.empName,
-    },
-    hierarchyUpdatedCount: hierarchyResult.updatedCount,
+    return {
+      deletedEmployee: {
+        id: result.deletedEmployee.id,
+        employeeNumber: result.deletedEmployee.empId,
+        name: result.deletedEmployee.empName,
+      },
+      cleanupSummary: result.cleanupSummary,
+      hierarchyUpdatedCount: hierarchyResult.updatedCount,
+    }
+  } catch (error) {
+    if (isPrismaKnownRequestError(error) && error.code === 'P2003') {
+      throw new AppError(
+        409,
+        'EMPLOYEE_DELETE_REFERENCE_CLEANUP_FAILED',
+        '연결된 데이터를 정리하는 중 문제가 발생해 직원을 삭제하지 못했습니다.'
+      )
+    }
+
+    throw error instanceof AppError
+      ? error
+      : new AppError(
+          500,
+          'EMPLOYEE_DELETE_FAILED',
+          '직원 삭제 중 예상하지 못한 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+        )
   }
 }
 

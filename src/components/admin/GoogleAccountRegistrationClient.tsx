@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Trash2, X } from 'lucide-react'
 import { EvaluatorAssignmentAdminPanel } from './EvaluatorAssignmentAdminPanel'
 import { MasterLoginAdminPanel } from './MasterLoginAdminPanel'
 import { OrgMemberManagementPanel } from './OrgMemberManagementPanel'
@@ -104,8 +105,19 @@ type DeleteEmployeeResponse = {
     employeeNumber: string
     name: string
   }
+  cleanupSummary: {
+    deletedPersonalKpiCount: number
+    deletedMonthlyRecordCount: number
+    deletedEvaluationCount: number
+    deletedCheckInCount: number
+  }
   hierarchyUpdatedCount: number
 }
+
+type EmployeeDeleteTarget = Pick<
+  EmployeeListItem,
+  'id' | 'employeeNumber' | 'name' | 'googleEmail'
+>
 
 type UploadPreviewRow = {
   rowNumber: number
@@ -268,6 +280,48 @@ function buildQuery(search: string, status: string, departmentId: string) {
   return query ? `?${query}` : ''
 }
 
+function buildDirectorySnapshotAfterDelete(
+  payload: EmployeeDirectoryResponse | undefined,
+  deletedEmployeeId: string
+) {
+  if (!payload) {
+    return payload
+  }
+
+  const employeeToDelete = payload.employees.find((employee) => employee.id === deletedEmployeeId)
+  if (!employeeToDelete) {
+    return payload
+  }
+
+  const employees = payload.employees
+    .filter((employee) => employee.id !== deletedEmployeeId)
+    .map((employee) =>
+      employee.managerId === deletedEmployeeId
+        ? {
+            ...employee,
+            managerId: null,
+            managerEmployeeNumber: null,
+            managerName: null,
+          }
+        : employee
+    )
+
+  return {
+    ...payload,
+    employees,
+    summary: {
+      ...payload.summary,
+      totalEmployees: employees.length,
+      activeEmployees: employees.filter((employee) => employee.employmentStatus === 'ACTIVE').length,
+      inactiveEmployees: employees.filter((employee) => employee.employmentStatus === 'INACTIVE').length,
+      resignedEmployees: employees.filter((employee) => employee.employmentStatus === 'RESIGNED').length,
+      unassignedManagerCount: employees.filter(
+        (employee) => employee.employmentStatus === 'ACTIVE' && !employee.managerId
+      ).length,
+    },
+  }
+}
+
 function OrgChartTree({
   nodes,
   onEdit,
@@ -338,6 +392,7 @@ export function GoogleAccountRegistrationClient() {
   const [includeChildDepartments, setIncludeChildDepartments] = useState(false)
   const [feedback, setFeedback] = useState<FeedbackState>(null)
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null)
+  const [employeeDeleteTarget, setEmployeeDeleteTarget] = useState<EmployeeDeleteTarget | null>(null)
   const [form, setForm] = useState<EmployeeFormState>(EMPTY_FORM)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null)
@@ -456,24 +511,37 @@ export function GoogleAccountRegistrationClient() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (employeeId: string) => {
+    mutationFn: async (target: EmployeeDeleteTarget) => {
       const response = await fetch('/api/admin/employees/google-account', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId }),
+        body: JSON.stringify({
+          employeeId: target.id,
+          confirmDelete: true,
+        }),
       })
 
       return parseResponse<DeleteEmployeeResponse>(await response.json())
     },
     onSuccess: async (data) => {
+      queryClient.setQueriesData<EmployeeDirectoryResponse | undefined>(
+        { queryKey: ['admin-google-account-directory'] },
+        (current) => buildDirectorySnapshotAfterDelete(current, data.deletedEmployee.id)
+      )
+      queryClient.setQueriesData<EmployeeDirectoryResponse | undefined>(
+        { queryKey: ['admin-google-account-directory-org-member'] },
+        (current) => buildDirectorySnapshotAfterDelete(current, data.deletedEmployee.id)
+      )
+
       setFeedback({
         type: 'success',
-        message: `${data.deletedEmployee.name}(${data.deletedEmployee.employeeNumber}) 직원을 삭제했습니다.`,
+        message: `${data.deletedEmployee.name}(${data.deletedEmployee.employeeNumber}) 직원과 연결된 데이터를 함께 삭제했습니다.`,
       })
       if (editingEmployeeId === data.deletedEmployee.id) {
         setEditingEmployeeId(null)
         setForm(EMPTY_FORM)
       }
+      setEmployeeDeleteTarget(null)
       await refreshQueries()
     },
     onError: (error: Error) => {
@@ -979,16 +1047,16 @@ export function GoogleAccountRegistrationClient() {
                           )}
                           <button
                             type="button"
-                            onClick={() => {
-                              if (
-                                window.confirm(
-                                  `${employee.name} 직원을 삭제하시겠습니까? 참조 데이터가 있으면 서버에서 자동으로 차단합니다.`
-                                )
-                              ) {
-                                deleteMutation.mutate(employee.id)
-                              }
-                            }}
-                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
+                            onClick={() =>
+                              setEmployeeDeleteTarget({
+                                id: employee.id,
+                                employeeNumber: employee.employeeNumber,
+                                name: employee.name,
+                                googleEmail: employee.googleEmail,
+                              })
+                            }
+                            disabled={deleteMutation.isPending}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             삭제
                           </button>
@@ -1259,6 +1327,90 @@ export function GoogleAccountRegistrationClient() {
           </section>
         </div>
       )}
+
+      {employeeDeleteTarget ? (
+        <EmployeeDeleteDialog
+          target={employeeDeleteTarget}
+          busy={deleteMutation.isPending}
+          onClose={() => {
+            if (!deleteMutation.isPending) {
+              setEmployeeDeleteTarget(null)
+            }
+          }}
+          onConfirm={() => deleteMutation.mutate(employeeDeleteTarget)}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function EmployeeDeleteDialog(props: {
+  target: EmployeeDeleteTarget
+  busy: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div
+        data-testid="employee-delete-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        className="w-full max-w-lg rounded-3xl bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">직원 삭제</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              연결된 데이터도 함께 삭제되며, 이 작업은 되돌릴 수 없습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={props.onClose}
+            disabled={props.busy}
+            className="rounded-full p-2 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4">
+            <div className="text-sm font-semibold text-red-800">삭제 대상</div>
+            <div data-testid="employee-delete-name" className="mt-2 text-base font-semibold text-slate-900">
+              {props.target.name}
+            </div>
+            <div data-testid="employee-delete-meta" className="mt-1 text-sm text-slate-600">
+              {props.target.employeeNumber} · {props.target.googleEmail}
+            </div>
+            <p className="mt-3 text-sm text-red-700">연결된 데이터도 함께 삭제됩니다.</p>
+            <p className="mt-1 text-sm text-red-700">이 작업은 되돌릴 수 없습니다.</p>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              data-testid="employee-delete-cancel"
+              onClick={props.onClose}
+              disabled={props.busy}
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              data-testid="employee-delete-confirm"
+              onClick={props.onConfirm}
+              disabled={props.busy}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Trash2 className="h-4 w-4" />
+              {props.busy ? '삭제 중...' : '삭제'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
