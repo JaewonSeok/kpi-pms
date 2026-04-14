@@ -23,6 +23,7 @@ type DepartmentOption = {
   leaderEmployeeName: string | null
   excludeLeaderFromEvaluatorAutoAssign: boolean
   memberCount: number
+  orgKpiCount: number
 }
 
 type ManagerOption = {
@@ -51,6 +52,16 @@ type EmployeeListItem = {
 }
 
 type Feedback = { type: 'success' | 'error'; message: string } | null
+
+type DeleteDepartmentResponse = {
+  deletedDepartment: {
+    id: string
+    deptCode: string
+    deptName: string
+    parentDeptId: string | null
+  }
+  hierarchyUpdatedCount: number
+}
 
 type Props = {
   departments: DepartmentOption[]
@@ -204,6 +215,8 @@ export function OrgMemberManagementPanel(props: Props) {
   const [departmentModalOpen, setDepartmentModalOpen] = useState(false)
   const [departmentForm, setDepartmentForm] = useState<DepartmentFormState>(EMPTY_DEPARTMENT_FORM)
   const [isSavingDepartment, setIsSavingDepartment] = useState(false)
+  const [departmentDeleteConfirmOpen, setDepartmentDeleteConfirmOpen] = useState(false)
+  const [isDeletingDepartment, setIsDeletingDepartment] = useState(false)
 
   const departmentTree = useMemo(() => buildDepartmentTree(props.departments), [props.departments])
 
@@ -252,8 +265,31 @@ export function OrgMemberManagementPanel(props: Props) {
   const selectedDepartment = props.departments.find(
     (department) => department.id === props.selectedDepartmentId
   )
+  const editingDepartment = props.departments.find(
+    (department) => department.id === departmentForm.departmentId
+  )
+  const editingDepartmentChildCount = editingDepartment
+    ? props.departments.filter((department) => department.parentDeptId === editingDepartment.id).length
+    : 0
+  const departmentDeleteBlockers = editingDepartment
+    ? [
+        editingDepartmentChildCount > 0 ? `하위 조직 ${editingDepartmentChildCount}개` : null,
+        editingDepartment.memberCount > 0 ? `구성원 ${editingDepartment.memberCount}명` : null,
+        editingDepartment.orgKpiCount > 0 ? `조직 KPI ${editingDepartment.orgKpiCount}건` : null,
+      ].filter((value): value is string => Boolean(value))
+    : []
+  const departmentDeleteBlockedReason = departmentDeleteBlockers.length
+    ? `${departmentDeleteBlockers.join(', ')}이 남아 있어 삭제할 수 없습니다.`
+    : null
+
+  function closeDepartmentModal() {
+    setDepartmentDeleteConfirmOpen(false)
+    setDepartmentModalOpen(false)
+    setDepartmentForm(EMPTY_DEPARTMENT_FORM)
+  }
 
   function openCreateDepartment() {
+    setDepartmentDeleteConfirmOpen(false)
     setDepartmentForm({
       ...EMPTY_DEPARTMENT_FORM,
       parentDeptId: props.selectedDepartmentId || '',
@@ -265,6 +301,7 @@ export function OrgMemberManagementPanel(props: Props) {
     const department = props.departments.find((item) => item.id === departmentId)
     if (!department) return
 
+    setDepartmentDeleteConfirmOpen(false)
     setDepartmentForm({
       departmentId: department.id,
       deptCode: department.deptCode,
@@ -296,8 +333,7 @@ export function OrgMemberManagementPanel(props: Props) {
       })
 
       const data = parseResponse<{ hierarchyUpdatedCount: number }>(await response.json())
-      setDepartmentModalOpen(false)
-      setDepartmentForm(EMPTY_DEPARTMENT_FORM)
+      closeDepartmentModal()
       await props.onRefresh()
       props.onFeedback({
         type: 'success',
@@ -310,6 +346,72 @@ export function OrgMemberManagementPanel(props: Props) {
       })
     } finally {
       setIsSavingDepartment(false)
+    }
+  }
+
+  function openDeleteDepartmentConfirm() {
+    props.onFeedback(null)
+
+    if (!editingDepartment) {
+      props.onFeedback({
+        type: 'error',
+        message: '삭제할 조직을 먼저 선택해 주세요.',
+      })
+      return
+    }
+
+    if (departmentDeleteBlockedReason) {
+      props.onFeedback({
+        type: 'error',
+        message: departmentDeleteBlockedReason,
+      })
+      return
+    }
+
+    setDepartmentDeleteConfirmOpen(true)
+  }
+
+  async function deleteDepartment() {
+    if (!editingDepartment || isDeletingDepartment) {
+      return
+    }
+
+    setIsDeletingDepartment(true)
+    props.onFeedback(null)
+
+    try {
+      const response = await fetch('/api/admin/employees/google-account/departments', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          departmentId: editingDepartment.id,
+          confirmDelete: true,
+        }),
+      })
+
+      const data = parseResponse<DeleteDepartmentResponse>(await response.json())
+      const nextDepartmentId =
+        props.selectedDepartmentId === data.deletedDepartment.id
+          ? data.deletedDepartment.parentDeptId ?? ''
+          : props.selectedDepartmentId
+
+      if (props.selectedDepartmentId === data.deletedDepartment.id) {
+        props.onSelectDepartment(nextDepartmentId)
+      }
+
+      closeDepartmentModal()
+      await props.onRefresh()
+      props.onFeedback({
+        type: 'success',
+        message: `${data.deletedDepartment.deptName} 조직을 삭제했습니다. 평가권자 연결 ${data.hierarchyUpdatedCount}건을 다시 계산했습니다.`,
+      })
+    } catch (error) {
+      props.onFeedback({
+        type: 'error',
+        message: error instanceof Error ? error.message : '조직 삭제에 실패했습니다.',
+      })
+    } finally {
+      setIsDeletingDepartment(false)
     }
   }
 
@@ -493,7 +595,7 @@ export function OrgMemberManagementPanel(props: Props) {
               </div>
               <button
                 type="button"
-                onClick={() => setDepartmentModalOpen(false)}
+                onClick={closeDepartmentModal}
                 className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
               >
                 닫기
@@ -584,10 +686,34 @@ export function OrgMemberManagementPanel(props: Props) {
               </span>
             </label>
 
+            {departmentForm.departmentId ? (
+              <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="font-semibold">조직 삭제</div>
+                <p className="mt-1">
+                  삭제 후에는 되돌릴 수 없습니다. 하위 조직, 구성원, 조직 KPI가 남아 있으면 삭제가 차단됩니다.
+                </p>
+                {departmentDeleteBlockedReason ? (
+                  <p className="mt-2 text-xs text-red-600">{departmentDeleteBlockedReason}</p>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="mt-6 flex justify-end gap-2">
+              {departmentForm.departmentId ? (
+                <button
+                  type="button"
+                  data-testid="department-delete-button"
+                  onClick={openDeleteDepartmentConfirm}
+                  disabled={isDeletingDepartment || Boolean(departmentDeleteBlockedReason)}
+                  title={departmentDeleteBlockedReason ?? undefined}
+                  className="mr-auto rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  삭제
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={() => setDepartmentModalOpen(false)}
+                onClick={closeDepartmentModal}
                 className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
               >
                 취소
@@ -599,6 +725,51 @@ export function OrgMemberManagementPanel(props: Props) {
                 className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
               >
                 {isSavingDepartment ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {departmentDeleteConfirmOpen && editingDepartment ? (
+        <div
+          data-testid="department-delete-dialog"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 p-4"
+        >
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-slate-900">조직 삭제</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              삭제 후에는 되돌릴 수 없습니다. 삭제할 조직과 연결 상태를 다시 확인한 뒤 진행해 주세요.
+            </p>
+
+            <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-4">
+              <div className="text-sm font-semibold text-red-800">삭제 대상</div>
+              <div data-testid="department-delete-name" className="mt-2 text-base font-semibold text-red-900">
+                {editingDepartment.deptName} ({editingDepartment.deptCode})
+              </div>
+              <p className="mt-2 text-sm text-red-700">
+                하위 조직이나 구성원이 남아 있으면 삭제가 차단되며, 이 작업은 되돌릴 수 없습니다.
+              </p>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                data-testid="department-delete-cancel"
+                onClick={() => setDepartmentDeleteConfirmOpen(false)}
+                disabled={isDeletingDepartment}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                data-testid="department-delete-confirm"
+                onClick={deleteDepartment}
+                disabled={isDeletingDepartment}
+                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+              >
+                {isDeletingDepartment ? '삭제 중...' : '삭제'}
               </button>
             </div>
           </div>

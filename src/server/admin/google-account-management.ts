@@ -213,6 +213,7 @@ export type DepartmentDirectoryItem = {
   leaderEmployeeName: string | null
   excludeLeaderFromEvaluatorAutoAssign: boolean
   memberCount: number
+  orgKpiCount: number
 }
 
 export type EvaluatorAssignmentPreviewRow = {
@@ -820,6 +821,11 @@ export async function loadEmployeeDirectory(params: {
         parentDeptId: true,
         leaderEmployeeId: true,
         excludeLeaderFromEvaluatorAutoAssign: true,
+        _count: {
+          select: {
+            orgKpis: true,
+          },
+        },
       },
       orderBy: [{ deptName: 'asc' }],
     }),
@@ -933,6 +939,7 @@ export async function loadEmployeeDirectory(params: {
         : null,
       excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
       memberCount: memberCountByDepartmentId.get(department.id) ?? 0,
+      orgKpiCount: department._count.orgKpis,
     })),
     managerOptions: employees.map((employee) => ({
       id: employee.id,
@@ -1212,6 +1219,93 @@ export async function upsertDepartmentRecord(params: {
       leaderEmployeeNumber: leader?.empId ?? null,
       leaderEmployeeName: leader?.empName ?? null,
       excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
+    },
+    hierarchyUpdatedCount: hierarchyResult.updatedCount,
+  }
+}
+
+export async function deleteDepartmentRecord(
+  params: {
+    departmentId: string
+  },
+  deps: {
+    prisma?: typeof prisma
+    recalculateLeadershipLinks?: typeof recalculateLeadershipLinks
+  } = {}
+) {
+  const db = deps.prisma ?? prisma
+
+  const department = await db.department.findUnique({
+    where: { id: params.departmentId },
+    select: {
+      id: true,
+      deptCode: true,
+      deptName: true,
+      parentDeptId: true,
+      leaderEmployeeId: true,
+      _count: {
+        select: {
+          childDepts: true,
+          employees: true,
+          orgKpis: true,
+        },
+      },
+    },
+  })
+
+  if (!department) {
+    throw new AppError(404, 'DEPARTMENT_NOT_FOUND', '삭제할 조직을 찾을 수 없습니다.')
+  }
+
+  const blockers: string[] = []
+  if (department._count.childDepts > 0) {
+    blockers.push(`하위 조직 ${department._count.childDepts}개`)
+  }
+  if (department._count.employees > 0) {
+    blockers.push(`구성원 ${department._count.employees}명`)
+  }
+  if (department._count.orgKpis > 0) {
+    blockers.push(`조직 KPI ${department._count.orgKpis}건`)
+  }
+
+  if (blockers.length > 0) {
+    throw new AppError(
+      409,
+      'DEPARTMENT_DELETE_BLOCKED',
+      `${blockers.join(', ')}이 남아 있어 조직을 삭제할 수 없습니다. 먼저 정리해 주세요.`
+    )
+  }
+
+  try {
+    await db.department.delete({
+      where: { id: department.id },
+    })
+  } catch (error) {
+    const code = typeof error === 'object' && error && 'code' in error ? (error as { code?: string }).code : null
+    if (code === 'P2003') {
+      throw new AppError(
+        409,
+        'DEPARTMENT_DELETE_REFERENCE_BLOCKED',
+        '연결된 데이터를 정리하지 못해 조직을 삭제할 수 없습니다.'
+      )
+    }
+    throw error
+  }
+
+  const hierarchyResult = await (deps.recalculateLeadershipLinks ?? recalculateLeadershipLinks)()
+
+  return {
+    deletedDepartment: {
+      id: department.id,
+      deptCode: department.deptCode,
+      deptName: department.deptName,
+      parentDeptId: department.parentDeptId,
+      leaderEmployeeId: department.leaderEmployeeId,
+    },
+    blockers: {
+      childDepartmentCount: department._count.childDepts,
+      memberCount: department._count.employees,
+      orgKpiCount: department._count.orgKpis,
     },
     hierarchyUpdatedCount: hierarchyResult.updatedCount,
   }

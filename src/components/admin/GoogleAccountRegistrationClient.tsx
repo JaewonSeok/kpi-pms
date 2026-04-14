@@ -30,6 +30,7 @@ type DepartmentOption = {
   leaderEmployeeName: string | null
   excludeLeaderFromEvaluatorAutoAssign: boolean
   memberCount: number
+  orgKpiCount: number
 }
 
 type ManagerOption = {

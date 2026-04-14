@@ -1649,6 +1649,16 @@ export const AdminDepartmentRecordSchema = z.object({
   excludeLeaderFromEvaluatorAutoAssign: z.boolean().default(false),
 })
 
+export const DeleteAdminDepartmentSchema = z
+  .object({
+    departmentId: z.string().min(1, '삭제할 조직을 선택해 주세요.'),
+    confirmDelete: z.boolean(),
+  })
+  .refine((data) => data.confirmDelete, {
+    message: '조직 삭제 확인이 필요합니다.',
+    path: ['confirmDelete'],
+  })
+
 export const AdminEvaluatorAssignmentActionSchema = z.object({
   action: z.enum(['preview', 'apply']),
 })
