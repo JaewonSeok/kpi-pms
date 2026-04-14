@@ -1,5 +1,5 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { getOrgKpiDeleteActionState } from '@/lib/org-kpi-delete'
 import { AppError } from '@/lib/utils'
 import { resolveOrgKpiOperationalStatus } from './org-kpi-workflow'
 
@@ -53,6 +53,13 @@ async function isGoalEditLocked(db: PrismaLike, deptId: string, evalYear: number
   })
 
   return cycle?.goalEditMode === 'CHECKIN_ONLY'
+}
+
+function isPrismaKnownRequestError(error: unknown): error is Prisma.PrismaClientKnownRequestError | { code: string } {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError ||
+    (typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code?: unknown }).code === 'string')
+  )
 }
 
 export async function deleteOrgKpiRecord(
@@ -119,111 +126,101 @@ export async function deleteOrgKpiRecord(
     logs,
   })
 
-  const deleteState = getOrgKpiDeleteActionState({
-    kpi: {
-      id: current.id,
-      title: current.kpiName,
-      status: operationalStatus,
-      linkedPersonalKpiCount: current._count.personalKpis,
-    },
-    canManage: true,
-    goalEditLocked,
-  })
+  try {
+    const result = await db.$transaction(async (tx) => {
+      const [detachedChildren, detachedClones, detachedPersonalKpis] = await Promise.all([
+        tx.orgKpi.updateMany({
+          where: {
+            parentOrgKpiId: current.id,
+          },
+          data: {
+            parentOrgKpiId: null,
+          },
+        }),
+        tx.orgKpi.updateMany({
+          where: {
+            copiedFromOrgKpiId: current.id,
+          },
+          data: {
+            copiedFromOrgKpiId: null,
+          },
+        }),
+        tx.personalKpi.updateMany({
+          where: {
+            linkedOrgKpiId: current.id,
+          },
+          data: {
+            linkedOrgKpiId: null,
+          },
+        }),
+      ])
 
-  if (deleteState.disabled) {
-    if (deleteState.code === 'GOAL_EDIT_LOCKED') {
-      throw new AppError(
-        400,
-        'GOAL_EDIT_LOCKED',
-        deleteState.reason ?? '현재 주기는 목표 읽기 전용 모드입니다. 조직 KPI를 삭제할 수 없습니다.'
-      )
-    }
-
-    if (deleteState.code === 'LINKED_PERSONAL_KPI_BLOCKED') {
-      throw new AppError(
-        409,
-        'ORG_KPI_DELETE_BLOCKED',
-        deleteState.reason ?? '개인 KPI와 연결된 조직 KPI는 삭제할 수 없습니다.'
-      )
-    }
-
-    throw new AppError(
-      409,
-      'ORG_KPI_NOT_DELETABLE',
-      deleteState.reason ?? '현재 상태의 조직 KPI는 삭제할 수 없습니다.'
-    )
-  }
-
-  const result = await db.$transaction(async (tx) => {
-    const [detachedChildren, detachedClones] = await Promise.all([
-      tx.orgKpi.updateMany({
-        where: {
-          parentOrgKpiId: current.id,
+      const deleted = await tx.orgKpi.delete({
+        where: { id: current.id },
+        select: {
+          id: true,
+          kpiName: true,
+          deptId: true,
+          evalYear: true,
         },
+      })
+
+      await tx.auditLog.create({
         data: {
-          parentOrgKpiId: null,
+          userId: params.actor.id,
+          action: 'ORG_KPI_DELETED',
+          entityType: 'OrgKpi',
+          entityId: current.id,
+          oldValue: {
+            deptId: current.deptId,
+            evalYear: current.evalYear,
+            kpiName: current.kpiName,
+            status: current.status,
+            workflowStatus: operationalStatus,
+            parentOrgKpiId: current.parentOrgKpiId,
+            copiedFromOrgKpiId: current.copiedFromOrgKpiId,
+            linkedPersonalKpiCount: current._count.personalKpis,
+            childOrgKpiCount: current._count.childOrgKpis,
+            clonedOrgKpiCount: current._count.clonedOrgKpis,
+            goalEditLocked,
+          },
+          newValue: {
+            deleted: true,
+            forceDelete: true,
+            detachedChildOrgKpiCount: detachedChildren.count,
+            detachedCloneReferenceCount: detachedClones.count,
+            detachedLinkedPersonalKpiCount: detachedPersonalKpis.count,
+          },
+          ipAddress: params.clientInfo.ipAddress,
+          userAgent: params.clientInfo.userAgent,
         },
-      }),
-      tx.orgKpi.updateMany({
-        where: {
-          copiedFromOrgKpiId: current.id,
-        },
-        data: {
-          copiedFromOrgKpiId: null,
-        },
-      }),
-    ])
+      })
 
-    const deleted = await tx.orgKpi.delete({
-      where: { id: current.id },
-      select: {
-        id: true,
-        kpiName: true,
-        deptId: true,
-        evalYear: true,
-      },
-    })
-
-    await tx.auditLog.create({
-      data: {
-        userId: params.actor.id,
-        action: 'ORG_KPI_DELETED',
-        entityType: 'OrgKpi',
-        entityId: current.id,
-        oldValue: {
-          deptId: current.deptId,
-          evalYear: current.evalYear,
-          kpiName: current.kpiName,
-          status: current.status,
-          workflowStatus: operationalStatus,
-          parentOrgKpiId: current.parentOrgKpiId,
-          copiedFromOrgKpiId: current.copiedFromOrgKpiId,
-          linkedPersonalKpiCount: current._count.personalKpis,
-          childOrgKpiCount: current._count.childOrgKpis,
-          clonedOrgKpiCount: current._count.clonedOrgKpis,
-        },
-        newValue: {
-          deleted: true,
-          detachedChildOrgKpiCount: detachedChildren.count,
-          detachedCloneReferenceCount: detachedClones.count,
-        },
-        ipAddress: params.clientInfo.ipAddress,
-        userAgent: params.clientInfo.userAgent,
-      },
+      return {
+        deleted,
+        detachedChildOrgKpiCount: detachedChildren.count,
+        detachedCloneReferenceCount: detachedClones.count,
+        detachedLinkedPersonalKpiCount: detachedPersonalKpis.count,
+      }
     })
 
     return {
-      deleted,
-      detachedChildOrgKpiCount: detachedChildren.count,
-      detachedCloneReferenceCount: detachedClones.count,
+      deleted: true,
+      id: result.deleted.id,
+      title: result.deleted.kpiName,
+      detachedChildOrgKpiCount: result.detachedChildOrgKpiCount,
+      detachedCloneReferenceCount: result.detachedCloneReferenceCount,
+      detachedLinkedPersonalKpiCount: result.detachedLinkedPersonalKpiCount,
     }
-  })
+  } catch (error) {
+    if (isPrismaKnownRequestError(error) && error.code === 'P2003') {
+      throw new AppError(
+        409,
+        'ORG_KPI_DELETE_REFERENCE_CLEANUP_FAILED',
+        '연결된 데이터를 정리하는 중 문제가 발생해 조직 KPI를 삭제하지 못했습니다.'
+      )
+    }
 
-  return {
-    deleted: true,
-    id: result.deleted.id,
-    title: result.deleted.kpiName,
-    detachedChildOrgKpiCount: result.detachedChildOrgKpiCount,
-    detachedCloneReferenceCount: result.detachedCloneReferenceCount,
+    throw error
   }
 }
