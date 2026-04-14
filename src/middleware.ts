@@ -15,9 +15,12 @@ function buildLoginRedirect(request: NextRequest) {
   return loginUrl
 }
 
-function buildAccessPendingRedirect(request: NextRequest) {
+function buildAccessPendingRedirect(
+  request: NextRequest,
+  reason = 'AuthenticatedButClaimsMissing'
+) {
   const pendingUrl = new URL('/access-pending', request.url)
-  pendingUrl.searchParams.set('reason', 'AuthenticatedButClaimsMissing')
+  pendingUrl.searchParams.set('reason', reason)
   return pendingUrl
 }
 
@@ -81,7 +84,11 @@ export default async function middleware(request: NextRequest) {
   }
 
   if (decision.action === 'redirect-pending') {
-    const pendingUrl = buildAccessPendingRedirect(request)
+    const pendingReason =
+      token?.authErrorCode === 'CLAIMS_REHYDRATION_FAILED'
+        ? 'CLAIMS_REHYDRATION_FAILED'
+        : 'AuthenticatedButClaimsMissing'
+    const pendingUrl = buildAccessPendingRedirect(request, pendingReason)
     authTrace('warn', 'AUTH_CLAIMS_PENDING_REDIRECT', {
       ...tracePayload,
       redirect: pendingUrl.toString(),

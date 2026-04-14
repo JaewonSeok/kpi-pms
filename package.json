@@ -37,7 +37,7 @@
     "test:calibration-ops": "ts-node -P tsconfig.seed.json tests/calibration-ops.test.ts",
     "test:goal-governance": "ts-node -P tsconfig.seed.json tests/goal-governance.test.ts",
     "test:wordcloud360": "ts-node -P tsconfig.seed.json tests/word-cloud-360.test.ts && ts-node -P tsconfig.seed.json tests/word-cloud-360-import.test.ts && ts-node -P tsconfig.seed.json tests/word-cloud-360-ops.test.ts",
-    "test:operational-pages": "ts-node -P tsconfig.seed.json tests/operational-pages.test.ts",
+    "test:operational-pages": "ts-node -P tsconfig.seed.json tests/operational-pages.test.ts && ts-node -P tsconfig.seed.json tests/protected-page-regression.test.ts",
     "test:google-workspace": "ts-node -P tsconfig.seed.json tests/google-workspace.test.ts",
     "test:auth": "ts-node -P tsconfig.seed.json tests/auth-rbac.test.ts && ts-node -P tsconfig.seed.json tests/google-auth-flow.test.ts",
     "test:master-login": "ts-node -P tsconfig.seed.json tests/master-login.test.ts && ts-node -P tsconfig.seed.json tests/impersonation-risk.test.ts",

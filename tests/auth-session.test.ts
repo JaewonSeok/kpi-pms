@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict'
+import Module from 'node:module'
+import path from 'node:path'
 import { encode } from 'next-auth/jwt'
 import {
+  buildAuthenticatedSessionShellFromToken,
   compressDepartmentScopeForToken,
   estimateSerializedPayloadBytes,
+  hasAuthenticatedSessionIdentity,
   hasCoreAuthTokenClaims,
   hasFullAppSessionUserClaims,
   hasRecoverableAuthTokenIdentity,
+  resolveProtectedSessionAccess,
   resolveDepartmentAccessMode,
 } from '../src/lib/auth-session'
 import {
@@ -14,6 +19,25 @@ import {
   resolveMatchedAuthCookieCandidate,
 } from '../src/lib/auth-env'
 import { resolveRequestAuthToken } from '../src/lib/auth-middleware'
+
+const moduleLoader = Module as unknown as {
+  _resolveFilename: (
+    request: string,
+    parent: unknown,
+    isMain: boolean,
+    options: unknown
+  ) => string
+  _load: (request: string, parent: unknown, isMain: boolean) => unknown
+}
+
+const originalResolveFilename = moduleLoader._resolveFilename
+const originalLoad = moduleLoader._load
+moduleLoader._resolveFilename = function patchedResolveFilename(request, parent, isMain, options) {
+  if (request.startsWith('@/')) {
+    request = path.resolve(process.cwd(), 'src', request.slice(2))
+  }
+  return originalResolveFilename.call(this, request, parent, isMain, options)
+}
 
 async function run(name: string, fn: () => void | Promise<void>) {
   try {
@@ -163,6 +187,186 @@ async function main() {
       }),
       false
     )
+  })
+
+  await run('authenticated session identity helper treats partial user shells as signed-in users', () => {
+    assert.equal(
+      hasAuthenticatedSessionIdentity({
+        id: 'emp-1',
+      }),
+      true
+    )
+    assert.equal(
+      hasAuthenticatedSessionIdentity({
+        email: 'member1@rsupport.com',
+      }),
+      true
+    )
+    assert.equal(
+      hasAuthenticatedSessionIdentity({
+        role: 'ROLE_MEMBER',
+      }),
+      false
+    )
+  })
+
+  await run('authenticated session shell builder keeps token identity alive during non-fatal claims failures', () => {
+    const shell = buildAuthenticatedSessionShellFromToken(
+      {
+        sub: 'emp-1',
+        email: 'member1@rsupport.com',
+        name: 'Member One',
+      },
+      {
+        authErrorCode: 'CLAIMS_REHYDRATION_FAILED',
+        authErrorReason: 'P2022',
+      }
+    )
+
+    assert.deepEqual(shell, {
+      authState: 'AUTHENTICATED_BUT_CLAIMS_MISSING',
+      authErrorCode: 'CLAIMS_REHYDRATION_FAILED',
+      authErrorReason: 'P2022',
+      user: {
+        id: 'emp-1',
+        email: 'member1@rsupport.com',
+        name: 'Member One',
+      },
+    })
+  })
+
+  await run('protected layout fallback treats token identity as pending instead of unauthenticated', () => {
+    assert.deepEqual(
+      resolveProtectedSessionAccess({
+        session: null,
+        fallbackToken: {
+          sub: 'emp-1',
+          email: 'member1@rsupport.com',
+          authErrorCode: 'CLAIMS_REHYDRATION_FAILED',
+          authErrorReason: 'P2022',
+        },
+      }),
+      {
+        action: 'redirect-pending',
+        reason: 'CLAIMS_REHYDRATION_FAILED',
+        authErrorReason: 'P2022',
+        source: 'token',
+      }
+    )
+    assert.deepEqual(
+      resolveProtectedSessionAccess({
+        session: null,
+      }),
+      {
+        action: 'redirect-login',
+        reason: 'SessionRequired',
+      }
+    )
+  })
+
+  await run('session callback keeps an authenticated shell when Prisma claims rehydration fails', async () => {
+    process.env.NEXTAUTH_URL ??= 'https://kpi-pms.vercel.app'
+    process.env.NEXTAUTH_SECRET ??= 'unit-test-secret'
+    process.env.GOOGLE_CLIENT_ID ??= 'unit-google-client-id'
+    process.env.GOOGLE_CLIENT_SECRET ??= 'unit-google-client-secret'
+    process.env.ALLOWED_DOMAIN ??= 'rsupport.com'
+
+    const prismaStub = {
+      employee: {
+        findUnique: async () => {
+          throw {
+            code: 'P2022',
+            name: 'PrismaClientKnownRequestError',
+            message: 'The column `(not available)` does not exist.',
+          }
+        },
+      },
+      department: {
+        findMany: async () => [],
+      },
+    }
+
+    moduleLoader._load = function patchedLoad(request, parent, isMain) {
+      if (request === '@/lib/prisma') {
+        return {
+          prisma: prismaStub,
+        }
+      }
+
+      if (request === '@/lib/audit') {
+        return {
+          createAuditLog: async () => {},
+        }
+      }
+
+      if (request === '@/lib/impersonation') {
+        return {
+          isImpersonationExpired: () => false,
+        }
+      }
+
+      if (request === '@/lib/master-login') {
+        return {
+          canUseMasterLoginForActor: async () => false,
+        }
+      }
+
+      if (request === '@/server/auth/org-scope') {
+        return {
+          buildOrgPath: async () => '/HQ',
+          getAccessibleDeptIds: async () => [],
+        }
+      }
+
+      if (request === '@/server/impersonation') {
+        return {
+          createImpersonationSessionRecord: async () => null,
+          endImpersonationSessionRecord: async () => null,
+          findActiveImpersonationSession: async () => null,
+        }
+      }
+
+      return originalLoad.call(this, request, parent, isMain)
+    }
+
+    try {
+      const { authOptions } = (await import('../src/lib/auth')) as typeof import('../src/lib/auth')
+      const sessionCallback = authOptions.callbacks?.session
+      assert.ok(sessionCallback)
+
+      const session = (await sessionCallback({
+        session: {
+          user: {
+            name: 'Member One',
+            email: '',
+            image: null,
+          },
+        },
+        token: {
+          sub: 'emp-1',
+          email: 'member1@rsupport.com',
+          name: 'Member One',
+        },
+      } as never)) as {
+        authState?: string | null
+        authErrorCode?: string | null
+        authErrorReason?: string | null
+        user: {
+          id?: string
+          email?: string
+          name?: string
+        }
+      }
+
+      assert.equal(session.authState, 'AUTHENTICATED_BUT_CLAIMS_MISSING')
+      assert.equal(session.authErrorCode, 'CLAIMS_REHYDRATION_FAILED')
+      assert.equal(session.authErrorReason, 'P2022')
+      assert.equal(session.user.id, 'emp-1')
+      assert.equal(session.user.email, 'member1@rsupport.com')
+      assert.equal(session.user.name, 'Member One')
+    } finally {
+      moduleLoader._load = originalLoad
+    }
   })
 
   await run('auth cookie candidate helpers detect secure and plain names in priority order', () => {

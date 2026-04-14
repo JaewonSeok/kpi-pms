@@ -36,12 +36,14 @@ run('critical interaction routes exist', () => {
   }
 })
 
-run('expired-session KPI pages redirect to login', () => {
+run('critical KPI pages use the shared protected session helper', () => {
   const personalPage = read('src/app/(main)/kpi/personal/page.tsx')
   const monthlyPage = read('src/app/(main)/kpi/monthly/page.tsx')
 
-  assert.equal(personalPage.includes("redirect('/login')"), true)
-  assert.equal(monthlyPage.includes("redirect('/login')"), true)
+  assert.equal(personalPage.includes('requireProtectedPageSession'), true)
+  assert.equal(monthlyPage.includes('requireProtectedPageSession'), true)
+  assert.equal(personalPage.includes("redirect('/login')"), false)
+  assert.equal(monthlyPage.includes("redirect('/login')"), false)
 })
 
 run('evaluation results client is wired to acknowledge and export endpoints', () => {

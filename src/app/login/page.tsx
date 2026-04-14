@@ -9,7 +9,7 @@ import {
   resolveLoginFeedback,
   resolveClientCallbackUrl,
 } from '@/lib/auth-flow'
-import { hasFullAppSessionUserClaims } from '@/lib/auth-session'
+import { hasAuthenticatedSessionIdentity, hasFullAppSessionUserClaims } from '@/lib/auth-session'
 
 function LoginContent() {
   const router = useRouter()
@@ -25,18 +25,33 @@ function LoginContent() {
   const [googleError, setGoogleError] = useState('')
   const loginFeedback = resolveLoginFeedback(error)
   const hasFullSession = hasFullAppSessionUserClaims(session?.user)
+  const hasAuthenticatedShell = hasAuthenticatedSessionIdentity(session)
 
   const visibleGoogleError = googleError || loginFeedback?.message || getLoginErrorMessage(error)
 
   useEffect(() => {
-    if (typeof window === 'undefined' || status !== 'authenticated' || !hasFullSession) {
+    if (typeof window === 'undefined' || status !== 'authenticated') {
       return
     }
 
-    router.replace(
-      resolveClientCallbackUrl(requestedCallbackUrl, window.location.origin, '/dashboard')
-    )
-  }, [hasFullSession, requestedCallbackUrl, router, status])
+    if (hasFullSession) {
+      router.replace(
+        resolveClientCallbackUrl(requestedCallbackUrl, window.location.origin, '/dashboard')
+      )
+      return
+    }
+
+    if (hasAuthenticatedShell) {
+      const reason = session?.authErrorCode ?? 'AuthenticatedButClaimsMissing'
+      router.replace(
+        resolveClientCallbackUrl(
+          `/access-pending?reason=${encodeURIComponent(reason)}`,
+          window.location.origin,
+          '/access-pending'
+        )
+      )
+    }
+  }, [hasAuthenticatedShell, hasFullSession, requestedCallbackUrl, router, session?.authErrorCode, status])
 
   const handleGoogleLogin = async () => {
     setLoading(true)

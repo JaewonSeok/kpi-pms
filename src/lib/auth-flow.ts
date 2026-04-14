@@ -49,6 +49,11 @@ const LOGIN_ERROR_KINDS: Record<string, LoginFeedbackKind> = {
   CookieNotPersisted: 'session',
 }
 
+const ACCESS_PENDING_ONLY_ERROR_CODES = new Set([
+  'AuthenticatedButClaimsMissing',
+  'CLAIMS_REHYDRATION_FAILED',
+])
+
 function normalizeAllowedDomain(domain: string) {
   return domain.trim().toLowerCase().replace(/^@/, '')
 }
@@ -69,6 +74,10 @@ function isUnsafePostLoginPath(pathname: string) {
 
 export function getLoginErrorMessage(errorCode?: string | null) {
   if (!errorCode) {
+    return null
+  }
+
+  if (ACCESS_PENDING_ONLY_ERROR_CODES.has(errorCode)) {
     return null
   }
 

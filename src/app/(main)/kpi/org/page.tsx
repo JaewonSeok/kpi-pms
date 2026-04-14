@@ -1,7 +1,5 @@
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
 import { getOrgKpiPageData } from '@/server/org-kpi-page'
+import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { OrgKpiManagementClient } from '@/components/kpi/OrgKpiManagementClient'
 
 type OrgKpiPageProps = {
@@ -14,11 +12,10 @@ type OrgKpiPageProps = {
 }
 
 export default async function OrgKpiPage({ searchParams }: OrgKpiPageProps) {
-  const session = await getServerSession(authOptions)
-
-  if (!session) {
-    redirect('/login')
-  }
+  const session = await requireProtectedPageSession({
+    route: '/kpi/org',
+    pathname: '/kpi/org',
+  })
 
   const resolvedSearchParams = (await searchParams) ?? {}
   const year = resolvedSearchParams.year ? Number(resolvedSearchParams.year) : undefined

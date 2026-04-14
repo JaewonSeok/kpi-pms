@@ -1,7 +1,5 @@
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
 import { getEvaluationAppealPageData } from '@/server/evaluation-appeal'
+import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { EvaluationAppealClient } from '@/components/evaluation/EvaluationAppealClient'
 
 type EvaluationAppealPageProps = {
@@ -12,11 +10,10 @@ type EvaluationAppealPageProps = {
 }
 
 export default async function EvaluationAppealPage({ searchParams }: EvaluationAppealPageProps) {
-  const session = await getServerSession(authOptions)
-
-  if (!session) {
-    redirect('/login')
-  }
+  const session = await requireProtectedPageSession({
+    route: '/evaluation/appeal',
+    pathname: '/evaluation/appeal',
+  })
 
   const resolvedSearchParams = (await searchParams) ?? {}
   const pageData = await getEvaluationAppealPageData({

@@ -1,10 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Archive, Bot, Copy, FilePenLine, FileUp, Lock, Plus, Send, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Archive, Bot, Copy, FilePenLine, FileUp, Lock, Plus, Send, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react'
 import type { OrgKpiPageData, OrgKpiViewModel } from '@/server/org-kpi-page'
+import {
+  getOrgKpiDeleteActionState,
+  resolveNextOrgKpiSelectionAfterDelete,
+} from '@/lib/org-kpi-delete'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
 
 type Props = OrgKpiPageData & {
@@ -232,18 +236,21 @@ function buildAiPayload(action: AiAction, kpi: OrgKpiViewModel | null, form: For
 }
 export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pageData }: Props) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const canRenderWorkspace = pageData.state === 'ready' || pageData.state === 'empty'
   const defaultTab = initialTab && initialTab in TAB_LABELS ? (initialTab as TabKey) : 'map'
   const defaultDepartmentSelection =
     pageData.departments.length > 1 ? 'ALL' : pageData.selectedDepartmentId
   const [tab, setTab] = useState<TabKey>(defaultTab)
   const [selectedDepartmentId, setSelectedDepartmentId] = useState(defaultDepartmentSelection)
+  const [list, setList] = useState(pageData.list)
   const [selectedKpiId, setSelectedKpiId] = useState(initialSelectedKpiId ?? pageData.list[0]?.id ?? '')
   const [showForm, setShowForm] = useState(false)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [showClone, setShowClone] = useState(false)
   const [showBulkEdit, setShowBulkEdit] = useState(false)
   const [showExport, setShowExport] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [editingKpiId, setEditingKpiId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
   const [cloneForm, setCloneForm] = useState<OrgCloneForm>(buildCloneForm(pageData, pageData.list[0]))
@@ -266,7 +273,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
   const filteredList = useMemo(
     () =>
-      pageData.list.filter((item) => {
+      list.filter((item) => {
         if (selectedDepartmentId !== 'ALL' && item.departmentId !== selectedDepartmentId) return false
         if (
           search.trim() &&
@@ -278,7 +285,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
         }
         return true
       }),
-    [pageData.list, search, selectedDepartmentId]
+    [list, search, selectedDepartmentId]
   )
 
   useEffect(() => {
@@ -289,12 +296,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     previousServerContextKey.current = serverContextKey
     setTab(defaultTab)
     setSelectedDepartmentId(defaultDepartmentSelection)
+    setList(pageData.list)
     setSelectedKpiId(initialSelectedKpiId ?? pageData.list[0]?.id ?? '')
     setShowForm(false)
     setShowBulkUpload(false)
     setShowClone(false)
     setShowBulkEdit(false)
     setShowExport(false)
+    setShowDeleteConfirm(false)
     setEditingKpiId(null)
     setForm(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
     setCloneForm(buildCloneForm(pageData, pageData.list[0]))
@@ -325,6 +334,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setShowClone(false)
     setShowBulkEdit(false)
     setShowExport(false)
+    setShowDeleteConfirm(false)
     setEditingKpiId(null)
     setBanner(null)
     setAiPreview(null)
@@ -346,12 +356,26 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
   const selectedKpi =
     filteredList.find((item) => item.id === selectedKpiId) ??
-    pageData.list.find((item) => item.id === selectedKpiId) ??
+    list.find((item) => item.id === selectedKpiId) ??
     filteredList[0] ??
-    pageData.list[0] ??
+    list[0] ??
     null
   const goalEditLocked =
     pageData.alerts?.some((alert) => alert.title.includes('읽기 전용 모드')) ?? false
+
+  const deleteActionState = getOrgKpiDeleteActionState({
+    kpi: selectedKpi
+      ? {
+          id: selectedKpi.id,
+          title: selectedKpi.title,
+          status: selectedKpi.status,
+          linkedPersonalKpiCount: selectedKpi.linkedPersonalKpiCount,
+        }
+      : null,
+    canManage: pageData.permissions.canManage,
+    goalEditLocked,
+    busy,
+  })
 
   const cloneDisabledReason =
     !selectedKpi
@@ -566,6 +590,87 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       router.refresh()
     } catch (error) {
       setBanner({ tone: 'error', message: error instanceof Error ? error.message : '조직 KPI 복제에 실패했습니다.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleOpenDeleteConfirm() {
+    if (deleteActionState.disabled) {
+      setBanner({
+        tone: 'error',
+        message: deleteActionState.reason ?? '삭제할 조직 KPI를 먼저 선택해 주세요.',
+      })
+      return
+    }
+
+    setShowDeleteConfirm(true)
+  }
+
+  async function handleDeleteKpi() {
+    if (!selectedKpi) {
+      setBanner({ tone: 'error', message: '삭제할 조직 KPI를 먼저 선택해 주세요.' })
+      return
+    }
+
+    if (deleteActionState.disabled) {
+      setBanner({
+        tone: 'error',
+        message: deleteActionState.reason ?? '현재 상태에서는 조직 KPI를 삭제할 수 없습니다.',
+      })
+      return
+    }
+
+    setBusy(true)
+    try {
+      await fetchJson<{ id: string }>(`/api/kpi/org/${selectedKpi.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmDelete: true }),
+      })
+
+      const nextSelectedId = resolveNextOrgKpiSelectionAfterDelete({
+        currentItems: filteredList,
+        deletedId: selectedKpi.id,
+      })
+
+      setList((current) => current.filter((item) => item.id !== selectedKpi.id))
+      setSelectedKpiId(nextSelectedId)
+      setShowDeleteConfirm(false)
+      setShowForm(false)
+      setShowClone(false)
+      setEditingKpiId((current) => (current === selectedKpi.id ? null : current))
+      setAiPreview(null)
+      setTab((current) => (current === 'ai' ? 'map' : current))
+      setBanner({
+        tone: 'success',
+        message: `"${selectedKpi.title}" 조직 KPI를 삭제했습니다.`,
+      })
+
+      const nextParams = new URLSearchParams(searchParams.toString())
+      nextParams.set('year', String(pageData.selectedYear))
+      if (selectedDepartmentId !== 'ALL') {
+        nextParams.set('dept', selectedDepartmentId)
+      } else {
+        nextParams.delete('dept')
+      }
+      if (tab !== 'map') {
+        nextParams.set('tab', tab)
+      } else {
+        nextParams.delete('tab')
+      }
+      if (nextSelectedId) {
+        nextParams.set('kpiId', nextSelectedId)
+      } else {
+        nextParams.delete('kpiId')
+      }
+      router.replace(`/kpi/org${nextParams.toString() ? `?${nextParams.toString()}` : ''}`)
+      router.refresh()
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '조직 KPI 삭제에 실패했습니다.',
+      })
     } finally {
       setBusy(false)
     }
@@ -858,12 +963,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 goalEditLocked={goalEditLocked}
                 busy={busy}
                 cloneDisabledReason={cloneDisabledReason}
+                deleteActionState={deleteActionState}
                 onEdit={(kpi) => {
                   setEditingKpiId(kpi.id)
                   setForm(buildFormFromKpi(kpi))
                   setShowForm(true)
                 }}
                 onClone={handleOpenClone}
+                onDelete={handleOpenDeleteConfirm}
                 onWorkflow={(action) => void runWorkflow(action)}
                 onStatus={(status) => void changeStatus(status)}
                 onAi={(action) => void requestAi(action)}
@@ -950,7 +1057,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
       <OrgKpiQuickLinks showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'} />
 
-        {showForm ? <EditorModal departments={pageData.departments} parentGoalOptions={pageData.parentGoalOptions} editingKpiId={editingKpiId} form={form} onChange={setForm} onClose={() => setShowForm(false)} onSubmit={() => void saveKpi()} busy={busy} editing={Boolean(editingKpiId)} /> : null}
+      {showForm ? <EditorModal departments={pageData.departments} parentGoalOptions={pageData.parentGoalOptions} editingKpiId={editingKpiId} form={form} onChange={setForm} onClose={() => setShowForm(false)} onSubmit={() => void saveKpi()} busy={busy} editing={Boolean(editingKpiId)} /> : null}
       {showBulkUpload ? <OrgKpiBulkUploadModal departments={pageData.departments} selectedYear={pageData.selectedYear} defaultDepartmentId={selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId} onClose={() => setShowBulkUpload(false)} onUploaded={(message, tone = 'success') => { setBanner({ tone, message }); router.refresh() }} /> : null}
       {showClone ? (
         <CloneOrgKpiModal
@@ -985,6 +1092,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           onSubmit={() => void handleExportGoals()}
         />
       ) : null}
+      {showDeleteConfirm ? (
+        <DeleteOrgKpiDialog
+          kpi={selectedKpi}
+          busy={busy}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={() => void handleDeleteKpi()}
+        />
+      ) : null}
     </div>
   )
 }
@@ -1005,8 +1120,17 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="space-y-2 text-sm text-slate-700"><span className="font-medium">{label}</span>{children}</label>
 }
 
-function ActionButton({ label, icon, onClick, disabled, primary = false }: { label: string; icon: ReactNode; onClick: () => void; disabled: boolean; primary?: boolean }) {
-  return <button type="button" onClick={onClick} disabled={disabled} className={cls('inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60', primary ? 'bg-slate-900 text-white hover:bg-slate-800' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>{icon}{label}</button>
+function ActionButton(props: {
+  label: string
+  icon: ReactNode
+  onClick: () => void
+  disabled: boolean
+  primary?: boolean
+  destructive?: boolean
+  title?: string
+  testId?: string
+}) {
+  return <button type="button" onClick={props.onClick} disabled={props.disabled} title={props.title} data-testid={props.testId} className={cls('inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60', props.primary ? 'bg-slate-900 text-white hover:bg-slate-800' : props.destructive ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>{props.icon}{props.label}</button>
 }
 
 function LoadAlerts({ alerts }: { alerts: NonNullable<Props['alerts']> }) {
@@ -1041,8 +1165,10 @@ function KpiDetailCard(props: {
   goalEditLocked?: boolean
   busy: boolean
   cloneDisabledReason?: string
+  deleteActionState: ReturnType<typeof getOrgKpiDeleteActionState>
   onEdit: (kpi: OrgKpiViewModel) => void
   onClone: () => void
+  onDelete: () => void
   onWorkflow: (action: 'SUBMIT' | 'LOCK' | 'REOPEN') => void
   onStatus: (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => void
   onAi: (action: AiAction) => void
@@ -1057,6 +1183,20 @@ function KpiDetailCard(props: {
           title="선택한 KPI가 없습니다"
           description="목표 맵이나 목록에서 KPI를 선택하면 상세 정보가 표시됩니다."
         />
+        <div className="mt-5 space-y-3 border-t border-slate-100 pt-5">
+          <ActionButton
+            label="삭제"
+            icon={<Trash2 className="h-4 w-4" />}
+            onClick={props.onDelete}
+            disabled
+            destructive
+            testId="org-kpi-delete-button"
+            title={props.deleteActionState.reason}
+          />
+          <p data-testid="org-kpi-delete-helper" className="text-xs text-slate-500">
+            {props.deleteActionState.reason ?? '삭제할 조직 KPI를 먼저 선택해 주세요.'}
+          </p>
+        </div>
       </div>
     )
   }
@@ -1237,6 +1377,15 @@ function KpiDetailCard(props: {
             disabled={!props.permissions.canArchive || goalEditLocked || props.busy || kpi.status === 'ARCHIVED'}
           />
           <ActionButton
+            label="삭제"
+            icon={<Trash2 className="h-4 w-4" />}
+            onClick={props.onDelete}
+            disabled={props.deleteActionState.disabled}
+            destructive
+            testId="org-kpi-delete-button"
+            title={props.deleteActionState.reason}
+          />
+          <ActionButton
             label="AI 개선"
             icon={<Sparkles className="h-4 w-4" />}
             onClick={() => props.onAi('improve-wording')}
@@ -1245,12 +1394,72 @@ function KpiDetailCard(props: {
         </div>
 
         {props.cloneDisabledReason ? <p className="text-xs text-slate-500">{props.cloneDisabledReason}</p> : null}
+        {props.deleteActionState.reason ? (
+          <p data-testid="org-kpi-delete-helper" className="text-xs text-slate-500">
+            {props.deleteActionState.reason}
+          </p>
+        ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Link href="/kpi/personal" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">개인 KPI 보기</Link>
           <Link href="/kpi/monthly" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">월간 실적 보기</Link>
           <Link href="/evaluation/results" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">평가 결과 보기</Link>
           <Link href="/evaluation/workbench" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">AI 평가 보조</Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DeleteOrgKpiDialog(props: {
+  kpi: OrgKpiViewModel | null
+  busy: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div data-testid="org-kpi-delete-dialog" role="alertdialog" aria-modal="true" className="w-full max-w-lg rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">조직 KPI 삭제</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              삭제 후에는 되돌릴 수 없습니다. 연결 상태를 다시 확인한 뒤 진행해 주세요.
+            </p>
+          </div>
+          <button type="button" onClick={props.onClose} disabled={props.busy} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4">
+            <div className="text-sm font-semibold text-red-800">삭제 대상</div>
+            <div data-testid="org-kpi-delete-name" className="mt-2 text-base font-semibold text-slate-900">
+              {props.kpi?.title ?? '선택한 조직 KPI'}
+            </div>
+            <p className="mt-2 text-sm text-red-700">
+              이 작업은 되돌릴 수 없습니다.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <ActionButton
+              label="취소"
+              icon={<Archive className="h-4 w-4" />}
+              onClick={props.onClose}
+              disabled={props.busy}
+              testId="org-kpi-delete-cancel"
+            />
+            <ActionButton
+              label={props.busy ? '삭제 중...' : '삭제'}
+              icon={<Trash2 className="h-4 w-4" />}
+              onClick={props.onConfirm}
+              disabled={props.busy}
+              destructive
+              testId="org-kpi-delete-confirm"
+            />
+          </div>
         </div>
       </div>
     </div>

@@ -1,7 +1,5 @@
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
 import { getPersonalKpiPageData } from '@/server/personal-kpi-page'
+import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { PersonalKpiManagementClient } from '@/components/kpi/PersonalKpiManagementClient'
 
 type PageProps = {
@@ -15,10 +13,10 @@ type PageProps = {
 }
 
 export default async function PersonalKpiPage({ searchParams }: PageProps) {
-  const session = await getServerSession(authOptions)
-  if (!session) {
-    redirect('/login')
-  }
+  const session = await requireProtectedPageSession({
+    route: '/kpi/personal',
+    pathname: '/kpi/personal',
+  })
 
   const resolvedSearchParams = (await searchParams) ?? {}
   const selectedYear = resolvedSearchParams.year ? Number.parseInt(resolvedSearchParams.year, 10) : undefined

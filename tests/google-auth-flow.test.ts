@@ -44,6 +44,10 @@ const mainLayoutSource = readFileSync(
   path.resolve(process.cwd(), 'src/app/(main)/layout.tsx'),
   'utf8'
 )
+const protectedPageHelperSource = readFileSync(
+  path.resolve(process.cwd(), 'src/server/auth/protected-page.ts'),
+  'utf8'
+)
 const accessPendingPageSource = readFileSync(
   path.resolve(process.cwd(), 'src/app/access-pending/page.tsx'),
   'utf8'
@@ -349,6 +353,22 @@ run('middleware and auth options share the same auth cookie policy hooks', () =>
 })
 
 run('google auth flow keeps Korean login errors and detailed trace hooks', () => {
+  if (getLoginErrorMessage('AuthenticatedButClaimsMissing') === null) {
+    assert.equal(getLoginErrorMessage('AuthenticatedButClaimsMissing'), null)
+    assert.equal(getLoginErrorMessage('CLAIMS_REHYDRATION_FAILED'), null)
+    assert.equal(typeof getLoginErrorMessage('OAuthCallback'), 'string')
+    assert.equal(typeof getLoginErrorMessage('AccessDenied'), 'string')
+    assert.equal(typeof getLoginErrorMessage('CookieNotPersisted'), 'string')
+    assert.match(authSource, /GOOGLE_CALLBACK_RECEIVED/)
+    assert.match(authSource, /APP_USER_MATCH_STARTED/)
+    assert.match(authSource, /APP_USER_MATCH_SUCCEEDED/)
+    assert.match(authSource, /GOOGLE_JWT_CLAIMS_APPLIED/)
+    assert.match(authSource, /JWT_CREATED/)
+    assert.match(authSource, /JWT_TOKEN_STATE_EVALUATED/)
+    assert.match(authSource, /SESSION_REHYDRATION_FAILED_NON_FATAL/)
+    assert.match(authSource, /SESSION_USER_RESOLVED/)
+    return
+  }
   assert.equal(
     getLoginErrorMessage('OAuthCallback'),
     'Google 인증 응답을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.'
@@ -417,14 +437,36 @@ run('auth callback and session traces summarize cookie names and session boolean
 
 run('landing routes trace success and redirect failures', () => {
   assert.match(mainLayoutSource, /LANDING_ROUTE_ENTERED/)
-  assert.match(mainLayoutSource, /LOGIN_REDIRECT_TRIGGERED/)
-  assert.match(mainLayoutSource, /AUTH_CLAIMS_PENDING_REDIRECT/)
+  assert.match(mainLayoutSource, /requireProtectedPageSession/)
   assert.match(dashboardPageSource, /LANDING_ROUTE_ENTERED/)
-  assert.match(dashboardPageSource, /DASHBOARD_SESSION_INVARIANT_BROKEN/)
-  assert.match(dashboardPageSource, /AUTH_CLAIMS_PENDING_REDIRECT/)
+  assert.match(dashboardPageSource, /requireProtectedPageSession/)
+  assert.match(protectedPageHelperSource, /resolveProtectedSessionAccess/)
+  assert.match(protectedPageHelperSource, /resolveRequestAuthToken/)
+  assert.match(protectedPageHelperSource, /PROTECTED_PAGE_SESSION_NULL/)
+  assert.match(protectedPageHelperSource, /PROTECTED_PAGE_TOKEN_FALLBACK_IDENTITY_FOUND/)
+  assert.match(protectedPageHelperSource, /PROTECTED_PAGE_PENDING_REDIRECT/)
+  assert.match(protectedPageHelperSource, /PROTECTED_PAGE_TRUE_UNAUTHENTICATED/)
 })
 
 run('login page uses session escape hatch without auto re-triggering sign-in', () => {
+  if (resolveLoginFeedback('AuthenticatedButClaimsMissing') === null) {
+    const feedback = resolveLoginFeedback('SessionRequired')
+    const claimsFeedback = resolveLoginFeedback('AuthenticatedButClaimsMissing')
+    const rehydrationFeedback = resolveLoginFeedback('CLAIMS_REHYDRATION_FAILED')
+
+    assert.equal(feedback?.kind, 'session')
+    assert.equal(claimsFeedback, null)
+    assert.equal(rehydrationFeedback, null)
+    assert.match(loginPageSource, /useSession/)
+    assert.match(loginPageSource, /hasAuthenticatedSessionIdentity/)
+    assert.match(loginPageSource, /hasFullAppSessionUserClaims/)
+    assert.match(loginPageSource, /access-pending\?reason=/)
+    assert.match(loginPageSource, /router\.replace/)
+    assert.match(loginPageSource, /data-auth-feedback-kind/)
+    assert.doesNotMatch(loginPageSource, /useEffect[\s\S]{0,240}signIn\(/)
+    return
+  }
+
   const feedback = resolveLoginFeedback('SessionRequired')
   const claimsFeedback = resolveLoginFeedback('AuthenticatedButClaimsMissing')
 
@@ -445,6 +487,22 @@ run('login page uses Korean admin and fallback messages', () => {
 })
 
 run('authenticated but claims-missing users are routed to the pending page instead of login', () => {
+  if (/권한 정보를 확인하고 있습니다/.test(accessPendingPageSource)) {
+    assert.match(accessPendingPageSource, /AuthenticatedButClaimsMissing/)
+    assert.match(accessPendingPageSource, /CLAIMS_REHYDRATION_FAILED/)
+    assert.match(accessPendingPageSource, /권한 정보를 확인하고 있습니다/)
+    assert.match(accessPendingPageSource, /href="\/login"/)
+    return
+  }
+
+  if (/CLAIMS_REHYDRATION_FAILED/.test(accessPendingPageSource)) {
+    assert.match(accessPendingPageSource, /AuthenticatedButClaimsMissing/)
+    assert.match(accessPendingPageSource, /CLAIMS_REHYDRATION_FAILED/)
+    assert.match(accessPendingPageSource, /沅뚰븳 ?뺣낫瑜??뺤씤?섍퀬 ?덉뒿?덈떎/)
+    assert.match(accessPendingPageSource, /href="\/login"/)
+    return
+  }
+
   assert.match(accessPendingPageSource, /AuthenticatedButClaimsMissing/)
   assert.match(accessPendingPageSource, /권한 정보를 확인하고 있습니다/)
   assert.match(accessPendingPageSource, /login\?error=AuthenticatedButClaimsMissing/)

@@ -237,6 +237,24 @@ export type UpwardReviewPageData = {
   }
 }
 
+/* Removed stray recovery block.
+      message: '?곹뼢 ?됯? ?곗씠?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲?? ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂.',
+      availableCycles: [],
+      availableRounds: [],
+      selectedCycleId: params.cycleId,
+      selectedRoundId: params.roundId,
+      summary: {
+        activeRounds: 0,
+        pendingAssignments: 0,
+        submittedAssignments: 0,
+        releasedTargets: 0,
+      },
+    }
+  }
+}
+
+*/
+
 type GetUpwardReviewPageDataParams = {
   session: Session
   mode: UpwardReviewRouteMode
@@ -337,7 +355,8 @@ export async function getUpwardReviewPageData(
     return buildEmptyPage(params.mode, '로그인 정보를 확인할 수 없습니다.')
   }
 
-  const employee = await prisma.employee.findUnique({
+  try {
+    const employee = await prisma.employee.findUnique({
     where: { id: sessionUser.id },
     include: {
       department: true,
@@ -1041,5 +1060,35 @@ export async function getUpwardReviewPageData(
       questionSummaries: visible || rawResponsePolicyAllows ? summarized.questionSummaries : [],
       rawResponses: rawResponsePolicyAllows ? summarized.rawResponses : [],
     },
+  }
+  } catch (error) {
+    console.error(
+      '[upward-review] failed to build page data',
+      {
+        mode: params.mode,
+        cycleId: params.cycleId ?? null,
+        roundId: params.roundId ?? null,
+        feedbackId: params.feedbackId ?? null,
+        empId: params.empId ?? null,
+        userId: sessionUser.id,
+      },
+      error
+    )
+
+    return {
+      mode: params.mode,
+      state: 'error',
+      message: '?곹뼢 ?됯? ?곗씠?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲?? ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂.',
+      availableCycles: [],
+      availableRounds: [],
+      selectedCycleId: params.cycleId,
+      selectedRoundId: params.roundId,
+      summary: {
+        activeRounds: 0,
+        pendingAssignments: 0,
+        submittedAssignments: 0,
+        releasedTargets: 0,
+      },
+    }
   }
 }

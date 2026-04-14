@@ -1,4 +1,4 @@
-import type { Prisma, SystemRole } from '@prisma/client'
+import { Prisma, type SystemRole } from '@prisma/client'
 import type { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
@@ -16,6 +16,7 @@ import {
   findActiveImpersonationSession,
 } from '@/server/impersonation'
 import {
+  buildAuthenticatedSessionShellFromToken,
   compressDepartmentScopeForToken,
   hasCoreAuthTokenClaims,
   hasFullAppSessionUserClaims,
@@ -91,9 +92,10 @@ type AuthClaims = {
 
 type MasterLoginSessionState = ImpersonationSessionState
 type AuthClaimsResolutionState = 'READY' | 'AUTHENTICATED_BUT_CLAIMS_MISSING'
+type AuthClaimsErrorCode = 'AuthenticatedButClaimsMissing' | 'CLAIMS_REHYDRATION_FAILED'
 type AuthClaimsTokenState = Parameters<typeof extractAuthClaimsFromToken>[0] & {
   authState?: AuthClaimsResolutionState
-  authErrorCode?: 'AuthenticatedButClaimsMissing' | null
+  authErrorCode?: AuthClaimsErrorCode | null
   authErrorReason?: string | null
 }
 
@@ -324,11 +326,87 @@ function restoreActorClaims(
 function markClaimsResolutionState(
   token: AuthClaimsTokenState,
   state: AuthClaimsResolutionState,
-  reason?: string | null
+  options?: {
+    reason?: string | null
+    errorCode?: AuthClaimsErrorCode | null
+  }
 ) {
   token.authState = state
-  token.authErrorCode = state === 'AUTHENTICATED_BUT_CLAIMS_MISSING' ? 'AuthenticatedButClaimsMissing' : null
-  token.authErrorReason = state === 'AUTHENTICATED_BUT_CLAIMS_MISSING' ? reason ?? 'unknown' : null
+  token.authErrorCode =
+    state === 'AUTHENTICATED_BUT_CLAIMS_MISSING'
+      ? options?.errorCode ?? 'AuthenticatedButClaimsMissing'
+      : null
+  token.authErrorReason =
+    state === 'AUTHENTICATED_BUT_CLAIMS_MISSING' ? options?.reason ?? 'unknown' : null
+}
+
+function summarizeSessionResolutionError(error: unknown) {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      typeof (error as { code?: unknown }).code === 'string' &&
+      /^P\d{4}$/i.test((error as { code: string }).code))
+  ) {
+    return {
+      prismaErrorCode:
+        error instanceof Prisma.PrismaClientKnownRequestError
+          ? error.code
+          : (error as { code: string }).code,
+      authErrorReason:
+        error instanceof Prisma.PrismaClientKnownRequestError
+          ? error.code
+          : (error as { code: string }).code,
+    }
+  }
+
+  if (error instanceof Error) {
+    return {
+      prismaErrorCode: null,
+      authErrorReason: error.name || 'session-callback-failed',
+    }
+  }
+
+  return {
+    prismaErrorCode: null,
+    authErrorReason: 'session-callback-failed',
+  }
+}
+
+function applyAuthenticatedSessionShell(
+  session: {
+    authState?: AuthClaimsResolutionState
+    authErrorCode?: AuthClaimsErrorCode | null
+    authErrorReason?: string | null
+    user: {
+      id?: string
+      email?: string
+      name?: string
+    }
+  },
+  token: AuthClaimsTokenState,
+  options?: {
+    authErrorCode?: AuthClaimsErrorCode | null
+    authErrorReason?: string | null
+  }
+) {
+  const shell = buildAuthenticatedSessionShellFromToken(token, {
+    authErrorCode: options?.authErrorCode ?? token.authErrorCode,
+    authErrorReason: options?.authErrorReason ?? token.authErrorReason,
+  })
+
+  if (!shell) {
+    return false
+  }
+
+  session.authState = shell.authState
+  session.authErrorCode = shell.authErrorCode
+  session.authErrorReason = shell.authErrorReason
+  session.user.id = shell.user.id
+  session.user.email = shell.user.email
+  session.user.name = shell.user.name
+  return true
 }
 
 async function findAuthEmployee(where: Prisma.EmployeeWhereUniqueInput) {
@@ -358,7 +436,10 @@ async function hydrateTokenClaimsFromDirectory(
   try {
     const employee = await findEmployeeForToken(token)
     if (!employee) {
-      markClaimsResolutionState(token, 'AUTHENTICATED_BUT_CLAIMS_MISSING', 'employee-not-found')
+      markClaimsResolutionState(token, 'AUTHENTICATED_BUT_CLAIMS_MISSING', {
+        errorCode: 'AuthenticatedButClaimsMissing',
+        reason: 'employee-not-found',
+      })
       authTrace('warn', 'AUTH_EMPLOYEE_REHYDRATION_FAILED', {
         reason,
         tokenSub: token.sub ?? null,
@@ -378,14 +459,17 @@ async function hydrateTokenClaimsFromDirectory(
     })
     return claims
   } catch (error) {
-    markClaimsResolutionState(token, 'AUTHENTICATED_BUT_CLAIMS_MISSING', 'directory-query-failed')
-    authTrace('error', 'AUTH_CLAIMS_REHYDRATION_ERROR', {
+    const errorDetails = summarizeSessionResolutionError(error)
+    markClaimsResolutionState(token, 'AUTHENTICATED_BUT_CLAIMS_MISSING', {
+      errorCode: 'CLAIMS_REHYDRATION_FAILED',
+      reason: errorDetails.authErrorReason,
+    })
+    authTrace('error', reason === 'session-rehydration' ? 'SESSION_REHYDRATION_FAILED_NON_FATAL' : 'AUTH_CLAIMS_REHYDRATION_ERROR', {
       reason,
       tokenSub: token.sub ?? null,
       email: maskAuthEmail(token.email),
-      errorName: error instanceof Error ? error.name : 'UnknownError',
-      errorMessage:
-        error instanceof Error ? error.message.slice(0, 160) : 'Unknown auth claims rehydration error',
+      prismaErrorCode: errorDetails.prismaErrorCode,
+      authErrorReason: errorDetails.authErrorReason,
     })
     return null
   }
@@ -402,7 +486,7 @@ async function resolveSessionAccessibleDepartmentIds(claims: AuthClaims) {
 declare module 'next-auth' {
   interface Session {
     authState?: AuthClaimsResolutionState
-    authErrorCode?: 'AuthenticatedButClaimsMissing' | null
+    authErrorCode?: AuthClaimsErrorCode | null
     authErrorReason?: string | null
     user: {
       id: string
@@ -426,7 +510,7 @@ declare module 'next-auth' {
 
   interface User {
     authState?: AuthClaimsResolutionState
-    authErrorCode?: 'AuthenticatedButClaimsMissing' | null
+    authErrorCode?: AuthClaimsErrorCode | null
     authErrorReason?: string | null
     id: string
     email: string
@@ -449,7 +533,7 @@ declare module 'next-auth' {
 declare module 'next-auth/jwt' {
   interface JWT {
     authState?: AuthClaimsResolutionState
-    authErrorCode?: 'AuthenticatedButClaimsMissing' | null
+    authErrorCode?: AuthClaimsErrorCode | null
     authErrorReason?: string | null
     role: SystemRole
     empId: string
@@ -842,65 +926,76 @@ export const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (token) {
-        let claims = extractAuthClaimsFromToken(token)
+        try {
+          let claims = extractAuthClaimsFromToken(token)
 
-        if (!claims) {
-          authTrace('warn', 'SESSION_CLAIMS_INCOMPLETE', {
-            tokenSub: token.sub ?? null,
-            email: maskAuthEmail(token.email),
+          if (!claims) {
+            authTrace('warn', 'SESSION_CLAIMS_INCOMPLETE', {
+              tokenSub: token.sub ?? null,
+              email: maskAuthEmail(token.email),
+            })
+            claims = await hydrateTokenClaimsFromDirectory(token, 'session-rehydration')
+          }
+
+          if (!claims) {
+            applyAuthenticatedSessionShell(session, token, {
+              authErrorCode: token.authErrorCode ?? 'AuthenticatedButClaimsMissing',
+              authErrorReason: token.authErrorReason ?? 'session-rehydration-failed',
+            })
+            return session
+          }
+
+          session.authState = 'READY'
+          session.authErrorCode = null
+          session.authErrorReason = null
+          session.user.id = claims.id
+          session.user.email = claims.email
+          session.user.name = claims.name
+          session.user.role = claims.role
+          session.user.empId = claims.empId
+          session.user.position = claims.position
+          session.user.deptId = claims.deptId
+          session.user.deptName = claims.deptName
+          session.user.departmentCode = claims.departmentCode
+          session.user.managerId = claims.managerId
+          session.user.orgPath = claims.orgPath
+          session.user.accessibleDepartmentIds = await resolveSessionAccessibleDepartmentIds(claims)
+          session.user.departmentAccessMode = claims.departmentAccessMode
+          session.user.masterLoginAvailable = token.masterLogin?.active
+            ? true
+            : await canUseMasterLoginForActor({
+                employeeId: claims.id,
+                role: claims.role,
+                email: claims.email,
+              })
+          session.user.masterLogin = toSessionMasterLoginState(token.masterLogin)
+          authTrace('info', 'SESSION_USER_RESOLVED', {
+            employeeId: claims.id,
+            email: maskAuthEmail(claims.email),
+            role: claims.role,
+            departmentAccessMode: claims.departmentAccessMode,
+            hasFullClaims: hasFullAppSessionUserClaims(session.user),
+            hasMasterLogin: Boolean(session.user.masterLogin?.active),
           })
-          claims = await hydrateTokenClaimsFromDirectory(token, 'session-rehydration')
-        }
-
-        if (!claims) {
-          session.authState = token.authState ?? 'AUTHENTICATED_BUT_CLAIMS_MISSING'
-          session.authErrorCode = token.authErrorCode ?? 'AuthenticatedButClaimsMissing'
-          session.authErrorReason = token.authErrorReason ?? 'session-rehydration-failed'
-          session.user.id = typeof token.sub === 'string' ? token.sub : ''
-          session.user.email = typeof token.email === 'string' ? token.email : ''
-          session.user.name = typeof token.name === 'string' ? token.name : session.user.name ?? ''
-          authTrace('error', 'SESSION_RESOLUTION_FAILED', {
+        } catch (error) {
+          const errorDetails = summarizeSessionResolutionError(error)
+          markClaimsResolutionState(token, 'AUTHENTICATED_BUT_CLAIMS_MISSING', {
+            errorCode: 'CLAIMS_REHYDRATION_FAILED',
+            reason: errorDetails.authErrorReason,
+          })
+          applyAuthenticatedSessionShell(session, token, {
+            authErrorCode: 'CLAIMS_REHYDRATION_FAILED',
+            authErrorReason: errorDetails.authErrorReason,
+          })
+          authTrace('error', 'SESSION_REHYDRATION_FAILED_NON_FATAL', {
             tokenSub: token.sub ?? null,
             email: maskAuthEmail(token.email),
-            authState: session.authState,
-            authErrorCode: session.authErrorCode,
-            authErrorReason: session.authErrorReason,
+            prismaErrorCode: errorDetails.prismaErrorCode,
+            authErrorCode: token.authErrorCode ?? 'CLAIMS_REHYDRATION_FAILED',
+            authErrorReason: token.authErrorReason ?? errorDetails.authErrorReason,
           })
           return session
         }
-
-        session.authState = 'READY'
-        session.authErrorCode = null
-        session.authErrorReason = null
-        session.user.id = claims.id
-        session.user.email = claims.email
-        session.user.name = claims.name
-        session.user.role = claims.role
-        session.user.empId = claims.empId
-        session.user.position = claims.position
-        session.user.deptId = claims.deptId
-        session.user.deptName = claims.deptName
-        session.user.departmentCode = claims.departmentCode
-        session.user.managerId = claims.managerId
-        session.user.orgPath = claims.orgPath
-        session.user.accessibleDepartmentIds = await resolveSessionAccessibleDepartmentIds(claims)
-        session.user.departmentAccessMode = claims.departmentAccessMode
-        session.user.masterLoginAvailable = token.masterLogin?.active
-          ? true
-          : await canUseMasterLoginForActor({
-              employeeId: claims.id,
-              role: claims.role,
-              email: claims.email,
-            })
-        session.user.masterLogin = toSessionMasterLoginState(token.masterLogin)
-        authTrace('info', 'SESSION_USER_RESOLVED', {
-          employeeId: claims.id,
-          email: maskAuthEmail(claims.email),
-          role: claims.role,
-          departmentAccessMode: claims.departmentAccessMode,
-          hasFullClaims: hasFullAppSessionUserClaims(session.user),
-          hasMasterLogin: Boolean(session.user.masterLogin?.active),
-        })
       } else {
         authTrace('warn', 'SESSION_TOKEN_MISSING', {
           hasSessionUser: Boolean(session.user),

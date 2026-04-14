@@ -1,7 +1,5 @@
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
 import { UpwardReviewWorkspaceClient } from '@/components/evaluation/upward/UpwardReviewWorkspaceClient'
+import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { getUpwardReviewPageData } from '@/server/upward-review'
 
 type PageProps = {
@@ -12,8 +10,10 @@ type PageProps = {
 }
 
 export default async function UpwardReviewRespondListPage({ searchParams }: PageProps) {
-  const session = await getServerSession(authOptions)
-  if (!session) redirect('/login')
+  const session = await requireProtectedPageSession({
+    route: '/evaluation/upward/respond',
+    pathname: '/evaluation/upward/respond',
+  })
 
   const resolvedSearchParams = (await searchParams) ?? {}
   const data = await getUpwardReviewPageData({

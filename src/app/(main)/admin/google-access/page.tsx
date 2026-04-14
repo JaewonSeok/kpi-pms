@@ -1,13 +1,16 @@
-import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
+import { canAccessMenu } from '@/lib/auth/permissions'
+import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { GoogleAccountRegistrationClient } from '@/components/admin/GoogleAccountRegistrationClient'
 
 export default async function AdminGoogleAccessPage() {
-  const session = await getServerSession(authOptions)
+  const session = await requireProtectedPageSession({
+    route: '/admin/google-access',
+    pathname: '/admin/google-access',
+  })
 
-  if (!session || session.user.role !== 'ROLE_ADMIN') {
-    redirect('/dashboard')
+  if (!canAccessMenu(session.user.role, 'SYSTEM_SETTING')) {
+    redirect('/403')
   }
 
   return <GoogleAccountRegistrationClient />

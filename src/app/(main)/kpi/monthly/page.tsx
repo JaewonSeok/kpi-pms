@@ -1,7 +1,5 @@
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
 import { getMonthlyKpiPageData } from '@/server/monthly-kpi-page'
+import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { MonthlyKpiManagementClient } from '@/components/kpi/MonthlyKpiManagementClient'
 
 type PageProps = {
@@ -16,10 +14,10 @@ type PageProps = {
 }
 
 export default async function MonthlyKpiPage({ searchParams }: PageProps) {
-  const session = await getServerSession(authOptions)
-  if (!session) {
-    redirect('/login')
-  }
+  const session = await requireProtectedPageSession({
+    route: '/kpi/monthly',
+    pathname: '/kpi/monthly',
+  })
 
   const resolvedSearchParams = (await searchParams) ?? {}
   const selectedYear = resolvedSearchParams.year ? Number.parseInt(resolvedSearchParams.year, 10) : undefined

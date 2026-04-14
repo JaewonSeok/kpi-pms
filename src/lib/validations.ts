@@ -81,6 +81,15 @@ export const UpdateOrgKpiSchema = z.object({
   parentOrgKpiId: z.string().nullable().optional(),
 })
 
+export const DeleteOrgKpiSchema = z
+  .object({
+    confirmDelete: z.boolean(),
+  })
+  .refine((data) => data.confirmDelete, {
+    message: '삭제 확인이 필요합니다.',
+    path: ['confirmDelete'],
+  })
+
 export const CloneOrgKpiSchema = z.object({
   targetDeptId: z.string().min(1),
   targetEvalYear: z.number().int().min(2020).max(2100),

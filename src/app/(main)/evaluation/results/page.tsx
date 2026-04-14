@@ -1,7 +1,5 @@
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
-import { authOptions } from '@/lib/auth'
 import { getEvaluationResultsPageData } from '@/server/evaluation-results'
+import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { EvaluationResultsClient } from '@/components/evaluation/EvaluationResultsClient'
 
 type EvaluationResultsPageProps = {
@@ -12,11 +10,10 @@ type EvaluationResultsPageProps = {
 }
 
 export default async function EvaluationResultsPage({ searchParams }: EvaluationResultsPageProps) {
-  const session = await getServerSession(authOptions)
-
-  if (!session) {
-    redirect('/login')
-  }
+  const session = await requireProtectedPageSession({
+    route: '/evaluation/results',
+    pathname: '/evaluation/results',
+  })
 
   const resolvedSearchParams = (await searchParams) ?? {}
   const pageData = await getEvaluationResultsPageData({

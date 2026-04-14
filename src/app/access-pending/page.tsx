@@ -7,7 +7,7 @@ type AccessPendingPageProps = {
 }
 
 function resolvePendingMessage(reason?: string) {
-  if (reason === 'AuthenticatedButClaimsMissing') {
+  if (reason === 'AuthenticatedButClaimsMissing' || reason === 'CLAIMS_REHYDRATION_FAILED') {
     return 'Google 로그인은 완료됐지만 사내 권한 정보를 아직 확인하지 못했습니다. 잠시 후 다시 시도하거나 HR 관리자에게 문의해 주세요.'
   }
 
@@ -27,7 +27,7 @@ export default async function AccessPendingPage({ searchParams }: AccessPendingP
         <p className="mt-4 text-base leading-7 text-slate-600">{message}</p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link
-            href="/login?error=AuthenticatedButClaimsMissing"
+            href="/login"
             className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
           >
             로그인 화면으로 이동
