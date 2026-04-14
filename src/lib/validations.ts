@@ -129,6 +129,15 @@ export const UpdatePersonalKpiSchema = z.object({
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
 })
 
+export const DeletePersonalKpiSchema = z
+  .object({
+    confirmDelete: z.boolean(),
+  })
+  .refine((data) => data.confirmDelete, {
+    message: '삭제 확인이 필요합니다.',
+    path: ['confirmDelete'],
+  })
+
 export const ClonePersonalKpiSchema = z.object({
   targetEmployeeId: z.string().min(1).optional(),
   assignToSelf: z.boolean().default(false),

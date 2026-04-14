@@ -6,7 +6,7 @@ import {
 } from '@/lib/personal-kpi-access'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
-import { UpdatePersonalKpiSchema } from '@/lib/validations'
+import { DeletePersonalKpiSchema, UpdatePersonalKpiSchema } from '@/lib/validations'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import {
   canEditPersonalKpiByOperationalStatus,
@@ -14,6 +14,7 @@ import {
 } from '@/server/personal-kpi-workflow'
 import { canAccessEmployee } from '@/server/auth/authorize'
 import { validatePersonalOrgLink } from '@/server/goal-alignment'
+import { deletePersonalKpiRecord } from '@/server/personal-kpi-delete'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -321,6 +322,35 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
 
     return successResponse(updated)
+  } catch (error) {
+    return errorResponse(error)
+  }
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
+
+    const { id } = await context.params
+    const body = await request.json()
+    const validated = DeletePersonalKpiSchema.safeParse(body)
+    if (!validated.success) {
+      throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0].message)
+    }
+
+    const result = await deletePersonalKpiRecord({
+      id,
+      actor: {
+        id: session.user.id,
+        role: session.user.role,
+        deptId: session.user.deptId,
+        accessibleDepartmentIds: session.user.accessibleDepartmentIds ?? [],
+      },
+      clientInfo: getClientInfo(request),
+    })
+
+    return successResponse(result)
   } catch (error) {
     return errorResponse(error)
   }

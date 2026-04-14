@@ -3,8 +3,12 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bot, ClipboardList, Copy, History, Link2, Plus, Send, Sparkles, X } from 'lucide-react'
+import { Bot, ClipboardList, Copy, History, Link2, Plus, Send, Sparkles, Trash2, X } from 'lucide-react'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
+import {
+  getPersonalKpiDeleteActionState,
+  resolveNextPersonalKpiSelectionAfterDelete,
+} from '@/lib/personal-kpi-delete'
 import type {
   PersonalKpiAiLogItem,
   PersonalKpiPageData,
@@ -31,7 +35,7 @@ type Banner = {
 }
 
 type EditorMode = 'create' | 'edit'
-type BusyAction = 'save-form' | 'submit' | 'workflow' | 'ai' | 'ai-decision' | 'bulk-edit' | null
+type BusyAction = 'save-form' | 'submit' | 'workflow' | 'ai' | 'ai-decision' | 'bulk-edit' | 'delete' | null
 
 type KpiForm = {
   employeeId: string
@@ -302,7 +306,13 @@ function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
   }
 }
 
-function buildAiPayload(props: Props, selectedKpi: PersonalKpiViewModel | undefined, form: KpiForm, action: AiAction) {
+function buildAiPayload(
+  props: Props,
+  selectedKpi: PersonalKpiViewModel | undefined,
+  form: KpiForm,
+  action: AiAction,
+  candidates: PersonalKpiViewModel[]
+) {
   return {
     action,
     employeeName: props.actor.name,
@@ -322,7 +332,7 @@ function buildAiPayload(props: Props, selectedKpi: PersonalKpiViewModel | undefi
       props.orgKpiOptions.find((item) => item.id === form.linkedOrgKpiId)?.category,
     reviewComment: selectedKpi?.reviewComment,
     recentMonthlyRecords: selectedKpi?.recentMonthlyRecords ?? [],
-    candidates: props.mine.map((item) => ({
+    candidates: candidates.map((item) => ({
       id: item.id,
       title: item.title,
       definition: item.definition,
@@ -407,6 +417,28 @@ function buildAiActionState(params: {
   }
 }
 
+function derivePersonalSummary(items: PersonalKpiViewModel[], reviewPendingCount: number): Props['summary'] {
+  const totalWeight = Math.round(items.reduce((sum, item) => sum + item.weight, 0) * 10) / 10
+  const linkedOrgKpiCount = items.filter((item) => item.orgKpiId).length
+  const rejectedCount = items.filter((item) => item.hasRejectedRevision).length
+  const monthlyCoverageRate = items.length
+    ? Math.round((items.filter((item) => item.linkedMonthlyCount > 0).length / items.length) * 100)
+    : 0
+  const statuses = Array.from(new Set(items.map((item) => item.status)))
+  const overallStatus = items.length ? (statuses.length === 1 ? statuses[0] : 'MIXED') : 'DRAFT'
+
+  return {
+    totalCount: items.length,
+    totalWeight,
+    remainingWeight: Math.round(Math.max(0, 100 - totalWeight) * 10) / 10,
+    linkedOrgKpiCount,
+    rejectedCount,
+    reviewPendingCount,
+    monthlyCoverageRate,
+    overallStatus,
+  }
+}
+
 function getReviewActionState(status: PersonalKpiReviewQueueItem['status'], action: 'START_REVIEW' | 'APPROVE' | 'REJECT') {
   if (action === 'START_REVIEW') {
     return status === 'SUBMITTED'
@@ -454,6 +486,7 @@ export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
+  const [mineItems, setMineItems] = useState(props.mine)
   const [selectedKpiId, setSelectedKpiId] = useState(props.initialKpiId ?? props.mine[0]?.id ?? '')
   const [selectedReviewId, setSelectedReviewId] = useState(props.reviewQueue[0]?.id ?? '')
   const [editorOpen, setEditorOpen] = useState(false)
@@ -463,19 +496,24 @@ export function PersonalKpiManagementClient(props: Props) {
   const [cloneForm, setCloneForm] = useState<PersonalCloneForm>(buildCloneForm(props))
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [bulkEditForm, setBulkEditForm] = useState<PersonalBulkEditForm>(buildBulkEditForm(props))
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
   const [reviewNote, setReviewNote] = useState('')
 
   useEffect(() => {
-    if (!props.mine.length) {
+    setMineItems(props.mine)
+  }, [props.mine])
+
+  useEffect(() => {
+    if (!mineItems.length) {
       setSelectedKpiId('')
       return
     }
 
     const requestedKpiId =
-      props.initialKpiId && props.mine.some((item) => item.id === props.initialKpiId)
+      props.initialKpiId && mineItems.some((item) => item.id === props.initialKpiId)
         ? props.initialKpiId
         : undefined
 
@@ -484,10 +522,10 @@ export function PersonalKpiManagementClient(props: Props) {
       return
     }
 
-    if (!props.mine.some((item) => item.id === selectedKpiId)) {
-      setSelectedKpiId(props.mine[0].id)
+    if (!mineItems.some((item) => item.id === selectedKpiId)) {
+      setSelectedKpiId(mineItems[0].id)
     }
-  }, [props.mine, props.initialKpiId, selectedKpiId])
+  }, [mineItems, props.initialKpiId, selectedKpiId])
 
   useEffect(() => {
     if (!props.reviewQueue.length) {
@@ -501,6 +539,7 @@ export function PersonalKpiManagementClient(props: Props) {
 
   useEffect(() => {
     setActiveTabState('mine')
+    setMineItems(props.mine)
     setSelectedKpiId(
       props.initialKpiId && props.mine.some((item) => item.id === props.initialKpiId)
         ? props.initialKpiId
@@ -514,6 +553,7 @@ export function PersonalKpiManagementClient(props: Props) {
     setCloneForm(buildCloneForm(props))
     setBulkEditOpen(false)
     setBulkEditForm(buildBulkEditForm(props))
+    setShowDeleteConfirm(false)
     setAiPreview(null)
     setBanner(null)
     setReviewNote('')
@@ -521,14 +561,33 @@ export function PersonalKpiManagementClient(props: Props) {
 
   const activeTab = activeTabState
   const selectedKpi = useMemo(
-    () => props.mine.find((item) => item.id === selectedKpiId) ?? props.mine[0],
-    [props.mine, selectedKpiId]
+    () => mineItems.find((item) => item.id === selectedKpiId) ?? mineItems[0],
+    [mineItems, selectedKpiId]
   )
   const selectedReview = useMemo(
     () => props.reviewQueue.find((item) => item.id === selectedReviewId) ?? props.reviewQueue[0],
     [props.reviewQueue, selectedReviewId]
   )
-  const bulkTargetIds = useMemo(() => props.mine.map((item) => item.id), [props.mine])
+  const bulkTargetIds = useMemo(() => mineItems.map((item) => item.id), [mineItems])
+  const goalEditLockedFromAlerts =
+    props.alerts?.some((alert) => alert.title.includes('?쎄린 ?꾩슜 紐⑤뱶')) ?? false
+  const derivedSummary = useMemo(
+    () => derivePersonalSummary(mineItems, props.summary.reviewPendingCount),
+    [mineItems, props.summary.reviewPendingCount]
+  )
+  const deleteActionState = getPersonalKpiDeleteActionState({
+    kpi: selectedKpi
+      ? {
+          id: selectedKpi.id,
+          title: selectedKpi.title,
+          status: selectedKpi.status,
+          linkedMonthlyCount: selectedKpi.linkedMonthlyCount,
+        }
+      : null,
+    canManage: props.permissions.canEdit,
+    goalEditLocked: goalEditLockedFromAlerts,
+    busy: busyAction === 'delete',
+  })
   const canEditSelectedKpi = Boolean(selectedKpi && props.permissions.canEdit && isDraftStatus(selectedKpi.status))
   const selectedKpiEditReason =
     !selectedKpi
@@ -558,7 +617,7 @@ export function PersonalKpiManagementClient(props: Props) {
         canUseAi: props.permissions.canUseAi,
         selectedKpi,
         reviewQueueCount: props.reviewQueue.length,
-        totalKpiCount: props.mine.length,
+        totalKpiCount: mineItems.length,
       }),
     ])
   ) as Record<AiAction, AiActionState>
@@ -572,7 +631,7 @@ export function PersonalKpiManagementClient(props: Props) {
       }
     : getPersonalKpiSubmitCtaState({
         canSubmit: props.permissions.canSubmit,
-        totalCount: props.summary.totalCount,
+        totalCount: derivedSummary.totalCount,
         selectedKpiStatus: selectedKpi?.status ?? null,
         hasSelectedKpi: Boolean(selectedKpi),
         workflowSaving: busyAction === 'submit',
@@ -981,6 +1040,63 @@ export function PersonalKpiManagementClient(props: Props) {
     }
   }
 
+  async function handleDeleteKpi() {
+    if (!selectedKpi) {
+      setBanner({ tone: 'error', message: '삭제할 KPI를 먼저 선택해 주세요.' })
+      setShowDeleteConfirm(false)
+      return
+    }
+
+    if (deleteActionState.disabled) {
+      setBanner({ tone: 'error', message: deleteActionState.reason ?? '현재 상태에서는 KPI를 삭제할 수 없습니다.' })
+      setShowDeleteConfirm(false)
+      return
+    }
+
+    setBusyAction('delete')
+    setBanner(null)
+
+    try {
+      const deleted = await parseJsonOrThrow<{ id: string }>(
+        await fetch(`/api/kpi/personal/${selectedKpi.id}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirmDelete: true }),
+        })
+      )
+
+      const nextItems = mineItems.filter((item) => item.id !== deleted.id)
+      const nextSelectedId = resolveNextPersonalKpiSelectionAfterDelete({
+        currentItems: mineItems,
+        deletedId: deleted.id,
+      })
+
+      setMineItems(nextItems)
+      setSelectedKpiId(nextSelectedId)
+      setShowDeleteConfirm(false)
+      setAiPreview(null)
+      setBanner({ tone: 'success', message: '개인 KPI를 삭제했습니다.' })
+
+      const query = buildSearch({
+        year: String(props.selectedYear),
+        employeeId: props.selectedEmployeeId,
+        cycleId: props.selectedCycleId,
+        tab: activeTab,
+        kpiId: nextSelectedId || undefined,
+      })
+
+      router.replace(`/kpi/personal?${query}`, { scroll: false })
+      router.refresh()
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '개인 KPI 삭제에 실패했습니다.',
+      })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function handleReviewWorkflow(
     kpiId: string,
     action: 'START_REVIEW' | 'APPROVE' | 'REJECT' | 'LOCK' | 'REOPEN'
@@ -1091,7 +1207,7 @@ export function PersonalKpiManagementClient(props: Props) {
         body: JSON.stringify({
           action,
           sourceId: selectedKpi?.id,
-          payload: buildAiPayload(props, selectedKpi, form, action),
+          payload: buildAiPayload(props, selectedKpi, form, action, mineItems),
         }),
       })
       const data = await parseAiJsonOrThrow<{
@@ -1203,8 +1319,8 @@ export function PersonalKpiManagementClient(props: Props) {
         cycleOptions={props.cycleOptions}
         selectedEmployeeId={props.selectedEmployeeId}
         employeeOptions={props.employeeOptions}
-        summary={props.summary}
-        rejectedCount={props.summary.rejectedCount}
+        summary={derivedSummary}
+        rejectedCount={derivedSummary.rejectedCount}
         submitState={submitCtaState}
         submitLabel={submitLabel}
         createDisabledReason={createDisabledReason}
@@ -1228,19 +1344,21 @@ export function PersonalKpiManagementClient(props: Props) {
 
       {props.state === 'ready' ? (
         <>
-          <SummaryCards summary={props.summary} />
+          <SummaryCards summary={derivedSummary} />
           <Tabs activeTab={activeTab} onChange={setActiveTab} />
           {activeTab === 'mine' ? (
             <MineSection
-              items={props.mine}
+              items={mineItems}
               selectedId={selectedKpiId}
               onSelect={handleSelectKpi}
               onEdit={handleEditKpi}
               onClone={handleOpenClone}
+              onDelete={() => setShowDeleteConfirm(true)}
               selectedKpi={selectedKpi}
               canEdit={canEditSelectedKpi}
               editDisabledReason={selectedKpiEditReason}
               cloneDisabledReason={cloneDisabledReason}
+              deleteActionState={deleteActionState}
             />
           ) : null}
           {activeTab === 'review' ? (
@@ -1346,6 +1464,14 @@ export function PersonalKpiManagementClient(props: Props) {
           onChange={setBulkEditForm}
           onClose={() => setBulkEditOpen(false)}
           onSubmit={handleSaveBulkEdit}
+        />
+      ) : null}
+      {showDeleteConfirm ? (
+        <DeletePersonalKpiDialog
+          kpi={selectedKpi}
+          busy={busyAction === 'delete'}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={handleDeleteKpi}
         />
       ) : null}
       {riskDialog}
@@ -1606,17 +1732,32 @@ function MineSection(props: {
   onSelect: (id: string) => void
   onEdit: (kpi: PersonalKpiViewModel) => void
   onClone: () => void
+  onDelete: () => void
   selectedKpi?: PersonalKpiViewModel
   canEdit: boolean
   editDisabledReason?: string
   cloneDisabledReason?: string
+  deleteActionState: ReturnType<typeof getPersonalKpiDeleteActionState>
 }) {
   if (!props.items.length) {
     return (
-      <EmptyState
-        title="아직 작성된 KPI가 없습니다."
-        description="상단의 KPI 추가 버튼으로 첫 개인 KPI를 작성해보세요."
-      />
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <EmptyState
+          title="아직 작성된 KPI가 없습니다."
+          description="상단의 KPI 추가 버튼으로 첫 개인 KPI를 작성해보세요."
+        />
+        <GoalDetailPanel
+          selectedKpi={props.selectedKpi}
+          canEdit={props.canEdit}
+          editDisabledReason={props.editDisabledReason}
+          onEdit={props.onEdit}
+          canClone={!props.cloneDisabledReason}
+          cloneDisabledReason={props.cloneDisabledReason}
+          onClone={props.onClone}
+          onDelete={props.onDelete}
+          deleteActionState={props.deleteActionState}
+        />
+      </div>
     )
   }
 
@@ -1671,6 +1812,8 @@ function MineSection(props: {
         canClone={!props.cloneDisabledReason}
         cloneDisabledReason={props.cloneDisabledReason}
         onClone={props.onClone}
+        onDelete={props.onDelete}
+        deleteActionState={props.deleteActionState}
       />
     </div>
   )
@@ -2332,9 +2475,31 @@ function GoalDetailPanel(props: {
   canClone: boolean
   cloneDisabledReason?: string
   onClone: () => void
+  onDelete: () => void
+  deleteActionState: ReturnType<typeof getPersonalKpiDeleteActionState>
 }) {
   if (!props.selectedKpi) {
-    return <EmptyState title="선택한 KPI가 없습니다." description="왼쪽 목록에서 KPI를 선택하면 상세 정보가 표시됩니다." />
+    return (
+      <SectionCard title="KPI 상세" description="선택한 KPI의 정의와 최근 실적, 작업 버튼을 확인합니다.">
+        <div className="space-y-4">
+          <EmptyState title="선택된 KPI가 없습니다." description="왼쪽 목록에서 KPI를 선택하면 상세 정보가 표시됩니다." />
+          <div className="space-y-3 border-t border-slate-100 pt-4">
+            <ActionButton
+              label="삭제"
+              icon={<Trash2 className="h-4 w-4" />}
+              onClick={props.onDelete}
+              disabled
+              variant="destructive"
+              title={props.deleteActionState.reason}
+              testId="personal-kpi-delete-button"
+            />
+            <p data-testid="personal-kpi-delete-helper" className="text-xs text-slate-500">
+              {props.deleteActionState.reason ?? '삭제할 개인 KPI를 먼저 선택해 주세요.'}
+            </p>
+          </div>
+        </div>
+      </SectionCard>
+    )
   }
 
   const item = props.selectedKpi
@@ -2431,8 +2596,89 @@ function GoalDetailPanel(props: {
             <EmptyInline text="최근 월간 실적이 아직 없습니다." />
           )}
         </div>
+
+        <div className="space-y-3 border-t border-slate-100 pt-4">
+          <ActionButton
+            label="삭제"
+            icon={<Trash2 className="h-4 w-4" />}
+            onClick={props.onDelete}
+            disabled={props.deleteActionState.disabled}
+            variant="destructive"
+            title={props.deleteActionState.reason}
+            testId="personal-kpi-delete-button"
+          />
+          {props.deleteActionState.reason ? (
+            <p data-testid="personal-kpi-delete-helper" className="text-xs text-slate-500">
+              {props.deleteActionState.reason}
+            </p>
+          ) : null}
+        </div>
       </div>
     </SectionCard>
+  )
+}
+
+function DeletePersonalKpiDialog(props: {
+  kpi?: PersonalKpiViewModel
+  busy: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div
+        data-testid="personal-kpi-delete-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        className="w-full max-w-lg rounded-3xl bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">개인 KPI 삭제</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              삭제 후에는 되돌릴 수 없습니다. 대상 KPI를 다시 확인한 뒤 진행해 주세요.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={props.onClose}
+            disabled={props.busy}
+            className="rounded-full p-2 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4">
+            <div className="text-sm font-semibold text-red-800">삭제 대상</div>
+            <div data-testid="personal-kpi-delete-name" className="mt-2 text-base font-semibold text-slate-900">
+              {props.kpi?.title ?? '선택한 개인 KPI'}
+            </div>
+            <p className="mt-2 text-sm text-red-700">이 작업은 되돌릴 수 없습니다.</p>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <ActionButton
+              label="취소"
+              icon={<X className="h-4 w-4" />}
+              onClick={props.onClose}
+              disabled={props.busy}
+              variant="secondary"
+              testId="personal-kpi-delete-cancel"
+            />
+            <ActionButton
+              label={props.busy ? '삭제 중...' : '삭제'}
+              icon={<Trash2 className="h-4 w-4" />}
+              onClick={props.onConfirm}
+              disabled={props.busy}
+              variant="destructive"
+              testId="personal-kpi-delete-confirm"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -2987,13 +3233,14 @@ function LoadAlerts(props: {
 }
 
 function ActionButton(props: {
-  children: ReactNode
+  children?: ReactNode
   label?: ReactNode
   onClick?: () => void
   disabled?: boolean
-  variant?: 'primary' | 'secondary'
+  variant?: 'primary' | 'secondary' | 'destructive'
   title?: string
   icon?: ReactNode
+  testId?: string
 }) {
   return (
     <button
@@ -3001,9 +3248,12 @@ function ActionButton(props: {
       onClick={props.onClick}
       disabled={props.disabled}
       title={props.title}
+      data-testid={props.testId}
       className={`inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition ${
         props.variant === 'secondary'
           ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+          : props.variant === 'destructive'
+            ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
           : 'bg-slate-900 text-white hover:bg-slate-800'
       } disabled:cursor-not-allowed disabled:opacity-50`}
     >
