@@ -635,6 +635,8 @@ run('master login tab exposes HR admin permission controls and directory permiss
   assert.match(masterLoginPanelSource, /권한이 저장되었습니다\./)
   assert.match(masterLoginPanelSource, /type="checkbox"/)
   assert.match(masterLoginPanelSource, /masterLoginPermissionGranted/)
+  assert.match(masterLoginPanelSource, /resolveMasterLoginPermissionToggleState/)
+  assert.match(masterLoginPanelSource, /title=\{toggleState\.message \?\? undefined\}/)
   assert.match(masterLoginPanelSource, /소유자 기본 권한/)
 
   assert.match(serverSource, /masterLoginPermissionGranted/)

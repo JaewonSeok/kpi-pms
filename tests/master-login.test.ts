@@ -10,7 +10,10 @@ import {
 import {
   MASTER_LOGIN_PERMISSION_KEY,
   canUseMasterLogin,
+  isFixedMasterLoginAccessSource,
   readMasterLoginConfig,
+  resolveMasterLoginPermissionManagementState,
+  resolveMasterLoginPermissionToggleState,
   resolveMasterLoginAccess,
 } from '../src/lib/master-login'
 
@@ -95,18 +98,79 @@ run('master login permission allows owner, legacy admins, and granted HR admins 
   )
 })
 
+run('master login permission management only blocks active impersonation sessions', () => {
+  assert.deepEqual(
+    resolveMasterLoginPermissionManagementState({
+      isAuthenticated: true,
+      hasActiveMasterLogin: false,
+    }),
+    {
+      allowed: true,
+      reason: 'NONE',
+      message: null,
+    }
+  )
+
+  assert.deepEqual(
+    resolveMasterLoginPermissionManagementState({
+      isAuthenticated: true,
+      hasActiveMasterLogin: true,
+    }),
+    {
+      allowed: false,
+      reason: 'MASTER_LOGIN_ACTIVE',
+      message:
+        '마스터 로그인 진행 중에는 권한을 변경할 수 없습니다. 먼저 현재 세션을 종료해 주세요.',
+    }
+  )
+})
+
+run('master login permission toggle enables grantable HR admins and explains fixed accounts', () => {
+  assert.equal(isFixedMasterLoginAccessSource('owner'), true)
+  assert.equal(isFixedMasterLoginAccessSource('legacy_admin'), true)
+  assert.equal(isFixedMasterLoginAccessSource('granted_hr_admin'), false)
+
+  assert.deepEqual(
+    resolveMasterLoginPermissionToggleState({
+      isAuthenticated: true,
+      hasActiveMasterLogin: false,
+      accessSource: 'none',
+      pending: false,
+    }),
+    {
+      disabled: false,
+      reason: 'NONE',
+      message: null,
+    }
+  )
+
+  assert.deepEqual(
+    resolveMasterLoginPermissionToggleState({
+      isAuthenticated: true,
+      hasActiveMasterLogin: false,
+      accessSource: 'owner',
+      pending: false,
+    }),
+    {
+      disabled: true,
+      reason: 'FIXED_ACCESS_SOURCE',
+      message: '소유자 또는 기본 허용 HR 관리자 계정은 여기에서 변경할 수 없습니다.',
+    }
+  )
+})
+
 run('master login schemas require preview reason and permission toggle payload', () => {
   assert.equal(
     AdminMasterLoginSchema.safeParse({
       targetEmployeeId: 'emp-1',
-      reason: '운영 검증을 위해 대상 계정으로 로그인합니다.',
+      reason: 'Need to verify a production issue through delegated admin access.',
     }).success,
     true
   )
   assert.equal(
     AdminMasterLoginSchema.safeParse({
       targetEmployeeId: '',
-      reason: '운영 검증을 위해 대상 계정으로 로그인합니다.',
+      reason: 'Need to verify a production issue through delegated admin access.',
     }).success,
     false
   )
@@ -126,7 +190,7 @@ run('master login schemas require preview reason and permission toggle payload',
   )
 })
 
-run('master login route, auth, and UI sources expose permission management safeguards', () => {
+run('master login route, auth, service, and UI sources expose permission safeguards', () => {
   const routeSource = readFileSync(
     path.resolve(
       process.cwd(),
@@ -139,6 +203,10 @@ run('master login route, auth, and UI sources expose permission management safeg
     path.resolve(process.cwd(), 'src/components/admin/MasterLoginAdminPanel.tsx'),
     'utf8'
   )
+  const serviceSource = readFileSync(
+    path.resolve(process.cwd(), 'src/server/master-login-permissions.ts'),
+    'utf8'
+  )
   const bannerSource = readFileSync(
     path.resolve(process.cwd(), 'src/components/layout/MasterLoginBanner.tsx'),
     'utf8'
@@ -146,11 +214,17 @@ run('master login route, auth, and UI sources expose permission management safeg
 
   assert.match(routeSource, /authorizeMenu\('SYSTEM_SETTING'\)/)
   assert.match(routeSource, /MASTER_LOGIN_PREVIEW/)
-  assert.match(routeSource, /MASTER_LOGIN_PERMISSION_GRANTED/)
-  assert.match(routeSource, /MASTER_LOGIN_PERMISSION_REVOKED/)
-  assert.match(routeSource, /AdminMasterLoginPermissionSchema/)
-  assert.match(routeSource, /MASTER_LOGIN_PERMISSION_KEY/)
-  assert.match(routeSource, /소유자 또는 권한이 부여된 HR관리자만 수행할 수 있습니다\./)
+  assert.match(routeSource, /assertMasterLoginExecutionPermission/)
+  assert.match(routeSource, /updateMasterLoginPermission/)
+  assert.match(routeSource, /canManage: true/)
+
+  assert.match(serviceSource, /MASTER_LOGIN_PERMISSION_KEY/)
+  assert.match(serviceSource, /MASTER_LOGIN_PERMISSION_GRANTED/)
+  assert.match(serviceSource, /MASTER_LOGIN_PERMISSION_REVOKED/)
+  assert.match(serviceSource, /MASTER_LOGIN_PERMISSION_FIXED_ACCOUNT/)
+  assert.match(serviceSource, /MASTER_LOGIN_FORBIDDEN/)
+  assert.match(serviceSource, /MASTER_LOGIN_TARGET_NOT_FOUND/)
+  assert.match(serviceSource, /resolveMasterLoginPermissionManagementState/)
 
   assert.match(authSource, /canUseMasterLoginForActor/)
   assert.match(authSource, /MASTER_LOGIN_STARTED/)
@@ -159,16 +233,13 @@ run('master login route, auth, and UI sources expose permission management safeg
   assert.match(authSource, /createImpersonationSessionRecord/)
   assert.match(authSource, /endImpersonationSessionRecord/)
 
-  assert.match(panelSource, /마스터 로그인 권한/)
-  assert.match(panelSource, /소유자 또는 권한이 부여된 HR관리자만/)
-  assert.match(panelSource, /권한이 저장되었습니다\./)
-  assert.match(panelSource, /이 계정으로 시작/)
   assert.match(panelSource, /masterLoginPermissionGranted/)
+  assert.match(panelSource, /type="checkbox"/)
+  assert.match(panelSource, /resolveMasterLoginPermissionToggleState/)
+  assert.match(panelSource, /resolveMasterLoginPermissionManagementState/)
+  assert.match(panelSource, /title=\{toggleState\.message \?\? undefined\}/)
+  assert.match(panelSource, /fetch\('\/api\/admin\/employees\/google-account\/master-login'/)
 
-  assert.match(bannerSource, /마스터 로그인 중입니다\./)
-  assert.match(bannerSource, /현재 권한은 대상자 기준으로 적용됩니다\./)
-  assert.match(bannerSource, /사유:/)
-  assert.match(bannerSource, /종료/)
   assert.match(bannerSource, /IMPERSONATION_SYNC_STORAGE_KEY/)
 })
 

@@ -40,7 +40,7 @@
     "test:operational-pages": "ts-node -P tsconfig.seed.json tests/operational-pages.test.ts && ts-node -P tsconfig.seed.json tests/protected-page-regression.test.ts",
     "test:google-workspace": "ts-node -P tsconfig.seed.json tests/google-workspace.test.ts",
     "test:auth": "ts-node -P tsconfig.seed.json tests/auth-rbac.test.ts && ts-node -P tsconfig.seed.json tests/google-auth-flow.test.ts",
-    "test:master-login": "ts-node -P tsconfig.seed.json tests/master-login.test.ts && ts-node -P tsconfig.seed.json tests/impersonation-risk.test.ts",
+    "test:master-login": "ts-node -P tsconfig.seed.json tests/master-login.test.ts && ts-node -P tsconfig.seed.json tests/master-login-permission-service.test.ts && ts-node -P tsconfig.seed.json tests/impersonation-risk.test.ts",
     "test:ai": "ts-node -P tsconfig.seed.json tests/ai.test.ts && ts-node -P tsconfig.seed.json tests/evaluation-ai-assist.test.ts",
     "test:ai-competency": "ts-node -P tsconfig.seed.json tests/ai-competency.test.ts && ts-node -P tsconfig.seed.json tests/ai-competency-page.test.ts",
     "test:ai-competency-seeded": "ts-node -P tsconfig.seed.json tests/ai-competency-seeded-runtime.test.ts",

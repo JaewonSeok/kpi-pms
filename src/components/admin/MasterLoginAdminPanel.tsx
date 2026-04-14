@@ -8,6 +8,11 @@ import {
   createImpersonationSyncPayload,
   IMPERSONATION_SYNC_STORAGE_KEY,
 } from '@/lib/impersonation'
+import {
+  isFixedMasterLoginAccessSource,
+  resolveMasterLoginPermissionManagementState,
+  resolveMasterLoginPermissionToggleState,
+} from '@/lib/master-login'
 
 type EmployeeRole =
   | 'ROLE_MEMBER'
@@ -142,10 +147,6 @@ function formatActiveMasterLogin(session: ReturnType<typeof useSession>['data'])
   return session?.user?.masterLogin?.active ? session.user.masterLogin : null
 }
 
-function isFixedAccessSource(source: MasterLoginAccessSource) {
-  return source === 'owner' || source === 'legacy_admin'
-}
-
 export function MasterLoginAdminPanel({ employees, onFeedback, onRefresh }: Props) {
   const router = useRouter()
   const { data: session, status, update } = useSession()
@@ -166,8 +167,11 @@ export function MasterLoginAdminPanel({ employees, onFeedback, onRefresh }: Prop
   )
   const directGrantCount = hrAdmins.filter((employee) => employee.masterLoginPermissionGranted).length
   const availableAdminCount = hrAdmins.filter((employee) => employee.masterLoginAvailable).length
-  const permissionManagementBlocked =
-    status !== 'authenticated' || !masterLoginAvailable || Boolean(activeMasterLogin)
+  const permissionManagement = resolveMasterLoginPermissionManagementState({
+    isAuthenticated: status === 'authenticated',
+    hasActiveMasterLogin: Boolean(activeMasterLogin),
+  })
+  const permissionManagementBlocked = !permissionManagement.allowed
 
   const selectedTargetSummary = useMemo(() => {
     if (!dialogTarget) {
@@ -204,7 +208,20 @@ export function MasterLoginAdminPanel({ employees, onFeedback, onRefresh }: Prop
   }
 
   async function saveMasterLoginPermission(employee: EmployeeListItem, enabled: boolean) {
-    if (permissionManagementBlocked || isFixedAccessSource(employee.masterLoginAccessSource)) {
+    const toggleState = resolveMasterLoginPermissionToggleState({
+      isAuthenticated: status === 'authenticated',
+      hasActiveMasterLogin: Boolean(activeMasterLogin),
+      accessSource: employee.masterLoginAccessSource,
+      pending: false,
+    })
+
+    if (toggleState.disabled) {
+      if (toggleState.message) {
+        onFeedback({
+          type: 'error',
+          message: toggleState.message,
+        })
+      }
       return
     }
 
@@ -368,8 +385,14 @@ export function MasterLoginAdminPanel({ employees, onFeedback, onRefresh }: Prop
             </thead>
             <tbody>
               {hrAdmins.map((employee) => {
-                const isFixed = isFixedAccessSource(employee.masterLoginAccessSource)
+                const isFixed = isFixedMasterLoginAccessSource(employee.masterLoginAccessSource)
                 const isPending = pendingPermissionEmployeeId === employee.id
+                const toggleState = resolveMasterLoginPermissionToggleState({
+                  isAuthenticated: status === 'authenticated',
+                  hasActiveMasterLogin: Boolean(activeMasterLogin),
+                  accessSource: employee.masterLoginAccessSource,
+                  pending: isPending,
+                })
 
                 return (
                   <tr key={employee.id} className="border-b border-slate-100 align-top">
@@ -397,7 +420,8 @@ export function MasterLoginAdminPanel({ employees, onFeedback, onRefresh }: Prop
                         <input
                           type="checkbox"
                           checked={employee.masterLoginPermissionGranted || isFixed}
-                          disabled={permissionManagementBlocked || isFixed || isPending}
+                          disabled={toggleState.disabled}
+                          title={toggleState.message ?? undefined}
                           onChange={(event) => {
                             void saveMasterLoginPermission(employee, event.target.checked)
                           }}
