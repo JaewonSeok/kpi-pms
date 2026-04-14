@@ -451,6 +451,65 @@ function isPrismaKnownRequestError(error: unknown): error is Prisma.PrismaClient
   )
 }
 
+type EmployeeDeleteErrorInfo = {
+  code?: string
+  message: string
+  name: string
+}
+
+function extractEmployeeDeleteErrorInfo(error: unknown): EmployeeDeleteErrorInfo {
+  let current: unknown = error
+
+  while (current && typeof current === 'object') {
+    const currentRecord = current as {
+      code?: unknown
+      message?: unknown
+      name?: unknown
+      cause?: unknown
+    }
+
+    if (typeof currentRecord.code === 'string') {
+      return {
+        code: currentRecord.code,
+        message: typeof currentRecord.message === 'string' ? currentRecord.message : 'unknown',
+        name: typeof currentRecord.name === 'string' ? currentRecord.name : 'UnknownError',
+      }
+    }
+
+    if ('cause' in currentRecord) {
+      current = currentRecord.cause
+      continue
+    }
+
+    break
+  }
+
+  return {
+    message: error instanceof Error ? error.message : 'unknown',
+    name: error instanceof Error ? error.name : 'UnknownError',
+  }
+}
+
+function attachEmployeeDeleteStepContext<T extends object>(
+  error: T,
+  stepName: string
+): T & { employeeDeleteStep?: string } {
+  ;(error as T & { employeeDeleteStep?: string }).employeeDeleteStep = stepName
+  return error as T & { employeeDeleteStep?: string }
+}
+
+function readEmployeeDeleteStep(error: unknown) {
+  return typeof error === 'object' && error !== null && 'employeeDeleteStep' in error
+    ? typeof (error as { employeeDeleteStep?: unknown }).employeeDeleteStep === 'string'
+      ? (error as { employeeDeleteStep: string }).employeeDeleteStep
+      : undefined
+    : undefined
+}
+
+function logEmployeeDelete(event: string, payload: Record<string, unknown>) {
+  console.info(`[admin-google-account] ${event}`, payload)
+}
+
 function compareMembers(
   a: Pick<EmployeeOrgChartMember, 'sortOrder' | 'departmentName' | 'teamName' | 'name'>,
   b: Pick<EmployeeOrgChartMember, 'sortOrder' | 'departmentName' | 'teamName' | 'name'>
@@ -1373,7 +1432,7 @@ export async function upsertEmployeeRecord(params: {
     : null
 
   if (params.employeeId && !existingTarget) {
-    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '직원 정보를 찾을 수 없습니다.')
+    throw new AppError(404, 'EMPLOYEE_DELETE_TARGET_NOT_FOUND', '삭제할 직원을 찾을 수 없습니다.')
   }
 
   const manager = await resolveManagerOrThrow(params.managerEmployeeNumber)
@@ -1531,7 +1590,7 @@ export async function applyEmployeeLifecycleAction(params: {
   })
 
   if (!employee) {
-    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '직원 정보를 찾을 수 없습니다.')
+    throw new AppError(404, 'EMPLOYEE_DELETE_TARGET_NOT_FOUND', '삭제할 직원을 찾을 수 없습니다.')
   }
 
   const nextStatus: EmployeeManagementStatus =
@@ -1635,31 +1694,83 @@ export async function safeDeleteEmployeeRecord(
   })
 
   if (!employee) {
-    throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '직원 정보를 찾을 수 없습니다.')
+    throw new AppError(404, 'EMPLOYEE_DELETE_TARGET_NOT_FOUND', '삭제할 직원을 찾을 수 없습니다.')
+  }
+
+  const withDeleteStep = async <T>(
+    stepName: string,
+    fn: () => Promise<T>,
+    describe?: (result: T) => Record<string, unknown>
+  ) => {
+    logEmployeeDelete(`EMPLOYEE_DELETE_STEP_${stepName}_START`, {
+      employeeId,
+      stepName,
+    })
+
+    try {
+      const result = await fn()
+      logEmployeeDelete(`EMPLOYEE_DELETE_STEP_${stepName}_DONE`, {
+        employeeId,
+        stepName,
+        ...(describe ? describe(result) : {}),
+      })
+      return result
+    } catch (error) {
+      const errorInfo = extractEmployeeDeleteErrorInfo(error)
+      logEmployeeDelete('EMPLOYEE_DELETE_CAUGHT_ERROR', {
+        employeeId,
+        stepName,
+        errorCode: errorInfo.code,
+        errorName: errorInfo.name,
+        errorMessage: errorInfo.message,
+      })
+      throw attachEmployeeDeleteStepContext(
+        error instanceof Error ? error : new Error(errorInfo.message),
+        stepName
+      )
+    }
   }
 
   try {
+    logEmployeeDelete('EMPLOYEE_DELETE_TX_BEGIN', {
+      employeeId,
+    })
     const result = await db.$transaction(async (tx) => {
-      const ownedPersonalKpis = await tx.personalKpi.findMany({
-        where: { employeeId },
-        select: { id: true },
-      })
+      const ownedPersonalKpis = await withDeleteStep(
+        'loadOwnedPersonalKpis',
+        () =>
+          tx.personalKpi.findMany({
+            where: { employeeId },
+            select: { id: true },
+          }),
+        (items) => ({ itemCount: items.length })
+      )
       const ownedPersonalKpiIds = ownedPersonalKpis.map((item) => item.id)
 
-      const relatedEvaluations = await tx.evaluation.findMany({
-        where: {
-          OR: [{ targetId: employeeId }, { evaluatorId: employeeId }],
-        },
-        select: { id: true },
-      })
+      const relatedEvaluations = await withDeleteStep(
+        'loadRelatedEvaluations',
+        () =>
+          tx.evaluation.findMany({
+            where: {
+              OR: [{ targetId: employeeId }, { evaluatorId: employeeId }],
+            },
+            select: { id: true },
+          }),
+        (items) => ({ itemCount: items.length })
+      )
       const relatedEvaluationIds = relatedEvaluations.map((item) => item.id)
 
-      const relatedFeedbacks = await tx.multiFeedback.findMany({
-        where: {
-          OR: [{ giverId: employeeId }, { receiverId: employeeId }],
-        },
-        select: { id: true },
-      })
+      const relatedFeedbacks = await withDeleteStep(
+        'loadRelatedFeedbacks',
+        () =>
+          tx.multiFeedback.findMany({
+            where: {
+              OR: [{ giverId: employeeId }, { receiverId: employeeId }],
+            },
+            select: { id: true },
+          }),
+        (items) => ({ itemCount: items.length })
+      )
       const relatedFeedbackIds = relatedFeedbacks.map((item) => item.id)
 
       const cleanupSummary = {
@@ -1682,6 +1793,7 @@ export async function safeDeleteEmployeeRecord(
         deletedOnboardingReviewGenerationCount: 0,
         deletedDevelopmentPlanCount: 0,
         deletedWordCloudAssignmentCount: 0,
+        deletedWordCloudResponseCount: 0,
         deletedCompensationSnapshotCount: 0,
         deletedNotificationCount: 0,
         deletedNotificationPreferenceCount: 0,
@@ -1692,6 +1804,8 @@ export async function safeDeleteEmployeeRecord(
         deletedAiRequestLogCount: 0,
         clearedAiRequestApprovalActorCount: 0,
         deletedAiCompetencyAssignmentCount: 0,
+        deletedAiCompetencyAttemptCount: 0,
+        deletedAiCompetencyGeneratedExamSetCount: 0,
         deletedAiCompetencySubmissionReviewCount: 0,
         clearedAiCompetencyAnswerReviewCount: 0,
         clearedAiCompetencyDecisionActorCount: 0,
@@ -1701,302 +1815,514 @@ export async function safeDeleteEmployeeRecord(
       }
 
       cleanupSummary.clearedManagerReferenceCount = (
-        await tx.employee.updateMany({
-          where: { managerId: employeeId },
-          data: { managerId: null },
-        })
+        await withDeleteStep(
+          'clearManagerReference',
+          () =>
+            tx.employee.updateMany({
+              where: { managerId: employeeId },
+              data: { managerId: null },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       const [teamLeaderReferences, sectionChiefReferences, divisionHeadReferences] = await Promise.all([
-        tx.employee.updateMany({
-          where: { teamLeaderId: employeeId },
-          data: { teamLeaderId: null },
-        }),
-        tx.employee.updateMany({
-          where: { sectionChiefId: employeeId },
-          data: { sectionChiefId: null },
-        }),
-        tx.employee.updateMany({
-          where: { divisionHeadId: employeeId },
-          data: { divisionHeadId: null },
-        }),
+        withDeleteStep(
+          'clearTeamLeaderReference',
+          () =>
+            tx.employee.updateMany({
+              where: { teamLeaderId: employeeId },
+              data: { teamLeaderId: null },
+            }),
+          (result) => ({ affectedCount: result.count })
+        ),
+        withDeleteStep(
+          'clearSectionChiefReference',
+          () =>
+            tx.employee.updateMany({
+              where: { sectionChiefId: employeeId },
+              data: { sectionChiefId: null },
+            }),
+          (result) => ({ affectedCount: result.count })
+        ),
+        withDeleteStep(
+          'clearDivisionHeadReference',
+          () =>
+            tx.employee.updateMany({
+              where: { divisionHeadId: employeeId },
+              data: { divisionHeadId: null },
+            }),
+          (result) => ({ affectedCount: result.count })
+        ),
       ])
 
       cleanupSummary.clearedLeadershipReferenceCount =
         teamLeaderReferences.count + sectionChiefReferences.count + divisionHeadReferences.count
 
       cleanupSummary.clearedDepartmentLeaderCount = (
-        await tx.department.updateMany({
-          where: { leaderEmployeeId: employeeId },
-          data: { leaderEmployeeId: null },
-        })
+        await withDeleteStep(
+          'clearDepartmentLeaderReference',
+          () =>
+            tx.department.updateMany({
+              where: { leaderEmployeeId: employeeId },
+              data: { leaderEmployeeId: null },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedFeedbackAdminGroupMembershipCount = (
-        await tx.feedbackAdminGroupMember.deleteMany({
-          where: { employeeId },
-        })
+        await withDeleteStep(
+          'deleteFeedbackAdminGroupMemberships',
+          () => tx.feedbackAdminGroupMember.deleteMany({ where: { employeeId } }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedFeedbackRoundCollaborationCount = (
-        await tx.feedbackRoundCollaborator.deleteMany({
-          where: { employeeId },
-        })
+        await withDeleteStep(
+          'deleteFeedbackRoundCollaborations',
+          () => tx.feedbackRoundCollaborator.deleteMany({ where: { employeeId } }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedOnboardingReviewGenerationCount = (
-        await tx.onboardingReviewGeneration.deleteMany({
-          where: { employeeId },
-        })
+        await withDeleteStep(
+          'deleteOnboardingReviewGenerations',
+          () => tx.onboardingReviewGeneration.deleteMany({ where: { employeeId } }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.clearedAiCompetencyAnswerReviewCount = (
-        await tx.aiCompetencyAnswer.updateMany({
-          where: { reviewerId: employeeId },
-          data: {
-            reviewerId: null,
-            reviewerNote: null,
-            scoredAt: null,
-          },
-        })
+        await withDeleteStep(
+          'clearAiCompetencyAnswerReviewer',
+          () =>
+            tx.aiCompetencyAnswer.updateMany({
+              where: { reviewerId: employeeId },
+              data: {
+                reviewerId: null,
+                reviewerNote: null,
+                scoredAt: null,
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedAiCompetencySubmissionReviewCount = (
-        await tx.aiCompetencySubmissionReview.deleteMany({
-          where: { reviewerId: employeeId },
-        })
+        await withDeleteStep(
+          'deleteAiCompetencySubmissionReviews',
+          () => tx.aiCompetencySubmissionReview.deleteMany({ where: { reviewerId: employeeId } }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.clearedAiCompetencyDecisionActorCount = (
-        await tx.aiCompetencySecondRoundSubmission.updateMany({
-          where: { finalDecisionById: employeeId },
-          data: {
-            finalDecisionById: null,
-            finalDecisionNote: null,
-            decidedAt: null,
-          },
-        })
+        await withDeleteStep(
+          'clearAiCompetencyDecisionActor',
+          () =>
+            tx.aiCompetencySecondRoundSubmission.updateMany({
+              where: { finalDecisionById: employeeId },
+              data: {
+                finalDecisionById: null,
+                finalDecisionNote: null,
+                decidedAt: null,
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.clearedAiCompetencyCertApproverCount = (
-        await tx.aiCompetencyExternalCertClaim.updateMany({
-          where: { decidedById: employeeId },
-          data: {
-            decidedById: null,
-            decidedAt: null,
-            rejectionReason: null,
-          },
-        })
+        await withDeleteStep(
+          'clearAiCompetencyCertApprover',
+          () =>
+            tx.aiCompetencyExternalCertClaim.updateMany({
+              where: { decidedById: employeeId },
+              data: {
+                decidedById: null,
+                decidedAt: null,
+                rejectionReason: null,
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.clearedAiCompetencyResultSyncActorCount = (
-        await tx.aiCompetencyResult.updateMany({
-          where: { syncActorId: employeeId },
-          data: {
-            syncActorId: null,
-            syncedAt: null,
-          },
-        })
+        await withDeleteStep(
+          'clearAiCompetencyResultSyncActor',
+          () =>
+            tx.aiCompetencyResult.updateMany({
+              where: { syncActorId: employeeId },
+              data: {
+                syncActorId: null,
+                syncedAt: null,
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
+      ).count
+
+      cleanupSummary.deletedWordCloudResponseCount = (
+        await withDeleteStep(
+          'deleteWordCloudResponses',
+          () =>
+            tx.wordCloud360Response.deleteMany({
+              where: {
+                OR: [{ evaluatorId: employeeId }, { evaluateeId: employeeId }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedWordCloudAssignmentCount = (
-        await tx.wordCloud360Assignment.deleteMany({
-          where: {
-            OR: [{ evaluatorId: employeeId }, { evaluateeId: employeeId }],
-          },
-        })
+        await withDeleteStep(
+          'deleteWordCloudAssignments',
+          () =>
+            tx.wordCloud360Assignment.deleteMany({
+              where: {
+                OR: [{ evaluatorId: employeeId }, { evaluateeId: employeeId }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedFeedbackNominationCount = (
-        await tx.feedbackNomination.deleteMany({
-          where: {
-            OR: [
-              { targetId: employeeId },
-              { reviewerId: employeeId },
-              { submittedById: employeeId },
-              { approvedById: employeeId },
-            ],
-          },
-        })
+        await withDeleteStep(
+          'deleteFeedbackNominations',
+          () =>
+            tx.feedbackNomination.deleteMany({
+              where: {
+                OR: [
+                  { targetId: employeeId },
+                  { reviewerId: employeeId },
+                  { submittedById: employeeId },
+                  { approvedById: employeeId },
+                ],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedFeedbackReportCacheCount = (
-        await tx.feedbackReportCache.deleteMany({
-          where: {
-            OR: [{ targetId: employeeId }, { generatedById: employeeId }],
-          },
-        })
+        await withDeleteStep(
+          'deleteFeedbackReportCaches',
+          () =>
+            tx.feedbackReportCache.deleteMany({
+              where: {
+                OR: [{ targetId: employeeId }, { generatedById: employeeId }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedDevelopmentPlanCount = (
-        await tx.developmentPlan.deleteMany({
-          where: {
-            OR: [{ employeeId }, { createdById: employeeId }],
-          },
-        })
+        await withDeleteStep(
+          'deleteDevelopmentPlans',
+          () =>
+            tx.developmentPlan.deleteMany({
+              where: {
+                OR: [{ employeeId }, { createdById: employeeId }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedCheckInCount = (
-        await tx.checkIn.deleteMany({
-          where: {
-            OR: [{ ownerId: employeeId }, { managerId: employeeId }],
-          },
-        })
+        await withDeleteStep(
+          'deleteCheckIns',
+          () =>
+            tx.checkIn.deleteMany({
+              where: {
+                OR: [{ ownerId: employeeId }, { managerId: employeeId }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       if (relatedFeedbackIds.length > 0) {
         cleanupSummary.deletedFeedbackResponseCount = (
-          await tx.feedbackResponse.deleteMany({
-            where: {
-              feedbackId: {
-                in: relatedFeedbackIds,
-              },
-            },
-          })
+          await withDeleteStep(
+            'deleteFeedbackResponses',
+            () =>
+              tx.feedbackResponse.deleteMany({
+                where: {
+                  feedbackId: {
+                    in: relatedFeedbackIds,
+                  },
+                },
+              }),
+            (result) => ({ affectedCount: result.count })
+          )
         ).count
       }
 
       cleanupSummary.deletedFeedbackCount = (
-        await tx.multiFeedback.deleteMany({
-          where: {
-            OR: [{ giverId: employeeId }, { receiverId: employeeId }],
-          },
-        })
+        await withDeleteStep(
+          'deleteFeedbackRecords',
+          () =>
+            tx.multiFeedback.deleteMany({
+              where: {
+                OR: [{ giverId: employeeId }, { receiverId: employeeId }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedMonthlyRecordCount = (
-        await tx.monthlyRecord.deleteMany({
-          where: {
-            OR: [{ employeeId }, { personalKpiId: { in: ownedPersonalKpiIds } }],
-          },
-        })
+        await withDeleteStep(
+          'deleteMonthlyRecords',
+          () =>
+            tx.monthlyRecord.deleteMany({
+              where: {
+                OR: [{ employeeId }, { personalKpiId: { in: ownedPersonalKpiIds } }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedEvaluationItemCount = (
-        await tx.evaluationItem.deleteMany({
-          where: {
-            OR: [
-              { evaluationId: { in: relatedEvaluationIds } },
-              { personalKpiId: { in: ownedPersonalKpiIds } },
-            ],
-          },
-        })
+        await withDeleteStep(
+          'deleteEvaluationItems',
+          () =>
+            tx.evaluationItem.deleteMany({
+              where: {
+                OR: [
+                  { evaluationId: { in: relatedEvaluationIds } },
+                  { personalKpiId: { in: ownedPersonalKpiIds } },
+                ],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedAppealCount = (
-        await tx.appeal.deleteMany({
-          where: {
-            OR: [{ appealerId: employeeId }, { evaluationId: { in: relatedEvaluationIds } }],
-          },
-        })
+        await withDeleteStep(
+          'deleteAppeals',
+          () =>
+            tx.appeal.deleteMany({
+              where: {
+                OR: [{ appealerId: employeeId }, { evaluationId: { in: relatedEvaluationIds } }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedEvaluationCount = (
-        await tx.evaluation.deleteMany({
-          where: {
-            OR: [{ targetId: employeeId }, { evaluatorId: employeeId }],
-          },
-        })
+        await withDeleteStep(
+          'deleteEvaluations',
+          () =>
+            tx.evaluation.deleteMany({
+              where: {
+                OR: [{ targetId: employeeId }, { evaluatorId: employeeId }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.detachedClonedPersonalKpiCount = (
-        await tx.personalKpi.updateMany({
-          where: {
-            copiedFromPersonalKpiId: {
-              in: ownedPersonalKpiIds,
-            },
-          },
-          data: {
-            copiedFromPersonalKpiId: null,
-          },
-        })
+        await withDeleteStep(
+          'detachClonedPersonalKpis',
+          () =>
+            tx.personalKpi.updateMany({
+              where: {
+                copiedFromPersonalKpiId: {
+                  in: ownedPersonalKpiIds,
+                },
+              },
+              data: {
+                copiedFromPersonalKpiId: null,
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedPersonalKpiCount = (
-        await tx.personalKpi.deleteMany({
-          where: { employeeId },
-        })
+        await withDeleteStep(
+          'deletePersonalKpis',
+          () => tx.personalKpi.deleteMany({ where: { employeeId } }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedCompensationSnapshotCount = (
-        await tx.compensationScenarioEmployee.deleteMany({
-          where: { employeeId },
-        })
+        await withDeleteStep(
+          'deleteCompensationSnapshots',
+          () => tx.compensationScenarioEmployee.deleteMany({ where: { employeeId } }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedNotificationPreferenceCount = (
-        await tx.notificationPreference.deleteMany({
-          where: { employeeId },
-        })
+        await withDeleteStep(
+          'deleteNotificationPreferences',
+          () =>
+            tx.notificationPreference.deleteMany({
+              where: { employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedNotificationCount = (
-        await tx.notification.deleteMany({
-          where: { recipientId: employeeId },
-        })
+        await withDeleteStep(
+          'deleteNotifications',
+          () =>
+            tx.notification.deleteMany({
+              where: { recipientId: employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedNotificationDeadLetterCount = (
-        await tx.notificationDeadLetter.deleteMany({
-          where: { recipientId: employeeId },
-        })
+        await withDeleteStep(
+          'deleteNotificationDeadLetters',
+          () =>
+            tx.notificationDeadLetter.deleteMany({
+              where: { recipientId: employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedNotificationJobCount = (
-        await tx.notificationJob.deleteMany({
-          where: { recipientId: employeeId },
-        })
+        await withDeleteStep(
+          'deleteNotificationJobs',
+          () =>
+            tx.notificationJob.deleteMany({
+              where: { recipientId: employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedAuthSessionCount = (
-        await tx.session.deleteMany({
-          where: { userId: employeeId },
-        })
+        await withDeleteStep(
+          'deleteAuthSessions',
+          () =>
+            tx.session.deleteMany({
+              where: { userId: employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedAuthAccountCount = (
-        await tx.account.deleteMany({
-          where: { userId: employeeId },
-        })
+        await withDeleteStep(
+          'deleteAuthAccounts',
+          () =>
+            tx.account.deleteMany({
+              where: { userId: employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedAiRequestLogCount = (
-        await tx.aiRequestLog.deleteMany({
-          where: { requesterId: employeeId },
-        })
+        await withDeleteStep(
+          'deleteAiRequestLogs',
+          () =>
+            tx.aiRequestLog.deleteMany({
+              where: { requesterId: employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.clearedAiRequestApprovalActorCount = (
-        await tx.aiRequestLog.updateMany({
-          where: { approvedById: employeeId },
-          data: {
-            approvedById: null,
-            approvedAt: null,
-          },
-        })
+        await withDeleteStep(
+          'clearAiRequestApprovalActor',
+          () =>
+            tx.aiRequestLog.updateMany({
+              where: { approvedById: employeeId },
+              data: {
+                approvedById: null,
+                approvedAt: null,
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
+      ).count
+
+      cleanupSummary.deletedAiCompetencyGeneratedExamSetCount = (
+        await withDeleteStep(
+          'deleteAiCompetencyGeneratedExamSets',
+          () =>
+            tx.aiCompetencyGeneratedExamSet.deleteMany({
+              where: { employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
+      ).count
+
+      cleanupSummary.deletedAiCompetencyAttemptCount = (
+        await withDeleteStep(
+          'deleteAiCompetencyAttempts',
+          () =>
+            tx.aiCompetencyAttempt.deleteMany({
+              where: { employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedAiCompetencyAssignmentCount = (
-        await tx.aiCompetencyAssignment.deleteMany({
-          where: { employeeId },
-        })
+        await withDeleteStep(
+          'deleteAiCompetencyAssignments',
+          () =>
+            tx.aiCompetencyAssignment.deleteMany({
+              where: { employeeId },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
       cleanupSummary.deletedImpersonationSessionCount = (
-        await tx.impersonationSession.deleteMany({
-          where: {
-            OR: [{ impersonatorAdminId: employeeId }, { impersonatedUserId: employeeId }],
-          },
-        })
+        await withDeleteStep(
+          'deleteImpersonationSessions',
+          () =>
+            tx.impersonationSession.deleteMany({
+              where: {
+                OR: [{ impersonatorAdminId: employeeId }, { impersonatedUserId: employeeId }],
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
       ).count
 
-      const deletedEmployee = await tx.employee.delete({
-        where: { id: employeeId },
-        select: {
-          id: true,
-          empId: true,
-          empName: true,
-        },
+      const deletedEmployee = await withDeleteStep(
+        'employeeDelete',
+        () =>
+          tx.employee.delete({
+            where: { id: employeeId },
+            select: {
+              id: true,
+              empId: true,
+              empName: true,
+            },
+          }),
+        (result) => ({ deletedEmployeeId: result.id })
+      )
+
+      logEmployeeDelete('EMPLOYEE_DELETE_EMPLOYEE_DELETE_DONE', {
+        employeeId,
+        deletedEmployeeId: deletedEmployee.id,
       })
 
       return {
@@ -2006,13 +2332,24 @@ export async function safeDeleteEmployeeRecord(
     })
 
     let hierarchyUpdatedCount = 0
+    logEmployeeDelete('EMPLOYEE_DELETE_POST_STEP_START', {
+      employeeId,
+      stepName: 'recalculateLeadershipLinks',
+    })
     try {
       const hierarchyResult = await runLeadershipRecalculation()
       hierarchyUpdatedCount = hierarchyResult.updatedCount
+      logEmployeeDelete('EMPLOYEE_DELETE_POST_STEP_DONE', {
+        employeeId,
+        stepName: 'recalculateLeadershipLinks',
+        updatedCount: hierarchyUpdatedCount,
+      })
     } catch (error) {
+      const errorInfo = extractEmployeeDeleteErrorInfo(error)
       console.warn('[admin-google-account] EMPLOYEE_DELETE_LEADERSHIP_REFRESH_FAILED', {
         employeeId,
-        error: error instanceof Error ? error.message : 'unknown',
+        errorCode: errorInfo.code,
+        errorMessage: errorInfo.message,
       })
     }
 
@@ -2026,10 +2363,25 @@ export async function safeDeleteEmployeeRecord(
       hierarchyUpdatedCount,
     }
   } catch (error) {
+    const errorInfo = extractEmployeeDeleteErrorInfo(error)
+    const failingStep = readEmployeeDeleteStep(error) ?? 'unknown'
+
+    logEmployeeDelete('EMPLOYEE_DELETE_CAUGHT_ERROR', {
+      employeeId,
+      stepName: failingStep,
+      errorCode: errorInfo.code,
+      errorName: errorInfo.name,
+      errorMessage: errorInfo.message,
+    })
+
+    if (error instanceof AppError) {
+      throw error
+    }
+
     if (isPrismaKnownRequestError(error) && error.code === 'P2003') {
       throw new AppError(
         409,
-        'EMPLOYEE_DELETE_REFERENCE_CLEANUP_FAILED',
+        'EMPLOYEE_DELETE_CLEANUP_FAILED',
         '연결된 데이터를 정리하는 중 문제가 발생해 직원을 삭제하지 못했습니다.'
       )
     }
@@ -2038,7 +2390,7 @@ export async function safeDeleteEmployeeRecord(
       ? error
       : new AppError(
           500,
-          'EMPLOYEE_DELETE_FAILED',
+          'EMPLOYEE_DELETE_TX_FAILED',
           '직원 삭제 중 예상하지 못한 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.'
         )
   }

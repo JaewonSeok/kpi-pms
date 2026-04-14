@@ -198,21 +198,41 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    console.info('[admin-google-account] EMPLOYEE_DELETE_ROUTE_ENTER')
     const session = await authorizeMenu('SYSTEM_SETTING')
-    const body = await request.json()
+    console.info('[admin-google-account] EMPLOYEE_DELETE_AUTH_OK', {
+      userId: session.user.id,
+      role: session.user.role,
+    })
+
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch (error) {
+      console.error('[admin-google-account] EMPLOYEE_DELETE_CAUGHT_ERROR', {
+        stepName: 'requestJson',
+        errorCode: error instanceof Error ? error.name : 'UNKNOWN',
+        errorMessage: error instanceof Error ? error.message : 'unknown',
+      })
+      throw new AppError(400, 'EMPLOYEE_DELETE_INVALID_BODY', '삭제 요청 본문을 읽지 못했습니다.')
+    }
     const validated = DeleteGoogleAccountEmployeeSchema.safeParse(body)
 
     if (!validated.success) {
       throw new AppError(
         400,
-        'VALIDATION_ERROR',
+        'EMPLOYEE_DELETE_VALIDATION_FAILED',
         validated.error.issues[0]?.message || '삭제 요청이 올바르지 않습니다.'
       )
     }
 
+    console.info('[admin-google-account] EMPLOYEE_DELETE_VALIDATION_OK', {
+      employeeId: validated.data.employeeId,
+    })
+
     const previousEmployee = await loadEmployeeAuditSnapshot(validated.data.employeeId)
     if (!previousEmployee) {
-      throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '직원 정보를 찾을 수 없습니다.')
+      throw new AppError(404, 'EMPLOYEE_DELETE_TARGET_NOT_FOUND', '삭제할 직원을 찾을 수 없습니다.')
     }
 
     const result = await safeDeleteEmployeeRecord(validated.data.employeeId)

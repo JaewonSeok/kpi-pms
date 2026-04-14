@@ -148,6 +148,9 @@ function createEmployeeForceDeletePrismaMock(options?: {
     wordCloud360Assignment: {
       deleteMany: createDeleteManyDelegate(calls, 'wordCloud360Assignment', 2),
     },
+    wordCloud360Response: {
+      deleteMany: createDeleteManyDelegate(calls, 'wordCloud360Response', 2),
+    },
     feedbackNomination: {
       deleteMany: createDeleteManyDelegate(calls, 'feedbackNomination', 1),
     },
@@ -199,6 +202,12 @@ function createEmployeeForceDeletePrismaMock(options?: {
     },
     aiCompetencyAssignment: {
       deleteMany: createDeleteManyDelegate(calls, 'aiCompetencyAssignment', 2),
+    },
+    aiCompetencyAttempt: {
+      deleteMany: createDeleteManyDelegate(calls, 'aiCompetencyAttempt', 2),
+    },
+    aiCompetencyGeneratedExamSet: {
+      deleteMany: createDeleteManyDelegate(calls, 'aiCompetencyGeneratedExamSet', 2),
     },
     impersonationSession: {
       deleteMany: createDeleteManyDelegate(calls, 'impersonationSession', 2),
@@ -290,6 +299,8 @@ async function main() {
     assert.equal(result.cleanupSummary.deletedAuthSessionCount, 1)
     assert.equal(result.cleanupSummary.deletedAuthAccountCount, 1)
     assert.equal(result.cleanupSummary.clearedAiRequestApprovalActorCount, 1)
+    assert.equal(result.cleanupSummary.deletedAiCompetencyAttemptCount, 2)
+    assert.equal(result.cleanupSummary.deletedAiCompetencyGeneratedExamSetCount, 2)
     assert.equal(result.cleanupSummary.deletedImpersonationSessionCount, 2)
     assert.equal(result.hierarchyUpdatedCount, 4)
 
@@ -311,6 +322,9 @@ async function main() {
     assert.ok(calledDelegates.includes('aiRequestLog.updateMany'))
     assert.ok(calledDelegates.includes('impersonationSession.deleteMany'))
     assert.ok(calledDelegates.includes('aiCompetencyAssignment.deleteMany'))
+    assert.ok(calledDelegates.includes('aiCompetencyAttempt.deleteMany'))
+    assert.ok(calledDelegates.includes('aiCompetencyGeneratedExamSet.deleteMany'))
+    assert.ok(calledDelegates.includes('wordCloud360Response.deleteMany'))
     assert.ok(calledDelegates.includes('wordCloud360Assignment.deleteMany'))
     assert.ok(calledDelegates.includes('employee.delete'))
   })
@@ -323,7 +337,7 @@ async function main() {
         prisma: prismaMock as any,
         recalculateLeadershipLinks: async () => ({ updatedCount: 0 }),
       }),
-      'EMPLOYEE_NOT_FOUND',
+      'EMPLOYEE_DELETE_TARGET_NOT_FOUND',
       404
     )
   })
@@ -338,7 +352,7 @@ async function main() {
         prisma: prismaMock as any,
         recalculateLeadershipLinks: async () => ({ updatedCount: 0 }),
       }),
-      'EMPLOYEE_DELETE_REFERENCE_CLEANUP_FAILED',
+      'EMPLOYEE_DELETE_CLEANUP_FAILED',
       409
     )
   })
@@ -365,6 +379,9 @@ async function main() {
       serverSource.includes('이 직원은 바로 삭제할 수 없습니다.'),
       false
     )
+    assert.equal(serverSource.includes('EMPLOYEE_DELETE_FAILED'), false)
+    assert.equal(serverSource.includes('EMPLOYEE_DELETE_TX_FAILED'), true)
+    assert.equal(serverSource.includes("'employeeDelete'"), true)
     assert.equal(serverSource.includes('cleanupSummary'), true)
   })
 
