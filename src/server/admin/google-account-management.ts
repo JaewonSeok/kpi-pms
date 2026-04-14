@@ -6,7 +6,7 @@ import {
   getAllowedGoogleWorkspaceDomain,
   normalizeGoogleWorkspaceEmail,
 } from '../../lib/google-workspace'
-import { resolveMasterLoginAccess } from '../../lib/master-login'
+import { resolveMasterLoginAccess } from '../../lib/master-login-shared'
 import { AppError } from '../../lib/utils'
 
 export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [

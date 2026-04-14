@@ -1,5 +1,12 @@
 import type { SystemRole } from '@prisma/client'
-import { MASTER_LOGIN_PERMISSION_KEY, isFixedMasterLoginAccessSource, resolveMasterLoginAccess, resolveMasterLoginPermissionManagementState } from '@/lib/master-login'
+import {
+  MASTER_LOGIN_PERMISSION_KEY,
+  resolveMasterLoginAccess,
+} from '@/lib/master-login-shared'
+import {
+  isFixedMasterLoginAccessSource,
+  resolveMasterLoginPermissionManagementState,
+} from '@/lib/master-login-ui'
 import { AppError } from '@/lib/utils'
 
 type AuditLogPayload = {

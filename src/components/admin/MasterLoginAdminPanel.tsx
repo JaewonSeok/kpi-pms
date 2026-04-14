@@ -12,7 +12,7 @@ import {
   isFixedMasterLoginAccessSource,
   resolveMasterLoginPermissionManagementState,
   resolveMasterLoginPermissionToggleState,
-} from '@/lib/master-login'
+} from '@/lib/master-login-ui'
 
 type EmployeeRole =
   | 'ROLE_MEMBER'

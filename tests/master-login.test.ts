@@ -10,12 +10,14 @@ import {
 import {
   MASTER_LOGIN_PERMISSION_KEY,
   canUseMasterLogin,
-  isFixedMasterLoginAccessSource,
   readMasterLoginConfig,
+  resolveMasterLoginAccess,
+} from '../src/lib/master-login-shared'
+import {
+  isFixedMasterLoginAccessSource,
   resolveMasterLoginPermissionManagementState,
   resolveMasterLoginPermissionToggleState,
-  resolveMasterLoginAccess,
-} from '../src/lib/master-login'
+} from '../src/lib/master-login-ui'
 
 function run(name: string, fn: () => void) {
   try {
@@ -237,6 +239,7 @@ run('master login route, auth, service, and UI sources expose permission safegua
   assert.match(panelSource, /type="checkbox"/)
   assert.match(panelSource, /resolveMasterLoginPermissionToggleState/)
   assert.match(panelSource, /resolveMasterLoginPermissionManagementState/)
+  assert.match(panelSource, /from '@\/lib\/master-login-ui'/)
   assert.match(panelSource, /title=\{toggleState\.message \?\? undefined\}/)
   assert.match(panelSource, /fetch\('\/api\/admin\/employees\/google-account\/master-login'/)
 
