@@ -129,3 +129,40 @@ export function filterNavigationItemsByRole(items: NavigationItem[], role: strin
 export function flattenNavigationItems(items: NavigationItem[]): NavigationItem[] {
   return items.flatMap((item) => (item.children?.length ? flattenNavigationItems(item.children) : [item]))
 }
+
+export function isNavigationHrefActive(
+  href: string,
+  pathname: string,
+  currentTab?: string | null
+) {
+  const url = new URL(href, 'https://kpi-pms.local')
+  const hrefPathname = url.pathname
+  const hrefTab = url.searchParams.get('tab')
+  const isLegacyOrgChartPath = pathname === '/admin/org-chart'
+
+  if (isLegacyOrgChartPath && hrefPathname === '/admin/google-access' && hrefTab === 'org-chart') {
+    return true
+  }
+
+  const pathMatches =
+    pathname === hrefPathname ||
+    (hrefPathname !== '/' && pathname.startsWith(`${hrefPathname}/`))
+
+  if (!pathMatches) {
+    return false
+  }
+
+  if (hrefPathname === '/admin/google-access') {
+    if (hrefTab) {
+      return currentTab === hrefTab
+    }
+
+    return currentTab !== 'org-chart'
+  }
+
+  if (hrefTab) {
+    return currentTab === hrefTab
+  }
+
+  return true
+}

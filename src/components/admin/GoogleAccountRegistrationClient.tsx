@@ -327,6 +327,84 @@ function buildDirectorySnapshotAfterDelete(
   }
 }
 
+function matchesDirectoryFilters(
+  employee: EmployeeListItem,
+  params: {
+    search: string
+    status: string
+    departmentId: string
+  }
+) {
+  const normalizedSearch = params.search.trim().toLowerCase()
+
+  if (params.status && params.status !== 'ALL' && employee.employmentStatus !== params.status) {
+    return false
+  }
+
+  if (params.departmentId && employee.departmentId !== params.departmentId) {
+    return false
+  }
+
+  if (!normalizedSearch) {
+    return true
+  }
+
+  const target = [
+    employee.employeeNumber,
+    employee.name,
+    employee.googleEmail,
+    employee.departmentName,
+    employee.departmentCode,
+    employee.teamName ?? '',
+    employee.jobTitle ?? '',
+  ]
+    .join(' ')
+    .toLowerCase()
+
+  return target.includes(normalizedSearch)
+}
+
+function compareDirectoryEmployees(left: EmployeeListItem, right: EmployeeListItem) {
+  return left.name.localeCompare(right.name, 'ko') || left.employeeNumber.localeCompare(right.employeeNumber, 'ko')
+}
+
+function buildDirectorySnapshotAfterCreate(
+  payload: EmployeeDirectoryResponse | undefined,
+  createdEmployee: EmployeeListItem,
+  params: {
+    search: string
+    status: string
+    departmentId: string
+  }
+) {
+  if (!payload) {
+    return payload
+  }
+
+  const shouldInclude = matchesDirectoryFilters(createdEmployee, params)
+  const nextEmployees = shouldInclude
+    ? [...payload.employees, createdEmployee].sort(compareDirectoryEmployees)
+    : payload.employees
+
+  return {
+    ...payload,
+    employees: nextEmployees,
+    summary: {
+      ...payload.summary,
+      totalEmployees: payload.summary.totalEmployees + 1,
+      activeEmployees:
+        payload.summary.activeEmployees + (createdEmployee.employmentStatus === 'ACTIVE' ? 1 : 0),
+      inactiveEmployees:
+        payload.summary.inactiveEmployees + (createdEmployee.employmentStatus === 'INACTIVE' ? 1 : 0),
+      resignedEmployees:
+        payload.summary.resignedEmployees + (createdEmployee.employmentStatus === 'RESIGNED' ? 1 : 0),
+      unassignedManagerCount:
+        payload.summary.unassignedManagerCount +
+        (createdEmployee.employmentStatus === 'ACTIVE' && !createdEmployee.managerId ? 1 : 0),
+    },
+  }
+}
+
 function OrgChartTree({
   nodes,
   onEdit,
@@ -456,10 +534,29 @@ export function GoogleAccountRegistrationClient() {
       return parseResponse<SaveEmployeeResponse>(await response.json())
     },
     onSuccess: async (data) => {
+      const isCreateMode = !editingEmployeeId
+
+      if (isCreateMode) {
+        queryClient.setQueryData<EmployeeDirectoryResponse | undefined>(
+          ['admin-google-account-directory', querySuffix],
+          (current) =>
+            buildDirectorySnapshotAfterCreate(current, data.employee, {
+              search,
+              status: statusFilter,
+              departmentId: departmentFilter,
+            })
+        )
+      }
+
+      const successMessage = isCreateMode
+        ? `${data.employee.name}(${data.employee.employeeNumber}) 직원을 등록했습니다. 조직도 연계 ${data.hierarchyUpdatedCount}건을 재계산했습니다.`
+        : `${data.employee.name}(${data.employee.employeeNumber}) 정보를 저장했습니다. 조직도 연계 ${data.hierarchyUpdatedCount}건을 재계산했습니다.`
+
       setFeedback({
         type: 'success',
         message: `${data.employee.name}(${data.employee.employeeNumber}) 정보를 저장했습니다. 조직도 연계 ${data.hierarchyUpdatedCount}건을 재계산했습니다.`,
       })
+      setFeedback({ type: 'success', message: successMessage })
       setEditingEmployeeId(null)
       setForm(EMPTY_FORM)
       await refreshQueries()
@@ -630,6 +727,14 @@ export function GoogleAccountRegistrationClient() {
   const resetForm = () => {
     setEditingEmployeeId(null)
     setForm(EMPTY_FORM)
+  }
+
+  const beginCreateMode = () => {
+    resetForm()
+    setFeedback(null)
+    if (activeTab !== 'manage') {
+      applyTab('manage')
+    }
   }
 
   const handleLifecycle = (employee: EmployeeListItem, action: 'DEACTIVATE' | 'RESIGN' | 'REACTIVATE') => {
@@ -810,12 +915,23 @@ export function GoogleAccountRegistrationClient() {
               {editingEmployeeId && (
                 <button
                   type="button"
-                  onClick={resetForm}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
+                  onClick={beginCreateMode}
+                  className="hidden"
                 >
                   새 등록으로 전환
                 </button>
               )}
+            </div>
+
+            <div className="mb-4 flex justify-end">
+              <button
+                type="button"
+                onClick={beginCreateMode}
+                disabled={!editingEmployeeId && !form.employeeNumber && !form.name && !form.gwsEmail && !form.deptId}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {editingEmployeeId ? '새 등록으로 전환' : '입력 초기화'}
+              </button>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1225,10 +1341,7 @@ export function GoogleAccountRegistrationClient() {
             onSelectDepartment={setDepartmentFilter}
             onToggleIncludeChildDepartments={setIncludeChildDepartments}
             onEditEmployee={startEdit}
-            onOpenCreateEmployee={() => {
-              resetForm()
-              applyTab('manage')
-            }}
+            onOpenCreateEmployee={beginCreateMode}
             onOpenUpload={() => applyTab('upload')}
             onRefresh={refreshQueries}
             onFeedback={setFeedback}

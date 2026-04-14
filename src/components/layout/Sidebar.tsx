@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import type { ReactNode } from 'react'
 import {
   BarChart3,
@@ -14,7 +14,12 @@ import {
   Settings,
   Target,
 } from 'lucide-react'
-import { filterNavigationItemsByRole, NAV_ITEMS, type NavigationItem } from '@/lib/navigation'
+import {
+  filterNavigationItemsByRole,
+  isNavigationHrefActive,
+  NAV_ITEMS,
+  type NavigationItem,
+} from '@/lib/navigation'
 import { cn } from '@/lib/utils'
 
 type SidebarProps = {
@@ -25,7 +30,9 @@ type SidebarProps = {
 
 export function Sidebar({ role, className, onNavigate }: SidebarProps) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const filteredItems = filterNavigationItemsByRole(NAV_ITEMS, role)
+  const currentTab = searchParams.get('tab')
 
   return (
     <aside
@@ -53,6 +60,7 @@ export function Sidebar({ role, className, onNavigate }: SidebarProps) {
             key={item.href}
             item={item}
             pathname={pathname}
+            currentTab={currentTab}
             onNavigate={onNavigate}
           />
         ))}
@@ -68,14 +76,18 @@ export function Sidebar({ role, className, onNavigate }: SidebarProps) {
 function NavGroup({
   item,
   pathname,
+  currentTab,
   onNavigate,
 }: {
   item: NavigationItem
   pathname: string
+  currentTab?: string | null
   onNavigate?: () => void
 }) {
-  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
   const children = item.children
+  const isActive = children?.length
+    ? children.some((child) => isNavigationHrefActive(child.href, pathname, currentTab))
+    : isNavigationHrefActive(item.href, pathname, currentTab)
 
   if (!children?.length) {
     return (
@@ -114,7 +126,7 @@ function NavGroup({
             onClick={onNavigate}
             className={cn(
               'flex min-h-10 items-center gap-2 rounded-2xl px-3 py-2 text-sm transition',
-              pathname === child.href
+              isNavigationHrefActive(child.href, pathname, currentTab)
                 ? 'bg-white font-semibold text-blue-700 shadow-sm'
                 : 'text-slate-500 hover:bg-white hover:text-slate-900'
             )}

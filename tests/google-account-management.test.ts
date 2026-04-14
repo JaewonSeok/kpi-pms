@@ -9,6 +9,7 @@ import {
   buildAdminGoogleAccessHref,
   resolveAdminGoogleAccessTab,
 } from '../src/lib/admin-google-access-tabs'
+import { isNavigationHrefActive } from '../src/lib/navigation'
 import {
   AdminDepartmentRecordSchema,
   AdminEmployeeLifecycleActionSchema,
@@ -671,6 +672,36 @@ run('admin google access href builder keeps org-chart tab and department filter 
   assert.equal(buildAdminGoogleAccessHref('upload', { departmentId: 'dept-1' }), '/admin/google-access?tab=upload')
 })
 
+run('sidebar active state separates org-chart from google access management tabs', () => {
+  const sidebarSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/layout/Sidebar.tsx'),
+    'utf8'
+  )
+
+  assert.equal(
+    isNavigationHrefActive(buildAdminGoogleAccessHref('org-chart'), '/admin/google-access', 'org-chart'),
+    true
+  )
+  assert.equal(
+    isNavigationHrefActive(
+      buildAdminGoogleAccessHref('org-chart', { departmentId: 'dept-1' }),
+      '/admin/google-access',
+      'org-chart'
+    ),
+    true
+  )
+  assert.equal(isNavigationHrefActive('/admin/google-access', '/admin/google-access', 'org-chart'), false)
+  assert.equal(isNavigationHrefActive('/admin/google-access', '/admin/google-access', 'manage'), true)
+  assert.equal(isNavigationHrefActive('/admin/google-access', '/admin/google-access', 'master-login'), true)
+  assert.equal(
+    isNavigationHrefActive(buildAdminGoogleAccessHref('org-chart'), '/admin/org-chart', null),
+    true
+  )
+  assert.match(sidebarSource, /useSearchParams/)
+  assert.match(sidebarSource, /const currentTab = searchParams\.get\('tab'\)/)
+  assert.match(sidebarSource, /isNavigationHrefActive\(child\.href, pathname, currentTab\)/)
+})
+
 run('admin google access page renders a dedicated org-chart screen for tab=org-chart', () => {
   const googleAccessPageSource = readFileSync(
     path.resolve(process.cwd(), 'src/app/(main)/admin/google-access/page.tsx'),
@@ -715,6 +746,36 @@ run('org-chart entry points resolve to the org-chart tab instead of falling back
   assert.match(navigationSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
   assert.match(calendarSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
   assert.match(orgChartPageSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
+})
+
+run('single employee create mode stays available in manage tab and uses the POST create path', () => {
+  const registrationClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
+    'utf8'
+  )
+  const routeSource = readFileSync(
+    path.resolve(process.cwd(), 'src/app/api/admin/employees/google-account/route.ts'),
+    'utf8'
+  )
+  const serverSource = readFileSync(
+    path.resolve(process.cwd(), 'src/server/admin/google-account-management.ts'),
+    'utf8'
+  )
+
+  assert.match(registrationClientSource, /const beginCreateMode = \(\) => \{/)
+  assert.match(registrationClientSource, /onClick=\{beginCreateMode\}/)
+  assert.match(registrationClientSource, /method: editingEmployeeId \? 'PUT' : 'POST'/)
+  assert.match(registrationClientSource, /buildDirectorySnapshotAfterCreate/)
+  assert.match(registrationClientSource, /queryClient\.setQueryData<EmployeeDirectoryResponse \| undefined>\(\s*\['admin-google-account-directory', querySuffix\]/)
+
+  assert.match(routeSource, /export async function POST\(request: Request\)/)
+  assert.match(routeSource, /CreateAdminEmployeeSchema\.safeParse\(body\)/)
+  assert.match(routeSource, /await upsertEmployeeRecord\(/)
+  assert.match(routeSource, /action: 'EMPLOYEE_MANUAL_CREATE'/)
+
+  assert.match(serverSource, /await prisma\.employee\.create\(\{/)
+  assert.match(serverSource, /EMPLOYEE_NUMBER_ALREADY_EXISTS/)
+  assert.match(serverSource, /GOOGLE_EMAIL_ALREADY_ASSIGNED/)
 })
 
 console.log('Google account management tests completed')
