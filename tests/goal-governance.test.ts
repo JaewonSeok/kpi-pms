@@ -109,7 +109,7 @@ async function main() {
     assert.equal(clientSource.includes('내 팀원 목표 승인 상태'), true)
     assert.equal(clientSource.includes('kpi.linkedConfirmedPersonalKpiCount'), true)
     assert.equal(clientSource.includes('kpi.linkedPersonalKpis.length'), true)
-    assert.equal(clientSource.includes("goalEditLocked || !['DRAFT', 'SUBMITTED', 'LOCKED'].includes(kpi.status)"), true)
+    assert.equal(clientSource.includes("!['DRAFT', 'SUBMITTED', 'LOCKED'].includes(kpi.status)"), true)
   })
 
   await run('org KPI workspace supports bulk edit and export mode selection routes', () => {

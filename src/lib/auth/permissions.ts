@@ -11,6 +11,7 @@ export const MENU_PERMISSIONS: Record<MenuKey, AuthRole[]> = {
     'ROLE_DIV_HEAD',
     'ROLE_SECTION_CHIEF',
     'ROLE_TEAM_LEADER',
+    'ROLE_MEMBER',
   ],
   PERSONAL_KPI_UPLOAD: ['ROLE_ADMIN', 'ROLE_TEAM_LEADER'],
   KPI_SETTING: [

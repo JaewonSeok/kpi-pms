@@ -238,7 +238,12 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const router = useRouter()
   const searchParams = useSearchParams()
   const canRenderWorkspace = pageData.state === 'ready' || pageData.state === 'empty'
-  const defaultTab = initialTab && initialTab in TAB_LABELS ? (initialTab as TabKey) : 'map'
+  const isReadOnlyMemberView = pageData.actor.role === 'ROLE_MEMBER'
+  const visibleTabs = isReadOnlyMemberView
+    ? (['map', 'list', 'linkage', 'history'] as TabKey[])
+    : (Object.keys(TAB_LABELS) as TabKey[])
+  const defaultTab =
+    initialTab && visibleTabs.includes(initialTab as TabKey) ? (initialTab as TabKey) : 'map'
   const defaultDepartmentSelection =
     pageData.departments.length > 1 ? 'ALL' : pageData.selectedDepartmentId
   const [tab, setTab] = useState<TabKey>(defaultTab)
@@ -287,6 +292,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       }),
     [list, search, selectedDepartmentId]
   )
+
+  useEffect(() => {
+    if (visibleTabs.includes(tab)) {
+      return
+    }
+
+    setTab(visibleTabs[0] ?? 'map')
+  }, [tab, visibleTabs])
 
   useEffect(() => {
     if (previousServerContextKey.current === serverContextKey) {
@@ -855,6 +868,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">Goal Alignment</span>
+              {isReadOnlyMemberView ? (
+                <span
+                  data-testid="org-kpi-member-readonly-badge"
+                  className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"
+                >
+                  내 팀 조회 전용
+                </span>
+              ) : null}
               <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', STATUS_CLASS[pageData.summary.confirmedRate === 100 ? 'CONFIRMED' : pageData.summary.confirmedCount > 0 ? 'SUBMITTED' : 'DRAFT'])}>
                 {pageData.summary.confirmedRate === 100 ? '확정' : pageData.summary.confirmedCount > 0 ? '제출됨' : '초안'}
               </span>
@@ -884,7 +905,15 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
+          {isReadOnlyMemberView ? (
+            <MemberReadOnlySummaryCard
+              departmentName={pageData.actor.departmentName}
+              totalCount={pageData.summary.totalCount}
+              linkedPersonalKpiCount={pageData.summary.linkedPersonalKpiCount}
+              riskCount={pageData.summary.riskCount}
+            />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
             <ActionButton label="조직 KPI 추가" icon={<Plus className="h-4 w-4" />} onClick={() => { setEditingKpiId(null); setForm(buildEmptyForm(pageData.selectedYear, selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId)); setShowForm(true) }} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
             <ActionButton label="일괄 업로드" icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
             <ActionButton label="목표 일괄 수정" icon={<FilePenLine className="h-4 w-4" />} onClick={handleOpenBulkEdit} disabled={Boolean(bulkEditDisabledReason) || busy} />
@@ -894,6 +923,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
             <ActionButton label="잠금" icon={<Lock className="h-4 w-4" />} onClick={() => void runWorkflow('LOCK')} disabled={!selectedKpi || !pageData.permissions.canLock || busy} />
             <ActionButton label="이력 보기" icon={<Archive className="h-4 w-4" />} onClick={() => setTab('history')} disabled={false} />
           </div>
+          )}
         </div>
       </section>
 
@@ -909,7 +939,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
       <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          {(Object.keys(TAB_LABELS) as TabKey[]).map((tabKey) => (
+          {visibleTabs.map((tabKey) => (
             <button key={tabKey} type="button" onClick={() => setTab(tabKey)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === tabKey ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>
               {TAB_LABELS[tabKey]}
             </button>
@@ -960,6 +990,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
               <KpiDetailCard
                 kpi={selectedKpi}
                 permissions={pageData.permissions}
+                readOnly={isReadOnlyMemberView}
                 goalEditLocked={goalEditLocked}
                 busy={busy}
                 cloneDisabledReason={cloneDisabledReason}
@@ -1055,7 +1086,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
         </div>
       ) : null}
 
-      <OrgKpiQuickLinks showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'} />
+      <OrgKpiQuickLinks showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'} readOnly={isReadOnlyMemberView} />
 
       {showForm ? <EditorModal departments={pageData.departments} parentGoalOptions={pageData.parentGoalOptions} editingKpiId={editingKpiId} form={form} onChange={setForm} onClose={() => setShowForm(false)} onSubmit={() => void saveKpi()} busy={busy} editing={Boolean(editingKpiId)} /> : null}
       {showBulkUpload ? <OrgKpiBulkUploadModal departments={pageData.departments} selectedYear={pageData.selectedYear} defaultDepartmentId={selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId} onClose={() => setShowBulkUpload(false)} onUploaded={(message, tone = 'success') => { setBanner({ tone, message }); router.refresh() }} /> : null}
@@ -1112,6 +1143,30 @@ function MetricCard({ label, value, helper }: { label: string; value: string; he
   return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-sm text-slate-500">{label}</div><div className="mt-3 text-2xl font-semibold text-slate-900">{value}</div><div className="mt-2 text-xs text-slate-500">{helper}</div></div>
 }
 
+function MemberReadOnlySummaryCard(props: {
+  departmentName: string
+  totalCount: number
+  linkedPersonalKpiCount: number
+  riskCount: number
+}) {
+  return (
+    <div className="rounded-3xl border border-blue-200 bg-blue-50 p-5 xl:w-[360px]">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
+        Team Scope
+      </div>
+      <div className="mt-3 text-lg font-semibold text-slate-900">{props.departmentName}</div>
+      <p className="mt-2 text-sm leading-6 text-slate-600">
+        이 화면은 소속 팀에 등록된 조직 KPI만 조회할 수 있는 읽기 전용 화면입니다.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+        <HeroStat label="팀 조직 KPI" value={`${props.totalCount}개`} />
+        <HeroStat label="연결된 개인 KPI" value={`${props.linkedPersonalKpiCount}개`} />
+        <HeroStat label="위험 신호 KPI" value={`${props.riskCount}개`} />
+      </div>
+    </div>
+  )
+}
+
 function BannerBox({ tone, message }: Banner) {
   return <div className={cls('rounded-2xl border px-4 py-3 text-sm', tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : tone === 'error' ? 'border-red-200 bg-red-50 text-red-800' : 'border-blue-200 bg-blue-50 text-blue-800')}>{message}</div>
 }
@@ -1162,6 +1217,7 @@ function EmptyState({ title, description, compact = false }: { title: string; de
 function KpiDetailCard(props: {
   kpi: OrgKpiViewModel | null
   permissions: OrgKpiPageData['permissions']
+  readOnly?: boolean
   goalEditLocked?: boolean
   busy: boolean
   cloneDisabledReason?: string
@@ -1175,6 +1231,7 @@ function KpiDetailCard(props: {
 }) {
   const { kpi } = props
   const goalEditLocked = props.goalEditLocked ?? false
+  const isReadOnly = props.readOnly ?? false
 
   if (!kpi) {
     return (
@@ -1183,20 +1240,22 @@ function KpiDetailCard(props: {
           title="선택한 KPI가 없습니다"
           description="목표 맵이나 목록에서 KPI를 선택하면 상세 정보가 표시됩니다."
         />
-        <div className="mt-5 space-y-3 border-t border-slate-100 pt-5">
-          <ActionButton
-            label="삭제"
-            icon={<Trash2 className="h-4 w-4" />}
-            onClick={props.onDelete}
-            disabled
-            destructive
-            testId="org-kpi-delete-button"
-            title={props.deleteActionState.reason}
-          />
-          <p data-testid="org-kpi-delete-helper" className="text-xs text-slate-500">
-            {props.deleteActionState.reason ?? '삭제할 조직 KPI를 먼저 선택해 주세요.'}
-          </p>
-        </div>
+        {isReadOnly ? null : (
+          <div className="mt-5 space-y-3 border-t border-slate-100 pt-5">
+            <ActionButton
+              label="삭제"
+              icon={<Trash2 className="h-4 w-4" />}
+              onClick={props.onDelete}
+              disabled
+              destructive
+              testId="org-kpi-delete-button"
+              title={props.deleteActionState.reason}
+            />
+            <p data-testid="org-kpi-delete-helper" className="text-xs text-slate-500">
+              {props.deleteActionState.reason ?? '삭제할 조직 KPI를 먼저 선택해 주세요.'}
+            </p>
+          </div>
+        )}
       </div>
     )
   }
@@ -1339,72 +1398,100 @@ function KpiDetailCard(props: {
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <ActionButton
-            label="수정"
-            icon={<FilePenLine className="h-4 w-4" />}
-            onClick={() => props.onEdit(kpi)}
-            disabled={!props.permissions.canManage || goalEditLocked || kpi.status !== 'DRAFT' || props.busy}
-          />
-          <ActionButton
-            label="복제"
-            icon={<Copy className="h-4 w-4" />}
-            onClick={props.onClone}
-            disabled={Boolean(props.cloneDisabledReason)}
-          />
-          <ActionButton
-            label={kpi.status === 'SUBMITTED' || kpi.status === 'LOCKED' ? '다시 열기' : '제출'}
-            icon={<Send className="h-4 w-4" />}
-            onClick={() => props.onWorkflow(kpi.status === 'SUBMITTED' || kpi.status === 'LOCKED' ? 'REOPEN' : 'SUBMIT')}
-            disabled={!props.permissions.canManage || props.busy || goalEditLocked || !['DRAFT', 'SUBMITTED', 'LOCKED'].includes(kpi.status)}
-          />
-          <ActionButton
-            label="확정"
-            icon={<ShieldCheck className="h-4 w-4" />}
-            onClick={() => props.onStatus('CONFIRMED')}
-            disabled={!props.permissions.canConfirm || props.busy || ['CONFIRMED', 'LOCKED'].includes(kpi.status)}
-          />
-          <ActionButton
-            label="잠금"
-            icon={<Lock className="h-4 w-4" />}
-            onClick={() => props.onWorkflow('LOCK')}
-            disabled={!props.permissions.canLock || props.busy || kpi.status !== 'CONFIRMED'}
-          />
-          <ActionButton
-            label="보관"
-            icon={<Archive className="h-4 w-4" />}
-            onClick={() => props.onStatus('ARCHIVED')}
-            disabled={!props.permissions.canArchive || goalEditLocked || props.busy || kpi.status === 'ARCHIVED'}
-          />
-          <ActionButton
-            label="삭제"
-            icon={<Trash2 className="h-4 w-4" />}
-            onClick={props.onDelete}
-            disabled={props.deleteActionState.disabled}
-            destructive
-            testId="org-kpi-delete-button"
-            title={props.deleteActionState.reason}
-          />
-          <ActionButton
-            label="AI 개선"
-            icon={<Sparkles className="h-4 w-4" />}
-            onClick={() => props.onAi('improve-wording')}
-            disabled={!props.permissions.canUseAi || goalEditLocked}
-          />
-        </div>
+        {!isReadOnly ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ActionButton
+              label="수정"
+              icon={<FilePenLine className="h-4 w-4" />}
+              onClick={() => props.onEdit(kpi)}
+              disabled={!props.permissions.canManage || goalEditLocked || kpi.status !== 'DRAFT' || props.busy}
+            />
+            <ActionButton
+              label="복제"
+              icon={<Copy className="h-4 w-4" />}
+              onClick={props.onClone}
+              disabled={Boolean(props.cloneDisabledReason)}
+            />
+            <ActionButton
+              label={kpi.status === 'SUBMITTED' || kpi.status === 'LOCKED' ? '다시 열기' : '제출'}
+              icon={<Send className="h-4 w-4" />}
+              onClick={() =>
+                props.onWorkflow(
+                  kpi.status === 'SUBMITTED' || kpi.status === 'LOCKED' ? 'REOPEN' : 'SUBMIT'
+                )
+              }
+              disabled={
+                !props.permissions.canManage ||
+                props.busy ||
+                goalEditLocked ||
+                !['DRAFT', 'SUBMITTED', 'LOCKED'].includes(kpi.status)
+              }
+            />
+            <ActionButton
+              label="확정"
+              icon={<ShieldCheck className="h-4 w-4" />}
+              onClick={() => props.onStatus('CONFIRMED')}
+              disabled={!props.permissions.canConfirm || props.busy || ['CONFIRMED', 'LOCKED'].includes(kpi.status)}
+            />
+            <ActionButton
+              label="잠금"
+              icon={<Lock className="h-4 w-4" />}
+              onClick={() => props.onWorkflow('LOCK')}
+              disabled={!props.permissions.canLock || props.busy || kpi.status !== 'CONFIRMED'}
+            />
+            <ActionButton
+              label="보관"
+              icon={<Archive className="h-4 w-4" />}
+              onClick={() => props.onStatus('ARCHIVED')}
+              disabled={!props.permissions.canArchive || goalEditLocked || props.busy || kpi.status === 'ARCHIVED'}
+            />
+            <ActionButton
+              label="삭제"
+              icon={<Trash2 className="h-4 w-4" />}
+              onClick={props.onDelete}
+              disabled={props.deleteActionState.disabled}
+              destructive
+              testId="org-kpi-delete-button"
+              title={props.deleteActionState.reason}
+            />
+            <ActionButton
+              label="AI 개선"
+              icon={<Sparkles className="h-4 w-4" />}
+              onClick={() => props.onAi('improve-wording')}
+              disabled={!props.permissions.canUseAi || goalEditLocked}
+            />
+          </div>
+        ) : null}
 
-        {props.cloneDisabledReason ? <p className="text-xs text-slate-500">{props.cloneDisabledReason}</p> : null}
-        {props.deleteActionState.reason ? (
+        {!isReadOnly && props.cloneDisabledReason ? (
+          <p className="text-xs text-slate-500">{props.cloneDisabledReason}</p>
+        ) : null}
+        {!isReadOnly && props.deleteActionState.reason ? (
           <p data-testid="org-kpi-delete-helper" className="text-xs text-slate-500">
             {props.deleteActionState.reason}
           </p>
+        ) : null}
+
+        {isReadOnly ? (
+          <div
+            data-testid="org-kpi-member-readonly-panel"
+            className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-900"
+          >
+            <div className="font-semibold">구성원 조회 전용 화면입니다.</div>
+            <p className="mt-2 leading-6 text-blue-800">
+              소속 팀의 조직 KPI와 연결된 개인 목표 현황만 확인할 수 있습니다. 목표 등록, 수정, 제출, 확정,
+              잠금, 삭제와 같은 운영 작업은 팀장 이상 권한에서만 가능합니다.
+            </p>
+          </div>
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Link href="/kpi/personal" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">개인 KPI 보기</Link>
           <Link href="/kpi/monthly" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">월간 실적 보기</Link>
           <Link href="/evaluation/results" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">평가 결과 보기</Link>
-          <Link href="/evaluation/workbench" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">AI 평가 보조</Link>
+          {isReadOnly ? null : (
+            <Link href="/evaluation/workbench" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">AI 평가 보조</Link>
+          )}
         </div>
       </div>
     </div>
@@ -1789,13 +1876,22 @@ function GoalExportModal(props: {
   )
 }
 
-function OrgKpiQuickLinks({ showAdminLinks }: { showAdminLinks: boolean }) {
+function OrgKpiQuickLinks({
+  showAdminLinks,
+  readOnly = false,
+}: {
+  showAdminLinks: boolean
+  readOnly?: boolean
+}) {
   const items = [
     ['/kpi/personal', '개인 KPI'],
     ['/kpi/monthly', '월간 실적'],
     ['/evaluation/results', '평가 결과'],
-    ['/evaluation/workbench', 'AI 보조 작성'],
   ]
+
+  if (!readOnly) {
+    items.push(['/evaluation/workbench', 'AI 보조 작성'])
+  }
 
   if (showAdminLinks) {
     items.push(['/admin/eval-cycle', '평가 주기 / 읽기 모드 설정'])
