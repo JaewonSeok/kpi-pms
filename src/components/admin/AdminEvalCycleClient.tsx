@@ -4,6 +4,13 @@ import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarDays, CircleDot, Clock3, FilePenLine, Flag, Layers3, Plus } from 'lucide-react'
+import {
+  buildEvalCycleSummaryLabel,
+  buildEvalCycleSummaryMetrics,
+  filterEvalCyclesByYearAndStatus,
+  resolveEvalCycleDisplayStatus,
+  type EvalCycleStatus as CycleStatus,
+} from '@/lib/eval-cycle-status'
 import { formatDate, getCurrentYear } from '@/lib/utils'
 
 type OrganizationOption = {
@@ -11,19 +18,6 @@ type OrganizationOption = {
   name: string
   fiscalYear: number
 }
-
-type CycleStatus =
-  | 'SETUP'
-  | 'KPI_SETTING'
-  | 'IN_PROGRESS'
-  | 'SELF_EVAL'
-  | 'FIRST_EVAL'
-  | 'SECOND_EVAL'
-  | 'FINAL_EVAL'
-  | 'CEO_ADJUST'
-  | 'RESULT_OPEN'
-  | 'APPEAL'
-  | 'CLOSED'
 
 type EvalCycleItem = {
   id: string
@@ -53,6 +47,10 @@ type EvalCycleItem = {
   updatedAt: string
   organization: { name: string }
   _count: { evaluations: number }
+}
+
+type EvalCycleView = EvalCycleItem & {
+  displayStatus: CycleStatus
 }
 
 type CycleFormState = {
@@ -247,6 +245,7 @@ function buildReadinessChecklist(cycle: EvalCycleItem) {
 
 function buildStatusRecommendation(cycle: EvalCycleItem, readinessPassed: boolean) {
   const now = new Date()
+  const displayStatus = resolveEvalCycleDisplayStatus(cycle, { now })
   const inRange = (start: string | null, end: string | null) => {
     if (!start || !end) return false
     const startDate = new Date(start)
@@ -290,6 +289,13 @@ function buildStatusRecommendation(cycle: EvalCycleItem, readinessPassed: boolea
     }
   }
 
+  if (displayStatus === 'CLOSED') {
+    return {
+      status: 'CLOSED' as CycleStatus,
+      reason: '결과 공개 및 이의 신청 기간이 종료되어 평가 주기가 마감되었습니다.',
+    }
+  }
+
   if (cycle.kpiSetupStart && new Date(cycle.kpiSetupStart) > now) {
     return { status: 'SETUP' as CycleStatus, reason: '아직 첫 운영 단계가 시작되지 않았습니다.' }
   }
@@ -298,7 +304,7 @@ function buildStatusRecommendation(cycle: EvalCycleItem, readinessPassed: boolea
     return { status: 'RESULT_OPEN' as CycleStatus, reason: '모든 준비가 완료되어 결과 공개 단계 진입이 가능합니다.' }
   }
 
-  return { status: cycle.status, reason: '현재 설정된 일정과 상태를 유지하는 것이 안전합니다.' }
+  return { status: displayStatus, reason: '현재 설정된 일정과 상태를 유지하는 것이 안전합니다.' }
 }
 
 function getStatusBadgeClass(status: CycleStatus) {
@@ -461,25 +467,30 @@ export function AdminEvalCycleClient({
 
   const cycles = useMemo(() => cyclesQuery.data ?? [], [cyclesQuery.data])
 
+  const cycleViews = useMemo<EvalCycleView[]>(
+    () =>
+      cycles.map((cycle) => ({
+        ...cycle,
+        displayStatus: resolveEvalCycleDisplayStatus(cycle),
+      })),
+    [cycles]
+  )
+
   const visibleCycles = useMemo(() => {
-    return cycles.filter((cycle) => {
-      if (selectedYear !== 'ALL' && cycle.evalYear !== selectedYear) return false
-      if (selectedStatus !== 'ALL' && cycle.status !== selectedStatus) return false
-      return true
+    return filterEvalCyclesByYearAndStatus(cycleViews, {
+      selectedYear,
+      selectedStatus,
     })
-  }, [cycles, selectedStatus, selectedYear])
+  }, [cycleViews, selectedStatus, selectedYear])
 
   const selectedCycle = visibleCycles.find((cycle) => cycle.id === selectedCycleId) ?? visibleCycles[0] ?? null
 
   const metrics = useMemo(() => {
-    const currentYearCycles = cycles.filter((cycle) => cycle.evalYear === getCurrentYear())
-    return {
-      total: currentYearCycles.length,
-      inProgress: currentYearCycles.filter((cycle) => cycle.status !== 'CLOSED').length,
-      published: currentYearCycles.filter((cycle) => cycle.status === 'RESULT_OPEN' || cycle.status === 'APPEAL').length,
-      closed: currentYearCycles.filter((cycle) => cycle.status === 'CLOSED').length,
-    }
-  }, [cycles])
+    return buildEvalCycleSummaryMetrics(cycleViews, {
+      selectedYear,
+      selectedStatus,
+    })
+  }, [cycleViews, selectedStatus, selectedYear])
 
   const yearOptions = useMemo(() => {
     const fromCycles = cycles.map((cycle) => cycle.evalYear)
@@ -525,7 +536,11 @@ export function AdminEvalCycleClient({
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={<Layers3 className="h-5 w-5" />} label="올해 주기 수" value={`${metrics.total}개`} />
+        <MetricCard
+          icon={<Layers3 className="h-5 w-5" />}
+          label={buildEvalCycleSummaryLabel(selectedYear, selectedStatus)}
+          value={`${metrics.total}개`}
+        />
         <MetricCard icon={<Clock3 className="h-5 w-5" />} label="진행 중" value={`${metrics.inProgress}개`} />
         <MetricCard icon={<Flag className="h-5 w-5" />} label="결과 공개/이의 신청" value={`${metrics.published}개`} />
         <MetricCard icon={<CircleDot className="h-5 w-5" />} label="종료됨" value={`${metrics.closed}개`} />
@@ -600,8 +615,10 @@ export function AdminEvalCycleClient({
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="text-base font-semibold text-slate-900">{cycle.cycleName}</h3>
-                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(cycle.status)}`}>
-                            {STATUS_LABELS[cycle.status]}
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(cycle.displayStatus)}`}
+                          >
+                            {STATUS_LABELS[cycle.displayStatus]}
                           </span>
                         </div>
                         <p className="mt-1 text-sm text-slate-500">
@@ -656,8 +673,10 @@ export function AdminEvalCycleClient({
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-base font-semibold text-slate-900">{selectedCycle.cycleName}</h3>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(selectedCycle.status)}`}>
-                      {STATUS_LABELS[selectedCycle.status]}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(selectedCycle.displayStatus)}`}
+                    >
+                      {STATUS_LABELS[selectedCycle.displayStatus]}
                     </span>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
