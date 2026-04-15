@@ -1,6 +1,10 @@
 import type { Prisma, SystemRole } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
+import {
+  buildOrgKpiTargetValuePersistence,
+  resolveOrgKpiTargetValues,
+} from '@/lib/org-kpi-target-values'
 import { canManagePersonalKpi } from '@/lib/personal-kpi-access'
 import { AppError } from '@/lib/utils'
 import { canAccessEmployee } from '@/server/auth/authorize'
@@ -606,6 +610,24 @@ export async function cloneOrgKpi(params: OrgCloneParams) {
     clonedAt: new Date().toISOString(),
   }
 
+  const sourceTargetValues = resolveOrgKpiTargetValues({
+    targetValue: source.targetValue,
+    targetValueT: source.targetValueT,
+    targetValueE: source.targetValueE,
+    targetValueS: source.targetValueS,
+  })
+
+  const targetValuePayload =
+    sourceTargetValues.targetValueT !== undefined &&
+    sourceTargetValues.targetValueE !== undefined &&
+    sourceTargetValues.targetValueS !== undefined
+      ? buildOrgKpiTargetValuePersistence({
+          targetValueT: sourceTargetValues.targetValueT,
+          targetValueE: sourceTargetValues.targetValueE,
+          targetValueS: sourceTargetValues.targetValueS,
+        })
+      : {}
+
   const cloned = await prisma.orgKpi.create({
     data: {
       deptId: params.targetDeptId,
@@ -615,7 +637,7 @@ export async function cloneOrgKpi(params: OrgCloneParams) {
       kpiName: buildCloneName(source.kpiName, existingTargets.map((item) => item.kpiName)),
       definition: source.definition,
       formula: source.formula,
-      targetValue: source.targetValue,
+      ...targetValuePayload,
       unit: source.unit,
       weight: source.weight,
       difficulty: source.difficulty,

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { DeleteOrgKpiSchema, UpdateOrgKpiSchema } from '@/lib/validations'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import {
   canEditOrgKpiByOperationalStatus,
   resolveOrgKpiOperationalStatus,
@@ -129,6 +130,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         definition: true,
         formula: true,
         targetValue: true,
+        targetValueT: true,
+        targetValueE: true,
+        targetValueS: true,
         unit: true,
         difficulty: true,
         tags: true,
@@ -176,7 +180,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.kpiName !== undefined ||
       data.definition !== undefined ||
       data.formula !== undefined ||
-      data.targetValue !== undefined ||
+      data.targetValueT !== undefined ||
+      data.targetValueE !== undefined ||
+      data.targetValueS !== undefined ||
       data.unit !== undefined ||
       data.weight !== undefined ||
       data.difficulty !== undefined ||
@@ -294,7 +300,15 @@ export async function PATCH(request: Request, context: RouteContext) {
         ...(data.kpiName !== undefined ? { kpiName: data.kpiName } : {}),
         ...(data.definition !== undefined ? { definition: data.definition || null } : {}),
         ...(data.formula !== undefined ? { formula: data.formula || null } : {}),
-        ...(data.targetValue !== undefined ? { targetValue: data.targetValue } : {}),
+        ...(data.targetValueT !== undefined &&
+        data.targetValueE !== undefined &&
+        data.targetValueS !== undefined
+          ? buildOrgKpiTargetValuePersistence({
+              targetValueT: data.targetValueT,
+              targetValueE: data.targetValueE,
+              targetValueS: data.targetValueS,
+            })
+          : {}),
         ...(data.unit !== undefined ? { unit: data.unit || null } : {}),
         ...(data.weight !== undefined ? { weight: data.weight } : {}),
         ...(data.difficulty !== undefined ? { difficulty: data.difficulty } : {}),
@@ -350,6 +364,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         definition: current.definition,
         formula: current.formula,
         targetValue: current.targetValue,
+        targetValueT: current.targetValueT,
+        targetValueE: current.targetValueE,
+        targetValueS: current.targetValueS,
         unit: current.unit,
         difficulty: current.difficulty,
         tags: current.tags,
@@ -366,6 +383,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         definition: kpi.definition,
         formula: kpi.formula,
         targetValue: kpi.targetValue,
+        targetValueT: kpi.targetValueT,
+        targetValueE: kpi.targetValueE,
+        targetValueS: kpi.targetValueS,
         unit: kpi.unit,
         difficulty: kpi.difficulty,
         tags: kpi.tags,

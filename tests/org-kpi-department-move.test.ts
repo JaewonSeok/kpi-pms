@@ -42,6 +42,9 @@ function makeKpi(overrides?: Partial<OrgKpiViewModel>): OrgKpiViewModel {
     definition: '기존 정의',
     formula: '기존 산식',
     targetValue: 10,
+    targetValueT: 8,
+    targetValueE: 10,
+    targetValueS: 12,
     unit: '%',
     weight: 40,
     difficulty: 'MEDIUM',
@@ -115,7 +118,9 @@ async function main() {
         tags: '채용, 브랜딩',
         definition: '신규 정의',
         formula: '신규 산식',
-        targetValue: '12',
+        targetValueT: '10',
+        targetValueE: '12',
+        targetValueS: '14',
         unit: '건',
         weight: '35',
         difficulty: 'HIGH',
@@ -130,6 +135,11 @@ async function main() {
     assert.equal(moved.parentOrgKpiTitle, '인사 전략 고도화')
     assert.equal(moved.title, '핵심 인재 확보')
     assert.equal(moved.category, '인사')
+
+    assert.equal(moved.targetValue, 12)
+    assert.equal(moved.targetValueT, 10)
+    assert.equal(moved.targetValueE, 12)
+    assert.equal(moved.targetValueS, 14)
 
     const oldDepartmentCount = updated.filter((item) => item.departmentId === 'dept-hq').length
     const newDepartmentCount = updated.filter((item) => item.departmentId === 'dept-hr').length

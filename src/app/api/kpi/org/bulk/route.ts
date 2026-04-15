@@ -1,6 +1,7 @@
 import { getServerSession, type Session } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { BulkOrgKpiUploadSchema } from '@/lib/validations'
@@ -119,7 +120,13 @@ export async function POST(request: Request) {
           kpiName: row.kpiName,
           definition: row.definition,
           formula: row.formula,
-          targetValue: row.targetValue ?? undefined,
+          ...(row.targetValue != null
+            ? buildOrgKpiTargetValuePersistence({
+                targetValueT: row.targetValue,
+                targetValueE: row.targetValue,
+                targetValueS: row.targetValue,
+              })
+            : {}),
           unit: row.unit,
           weight: row.weight,
           difficulty: row.difficulty,

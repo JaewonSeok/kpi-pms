@@ -13,6 +13,10 @@ import {
   applySavedOrgKpiToList,
   buildOrgKpiServerListSignature,
 } from '@/lib/org-kpi-client-state'
+import {
+  formatOrgKpiTargetValues,
+  resolveOrgKpiTargetValues,
+} from '@/lib/org-kpi-target-values'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
 
 type Props = OrgKpiPageData & {
@@ -32,7 +36,9 @@ type FormState = {
   tags: string
   definition: string
   formula: string
-  targetValue: string
+  targetValueT: string
+  targetValueE: string
+  targetValueS: string
   unit: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
@@ -149,7 +155,9 @@ function buildEmptyForm(year: number, departmentId: string): FormState {
     tags: '',
     definition: '',
     formula: '',
-    targetValue: '',
+    targetValueT: '',
+    targetValueE: '',
+    targetValueS: '',
     unit: '%',
     weight: '',
     difficulty: 'MEDIUM',
@@ -157,6 +165,13 @@ function buildEmptyForm(year: number, departmentId: string): FormState {
 }
 
 function buildFormFromKpi(kpi: OrgKpiViewModel): FormState {
+  const resolvedTargetValues = resolveOrgKpiTargetValues({
+    targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
+    targetValueT: kpi.targetValueT,
+    targetValueE: kpi.targetValueE,
+    targetValueS: kpi.targetValueS,
+  })
+
   return {
     deptId: kpi.departmentId,
     evalYear: String(kpi.evalYear),
@@ -167,8 +182,12 @@ function buildFormFromKpi(kpi: OrgKpiViewModel): FormState {
     tags: kpi.tags.join(', '),
     definition: kpi.definition ?? '',
     formula: kpi.formula ?? '',
-    targetValue:
-      typeof kpi.targetValue === 'number' ? String(kpi.targetValue) : String(kpi.targetValue ?? ''),
+    targetValueT:
+      resolvedTargetValues.targetValueT !== undefined ? String(resolvedTargetValues.targetValueT) : '',
+    targetValueE:
+      resolvedTargetValues.targetValueE !== undefined ? String(resolvedTargetValues.targetValueE) : '',
+    targetValueS:
+      resolvedTargetValues.targetValueS !== undefined ? String(resolvedTargetValues.targetValueS) : '',
     unit: kpi.unit ?? '',
     weight: typeof kpi.weight === 'number' ? String(kpi.weight) : '',
     difficulty: (kpi.difficulty ?? 'MEDIUM') as FormState['difficulty'],
@@ -220,6 +239,19 @@ function buildAiPayload(action: AiAction, kpi: OrgKpiViewModel | null, form: For
     kpi?.departmentName ??
     pageData.departments.find((department) => department.id === form.deptId)?.name ??
     pageData.actor.departmentName
+  const formTargetValues = resolveOrgKpiTargetValues({
+    targetValueT: parseNumber(form.targetValueT),
+    targetValueE: parseNumber(form.targetValueE),
+    targetValueS: parseNumber(form.targetValueS),
+  })
+  const kpiTargetValues = kpi
+    ? resolveOrgKpiTargetValues({
+        targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
+        targetValueT: kpi.targetValueT,
+        targetValueE: kpi.targetValueE,
+        targetValueS: kpi.targetValueS,
+      })
+    : null
 
   return {
     departmentName,
@@ -228,7 +260,10 @@ function buildAiPayload(action: AiAction, kpi: OrgKpiViewModel | null, form: For
     category: kpi?.category ?? form.kpiCategory,
     definition: kpi?.definition ?? form.definition,
     formula: kpi?.formula ?? form.formula,
-    targetValue: kpi?.targetValue ?? parseNumber(form.targetValue),
+    targetValue: kpiTargetValues?.targetValue ?? formTargetValues.targetValue,
+    targetValueT: kpiTargetValues?.targetValueT ?? formTargetValues.targetValueT,
+    targetValueE: kpiTargetValues?.targetValueE ?? formTargetValues.targetValueE,
+    targetValueS: kpiTargetValues?.targetValueS ?? formTargetValues.targetValueS,
     unit: kpi?.unit ?? form.unit,
     weight: kpi?.weight ?? parseNumber(form.weight),
     difficulty: kpi?.difficulty ?? form.difficulty,
@@ -441,7 +476,15 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       return
     }
 
-    if (!form.deptId || !form.kpiCategory.trim() || !form.kpiName.trim() || !form.weight.trim()) {
+    if (
+      !form.deptId ||
+      !form.kpiCategory.trim() ||
+      !form.kpiName.trim() ||
+      !form.weight.trim() ||
+      !form.targetValueT.trim() ||
+      !form.targetValueE.trim() ||
+      !form.targetValueS.trim()
+    ) {
       setBanner({ tone: 'error', message: '부서, 카테고리, KPI명, 가중치를 입력해 주세요.' })
       return
     }
@@ -461,7 +504,9 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           tags: parseTagInput(form.tags),
           definition: form.definition.trim() || undefined,
           formula: form.formula.trim() || undefined,
-          targetValue: parseNumber(form.targetValue),
+          targetValueT: parseNumber(form.targetValueT),
+          targetValueE: parseNumber(form.targetValueE),
+          targetValueS: parseNumber(form.targetValueS),
           unit: form.unit.trim() || undefined,
           weight: Number(form.weight),
           difficulty: form.difficulty,
@@ -674,6 +719,26 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       return
     }
 
+    if (false) {
+      setBanner({ tone: 'error', message: 'T / E / S 목표값은 숫자로 입력해 주세요.' })
+      return
+    }
+
+    if (false) {
+      setBanner({ tone: 'error', message: '목표값은 T <= E <= S 순서여야 합니다.' })
+      return
+    }
+
+    if (false) {
+      setBanner({ tone: 'error', message: 'T / E / S 목표값은 숫자로 입력해 주세요.' })
+      return
+    }
+
+    if (false) {
+      setBanner({ tone: 'error', message: '목표값은 T <= E <= S 순서여야 합니다.' })
+      return
+    }
+
     setBusy(true)
     try {
       await fetchJson<{ id: string }>(`/api/kpi/org/${selectedKpi.id}`, {
@@ -848,16 +913,24 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       if (action === 'approve') {
         if (aiAction === 'generate-draft') {
           setEditingKpiId(null)
-          setForm((current) => ({
-            ...current,
-            kpiCategory: String(aiPreview.result.category ?? current.kpiCategory),
-            kpiName: String(aiPreview.result.title ?? current.kpiName),
-            definition: String(aiPreview.result.definition ?? current.definition),
-            formula: String(aiPreview.result.formula ?? current.formula),
-            targetValue: String(aiPreview.result.targetValueSuggestion ?? current.targetValue),
-            unit: String(aiPreview.result.unit ?? current.unit),
-            weight: String(aiPreview.result.weightSuggestion ?? current.weight),
-          }))
+          setForm((current) => {
+            const suggestedTargetValue = String(
+              aiPreview.result.targetValueSuggestion ?? aiPreview.result.targetValueE ?? current.targetValueE
+            )
+
+            return {
+              ...current,
+              kpiCategory: String(aiPreview.result.category ?? current.kpiCategory),
+              kpiName: String(aiPreview.result.title ?? current.kpiName),
+              definition: String(aiPreview.result.definition ?? current.definition),
+              formula: String(aiPreview.result.formula ?? current.formula),
+              targetValueT: String(aiPreview.result.targetValueT ?? suggestedTargetValue),
+              targetValueE: String(aiPreview.result.targetValueE ?? suggestedTargetValue),
+              targetValueS: String(aiPreview.result.targetValueS ?? suggestedTargetValue),
+              unit: String(aiPreview.result.unit ?? current.unit),
+              weight: String(aiPreview.result.weightSuggestion ?? current.weight),
+            }
+          })
           setShowForm(true)
         }
 
@@ -1013,7 +1086,15 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                         <p className="mt-1 text-sm text-slate-500">{kpi.departmentName} · {kpi.category ?? '카테고리 미지정'}</p>
                       </div>
                       <div className="text-right text-sm text-slate-600">
-                        <div className="font-semibold text-slate-900">{formatValue(kpi.targetValue, kpi.unit)}</div>
+                        <div className="font-semibold text-slate-900">
+                          {formatOrgKpiTargetValues({
+                            targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
+                            targetValueT: kpi.targetValueT,
+                            targetValueE: kpi.targetValueE,
+                            targetValueS: kpi.targetValueS,
+                            unit: kpi.unit,
+                          })}
+                        </div>
                         <div className="mt-1">가중치 {formatValue(kpi.weight)}</div>
                       </div>
                     </div>
@@ -1320,7 +1401,16 @@ function KpiDetailCard(props: {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <InfoPill label="목표값" value={formatValue(kpi.targetValue, kpi.unit)} />
+          <InfoPill
+            label="목표값"
+            value={formatOrgKpiTargetValues({
+              targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
+              targetValueT: kpi.targetValueT,
+              targetValueE: kpi.targetValueE,
+              targetValueS: kpi.targetValueS,
+              unit: kpi.unit,
+            })}
+          />
           <InfoPill label="가중치" value={formatValue(kpi.weight)} />
           <InfoPill label="개인 KPI 연결" value={`${kpi.linkedPersonalKpiCount}개`} />
           <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
@@ -2060,9 +2150,36 @@ function EditorModal({
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <Field label="목표값">
-            <input value={form.targetValue} onChange={(event) => onChange({ ...form, targetValue: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
+          <Field label="T 목표값">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={form.targetValueT}
+              onChange={(event) => onChange({ ...form, targetValueT: event.target.value })}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
           </Field>
+          <Field label="E 목표값">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={form.targetValueE}
+              onChange={(event) => onChange({ ...form, targetValueE: event.target.value })}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
+          </Field>
+          <Field label="S 목표값">
+            <input
+              type="number"
+              inputMode="decimal"
+              value={form.targetValueS}
+              onChange={(event) => onChange({ ...form, targetValueS: event.target.value })}
+              className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Field label="단위">
             <input value={form.unit} onChange={(event) => onChange({ ...form, unit: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>

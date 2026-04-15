@@ -1,4 +1,5 @@
 import type { OrgKpiPageData, OrgKpiViewModel } from '@/server/org-kpi-page'
+import { buildOrgKpiTargetValuePersistence } from './org-kpi-target-values'
 
 type OrgKpiDepartmentOption = OrgKpiPageData['departments'][number]
 type OrgKpiParentGoalOption = OrgKpiPageData['parentGoalOptions'][number]
@@ -13,15 +14,12 @@ export type OrgKpiEditorFormSnapshot = {
   tags: string
   definition: string
   formula: string
-  targetValue: string
+  targetValueT: string
+  targetValueE: string
+  targetValueS: string
   unit: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
-}
-
-function parseNumber(value: string) {
-  const parsed = Number(value.trim())
-  return Number.isFinite(parsed) ? parsed : undefined
 }
 
 function parseTagInput(value: string) {
@@ -47,6 +45,9 @@ export function buildOrgKpiServerListSignature(items: OrgKpiViewModel[]) {
         item.category ?? '',
         item.parentOrgKpiId ?? '',
         item.weight,
+        item.targetValueT ?? '',
+        item.targetValueE ?? '',
+        item.targetValueS ?? '',
       ].join(':')
     )
     .join('|')
@@ -70,6 +71,12 @@ export function applySavedOrgKpiToList(params: {
       return item
     }
 
+    const nextTargetValues = buildOrgKpiTargetValuePersistence({
+      targetValueT: Number(params.form.targetValueT),
+      targetValueE: Number(params.form.targetValueE),
+      targetValueS: Number(params.form.targetValueS),
+    })
+
     return {
       ...item,
       departmentId: params.form.deptId,
@@ -84,7 +91,10 @@ export function applySavedOrgKpiToList(params: {
       tags: parseTagInput(params.form.tags),
       definition: params.form.definition.trim() || undefined,
       formula: params.form.formula.trim() || undefined,
-      targetValue: parseNumber(params.form.targetValue),
+      targetValue: nextTargetValues.targetValue,
+      targetValueT: nextTargetValues.targetValueT,
+      targetValueE: nextTargetValues.targetValueE,
+      targetValueS: nextTargetValues.targetValueS,
       unit: params.form.unit.trim() || undefined,
       weight: Number(params.form.weight),
       difficulty: params.form.difficulty,

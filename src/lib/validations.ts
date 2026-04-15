@@ -48,6 +48,42 @@ export const UpdateGradeSettingsSchema = z.object({
 // KPI 관련
 // ============================================
 
+const OrgKpiTargetValueSchema = {
+  targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.'),
+  targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.'),
+  targetValueS: z.number().min(0, 'S 목표값은 0 이상이어야 합니다.'),
+}
+
+function hasCompleteOrgKpiTargetValues(data: {
+  targetValueT?: number
+  targetValueE?: number
+  targetValueS?: number
+}) {
+  return (
+    data.targetValueT !== undefined &&
+    data.targetValueE !== undefined &&
+    data.targetValueS !== undefined
+  )
+}
+
+function isOrderedOrgKpiTargetValues(data: {
+  targetValueT?: number
+  targetValueE?: number
+  targetValueS?: number
+}) {
+  if (!hasCompleteOrgKpiTargetValues(data)) {
+    return true
+  }
+
+  const { targetValueT, targetValueE, targetValueS } = data as {
+    targetValueT: number
+    targetValueE: number
+    targetValueS: number
+  }
+
+  return targetValueT <= targetValueE && targetValueE <= targetValueS
+}
+
 export const CreateOrgKpiSchema = z.object({
   deptId: z.string().min(1),
   evalYear: z.number().int().min(2020).max(2100),
@@ -56,12 +92,15 @@ export const CreateOrgKpiSchema = z.object({
   kpiName: z.string().min(1).max(100),
   definition: z.string().max(500).optional(),
   formula: z.string().max(500).optional(),
-  targetValue: z.number().optional(),
+  ...OrgKpiTargetValueSchema,
   unit: z.string().max(20).optional(),
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   parentOrgKpiId: z.string().nullable().optional(),
+}).refine(isOrderedOrgKpiTargetValues, {
+  message: '목표값은 T <= E <= S 순서여야 합니다.',
+  path: ['targetValueT'],
 })
 
 export const UpdateOrgKpiSchema = z.object({
@@ -72,7 +111,9 @@ export const UpdateOrgKpiSchema = z.object({
   kpiName: z.string().min(1).max(100).optional(),
   definition: z.string().max(500).optional(),
   formula: z.string().max(500).optional(),
-  targetValue: z.number().optional(),
+  targetValueT: OrgKpiTargetValueSchema.targetValueT.optional(),
+  targetValueE: OrgKpiTargetValueSchema.targetValueE.optional(),
+  targetValueS: OrgKpiTargetValueSchema.targetValueS.optional(),
   unit: z.string().max(20).optional(),
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
@@ -80,6 +121,22 @@ export const UpdateOrgKpiSchema = z.object({
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
   parentOrgKpiId: z.string().nullable().optional(),
 })
+  .refine(
+    (data) => {
+      const providedCount = [data.targetValueT, data.targetValueE, data.targetValueS].filter(
+        (value) => value !== undefined
+      ).length
+      return providedCount === 0 || providedCount === 3
+    },
+    {
+      message: 'T / E / S 목표값을 모두 입력해 주세요.',
+      path: ['targetValueT'],
+    }
+  )
+  .refine(isOrderedOrgKpiTargetValues, {
+    message: '목표값은 T <= E <= S 순서여야 합니다.',
+    path: ['targetValueT'],
+  })
 
 export const DeleteOrgKpiSchema = z
   .object({

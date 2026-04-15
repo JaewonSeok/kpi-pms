@@ -2,6 +2,7 @@ import { getServerSession, type Session } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateOrgKpiSchema } from '@/lib/validations'
 import { validateOrgParentLink } from '@/server/goal-alignment'
@@ -151,7 +152,11 @@ export async function POST(request: Request) {
         kpiName: data.kpiName,
         definition: data.definition,
         formula: data.formula,
-        targetValue: data.targetValue,
+        ...buildOrgKpiTargetValuePersistence({
+          targetValueT: data.targetValueT,
+          targetValueE: data.targetValueE,
+          targetValueS: data.targetValueS,
+        }),
         unit: data.unit,
         weight: data.weight,
         difficulty: data.difficulty,
@@ -195,6 +200,10 @@ export async function POST(request: Request) {
         kpiName: kpi.kpiName,
         kpiCategory: kpi.kpiCategory,
         kpiType: kpi.kpiType,
+        targetValue: kpi.targetValue,
+        targetValueT: kpi.targetValueT,
+        targetValueE: kpi.targetValueE,
+        targetValueS: kpi.targetValueS,
         parentOrgKpiId: kpi.parentOrgKpiId,
         tags: kpi.tags,
       },

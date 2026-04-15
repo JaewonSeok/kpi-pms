@@ -187,6 +187,9 @@ model OrgKpi {
   definition   String?
   formula      String?
   targetValue  Float?
+  targetValueT Float?
+  targetValueE Float?
+  targetValueS Float?
   unit         String?
   weight       Float
   difficulty   Difficulty

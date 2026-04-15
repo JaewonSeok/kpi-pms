@@ -8,6 +8,7 @@ import type {
   SystemRole,
 } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { resolveOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
 import { resolveOrgKpiOperationalStatus, type OrgKpiOperationalStatus } from './org-kpi-workflow'
 
 export type OrgKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
@@ -74,6 +75,9 @@ export type OrgKpiViewModel = {
   definition?: string
   formula?: string
   targetValue?: number | string
+  targetValueT?: number
+  targetValueE?: number
+  targetValueS?: number
   unit?: string
   weight?: number
   difficulty?: Difficulty
@@ -882,6 +886,12 @@ export async function getOrgKpiPageData(params: {
     }
 
     const mappedList = kpis.map<OrgKpiViewModel>((kpi) => {
+      const resolvedTargetValues = resolveOrgKpiTargetValues({
+        targetValue: kpi.targetValue,
+        targetValueT: kpi.targetValueT,
+        targetValueE: kpi.targetValueE,
+        targetValueS: kpi.targetValueS,
+      })
       const logs = logsByEntityId.get(kpi.id) ?? []
       const owner = findDepartmentOwner(kpi.deptId, employeesByDept, departmentsById)
       const linkedConfirmedPersonalKpiCount = kpi.personalKpis.filter(
@@ -939,7 +949,10 @@ export async function getOrgKpiPageData(params: {
         type: kpi.kpiType,
         definition: kpi.definition ?? undefined,
         formula: kpi.formula ?? undefined,
-        targetValue: typeof kpi.targetValue === 'number' ? Number(kpi.targetValue) : undefined,
+        targetValue: resolvedTargetValues.targetValue,
+        targetValueT: resolvedTargetValues.targetValueT,
+        targetValueE: resolvedTargetValues.targetValueE,
+        targetValueS: resolvedTargetValues.targetValueS,
         unit: kpi.unit ?? undefined,
         weight: Number(kpi.weight),
         difficulty: kpi.difficulty,
