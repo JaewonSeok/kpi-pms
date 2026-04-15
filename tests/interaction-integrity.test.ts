@@ -77,10 +77,13 @@ run('org KPI client resets stale selection and AI state when year or department 
 
   assert.equal(file.includes('const serverContextKey ='), true)
   assert.equal(file.includes('const viewContextKey ='), true)
-  assert.equal(file.includes('setSelectedDepartmentId(defaultDepartmentSelection)'), true)
+  assert.equal(file.includes('buildOrgKpiServerListSignature(pageData.list)'), true)
+  assert.equal(file.includes('setSelectedDepartmentId(nextDepartmentSelection)'), true)
   assert.equal(file.includes("setTab('map')"), true)
   assert.equal(file.includes('setAiPreview(null)'), true)
   assert.equal(file.includes("const saved = await fetchJson<{ id: string; deptId: string }>("), true)
+  assert.equal(file.includes('applySavedOrgKpiToList'), true)
+  assert.equal(file.includes("nextParams.set('dept', saved.deptId)"), true)
   assert.equal(file.includes('setSelectedKpiId(saved.id)'), true)
 })
 

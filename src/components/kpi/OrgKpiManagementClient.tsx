@@ -9,6 +9,10 @@ import {
   getOrgKpiDeleteActionState,
   resolveNextOrgKpiSelectionAfterDelete,
 } from '@/lib/org-kpi-delete'
+import {
+  applySavedOrgKpiToList,
+  buildOrgKpiServerListSignature,
+} from '@/lib/org-kpi-client-state'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
 
 type Props = OrgKpiPageData & {
@@ -271,7 +275,8 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const [aiAction, setAiAction] = useState<AiAction>('generate-draft')
   const [search, setSearch] = useState('')
   const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
-  const serverContextKey = `${pageData.selectedYear}:${pageData.selectedDepartmentId}:${pageData.list.map((item) => item.id).join(',')}:${initialSelectedKpiId ?? ''}:${defaultTab}`
+  const serverListSignature = useMemo(() => buildOrgKpiServerListSignature(pageData.list), [pageData.list])
+  const serverContextKey = `${pageData.selectedYear}:${pageData.selectedDepartmentId}:${serverListSignature}:${initialSelectedKpiId ?? ''}:${defaultTab}`
   const previousServerContextKey = useRef(serverContextKey)
   const viewContextKey = `${pageData.selectedYear}:${selectedDepartmentId}`
   const previousViewContextKey = useRef(viewContextKey)
@@ -306,11 +311,25 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       return
     }
 
+    const nextDepartmentSelection =
+      selectedDepartmentId === 'ALL'
+        ? 'ALL'
+        : pageData.departments.some((department) => department.id === selectedDepartmentId)
+          ? selectedDepartmentId
+          : defaultDepartmentSelection
+    const nextSelectedKpiId =
+      (selectedKpiId && pageData.list.some((item) => item.id === selectedKpiId) ? selectedKpiId : null) ??
+      (initialSelectedKpiId && pageData.list.some((item) => item.id === initialSelectedKpiId)
+        ? initialSelectedKpiId
+        : null) ??
+      pageData.list[0]?.id ??
+      ''
+
     previousServerContextKey.current = serverContextKey
     setTab(defaultTab)
-    setSelectedDepartmentId(defaultDepartmentSelection)
+    setSelectedDepartmentId(nextDepartmentSelection)
     setList(pageData.list)
-    setSelectedKpiId(initialSelectedKpiId ?? pageData.list[0]?.id ?? '')
+    setSelectedKpiId(nextSelectedKpiId)
     setShowForm(false)
     setShowBulkUpload(false)
     setShowClone(false)
@@ -320,12 +339,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setEditingKpiId(null)
     setForm(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
     setCloneForm(buildCloneForm(pageData, pageData.list[0]))
-    setBulkEditForm(buildOrgBulkEditForm(pageData, defaultDepartmentSelection))
-    setExportForm(buildGoalExportForm(pageData, defaultDepartmentSelection))
+    setBulkEditForm(buildOrgBulkEditForm(pageData, nextDepartmentSelection))
+    setExportForm(buildGoalExportForm(pageData, nextDepartmentSelection))
     setBanner(null)
     setAiPreview(null)
     setSearch('')
   }, [
+    selectedDepartmentId,
+    selectedKpiId,
     defaultDepartmentSelection,
     defaultTab,
     initialSelectedKpiId,
@@ -450,9 +471,28 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
         tone: 'success',
         message: editingKpiId ? '조직 KPI를 수정했습니다.' : '새 조직 KPI를 등록했습니다.',
       })
-      setSelectedDepartmentId((current) => (current === 'ALL' ? current : saved.deptId))
+      setList((current) =>
+        applySavedOrgKpiToList({
+          currentItems: current,
+          savedId: saved.id,
+          departments: pageData.departments,
+          parentGoalOptions: pageData.parentGoalOptions,
+          form,
+        })
+      )
+      setSelectedDepartmentId(saved.deptId)
       setSelectedKpiId(saved.id)
       setShowForm(false)
+      const nextParams = new URLSearchParams(searchParams.toString())
+      nextParams.set('year', String(Number(form.evalYear || pageData.selectedYear)))
+      nextParams.set('dept', saved.deptId)
+      if (tab !== 'map') {
+        nextParams.set('tab', tab)
+      } else {
+        nextParams.delete('tab')
+      }
+      nextParams.set('kpiId', saved.id)
+      router.replace(`/kpi/org${nextParams.toString() ? `?${nextParams.toString()}` : ''}`)
       router.refresh()
     } catch (error) {
       setBanner({ tone: 'error', message: error instanceof Error ? error.message : '조직 KPI 저장에 실패했습니다.' })
