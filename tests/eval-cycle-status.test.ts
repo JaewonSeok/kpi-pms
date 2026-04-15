@@ -121,6 +121,30 @@ run('eval cycle summary metrics use the same derived status rules as the list fi
   })
 })
 
+run('eval cycle summary metrics count an ended cycle as closed even when the raw status still says final evaluation', () => {
+  const now = new Date('2026-04-14T12:00:00.000Z')
+  const cycles = [
+    createCycle({
+      evalYear: 2026,
+      status: 'FINAL_EVAL',
+      resultOpenStart: '2026-03-01T00:00:00.000Z',
+      appealDeadline: '2026-03-31T23:59:59.000Z',
+    }),
+  ]
+
+  const metrics = buildEvalCycleSummaryMetrics(cycles, {
+    selectedYear: 2026,
+    now,
+  })
+
+  assert.deepEqual(metrics, {
+    total: 1,
+    inProgress: 0,
+    published: 0,
+    closed: 1,
+  })
+})
+
 run('eval cycle list filter uses the derived display status instead of the raw status field', () => {
   const now = new Date('2026-04-14T12:00:00.000Z')
   const cycles = [
