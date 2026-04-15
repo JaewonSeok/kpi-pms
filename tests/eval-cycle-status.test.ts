@@ -191,4 +191,11 @@ run('admin eval cycle client wires summary cards, list filters, and badges to th
   assert.equal(source.includes('STATUS_LABELS[selectedCycle.displayStatus]'), true)
 })
 
+run('admin eval cycle page forces dynamic rendering so closed-cycle data is not served stale', () => {
+  const source = read('src/app/(main)/admin/eval-cycle/page.tsx')
+
+  assert.equal(source.includes("export const dynamic = 'force-dynamic'"), true)
+  assert.equal(source.includes('export const revalidate = 0'), true)
+})
+
 console.log('Eval cycle status tests completed')
