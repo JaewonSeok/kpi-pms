@@ -544,6 +544,7 @@ model EvalCycle {
   aiCompetencyResults AiCompetencyResult[]
   wordCloud360Cycles  WordCloud360Cycle[]
   businessPlans       BusinessPlanDocument[]
+  jobDescriptions     JobDescriptionDocument[]
   teamKpiRecommendationSets TeamKpiRecommendationSet[]
   teamKpiReviewRuns   TeamKpiReviewRun[]
 

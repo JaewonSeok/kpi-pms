@@ -1057,7 +1057,8 @@ function sanitizeRecommendationItem(
   item: Record<string, unknown>,
   sourceOrgKpis: RecommendationGenerationContext['sourceOrgKpis'],
   existingTeamKpis: RecommendationGenerationContext['existingTeamKpis'],
-  rank: number
+  rank: number,
+  recommendationType?: TeamKpiRecommendationType
 ) {
   return sanitizeAndRankTeamRecommendationItem({
     item,
@@ -1075,6 +1076,7 @@ function sanitizeRecommendationItem(
     })),
     existingTeamKpis,
     rank,
+    recommendationType,
   })
 }
 
@@ -1109,7 +1111,7 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
     existingTeamKpis: context.existingTeamKpis,
   })
 
-  const aiPayload = {
+  const legacyAiPayload = {
     teamDepartment: {
       id: context.targetDepartment.id,
       name: context.targetDepartment.name,
@@ -1186,6 +1188,56 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
     ],
   }
 
+  const aiPayload = buildDualTrackTeamRecommendationPayload({
+    teamDepartment: {
+      id: context.targetDepartment.id,
+      name: context.targetDepartment.name,
+      organizationName: context.targetDepartment.organizationName,
+    },
+    planningDepartment: {
+      id: context.planningDepartment.id,
+      name: context.planningDepartment.name,
+      organizationName: context.planningDepartment.organizationName,
+    },
+    evalYear: context.evalYear,
+    businessPlan: {
+      title: context.businessPlan.title,
+      summaryText: context.businessPlan.summaryText,
+      bodyText: context.businessPlan.bodyText,
+    },
+    divisionJobDescription: {
+      title: context.divisionJobDescription.title,
+      summaryText: context.divisionJobDescription.summaryText,
+      bodyText: context.divisionJobDescription.bodyText,
+    },
+    teamJobDescription: {
+      title: context.teamJobDescription.title,
+      summaryText: context.teamJobDescription.summaryText,
+      bodyText: context.teamJobDescription.bodyText,
+    },
+    sourceOrgKpis: context.sourceOrgKpis.map((kpi) => ({
+      id: kpi.id,
+      kpiName: kpi.kpiName,
+      kpiCategory: kpi.kpiCategory,
+      definition: kpi.definition,
+      formula: kpi.formula,
+      targetValueText: formatOrgKpiTargetValues({
+        ...resolveOrgKpiTargetValues({
+          targetValue: kpi.targetValue ?? undefined,
+          targetValueT: kpi.targetValueT ?? undefined,
+          targetValueE: kpi.targetValueE ?? undefined,
+          targetValueS: kpi.targetValueS ?? undefined,
+        }),
+        unit: kpi.unit ?? undefined,
+      }),
+      weight: kpi.weight,
+      difficulty: kpi.difficulty,
+    })),
+    existingTeamKpis: context.existingTeamKpis,
+  })
+
+  void legacyAiPayload
+
   const aiPreview = await recommendTeamKpiRecommendations({
     requesterId: params.userId,
     sourceId: context.businessPlan.id,
@@ -1196,24 +1248,43 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
     aiPreview.result && typeof aiPreview.result === 'object'
       ? (aiPreview.result as Record<string, unknown>)
       : {}
-  const recommendationItemsRaw = Array.isArray(resultRecord.recommendations)
-    ? resultRecord.recommendations
+  const alignedRecommendationItemsRaw = Array.isArray(resultRecord.alignedRecommendations)
+    ? resultRecord.alignedRecommendations
+    : []
+  const independentRecommendationItemsRaw = Array.isArray(resultRecord.independentRecommendations)
+    ? resultRecord.independentRecommendations
     : []
   const recommendationItems = rankTeamRecommendationItems(
-    recommendationItemsRaw
-      .slice(0, 5)
-      .map((item, index) =>
+    [
+      ...alignedRecommendationItemsRaw.slice(0, 5).map((item, index) =>
         sanitizeRecommendationItem(
           item && typeof item === 'object' ? (item as Record<string, unknown>) : {},
           context.sourceOrgKpis,
           context.existingTeamKpis,
-          index + 1
+          index + 1,
+          'ALIGNED_WITH_DIVISION_KPI'
         )
-      )
-      .filter((item) => item.title && item.linkageExplanation && item.recommendationReason)
+      ),
+      ...independentRecommendationItemsRaw.slice(0, 3).map((item, index) =>
+        sanitizeRecommendationItem(
+          item && typeof item === 'object' ? (item as Record<string, unknown>) : {},
+          context.sourceOrgKpis,
+          context.existingTeamKpis,
+          alignedRecommendationItemsRaw.length + index + 1,
+          'TEAM_INDEPENDENT'
+        )
+      ),
+    ].filter((item) => item.title && item.linkageExplanation && item.recommendationReason)
   )
 
-  if (recommendationItems.length < 3) {
+  const alignedCount = recommendationItems.filter(
+    (item) => item.recommendationType === 'ALIGNED_WITH_DIVISION_KPI'
+  ).length
+  const independentCount = recommendationItems.filter(
+    (item) => item.recommendationType === 'TEAM_INDEPENDENT'
+  ).length
+
+  if (alignedCount < 3 || independentCount < 2) {
     throw new AppError(502, 'AI_RECOMMENDATION_INVALID', 'AI 추천 결과가 충분하지 않아 다시 시도해 주세요.')
   }
 
@@ -1512,6 +1583,8 @@ type ReviewGenerationContext = {
   evalYear: number
   evalCycleId?: string | null
   businessPlan: BusinessPlanDocument
+  divisionJobDescription: JobDescriptionDocument
+  teamJobDescription: JobDescriptionDocument
   sourceOrgKpis: RecommendationGenerationContext['sourceOrgKpis']
   teamOrgKpis: Array<{
     id: string
@@ -1527,6 +1600,7 @@ type ReviewGenerationContext = {
     weight: number
     difficulty: Difficulty
     parentOrgKpiId: string | null
+    recommendationType: TeamKpiRecommendationType
   }>
 }
 
@@ -1571,8 +1645,13 @@ async function loadReviewGenerationContext(params: ReviewGenerationParams): Prom
     evalYear: base.evalYear,
     evalCycleId: base.evalCycleId,
     businessPlan: base.businessPlan,
+    divisionJobDescription: base.divisionJobDescription,
+    teamJobDescription: base.teamJobDescription,
     sourceOrgKpis: base.sourceOrgKpis,
-    teamOrgKpis,
+    teamOrgKpis: teamOrgKpis.map((item) => ({
+      ...item,
+      recommendationType: item.parentOrgKpiId ? 'ALIGNED_WITH_DIVISION_KPI' : 'TEAM_INDEPENDENT',
+    })),
   }
 }
 
@@ -1587,11 +1666,19 @@ function sanitizeReviewItem(
 
   return {
     orgKpiId: candidate.id,
+    recommendationType: candidate.recommendationType,
     kpiTitleSnapshot: candidate.kpiName,
+    reviewType: 'FULL_SET' as TeamKpiReviewType,
     verdict,
     rationale: String(item.rationale ?? '상위 전략과의 연결 방향은 보이지만 세부 측정 기준을 조금 더 명확히 할 필요가 있습니다.').trim(),
     linkageComment:
       typeof item.linkageComment === 'string' ? item.linkageComment.trim() : '상위 KPI 및 사업계획서와의 연결 설명을 한 줄로 분명히 적어 주세요.',
+    roleFitComment:
+      typeof item.roleFitComment === 'string'
+        ? item.roleFitComment.trim()
+        : candidate.recommendationType === 'TEAM_INDEPENDENT'
+          ? '팀 직무기술서와 현재 역할 적합성을 기준으로 한 번 더 검토해 주세요.'
+          : '상위 본부 KPI 실행 책임과 팀 역할이 자연스럽게 이어지는지 확인해 주세요.',
     measurabilityComment:
       typeof item.measurabilityComment === 'string'
         ? item.measurabilityComment.trim()
@@ -1612,6 +1699,26 @@ function sanitizeReviewItem(
       typeof item.clarityComment === 'string'
         ? item.clarityComment.trim()
         : '대상, 결과, 시점을 포함한 문장으로 다듬으면 더 명확해집니다.',
+    duplicationComment:
+      typeof item.duplicationComment === 'string'
+        ? item.duplicationComment.trim()
+        : '기존 팀 KPI와 의미상 중복되지 않는지 확인해 주세요.',
+    strongPoint:
+      typeof item.strongPoint === 'string'
+        ? item.strongPoint.trim()
+        : candidate.recommendationType === 'TEAM_INDEPENDENT'
+          ? '팀 고유 역할과 직무기술서를 반영한 KPI라는 점이 강점입니다.'
+          : '상위 본부 KPI와의 정렬성이 비교적 선명한 점이 강점입니다.',
+    weakPoint:
+      typeof item.weakPoint === 'string'
+        ? item.weakPoint.trim()
+        : candidate.recommendationType === 'TEAM_INDEPENDENT'
+          ? '팀 역할 적합성은 높지만 전략 연결 설명이 더 구체적이면 좋습니다.'
+          : '상위 KPI 연결은 보이지만 팀이 직접 통제하는 측정 기준이 더 구체화될 필요가 있습니다.',
+    improvementSuggestions:
+      typeof item.improvementSuggestions === 'string'
+        ? item.improvementSuggestions.trim()
+        : 'KPI명, 산식, 데이터 출처, T/E/S 목표값을 더 구체적으로 보완해 주세요.',
     recommendationText:
       typeof item.recommendationText === 'string'
         ? item.recommendationText.trim()
@@ -1642,6 +1749,16 @@ export async function generateTeamKpiReviewRun(params: ReviewGenerationParams) {
       title: context.businessPlan.title,
       summaryText: context.businessPlan.summaryText,
       bodyText: context.businessPlan.bodyText,
+    },
+    divisionJobDescription: {
+      title: context.divisionJobDescription.title,
+      summaryText: context.divisionJobDescription.summaryText,
+      bodyText: context.divisionJobDescription.bodyText,
+    },
+    teamJobDescription: {
+      title: context.teamJobDescription.title,
+      summaryText: context.teamJobDescription.summaryText,
+      bodyText: context.teamJobDescription.bodyText,
     },
     sourceOrgKpis: context.sourceOrgKpis.map((kpi) => ({
       id: kpi.id,
@@ -1679,7 +1796,9 @@ export async function generateTeamKpiReviewRun(params: ReviewGenerationParams) {
       weight: kpi.weight,
       difficulty: kpi.difficulty,
       linkedSourceOrgKpiId: kpi.parentOrgKpiId,
+      recommendationType: kpi.recommendationType,
     })),
+    reviewType: 'FULL_SET',
     reviewCriteria: [
       '본부 KPI와의 연결성',
       '사업계획서와의 연결성',
@@ -1731,6 +1850,11 @@ export async function generateTeamKpiReviewRun(params: ReviewGenerationParams) {
     ['ADEQUATE', 'CAUTION', 'INSUFFICIENT'].includes(resultRecord.overallVerdict)
       ? (resultRecord.overallVerdict as TeamKpiReviewVerdict)
       : null
+  const reviewType =
+    typeof resultRecord.reviewType === 'string' &&
+    ['FULL_SET', 'ALIGNED_ONLY', 'TEAM_INDEPENDENT_ONLY'].includes(resultRecord.reviewType)
+      ? (resultRecord.reviewType as TeamKpiReviewType)
+      : 'FULL_SET'
 
   const created = await prisma.teamKpiReviewRun.create({
     data: {
@@ -1741,8 +1865,15 @@ export async function generateTeamKpiReviewRun(params: ReviewGenerationParams) {
       evalCycleId: context.evalCycleId ?? null,
       requesterId: params.userId,
       aiRequestLogId: aiPreview.requestLogId,
+      reviewType,
       overallVerdict,
       overallSummary: typeof resultRecord.overallSummary === 'string' ? resultRecord.overallSummary : null,
+      linkedParentCoverage:
+        typeof resultRecord.linkedParentCoverage === 'string' ? resultRecord.linkedParentCoverage : null,
+      independentKpiCoverage:
+        typeof resultRecord.independentKpiCoverage === 'string'
+          ? resultRecord.independentKpiCoverage
+          : null,
       items: {
         create: reviewItems,
       },
