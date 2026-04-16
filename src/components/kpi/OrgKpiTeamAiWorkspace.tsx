@@ -296,6 +296,11 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
                     </div>
 
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <InfoBlock label="Linked parent KPI" value={item.sourceOrgKpiTitle ?? item.linkedParentKpiTitle ?? 'No parent KPI'} />
+                      <InfoBlock label="Linkage reason" value={item.linkageReason ?? item.recommendationReason} />
+                      <InfoBlock label="Metric source" value={item.metricSource ?? 'No metric source'} />
+                      <InfoBlock label="High-quality reason" value={item.whyThisIsHighQuality ?? 'No quality rationale'} />
+                      <InfoBlock label="Controllability" value={item.controllabilityNote ?? 'No controllability note'} />
                       <InfoBlock label="상위 KPI 연결" value={item.linkageExplanation} />
                       <InfoBlock label="추천 이유" value={item.recommendationReason} />
                       <InfoBlock label="측정 방식" value={item.formula ?? '산식 없음'} />

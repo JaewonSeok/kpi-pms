@@ -17,6 +17,7 @@ import {
   formatOrgKpiTargetValues,
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
+import { buildStrategicTeamRecommendationPayload } from '@/lib/org-kpi-team-ai-recommendation'
 import type { KpiAiPreviewComparison } from '@/lib/kpi-ai-preview'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
 import { KpiAiPreviewPanel } from './KpiAiPreviewPanel'
@@ -343,7 +344,7 @@ function buildAiPayload(action: AiAction, kpi: OrgKpiViewModel | null, form: For
       })
     : null
 
-  return {
+  const basePayload = {
     departmentName,
     year: Number(form.evalYear || pageData.selectedYear),
     kpiName: kpi?.title ?? form.kpiName,
@@ -361,6 +362,78 @@ function buildAiPayload(action: AiAction, kpi: OrgKpiViewModel | null, form: For
     monthlyAchievementRate: kpi?.monthlyAchievementRate ?? null,
     riskFlags: kpi?.riskFlags ?? [],
     action,
+  }
+
+  if (action !== 'generate-draft' || !pageData.teamAi?.businessPlan) {
+    return basePayload
+  }
+
+  const teamAi = pageData.teamAi
+  const businessPlan = teamAi.businessPlan!
+  const targetDepartmentId = kpi?.departmentId ?? form.deptId ?? teamAi.targetDepartmentId
+  const sourceOrgKpis = teamAi.sourceOrgKpis.map((item) => {
+    const full = pageData.list.find((candidate) => candidate.id === item.id)
+    return {
+      id: item.id,
+      kpiName: item.title,
+      kpiCategory: item.category ?? full?.category ?? null,
+      definition: full?.definition ?? null,
+      formula: full?.formula ?? null,
+      targetValueText: item.targetValuesText,
+      weight: item.weight ?? full?.weight ?? 20,
+      difficulty: item.difficulty ?? full?.difficulty ?? 'MEDIUM',
+    }
+  })
+  const existingTeamKpis = pageData.list
+    .filter((item) => item.departmentId === targetDepartmentId)
+    .map((item) => ({
+      id: item.id,
+      kpiName: item.title,
+      kpiCategory: item.category ?? null,
+      definition: item.definition ?? null,
+      formula: item.formula ?? null,
+      weight: item.weight ?? 0,
+      parentOrgKpiId: item.parentOrgKpiId ?? null,
+    }))
+  const strategicPayload = buildStrategicTeamRecommendationPayload({
+    teamDepartment: {
+      id: targetDepartmentId,
+      name: departmentName,
+      organizationName:
+        pageData.departments.find((department) => department.id === targetDepartmentId)?.organizationName ??
+        teamAi.planningSourceLabel,
+    },
+    planningDepartment: {
+      id: teamAi.planningDepartmentId,
+      name: teamAi.planningDepartmentName,
+      organizationName:
+        pageData.departments.find((department) => department.id === teamAi.planningDepartmentId)
+          ?.organizationName ??
+        teamAi.planningSourceLabel,
+    },
+    evalYear: Number(form.evalYear || pageData.selectedYear),
+    businessPlan: {
+      title: businessPlan.title,
+      summaryText: businessPlan.summaryText,
+      bodyText: businessPlan.bodyText,
+    },
+    currentDraft: {
+      title: String(basePayload.kpiName ?? ''),
+      category: String(basePayload.category ?? ''),
+      definition: String(basePayload.definition ?? ''),
+      formula: String(basePayload.formula ?? ''),
+      unit: String(basePayload.unit ?? '%'),
+      weight: typeof basePayload.weight === 'number' ? basePayload.weight : null,
+      difficulty: String(basePayload.difficulty ?? 'MEDIUM'),
+    },
+    sourceOrgKpis,
+    existingTeamKpis,
+    preferredParentOrgKpiId: kpi?.parentOrgKpiId ?? form.parentOrgKpiId ?? null,
+  })
+
+  return {
+    ...basePayload,
+    ...strategicPayload,
   }
 }
 export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pageData }: Props) {

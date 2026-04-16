@@ -243,6 +243,75 @@ function renderSection(section: KpiAiPreviewSection) {
           </div>
         </SectionCard>
       )
+    case 'recommendations':
+      return (
+        <SectionCard key={section.key} title={section.title} helper="상위 본부 KPI와 직접 연결되는 팀 KPI 추천안을 우선순위 순서대로 검토할 수 있습니다.">
+          <div className="space-y-3">
+            {section.items.map((item, index) => (
+              <div key={`${section.key}-${item.title}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white">
+                        추천 {item.recommendedPriority ?? String(index + 1)}
+                      </span>
+                      {item.difficultyLevel ? (
+                        <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                          난이도 {item.difficultyLevel}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 text-base font-semibold text-slate-900">{item.title}</div>
+                    <ExpandableText value={item.definition} previewLength={220} className="mt-2" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                    <div className="text-xs text-slate-500">T / E / S</div>
+                    <div className="mt-1 font-semibold text-slate-900">{item.targetText}</div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">연결된 본부 KPI</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-900">{item.linkedParentKpiTitle}</div>
+                    <ExpandableText value={item.linkageReason} previewLength={180} className="mt-2" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">측정 방식 / 데이터</div>
+                    <div className="mt-2 text-sm font-medium text-slate-900">{item.formula}</div>
+                    <ExpandableText value={item.metricSource} previewLength={180} className="mt-2" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">왜 좋은 KPI인가</div>
+                    <ExpandableText value={item.whyThisIsHighQuality} previewLength={180} className="mt-2" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">통제 가능성 / 리스크</div>
+                    <ExpandableText value={`${item.controllabilityNote}\n\n${item.riskNote}`} previewLength={200} className="mt-2" />
+                  </div>
+                </div>
+
+                {(item.alignmentScore || item.qualityScore) ? (
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {item.alignmentScore ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-xs text-slate-500">상위 KPI 정렬도</div>
+                        <div className="mt-1 text-base font-semibold text-slate-900">{item.alignmentScore}</div>
+                      </div>
+                    ) : null}
+                    {item.qualityScore ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-xs text-slate-500">추천 품질 점수</div>
+                        <div className="mt-1 text-base font-semibold text-slate-900">{item.qualityScore}</div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )
   }
 }
 

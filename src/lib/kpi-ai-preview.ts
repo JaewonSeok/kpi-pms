@@ -33,6 +33,23 @@ export type KpiAiPreviewWeightRecommendation = {
   reason: string
 }
 
+export type KpiAiPreviewRecommendation = {
+  title: string
+  definition: string
+  formula: string
+  linkedParentKpiTitle: string
+  linkageReason: string
+  metricSource: string
+  targetText: string
+  whyThisIsHighQuality: string
+  controllabilityNote: string
+  riskNote: string
+  difficultyLevel?: string
+  alignmentScore?: string
+  qualityScore?: string
+  recommendedPriority?: string
+}
+
 export type KpiAiPreviewSection =
   | { kind: 'text'; key: string; title: string; body: string }
   | { kind: 'list'; key: string; title: string; items: string[] }
@@ -40,6 +57,7 @@ export type KpiAiPreviewSection =
   | { kind: 'criteria'; key: string; title: string; items: KpiAiPreviewCriterion[] }
   | { kind: 'duplicates'; key: string; title: string; items: KpiAiPreviewDuplicate[] }
   | { kind: 'weights'; key: string; title: string; items: KpiAiPreviewWeightRecommendation[] }
+  | { kind: 'recommendations'; key: string; title: string; items: KpiAiPreviewRecommendation[] }
 
 export type KpiAiPreviewDescriptor = {
   tone: KpiAiPreviewTone
@@ -196,6 +214,64 @@ function buildWeightRecommendations(items: JsonRecord[]): KpiAiPreviewWeightReco
     .filter((item): item is KpiAiPreviewWeightRecommendation => Boolean(item))
 }
 
+function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendation[] {
+  return items.flatMap((item) => {
+      const title = toStringValue(item.recommendedTitle) ?? toStringValue(item.title)
+      const definition = toStringValue(item.recommendedDefinition) ?? toStringValue(item.definition)
+      const formula = toStringValue(item.formula)
+      const linkedParentKpiTitle = toStringValue(item.linkedParentKpiTitle)
+      const linkageReason = toStringValue(item.linkageReason) ?? toStringValue(item.linkageExplanation)
+      const metricSource = toStringValue(item.metricSource)
+      const whyThisIsHighQuality = toStringValue(item.whyThisIsHighQuality)
+      const controllabilityNote = toStringValue(item.controllabilityNote)
+      const riskNote = toStringValue(item.riskNote) ?? toStringValue(item.riskComment)
+      const targetT = toNumberString(item.targetT ?? item.targetValueT)
+      const targetE = toNumberString(item.targetE ?? item.targetValueE)
+      const targetS = toNumberString(item.targetS ?? item.targetValueS)
+      const unit = toStringValue(item.unit)
+      const targetParts = [
+        targetT ? `T ${targetT}` : null,
+        targetE ? `E ${targetE}` : null,
+        targetS ? `S ${targetS}` : null,
+        unit ? unit : null,
+      ].filter((part): part is string => Boolean(part))
+      const targetText = targetParts.join(' / ')
+
+      if (
+        !title ||
+        !definition ||
+        !formula ||
+        !linkedParentKpiTitle ||
+        !linkageReason ||
+        !metricSource ||
+        !whyThisIsHighQuality ||
+        !controllabilityNote ||
+        !riskNote
+      ) {
+        return []
+      }
+
+      return [
+        {
+        title,
+        definition,
+        formula,
+        linkedParentKpiTitle,
+        linkageReason,
+        metricSource,
+        targetText: targetText || '-',
+        whyThisIsHighQuality,
+        controllabilityNote,
+        riskNote,
+        difficultyLevel: toStringValue(item.difficultyLevel ?? item.difficultySuggestion) ?? undefined,
+        alignmentScore: toNumberString(item.alignmentScore) ?? undefined,
+        qualityScore: toNumberString(item.qualityScore) ?? undefined,
+        recommendedPriority: toNumberString(item.recommendedPriority) ?? undefined,
+        },
+      ]
+    })
+}
+
 export function inferKpiAiPreviewTone(
   action: string,
   result: Record<string, unknown>,
@@ -264,7 +340,11 @@ export function buildKpiAiPreviewSummary(action: string, result: Record<string, 
     return '리스크 요인과 검토 포인트를 실무자가 바로 읽을 수 있는 형태로 요약했습니다.'
   }
 
-  if (action.includes('weight') || record.recommendations) {
+  if (action.includes('generate') && Array.isArray(record.recommendations)) {
+    return '상위 본부 KPI와 사업계획서를 먼저 읽고, 직접 정렬되는 팀 KPI 추천안을 우선순위와 근거까지 함께 정리했습니다.'
+  }
+
+  if (action.includes('weight')) {
     return '가중치 조정안과 그 근거를 검토 문서 형태로 정리했습니다.'
   }
 
@@ -348,6 +428,17 @@ export function buildKpiAiPreviewSections(_action: string, result: Record<string
   addList('memberPrep', RESULT_LABELS.memberPrep, record.memberPrep)
   addList('evaluationPoints', RESULT_LABELS.evaluationPoints, record.evaluationPoints)
   addList('managerNotes', RESULT_LABELS.managerNotes, record.managerNotes)
+
+  const recommendations = buildRecommendationCards(toObjectArray(record.recommendations))
+  if (recommendations.length) {
+    consumed.add('recommendations')
+    sections.push({
+      kind: 'recommendations',
+      key: 'recommendations',
+      title: '추천 KPI 후보',
+      items: recommendations,
+    })
+  }
 
   const criteria = buildCriteria(toObjectArray(record.criteria))
   if (criteria.length) {

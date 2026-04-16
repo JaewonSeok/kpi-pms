@@ -1,4 +1,4 @@
-import {
+﻿import {
   AIApprovalStatus,
   AIRequestStatus,
   AIRequestType,
@@ -45,10 +45,10 @@ type OpenAIResponseData = {
 }
 
 export const AI_REQUEST_LABELS: Record<AIRequestType, string> = {
-  KPI_ASSIST: 'KPI 작성 보조',
-  EVAL_COMMENT_DRAFT: '평가 코멘트 초안',
-  BIAS_ANALYSIS: '편향 분석',
-  GROWTH_PLAN: '성장 계획 추천',
+  KPI_ASSIST: 'KPI ?묒꽦 蹂댁“',
+  EVAL_COMMENT_DRAFT: '?됯? 肄붾찘??珥덉븞',
+  BIAS_ANALYSIS: '?명뼢 遺꾩꽍',
+  GROWTH_PLAN: '?깆옣 怨꾪쉷 異붿쿇',
 }
 
 const KPI_SCHEMA = {
@@ -97,6 +97,13 @@ const ORG_KPI_DRAFT_SCHEMA = {
     'weightSuggestion',
     'difficultySuggestion',
     'reviewPoints',
+    'metricSource',
+    'linkedParentKpiTitle',
+    'linkageReason',
+    'whyThisIsHighQuality',
+    'controllabilityNote',
+    'riskNote',
+    'recommendations',
   ],
   properties: {
     title: { type: 'string' },
@@ -104,12 +111,73 @@ const ORG_KPI_DRAFT_SCHEMA = {
     definition: { type: 'string' },
     formula: { type: 'string' },
     targetValueSuggestion: { type: 'string' },
+    targetValueT: { type: 'number' },
+    targetValueE: { type: 'number' },
+    targetValueS: { type: 'number' },
     unit: { type: 'string' },
     weightSuggestion: { type: 'number' },
     difficultySuggestion: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+    metricSource: { type: 'string' },
+    linkedParentKpiId: { type: ['string', 'null'] },
+    linkedParentKpiTitle: { type: 'string' },
+    linkageReason: { type: 'string' },
+    whyThisIsHighQuality: { type: 'string' },
+    controllabilityNote: { type: 'string' },
+    riskNote: { type: 'string' },
     reviewPoints: {
       type: 'array',
       items: { type: 'string' },
+    },
+    recommendations: {
+      type: 'array',
+      minItems: 3,
+      maxItems: 5,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'recommendedTitle',
+          'recommendedDefinition',
+          'formula',
+          'metricSource',
+          'targetT',
+          'targetE',
+          'targetS',
+          'unit',
+          'weightSuggestion',
+          'difficultyLevel',
+          'linkedParentKpiTitle',
+          'linkageReason',
+          'whyThisIsHighQuality',
+          'controllabilityNote',
+          'riskNote',
+          'alignmentScore',
+          'qualityScore',
+          'recommendedPriority',
+        ],
+        properties: {
+          recommendedTitle: { type: 'string' },
+          recommendedDefinition: { type: 'string' },
+          category: { type: ['string', 'null'] },
+          formula: { type: 'string' },
+          metricSource: { type: 'string' },
+          targetT: { type: 'number' },
+          targetE: { type: 'number' },
+          targetS: { type: 'number' },
+          unit: { type: 'string' },
+          weightSuggestion: { type: 'number' },
+          difficultyLevel: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+          linkedParentKpiId: { type: ['string', 'null'] },
+          linkedParentKpiTitle: { type: 'string' },
+          linkageReason: { type: 'string' },
+          whyThisIsHighQuality: { type: 'string' },
+          controllabilityNote: { type: 'string' },
+          riskNote: { type: 'string' },
+          alignmentScore: { type: 'number' },
+          qualityScore: { type: 'number' },
+          recommendedPriority: { type: 'number' },
+        },
+      },
     },
   },
 } satisfies JsonRecord
@@ -1058,7 +1126,7 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     schemaName: 'org_kpi_draft',
     schema: ORG_KPI_DRAFT_SCHEMA,
     systemPrompt:
-      'You are an HR strategy assistant for organization KPI design. Reply in Korean. Generate concise, measurable organization KPI draft suggestions that align top-down strategy with monthly execution and personal KPI cascade. Avoid personal data and avoid vague wording.',
+      'You are a team KPI design expert. Reply in Korean. Read linked parent division KPIs first, then the business plan, then the team context, and only then design team KPI draft recommendations. Return exactly 3 to 5 ranked draft options. The top recommendation must also be mirrored in the top-level fields for direct apply. Prefer strategic outcome KPIs or strong leading KPIs over vague activity KPIs. Exclude easy, ambiguous, unmeasurable, uncontrollable, or duplicate KPI ideas. Every recommendation must name the linked parent KPI, explain the linkage, explain why the KPI is high quality, mention metric source, controllability, operational risk, and provide T/E/S target values plus alignment and quality scores.',
   },
   'KPI_ASSIST:OrgKpiWording': {
     schemaName: 'org_kpi_wording',
@@ -1100,7 +1168,7 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     schemaName: 'org_team_kpi_recommendation',
     schema: ORG_TEAM_KPI_RECOMMENDATION_SCHEMA,
     systemPrompt:
-      'You are an HR strategy copilot for team KPI design. Reply in Korean. Read the division business plan, source organization KPIs, and the target team context. Recommend 3 to 5 concrete team KPIs that align with the division plan, favor measurable outcome KPIs over activity KPIs, and explain the linkage, rationale, and operational risks for each suggestion.',
+      'You are a team KPI design expert. Reply in Korean. Read the linked parent division KPIs first, then the division business plan, then the team context, and only then design the team KPI recommendations. Recommend exactly 3 to 5 team KPIs that directly contribute to a parent KPI. Prefer strategic outcome KPIs or strong leading KPIs over vague activity lists. Exclude easy, ambiguous, unmeasurable, uncontrollable, or duplicate KPI ideas. For each recommendation, provide a clear KPI name, definition, formula, metric source, T/E/S target values, linked parent KPI, linkage reason, why the KPI is high quality, controllability note, risk note, and alignment/quality scoring.',
   },
   'KPI_ASSIST:OrgTeamKpiReview': {
     schemaName: 'org_team_kpi_review',
@@ -1371,33 +1439,207 @@ export function buildFallbackResult(
   const grade = String(payload.gradeName ?? '').trim()
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiDraft') {
+    /*
+    const teamDepartment =
+      typeof payload.teamDepartment === 'object' && payload.teamDepartment
+        ? (payload.teamDepartment as Record<string, unknown>)
+        : {}
+    const sourceOrgKpis = Array.isArray(payload.sourceOrgKpis) ? payload.sourceOrgKpis : []
+    const linkedParentOrgKpis = Array.isArray(payload.linkedParentOrgKpis) ? payload.linkedParentOrgKpis : []
+    const prioritizedParents = linkedParentOrgKpis.length ? linkedParentOrgKpis : sourceOrgKpis
+    const deptName =
+      String(teamDepartment.name ?? payload.departmentName ?? payload.teamName ?? '?').trim() || '?'
+    const recommendations = Array.from({
+      length: Math.min(5, Math.max(3, prioritizedParents.length || sourceOrgKpis.length || 3)),
+    }).map((_, index) => {
+      const source =
+        typeof prioritizedParents[index] === 'object' && prioritizedParents[index]
+          ? (prioritizedParents[index] as Record<string, unknown>)
+          : {}
+      const linkedParentKpiTitle = String(source.title ?? `?곸쐞 KPI ${index + 1}`)
+      const targetT = Number(source.targetValueT ?? 92 + index * 3)
+      const targetE = Number(source.targetValueE ?? 100 + index * 4)
+      const targetS = Number(source.targetValueS ?? 108 + index * 5)
+
+      return {
+        recommendedTitle: `${deptName} ${linkedParentKpiTitle} ?ㅼ쟻 ?ъ꽦瑜?,
+        recommendedDefinition: `${linkedParentKpiTitle} ?ъ꽦??吏곸젒 湲곗뿬?섎룄濡?${deptName}???듭젣 媛?ν븳 ?듭떖 寃곌낵吏?쒖? ?좏뻾吏?쒕? 寃고빀??? KPI 珥덉븞?낅땲??`,
+        category: String(payload.category ?? payload.kpiCategory ?? '?꾨왂 ?ㅽ뻾'),
+        formula:
+          typeof source.formula === 'string' && source.formula.trim().length
+            ? source.formula
+            : '?ㅼ쟻 / 紐⑺몴 x 100',
+        metricSource: `${deptName} ?댁쁺 ?ㅼ쟻 ?곗씠??諛??붽컙 KPI 吏묎퀎`,
+        targetT,
+        targetE,
+        targetS,
+        unit: String(payload.unit ?? '%'),
+        weightSuggestion: Number(payload.weight ?? 20),
+        difficultyLevel: String(payload.difficulty ?? 'MEDIUM'),
+        linkedParentKpiId: typeof source.id === 'string' ? source.id : null,
+        linkedParentKpiTitle,
+        linkageReason: `${linkedParentKpiTitle}???깃낵瑜?? ?ㅽ뻾 ?섏??먯꽌 吏곸젒 ?뚯뼱?щ┫ ???덈뒗 KPI濡??ㅺ퀎?덉뒿?덈떎.`,
+        whyThisIsHighQuality:
+          '?곸쐞 KPI ?뺣젹?? 痢≪젙 媛?μ꽦, ? ?듭젣 媛?μ꽦, stretch 紐⑺몴 ?섏????숈떆??異⑹”?섎룄濡??ㅺ퀎?덉뒿?덈떎.',
+        controllabilityNote: `${deptName}??吏곸젒 ?먯썝 諛곕텇怨??ㅽ뻾 由щ벉??議곗젙???깃낵瑜??듭젣?????덈뒗 吏?쒖엯?덈떎.`,
+        riskNote: '?곗씠???섏쭛 湲곗?怨?痢≪젙 二쇨린瑜?紐낇솗??怨좎젙?섏? ?딆쑝硫?鍮꾧탳 媛?μ꽦???⑥뼱吏????덉뒿?덈떎.',
+        alignmentScore: Math.max(84, 96 - index * 3),
+        qualityScore: Math.max(82, 95 - index * 3),
+        recommendedPriority: index + 1,
+      }
+    })
+    const primary = recommendations[0]
+
     return {
-      title: goal || orgKpi || '조직 KPI 초안',
-      category: String(payload.category ?? payload.kpiCategory ?? '전략 실행'),
+      title: primary?.recommendedTitle ?? (goal || orgKpi || '議곗쭅 KPI 珥덉븞'),
+      category: primary?.category ?? String(payload.category ?? payload.kpiCategory ?? '?꾨왂 ?ㅽ뻾'),
       definition:
-        summary ||
-        '조직 전략을 월간 실행과 개인 KPI로 연결할 수 있도록 측정 가능한 결과 중심으로 정의한 조직 KPI 초안입니다.',
-      formula: '실적 / 목표 x 100',
-      targetValueSuggestion: String(payload.targetValue ?? '연간 목표 100 기준'),
+        primary?.recommendedDefinition ??
+        (summary ||
+        '?곸쐞 KPI? ?ъ뾽怨꾪쉷??諛⑺뼢??吏곸젒 ?ㅽ뻾?쇰줈 ?곌껐?섎뒗 ? KPI 珥덉븞?낅땲??'),
+      formula: primary?.formula ?? '?ㅼ쟻 / 紐⑺몴 x 100',
+      targetValueSuggestion: String(primary?.targetE ?? payload.targetValue ?? '100'),
+      targetValueT: primary?.targetT ?? 95,
+      targetValueE: primary?.targetE ?? 100,
+      targetValueS: primary?.targetS ?? 110,
+      unit: primary?.unit ?? String(payload.unit ?? '%'),
+      weightSuggestion: primary?.weightSuggestion ?? Number(payload.weight ?? 20),
+      difficultySuggestion: primary?.difficultyLevel ?? String(payload.difficulty ?? 'MEDIUM'),
+      metricSource: primary?.metricSource ?? `${deptName} ?댁쁺 ?ㅼ쟻 ?곗씠??,
+      linkedParentKpiId: primary?.linkedParentKpiId ?? null,
+      linkedParentKpiTitle: primary?.linkedParentKpiTitle ?? '?곌퀎 ?곸쐞 KPI',
+      linkageReason:
+        primary?.linkageReason ?? '?곸쐞 蹂몃? KPI???ㅼ쭏?곸쑝濡?湲곗뿬?섎뒗 ? KPI瑜??곗꽑 異붿쿇?덉뒿?덈떎.',
+      whyThisIsHighQuality:
+        primary?.whyThisIsHighQuality ??
+        '?꾨왂 ?뺣젹?? 痢≪젙 媛?μ꽦, ?듭젣 媛?μ꽦, ?꾩쟾?깆쓣 ?④퍡 異⑹”?섎룄濡?援ъ꽦?덉뒿?덈떎.',
+      controllabilityNote:
+        primary?.controllabilityNote ?? '???吏곸젒 愿由?媛?ν븳 ?ㅽ뻾吏?쒖씤吏 ?뺤씤???꾩슂?⑸땲??',
+      riskNote:
+        primary?.riskNote ?? '?몄깮 蹂???곹뼢怨??곗씠??吏묎퀎 二쇨린瑜?紐낇솗???뺤쓽?댁빞 ?⑸땲??',
+      reviewPoints: [
+        '?곌퀎???곸쐞 KPI? ?곌껐 ?댁쑀媛 紐낇솗?쒖? ?뺤씤?섏꽭??',
+        '?곗떇怨??곗씠??異쒖쿂媛 ?ㅼ젣 ?댁쁺 ?곗씠?곕줈 痢≪젙 媛?ν븳吏 寃?좏븯?몄슂.',
+        'T/E/S 紐⑺몴媛믪씠 ?덈Т ?쎌? ?딆? stretch ?섏??몄? 寃?좏븯?몄슂.',
+      ],
+      recommendations,
+    }
+    return {
+      title: goal || orgKpi || '議곗쭅 KPI 珥덉븞',
+      category: String(payload.category ?? payload.kpiCategory ?? '?꾨왂 ?ㅽ뻾'),
+      definition:
+        (summary ||
+        '議곗쭅 ?꾨왂???붽컙 ?ㅽ뻾怨?媛쒖씤 KPI濡??곌껐?????덈룄濡?痢≪젙 媛?ν븳 寃곌낵 以묒떖?쇰줈 ?뺤쓽??議곗쭅 KPI 珥덉븞?낅땲??'),
+      formula: '?ㅼ쟻 / 紐⑺몴 x 100',
+      targetValueSuggestion: String(payload.targetValue ?? '?곌컙 紐⑺몴 100 湲곗?'),
       unit: String(payload.unit ?? '%'),
       weightSuggestion: Number(payload.weight ?? 20),
       difficultySuggestion: String(payload.difficulty ?? 'MEDIUM'),
       reviewPoints: [
-        '가중치 합과 부서 내 다른 KPI와의 중복 여부를 함께 확인하세요.',
-        '월간 실적 데이터로 실제 측정 가능한지 검토하세요.',
+        '媛以묒튂 ?⑷낵 遺?????ㅻⅨ KPI???以묐났 ?щ?瑜??④퍡 ?뺤씤?섏꽭??',
+        '?붽컙 ?ㅼ쟻 ?곗씠?곕줈 ?ㅼ젣 痢≪젙 媛?ν븳吏 寃?좏븯?몄슂.',
       ],
+    }
+  }
+
+    */
+
+    const teamDepartment =
+      typeof payload.teamDepartment === 'object' && payload.teamDepartment
+        ? (payload.teamDepartment as Record<string, unknown>)
+        : {}
+    const sourceOrgKpis = Array.isArray(payload.sourceOrgKpis) ? payload.sourceOrgKpis : []
+    const linkedParentOrgKpis = Array.isArray(payload.linkedParentOrgKpis) ? payload.linkedParentOrgKpis : []
+    const prioritizedParents = linkedParentOrgKpis.length ? linkedParentOrgKpis : sourceOrgKpis
+    const deptName =
+      String(teamDepartment.name ?? payload.departmentName ?? payload.teamName ?? 'Team').trim() || 'Team'
+    const recommendations = Array.from({
+      length: Math.min(5, Math.max(3, prioritizedParents.length || sourceOrgKpis.length || 3)),
+    }).map((_, index) => {
+      const source =
+        typeof prioritizedParents[index] === 'object' && prioritizedParents[index]
+          ? (prioritizedParents[index] as Record<string, unknown>)
+          : {}
+      const linkedParentKpiTitle = String(source.title ?? `Parent KPI ${index + 1}`)
+      const targetT = Number(source.targetValueT ?? 92 + index * 3)
+      const targetE = Number(source.targetValueE ?? 100 + index * 4)
+      const targetS = Number(source.targetValueS ?? 108 + index * 5)
+
+      return {
+        recommendedTitle: `${deptName} ${linkedParentKpiTitle} execution outcome`,
+        recommendedDefinition: `${linkedParentKpiTitle} directly cascades into a controllable ${deptName} team KPI draft with outcome and leading indicators.`,
+        category: String(payload.category ?? payload.kpiCategory ?? 'Strategic execution'),
+        formula:
+          typeof source.formula === 'string' && source.formula.trim().length
+            ? source.formula
+            : 'Actual / Target x 100',
+        metricSource: `${deptName} operational results and monthly KPI reporting`,
+        targetT,
+        targetE,
+        targetS,
+        unit: String(payload.unit ?? '%'),
+        weightSuggestion: Number(payload.weight ?? 20),
+        difficultyLevel: String(payload.difficulty ?? 'MEDIUM'),
+        linkedParentKpiId: typeof source.id === 'string' ? source.id : null,
+        linkedParentKpiTitle,
+        linkageReason: `${linkedParentKpiTitle} is decomposed into a direct ${deptName} team KPI so the team can contribute measurably to the parent KPI.`,
+        whyThisIsHighQuality:
+          'It is tightly aligned to the parent KPI, measurable, controllable by the team, and designed with stretch targets.',
+        controllabilityNote: `${deptName} can directly influence this KPI through execution cadence, resourcing, and operating discipline.`,
+        riskNote:
+          'If data collection rules and metric cadence are not fixed up front, comparability and accountability may weaken.',
+        alignmentScore: Math.max(84, 96 - index * 3),
+        qualityScore: Math.max(82, 95 - index * 3),
+        recommendedPriority: index + 1,
+      }
+    })
+    const primary = recommendations[0]
+
+    return {
+      title: primary?.recommendedTitle ?? (goal || orgKpi || '議곗쭅 KPI 珥덉븞'),
+      category: primary?.category ?? String(payload.category ?? payload.kpiCategory ?? 'Strategic execution'),
+      definition:
+        primary?.recommendedDefinition ??
+        (summary ||
+        '?곸쐞 KPI? ?ъ뾽怨꾪쉷??諛⑺뼢??吏곸젒 ?ㅽ뻾?쇰줈 ?곌껐?섎뒗 ? KPI 珥덉븞?낅땲??'),
+      formula: primary?.formula ?? 'Actual / Target x 100',
+      targetValueSuggestion: String(primary?.targetE ?? payload.targetValue ?? '100'),
+      targetValueT: primary?.targetT ?? 95,
+      targetValueE: primary?.targetE ?? 100,
+      targetValueS: primary?.targetS ?? 110,
+      unit: primary?.unit ?? String(payload.unit ?? '%'),
+      weightSuggestion: primary?.weightSuggestion ?? Number(payload.weight ?? 20),
+      difficultySuggestion: primary?.difficultyLevel ?? String(payload.difficulty ?? 'MEDIUM'),
+      metricSource: primary?.metricSource ?? `${deptName} operational result data`,
+      linkedParentKpiId: primary?.linkedParentKpiId ?? null,
+      linkedParentKpiTitle: primary?.linkedParentKpiTitle ?? '?곌퀎 ?곸쐞 KPI',
+      linkageReason:
+        primary?.linkageReason ?? '?곸쐞 蹂몃? KPI???ㅼ쭏?곸쑝濡?湲곗뿬?섎뒗 ? KPI瑜??곗꽑 異붿쿇?덉뒿?덈떎.',
+      whyThisIsHighQuality:
+        primary?.whyThisIsHighQuality ??
+        '?꾨왂 ?뺣젹?? 痢≪젙 媛?μ꽦, ?듭젣 媛?μ꽦, ?꾩쟾?깆쓣 ?④퍡 異⑹”?섎룄濡?援ъ꽦?덉뒿?덈떎.',
+      controllabilityNote:
+        primary?.controllabilityNote ?? '???吏곸젒 愿由?媛?ν븳 ?ㅽ뻾吏?쒖씤吏 ?뺤씤???꾩슂?⑸땲??',
+      riskNote:
+        primary?.riskNote ?? '?몄깮 蹂???곹뼢怨??곗씠??吏묎퀎 二쇨린瑜?紐낇솗???뺤쓽?댁빞 ?⑸땲??',
+      reviewPoints: [
+        '?곌퀎???곸쐞 KPI? ?곌껐 ?댁쑀媛 紐낇솗?쒖? ?뺤씤?섏꽭??',
+        '?곗떇怨??곗씠??異쒖쿂媛 ?ㅼ젣 ?댁쁺 ?곗씠?곕줈 痢≪젙 媛?ν븳吏 寃?좏븯?몄슂.',
+        'T/E/S 紐⑺몴媛믪씠 ?덈Т ?쎌? ?딆? stretch ?섏??몄? 寃?좏븯?몄슂.',
+      ],
+      recommendations,
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiWording') {
     return {
-      improvedTitle: goal || orgKpi || '측정 가능한 조직 KPI 문구',
+      improvedTitle: goal || orgKpi || '痢≪젙 媛?ν븳 議곗쭅 KPI 臾멸뎄',
       improvedDefinition:
-        summary ||
-        '조직 목표와 측정 기준이 함께 드러나도록 문장을 간결하게 정리한 제안입니다.',
+        (summary ||
+        '議곗쭅 紐⑺몴? 痢≪젙 湲곗????④퍡 ?쒕윭?섎룄濡?臾몄옣??媛꾧껐?섍쾶 ?뺣━???쒖븞?낅땲??'),
       rationale: [
-        '측정 대상과 기대 결과를 한 문장 안에서 읽히게 정리했습니다.',
-        '실제 실행 지표와 연결될 수 있도록 표현을 구체화했습니다.',
+        '痢≪젙 ??곴낵 湲곕? 寃곌낵瑜???臾몄옣 ?덉뿉???쏀엳寃??뺣━?덉뒿?덈떎.',
+        '?ㅼ젣 ?ㅽ뻾 吏?쒖? ?곌껐?????덈룄濡??쒗쁽??援ъ껜?뷀뻽?듬땲??',
       ],
     }
   }
@@ -1405,37 +1647,37 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiSmart') {
     return {
       overall: 'WARNING',
-      summary: '현재 KPI는 방향성은 있으나 측정 기준과 기한 표현을 더 선명하게 다듬을 필요가 있습니다.',
+      summary: '?꾩옱 KPI??諛⑺뼢?깆? ?덉쑝??痢≪젙 湲곗?怨?湲고븳 ?쒗쁽?????좊챸?섍쾶 ?ㅻ벉???꾩슂媛 ?덉뒿?덈떎.',
       criteria: [
         {
           name: 'Specific',
           status: 'WARN',
-          reason: '대상과 결과 표현이 다소 넓습니다.',
-          suggestion: '핵심 고객군 또는 운영 지표를 명확히 지정하세요.',
+          reason: '??곴낵 寃곌낵 ?쒗쁽???ㅼ냼 ?볦뒿?덈떎.',
+          suggestion: '?듭떖 怨좉컼援??먮뒗 ?댁쁺 吏?쒕? 紐낇솗??吏?뺥븯?몄슂.',
         },
         {
           name: 'Measurable',
           status: 'PASS',
-          reason: '목표값과 측정 방식이 포함되어 있습니다.',
-          suggestion: '월간 추적 기준을 함께 적으면 더 좋습니다.',
+          reason: '紐⑺몴媛믨낵 痢≪젙 諛⑹떇???ы븿?섏뼱 ?덉뒿?덈떎.',
+          suggestion: '?붽컙 異붿쟻 湲곗????④퍡 ?곸쑝硫???醫뗭뒿?덈떎.',
         },
         {
           name: 'Achievable',
           status: 'WARN',
-          reason: '목표 수준의 근거가 부족합니다.',
-          suggestion: '전년 실적 또는 현재 기준치를 함께 적으세요.',
+          reason: '紐⑺몴 ?섏???洹쇨굅媛 遺議깊빀?덈떎.',
+          suggestion: '?꾨뀈 ?ㅼ쟻 ?먮뒗 ?꾩옱 湲곗?移섎? ?④퍡 ?곸쑝?몄슂.',
         },
         {
           name: 'Relevant',
           status: 'PASS',
-          reason: '조직 전략 방향과 연결되어 있습니다.',
-          suggestion: '상위 전략 키워드를 문장에 반영하면 더 분명해집니다.',
+          reason: '議곗쭅 ?꾨왂 諛⑺뼢怨??곌껐?섏뼱 ?덉뒿?덈떎.',
+          suggestion: '?곸쐞 ?꾨왂 ?ㅼ썙?쒕? 臾몄옣??諛섏쁺?섎㈃ ??遺꾨챸?댁쭛?덈떎.',
         },
         {
           name: 'Time-bound',
           status: 'FAIL',
-          reason: '평가 주기나 점검 주기가 약합니다.',
-          suggestion: '연간 목표와 월간 점검 기준을 함께 명시하세요.',
+          reason: '?됯? 二쇨린???먭? 二쇨린媛 ?쏀빀?덈떎.',
+          suggestion: '?곌컙 紐⑺몴? ?붽컙 ?먭? 湲곗????④퍡 紐낆떆?섏꽭??',
         },
       ],
     }
@@ -1443,16 +1685,16 @@ export function buildFallbackResult(
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiDuplicate') {
     return {
-      summary: '유사 KPI 후보를 기반으로 중복 가능성을 정리했습니다.',
+      summary: '?좎궗 KPI ?꾨낫瑜?湲곕컲?쇰줈 以묐났 媛?μ꽦???뺣━?덉뒿?덈떎.',
       duplicates: Array.isArray(payload.candidates)
         ? (payload.candidates as unknown[])
             .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
             .slice(0, 3)
             .map((item) => ({
               id: String(item.id ?? ''),
-              title: String(item.title ?? '유사 KPI'),
+              title: String(item.title ?? '?좎궗 KPI'),
               overlapLevel: 'MEDIUM',
-              similarityReason: '측정 대상 또는 전략 키워드가 유사합니다.',
+              similarityReason: '痢≪젙 ????먮뒗 ?꾨왂 ?ㅼ썙?쒓? ?좎궗?⑸땲??',
             }))
         : [],
     }
@@ -1461,13 +1703,13 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiAlignment') {
     return {
       recommendedParentId: String(payload.recommendedParentId ?? ''),
-      recommendedParentTitle: String(payload.recommendedParentTitle ?? '상위 KPI 후보'),
+      recommendedParentTitle: String(payload.recommendedParentTitle ?? '?곸쐞 KPI ?꾨낫'),
       riskLevel: 'MEDIUM',
       rationale:
-        summary || '조직 트리와 KPI 카테고리 기준으로 가장 자연스러운 상위 연결 후보를 정리했습니다.',
+        summary || '議곗쭅 ?몃━? KPI 移댄뀒怨좊━ 湲곗??쇰줈 媛???먯뿰?ㅻ윭???곸쐞 ?곌껐 ?꾨낫瑜??뺣━?덉뒿?덈떎.',
       suggestedLinks: [
-        '상위 전략 KPI와의 관계를 정의 문장에 함께 적어 두세요.',
-        '개인 KPI로 풀어내기 어려운 표현은 월간 실적 기준으로 다시 다듬으세요.',
+        '?곸쐞 ?꾨왂 KPI???愿怨꾨? ?뺤쓽 臾몄옣???④퍡 ?곸뼱 ?먯꽭??',
+        '媛쒖씤 KPI濡???대궡湲??대젮???쒗쁽? ?붽컙 ?ㅼ쟻 湲곗??쇰줈 ?ㅼ떆 ?ㅻ벉?쇱꽭??',
       ],
     }
   }
@@ -1476,14 +1718,14 @@ export function buildFallbackResult(
     return {
       riskLevel: 'MEDIUM',
       executiveSummary:
-        summary || '현재 KPI 구조는 운영 가능하지만 연결 누락과 실적 추적 공백이 일부 존재합니다.',
+        summary || '?꾩옱 KPI 援ъ“???댁쁺 媛?ν븯吏留??곌껐 ?꾨씫怨??ㅼ쟻 異붿쟻 怨듬갚???쇰? 議댁옱?⑸땲??',
       risks: [
-        '개인 KPI 연결 수가 낮은 항목이 있습니다.',
-        '최근 월간 실적이 없는 KPI가 있습니다.',
+        '媛쒖씤 KPI ?곌껐 ?섍? ??? ??ぉ???덉뒿?덈떎.',
+        '理쒓렐 ?붽컙 ?ㅼ쟻???녿뒗 KPI媛 ?덉뒿?덈떎.',
       ],
       recommendations: [
-        '연결 누락 KPI를 우선 검토하고 개인 KPI 템플릿과 연결하세요.',
-        '측정식이 약한 KPI는 SMART 관점으로 다시 정리하세요.',
+        '?곌껐 ?꾨씫 KPI瑜??곗꽑 寃?좏븯怨?媛쒖씤 KPI ?쒗뵆由욧낵 ?곌껐?섏꽭??',
+        '痢≪젙?앹씠 ?쏀븳 KPI??SMART 愿?먯쑝濡??ㅼ떆 ?뺣━?섏꽭??',
       ],
     }
   }
@@ -1491,15 +1733,17 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiMonthlyComment') {
     return {
       comment:
-        summary || '최근 월간 실적 기준으로는 실행은 진행 중이지만 연결 커버리지와 달성률 편차를 함께 점검할 필요가 있습니다.',
-      highlights: ['주요 KPI의 월간 달성 흐름은 유지되고 있습니다.'],
-      concerns: ['연결된 개인 KPI 수가 적은 항목은 실행 추적이 약해질 수 있습니다.'],
-      nextActions: ['다음 점검 전까지 미연결 KPI와 최근 실적 누락 항목을 우선 확인하세요.'],
+        summary || '理쒓렐 ?붽컙 ?ㅼ쟻 湲곗??쇰줈???ㅽ뻾? 吏꾪뻾 以묒씠吏留??곌껐 而ㅻ쾭由ъ?? ?ъ꽦瑜??몄감瑜??④퍡 ?먭????꾩슂媛 ?덉뒿?덈떎.',
+      highlights: ['二쇱슂 KPI???붽컙 ?ъ꽦 ?먮쫫? ?좎??섍퀬 ?덉뒿?덈떎.'],
+      concerns: ['?곌껐??媛쒖씤 KPI ?섍? ?곸? ??ぉ? ?ㅽ뻾 異붿쟻???쏀빐吏????덉뒿?덈떎.'],
+      nextActions: ['?ㅼ쓬 ?먭? ?꾧퉴吏 誘몄뿰寃?KPI? 理쒓렐 ?ㅼ쟻 ?꾨씫 ??ぉ???곗꽑 ?뺤씤?섏꽭??'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgTeamKpiRecommendation') {
     const sourceOrgKpis = Array.isArray(payload.sourceOrgKpis) ? payload.sourceOrgKpis : []
+    const linkedParentOrgKpis = Array.isArray(payload.linkedParentOrgKpis) ? payload.linkedParentOrgKpis : []
+    const prioritizedParents = linkedParentOrgKpis.length ? linkedParentOrgKpis : sourceOrgKpis
     const planningDepartment =
       typeof payload.planningDepartment === 'object' && payload.planningDepartment
         ? (payload.planningDepartment as Record<string, unknown>)
@@ -1508,41 +1752,63 @@ export function buildFallbackResult(
       typeof payload.teamDepartment === 'object' && payload.teamDepartment
         ? (payload.teamDepartment as Record<string, unknown>)
         : {}
+    const teamName = String(teamDepartment.name ?? '팀')
+    const planningName = String(planningDepartment.name ?? '본부')
 
-    const recommendations = Array.from({ length: Math.min(5, Math.max(3, sourceOrgKpis.length || 3)) }).map(
-      (_, index) => {
-        const source =
-          typeof sourceOrgKpis[index] === 'object' && sourceOrgKpis[index]
-            ? (sourceOrgKpis[index] as Record<string, unknown>)
-            : {}
-        const titleBase = String(source.title ?? `팀 KPI ${index + 1}`)
-        const deptName = String(teamDepartment.name ?? '대상 팀')
-        return {
-          title: `${deptName} ${titleBase}`,
-          definition:
-            summary ||
-            `${String(planningDepartment.name ?? '본부')} 사업계획서와 상위 KPI를 팀 실행 결과로 연결하기 위한 결과 중심 KPI 제안입니다.`,
-          formula: typeof source.formula === 'string' && source.formula ? source.formula : '실적 / 목표 x 100',
-          targetValueT: Number(source.targetValueT ?? 90 + index * 5),
-          targetValueE: Number(source.targetValueE ?? 100 + index * 5),
-          targetValueS: Number(source.targetValueS ?? 110 + index * 5),
-          unit: String(source.unit ?? '%'),
-          weightSuggestion: Number(source.weight ?? 20),
-          difficultySuggestion: String(source.difficulty ?? 'MEDIUM'),
-          sourceOrgKpiId: typeof source.id === 'string' ? source.id : null,
-          sourceOrgKpiTitle: typeof source.title === 'string' ? source.title : null,
-          linkageExplanation: `${String(planningDepartment.name ?? '본부')} KPI와 ${deptName} 역할을 직접 연결한 제안입니다.`,
-          recommendationReason:
-            '팀이 실제로 통제 가능한 산출물과 결과를 기준으로 상위 전략과의 정렬도를 높이기 위한 KPI입니다.',
-          riskComment: '측정 근거와 데이터 수집 주기를 함께 정의하면 운영 리스크를 줄일 수 있습니다.',
-        }
+    const recommendations = Array.from({
+      length: Math.min(5, Math.max(3, prioritizedParents.length || sourceOrgKpis.length || 3)),
+    }).map((_, index) => {
+      const source =
+        typeof prioritizedParents[index] === 'object' && prioritizedParents[index]
+          ? (prioritizedParents[index] as Record<string, unknown>)
+          : {}
+      const sourceTitle = String(source.title ?? `상위 KPI ${index + 1}`)
+      const targetT = Number(source.targetValueT ?? 90 + index * 5)
+      const targetE = Number(source.targetValueE ?? 100 + index * 5)
+      const targetS = Number(source.targetValueS ?? 110 + index * 5)
+
+      return {
+        title: `${teamName} ${sourceTitle} 실행지표`,
+        recommendedTitle: `${teamName} ${sourceTitle} 실행지표`,
+        recommendedDefinition: `${planningName} KPI와 직접 연결되는 ${teamName} 실행 KPI 초안입니다.`,
+        definition:
+          summary ||
+          `${planningName} 사업계획과 상위 KPI를 ${teamName} 수준의 실행 성과와 선행지표로 연결하기 위한 추천안입니다.`,
+        formula: typeof source.formula === 'string' && source.formula ? source.formula : 'Actual / Target x 100',
+        metricSource: `${teamName} 운영 결과 데이터 / 정기 실적 집계`,
+        targetValueT: targetT,
+        targetValueE: targetE,
+        targetValueS: targetS,
+        targetT,
+        targetE,
+        targetS,
+        unit: String(source.unit ?? '%'),
+        weightSuggestion: Number(source.weight ?? 20),
+        difficultySuggestion: String(source.difficulty ?? 'MEDIUM'),
+        difficultyLevel: String(source.difficulty ?? 'MEDIUM'),
+        sourceOrgKpiId: typeof source.id === 'string' ? source.id : null,
+        sourceOrgKpiTitle: typeof source.title === 'string' ? source.title : null,
+        linkedParentKpiId: typeof source.id === 'string' ? source.id : null,
+        linkedParentKpiTitle: typeof source.title === 'string' ? source.title : null,
+        linkageReason: `${planningName} KPI를 ${teamName} 실행 KPI로 직접 분해한 추천안입니다.`,
+        linkageExplanation: `${planningName} KPI와 ${teamName} 역할을 직접 연결하는 실행 KPI 추천입니다.`,
+        whyThisIsHighQuality:
+          '상위 KPI 정렬도, 측정 가능성, 스트레치 목표, 팀 통제 가능성을 함께 반영했습니다.',
+        controllabilityNote: `${teamName}이 실제로 운영 계획과 실행 자원 조정을 통해 관리 가능한 지표입니다.`,
+        recommendationReason:
+          '상위 KPI의 전략 의도를 팀 실행 수준에서 측정 가능하고 도전적인 지표로 구체화했습니다.',
+        riskComment: '데이터 기준과 측정 주기를 먼저 합의하지 않으면 실행 리스크가 커질 수 있습니다.',
+        riskNote: '데이터 기준과 측정 주기를 먼저 합의하지 않으면 실행 리스크가 커질 수 있습니다.',
+        alignmentScore: Math.max(84, 96 - index * 4),
+        qualityScore: Math.max(82, 95 - index * 4),
+        recommendedPriority: index + 1,
       }
-    )
+    })
 
     return {
       summary:
         summary ||
-        `${String(teamDepartment.name ?? '대상 팀')}이 ${String(planningDepartment.name ?? '본부')} 사업계획서를 실행 가능한 팀 KPI로 전환할 수 있도록 추천 초안을 생성했습니다.`,
+        `${teamName}이 ${planningName} 사업계획과 상위 KPI를 직접 실행할 수 있도록 팀 KPI 추천안을 생성했습니다.`,
       recommendations,
     }
   }
@@ -1552,21 +1818,21 @@ export function buildFallbackResult(
     return {
       overallVerdict: 'CAUTION',
       overallSummary:
-        summary || '상위 전략과의 연결성은 보이지만 일부 KPI는 측정 근거와 통제 가능성을 더 분명히 다듬을 필요가 있습니다.',
+        summary || '?곸쐞 ?꾨왂怨쇱쓽 ?곌껐?깆? 蹂댁씠吏留??쇰? KPI??痢≪젙 洹쇨굅? ?듭젣 媛?μ꽦????遺꾨챸???ㅻ벉???꾩슂媛 ?덉뒿?덈떎.',
       items: items.slice(0, 20).map((item, index) => {
         const row = typeof item === 'object' && item ? (item as Record<string, unknown>) : {}
         return {
           orgKpiId: String(row.id ?? `kpi-${index + 1}`),
-          kpiTitle: String(row.title ?? `팀 KPI ${index + 1}`),
+          kpiTitle: String(row.title ?? `? KPI ${index + 1}`),
           verdict: index === 0 ? 'ADEQUATE' : index % 2 === 0 ? 'CAUTION' : 'INSUFFICIENT',
-          rationale: '상위 KPI와의 방향은 맞지만 측정 정의와 실행 범위를 조금 더 구체화할 필요가 있습니다.',
-          linkageComment: '사업계획서의 핵심 과제와 연결 설명을 한 줄로 명확히 적으면 정렬도가 더 잘 보입니다.',
-          measurabilityComment: '산식과 데이터 출처를 함께 두면 월간 추적 가능성이 높아집니다.',
-          controllabilityComment: '팀이 직접 통제 가능한 결과인지 한 번 더 검토해 보세요.',
-          challengeComment: '전년 대비 개선 폭이나 기준선을 같이 두면 도전성 판단이 쉬워집니다.',
-          externalRiskComment: '외생 변수 영향이 큰 경우 보조지표를 함께 두는 편이 안전합니다.',
-          clarityComment: '모호한 표현 대신 대상, 결과, 시점을 함께 적으면 더 명확합니다.',
-          recommendationText: '상위 KPI 연결 문장과 측정 기준을 보완한 뒤 최종 확정하세요.',
+          rationale: '?곸쐞 KPI???諛⑺뼢? 留욎?留?痢≪젙 ?뺤쓽? ?ㅽ뻾 踰붿쐞瑜?議곌툑 ??援ъ껜?뷀븷 ?꾩슂媛 ?덉뒿?덈떎.',
+          linkageComment: '?ъ뾽怨꾪쉷?쒖쓽 ?듭떖 怨쇱젣? ?곌껐 ?ㅻ챸????以꾨줈 紐낇솗???곸쑝硫??뺣젹?꾧? ????蹂댁엯?덈떎.',
+          measurabilityComment: '?곗떇怨??곗씠??異쒖쿂瑜??④퍡 ?먮㈃ ?붽컙 異붿쟻 媛?μ꽦???믪븘吏묐땲??',
+          controllabilityComment: '???吏곸젒 ?듭젣 媛?ν븳 寃곌낵?몄? ??踰???寃?좏빐 蹂댁꽭??',
+          challengeComment: '?꾨뀈 ?鍮?媛쒖꽑 ??씠??湲곗??좎쓣 媛숈씠 ?먮㈃ ?꾩쟾???먮떒???ъ썙吏묐땲??',
+          externalRiskComment: '?몄깮 蹂???곹뼢????寃쎌슦 蹂댁“吏?쒕? ?④퍡 ?먮뒗 ?몄씠 ?덉쟾?⑸땲??',
+          clarityComment: '紐⑦샇???쒗쁽 ?????? 寃곌낵, ?쒖젏???④퍡 ?곸쑝硫???紐낇솗?⑸땲??',
+          recommendationText: '?곸쐞 KPI ?곌껐 臾몄옣怨?痢≪젙 湲곗???蹂댁셿????理쒖쥌 ?뺤젙?섏꽭??',
         }
       }),
     }
@@ -1574,33 +1840,33 @@ export function buildFallbackResult(
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiDraft') {
     return {
-      title: goal || '개인 KPI 초안',
+      title: goal || '媛쒖씤 KPI 珥덉븞',
       definition:
-        summary || '조직 KPI와 연결되고 월간 실적과 평가에서 근거로 활용할 수 있는 개인 KPI 초안입니다.',
-      formula: payload.kpiType === 'QUALITATIVE' ? '정성 기준 체크리스트 충족 여부' : '실적 / 목표 x 100',
-      targetValueSuggestion: String(payload.targetValue ?? '연간 목표 100 기준'),
+        summary || '議곗쭅 KPI? ?곌껐?섍퀬 ?붽컙 ?ㅼ쟻怨??됯??먯꽌 洹쇨굅濡??쒖슜?????덈뒗 媛쒖씤 KPI 珥덉븞?낅땲??',
+      formula: payload.kpiType === 'QUALITATIVE' ? '정성 체크리스트 충족 여부' : 'Actual / Target x 100',
+      targetValueSuggestion: String(payload.targetValue ?? '?곌컙 紐⑺몴 100 湲곗?'),
       unit: String(payload.unit ?? (payload.kpiType === 'QUALITATIVE' ? '건' : '%')),
       weightSuggestion: Number(payload.weight ?? 25),
       difficultySuggestion: String(payload.difficulty ?? 'MEDIUM'),
       evaluationCriteria: [
-        '월간 실적 입력 시 동일한 기준으로 추적 가능한지 확인합니다.',
-        '리더 검토 시 목표 수준과 측정 방법이 설명 가능한지 확인합니다.',
+        '?붽컙 ?ㅼ쟻 ?낅젰 ???숈씪??湲곗??쇰줈 異붿쟻 媛?ν븳吏 ?뺤씤?⑸땲??',
+        '由щ뜑 寃????紐⑺몴 ?섏?怨?痢≪젙 諛⑸쾿???ㅻ챸 媛?ν븳吏 ?뺤씤?⑸땲??',
       ],
       reviewPoints: [
-        '조직 KPI와의 연결 문장이 충분히 분명한지 확인하세요.',
-        '가중치 합이 100이 되도록 다른 KPI와 함께 조정하세요.',
+        '議곗쭅 KPI????곌껐 臾몄옣??異⑸텇??遺꾨챸?쒖? ?뺤씤?섏꽭??',
+        '媛以묒튂 ?⑹씠 100???섎룄濡??ㅻⅨ KPI? ?④퍡 議곗젙?섏꽭??',
       ],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiWording') {
     return {
-      improvedTitle: goal || '측정 가능한 개인 KPI 문장',
+      improvedTitle: goal || '痢≪젙 媛?ν븳 媛쒖씤 KPI 臾몄옣',
       improvedDefinition:
-        summary || '직무 기대성과와 측정 방법이 더 명확하게 보이도록 개인 KPI 문장을 정리한 제안입니다.',
+        summary || '吏곷Т 湲곕??깃낵? 痢≪젙 諛⑸쾿????紐낇솗?섍쾶 蹂댁씠?꾨줉 媛쒖씤 KPI 臾몄옣???뺣━???쒖븞?낅땲??',
       rationale: [
-        '목표 대상과 기대 결과를 더 분명하게 드러내도록 정리했습니다.',
-        '월간 실적과 평가 코멘트로 이어질 수 있게 측정 표현을 보완했습니다.',
+        '紐⑺몴 ??곴낵 湲곕? 寃곌낵瑜???遺꾨챸?섍쾶 ?쒕윭?대룄濡??뺣━?덉뒿?덈떎.',
+        '?붽컙 ?ㅼ쟻怨??됯? 肄붾찘?몃줈 ?댁뼱吏????덇쾶 痢≪젙 ?쒗쁽??蹂댁셿?덉뒿?덈떎.',
       ],
     }
   }
@@ -1608,13 +1874,13 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiSmart') {
     return {
       overall: 'WARNING',
-      summary: '개인 KPI의 방향은 적절하지만 측정 기준과 기한 표현을 더 구체화하면 검토와 합의가 쉬워집니다.',
+      summary: '媛쒖씤 KPI??諛⑺뼢? ?곸젅?섏?留?痢≪젙 湲곗?怨?湲고븳 ?쒗쁽????援ъ껜?뷀븯硫?寃?좎? ?⑹쓽媛 ?ъ썙吏묐땲??',
       criteria: [
-        { name: 'Specific', status: 'WARN', reason: '핵심 결과가 다소 넓게 표현되어 있습니다.', suggestion: '대상 업무나 결과물을 더 명확히 적어보세요.' },
-        { name: 'Measurable', status: 'PASS', reason: '측정 기준이 포함되어 있습니다.', suggestion: '월간 실적으로 같은 기준을 추적할 수 있는지 확인하세요.' },
-        { name: 'Achievable', status: 'WARN', reason: '목표 수준의 근거가 부족합니다.', suggestion: '전년 실적이나 기준선을 함께 적어보세요.' },
-        { name: 'Relevant', status: 'PASS', reason: '조직 KPI와 연결성이 보입니다.', suggestion: '상위 목표 설명을 한 줄 추가하면 더 좋습니다.' },
-        { name: 'Time-bound', status: 'FAIL', reason: '연간 또는 월간 기준 시점이 분명하지 않습니다.', suggestion: '평가 주기와 월간 추적 시점을 함께 적어주세요.' },
+        { name: 'Specific', status: 'WARN', reason: '?듭떖 寃곌낵媛 ?ㅼ냼 ?볤쾶 ?쒗쁽?섏뼱 ?덉뒿?덈떎.', suggestion: '????낅Т??寃곌낵臾쇱쓣 ??紐낇솗???곸뼱蹂댁꽭??' },
+        { name: 'Measurable', status: 'PASS', reason: '痢≪젙 湲곗????ы븿?섏뼱 ?덉뒿?덈떎.', suggestion: '?붽컙 ?ㅼ쟻?쇰줈 媛숈? 湲곗???異붿쟻?????덈뒗吏 ?뺤씤?섏꽭??' },
+        { name: 'Achievable', status: 'WARN', reason: '紐⑺몴 ?섏???洹쇨굅媛 遺議깊빀?덈떎.', suggestion: '?꾨뀈 ?ㅼ쟻?대굹 湲곗??좎쓣 ?④퍡 ?곸뼱蹂댁꽭??' },
+        { name: 'Relevant', status: 'PASS', reason: '議곗쭅 KPI? ?곌껐?깆씠 蹂댁엯?덈떎.', suggestion: '?곸쐞 紐⑺몴 ?ㅻ챸????以?異붽??섎㈃ ??醫뗭뒿?덈떎.' },
+        { name: 'Time-bound', status: 'FAIL', reason: '?곌컙 ?먮뒗 ?붽컙 湲곗? ?쒖젏??遺꾨챸?섏? ?딆뒿?덈떎.', suggestion: '?됯? 二쇨린? ?붽컙 異붿쟻 ?쒖젏???④퍡 ?곸뼱二쇱꽭??' },
       ],
     }
   }
@@ -1624,7 +1890,7 @@ export function buildFallbackResult(
     return {
       currentTotal: Number(payload.currentTotal ?? 100),
       recommendedTotal: 100,
-      summary: '현재 KPI 묶음 기준으로 핵심 성과에 더 무게를 두고 보조 KPI는 가볍게 조정하는 편이 적절합니다.',
+      summary: '?꾩옱 KPI 臾띠쓬 湲곗??쇰줈 ?듭떖 ?깃낵????臾닿쾶瑜??먭퀬 蹂댁“ KPI??媛蹂띻쾶 議곗젙?섎뒗 ?몄씠 ?곸젅?⑸땲??',
       recommendations: items.slice(0, 5).map((item, index) => {
         const row = typeof item === 'object' && item ? (item as Record<string, unknown>) : {}
         const currentWeight = Number(row.weight ?? 20)
@@ -1632,7 +1898,7 @@ export function buildFallbackResult(
           title: String(row.title ?? `KPI ${index + 1}`),
           currentWeight,
           recommendedWeight: Math.max(10, Math.min(40, currentWeight)),
-          reason: '조직 KPI 연결도와 실행 빈도를 함께 고려해 가중치를 조정했습니다.',
+          reason: '議곗쭅 KPI ?곌껐?꾩? ?ㅽ뻾 鍮덈룄瑜??④퍡 怨좊젮??媛以묒튂瑜?議곗젙?덉뒿?덈떎.',
         }
       }),
     }
@@ -1641,25 +1907,25 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiAlignment') {
     return {
       recommendedOrgKpiId: String(payload.recommendedOrgKpiId ?? ''),
-      recommendedOrgKpiTitle: String(payload.orgKpiName ?? '추천 조직 KPI'),
+      recommendedOrgKpiTitle: String(payload.orgKpiName ?? '異붿쿇 議곗쭅 KPI'),
       rationale:
-        summary || '해당 개인 KPI는 상위 조직 KPI의 실행 성과를 직접적으로 뒷받침하는 성격이라 연결성이 높습니다.',
-      alternatives: ['같은 카테고리의 조직 KPI와 중복 연결되지 않는지 확인해보세요.'],
+        summary || '?대떦 媛쒖씤 KPI???곸쐞 議곗쭅 KPI???ㅽ뻾 ?깃낵瑜?吏곸젒?곸쑝濡??룸컺移⑦븯???깃꺽?대씪 ?곌껐?깆씠 ?믪뒿?덈떎.',
+      alternatives: ['媛숈? 移댄뀒怨좊━??議곗쭅 KPI? 以묐났 ?곌껐?섏? ?딅뒗吏 ?뺤씤?대낫?몄슂.'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiDuplicate') {
     return {
-      summary: '현재 KPI 목록 안에서 표현이 겹치거나 측정 기준이 유사한 항목을 정리했습니다.',
+      summary: '?꾩옱 KPI 紐⑸줉 ?덉뿉???쒗쁽??寃뱀튂嫄곕굹 痢≪젙 湲곗????좎궗????ぉ???뺣━?덉뒿?덈떎.',
       duplicates: Array.isArray(payload.candidates)
         ? (payload.candidates as unknown[])
             .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
             .slice(0, 4)
             .map((item) => ({
               id: String(item.id ?? ''),
-              title: String(item.title ?? '유사 KPI'),
+              title: String(item.title ?? '?좎궗 KPI'),
               overlapLevel: 'MEDIUM',
-              similarityReason: '측정 대상이나 결과 지표가 유사합니다.',
+              similarityReason: '痢≪젙 ??곸씠??寃곌낵 吏?쒓? ?좎궗?⑸땲??',
             }))
         : [],
     }
@@ -1667,78 +1933,78 @@ export function buildFallbackResult(
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiReviewerRisk') {
     return {
-      summary: '리더 검토 관점에서 목표 수준과 측정 방법이 더 분명해야 하는 KPI가 보입니다.',
-      risks: ['조직 KPI 연결이 없는 항목이 있습니다.', '달성 기준이 모호한 정성 KPI가 포함되어 있습니다.'],
-      reviewPoints: ['가중치 합이 100인지 먼저 확인하세요.', '월간 실적 입력 기준으로 추적 가능한지 검토하세요.'],
+      summary: '由щ뜑 寃??愿?먯뿉??紐⑺몴 ?섏?怨?痢≪젙 諛⑸쾿????遺꾨챸?댁빞 ?섎뒗 KPI媛 蹂댁엯?덈떎.',
+      risks: ['議곗쭅 KPI ?곌껐???녿뒗 ??ぉ???덉뒿?덈떎.', '?ъ꽦 湲곗???紐⑦샇???뺤꽦 KPI媛 ?ы븿?섏뼱 ?덉뒿?덈떎.'],
+      reviewPoints: ['媛以묒튂 ?⑹씠 100?몄? 癒쇱? ?뺤씤?섏꽭??', '?붽컙 ?ㅼ쟻 ?낅젰 湲곗??쇰줈 異붿쟻 媛?ν븳吏 寃?좏븯?몄슂.'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'PersonalKpiMonthlyComment') {
     return {
       comment:
-        summary || '최근 월간 실적 흐름을 보면 실행은 진행 중이지만 목표 대비 편차가 있어 다음 체크인에서 우선순위와 지원 필요사항을 함께 점검하는 것이 좋습니다.',
-      nextActions: ['다음 월간 실적 입력 전까지 핵심 장애요인을 정리하세요.', '체크인에서 지원 요청이 필요한 부분을 명확히 공유하세요.'],
-      managerNotes: ['실적 수치뿐 아니라 실행 과정의 병목 요인을 함께 확인하세요.'],
+        summary || '理쒓렐 ?붽컙 ?ㅼ쟻 ?먮쫫??蹂대㈃ ?ㅽ뻾? 吏꾪뻾 以묒씠吏留?紐⑺몴 ?鍮??몄감媛 ?덉뼱 ?ㅼ쓬 泥댄겕?몄뿉???곗꽑?쒖쐞? 吏???꾩슂?ы빆???④퍡 ?먭??섎뒗 寃껋씠 醫뗭뒿?덈떎.',
+      nextActions: ['?ㅼ쓬 ?붽컙 ?ㅼ쟻 ?낅젰 ?꾧퉴吏 ?듭떖 ?μ븷?붿씤???뺣━?섏꽭??', '泥댄겕?몄뿉??吏???붿껌???꾩슂??遺遺꾩쓣 紐낇솗??怨듭쑀?섏꽭??'],
+      managerNotes: ['?ㅼ쟻 ?섏튂肉??꾨땲???ㅽ뻾 怨쇱젙??蹂묐ぉ ?붿씤???④퍡 ?뺤씤?섏꽭??'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyPerformanceSummary') {
     return {
       summary:
-        summary || '이번 달 KPI 실행 상태를 보면 전반적으로 계획된 과제는 진행되고 있으나, 일부 지표는 목표 대비 편차가 보여 추가 점검이 필요합니다.',
-      highlights: ['주요 KPI의 실행 흐름이 유지되고 있습니다.', '월간 기록과 메모가 평가 근거로 누적되고 있습니다.'],
-      risks: ['달성률이 낮은 KPI는 원인과 대응 계획을 더 구체화할 필요가 있습니다.'],
-      nextActions: ['다음 월간 입력 전까지 위험 KPI의 장애요인과 대응 계획을 보완해 주세요.'],
+        summary || '?대쾲 ??KPI ?ㅽ뻾 ?곹깭瑜?蹂대㈃ ?꾨컲?곸쑝濡?怨꾪쉷??怨쇱젣??吏꾪뻾?섍퀬 ?덉쑝?? ?쇰? 吏?쒕뒗 紐⑺몴 ?鍮??몄감媛 蹂댁뿬 異붽? ?먭????꾩슂?⑸땲??',
+      highlights: ['二쇱슂 KPI???ㅽ뻾 ?먮쫫???좎??섍퀬 ?덉뒿?덈떎.', '?붽컙 湲곕줉怨?硫붾え媛 ?됯? 洹쇨굅濡??꾩쟻?섍퀬 ?덉뒿?덈떎.'],
+      risks: ['?ъ꽦瑜좎씠 ??? KPI???먯씤怨????怨꾪쉷????援ъ껜?뷀븷 ?꾩슂媛 ?덉뒿?덈떎.'],
+      nextActions: ['?ㅼ쓬 ?붽컙 ?낅젰 ?꾧퉴吏 ?꾪뿕 KPI???μ븷?붿씤怨????怨꾪쉷??蹂댁셿??二쇱꽭??'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyRiskExplanation') {
     return {
       riskLevel: 'MEDIUM',
-      causeSummary: summary || '이번 달 실적 저하는 실행 지연과 외부 의존 이슈가 함께 영향을 준 것으로 보입니다.',
-      responsePoints: ['지연 원인을 구체적으로 기록하고, 다음 달 보완 액션을 명시해 주세요.', '체크인에서 지원이 필요한 리소스를 함께 논의해 보세요.'],
+      causeSummary: summary || '?대쾲 ???ㅼ쟻 ??섎뒗 ?ㅽ뻾 吏?곌낵 ?몃? ?섏〈 ?댁뒋媛 ?④퍡 ?곹뼢??以 寃껋쑝濡?蹂댁엯?덈떎.',
+      responsePoints: ['吏???먯씤??援ъ껜?곸쑝濡?湲곕줉?섍퀬, ?ㅼ쓬 ??蹂댁셿 ?≪뀡??紐낆떆??二쇱꽭??', '泥댄겕?몄뿉??吏?먯씠 ?꾩슂??由ъ냼?ㅻ? ?④퍡 ?쇱쓽??蹂댁꽭??'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyManagerReview') {
     return {
       comment:
-        summary || '이번 달에는 주요 과제 추진이 이어졌지만 일부 KPI는 목표 대비 편차가 있어 원인 분석과 다음 달 보완 계획을 조금 더 구체화하면 좋겠습니다.',
-      strengths: ['핵심 과제를 꾸준히 추진했습니다.', '기록과 근거를 비교적 충실하게 남겼습니다.'],
-      requests: ['위험 KPI의 장애요인과 대응 계획을 더 구체적으로 정리해 주세요.'],
+        summary || '?대쾲 ?ъ뿉??二쇱슂 怨쇱젣 異붿쭊???댁뼱議뚯?留??쇰? KPI??紐⑺몴 ?鍮??몄감媛 ?덉뼱 ?먯씤 遺꾩꽍怨??ㅼ쓬 ??蹂댁셿 怨꾪쉷??議곌툑 ??援ъ껜?뷀븯硫?醫뗪쿋?듬땲??',
+      strengths: ['?듭떖 怨쇱젣瑜?袁몄???異붿쭊?덉뒿?덈떎.', '湲곕줉怨?洹쇨굅瑜?鍮꾧탳??異⑹떎?섍쾶 ?④꼈?듬땲??'],
+      requests: ['?꾪뿕 KPI???μ븷?붿씤怨????怨꾪쉷????援ъ껜?곸쑝濡??뺣━??二쇱꽭??'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyEvidenceSummary') {
     return {
-      summary: summary || '현재 입력된 메모와 첨부를 기준으로 이번 달의 실행 근거를 요약했습니다.',
-      evidenceHighlights: ['주요 활동 내역과 일부 증빙이 함께 기록되어 있습니다.'],
-      missingEvidence: ['위험 KPI에 대한 보완 증빙이 더 있으면 평가 근거가 더 명확해집니다.'],
+      summary: summary || '?꾩옱 ?낅젰??硫붾え? 泥⑤?瑜?湲곗??쇰줈 ?대쾲 ?ъ쓽 ?ㅽ뻾 洹쇨굅瑜??붿빟?덉뒿?덈떎.',
+      evidenceHighlights: ['二쇱슂 ?쒕룞 ?댁뿭怨??쇰? 利앸튃???④퍡 湲곕줉?섏뼱 ?덉뒿?덈떎.'],
+      missingEvidence: ['?꾪뿕 KPI?????蹂댁셿 利앸튃?????덉쑝硫??됯? 洹쇨굅媛 ??紐낇솗?댁쭛?덈떎.'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyRetrospective') {
     return {
-      strengths: ['중요한 과제를 꾸준히 추진했습니다.'],
-      risks: ['낮은 달성률 KPI의 원인 설명이 더 필요합니다.'],
-      nextMonthPriorities: ['우선순위 KPI에 집중하고, 증빙과 메모를 더 구체화하세요.'],
-      summary: summary || '이번 달은 실행 흐름은 유지됐지만 일부 KPI는 보완이 필요한 상태입니다.',
+      strengths: ['以묒슂??怨쇱젣瑜?袁몄???異붿쭊?덉뒿?덈떎.'],
+      risks: ['??? ?ъ꽦瑜?KPI???먯씤 ?ㅻ챸?????꾩슂?⑸땲??'],
+      nextMonthPriorities: ['?곗꽑?쒖쐞 KPI??吏묒쨷?섍퀬, 利앸튃怨?硫붾え瑜???援ъ껜?뷀븯?몄슂.'],
+      summary: summary || '?대쾲 ?ъ? ?ㅽ뻾 ?먮쫫? ?좎??먯?留??쇰? KPI??蹂댁셿???꾩슂???곹깭?낅땲??',
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyCheckinAgenda') {
     return {
-      agenda: ['위험 KPI 원인과 지원 필요사항 점검', '다음 달 우선순위와 일정 정렬'],
-      leaderPrep: ['지연된 KPI의 맥락과 지원 가능 리소스를 정리해 주세요.'],
-      memberPrep: ['이번 달 성과와 어려움, 다음 달 계획을 2~3문장으로 정리해 주세요.'],
+      agenda: ['?꾪뿕 KPI ?먯씤怨?吏???꾩슂?ы빆 ?먭?', '?ㅼ쓬 ???곗꽑?쒖쐞? ?쇱젙 ?뺣젹'],
+      leaderPrep: ['吏?곕맂 KPI??留λ씫怨?吏??媛??由ъ냼?ㅻ? ?뺣━??二쇱꽭??'],
+      memberPrep: ['?대쾲 ???깃낵? ?대젮?, ?ㅼ쓬 ??怨꾪쉷??2~3臾몄옣?쇰줈 ?뺣━??二쇱꽭??'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'MonthlyEvaluationEvidence') {
     return {
-      summary: summary || '이번 달 실적은 향후 평가 코멘트에서 실행력과 리스크 대응을 설명하는 근거로 활용할 수 있습니다.',
-      evaluationPoints: ['주요 KPI 진행 상황', '위험 대응 방식', '근거 자료와 실행 메모의 일관성'],
-      watchouts: ['정량 실적이 부족한 KPI는 정성 근거를 보완해야 합니다.'],
+      summary: summary || '?대쾲 ???ㅼ쟻? ?ν썑 ?됯? 肄붾찘?몄뿉???ㅽ뻾?κ낵 由ъ뒪????묒쓣 ?ㅻ챸?섎뒗 洹쇨굅濡??쒖슜?????덉뒿?덈떎.',
+      evaluationPoints: ['주요 KPI 진행 상황', '위험 대응 방식', '근거 자료와 실행 메모'],
+      watchouts: ['?뺣웾 ?ㅼ쟻??遺議깊븳 KPI???뺤꽦 洹쇨굅瑜?蹂댁셿?댁빞 ?⑸땲??'],
     }
   }
 
@@ -1754,7 +2020,7 @@ export function buildFallbackResult(
         .slice(0, limit)
         .map((reviewer) => ({
           employeeId: String(reviewer.employeeId ?? ''),
-          name: String(reviewer.name ?? '리뷰어 후보'),
+          name: String(reviewer.name ?? '由щ럭???꾨낫'),
           relationship: String(reviewer.relationship ?? record.key ?? 'PEER'),
         }))
     })
@@ -1762,10 +2028,10 @@ export function buildFallbackResult(
     return {
       recommendations,
       rationale:
-        summary || '익명 기준과 reviewer fatigue를 함께 고려해 상사 1명, 동료 2명, 부하 또는 협업 리뷰어 1~2명을 우선 추천했습니다.',
+        summary || '?듬챸 湲곗?怨?reviewer fatigue瑜??④퍡 怨좊젮???곸궗 1紐? ?숇즺 2紐? 遺???먮뒗 ?묒뾽 由щ럭??1~2紐낆쓣 ?곗꽑 異붿쿇?덉뒿?덈떎.',
       watchouts: [
-        '소수 조직은 동일 조합이 반복되면 익명성이 약해질 수 있습니다.',
-        '최근 실제 협업이 없었던 리뷰어는 우선순위를 낮추는 편이 좋습니다.',
+        '?뚯닔 議곗쭅? ?숈씪 議고빀??諛섎났?섎㈃ ?듬챸?깆씠 ?쏀빐吏????덉뒿?덈떎.',
+        '理쒓렐 ?ㅼ젣 ?묒뾽???놁뿀??由щ럭?대뒗 ?곗꽑?쒖쐞瑜???텛???몄씠 醫뗭뒿?덈떎.',
       ],
     }
   }
@@ -1773,53 +2039,53 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'Feedback360ThemeSummary') {
     return {
       anonymousSummary:
-        summary || '익명 기준 안에서 반복적으로 언급된 강점과 개선 포인트를 중심으로 다면평가 내용을 요약했습니다.',
-      strengths: ['협업 과정에서 조율과 커뮤니케이션 안정성이 높다는 피드백이 반복됩니다.'],
-      blindSpots: ['우선순위 전환 시 기대 정렬과 진행 공유를 더 구조적으로 하면 좋다는 의견이 있습니다.'],
+        summary || '?듬챸 湲곗? ?덉뿉??諛섎났?곸쑝濡??멸툒??媛뺤젏怨?媛쒖꽑 ?ъ씤?몃? 以묒떖?쇰줈 ?ㅻ㈃?됯? ?댁슜???붿빟?덉뒿?덈떎.',
+      strengths: ['?묒뾽 怨쇱젙?먯꽌 議곗쑉怨?而ㅻ??덉??댁뀡 ?덉젙?깆씠 ?믩떎???쇰뱶諛깆씠 諛섎났?⑸땲??'],
+      blindSpots: ['?곗꽑?쒖쐞 ?꾪솚 ??湲곕? ?뺣젹怨?吏꾪뻾 怨듭쑀瑜???援ъ“?곸쑝濡??섎㈃ 醫뗫떎???섍껄???덉뒿?덈떎.'],
       textHighlights: Array.isArray(payload.textHighlights)
         ? (payload.textHighlights as unknown[])
             .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
             .slice(0, 3)
-        : ['익명 기준을 충족하면 대표 코멘트 하이라이트가 더 풍부해집니다.'],
+        : ['?듬챸 湲곗???異⑹”?섎㈃ ???肄붾찘???섏씠?쇱씠?멸? ???띾??댁쭛?덈떎.'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'Feedback360CarelessReview') {
     return {
-      summary: summary || '일부 응답에서 동일 점수 반복과 짧은 서술형 응답이 보여 품질 검토가 필요합니다.',
+      summary: summary || '?쇰? ?묐떟?먯꽌 ?숈씪 ?먯닔 諛섎났怨?吏㏃? ?쒖닠???묐떟??蹂댁뿬 ?덉쭏 寃?좉? ?꾩슂?⑸땲??',
       riskFlags: [
         {
-          label: '동일 점수 반복',
+          label: '?숈씪 ?먯닔 諛섎났',
           severity: 'MEDIUM',
-          reason: '여러 문항에 동일 점수가 반복되면 관찰 기반 응답인지 확인이 필요합니다.',
+          reason: '?щ윭 臾명빆???숈씪 ?먯닔媛 諛섎났?섎㈃ 愿李?湲곕컲 ?묐떟?몄? ?뺤씤???꾩슂?⑸땲??',
         },
         {
-          label: '짧은 서술형 응답',
+          label: '吏㏃? ?쒖닠???묐떟',
           severity: 'LOW',
-          reason: '서술형 텍스트가 지나치게 짧으면 actionable insight가 부족할 수 있습니다.',
+          reason: '?쒖닠???띿뒪?멸? 吏?섏튂寃?吏㏃쑝硫?actionable insight媛 遺議깊븷 ???덉뒿?덈떎.',
         },
       ],
       recommendedActions: [
-        'quality flag가 붙은 응답은 HR 운영 화면에서 우선 검토하세요.',
-        '필요 시 reviewer reminder 또는 재요청 여부를 운영 메모로 남기세요.',
+        'quality flag媛 遺숈? ?묐떟? HR ?댁쁺 ?붾㈃?먯꽌 ?곗꽑 寃?좏븯?몄슂.',
+        '?꾩슂 ??reviewer reminder ?먮뒗 ?ъ슂泥??щ?瑜??댁쁺 硫붾え濡??④린?몄슂.',
       ],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'Feedback360DevelopmentPlan') {
     return {
-      focusArea: String(payload.focusArea ?? '협업과 피드백 전달 방식 강화'),
+      focusArea: String(payload.focusArea ?? '?묒뾽怨??쇰뱶諛??꾨떖 諛⑹떇 媛뺥솕'),
       actions: [
-        '다음 체크인에서 blind spot 하나를 구체 행동 사례와 함께 리뷰합니다.',
-        '다음 한 달 동안 개선 포인트와 연결된 행동 실험을 1개 실행합니다.',
+        '?ㅼ쓬 泥댄겕?몄뿉??blind spot ?섎굹瑜?援ъ껜 ?됰룞 ?щ?? ?④퍡 由щ럭?⑸땲??',
+        '?ㅼ쓬 ?????숈븞 媛쒖꽑 ?ъ씤?몄? ?곌껐???됰룞 ?ㅽ뿕??1媛??ㅽ뻾?⑸땲??',
       ],
       managerSupport: [
-        '리더는 체크인에서 기대 수준과 실제 관찰 차이를 구체 예시 중심으로 피드백합니다.',
-        '월간 실적 코멘트에 360 후속 액션 진행 여부를 짧게 남깁니다.',
+        '由щ뜑??泥댄겕?몄뿉??湲곕? ?섏?怨??ㅼ젣 愿李?李⑥씠瑜?援ъ껜 ?덉떆 以묒떖?쇰줈 ?쇰뱶諛깊빀?덈떎.',
+        '?붽컙 ?ㅼ쟻 肄붾찘?몄뿉 360 ?꾩냽 ?≪뀡 吏꾪뻾 ?щ?瑜?吏㏐쾶 ?④퉩?덈떎.',
       ],
       nextCheckinTopics: [
-        '협업 맥락에서 가장 자주 나온 강점의 재현 방법',
-        'blind spot을 줄이기 위한 다음 행동 실험',
+        '?묒뾽 留λ씫?먯꽌 媛???먯＜ ?섏삩 媛뺤젏???ы쁽 諛⑸쾿',
+        'blind spot??以꾩씠湲??꾪븳 ?ㅼ쓬 ?됰룞 ?ㅽ뿕',
       ],
     }
   }
@@ -1827,168 +2093,168 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.GROWTH_PLAN && sourceType === 'Feedback360GrowthCopilot') {
     return {
       summary:
-        summary ||
-        '최근 리뷰, 목표, 1:1 기록을 종합하면 강점은 유지되고 있지만 코칭의 명확성, 실행 점검, 기대치 정렬을 더 구조적으로 관리할 필요가 있습니다.',
+        (summary ||
+        '理쒓렐 由щ럭, 紐⑺몴, 1:1 湲곕줉??醫낇빀?섎㈃ 媛뺤젏? ?좎??섍퀬 ?덉?留?肄붿묶??紐낇솗?? ?ㅽ뻾 ?먭?, 湲곕?移??뺣젹????援ъ“?곸쑝濡?愿由ы븷 ?꾩슂媛 ?덉뒿?덈떎.'),
       growthAreas: [
-        '우선순위와 기대치를 더 선명하게 전달합니다.',
-        '1:1에서 행동 단위의 피드백과 후속 질문을 더 자주 남깁니다.',
-        '목표와 성장 과제를 연결해 분기 단위로 진행 상황을 점검합니다.',
+        '?곗꽑?쒖쐞? 湲곕?移섎? ???좊챸?섍쾶 ?꾨떖?⑸땲??',
+        '1:1?먯꽌 ?됰룞 ?⑥쐞???쇰뱶諛깃낵 ?꾩냽 吏덈Ц?????먯＜ ?④퉩?덈떎.',
+        '紐⑺몴? ?깆옣 怨쇱젣瑜??곌껐??遺꾧린 ?⑥쐞濡?吏꾪뻾 ?곹솴???먭??⑸땲??',
       ],
-      recommendedCompetencies: ['코칭', '기대치 설정', '피드백 품질'],
+      recommendedCompetencies: ['肄붿묶', '湲곕?移??ㅼ젙', '?쇰뱶諛??덉쭏'],
       oneOnOneQuestions: [
-        '최근 가장 막히는 업무 상황에서 내가 더 구체적으로 도와줄 수 있는 부분은 무엇인가요?',
-        '이번 분기 목표 중 우선순위가 가장 불명확한 항목은 무엇인가요?',
-        '다음 한 달 안에 행동으로 확인할 수 있는 성장 신호는 무엇인가요?',
+        '理쒓렐 媛??留됲엳???낅Т ?곹솴?먯꽌 ?닿? ??援ъ껜?곸쑝濡??꾩?以????덈뒗 遺遺꾩? 臾댁뾿?멸???',
+        '?대쾲 遺꾧린 紐⑺몴 以??곗꽑?쒖쐞媛 媛??遺덈챸?뺥븳 ??ぉ? 臾댁뾿?멸???',
+        '?ㅼ쓬 ?????덉뿉 ?됰룞?쇰줈 ?뺤씤?????덈뒗 ?깆옣 ?좏샇??臾댁뾿?멸???',
       ],
       coachingDraft:
-        '최근 성과와 피드백을 보면 강점은 분명합니다. 다음 단계에서는 기대치를 더 명확히 정리하고, 1:1에서 실행 결과를 짧은 주기로 확인하면 성장 속도를 높일 수 있습니다.',
+        '理쒓렐 ?깃낵? ?쇰뱶諛깆쓣 蹂대㈃ 媛뺤젏? 遺꾨챸?⑸땲?? ?ㅼ쓬 ?④퀎?먯꽌??湲곕?移섎? ??紐낇솗???뺣━?섍퀬, 1:1?먯꽌 ?ㅽ뻾 寃곌낵瑜?吏㏃? 二쇨린濡??뺤씤?섎㈃ ?깆옣 ?띾룄瑜??믪씪 ???덉뒿?덈떎.',
       promotionReadinessHint:
-        '현재 역할 확장은 검토 가능하지만, 기대치 정렬과 코칭 일관성이 더 쌓이면 다음 레벨 준비도가 더 명확해질 수 있습니다.',
+        '?꾩옱 ??븷 ?뺤옣? 寃??媛?ν븯吏留? 湲곕?移??뺣젹怨?肄붿묶 ?쇨??깆씠 ???볦씠硫??ㅼ쓬 ?덈꺼 以鍮꾨룄媛 ??紐낇솗?댁쭏 ???덉뒿?덈떎.',
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'CalibrationRiskSummary') {
     return {
-      summary: summary || '현재 캘리브레이션에서는 분포 편차와 조정 사유 누락 여부를 먼저 확인하는 것이 중요합니다.',
-      priorityRisks: ['저인원 조직의 분포 왜곡', '조정 사유 누락', '원점수와 조정등급 괴리'],
+      summary: summary || '?꾩옱 罹섎━釉뚮젅?댁뀡?먯꽌??遺꾪룷 ?몄감? 議곗젙 ?ъ쑀 ?꾨씫 ?щ?瑜?癒쇱? ?뺤씤?섎뒗 寃껋씠 以묒슂?⑸땲??',
+      priorityRisks: ['??몄썝 議곗쭅??遺꾪룷 ?쒓끝', '議곗젙 ?ъ쑀 ?꾨씫', '?먯젏?섏? 議곗젙?깃툒 愿대━'],
       recommendedActions: [
-        '분포 편차가 큰 조직부터 후보와 조정 사유를 다시 검토하세요.',
-        '예외 조직은 별도 정책 메모를 남겨 감사 가능성을 확보하세요.',
+        '遺꾪룷 ?몄감媛 ??議곗쭅遺???꾨낫? 議곗젙 ?ъ쑀瑜??ㅼ떆 寃?좏븯?몄슂.',
+        '?덉쇅 議곗쭅? 蹂꾨룄 ?뺤콉 硫붾え瑜??④꺼 媛먯궗 媛?μ꽦???뺣낫?섏꽭??',
       ],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'CompensationDecisionExplanation') {
     return {
-      summary: summary || '평가 결과, 등급 규칙, 시나리오 예산 범위를 기준으로 보상 결정 배경을 설명하는 초안입니다.',
-      drivers: ['최종 평가 등급', '시뮬레이션 규칙', '예산 한도 및 예외 승인 여부'],
+      summary: summary || '?됯? 寃곌낵, ?깃툒 洹쒖튃, ?쒕굹由ъ삤 ?덉궛 踰붿쐞瑜?湲곗??쇰줈 蹂댁긽 寃곗젙 諛곌꼍???ㅻ챸?섎뒗 珥덉븞?낅땲??',
+      drivers: ['理쒖쥌 ?됯? ?깃툒', '?쒕??덉씠??洹쒖튃', '?덉궛 ?쒕룄 諛??덉쇅 ?뱀씤 ?щ?'],
       employeeFacingNote:
-        '이번 보상 결정은 평가 결과와 적용된 보상 규칙을 기준으로 산정되었으며, 공개 전 최종 승인과 예산 검토를 거쳤습니다.',
+        '?대쾲 蹂댁긽 寃곗젙? ?됯? 寃곌낵? ?곸슜??蹂댁긽 洹쒖튃??湲곗??쇰줈 ?곗젙?섏뿀?쇰ŉ, 怨듦컻 ??理쒖쥌 ?뱀씤怨??덉궛 寃?좊? 嫄곗낀?듬땲??',
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'NotificationOpsSummary') {
     return {
       summary:
-        summary ||
-        '최근 알림 운영은 전반적으로 안정적이지만 일부 실패 템플릿과 dead letter 정리가 필요합니다.',
+        (summary ||
+        '理쒓렐 ?뚮┝ ?댁쁺? ?꾨컲?곸쑝濡??덉젙?곸씠吏留??쇰? ?ㅽ뙣 ?쒗뵆由욧낵 dead letter ?뺣━媛 ?꾩슂?⑸땲??'),
       warnings: [
-        '실패 건이 반복되는 템플릿과 채널 조합을 우선 점검해 주세요.',
-        'dead letter 누적 건은 재처리 전 payload 누락 여부를 먼저 확인하는 것이 좋습니다.',
+        '?ㅽ뙣 嫄댁씠 諛섎났?섎뒗 ?쒗뵆由욧낵 梨꾨꼸 議고빀???곗꽑 ?먭???二쇱꽭??',
+        'dead letter ?꾩쟻 嫄댁? ?ъ쿂由???payload ?꾨씫 ?щ?瑜?癒쇱? ?뺤씤?섎뒗 寃껋씠 醫뗭뒿?덈떎.',
       ],
       recommendedActions: [
-        '실패 건이 많은 템플릿의 변수와 활성 상태를 검토하세요.',
-        '최근 24시간 재시도 이력과 dead letter 재처리 결과를 함께 모니터링하세요.',
+        '?ㅽ뙣 嫄댁씠 留롮? ?쒗뵆由우쓽 蹂?섏? ?쒖꽦 ?곹깭瑜?寃?좏븯?몄슂.',
+        '理쒓렐 24?쒓컙 ?ъ떆???대젰怨?dead letter ?ъ쿂由?寃곌낵瑜??④퍡 紐⑤땲?곕쭅?섏꽭??',
       ],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'NotificationDeadLetterPatterns') {
     return {
-      summary: summary || 'dead letter는 변수 누락, 수신 대상 정보 누락, 일시적 채널 실패 유형으로 묶여 보입니다.',
+      summary: summary || 'dead letter??蹂???꾨씫, ?섏떊 ????뺣낫 ?꾨씫, ?쇱떆??梨꾨꼸 ?ㅽ뙣 ?좏삎?쇰줈 臾띠뿬 蹂댁엯?덈떎.',
       patterns: [
-        { reason: '변수 누락 또는 치환 실패', count: 2, impact: '같은 템플릿의 반복 실패로 이어질 수 있습니다.' },
-        { reason: '수신 대상 정보 누락', count: 1, impact: '특정 사용자 알림이 누락될 수 있습니다.' },
+        { reason: '蹂???꾨씫 ?먮뒗 移섑솚 ?ㅽ뙣', count: 2, impact: '媛숈? ?쒗뵆由우쓽 諛섎났 ?ㅽ뙣濡??댁뼱吏????덉뒿?덈떎.' },
+        { reason: '?섏떊 ????뺣낫 ?꾨씫', count: 1, impact: '?뱀젙 ?ъ슜???뚮┝???꾨씫?????덉뒿?덈떎.' },
       ],
       recommendedActions: [
-        '템플릿 변수 목록과 payload 키를 먼저 비교하세요.',
-        '수신 대상 정보가 비어 있는 경우 데이터 원본과 동기화 상태를 점검하세요.',
+        '?쒗뵆由?蹂??紐⑸줉怨?payload ?ㅻ? 癒쇱? 鍮꾧탳?섏꽭??',
+        '?섏떊 ????뺣낫媛 鍮꾩뼱 ?덈뒗 寃쎌슦 ?곗씠???먮낯怨??숆린???곹깭瑜??먭??섏꽭??',
       ],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'NotificationTemplateValidation') {
     return {
-      summary: summary || '템플릿 변수는 대체로 일관되지만 누락될 수 있는 placeholder와 표현 중복을 점검하는 것이 좋습니다.',
+      summary: summary || '?쒗뵆由?蹂?섎뒗 ?泥대줈 ?쇨??섏?留??꾨씫?????덈뒗 placeholder? ?쒗쁽 以묐났???먭??섎뒗 寃껋씠 醫뗭뒿?덈떎.',
       missingVariables: ['dueDate'],
-      confusingVariables: ['employeeName / recipientName 중 하나로 통일 권장'],
+      confusingVariables: ['employeeName / recipientName 以??섎굹濡??듭씪 沅뚯옣'],
       suggestions: [
-        '제목과 본문에서 동일 의미 변수명은 하나로 통일하세요.',
-        '링크 변수는 누락 시 대체 문구가 보이도록 처리하는 것이 안전합니다.',
+        '?쒕ぉ怨?蹂몃Ц?먯꽌 ?숈씪 ?섎? 蹂?섎챸? ?섎굹濡??듭씪?섏꽭??',
+        '留곹겕 蹂?섎뒗 ?꾨씫 ???泥?臾멸뎄媛 蹂댁씠?꾨줉 泥섎━?섎뒗 寃껋씠 ?덉쟾?⑸땲??',
       ],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'NotificationOpsReport') {
     return {
-      headline: summary || '최근 알림 운영은 전반적으로 안정적이나 일부 실패 템플릿에 대한 운영 점검이 필요합니다.',
-      highlights: ['주요 알림은 정상적으로 처리되고 있습니다.', '큐 적체는 제한적이며 재처리 흐름은 유지되고 있습니다.'],
-      risks: ['dead letter 누적이 커지면 사용자 경험 저하로 이어질 수 있습니다.', '비활성 템플릿이 필요한 이벤트를 놓치지 않는지 확인해야 합니다.'],
-      nextActions: ['실패 템플릿을 우선 점검하고 test send를 실행하세요.', 'dead letter 재처리 후 24시간 동안 재발 여부를 모니터링하세요.'],
+      headline: summary || '理쒓렐 ?뚮┝ ?댁쁺? ?꾨컲?곸쑝濡??덉젙?곸씠???쇰? ?ㅽ뙣 ?쒗뵆由우뿉 ????댁쁺 ?먭????꾩슂?⑸땲??',
+      highlights: ['二쇱슂 ?뚮┝? ?뺤긽?곸쑝濡?泥섎━?섍퀬 ?덉뒿?덈떎.', '???곸껜???쒗븳?곸씠硫??ъ쿂由??먮쫫? ?좎??섍퀬 ?덉뒿?덈떎.'],
+      risks: ['dead letter ?꾩쟻??而ㅼ?硫??ъ슜??寃쏀뿕 ??섎줈 ?댁뼱吏????덉뒿?덈떎.', '鍮꾪솢???쒗뵆由우씠 ?꾩슂???대깽?몃? ?볦튂吏 ?딅뒗吏 ?뺤씤?댁빞 ?⑸땲??'],
+      nextActions: ['?ㅽ뙣 ?쒗뵆由우쓣 ?곗꽑 ?먭??섍퀬 test send瑜??ㅽ뻾?섏꽭??', 'dead letter ?ъ쿂由???24?쒓컙 ?숈븞 ?щ컻 ?щ?瑜?紐⑤땲?곕쭅?섏꽭??'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'AdminOpsStatusSummary') {
     return {
       summary:
-        summary || '최근 운영 상태는 전반적으로 확인 가능하지만, 실패 작업과 업무 리스크를 함께 점검하는 운영 대응이 필요합니다.',
+        summary || '理쒓렐 ?댁쁺 ?곹깭???꾨컲?곸쑝濡??뺤씤 媛?ν븯吏留? ?ㅽ뙣 ?묒뾽怨??낅Т 由ъ뒪?щ? ?④퍡 ?먭??섎뒗 ?댁쁺 ??묒씠 ?꾩슂?⑸땲??',
       highlights: [
-        '운영 핵심 지표와 업무 리스크를 한 화면에서 확인할 수 있습니다.',
-        '기술 상태와 HR 운영 리스크를 함께 보며 우선순위를 정할 수 있습니다.',
+        '?댁쁺 ?듭떖 吏?쒖? ?낅Т 由ъ뒪?щ? ???붾㈃?먯꽌 ?뺤씤?????덉뒿?덈떎.',
+        '湲곗닠 ?곹깭? HR ?댁쁺 由ъ뒪?щ? ?④퍡 蹂대ŉ ?곗꽑?쒖쐞瑜??뺥븷 ???덉뒿?덈떎.',
       ],
       watchouts: [
-        'dead letter, 로그인 준비 불가 계정, 예산 초과 시나리오는 즉시 확인이 필요합니다.',
-        'AI fallback 증가나 평가 주기 지연은 후속 운영 이슈로 이어질 수 있습니다.',
+        'dead letter, 濡쒓렇??以鍮?遺덇? 怨꾩젙, ?덉궛 珥덇낵 ?쒕굹由ъ삤??利됱떆 ?뺤씤???꾩슂?⑸땲??',
+        'AI fallback 利앷????됯? 二쇨린 吏?곗? ?꾩냽 ?댁쁺 ?댁뒋濡??댁뼱吏????덉뒿?덈떎.',
       ],
       recommendedActions: [
-        '실패 작업과 dead letter를 먼저 검토하고 복구 여부를 확인하세요.',
-        '평가 주기, 월간 실적, 보상 시뮬레이션의 지연 항목을 우선순위로 점검하세요.',
+        '?ㅽ뙣 ?묒뾽怨?dead letter瑜?癒쇱? 寃?좏븯怨?蹂듦뎄 ?щ?瑜??뺤씤?섏꽭??',
+        '?됯? 二쇨린, ?붽컙 ?ㅼ쟻, 蹂댁긽 ?쒕??덉씠?섏쓽 吏????ぉ???곗꽑?쒖쐞濡??먭??섏꽭??',
       ],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'AdminOpsIncidentPatterns') {
     return {
-      summary: summary || '최근 이벤트는 알림 실패, 로그인 준비 불가 계정, 운영 지연 이슈 중심으로 묶여 보입니다.',
+      summary: summary || '理쒓렐 ?대깽?몃뒗 ?뚮┝ ?ㅽ뙣, 濡쒓렇??以鍮?遺덇? 怨꾩젙, ?댁쁺 吏???댁뒋 以묒떖?쇰줈 臾띠뿬 蹂댁엯?덈떎.',
       patterns: [
         {
           component: 'notification',
-          pattern: 'dead letter와 재시도 지연이 반복되는 패턴',
+          pattern: 'dead letter? ?ъ떆??吏?곗씠 諛섎났?섎뒗 ?⑦꽩',
           severity: 'HIGH',
-          action: '알림 운영 화면에서 실패 원인과 재처리 결과를 우선 확인하세요.',
+          action: '?뚮┝ ?댁쁺 ?붾㈃?먯꽌 ?ㅽ뙣 ?먯씤怨??ъ쿂由?寃곌낵瑜??곗꽑 ?뺤씤?섏꽭??',
         },
         {
           component: 'ops-summary',
-          pattern: '업무 리스크 항목이 복수 화면으로 분산되어 후속 조치가 지연되는 패턴',
+          pattern: '?낅Т 由ъ뒪????ぉ??蹂듭닔 ?붾㈃?쇰줈 遺꾩궛?섏뼱 ?꾩냽 議곗튂媛 吏?곕릺???⑦꽩',
           severity: 'MEDIUM',
-          action: '업무 리스크 탭 기준으로 우선순위를 정해 관련 화면으로 이동하세요.',
+          action: '?낅Т 由ъ뒪????湲곗??쇰줈 ?곗꽑?쒖쐞瑜??뺥빐 愿???붾㈃?쇰줈 ?대룞?섏꽭??',
         },
       ],
-      topRisks: ['dead letter 누적', '로그인 준비 불가 계정', '예산 초과 시나리오'],
+      topRisks: ['dead letter ?꾩쟻', '濡쒓렇??以鍮?遺덇? 怨꾩젙', '?덉궛 珥덇낵 ?쒕굹由ъ삤'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'AdminOpsDailyReport') {
     return {
-      headline: summary || '오늘 운영 현황은 전반적으로 안정적이나, 일부 운영 리스크는 즉시 확인이 필요합니다.',
+      headline: summary || '?ㅻ뒛 ?댁쁺 ?꾪솴? ?꾨컲?곸쑝濡??덉젙?곸씠?? ?쇰? ?댁쁺 由ъ뒪?щ뒗 利됱떆 ?뺤씤???꾩슂?⑸땲??',
       executiveSummary:
-        '실패 작업, dead letter, 로그인 준비 불가 계정, 예산 초과 시나리오를 함께 확인해 기술 운영과 업무 운영 리스크를 동시에 관리해야 합니다.',
-      issues: ['알림 실패 누적 여부 확인', '평가/보상 운영 지연 여부 확인', '로그인 준비 불가 계정 점검'],
-      nextActions: ['알림 운영에서 재처리 상태 확인', 'Google 계정 등록 화면에서 미등록 계정 점검', '보상 시뮬레이션의 예산 초과 시나리오 검토'],
+        '?ㅽ뙣 ?묒뾽, dead letter, 濡쒓렇??以鍮?遺덇? 怨꾩젙, ?덉궛 珥덇낵 ?쒕굹由ъ삤瑜??④퍡 ?뺤씤??湲곗닠 ?댁쁺怨??낅Т ?댁쁺 由ъ뒪?щ? ?숈떆??愿由ы빐???⑸땲??',
+      issues: ['?뚮┝ ?ㅽ뙣 ?꾩쟻 ?щ? ?뺤씤', '?됯?/蹂댁긽 ?댁쁺 吏???щ? ?뺤씤', '濡쒓렇??以鍮?遺덇? 怨꾩젙 ?먭?'],
+      nextActions: ['알림 운영 상태를 재확인', 'Google 계정 등록 누락 계정을 점검', '보상 시나리오 예산 초과를 검토'],
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'AdminOpsRiskPrioritization') {
     return {
-      summary: summary || '현재 운영 리스크는 사용자 영향과 복구 난이도를 기준으로 우선순위를 정하는 것이 좋습니다.',
+      summary: summary || '?꾩옱 ?댁쁺 由ъ뒪?щ뒗 ?ъ슜???곹뼢怨?蹂듦뎄 ?쒖씠?꾨? 湲곗??쇰줈 ?곗꽑?쒖쐞瑜??뺥븯??寃껋씠 醫뗭뒿?덈떎.',
       priorities: [
         {
-          label: 'Dead Letter 및 실패 작업',
+          label: 'Dead Letter 諛??ㅽ뙣 ?묒뾽',
           priority: 'P1',
-          reason: '사용자 알림 누락으로 직접적인 운영 장애로 이어질 수 있습니다.',
-          action: '알림 운영에서 실패 원인 확인 후 재처리하세요.',
+          reason: '?ъ슜???뚮┝ ?꾨씫?쇰줈 吏곸젒?곸씤 ?댁쁺 ?μ븷濡??댁뼱吏????덉뒿?덈떎.',
+          action: '?뚮┝ ?댁쁺?먯꽌 ?ㅽ뙣 ?먯씤 ?뺤씤 ???ъ쿂由ы븯?몄슂.',
         },
         {
-          label: '로그인 준비 불가 계정',
+          label: '濡쒓렇??以鍮?遺덇? 怨꾩젙',
           priority: 'P2',
-          reason: '신규/기존 사용자의 접근 문제로 운영 문의가 증가할 수 있습니다.',
-          action: 'Google 계정 등록 화면에서 미등록 또는 도메인 불일치 계정을 정리하세요.',
+          reason: '?좉퇋/湲곗〈 ?ъ슜?먯쓽 ?묎렐 臾몄젣濡??댁쁺 臾몄쓽媛 利앷??????덉뒿?덈떎.',
+          action: 'Google 怨꾩젙 ?깅줉 ?붾㈃?먯꽌 誘몃벑濡??먮뒗 ?꾨찓??遺덉씪移?怨꾩젙???뺣━?섏꽭??',
         },
         {
-          label: '예산 초과 보상 시나리오',
+          label: '?덉궛 珥덇낵 蹂댁긽 ?쒕굹由ъ삤',
           priority: 'P3',
-          reason: '즉시 장애는 아니지만 승인 지연과 공개 지연으로 이어질 수 있습니다.',
-          action: '보상 시뮬레이션 관리 화면에서 초과 사유와 예외 승인 여부를 확인하세요.',
+          reason: '利됱떆 ?μ븷???꾨땲吏留??뱀씤 吏?곌낵 怨듦컻 吏?곗쑝濡??댁뼱吏????덉뒿?덈떎.',
+          action: '蹂댁긽 ?쒕??덉씠??愿由??붾㈃?먯꽌 珥덇낵 ?ъ쑀? ?덉쇅 ?뱀씤 ?щ?瑜??뺤씤?섏꽭??',
         },
       ],
     }
@@ -1997,33 +2263,33 @@ export function buildFallbackResult(
   switch (requestType) {
     case AIRequestType.KPI_ASSIST:
       return {
-        kpiName: goal || (orgKpi ? `${orgKpi} 실행력 강화` : '핵심 KPI 초안'),
+        kpiName: goal || (orgKpi ? `${orgKpi} ?ㅽ뻾??媛뺥솕` : '?듭떖 KPI 珥덉븞'),
         definition:
-          summary ||
-          '조직 목표와 연결된 핵심 결과를 분기 또는 연간 기준으로 측정할 수 있게 정의한 KPI 초안입니다.',
-        formula: payload.kpiType === 'QUALITATIVE' ? '정성 평가 체크리스트 충족률' : '실적 / 목표 x 100',
-        targetValueSuggestion: String(payload.targetValue ?? '월별 목표 100 기준'),
+          (summary ||
+          '議곗쭅 紐⑺몴? ?곌껐???듭떖 寃곌낵瑜?遺꾧린 ?먮뒗 ?곌컙 湲곗??쇰줈 痢≪젙?????덇쾶 ?뺤쓽??KPI 珥덉븞?낅땲??'),
+        formula: payload.kpiType === 'QUALITATIVE' ? '정성 평가 체크리스트 충족 여부' : 'Actual / Target x 100',
+        targetValueSuggestion: String(payload.targetValue ?? '?붾퀎 紐⑺몴 100 湲곗?'),
         unitSuggestion: String(payload.unit ?? (payload.kpiType === 'QUALITATIVE' ? '점수' : '%')),
         weightSuggestion: Number(payload.weight ?? 20),
         difficultySuggestion: String(payload.difficulty ?? 'MEDIUM'),
         smartChecks: [
-          '목표 대상과 산출물이 문장에 포함되어 있습니다.',
-          '측정 방식 또는 점검 기준이 포함되어 있습니다.',
-          '조직 KPI와 연결되는 맥락이 드러납니다.',
+          '紐⑺몴 ??곴낵 ?곗텧臾쇱씠 臾몄옣???ы븿?섏뼱 ?덉뒿?덈떎.',
+          '痢≪젙 諛⑹떇 ?먮뒗 ?먭? 湲곗????ы븿?섏뼱 ?덉뒿?덈떎.',
+          '議곗쭅 KPI? ?곌껐?섎뒗 留λ씫???쒕윭?⑸땲??',
         ],
         managerReviewPoints: [
-          '가중치가 전체 KPI 합계와 충돌하지 않는지 확인하세요.',
-          '측정 주기와 데이터 출처를 한 번 더 검토하세요.',
+          '媛以묒튂媛 ?꾩껜 KPI ?⑷퀎? 異⑸룎?섏? ?딅뒗吏 ?뺤씤?섏꽭??',
+          '痢≪젙 二쇨린? ?곗씠??異쒖쿂瑜???踰???寃?좏븯?몄슂.',
         ],
       }
     case AIRequestType.EVAL_COMMENT_DRAFT:
       return {
-        summary: summary || '현재 입력된 근거를 기준으로 균형 잡힌 평가 코멘트 초안을 준비했습니다.',
-        strengths: toStringArray(payload.strengths, ['주요 KPI 또는 과제에서 안정적인 실행력을 보였습니다.']),
-        improvements: toStringArray(payload.improvements, ['우선순위 조정과 후속 커뮤니케이션을 더 명확히 하면 효과가 커질 수 있습니다.']),
+        summary: summary || '?꾩옱 ?낅젰??洹쇨굅瑜?湲곗??쇰줈 洹좏삎 ?≫엺 ?됯? 肄붾찘??珥덉븞??以鍮꾪뻽?듬땲??',
+        strengths: toStringArray(payload.strengths, ['二쇱슂 KPI ?먮뒗 怨쇱젣?먯꽌 ?덉젙?곸씤 ?ㅽ뻾?μ쓣 蹂댁??듬땲??']),
+        improvements: toStringArray(payload.improvements, ['?곗꽑?쒖쐞 議곗젙怨??꾩냽 而ㅻ??덉??댁뀡????紐낇솗???섎㈃ ?④낵媛 而ㅼ쭏 ???덉뒿?덈떎.']),
         draftComment:
-          summary ||
-          `${grade ? `${grade} 수준의 ` : ''}성과를 뒷받침하는 근거를 중심으로 강점과 개선 포인트를 함께 정리한 초안입니다. 구체 사례와 수치를 추가한 뒤 제출해 주세요.`,
+          (summary ||
+          `${grade ? `${grade} ?섏???` : ''}?깃낵瑜??룸컺移⑦븯??洹쇨굅瑜?以묒떖?쇰줈 媛뺤젏怨?媛쒖꽑 ?ъ씤?몃? ?④퍡 ?뺣━??珥덉븞?낅땲?? 援ъ껜 ?щ?? ?섏튂瑜?異붽??????쒖텧??二쇱꽭??`),
       }
     case AIRequestType.BIAS_ANALYSIS:
       return {
@@ -2031,31 +2297,31 @@ export function buildFallbackResult(
         findings: [
           {
             severity: 'MEDIUM',
-            issue: '주관적 표현이나 성향 중심 표현이 포함될 수 있습니다.',
-            recommendation: '행동과 결과, 관찰 가능한 사실 중심으로 문장을 다시 써 주세요.',
+            issue: '二쇨????쒗쁽?대굹 ?깊뼢 以묒떖 ?쒗쁽???ы븿?????덉뒿?덈떎.',
+            recommendation: '?됰룞怨?寃곌낵, 愿李?媛?ν븳 ?ъ떎 以묒떖?쇰줈 臾몄옣???ㅼ떆 ??二쇱꽭??',
           },
           {
             severity: 'LOW',
-            issue: '최근 사례에 근거가 치우쳤는지 확인이 필요합니다.',
-            recommendation: '기간 전체의 대표 사례를 함께 언급해 주세요.',
+            issue: '理쒓렐 ?щ???洹쇨굅媛 移섏슦爾ㅻ뒗吏 ?뺤씤???꾩슂?⑸땲??',
+            recommendation: '湲곌컙 ?꾩껜??????щ?瑜??④퍡 ?멸툒??二쇱꽭??',
           },
         ],
         balancedRewrite:
-          summary ||
-          '관찰된 행동, KPI 결과, 협업 기여를 기준으로 표현을 정리하고, 개인 성향 대신 구체적인 사례 중심으로 보완한 문장입니다.',
+          (summary ||
+          '愿李곕맂 ?됰룞, KPI 寃곌낵, ?묒뾽 湲곗뿬瑜?湲곗??쇰줈 ?쒗쁽???뺣━?섍퀬, 媛쒖씤 ?깊뼢 ???援ъ껜?곸씤 ?щ? 以묒떖?쇰줈 蹂댁셿??臾몄옣?낅땲??'),
       }
     case AIRequestType.GROWTH_PLAN:
       return {
-        focusArea: goal || '우선 개선 영역',
+        focusArea: goal || '?곗꽑 媛쒖꽑 ?곸뿭',
         recommendedActions: [
-          '다음 분기 핵심 과제 1개를 선정해 주간 점검 지표를 운영합니다.',
-          '리뷰 또는 피드백 루프를 월 1회 이상 정례화합니다.',
+          '?ㅼ쓬 遺꾧린 ?듭떖 怨쇱젣 1媛쒕? ?좎젙??二쇨컙 ?먭? 吏?쒕? ?댁쁺?⑸땲??',
+          '由щ럭 ?먮뒗 ?쇰뱶諛?猷⑦봽瑜???1???댁긽 ?뺣??뷀빀?덈떎.',
         ],
         supportNeeded: [
-          '매니저와 월별 체크인에서 진행 상황을 확인합니다.',
-          '필요한 교육이나 멘토링 자원을 사전에 확보합니다.',
+          '留ㅻ땲?? ?붾퀎 泥댄겕?몄뿉??吏꾪뻾 ?곹솴???뺤씤?⑸땲??',
+          '?꾩슂??援먯쑁?대굹 硫섑넗留??먯썝???ъ쟾???뺣낫?⑸땲??',
         ],
-        milestone: grade ? `${grade} 결과 피드백 반영 후 90일 내 중간 점검` : '90일 내 중간 점검',
+        milestone: grade ? `${grade} 寃곌낵 ?쇰뱶諛?諛섏쁺 ??90????以묎컙 ?먭?` : '90????以묎컙 ?먭?',
       }
     default:
       return {
@@ -2227,7 +2493,7 @@ export async function generateAiAssist(
       requestLogId: log.id,
       source: 'disabled' as const,
       result: fallbackResult,
-      fallbackReason: 'AI 기능이 비활성화되어 기본 제안을 제공합니다.',
+      fallbackReason: 'AI 湲곕뒫??鍮꾪솢?깊솕?섏뼱 湲곕낯 ?쒖븞???쒓났?⑸땲??',
     }
   }
 

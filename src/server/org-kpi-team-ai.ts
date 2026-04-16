@@ -20,6 +20,11 @@ import {
   formatOrgKpiTargetValues,
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
+import {
+  prioritizeSourceOrgKpis,
+  rankTeamRecommendationItems,
+  sanitizeAndRankTeamRecommendationItem,
+} from '@/lib/org-kpi-team-ai-recommendation'
 import { AppError } from '@/lib/utils'
 import { createAuditLog } from '@/lib/audit'
 import { validateOrgParentLink } from '@/server/goal-alignment'
@@ -84,6 +89,7 @@ export type OrgKpiTeamRecommendationItemView = {
   title: string
   definition?: string
   formula?: string
+  metricSource?: string
   targetValueT?: number
   targetValueE?: number
   targetValueS?: number
@@ -94,7 +100,12 @@ export type OrgKpiTeamRecommendationItemView = {
   sourceOrgKpiTitle?: string | null
   linkageExplanation: string
   recommendationReason: string
+  whyThisIsHighQuality?: string | null
+  controllabilityNote?: string | null
   riskComment?: string | null
+  alignmentScore?: number | null
+  qualityScore?: number | null
+  recommendedPriority?: number | null
   decision: TeamKpiRecommendationDecision
   adoptedOrgKpiId?: string | null
   customizedDraft?: Record<string, unknown> | null
@@ -250,6 +261,7 @@ function mapRecommendationSet(
         title: item.title,
         definition: item.definition ?? undefined,
         formula: item.formula ?? undefined,
+        metricSource: item.metricSource ?? undefined,
         targetValueT: item.targetValueT ?? undefined,
         targetValueE: item.targetValueE ?? undefined,
         targetValueS: item.targetValueS ?? undefined,
@@ -260,7 +272,12 @@ function mapRecommendationSet(
         sourceOrgKpiTitle: item.sourceOrgKpiTitle,
         linkageExplanation: item.linkageExplanation,
         recommendationReason: item.recommendationReason,
+        whyThisIsHighQuality: item.whyThisIsHighQuality,
+        controllabilityNote: item.controllabilityNote,
         riskComment: item.riskComment,
+        alignmentScore: item.alignmentScore,
+        qualityScore: item.qualityScore,
+        recommendedPriority: item.recommendedPriority,
         decision: item.decision,
         adoptedOrgKpiId: item.adoptedOrgKpiId,
         customizedDraft:
@@ -647,7 +664,9 @@ type RecommendationGenerationContext = {
     kpiName: string
     kpiCategory: string
     definition: string | null
+    formula: string | null
     weight: number
+    parentOrgKpiId: string | null
   }>
 }
 
@@ -717,7 +736,9 @@ async function loadRecommendationGenerationContext(params: LoadContextParams): P
         kpiName: true,
         kpiCategory: true,
         definition: true,
+        formula: true,
         weight: true,
+        parentOrgKpiId: true,
       },
     }),
   ])
@@ -744,42 +765,26 @@ async function loadRecommendationGenerationContext(params: LoadContextParams): P
 function sanitizeRecommendationItem(
   item: Record<string, unknown>,
   sourceOrgKpis: RecommendationGenerationContext['sourceOrgKpis'],
+  existingTeamKpis: RecommendationGenerationContext['existingTeamKpis'],
   rank: number
 ) {
-  const sourceOrgKpiId =
-    typeof item.sourceOrgKpiId === 'string' &&
-    sourceOrgKpis.some((candidate) => candidate.id === item.sourceOrgKpiId)
-      ? item.sourceOrgKpiId
-      : null
-
-  const sourceOrgKpiTitle =
-    typeof item.sourceOrgKpiTitle === 'string'
-      ? item.sourceOrgKpiTitle
-      : sourceOrgKpiId
-        ? sourceOrgKpis.find((candidate) => candidate.id === sourceOrgKpiId)?.kpiName ?? null
-        : null
-
-  return {
+  return sanitizeAndRankTeamRecommendationItem({
+    item,
+    sourceOrgKpis: sourceOrgKpis.map((candidate) => ({
+      ...candidate,
+      targetValueText: formatOrgKpiTargetValues({
+        ...resolveOrgKpiTargetValues({
+          targetValue: candidate.targetValue ?? undefined,
+          targetValueT: candidate.targetValueT ?? undefined,
+          targetValueE: candidate.targetValueE ?? undefined,
+          targetValueS: candidate.targetValueS ?? undefined,
+        }),
+        unit: candidate.unit ?? undefined,
+      }),
+    })),
+    existingTeamKpis,
     rank,
-    title: String(item.title ?? '').trim(),
-    definition: typeof item.definition === 'string' ? item.definition.trim() : null,
-    formula: typeof item.formula === 'string' ? item.formula.trim() : null,
-    targetValueT: typeof item.targetValueT === 'number' ? item.targetValueT : null,
-    targetValueE: typeof item.targetValueE === 'number' ? item.targetValueE : null,
-    targetValueS: typeof item.targetValueS === 'number' ? item.targetValueS : null,
-    unit: typeof item.unit === 'string' ? item.unit.trim() : null,
-    weightSuggestion: typeof item.weightSuggestion === 'number' ? item.weightSuggestion : null,
-    difficultySuggestion:
-      typeof item.difficultySuggestion === 'string' &&
-      ['HIGH', 'MEDIUM', 'LOW'].includes(item.difficultySuggestion)
-        ? (item.difficultySuggestion as Difficulty)
-        : null,
-    sourceOrgKpiId,
-    sourceOrgKpiTitle,
-    linkageExplanation: String(item.linkageExplanation ?? '').trim(),
-    recommendationReason: String(item.recommendationReason ?? item.reason ?? '').trim(),
-    riskComment: typeof item.riskComment === 'string' ? item.riskComment.trim() : null,
-  }
+  })
 }
 
 type GenerateRecommendationParams = LoadContextParams
@@ -790,6 +795,28 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
   }
 
   const context = await loadRecommendationGenerationContext(params)
+
+  const prioritizedSourceOrgKpis = prioritizeSourceOrgKpis({
+    sourceOrgKpis: context.sourceOrgKpis.map((kpi) => ({
+      id: kpi.id,
+      kpiName: kpi.kpiName,
+      kpiCategory: kpi.kpiCategory,
+      definition: kpi.definition,
+      formula: kpi.formula,
+      targetValueText: formatOrgKpiTargetValues({
+        ...resolveOrgKpiTargetValues({
+          targetValue: kpi.targetValue ?? undefined,
+          targetValueT: kpi.targetValueT ?? undefined,
+          targetValueE: kpi.targetValueE ?? undefined,
+          targetValueS: kpi.targetValueS ?? undefined,
+        }),
+        unit: kpi.unit ?? undefined,
+      }),
+      weight: kpi.weight,
+      difficulty: kpi.difficulty,
+    })),
+    existingTeamKpis: context.existingTeamKpis,
+  })
 
   const aiPayload = {
     teamDepartment: {
@@ -808,30 +835,54 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
       summaryText: context.businessPlan.summaryText,
       bodyText: context.businessPlan.bodyText,
     },
-    sourceOrgKpis: context.sourceOrgKpis.map((kpi) => ({
+    linkedParentOrgKpis: prioritizedSourceOrgKpis
+      .filter((kpi) => kpi.priorityTier === 'PRIMARY')
+      .slice(0, 5)
+      .map((kpi) => ({
+        id: kpi.id,
+        title: kpi.title,
+        category: kpi.category,
+        definition: kpi.definition,
+        formula: kpi.formula,
+        targetValueText: kpi.targetValueText,
+        weight: kpi.weight,
+        difficulty: kpi.difficulty,
+        priorityReason: kpi.priorityReason,
+      })),
+    supportingParentOrgKpis: prioritizedSourceOrgKpis
+      .filter((kpi) => kpi.priorityTier === 'SUPPORTING')
+      .slice(0, 6)
+      .map((kpi) => ({
+        id: kpi.id,
+        title: kpi.title,
+        category: kpi.category,
+        definition: kpi.definition,
+        formula: kpi.formula,
+        targetValueText: kpi.targetValueText,
+        weight: kpi.weight,
+        difficulty: kpi.difficulty,
+        priorityReason: kpi.priorityReason,
+      })),
+    sourceOrgKpis: prioritizedSourceOrgKpis.map((kpi) => ({
       id: kpi.id,
-      title: kpi.kpiName,
-      category: kpi.kpiCategory,
+      title: kpi.title,
+      category: kpi.category,
       definition: kpi.definition,
       formula: kpi.formula,
-      targetValueText: formatOrgKpiTargetValues({
-        ...resolveOrgKpiTargetValues({
-          targetValue: kpi.targetValue ?? undefined,
-          targetValueT: kpi.targetValueT ?? undefined,
-          targetValueE: kpi.targetValueE ?? undefined,
-          targetValueS: kpi.targetValueS ?? undefined,
-        }),
-        unit: kpi.unit ?? undefined,
-      }),
+      targetValueText: kpi.targetValueText,
       weight: kpi.weight,
       difficulty: kpi.difficulty,
+      priorityTier: kpi.priorityTier,
+      priorityReason: kpi.priorityReason,
     })),
     existingTeamKpis: context.existingTeamKpis.map((kpi) => ({
       id: kpi.id,
       title: kpi.kpiName,
       category: kpi.kpiCategory,
       definition: kpi.definition,
+      formula: kpi.formula,
       weight: kpi.weight,
+      parentOrgKpiId: kpi.parentOrgKpiId,
     })),
     recommendationRules: [
       '본부 KPI와의 연결성',
@@ -857,16 +908,19 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
   const recommendationItemsRaw = Array.isArray(resultRecord.recommendations)
     ? resultRecord.recommendations
     : []
-  const recommendationItems = recommendationItemsRaw
-    .slice(0, 5)
-    .map((item, index) =>
-      sanitizeRecommendationItem(
-        item && typeof item === 'object' ? (item as Record<string, unknown>) : {},
-        context.sourceOrgKpis,
-        index + 1
+  const recommendationItems = rankTeamRecommendationItems(
+    recommendationItemsRaw
+      .slice(0, 5)
+      .map((item, index) =>
+        sanitizeRecommendationItem(
+          item && typeof item === 'object' ? (item as Record<string, unknown>) : {},
+          context.sourceOrgKpis,
+          context.existingTeamKpis,
+          index + 1
+        )
       )
-    )
-    .filter((item) => item.title && item.linkageExplanation && item.recommendationReason)
+      .filter((item) => item.title && item.linkageExplanation && item.recommendationReason)
+  )
 
   if (recommendationItems.length < 3) {
     throw new AppError(502, 'AI_RECOMMENDATION_INVALID', 'AI 추천 결과가 충분하지 않아 다시 시도해 주세요.')
