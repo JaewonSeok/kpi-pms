@@ -199,8 +199,8 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
                   props.onBusinessPlanFormChange({ ...props.businessPlanForm, summaryText: event.target.value })
                 }
                 disabled={!props.context.canEditBusinessPlan || props.busy}
-                rows={4}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 disabled:bg-slate-50"
+                rows={6}
+                className="min-h-[9rem] w-full resize-y rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 disabled:bg-slate-50"
               />
             </Field>
             <Field label="본문">
@@ -210,8 +210,8 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
                   props.onBusinessPlanFormChange({ ...props.businessPlanForm, bodyText: event.target.value })
                 }
                 disabled={!props.context.canEditBusinessPlan || props.busy}
-                rows={10}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 disabled:bg-slate-50"
+                rows={14}
+                className="min-h-[18rem] w-full resize-y rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 disabled:bg-slate-50"
               />
             </Field>
           </div>

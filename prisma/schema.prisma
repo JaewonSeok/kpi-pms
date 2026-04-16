@@ -45,6 +45,7 @@ model Department {
   employees    Employee[]
   orgKpis      OrgKpi[]
   businessPlans BusinessPlanDocument[]
+  jobDescriptions JobDescriptionDocument[]
   teamKpiRecommendationSourceSets TeamKpiRecommendationSet[] @relation("TeamKpiRecommendationSourceDepartment")
   teamKpiRecommendationTargetSets TeamKpiRecommendationSet[] @relation("TeamKpiRecommendationTargetDepartment")
   teamKpiReviewSourceRuns TeamKpiReviewRun[] @relation("TeamKpiReviewSourceDepartment")
@@ -243,6 +244,27 @@ model BusinessPlanDocument {
   @@map("business_plan_documents")
 }
 
+model JobDescriptionDocument {
+  id          String               @id @default(cuid())
+  deptId      String
+  department  Department           @relation(fields: [deptId], references: [id])
+  scope       JobDescriptionScope
+  evalYear    Int
+  evalCycleId String?
+  evalCycle   EvalCycle?           @relation(fields: [evalCycleId], references: [id], onDelete: SetNull)
+  title       String
+  summaryText String?
+  bodyText    String
+  createdById String
+  updatedById String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([deptId, scope, evalYear, updatedAt])
+  @@index([evalCycleId])
+  @@map("job_description_documents")
+}
+
 model TeamKpiRecommendationSet {
   id                 String               @id @default(cuid())
   businessPlanId     String?
@@ -272,6 +294,7 @@ model TeamKpiRecommendationItem {
   setId                String
   set                  TeamKpiRecommendationSet      @relation(fields: [setId], references: [id], onDelete: Cascade)
   rank                 Int
+  recommendationType   TeamKpiRecommendationType     @default(ALIGNED_WITH_DIVISION_KPI)
   title                String
   definition           String?
   formula              String?
@@ -287,10 +310,15 @@ model TeamKpiRecommendationItem {
   linkageExplanation   String
   recommendationReason String
   whyThisIsHighQuality String?
+  basedOnJobDescription Boolean?
+  jobDescriptionEvidence String?
+  trendRationale       String?
+  whyThisFitsTeamRole  String?
   controllabilityNote  String?
   riskComment          String?
   alignmentScore       Float?
   qualityScore         Float?
+  difficultyScore      Float?
   recommendedPriority  Int?
   decision             TeamKpiRecommendationDecision @default(PENDING)
   adoptedOrgKpiId      String?
@@ -319,8 +347,11 @@ model TeamKpiReviewRun {
   evalCycle          EvalCycle?            @relation(fields: [evalCycleId], references: [id], onDelete: SetNull)
   requesterId        String
   aiRequestLogId     String?
+  reviewType         TeamKpiReviewType     @default(FULL_SET)
   overallVerdict     TeamKpiReviewVerdict?
   overallSummary     String?
+  linkedParentCoverage String?
+  independentKpiCoverage String?
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
 
@@ -337,15 +368,22 @@ model TeamKpiReviewItem {
   run                  TeamKpiReviewRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
   orgKpiId             String?
   orgKpi               OrgKpi?              @relation(fields: [orgKpiId], references: [id], onDelete: SetNull)
+  recommendationType   TeamKpiRecommendationType?
+  reviewType           TeamKpiReviewType    @default(FULL_SET)
   kpiTitleSnapshot     String
   verdict              TeamKpiReviewVerdict
   rationale            String
   linkageComment       String?
+  roleFitComment       String?
   measurabilityComment String?
   controllabilityComment String?
   challengeComment     String?
   externalRiskComment  String?
   clarityComment       String?
+  duplicationComment   String?
+  strongPoint          String?
+  weakPoint            String?
+  improvementSuggestions String?
   recommendationText   String?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt
@@ -408,6 +446,11 @@ enum BusinessPlanSourceType {
   SUMMARY
 }
 
+enum JobDescriptionScope {
+  DIVISION
+  TEAM
+}
+
 enum TeamKpiRecommendationDecision {
   PENDING
   ADOPT_AS_IS
@@ -416,10 +459,21 @@ enum TeamKpiRecommendationDecision {
   REFERENCED_NEW
 }
 
+enum TeamKpiRecommendationType {
+  ALIGNED_WITH_DIVISION_KPI
+  TEAM_INDEPENDENT
+}
+
 enum TeamKpiReviewVerdict {
   ADEQUATE
   CAUTION
   INSUFFICIENT
+}
+
+enum TeamKpiReviewType {
+  FULL_SET
+  ALIGNED_ONLY
+  TEAM_INDEPENDENT_ONLY
 }
 
 // ============================================

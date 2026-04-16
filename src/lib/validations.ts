@@ -1,4 +1,4 @@
-import { z } from 'zod'
+﻿import { z } from 'zod'
 import { reviewEmailHtmlToText } from './review-email-editor'
 import { CALIBRATION_DISCUSSION_STATUS_OPTIONS } from './calibration-workspace'
 import {
@@ -12,21 +12,21 @@ import {
 } from './calibration-session-setup'
 
 // ============================================
-// 조직도 관련
+// 議곗쭅??愿??
 // ============================================
 
 export const CreateOrganizationSchema = z.object({
-  name: z.string().min(1, '조직명을 입력하세요').max(100),
+  name: z.string().min(1, '조직명을 입력해 주세요.').max(100),
   fiscalYear: z.number().int().min(2020).max(2100),
 })
 
 // ============================================
-// 등급 설정 관련
+// ?깃툒 ?ㅼ젙 愿??
 // ============================================
 
 export const GradeSettingSchema = z.object({
   gradeOrder: z.number().int().min(1),
-  gradeName: z.string().min(1).max(5, '등급명은 5자 이내'),
+  gradeName: z.string().min(1).max(5, '?깃툒紐낆? 5???대궡'),
   baseScore: z.number().int().min(0).max(100),
   minScore: z.number().int().min(0).max(100),
   maxScore: z.number().int().min(0).max(100),
@@ -35,7 +35,7 @@ export const GradeSettingSchema = z.object({
   targetDistRate: z.number().min(0).max(100).optional(),
   isActive: z.boolean().default(true),
 }).refine(data => data.minScore <= data.maxScore, {
-  message: '최솟값은 최댓값보다 작거나 같아야 합니다',
+  message: '최소 점수는 최대 점수보다 작거나 같아야 합니다.',
   path: ['minScore'],
 })
 
@@ -45,13 +45,13 @@ export const UpdateGradeSettingsSchema = z.object({
 })
 
 // ============================================
-// KPI 관련
+// KPI 愿??
 // ============================================
 
 const OrgKpiTargetValueSchema = {
-  targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.'),
-  targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.'),
-  targetValueS: z.number().min(0, 'S 목표값은 0 이상이어야 합니다.'),
+  targetValueT: z.number().min(0, 'T 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??'),
+  targetValueE: z.number().min(0, 'E 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??'),
+  targetValueS: z.number().min(0, 'S 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??'),
 }
 
 function hasCompleteOrgKpiTargetValues(data: {
@@ -84,14 +84,31 @@ function isOrderedOrgKpiTargetValues(data: {
   return targetValueT <= targetValueE && targetValueE <= targetValueS
 }
 
+const ORG_KPI_LONG_TEXT_MAX = 50_000
+const BUSINESS_PLAN_SUMMARY_MAX = 20_000
+const BUSINESS_PLAN_BODY_MAX = 100_000
+const JOB_DESCRIPTION_SUMMARY_MAX = 20_000
+const JOB_DESCRIPTION_BODY_MAX = 100_000
+
+const orgKpiLongTextSchema = (label: string) =>
+  z
+    .string()
+    .max(ORG_KPI_LONG_TEXT_MAX, `${label}???덈Т 源곷땲?? ${ORG_KPI_LONG_TEXT_MAX.toLocaleString()}???대궡濡??낅젰??二쇱꽭??`)
+
+const businessPlanLongTextSchema = (label: string, max: number) =>
+  z.string().max(max, `${label}???덈Т 源곷땲?? ${max.toLocaleString()}???대궡濡??낅젰??二쇱꽭??`)
+
+const jobDescriptionLongTextSchema = (label: string, max: number) =>
+  z.string().max(max, `${label}???덈Т 源곷땲?? ${max.toLocaleString()}???대궡濡??낅젰??二쇱꽭??`)
+
 export const CreateOrgKpiSchema = z.object({
   deptId: z.string().min(1),
   evalYear: z.number().int().min(2020).max(2100),
   kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']),
   kpiCategory: z.string().min(1).max(50),
   kpiName: z.string().min(1).max(100),
-  definition: z.string().max(500).optional(),
-  formula: z.string().max(500).optional(),
+  definition: orgKpiLongTextSchema('KPI ?뺤쓽').optional(),
+  formula: orgKpiLongTextSchema('KPI ?곗떇').optional(),
   ...OrgKpiTargetValueSchema,
   unit: z.string().max(20).optional(),
   weight: z.number().min(0).max(100),
@@ -99,7 +116,7 @@ export const CreateOrgKpiSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   parentOrgKpiId: z.string().nullable().optional(),
 }).refine(isOrderedOrgKpiTargetValues, {
-  message: '목표값은 T <= E <= S 순서여야 합니다.',
+  message: '紐⑺몴媛믪? T <= E <= S ?쒖꽌?ъ빞 ?⑸땲??',
   path: ['targetValueT'],
 })
 
@@ -109,8 +126,8 @@ export const UpdateOrgKpiSchema = z.object({
   kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']).optional(),
   kpiCategory: z.string().min(1).max(50).optional(),
   kpiName: z.string().min(1).max(100).optional(),
-  definition: z.string().max(500).optional(),
-  formula: z.string().max(500).optional(),
+  definition: orgKpiLongTextSchema('KPI ?뺤쓽').optional(),
+  formula: orgKpiLongTextSchema('KPI ?곗떇').optional(),
   targetValueT: OrgKpiTargetValueSchema.targetValueT.optional(),
   targetValueE: OrgKpiTargetValueSchema.targetValueE.optional(),
   targetValueS: OrgKpiTargetValueSchema.targetValueS.optional(),
@@ -129,12 +146,12 @@ export const UpdateOrgKpiSchema = z.object({
       return providedCount === 0 || providedCount === 3
     },
     {
-      message: 'T / E / S 목표값을 모두 입력해 주세요.',
+      message: 'T / E / S 紐⑺몴媛믪쓣 紐⑤몢 ?낅젰??二쇱꽭??',
       path: ['targetValueT'],
     }
   )
   .refine(isOrderedOrgKpiTargetValues, {
-    message: '목표값은 T <= E <= S 순서여야 합니다.',
+    message: '紐⑺몴媛믪? T <= E <= S ?쒖꽌?ъ빞 ?⑸땲??',
     path: ['targetValueT'],
   })
 
@@ -143,7 +160,7 @@ export const DeleteOrgKpiSchema = z
     confirmDelete: z.boolean(),
   })
   .refine((data) => data.confirmDelete, {
-    message: '삭제 확인이 필요합니다.',
+    message: '??젣 ?뺤씤???꾩슂?⑸땲??',
     path: ['confirmDelete'],
   })
 
@@ -191,7 +208,7 @@ export const DeletePersonalKpiSchema = z
     confirmDelete: z.boolean(),
   })
   .refine((data) => data.confirmDelete, {
-    message: '삭제 확인이 필요합니다.',
+    message: '??젣 ?뺤씤???꾩슂?⑸땲??',
     path: ['confirmDelete'],
   })
 
@@ -219,7 +236,7 @@ export const BulkPersonalKpiEditSchema = z
       data.difficulty !== undefined ||
       data.tags !== undefined,
     {
-      message: '일괄 수정할 항목을 하나 이상 선택해 주세요.',
+      message: '?쇨큵 ?섏젙????ぉ???섎굹 ?댁긽 ?좏깮??二쇱꽭??',
       path: ['ids'],
     }
   )
@@ -239,7 +256,7 @@ export const BulkOrgKpiEditSchema = z
       data.parentOrgKpiId !== undefined ||
       data.tags !== undefined,
     {
-      message: '일괄 수정할 항목을 하나 이상 선택해 주세요.',
+      message: '?쇨큵 ?섏젙????ぉ???섎굹 ?댁긽 ?좏깮??二쇱꽭??',
       path: ['ids'],
     }
   )
@@ -271,12 +288,12 @@ export const PersonalKpiAiActionSchema = z.object({
 })
 
 // ============================================
-// 월별 실적 관련
+// ?붾퀎 ?ㅼ쟻 愿??
 // ============================================
 
 export const MonthlyRecordSchema = z.object({
   personalKpiId: z.string().min(1),
-  yearMonth: z.string().regex(/^\d{4}-\d{2}$/, 'YYYY-MM 형식으로 입력하세요'),
+  yearMonth: z.string().regex(/^\d{4}-\d{2}$/, 'YYYY-MM 형식으로 입력해 주세요.'),
   actualValue: z.number().optional(),
   activities: z.string().max(1000).optional(),
   obstacles: z.string().max(500).optional(),
@@ -330,11 +347,11 @@ export const MonthlyRecordAiActionSchema = z.object({
 })
 
 // ============================================
-// 평가 관련
+// ?됯? 愿??
 // ============================================
 
 export const SubmitEvaluationSchema = z.object({
-  comment: z.string().min(50, '종합 의견은 최소 50자 이상 입력하세요').max(2000),
+  comment: z.string().min(50, '종합 의견은 최소 50자 이상 입력해 주세요.').max(2000),
   gradeId: z.string().optional(),
   items: z.array(z.object({
     personalKpiId: z.string(),
@@ -362,17 +379,17 @@ export const SaveEvaluationDraftSchema = z.object({
 })
 
 export const RejectEvaluationSchema = z.object({
-  rejectionReason: z.string().min(10, '반려 사유는 최소 10자 이상 입력하세요').max(500),
+  rejectionReason: z.string().min(10, '반려 사유는 최소 10자 이상 입력해 주세요.').max(500),
 })
 
 export const CeoAdjustSchema = z.object({
   targetId: z.string(),
-  gradeId: z.string().min(1, '등급을 선택하세요'),
-  adjustReason: z.string().min(30, '조정 사유는 최소 30자 이상 입력하세요').max(500),
+  gradeId: z.string().min(1, '등급을 선택해 주세요.'),
+  adjustReason: z.string().min(30, '조정 사유는 최소 30자 이상 입력해 주세요.').max(500),
 })
 
 // ============================================
-// 다면평가 관련
+// ?ㅻ㈃?됯? 愿??
 // ============================================
 
 export const CreateFeedbackRoundSchema = z.object({
@@ -434,7 +451,7 @@ export const UpwardReviewTemplateQuestionSchema = z.object({
   templateId: z.string().min(1),
   questionId: z.string().optional(),
   category: z.string().trim().max(50).optional(),
-  questionText: z.string().trim().min(1, '질문 내용을 입력해 주세요.').max(500),
+  questionText: z.string().trim().min(1, '吏덈Ц ?댁슜???낅젰??二쇱꽭??').max(500),
   description: z.string().trim().max(500).optional(),
   questionType: z.enum(['TEXT', 'RATING_SCALE', 'MULTIPLE_CHOICE']),
   scaleMin: z.number().int().min(1).max(5).optional(),
@@ -446,57 +463,57 @@ export const UpwardReviewTemplateQuestionSchema = z.object({
 
 export const UpwardReviewTemplateSchema = z.object({
   templateId: z.string().optional(),
-  name: z.string().trim().min(1, '템플릿 이름을 입력해 주세요.').max(100),
+  name: z.string().trim().min(1, '?쒗뵆由??대쫫???낅젰??二쇱꽭??').max(100),
   description: z.string().trim().max(500).optional(),
   isActive: z.boolean().default(true),
   defaultMinResponses: z.number().int().min(1).max(10).default(3),
   defaultTargetTypes: z
     .array(z.enum(['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM', 'CUSTOM']))
-    .min(1, '최소 한 개 이상의 평가 대상 유형을 선택해 주세요.'),
+    .min(1, '理쒖냼 ??媛??댁긽???됯? ????좏삎???좏깮??二쇱꽭??'),
 })
 
 export const UpwardReviewRoundSchema = z.object({
   roundId: z.string().optional(),
-  evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
-  roundName: z.string().trim().min(1, '라운드명을 입력해 주세요.').max(100),
-  templateId: z.string().min(1, '질문 템플릿을 선택해 주세요.'),
+  evalCycleId: z.string().min(1, '?됯? 二쇨린瑜??좏깮??二쇱꽭??'),
+  roundName: z.string().trim().min(1, '?쇱슫?쒕챸???낅젰??二쇱꽭??').max(100),
+  templateId: z.string().min(1, '吏덈Ц ?쒗뵆由우쓣 ?좏깮??二쇱꽭??'),
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
   minRaters: z.number().int().min(1).max(10).default(3),
   targetTypes: z
     .array(z.enum(['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM', 'CUSTOM']))
-    .min(1, '최소 한 개 이상의 평가 대상 유형을 선택해 주세요.'),
+    .min(1, '理쒖냼 ??媛??댁긽???됯? ????좏삎???좏깮??二쇱꽭??'),
   resultViewerMode: z.enum(['TARGET_ONLY', 'TARGET_AND_PRIMARY_MANAGER']).default('TARGET_ONLY'),
   rawResponsePolicy: z.enum(['ADMIN_ONLY', 'REVIEW_ADMIN_CONTENT']).default('ADMIN_ONLY'),
 })
 
 export const UpwardReviewAssignmentSchema = z.object({
   roundId: z.string().min(1),
-  evaluatorId: z.string().min(1, '평가자를 선택해 주세요.'),
-  evaluateeId: z.string().min(1, '피평가자를 선택해 주세요.'),
+  evaluatorId: z.string().min(1, '?됯??먮? ?좏깮??二쇱꽭??'),
+  evaluateeId: z.string().min(1, '?쇳룊媛?먮? ?좏깮??二쇱꽭??'),
   relationship: z.enum(['SUBORDINATE', 'PEER', 'CROSS_DEPT']).default('SUBORDINATE'),
 })
 
 export const UpwardReviewSuggestionSchema = z.object({
   roundId: z.string().min(1),
-  evaluateeId: z.string().min(1, '추천을 생성할 피평가자를 선택해 주세요.').optional(),
+  evaluateeId: z.string().min(1, '異붿쿇???앹꽦???쇳룊媛?먮? ?좏깮??二쇱꽭??').optional(),
 })
 
 export const UpwardReviewResponseSchema = z.object({
-  overallComment: z.string().max(1000, '공통 의견은 1000자 이내로 입력해 주세요.').optional(),
+  overallComment: z.string().max(1000, '怨듯넻 ?섍껄? 1000???대궡濡??낅젰??二쇱꽭??').optional(),
   responses: z.array(
     z.object({
-      questionId: z.string().min(1, '문항 정보가 올바르지 않습니다.'),
+      questionId: z.string().min(1, '臾명빆 ?뺣낫媛 ?щ컮瑜댁? ?딆뒿?덈떎.'),
       ratingValue: z
         .number()
-        .int('척도형 응답은 정수로 입력해 주세요.')
-        .min(1, '척도형 응답은 1점 이상이어야 합니다.')
-        .max(10, '척도형 응답이 허용 범위를 초과했습니다.')
+        .int('泥숇룄???묐떟? ?뺤닔濡??낅젰??二쇱꽭??')
+        .min(1, '泥숇룄???묐떟? 1???댁긽?댁뼱???⑸땲??')
+        .max(10, '泥숇룄???묐떟???덉슜 踰붿쐞瑜?珥덇낵?덉뒿?덈떎.')
         .nullable()
         .optional(),
-      textValue: z.string().max(4000, '서술형 응답은 4000자 이내로 입력해 주세요.').nullable().optional(),
+      textValue: z.string().max(4000, '?쒖닠???묐떟? 4000???대궡濡??낅젰??二쇱꽭??').nullable().optional(),
     })
-  ).max(200, '응답 문항 수가 너무 많습니다. 다시 시도해 주세요.'),
+  ).max(200, '?묐떟 臾명빆 ?섍? ?덈Т 留롮뒿?덈떎. ?ㅼ떆 ?쒕룄??二쇱꽭??'),
 })
 
 export const UpwardReviewResultReleaseSchema = z.object({
@@ -631,7 +648,7 @@ export const FeedbackSelectionSettingsSchema = z.object({
         .min(10)
         .max(1000)
         .default(
-          'AI 코파일럿은 최근 리뷰, 목표, 1:1, 피드백을 바탕으로 성장 포인트와 코칭 초안을 제안하는 보조 기능입니다. 최종 판단과 활용 결정은 리더와 HR이 수행합니다.'
+          'AI 肄뷀뙆?쇰읉? 理쒓렐 由щ럭, 紐⑺몴, 1:1, ?쇰뱶諛깆쓣 諛뷀깢?쇰줈 ?깆옣 ?ъ씤?몄? 肄붿묶 珥덉븞???쒖븞?섎뒗 蹂댁“ 湲곕뒫?낅땲?? 理쒖쥌 ?먮떒怨??쒖슜 寃곗젙? 由щ뜑? HR???섑뻾?⑸땲??'
         ),
     })
     .default({
@@ -643,7 +660,7 @@ export const FeedbackSelectionSettingsSchema = z.object({
       includeFeedback: true,
       includeResults: true,
       disclaimer:
-        'AI 코파일럿은 최근 리뷰, 목표, 1:1, 피드백을 바탕으로 성장 포인트와 코칭 초안을 제안하는 보조 기능입니다. 최종 판단과 활용 결정은 리더와 HR이 수행합니다.',
+        'AI 肄뷀뙆?쇰읉? 理쒓렐 由щ럭, 紐⑺몴, 1:1, ?쇰뱶諛깆쓣 諛뷀깢?쇰줈 ?깆옣 ?ъ씤?몄? 肄붿묶 珥덉븞???쒖븞?섎뒗 蹂댁“ 湲곕뒫?낅땲?? 理쒖쥌 ?먮떒怨??쒖슜 寃곗젙? 由щ뜑? HR???섑뻾?⑸땲??',
     }),
 })
 
@@ -687,7 +704,7 @@ export const FeedbackRatingGuideSettingsSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['scaleEntries'],
-        message: '등급 값은 중복 없이 한 번씩만 설정할 수 있습니다.',
+        message: '?깃툒 媛믪? 以묐났 ?놁씠 ??踰덉뵫留??ㅼ젙?????덉뒿?덈떎.',
       })
     }
 
@@ -695,7 +712,7 @@ export const FeedbackRatingGuideSettingsSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['distributionQuestionId'],
-        message: '배분 정책을 적용할 등급 질문을 선택해 주세요.',
+        message: '諛곕텇 ?뺤콉???곸슜???깃툒 吏덈Ц???좏깮??二쇱꽭??',
       })
     }
   })
@@ -861,7 +878,7 @@ export const FeedbackRoundReminderSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['body'],
-        message: '본문을 한 줄 이상 입력해 주세요.',
+        message: '蹂몃Ц????以??댁긽 ?낅젰??二쇱꽭??',
       })
     }
 
@@ -869,7 +886,7 @@ export const FeedbackRoundReminderSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['testEmail'],
-        message: '테스트 발송용 이메일 주소를 입력해 주세요.',
+        message: '?뚯뒪??諛쒖넚???대찓??二쇱냼瑜??낅젰??二쇱꽭??',
       })
     }
   })
@@ -963,7 +980,7 @@ export const DevelopmentPlanUpdateSchema = z
       data.dueDate !== undefined ||
       data.status !== undefined,
     {
-      message: '수정할 항목을 하나 이상 입력해 주세요.',
+      message: '?섏젙????ぉ???섎굹 ?댁긽 ?낅젰??二쇱꽭??',
       path: ['id'],
     }
   )
@@ -973,10 +990,10 @@ export const OnboardingReviewConditionSchema = z.discriminatedUnion('field', [
     id: z.string().min(1).max(100),
     field: z.literal('JOIN_DATE'),
     operator: z.enum(['ON_OR_AFTER', 'ON_OR_BEFORE', 'BETWEEN']),
-    value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '날짜 형식을 확인해 주세요.'),
+    value: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '?좎쭨 ?뺤떇???뺤씤??二쇱꽭??'),
     valueTo: z
       .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, '날짜 형식을 확인해 주세요.')
+      .regex(/^\d{4}-\d{2}-\d{2}$/, '?좎쭨 ?뺤떇???뺤씤??二쇱꽭??')
       .nullable()
       .optional(),
   }),
@@ -986,7 +1003,7 @@ export const OnboardingReviewConditionSchema = z.discriminatedUnion('field', [
     operator: z.literal('IN'),
     values: z
       .array(z.enum(['MEMBER', 'TEAM_LEADER', 'SECTION_CHIEF', 'DIV_HEAD', 'CEO']))
-      .min(1, '직군을 하나 이상 선택해 주세요.')
+      .min(1, '吏곴뎔???섎굹 ?댁긽 ?좏깮??二쇱꽭??')
       .max(5),
   }),
 ])
@@ -1009,8 +1026,8 @@ export const OnboardingReviewWorkflowSchema = z
     workflowName: z.string().trim().min(1).max(100),
     isActive: z.boolean().default(true),
     scheduleHourKst: z.number().int().min(0).max(23).default(8),
-    targetConditions: z.array(OnboardingReviewConditionSchema).min(1, '대상자 조건을 하나 이상 설정해 주세요.'),
-    steps: z.array(OnboardingReviewWorkflowStepSchema).min(1, '단계를 하나 이상 추가해 주세요.').max(10),
+    targetConditions: z.array(OnboardingReviewConditionSchema).min(1, '??곸옄 議곌굔???섎굹 ?댁긽 ?ㅼ젙??二쇱꽭??'),
+    steps: z.array(OnboardingReviewWorkflowStepSchema).min(1, '?④퀎瑜??섎굹 ?댁긽 異붽???二쇱꽭??').max(10),
   })
   .superRefine((data, ctx) => {
     const stepIds = new Set<string>()
@@ -1021,7 +1038,7 @@ export const OnboardingReviewWorkflowSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['steps', index, 'id'],
-          message: '단계 식별자가 중복되었습니다.',
+          message: '?④퀎 ?앸퀎?먭? 以묐났?섏뿀?듬땲??',
         })
       }
       stepIds.add(step.id)
@@ -1030,7 +1047,7 @@ export const OnboardingReviewWorkflowSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['steps', index, 'stepOrder'],
-          message: '단계 번호는 중복될 수 없습니다.',
+          message: '?④퀎 踰덊샇??以묐났?????놁뒿?덈떎.',
         })
       }
       stepOrders.add(step.stepOrder)
@@ -1043,7 +1060,7 @@ export const OnboardingReviewWorkflowSchema = z
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['targetConditions', index, 'valueTo'],
-            message: '종료일은 시작일보다 빠를 수 없습니다.',
+            message: '醫낅즺?쇱? ?쒖옉?쇰낫??鍮좊? ???놁뒿?덈떎.',
           })
         }
       }
@@ -1056,7 +1073,7 @@ export const OnboardingReviewWorkflowRunSchema = z.object({
 })
 
 // ============================================
-// 체크인 관련
+// 泥댄겕??愿??
 // ============================================
 
 export const CreateCheckInSchema = z.object({
@@ -1113,16 +1130,16 @@ export const UpdateCheckInSchema = z.object({
 })
 
 // ============================================
-// 이의신청 관련
+// ?댁쓽?좎껌 愿??
 // ============================================
 
 export const AppealSchema = z.object({
   evaluationId: z.string().min(1),
-  reason: z.string().min(20, '이의신청 사유는 최소 20자 이상 입력하세요').max(1000),
+  reason: z.string().min(20, '이의신청 사유는 최소 20자 이상 입력해 주세요.').max(1000),
 })
 
 // ============================================
-// 평가 주기 관련
+// ?됯? 二쇨린 愿??
 // ============================================
 
 export const EvalCycleSchema = z.object({
@@ -1200,7 +1217,7 @@ const EvaluationGroupSchema = z
     departmentIds: z.array(z.string().min(1)).default([]),
   })
   .refine((value) => value.quantitativeWeight + value.qualitativeWeight === 100, {
-    message: '계량/비계량 비중 합계는 100이어야 합니다.',
+    message: '怨꾨웾/鍮꾧퀎??鍮꾩쨷 ?⑷퀎??100?댁뼱???⑸땲??',
     path: ['qualitativeWeight'],
   })
 
@@ -1278,14 +1295,14 @@ const PerformanceSelectionMatrixSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['smartWeight'],
-        message: '선정 매트릭스 가중치 합계는 100이어야 합니다.',
+        message: '?좎젙 留ㅽ듃由?뒪 媛以묒튂 ?⑷퀎??100?댁뼱???⑸땲??',
       })
     }
     if (!(data.keepThreshold > data.holdThreshold && data.holdThreshold > data.improveThreshold)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['keepThreshold'],
-        message: '선정 기준 점수는 유지 > 유보 > 보완 순으로 설정해 주세요.',
+        message: '?좎젙 湲곗? ?먯닔???좎? > ?좊낫 > 蹂댁셿 ?쒖쑝濡??ㅼ젙??二쇱꽭??',
       })
     }
   })
@@ -1305,7 +1322,7 @@ const NonQuantitativeTemplateBindingSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['pageMax'],
-        message: '비계량 작성 분량은 최소 페이지가 최대 페이지보다 클 수 없습니다.',
+        message: '鍮꾧퀎???묒꽦 遺꾨웾? 理쒖냼 ?섏씠吏媛 理쒕? ?섏씠吏蹂대떎 ?????놁뒿?덈떎.',
       })
     }
   })
@@ -1474,10 +1491,24 @@ export const BusinessPlanDocumentSchema = z.object({
   deptId: z.string().min(1),
   evalYear: z.number().int().min(2020).max(2100),
   evalCycleId: z.string().max(100).nullable().optional(),
-  title: z.string().min(1, '사업계획서 제목을 입력해 주세요.').max(150),
+  title: z.string().min(1, '?ъ뾽怨꾪쉷???쒕ぉ???낅젰??二쇱꽭??').max(150),
   sourceType: z.enum(['TEXT', 'SUMMARY']).default('TEXT'),
-  summaryText: z.string().max(5000).optional(),
-  bodyText: z.string().min(1, '사업계획서 본문을 입력해 주세요.').max(20000),
+  summaryText: businessPlanLongTextSchema('사업계획서 요약', BUSINESS_PLAN_SUMMARY_MAX).optional(),
+  bodyText: businessPlanLongTextSchema('사업계획서 본문', BUSINESS_PLAN_BODY_MAX).min(1, '?ъ뾽怨꾪쉷??蹂몃Ц???낅젰??二쇱꽭??'),
+})
+
+export const JobDescriptionDocumentSchema = z.object({
+  id: z.string().max(100).optional(),
+  deptId: z.string().min(1),
+  scope: z.enum(['DIVISION', 'TEAM']),
+  evalYear: z.number().int().min(2020).max(2100),
+  evalCycleId: z.string().max(100).nullable().optional(),
+  title: z.string().min(1, '직무기술서 제목을 입력해 주세요.').max(150),
+  summaryText: jobDescriptionLongTextSchema('직무기술서 요약', JOB_DESCRIPTION_SUMMARY_MAX).optional(),
+  bodyText: jobDescriptionLongTextSchema('직무기술서 본문', JOB_DESCRIPTION_BODY_MAX).min(
+    1,
+    '직무기술서 본문을 입력해 주세요.'
+  ),
 })
 
 export const TeamKpiRecommendationRequestSchema = z.object({
@@ -1491,8 +1522,8 @@ export const TeamKpiAdoptDraftSchema = z
     kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']),
     kpiCategory: z.string().min(1).max(50),
     kpiName: z.string().min(1).max(100),
-    definition: z.string().max(500).optional(),
-    formula: z.string().max(500).optional(),
+    definition: orgKpiLongTextSchema('팀 KPI 정의').optional(),
+    formula: orgKpiLongTextSchema('팀 KPI 산식').optional(),
     ...OrgKpiTargetValueSchema,
     unit: z.string().max(20).optional(),
     weight: z.number().min(0).max(100),
@@ -1501,7 +1532,7 @@ export const TeamKpiAdoptDraftSchema = z
     parentOrgKpiId: z.string().nullable().optional(),
   })
   .refine(isOrderedOrgKpiTargetValues, {
-    message: '목표값은 T <= E <= S 순서여야 합니다.',
+    message: '紐⑺몴媛믪? T <= E <= S ?쒖꽌?ъ빞 ?⑸땲??',
     path: ['targetValueT'],
   })
 
@@ -1534,8 +1565,8 @@ export const BulkOrgKpiRowSchema = z.object({
   kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']).default('QUANTITATIVE'),
   kpiCategory: z.string().min(1).max(50),
   kpiName: z.string().min(1).max(100),
-  definition: z.string().max(500).optional(),
-  formula: z.string().max(500).optional(),
+  definition: orgKpiLongTextSchema('KPI 정의').optional(),
+  formula: orgKpiLongTextSchema('KPI 산식').optional(),
   targetValue: z.number().nullable().optional(),
   unit: z.string().max(20).optional(),
   weight: z.number().min(0).max(100),
@@ -1649,7 +1680,7 @@ const EmployeeDateSchema = z
   .string()
   .min(1)
   .refine((value) => !Number.isNaN(Date.parse(value)), {
-    message: '날짜 형식이 올바르지 않습니다.',
+    message: '?좎쭨 ?뺤떇???щ컮瑜댁? ?딆뒿?덈떎.',
   })
 
 const SortOrderSchema = z.preprocess((value) => {
@@ -1705,7 +1736,7 @@ export const AdminEmployeeRecordSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['managerEmployeeNumber'],
-        message: '본인을 관리자로 지정할 수 없습니다.',
+        message: '蹂몄씤??愿由ъ옄濡?吏?뺥븷 ???놁뒿?덈떎.',
       })
     }
 
@@ -1713,7 +1744,7 @@ export const AdminEmployeeRecordSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['resignationDate'],
-        message: '재직 상태가 ACTIVE이면 퇴사일을 입력할 수 없습니다.',
+        message: '?ъ쭅 ?곹깭媛 ACTIVE?대㈃ ?댁궗?쇱쓣 ?낅젰?????놁뒿?덈떎.',
       })
     }
   })
@@ -1734,18 +1765,18 @@ export const AdminEmployeeLifecycleActionSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['resignationDate'],
-        message: '퇴사 처리 시 퇴사일을 입력해 주세요.',
+        message: '?댁궗 泥섎━ ???댁궗?쇱쓣 ?낅젰??二쇱꽭??',
       })
     }
   })
 
 export const DeleteGoogleAccountEmployeeSchema = z
   .object({
-    employeeId: z.string().min(1, '삭제할 직원을 선택해 주세요.'),
+    employeeId: z.string().min(1, '??젣??吏곸썝???좏깮??二쇱꽭??'),
     confirmDelete: z.boolean(),
   })
   .refine((data) => data.confirmDelete, {
-    message: '직원 삭제 확인이 필요합니다.',
+    message: '吏곸썝 ??젣 ?뺤씤???꾩슂?⑸땲??',
     path: ['confirmDelete'],
   })
 
@@ -1762,11 +1793,11 @@ export const AdminDepartmentRecordSchema = z.object({
 
 export const DeleteAdminDepartmentSchema = z
   .object({
-    departmentId: z.string().min(1, '삭제할 조직을 선택해 주세요.'),
+    departmentId: z.string().min(1, '??젣??議곗쭅???좏깮??二쇱꽭??'),
     confirmDelete: z.boolean(),
   })
   .refine((data) => data.confirmDelete, {
-    message: '조직 삭제 확인이 필요합니다.',
+    message: '議곗쭅 ??젣 ?뺤씤???꾩슂?⑸땲??',
     path: ['confirmDelete'],
   })
 
@@ -1775,12 +1806,12 @@ export const AdminEvaluatorAssignmentActionSchema = z.object({
 })
 
 export const AdminMasterLoginSchema = z.object({
-  targetEmployeeId: z.string().min(1, '대상 유저를 선택해 주세요.'),
-  reason: z.string().trim().min(10, '마스터 로그인 사유를 10자 이상 입력해 주세요.').max(500),
+  targetEmployeeId: z.string().min(1, '????좎?瑜??좏깮??二쇱꽭??'),
+  reason: z.string().trim().min(10, '留덉뒪??濡쒓렇???ъ쑀瑜?10???댁긽 ?낅젰??二쇱꽭??').max(500),
 })
 
 export const AdminMasterLoginPermissionSchema = z.object({
-  targetEmployeeId: z.string().min(1, '권한을 변경할 HR관리자를 선택해 주세요.'),
+  targetEmployeeId: z.string().min(1, '沅뚰븳??蹂寃쏀븷 HR愿由ъ옄瑜??좏깮??二쇱꽭??'),
   enabled: z.boolean(),
 })
 
@@ -1987,14 +2018,14 @@ export const CalibrationCandidateUpdateSchema = z
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ['scheduledEnd'],
-                message: '세션 종료 시각은 시작 시각보다 뒤여야 합니다.',
+                message: '?몄뀡 醫낅즺 ?쒓컖? ?쒖옉 ?쒓컖蹂대떎 ?ㅼ뿬???⑸땲??',
               })
             }
             if (setup.objectionWindowOpenAt && setup.objectionWindowCloseAt && setup.objectionWindowOpenAt >= setup.objectionWindowCloseAt) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ['objectionWindowCloseAt'],
-                message: '이의제기 종료 시각은 시작 시각보다 뒤여야 합니다.',
+                message: '?댁쓽?쒓린 醫낅즺 ?쒓컖? ?쒖옉 ?쒓컖蹂대떎 ?ㅼ뿬???⑸땲??',
               })
             }
           })
@@ -2032,7 +2063,7 @@ export const CalibrationCandidateUpdateSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['targetId'],
-        message: '대상자를 선택해 주세요.',
+        message: '??곸옄瑜??좏깮??二쇱꽭??',
       })
       return
     }
@@ -2042,7 +2073,7 @@ export const CalibrationCandidateUpdateSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['rows'],
-          message: '적용할 등급/코멘트 행이 없습니다.',
+          message: '?곸슜???깃툒/肄붾찘???됱씠 ?놁뒿?덈떎.',
         })
       }
       return
@@ -2053,7 +2084,7 @@ export const CalibrationCandidateUpdateSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['sessionConfig'],
-          message: '세션 설정 값을 확인해 주세요.',
+          message: '?몄뀡 ?ㅼ젙 媛믪쓣 ?뺤씤??二쇱꽭??',
         })
       }
       return
@@ -2064,7 +2095,7 @@ export const CalibrationCandidateUpdateSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['externalData'],
-          message: '업로드할 외부 데이터가 없습니다.',
+          message: '?낅줈?쒗븷 ?몃? ?곗씠?곌? ?놁뒿?덈떎.',
         })
       }
       return
@@ -2075,7 +2106,7 @@ export const CalibrationCandidateUpdateSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['workspaceCommand'],
-          message: '워크스페이스 변경 내용을 확인해 주세요.',
+          message: '?뚰겕?ㅽ럹?댁뒪 蹂寃??댁슜???뺤씤??二쇱꽭??',
         })
         return
       }
@@ -2091,7 +2122,7 @@ export const CalibrationCandidateUpdateSchema = z
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['workspaceCommand', 'shortReason'],
-            message: 'No 또는 상위 검토는 짧은 사유를 함께 남겨 주세요.',
+            message: 'No ?먮뒗 ?곸쐞 寃?좊뒗 吏㏃? ?ъ쑀瑜??④퍡 ?④꺼 二쇱꽭??',
           })
         }
       }
@@ -2103,7 +2134,7 @@ export const CalibrationCandidateUpdateSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['followUpCommand'],
-          message: '?뚰괎濡쒖뾽 蹂寃??댁슜???뺤씤??二쇱꽭??',
+          message: '??곌킂嚥≪뮇毓?癰궰野???곸뒠???類ㅼ뵥??雅뚯눘苑??',
         })
       }
       return
@@ -2115,7 +2146,7 @@ export const CalibrationCandidateUpdateSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['targetId'],
-        message: '대상자를 선택해 주세요.',
+        message: '??곸옄瑜??좏깮??二쇱꽭??',
       })
     }
 
@@ -2123,7 +2154,7 @@ export const CalibrationCandidateUpdateSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['gradeId'],
-        message: '조정 등급을 선택해 주세요.',
+        message: '議곗젙 ?깃툒???좏깮??二쇱꽭??',
       })
     }
 
@@ -2131,7 +2162,7 @@ export const CalibrationCandidateUpdateSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['adjustReason'],
-        message: '조정 사유는 최소 30자 이상 입력해 주세요.',
+        message: '議곗젙 ?ъ쑀??理쒖냼 30???댁긽 ?낅젰??二쇱꽭??',
       })
     }
   })
@@ -2209,7 +2240,7 @@ export const AiCompetencyCycleUpsertSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['artifactMinCount'],
-        message: '최소 제출 개수는 최대 제출 개수보다 클 수 없습니다.',
+        message: '理쒖냼 ?쒖텧 媛쒖닔??理쒕? ?쒖텧 媛쒖닔蹂대떎 ?????놁뒿?덈떎.',
       })
     }
   })
@@ -2272,7 +2303,7 @@ export const AiCompetencyBlueprintSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['totalQuestionCount'],
-        message: '행별 문항 수 합계가 총 문항 수와 일치해야 합니다.',
+        message: '?됰퀎 臾명빆 ???⑷퀎媛 珥?臾명빆 ?섏? ?쇱튂?댁빞 ?⑸땲??',
       })
     }
 
@@ -2280,7 +2311,7 @@ export const AiCompetencyBlueprintSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['totalPoints'],
-        message: '행별 배점 합계가 총점과 일치해야 합니다.',
+        message: '?됰퀎 諛곗젏 ?⑷퀎媛 珥앹젏怨??쇱튂?댁빞 ?⑸땲??',
       })
     }
 
@@ -2288,7 +2319,7 @@ export const AiCompetencyBlueprintSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['passScore'],
-        message: '합격 기준은 총점을 초과할 수 없습니다.',
+        message: '?⑷꺽 湲곗?? 珥앹젏??珥덇낵?????놁뒿?덈떎.',
       })
     }
   })
@@ -2337,14 +2368,14 @@ export const AiCompetencyRubricSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['totalScore'],
-        message: '평가 기준 배점 합계가 총점과 일치해야 합니다.',
+        message: '?됯? 湲곗? 諛곗젏 ?⑷퀎媛 珥앹젏怨??쇱튂?댁빞 ?⑸땲??',
       })
     }
     if (data.passScore > data.totalScore) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['passScore'],
-        message: '합격 기준은 총점을 초과할 수 없습니다.',
+        message: '?⑷꺽 湲곗?? 珥앹젏??珥덇낵?????놁뒿?덈떎.',
       })
     }
   })
@@ -2415,7 +2446,7 @@ export const AiCompetencySubmissionReviewSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['decision'],
-        message: '최종 제출 시 판정을 선택해 주세요.',
+        message: '理쒖쥌 ?쒖텧 ???먯젙???좏깮??二쇱꽭??',
       })
     }
   })
@@ -2475,18 +2506,18 @@ export const WordCloud360CycleSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['endDate'],
-        message: '종료일은 시작일보다 빠를 수 없습니다.',
+        message: '醫낅즺?쇱? ?쒖옉?쇰낫??鍮좊? ???놁뒿?덈떎.',
       })
     }
   })
 
 export const ExportReasonSchema = z.object({
-  reason: z.string().trim().min(5, '다운로드 사유를 5자 이상 입력해 주세요.').max(200, '다운로드 사유는 200자 이하로 입력해 주세요.'),
+  reason: z.string().trim().min(5, '?ㅼ슫濡쒕뱶 ?ъ쑀瑜?5???댁긽 ?낅젰??二쇱꽭??').max(200, '?ㅼ슫濡쒕뱶 ?ъ쑀??200???댄븯濡??낅젰??二쇱꽭??'),
 })
 
 export const WordCloud360KeywordSchema = z.object({
   keywordId: z.string().min(1).optional(),
-  keywordCode: EmptyStringToUndefined(z.string().trim().regex(/^[A-Z0-9_-]{2,50}$/i, '키워드 코드는 영문, 숫자, -, _ 조합으로 입력하세요.')),
+  keywordCode: EmptyStringToUndefined(z.string().trim().regex(/^[A-Z0-9_-]{2,50}$/i, '?ㅼ썙??肄붾뱶???곷Ц, ?レ옄, -, _ 議고빀?쇰줈 ?낅젰?섏꽭??')),
   keyword: z.string().trim().min(1).max(50),
   polarity: WordCloudKeywordPolaritySchema,
   category: WordCloudKeywordCategorySchema,
@@ -2512,7 +2543,7 @@ export const WordCloud360AssignmentItemSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['evaluateeId'],
-        message: '자기 자신을 평가할 때는 SELF 그룹만 사용할 수 있습니다.',
+        message: '?먭린 ?먯떊???됯????뚮뒗 SELF 洹몃９留??ъ슜?????덉뒿?덈떎.',
       })
     }
   })
@@ -2541,7 +2572,7 @@ export const WordCloud360ResponseSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['positiveKeywordIds'],
-        message: '긍정 키워드는 중복 선택할 수 없습니다.',
+        message: '湲띿젙 ?ㅼ썙?쒕뒗 以묐났 ?좏깮?????놁뒿?덈떎.',
       })
     }
 
@@ -2549,23 +2580,25 @@ export const WordCloud360ResponseSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['negativeKeywordIds'],
-        message: '부정 키워드는 중복 선택할 수 없습니다.',
+        message: '遺???ㅼ썙?쒕뒗 以묐났 ?좏깮?????놁뒿?덈떎.',
       })
     }
   })
 
 export const WordCloud360RevertResponseSchema = z.object({
-  assignmentId: z.string().min(1, '최종 제출을 취소할 응답을 선택해 주세요.'),
-  reason: z.string().trim().min(5, '취소 사유를 5자 이상 입력해 주세요.').max(500, '취소 사유는 500자 이하로 입력해 주세요.'),
+  assignmentId: z.string().min(1, '理쒖쥌 ?쒖텧??痍⑥냼???묐떟???좏깮??二쇱꽭??'),
+  reason: z.string().trim().min(5, '痍⑥냼 ?ъ쑀瑜?5???댁긽 ?낅젰??二쇱꽭??').max(500, '痍⑥냼 ?ъ쑀??500???댄븯濡??낅젰??二쇱꽭??'),
 })
 
 export const WordCloud360RestoreResponseSchema = z.object({
-  assignmentId: z.string().min(1, '복원할 응답을 선택해 주세요.'),
-  revisionId: z.string().min(1, '복원할 이력 시점을 선택해 주세요.'),
-  reason: z.string().trim().min(5, '복원 사유를 5자 이상 입력해 주세요.').max(500, '복원 사유는 500자 이하로 입력해 주세요.'),
+  assignmentId: z.string().min(1, '蹂듭썝???묐떟???좏깮??二쇱꽭??'),
+  revisionId: z.string().min(1, '蹂듭썝???대젰 ?쒖젏???좏깮??二쇱꽭??'),
+  reason: z.string().trim().min(5, '蹂듭썝 ?ъ쑀瑜?5???댁긽 ?낅젰??二쇱꽭??').max(500, '蹂듭썝 ?ъ쑀??500???댄븯濡??낅젰??二쇱꽭??'),
 })
 
 export const WordCloud360PublishSchema = z.object({
   cycleId: z.string().min(1),
   publish: z.boolean().default(true),
 })
+
+

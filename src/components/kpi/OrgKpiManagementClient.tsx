@@ -2325,10 +2325,10 @@ function EditorModal({
             <input value={form.kpiName} onChange={(event) => onChange({ ...form, kpiName: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" placeholder="예: 핵심 고객군 월간 유지율 향상" />
           </Field>
           <Field label="정의">
-            <textarea value={form.definition} onChange={(event) => onChange({ ...form, definition: event.target.value })} rows={3} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
+            <textarea value={form.definition} onChange={(event) => onChange({ ...form, definition: event.target.value })} rows={5} className="min-h-[8rem] w-full resize-y rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>
           <Field label="산식">
-            <textarea value={form.formula} onChange={(event) => onChange({ ...form, formula: event.target.value })} rows={2} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
+            <textarea value={form.formula} onChange={(event) => onChange({ ...form, formula: event.target.value })} rows={4} className="min-h-[6rem] w-full resize-y rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>
         </div>
 

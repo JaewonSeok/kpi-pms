@@ -8,10 +8,14 @@ import {
   type BusinessPlanDocument,
   type BusinessPlanSourceType,
   type Department,
+  type JobDescriptionDocument,
+  type JobDescriptionScope,
   type KpiType,
   type Prisma,
   type SystemRole,
   type TeamKpiRecommendationDecision,
+  type TeamKpiRecommendationType,
+  type TeamKpiReviewType,
   type TeamKpiReviewVerdict,
 } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
@@ -21,6 +25,7 @@ import {
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
 import {
+  buildDualTrackTeamRecommendationPayload,
   prioritizeSourceOrgKpis,
   rankTeamRecommendationItems,
   sanitizeAndRankTeamRecommendationItem,
@@ -83,9 +88,26 @@ export type OrgKpiBusinessPlanView = {
   updatedAt: string
 }
 
+export type OrgKpiJobDescriptionView = {
+  id: string
+  departmentId: string
+  departmentName: string
+  scope: JobDescriptionScope
+  evalYear: number
+  evalCycleId?: string | null
+  title: string
+  summaryText?: string | null
+  bodyText: string
+  createdById: string
+  updatedById?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type OrgKpiTeamRecommendationItemView = {
   id: string
   rank: number
+  recommendationType: TeamKpiRecommendationType
   title: string
   definition?: string
   formula?: string
@@ -101,10 +123,15 @@ export type OrgKpiTeamRecommendationItemView = {
   linkageExplanation: string
   recommendationReason: string
   whyThisIsHighQuality?: string | null
+  basedOnJobDescription?: boolean | null
+  jobDescriptionEvidence?: string | null
+  trendRationale?: string | null
+  whyThisFitsTeamRole?: string | null
   controllabilityNote?: string | null
   riskComment?: string | null
   alignmentScore?: number | null
   qualityScore?: number | null
+  difficultyScore?: number | null
   recommendedPriority?: number | null
   decision: TeamKpiRecommendationDecision
   adoptedOrgKpiId?: string | null
@@ -127,15 +154,21 @@ export type OrgKpiTeamRecommendationSetView = {
 export type OrgKpiTeamReviewItemView = {
   id: string
   orgKpiId?: string | null
+  recommendationType?: TeamKpiRecommendationType | null
   kpiTitleSnapshot: string
   verdict: TeamKpiReviewVerdict
   rationale: string
   linkageComment?: string | null
+  roleFitComment?: string | null
   measurabilityComment?: string | null
   controllabilityComment?: string | null
   challengeComment?: string | null
   externalRiskComment?: string | null
   clarityComment?: string | null
+  duplicationComment?: string | null
+  strongPoint?: string | null
+  weakPoint?: string | null
+  improvementSuggestions?: string | null
   recommendationText?: string | null
 }
 
@@ -144,8 +177,11 @@ export type OrgKpiTeamReviewRunView = {
   sourceDepartmentId?: string | null
   sourceDepartmentName?: string | null
   targetDepartmentId: string
+  reviewType?: TeamKpiReviewType | null
   overallVerdict?: TeamKpiReviewVerdict | null
   overallSummary?: string | null
+  linkedParentCoverage?: string | null
+  independentKpiCoverage?: string | null
   aiRequestLogId?: string | null
   createdAt: string
   items: OrgKpiTeamReviewItemView[]
@@ -159,9 +195,13 @@ export type OrgKpiTeamAiContextView = {
   evalYear: number
   evalCycleId?: string | null
   canEditBusinessPlan: boolean
+  canEditDivisionJobDescription: boolean
+  canEditTeamJobDescription: boolean
   canRequestRecommendation: boolean
   canRunReview: boolean
   businessPlan: OrgKpiBusinessPlanView | null
+  divisionJobDescription: OrgKpiJobDescriptionView | null
+  teamJobDescription: OrgKpiJobDescriptionView | null
   sourceOrgKpis: Array<{
     id: string
     title: string
@@ -176,6 +216,16 @@ export type OrgKpiTeamAiContextView = {
 
 export function canEditBusinessPlan(role: SystemRole) {
   return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD'].includes(role)
+}
+
+export function canEditJobDescription(role: SystemRole, scope: JobDescriptionScope) {
+  if (scope === 'DIVISION') {
+    return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD'].includes(role)
+  }
+
+  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(
+    role
+  )
 }
 
 export function canOperateTeamKpiAi(role: SystemRole) {
@@ -236,6 +286,26 @@ function mapBusinessPlan(document: BusinessPlanDocument & { department: { deptNa
   }
 }
 
+function mapJobDescription(
+  document: JobDescriptionDocument & { department: { deptName: string } }
+): OrgKpiJobDescriptionView {
+  return {
+    id: document.id,
+    departmentId: document.deptId,
+    departmentName: document.department.deptName,
+    scope: document.scope,
+    evalYear: document.evalYear,
+    evalCycleId: document.evalCycleId,
+    title: document.title,
+    summaryText: document.summaryText,
+    bodyText: document.bodyText,
+    createdById: document.createdById,
+    updatedById: document.updatedById,
+    createdAt: document.createdAt.toISOString(),
+    updatedAt: document.updatedAt.toISOString(),
+  }
+}
+
 function mapRecommendationSet(
   set: Prisma.TeamKpiRecommendationSetGetPayload<{
     include: {
@@ -258,6 +328,7 @@ function mapRecommendationSet(
       .map((item) => ({
         id: item.id,
         rank: item.rank,
+        recommendationType: item.recommendationType,
         title: item.title,
         definition: item.definition ?? undefined,
         formula: item.formula ?? undefined,
@@ -273,10 +344,15 @@ function mapRecommendationSet(
         linkageExplanation: item.linkageExplanation,
         recommendationReason: item.recommendationReason,
         whyThisIsHighQuality: item.whyThisIsHighQuality,
+        basedOnJobDescription: item.basedOnJobDescription,
+        jobDescriptionEvidence: item.jobDescriptionEvidence,
+        trendRationale: item.trendRationale,
+        whyThisFitsTeamRole: item.whyThisFitsTeamRole,
         controllabilityNote: item.controllabilityNote,
         riskComment: item.riskComment,
         alignmentScore: item.alignmentScore,
         qualityScore: item.qualityScore,
+        difficultyScore: item.difficultyScore,
         recommendedPriority: item.recommendedPriority,
         decision: item.decision,
         adoptedOrgKpiId: item.adoptedOrgKpiId,
@@ -303,22 +379,31 @@ function mapReviewRun(
     sourceDepartmentId: run.sourceDepartmentId,
     sourceDepartmentName: run.sourceDepartment?.deptName,
     targetDepartmentId: run.targetDepartmentId,
+    reviewType: run.reviewType,
     overallVerdict: run.overallVerdict,
     overallSummary: run.overallSummary,
+    linkedParentCoverage: run.linkedParentCoverage,
+    independentKpiCoverage: run.independentKpiCoverage,
     aiRequestLogId: run.aiRequestLogId,
     createdAt: run.createdAt.toISOString(),
     items: run.items.map((item) => ({
       id: item.id,
       orgKpiId: item.orgKpiId,
+      recommendationType: item.recommendationType,
       kpiTitleSnapshot: item.kpiTitleSnapshot,
       verdict: item.verdict,
       rationale: item.rationale,
       linkageComment: item.linkageComment,
+      roleFitComment: item.roleFitComment,
       measurabilityComment: item.measurabilityComment,
       controllabilityComment: item.controllabilityComment,
       challengeComment: item.challengeComment,
       externalRiskComment: item.externalRiskComment,
       clarityComment: item.clarityComment,
+      duplicationComment: item.duplicationComment,
+      strongPoint: item.strongPoint,
+      weakPoint: item.weakPoint,
+      improvementSuggestions: item.improvementSuggestions,
       recommendationText: item.recommendationText,
     })),
   }
@@ -395,10 +480,41 @@ export async function loadOrgKpiTeamAiContext(
 
   const cycle = await resolveTargetCycle(targetDepartment.organization.id, params.evalYear)
 
-  const [businessPlan, sourceOrgKpis, recommendationSets, reviewRuns] = await Promise.all([
+  const [businessPlan, divisionJobDescription, teamJobDescription, sourceOrgKpis, recommendationSets, reviewRuns] =
+    await Promise.all([
     prisma.businessPlanDocument.findFirst({
       where: {
         deptId: planningDepartmentId,
+        evalYear: params.evalYear,
+      },
+      include: {
+        department: {
+          select: {
+            deptName: true,
+          },
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    }),
+    prisma.jobDescriptionDocument.findFirst({
+      where: {
+        deptId: planningDepartmentId,
+        scope: 'DIVISION',
+        evalYear: params.evalYear,
+      },
+      include: {
+        department: {
+          select: {
+            deptName: true,
+          },
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    }),
+    prisma.jobDescriptionDocument.findFirst({
+      where: {
+        deptId: params.targetDepartmentId,
+        scope: 'TEAM',
         evalYear: params.evalYear,
       },
       include: {
@@ -476,9 +592,17 @@ export async function loadOrgKpiTeamAiContext(
     canEditBusinessPlan:
       canEditBusinessPlan(params.role) &&
       (!scopeDepartmentIds || scopeDepartmentIds.includes(planningDepartmentId)),
+    canEditDivisionJobDescription:
+      canEditJobDescription(params.role, 'DIVISION') &&
+      (!scopeDepartmentIds || scopeDepartmentIds.includes(planningDepartmentId)),
+    canEditTeamJobDescription:
+      canEditJobDescription(params.role, 'TEAM') &&
+      (!scopeDepartmentIds || scopeDepartmentIds.includes(params.targetDepartmentId)),
     canRequestRecommendation: canOperateTeamKpiAi(params.role),
     canRunReview: canOperateTeamKpiAi(params.role),
     businessPlan: businessPlan ? mapBusinessPlan(businessPlan) : null,
+    divisionJobDescription: divisionJobDescription ? mapJobDescription(divisionJobDescription) : null,
+    teamJobDescription: teamJobDescription ? mapJobDescription(teamJobDescription) : null,
     sourceOrgKpis: sourceOrgKpis.map((kpi) => ({
       id: kpi.id,
       title: kpi.kpiName,
@@ -631,6 +755,137 @@ export async function saveBusinessPlanDocument(params: SaveBusinessPlanParams) {
   return mapBusinessPlan(saved)
 }
 
+type SaveJobDescriptionParams = SessionScopeParams & {
+  userId: string
+  id?: string
+  targetDepartmentId: string
+  scope: JobDescriptionScope
+  evalYear: number
+  evalCycleId?: string | null
+  title: string
+  summaryText?: string
+  bodyText: string
+}
+
+export async function saveJobDescriptionDocument(params: SaveJobDescriptionParams) {
+  if (!canEditJobDescription(params.role, params.scope)) {
+    throw new AppError(403, 'FORBIDDEN', '직무기술서를 저장할 권한이 없습니다.')
+  }
+
+  const scopeDepartmentIds = getOrgKpiScopeDepartmentIds(params)
+  assertDepartmentScope(scopeDepartmentIds, params.targetDepartmentId)
+
+  const targetDepartment = await prisma.department.findUnique({
+    where: { id: params.targetDepartmentId },
+    select: {
+      id: true,
+      deptName: true,
+      organization: {
+        select: {
+          id: true,
+        },
+      },
+    },
+  })
+
+  if (!targetDepartment) {
+    throw new AppError(404, 'DEPARTMENT_NOT_FOUND', '조직 정보를 찾을 수 없습니다.')
+  }
+
+  const targetCycle = params.evalCycleId
+    ? await prisma.evalCycle.findUnique({
+        where: { id: params.evalCycleId },
+        select: { id: true, orgId: true, evalYear: true },
+      })
+    : await resolveTargetCycle(targetDepartment.organization.id, params.evalYear)
+
+  if (
+    targetCycle &&
+    (targetCycle.orgId !== targetDepartment.organization.id || targetCycle.evalYear !== params.evalYear)
+  ) {
+    throw new AppError(400, 'INVALID_EVAL_CYCLE', '선택한 평가주기 정보가 조직/연도와 맞지 않습니다.')
+  }
+
+  const current = params.id
+    ? await prisma.jobDescriptionDocument.findUnique({
+        where: { id: params.id },
+        include: {
+          department: {
+            select: {
+              deptName: true,
+            },
+          },
+        },
+      })
+    : null
+
+  const saved = current
+    ? await prisma.jobDescriptionDocument.update({
+        where: { id: current.id },
+        data: {
+          title: params.title,
+          summaryText: params.summaryText?.trim() || null,
+          bodyText: params.bodyText,
+          scope: params.scope,
+          evalCycleId: targetCycle?.id ?? null,
+          updatedById: params.userId,
+        },
+        include: {
+          department: {
+            select: {
+              deptName: true,
+            },
+          },
+        },
+      })
+    : await prisma.jobDescriptionDocument.create({
+        data: {
+          deptId: params.targetDepartmentId,
+          scope: params.scope,
+          evalYear: params.evalYear,
+          evalCycleId: targetCycle?.id ?? null,
+          title: params.title,
+          summaryText: params.summaryText?.trim() || null,
+          bodyText: params.bodyText,
+          createdById: params.userId,
+          updatedById: params.userId,
+        },
+        include: {
+          department: {
+            select: {
+              deptName: true,
+            },
+          },
+        },
+      })
+
+  await createAuditLog({
+    userId: params.userId,
+    action: current ? 'JOB_DESCRIPTION_UPDATED' : 'JOB_DESCRIPTION_CREATED',
+    entityType: 'JobDescriptionDocument',
+    entityId: saved.id,
+    oldValue: current
+      ? {
+          scope: current.scope,
+          title: current.title,
+          summaryText: current.summaryText,
+          bodyText: current.bodyText,
+        }
+      : undefined,
+    newValue: {
+      deptId: saved.deptId,
+      evalYear: saved.evalYear,
+      evalCycleId: saved.evalCycleId,
+      scope: saved.scope,
+      title: saved.title,
+      summaryText: saved.summaryText,
+      bodyText: saved.bodyText,
+    },
+  })
+
+  return mapJobDescription(saved)
+}
+
 type RecommendationGenerationContext = {
   targetDepartment: {
     id: string
@@ -645,6 +900,8 @@ type RecommendationGenerationContext = {
   evalYear: number
   evalCycleId?: string | null
   businessPlan: BusinessPlanDocument
+  divisionJobDescription: JobDescriptionDocument
+  teamJobDescription: JobDescriptionDocument
   sourceOrgKpis: Array<{
     id: string
     kpiName: string
@@ -703,7 +960,23 @@ async function loadRecommendationGenerationContext(params: LoadContextParams): P
     )
   }
 
-  const [sourceOrgKpis, existingTeamKpis] = await Promise.all([
+  const [divisionJobDescription, teamJobDescription, sourceOrgKpis, existingTeamKpis] = await Promise.all([
+    prisma.jobDescriptionDocument.findFirst({
+      where: {
+        deptId: planningDepartmentId,
+        scope: 'DIVISION',
+        evalYear: params.evalYear,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    }),
+    prisma.jobDescriptionDocument.findFirst({
+      where: {
+        deptId: params.targetDepartmentId,
+        scope: 'TEAM',
+        evalYear: params.evalYear,
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+    }),
     prisma.orgKpi.findMany({
       where: {
         deptId: planningDepartmentId,
@@ -743,6 +1016,22 @@ async function loadRecommendationGenerationContext(params: LoadContextParams): P
     }),
   ])
 
+  if (!divisionJobDescription) {
+    throw new AppError(
+      400,
+      'DIVISION_JOB_DESCRIPTION_REQUIRED',
+      `${planningDepartment.deptName} 직무기술서가 등록되어야 연계형/독립형 팀 KPI 초안을 생성할 수 있습니다.`
+    )
+  }
+
+  if (!teamJobDescription) {
+    throw new AppError(
+      400,
+      'TEAM_JOB_DESCRIPTION_REQUIRED',
+      `${targetDepartment.deptName} 팀 직무기술서가 등록되어야 독립형 팀 KPI 초안을 생성할 수 있습니다.`
+    )
+  }
+
   return {
     targetDepartment: {
       id: targetDepartment.id,
@@ -757,6 +1046,8 @@ async function loadRecommendationGenerationContext(params: LoadContextParams): P
     evalYear: params.evalYear,
     evalCycleId: cycle?.id ?? null,
     businessPlan,
+    divisionJobDescription,
+    teamJobDescription,
     sourceOrgKpis,
     existingTeamKpis,
   }

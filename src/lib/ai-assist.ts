@@ -687,70 +687,148 @@ const FEEDBACK_360_DEVELOPMENT_PLAN_SCHEMA = {
   },
 } satisfies JsonRecord
 
+const ORG_TEAM_KPI_ALIGNED_RECOMMENDATION_ITEM_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'recommendationType',
+    'recommendedTitle',
+    'recommendedDefinition',
+    'formula',
+    'metricSource',
+    'targetT',
+    'targetE',
+    'targetS',
+    'unit',
+    'weightSuggestion',
+    'difficultyLevel',
+    'linkedParentKpiId',
+    'linkedParentKpiTitle',
+    'linkageReason',
+    'recommendationReason',
+    'whyThisIsHighQuality',
+    'controllabilityNote',
+    'riskNote',
+    'alignmentScore',
+    'qualityScore',
+    'difficultyScore',
+    'recommendedPriority',
+  ],
+  properties: {
+    recommendationType: { type: 'string', enum: ['ALIGNED_WITH_DIVISION_KPI'] },
+    title: { type: 'string' },
+    definition: { type: 'string' },
+    recommendedTitle: { type: 'string' },
+    recommendedDefinition: { type: 'string' },
+    formula: { type: 'string' },
+    metricSource: { type: 'string' },
+    targetValueT: { type: 'number' },
+    targetValueE: { type: 'number' },
+    targetValueS: { type: 'number' },
+    targetT: { type: 'number' },
+    targetE: { type: 'number' },
+    targetS: { type: 'number' },
+    unit: { type: 'string' },
+    weightSuggestion: { type: 'number' },
+    difficultySuggestion: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+    difficultyLevel: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+    sourceOrgKpiId: { type: ['string', 'null'] },
+    sourceOrgKpiTitle: { type: ['string', 'null'] },
+    linkedParentKpiId: { type: ['string', 'null'] },
+    linkedParentKpiTitle: { type: ['string', 'null'] },
+    linkageExplanation: { type: 'string' },
+    linkageReason: { type: 'string' },
+    recommendationReason: { type: 'string' },
+    whyThisIsHighQuality: { type: 'string' },
+    controllabilityNote: { type: 'string' },
+    riskComment: { type: 'string' },
+    riskNote: { type: 'string' },
+    alignmentScore: { type: 'number' },
+    qualityScore: { type: 'number' },
+    difficultyScore: { type: 'number' },
+    recommendedPriority: { type: 'number' },
+  },
+} satisfies JsonRecord
+
+const ORG_TEAM_KPI_INDEPENDENT_RECOMMENDATION_ITEM_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'recommendationType',
+    'recommendedTitle',
+    'recommendedDefinition',
+    'formula',
+    'metricSource',
+    'targetT',
+    'targetE',
+    'targetS',
+    'unit',
+    'weightSuggestion',
+    'difficultyLevel',
+    'basedOnJobDescription',
+    'jobDescriptionEvidence',
+    'trendRationale',
+    'whyThisFitsTeamRole',
+    'recommendationReason',
+    'whyThisIsHighQuality',
+    'controllabilityNote',
+    'riskNote',
+    'alignmentScore',
+    'qualityScore',
+    'difficultyScore',
+    'recommendedPriority',
+  ],
+  properties: {
+    recommendationType: { type: 'string', enum: ['TEAM_INDEPENDENT'] },
+    title: { type: 'string' },
+    definition: { type: 'string' },
+    recommendedTitle: { type: 'string' },
+    recommendedDefinition: { type: 'string' },
+    formula: { type: 'string' },
+    metricSource: { type: 'string' },
+    targetValueT: { type: 'number' },
+    targetValueE: { type: 'number' },
+    targetValueS: { type: 'number' },
+    targetT: { type: 'number' },
+    targetE: { type: 'number' },
+    targetS: { type: 'number' },
+    unit: { type: 'string' },
+    weightSuggestion: { type: 'number' },
+    difficultySuggestion: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+    difficultyLevel: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+    basedOnJobDescription: { type: 'boolean' },
+    jobDescriptionEvidence: { type: 'string' },
+    trendRationale: { type: 'string' },
+    whyThisFitsTeamRole: { type: 'string' },
+    recommendationReason: { type: 'string' },
+    whyThisIsHighQuality: { type: 'string' },
+    controllabilityNote: { type: 'string' },
+    riskComment: { type: 'string' },
+    riskNote: { type: 'string' },
+    alignmentScore: { type: 'number' },
+    qualityScore: { type: 'number' },
+    difficultyScore: { type: 'number' },
+    recommendedPriority: { type: 'number' },
+  },
+} satisfies JsonRecord
+
 const ORG_TEAM_KPI_RECOMMENDATION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['summary', 'recommendations'],
+  required: ['summary', 'alignedRecommendations', 'independentRecommendations'],
   properties: {
     summary: { type: 'string' },
-    recommendations: {
+    alignedRecommendations: {
       type: 'array',
       minItems: 3,
       maxItems: 5,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: [
-          'recommendedTitle',
-          'recommendedDefinition',
-          'formula',
-          'metricSource',
-          'targetT',
-          'targetE',
-          'targetS',
-          'unit',
-          'weightSuggestion',
-          'difficultyLevel',
-          'linkedParentKpiTitle',
-          'linkageReason',
-          'recommendationReason',
-          'whyThisIsHighQuality',
-          'controllabilityNote',
-          'riskNote',
-        ],
-        properties: {
-          title: { type: 'string' },
-          definition: { type: 'string' },
-          recommendedTitle: { type: 'string' },
-          recommendedDefinition: { type: 'string' },
-          formula: { type: 'string' },
-          metricSource: { type: 'string' },
-          targetValueT: { type: 'number' },
-          targetValueE: { type: 'number' },
-          targetValueS: { type: 'number' },
-          targetT: { type: 'number' },
-          targetE: { type: 'number' },
-          targetS: { type: 'number' },
-          unit: { type: 'string' },
-          weightSuggestion: { type: 'number' },
-          difficultySuggestion: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
-          difficultyLevel: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
-          sourceOrgKpiId: { type: ['string', 'null'] },
-          sourceOrgKpiTitle: { type: ['string', 'null'] },
-          linkedParentKpiId: { type: ['string', 'null'] },
-          linkedParentKpiTitle: { type: ['string', 'null'] },
-          linkageExplanation: { type: 'string' },
-          linkageReason: { type: 'string' },
-          recommendationReason: { type: 'string' },
-          whyThisIsHighQuality: { type: 'string' },
-          controllabilityNote: { type: 'string' },
-          riskComment: { type: 'string' },
-          riskNote: { type: 'string' },
-          alignmentScore: { type: 'number' },
-          qualityScore: { type: 'number' },
-          recommendedPriority: { type: 'number' },
-        },
-      },
+      items: ORG_TEAM_KPI_ALIGNED_RECOMMENDATION_ITEM_SCHEMA,
+    },
+    independentRecommendations: {
+      type: 'array',
+      minItems: 2,
+      maxItems: 3,
+      items: ORG_TEAM_KPI_INDEPENDENT_RECOMMENDATION_ITEM_SCHEMA,
     },
   },
 } satisfies JsonRecord
@@ -758,10 +836,20 @@ const ORG_TEAM_KPI_RECOMMENDATION_SCHEMA = {
 const ORG_TEAM_KPI_REVIEW_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['overallVerdict', 'overallSummary', 'items'],
+  required: [
+    'reviewType',
+    'overallVerdict',
+    'overallSummary',
+    'linkedParentCoverage',
+    'independentKpiCoverage',
+    'items',
+  ],
   properties: {
+    reviewType: { type: 'string', enum: ['FULL_SET', 'ALIGNED_ONLY', 'TEAM_INDEPENDENT_ONLY'] },
     overallVerdict: { type: 'string', enum: ['ADEQUATE', 'CAUTION', 'INSUFFICIENT'] },
     overallSummary: { type: 'string' },
+    linkedParentCoverage: { type: 'string' },
+    independentKpiCoverage: { type: 'string' },
     items: {
       type: 'array',
       minItems: 1,
@@ -772,27 +860,42 @@ const ORG_TEAM_KPI_REVIEW_SCHEMA = {
         required: [
           'orgKpiId',
           'kpiTitle',
+          'recommendationType',
           'verdict',
           'rationale',
           'linkageComment',
+          'roleFitComment',
           'measurabilityComment',
           'controllabilityComment',
           'challengeComment',
           'externalRiskComment',
           'clarityComment',
+          'duplicationComment',
+          'strongPoint',
+          'weakPoint',
+          'improvementSuggestions',
           'recommendationText',
         ],
         properties: {
           orgKpiId: { type: 'string' },
           kpiTitle: { type: 'string' },
+          recommendationType: {
+            type: 'string',
+            enum: ['ALIGNED_WITH_DIVISION_KPI', 'TEAM_INDEPENDENT'],
+          },
           verdict: { type: 'string', enum: ['ADEQUATE', 'CAUTION', 'INSUFFICIENT'] },
           rationale: { type: 'string' },
           linkageComment: { type: 'string' },
+          roleFitComment: { type: 'string' },
           measurabilityComment: { type: 'string' },
           controllabilityComment: { type: 'string' },
           challengeComment: { type: 'string' },
           externalRiskComment: { type: 'string' },
           clarityComment: { type: 'string' },
+          duplicationComment: { type: 'string' },
+          strongPoint: { type: 'string' },
+          weakPoint: { type: 'string' },
+          improvementSuggestions: { type: 'string' },
           recommendationText: { type: 'string' },
         },
       },
@@ -1168,13 +1271,13 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     schemaName: 'org_team_kpi_recommendation',
     schema: ORG_TEAM_KPI_RECOMMENDATION_SCHEMA,
     systemPrompt:
-      'You are a team KPI design expert. Reply in Korean. Read the linked parent division KPIs first, then the division business plan, then the team context, and only then design the team KPI recommendations. Recommend exactly 3 to 5 team KPIs that directly contribute to a parent KPI. Prefer strategic outcome KPIs or strong leading KPIs over vague activity lists. Exclude easy, ambiguous, unmeasurable, uncontrollable, or duplicate KPI ideas. For each recommendation, provide a clear KPI name, definition, formula, metric source, T/E/S target values, linked parent KPI, linkage reason, why the KPI is high quality, controllability note, risk note, and alignment/quality scoring.',
+      'You are a team KPI design expert. Reply in Korean. First read the linked parent division KPIs, then the division business plan, then the division and team job descriptions, and only then design the team KPI recommendations. Produce two separate groups. Group 1: exactly 3 to 5 ALIGNED_WITH_DIVISION_KPI recommendations that directly contribute to a linked parent KPI. Group 2: exactly 2 to 3 TEAM_INDEPENDENT recommendations that are required by the team role even when they are not directly linked to a parent KPI. Prefer strategic outcome KPIs or strong leading KPIs over vague activity lists. Exclude easy, ambiguous, unmeasurable, uncontrollable, duplicate, or copy-paste KPI ideas. Each aligned recommendation must explain the linked parent KPI and linkage reason. Each independent recommendation must cite job-description evidence, team-role fit, and trend rationale grounded only in stored internal context or generic operational practice. Every recommendation must provide KPI name, definition, formula, metric source, T/E/S target values, high-quality rationale, controllability note, risk note, and alignment/quality/difficulty scoring.',
   },
   'KPI_ASSIST:OrgTeamKpiReview': {
     schemaName: 'org_team_kpi_review',
     schema: ORG_TEAM_KPI_REVIEW_SCHEMA,
     systemPrompt:
-      'You are an HR KPI reviewer. Reply in Korean. Review the target team KPI set against the business plan and source organization KPIs. Grade each KPI as ADEQUATE, CAUTION, or INSUFFICIENT with rationale, linkage, measurability, controllability, challenge, external risk, clarity, and concrete revision advice.',
+      'You are an HR KPI reviewer. Reply in Korean. Review the target team KPI set against the linked parent division KPIs, the division business plan, and the division/team job descriptions. Grade each KPI as ADEQUATE, CAUTION, or INSUFFICIENT. For ALIGNED_WITH_DIVISION_KPI items, evaluate parent-KPI alignment more strictly. For TEAM_INDEPENDENT items, evaluate role fit and job-description fit more strictly. Return overall coverage for linked-parent KPIs and independent team-role coverage, plus item-level rationale, strengths, weak points, measurability, controllability, challenge, external risk, clarity, duplication risk, and concrete improvement suggestions.',
   },
   'KPI_ASSIST:PersonalKpiDraft': {
     schemaName: 'personal_kpi_draft',
@@ -1379,13 +1482,67 @@ function redactText(value: string) {
     .replace(/\b01[016789]-?\d{3,4}-?\d{4}\b/g, '[redacted-phone]')
 }
 
+const DEFAULT_AI_TEXT_LIMIT = 6_000
+const AI_TEXT_LIMITS_BY_KEY: Record<string, number> = {
+  bodyText: 16_000,
+  summaryText: 10_000,
+  definition: 8_000,
+  formula: 8_000,
+  rationale: 8_000,
+  recommendationText: 8_000,
+  linkageReason: 6_000,
+  whyThisIsHighQuality: 6_000,
+  controllabilityNote: 6_000,
+  riskNote: 6_000,
+  riskComment: 6_000,
+  note: 6_000,
+  review: 8_000,
+  reviewPoints: 8_000,
+}
+
+function resolveAiTextLimit(key?: string) {
+  if (!key) {
+    return DEFAULT_AI_TEXT_LIMIT
+  }
+
+  if (AI_TEXT_LIMITS_BY_KEY[key]) {
+    return AI_TEXT_LIMITS_BY_KEY[key]
+  }
+
+  const normalizedKey = key.toLowerCase()
+  if (normalizedKey.includes('body')) return AI_TEXT_LIMITS_BY_KEY.bodyText
+  if (normalizedKey.includes('summary')) return AI_TEXT_LIMITS_BY_KEY.summaryText
+  if (normalizedKey.includes('definition')) return AI_TEXT_LIMITS_BY_KEY.definition
+  if (normalizedKey.includes('formula')) return AI_TEXT_LIMITS_BY_KEY.formula
+  if (normalizedKey.includes('rationale')) return AI_TEXT_LIMITS_BY_KEY.rationale
+  if (normalizedKey.includes('recommend')) return AI_TEXT_LIMITS_BY_KEY.recommendationText
+  if (normalizedKey.includes('review')) return AI_TEXT_LIMITS_BY_KEY.review
+  if (normalizedKey.includes('note')) return AI_TEXT_LIMITS_BY_KEY.note
+
+  return DEFAULT_AI_TEXT_LIMIT
+}
+
+function truncateAiContextText(value: string, key?: string) {
+  const limit = resolveAiTextLimit(key)
+  if (value.length <= limit) {
+    return value
+  }
+
+  const marker = `\n...[truncated ${value.length - limit} chars]...\n`
+  const available = Math.max(limit - marker.length, 32)
+  const headLength = Math.ceil(available * 0.7)
+  const tailLength = Math.max(available - headLength, 16)
+
+  return `${value.slice(0, headLength)}${marker}${value.slice(-tailLength)}`
+}
+
 function sanitizeValue(value: unknown, key?: string): unknown {
   if (key && OMIT_KEY_PATTERN.test(key)) {
     return undefined
   }
 
   if (typeof value === 'string') {
-    return redactText(value).slice(0, 4000)
+    return truncateAiContextText(redactText(value), key)
   }
 
   if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
@@ -1394,7 +1551,7 @@ function sanitizeValue(value: unknown, key?: string): unknown {
 
   if (Array.isArray(value)) {
     return value
-      .map((item) => sanitizeValue(item))
+      .map((item) => sanitizeValue(item, key))
       .filter((item) => item !== undefined)
       .slice(0, 20)
   }
@@ -1744,6 +1901,14 @@ export function buildFallbackResult(
     const sourceOrgKpis = Array.isArray(payload.sourceOrgKpis) ? payload.sourceOrgKpis : []
     const linkedParentOrgKpis = Array.isArray(payload.linkedParentOrgKpis) ? payload.linkedParentOrgKpis : []
     const prioritizedParents = linkedParentOrgKpis.length ? linkedParentOrgKpis : sourceOrgKpis
+    const divisionJobDescription =
+      typeof payload.divisionJobDescription === 'object' && payload.divisionJobDescription
+        ? (payload.divisionJobDescription as Record<string, unknown>)
+        : {}
+    const teamJobDescription =
+      typeof payload.teamJobDescription === 'object' && payload.teamJobDescription
+        ? (payload.teamJobDescription as Record<string, unknown>)
+        : {}
     const planningDepartment =
       typeof payload.planningDepartment === 'object' && payload.planningDepartment
         ? (payload.planningDepartment as Record<string, unknown>)
@@ -1755,7 +1920,7 @@ export function buildFallbackResult(
     const teamName = String(teamDepartment.name ?? '팀')
     const planningName = String(planningDepartment.name ?? '본부')
 
-    const recommendations = Array.from({
+    const alignedRecommendations = Array.from({
       length: Math.min(5, Math.max(3, prioritizedParents.length || sourceOrgKpis.length || 3)),
     }).map((_, index) => {
       const source =
@@ -1768,6 +1933,7 @@ export function buildFallbackResult(
       const targetS = Number(source.targetValueS ?? 110 + index * 5)
 
       return {
+        recommendationType: 'ALIGNED_WITH_DIVISION_KPI',
         title: `${teamName} ${sourceTitle} 실행지표`,
         recommendedTitle: `${teamName} ${sourceTitle} 실행지표`,
         recommendedDefinition: `${planningName} KPI와 직접 연결되는 ${teamName} 실행 KPI 초안입니다.`,
@@ -1801,6 +1967,50 @@ export function buildFallbackResult(
         riskNote: '데이터 기준과 측정 주기를 먼저 합의하지 않으면 실행 리스크가 커질 수 있습니다.',
         alignmentScore: Math.max(84, 96 - index * 4),
         qualityScore: Math.max(82, 95 - index * 4),
+        difficultyScore: Math.max(74, 88 - index * 3),
+        recommendedPriority: index + 1,
+      }
+    })
+
+    const independentRecommendations = Array.from({ length: 2 + (teamName.length % 2) }).map((_, index) => {
+      const divisionJobTitle = String(divisionJobDescription.title ?? `${planningName} 직무기술서`)
+      const teamJobTitle = String(teamJobDescription.title ?? `${teamName} 직무기술서`)
+      const targetT = 88 + index * 4
+      const targetE = 95 + index * 4
+      const targetS = 102 + index * 4
+
+      return {
+        recommendationType: 'TEAM_INDEPENDENT',
+        title: `${teamName} 핵심 역할 성과지표 ${index + 1}`,
+        recommendedTitle: `${teamName} 핵심 역할 성과지표 ${index + 1}`,
+        recommendedDefinition: `${teamJobTitle}와 ${divisionJobTitle}에 적힌 역할 범위를 바탕으로 ${teamName}의 고유 책임을 측정하는 독립형 KPI 초안입니다.`,
+        definition:
+          summary ||
+          `${teamName}의 고유 직무 책임, 서비스 수준, 내부 운영 품질을 측정하기 위한 독립형 KPI 추천안입니다.`,
+        formula: `(${teamName} 핵심 산출 실적 / ${teamName} 계획 기준) x 100`,
+        metricSource: `${teamName} 운영 시스템 / 내부 서비스 수준 보고서`,
+        targetValueT: targetT,
+        targetValueE: targetE,
+        targetValueS: targetS,
+        targetT,
+        targetE,
+        targetS,
+        unit: '%',
+        weightSuggestion: 15 + index * 3,
+        difficultySuggestion: index === 0 ? 'HIGH' : 'MEDIUM',
+        difficultyLevel: index === 0 ? 'HIGH' : 'MEDIUM',
+        basedOnJobDescription: true,
+        jobDescriptionEvidence: `${teamJobTitle}에 명시된 핵심 책임과 ${planningName} 직무 기대 수준을 근거로 도출했습니다.`,
+        trendRationale: '저장된 직무기술서와 일반적인 운영 효율화 관점 기준으로 자동화, 서비스 품질, 리드타임 관리 필요성을 반영했습니다.',
+        whyThisFitsTeamRole: `${teamName}이 직접 통제할 수 있는 핵심 역할 성과와 운영 품질을 측정하도록 설계했습니다.`,
+        recommendationReason: '상위 KPI에 직접 매달리지 않더라도 팀 고유 역할을 측정해야 지속 가능한 성과관리가 가능합니다.',
+        whyThisIsHighQuality: '직무기술서 근거, 측정 가능성, 통제 가능성, 도전성을 함께 반영한 독립형 KPI입니다.',
+        controllabilityNote: `${teamName}이 운영 절차, 우선순위, 리소스 배분을 통해 직접 개선할 수 있는 지표입니다.`,
+        riskComment: '업무 범위 정의와 데이터 기준이 모호하면 부서 간 책임이 중첩될 수 있습니다.',
+        riskNote: '업무 범위 정의와 데이터 기준이 모호하면 부서 간 책임이 중첩될 수 있습니다.',
+        alignmentScore: Math.max(78, 90 - index * 4),
+        qualityScore: Math.max(80, 92 - index * 3),
+        difficultyScore: Math.max(72, 86 - index * 3),
         recommendedPriority: index + 1,
       }
     })
@@ -1808,30 +2018,56 @@ export function buildFallbackResult(
     return {
       summary:
         summary ||
-        `${teamName}이 ${planningName} 사업계획과 상위 KPI를 직접 실행할 수 있도록 팀 KPI 추천안을 생성했습니다.`,
-      recommendations,
+        `${teamName}이 ${planningName} 사업계획, 상위 KPI, 직무기술서를 함께 반영해 연계형과 독립형 팀 KPI 초안을 생성했습니다.`,
+      alignedRecommendations,
+      independentRecommendations,
     }
   }
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgTeamKpiReview') {
     const items = Array.isArray(payload.teamKpis) ? payload.teamKpis : []
     return {
+      reviewType: 'FULL_SET',
       overallVerdict: 'CAUTION',
       overallSummary:
         summary || '?곸쐞 ?꾨왂怨쇱쓽 ?곌껐?깆? 蹂댁씠吏留??쇰? KPI??痢≪젙 洹쇨굅? ?듭젣 媛?μ꽦????遺꾨챸???ㅻ벉???꾩슂媛 ?덉뒿?덈떎.',
+      linkedParentCoverage: '연계형 KPI는 상위 본부 KPI와의 연결은 보이지만, 일부 항목은 기여 경로를 더 구체화할 필요가 있습니다.',
+      independentKpiCoverage: '독립형 KPI는 팀 역할을 반영하지만 직무기술서 표현과 측정 기준을 더 정교하게 맞춰야 합니다.',
       items: items.slice(0, 20).map((item, index) => {
         const row = typeof item === 'object' && item ? (item as Record<string, unknown>) : {}
+        const recommendationType =
+          row.recommendationType === 'TEAM_INDEPENDENT'
+            ? 'TEAM_INDEPENDENT'
+            : 'ALIGNED_WITH_DIVISION_KPI'
         return {
           orgKpiId: String(row.id ?? `kpi-${index + 1}`),
           kpiTitle: String(row.title ?? `? KPI ${index + 1}`),
+          recommendationType,
           verdict: index === 0 ? 'ADEQUATE' : index % 2 === 0 ? 'CAUTION' : 'INSUFFICIENT',
           rationale: '?곸쐞 KPI???諛⑺뼢? 留욎?留?痢≪젙 ?뺤쓽? ?ㅽ뻾 踰붿쐞瑜?議곌툑 ??援ъ껜?뷀븷 ?꾩슂媛 ?덉뒿?덈떎.',
           linkageComment: '?ъ뾽怨꾪쉷?쒖쓽 ?듭떖 怨쇱젣? ?곌껐 ?ㅻ챸????以꾨줈 紐낇솗???곸쑝硫??뺣젹?꾧? ????蹂댁엯?덈떎.',
+          roleFitComment:
+            recommendationType === 'TEAM_INDEPENDENT'
+              ? '팀 직무기술서에 적힌 핵심 책임과는 대체로 맞지만 역할 경계를 조금 더 선명하게 써 주는 편이 좋습니다.'
+              : '상위 본부 KPI를 실행하는 팀 역할과 연결은 보이지만, 실제 팀 책임 범위와 통제 범위를 더 또렷하게 쓰는 편이 좋습니다.',
           measurabilityComment: '?곗떇怨??곗씠??異쒖쿂瑜??④퍡 ?먮㈃ ?붽컙 異붿쟻 媛?μ꽦???믪븘吏묐땲??',
           controllabilityComment: '???吏곸젒 ?듭젣 媛?ν븳 寃곌낵?몄? ??踰???寃?좏빐 蹂댁꽭??',
           challengeComment: '?꾨뀈 ?鍮?媛쒖꽑 ??씠??湲곗??좎쓣 媛숈씠 ?먮㈃ ?꾩쟾???먮떒???ъ썙吏묐땲??',
           externalRiskComment: '?몄깮 蹂???곹뼢????寃쎌슦 蹂댁“吏?쒕? ?④퍡 ?먮뒗 ?몄씠 ?덉쟾?⑸땲??',
           clarityComment: '紐⑦샇???쒗쁽 ?????? 寃곌낵, ?쒖젏???④퍡 ?곸쑝硫???紐낇솗?⑸땲??',
+          duplicationComment: '기존 팀 KPI와 표현이 겹치지 않도록 측정 대상과 산식 범위를 조금 더 좁혀 주는 편이 좋습니다.',
+          strongPoint:
+            recommendationType === 'TEAM_INDEPENDENT'
+              ? '팀 고유 역할을 KPI로 끌어낸 점이 강점입니다.'
+              : '상위 본부 KPI와 연결되는 실행 KPI 구조가 강점입니다.',
+          weakPoint:
+            recommendationType === 'TEAM_INDEPENDENT'
+              ? '직무기술서 근거 문장을 더 직접적으로 드러낼 필요가 있습니다.'
+              : '상위 KPI 기여 경로와 데이터 기준을 더 직접적으로 써 주는 편이 좋습니다.',
+          improvementSuggestions:
+            recommendationType === 'TEAM_INDEPENDENT'
+              ? '직무기술서 핵심 책임 문구와 데이터 출처를 정의/산식에 명시하세요.'
+              : 'linked parent KPI와 기여 경로, 데이터 기준을 KPI 정의와 산식에 더 직접적으로 연결하세요.',
           recommendationText: '?곸쐞 KPI ?곌껐 臾몄옣怨?痢≪젙 湲곗???蹂댁셿????理쒖쥌 ?뺤젙?섏꽭??',
         }
       }),
