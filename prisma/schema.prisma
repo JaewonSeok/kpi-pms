@@ -44,6 +44,11 @@ model Department {
   organization Organization @relation(fields: [orgId], references: [id])
   employees    Employee[]
   orgKpis      OrgKpi[]
+  businessPlans BusinessPlanDocument[]
+  teamKpiRecommendationSourceSets TeamKpiRecommendationSet[] @relation("TeamKpiRecommendationSourceDepartment")
+  teamKpiRecommendationTargetSets TeamKpiRecommendationSet[] @relation("TeamKpiRecommendationTargetDepartment")
+  teamKpiReviewSourceRuns TeamKpiReviewRun[] @relation("TeamKpiReviewSourceDepartment")
+  teamKpiReviewTargetRuns TeamKpiReviewRun[] @relation("TeamKpiReviewTargetDepartment")
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -206,10 +211,148 @@ model OrgKpi {
   updatedAt    DateTime   @updatedAt
 
   personalKpis PersonalKpi[]
+  adoptedRecommendationItems TeamKpiRecommendationItem[]
+  teamKpiReviewItems TeamKpiReviewItem[]
 
   @@unique([deptId, evalYear, kpiName])
   @@index([evalYear, parentOrgKpiId])
   @@map("org_kpis")
+}
+
+model BusinessPlanDocument {
+  id          String                 @id @default(cuid())
+  deptId      String
+  department  Department             @relation(fields: [deptId], references: [id])
+  evalYear    Int
+  evalCycleId String?
+  evalCycle   EvalCycle?             @relation(fields: [evalCycleId], references: [id], onDelete: SetNull)
+  title       String
+  sourceType  BusinessPlanSourceType @default(TEXT)
+  summaryText String?
+  bodyText    String
+  createdById String
+  updatedById String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  recommendationSets TeamKpiRecommendationSet[]
+  reviewRuns         TeamKpiReviewRun[]
+
+  @@index([deptId, evalYear, updatedAt])
+  @@index([evalCycleId])
+  @@map("business_plan_documents")
+}
+
+model TeamKpiRecommendationSet {
+  id                 String               @id @default(cuid())
+  businessPlanId     String?
+  businessPlan       BusinessPlanDocument? @relation(fields: [businessPlanId], references: [id], onDelete: SetNull)
+  sourceDepartmentId String
+  sourceDepartment   Department           @relation("TeamKpiRecommendationSourceDepartment", fields: [sourceDepartmentId], references: [id])
+  targetDepartmentId String
+  targetDepartment   Department           @relation("TeamKpiRecommendationTargetDepartment", fields: [targetDepartmentId], references: [id])
+  evalYear           Int
+  evalCycleId        String?
+  evalCycle          EvalCycle?           @relation(fields: [evalCycleId], references: [id], onDelete: SetNull)
+  requesterId        String
+  aiRequestLogId     String?
+  summaryText        String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  items TeamKpiRecommendationItem[]
+
+  @@index([targetDepartmentId, evalYear, createdAt])
+  @@index([businessPlanId])
+  @@map("team_kpi_recommendation_sets")
+}
+
+model TeamKpiRecommendationItem {
+  id                   String                        @id @default(cuid())
+  setId                String
+  set                  TeamKpiRecommendationSet      @relation(fields: [setId], references: [id], onDelete: Cascade)
+  rank                 Int
+  title                String
+  definition           String?
+  formula              String?
+  metricSource         String?
+  targetValueT         Float?
+  targetValueE         Float?
+  targetValueS         Float?
+  unit                 String?
+  weightSuggestion     Float?
+  difficultySuggestion Difficulty?
+  sourceOrgKpiId       String?
+  sourceOrgKpiTitle    String?
+  linkageExplanation   String
+  recommendationReason String
+  whyThisIsHighQuality String?
+  controllabilityNote  String?
+  riskComment          String?
+  alignmentScore       Float?
+  qualityScore         Float?
+  recommendedPriority  Int?
+  decision             TeamKpiRecommendationDecision @default(PENDING)
+  adoptedOrgKpiId      String?
+  adoptedOrgKpi        OrgKpi?                       @relation(fields: [adoptedOrgKpiId], references: [id], onDelete: SetNull)
+  customizedDraft      Json?
+  decidedById          String?
+  decidedAt            DateTime?
+  createdAt            DateTime                      @default(now())
+  updatedAt            DateTime                      @updatedAt
+
+  @@index([setId, rank])
+  @@index([adoptedOrgKpiId])
+  @@map("team_kpi_recommendation_items")
+}
+
+model TeamKpiReviewRun {
+  id                 String                @id @default(cuid())
+  businessPlanId     String?
+  businessPlan       BusinessPlanDocument? @relation(fields: [businessPlanId], references: [id], onDelete: SetNull)
+  sourceDepartmentId String?
+  sourceDepartment   Department?           @relation("TeamKpiReviewSourceDepartment", fields: [sourceDepartmentId], references: [id], onDelete: SetNull)
+  targetDepartmentId String
+  targetDepartment   Department            @relation("TeamKpiReviewTargetDepartment", fields: [targetDepartmentId], references: [id])
+  evalYear           Int
+  evalCycleId        String?
+  evalCycle          EvalCycle?            @relation(fields: [evalCycleId], references: [id], onDelete: SetNull)
+  requesterId        String
+  aiRequestLogId     String?
+  overallVerdict     TeamKpiReviewVerdict?
+  overallSummary     String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  items TeamKpiReviewItem[]
+
+  @@index([targetDepartmentId, evalYear, createdAt])
+  @@index([businessPlanId])
+  @@map("team_kpi_review_runs")
+}
+
+model TeamKpiReviewItem {
+  id                   String               @id @default(cuid())
+  runId                String
+  run                  TeamKpiReviewRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  orgKpiId             String?
+  orgKpi               OrgKpi?              @relation(fields: [orgKpiId], references: [id], onDelete: SetNull)
+  kpiTitleSnapshot     String
+  verdict              TeamKpiReviewVerdict
+  rationale            String
+  linkageComment       String?
+  measurabilityComment String?
+  controllabilityComment String?
+  challengeComment     String?
+  externalRiskComment  String?
+  clarityComment       String?
+  recommendationText   String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([runId])
+  @@index([orgKpiId])
+  @@map("team_kpi_review_items")
 }
 
 model PersonalKpi {
@@ -258,6 +401,25 @@ enum KpiStatus {
   DRAFT
   CONFIRMED
   ARCHIVED
+}
+
+enum BusinessPlanSourceType {
+  TEXT
+  SUMMARY
+}
+
+enum TeamKpiRecommendationDecision {
+  PENDING
+  ADOPT_AS_IS
+  ADOPT_EDITED
+  DISMISSED
+  REFERENCED_NEW
+}
+
+enum TeamKpiReviewVerdict {
+  ADEQUATE
+  CAUTION
+  INSUFFICIENT
 }
 
 // ============================================
@@ -327,6 +489,9 @@ model EvalCycle {
   aiCompetencyCycle   AiCompetencyCycle?
   aiCompetencyResults AiCompetencyResult[]
   wordCloud360Cycles  WordCloud360Cycle[]
+  businessPlans       BusinessPlanDocument[]
+  teamKpiRecommendationSets TeamKpiRecommendationSet[]
+  teamKpiReviewRuns   TeamKpiReviewRun[]
 
   @@map("eval_cycles")
 }

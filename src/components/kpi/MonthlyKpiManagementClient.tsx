@@ -14,6 +14,7 @@ import {
   Save,
   Sparkles,
 } from 'lucide-react'
+import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
 import type {
   MonthlyAttachmentViewModel,
   MonthlyPageData,
@@ -1974,7 +1975,7 @@ function AiTab({
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
         <div className="mb-5">
-          <h2 className="text-lg font-semibold text-slate-900">AI preview</h2>
+          <h2 className="text-lg font-semibold text-slate-900">AI 미리보기</h2>
           <p className="mt-1 text-sm text-slate-500">결과를 확인한 뒤 적용하거나 반려할 수 있습니다.</p>
         </div>
         {aiPreview ? (
@@ -1989,9 +1990,24 @@ function AiTab({
                 <Bot className="h-4 w-4 text-slate-500" />
                 {AI_LABELS[lastAiAction]}
               </div>
-              <AiPreviewBlock action={lastAiAction} result={aiPreview.result} />
+              <KpiAiPreviewPanel
+                preview={{
+                  action: lastAiAction,
+                  actionLabel: AI_LABELS[lastAiAction],
+                  source: aiPreview.source,
+                  fallbackReason: aiPreview.fallbackReason,
+                  result: aiPreview.result,
+                }}
+                emptyTitle="AI preview가 아직 없습니다."
+                emptyDescription="AI 보조 기능을 실행하면 이 영역에 preview가 표시됩니다."
+                onApprove={onApprove}
+                onReject={onReject}
+                approveLabel="미리보기 적용"
+                rejectLabel="반려"
+                decisionBusy={busy === 'ai-decision'}
+              />
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="hidden flex-wrap gap-2">
               <Button onClick={onReject} disabled={busy === 'ai-decision'}>
                 반려
               </Button>

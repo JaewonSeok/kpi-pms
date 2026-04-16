@@ -619,6 +619,119 @@ const FEEDBACK_360_DEVELOPMENT_PLAN_SCHEMA = {
   },
 } satisfies JsonRecord
 
+const ORG_TEAM_KPI_RECOMMENDATION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['summary', 'recommendations'],
+  properties: {
+    summary: { type: 'string' },
+    recommendations: {
+      type: 'array',
+      minItems: 3,
+      maxItems: 5,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'recommendedTitle',
+          'recommendedDefinition',
+          'formula',
+          'metricSource',
+          'targetT',
+          'targetE',
+          'targetS',
+          'unit',
+          'weightSuggestion',
+          'difficultyLevel',
+          'linkedParentKpiTitle',
+          'linkageReason',
+          'recommendationReason',
+          'whyThisIsHighQuality',
+          'controllabilityNote',
+          'riskNote',
+        ],
+        properties: {
+          title: { type: 'string' },
+          definition: { type: 'string' },
+          recommendedTitle: { type: 'string' },
+          recommendedDefinition: { type: 'string' },
+          formula: { type: 'string' },
+          metricSource: { type: 'string' },
+          targetValueT: { type: 'number' },
+          targetValueE: { type: 'number' },
+          targetValueS: { type: 'number' },
+          targetT: { type: 'number' },
+          targetE: { type: 'number' },
+          targetS: { type: 'number' },
+          unit: { type: 'string' },
+          weightSuggestion: { type: 'number' },
+          difficultySuggestion: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+          difficultyLevel: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'] },
+          sourceOrgKpiId: { type: ['string', 'null'] },
+          sourceOrgKpiTitle: { type: ['string', 'null'] },
+          linkedParentKpiId: { type: ['string', 'null'] },
+          linkedParentKpiTitle: { type: ['string', 'null'] },
+          linkageExplanation: { type: 'string' },
+          linkageReason: { type: 'string' },
+          recommendationReason: { type: 'string' },
+          whyThisIsHighQuality: { type: 'string' },
+          controllabilityNote: { type: 'string' },
+          riskComment: { type: 'string' },
+          riskNote: { type: 'string' },
+          alignmentScore: { type: 'number' },
+          qualityScore: { type: 'number' },
+          recommendedPriority: { type: 'number' },
+        },
+      },
+    },
+  },
+} satisfies JsonRecord
+
+const ORG_TEAM_KPI_REVIEW_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['overallVerdict', 'overallSummary', 'items'],
+  properties: {
+    overallVerdict: { type: 'string', enum: ['ADEQUATE', 'CAUTION', 'INSUFFICIENT'] },
+    overallSummary: { type: 'string' },
+    items: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 20,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'orgKpiId',
+          'kpiTitle',
+          'verdict',
+          'rationale',
+          'linkageComment',
+          'measurabilityComment',
+          'controllabilityComment',
+          'challengeComment',
+          'externalRiskComment',
+          'clarityComment',
+          'recommendationText',
+        ],
+        properties: {
+          orgKpiId: { type: 'string' },
+          kpiTitle: { type: 'string' },
+          verdict: { type: 'string', enum: ['ADEQUATE', 'CAUTION', 'INSUFFICIENT'] },
+          rationale: { type: 'string' },
+          linkageComment: { type: 'string' },
+          measurabilityComment: { type: 'string' },
+          controllabilityComment: { type: 'string' },
+          challengeComment: { type: 'string' },
+          externalRiskComment: { type: 'string' },
+          clarityComment: { type: 'string' },
+          recommendationText: { type: 'string' },
+        },
+      },
+    },
+  },
+} satisfies JsonRecord
+
 const FEEDBACK_360_GROWTH_COPILOT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -982,6 +1095,18 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     schema: ORG_KPI_MONTHLY_COMMENT_SCHEMA,
     systemPrompt:
       'You are a monthly KPI review assistant. Reply in Korean. Draft a short operational comment for an organization KPI using monthly execution signals. Highlight achievements, concerns, and next actions.',
+  },
+  'KPI_ASSIST:OrgTeamKpiRecommendation': {
+    schemaName: 'org_team_kpi_recommendation',
+    schema: ORG_TEAM_KPI_RECOMMENDATION_SCHEMA,
+    systemPrompt:
+      'You are an HR strategy copilot for team KPI design. Reply in Korean. Read the division business plan, source organization KPIs, and the target team context. Recommend 3 to 5 concrete team KPIs that align with the division plan, favor measurable outcome KPIs over activity KPIs, and explain the linkage, rationale, and operational risks for each suggestion.',
+  },
+  'KPI_ASSIST:OrgTeamKpiReview': {
+    schemaName: 'org_team_kpi_review',
+    schema: ORG_TEAM_KPI_REVIEW_SCHEMA,
+    systemPrompt:
+      'You are an HR KPI reviewer. Reply in Korean. Review the target team KPI set against the business plan and source organization KPIs. Grade each KPI as ADEQUATE, CAUTION, or INSUFFICIENT with rationale, linkage, measurability, controllability, challenge, external risk, clarity, and concrete revision advice.',
   },
   'KPI_ASSIST:PersonalKpiDraft': {
     schemaName: 'personal_kpi_draft',
@@ -1370,6 +1495,80 @@ export function buildFallbackResult(
       highlights: ['주요 KPI의 월간 달성 흐름은 유지되고 있습니다.'],
       concerns: ['연결된 개인 KPI 수가 적은 항목은 실행 추적이 약해질 수 있습니다.'],
       nextActions: ['다음 점검 전까지 미연결 KPI와 최근 실적 누락 항목을 우선 확인하세요.'],
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgTeamKpiRecommendation') {
+    const sourceOrgKpis = Array.isArray(payload.sourceOrgKpis) ? payload.sourceOrgKpis : []
+    const planningDepartment =
+      typeof payload.planningDepartment === 'object' && payload.planningDepartment
+        ? (payload.planningDepartment as Record<string, unknown>)
+        : {}
+    const teamDepartment =
+      typeof payload.teamDepartment === 'object' && payload.teamDepartment
+        ? (payload.teamDepartment as Record<string, unknown>)
+        : {}
+
+    const recommendations = Array.from({ length: Math.min(5, Math.max(3, sourceOrgKpis.length || 3)) }).map(
+      (_, index) => {
+        const source =
+          typeof sourceOrgKpis[index] === 'object' && sourceOrgKpis[index]
+            ? (sourceOrgKpis[index] as Record<string, unknown>)
+            : {}
+        const titleBase = String(source.title ?? `팀 KPI ${index + 1}`)
+        const deptName = String(teamDepartment.name ?? '대상 팀')
+        return {
+          title: `${deptName} ${titleBase}`,
+          definition:
+            summary ||
+            `${String(planningDepartment.name ?? '본부')} 사업계획서와 상위 KPI를 팀 실행 결과로 연결하기 위한 결과 중심 KPI 제안입니다.`,
+          formula: typeof source.formula === 'string' && source.formula ? source.formula : '실적 / 목표 x 100',
+          targetValueT: Number(source.targetValueT ?? 90 + index * 5),
+          targetValueE: Number(source.targetValueE ?? 100 + index * 5),
+          targetValueS: Number(source.targetValueS ?? 110 + index * 5),
+          unit: String(source.unit ?? '%'),
+          weightSuggestion: Number(source.weight ?? 20),
+          difficultySuggestion: String(source.difficulty ?? 'MEDIUM'),
+          sourceOrgKpiId: typeof source.id === 'string' ? source.id : null,
+          sourceOrgKpiTitle: typeof source.title === 'string' ? source.title : null,
+          linkageExplanation: `${String(planningDepartment.name ?? '본부')} KPI와 ${deptName} 역할을 직접 연결한 제안입니다.`,
+          recommendationReason:
+            '팀이 실제로 통제 가능한 산출물과 결과를 기준으로 상위 전략과의 정렬도를 높이기 위한 KPI입니다.',
+          riskComment: '측정 근거와 데이터 수집 주기를 함께 정의하면 운영 리스크를 줄일 수 있습니다.',
+        }
+      }
+    )
+
+    return {
+      summary:
+        summary ||
+        `${String(teamDepartment.name ?? '대상 팀')}이 ${String(planningDepartment.name ?? '본부')} 사업계획서를 실행 가능한 팀 KPI로 전환할 수 있도록 추천 초안을 생성했습니다.`,
+      recommendations,
+    }
+  }
+
+  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgTeamKpiReview') {
+    const items = Array.isArray(payload.teamKpis) ? payload.teamKpis : []
+    return {
+      overallVerdict: 'CAUTION',
+      overallSummary:
+        summary || '상위 전략과의 연결성은 보이지만 일부 KPI는 측정 근거와 통제 가능성을 더 분명히 다듬을 필요가 있습니다.',
+      items: items.slice(0, 20).map((item, index) => {
+        const row = typeof item === 'object' && item ? (item as Record<string, unknown>) : {}
+        return {
+          orgKpiId: String(row.id ?? `kpi-${index + 1}`),
+          kpiTitle: String(row.title ?? `팀 KPI ${index + 1}`),
+          verdict: index === 0 ? 'ADEQUATE' : index % 2 === 0 ? 'CAUTION' : 'INSUFFICIENT',
+          rationale: '상위 KPI와의 방향은 맞지만 측정 정의와 실행 범위를 조금 더 구체화할 필요가 있습니다.',
+          linkageComment: '사업계획서의 핵심 과제와 연결 설명을 한 줄로 명확히 적으면 정렬도가 더 잘 보입니다.',
+          measurabilityComment: '산식과 데이터 출처를 함께 두면 월간 추적 가능성이 높아집니다.',
+          controllabilityComment: '팀이 직접 통제 가능한 결과인지 한 번 더 검토해 보세요.',
+          challengeComment: '전년 대비 개선 폭이나 기준선을 같이 두면 도전성 판단이 쉬워집니다.',
+          externalRiskComment: '외생 변수 영향이 큰 경우 보조지표를 함께 두는 편이 안전합니다.',
+          clarityComment: '모호한 표현 대신 대상, 결과, 시점을 함께 적으면 더 명확합니다.',
+          recommendationText: '상위 KPI 연결 문장과 측정 기준을 보완한 뒤 최종 확정하세요.',
+        }
+      }),
     }
   }
 

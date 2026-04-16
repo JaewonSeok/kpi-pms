@@ -78,3 +78,23 @@ export function draftMonthlyExecutionComment(params: OrgKpiAiParams) {
     payload: params.payload,
   })
 }
+
+export function recommendTeamKpiRecommendations(params: OrgKpiAiParams) {
+  return generateAiAssist({
+    requesterId: params.requesterId,
+    requestType: AIRequestType.KPI_ASSIST,
+    sourceType: 'OrgTeamKpiRecommendation',
+    sourceId: params.sourceId,
+    payload: params.payload,
+  })
+}
+
+export function reviewTeamKpiRecommendations(params: OrgKpiAiParams) {
+  return generateAiAssist({
+    requesterId: params.requesterId,
+    requestType: AIRequestType.KPI_ASSIST,
+    sourceType: 'OrgTeamKpiReview',
+    sourceId: params.sourceId,
+    payload: params.payload,
+  })
+}

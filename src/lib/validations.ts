@@ -1469,6 +1469,54 @@ export const OrgKpiAiActionSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
 })
 
+export const BusinessPlanDocumentSchema = z.object({
+  id: z.string().max(100).optional(),
+  deptId: z.string().min(1),
+  evalYear: z.number().int().min(2020).max(2100),
+  evalCycleId: z.string().max(100).nullable().optional(),
+  title: z.string().min(1, '사업계획서 제목을 입력해 주세요.').max(150),
+  sourceType: z.enum(['TEXT', 'SUMMARY']).default('TEXT'),
+  summaryText: z.string().max(5000).optional(),
+  bodyText: z.string().min(1, '사업계획서 본문을 입력해 주세요.').max(20000),
+})
+
+export const TeamKpiRecommendationRequestSchema = z.object({
+  targetDeptId: z.string().min(1),
+  evalYear: z.number().int().min(2020).max(2100),
+  evalCycleId: z.string().max(100).nullable().optional(),
+})
+
+export const TeamKpiAdoptDraftSchema = z
+  .object({
+    kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']),
+    kpiCategory: z.string().min(1).max(50),
+    kpiName: z.string().min(1).max(100),
+    definition: z.string().max(500).optional(),
+    formula: z.string().max(500).optional(),
+    ...OrgKpiTargetValueSchema,
+    unit: z.string().max(20).optional(),
+    weight: z.number().min(0).max(100),
+    difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+    tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
+    parentOrgKpiId: z.string().nullable().optional(),
+  })
+  .refine(isOrderedOrgKpiTargetValues, {
+    message: '목표값은 T <= E <= S 순서여야 합니다.',
+    path: ['targetValueT'],
+  })
+
+export const TeamKpiRecommendationDecisionSchema = z.object({
+  decision: z.enum(['ADOPT_AS_IS', 'ADOPT_EDITED', 'DISMISSED', 'REFERENCED_NEW']),
+  draft: TeamKpiAdoptDraftSchema.optional(),
+})
+
+export const TeamKpiReviewRequestSchema = z.object({
+  targetDeptId: z.string().min(1),
+  evalYear: z.number().int().min(2020).max(2100),
+  evalCycleId: z.string().max(100).nullable().optional(),
+  orgKpiIds: z.array(z.string().min(1)).min(1).max(20).optional(),
+})
+
 export const AIApprovalDecisionSchema = z.object({
   action: z.enum(['approve', 'reject']),
   approvedPayload: z.record(z.string(), z.unknown()).optional(),

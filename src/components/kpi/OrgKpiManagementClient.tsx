@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -17,7 +17,9 @@ import {
   formatOrgKpiTargetValues,
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
+import type { KpiAiPreviewComparison } from '@/lib/kpi-ai-preview'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
+import { KpiAiPreviewPanel } from './KpiAiPreviewPanel'
 
 type Props = OrgKpiPageData & {
   initialTab?: string
@@ -141,8 +143,96 @@ const parseTagInput = (value: string) =>
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean)
-    )
+      )
   )
+
+function previewRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+}
+
+function previewStringValue(value: unknown) {
+  return typeof value === 'string' && value.trim().length ? value.trim() : null
+}
+
+function previewNumberValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100)
+  }
+
+  if (typeof value === 'string' && value.trim().length) {
+    return value.trim()
+  }
+
+  return null
+}
+
+function previewNumericValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string' && value.trim().length) {
+    const parsed = Number(value.trim())
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+
+  return undefined
+}
+
+function buildOrgAiPreviewComparisons(params: {
+  action: AiAction
+  result: Record<string, unknown>
+  selectedKpi: OrgKpiViewModel | null
+  form: FormState
+}): KpiAiPreviewComparison[] {
+  const record = previewRecord(params.result) ?? {}
+  const comparisons: KpiAiPreviewComparison[] = []
+
+  const pushComparison = (label: string, before?: string | null, after?: string | null) => {
+    if (!after || before?.trim() === after.trim()) return
+    comparisons.push({ label, before, after })
+  }
+
+  pushComparison(
+    'KPI명',
+    params.selectedKpi?.title ?? params.form.kpiName,
+    previewStringValue(record.improvedTitle ?? record.title),
+  )
+  pushComparison(
+    '정의',
+    params.selectedKpi?.definition ?? params.form.definition,
+    previewStringValue(record.improvedDefinition ?? record.definition),
+  )
+  pushComparison(
+    '산식',
+    params.selectedKpi?.formula ?? params.form.formula,
+    previewStringValue(record.formula),
+  )
+  pushComparison(
+    '목표값',
+    formatOrgKpiTargetValues({
+      targetValueT: params.selectedKpi?.targetValueT ?? previewNumericValue(params.form.targetValueT),
+      targetValueE:
+        params.selectedKpi?.targetValueE ??
+        previewNumericValue(params.selectedKpi?.targetValue) ??
+        previewNumericValue(params.form.targetValueE),
+      targetValueS: params.selectedKpi?.targetValueS ?? previewNumericValue(params.form.targetValueS),
+    }),
+    formatOrgKpiTargetValues({
+      targetValueT: previewNumericValue(record.targetValueT),
+      targetValueE: previewNumericValue(record.targetValueE ?? record.targetValueSuggestion),
+      targetValueS: previewNumericValue(record.targetValueS),
+    }),
+  )
+  pushComparison(
+    '가중치',
+    params.selectedKpi ? `${params.selectedKpi.weight}%` : params.form.weight,
+    previewNumberValue(record.weightSuggestion),
+  )
+  pushComparison('상위 정렬', params.selectedKpi?.parentOrgKpiTitle, previewStringValue(record.recommendedParentTitle))
+
+  return comparisons
+}
 
 function buildEmptyForm(year: number, departmentId: string): FormState {
   return {
@@ -1193,16 +1283,36 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            {aiPreview ? (
-              <div className="space-y-4">
-                {aiPreview.fallbackReason ? <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">fallback 사유: {aiPreview.fallbackReason}</div> : null}
-                <pre className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{JSON.stringify(aiPreview.result, null, 2)}</pre>
-                <div className="flex flex-wrap gap-3">
-                  <ActionButton label="반려" icon={<Archive className="h-4 w-4" />} onClick={() => void decideAi('reject')} disabled={busy} />
-                  <ActionButton label="적용" icon={<Sparkles className="h-4 w-4" />} onClick={() => void decideAi('approve')} disabled={busy} primary />
-                </div>
-              </div>
-            ) : <EmptyState title="AI preview가 없습니다" description="AI 보조 기능을 실행하면 결과가 여기에 표시됩니다." />}
+            <KpiAiPreviewPanel
+              preview={
+                aiPreview
+                  ? {
+                      action: aiAction,
+                      actionLabel: AI_LABELS[aiAction],
+                      source: aiPreview.source,
+                      fallbackReason: aiPreview.fallbackReason,
+                      result: aiPreview.result,
+                    }
+                  : null
+              }
+              comparisons={
+                aiPreview
+                  ? buildOrgAiPreviewComparisons({
+                      action: aiAction,
+                      result: aiPreview.result,
+                      selectedKpi,
+                      form,
+                    })
+                  : []
+              }
+              emptyTitle="AI 결과가 아직 없습니다"
+              emptyDescription="AI 보조 기능을 실행하면 이 영역에 읽기 쉬운 미리보기가 표시됩니다."
+              onReject={aiPreview ? () => void decideAi('reject') : undefined}
+              onApprove={aiPreview ? () => void decideAi('approve') : undefined}
+              rejectLabel="반려"
+              approveLabel="적용"
+              decisionBusy={busy}
+            />
           </div>
         </div>
       ) : null}

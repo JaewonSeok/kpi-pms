@@ -10,6 +10,10 @@ import type {
 import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
 import { resolveOrgKpiOperationalStatus, type OrgKpiOperationalStatus } from './org-kpi-workflow'
+import {
+  loadOrgKpiTeamAiContext,
+  type OrgKpiTeamAiContextView,
+} from './org-kpi-team-ai'
 
 export type OrgKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -177,6 +181,7 @@ export type OrgKpiPageData = {
   history: OrgKpiTimelineItem[]
   linkage: OrgKpiLinkageItem[]
   aiLogs: OrgKpiAiLogItem[]
+  teamAi: OrgKpiTeamAiContextView | null
   permissions: {
     canManage: boolean
     canCreate: boolean
@@ -189,6 +194,28 @@ export type OrgKpiPageData = {
     role: SystemRole
     name: string
     departmentName: string
+  }
+}
+
+function buildEmptyTeamAiContext(params: {
+  targetDepartmentId: string
+  departmentName: string
+  evalYear: number
+}): OrgKpiTeamAiContextView {
+  return {
+    targetDepartmentId: params.targetDepartmentId,
+    planningDepartmentId: params.targetDepartmentId,
+    planningDepartmentName: params.departmentName,
+    planningSourceLabel: '현재 조직 기준',
+    evalYear: params.evalYear,
+    evalCycleId: null,
+    canEditBusinessPlan: false,
+    canRequestRecommendation: false,
+    canRunReview: false,
+    businessPlan: null,
+    sourceOrgKpis: [],
+    recommendationSets: [],
+    reviewRuns: [],
   }
 }
 
@@ -673,6 +700,11 @@ export async function getOrgKpiPageData(params: {
         history: [],
         linkage: [],
         aiLogs: [],
+        teamAi: buildEmptyTeamAiContext({
+          targetDepartmentId: params.deptId,
+          departmentName: params.deptName,
+          evalYear: new Date().getFullYear(),
+        }),
         alerts,
         permissions: {
           canManage: false,
@@ -821,7 +853,7 @@ export async function getOrgKpiPageData(params: {
             where: {
               requesterId: params.userId,
               sourceType: {
-                startsWith: 'OrgKpi',
+                startsWith: 'Org',
               },
             },
             include: {
@@ -1059,6 +1091,11 @@ export async function getOrgKpiPageData(params: {
         ? params.selectedDepartmentId
         : departmentsForSelector[0]?.id ?? params.deptId
 
+    const selectedDepartmentName =
+      departmentsForSelector.find((department) => department.id === selectedDepartmentId)?.name ??
+      departmentsById.get(selectedDepartmentId)?.deptName ??
+      params.deptName
+
     const parentGoalOptions = kpis
       .filter((kpi) => visibleTreeIds.has(kpi.deptId))
       .map((kpi) => ({
@@ -1080,6 +1117,29 @@ export async function getOrgKpiPageData(params: {
       kpisByDepartment,
       selectedScopeIds: visibleTreeIds,
     })
+
+    let teamAi: OrgKpiTeamAiContextView | null = null
+    try {
+      teamAi = await loadOrgKpiTeamAiContext({
+        userId: params.userId,
+        role: params.role,
+        deptId: params.deptId,
+        accessibleDepartmentIds: params.accessibleDepartmentIds,
+        targetDepartmentId: selectedDepartmentId,
+        evalYear: selectedYear,
+      })
+    } catch (error) {
+      console.warn('[org-kpi-page:team-ai]', error)
+      alerts.push({
+        title: '팀 KPI AI 추천',
+        description: '사업계획서 기반 AI 추천/검토 정보를 불러오지 못해 기본 화면만 표시합니다.',
+      })
+      teamAi = buildEmptyTeamAiContext({
+        targetDepartmentId: selectedDepartmentId,
+        departmentName: selectedDepartmentName,
+        evalYear: selectedYear,
+      })
+    }
 
     const canManage = ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(
       params.role
@@ -1130,6 +1190,7 @@ export async function getOrgKpiPageData(params: {
         approvalStatus: log.approvalStatus,
         summary: parseAiSummary(log.responsePayload),
       })),
+      teamAi,
       alerts,
       permissions: {
         canManage,
@@ -1170,6 +1231,11 @@ export async function getOrgKpiPageData(params: {
       history: [],
       linkage: [],
       aiLogs: [],
+      teamAi: buildEmptyTeamAiContext({
+        targetDepartmentId: params.deptId,
+        departmentName: params.deptName,
+        evalYear: new Date().getFullYear(),
+      }),
       alerts: [],
       permissions: {
         canManage: false,

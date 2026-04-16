@@ -5,10 +5,12 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bot, ClipboardList, Copy, History, Link2, Plus, Send, Sparkles, Trash2, X } from 'lucide-react'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
+import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
 import {
   getPersonalKpiDeleteActionState,
   resolveNextPersonalKpiSelectionAfterDelete,
 } from '@/lib/personal-kpi-delete'
+import type { KpiAiPreviewComparison } from '@/lib/kpi-ai-preview'
 import type {
   PersonalKpiAiLogItem,
   PersonalKpiPageData,
@@ -179,6 +181,43 @@ function toNumberOrUndefined(value: string) {
   if (!value.trim()) return undefined
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function previewRecord(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+}
+
+function previewStringValue(value: unknown) {
+  return typeof value === 'string' && value.trim().length ? value.trim() : null
+}
+
+function buildPersonalAiPreviewComparisons(params: {
+  preview: AiPreview | null
+  selectedKpi: PersonalKpiViewModel | null
+  form: KpiForm
+}): KpiAiPreviewComparison[] {
+  if (!params.preview) return []
+
+  const record = previewRecord(params.preview.result) ?? {}
+  const comparisons: KpiAiPreviewComparison[] = []
+
+  const push = (label: string, before?: string | null, after?: string | null) => {
+    if (!after || before?.trim() === after.trim()) return
+    comparisons.push({ label, before, after })
+  }
+
+  push('KPI명', params.selectedKpi?.title ?? params.form.kpiName, previewStringValue(record.improvedTitle ?? record.title))
+  push('정의', params.selectedKpi?.definition ?? params.form.definition, previewStringValue(record.improvedDefinition ?? record.definition))
+  push('산식', params.selectedKpi?.formula ?? params.form.formula, previewStringValue(record.formula))
+  push(
+    '목표값',
+    typeof params.selectedKpi?.targetValue === 'number' ? String(params.selectedKpi.targetValue) : params.form.targetValue,
+    previewStringValue(record.targetValueSuggestion)
+  )
+  push('가중치', params.selectedKpi ? String(params.selectedKpi.weight) : params.form.weight, previewStringValue(record.weightSuggestion))
+  push('연결 조직 KPI', params.selectedKpi?.orgKpiTitle, previewStringValue(record.recommendedOrgKpiTitle))
+
+  return comparisons
 }
 
 function parseTagInput(value: string) {
@@ -1383,6 +1422,7 @@ export function PersonalKpiManagementClient(props: Props) {
               actions={AI_ACTIONS}
               busy={busyAction === 'ai'}
               preview={aiPreview}
+              previewComparisons={buildPersonalAiPreviewComparisons({ preview: aiPreview, selectedKpi, form })}
               logs={props.aiLogs}
               actionStates={aiActionStates}
               onRun={handleRunAi}
@@ -1418,6 +1458,7 @@ export function PersonalKpiManagementClient(props: Props) {
               actions={AI_ACTIONS}
               busy={busyAction === 'ai'}
               preview={aiPreview}
+              previewComparisons={buildPersonalAiPreviewComparisons({ preview: aiPreview, selectedKpi, form })}
               logs={props.aiLogs}
               actionStates={aiActionStates}
               onRun={handleRunAi}
@@ -2100,6 +2141,7 @@ function AiSection(props: {
   actionStates: Record<AiAction, AiActionState>
   busy: boolean
   preview: AiPreview | null
+  previewComparisons: KpiAiPreviewComparison[]
   logs: PersonalKpiAiLogItem[]
   decisionBusy: boolean
   onRun: (action: AiAction) => void
@@ -2141,7 +2183,25 @@ function AiSection(props: {
 
       <SectionCard title="AI 미리보기" description="제안을 바로 적용하지 않고, 검토 후 반영 여부를 결정합니다.">
         {props.preview ? (
-          <div className="space-y-4">
+          <>
+          <KpiAiPreviewPanel
+            preview={{
+              action: props.preview.action,
+              actionLabel: props.actions.find((item) => item.action === props.preview!.action)?.title ?? props.preview!.action,
+              source: props.preview.source,
+              fallbackReason: props.preview.fallbackReason,
+              result: props.preview.result,
+            }}
+            comparisons={props.previewComparisons}
+            emptyTitle="AI 제안이 아직 없습니다."
+            emptyDescription="왼쪽에서 AI 기능을 실행하면 이 영역에 preview가 표시됩니다."
+            onApprove={props.onApprove}
+            onReject={props.onReject}
+            approveLabel="제안 적용"
+            rejectLabel="제안 반려"
+            decisionBusy={props.decisionBusy}
+          />
+          {props.preview ? <div className="hidden space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={props.preview.source === 'ai' ? 'CONFIRMED' : 'DRAFT'} />
@@ -2167,7 +2227,8 @@ function AiSection(props: {
                 제안 반려
               </ActionButton>
             </div>
-          </div>
+          </div> : null}
+          </>
         ) : props.logs.length ? (
           <div className="space-y-3">
             {props.logs.slice(0, 4).map((log) => (
