@@ -35,12 +35,19 @@ export type KpiAiPreviewWeightRecommendation = {
 
 export type KpiAiPreviewRecommendation = {
   title: string
+  category?: string | null
   definition: string
   formula: string
+  linkedParentKpiId?: string | null
   linkedParentKpiTitle: string
   linkageReason: string
   metricSource: string
+  targetValueT?: string
+  targetValueE?: string
+  targetValueS?: string
   targetText: string
+  unit?: string
+  weightSuggestion?: string
   whyThisIsHighQuality: string
   controllabilityNote: string
   riskNote: string
@@ -217,8 +224,10 @@ function buildWeightRecommendations(items: JsonRecord[]): KpiAiPreviewWeightReco
 function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendation[] {
   return items.flatMap((item) => {
       const title = toStringValue(item.recommendedTitle) ?? toStringValue(item.title)
+      const category = toStringValue(item.category)
       const definition = toStringValue(item.recommendedDefinition) ?? toStringValue(item.definition)
       const formula = toStringValue(item.formula)
+      const linkedParentKpiId = toStringValue(item.linkedParentKpiId)
       const linkedParentKpiTitle = toStringValue(item.linkedParentKpiTitle)
       const linkageReason = toStringValue(item.linkageReason) ?? toStringValue(item.linkageExplanation)
       const metricSource = toStringValue(item.metricSource)
@@ -229,6 +238,7 @@ function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendati
       const targetE = toNumberString(item.targetE ?? item.targetValueE)
       const targetS = toNumberString(item.targetS ?? item.targetValueS)
       const unit = toStringValue(item.unit)
+      const weightSuggestion = toNumberString(item.weightSuggestion)
       const targetParts = [
         targetT ? `T ${targetT}` : null,
         targetE ? `E ${targetE}` : null,
@@ -254,12 +264,19 @@ function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendati
       return [
         {
         title,
+        category: category ?? null,
         definition,
         formula,
+        linkedParentKpiId: linkedParentKpiId ?? null,
         linkedParentKpiTitle,
         linkageReason,
         metricSource,
+        targetValueT: targetT ?? undefined,
+        targetValueE: targetE ?? undefined,
+        targetValueS: targetS ?? undefined,
         targetText: targetText || '-',
+        unit: unit ?? undefined,
+        weightSuggestion: weightSuggestion ?? undefined,
         whyThisIsHighQuality,
         controllabilityNote,
         riskNote,
@@ -270,6 +287,11 @@ function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendati
         },
       ]
     })
+}
+
+export function extractKpiAiPreviewRecommendations(result: Record<string, unknown>): KpiAiPreviewRecommendation[] {
+  const record = toRecord(result) ?? {}
+  return buildRecommendationCards(toObjectArray(record.recommendations))
 }
 
 export function inferKpiAiPreviewTone(
@@ -429,7 +451,7 @@ export function buildKpiAiPreviewSections(_action: string, result: Record<string
   addList('evaluationPoints', RESULT_LABELS.evaluationPoints, record.evaluationPoints)
   addList('managerNotes', RESULT_LABELS.managerNotes, record.managerNotes)
 
-  const recommendations = buildRecommendationCards(toObjectArray(record.recommendations))
+  const recommendations = extractKpiAiPreviewRecommendations(record)
   if (recommendations.length) {
     consumed.add('recommendations')
     sections.push({

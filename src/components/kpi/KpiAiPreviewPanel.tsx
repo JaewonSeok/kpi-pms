@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FileJson, Sparkles
 import {
   buildKpiAiPreviewDescriptor,
   type KpiAiPreviewComparison,
+  type KpiAiPreviewRecommendation,
   type KpiAiPreviewSection,
   type KpiAiPreviewSource,
 } from '@/lib/kpi-ai-preview'
@@ -29,6 +30,9 @@ type Props = {
   onRetry?: () => void
   retryLabel?: string
   decisionBusy?: boolean
+  onSelectRecommendation?: (item: KpiAiPreviewRecommendation, index: number) => void
+  selectedRecommendationIndex?: number | null
+  recommendationActionLabel?: string
 }
 
 const cls = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
@@ -186,7 +190,14 @@ function ComparisonSection({ items }: { items: KpiAiPreviewComparison[] }) {
   )
 }
 
-function renderSection(section: KpiAiPreviewSection) {
+function renderSection(
+  section: KpiAiPreviewSection,
+  recommendationUi?: {
+    onSelectRecommendation?: (item: KpiAiPreviewRecommendation, index: number) => void
+    selectedRecommendationIndex?: number | null
+    recommendationActionLabel?: string
+  },
+) {
   switch (section.kind) {
     case 'text':
       return (
@@ -317,6 +328,11 @@ function renderSection(section: KpiAiPreviewSection) {
                           난이도 {item.difficultyLevel}
                         </span>
                       ) : null}
+                      {recommendationUi?.selectedRecommendationIndex === index ? (
+                        <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                          선택됨
+                        </span>
+                      ) : null}
                     </div>
                     <div className="mt-3 text-base font-semibold text-slate-900">{item.title}</div>
                     <ExpandableText value={item.definition} previewLength={220} className="mt-2" />
@@ -362,6 +378,24 @@ function renderSection(section: KpiAiPreviewSection) {
                         <div className="mt-1 text-base font-semibold text-slate-900">{item.qualityScore}</div>
                       </div>
                     ) : null}
+                  </div>
+                ) : null}
+                {recommendationUi?.onSelectRecommendation ? (
+                  <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => recommendationUi.onSelectRecommendation?.(item, index)}
+                      className={cls(
+                        'inline-flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-semibold transition',
+                        recommendationUi.selectedRecommendationIndex === index
+                          ? 'border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                          : 'bg-slate-900 text-white hover:bg-slate-800',
+                      )}
+                    >
+                      {recommendationUi.selectedRecommendationIndex === index
+                        ? '다시 이 추천안으로 작성'
+                        : recommendationUi.recommendationActionLabel ?? '이 추천안으로 작성'}
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -467,7 +501,15 @@ export function KpiAiPreviewPanel(props: Props) {
 
       <ComparisonSection items={descriptor.comparisons} />
 
-      <div className="space-y-3">{descriptor.sections.map((section) => renderSection(section))}</div>
+      <div className="space-y-3">
+        {descriptor.sections.map((section) =>
+          renderSection(section, {
+            onSelectRecommendation: props.onSelectRecommendation,
+            selectedRecommendationIndex: props.selectedRecommendationIndex ?? null,
+            recommendationActionLabel: props.recommendationActionLabel,
+          }),
+        )}
+      </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <button

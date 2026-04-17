@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tar -a -cf ..\\\\kpi-pms.zip --exclude=\"node_modules\" --exclude=\".next\" --exclude=\"dist\" --exclude=\".git\" *)",
+      "Bash(tar --version)",
+      "Bash(tar -a -cf \"/c/Users/RSUPPORT/Desktop/성과관리 및 평가시스템/kpi-pms.zip\" --exclude=\"./node_modules\" --exclude=\"./.next\" --exclude=\"./dist\" --exclude=\"./.git\" .)",
+      "Bash(wc -l \"/c/Users/RSUPPORT/Desktop/성과관리 및 평가시스템/kpi-pms/src/server\"/*.ts)",
+      "Bash(wc -l \"/c/Users/RSUPPORT/Desktop/성과관리 및 평가시스템/kpi-pms/src/lib\"/*.ts)",
+      "Bash(git -C \"/c/Users/RSUPPORT/Desktop/성과관리 및 평가시스템/kpi-pms\" log --oneline)"
+    ]
+  }
+}
