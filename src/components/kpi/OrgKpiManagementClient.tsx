@@ -192,6 +192,19 @@ function toOrgKpiAiPreviewErrorMessage(message?: string | null) {
   return trimmed
 }
 
+function logOrgKpiAiResultMode(
+  event:
+    | 'ORG_KPI_AI_RESULT_MODE_FALLBACK'
+    | 'ORG_KPI_AI_RESULT_MODE_NORMAL',
+  params: {
+    stepName: AiAction
+    errorCode?: string | null
+    prismaCode?: string | null
+  },
+) {
+  console.info(`[org-kpi-ai] ${event}`, params)
+}
+
 function previewNumberValue(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100)
@@ -730,6 +743,27 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       setSelectedKpiId(filteredList[0].id)
     }
   }, [filteredList, selectedKpiId])
+
+  useEffect(() => {
+    if (!aiPreview) return
+
+    if (aiPreview.source === 'fallback') {
+      logOrgKpiAiResultMode('ORG_KPI_AI_RESULT_MODE_FALLBACK', {
+        stepName: aiAction,
+        errorCode: 'FALLBACK_RESULT',
+        prismaCode: null,
+      })
+      return
+    }
+
+    if (aiPreview.source === 'ai') {
+      logOrgKpiAiResultMode('ORG_KPI_AI_RESULT_MODE_NORMAL', {
+        stepName: aiAction,
+        errorCode: null,
+        prismaCode: null,
+      })
+    }
+  }, [aiAction, aiPreview])
 
   useEffect(() => {
     if (tab !== 'ai' || selectedDepartmentId === 'ALL' || isReadOnlyMemberView) {
@@ -1843,6 +1877,8 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 onApprove={aiPreview ? () => void decideAi('approve') : undefined}
                 rejectLabel="반려"
                 approveLabel="적용"
+                onRetry={aiPreview ? () => void requestAi(aiAction) : undefined}
+                retryLabel="다시 시도"
                 decisionBusy={busy}
               />
             </div>

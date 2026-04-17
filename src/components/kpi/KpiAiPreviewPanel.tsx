@@ -26,6 +26,8 @@ type Props = {
   onReject?: () => void
   approveLabel?: string
   rejectLabel?: string
+  onRetry?: () => void
+  retryLabel?: string
   decisionBusy?: boolean
 }
 
@@ -99,6 +101,61 @@ function SectionCard({
         {helper ? <p className="text-xs text-slate-500">{helper}</p> : null}
       </div>
       <div className="mt-3">{children}</div>
+    </section>
+  )
+}
+
+function FallbackStatePanel({
+  preview,
+  onRetry,
+  retryLabel,
+}: {
+  preview: PreviewPayload
+  onRetry?: () => void
+  retryLabel?: string
+}) {
+  const isDisabled = preview.source === 'disabled'
+  const title = isDisabled
+    ? 'AI 기능이 현재 준비되지 않았습니다.'
+    : 'AI 추천/검토 결과를 불러오는 중 문제가 발생했습니다.'
+  const description = isDisabled
+    ? '현재는 AI 기능을 사용할 수 없어 기본 KPI 화면에서 계속 작업하실 수 있습니다.'
+    : '잠시 후 다시 시도해 주세요. 문제가 반복되면 기본 KPI 화면에서 계속 작업하실 수 있습니다.'
+  const toneClass = isDisabled
+    ? 'border-slate-200 bg-slate-50 text-slate-700'
+    : 'border-amber-200 bg-amber-50 text-amber-900'
+  const detailToneClass = isDisabled ? 'text-slate-600' : 'text-amber-800'
+
+  return (
+    <section className={cls('rounded-3xl border p-5 shadow-sm', toneClass)}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-current/20 bg-white/70 px-3 py-1 text-xs font-semibold">
+              {preview.actionLabel}
+            </span>
+            <span className="rounded-full border border-current/20 bg-white/70 px-3 py-1 text-xs font-medium">
+              {isDisabled ? '기본 화면 안내' : '결과 재시도 필요'}
+            </span>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">{title}</h3>
+            <p className="mt-2 text-sm leading-6">{description}</p>
+          </div>
+          {preview.fallbackReason ? (
+            <p className={cls('text-sm leading-6', detailToneClass)}>{preview.fallbackReason}</p>
+          ) : null}
+        </div>
+        {!isDisabled && onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+          >
+            {retryLabel ?? '다시 시도'}
+          </button>
+        ) : null}
+      </div>
     </section>
   )
 }
@@ -319,7 +376,7 @@ export function KpiAiPreviewPanel(props: Props) {
   const [showRawJson, setShowRawJson] = useState(false)
 
   const descriptor = useMemo(() => {
-    if (!props.preview) return null
+    if (!props.preview || props.preview.source !== 'ai') return null
     return buildKpiAiPreviewDescriptor({
       action: props.preview.action,
       result: props.preview.result,
@@ -334,6 +391,16 @@ export function KpiAiPreviewPanel(props: Props) {
         <p className="text-sm font-semibold text-slate-900">{props.emptyTitle}</p>
         <p className="mt-2 text-sm text-slate-500">{props.emptyDescription}</p>
       </div>
+    )
+  }
+
+  if (props.preview.source !== 'ai') {
+    return (
+      <FallbackStatePanel
+        preview={props.preview}
+        onRetry={props.onRetry}
+        retryLabel={props.retryLabel}
+      />
     )
   }
 

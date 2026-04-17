@@ -1715,82 +1715,54 @@ export function buildFallbackResult(
     const linkedParentOrgKpis = Array.isArray(payload.linkedParentOrgKpis) ? payload.linkedParentOrgKpis : []
     const prioritizedParents = linkedParentOrgKpis.length ? linkedParentOrgKpis : sourceOrgKpis
     const deptName =
-      String(teamDepartment.name ?? payload.departmentName ?? payload.teamName ?? 'Team').trim() || 'Team'
-    const recommendations = Array.from({
-      length: Math.min(5, Math.max(3, prioritizedParents.length || sourceOrgKpis.length || 3)),
-    }).map((_, index) => {
-      const source =
-        typeof prioritizedParents[index] === 'object' && prioritizedParents[index]
-          ? (prioritizedParents[index] as Record<string, unknown>)
-          : {}
-      const linkedParentKpiTitle = String(source.title ?? `Parent KPI ${index + 1}`)
-      const targetT = Number(source.targetValueT ?? 92 + index * 3)
-      const targetE = Number(source.targetValueE ?? 100 + index * 4)
-      const targetS = Number(source.targetValueS ?? 108 + index * 5)
-
-      return {
-        recommendedTitle: `${deptName} ${linkedParentKpiTitle} 실행 성과`,
-        recommendedDefinition: `${linkedParentKpiTitle}를 ${deptName} 팀이 직접 통제 가능한 결과 지표와 선행 지표로 풀어낸 팀 KPI 초안입니다.`,
-        category: String(payload.category ?? payload.kpiCategory ?? 'Strategic execution'),
-        formula:
-          typeof source.formula === 'string' && source.formula.trim().length
-            ? source.formula
-            : 'Actual / Target x 100',
-        metricSource: `${deptName} 운영 실적 및 월간 KPI 보고 데이터`,
-        targetT,
-        targetE,
-        targetS,
-        unit: String(payload.unit ?? '%'),
-        weightSuggestion: Number(payload.weight ?? 20),
-        difficultyLevel: String(payload.difficulty ?? 'MEDIUM'),
-        linkedParentKpiId: typeof source.id === 'string' ? source.id : null,
-        linkedParentKpiTitle,
-        linkageReason: `${linkedParentKpiTitle}를 ${deptName} 팀이 직접 실행 가능한 KPI로 풀어 상위 KPI에 측정 가능하게 기여하도록 설계했습니다.`,
-        whyThisIsHighQuality:
-          '상위 KPI와의 정렬성이 높고, 측정 가능하며, 팀이 직접 통제 가능한 범위에서 stretch 목표를 달성하도록 설계했습니다.',
-        controllabilityNote: `${deptName} 팀이 실행 cadence, 자원 배치, 운영 규율을 통해 직접 영향을 줄 수 있는 KPI입니다.`,
-        riskNote:
-          '데이터 수집 기준과 집계 주기를 먼저 고정하지 않으면 비교 가능성과 책임성이 약해질 수 있습니다.',
-        alignmentScore: Math.max(84, 96 - index * 3),
-        qualityScore: Math.max(82, 95 - index * 3),
-        recommendedPriority: index + 1,
-      }
-    })
-    const primary = recommendations[0]
+      String(teamDepartment.name ?? payload.departmentName ?? payload.teamName ?? '팀').trim() || '팀'
+    const primarySource =
+      typeof prioritizedParents[0] === 'object' && prioritizedParents[0]
+        ? (prioritizedParents[0] as Record<string, unknown>)
+        : null
+    const linkedParentKpiTitle =
+      primarySource && typeof primarySource.title === 'string' && primarySource.title.trim().length
+        ? primarySource.title.trim()
+        : null
 
     return {
-      title: primary?.recommendedTitle ?? (goal || orgKpi || '조직 KPI 초안'),
-      category: primary?.category ?? String(payload.category ?? payload.kpiCategory ?? 'Strategic execution'),
+      title: goal || orgKpi || `${deptName} KPI 초안`,
+      category: String(payload.category ?? payload.kpiCategory ?? '전략 실행'),
       definition:
-        primary?.recommendedDefinition ??
         (summary ||
-        '상위 KPI와 사업계획 방향을 직접 실행으로 연결하는 팀 KPI 초안입니다.'),
-      formula: primary?.formula ?? 'Actual / Target x 100',
-      targetValueSuggestion: String(primary?.targetE ?? payload.targetValue ?? '100'),
-      targetValueT: primary?.targetT ?? 95,
-      targetValueE: primary?.targetE ?? 100,
-      targetValueS: primary?.targetS ?? 110,
-      unit: primary?.unit ?? String(payload.unit ?? '%'),
-      weightSuggestion: primary?.weightSuggestion ?? Number(payload.weight ?? 20),
-      difficultySuggestion: primary?.difficultyLevel ?? String(payload.difficulty ?? 'MEDIUM'),
-      metricSource: primary?.metricSource ?? `${deptName} operational result data`,
-      linkedParentKpiId: primary?.linkedParentKpiId ?? null,
-      linkedParentKpiTitle: primary?.linkedParentKpiTitle ?? '연계 상위 KPI',
+        `${deptName} 팀이 상위 전략과 연결된 실행 성과를 측정할 수 있도록 기본 초안을 준비했습니다. AI 추천을 다시 실행하면 더 구체적인 제안을 확인할 수 있습니다.`),
+      formula:
+        primarySource && typeof primarySource.formula === 'string' && primarySource.formula.trim().length
+          ? primarySource.formula.trim()
+          : '실적 / 목표 x 100',
+      targetValueSuggestion: String(payload.targetValue ?? '100'),
+      targetValueT: 95,
+      targetValueE: 100,
+      targetValueS: 110,
+      unit: String(payload.unit ?? '%'),
+      weightSuggestion: Number(payload.weight ?? 20),
+      difficultySuggestion: String(payload.difficulty ?? 'MEDIUM'),
+      metricSource: `${deptName} 운영 실적 데이터`,
+      linkedParentKpiId:
+        primarySource && typeof primarySource.id === 'string' && primarySource.id.trim().length
+          ? primarySource.id
+          : null,
+      linkedParentKpiTitle,
       linkageReason:
-        primary?.linkageReason ?? '상위 본부 KPI에 실질적으로 기여하는 팀 KPI를 우선 추천했습니다.',
+        linkedParentKpiTitle
+          ? `${linkedParentKpiTitle}와 연결되는 팀 KPI 초안을 다시 확인해 주세요.`
+          : '연계 가능한 상위 KPI를 확인한 뒤 다시 추천을 실행해 주세요.',
       whyThisIsHighQuality:
-        primary?.whyThisIsHighQuality ??
-        '전략 정렬성, 측정 가능성, 통제 가능성, 도전성을 함께 충족하도록 구성했습니다.',
+        '현재는 기본 초안만 표시하고 있습니다. AI 응답이 복구되면 더 구체적인 정렬 근거와 품질 설명을 제공합니다.',
       controllabilityNote:
-        primary?.controllabilityNote ?? '팀이 직접 관리 가능한 실행 지표인지 확인이 필요합니다.',
+        '팀이 직접 관리 가능한 실행 지표인지 다시 확인해 주세요.',
       riskNote:
-        primary?.riskNote ?? '외생 변수 영향과 데이터 집계 주기를 명확히 정의해야 합니다.',
+        '기본 초안이므로 실제 적용 전 연결성, 측정 기준, 외생 변수 영향을 다시 확인해 주세요.',
       reviewPoints: [
         '연계된 상위 KPI와의 연결 이유가 명확한지 확인해 주세요.',
         '산식과 데이터 출처가 실제 운영 데이터로 측정 가능한지 검토해 주세요.',
         'T/E/S 목표값이 너무 낮지 않고 stretch 수준인지 확인해 주세요.',
       ],
-      recommendations,
     }
   }
 

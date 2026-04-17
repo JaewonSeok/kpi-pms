@@ -1,7 +1,7 @@
 'use client'
 
-import type { ReactNode } from 'react'
-import { Bot, CheckCircle2, FileText, PencilLine, Sparkles, Target, XCircle } from 'lucide-react'
+import { useEffect, type ReactNode } from 'react'
+import { Bot, CheckCircle2, FileText, Sparkles } from 'lucide-react'
 import type {
   OrgKpiBusinessPlanView,
   OrgKpiJobDescriptionView,
@@ -409,7 +409,74 @@ function scrollToSection(id: string) {
   target.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+function logOrgKpiTeamAiResultMode(
+  event:
+    | 'ORG_KPI_AI_RESULT_MODE_EMPTY_BUSINESS_PLAN'
+    | 'ORG_KPI_AI_RESULT_MODE_EMPTY_RECOMMENDATION'
+    | 'ORG_KPI_AI_RESULT_MODE_EMPTY_REVIEW'
+    | 'ORG_KPI_AI_RESULT_MODE_NORMAL',
+  params: {
+    stepName: string
+    errorCode?: string | null
+    prismaCode?: string | null
+  },
+) {
+  console.info(`[org-kpi-team-ai-ui] ${event}`, params)
+}
+
 export function OrgKpiTeamAiWorkspace(props: Props) {
+  const emptyStateFlags = getOrgKpiTeamAiEmptyStateFlags({
+    businessPlan: props.context?.businessPlan ?? null,
+    recommendationSetCount: props.context?.recommendationSets.length ?? 0,
+    reviewRunCount: props.context?.reviewRuns.length ?? 0,
+  })
+
+  useEffect(() => {
+    if (props.selectedDepartmentId === 'ALL' || props.loading || !props.context) {
+      return
+    }
+
+    if (emptyStateFlags.businessPlanMissing) {
+      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_EMPTY_BUSINESS_PLAN', {
+        stepName: 'businessPlan',
+        errorCode: null,
+        prismaCode: null,
+      })
+      return
+    }
+
+    if (emptyStateFlags.recommendationMissing) {
+      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_EMPTY_RECOMMENDATION', {
+        stepName: 'recommendation',
+        errorCode: null,
+        prismaCode: null,
+      })
+      return
+    }
+
+    if (emptyStateFlags.reviewMissing) {
+      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_EMPTY_REVIEW', {
+        stepName: 'review',
+        errorCode: null,
+        prismaCode: null,
+      })
+      return
+    }
+
+    logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_NORMAL', {
+      stepName: 'teamAiWorkspace',
+      errorCode: null,
+      prismaCode: null,
+    })
+  }, [
+    emptyStateFlags.businessPlanMissing,
+    emptyStateFlags.recommendationMissing,
+    emptyStateFlags.reviewMissing,
+    props.context,
+    props.loading,
+    props.selectedDepartmentId,
+  ])
+
   if (props.selectedDepartmentId === 'ALL') {
     return (
       <EmptyBlock
@@ -429,11 +496,6 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
 
   const latestRecommendationSet = props.context.recommendationSets[0] ?? null
   const latestReviewRun = props.context.reviewRuns[0] ?? null
-  const emptyStateFlags = getOrgKpiTeamAiEmptyStateFlags({
-    businessPlan: props.context.businessPlan,
-    recommendationSetCount: props.context.recommendationSets.length,
-    reviewRunCount: props.context.reviewRuns.length,
-  })
   const canRequestRecommendation =
     props.context.canRequestRecommendation &&
     Boolean(props.context.businessPlan) &&
