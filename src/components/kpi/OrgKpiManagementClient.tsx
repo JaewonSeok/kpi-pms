@@ -129,6 +129,9 @@ const AI_LABELS: Record<AiAction, string> = {
   'draft-monthly-comment': '월간 실적 코멘트 초안',
 }
 
+const ORG_KPI_AI_PREVIEW_ERROR_MESSAGE =
+  'AI 결과 형식을 불러오는 중 문제가 발생해 기본 결과로 표시했습니다. 잠시 후 다시 시도해 주세요.'
+
 const cls = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
 const formatPercent = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? `${Math.round(value * 10) / 10}%` : '-')
 const formatDateTime = (value?: string | null) =>
@@ -167,6 +170,26 @@ function previewRecord(value: unknown) {
 
 function previewStringValue(value: unknown) {
   return typeof value === 'string' && value.trim().length ? value.trim() : null
+}
+
+function toOrgKpiAiPreviewErrorMessage(message?: string | null) {
+  const trimmed = typeof message === 'string' ? message.trim() : ''
+  if (!trimmed) return ORG_KPI_AI_PREVIEW_ERROR_MESSAGE
+
+  const lower = trimmed.toLowerCase()
+  if (
+    lower.includes('response_format') ||
+    lower.includes('json_schema') ||
+    lower.includes('structured output') ||
+    lower.includes('recommendedparentid') ||
+    lower.includes('invalid schema') ||
+    lower.includes('could not be parsed') ||
+    lower.includes('did not include structured output')
+  ) {
+    return ORG_KPI_AI_PREVIEW_ERROR_MESSAGE
+  }
+
+  return trimmed
 }
 
 function previewNumberValue(value: unknown) {
@@ -559,6 +582,9 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   )
   const [pendingRecommendationDecision, setPendingRecommendationDecision] =
     useState<PendingRecommendationDecision | null>(null)
+  const activeTeamDepartmentId =
+    selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId
+  const hasReviewableTeamKpis = list.some((item) => item.departmentId === activeTeamDepartmentId)
   const [cloneForm, setCloneForm] = useState<OrgCloneForm>(buildCloneForm(pageData, pageData.list[0]))
   const [bulkEditForm, setBulkEditForm] = useState<OrgBulkEditForm>(
     buildOrgBulkEditForm(pageData, defaultDepartmentSelection)
@@ -1010,17 +1036,27 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           payload: buildAiPayload(action, selectedKpi, form, pageData),
         }),
       })
-      setAiPreview(data)
+      setAiPreview({
+        ...data,
+        fallbackReason:
+          data.source === 'ai' ? null : toOrgKpiAiPreviewErrorMessage(data.fallbackReason),
+      })
       setTab('ai')
       setBanner({
         tone: data.source === 'ai' ? 'success' : 'info',
         message:
           data.source === 'ai'
             ? 'AI 결과를 준비했습니다. 미리보기 후 적용해 주세요.'
-            : 'AI fallback 결과를 준비했습니다. 미리보기 후 적용해 주세요.',
+            : toOrgKpiAiPreviewErrorMessage(data.fallbackReason),
       })
     } catch (error) {
-      setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'AI 요청에 실패했습니다.' })
+      setBanner({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? toOrgKpiAiPreviewErrorMessage(error.message)
+            : ORG_KPI_AI_PREVIEW_ERROR_MESSAGE,
+      })
     } finally {
       setBusy(false)
     }
@@ -1480,14 +1516,24 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     }
   }
 
+  function openDirectKpiCreate() {
+    setEditingKpiId(null)
+    setPendingRecommendationDecision(null)
+    setForm(buildEmptyForm(pageData.selectedYear, activeTeamDepartmentId))
+    setShowForm(true)
+    setBanner({
+      tone: 'info',
+      message: '직접 팀 KPI를 작성하는 편집 모드입니다.',
+    })
+  }
+
   function openRecommendationEditor(
     item: OrgKpiTeamRecommendationItemView,
     decision: RecommendationDecisionMode
   ) {
-    const targetDepartmentId = selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId
     setEditingKpiId(null)
     setPendingRecommendationDecision({ itemId: item.id, decision })
-    setForm(buildFormFromTeamRecommendation(item, pageData.selectedYear, targetDepartmentId))
+    setForm(buildFormFromTeamRecommendation(item, pageData.selectedYear, activeTeamDepartmentId))
     setShowForm(true)
     setBanner({
       tone: 'info',
@@ -1601,7 +1647,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
             />
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
-            <ActionButton label="조직 KPI 추가" icon={<Plus className="h-4 w-4" />} onClick={() => { setEditingKpiId(null); setPendingRecommendationDecision(null); setForm(buildEmptyForm(pageData.selectedYear, selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId)); setShowForm(true) }} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
+            <ActionButton label="조직 KPI 추가" icon={<Plus className="h-4 w-4" />} onClick={openDirectKpiCreate} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
             <ActionButton label="일괄 업로드" icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
             <ActionButton label="목표 일괄 수정" icon={<FilePenLine className="h-4 w-4" />} onClick={handleOpenBulkEdit} disabled={Boolean(bulkEditDisabledReason) || busy} />
             <ActionButton label="엑셀 다운로드" icon={<Archive className="h-4 w-4" />} onClick={handleOpenExport} disabled={Boolean(exportDisabledReason) || busy} />
@@ -1808,6 +1854,8 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
               context={teamAiContext}
               loading={teamAiLoading}
               busy={busy}
+              canCreateKpi={pageData.permissions.canCreate && !goalEditLocked}
+              canRunReviewAction={teamAiContext?.canRunReview === true && hasReviewableTeamKpis}
               businessPlanForm={businessPlanForm}
               divisionJobDescriptionForm={divisionJobDescriptionForm}
               teamJobDescriptionForm={teamJobDescriptionForm}
@@ -1821,6 +1869,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
               onAdoptRecommendationAsIs={(itemId) => void applyRecommendationAsIs(itemId)}
               onDismissRecommendation={(itemId) => void dismissRecommendation(itemId)}
               onOpenRecommendationEditor={openRecommendationEditor}
+              onCreateKpi={openDirectKpiCreate}
               onRunReview={() => void runTeamAiReview()}
             />
           ) : null}

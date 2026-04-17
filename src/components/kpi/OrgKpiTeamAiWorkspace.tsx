@@ -10,6 +10,7 @@ import type {
   OrgKpiTeamReviewItemView,
 } from '@/server/org-kpi-team-ai'
 import { formatOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
+import { getOrgKpiTeamAiEmptyStateFlags } from '@/lib/org-kpi-team-ai-empty-state'
 
 export type BusinessPlanFormState = {
   id?: string
@@ -40,6 +41,8 @@ type Props = {
   context: OrgKpiTeamAiContextView | null
   loading: boolean
   busy: boolean
+  canCreateKpi: boolean
+  canRunReviewAction: boolean
   businessPlanForm: BusinessPlanFormState
   divisionJobDescriptionForm: JobDescriptionFormState
   teamJobDescriptionForm: JobDescriptionFormState
@@ -56,6 +59,7 @@ type Props = {
     item: OrgKpiTeamRecommendationItemView,
     decision: RecommendationDecisionMode
   ) => void
+  onCreateKpi: () => void
   onRunReview: () => void
 }
 
@@ -75,11 +79,28 @@ const verdictLabels = {
   INSUFFICIENT: '미흡',
 } as const
 
-function EmptyBlock(props: { title: string; description: string }) {
+function EmptyBlock(props: {
+  title: string
+  description: string
+  tone?: 'neutral' | 'info'
+  icon?: ReactNode
+  actions?: ReactNode
+}) {
   return (
-    <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center">
-      <div className="text-base font-semibold text-slate-900">{props.title}</div>
+    <div
+      className={cls(
+        'rounded-3xl border border-dashed px-6 py-10 text-center',
+        props.tone === 'info' ? 'border-blue-200 bg-blue-50/70' : 'border-slate-300 bg-slate-50'
+      )}
+    >
+      {props.icon ? (
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm">
+          {props.icon}
+        </div>
+      ) : null}
+      <div className={cls('text-base font-semibold text-slate-900', Boolean(props.icon) && 'mt-4')}>{props.title}</div>
       <p className="mt-2 text-sm leading-6 text-slate-500">{props.description}</p>
+      {props.actions ? <div className="mt-5 flex flex-wrap items-center justify-center gap-3">{props.actions}</div> : null}
     </div>
   )
 }
@@ -115,13 +136,14 @@ function StatusBadge(props: {
 }
 
 function SectionCard(props: {
+  id?: string
   title: string
   helper?: string
   action?: ReactNode
   children: ReactNode
 }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <section id={props.id} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h3 className="text-base font-semibold text-slate-900">{props.title}</h3>
@@ -176,6 +198,7 @@ function SecondaryButton(props: { label: string; onClick: () => void; disabled?:
 }
 
 function DocumentEditorCard(props: {
+  id?: string
   title: string
   helper: string
   editable: boolean
@@ -187,6 +210,7 @@ function DocumentEditorCard(props: {
 }) {
   return (
     <SectionCard
+      id={props.id}
       title={props.title}
       helper={props.helper}
       action={
@@ -378,6 +402,13 @@ function formatDocumentSummary(document: OrgKpiBusinessPlanView | OrgKpiJobDescr
   return document.updatedAt.slice(0, 10)
 }
 
+function scrollToSection(id: string) {
+  if (typeof document === 'undefined') return
+  const target = document.getElementById(id)
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 export function OrgKpiTeamAiWorkspace(props: Props) {
   if (props.selectedDepartmentId === 'ALL') {
     return (
@@ -398,6 +429,16 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
 
   const latestRecommendationSet = props.context.recommendationSets[0] ?? null
   const latestReviewRun = props.context.reviewRuns[0] ?? null
+  const emptyStateFlags = getOrgKpiTeamAiEmptyStateFlags({
+    businessPlan: props.context.businessPlan,
+    recommendationSetCount: props.context.recommendationSets.length,
+    reviewRunCount: props.context.reviewRuns.length,
+  })
+  const canRequestRecommendation =
+    props.context.canRequestRecommendation &&
+    Boolean(props.context.businessPlan) &&
+    Boolean(props.context.divisionJobDescription) &&
+    Boolean(props.context.teamJobDescription)
   const alignedItems =
     latestRecommendationSet?.items.filter((item) => item.recommendationType === 'ALIGNED_WITH_DIVISION_KPI') ?? []
   const independentItems =
@@ -423,8 +464,38 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
         </div>
       </SectionCard>
 
+      {emptyStateFlags.businessPlanMissing ? (
+        <SectionCard
+          title="사업계획서 기반 추천 준비"
+          helper="데이터가 아직 없어서 비어 있는 상태입니다. 먼저 사업계획서를 등록하면 AI 추천과 검토 흐름을 바로 시작할 수 있습니다."
+        >
+          <EmptyBlock
+            tone="info"
+            icon={<FileText className="h-6 w-6" />}
+            title="사업계획서가 아직 등록되지 않았습니다."
+            description="팀 KPI AI 추천을 사용하려면 먼저 본부 사업계획서를 등록해 주세요. 사업계획서가 등록되면 본부 전략과 KPI를 바탕으로 팀에 적합한 KPI 초안을 추천해 드립니다."
+            actions={
+              <>
+                <PrimaryButton
+                  label="사업계획서 등록하기"
+                  icon={<FileText className="h-4 w-4" />}
+                  onClick={() => scrollToSection('team-ai-business-plan-section')}
+                  disabled={props.busy || !props.context.canEditBusinessPlan}
+                />
+                <SecondaryButton
+                  label="직접 KPI 작성하기"
+                  onClick={props.onCreateKpi}
+                  disabled={!props.canCreateKpi || props.busy}
+                />
+              </>
+            }
+          />
+        </SectionCard>
+      ) : null}
+
       <div className="grid gap-6 xl:grid-cols-3">
         <DocumentEditorCard
+          id="team-ai-business-plan-section"
           title="본부 사업계획서"
           helper={`${props.context.planningSourceLabel} 기반 요약/본문을 저장합니다.`}
           editable={props.context.canEditBusinessPlan}
@@ -464,13 +535,7 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
             label="AI KPI 추천 받기"
             icon={<Sparkles className="h-4 w-4" />}
             onClick={props.onRequestRecommendation}
-            disabled={
-              props.busy ||
-              !props.context.canRequestRecommendation ||
-              !props.context.businessPlan ||
-              !props.context.divisionJobDescription ||
-              !props.context.teamJobDescription
-            }
+            disabled={props.busy || !canRequestRecommendation}
           />
         }
       >
@@ -497,12 +562,40 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
         </div>
       </SectionCard>
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      {emptyStateFlags.recommendationMissing ? (
+        <SectionCard
+          title="AI 추천 결과"
+          helper="추천을 아직 실행하지 않은 상태입니다. 연계형과 독립형 팀 KPI 초안을 같은 흐름에서 바로 시작할 수 있습니다."
+        >
+          <EmptyBlock
+            tone="info"
+            icon={<Sparkles className="h-6 w-6" />}
+            title="아직 AI 추천 결과가 없습니다."
+            description="연결된 본부 KPI와 사업계획서를 바탕으로 팀 KPI 초안을 추천받을 수 있습니다. 추천을 실행하면 본부와 정렬된 KPI 후보를 제안해 드립니다."
+            actions={
+              <>
+                <PrimaryButton
+                  label="AI 추천 받기"
+                  icon={<Sparkles className="h-4 w-4" />}
+                  onClick={props.onRequestRecommendation}
+                  disabled={props.busy || !canRequestRecommendation}
+                />
+                <SecondaryButton
+                  label="직접 KPI 작성하기"
+                  onClick={props.onCreateKpi}
+                  disabled={!props.canCreateKpi || props.busy}
+                />
+              </>
+            }
+          />
+        </SectionCard>
+      ) : (
+        <div className="grid gap-6 xl:grid-cols-2">
         <SectionCard
           title="연계형 팀 KPI 추천"
           helper="연결된 본부 KPI를 먼저 읽고, 그 KPI 달성에 직접 기여하는 팀 KPI만 추천합니다."
         >
-          {latestRecommendationSet && alignedItems.length ? (
+          {alignedItems.length ? (
             <div className="space-y-4">
               {alignedItems.map((item) => (
                 <RecommendationCard
@@ -527,7 +620,7 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
           title="독립형 팀 KPI 추천"
           helper="팀 직무기술서와 역할 범위를 기준으로, 팀의 고유 책임에 맞는 독립 KPI를 추천합니다."
         >
-          {latestRecommendationSet && independentItems.length ? (
+          {independentItems.length ? (
             <div className="space-y-4">
               {independentItems.map((item) => (
                 <RecommendationCard
@@ -547,9 +640,11 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
             />
           )}
         </SectionCard>
-      </div>
+        </div>
+      )}
 
       <SectionCard
+        id="team-ai-adopted-drafts-section"
         title="채택된 팀 KPI 초안"
         helper="추천 원안과 팀장의 최종 의사결정은 분리 저장됩니다."
         action={
@@ -557,7 +652,7 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
             label="AI 재검토 실행"
             icon={<Bot className="h-4 w-4" />}
             onClick={props.onRunReview}
-            disabled={props.busy || !props.context.canRunReview}
+            disabled={props.busy || !props.canRunReviewAction}
           />
         }
       >
@@ -629,8 +724,25 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
           </div>
         ) : (
           <EmptyBlock
-            title="AI 재검토 결과가 아직 없습니다"
-            description="채택된 팀 KPI 초안을 만든 뒤 AI 재검토를 실행하면 적정/주의/미흡 결과와 수정 권고가 저장됩니다."
+            tone="info"
+            icon={<Bot className="h-6 w-6" />}
+            title="아직 AI 검토 결과가 없습니다."
+            description="팀 KPI를 저장한 뒤 AI 검토를 실행하면 적정·주의·미흡 판단과 수정 권고를 확인할 수 있습니다."
+            actions={
+              <>
+                <PrimaryButton
+                  label="AI 검토 실행하기"
+                  icon={<Bot className="h-4 w-4" />}
+                  onClick={props.onRunReview}
+                  disabled={props.busy || !props.canRunReviewAction}
+                />
+                <SecondaryButton
+                  label="나중에 검토하기"
+                  onClick={() => scrollToSection('team-ai-adopted-drafts-section')}
+                  disabled={props.busy}
+                />
+              </>
+            }
           />
         )}
       </SectionCard>

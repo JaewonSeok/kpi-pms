@@ -246,10 +246,16 @@ const ORG_KPI_DUPLICATE_SCHEMA = {
 const ORG_KPI_ALIGNMENT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['riskLevel', 'rationale', 'suggestedLinks'],
+  required: [
+    'recommendedParentId',
+    'recommendedParentTitle',
+    'riskLevel',
+    'rationale',
+    'suggestedLinks',
+  ],
   properties: {
-    recommendedParentId: { type: 'string' },
-    recommendedParentTitle: { type: 'string' },
+    recommendedParentId: { type: ['string', 'null'] },
+    recommendedParentTitle: { type: ['string', 'null'] },
     riskLevel: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
     rationale: { type: 'string' },
     suggestedLinks: {
@@ -1253,7 +1259,7 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     schemaName: 'org_kpi_alignment',
     schema: ORG_KPI_ALIGNMENT_SCHEMA,
     systemPrompt:
-      'You are a KPI cascade assistant. Reply in Korean. Suggest the most natural parent organization KPI or cascade linkage based on department context, strategy direction, and the candidate KPIs.',
+      'You are a KPI cascade assistant. Reply in Korean. Suggest the most natural parent organization KPI or cascade linkage based on department context, strategy direction, and the candidate KPIs. Always return recommendedParentId and recommendedParentTitle. If no confident parent exists, return null for both fields and explain the reason in rationale.',
   },
   'KPI_ASSIST:OrgKpiOperationalRisk': {
     schemaName: 'org_kpi_operational_risk',
@@ -1723,14 +1729,14 @@ export function buildFallbackResult(
       const targetS = Number(source.targetValueS ?? 108 + index * 5)
 
       return {
-        recommendedTitle: `${deptName} ${linkedParentKpiTitle} execution outcome`,
-        recommendedDefinition: `${linkedParentKpiTitle} directly cascades into a controllable ${deptName} team KPI draft with outcome and leading indicators.`,
+        recommendedTitle: `${deptName} ${linkedParentKpiTitle} 실행 성과`,
+        recommendedDefinition: `${linkedParentKpiTitle}를 ${deptName} 팀이 직접 통제 가능한 결과 지표와 선행 지표로 풀어낸 팀 KPI 초안입니다.`,
         category: String(payload.category ?? payload.kpiCategory ?? 'Strategic execution'),
         formula:
           typeof source.formula === 'string' && source.formula.trim().length
             ? source.formula
             : 'Actual / Target x 100',
-        metricSource: `${deptName} operational results and monthly KPI reporting`,
+        metricSource: `${deptName} 운영 실적 및 월간 KPI 보고 데이터`,
         targetT,
         targetE,
         targetS,
@@ -1739,12 +1745,12 @@ export function buildFallbackResult(
         difficultyLevel: String(payload.difficulty ?? 'MEDIUM'),
         linkedParentKpiId: typeof source.id === 'string' ? source.id : null,
         linkedParentKpiTitle,
-        linkageReason: `${linkedParentKpiTitle} is decomposed into a direct ${deptName} team KPI so the team can contribute measurably to the parent KPI.`,
+        linkageReason: `${linkedParentKpiTitle}를 ${deptName} 팀이 직접 실행 가능한 KPI로 풀어 상위 KPI에 측정 가능하게 기여하도록 설계했습니다.`,
         whyThisIsHighQuality:
-          'It is tightly aligned to the parent KPI, measurable, controllable by the team, and designed with stretch targets.',
-        controllabilityNote: `${deptName} can directly influence this KPI through execution cadence, resourcing, and operating discipline.`,
+          '상위 KPI와의 정렬성이 높고, 측정 가능하며, 팀이 직접 통제 가능한 범위에서 stretch 목표를 달성하도록 설계했습니다.',
+        controllabilityNote: `${deptName} 팀이 실행 cadence, 자원 배치, 운영 규율을 통해 직접 영향을 줄 수 있는 KPI입니다.`,
         riskNote:
-          'If data collection rules and metric cadence are not fixed up front, comparability and accountability may weaken.',
+          '데이터 수집 기준과 집계 주기를 먼저 고정하지 않으면 비교 가능성과 책임성이 약해질 수 있습니다.',
         alignmentScore: Math.max(84, 96 - index * 3),
         qualityScore: Math.max(82, 95 - index * 3),
         recommendedPriority: index + 1,
@@ -1753,12 +1759,12 @@ export function buildFallbackResult(
     const primary = recommendations[0]
 
     return {
-      title: primary?.recommendedTitle ?? (goal || orgKpi || '議곗쭅 KPI 珥덉븞'),
+      title: primary?.recommendedTitle ?? (goal || orgKpi || '조직 KPI 초안'),
       category: primary?.category ?? String(payload.category ?? payload.kpiCategory ?? 'Strategic execution'),
       definition:
         primary?.recommendedDefinition ??
         (summary ||
-        '?곸쐞 KPI? ?ъ뾽怨꾪쉷??諛⑺뼢??吏곸젒 ?ㅽ뻾?쇰줈 ?곌껐?섎뒗 ? KPI 珥덉븞?낅땲??'),
+        '상위 KPI와 사업계획 방향을 직접 실행으로 연결하는 팀 KPI 초안입니다.'),
       formula: primary?.formula ?? 'Actual / Target x 100',
       targetValueSuggestion: String(primary?.targetE ?? payload.targetValue ?? '100'),
       targetValueT: primary?.targetT ?? 95,
@@ -1769,20 +1775,20 @@ export function buildFallbackResult(
       difficultySuggestion: primary?.difficultyLevel ?? String(payload.difficulty ?? 'MEDIUM'),
       metricSource: primary?.metricSource ?? `${deptName} operational result data`,
       linkedParentKpiId: primary?.linkedParentKpiId ?? null,
-      linkedParentKpiTitle: primary?.linkedParentKpiTitle ?? '?곌퀎 ?곸쐞 KPI',
+      linkedParentKpiTitle: primary?.linkedParentKpiTitle ?? '연계 상위 KPI',
       linkageReason:
-        primary?.linkageReason ?? '?곸쐞 蹂몃? KPI???ㅼ쭏?곸쑝濡?湲곗뿬?섎뒗 ? KPI瑜??곗꽑 異붿쿇?덉뒿?덈떎.',
+        primary?.linkageReason ?? '상위 본부 KPI에 실질적으로 기여하는 팀 KPI를 우선 추천했습니다.',
       whyThisIsHighQuality:
         primary?.whyThisIsHighQuality ??
-        '?꾨왂 ?뺣젹?? 痢≪젙 媛?μ꽦, ?듭젣 媛?μ꽦, ?꾩쟾?깆쓣 ?④퍡 異⑹”?섎룄濡?援ъ꽦?덉뒿?덈떎.',
+        '전략 정렬성, 측정 가능성, 통제 가능성, 도전성을 함께 충족하도록 구성했습니다.',
       controllabilityNote:
-        primary?.controllabilityNote ?? '???吏곸젒 愿由?媛?ν븳 ?ㅽ뻾吏?쒖씤吏 ?뺤씤???꾩슂?⑸땲??',
+        primary?.controllabilityNote ?? '팀이 직접 관리 가능한 실행 지표인지 확인이 필요합니다.',
       riskNote:
-        primary?.riskNote ?? '?몄깮 蹂???곹뼢怨??곗씠??吏묎퀎 二쇨린瑜?紐낇솗???뺤쓽?댁빞 ?⑸땲??',
+        primary?.riskNote ?? '외생 변수 영향과 데이터 집계 주기를 명확히 정의해야 합니다.',
       reviewPoints: [
-        '?곌퀎???곸쐞 KPI? ?곌껐 ?댁쑀媛 紐낇솗?쒖? ?뺤씤?섏꽭??',
-        '?곗떇怨??곗씠??異쒖쿂媛 ?ㅼ젣 ?댁쁺 ?곗씠?곕줈 痢≪젙 媛?ν븳吏 寃?좏븯?몄슂.',
-        'T/E/S 紐⑺몴媛믪씠 ?덈Т ?쎌? ?딆? stretch ?섏??몄? 寃?좏븯?몄슂.',
+        '연계된 상위 KPI와의 연결 이유가 명확한지 확인해 주세요.',
+        '산식과 데이터 출처가 실제 운영 데이터로 측정 가능한지 검토해 주세요.',
+        'T/E/S 목표값이 너무 낮지 않고 stretch 수준인지 확인해 주세요.',
       ],
       recommendations,
     }
@@ -1790,13 +1796,13 @@ export function buildFallbackResult(
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiWording') {
     return {
-      improvedTitle: goal || orgKpi || '痢≪젙 媛?ν븳 議곗쭅 KPI 臾멸뎄',
+      improvedTitle: goal || orgKpi || '측정 가능한 조직 KPI 문구',
       improvedDefinition:
         (summary ||
-        '議곗쭅 紐⑺몴? 痢≪젙 湲곗????④퍡 ?쒕윭?섎룄濡?臾몄옣??媛꾧껐?섍쾶 ?뺣━???쒖븞?낅땲??'),
+        '조직 목표와 측정 기준이 함께 드러나도록 문장을 간결하고 명확하게 다듬은 제안입니다.'),
       rationale: [
-        '痢≪젙 ??곴낵 湲곕? 寃곌낵瑜???臾몄옣 ?덉뿉???쏀엳寃??뺣━?덉뒿?덈떎.',
-        '?ㅼ젣 ?ㅽ뻾 吏?쒖? ?곌껐?????덈룄濡??쒗쁽??援ъ껜?뷀뻽?듬땲??',
+        '측정 대상과 기대 결과가 한 문장 안에서 드러나도록 정리했습니다.',
+        '실제 실행 지표와 연결되도록 표현을 더 구체화했습니다.',
       ],
     }
   }
@@ -1804,37 +1810,37 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiSmart') {
     return {
       overall: 'WARNING',
-      summary: '?꾩옱 KPI??諛⑺뼢?깆? ?덉쑝??痢≪젙 湲곗?怨?湲고븳 ?쒗쁽?????좊챸?섍쾶 ?ㅻ벉???꾩슂媛 ?덉뒿?덈떎.',
+      summary: '현재 KPI는 방향성은 있으나 측정 기준과 기한 표현을 조금 더 선명하게 다듬을 필요가 있습니다.',
       criteria: [
         {
           name: 'Specific',
           status: 'WARN',
-          reason: '??곴낵 寃곌낵 ?쒗쁽???ㅼ냼 ?볦뒿?덈떎.',
-          suggestion: '?듭떖 怨좉컼援??먮뒗 ?댁쁺 吏?쒕? 紐낇솗??吏?뺥븯?몄슂.',
+          reason: '대상과 결과 표현이 다소 넓습니다.',
+          suggestion: '측정 대상 고객군이나 운영 지표를 더 명확히 지정해 주세요.',
         },
         {
           name: 'Measurable',
           status: 'PASS',
-          reason: '紐⑺몴媛믨낵 痢≪젙 諛⑹떇???ы븿?섏뼱 ?덉뒿?덈떎.',
-          suggestion: '?붽컙 異붿쟻 湲곗????④퍡 ?곸쑝硫???醫뗭뒿?덈떎.',
+          reason: '목표값과 측정 방식이 포함되어 있습니다.',
+          suggestion: '월간 추적 기준까지 함께 적으면 더 좋습니다.',
         },
         {
           name: 'Achievable',
           status: 'WARN',
-          reason: '紐⑺몴 ?섏???洹쇨굅媛 遺議깊빀?덈떎.',
-          suggestion: '?꾨뀈 ?ㅼ쟻 ?먮뒗 ?꾩옱 湲곗?移섎? ?④퍡 ?곸쑝?몄슂.',
+          reason: '목표 수준의 근거가 부족합니다.',
+          suggestion: '전년 실적이나 현재 기준치를 함께 적어 주세요.',
         },
         {
           name: 'Relevant',
           status: 'PASS',
-          reason: '議곗쭅 ?꾨왂 諛⑺뼢怨??곌껐?섏뼱 ?덉뒿?덈떎.',
-          suggestion: '?곸쐞 ?꾨왂 ?ㅼ썙?쒕? 臾몄옣??諛섏쁺?섎㈃ ??遺꾨챸?댁쭛?덈떎.',
+          reason: '조직 전략 방향과 연결되어 있습니다.',
+          suggestion: '상위 전략 키워드를 문장에 반영하면 더 분명해집니다.',
         },
         {
           name: 'Time-bound',
           status: 'FAIL',
-          reason: '?됯? 二쇨린???먭? 二쇨린媛 ?쏀빀?덈떎.',
-          suggestion: '?곌컙 紐⑺몴? ?붽컙 ?먭? 湲곗????④퍡 紐낆떆?섏꽭??',
+          reason: '평가 주기와 월간 관리 주기가 혼합돼 있습니다.',
+          suggestion: '연간 목표와 월간 추적 기준을 구분해 명시해 주세요.',
         },
       ],
     }
@@ -1842,16 +1848,16 @@ export function buildFallbackResult(
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiDuplicate') {
     return {
-      summary: '?좎궗 KPI ?꾨낫瑜?湲곕컲?쇰줈 以묐났 媛?μ꽦???뺣━?덉뒿?덈떎.',
+      summary: '유사 KPI 후보를 기준으로 중복 가능성을 정리했습니다.',
       duplicates: Array.isArray(payload.candidates)
         ? (payload.candidates as unknown[])
             .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
             .slice(0, 3)
             .map((item) => ({
               id: String(item.id ?? ''),
-              title: String(item.title ?? '?좎궗 KPI'),
+              title: String(item.title ?? '유사 KPI'),
               overlapLevel: 'MEDIUM',
-              similarityReason: '痢≪젙 ????먮뒗 ?꾨왂 ?ㅼ썙?쒓? ?좎궗?⑸땲??',
+              similarityReason: '측정 대상이나 전략 키워드가 유사합니다.',
             }))
         : [],
     }
@@ -1859,14 +1865,20 @@ export function buildFallbackResult(
 
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiAlignment') {
     return {
-      recommendedParentId: String(payload.recommendedParentId ?? ''),
-      recommendedParentTitle: String(payload.recommendedParentTitle ?? '?곸쐞 KPI ?꾨낫'),
+      recommendedParentId:
+        typeof payload.recommendedParentId === 'string' && payload.recommendedParentId.trim().length
+          ? payload.recommendedParentId
+          : null,
+      recommendedParentTitle:
+        typeof payload.recommendedParentTitle === 'string' && payload.recommendedParentTitle.trim().length
+          ? payload.recommendedParentTitle
+          : null,
       riskLevel: 'MEDIUM',
       rationale:
-        summary || '議곗쭅 ?몃━? KPI 移댄뀒怨좊━ 湲곗??쇰줈 媛???먯뿰?ㅻ윭???곸쐞 ?곌껐 ?꾨낫瑜??뺣━?덉뒿?덈떎.',
+        summary || '조직 트리와 KPI 카테고리 기준으로 가장 자연스러운 상위 연계 후보를 정리했습니다.',
       suggestedLinks: [
-        '?곸쐞 ?꾨왂 KPI???愿怨꾨? ?뺤쓽 臾몄옣???④퍡 ?곸뼱 ?먯꽭??',
-        '媛쒖씤 KPI濡???대궡湲??대젮???쒗쁽? ?붽컙 ?ㅼ쟻 湲곗??쇰줈 ?ㅼ떆 ?ㅻ벉?쇱꽭??',
+        '상위 전략 KPI와의 관계를 정의 문장에 함께 적어 주세요.',
+        '개인 KPI로 이어질 표현은 월간 실적 기준으로 다시 풀어 써 주세요.',
       ],
     }
   }
@@ -1875,14 +1887,14 @@ export function buildFallbackResult(
     return {
       riskLevel: 'MEDIUM',
       executiveSummary:
-        summary || '?꾩옱 KPI 援ъ“???댁쁺 媛?ν븯吏留??곌껐 ?꾨씫怨??ㅼ쟻 異붿쟻 怨듬갚???쇰? 議댁옱?⑸땲??',
+        summary || '현재 KPI 구조는 운영 가능하지만 연결 누락과 실적 추적 공백이 일부 존재합니다.',
       risks: [
-        '媛쒖씤 KPI ?곌껐 ?섍? ??? ??ぉ???덉뒿?덈떎.',
-        '理쒓렐 ?붽컙 ?ㅼ쟻???녿뒗 KPI媛 ?덉뒿?덈떎.',
+        '개인 KPI와 연결하기 어려운 항목이 있습니다.',
+        '최근 월간 실적이 없는 KPI가 있습니다.',
       ],
       recommendations: [
-        '?곌껐 ?꾨씫 KPI瑜??곗꽑 寃?좏븯怨?媛쒖씤 KPI ?쒗뵆由욧낵 ?곌껐?섏꽭??',
-        '痢≪젙?앹씠 ?쏀븳 KPI??SMART 愿?먯쑝濡??ㅼ떆 ?뺣━?섏꽭??',
+        '연결 누락 KPI를 우선 검토하고 개인 KPI 템플릿과 연결해 주세요.',
+        '측정성이 약한 KPI는 SMART 관점으로 다시 다듬어 주세요.',
       ],
     }
   }
@@ -1890,10 +1902,10 @@ export function buildFallbackResult(
   if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'OrgKpiMonthlyComment') {
     return {
       comment:
-        summary || '理쒓렐 ?붽컙 ?ㅼ쟻 湲곗??쇰줈???ㅽ뻾? 吏꾪뻾 以묒씠吏留??곌껐 而ㅻ쾭由ъ?? ?ъ꽦瑜??몄감瑜??④퍡 ?먭????꾩슂媛 ?덉뒿?덈떎.',
-      highlights: ['二쇱슂 KPI???붽컙 ?ъ꽦 ?먮쫫? ?좎??섍퀬 ?덉뒿?덈떎.'],
-      concerns: ['?곌껐??媛쒖씤 KPI ?섍? ?곸? ??ぉ? ?ㅽ뻾 異붿쟻???쏀빐吏????덉뒿?덈떎.'],
-      nextActions: ['?ㅼ쓬 ?먭? ?꾧퉴吏 誘몄뿰寃?KPI? 理쒓렐 ?ㅼ쟻 ?꾨씫 ??ぉ???곗꽑 ?뺤씤?섏꽭??'],
+        summary || '최근 월간 실적 기준으로 실행은 진행 중이지만 연결 커버리지와 실적 완성도를 함께 점검할 필요가 있습니다.',
+      highlights: ['주요 KPI의 월간 추세 흐름이 유지되고 있습니다.'],
+      concerns: ['연결된 개인 KPI가 적은 항목은 실행 추적이 약해질 수 있습니다.'],
+      nextActions: ['다음 월말까지 미연결 KPI와 최근 실적 누락 항목을 우선 확인해 주세요.'],
     }
   }
 
@@ -2729,7 +2741,7 @@ export async function generateAiAssist(
       requestLogId: log.id,
       source: 'disabled' as const,
       result: fallbackResult,
-      fallbackReason: 'AI 湲곕뒫??鍮꾪솢?깊솕?섏뼱 湲곕낯 ?쒖븞???쒓났?⑸땲??',
+      fallbackReason: 'AI 기능이 비활성화되어 기본 결과로 표시했습니다.',
     }
   }
 

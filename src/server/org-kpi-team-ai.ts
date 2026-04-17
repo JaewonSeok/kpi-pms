@@ -41,7 +41,7 @@ import {
 type DepartmentWithContext = Department & {
   organization: {
     id: string
-    orgName: string
+    name: string
   }
   leaderEmployee: {
     id: string
@@ -415,7 +415,7 @@ async function loadDepartmentGraph() {
       organization: {
         select: {
           id: true,
-          orgName: true,
+          name: true,
         },
       },
       leaderEmployee: {
@@ -460,167 +460,281 @@ type LoadContextParams = SessionScopeParams & {
   evalYear: number
 }
 
+type OrgKpiAiContextStepName =
+  | 'loadDepartmentGraph'
+  | 'resolveTargetCycle'
+  | 'businessPlanLookup'
+  | 'recommendationLookup'
+  | 'reviewLookup'
+
+function getOrgKpiAiContextErrorMeta(error: unknown) {
+  const stepName =
+    typeof error === 'object' &&
+    error &&
+    'orgKpiAiStepName' in error &&
+    typeof (error as { orgKpiAiStepName?: unknown }).orgKpiAiStepName === 'string'
+      ? ((error as { orgKpiAiStepName: OrgKpiAiContextStepName }).orgKpiAiStepName ?? 'unknown')
+      : 'unknown'
+
+  const errorCode =
+    error instanceof AppError
+      ? error.code
+      : typeof error === 'object' && error && 'code' in error
+        ? String((error as { code?: unknown }).code ?? '')
+        : null
+
+  const prismaCode =
+    typeof error === 'object' && error && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : null
+
+  const shortMessage =
+    error instanceof Error ? error.message.split('\n')[0]?.trim() || error.name : String(error)
+
+  return {
+    stepName,
+    errorCode: errorCode || null,
+    prismaCode: prismaCode || null,
+    shortMessage,
+  }
+}
+
+function logOrgKpiAiContext(event: string, payload: Record<string, unknown>) {
+  console.info(`[org-kpi-team-ai] ${event}`, payload)
+}
+
+async function runOrgKpiAiContextStep<T>(stepName: OrgKpiAiContextStepName, fn: () => Promise<T>) {
+  try {
+    return await fn()
+  } catch (error) {
+    if (error && typeof error === 'object') {
+      Object.assign(error, { orgKpiAiStepName: stepName })
+    }
+    throw error
+  }
+}
+
 export async function loadOrgKpiTeamAiContext(
   params: LoadContextParams
 ): Promise<OrgKpiTeamAiContextView> {
-  const scopeDepartmentIds = getOrgKpiScopeDepartmentIds(params)
-  assertDepartmentScope(scopeDepartmentIds, params.targetDepartmentId)
-
-  const { departmentsById } = await loadDepartmentGraph()
-  const targetDepartment = departmentsById.get(params.targetDepartmentId)
-  if (!targetDepartment) {
-    throw new AppError(404, 'DEPARTMENT_NOT_FOUND', '조직 정보를 찾을 수 없습니다.')
-  }
-
-  const planningDepartmentId = resolvePlanningDepartmentIdFromGraph(params.targetDepartmentId, departmentsById)
-  const planningDepartment = departmentsById.get(planningDepartmentId)
-  if (!planningDepartment) {
-    throw new AppError(404, 'DEPARTMENT_NOT_FOUND', '추천 기준 조직 정보를 찾을 수 없습니다.')
-  }
-
-  const cycle = await resolveTargetCycle(targetDepartment.organization.id, params.evalYear)
-
-  const [businessPlan, divisionJobDescription, teamJobDescription, sourceOrgKpis, recommendationSets, reviewRuns] =
-    await Promise.all([
-    prisma.businessPlanDocument.findFirst({
-      where: {
-        deptId: planningDepartmentId,
-        evalYear: params.evalYear,
-      },
-      include: {
-        department: {
-          select: {
-            deptName: true,
-          },
-        },
-      },
-      orderBy: [{ updatedAt: 'desc' }],
-    }),
-    prisma.jobDescriptionDocument.findFirst({
-      where: {
-        deptId: planningDepartmentId,
-        scope: 'DIVISION',
-        evalYear: params.evalYear,
-      },
-      include: {
-        department: {
-          select: {
-            deptName: true,
-          },
-        },
-      },
-      orderBy: [{ updatedAt: 'desc' }],
-    }),
-    prisma.jobDescriptionDocument.findFirst({
-      where: {
-        deptId: params.targetDepartmentId,
-        scope: 'TEAM',
-        evalYear: params.evalYear,
-      },
-      include: {
-        department: {
-          select: {
-            deptName: true,
-          },
-        },
-      },
-      orderBy: [{ updatedAt: 'desc' }],
-    }),
-    prisma.orgKpi.findMany({
-      where: {
-        deptId: planningDepartmentId,
-        evalYear: params.evalYear,
-      },
-      select: {
-        id: true,
-        kpiName: true,
-        kpiCategory: true,
-        targetValue: true,
-        targetValueT: true,
-        targetValueE: true,
-        targetValueS: true,
-        unit: true,
-        weight: true,
-        difficulty: true,
-      },
-      orderBy: [{ weight: 'desc' }, { kpiName: 'asc' }],
-    }),
-    prisma.teamKpiRecommendationSet.findMany({
-      where: {
-        targetDepartmentId: params.targetDepartmentId,
-        evalYear: params.evalYear,
-      },
-      include: {
-        sourceDepartment: {
-          select: {
-            deptName: true,
-          },
-        },
-        items: true,
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: 5,
-    }),
-    prisma.teamKpiReviewRun.findMany({
-      where: {
-        targetDepartmentId: params.targetDepartmentId,
-        evalYear: params.evalYear,
-      },
-      include: {
-        sourceDepartment: {
-          select: {
-            deptName: true,
-          },
-        },
-        items: true,
-      },
-      orderBy: [{ createdAt: 'desc' }],
-      take: 5,
-    }),
-  ])
-
-  return {
-    targetDepartmentId: params.targetDepartmentId,
-    planningDepartmentId,
-    planningDepartmentName: planningDepartment.deptName,
-    planningSourceLabel:
-      planningDepartmentId === params.targetDepartmentId
-        ? '현재 조직 기준'
-        : `${planningDepartment.deptName} 사업계획서 기준`,
+  logOrgKpiAiContext('ORG_KPI_AI_CONTEXT_LOAD_START', {
+    deptId: params.targetDepartmentId,
     evalYear: params.evalYear,
-    evalCycleId: cycle?.id ?? null,
-    canEditBusinessPlan:
-      canEditBusinessPlan(params.role) &&
-      (!scopeDepartmentIds || scopeDepartmentIds.includes(planningDepartmentId)),
-    canEditDivisionJobDescription:
-      canEditJobDescription(params.role, 'DIVISION') &&
-      (!scopeDepartmentIds || scopeDepartmentIds.includes(planningDepartmentId)),
-    canEditTeamJobDescription:
-      canEditJobDescription(params.role, 'TEAM') &&
-      (!scopeDepartmentIds || scopeDepartmentIds.includes(params.targetDepartmentId)),
-    canRequestRecommendation: canOperateTeamKpiAi(params.role),
-    canRunReview: canOperateTeamKpiAi(params.role),
-    businessPlan: businessPlan ? mapBusinessPlan(businessPlan) : null,
-    divisionJobDescription: divisionJobDescription ? mapJobDescription(divisionJobDescription) : null,
-    teamJobDescription: teamJobDescription ? mapJobDescription(teamJobDescription) : null,
-    sourceOrgKpis: sourceOrgKpis.map((kpi) => ({
-      id: kpi.id,
-      title: kpi.kpiName,
-      category: kpi.kpiCategory,
-      targetValuesText: formatOrgKpiTargetValues({
-        ...resolveOrgKpiTargetValues({
-          targetValue: kpi.targetValue ?? undefined,
-          targetValueT: kpi.targetValueT ?? undefined,
-          targetValueE: kpi.targetValueE ?? undefined,
-          targetValueS: kpi.targetValueS ?? undefined,
+    stepName: 'loadDepartmentGraph',
+  })
+
+  try {
+    const scopeDepartmentIds = getOrgKpiScopeDepartmentIds(params)
+    assertDepartmentScope(scopeDepartmentIds, params.targetDepartmentId)
+
+    const { departmentsById } = await runOrgKpiAiContextStep('loadDepartmentGraph', () => loadDepartmentGraph())
+    const targetDepartment = departmentsById.get(params.targetDepartmentId)
+    if (!targetDepartment) {
+      throw new AppError(404, 'DEPARTMENT_NOT_FOUND', '조직 정보를 찾을 수 없습니다.')
+    }
+
+    const planningDepartmentId = resolvePlanningDepartmentIdFromGraph(params.targetDepartmentId, departmentsById)
+    const planningDepartment = departmentsById.get(planningDepartmentId)
+    if (!planningDepartment) {
+      throw new AppError(404, 'DEPARTMENT_NOT_FOUND', '추천 기준 조직 정보를 찾을 수 없습니다.')
+    }
+
+    const cycle = await runOrgKpiAiContextStep('resolveTargetCycle', () =>
+      resolveTargetCycle(targetDepartment.organization.id, params.evalYear)
+    )
+
+    logOrgKpiAiContext('ORG_KPI_AI_BUSINESS_PLAN_LOOKUP', {
+      deptId: params.targetDepartmentId,
+      evalYear: params.evalYear,
+      stepName: 'businessPlanLookup',
+    })
+    logOrgKpiAiContext('ORG_KPI_AI_RECOMMENDATION_LOOKUP', {
+      deptId: params.targetDepartmentId,
+      evalYear: params.evalYear,
+      stepName: 'recommendationLookup',
+    })
+    logOrgKpiAiContext('ORG_KPI_AI_REVIEW_LOOKUP', {
+      deptId: params.targetDepartmentId,
+      evalYear: params.evalYear,
+      stepName: 'reviewLookup',
+    })
+
+    const [businessPlan, divisionJobDescription, teamJobDescription, sourceOrgKpis, recommendationSets, reviewRuns] =
+      await Promise.all([
+        runOrgKpiAiContextStep('businessPlanLookup', () =>
+          prisma.businessPlanDocument.findFirst({
+            where: {
+              deptId: planningDepartmentId,
+              evalYear: params.evalYear,
+            },
+            include: {
+              department: {
+                select: {
+                  deptName: true,
+                },
+              },
+            },
+            orderBy: [{ updatedAt: 'desc' }],
+          })
+        ),
+        runOrgKpiAiContextStep('businessPlanLookup', () =>
+          prisma.jobDescriptionDocument.findFirst({
+            where: {
+              deptId: planningDepartmentId,
+              scope: 'DIVISION',
+              evalYear: params.evalYear,
+            },
+            include: {
+              department: {
+                select: {
+                  deptName: true,
+                },
+              },
+            },
+            orderBy: [{ updatedAt: 'desc' }],
+          })
+        ),
+        runOrgKpiAiContextStep('businessPlanLookup', () =>
+          prisma.jobDescriptionDocument.findFirst({
+            where: {
+              deptId: params.targetDepartmentId,
+              scope: 'TEAM',
+              evalYear: params.evalYear,
+            },
+            include: {
+              department: {
+                select: {
+                  deptName: true,
+                },
+              },
+            },
+            orderBy: [{ updatedAt: 'desc' }],
+          })
+        ),
+        runOrgKpiAiContextStep('businessPlanLookup', () =>
+          prisma.orgKpi.findMany({
+            where: {
+              deptId: planningDepartmentId,
+              evalYear: params.evalYear,
+            },
+            select: {
+              id: true,
+              kpiName: true,
+              kpiCategory: true,
+              targetValue: true,
+              targetValueT: true,
+              targetValueE: true,
+              targetValueS: true,
+              unit: true,
+              weight: true,
+              difficulty: true,
+            },
+            orderBy: [{ weight: 'desc' }, { kpiName: 'asc' }],
+          })
+        ),
+        runOrgKpiAiContextStep('recommendationLookup', () =>
+          prisma.teamKpiRecommendationSet.findMany({
+            where: {
+              targetDepartmentId: params.targetDepartmentId,
+              evalYear: params.evalYear,
+            },
+            include: {
+              sourceDepartment: {
+                select: {
+                  deptName: true,
+                },
+              },
+              items: true,
+            },
+            orderBy: [{ createdAt: 'desc' }],
+            take: 5,
+          })
+        ),
+        runOrgKpiAiContextStep('reviewLookup', () =>
+          prisma.teamKpiReviewRun.findMany({
+            where: {
+              targetDepartmentId: params.targetDepartmentId,
+              evalYear: params.evalYear,
+            },
+            include: {
+              sourceDepartment: {
+                select: {
+                  deptName: true,
+                },
+              },
+              items: true,
+            },
+            orderBy: [{ createdAt: 'desc' }],
+            take: 5,
+          })
+        ),
+      ])
+
+    const context = {
+      targetDepartmentId: params.targetDepartmentId,
+      planningDepartmentId,
+      planningDepartmentName: planningDepartment.deptName,
+      planningSourceLabel:
+        planningDepartmentId === params.targetDepartmentId
+          ? '현재 조직 기준'
+          : `${planningDepartment.deptName} 사업계획서 기준`,
+      evalYear: params.evalYear,
+      evalCycleId: cycle?.id ?? null,
+      canEditBusinessPlan:
+        canEditBusinessPlan(params.role) &&
+        (!scopeDepartmentIds || scopeDepartmentIds.includes(planningDepartmentId)),
+      canEditDivisionJobDescription:
+        canEditJobDescription(params.role, 'DIVISION') &&
+        (!scopeDepartmentIds || scopeDepartmentIds.includes(planningDepartmentId)),
+      canEditTeamJobDescription:
+        canEditJobDescription(params.role, 'TEAM') &&
+        (!scopeDepartmentIds || scopeDepartmentIds.includes(params.targetDepartmentId)),
+      canRequestRecommendation: canOperateTeamKpiAi(params.role),
+      canRunReview: canOperateTeamKpiAi(params.role),
+      businessPlan: businessPlan ? mapBusinessPlan(businessPlan) : null,
+      divisionJobDescription: divisionJobDescription ? mapJobDescription(divisionJobDescription) : null,
+      teamJobDescription: teamJobDescription ? mapJobDescription(teamJobDescription) : null,
+      sourceOrgKpis: sourceOrgKpis.map((kpi) => ({
+        id: kpi.id,
+        title: kpi.kpiName,
+        category: kpi.kpiCategory,
+        targetValuesText: formatOrgKpiTargetValues({
+          ...resolveOrgKpiTargetValues({
+            targetValue: kpi.targetValue ?? undefined,
+            targetValueT: kpi.targetValueT ?? undefined,
+            targetValueE: kpi.targetValueE ?? undefined,
+            targetValueS: kpi.targetValueS ?? undefined,
+          }),
+          unit: kpi.unit ?? undefined,
         }),
-        unit: kpi.unit ?? undefined,
-      }),
-      weight: Number(kpi.weight),
-      difficulty: kpi.difficulty,
-    })),
-    recommendationSets: recommendationSets.map(mapRecommendationSet),
-    reviewRuns: reviewRuns.map(mapReviewRun),
+        weight: Number(kpi.weight),
+        difficulty: kpi.difficulty,
+      })),
+      recommendationSets: recommendationSets.map(mapRecommendationSet),
+      reviewRuns: reviewRuns.map(mapReviewRun),
+    } satisfies OrgKpiTeamAiContextView
+
+    logOrgKpiAiContext('ORG_KPI_AI_CONTEXT_LOAD_SUCCESS', {
+      deptId: params.targetDepartmentId,
+      evalYear: params.evalYear,
+      stepName: 'reviewLookup',
+      businessPlanLoaded: Boolean(context.businessPlan),
+      recommendationSetCount: context.recommendationSets.length,
+      reviewRunCount: context.reviewRuns.length,
+    })
+
+    return context
+  } catch (error) {
+    const meta = getOrgKpiAiContextErrorMeta(error)
+    logOrgKpiAiContext('ORG_KPI_AI_CONTEXT_LOAD_FAILED', {
+      deptId: params.targetDepartmentId,
+      evalYear: params.evalYear,
+      stepName: meta.stepName,
+      errorCode: meta.errorCode,
+      prismaCode: meta.prismaCode,
+      shortMessage: meta.shortMessage,
+    })
+    throw error
   }
 }
 
@@ -1036,12 +1150,12 @@ async function loadRecommendationGenerationContext(params: LoadContextParams): P
     targetDepartment: {
       id: targetDepartment.id,
       name: targetDepartment.deptName,
-      organizationName: targetDepartment.organization.orgName,
+      organizationName: targetDepartment.organization.name,
     },
     planningDepartment: {
       id: planningDepartment.id,
       name: planningDepartment.deptName,
-      organizationName: planningDepartment.organization.orgName,
+      organizationName: planningDepartment.organization.name,
     },
     evalYear: params.evalYear,
     evalCycleId: cycle?.id ?? null,
