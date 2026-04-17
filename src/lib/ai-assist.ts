@@ -93,11 +93,15 @@ const ORG_KPI_DRAFT_SCHEMA = {
     'definition',
     'formula',
     'targetValueSuggestion',
+    'targetValueT',
+    'targetValueE',
+    'targetValueS',
     'unit',
     'weightSuggestion',
     'difficultySuggestion',
     'reviewPoints',
     'metricSource',
+    'linkedParentKpiId',
     'linkedParentKpiTitle',
     'linkageReason',
     'whyThisIsHighQuality',
@@ -138,6 +142,7 @@ const ORG_KPI_DRAFT_SCHEMA = {
         required: [
           'recommendedTitle',
           'recommendedDefinition',
+          'category',
           'formula',
           'metricSource',
           'targetT',
@@ -146,6 +151,7 @@ const ORG_KPI_DRAFT_SCHEMA = {
           'unit',
           'weightSuggestion',
           'difficultyLevel',
+          'linkedParentKpiId',
           'linkedParentKpiTitle',
           'linkageReason',
           'whyThisIsHighQuality',
@@ -2591,6 +2597,114 @@ function extractOutputText(response: JsonRecord) {
   return chunks.join('\n').trim()
 }
 
+function isOrgKpiAiRequest(requestType: AIRequestType, sourceType?: string) {
+  return requestType === AIRequestType.KPI_ASSIST && typeof sourceType === 'string' && sourceType.startsWith('OrgKpi')
+}
+
+function resolveOrgKpiAiLogContext(payload: JsonRecord, sourceType?: string) {
+  const teamDepartment =
+    payload.teamDepartment && typeof payload.teamDepartment === 'object'
+      ? (payload.teamDepartment as JsonRecord)
+      : null
+
+  const deptId =
+    (typeof payload.deptId === 'string' && payload.deptId) ||
+    (typeof teamDepartment?.id === 'string' && teamDepartment.id) ||
+    null
+  const evalYear =
+    (typeof payload.evalYear === 'number' && Number.isFinite(payload.evalYear) ? payload.evalYear : null) ??
+    (typeof payload.year === 'number' && Number.isFinite(payload.year) ? payload.year : null)
+
+  return {
+    deptId,
+    evalYear,
+    stepName: sourceType ?? null,
+  }
+}
+
+function logOrgKpiAiEvent(
+  event:
+    | 'ORG_KPI_AI_SCHEMA_VALIDATE_START'
+    | 'ORG_KPI_AI_SCHEMA_VALIDATE_FAILED'
+    | 'ORG_KPI_AI_PROVIDER_PARSE_FAILED'
+    | 'ORG_KPI_AI_FALLBACK_USED',
+  requestType: AIRequestType,
+  sourceType: string | undefined,
+  payload: JsonRecord,
+  extra: {
+    errorCode?: string | null
+    prismaCode?: string | null
+    shortMessage?: string | null
+  } = {},
+) {
+  if (!isOrgKpiAiRequest(requestType, sourceType)) {
+    return
+  }
+
+  console.info(`[org-kpi-ai] ${event}`, {
+    ...resolveOrgKpiAiLogContext(payload, sourceType),
+    errorCode: extra.errorCode ?? null,
+    prismaCode: extra.prismaCode ?? null,
+    shortMessage: extra.shortMessage ?? null,
+  })
+}
+
+type StrictJsonSchemaNode = JsonRecord & {
+  properties?: Record<string, unknown>
+  required?: unknown
+  items?: unknown
+}
+
+function collectStrictJsonSchemaCoverageErrors(node: StrictJsonSchemaNode, path: string[] = []): string[] {
+  const errors: string[] = []
+  const properties =
+    node.properties && typeof node.properties === 'object' && !Array.isArray(node.properties)
+      ? (node.properties as Record<string, unknown>)
+      : null
+
+  if (properties) {
+    const required = Array.isArray(node.required) ? node.required.filter((item) => typeof item === 'string') : null
+    const propertyKeys = Object.keys(properties)
+
+    if (!required) {
+      errors.push(
+        `In context=${JSON.stringify(path)}, 'required' is required to be supplied and to be an array including every key in properties.`,
+      )
+    } else {
+      for (const propertyKey of propertyKeys) {
+        if (!required.includes(propertyKey)) {
+          errors.push(
+            `In context=${JSON.stringify([...path, 'properties'])}, 'required' is required to be supplied and to be an array including every key in properties. Missing '${propertyKey}'.`,
+          )
+        }
+      }
+    }
+
+    for (const [propertyKey, propertyValue] of Object.entries(properties)) {
+      if (propertyValue && typeof propertyValue === 'object' && !Array.isArray(propertyValue)) {
+        errors.push(
+          ...collectStrictJsonSchemaCoverageErrors(propertyValue as StrictJsonSchemaNode, [...path, 'properties', propertyKey]),
+        )
+      }
+    }
+  }
+
+  if (node.items && typeof node.items === 'object' && !Array.isArray(node.items)) {
+    errors.push(...collectStrictJsonSchemaCoverageErrors(node.items as StrictJsonSchemaNode, [...path, 'items']))
+  }
+
+  return errors
+}
+
+function assertStrictJsonSchemaCoverage(schemaName: string, schema: JsonRecord) {
+  const errors = collectStrictJsonSchemaCoverageErrors(schema as StrictJsonSchemaNode)
+  if (!errors.length) {
+    return
+  }
+
+  throw new AppError(500, 'AI_SCHEMA_VALIDATION_ERROR', `Invalid schema for response_format '${schemaName}': ${errors[0]}`)
+}
+
 async function callOpenAIResponsesApi(
   requestType: AIRequestType,
   payload: JsonRecord,
@@ -2602,6 +2716,18 @@ async function callOpenAIResponsesApi(
   }
 
   const config = getAiConfig(requestType, sourceType)
+  logOrgKpiAiEvent('ORG_KPI_AI_SCHEMA_VALIDATE_START', requestType, sourceType, payload)
+  try {
+    assertStrictJsonSchemaCoverage(config.schemaName, config.schema)
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Schema validation failed.'
+    logOrgKpiAiEvent('ORG_KPI_AI_SCHEMA_VALIDATE_FAILED', requestType, sourceType, payload, {
+      errorCode: error instanceof AppError ? error.code : 'AI_SCHEMA_VALIDATION_ERROR',
+      shortMessage: errorMessage,
+    })
+    throw error
+  }
+
   const model = process.env.OPENAI_RESPONSES_MODEL || 'gpt-5-mini'
   const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')
   const response = await fetch(`${baseUrl}/responses`, {
@@ -2644,11 +2770,27 @@ async function callOpenAIResponsesApi(
       typeof (json.error as JsonRecord | undefined)?.message === 'string'
         ? String((json.error as JsonRecord).message)
         : 'OpenAI Responses API request failed.'
+    if (
+      errorMessage.includes('response_format') ||
+      errorMessage.includes('json_schema') ||
+      errorMessage.includes('structured output')
+    ) {
+      logOrgKpiAiEvent('ORG_KPI_AI_SCHEMA_VALIDATE_FAILED', requestType, sourceType, payload, {
+        errorCode: 'AI_SCHEMA_VALIDATION_ERROR',
+        shortMessage: errorMessage,
+      })
+      throw new AppError(response.status, 'AI_SCHEMA_VALIDATION_ERROR', errorMessage)
+    }
+
     throw new AppError(response.status, 'AI_REQUEST_FAILED', errorMessage)
   }
 
   const text = extractOutputText(json)
   if (!text) {
+    logOrgKpiAiEvent('ORG_KPI_AI_PROVIDER_PARSE_FAILED', requestType, sourceType, payload, {
+      errorCode: 'AI_EMPTY_RESPONSE',
+      shortMessage: 'OpenAI response did not include structured output.',
+    })
     throw new AppError(502, 'AI_EMPTY_RESPONSE', 'OpenAI response did not include structured output.')
   }
 
@@ -2656,6 +2798,10 @@ async function callOpenAIResponsesApi(
   try {
     parsed = JSON.parse(text) as JsonRecord
   } catch {
+    logOrgKpiAiEvent('ORG_KPI_AI_PROVIDER_PARSE_FAILED', requestType, sourceType, payload, {
+      errorCode: 'AI_INVALID_JSON',
+      shortMessage: 'OpenAI response JSON could not be parsed.',
+    })
     throw new AppError(502, 'AI_INVALID_JSON', 'OpenAI response JSON could not be parsed.')
   }
 
@@ -2741,6 +2887,11 @@ export async function generateAiAssist(
   } catch (error) {
     const errorCode = error instanceof AppError ? error.code : 'AI_REQUEST_FAILED'
     const errorMessage = error instanceof Error ? error.message : 'Unknown AI request error.'
+
+    logOrgKpiAiEvent('ORG_KPI_AI_FALLBACK_USED', params.requestType, params.sourceType, requestPayload, {
+      errorCode,
+      shortMessage: errorMessage,
+    })
 
     await recordOperationalEvent({
       level: 'WARN',

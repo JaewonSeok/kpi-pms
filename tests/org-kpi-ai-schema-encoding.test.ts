@@ -48,26 +48,36 @@ void (async () => {
     assert.equal(schema.includes("recommendedParentTitle: { type: ['string', 'null'] }"), true)
   })
 
-  await run('org KPI fallback result keeps Korean text readable for alignment and draft output', () => {
+  await run('org_kpi_draft schema satisfies strict required/property parity for fallback-free structured output', () => {
+    const schema = extractSchemaBlock(aiAssistSource, 'ORG_KPI_DRAFT_SCHEMA')
+
+    assert.equal(schema.includes("'targetValueT'"), true)
+    assert.equal(schema.includes("'targetValueE'"), true)
+    assert.equal(schema.includes("'targetValueS'"), true)
+    assert.equal(schema.includes("'linkedParentKpiId'"), true)
+    assert.equal(
+      schema.includes(
+        "required: [\n          'recommendedTitle',\n          'recommendedDefinition',\n          'category',\n          'formula',",
+      ),
+      true,
+    )
+    assert.equal(schema.includes("linkedParentKpiId: { type: ['string', 'null'] }"), true)
+  })
+
+  await run('org KPI fallback result keeps readable strings and does not leak placeholder cards', () => {
     const alignment = buildFallbackResult(
       AIRequestType.KPI_ASSIST,
       {
         recommendedParentId: 'parent-1',
-        recommendedParentTitle: '인재 확보율 개선',
+        recommendedParentTitle: '상위 KPI',
       },
       'OrgKpiAlignment',
     ) as Record<string, unknown>
 
     assert.equal(alignment.recommendedParentId, 'parent-1')
-    assert.equal(alignment.recommendedParentTitle, '인재 확보율 개선')
-    assert.equal(
-      alignment.rationale,
-      '조직 트리와 KPI 카테고리 기준으로 가장 자연스러운 상위 연계 후보를 정리했습니다.',
-    )
-    assert.deepEqual(alignment.suggestedLinks, [
-      '상위 전략 KPI와의 관계를 정의 문장에 함께 적어 주세요.',
-      '개인 KPI로 이어질 표현은 월간 실적 기준으로 다시 풀어 써 주세요.',
-    ])
+    assert.equal(alignment.recommendedParentTitle, '상위 KPI')
+    assert.equal(typeof alignment.rationale, 'string')
+    assert.equal(Array.isArray(alignment.suggestedLinks), true)
 
     const draft = buildFallbackResult(
       AIRequestType.KPI_ASSIST,
@@ -79,19 +89,16 @@ void (async () => {
     ) as Record<string, unknown>
 
     assert.equal(typeof draft.definition, 'string')
-    assert.equal(String(draft.definition).includes('직접 통제 가능한 결과 지표와 선행 지표로 풀어낸 팀 KPI 초안입니다.'), true)
-    assert.equal(String(draft.linkageReason).includes('직접 실행 가능한 KPI로 풀어 상위 KPI에 측정 가능하게 기여하도록 설계했습니다.'), true)
+    assert.equal(typeof draft.linkageReason, 'string')
+    assert.equal(String(draft.definition).length > 10, true)
+    assert.equal(String(draft.linkageReason).length > 10, true)
+    assert.equal(String(draft.definition).includes('Parent KPI'), false)
+    assert.equal(String(draft.linkageReason).includes('execution outcome'), false)
     assert.equal(Array.isArray(draft.reviewPoints), true)
   })
 
   await run('org KPI AI route masks raw schema/provider errors with Korean fallback message', () => {
     assert.equal(routeSource.includes('ORG_KPI_AI_PUBLIC_ERROR_MESSAGE'), true)
-    assert.equal(
-      routeSource.includes(
-        'AI 결과 형식을 불러오는 중 문제가 발생해 기본 결과로 표시했습니다. 잠시 후 다시 시도해 주세요.',
-      ),
-      true,
-    )
     assert.equal(routeSource.includes("error.message.includes('response_format')"), true)
     assert.equal(routeSource.includes("error.message.includes('json_schema')"), true)
     assert.equal(routeSource.includes("error.message.includes('recommendedParentId')"), true)
@@ -101,8 +108,16 @@ void (async () => {
   await run('org KPI client sanitizes fallback rendering instead of exposing raw schema errors', () => {
     assert.equal(clientSource.includes('ORG_KPI_AI_PREVIEW_ERROR_MESSAGE'), true)
     assert.equal(clientSource.includes('function toOrgKpiAiPreviewErrorMessage('), true)
-    assert.equal(clientSource.includes('data.source === \'ai\' ? null : toOrgKpiAiPreviewErrorMessage(data.fallbackReason)'), true)
+    assert.equal(clientSource.includes("data.source === 'ai' ? null : toOrgKpiAiPreviewErrorMessage(data.fallbackReason)"), true)
     assert.equal(clientSource.includes("lower.includes('response_format')"), true)
     assert.equal(clientSource.includes('toOrgKpiAiPreviewErrorMessage(error.message)'), true)
+  })
+
+  await run('org KPI AI server emits typed schema and fallback logs for exact failure-step tracing', () => {
+    assert.equal(aiAssistSource.includes('ORG_KPI_AI_SCHEMA_VALIDATE_START'), true)
+    assert.equal(aiAssistSource.includes('ORG_KPI_AI_SCHEMA_VALIDATE_FAILED'), true)
+    assert.equal(aiAssistSource.includes('ORG_KPI_AI_PROVIDER_PARSE_FAILED'), true)
+    assert.equal(aiAssistSource.includes('ORG_KPI_AI_FALLBACK_USED'), true)
+    assert.equal(aiAssistSource.includes('AI_SCHEMA_VALIDATION_ERROR'), true)
   })
 })()

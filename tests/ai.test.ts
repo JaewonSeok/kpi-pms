@@ -26,6 +26,50 @@ function extractSchemaBlock(source: string, schemaName: string) {
   return source.match(pattern)?.[0] ?? ''
 }
 
+function extractSchemaObject<T = Record<string, unknown>>(source: string, schemaName: string): T {
+  const block = extractSchemaBlock(source, schemaName)
+  if (!block) {
+    throw new Error(`Schema block not found: ${schemaName}`)
+  }
+
+  const literal = block
+    .replace(new RegExp(`^const ${schemaName} = `), '')
+    .replace(/\s+satisfies JsonRecord$/, '')
+
+  return Function(`return (${literal})`)() as T
+}
+
+function assertStrictSchemaRequiredParity(schema: Record<string, unknown>, path: string[] = []) {
+  const properties =
+    schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)
+      ? (schema.properties as Record<string, unknown>)
+      : null
+
+  if (properties) {
+    const required = Array.isArray(schema.required) ? schema.required.filter((value) => typeof value === 'string') : []
+    assert.deepEqual(
+      [...required].sort(),
+      [...Object.keys(properties)].sort(),
+      `required/property mismatch at ${path.join('.') || '<root>'}`,
+    )
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        assertStrictSchemaRequiredParity(value as Record<string, unknown>, [...path, 'properties', key])
+      }
+    }
+  }
+
+  const items =
+    schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)
+      ? (schema.items as Record<string, unknown>)
+      : null
+
+  if (items) {
+    assertStrictSchemaRequiredParity(items, [...path, 'items'])
+  }
+}
+
 async function main() {
   const { AIRequestType } = await import('@prisma/client')
   const {
@@ -93,18 +137,19 @@ async function main() {
   run('structured output schemas keep nullable optional fields in required arrays for strict json_schema', () => {
     const source = read('src/lib/ai-assist.ts')
     const personalDraftSchema = extractSchemaBlock(source, 'PERSONAL_KPI_DRAFT_SCHEMA')
-    const orgDraftSchema = extractSchemaBlock(source, 'ORG_KPI_DRAFT_SCHEMA')
     const personalDuplicateSchema = extractSchemaBlock(source, 'PERSONAL_KPI_DUPLICATE_SCHEMA')
     const orgDuplicateSchema = extractSchemaBlock(source, 'ORG_KPI_DUPLICATE_SCHEMA')
+    const orgDraftSchemaObject = extractSchemaObject(source, 'ORG_KPI_DRAFT_SCHEMA')
+    const orgAlignmentSchemaObject = extractSchemaObject(source, 'ORG_KPI_ALIGNMENT_SCHEMA')
 
     assert.equal(personalDraftSchema.includes("'formula'"), true)
     assert.equal(personalDraftSchema.includes("formula: { type: ['string', 'null'] }"), true)
-    assert.equal(orgDraftSchema.includes("'category'"), true)
-    assert.equal(orgDraftSchema.includes("category: { type: ['string', 'null'] }"), true)
     assert.equal(personalDuplicateSchema.includes("required: ['id', 'title', 'overlapLevel', 'similarityReason']"), true)
     assert.equal(personalDuplicateSchema.includes("id: { type: ['string', 'null'] }"), true)
     assert.equal(orgDuplicateSchema.includes("required: ['id', 'title', 'overlapLevel', 'similarityReason']"), true)
     assert.equal(orgDuplicateSchema.includes("id: { type: ['string', 'null'] }"), true)
+    assertStrictSchemaRequiredParity(orgDraftSchemaObject)
+    assertStrictSchemaRequiredParity(orgAlignmentSchemaObject)
   })
 
   console.log('AI assistant tests completed')
