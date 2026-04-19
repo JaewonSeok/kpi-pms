@@ -33,6 +33,7 @@ type Props = {
   onSelectRecommendation?: (item: KpiAiPreviewRecommendation, index: number) => void
   selectedRecommendationIndex?: number | null
   recommendationActionLabel?: string
+  isRecommendationDraftOpen?: boolean
 }
 
 const cls = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
@@ -196,6 +197,7 @@ function renderSection(
     onSelectRecommendation?: (item: KpiAiPreviewRecommendation, index: number) => void
     selectedRecommendationIndex?: number | null
     recommendationActionLabel?: string
+    isRecommendationDraftOpen?: boolean
   },
 ) {
   switch (section.kind) {
@@ -382,20 +384,32 @@ function renderSection(
                 ) : null}
                 {recommendationUi?.onSelectRecommendation ? (
                   <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
+                    {(() => {
+                      const isCurrentRecommendation = recommendationUi.selectedRecommendationIndex === index
+                      const buttonLabel = isCurrentRecommendation
+                        ? recommendationUi.isRecommendationDraftOpen
+                          ? '현재 초안에 반영됨'
+                          : '이 추천안으로 다시 채우기'
+                        : recommendationUi.selectedRecommendationIndex !== null
+                          ? '이 추천안으로 다시 채우기'
+                          : recommendationUi.recommendationActionLabel ?? '이 추천안으로 작성'
+
+                      return (
                     <button
                       type="button"
                       onClick={() => recommendationUi.onSelectRecommendation?.(item, index)}
+                      disabled={Boolean(isCurrentRecommendation && recommendationUi.isRecommendationDraftOpen)}
                       className={cls(
-                        'inline-flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-semibold transition',
-                        recommendationUi.selectedRecommendationIndex === index
+                        'inline-flex min-h-11 items-center justify-center rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-70',
+                        isCurrentRecommendation
                           ? 'border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
                           : 'bg-slate-900 text-white hover:bg-slate-800',
                       )}
                     >
-                      {recommendationUi.selectedRecommendationIndex === index
-                        ? '다시 이 추천안으로 작성'
-                        : recommendationUi.recommendationActionLabel ?? '이 추천안으로 작성'}
+                      {buttonLabel}
                     </button>
+                      )
+                    })()}
                   </div>
                 ) : null}
               </div>
@@ -507,6 +521,7 @@ export function KpiAiPreviewPanel(props: Props) {
             onSelectRecommendation: props.onSelectRecommendation,
             selectedRecommendationIndex: props.selectedRecommendationIndex ?? null,
             recommendationActionLabel: props.recommendationActionLabel,
+            isRecommendationDraftOpen: props.isRecommendationDraftOpen,
           }),
         )}
       </div>

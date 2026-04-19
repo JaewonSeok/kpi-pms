@@ -28,8 +28,11 @@ import {
   type KpiAiPreviewRecommendation,
 } from '@/lib/kpi-ai-preview'
 import {
+  buildOrgKpiAiRecommendationDraftStatusLabel,
+  buildOrgKpiAiRecommendationOptionLabel,
   buildOrgKpiAiRecommendationSourceLabel,
   buildOrgKpiFormFromAiRecommendation,
+  isOrgKpiAiRecommendationDraftDirty,
 } from '@/lib/org-kpi-ai-recommendation-draft'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
 import { KpiAiPreviewPanel } from './KpiAiPreviewPanel'
@@ -590,6 +593,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [editingKpiId, setEditingKpiId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
+  const [editorBaselineForm, setEditorBaselineForm] = useState<FormState | null>(null)
   const [teamAiContext, setTeamAiContext] = useState<OrgKpiTeamAiContextView | null>(pageData.teamAi)
   const [teamAiLoading, setTeamAiLoading] = useState(false)
   const [businessPlanForm, setBusinessPlanForm] = useState<BusinessPlanFormState>(
@@ -619,6 +623,10 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const [aiAction, setAiAction] = useState<AiAction>('generate-draft')
   const [selectedAiRecommendationIndex, setSelectedAiRecommendationIndex] = useState<number | null>(null)
   const [editorDraftSourceLabel, setEditorDraftSourceLabel] = useState<string | null>(null)
+  const [pendingAiRecommendationIndex, setPendingAiRecommendationIndex] = useState<number | null>(null)
+  const [showRecommendationSwitchConfirm, setShowRecommendationSwitchConfirm] = useState(false)
+  const [showEditorCloseConfirm, setShowEditorCloseConfirm] = useState(false)
+  const [showAiRecommendationRetainedNotice, setShowAiRecommendationRetainedNotice] = useState(false)
   const [search, setSearch] = useState('')
   const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
   const serverListSignature = useMemo(() => buildOrgKpiServerListSignature(pageData.list), [pageData.list])
@@ -643,6 +651,35 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       }),
     [list, search, selectedDepartmentId]
   )
+  const aiPreviewRecommendations = useMemo(
+    () =>
+      aiPreview?.source === 'ai' && aiAction === 'generate-draft'
+        ? extractKpiAiPreviewRecommendations(aiPreview.result)
+        : [],
+    [aiAction, aiPreview]
+  )
+  const canUseAiRecommendationDraftOptions =
+    aiPreview?.source === 'ai' &&
+    aiAction === 'generate-draft' &&
+    !editingKpiId &&
+    !pendingRecommendationDecision &&
+    aiPreviewRecommendations.length > 0
+  const editorIsDirty = useMemo(
+    () => isOrgKpiAiRecommendationDraftDirty(form, editorBaselineForm),
+    [editorBaselineForm, form]
+  )
+  const editorRecommendationStatusLabel = useMemo(() => {
+    if (canUseAiRecommendationDraftOptions && selectedAiRecommendationIndex !== null) {
+      return buildOrgKpiAiRecommendationDraftStatusLabel(selectedAiRecommendationIndex, editorIsDirty)
+    }
+
+    return editorDraftSourceLabel
+  }, [
+    canUseAiRecommendationDraftOptions,
+    editorDraftSourceLabel,
+    editorIsDirty,
+    selectedAiRecommendationIndex,
+  ])
 
   useEffect(() => {
     if (visibleTabs.includes(tab)) {
@@ -685,6 +722,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setEditingKpiId(null)
     setPendingRecommendationDecision(null)
     setForm(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
+    setEditorBaselineForm(null)
     setTeamAiContext(pageData.teamAi)
     setTeamAiLoading(false)
     setBusinessPlanForm(buildBusinessPlanForm(pageData.teamAi, pageData.selectedYear, pageData.selectedDepartmentId))
@@ -701,6 +739,10 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setAiPreview(null)
     setSelectedAiRecommendationIndex(null)
     setEditorDraftSourceLabel(null)
+    setPendingAiRecommendationIndex(null)
+    setShowRecommendationSwitchConfirm(false)
+    setShowEditorCloseConfirm(false)
+    setShowAiRecommendationRetainedNotice(false)
     setSearch('')
   }, [
     selectedDepartmentId,
@@ -729,6 +771,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setShowDeleteConfirm(false)
     setEditingKpiId(null)
     setPendingRecommendationDecision(null)
+    setEditorBaselineForm(null)
     setBanner(null)
     setAiPreview(null)
     setTeamAiContext(pageData.teamAi)
@@ -746,6 +789,10 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setTab('map')
     setSelectedAiRecommendationIndex(null)
     setEditorDraftSourceLabel(null)
+    setPendingAiRecommendationIndex(null)
+    setShowRecommendationSwitchConfirm(false)
+    setShowEditorCloseConfirm(false)
+    setShowAiRecommendationRetainedNotice(false)
   }, [pageData, viewContextKey])
 
   useEffect(() => {
@@ -976,13 +1023,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           )
       setBanner({
         tone: 'success',
-        message: pendingRecommendationDecision
-          ? pendingRecommendationDecision.decision === 'REFERENCED_NEW'
-            ? 'AI 추천을 참고해 새 팀 KPI를 저장했습니다.'
-            : 'AI 추천 KPI를 수정 후 채택했습니다.'
-          : editingKpiId
-            ? '조직 KPI를 수정했습니다.'
-            : '새 조직 KPI를 등록했습니다.',
+        message: editingKpiId ? '조직 KPI를 수정했습니다.' : '조직 KPI를 저장했습니다.',
       })
       setList((current) =>
         applySavedOrgKpiToList({
@@ -998,7 +1039,11 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       setShowForm(false)
       setEditingKpiId(null)
       setPendingRecommendationDecision(null)
+      setEditorBaselineForm(null)
       setEditorDraftSourceLabel(null)
+      setShowRecommendationSwitchConfirm(false)
+      setShowEditorCloseConfirm(false)
+      setShowAiRecommendationRetainedNotice(false)
       const nextParams = new URLSearchParams(searchParams.toString())
       nextParams.set('year', String(Number(form.evalYear || pageData.selectedYear)))
       nextParams.set('dept', saved.deptId)
@@ -1014,7 +1059,10 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       }
       router.refresh()
     } catch (error) {
-      setBanner({ tone: 'error', message: error instanceof Error ? error.message : '조직 KPI 저장에 실패했습니다.' })
+      setBanner({
+        tone: 'error',
+        message: '조직 KPI 저장 중 문제가 발생했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요.',
+      })
     } finally {
       setBusy(false)
     }
@@ -1077,6 +1125,10 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setAiAction(action)
     setSelectedAiRecommendationIndex(null)
     setEditorDraftSourceLabel(null)
+    setPendingAiRecommendationIndex(null)
+    setShowRecommendationSwitchConfirm(false)
+    setShowEditorCloseConfirm(false)
+    setShowAiRecommendationRetainedNotice(false)
     try {
       const data = await fetchJson<AiPreview>('/api/kpi/org/ai', {
         method: 'POST',
@@ -1403,11 +1455,8 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
           if (primaryRecommendation) {
             openAiPreviewRecommendationEditor(primaryRecommendation, 0)
           } else {
-            setEditingKpiId(null)
-            setPendingRecommendationDecision(null)
-            setSelectedAiRecommendationIndex(null)
-            setEditorDraftSourceLabel('AI 대표 추천 기반 초안')
-            setForm((current) => {
+            const nextForm = (() => {
+              const current = form
               const suggestedTargetValue = String(
                 aiPreview.result.targetValueSuggestion ?? aiPreview.result.targetValueE ?? current.targetValueE
               )
@@ -1424,22 +1473,25 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 unit: String(aiPreview.result.unit ?? current.unit),
                 weight: String(aiPreview.result.weightSuggestion ?? current.weight),
               }
+            })()
+            openEditorWithForm(nextForm, {
+              recommendationIndex: null,
+              draftSourceLabel: 'AI 대표 추천 기반 초안',
             })
-            setShowForm(true)
           }
         }
 
         if (aiAction === 'improve-wording' && selectedKpi) {
-          setEditingKpiId(selectedKpi.id)
-          setPendingRecommendationDecision(null)
-          setSelectedAiRecommendationIndex(null)
-          setEditorDraftSourceLabel(null)
-          setForm({
-            ...buildFormFromKpi(selectedKpi),
-            kpiName: String(aiPreview.result.improvedTitle ?? selectedKpi.title),
-            definition: String(aiPreview.result.improvedDefinition ?? selectedKpi.definition ?? ''),
-          })
-          setShowForm(true)
+          openEditorWithForm(
+            {
+              ...buildFormFromKpi(selectedKpi),
+              kpiName: String(aiPreview.result.improvedTitle ?? selectedKpi.title),
+              definition: String(aiPreview.result.improvedDefinition ?? selectedKpi.definition ?? ''),
+            },
+            {
+              editingId: selectedKpi.id,
+            }
+          )
         }
 
         setBanner({ tone: 'success', message: 'AI 제안을 반영했습니다.' })
@@ -1585,32 +1637,118 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setEditingKpiId(null)
     setPendingRecommendationDecision(null)
     setEditorDraftSourceLabel(null)
+    setEditorBaselineForm(null)
+    setShowRecommendationSwitchConfirm(false)
+    setPendingAiRecommendationIndex(null)
+    setShowEditorCloseConfirm(false)
     setForm(buildEmptyForm(pageData.selectedYear, activeTeamDepartmentId))
+  }
+
+  function closeEditorModalWithRetentionNotice() {
+    closeEditorModal()
+    if (aiPreviewRecommendations.length) {
+      setShowAiRecommendationRetainedNotice(true)
+    }
+  }
+
+  function openEditorWithForm(nextForm: FormState, options: {
+    recommendationIndex?: number | null
+    draftSourceLabel?: string | null
+    editingId?: string | null
+    pendingDecision?: PendingRecommendationDecision | null
+    bannerMessage?: string | null
+  }) {
+    setEditingKpiId(options.editingId ?? null)
+    setPendingRecommendationDecision(options.pendingDecision ?? null)
+    setSelectedAiRecommendationIndex(options.recommendationIndex ?? null)
+    setEditorDraftSourceLabel(options.draftSourceLabel ?? null)
+    setForm(nextForm)
+    setEditorBaselineForm(nextForm)
+    setShowForm(true)
+    setShowRecommendationSwitchConfirm(false)
+    setPendingAiRecommendationIndex(null)
+    setShowEditorCloseConfirm(false)
+    setShowAiRecommendationRetainedNotice(false)
+    if (options.bannerMessage) {
+      setBanner({
+        tone: 'info',
+        message: options.bannerMessage,
+      })
+    }
+  }
+
+  function applyAiPreviewRecommendationSelection(index: number) {
+    const item = aiPreviewRecommendations[index]
+
+    if (!item) {
+      setBanner({
+        tone: 'error',
+        message: '선택할 수 있는 AI 추천안이 없습니다. 먼저 추천을 생성해 주세요.',
+      })
+      return false
+    }
+
+    const nextForm = buildOrgKpiFormFromAiRecommendation(item, pageData.selectedYear, activeTeamDepartmentId)
+    openEditorWithForm(nextForm, {
+      recommendationIndex: index,
+      draftSourceLabel: buildOrgKpiAiRecommendationSourceLabel(index),
+      bannerMessage: `AI 추천안 ${index + 1}을 초안에 반영했습니다.`,
+    })
+
+    return true
   }
 
   function openAiPreviewRecommendationEditor(item: KpiAiPreviewRecommendation, index: number) {
-    setEditingKpiId(null)
-    setPendingRecommendationDecision(null)
-    setSelectedAiRecommendationIndex(index)
-    setEditorDraftSourceLabel(buildOrgKpiAiRecommendationSourceLabel(index))
-    setForm(buildOrgKpiFormFromAiRecommendation(item, pageData.selectedYear, activeTeamDepartmentId))
-    setShowForm(true)
-    setBanner({
-      tone: 'info',
-      message: `${buildOrgKpiAiRecommendationSourceLabel(index)}을 편집 초안으로 불러왔습니다.`,
+    const nextForm = buildOrgKpiFormFromAiRecommendation(item, pageData.selectedYear, activeTeamDepartmentId)
+    openEditorWithForm(nextForm, {
+      recommendationIndex: index,
+      draftSourceLabel: buildOrgKpiAiRecommendationSourceLabel(index),
+      bannerMessage: `AI 추천안 ${index + 1}을 초안에 반영했습니다.`,
     })
   }
 
+  function handleAiRecommendationSelection(index: number) {
+    if (!aiPreviewRecommendations.length) {
+      setBanner({
+        tone: 'error',
+        message: '선택할 수 있는 AI 추천안이 없습니다. 먼저 추천을 생성해 주세요.',
+      })
+      return
+    }
+
+    if (selectedAiRecommendationIndex === index && showForm) {
+      return
+    }
+
+    if (showForm && editorIsDirty) {
+      setPendingAiRecommendationIndex(index)
+      setShowRecommendationSwitchConfirm(true)
+      return
+    }
+
+    applyAiPreviewRecommendationSelection(index)
+  }
+
+  function confirmAiRecommendationSwitch() {
+    if (pendingAiRecommendationIndex === null) return
+    applyAiPreviewRecommendationSelection(pendingAiRecommendationIndex)
+  }
+
+  function requestCloseEditorModal() {
+    if (editorIsDirty) {
+      setShowEditorCloseConfirm(true)
+      return
+    }
+
+    closeEditorModalWithRetentionNotice()
+  }
+
   function openDirectKpiCreate() {
-    setEditingKpiId(null)
-    setPendingRecommendationDecision(null)
-    setSelectedAiRecommendationIndex(null)
-    setEditorDraftSourceLabel(null)
-    setForm(buildEmptyForm(pageData.selectedYear, activeTeamDepartmentId))
-    setShowForm(true)
-    setBanner({
-      tone: 'info',
-      message: '직접 팀 KPI를 작성하는 편집 모드입니다.',
+    const nextForm = buildEmptyForm(pageData.selectedYear, activeTeamDepartmentId)
+    openEditorWithForm(nextForm, {
+      recommendationIndex: null,
+      draftSourceLabel: null,
+      bannerMessage: '직접 팀 KPI를 작성하는 편집 모드입니다.',
     })
   }
 
@@ -1618,17 +1756,10 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     item: OrgKpiTeamRecommendationItemView,
     decision: RecommendationDecisionMode
   ) {
-    setEditingKpiId(null)
-    setPendingRecommendationDecision({ itemId: item.id, decision })
-    setSelectedAiRecommendationIndex(null)
-    setEditorDraftSourceLabel(
-      decision === 'REFERENCED_NEW' ? 'AI 추천 참고 신규 초안' : 'AI 추천 수정 채택 초안',
-    )
-    setForm(buildFormFromTeamRecommendation(item, pageData.selectedYear, activeTeamDepartmentId))
-    setShowForm(true)
-    setBanner({
-      tone: 'info',
-      message:
+    openEditorWithForm(buildFormFromTeamRecommendation(item, pageData.selectedYear, activeTeamDepartmentId), {
+      pendingDecision: { itemId: item.id, decision },
+      draftSourceLabel: decision === 'REFERENCED_NEW' ? 'AI 추천 참고 신규 초안' : 'AI 추천 수정 채택 초안',
+      bannerMessage:
         decision === 'REFERENCED_NEW'
           ? 'AI 추천을 참고해 새 팀 KPI를 작성합니다.'
           : 'AI 추천을 수정 후 채택하는 편집 모드입니다.',
@@ -1828,12 +1959,11 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 cloneDisabledReason={cloneDisabledReason}
                 deleteActionState={deleteActionState}
                 onEdit={(kpi) => {
-                  setEditingKpiId(kpi.id)
-                  setPendingRecommendationDecision(null)
-                  setSelectedAiRecommendationIndex(null)
-                  setEditorDraftSourceLabel(null)
-                  setForm(buildFormFromKpi(kpi))
-                  setShowForm(true)
+                  openEditorWithForm(buildFormFromKpi(kpi), {
+                    editingId: kpi.id,
+                    recommendationIndex: null,
+                    draftSourceLabel: null,
+                  })
                 }}
                 onClone={handleOpenClone}
                 onDelete={handleOpenDeleteConfirm}
@@ -1941,14 +2071,22 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 decisionBusy={busy}
                 onSelectRecommendation={
                   aiPreview && aiAction === 'generate-draft'
-                    ? (item, index) => openAiPreviewRecommendationEditor(item, index)
+                    ? (_item, index) => handleAiRecommendationSelection(index)
                     : undefined
                 }
                 selectedRecommendationIndex={aiAction === 'generate-draft' ? selectedAiRecommendationIndex : null}
                 recommendationActionLabel="이 추천안으로 작성"
+                isRecommendationDraftOpen={showForm}
               />
             </div>
           </div>
+
+          {showAiRecommendationRetainedNotice && aiPreviewRecommendations.length ? (
+            <InfoNoticeCard
+              title="AI 추천 결과가 유지되고 있습니다."
+              description="팝업을 닫아도 추천안은 사라지지 않습니다. 원하는 추천안을 다시 선택해 초안으로 불러올 수 있습니다."
+            />
+          ) : null}
 
           {!isReadOnlyMemberView ? (
             <OrgKpiTeamAiWorkspace
@@ -1980,7 +2118,48 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
       <OrgKpiQuickLinks showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'} readOnly={isReadOnlyMemberView} />
 
-      {showForm ? <EditorModal departments={pageData.departments} parentGoalOptions={pageData.parentGoalOptions} editingKpiId={editingKpiId} form={form} onChange={setForm} onClose={closeEditorModal} onSubmit={() => void saveKpi()} busy={busy} editing={Boolean(editingKpiId)} draftSourceLabel={editorDraftSourceLabel} /> : null}
+      {showForm ? (
+        <EditorModal
+          departments={pageData.departments}
+          parentGoalOptions={pageData.parentGoalOptions}
+          editingKpiId={editingKpiId}
+          form={form}
+          onChange={setForm}
+          onClose={requestCloseEditorModal}
+          onSubmit={() => void saveKpi()}
+          busy={busy}
+          editing={Boolean(editingKpiId)}
+          draftSourceLabel={editorRecommendationStatusLabel}
+          recommendationOptions={canUseAiRecommendationDraftOptions ? aiPreviewRecommendations : []}
+          selectedRecommendationIndex={canUseAiRecommendationDraftOptions ? selectedAiRecommendationIndex : null}
+          onSelectRecommendation={canUseAiRecommendationDraftOptions ? handleAiRecommendationSelection : undefined}
+        />
+      ) : null}
+      {showRecommendationSwitchConfirm ? (
+        <ConfirmActionDialog
+          title="다른 추천안으로 변경하시겠습니까?"
+          description="현재 수정 중인 내용이 있습니다. 다른 추천안을 선택하면 지금 입력한 내용이 새 추천안으로 덮어써집니다."
+          helperText="저장하지 않은 변경 사항은 복구할 수 없습니다."
+          cancelLabel="취소"
+          confirmLabel="추천안 변경"
+          onCancel={() => {
+            setShowRecommendationSwitchConfirm(false)
+            setPendingAiRecommendationIndex(null)
+          }}
+          onConfirm={confirmAiRecommendationSwitch}
+        />
+      ) : null}
+      {showEditorCloseConfirm ? (
+        <ConfirmActionDialog
+          title="작성 중인 초안을 닫으시겠습니까?"
+          description="현재 팝업의 입력 내용은 닫히지만, AI 추천 결과는 화면에 그대로 유지됩니다."
+          helperText="다시 열어서 같은 추천안 또는 다른 추천안을 선택할 수 있습니다."
+          cancelLabel="계속 작성"
+          confirmLabel="닫기"
+          onCancel={() => setShowEditorCloseConfirm(false)}
+          onConfirm={closeEditorModalWithRetentionNotice}
+        />
+      ) : null}
       {showBulkUpload ? <OrgKpiBulkUploadModal departments={pageData.departments} selectedYear={pageData.selectedYear} defaultDepartmentId={selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId} onClose={() => setShowBulkUpload(false)} onUploaded={(message, tone = 'success') => { setBanner({ tone, message }); router.refresh() }} /> : null}
       {showClone ? (
         <CloneOrgKpiModal
@@ -2104,6 +2283,55 @@ function StatusBadge({ status }: { status: string }) {
 
 function EmptyState({ title, description, compact = false }: { title: string; description: string; compact?: boolean }) {
   return <div className={cls('rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center text-slate-500', compact ? 'px-4 py-6' : 'px-4 py-10')}><div className="text-sm font-semibold text-slate-900">{title}</div><p className="mt-2 text-sm leading-6">{description}</p></div>
+}
+
+function InfoNoticeCard({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-blue-900 shadow-sm">
+      <div className="text-sm font-semibold">{title}</div>
+      <p className="mt-2 text-sm leading-6 text-blue-800">{description}</p>
+    </div>
+  )
+}
+
+function ConfirmActionDialog({
+  title,
+  description,
+  helperText,
+  cancelLabel,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string
+  description: string
+  helperText?: string
+  cancelLabel: string
+  confirmLabel: string
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <p className="text-sm leading-6 text-slate-600">{description}</p>
+          {helperText ? <p className="text-xs leading-5 text-slate-500">{helperText}</p> : null}
+        </div>
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <ActionButton label={cancelLabel} icon={<Archive className="h-4 w-4" />} onClick={onCancel} disabled={false} />
+          <ActionButton
+            label={confirmLabel}
+            icon={<FilePenLine className="h-4 w-4" />}
+            onClick={onConfirm}
+            disabled={false}
+            primary
+          />
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function KpiDetailCard(props: {
@@ -2836,6 +3064,9 @@ function EditorModal({
   parentGoalOptions,
   editingKpiId,
   draftSourceLabel,
+  recommendationOptions,
+  selectedRecommendationIndex,
+  onSelectRecommendation,
 }: {
   departments: OrgKpiPageData['departments']
   form: FormState
@@ -2847,10 +3078,14 @@ function EditorModal({
   parentGoalOptions: OrgKpiPageData['parentGoalOptions']
   editingKpiId?: string | null
   draftSourceLabel?: string | null
+  recommendationOptions?: KpiAiPreviewRecommendation[]
+  selectedRecommendationIndex?: number | null
+  onSelectRecommendation?: (index: number) => void
 }) {
   const filteredParentOptions = parentGoalOptions.filter(
     (option) => option.evalYear === Number(form.evalYear || new Date().getFullYear()) && option.id !== editingKpiId
   )
+  const canChooseRecommendation = Boolean(recommendationOptions?.length && onSelectRecommendation)
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/40 px-4 py-8 backdrop-blur-sm">
@@ -2862,16 +3097,58 @@ function EditorModal({
             <p className="mt-2 text-sm text-slate-500">
               측정 가능한 조직 KPI를 작성하고 개인 KPI와 월간 실적에 연결될 기준 레코드를 만듭니다.
             </p>
-            {draftSourceLabel ? (
-              <div className="mt-3 inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                {draftSourceLabel}
-              </div>
-            ) : null}
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200">
             닫기
           </button>
         </div>
+
+        {canChooseRecommendation ? (
+          <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-slate-900">추천안 선택</label>
+                <p className="text-sm leading-6 text-slate-600">
+                  AI 추천안 중 하나를 선택해 초안에 반영한 뒤 필요한 내용을 수정해 저장하세요.
+                </p>
+                <select
+                  value={selectedRecommendationIndex !== null && selectedRecommendationIndex !== undefined ? String(selectedRecommendationIndex) : ''}
+                  onChange={(event) => {
+                    if (!event.target.value) return
+                    onSelectRecommendation?.(Number(event.target.value))
+                  }}
+                  className="w-full rounded-2xl border border-blue-200 bg-white px-3 py-2.5 text-sm"
+                >
+                  <option value="">추천안을 선택해 주세요</option>
+                  {recommendationOptions?.map((_, index) => (
+                    <option key={`ai-recommendation-${index}`} value={String(index)}>
+                      {buildOrgKpiAiRecommendationOptionLabel(index)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {draftSourceLabel ? (
+                <div className="space-y-2">
+                  <div className="inline-flex rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700">
+                    {draftSourceLabel}
+                  </div>
+                  <p className="max-w-xs text-xs leading-5 text-slate-600">
+                    현재 선택한 추천안을 기준으로 초안이 채워져 있습니다. 저장 전까지 자유롭게 수정할 수 있습니다.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : draftSourceLabel ? (
+          <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+            <div className="inline-flex rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700">
+              {draftSourceLabel}
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              현재 선택한 추천안을 기준으로 초안이 채워져 있습니다. 저장 전까지 자유롭게 수정할 수 있습니다.
+            </p>
+          </div>
+        ) : null}
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <Field label="부서">
