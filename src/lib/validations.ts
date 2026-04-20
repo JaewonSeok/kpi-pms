@@ -2472,6 +2472,178 @@ export const AiCompetencyResultOverrideSchema = z.object({
   overrideReason: z.string().trim().min(5).max(1000),
 })
 
+export const AiCompetencyGateCycleStatusSchema = z.enum(['DRAFT', 'OPEN', 'CLOSED'])
+export const AiCompetencyGateTrackSchema = z.enum(['AI_PROJECT_EXECUTION', 'AI_USE_CASE_EXPANSION'])
+export const AiCompetencyGateStatusSchema = z.enum([
+  'NOT_STARTED',
+  'DRAFT',
+  'SUBMITTED',
+  'UNDER_REVIEW',
+  'REVISION_REQUESTED',
+  'RESUBMITTED',
+  'PASSED',
+  'FAILED',
+  'CLOSED',
+])
+export const AiCompetencyGateDecisionSchema = z.enum(['PASS', 'REVISION_REQUIRED', 'FAIL'])
+export const AiCompetencyGateEvidenceTypeSchema = z.enum([
+  'BEFORE',
+  'AFTER',
+  'METRIC_PROOF',
+  'REUSE_ARTIFACT',
+  'ADOPTION_PROOF',
+  'SHARING_PROOF',
+  'SECURITY_PROOF',
+  'OTHER',
+])
+export const AiCompetencyGuideEntryTypeSchema = z.enum(['GUIDE', 'PASS_EXAMPLE', 'FAIL_EXAMPLE', 'FAQ'])
+export const AiCompetencyGateTrackApplicabilitySchema = z.enum(['COMMON', 'PROJECT_ONLY', 'ADOPTION_ONLY'])
+
+const AiCompetencyGateShortTextSchema = EmptyStringToUndefined(z.string().trim().max(200))
+const AiCompetencyGateMediumTextSchema = EmptyStringToUndefined(z.string().trim().max(2000))
+const AiCompetencyGateLongTextSchema = EmptyStringToUndefined(z.string().trim().max(20000))
+
+export const AiCompetencyGateCycleUpsertSchema = z.object({
+  cycleId: z.string().min(1).optional(),
+  evalCycleId: z.string().min(1),
+  cycleName: z.string().trim().min(1).max(100),
+  status: AiCompetencyGateCycleStatusSchema.default('DRAFT'),
+  submissionOpenAt: EmptyStringToUndefined(z.string().datetime()),
+  submissionCloseAt: EmptyStringToUndefined(z.string().datetime()),
+  reviewOpenAt: EmptyStringToUndefined(z.string().datetime()),
+  reviewCloseAt: EmptyStringToUndefined(z.string().datetime()),
+  resultPublishAt: EmptyStringToUndefined(z.string().datetime()),
+  policyAcknowledgementText: AiCompetencyGateLongTextSchema,
+  promotionGateEnabled: z.boolean().default(true),
+})
+
+export const AiCompetencyGateAssignmentUpsertSchema = z.object({
+  cycleId: z.string().min(1),
+  employeeId: z.string().min(1),
+  reviewerId: EmptyStringToUndefined(z.string().min(1)),
+  adminNote: AiCompetencyGateMediumTextSchema,
+})
+
+export const AiCompetencyGateMetricSchema = z.object({
+  id: z.string().min(1).optional(),
+  metricName: AiCompetencyGateShortTextSchema,
+  beforeValue: AiCompetencyGateMediumTextSchema,
+  afterValue: AiCompetencyGateMediumTextSchema,
+  unit: AiCompetencyGateShortTextSchema,
+  verificationMethod: AiCompetencyGateMediumTextSchema,
+  displayOrder: z.number().int().min(0).max(99).default(0),
+})
+
+export const AiCompetencyGateDraftSchema = z.object({
+  assignmentId: z.string().min(1),
+  track: AiCompetencyGateTrackSchema,
+  title: AiCompetencyGateShortTextSchema,
+  problemStatement: AiCompetencyGateLongTextSchema,
+  importanceReason: AiCompetencyGateLongTextSchema,
+  goalStatement: AiCompetencyGateLongTextSchema,
+  scopeDescription: AiCompetencyGateLongTextSchema,
+  ownerRoleDescription: AiCompetencyGateLongTextSchema,
+  beforeWorkflow: AiCompetencyGateLongTextSchema,
+  afterWorkflow: AiCompetencyGateLongTextSchema,
+  impactSummary: AiCompetencyGateLongTextSchema,
+  teamOrganizationAdoption: AiCompetencyGateLongTextSchema,
+  reusableOutputSummary: AiCompetencyGateLongTextSchema,
+  humanReviewControl: AiCompetencyGateLongTextSchema,
+  factCheckMethod: AiCompetencyGateLongTextSchema,
+  securityEthicsPrivacyHandling: AiCompetencyGateLongTextSchema,
+  sharingExpansionActivity: AiCompetencyGateLongTextSchema,
+  toolList: AiCompetencyGateMediumTextSchema,
+  approvedToolBasis: AiCompetencyGateLongTextSchema,
+  sensitiveDataHandling: AiCompetencyGateLongTextSchema,
+  maskingAnonymizationHandling: AiCompetencyGateLongTextSchema,
+  prohibitedAutomationAcknowledged: z.boolean().default(false),
+  finalDeclarationAccepted: z.boolean().default(false),
+  metrics: z.array(AiCompetencyGateMetricSchema).max(20).default([]),
+  projectDetail: z
+    .object({
+      projectBackground: AiCompetencyGateLongTextSchema,
+      stakeholders: AiCompetencyGateLongTextSchema,
+      executionSteps: AiCompetencyGateLongTextSchema,
+      deliverables: AiCompetencyGateLongTextSchema,
+      projectStartedAt: EmptyStringToUndefined(z.string().datetime()),
+      projectEndedAt: EmptyStringToUndefined(z.string().datetime()),
+      ownerPmRoleDetail: AiCompetencyGateLongTextSchema,
+      contributionSummary: AiCompetencyGateLongTextSchema,
+    })
+    .default({}),
+  adoptionDetail: z
+    .object({
+      useCaseDescription: AiCompetencyGateLongTextSchema,
+      teamDivisionScope: AiCompetencyGateLongTextSchema,
+      repeatedUseExamples: AiCompetencyGateLongTextSchema,
+      measuredEffectDetail: AiCompetencyGateLongTextSchema,
+      seminarSharingEvidence: AiCompetencyGateLongTextSchema,
+      organizationExpansionDetail: AiCompetencyGateLongTextSchema,
+    })
+    .default({}),
+})
+
+export const AiCompetencyGateEvidenceUploadSchema = z.object({
+  assignmentId: z.string().min(1),
+  caseId: z.string().min(1),
+  evidenceType: AiCompetencyGateEvidenceTypeSchema,
+  title: z.string().trim().min(1).max(200),
+  description: AiCompetencyGateMediumTextSchema,
+  linkUrl: EmptyStringToUndefined(z.string().trim().url('올바른 링크 주소를 입력해 주세요.').max(1000)),
+  textNote: AiCompetencyGateLongTextSchema,
+})
+
+export const AiCompetencyGateEvidenceDeleteSchema = z.object({
+  assignmentId: z.string().min(1),
+  evidenceId: z.string().min(1),
+})
+
+export const AiCompetencyGatePreviewSchema = z.object({
+  assignmentId: z.string().min(1),
+})
+
+export const AiCompetencyGateSubmitSchema = z.object({
+  assignmentId: z.string().min(1),
+})
+
+export const AiCompetencyGateStartReviewSchema = z.object({
+  caseId: z.string().min(1),
+})
+
+export const AiCompetencyGateReviewItemSchema = z.object({
+  criterionId: z.string().min(1),
+  decision: AiCompetencyGateDecisionSchema,
+  comment: z.string().trim().min(1, '평가 의견을 입력해 주세요.').max(5000),
+  requiredFix: AiCompetencyGateLongTextSchema,
+})
+
+export const AiCompetencyGateReviewDraftSchema = z.object({
+  caseId: z.string().min(1),
+  overallDecision: AiCompetencyGateDecisionSchema.optional(),
+  overallComment: AiCompetencyGateLongTextSchema,
+  nonRemediable: z.boolean().default(false),
+  items: z.array(AiCompetencyGateReviewItemSchema).min(1).max(30),
+})
+
+export const AiCompetencyGateDecisionSubmitSchema = z.object({
+  caseId: z.string().min(1),
+  action: AiCompetencyGateDecisionSchema,
+  overallComment: z.string().trim().min(5, '결정 사유를 5자 이상 입력해 주세요.').max(5000),
+  nonRemediable: z.boolean().default(false),
+  items: z.array(AiCompetencyGateReviewItemSchema).min(1).max(30),
+})
+
+export const AiCompetencyGuideEntryUpsertSchema = z.object({
+  cycleId: EmptyStringToUndefined(z.string().min(1)),
+  entryType: AiCompetencyGuideEntryTypeSchema,
+  trackApplicability: AiCompetencyGateTrackApplicabilitySchema.default('COMMON'),
+  title: z.string().trim().min(1).max(120),
+  summary: z.string().trim().min(1).max(500),
+  body: z.string().trim().min(1).max(20000),
+  displayOrder: z.number().int().min(0).max(999).default(0),
+  isActive: z.boolean().default(true),
+})
+
 export const WordCloud360CycleStatusSchema = z.enum(['DRAFT', 'OPEN', 'CLOSED', 'PUBLISHED', 'ARCHIVED'])
 
 export const WordCloudKeywordPolaritySchema = z.enum(['POSITIVE', 'NEGATIVE'])

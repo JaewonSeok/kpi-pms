@@ -1,4 +1,4 @@
-import { getAiCompetencyPageData } from '@/server/ai-competency'
+import { getAiCompetencyGatePageData } from '@/server/ai-competency-gate'
 import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { AiCompetencyClient } from '@/components/evaluation/AiCompetencyClient'
 
@@ -15,7 +15,7 @@ export default async function AiCompetencyPage({ searchParams }: PageProps) {
   })
 
   const resolvedSearchParams = (await searchParams) ?? {}
-  const pageData = await getAiCompetencyPageData({
+  const pageData = await getAiCompetencyGatePageData({
     session,
     cycleId: resolvedSearchParams.cycleId,
   })

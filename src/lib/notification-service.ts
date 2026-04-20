@@ -56,6 +56,24 @@ type DispatchSummary = {
 
 const DEFAULT_NOTIFICATION_TEMPLATES: TemplateSeed[] = [
   {
+    code: 'system-in-app',
+    name: '시스템 알림 (앱)',
+    type: NotificationType.SYSTEM,
+    channel: NotificationDeliveryChannel.IN_APP,
+    subjectTemplate: '{{title}}',
+    bodyTemplate: '{{body}}',
+    defaultLink: '/dashboard',
+  },
+  {
+    code: 'system-email',
+    name: '시스템 알림 (메일)',
+    type: NotificationType.SYSTEM,
+    channel: NotificationDeliveryChannel.EMAIL,
+    subjectTemplate: '[성과관리] {{title}}',
+    bodyTemplate: '{{body}}\n\n{{link}}',
+    defaultLink: '/dashboard',
+  },
+  {
     code: 'goal-reminder-in-app',
     name: '목표 설정 리마인더 (앱)',
     type: NotificationType.GOAL_REMINDER,

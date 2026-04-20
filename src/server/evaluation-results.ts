@@ -10,8 +10,10 @@ import type {
 } from '@prisma/client'
 import { calcPdcaScore } from '@/lib/utils'
 import { prisma } from '@/lib/prisma'
+import { AI_COMPETENCY_GATE_VISIBLE_STATUS_LABELS } from '@/lib/ai-competency-gate-config'
 import { normalizeAccessibleDepartmentIds } from '@/lib/personal-kpi-access'
 import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
+import { loadAiCompetencyGatePromotionStatuses } from '@/server/ai-competency-gate-promotion'
 import {
   calculateEffectiveTotalScore,
   toWeightedScoredRows,
@@ -73,6 +75,9 @@ export type EvaluationResultViewModel = {
     previousScore?: number
     percentileLabel?: string
     deltaFromPrevious?: number
+    aiCompetencyGateStatusLabel?: string
+    aiCompetencyGateSatisfied?: boolean
+    aiCompetencyGateCaseId?: string
   }
   overview: {
     achievementRate: number
@@ -514,6 +519,35 @@ export async function getEvaluationResultsPageData(params: {
     const evaluationIds = baseEvaluations.map((evaluation) => evaluation.id)
     const appealIds = baseEvaluations.flatMap((evaluation) => evaluation.appeals.map((appeal) => appeal.id))
 
+    const aiCompetencyGateCycle = await loadEvaluationResultSection({
+      alerts,
+      title: 'AI 역량평가 게이트 설정을 불러오지 못했습니다.',
+      description: 'AI 역량평가 상태는 잠시 숨기고 기존 평가 결과만 표시합니다.',
+      fallback: null as { id: string; evalCycleId: string } | null,
+      loader: () =>
+        prisma.aiCompetencyGateCycle.findUnique({
+          where: { evalCycleId: selectedCycle.id },
+          select: {
+            id: true,
+            evalCycleId: true,
+          },
+        }),
+    })
+
+    const aiCompetencyGateStatuses = aiCompetencyGateCycle
+      ? await loadEvaluationResultSection({
+          alerts,
+          title: 'AI 역량평가 상태를 불러오지 못했습니다.',
+          description: 'AI 역량평가 상태는 잠시 숨기고 기존 평가 결과만 표시합니다.',
+          fallback: new Map() as Awaited<ReturnType<typeof loadAiCompetencyGatePromotionStatuses>>,
+          loader: () =>
+            loadAiCompetencyGatePromotionStatuses({
+              evalCycleIds: [selectedCycle.id],
+              employeeIds: [targetEmployee.id],
+            }),
+        })
+      : new Map()
+
     const [
       gradeSettings,
       previousFinalEvaluations,
@@ -693,12 +727,24 @@ export async function getEvaluationResultsPageData(params: {
         description: 'AI 활용능력 가산/대체 점수 없이 기존 평가 결과만 표시합니다.',
         fallback: new Map() as Awaited<ReturnType<typeof loadAiCompetencySyncedResults>>,
         loader: () =>
-          loadAiCompetencySyncedResults({
-            evalCycleIds: [selectedCycle.id],
-            employeeIds: [targetEmployee.id],
-          }),
+          aiCompetencyGateCycle
+            ? Promise.resolve(new Map())
+            : loadAiCompetencySyncedResults({
+                evalCycleIds: [selectedCycle.id],
+                employeeIds: [targetEmployee.id],
+              }),
       }),
     ])
+
+    const aiCompetencyGateStatus = aiCompetencyGateCycle
+      ? (aiCompetencyGateStatuses.get(`${selectedCycle.id}:${targetEmployee.id}`) ?? {
+          status: 'NOT_ASSIGNED' as const,
+          statusLabel: AI_COMPETENCY_GATE_VISIBLE_STATUS_LABELS.NOT_ASSIGNED,
+          isSatisfied: false,
+          cycleId: selectedCycle.id,
+          employeeId: targetEmployee.id,
+        })
+      : undefined
 
     const stageMap = new Map(baseEvaluations.map((evaluation) => [evaluation.evalStage, evaluation] as const))
     const finalEvaluation =
@@ -742,7 +788,10 @@ export async function getEvaluationResultsPageData(params: {
       cycleFinalEvaluations,
       publicationStatus,
       auditLogs,
-      aiCompetencyScore: aiCompetencyResults.get(`${selectedCycle.id}:${targetEmployee.id}`)?.finalScore,
+      aiCompetencyScore: aiCompetencyGateCycle
+        ? undefined
+        : aiCompetencyResults.get(`${selectedCycle.id}:${targetEmployee.id}`)?.finalScore,
+      aiCompetencyGateStatus,
       actorId: params.session.user.id,
       canExport: true,
     })
@@ -816,6 +865,11 @@ function buildEvaluationResultViewModel(params: {
     timestamp: Date
   }>
   aiCompetencyScore?: number
+  aiCompetencyGateStatus?: {
+    statusLabel: string
+    isSatisfied: boolean
+    caseId?: string
+  }
   actorId: string
   canExport: boolean
 }) {
@@ -996,6 +1050,9 @@ function buildEvaluationResultViewModel(params: {
       previousGrade: previousGrade ?? undefined,
       previousScore,
       percentileLabel: buildPercentileLabel(params.cycleFinalEvaluations, params.employee.id, totalScore),
+      aiCompetencyGateStatusLabel: params.aiCompetencyGateStatus?.statusLabel,
+      aiCompetencyGateSatisfied: params.aiCompetencyGateStatus?.isSatisfied,
+      aiCompetencyGateCaseId: params.aiCompetencyGateStatus?.caseId,
       deltaFromPrevious:
         previousScore !== undefined ? roundToSingle(totalScore - previousScore) : undefined,
     },

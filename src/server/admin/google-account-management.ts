@@ -1825,6 +1825,8 @@ export async function safeDeleteEmployeeRecord(
         clearedAiCompetencyDecisionActorCount: 0,
         clearedAiCompetencyCertApproverCount: 0,
         clearedAiCompetencyResultSyncActorCount: 0,
+        clearedAiCompetencyGateReviewerCount: 0,
+        deletedAiCompetencyGateAssignmentCount: 0,
         deletedImpersonationSessionCount: 0,
       }
 
@@ -2269,6 +2271,32 @@ export async function safeDeleteEmployeeRecord(
                 approvedById: null,
                 approvedAt: null,
               },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
+      ).count
+
+      cleanupSummary.clearedAiCompetencyGateReviewerCount = (
+        await withDeleteStep(
+          'clearAiCompetencyGateReviewer',
+          () =>
+            tx.aiCompetencyGateAssignment.updateMany({
+              where: { reviewerId: employeeId },
+              data: {
+                reviewerId: null,
+                reviewerNameSnapshot: null,
+              },
+            }),
+          (result) => ({ affectedCount: result.count })
+        )
+      ).count
+
+      cleanupSummary.deletedAiCompetencyGateAssignmentCount = (
+        await withDeleteStep(
+          'deleteAiCompetencyGateAssignments',
+          () =>
+            tx.aiCompetencyGateAssignment.deleteMany({
+              where: { employeeId },
             }),
           (result) => ({ affectedCount: result.count })
         )

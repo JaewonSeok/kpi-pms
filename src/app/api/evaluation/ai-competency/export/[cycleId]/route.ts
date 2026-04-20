@@ -1,6 +1,6 @@
 import { AppError, errorResponse } from '@/lib/utils'
 import { authorizeMenu } from '@/server/auth/authorize'
-import { exportAiCompetencyReport } from '@/server/ai-competency'
+import { exportAiCompetencyGateReport } from '@/server/ai-competency-gate'
 
 export async function GET(
   request: Request,
@@ -15,7 +15,7 @@ export async function GET(
     const { cycleId } = await params
     const { searchParams } = new URL(request.url)
     const format = searchParams.get('format') === 'xlsx' ? 'xlsx' : 'csv'
-    const exported = await exportAiCompetencyReport({ cycleId, format })
+    const exported = await exportAiCompetencyGateReport({ session, cycleId, format })
 
     return new Response(new Uint8Array(exported.body), {
       status: 200,

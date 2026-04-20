@@ -344,6 +344,7 @@ function EvaluationResultsHero({ viewModel, cycleOptions, availableYears, availa
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill status={viewModel.cycle.status} />
             <InfoPill label={viewModel.summary.calibrationAdjusted ? '캘리브레이션 반영' : '캘리브레이션 없음'} />
+            {viewModel.summary.aiCompetencyGateStatusLabel ? <InfoPill label={`AI 역량평가 ${viewModel.summary.aiCompetencyGateStatusLabel}`} /> : null}
             <InfoPill label={`${viewModel.employee.department} / ${viewModel.employee.title}`} />
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -389,6 +390,7 @@ function EvaluationResultsSummaryCards({
       <SummaryCard icon={<Award className="h-5 w-5" />} label="최종 등급" value={viewModel.summary.finalGrade} description="최종 공개된 등급 기준입니다." />
       <SummaryCard icon={<BarChart3 className="h-5 w-5" />} label="총점" value={`${viewModel.summary.totalScore.toFixed(1)}점`} description={viewModel.summary.percentileLabel ?? '조직 내 비교 정보 준비 중'} />
       <SummaryCard icon={<TrendingUp className="h-5 w-5" />} label="직전 주기 대비" value={deltaLabel} description={viewModel.summary.previousGrade ? `직전 등급 ${viewModel.summary.previousGrade}` : '직전 등급 데이터 없음'} />
+      {viewModel.summary.aiCompetencyGateStatusLabel ? <SummaryCard icon={<Sparkles className="h-5 w-5" />} label="AI 역량평가" value={viewModel.summary.aiCompetencyGateStatusLabel} description={viewModel.summary.aiCompetencyGateSatisfied ? '승진 게이트 기준을 충족했습니다.' : '승진 게이트 기준을 아직 충족하지 못했습니다.'} /> : null}
       <NextActionCard
         viewModel={viewModel}
         acknowledged={acknowledged}

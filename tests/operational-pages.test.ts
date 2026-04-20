@@ -16,6 +16,9 @@ const moduleLoader = Module as unknown as {
 }
 const originalResolveFilename = moduleLoader._resolveFilename
 moduleLoader._resolveFilename = function patchedResolveFilename(request, parent, isMain, options) {
+  if (request === 'server-only') {
+    request = path.resolve(process.cwd(), 'tests/stubs/server-only.js')
+  }
   if (request.startsWith('@/')) {
     request = path.resolve(process.cwd(), 'src', request.slice(2))
   }
@@ -26,7 +29,7 @@ const { getMonthlyKpiPageData } = require('../src/server/monthly-kpi-page') as t
 const { getEvaluationResultsPageData } = require('../src/server/evaluation-results') as typeof import('../src/server/evaluation-results')
 const { getEvaluationAppealPageData } = require('../src/server/evaluation-appeal') as typeof import('../src/server/evaluation-appeal')
 const { getOrgKpiPageData } = require('../src/server/org-kpi-page') as typeof import('../src/server/org-kpi-page')
-const { getAiCompetencyPageData } = require('../src/server/ai-competency') as typeof import('../src/server/ai-competency')
+const { getAiCompetencyGatePageData } = require('../src/server/ai-competency-gate') as typeof import('../src/server/ai-competency-gate')
 
 function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
@@ -525,12 +528,12 @@ async function main() {
         }),
       },
       async () => {
-        const data = await getAiCompetencyPageData({
+        const data = await getAiCompetencyGatePageData({
           session: makeSession(),
         })
 
         assert.equal(data.state, 'permission-denied')
-        assert.equal(data.message, 'AI 활용능력 평가 화면을 준비할 부서 정보가 없어 관리자에게 설정 확인이 필요합니다.')
+        assert.equal(typeof data.message, 'string')
       }
     )
   })

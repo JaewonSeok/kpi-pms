@@ -110,6 +110,7 @@ model Employee {
   notificationDeadLetters NotificationDeadLetter[]
   aiRequestLogs     AiRequestLog[]
   aiCompetencyAssignments AiCompetencyAssignment[]
+  aiCompetencyGateAssignments AiCompetencyGateAssignment[]
   aiCompetencyAttempts AiCompetencyAttempt[]
   aiCompetencyGeneratedExamSets AiCompetencyGeneratedExamSet[]
   aiCompetencyAnswerReviews AiCompetencyAnswer[] @relation("AiCompetencyAnswerReviewer")
@@ -541,6 +542,7 @@ model EvalCycle {
   onboardingReviewWorkflows OnboardingReviewWorkflow[]
   compensationScenarios CompensationScenario[]
   aiCompetencyCycle   AiCompetencyCycle?
+  aiCompetencyGateCycle AiCompetencyGateCycle?
   aiCompetencyResults AiCompetencyResult[]
   wordCloud360Cycles  WordCloud360Cycle[]
   businessPlans       BusinessPlanDocument[]
@@ -1936,6 +1938,378 @@ model AiCompetencyResult {
   @@unique([cycleId, employeeId])
   @@unique([evalCycleId, employeeId])
   @@map("ai_competency_results")
+}
+
+enum AiCompetencyGateCycleStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+enum AiCompetencyGateTrack {
+  AI_PROJECT_EXECUTION
+  AI_USE_CASE_EXPANSION
+}
+
+enum AiCompetencyGateStatus {
+  NOT_STARTED
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  REVISION_REQUESTED
+  RESUBMITTED
+  PASSED
+  FAILED
+  CLOSED
+}
+
+enum AiCompetencyGateDecision {
+  PASS
+  REVISION_REQUIRED
+  FAIL
+}
+
+enum AiCompetencyGateEvidenceType {
+  BEFORE
+  AFTER
+  METRIC_PROOF
+  REUSE_ARTIFACT
+  ADOPTION_PROOF
+  SHARING_PROOF
+  SECURITY_PROOF
+  OTHER
+}
+
+enum AiCompetencyGateSnapshotType {
+  SUBMIT
+  REVISION_REQUEST
+  RESUBMIT
+  FINAL_DECISION
+}
+
+enum AiCompetencyGuideEntryType {
+  GUIDE
+  PASS_EXAMPLE
+  FAIL_EXAMPLE
+  FAQ
+}
+
+enum AiCompetencyGateTrackApplicability {
+  COMMON
+  PROJECT_ONLY
+  ADOPTION_ONLY
+}
+
+enum AiCompetencyGateReviewStatus {
+  DRAFT
+  SUBMITTED
+}
+
+model AiCompetencyGateCycle {
+  id                        String                       @id @default(cuid())
+  evalCycleId               String                       @unique
+  evalCycle                 EvalCycle                    @relation(fields: [evalCycleId], references: [id])
+  cycleName                 String
+  status                    AiCompetencyGateCycleStatus  @default(DRAFT)
+  submissionOpenAt          DateTime?
+  submissionCloseAt         DateTime?
+  reviewOpenAt              DateTime?
+  reviewCloseAt             DateTime?
+  resultPublishAt           DateTime?
+  closedAt                  DateTime?
+  promotionGateEnabled      Boolean                      @default(true)
+  policyAcknowledgementText String?
+  createdById               String
+  updatedById               String?
+  createdAt                 DateTime                     @default(now())
+  updatedAt                 DateTime                     @updatedAt
+
+  assignments     AiCompetencyGateAssignment[]
+  reviewTemplates AiCompetencyGateReviewTemplate[]
+  guideEntries    AiCompetencyGuideEntry[]
+
+  @@map("ai_competency_gate_cycles")
+}
+
+model AiCompetencyGateAssignment {
+  id                     String                 @id @default(cuid())
+  cycleId                String
+  cycle                  AiCompetencyGateCycle  @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  employeeId             String
+  employee               Employee               @relation(fields: [employeeId], references: [id])
+  reviewerId             String?
+  status                 AiCompetencyGateStatus @default(NOT_STARTED)
+  employeeNameSnapshot   String
+  departmentNameSnapshot String
+  positionSnapshot       String
+  reviewerNameSnapshot   String?
+  assignedAt             DateTime               @default(now())
+  submittedAt            DateTime?
+  reviewStartedAt        DateTime?
+  decisionAt             DateTime?
+  closedAt               DateTime?
+  currentRevisionRound   Int                    @default(0)
+  adminNote              String?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+
+  submissionCase AiCompetencyGateCase?
+  reviews        AiCompetencyGateReview[]
+  decisionHistory AiCompetencyGateDecisionHistory[]
+  snapshots      AiCompetencyGateSnapshot[]
+
+  @@unique([cycleId, employeeId])
+  @@index([cycleId, status])
+  @@index([reviewerId, status])
+  @@map("ai_competency_gate_assignments")
+}
+
+model AiCompetencyGateCase {
+  id                                String                @id @default(cuid())
+  assignmentId                      String                @unique
+  assignment                        AiCompetencyGateAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  track                             AiCompetencyGateTrack?
+  title                             String?
+  problemStatement                  String?
+  importanceReason                  String?
+  goalStatement                     String?
+  scopeDescription                  String?
+  ownerRoleDescription              String?
+  beforeWorkflow                    String?
+  afterWorkflow                     String?
+  impactSummary                     String?
+  teamOrganizationAdoption          String?
+  reusableOutputSummary             String?
+  humanReviewControl                String?
+  factCheckMethod                   String?
+  securityEthicsPrivacyHandling     String?
+  sharingExpansionActivity          String?
+  toolList                          String?
+  approvedToolBasis                 String?
+  sensitiveDataHandling             String?
+  maskingAnonymizationHandling      String?
+  prohibitedAutomationAcknowledged  Boolean               @default(false)
+  finalDeclarationAccepted          Boolean               @default(false)
+  lastSavedAt                       DateTime?
+  createdAt                         DateTime              @default(now())
+  updatedAt                         DateTime              @updatedAt
+
+  metrics         AiCompetencyGateMetric[]
+  projectDetail   AiCompetencyGateProjectDetail?
+  adoptionDetail  AiCompetencyGateAdoptionDetail?
+  evidenceItems   AiCompetencyGateEvidence[]
+  reviews         AiCompetencyGateReview[]
+  decisionHistory AiCompetencyGateDecisionHistory[]
+  snapshots       AiCompetencyGateSnapshot[]
+
+  @@map("ai_competency_gate_cases")
+}
+
+model AiCompetencyGateMetric {
+  id                 String               @id @default(cuid())
+  caseId             String
+  submissionCase     AiCompetencyGateCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  metricName         String?
+  beforeValue        String?
+  afterValue         String?
+  unit               String?
+  verificationMethod String?
+  displayOrder       Int                  @default(0)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([caseId, displayOrder])
+  @@map("ai_competency_gate_metrics")
+}
+
+model AiCompetencyGateProjectDetail {
+  caseId             String               @id
+  submissionCase     AiCompetencyGateCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  projectBackground  String?
+  stakeholders       String?
+  executionSteps     String?
+  deliverables       String?
+  projectStartedAt   DateTime?
+  projectEndedAt     DateTime?
+  ownerPmRoleDetail  String?
+  contributionSummary String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@map("ai_competency_gate_project_details")
+}
+
+model AiCompetencyGateAdoptionDetail {
+  caseId                    String               @id
+  submissionCase            AiCompetencyGateCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  useCaseDescription        String?
+  teamDivisionScope         String?
+  repeatedUseExamples       String?
+  measuredEffectDetail      String?
+  seminarSharingEvidence    String?
+  organizationExpansionDetail String?
+  createdAt                 DateTime             @default(now())
+  updatedAt                 DateTime             @updatedAt
+
+  @@map("ai_competency_gate_adoption_details")
+}
+
+model AiCompetencyGateEvidence {
+  id          String                       @id @default(cuid())
+  caseId      String
+  submissionCase AiCompetencyGateCase      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  evidenceType AiCompetencyGateEvidenceType
+  title       String
+  description String?
+  fileName    String?
+  mimeType    String?
+  sizeBytes   Int?
+  content     Bytes?
+  linkUrl     String?
+  textNote    String?
+  uploadedById String
+  createdAt   DateTime                     @default(now())
+
+  @@index([caseId, evidenceType])
+  @@map("ai_competency_gate_evidence")
+}
+
+model AiCompetencyGateReviewTemplate {
+  id              String               @id @default(cuid())
+  cycleId         String
+  cycle           AiCompetencyGateCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  templateName    String
+  templateVersion Int                  @default(1)
+  isActive        Boolean              @default(true)
+  createdById     String
+  updatedById     String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  criteria AiCompetencyGateReviewCriterion[]
+  reviews  AiCompetencyGateReview[]
+
+  @@index([cycleId, isActive])
+  @@map("ai_competency_gate_review_templates")
+}
+
+model AiCompetencyGateReviewCriterion {
+  id                   String                              @id @default(cuid())
+  templateId           String
+  template             AiCompetencyGateReviewTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  criterionCode        String
+  criterionName        String
+  criterionDescription String?
+  trackApplicability   AiCompetencyGateTrackApplicability  @default(COMMON)
+  displayOrder         Int                                 @default(0)
+  mandatory            Boolean                             @default(true)
+  knockout             Boolean                             @default(false)
+  passGuidance         String?
+  revisionGuidance     String?
+  failGuidance         String?
+  createdAt            DateTime                            @default(now())
+  updatedAt            DateTime                            @updatedAt
+
+  reviewItems AiCompetencyGateReviewItem[]
+
+  @@unique([templateId, criterionCode])
+  @@index([templateId, displayOrder])
+  @@map("ai_competency_gate_review_criteria")
+}
+
+model AiCompetencyGateReview {
+  id                 String                      @id @default(cuid())
+  assignmentId       String
+  assignment         AiCompetencyGateAssignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  caseId             String
+  submissionCase     AiCompetencyGateCase        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reviewerId         String
+  reviewerNameSnapshot String
+  templateId         String
+  template           AiCompetencyGateReviewTemplate @relation(fields: [templateId], references: [id])
+  revisionRound      Int                         @default(0)
+  status             AiCompetencyGateReviewStatus @default(DRAFT)
+  overallDecision    AiCompetencyGateDecision?
+  overallComment     String?
+  nonRemediable      Boolean                     @default(false)
+  reviewedAt         DateTime?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  items AiCompetencyGateReviewItem[]
+
+  @@unique([assignmentId, reviewerId, revisionRound])
+  @@map("ai_competency_gate_reviews")
+}
+
+model AiCompetencyGateReviewItem {
+  id          String                    @id @default(cuid())
+  reviewId    String
+  review      AiCompetencyGateReview    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  criterionId String
+  criterion   AiCompetencyGateReviewCriterion @relation(fields: [criterionId], references: [id])
+  decision    AiCompetencyGateDecision
+  comment     String
+  requiredFix String?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@unique([reviewId, criterionId])
+  @@map("ai_competency_gate_review_items")
+}
+
+model AiCompetencyGateDecisionHistory {
+  id                String                 @id @default(cuid())
+  assignmentId      String
+  assignment        AiCompetencyGateAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  caseId            String?
+  submissionCase    AiCompetencyGateCase?  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  actorId           String
+  actorNameSnapshot String
+  fromStatus        AiCompetencyGateStatus?
+  toStatus          AiCompetencyGateStatus
+  action            String
+  comment           String?
+  createdAt         DateTime               @default(now())
+
+  @@index([assignmentId, createdAt])
+  @@map("ai_competency_gate_decision_history")
+}
+
+model AiCompetencyGateSnapshot {
+  id                  String                     @id @default(cuid())
+  assignmentId        String
+  assignment          AiCompetencyGateAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  caseId              String
+  submissionCase      AiCompetencyGateCase       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  snapshotType        AiCompetencyGateSnapshotType
+  revisionRound       Int                        @default(0)
+  payload             Json
+  createdById         String
+  createdByNameSnapshot String
+  createdAt           DateTime                   @default(now())
+
+  @@index([assignmentId, createdAt])
+  @@map("ai_competency_gate_snapshots")
+}
+
+model AiCompetencyGuideEntry {
+  id                 String                             @id @default(cuid())
+  entryKey           String                             @unique
+  cycleId            String?
+  cycle              AiCompetencyGateCycle?            @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  entryType          AiCompetencyGuideEntryType
+  trackApplicability AiCompetencyGateTrackApplicability @default(COMMON)
+  title              String
+  summary            String
+  body               String
+  displayOrder       Int                                @default(0)
+  isActive           Boolean                            @default(true)
+  createdAt          DateTime                           @default(now())
+  updatedAt          DateTime                           @updatedAt
+
+  @@index([cycleId, entryType, displayOrder])
+  @@map("ai_competency_guide_entries")
 }
 
 model Notification {

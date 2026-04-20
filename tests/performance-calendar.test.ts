@@ -116,12 +116,10 @@ async function main() {
           {
             id: 'ai-cycle-1',
             cycleName: '2026 AI 평가',
-            calibrationOpenAt: new Date('2026-03-15T00:00:00.000Z'),
-            calibrationCloseAt: new Date('2026-03-18T00:00:00.000Z'),
+            submissionOpenAt: new Date('2026-03-15T00:00:00.000Z'),
+            submissionCloseAt: new Date('2026-03-18T00:00:00.000Z'),
             reviewOpenAt: null,
             reviewCloseAt: null,
-            secondRoundApplyOpenAt: null,
-            secondRoundApplyCloseAt: null,
             resultPublishAt: null,
             evalCycle: {
               id: 'cycle-1',

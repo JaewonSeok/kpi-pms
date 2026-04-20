@@ -457,6 +457,15 @@ export async function getCompensationManagePageData(params: {
       .filter((value): value is string => Boolean(value)) ?? []
 
     const scenarioEmployeeIds = selectedScenario?.employees.map((row) => row.employee.id) ?? []
+    const aiCompetencyGateCycle = selectedScenario
+      ? await prisma.aiCompetencyGateCycle.findUnique({
+          where: { evalCycleId: selectedScenario.evalCycleId },
+          select: { id: true },
+        }).catch((error) => {
+          console.error('[compensation-manage] AI competency gate cycle fallback', error)
+          return null
+        })
+      : null
 
     const [evaluations, auditLogs, baselineScenario, aiCompetencyResults] = await Promise.all([
       evaluationIds.length
@@ -543,13 +552,15 @@ export async function getCompensationManagePageData(params: {
             })
           : Promise.resolve(null),
       selectedScenario
-        ? loadAiCompetencySyncedResults({
-            evalCycleIds: [selectedScenario.evalCycleId],
-            employeeIds: scenarioEmployeeIds,
-          }).catch((error) => {
-            console.error('[compensation-manage] AI competency sync fallback', error)
-            return new Map()
-          })
+        ? aiCompetencyGateCycle
+          ? Promise.resolve(new Map())
+          : loadAiCompetencySyncedResults({
+              evalCycleIds: [selectedScenario.evalCycleId],
+              employeeIds: scenarioEmployeeIds,
+            }).catch((error) => {
+              console.error('[compensation-manage] AI competency sync fallback', error)
+              return new Map()
+            })
         : Promise.resolve(new Map()),
     ])
 

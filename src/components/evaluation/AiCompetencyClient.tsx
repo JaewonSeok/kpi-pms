@@ -1,1021 +1,511 @@
 'use client'
 
-import { useDeferredValue, useEffect, useState, useTransition } from 'react'
-import type { AiCompetencyReviewDecision } from '@prisma/client'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { calculateRubricReview } from '@/lib/ai-competency-rubric'
-import type { AiCompetencyPageData } from '@/server/ai-competency'
-import { AiCompetencyAdminPanel } from './AiCompetencyAdminPanel'
+import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
+import type { AiCompetencyGateEvidenceType, AiCompetencyGateTrack } from '@prisma/client'
+import type { AiCompetencyGateEmployeePageData } from '@/server/ai-competency-gate'
 import {
-  DataTable,
-  difficultyLabel,
-  domainLabel,
   EmptyBox,
   Field,
+  formatDateOnly,
   formatDateTime,
   formatFileSize,
-  InfoRow,
   inputClassName,
-  labelForTrack,
   MetricCard,
+  NoticeBanner,
+  PageShell,
   primaryButtonClassName,
-  questionTypeLabel,
   secondaryButtonClassName,
   SectionCard,
   StateScreen,
   StatusPill,
-  STATUS_LABELS,
+  textareaClassName,
 } from './AiCompetencyShared'
-
-type TabKey =
-  | 'overview'
-  | 'assessment'
-  | 'second-round'
-  | 'certificate'
-  | 'reviewer'
-  | 'admin'
-  | 'executive'
 
 type NoticeState =
   | {
-      tone: 'success' | 'error'
-      message: string
+      tone: 'success' | 'error' | 'warning' | 'info'
+      title: string
+      description?: string
     }
   | null
 
-type SecondRoundFormState = {
-  taskDescription: string
-  aiUsagePurpose: string
-  toolUsed: string
-  promptSummary: string
-  verificationMethod: string
-  businessImpact: string
-  sensitiveDataCheck: string
+type EvidenceFormState = {
+  evidenceType: AiCompetencyGateEvidenceType
+  title: string
+  description: string
+  linkUrl: string
+  textNote: string
+  file: File | null
 }
 
-type CertFormState = {
-  certificateId: string
-  certificateNumber: string
-  issuedAt: string
-  expiresAt: string
-  policyAcknowledged: boolean
+const COPY = {
+  pageTitle: 'AI 역량평가',
+  pageDescription:
+    '승진 요건으로 운영되는 AI 역량평가입니다. 연간 평가 점수와 별도로 실제 업무 문제 해결과 조직 확산 성과를 Pass / 보완 요청 / Fail 방식으로 검토합니다.',
+  adminCta: '관리자/검토자 화면',
+  noPermissionTitle: '접근 권한이 없습니다.',
+  loadErrorTitle: 'AI 역량평가 화면을 불러오지 못했습니다.',
+  saveDraft: '작성 내용 저장',
+  preview: '제출 전 미리보기',
+  submit: '제출하기',
+  resubmit: '보완 후 재제출',
+  assignedEmptyTitle: '현재 회차에서 아직 AI 역량평가 대상자로 배정되지 않았습니다.',
+  assignedEmptyDescription: '관리자가 대상자와 검토자를 배정하면 제출서를 작성할 수 있습니다.',
+  evidenceTitle: '증빙 자료',
+  evidenceEmptyTitle: '등록된 증빙 자료가 없습니다.',
+  evidenceEmptyDescription: '제출 전까지 실제 근거 자료를 최소 1건 이상 등록해 주세요.',
+  historyTitle: '이력 / 결정 내역',
+  historyDescription: '제출, 보완 요청, 최종 결과가 시간순으로 기록됩니다.',
+  historyEmptyTitle: '아직 기록이 없습니다.',
+  historyEmptyDescription: '초안을 저장하거나 제출하면 이력과 결정 내역이 여기에 표시됩니다.',
 }
 
-type ReviewCriterionDraft = {
-  criterionId: string
-  score: string
-  comment: string
-  knockoutTriggered: boolean
-}
+const TRACK_OPTIONS: Array<{ value: AiCompetencyGateTrack; label: string; description: string }> = [
+  {
+    value: 'AI_PROJECT_EXECUTION',
+    label: 'AI 기반 프로젝트 수행',
+    description: '실제 업무 문제를 해결하기 위해 AI 기반 개선 프로젝트를 주도한 사례를 제출합니다.',
+  },
+  {
+    value: 'AI_USE_CASE_EXPANSION',
+    label: 'AI 활용 사례 확산',
+    description: '개인 활용을 넘어 팀이나 조직에 확산된 재사용 가능한 AI 활용 사례를 제출합니다.',
+  },
+]
 
-type ReviewFormState = {
-  submissionId: string
-  decision: AiCompetencyReviewDecision
-  notes: string
-  qnaNote: string
-  criterionScores: ReviewCriterionDraft[]
-}
+const EVIDENCE_TYPE_OPTIONS: Array<{ value: AiCompetencyGateEvidenceType; label: string }> = [
+  { value: 'BEFORE', label: 'Before 근거' },
+  { value: 'AFTER', label: 'After 근거' },
+  { value: 'METRIC_PROOF', label: '효과 측정 근거' },
+  { value: 'REUSE_ARTIFACT', label: '재사용 산출물' },
+  { value: 'ADOPTION_PROOF', label: '적용/확산 근거' },
+  { value: 'SHARING_PROOF', label: '공유 활동 근거' },
+  { value: 'SECURITY_PROOF', label: '보안/윤리 대응 근거' },
+  { value: 'OTHER', label: '기타' },
+]
 
-function initialTabFor(data: AiCompetencyPageData): TabKey {
-  if (data.permissions?.canManageCycles) return 'admin'
-  if (data.employeeView) return 'assessment'
-  if (data.reviewerView) return 'reviewer'
-  if (data.executiveView) return 'executive'
-  return 'overview'
-}
+const COMMON_FIELDS = [
+  ['title', '과제명', true],
+  ['problemStatement', '해결하려는 업무 문제', true],
+  ['importanceReason', '왜 중요한가', false],
+  ['goalStatement', '목표', true],
+  ['scopeDescription', '적용 범위', false],
+  ['ownerRoleDescription', '본인 역할(Owner/PM 역할)', true],
+  ['beforeWorkflow', '기존 방식(Before)', true],
+  ['afterWorkflow', 'AI 적용 후 방식(After)', true],
+  ['impactSummary', '측정 지표 / 효과 요약', true],
+  ['teamOrganizationAdoption', '팀/조직 적용 또는 확산 근거', true],
+  ['reusableOutputSummary', '재사용 가능한 산출물/가이드/템플릿', false],
+  ['humanReviewControl', '사람의 최종 검토/판단 방식', true],
+  ['factCheckMethod', '사실 확인 / 검증 방법', false],
+  ['securityEthicsPrivacyHandling', '보안/윤리/개인정보 대응', true],
+  ['sharingExpansionActivity', '공유/세미나/확산 활동', false],
+  ['toolList', '사용한 AI 도구', false],
+  ['approvedToolBasis', '승인된 도구 사용 근거', false],
+  ['sensitiveDataHandling', '민감/기밀/개인정보 처리 방식', false],
+  ['maskingAnonymizationHandling', '마스킹/익명화 처리 방식', false],
+] as const
 
-function buildSecondRoundForm(data: AiCompetencyPageData): SecondRoundFormState {
-  const application = data.employeeView?.secondRound.application
+function createEmptyMetric(index: number) {
   return {
-    taskDescription: application?.taskDescription ?? '',
-    aiUsagePurpose: application?.aiUsagePurpose ?? '',
-    toolUsed: application?.toolUsed ?? '',
-    promptSummary: application?.promptSummary ?? '',
-    verificationMethod: application?.verificationMethod ?? '',
-    businessImpact: application?.businessImpact ?? '',
-    sensitiveDataCheck: application?.sensitiveDataCheck ?? '',
+    metricName: '',
+    beforeValue: '',
+    afterValue: '',
+    unit: '',
+    verificationMethod: '',
+    displayOrder: index,
   }
 }
 
-function buildCertForm(data: AiCompetencyPageData): CertFormState {
-  return {
-    certificateId: data.employeeView?.externalCerts.masters[0]?.id ?? '',
-    certificateNumber: '',
-    issuedAt: '',
-    expiresAt: '',
-    policyAcknowledged: false,
-  }
+function createEmptyEvidenceForm(): EvidenceFormState {
+  return { evidenceType: 'BEFORE', title: '', description: '', linkUrl: '', textNote: '', file: null }
 }
 
-function buildCriterionDrafts(
-  item?: NonNullable<AiCompetencyPageData['reviewerView']>['queue'][number]
-): ReviewCriterionDraft[] {
-  if (!item?.rubric) return []
-  return item.rubric.criteria.map((criterion) => {
-    const saved = item.existingCriteriaScores.find((score) => score.criterionId === criterion.criterionId)
-    return {
-      criterionId: criterion.criterionId,
-      score: saved ? String(saved.score) : '',
-      comment: saved?.comment ?? '',
-      knockoutTriggered: saved?.knockoutTriggered ?? false,
-    }
-  })
-}
-
-function findReviewItem(
-  data: AiCompetencyPageData,
-  preferredSubmissionId?: string
-): NonNullable<AiCompetencyPageData['reviewerView']>['queue'][number] | undefined {
-  const queue = data.reviewerView?.queue ?? []
-  if (!queue.length) return undefined
-  return queue.find((item) => item.submissionId === preferredSubmissionId) ?? queue[0]
-}
-
-function buildReviewForm(data: AiCompetencyPageData, preferredSubmissionId?: string): ReviewFormState {
-  const first = findReviewItem(data, preferredSubmissionId)
-  return {
-    submissionId: first?.submissionId ?? '',
-    decision: first?.existingDecision ?? 'PASS',
-    notes: first?.existingNote ?? '',
-    qnaNote: first?.existingQnaNote ?? '',
-    criterionScores: buildCriterionDrafts(first),
-  }
-}
-
-function normalizeAnswerState(data: AiCompetencyPageData) {
-  const result: Record<string, string | string[] | null> = {}
-  data.employeeView?.questions.forEach((question) => {
-    if (Array.isArray(question.savedAnswer)) {
-      result[question.id] = question.savedAnswer.map((item) => String(item))
-      return
-    }
-    if (question.savedAnswer === null || question.savedAnswer === undefined) {
-      result[question.id] = question.questionType === 'MULTIPLE_CHOICE' ? [] : ''
-      return
-    }
-    result[question.id] =
-      typeof question.savedAnswer === 'string'
-        ? question.savedAnswer
-        : JSON.stringify(question.savedAnswer)
-  })
-  return result
-}
-
-function isSelectedMultiAnswer(
-  answers: Record<string, string | string[] | null>,
-  questionId: string,
-  option: string
-) {
-  const value = answers[questionId]
-  return Array.isArray(value) ? value.includes(option) : false
-}
-
-async function readApiResponse(response: Response) {
-  const body = (await response.json()) as {
-    success: boolean
-    data?: unknown
-    error?: { message?: string }
-  }
+async function readActionResponse(response: Response) {
+  const body = (await response.json()) as { success: boolean; data?: unknown; error?: { message?: string } }
   if (!response.ok || !body.success) {
-    throw new Error(body.error?.message ?? '요청 처리 중 오류가 발생했습니다.')
+    throw new Error(body.error?.message ?? '요청 처리 중 문제가 발생했습니다.')
   }
   return body.data
 }
 
-function tabsFor(data: AiCompetencyPageData): Array<{ key: TabKey; label: string }> {
-  const tabs: Array<{ key: TabKey; label: string }> = [{ key: 'overview', label: '개요' }]
-  if (data.employeeView) {
-    tabs.push({ key: 'assessment', label: '1차 공통평가' })
-    tabs.push({ key: 'second-round', label: '2차 실무인증' })
-    tabs.push({ key: 'certificate', label: '외부자격 인정' })
-  }
-  if (data.reviewerView) tabs.push({ key: 'reviewer', label: '리뷰어 심사' })
-  if (data.permissions?.canManageCycles) tabs.push({ key: 'admin', label: '관리자 운영' })
-  if (data.executiveView) tabs.push({ key: 'executive', label: '보고/분포' })
-  return tabs
-}
-
-export function AiCompetencyClient(data: AiCompetencyPageData) {
+export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const [activeTab, setActiveTab] = useState<TabKey>(initialTabFor(data))
-  const [notice, setNotice] = useState<NoticeState>(null)
   const [isPending, startTransition] = useTransition()
-  const [answers, setAnswers] = useState<Record<string, string | string[] | null>>(() => normalizeAnswerState(data))
-  const [secondRoundForm, setSecondRoundForm] = useState(() => buildSecondRoundForm(data))
-  const [secondRoundFiles, setSecondRoundFiles] = useState<File[]>([])
-  const [certForm, setCertForm] = useState(() => buildCertForm(data))
-  const [certFile, setCertFile] = useState<File | null>(null)
-  const [reviewForm, setReviewForm] = useState<ReviewFormState>(() => buildReviewForm(data))
-  const [reviewerSearch, setReviewerSearch] = useState('')
-  const deferredReviewerSearch = useDeferredValue(reviewerSearch)
+  const [notice, setNotice] = useState<NoticeState>(null)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [form, setForm] = useState(props.caseForm)
+  const [evidenceForm, setEvidenceForm] = useState<EvidenceFormState>(createEmptyEvidenceForm)
 
   useEffect(() => {
-    setAnswers(normalizeAnswerState(data))
-    setSecondRoundForm(buildSecondRoundForm(data))
-    setSecondRoundFiles([])
-    setCertForm(buildCertForm(data))
-    setCertFile(null)
-    setReviewForm((current) => buildReviewForm(data, current.submissionId))
-    const allowedTabs = tabsFor(data).map((item) => item.key)
-    setActiveTab((current) => (allowedTabs.includes(current) ? current : initialTabFor(data)))
-  }, [data])
+    setForm(props.caseForm)
+    setEvidenceForm(createEmptyEvidenceForm())
+  }, [props.caseForm])
 
-  async function callAction(action: string, payload: unknown) {
+  const isEditable = Boolean(props.statusCard?.canEdit && props.assignmentId)
+  const hasAssignment = Boolean(props.assignmentId)
+  const metricCountLabel = useMemo(() => `${form.metrics.length}개`, [form.metrics.length])
+
+  const callJsonAction = async (action: string, payload: unknown) => {
     const response = await fetch('/api/evaluation/ai-competency/actions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, payload }),
     })
-    return readApiResponse(response)
+    return readActionResponse(response)
   }
 
-  async function callMultipartAction(
-    action: string,
-    payload: unknown,
-    files: Array<{ field: string; file: File }>
-  ) {
-    const formData = new FormData()
-    formData.append('action', action)
-    formData.append('payload', JSON.stringify(payload))
-    files.forEach(({ field, file }) => formData.append(field, file))
-    const response = await fetch('/api/evaluation/ai-competency/actions', {
-      method: 'POST',
-      body: formData,
-    })
-    return readApiResponse(response)
-  }
-
-  function runMutation(task: () => Promise<unknown>, successMessage: string) {
+  const runMutation = (work: () => Promise<void>) => {
     startTransition(() => {
-      void (async () => {
-        try {
-          setNotice(null)
-          await task()
-          setNotice({ tone: 'success', message: successMessage })
-          router.refresh()
-        } catch (error) {
-          setNotice({
-            tone: 'error',
-            message: error instanceof Error ? error.message : '처리 중 오류가 발생했습니다.',
-          })
-        }
-      })()
+      void work().catch((error) => {
+        setNotice({ tone: 'error', title: error instanceof Error ? error.message : '처리 중 문제가 발생했습니다.' })
+      })
     })
   }
 
-  function changeCycle(nextCycleId: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    if (nextCycleId) params.set('cycleId', nextCycleId)
-    else params.delete('cycleId')
-    const query = params.toString()
-    router.push(query ? `/evaluation/ai-competency?${query}` : '/evaluation/ai-competency')
+  const updateField = (key: keyof typeof form, value: string | boolean | typeof form.metrics) => {
+    setForm((current) => ({ ...current, [key]: value }))
   }
 
-  function toggleMultiAnswer(questionId: string, option: string, checked: boolean) {
-    setAnswers((current) => {
-      const existing = Array.isArray(current[questionId]) ? [...current[questionId]] : []
-      const next = checked ? [...existing, option] : existing.filter((item) => item !== option)
-      return { ...current, [questionId]: next }
-    })
+  if (props.state === 'permission-denied') {
+    return <StateScreen title={COPY.noPermissionTitle} description={props.message ?? 'AI 역량평가 페이지에 접근할 수 없습니다.'} />
   }
 
-  const filteredReviewerQueue =
-    data.reviewerView?.queue.filter((item) => {
-      if (!deferredReviewerSearch.trim()) return true
-      const query = deferredReviewerSearch.trim().toLowerCase()
-      return [item.employeeName, item.department, item.taskDescription].join(' ').toLowerCase().includes(query)
-    }) ?? []
-
-  const selectedReviewItem = data.reviewerView?.queue.find((item) => item.submissionId === reviewForm.submissionId)
-  const attemptStatus = data.employeeView?.attempt?.status
-  const attemptScore = data.employeeView?.result?.firstRoundScore ?? data.employeeView?.attempt?.totalScore
-  const isAttemptEditable = attemptStatus === 'IN_PROGRESS'
-  const secondRoundApplication = data.employeeView?.secondRound.application
-  const canSubmitSecondRound = data.employeeView?.secondRound.canSubmit ?? false
-  const secondRoundMessage =
-    data.employeeView?.secondRound.submitMessage ??
-    '1차 합격자 중 신청 가능자로 배정된 경우에만 2차 실무인증을 제출할 수 있습니다.'
-  const hasCertMasters = (data.employeeView?.externalCerts.masters.length ?? 0) > 0
-  const selectedCertMaster =
-    data.employeeView?.externalCerts.masters.find((master) => master.id === certForm.certificateId) ??
-    data.employeeView?.externalCerts.masters[0]
-  const canSubmitCertClaim =
-    Boolean(data.employeeView?.assignment) &&
-    hasCertMasters &&
-    Boolean(certForm.certificateId) &&
-    Boolean(certFile) &&
-    (!selectedCertMaster?.requiresPolicyAcknowledgement || certForm.policyAcknowledged)
-
-  if (data.state === 'permission-denied') {
-    return <StateScreen title="접근 권한이 없습니다." description={data.message ?? '권한을 확인해 주세요.'} />
+  if (props.state === 'error') {
+    return <StateScreen title={COPY.loadErrorTitle} description={props.message ?? '잠시 후 다시 시도해 주세요.'} />
   }
-  if (data.state === 'setup-required') {
-    return (
-      <StateScreen
-        title={
-          data.permissions?.canManageCycles
-            ? 'AI 활용능력 평가 운영 설정이 필요합니다.'
-            : '현재 AI 활용능력 평가 운영이 아직 준비되지 않았습니다.'
-        }
-        description={
-          data.message ??
-          (data.permissions?.canManageCycles
-            ? '운영을 시작하려면 평가 사이클과 대상자 배정, 기본 운영 설정을 먼저 완료해 주세요.'
-            : '관리자가 AI 활용능력 평가 사이클을 준비하면 이 화면에서 1차, 2차, 자격 인정 현황을 확인할 수 있습니다.')
-        }
-      />
-    )
-  }
-  if (data.state === 'error') {
-    return <StateScreen title="AI 활용능력 평가 화면을 불러오지 못했습니다." description={data.message ?? '잠시 후 다시 시도해 주세요.'} />
-  }
-  if (data.state === 'no-assignment') {
-    return (
-      <StateScreen
-        title="현재 주기에 배정된 AI 활용능력 평가가 없습니다."
-        description={
-          data.message ??
-          '배정 대상자 편성 또는 트랙 설정이 완료되면 1차 평가와 2차 실무인증 화면이 이곳에 표시됩니다.'
-        }
-      />
-    )
-  }
-  if (data.state === 'empty' && !data.permissions?.canManageCycles) {
-    return <StateScreen title="진행 중인 AI 활용능력 평가 주기가 없습니다." description={data.message ?? '관리자에게 주기 개설을 요청해 주세요.'} />
-  }
-
-  const tabs = tabsFor(data)
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-500">평가관리</p>
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">AI 활용능력 평가</h1>
-            <p className="max-w-3xl text-sm leading-6 text-slate-600">
-              1차 공통평가, 2차 실무인증, 외부자격 인정, PMS 결과 반영을 한 화면에서 운영합니다.
-            </p>
-          </div>
-          <Field label="평가 주기 선택">
-            <select className={inputClassName} value={data.selectedCycleId ?? ''} onChange={(event) => changeCycle(event.target.value)}>
-              <option value="">주기를 선택해 주세요</option>
-              {data.availableCycles.map((cycle) => (
-                <option key={cycle.id} value={cycle.id}>
-                  {cycle.year}년 {cycle.name} / {STATUS_LABELS[cycle.status] ?? cycle.status}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </div>
-        {notice ? (
-          <div
-            className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
-              notice.tone === 'success'
-                ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border border-rose-200 bg-rose-50 text-rose-700'
-            }`}
+    <PageShell
+      title={COPY.pageTitle}
+      description={COPY.pageDescription}
+      actions={
+        <>
+          <select
+            className={inputClassName}
+            value={props.selectedCycleId ?? ''}
+            onChange={(event) => router.push(`/evaluation/ai-competency?cycleId=${encodeURIComponent(event.target.value)}`)}
           >
-            {notice.message}
-          </div>
-        ) : null}
-        {data.alerts?.length ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            <p className="font-semibold">일부 운영 데이터를 불러오지 못해 기본 화면으로 표시 중입니다.</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800">
-              {data.alerts.map((alert) => (
-                <li key={`${alert.title}:${alert.description}`}>
-                  {alert.title} {alert.description}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-        {data.summary ? (
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-            <MetricCard label="대상자" value={`${data.summary.targetCount}명`} />
-            <MetricCard label="1차 완료" value={`${data.summary.completedFirstRoundCount}명`} />
-            <MetricCard label="1차 합격" value={`${data.summary.passedFirstRoundCount}명`} />
-            <MetricCard label="2차 제출" value={`${data.summary.secondRoundSubmissionCount}건`} />
-            <MetricCard label="인증 획득" value={`${data.summary.certificationCount}명`} />
-            <MetricCard label="PMS 반영" value={`${data.summary.syncedCount}명`} />
-          </div>
-        ) : null}
-      </section>
-
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => setActiveTab(tab.key)}
-            className={
-              activeTab === tab.key
-                ? 'rounded-full bg-slate-950 px-4 py-2 text-sm font-medium text-white'
-                : 'rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50'
-            }
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'overview' && (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <SectionCard title="내 진행 현황" description="배정 상태, 응시 상태, PMS 반영 상태를 확인합니다.">
-            {data.employeeView?.assignment ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                <InfoRow label="트랙" value={labelForTrack(data.employeeView.assignment.track)} />
-                <InfoRow label="1차 상태" value={STATUS_LABELS[data.employeeView.attempt?.status ?? 'NOT_STARTED'] ?? '미응시'} />
-                <InfoRow label="1차 점수" value={typeof attemptScore === 'number' ? `${attemptScore}점` : '-'} />
-                <InfoRow label="1차 판정" value={data.employeeView.attempt?.passStatus ? STATUS_LABELS[data.employeeView.attempt.passStatus] ?? data.employeeView.attempt.passStatus : '판정 대기'} />
-                <InfoRow label="2차 상태" value={secondRoundApplication ? STATUS_LABELS[secondRoundApplication.status] ?? secondRoundApplication.status : data.employeeView.secondRound.submitMessage ?? '신청 전'} />
-                <InfoRow label="2차 보너스" value={`${data.employeeView.result?.secondRoundBonus ?? 0}점`} />
-                <InfoRow label="외부자격 점수" value={data.employeeView.result?.externalCertMappedScore ? `${data.employeeView.result.externalCertMappedScore}점` : '-'} />
-                <InfoRow label="PMS 반영" value={data.employeeView.result ? STATUS_LABELS[data.employeeView.result.syncState] ?? data.employeeView.result.syncState : '최종 결과 대기'} />
-              </div>
-            ) : (
-              <EmptyBox message="현재 주기에 배정된 AI 활용능력 평가가 없습니다." />
-            )}
-          </SectionCard>
-          <SectionCard title="최종 결과" description="최종 점수, 등급, 인증 상태를 표시합니다.">
-            {data.employeeView?.result ? (
-              <div className="space-y-3">
-                <MetricCard label="최종 점수" value={`${data.employeeView.result.finalScore.toFixed(1)}점`} />
-                <MetricCard label="등급" value={data.employeeView.result.finalGrade} />
-                <MetricCard label="인증 상태" value={STATUS_LABELS[data.employeeView.result.certificationStatus] ?? data.employeeView.result.certificationStatus} />
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  공개 {formatDateTime(data.employeeView.result.publishedAt)} / PMS 반영 {formatDateTime(data.employeeView.result.syncedAt)}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                <p className="font-medium text-slate-900">아직 최종 결과가 확정되지 않았습니다.</p>
-                <p className="mt-2">
-                  1차 점수 {typeof attemptScore === 'number' ? `${attemptScore}점` : '미채점'} /
-                  {' '}2차 상태 {secondRoundApplication ? STATUS_LABELS[secondRoundApplication.status] ?? secondRoundApplication.status : '진행 전'}
-                </p>
-              </div>
-            )}
-          </SectionCard>
+            {props.cycleOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.year}년 · {option.name}
+              </option>
+            ))}
+          </select>
+          {props.canOpenAdmin ? (
+            <button type="button" className={secondaryButtonClassName} onClick={() => router.push('/evaluation/ai-competency/admin')}>
+              {COPY.adminCta}
+            </button>
+          ) : null}
+        </>
+      }
+    >
+      {notice ? <NoticeBanner tone={notice.tone} title={notice.title} description={notice.description} /> : null}
+      {props.statusCard ? (
+        <div className="grid gap-4 md:grid-cols-4">
+          <MetricCard label="현재 상태" value={props.statusCard.statusLabel} />
+          <MetricCard label="현재 회차" value={props.selectedCycle?.cycleName ?? '-'} />
+          <MetricCard label="검토자" value={props.statusCard.reviewerName ?? '미지정'} />
+          <MetricCard
+            label="제출 상태"
+            value={props.statusCard.submittedAt ? formatDateOnly(props.statusCard.submittedAt) : '미제출'}
+            hint={props.selectedCycle?.submissionWindowLabel ? `제출 기간 ${props.selectedCycle.submissionWindowLabel}` : undefined}
+          />
         </div>
-      )}
+      ) : null}
 
-      {activeTab === 'assessment' && (
-        <SectionCard title="1차 공통평가" description="저장 후 이어서 응시하거나 최종 제출할 수 있습니다.">
-          {!data.employeeView?.assignment ? (
-            <EmptyBox message="현재 주기에 배정된 1차 평가가 없습니다." />
-          ) : (
-            <div className="space-y-6">
-              {data.employeeView.assessmentPlan && !data.employeeView.attempt ? (
-                <div className="grid gap-3 md:grid-cols-4">
-                  <MetricCard label="예정 문항 수" value={`${data.employeeView.assessmentPlan.totalQuestionCount}개`} />
-                  <MetricCard label="예정 총점" value={`${data.employeeView.assessmentPlan.totalPoints}점`} />
-                  <MetricCard label="시험 시간" value={`${data.employeeView.assessmentPlan.timeLimitMinutes}분`} />
-                  <MetricCard label="합격 기준" value={`${data.employeeView.assessmentPlan.passScore}점`} />
-                </div>
-              ) : null}
-              {data.employeeView.assessmentPlan?.blueprints.length && !data.employeeView.attempt ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                  체계표 기준: {data.employeeView.assessmentPlan.blueprints.map((blueprint) => blueprint.blueprintName).join(', ')}. 시험 시작 시 개인별 시험지가 생성되고, 시작 이후에는 문항 구성이 고정됩니다.
-                </div>
-              ) : null}
-              {data.employeeView.attempt ? (
-                <div className="grid gap-3 md:grid-cols-4">
-                  <MetricCard label="응시 상태" value={STATUS_LABELS[data.employeeView.attempt.status] ?? data.employeeView.attempt.status} />
-                  <MetricCard label="총점" value={typeof data.employeeView.attempt.totalScore === 'number' ? `${data.employeeView.attempt.totalScore}점` : '채점 대기'} />
-                  <MetricCard label="합격 여부" value={data.employeeView.attempt.passStatus ? STATUS_LABELS[data.employeeView.attempt.passStatus] ?? data.employeeView.attempt.passStatus : '판정 대기'} />
-                  <MetricCard label="최종 제출" value={formatDateTime(data.employeeView.attempt.submittedAt)} />
-                </div>
-              ) : null}
-              {!data.employeeView.attempt && (
+      {props.latestReview?.overallDecision === 'REVISION_REQUIRED' ? (
+        <NoticeBanner tone="warning" title="보완 요청이 도착했습니다." description={props.reviewerComment ?? '보완 요청 내용을 반영한 뒤 다시 제출해 주세요.'} />
+      ) : null}
+
+      <SectionCard title="안내" description="평가 기준과 예시를 확인한 뒤 제출서를 작성해 주세요.">
+        <div className="grid gap-4 md:grid-cols-2">
+          {props.guideLibrary.guides.map((guide) => (
+            <article key={guide.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <StatusPill value={guide.trackApplicability === 'COMMON' ? '공통 안내' : guide.trackApplicability === 'PROJECT_ONLY' ? '프로젝트형 안내' : '확산형 안내'} />
+              <h3 className="mt-3 text-base font-semibold text-slate-950">{guide.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{guide.summary}</p>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{guide.body}</p>
+            </article>
+          ))}
+        </div>
+      </SectionCard>
+
+      {!hasAssignment ? (
+        <EmptyBox title={COPY.assignedEmptyTitle} description={props.message ?? COPY.assignedEmptyDescription} />
+      ) : (
+        <SectionCard
+          title="제출서 작성"
+          description="실제 업무 문제를 해결한 AI 활용 사례를 구조적으로 정리해 주세요. 저장 후 제출 전까지 계속 수정할 수 있습니다."
+          action={
+            isEditable ? (
+              <div className="flex flex-wrap gap-3">
+                <button type="button" className={secondaryButtonClassName} onClick={() => setIsPreviewOpen(true)}>
+                  {COPY.preview}
+                </button>
+                <button
+                  type="button"
+                  className={secondaryButtonClassName}
+                  disabled={isPending}
+                  onClick={() =>
+                    runMutation(async () => {
+                      await callJsonAction('saveDraft', { assignmentId: props.assignmentId, ...form })
+                      setNotice({ tone: 'success', title: '작성 중인 AI 역량평가 초안을 저장했습니다.' })
+                      router.refresh()
+                    })
+                  }
+                >
+                  {COPY.saveDraft}
+                </button>
                 <button
                   type="button"
                   className={primaryButtonClassName}
                   disabled={isPending}
                   onClick={() =>
-                    runMutation(
-                      () => callAction('startAttempt', { assignmentId: data.employeeView?.assignment?.id }),
-                      '1차 평가 응시를 시작했습니다.'
-                    )
+                    runMutation(async () => {
+                      await callJsonAction('submitCase', { assignmentId: props.assignmentId })
+                      setNotice({
+                        tone: 'success',
+                        title: props.statusCard?.canResubmit ? '보완한 내용을 다시 제출했습니다.' : 'AI 역량평가 제출을 완료했습니다.',
+                      })
+                      setIsPreviewOpen(false)
+                      router.refresh()
+                    })
                   }
                 >
-                  응시 시작
+                  {props.statusCard?.canResubmit ? COPY.resubmit : COPY.submit}
                 </button>
-              )}
-              {data.employeeView.questions.map((question, index) => (
-                <div key={question.id} className="rounded-2xl border border-slate-200 p-5">
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-900">문항 {index + 1}. {question.title}</span>
-                    <StatusPill value={question.competencyDomain} customLabel={domainLabel(question.competencyDomain)} />
-                    <StatusPill value={question.questionType} customLabel={questionTypeLabel(question.questionType)} />
-                    <StatusPill value={question.difficulty} customLabel={difficultyLabel(question.difficulty)} />
-                  </div>
-                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{question.prompt}</p>
-                  <div className="mt-4 space-y-3">
-                    {(question.questionType === 'SINGLE_CHOICE' || question.questionType === 'SCENARIO_JUDGEMENT') &&
-                      question.options.map((option) => (
-                        <label key={option} className="flex gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                          <input type="radio" name={question.id} checked={answers[question.id] === option} disabled={!isAttemptEditable} onChange={() => setAnswers((current) => ({ ...current, [question.id]: option }))} />
-                          <span>{option}</span>
-                        </label>
-                      ))}
-                    {question.questionType === 'MULTIPLE_CHOICE' &&
-                      question.options.map((option) => (
-                        <label key={option} className="flex gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                          <input type="checkbox" checked={isSelectedMultiAnswer(answers, question.id, option)} disabled={!isAttemptEditable} onChange={(event) => toggleMultiAnswer(question.id, option, event.target.checked)} />
-                          <span>{option}</span>
-                        </label>
-                      ))}
-                    {(question.questionType === 'SHORT_ANSWER' || question.questionType === 'PRACTICAL' || !question.options.length) && (
-                      <textarea className={`${inputClassName} min-h-32`} value={typeof answers[question.id] === 'string' ? answers[question.id] ?? '' : ''} disabled={!isAttemptEditable} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} />
-                    )}
-                  </div>
-                </div>
+              </div>
+            ) : null
+          }
+        >
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              {TRACK_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={!isEditable}
+                  className={`rounded-3xl border p-5 text-left transition ${form.track === option.value ? 'border-slate-900 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} ${!isEditable ? 'cursor-default opacity-80' : ''}`}
+                  onClick={() => updateField('track', option.value)}
+                >
+                  <p className="text-sm font-semibold">{option.label}</p>
+                  <p className={`mt-2 text-sm leading-6 ${form.track === option.value ? 'text-slate-200' : 'text-slate-600'}`}>{option.description}</p>
+                </button>
               ))}
-              {data.employeeView.attempt && isAttemptEditable && (
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    className={secondaryButtonClassName}
-                    disabled={isPending}
-                    onClick={() =>
-                      runMutation(
-                        () =>
-                          callAction('saveAttempt', {
-                            attemptId: data.employeeView!.attempt!.id,
-                            submit: false,
-                            answers: data.employeeView!.questions.map((question) => ({
-                              questionId: question.id,
-                              answer: answers[question.id] ?? (question.questionType === 'MULTIPLE_CHOICE' ? [] : ''),
-                            })),
-                          }),
-                        '답안을 저장했습니다.'
-                      )
-                    }
-                  >
-                    임시 저장
-                  </button>
-                  <button
-                    type="button"
-                    className={primaryButtonClassName}
-                    disabled={isPending}
-                    onClick={() =>
-                      runMutation(
-                        () =>
-                          callAction('saveAttempt', {
-                            attemptId: data.employeeView!.attempt!.id,
-                            submit: true,
-                            answers: data.employeeView!.questions.map((question) => ({
-                              questionId: question.id,
-                              answer: answers[question.id] ?? (question.questionType === 'MULTIPLE_CHOICE' ? [] : ''),
-                            })),
-                          }),
-                        '1차 공통평가를 제출했습니다.'
-                      )
-                    }
-                  >
-                    최종 제출
-                  </button>
-                </div>
-              )}
-              {data.employeeView.attempt && !isAttemptEditable ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                  {data.employeeView.attempt.status === 'SCORED'
-                    ? '1차 공통평가 채점이 완료되어 답안을 수정할 수 없습니다.'
-                    : '1차 공통평가가 제출되어 현재는 답안을 수정할 수 없습니다.'}
-                </div>
-              ) : null}
             </div>
-          )}
-        </SectionCard>
-      )}
 
-      {activeTab === 'second-round' && (
-        <SectionCard title="2차 실무인증" description="1차 합격자 중 대상자만 신청할 수 있습니다.">
-          {!data.employeeView?.assignment ? (
-            <EmptyBox message="현재 주기에 배정된 2차 실무인증 정보가 없습니다." />
-          ) : (
-            <div className="space-y-6">
-              {data.employeeView.secondRound.application ? (
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                  <div className="flex flex-wrap gap-2">
-                    <StatusPill value={data.employeeView.secondRound.application.status} />
-                    <span className="text-sm text-slate-600">제출물 {data.employeeView.secondRound.application.artifacts.length}건 / 보너스 {data.employeeView.secondRound.application.aggregatedBonus ?? 0}점</span>
-                  </div>
-                  {data.employeeView.secondRound.application.reviews.length ? (
-                    <div className="mt-3 space-y-2 text-sm text-slate-600">
-                      {data.employeeView.secondRound.application.reviews.map((review) => (
-                        <p key={review.reviewerId}>
-                          {review.reviewerName} / {review.decision ? STATUS_LABELS[review.decision] ?? review.decision : '심사 진행 중'}
-                        </p>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {!canSubmitSecondRound ? (
-                <EmptyBox message={secondRoundMessage} />
-              ) : (
-                <form
-                  className="grid gap-4"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    if (!data.employeeView?.assignment) return
-                    runMutation(
-                      () =>
-                        callMultipartAction(
-                          'submitSecondRound',
-                          { assignmentId: data.employeeView!.assignment!.id, ...secondRoundForm },
-                          secondRoundFiles.map((file) => ({ field: 'artifacts', file }))
-                        ),
-                      '2차 실무인증 신청을 제출했습니다.'
-                    )
-                  }}
-                >
-                  <Field label="과제 설명"><textarea className={`${inputClassName} min-h-24`} value={secondRoundForm.taskDescription} onChange={(event) => setSecondRoundForm((current) => ({ ...current, taskDescription: event.target.value }))} /></Field>
-                  <Field label="AI 사용 목적"><textarea className={`${inputClassName} min-h-24`} value={secondRoundForm.aiUsagePurpose} onChange={(event) => setSecondRoundForm((current) => ({ ...current, aiUsagePurpose: event.target.value }))} /></Field>
-                  <Field label="사용 도구"><input className={inputClassName} value={secondRoundForm.toolUsed} onChange={(event) => setSecondRoundForm((current) => ({ ...current, toolUsed: event.target.value }))} /></Field>
-                  <Field label="프롬프트/접근 방식 요약"><textarea className={`${inputClassName} min-h-24`} value={secondRoundForm.promptSummary} onChange={(event) => setSecondRoundForm((current) => ({ ...current, promptSummary: event.target.value }))} /></Field>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <Field label="검증 방법"><textarea className={`${inputClassName} min-h-24`} value={secondRoundForm.verificationMethod} onChange={(event) => setSecondRoundForm((current) => ({ ...current, verificationMethod: event.target.value }))} /></Field>
-                    <Field label="업무 효과"><textarea className={`${inputClassName} min-h-24`} value={secondRoundForm.businessImpact} onChange={(event) => setSecondRoundForm((current) => ({ ...current, businessImpact: event.target.value }))} /></Field>
-                    <Field label="민감정보 점검"><textarea className={`${inputClassName} min-h-24`} value={secondRoundForm.sensitiveDataCheck} onChange={(event) => setSecondRoundForm((current) => ({ ...current, sensitiveDataCheck: event.target.value }))} /></Field>
-                  </div>
-                  <Field label="제출물 첨부"><input type="file" multiple onChange={(event) => setSecondRoundFiles(Array.from(event.target.files ?? []))} /></Field>
-                  <button type="submit" className={primaryButtonClassName} disabled={isPending}>
-                    {secondRoundApplication?.status === 'REVISE_REQUESTED' ? '2차 실무인증 재제출' : '2차 실무인증 제출'}
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
-        </SectionCard>
-      )}
-
-      {activeTab === 'certificate' && (
-        <SectionCard title="외부자격 인정" description="외부 자격 증빙을 제출하고 승인 상태를 확인합니다.">
-          {!data.employeeView?.assignment ? (
-            <EmptyBox message="현재 주기에 배정된 대상자 정보가 없습니다." />
-          ) : (
-            <div className="space-y-6">
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-                <div className="space-y-3">
-                  {data.employeeView.externalCerts.masters.length ? (
-                    data.employeeView.externalCerts.masters.map((master) => (
-                      <div key={master.id} className="rounded-2xl border border-slate-200 px-4 py-3">
-                        <p className="font-medium text-slate-900">{master.name}</p>
-                        <p className="text-sm text-slate-500">{master.vendor ?? '외부 기관'} / 인정 점수 {master.mappedScore}점</p>
-                      </div>
-                    ))
-                  ) : (
-                    <EmptyBox message="현재 운영 중인 외부자격 인정 기준이 없습니다." />
-                  )}
-                </div>
-                <form
-                  className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-5"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    if (!data.employeeView?.assignment || !certFile) return
-                    runMutation(
-                      () =>
-                        callMultipartAction(
-                          'submitCertClaim',
-                          {
-                            assignmentId: data.employeeView!.assignment!.id,
-                            certificateId: certForm.certificateId,
-                            certificateNumber: certForm.certificateNumber,
-                            issuedAt: certForm.issuedAt || undefined,
-                            expiresAt: certForm.expiresAt || undefined,
-                            policyAcknowledged: certForm.policyAcknowledged,
-                          },
-                          [{ field: 'proof', file: certFile }]
-                        ),
-                      '외부자격 인정 요청을 제출했습니다.'
-                    )
-                  }}
-                >
-                  <Field label="자격명"><select className={inputClassName} value={certForm.certificateId} onChange={(event) => setCertForm((current) => ({ ...current, certificateId: event.target.value }))}>{data.employeeView.externalCerts.masters.map((master) => <option key={master.id} value={master.id}>{master.name}</option>)}</select></Field>
-                  <Field label="자격번호"><input className={inputClassName} value={certForm.certificateNumber} onChange={(event) => setCertForm((current) => ({ ...current, certificateNumber: event.target.value }))} /></Field>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="취득일"><input type="date" className={inputClassName} value={certForm.issuedAt} onChange={(event) => setCertForm((current) => ({ ...current, issuedAt: event.target.value }))} /></Field>
-                    <Field label="만료일"><input type="date" className={inputClassName} value={certForm.expiresAt} onChange={(event) => setCertForm((current) => ({ ...current, expiresAt: event.target.value }))} /></Field>
-                  </div>
-                  <Field label="증빙 파일"><input type="file" onChange={(event) => setCertFile(event.target.files?.[0] ?? null)} /></Field>
-                  <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                    <input type="checkbox" checked={certForm.policyAcknowledged} onChange={(event) => setCertForm((current) => ({ ...current, policyAcknowledged: event.target.checked }))} />
-                    <span>사내 AI 사용 가이드와 민감정보 처리 정책을 확인했습니다.</span>
-                  </label>
-                  <button type="submit" className={primaryButtonClassName} disabled={isPending || !canSubmitCertClaim}>외부자격 인정 요청</button>
-                </form>
-              </div>
-              <DataTable title="요청 이력" columns={['자격명', '상태', '제출 시각', '인정 점수']} rows={data.employeeView.externalCerts.claims.map((claim) => [claim.certificateName, STATUS_LABELS[claim.status] ?? claim.status, formatDateTime(claim.submittedAt), `${claim.mappedScoreSnapshot}점`])} />
-            </div>
-          )}
-        </SectionCard>
-      )}
-
-      {activeTab === 'reviewer' && (
-        <SectionCard title="리뷰어 심사" description="배정된 2차 제출건만 열람하고 루브릭 기준으로 저장 또는 최종 제출합니다.">
-          {!data.reviewerView?.queue.length ? (
-            <EmptyBox message="현재 배정된 리뷰 작업이 없습니다." />
-          ) : (
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-              <div className="space-y-4">
-                <Field label="심사 대상 검색">
-                  <input className={inputClassName} value={reviewerSearch} onChange={(event) => setReviewerSearch(event.target.value)} placeholder="이름, 부서, 과제 설명으로 검색" />
+            <div className="grid gap-5 md:grid-cols-2">
+              {COMMON_FIELDS.map(([key, label, required]) => (
+                <Field key={key} label={label} required={required}>
+                  <textarea
+                    className={key === 'title' || key === 'scopeDescription' ? inputClassName : textareaClassName}
+                    value={String(form[key as keyof typeof form] ?? '')}
+                    disabled={!isEditable}
+                    onChange={(event) => updateField(key as keyof typeof form, event.target.value)}
+                  />
                 </Field>
-                <div className="space-y-3">
-                  {filteredReviewerQueue.map((item) => (
-                    <button
-                      key={item.reviewId}
-                      type="button"
-                      className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"
-                      onClick={() =>
-                        setReviewForm({
-                          submissionId: item.submissionId,
-                          decision: item.existingDecision ?? 'PASS',
-                          notes: item.existingNote ?? '',
-                          qnaNote: item.existingQnaNote ?? '',
-                          criterionScores: buildCriterionDrafts(item),
-                        })
-                      }
-                    >
-                      <div className="flex flex-wrap gap-2">
-                        <StatusPill value={item.reviewStatus} />
-                        <StatusPill value={item.status} />
-                      </div>
-                      <p className="mt-2 font-medium text-slate-900">{item.employeeName}</p>
-                      <p className="text-sm text-slate-500">{item.department} / {labelForTrack(item.track)}</p>
-                      <p className="mt-2 line-clamp-2 text-sm text-slate-600">{item.taskDescription}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                {selectedReviewItem ? (
-                  <>
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900">{selectedReviewItem.employeeName} 제출건</h3>
-                      <p className="mt-1 text-sm text-slate-600">{selectedReviewItem.taskDescription}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {selectedReviewItem.artifacts.map((artifact) => (
-                          <a key={artifact.id} className={secondaryButtonClassName} href={`/api/evaluation/ai-competency/artifacts/${artifact.id}`}>
-                            {artifact.fileName} ({formatFileSize(artifact.sizeBytes)})
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                    {selectedReviewItem.rubric ? (
-                      <>
-                        <div className="grid gap-3 md:grid-cols-3">
-                          <MetricCard label="루브릭 총점" value={`${selectedReviewItem.rubric.totalScore}점`} />
-                          <MetricCard label="합격 기준" value={`${selectedReviewItem.rubric.passScore}점`} />
-                          <MetricCard label="합격 보너스" value={`${selectedReviewItem.rubric.bonusScoreIfPassed}점`} />
-                        </div>
-                        <div className="space-y-4">
-                          {selectedReviewItem.rubric.criteria.map((criterion) => {
-                            const draft = reviewForm.criterionScores.find((item) => item.criterionId === criterion.criterionId)
-                            return (
-                              <div key={criterion.criterionId} className="rounded-2xl border border-slate-200 bg-white p-4">
-                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                  <div>
-                                    <p className="font-semibold text-slate-900">{criterion.criterionName}</p>
-                                    {criterion.criterionDescription ? <p className="mt-1 text-sm text-slate-600">{criterion.criterionDescription}</p> : null}
-                                  </div>
-                                  <div className="flex flex-wrap gap-2">
-                                    <StatusPill value={criterion.mandatory ? 'ACTIVE' : 'INACTIVE'} customLabel={criterion.mandatory ? '필수' : '선택'} />
-                                    {criterion.knockout ? <StatusPill value="FAILED" customLabel="Knockout" /> : null}
-                                  </div>
-                                </div>
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  {criterion.bands.map((band) => (
-                                    <button
-                                      key={`${criterion.criterionId}-${band.score}`}
-                                      type="button"
-                                      className={draft?.score === String(band.score) ? 'rounded-full bg-slate-950 px-3 py-2 text-xs font-medium text-white' : 'rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700'}
-                                      onClick={() =>
-                                        setReviewForm((current) => ({
-                                          ...current,
-                                          criterionScores: current.criterionScores.map((item) =>
-                                            item.criterionId === criterion.criterionId
-                                              ? { ...item, score: String(band.score) }
-                                              : item
-                                          ),
-                                        }))
-                                      }
-                                    >
-                                      {band.score}점 {band.title}
-                                    </button>
-                                  ))}
-                                </div>
-                                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                                  <Field label="점수">
-                                    <input
-                                      type="number"
-                                      className={inputClassName}
-                                      value={draft?.score ?? ''}
-                                      onChange={(event) =>
-                                        setReviewForm((current) => ({
-                                          ...current,
-                                          criterionScores: current.criterionScores.map((item) =>
-                                            item.criterionId === criterion.criterionId
-                                              ? { ...item, score: event.target.value }
-                                              : item
-                                          ),
-                                        }))
-                                      }
-                                    />
-                                  </Field>
-                                  {criterion.knockout ? (
-                                    <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                                      <input
-                                        type="checkbox"
-                                        checked={draft?.knockoutTriggered ?? false}
-                                        onChange={(event) =>
-                                          setReviewForm((current) => ({
-                                            ...current,
-                                            criterionScores: current.criterionScores.map((item) =>
-                                              item.criterionId === criterion.criterionId
-                                                ? { ...item, knockoutTriggered: event.target.checked }
-                                                : item
-                                            ),
-                                          }))
-                                        }
-                                      />
-                                      Knockout 위반 체크
-                                    </label>
-                                  ) : <div />}
-                                </div>
-                                <Field label="평가기준 코멘트">
-                                  <textarea
-                                    className={`${inputClassName} mt-4 min-h-24`}
-                                    value={draft?.comment ?? ''}
-                                    onChange={(event) =>
-                                      setReviewForm((current) => ({
-                                        ...current,
-                                        criterionScores: current.criterionScores.map((item) =>
-                                          item.criterionId === criterion.criterionId
-                                            ? { ...item, comment: event.target.value }
-                                            : item
-                                        ),
-                                      }))
-                                    }
-                                  />
-                                </Field>
-                              </div>
-                            )
-                          })}
-                        </div>
-                        {(() => {
-                          const preview = calculateRubricReview({
-                            rubric: {
-                              rubricName: selectedReviewItem.rubric.rubricName,
-                              rubricVersion: 1,
-                              track: selectedReviewItem.track,
-                              totalScore: selectedReviewItem.rubric.totalScore,
-                              passScore: selectedReviewItem.rubric.passScore,
-                              bonusScoreIfPassed: selectedReviewItem.rubric.bonusScoreIfPassed,
-                              certificationLabel: selectedReviewItem.rubric.certificationLabel ?? null,
-                            },
-                            criteria: selectedReviewItem.rubric.criteria.map((criterion) => ({
-                              id: criterion.criterionId,
-                              criterionCode: criterion.criterionCode,
-                              criterionName: criterion.criterionName,
-                              criterionDescription: criterion.criterionDescription,
-                              maxScore: criterion.maxScore,
-                              displayOrder: 0,
-                              mandatory: criterion.mandatory,
-                              knockout: criterion.knockout,
-                              bands: criterion.bands.map((band, index) => ({
-                                score: band.score,
-                                title: band.title,
-                                description: band.description,
-                                guidance: band.guidance,
-                                displayOrder: index,
-                              })),
-                            })),
-                            criterionScores: reviewForm.criterionScores.map((criterion) => ({
-                              criterionId: criterion.criterionId,
-                              score: Number(criterion.score || 0),
-                              comment: criterion.comment || undefined,
-                              knockoutTriggered: criterion.knockoutTriggered,
-                            })),
-                            decision: reviewForm.decision,
-                            submitFinal: false,
-                          })
-                          return (
-                            <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                              합계 {preview.totalScore}점 / 예상 판정 {STATUS_LABELS[preview.decision] ?? preview.decision} / 예상 보너스 {preview.bonusScore}점
-                              {preview.knockoutTriggered ? <span className="ml-2 text-rose-600">Knockout 조건이 감지되었습니다.</span> : null}
-                            </div>
-                          )
-                        })()}
-                        <Field label="종합 심사 의견">
-                          <textarea className={`${inputClassName} min-h-24`} value={reviewForm.notes} onChange={(event) => setReviewForm((current) => ({ ...current, notes: event.target.value }))} />
-                        </Field>
-                        <Field label="Q&A 메모">
-                          <textarea className={`${inputClassName} min-h-24`} value={reviewForm.qnaNote} onChange={(event) => setReviewForm((current) => ({ ...current, qnaNote: event.target.value }))} />
-                        </Field>
-                        <Field label="최종 판정">
-                          <select className={inputClassName} value={reviewForm.decision} onChange={(event) => setReviewForm((current) => ({ ...current, decision: event.target.value as AiCompetencyReviewDecision }))}>
-                            <option value="PASS">합격</option>
-                            <option value="FAIL">불합격</option>
-                            <option value="REVISE">재검토 필요</option>
-                          </select>
-                        </Field>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className={secondaryButtonClassName}
-                            disabled={isPending}
-                            onClick={() =>
-                              runMutation(
-                                () =>
-                                  callAction('reviewSubmission', {
-                                    submissionId: reviewForm.submissionId,
-                                    criterionScores: reviewForm.criterionScores.map((criterion) => ({
-                                      criterionId: criterion.criterionId,
-                                      score: Number(criterion.score || 0),
-                                      comment: criterion.comment || undefined,
-                                      knockoutTriggered: criterion.knockoutTriggered,
-                                    })),
-                                    notes: reviewForm.notes,
-                                    qnaNote: reviewForm.qnaNote,
-                                    submitFinal: false,
-                                  }),
-                                '리뷰 초안을 저장했습니다.'
-                              )
-                            }
-                          >
-                            초안 저장
-                          </button>
-                          <button
-                            type="button"
-                            className={primaryButtonClassName}
-                            disabled={isPending}
-                            onClick={() =>
-                              runMutation(
-                                () =>
-                                  callAction('reviewSubmission', {
-                                    submissionId: reviewForm.submissionId,
-                                    criterionScores: reviewForm.criterionScores.map((criterion) => ({
-                                      criterionId: criterion.criterionId,
-                                      score: Number(criterion.score || 0),
-                                      comment: criterion.comment || undefined,
-                                      knockoutTriggered: criterion.knockoutTriggered,
-                                    })),
-                                    decision: reviewForm.decision,
-                                    notes: reviewForm.notes,
-                                    qnaNote: reviewForm.qnaNote,
-                                    submitFinal: true,
-                                  }),
-                                '2차 실무인증 심사를 최종 제출했습니다.'
-                              )
-                            }
-                          >
-                            최종 제출
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <EmptyBox message="현재 제출건에는 연결된 활성 루브릭이 없습니다." />
-                    )}
-                  </>
+              ))}
+            </div>
+
+            {form.track === 'AI_PROJECT_EXECUTION' ? (
+              <TrackSection
+                title="프로젝트 수행 상세"
+                fields={[
+                  ['projectBackground', '프로젝트 배경', true],
+                  ['stakeholders', '이해관계자', false],
+                  ['executionSteps', '실행 단계', true],
+                  ['deliverables', '산출물', true],
+                  ['ownerPmRoleDetail', 'PM/Owner 역할 구체 설명', true],
+                  ['contributionSummary', '성과 기여 요약', false],
+                ]}
+                values={form.projectDetail}
+                editable={isEditable}
+                onChange={(key, value) =>
+                  setForm((current) => ({ ...current, projectDetail: { ...current.projectDetail, [key]: value } }))
+                }
+              />
+            ) : null}
+
+            {form.track === 'AI_USE_CASE_EXPANSION' ? (
+              <TrackSection
+                title="활용 사례 확산 상세"
+                fields={[
+                  ['useCaseDescription', '실제 활용 사례 설명', true],
+                  ['teamDivisionScope', '팀/본부 적용 범위', true],
+                  ['repeatedUseExamples', '반복 사용 사례', false],
+                  ['measuredEffectDetail', '측정 가능한 효과 상세', true],
+                  ['seminarSharingEvidence', '세미나/공유 근거', true],
+                  ['organizationExpansionDetail', '조직 확산 내용', false],
+                ]}
+                values={form.adoptionDetail}
+                editable={isEditable}
+                onChange={(key, value) =>
+                  setForm((current) => ({ ...current, adoptionDetail: { ...current.adoptionDetail, [key]: value } }))
+                }
+              />
+            ) : null}
+
+            <SectionCard
+              title="측정 지표 / 효과"
+              description="Before / After 비교와 검증 방법이 드러나도록 작성해 주세요."
+              action={
+                isEditable ? (
+                  <button type="button" className={secondaryButtonClassName} onClick={() => updateField('metrics', [...form.metrics, createEmptyMetric(form.metrics.length)])}>
+                    지표 추가
+                  </button>
                 ) : (
-                  <EmptyBox message="심사할 제출건을 선택해 주세요." />
+                  <MetricCard label="등록 지표" value={metricCountLabel} />
+                )
+              }
+            >
+              <div className="space-y-4">
+                {form.metrics.length ? (
+                  form.metrics.map((metric, index) => (
+                    <article key={metric.id ?? `metric-${index}`} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <Field label={`지표명 ${index + 1}`}><input className={inputClassName} value={metric.metricName} disabled={!isEditable} onChange={(event) => setForm((current) => ({ ...current, metrics: current.metrics.map((item, itemIndex) => itemIndex === index ? { ...item, metricName: event.target.value } : item) }))} /></Field>
+                        <Field label="단위"><input className={inputClassName} value={metric.unit} disabled={!isEditable} onChange={(event) => setForm((current) => ({ ...current, metrics: current.metrics.map((item, itemIndex) => itemIndex === index ? { ...item, unit: event.target.value } : item) }))} /></Field>
+                        <Field label="Before 값"><input className={inputClassName} value={metric.beforeValue} disabled={!isEditable} onChange={(event) => setForm((current) => ({ ...current, metrics: current.metrics.map((item, itemIndex) => itemIndex === index ? { ...item, beforeValue: event.target.value } : item) }))} /></Field>
+                        <Field label="After 값"><input className={inputClassName} value={metric.afterValue} disabled={!isEditable} onChange={(event) => setForm((current) => ({ ...current, metrics: current.metrics.map((item, itemIndex) => itemIndex === index ? { ...item, afterValue: event.target.value } : item) }))} /></Field>
+                        <Field label="검증 방법"><textarea className={textareaClassName} value={metric.verificationMethod} disabled={!isEditable} onChange={(event) => setForm((current) => ({ ...current, metrics: current.metrics.map((item, itemIndex) => itemIndex === index ? { ...item, verificationMethod: event.target.value } : item) }))} /></Field>
+                      </div>
+                      {isEditable ? <button type="button" className={`${secondaryButtonClassName} mt-4`} onClick={() => updateField('metrics', form.metrics.filter((_, itemIndex) => itemIndex !== index).map((item, itemIndex) => ({ ...item, displayOrder: itemIndex })))}>지표 삭제</button> : null}
+                    </article>
+                  ))
+                ) : (
+                  <EmptyBox title="등록된 지표가 없습니다." description="효과를 확인할 수 있는 지표를 최소 1개 이상 입력해 주세요." />
                 )}
               </div>
-            </div>
-          )}
+            </SectionCard>
+
+            <SectionCard title={COPY.evidenceTitle} description="파일, 링크, 설명 메모 중 하나 이상으로 실제 근거를 남겨 주세요.">
+              <div className="space-y-4">
+                {props.evidenceItems.length ? (
+                  props.evidenceItems.map((item) => (
+                    <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusPill value={EVIDENCE_TYPE_OPTIONS.find((option) => option.value === item.evidenceType)?.label ?? item.evidenceType} />
+                            <span className="text-sm text-slate-500">{formatDateTime(item.createdAt)}</span>
+                          </div>
+                          <h3 className="text-base font-semibold text-slate-950">{item.title}</h3>
+                          {item.description ? <p className="text-sm leading-6 text-slate-600">{item.description}</p> : null}
+                          {item.linkUrl ? <a className="text-sm font-medium text-slate-900 underline" href={item.linkUrl} target="_blank" rel="noreferrer">링크 열기</a> : null}
+                          {item.textNote ? <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.textNote}</p> : null}
+                          {item.hasFile ? <a className={secondaryButtonClassName} href={`/api/evaluation/ai-competency/evidence/${item.id}`}>{item.fileName} ({formatFileSize(item.sizeBytes)})</a> : null}
+                        </div>
+                        {isEditable ? <button type="button" className={secondaryButtonClassName} onClick={() => runMutation(async () => { await callJsonAction('deleteEvidence', { assignmentId: props.assignmentId, evidenceId: item.id }); setNotice({ tone: 'success', title: '증빙 자료를 삭제했습니다.' }); router.refresh() })}>삭제</button> : null}
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <EmptyBox title={COPY.evidenceEmptyTitle} description={COPY.evidenceEmptyDescription} />
+                )}
+
+                {isEditable ? (
+                  <div className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-4 md:grid-cols-2">
+                    <Field label="증빙 유형"><select className={inputClassName} value={evidenceForm.evidenceType} onChange={(event) => setEvidenceForm((current) => ({ ...current, evidenceType: event.target.value as AiCompetencyGateEvidenceType }))}>{EVIDENCE_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+                    <Field label="증빙 제목" required><input className={inputClassName} value={evidenceForm.title} onChange={(event) => setEvidenceForm((current) => ({ ...current, title: event.target.value }))} /></Field>
+                    <Field label="설명"><textarea className={textareaClassName} value={evidenceForm.description} onChange={(event) => setEvidenceForm((current) => ({ ...current, description: event.target.value }))} /></Field>
+                    <Field label="관련 링크"><input className={inputClassName} value={evidenceForm.linkUrl} onChange={(event) => setEvidenceForm((current) => ({ ...current, linkUrl: event.target.value }))} /></Field>
+                    <Field label="메모"><textarea className={textareaClassName} value={evidenceForm.textNote} onChange={(event) => setEvidenceForm((current) => ({ ...current, textNote: event.target.value }))} /></Field>
+                    <Field label="파일 첨부"><input className={inputClassName} type="file" onChange={(event) => setEvidenceForm((current) => ({ ...current, file: event.target.files?.[0] ?? null }))} /></Field>
+                    <div className="md:col-span-2">
+                      <button
+                        type="button"
+                        className={primaryButtonClassName}
+                        disabled={isPending}
+                        onClick={() =>
+                          runMutation(async () => {
+                            const formData = new FormData()
+                            formData.set('action', 'uploadEvidence')
+                            formData.set('payload', JSON.stringify({ assignmentId: props.assignmentId, evidenceType: evidenceForm.evidenceType, title: evidenceForm.title, description: evidenceForm.description, linkUrl: evidenceForm.linkUrl, textNote: evidenceForm.textNote }))
+                            if (evidenceForm.file) formData.set('file', evidenceForm.file)
+                            const response = await fetch('/api/evaluation/ai-competency/actions', { method: 'POST', body: formData })
+                            await readActionResponse(response)
+                            setNotice({ tone: 'success', title: '증빙 자료를 등록했습니다.' })
+                            setEvidenceForm(createEmptyEvidenceForm())
+                            router.refresh()
+                          })
+                        }
+                      >
+                        증빙 자료 등록
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="최종 자기 점검 / 서약" description="AI가 금지된 최종 자동 의사결정을 대신하지 않았고, 승인된 도구와 검증 절차를 거쳤는지 확인해 주세요.">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"><input type="checkbox" checked={form.prohibitedAutomationAcknowledged} disabled={!isEditable} onChange={(event) => updateField('prohibitedAutomationAcknowledged', event.target.checked)} /><span>채용, HR 징계, 법률 최종 판단, 재무 최종 승인 등 금지된 최종 자동 의사결정에 AI를 사용하지 않았습니다.</span></label>
+                <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"><input type="checkbox" checked={form.finalDeclarationAccepted} disabled={!isEditable} onChange={(event) => updateField('finalDeclarationAccepted', event.target.checked)} /><span>제출 내용은 사실에 기반하며, 필요 시 재현 가능한 근거와 설명을 제공할 수 있음을 확인합니다.</span></label>
+              </div>
+            </SectionCard>
+          </div>
         </SectionCard>
       )}
 
-      {activeTab === 'admin' && <AiCompetencyAdminPanel pageData={data} isPending={isPending} callAction={callAction} runMutation={runMutation} />}
+      <SectionCard title={COPY.historyTitle} description={COPY.historyDescription}>
+        <div className="space-y-3">
+          {props.timeline.length ? props.timeline.map((item) => (
+            <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill value={item.tone === 'success' ? '통과 관련' : item.tone === 'warning' ? '주의 / 보완' : '기록'} tone={item.tone === 'success' ? 'success' : item.tone === 'warning' ? 'warning' : 'neutral'} />
+                <span className="text-sm text-slate-500">{formatDateTime(item.createdAt)}</span>
+              </div>
+              <h3 className="mt-2 text-base font-semibold text-slate-950">{item.title}</h3>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.description}</p>
+            </article>
+          )) : <EmptyBox title={COPY.historyEmptyTitle} description={COPY.historyEmptyDescription} />}
+        </div>
+      </SectionCard>
 
-      {activeTab === 'executive' && (
-        <SectionCard title="보고/분포" description="조직별 분포와 완료율을 확인합니다.">
-          {data.executiveView ? (
-            <div className="space-y-6">
-              <div className="flex flex-wrap gap-2">
-                <a className={secondaryButtonClassName} href={data.executiveView.exportUrls.csv}>CSV 내보내기</a>
-                <a className={secondaryButtonClassName} href={data.executiveView.exportUrls.xlsx}>XLSX 내보내기</a>
-              </div>
-              <div className="grid gap-3 md:grid-cols-4">
-                <MetricCard label="완료율" value={`${data.executiveView.completionRate.toFixed(1)}%`} />
-                <MetricCard label="합격률" value={`${data.executiveView.passRate.toFixed(1)}%`} />
-                <MetricCard label="2차 참여율" value={`${data.executiveView.secondRoundParticipationRate.toFixed(1)}%`} />
-                <MetricCard label="인증률" value={`${data.executiveView.certificationRate.toFixed(1)}%`} />
-              </div>
-              <DataTable title="트랙별 분포" columns={['트랙', '인원', '평균 점수', '합격률']} rows={data.executiveView.trackDistribution.map((row) => [labelForTrack(row.track), `${row.count}명`, `${row.averageScore.toFixed(1)}점`, `${row.passRate.toFixed(1)}%`])} />
-              <DataTable title="부서별 평균" columns={['부서', '인원', '평균 점수']} rows={data.executiveView.departmentDistribution.map((row) => [row.department, `${row.count}명`, `${row.averageScore.toFixed(1)}점`])} />
-            </div>
-          ) : (
-            <EmptyBox message="표시할 집계 데이터가 없습니다." />
-          )}
-        </SectionCard>
-      )}
+      {isPreviewOpen ? <PreviewDialog form={form} onClose={() => setIsPreviewOpen(false)} /> : null}
+    </PageShell>
+  )
+}
+
+function TrackSection(props: { title: string; fields: ReadonlyArray<readonly [string, string, boolean]>; values: Record<string, string>; editable: boolean; onChange: (key: string, value: string) => void }) {
+  return (
+    <SectionCard title={props.title}>
+      <div className="grid gap-5 md:grid-cols-2">
+        {props.fields.map(([key, label, required]) => (
+          <Field key={key} label={label} required={required}>
+            <textarea className={textareaClassName} value={props.values[key] ?? ''} disabled={!props.editable} onChange={(event) => props.onChange(key, event.target.value)} />
+          </Field>
+        ))}
+      </div>
+    </SectionCard>
+  )
+}
+
+function PreviewDialog(props: { form: AiCompetencyGateEmployeePageData['caseForm']; onClose: () => void }) {
+  const previewRows = [
+    ['트랙', TRACK_OPTIONS.find((item) => item.value === props.form.track)?.label ?? '미선택'],
+    ['과제명', props.form.title || '미입력'],
+    ['업무 문제', props.form.problemStatement || '미입력'],
+    ['목표', props.form.goalStatement || '미입력'],
+    ['본인 역할', props.form.ownerRoleDescription || '미입력'],
+    ['Before', props.form.beforeWorkflow || '미입력'],
+    ['After', props.form.afterWorkflow || '미입력'],
+    ['효과 요약', props.form.impactSummary || '미입력'],
+  ]
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div><h2 className="text-xl font-semibold text-slate-950">제출 전 미리보기</h2><p className="mt-1 text-sm text-slate-600">현재 작성한 내용을 한 번 더 확인해 주세요.</p></div>
+          <button type="button" className={secondaryButtonClassName} onClick={props.onClose}>닫기</button>
+        </div>
+        <div className="mt-6 space-y-4">
+          {previewRows.map(([label, value]) => <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-800">{value}</p></div>)}
+        </div>
+      </div>
     </div>
   )
 }

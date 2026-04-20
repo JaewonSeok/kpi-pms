@@ -114,12 +114,10 @@ type FeedbackRoundLite = {
 type AiCompetencyCycleLite = {
   id: string
   cycleName: string
-  calibrationOpenAt: Date | null
-  calibrationCloseAt: Date | null
+  submissionOpenAt: Date | null
+  submissionCloseAt: Date | null
   reviewOpenAt: Date | null
   reviewCloseAt: Date | null
-  secondRoundApplyOpenAt: Date | null
-  secondRoundApplyCloseAt: Date | null
   resultPublishAt: Date | null
   evalCycle: {
     id: string
@@ -338,7 +336,7 @@ function buildDefaultDeps(): CalendarDeps {
         orderBy: [{ startDate: 'asc' }],
       }),
     loadAiCompetencyCycles: async (selectedYear) =>
-      prisma.aiCompetencyCycle.findMany({
+      prisma.aiCompetencyGateCycle.findMany({
         where: {
           evalCycle: {
             evalYear: { gte: selectedYear - 1, lte: selectedYear + 1 },
@@ -347,12 +345,10 @@ function buildDefaultDeps(): CalendarDeps {
         select: {
           id: true,
           cycleName: true,
-          calibrationOpenAt: true,
-          calibrationCloseAt: true,
+          submissionOpenAt: true,
+          submissionCloseAt: true,
           reviewOpenAt: true,
           reviewCloseAt: true,
-          secondRoundApplyOpenAt: true,
-          secondRoundApplyCloseAt: true,
           resultPublishAt: true,
           evalCycle: {
             select: {
@@ -532,22 +528,22 @@ function buildEvents(params: {
   for (const cycle of params.aiCycles) {
     ;[
       {
-        key: 'ai-review',
+        key: 'ai-submission',
         title: `${cycle.cycleName} AI 활용능력 심사`,
-        startsAt: cycle.reviewOpenAt,
-        endsAt: cycle.reviewCloseAt,
+        startsAt: cycle.submissionOpenAt,
+        endsAt: cycle.submissionCloseAt,
       },
       {
         key: 'ai-calibration',
         title: `${cycle.cycleName} AI 활용능력 보정`,
-        startsAt: cycle.calibrationOpenAt,
-        endsAt: cycle.calibrationCloseAt,
+        startsAt: cycle.reviewOpenAt,
+        endsAt: cycle.reviewCloseAt,
       },
       {
         key: 'ai-second-round',
         title: `${cycle.cycleName} 2차 신청`,
-        startsAt: cycle.secondRoundApplyOpenAt,
-        endsAt: cycle.secondRoundApplyCloseAt,
+        startsAt: null,
+        endsAt: null,
       },
       {
         key: 'ai-result',
@@ -558,7 +554,7 @@ function buildEvents(params: {
     ].forEach((item) =>
       pushRangeEvent(events, {
         id: `${cycle.id}:${item.key}`,
-        type: item.key === 'ai-calibration' ? 'calibration' : 'review',
+        type: 'review',
         title: item.title,
         subtitle: cycle.evalCycle.organization.name,
         description: 'AI 활용능력 평가 운영 일정입니다.',

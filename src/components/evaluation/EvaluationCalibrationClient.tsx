@@ -333,6 +333,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     selectedCandidate ??
     filteredCandidates[0] ??
     null
+  const candidate = currentDiscussionCandidate
   const parkingLotCandidates = filteredCandidates.filter((candidate) => candidate.workspace.status === 'PARKED')
   const unresolvedCount = filteredCandidates.filter((candidate) =>
     !['AGREED', 'ANYWAY_YES', 'NO'].includes(candidate.workspace.status)
@@ -1025,6 +1026,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
                 ]}
               />
             </div>
+            <MiniMetric label="AI 역량평가" value={candidate.aiCompetencyGateStatusLabel ?? '-'} />
           </div>
 
           <div className="space-y-4">
@@ -2313,6 +2315,7 @@ function CalibrationCandidatesSection({
                         <MiniMetric label="원점수" value={candidate.rawScore.toFixed(1)} />
                         <MiniMetric label="원등급" value={candidate.originalGrade} />
                         <MiniMetric label="조정등급" value={draftGrade} />
+                        {candidate.aiCompetencyGateStatusLabel ? <InfoBadge label={`AI 역량평가 ${candidate.aiCompetencyGateStatusLabel}`} /> : null}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <InfoBadge label={`기준 ${candidate.sourceStage}`} />

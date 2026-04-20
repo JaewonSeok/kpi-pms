@@ -28,7 +28,9 @@ import {
   type CalibrationGroundRulePolicy,
 } from '@/lib/calibration-session-setup'
 import { prisma } from '@/lib/prisma'
+import { AI_COMPETENCY_GATE_VISIBLE_STATUS_LABELS } from '@/lib/ai-competency-gate-config'
 import { loadAiCompetencySyncedResults } from '@/server/ai-competency'
+import { loadAiCompetencyGatePromotionStatuses } from '@/server/ai-competency-gate-promotion'
 import {
   parseCalibrationSessionConfig,
   type CalibrationSessionConfigValue,
@@ -60,6 +62,9 @@ export type CalibrationCandidate = {
   reviewerName?: string
   performanceScore?: number
   competencyScore?: number
+  aiCompetencyGateStatusLabel?: string
+  aiCompetencyGateSatisfied?: boolean
+  aiCompetencyGateCaseId?: string
   evaluationComment?: string
   reviewerComment?: string
   needsAttention: boolean
@@ -892,13 +897,35 @@ export async function getEvaluationCalibrationPageData(params: {
       }),
     ])
 
-    const aiCompetencyResults = await loadAiCompetencySyncedResults({
-      evalCycleIds: [selectedCycle.id],
-      employeeIds: targetIds,
-    }).catch((error) => {
-      console.error('[evaluation-calibration] AI competency sync fallback', error)
-      return new Map()
-    })
+    const aiCompetencyGateCycle = await prisma.aiCompetencyGateCycle
+      .findUnique({
+        where: { evalCycleId: selectedCycle.id },
+        select: { id: true },
+      })
+      .catch((error) => {
+        console.error('[evaluation-calibration] AI competency gate cycle fallback', error)
+        return null
+      })
+
+    const aiCompetencyGateStatuses = aiCompetencyGateCycle
+      ? await loadAiCompetencyGatePromotionStatuses({
+          evalCycleIds: [selectedCycle.id],
+          employeeIds: targetIds,
+        }).catch((error) => {
+          console.error('[evaluation-calibration] AI competency gate status fallback', error)
+          return new Map()
+        })
+      : new Map()
+
+    const aiCompetencyResults = aiCompetencyGateCycle
+      ? new Map()
+      : await loadAiCompetencySyncedResults({
+          evalCycleIds: [selectedCycle.id],
+          employeeIds: targetIds,
+        }).catch((error) => {
+          console.error('[evaluation-calibration] AI competency sync fallback', error)
+          return new Map()
+        })
 
     const checkInMap = buildCheckInMap(checkIns)
     const historicalEvaluationMap = buildHistoricalEvaluationMap(
@@ -923,7 +950,18 @@ export async function getEvaluationCalibrationPageData(params: {
         gradeSettings,
         checkIns: checkInMap.get(group.target.id) ?? [],
         departmentOutlierMap: outlierDepartmentIds,
-        aiCompetencyScore: aiCompetencyResults.get(`${selectedCycle.id}:${group.target.id}`)?.finalScore,
+        aiCompetencyScore: aiCompetencyGateCycle
+          ? undefined
+          : aiCompetencyResults.get(`${selectedCycle.id}:${group.target.id}`)?.finalScore,
+        aiCompetencyGateStatus: aiCompetencyGateCycle
+          ? (aiCompetencyGateStatuses.get(`${selectedCycle.id}:${group.target.id}`) ?? {
+              status: 'NOT_ASSIGNED' as const,
+              statusLabel: AI_COMPETENCY_GATE_VISIBLE_STATUS_LABELS.NOT_ASSIGNED,
+              isSatisfied: false,
+              cycleId: selectedCycle.id,
+              employeeId: group.target.id,
+            })
+          : undefined,
         externalColumns: sessionConfig.externalColumns,
         externalRow: sessionConfig.externalRowsByTargetId[group.target.id] ?? {},
         employeeRecord: orgEmployeeMap.get(group.target.id),
@@ -1131,6 +1169,11 @@ function buildCalibrationCandidate(params: {
   checkIns: CheckInRecord[]
   departmentOutlierMap: Set<string>
   aiCompetencyScore?: number
+  aiCompetencyGateStatus?: {
+    statusLabel: string
+    isSatisfied: boolean
+    caseId?: string
+  }
   externalColumns: Array<{ key: string; label: string }>
   externalRow: Record<string, string>
   employeeRecord?: {
@@ -1217,6 +1260,10 @@ function buildCalibrationCandidate(params: {
   const promotionCandidate = resolveBooleanFlagFromExternalData(externalData, ['promotion', '승진'])
   const seniorLevel = ['SECTION_CHIEF', 'DIV_HEAD', 'CEO'].includes(String(group.target.position))
   const outlierFlag = params.departmentOutlierMap.has(group.target.department.id)
+  const aiGateNeedsAttention =
+    promotionCandidate === true &&
+    Boolean(params.aiCompetencyGateStatus) &&
+    !params.aiCompetencyGateStatus?.isSatisfied
 
   return {
     id: group.target.id,
@@ -1236,12 +1283,15 @@ function buildCalibrationCandidate(params: {
     reviewerName: group.reviewerEvaluation?.evaluator.empName,
     performanceScore,
     competencyScore,
+    aiCompetencyGateStatusLabel: params.aiCompetencyGateStatus?.statusLabel,
+    aiCompetencyGateSatisfied: params.aiCompetencyGateStatus?.isSatisfied,
+    aiCompetencyGateCaseId: params.aiCompetencyGateStatus?.caseId,
     evaluationComment: baseEvaluation?.comment ?? '최종 평가 코멘트가 아직 없습니다.',
     reviewerComment:
       group.reviewerEvaluation?.comment ??
       adjustedEvaluation?.comment ??
       '상위 평가자의 별도 코멘트가 없습니다.',
-    needsAttention,
+    needsAttention: needsAttention || aiGateNeedsAttention,
     reasonMissing,
     suggestedReason: buildSuggestedReason({
       adjusted,
