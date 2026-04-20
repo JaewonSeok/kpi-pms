@@ -1,9 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import type { AiCompetencyGateEvidenceType, AiCompetencyGateTrack } from '@prisma/client'
 import type { AiCompetencyGateEmployeePageData } from '@/server/ai-competency-gate'
+import {
+  buildAiCompetencyAdminHref,
+  buildAiCompetencyEmployeeReturnTarget,
+} from '@/lib/ai-competency-gate-navigation'
 import {
   EmptyBox,
   Field,
@@ -132,6 +136,8 @@ async function readActionResponse(response: Response) {
 
 export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [isPending, startTransition] = useTransition()
   const [notice, setNotice] = useState<NoticeState>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
@@ -146,6 +152,18 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
   const isEditable = Boolean(props.statusCard?.canEdit && props.assignmentId)
   const hasAssignment = Boolean(props.assignmentId)
   const metricCountLabel = useMemo(() => `${form.metrics.length}개`, [form.metrics.length])
+  const employeeReturnTarget = useMemo(
+    () =>
+      buildAiCompetencyEmployeeReturnTarget({
+        pathname,
+        searchParams,
+      }),
+    [pathname, searchParams]
+  )
+  const adminHref = useMemo(
+    () => buildAiCompetencyAdminHref({ returnTo: employeeReturnTarget }),
+    [employeeReturnTarget]
+  )
 
   const callJsonAction = async (action: string, payload: unknown) => {
     const response = await fetch('/api/evaluation/ai-competency/actions', {
@@ -194,7 +212,7 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
             ))}
           </select>
           {props.canOpenAdmin ? (
-            <button type="button" className={secondaryButtonClassName} onClick={() => router.push('/evaluation/ai-competency/admin')}>
+            <button type="button" className={secondaryButtonClassName} onClick={() => router.push(adminHref)}>
               {COPY.adminCta}
             </button>
           ) : null}

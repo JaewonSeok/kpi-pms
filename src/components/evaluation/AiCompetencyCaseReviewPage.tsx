@@ -1,9 +1,14 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 import type { AiCompetencyGateDecision } from '@prisma/client'
 import type { AiCompetencyGateCaseReviewPageData } from '@/server/ai-competency-gate-admin'
+import {
+  buildAiCompetencyAdminListHref,
+  resolveSafeReturnTo,
+} from '@/lib/ai-competency-gate-navigation'
 import {
   EmptyBox,
   Field,
@@ -39,6 +44,7 @@ async function readActionResponse(response: Response) {
 export function AiCompetencyCaseReviewPage(props: { pageData: AiCompetencyGateCaseReviewPageData }) {
   const { pageData } = props
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [notice, setNotice] = useState<NoticeState>(null)
   const [isPending, startTransition] = useTransition()
   const [draft, setDraft] = useState<ReviewDraftState | undefined>(pageData.reviewDraft)
@@ -46,6 +52,19 @@ export function AiCompetencyCaseReviewPage(props: { pageData: AiCompetencyGateCa
   useEffect(() => {
     setDraft(pageData.reviewDraft)
   }, [pageData.reviewDraft])
+
+  const employeeReturnHref = useMemo(
+    () => resolveSafeReturnTo(searchParams.get('returnTo')),
+    [searchParams]
+  )
+  const dashboardHref = useMemo(
+    () =>
+      buildAiCompetencyAdminListHref({
+        cycleId: searchParams.get('cycleId'),
+        returnTo: employeeReturnHref,
+      }),
+    [employeeReturnHref, searchParams]
+  )
 
   const runMutation = (work: () => Promise<void>) => {
     startTransition(() => {
@@ -76,7 +95,25 @@ export function AiCompetencyCaseReviewPage(props: { pageData: AiCompetencyGateCa
     <PageShell
       title="AI 역량평가 제출서 검토"
       description="제출 내용을 확인하고 항목별 판단을 기록한 뒤 보완 요청, 통과, Fail을 결정합니다."
-      actions={<button type="button" className={secondaryButtonClassName} onClick={() => router.push('/evaluation/ai-competency/admin')}>대시보드로 돌아가기</button>}
+      actions={
+        <>
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            onClick={() => router.push(employeeReturnHref)}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            내 AI 역량평가 화면
+          </button>
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            onClick={() => router.push(dashboardHref)}
+          >
+            대시보드로 돌아가기
+          </button>
+        </>
+      }
     >
       {notice ? <NoticeBanner tone={notice.tone} title={notice.title} description={notice.description} /> : null}
 

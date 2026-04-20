@@ -1,8 +1,14 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 import type { AiCompetencyGateAdminPageData } from '@/server/ai-competency-gate-admin'
+import {
+  buildAiCompetencyAdminCaseHref,
+  buildAiCompetencyAdminListHref,
+  resolveSafeReturnTo,
+} from '@/lib/ai-competency-gate-navigation'
 import {
   EmptyBox,
   Field,
@@ -71,6 +77,7 @@ async function readActionResponse(response: Response) {
 export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminPageData }) {
   const { pageData } = props
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [notice, setNotice] = useState<NoticeState>(null)
   const [isPending, startTransition] = useTransition()
   const [cycleForm, setCycleForm] = useState(() => buildCycleForm(pageData))
@@ -88,6 +95,11 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
       adminNote: '',
     })
   }, [pageData])
+
+  const employeeReturnHref = useMemo(
+    () => resolveSafeReturnTo(searchParams.get('returnTo')),
+    [searchParams]
+  )
 
   const runMutation = (work: () => Promise<void>) => {
     startTransition(() => {
@@ -114,7 +126,20 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
   }
 
   return (
-    <PageShell title="AI 역량평가 운영" description="회차를 관리하고 대상자를 배정하며, 제출서 검토 대기열을 운영합니다.">
+    <PageShell
+      title="AI 역량평가 운영"
+      description="회차를 관리하고 대상자를 배정하며, 제출서 검토 대기열을 운영합니다."
+      actions={
+        <button
+          type="button"
+          className={secondaryButtonClassName}
+          onClick={() => router.push(employeeReturnHref)}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          내 AI 역량평가 화면
+        </button>
+      }
+    >
       {notice ? <NoticeBanner tone={notice.tone} title={notice.title} description={notice.description} /> : null}
 
       <div className="grid gap-4 md:grid-cols-4">
@@ -128,7 +153,14 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
         <select
           className={inputClassName}
           value={pageData.selectedCycleId ?? ''}
-          onChange={(event) => router.push(`/evaluation/ai-competency/admin?cycleId=${encodeURIComponent(event.target.value)}`)}
+          onChange={(event) =>
+            router.push(
+              buildAiCompetencyAdminListHref({
+                cycleId: event.target.value,
+                returnTo: employeeReturnHref,
+              })
+            )
+          }
         >
           {pageData.cycleOptions.map((cycle) => (
             <option key={cycle.id} value={cycle.id}>
@@ -267,9 +299,26 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
                   </div>
                   <div className="flex flex-wrap gap-3">
                     {assignment.caseId ? (
-                      <button type="button" className={secondaryButtonClassName} onClick={() => router.push(`/evaluation/ai-competency/admin/${assignment.caseId}`)}>
-                        케이스 상세 보기
-                      </button>
+                      (() => {
+                        const caseId = assignment.caseId
+                        return (
+                          <button
+                            type="button"
+                            className={secondaryButtonClassName}
+                            onClick={() =>
+                              router.push(
+                                buildAiCompetencyAdminCaseHref({
+                                  caseId,
+                                  cycleId: pageData.selectedCycleId,
+                                  returnTo: employeeReturnHref,
+                                })
+                              )
+                            }
+                          >
+                            케이스 상세 보기
+                          </button>
+                        )
+                      })()
                     ) : null}
                   </div>
                 </div>
