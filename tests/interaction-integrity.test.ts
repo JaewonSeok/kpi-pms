@@ -79,7 +79,7 @@ run('org KPI client resets stale selection and AI state when year or department 
   assert.equal(file.includes('const viewContextKey ='), true)
   assert.equal(file.includes('buildOrgKpiServerListSignature(pageData.list)'), true)
   assert.equal(file.includes('setSelectedDepartmentId(nextDepartmentSelection)'), true)
-  assert.equal(file.includes("setTab('list')"), true)
+  assert.equal(file.includes("setTab('map')"), true)
   assert.equal(file.includes('setAiPreview(null)'), true)
   assert.equal(file.includes('const saved = pendingRecommendationDecision'), true)
   assert.equal(file.includes('/api/kpi/org/team-ai/recommendations/${pendingRecommendationDecision.itemId}/decision'), true)
