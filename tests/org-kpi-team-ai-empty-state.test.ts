@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { getOrgKpiTeamAiEmptyStateFlags } from '../src/lib/org-kpi-team-ai-empty-state'
+import {
+  getOrgKpiTeamAiEmptyStateFlags,
+  resolveOrgKpiTeamAiResultMode,
+} from '../src/lib/org-kpi-team-ai-empty-state'
 
 function run(name: string, fn: () => void | Promise<void>) {
   Promise.resolve()
@@ -22,14 +25,19 @@ function read(relativePath: string) {
 
 const workspaceSource = read('src/components/kpi/OrgKpiTeamAiWorkspace.tsx')
 const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
-const pageSource = read('src/server/org-kpi-page.ts')
 
 void (async () => {
-  await run('business plan missing is treated as a neutral empty state', () => {
+  await run('business plan empty is the highest non-error empty state', () => {
     const flags = getOrgKpiTeamAiEmptyStateFlags({
       businessPlan: null,
       recommendationSetCount: 0,
       reviewRunCount: 0,
+    })
+    const mode = resolveOrgKpiTeamAiResultMode({
+      businessPlan: null,
+      recommendationSetCount: 0,
+      reviewRunCount: 0,
+      hasTrueFallback: false,
     })
 
     assert.deepEqual(flags, {
@@ -37,73 +45,58 @@ void (async () => {
       recommendationMissing: true,
       reviewMissing: true,
     })
+    assert.equal(mode, 'BUSINESS_PLAN_EMPTY')
     assert.equal(workspaceSource.includes('사업계획서가 아직 등록되지 않았습니다.'), true)
     assert.equal(workspaceSource.includes('사업계획서 등록하기'), true)
     assert.equal(workspaceSource.includes('직접 KPI 작성하기'), true)
-    assert.equal(workspaceSource.includes("scrollToSection('team-ai-business-plan-section')"), true)
   })
 
-  await run('recommendation missing is shown as recommendation empty state, not fallback copy', () => {
-    const flags = getOrgKpiTeamAiEmptyStateFlags({
-      businessPlan: {
-        id: 'bp-1',
-        departmentId: 'dept-1',
-        departmentName: '경영지원본부',
-        evalYear: 2026,
-        title: '사업계획서',
-        sourceType: 'TEXT',
-        bodyText: '본문',
-        createdById: 'user-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-02T00:00:00.000Z',
-      },
+  await run('recommendation empty appears only after business plan exists', () => {
+    const mode = resolveOrgKpiTeamAiResultMode({
+      businessPlan: { id: 'bp-1' },
       recommendationSetCount: 0,
       reviewRunCount: 0,
+      hasTrueFallback: false,
     })
 
-    assert.equal(flags.businessPlanMissing, false)
-    assert.equal(flags.recommendationMissing, true)
+    assert.equal(mode, 'RECOMMENDATION_EMPTY')
     assert.equal(workspaceSource.includes('아직 AI 추천 결과가 없습니다.'), true)
     assert.equal(workspaceSource.includes('AI 추천 받기'), true)
-    assert.equal(workspaceSource.includes('title="AI 추천 결과"'), true)
+    assert.equal(workspaceSource.includes('직접 KPI 작성하기'), true)
   })
 
-  await run('review missing is shown as review empty state with the real review action', () => {
-    const flags = getOrgKpiTeamAiEmptyStateFlags({
-      businessPlan: {
-        id: 'bp-1',
-        departmentId: 'dept-1',
-        departmentName: '경영지원본부',
-        evalYear: 2026,
-        title: '사업계획서',
-        sourceType: 'TEXT',
-        bodyText: '본문',
-        createdById: 'user-1',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        updatedAt: '2026-01-02T00:00:00.000Z',
-      },
+  await run('review empty appears only after recommendation data exists', () => {
+    const mode = resolveOrgKpiTeamAiResultMode({
+      businessPlan: { id: 'bp-1' },
       recommendationSetCount: 1,
       reviewRunCount: 0,
+      hasTrueFallback: false,
     })
 
-    assert.equal(flags.reviewMissing, true)
+    assert.equal(mode, 'REVIEW_EMPTY')
     assert.equal(workspaceSource.includes('아직 AI 검토 결과가 없습니다.'), true)
     assert.equal(workspaceSource.includes('AI 검토 실행하기'), true)
     assert.equal(workspaceSource.includes('나중에 검토하기'), true)
-    assert.equal(workspaceSource.includes("scrollToSection('team-ai-adopted-drafts-section')"), true)
   })
 
-  await run('workspace CTA wiring reuses the existing org KPI create and review flows', () => {
-    assert.equal(clientSource.includes('function openDirectKpiCreate()'), true)
-    assert.equal(clientSource.includes('setForm(buildEmptyForm(pageData.selectedYear, activeTeamDepartmentId))'), true)
-    assert.equal(clientSource.includes('canCreateKpi={pageData.permissions.canCreate && !goalEditLocked}'), true)
-    assert.equal(clientSource.includes('canRunReviewAction={teamAiContext?.canRunReview === true && hasReviewableTeamKpis}'), true)
-    assert.equal(clientSource.includes('onCreateKpi={openDirectKpiCreate}'), true)
+  await run('true fallback wins over every empty state and keeps a separate copy deck', () => {
+    const mode = resolveOrgKpiTeamAiResultMode({
+      businessPlan: null,
+      recommendationSetCount: 0,
+      reviewRunCount: 0,
+      hasTrueFallback: true,
+    })
+
+    assert.equal(mode, 'TRUE_FALLBACK')
+    assert.equal(workspaceSource.includes('AI 결과를 불러오는 중 문제가 발생했습니다.'), true)
+    assert.equal(workspaceSource.includes('일시적인 문제로 기본 결과를 표시하고 있습니다. 잠시 후 다시 시도해 주세요.'), true)
+    assert.equal(workspaceSource.includes('다시 시도'), true)
+    assert.equal(workspaceSource.includes('기본 화면으로 계속'), true)
   })
 
-  await run('true runtime fallback banner remains page-level for loader exceptions only', () => {
-    assert.equal(pageSource.includes("title: '팀 KPI AI 추천'"), true)
-    assert.equal(pageSource.includes("description: '사업계획서 기반 AI 추천/검토 정보를 불러오지 못해 기본 화면만 표시합니다.'"), true)
-    assert.equal(pageSource.includes('teamAi = buildEmptyTeamAiContext({'), true)
+  await run('workspace receives runtime fallback state and actions from org kpi client', () => {
+    assert.equal(clientSource.includes('runtimeState={teamAiRuntimeState}'), true)
+    assert.equal(clientSource.includes("onRetryRuntimeFallback={() => void loadTeamAiContext(selectedDepartmentId)}"), true)
+    assert.equal(clientSource.includes("onContinueWithoutAi={() => setTab('list')}"), true)
   })
 })()

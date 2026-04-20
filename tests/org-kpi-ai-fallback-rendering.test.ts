@@ -99,9 +99,9 @@ void (async () => {
     assert.equal(orgClientSource.includes("onRetry={aiPreview ? () => void requestAi(aiAction) : undefined}"), true)
     assert.equal(orgClientSource.includes('ORG_KPI_AI_RESULT_MODE_FALLBACK'), true)
     assert.equal(orgClientSource.includes('ORG_KPI_AI_RESULT_MODE_NORMAL'), true)
-    assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_EMPTY_BUSINESS_PLAN'), true)
-    assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_EMPTY_RECOMMENDATION'), true)
-    assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_EMPTY_REVIEW'), true)
+    assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_BUSINESS_PLAN_EMPTY'), true)
+    assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_RECOMMENDATION_EMPTY'), true)
+    assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_REVIEW_EMPTY'), true)
   })
 
   await run('english placeholder fallback strings are removed from the org KPI fallback generator', () => {

@@ -1,10 +1,10 @@
+import { Prisma } from '@prisma/client'
 import type {
   AIApprovalStatus,
   AIRequestStatus,
   Difficulty,
   KpiStatus,
   KpiType,
-  Prisma,
   SystemRole,
 } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
@@ -16,6 +16,13 @@ import {
 } from './org-kpi-team-ai'
 
 export type OrgKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
+
+export type OrgKpiTeamAiRuntimeState = {
+  mode: 'NORMAL_RESULT' | 'TRUE_FALLBACK'
+  errorCode?: string | null
+  prismaCode?: string | null
+  shortMessage?: string | null
+}
 
 export type OrgKpiScopeOption = {
   id: string
@@ -182,6 +189,7 @@ export type OrgKpiPageData = {
   linkage: OrgKpiLinkageItem[]
   aiLogs: OrgKpiAiLogItem[]
   teamAi: OrgKpiTeamAiContextView | null
+  teamAiRuntimeState?: OrgKpiTeamAiRuntimeState
   permissions: {
     canManage: boolean
     canCreate: boolean
@@ -195,6 +203,13 @@ export type OrgKpiPageData = {
     name: string
     departmentName: string
   }
+}
+
+const DEFAULT_TEAM_AI_RUNTIME_STATE: OrgKpiTeamAiRuntimeState = {
+  mode: 'NORMAL_RESULT',
+  errorCode: null,
+  prismaCode: null,
+  shortMessage: null,
 }
 
 function buildEmptyTeamAiContext(params: {
@@ -220,6 +235,25 @@ function buildEmptyTeamAiContext(params: {
     sourceOrgKpis: [],
     recommendationSets: [],
     reviewRuns: [],
+  }
+}
+
+function buildOrgKpiTeamAiRuntimeState(error?: unknown): OrgKpiTeamAiRuntimeState {
+  if (!error) {
+    return DEFAULT_TEAM_AI_RUNTIME_STATE
+  }
+
+  const prismaCode =
+    error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null
+  const errorCode = error instanceof Error && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+    ? (error as { code: string }).code
+    : 'ORG_KPI_TEAM_AI_CONTEXT_LOAD_FAILED'
+
+  return {
+    mode: 'TRUE_FALLBACK',
+    errorCode,
+    prismaCode,
+    shortMessage: error instanceof Error ? error.message : '팀 KPI AI 정보를 불러오지 못했습니다.',
   }
 }
 
@@ -709,6 +743,7 @@ export async function getOrgKpiPageData(params: {
           departmentName: params.deptName,
           evalYear: new Date().getFullYear(),
         }),
+        teamAiRuntimeState: DEFAULT_TEAM_AI_RUNTIME_STATE,
         alerts,
         permissions: {
           canManage: false,
@@ -1123,6 +1158,7 @@ export async function getOrgKpiPageData(params: {
     })
 
     let teamAi: OrgKpiTeamAiContextView | null = null
+    let teamAiRuntimeState: OrgKpiTeamAiRuntimeState = DEFAULT_TEAM_AI_RUNTIME_STATE
     try {
       teamAi = await loadOrgKpiTeamAiContext({
         userId: params.userId,
@@ -1134,6 +1170,7 @@ export async function getOrgKpiPageData(params: {
       })
     } catch (error) {
       console.warn('[org-kpi-page:team-ai]', error)
+      teamAiRuntimeState = buildOrgKpiTeamAiRuntimeState(error)
       alerts.push({
         title: '팀 KPI AI 추천',
         description: '사업계획서 기반 AI 추천/검토 정보를 불러오지 못해 기본 화면만 표시합니다.',
@@ -1195,6 +1232,7 @@ export async function getOrgKpiPageData(params: {
         summary: parseAiSummary(log.responsePayload),
       })),
       teamAi,
+      teamAiRuntimeState,
       alerts,
       permissions: {
         canManage,
@@ -1240,6 +1278,7 @@ export async function getOrgKpiPageData(params: {
         departmentName: params.deptName,
         evalYear: new Date().getFullYear(),
       }),
+      teamAiRuntimeState: DEFAULT_TEAM_AI_RUNTIME_STATE,
       alerts: [],
       permissions: {
         canManage: false,

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, type ReactNode } from 'react'
-import { Bot, CheckCircle2, FileText, Sparkles } from 'lucide-react'
+import { AlertTriangle, Bot, CheckCircle2, FileText, Sparkles } from 'lucide-react'
 import type {
   OrgKpiBusinessPlanView,
   OrgKpiJobDescriptionView,
@@ -10,7 +10,7 @@ import type {
   OrgKpiTeamReviewItemView,
 } from '@/server/org-kpi-team-ai'
 import { formatOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
-import { getOrgKpiTeamAiEmptyStateFlags } from '@/lib/org-kpi-team-ai-empty-state'
+import { resolveOrgKpiTeamAiResultMode } from '@/lib/org-kpi-team-ai-empty-state'
 
 export type BusinessPlanFormState = {
   id?: string
@@ -39,6 +39,12 @@ export type RecommendationDecisionMode = 'ADOPT_EDITED' | 'REFERENCED_NEW'
 type Props = {
   selectedDepartmentId: string
   context: OrgKpiTeamAiContextView | null
+  runtimeState: {
+    mode: 'NORMAL_RESULT' | 'TRUE_FALLBACK'
+    errorCode?: string | null
+    prismaCode?: string | null
+    shortMessage?: string | null
+  }
   loading: boolean
   busy: boolean
   canCreateKpi: boolean
@@ -59,6 +65,8 @@ type Props = {
     item: OrgKpiTeamRecommendationItemView,
     decision: RecommendationDecisionMode
   ) => void
+  onRetryRuntimeFallback: () => void
+  onContinueWithoutAi: () => void
   onCreateKpi: () => void
   onRunReview: () => void
 }
@@ -82,7 +90,8 @@ const verdictLabels = {
 function EmptyBlock(props: {
   title: string
   description: string
-  tone?: 'neutral' | 'info'
+  helperText?: string
+  tone?: 'neutral' | 'info' | 'warning'
   icon?: ReactNode
   actions?: ReactNode
 }) {
@@ -90,7 +99,9 @@ function EmptyBlock(props: {
     <div
       className={cls(
         'rounded-3xl border border-dashed px-6 py-10 text-center',
-        props.tone === 'info' ? 'border-blue-200 bg-blue-50/70' : 'border-slate-300 bg-slate-50'
+        props.tone === 'info' && 'border-blue-200 bg-blue-50/70',
+        props.tone === 'warning' && 'border-amber-200 bg-amber-50/80',
+        (!props.tone || props.tone === 'neutral') && 'border-slate-300 bg-slate-50'
       )}
     >
       {props.icon ? (
@@ -100,6 +111,7 @@ function EmptyBlock(props: {
       ) : null}
       <div className={cls('text-base font-semibold text-slate-900', Boolean(props.icon) && 'mt-4')}>{props.title}</div>
       <p className="mt-2 text-sm leading-6 text-slate-500">{props.description}</p>
+      {props.helperText ? <p className="mt-2 text-xs leading-5 text-slate-500">{props.helperText}</p> : null}
       {props.actions ? <div className="mt-5 flex flex-wrap items-center justify-center gap-3">{props.actions}</div> : null}
     </div>
   )
@@ -411,24 +423,30 @@ function scrollToSection(id: string) {
 
 function logOrgKpiTeamAiResultMode(
   event:
-    | 'ORG_KPI_AI_RESULT_MODE_EMPTY_BUSINESS_PLAN'
-    | 'ORG_KPI_AI_RESULT_MODE_EMPTY_RECOMMENDATION'
-    | 'ORG_KPI_AI_RESULT_MODE_EMPTY_REVIEW'
+    | 'ORG_KPI_AI_RESULT_MODE_BUSINESS_PLAN_EMPTY'
+    | 'ORG_KPI_AI_RESULT_MODE_RECOMMENDATION_EMPTY'
+    | 'ORG_KPI_AI_RESULT_MODE_REVIEW_EMPTY'
+    | 'ORG_KPI_AI_RESULT_MODE_TRUE_FALLBACK'
     | 'ORG_KPI_AI_RESULT_MODE_NORMAL',
   params: {
+    deptId: string
+    evalYear: number | null
+    stateName: string
     stepName: string
     errorCode?: string | null
     prismaCode?: string | null
+    shortMessage?: string | null
   },
 ) {
   console.info(`[org-kpi-team-ai-ui] ${event}`, params)
 }
 
 export function OrgKpiTeamAiWorkspace(props: Props) {
-  const emptyStateFlags = getOrgKpiTeamAiEmptyStateFlags({
+  const resultMode = resolveOrgKpiTeamAiResultMode({
     businessPlan: props.context?.businessPlan ?? null,
     recommendationSetCount: props.context?.recommendationSets.length ?? 0,
     reviewRunCount: props.context?.reviewRuns.length ?? 0,
+    hasTrueFallback: props.runtimeState.mode === 'TRUE_FALLBACK',
   })
 
   useEffect(() => {
@@ -436,45 +454,76 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
       return
     }
 
-    if (emptyStateFlags.businessPlanMissing) {
-      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_EMPTY_BUSINESS_PLAN', {
+    if (resultMode === 'TRUE_FALLBACK') {
+      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_TRUE_FALLBACK', {
+        deptId: props.context.targetDepartmentId,
+        evalYear: props.context.evalYear,
+        stateName: resultMode,
+        stepName: 'teamAiWorkspace',
+        errorCode: props.runtimeState.errorCode ?? null,
+        prismaCode: props.runtimeState.prismaCode ?? null,
+        shortMessage: props.runtimeState.shortMessage ?? null,
+      })
+      return
+    }
+
+    if (resultMode === 'BUSINESS_PLAN_EMPTY') {
+      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_BUSINESS_PLAN_EMPTY', {
+        deptId: props.context.targetDepartmentId,
+        evalYear: props.context.evalYear,
+        stateName: resultMode,
         stepName: 'businessPlan',
         errorCode: null,
         prismaCode: null,
+        shortMessage: null,
       })
       return
     }
 
-    if (emptyStateFlags.recommendationMissing) {
-      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_EMPTY_RECOMMENDATION', {
+    if (resultMode === 'RECOMMENDATION_EMPTY') {
+      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_RECOMMENDATION_EMPTY', {
+        deptId: props.context.targetDepartmentId,
+        evalYear: props.context.evalYear,
+        stateName: resultMode,
         stepName: 'recommendation',
         errorCode: null,
         prismaCode: null,
+        shortMessage: null,
       })
       return
     }
 
-    if (emptyStateFlags.reviewMissing) {
-      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_EMPTY_REVIEW', {
+    if (resultMode === 'REVIEW_EMPTY') {
+      logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_REVIEW_EMPTY', {
+        deptId: props.context.targetDepartmentId,
+        evalYear: props.context.evalYear,
+        stateName: resultMode,
         stepName: 'review',
         errorCode: null,
         prismaCode: null,
+        shortMessage: null,
       })
       return
     }
 
     logOrgKpiTeamAiResultMode('ORG_KPI_AI_RESULT_MODE_NORMAL', {
+      deptId: props.context.targetDepartmentId,
+      evalYear: props.context.evalYear,
+      stateName: resultMode,
       stepName: 'teamAiWorkspace',
       errorCode: null,
       prismaCode: null,
+      shortMessage: null,
     })
   }, [
-    emptyStateFlags.businessPlanMissing,
-    emptyStateFlags.recommendationMissing,
-    emptyStateFlags.reviewMissing,
     props.context,
     props.loading,
+    props.runtimeState.errorCode,
+    props.runtimeState.mode,
+    props.runtimeState.prismaCode,
+    props.runtimeState.shortMessage,
     props.selectedDepartmentId,
+    resultMode,
   ])
 
   if (props.selectedDepartmentId === 'ALL') {
@@ -491,6 +540,37 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="text-sm text-slate-500">팀 KPI AI 워크스페이스를 불러오는 중입니다...</div>
       </div>
+    )
+  }
+
+  if (resultMode === 'TRUE_FALLBACK') {
+    return (
+      <SectionCard
+        title="AI 추천/검토 상태"
+        helper="데이터가 없는 상태와 실제 오류 상태를 구분해 안내합니다."
+      >
+        <EmptyBlock
+          tone="warning"
+          icon={<AlertTriangle className="h-6 w-6" />}
+          title="AI 결과를 불러오는 중 문제가 발생했습니다."
+          description="일시적인 문제로 기본 결과를 표시하고 있습니다. 잠시 후 다시 시도해 주세요."
+          actions={
+            <>
+              <PrimaryButton
+                label="다시 시도"
+                icon={<Sparkles className="h-4 w-4" />}
+                onClick={props.onRetryRuntimeFallback}
+                disabled={props.busy || props.loading}
+              />
+              <SecondaryButton
+                label="기본 화면으로 계속"
+                onClick={props.onContinueWithoutAi}
+                disabled={props.busy}
+              />
+            </>
+          }
+        />
+      </SectionCard>
     )
   }
 
@@ -526,7 +606,7 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
         </div>
       </SectionCard>
 
-      {emptyStateFlags.businessPlanMissing ? (
+      {resultMode === 'BUSINESS_PLAN_EMPTY' ? (
         <SectionCard
           title="사업계획서 기반 추천 준비"
           helper="데이터가 아직 없어서 비어 있는 상태입니다. 먼저 사업계획서를 등록하면 AI 추천과 검토 흐름을 바로 시작할 수 있습니다."
@@ -624,7 +704,7 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
         </div>
       </SectionCard>
 
-      {emptyStateFlags.recommendationMissing ? (
+      {resultMode === 'RECOMMENDATION_EMPTY' ? (
         <SectionCard
           title="AI 추천 결과"
           helper="추천을 아직 실행하지 않은 상태입니다. 연계형과 독립형 팀 KPI 초안을 같은 흐름에서 바로 시작할 수 있습니다."
@@ -651,7 +731,7 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
             }
           />
         </SectionCard>
-      ) : (
+      ) : resultMode === 'REVIEW_EMPTY' || resultMode === 'NORMAL_RESULT' ? (
         <div className="grid gap-6 xl:grid-cols-2">
         <SectionCard
           title="연계형 팀 KPI 추천"
@@ -703,8 +783,10 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
           )}
         </SectionCard>
         </div>
-      )}
+      ) : null}
 
+      {resultMode === 'REVIEW_EMPTY' || resultMode === 'NORMAL_RESULT' ? (
+        <>
       <SectionCard
         id="team-ai-adopted-drafts-section"
         title="채택된 팀 KPI 초안"
@@ -746,7 +828,29 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
       </SectionCard>
 
       <SectionCard title="AI 재검토 결과" helper="연계형 KPI는 상위 본부 KPI 정렬도를, 독립형 KPI는 팀 역할 적합성을 더 강하게 검토합니다.">
-        {latestReviewRun ? (
+        {resultMode === 'REVIEW_EMPTY' ? (
+          <EmptyBlock
+            tone="info"
+            icon={<Bot className="h-6 w-6" />}
+            title="아직 AI 검토 결과가 없습니다."
+            description="팀 KPI를 저장한 뒤 AI 검토를 실행하면 적정·주의·미흡 판단과 수정 권고를 확인할 수 있습니다."
+            actions={
+              <>
+                <PrimaryButton
+                  label="AI 검토 실행하기"
+                  icon={<Bot className="h-4 w-4" />}
+                  onClick={props.onRunReview}
+                  disabled={props.busy || !props.canRunReviewAction}
+                />
+                <SecondaryButton
+                  label="나중에 검토하기"
+                  onClick={() => scrollToSection('team-ai-adopted-drafts-section')}
+                  disabled={props.busy}
+                />
+              </>
+            }
+          />
+        ) : latestReviewRun ? (
           <div className="space-y-5">
             <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -784,30 +888,10 @@ export function OrgKpiTeamAiWorkspace(props: Props) {
               ))}
             </div>
           </div>
-        ) : (
-          <EmptyBlock
-            tone="info"
-            icon={<Bot className="h-6 w-6" />}
-            title="아직 AI 검토 결과가 없습니다."
-            description="팀 KPI를 저장한 뒤 AI 검토를 실행하면 적정·주의·미흡 판단과 수정 권고를 확인할 수 있습니다."
-            actions={
-              <>
-                <PrimaryButton
-                  label="AI 검토 실행하기"
-                  icon={<Bot className="h-4 w-4" />}
-                  onClick={props.onRunReview}
-                  disabled={props.busy || !props.canRunReviewAction}
-                />
-                <SecondaryButton
-                  label="나중에 검토하기"
-                  onClick={() => scrollToSection('team-ai-adopted-drafts-section')}
-                  disabled={props.busy}
-                />
-              </>
-            }
-          />
-        )}
+        ) : null}
       </SectionCard>
+        </>
+      ) : null}
     </div>
   )
 }
