@@ -562,7 +562,7 @@ export async function getGoalAlignmentPageData(
         linkedPersonalGoalCount: linkedPersonalNodes.length,
         childGoalCount: 0,
         lineage: [],
-        href: `/kpi/org?year=${selectedYear}&dept=${encodeURIComponent(goal.deptId)}&tab=map&kpiId=${encodeURIComponent(goal.id)}`,
+        href: `/kpi/org?year=${selectedYear}&dept=${encodeURIComponent(goal.deptId)}&kpiId=${encodeURIComponent(goal.id)}`,
         children: [],
         personalGoals: linkedPersonalNodes.filter((item) =>
           matchesStatusFilter({
@@ -586,7 +586,7 @@ export async function getGoalAlignmentPageData(
           id: current.id,
           title: current.kpiName,
           departmentName: current.department.deptName,
-          href: `/kpi/org?year=${current.evalYear}&dept=${encodeURIComponent(current.deptId)}&tab=map&kpiId=${encodeURIComponent(current.id)}`,
+          href: `/kpi/org?year=${current.evalYear}&dept=${encodeURIComponent(current.deptId)}&kpiId=${encodeURIComponent(current.id)}`,
         })
         current = current.parentOrgKpiId ? orgGoalById.get(current.parentOrgKpiId) : null
       }
@@ -736,8 +736,8 @@ export async function getGoalAlignmentPageData(
         reminderHref: '/admin/notifications',
         orgKpiHref:
           selectedDepartmentId === 'ALL'
-            ? `/kpi/org?year=${selectedYear}&tab=map`
-            : `/kpi/org?year=${selectedYear}&dept=${encodeURIComponent(selectedDepartmentId)}&tab=map`,
+            ? `/kpi/org?year=${selectedYear}`
+            : `/kpi/org?year=${selectedYear}&dept=${encodeURIComponent(selectedDepartmentId)}`,
       },
     }
   } catch (error) {

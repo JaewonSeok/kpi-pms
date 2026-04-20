@@ -48,7 +48,7 @@ type Props = OrgKpiPageData & {
   initialSelectedKpiId?: string
 }
 
-type TabKey = 'map' | 'list' | 'linkage' | 'history' | 'ai'
+type TabKey = 'list' | 'linkage' | 'history' | 'ai'
 type Banner = { tone: 'success' | 'error' | 'info'; message: string }
 type FormState = {
   deptId: string
@@ -107,11 +107,17 @@ type AiPreview = {
 }
 
 const TAB_LABELS: Record<TabKey, string> = {
-  map: '목표 맵',
   list: '목록',
   linkage: '연결 현황',
   history: '이력',
   ai: 'AI 보조',
+}
+
+function normalizeOrgKpiTab(value?: string | null): TabKey | null {
+  if (!value) return null
+  if (value === 'map') return 'list'
+  if (value === 'list' || value === 'linkage' || value === 'history' || value === 'ai') return value
+  return null
 }
 
 const STATUS_LABELS: Record<OrgKpiViewModel['status'], string> = {
@@ -574,11 +580,12 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const searchParams = useSearchParams()
   const canRenderWorkspace = pageData.state === 'ready' || pageData.state === 'empty'
   const isReadOnlyMemberView = pageData.actor.role === 'ROLE_MEMBER'
+  const normalizedInitialTab = normalizeOrgKpiTab(initialTab)
   const visibleTabs = isReadOnlyMemberView
-    ? (['map', 'list', 'linkage', 'history'] as TabKey[])
+    ? (['list', 'linkage', 'history'] as TabKey[])
     : (Object.keys(TAB_LABELS) as TabKey[])
   const defaultTab =
-    initialTab && visibleTabs.includes(initialTab as TabKey) ? (initialTab as TabKey) : 'map'
+    normalizedInitialTab && visibleTabs.includes(normalizedInitialTab) ? normalizedInitialTab : 'list'
   const defaultDepartmentSelection =
     pageData.departments.length > 1 ? 'ALL' : pageData.selectedDepartmentId
   const [tab, setTab] = useState<TabKey>(defaultTab)
@@ -686,8 +693,18 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       return
     }
 
-    setTab(visibleTabs[0] ?? 'map')
+    setTab(visibleTabs[0] ?? 'list')
   }, [tab, visibleTabs])
+
+  useEffect(() => {
+    if (searchParams.get('tab') !== 'map') {
+      return
+    }
+
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.set('tab', 'list')
+    router.replace(`/kpi/org?${nextParams.toString()}`)
+  }, [router, searchParams])
 
   useEffect(() => {
     if (previousServerContextKey.current === serverContextKey) {
@@ -786,7 +803,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setCloneForm(buildCloneForm(pageData))
     setBulkEditForm(buildOrgBulkEditForm(pageData, selectedDepartmentId))
     setExportForm(buildGoalExportForm(pageData, selectedDepartmentId))
-    setTab('map')
+    setTab('list')
     setSelectedAiRecommendationIndex(null)
     setEditorDraftSourceLabel(null)
     setPendingAiRecommendationIndex(null)
@@ -1047,7 +1064,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       const nextParams = new URLSearchParams(searchParams.toString())
       nextParams.set('year', String(Number(form.evalYear || pageData.selectedYear)))
       nextParams.set('dept', saved.deptId)
-      if (tab !== 'map') {
+      if (tab !== 'list') {
         nextParams.set('tab', tab)
       } else {
         nextParams.delete('tab')
@@ -1221,8 +1238,8 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       setCloneForm(buildCloneForm(pageData))
       setSelectedDepartmentId((current) => (current === 'ALL' ? current : cloned.deptId))
       setSelectedKpiId(cloned.id)
-      setTab('map')
-      router.push(`/kpi/org?year=${encodeURIComponent(String(cloned.evalYear))}&tab=map&kpiId=${encodeURIComponent(cloned.id)}`)
+      setTab('list')
+      router.push(`/kpi/org?year=${encodeURIComponent(String(cloned.evalYear))}&kpiId=${encodeURIComponent(cloned.id)}`)
       router.refresh()
     } catch (error) {
       setBanner({ tone: 'error', message: error instanceof Error ? error.message : '조직 KPI 복제에 실패했습니다.' })
@@ -1297,7 +1314,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       setShowClone(false)
       setEditingKpiId((current) => (current === selectedKpi.id ? null : current))
       setAiPreview(null)
-      setTab((current) => (current === 'ai' ? 'map' : current))
+      setTab((current) => (current === 'ai' ? 'list' : current))
       setBanner({
         tone: 'success',
         message: `"${selectedKpi.title}" 조직 KPI를 삭제했습니다.`,
@@ -1310,7 +1327,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       } else {
         nextParams.delete('dept')
       }
-      if (tab !== 'map') {
+      if (tab !== 'list') {
         nextParams.set('tab', tab)
       } else {
         nextParams.delete('tab')
@@ -1904,6 +1921,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
       {tab !== 'ai' ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          {tab === 'list' ? (
+            <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <h2 className="text-base font-semibold text-slate-900">조직 KPI 목록</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                조직 KPI를 검색하고, 부서별로 살펴보며 연결 상태와 상세 정보를 확인합니다.
+              </p>
+            </div>
+          ) : null}
           <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
             <div className="space-y-3">
               <input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" placeholder="KPI명 또는 부서 검색" />
@@ -2358,7 +2383,7 @@ function KpiDetailCard(props: {
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <EmptyState
           title="선택한 KPI가 없습니다"
-          description="목표 맵이나 목록에서 KPI를 선택하면 상세 정보가 표시됩니다."
+          description="목록에서 KPI를 선택하면 상세 정보가 표시됩니다."
         />
         {isReadOnly ? null : (
           <div className="mt-5 space-y-3 border-t border-slate-100 pt-5">
