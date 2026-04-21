@@ -18,8 +18,9 @@ export default async function EvaluationAssistantPage({ searchParams }: PageProp
   }
 
   if (resolvedSearchParams.evaluationId) {
-    params.set('evaluationId', resolvedSearchParams.evaluationId)
+    const base = `/evaluation/performance/${encodeURIComponent(resolvedSearchParams.evaluationId)}`
+    redirect(params.size ? `${base}?${params.toString()}` : base)
   }
 
-  redirect(params.size ? `/evaluation/workbench?${params.toString()}` : '/evaluation/workbench')
+  redirect(params.size ? `/evaluation/performance?${params.toString()}` : '/evaluation/performance')
 }

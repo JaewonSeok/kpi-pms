@@ -57,6 +57,7 @@ run('member sidebar hides admin-only and restricted KPI routes', () => {
   assert.equal(memberHrefs.includes('/kpi/org'), true)
   assert.equal(memberHrefs.includes('/compensation/manage'), false)
   assert.equal(memberHrefs.includes('/kpi/monthly'), true)
+  assert.equal(memberHrefs.includes('/evaluation/performance'), true)
   assert.equal(memberHrefs.includes('/evaluation/ai-competency'), true)
   assert.equal(memberHrefs.includes('/evaluation/360'), true)
   assert.equal(memberHrefs.includes('/evaluation/upward/respond'), true)
@@ -68,6 +69,7 @@ run('ceo sidebar excludes monthly record but keeps ceo-specific routes', () => {
   const ceoHrefs = hrefsForRole('ROLE_CEO')
 
   assert.equal(ceoHrefs.includes('/kpi/monthly'), false)
+  assert.equal(ceoHrefs.includes('/evaluation/performance'), true)
   assert.equal(ceoHrefs.includes('/evaluation/ai-competency'), true)
   assert.equal(ceoHrefs.includes('/evaluation/word-cloud-360'), true)
   assert.equal(ceoHrefs.includes('/evaluation/ceo-adjust'), true)
@@ -80,6 +82,7 @@ run('admin sidebar exposes every admin and setup route', () => {
   for (const href of [
     '/kpi/org',
     '/kpi/monthly',
+    '/evaluation/performance',
     '/evaluation/ai-competency',
     '/evaluation/360',
     '/evaluation/upward/respond',
@@ -91,6 +94,7 @@ run('admin sidebar exposes every admin and setup route', () => {
     '/admin/google-access?tab=org-chart',
     '/admin/grades',
     '/admin/eval-cycle',
+    '/admin/performance-assignments',
     '/admin/performance-calendar',
     '/admin/performance-design',
     '/admin/goal-alignment',

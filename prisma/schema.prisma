@@ -87,6 +87,10 @@ model Employee {
   monthlyRecords    MonthlyRecord[]
   selfEvaluations   Evaluation[]    @relation("EvalTarget")
   givenEvaluations  Evaluation[]    @relation("Evaluator")
+  performanceAssignmentsAsTarget    EvaluationAssignment[] @relation("PerformanceEvaluationAssignmentTarget")
+  performanceAssignmentsAsEvaluator EvaluationAssignment[] @relation("PerformanceEvaluationAssignmentEvaluator")
+  createdPerformanceAssignments     EvaluationAssignment[] @relation("PerformanceEvaluationAssignmentCreatedBy")
+  updatedPerformanceAssignments     EvaluationAssignment[] @relation("PerformanceEvaluationAssignmentUpdatedBy")
   checkInsAsOwner   CheckIn[]       @relation("CheckInOwner")
   checkInsAsManager CheckIn[]       @relation("CheckInManager")
   feedbackGiven     MultiFeedback[] @relation("FeedbackGiver")
@@ -538,6 +542,7 @@ model EvalCycle {
   updatedAt       DateTime     @updatedAt
 
   evaluations         Evaluation[]
+  evaluationAssignments EvaluationAssignment[]
   multiFeedbackRounds MultiFeedbackRound[]
   onboardingReviewWorkflows OnboardingReviewWorkflow[]
   compensationScenarios CompensationScenario[]
@@ -739,6 +744,35 @@ enum EvalStatus {
   SUBMITTED
   REJECTED
   CONFIRMED
+}
+
+enum EvaluationAssignmentSource {
+  AUTO
+  MANUAL
+}
+
+model EvaluationAssignment {
+  id               String                     @id @default(cuid())
+  evalCycleId      String
+  evalCycle        EvalCycle                  @relation(fields: [evalCycleId], references: [id], onDelete: Cascade)
+  targetId         String
+  target           Employee                   @relation("PerformanceEvaluationAssignmentTarget", fields: [targetId], references: [id], onDelete: Cascade)
+  evalStage        EvalStage
+  evaluatorId      String
+  evaluator        Employee                   @relation("PerformanceEvaluationAssignmentEvaluator", fields: [evaluatorId], references: [id], onDelete: Cascade)
+  assignmentSource EvaluationAssignmentSource @default(AUTO)
+  note             String?
+  createdById      String?
+  createdBy        Employee?                  @relation("PerformanceEvaluationAssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById      String?
+  updatedBy        Employee?                  @relation("PerformanceEvaluationAssignmentUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  @@unique([evalCycleId, targetId, evalStage])
+  @@index([evaluatorId, evalCycleId, evalStage])
+  @@index([targetId, evalCycleId])
+  @@map("evaluation_assignments")
 }
 
 model EvaluationItem {
@@ -2570,6 +2604,7 @@ enum JobExecutionType {
 
 enum AIRequestType {
   KPI_ASSIST
+  EVAL_PERFORMANCE_BRIEFING
   EVAL_COMMENT_DRAFT
   BIAS_ANALYSIS
   GROWTH_PLAN

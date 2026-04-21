@@ -37,6 +37,7 @@ export const MENU_KEYS = [
   'COMPENSATION_SELF',
   'NOTIFICATIONS',
   'AI_ASSIST',
+  'PERFORMANCE_EVALUATION',
   'AI_COMPETENCY',
 ] as const
 

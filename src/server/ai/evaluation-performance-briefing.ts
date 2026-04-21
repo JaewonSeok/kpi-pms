@@ -7,8 +7,13 @@ import {
   type SystemRole,
 } from '@prisma/client'
 import { createAuditLog } from '@/lib/audit'
-import { estimateAiCostUsd, sanitizeAiPayload } from '@/lib/ai-assist'
-import { readAiAssistEnv } from '@/lib/ai-env'
+import { sanitizeAiPayload } from '@/lib/ai-assist'
+import { readExecutivePerformanceBriefingEnv } from '@/lib/ai-env'
+import {
+  type ExecutivePerformanceBriefing,
+  type ExecutivePerformanceBriefingEvidenceItem as PromptEvidenceDigestItem,
+  type ExecutivePerformanceBriefingInput,
+} from '@/lib/ai/executive-performance-briefing-prompt'
 import {
   determineEvaluationPerformanceBriefingAlignmentStatus,
   EvaluationPerformanceBriefingSnapshotSchema,
@@ -19,9 +24,9 @@ import {
 } from '@/lib/evaluation-performance-briefing'
 import { recordOperationalEvent } from '@/lib/operations'
 import { prisma } from '@/lib/prisma'
+import { requestExecutivePerformanceBriefingFromOpenAI } from '@/server/ai/executive-performance-briefing-openai'
+import { getPreviousEvaluationStage } from '@/server/evaluation-performance-assignments'
 import { AppError, EVAL_STAGE_LABELS, POSITION_LABELS } from '@/lib/utils'
-
-type JsonRecord = Record<string, unknown>
 
 type GenerateEvaluationPerformanceBriefingParams = {
   actorId: string
@@ -30,6 +35,8 @@ type GenerateEvaluationPerformanceBriefingParams = {
 }
 
 type LoadedEvaluation = Awaited<ReturnType<typeof loadEvaluationPerformanceBriefingContext>>['evaluation']
+type LoadedReferenceEvaluation =
+  Awaited<ReturnType<typeof loadEvaluationPerformanceBriefingContext>>['referenceEvaluation']
 
 type EvidenceSeed = EvaluationPerformanceBriefingEvidenceItem
 
@@ -38,20 +45,9 @@ type StatementDraft = {
   evidenceIds: string[]
 }
 
-type AiBriefingResponse = {
-  headline: string
-  headlineEvidenceIds: string[]
-  strengths: StatementDraft[]
-  kpiSummary: StatementDraft[]
-  contributionSummary: StatementDraft[]
-  risks: StatementDraft[]
-  alignmentReason: string
-  alignmentEvidenceIds: string[]
-  questions: string[]
-}
-
 type BriefingContext = {
   evaluation: NonNullable<LoadedEvaluation>
+  referenceEvaluation: NonNullable<LoadedReferenceEvaluation>
   managerScore: number | null
   evidenceScore: number | null
   evidenceLevel: EvaluationPerformanceBriefingEvidenceLevel
@@ -59,126 +55,13 @@ type BriefingContext = {
   alignmentStatus: EvaluationPerformanceBriefingAlignmentStatus
   evidenceSeeds: EvidenceSeed[]
   coverage: EvaluationPerformanceBriefingSnapshot['evidenceCoverage']
+  promptInput: ExecutivePerformanceBriefingInput
   payload: Record<string, unknown>
   fallbackSnapshot: EvaluationPerformanceBriefingSnapshot
 }
 
 const PERFORMANCE_BRIEFING_PROMPT_VERSION = 'evaluation-performance-briefing-v1'
 const PERFORMANCE_BRIEFING_SOURCE_TYPE = 'EvaluationPerformanceBriefing'
-
-const PERFORMANCE_BRIEFING_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'headline',
-    'headlineEvidenceIds',
-    'strengths',
-    'kpiSummary',
-    'contributionSummary',
-    'risks',
-    'alignmentReason',
-    'alignmentEvidenceIds',
-    'questions',
-  ],
-  properties: {
-    headline: { type: 'string' },
-    headlineEvidenceIds: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 6,
-      items: { type: 'string' },
-    },
-    strengths: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 5,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['text', 'evidenceIds'],
-        properties: {
-          text: { type: 'string' },
-          evidenceIds: {
-            type: 'array',
-            minItems: 1,
-            maxItems: 6,
-            items: { type: 'string' },
-          },
-        },
-      },
-    },
-    kpiSummary: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 5,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['text', 'evidenceIds'],
-        properties: {
-          text: { type: 'string' },
-          evidenceIds: {
-            type: 'array',
-            minItems: 1,
-            maxItems: 6,
-            items: { type: 'string' },
-          },
-        },
-      },
-    },
-    contributionSummary: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 5,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['text', 'evidenceIds'],
-        properties: {
-          text: { type: 'string' },
-          evidenceIds: {
-            type: 'array',
-            minItems: 1,
-            maxItems: 6,
-            items: { type: 'string' },
-          },
-        },
-      },
-    },
-    risks: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 5,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['text', 'evidenceIds'],
-        properties: {
-          text: { type: 'string' },
-          evidenceIds: {
-            type: 'array',
-            minItems: 1,
-            maxItems: 6,
-            items: { type: 'string' },
-          },
-        },
-      },
-    },
-    alignmentReason: { type: 'string' },
-    alignmentEvidenceIds: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 8,
-      items: { type: 'string' },
-    },
-    questions: {
-      type: 'array',
-      minItems: 2,
-      maxItems: 5,
-      items: { type: 'string' },
-    },
-  },
-} as const
 
 function toJsonValue(value: Record<string, unknown> | EvaluationPerformanceBriefingSnapshot) {
   return value as Prisma.InputJsonValue
@@ -200,125 +83,6 @@ function toLocalDateLabel(value: Date) {
   return value.toISOString().slice(0, 10)
 }
 
-function extractResponseText(response: {
-  output_text?: string | null
-  output?: Array<{ content?: Array<{ text?: string | null }> | null } | null>
-}) {
-  if (typeof response.output_text === 'string' && response.output_text.trim()) {
-    return response.output_text.trim()
-  }
-
-  const chunks: string[] = []
-  for (const item of response.output ?? []) {
-    for (const part of item?.content ?? []) {
-      if (typeof part?.text === 'string' && part.text.trim()) {
-        chunks.push(part.text.trim())
-      }
-    }
-  }
-
-  return chunks.join('\n').trim()
-}
-
-const ParsedAiBriefingSchema = EvaluationPerformanceBriefingSnapshotSchema.pick({
-  headline: true,
-  headlineEvidenceIds: true,
-  strengths: true,
-  kpiSummary: true,
-  contributionSummary: true,
-  risks: true,
-  questions: true,
-}).extend({
-  alignmentReason: EvaluationPerformanceBriefingSnapshotSchema.shape.alignment.shape.reason,
-  alignmentEvidenceIds: EvaluationPerformanceBriefingSnapshotSchema.shape.alignment.shape.evidenceIds,
-})
-
-function buildSystemPrompt() {
-  return [
-    '당신은 임원/상위 평가권자를 위한 AI 성과 브리핑 작성 보조자입니다.',
-    '반드시 제공된 근거 목록만 사용하고, 추정이나 성격 판단을 하지 마세요.',
-    '최종 평가 점수나 S/A/B/C 등급을 추천하지 마세요.',
-    '근거가 약하면 명확히 부족하다고 쓰고, 불확실한 내용은 확정적으로 말하지 마세요.',
-    '각 문장은 evidenceIds로 연결된 근거가 있어야 하며, evidenceIds는 제공된 evidenceCatalog의 id만 사용하세요.',
-    'managerEvaluation과 evidenceSummary를 비교해 정합성 설명을 작성하되, status 자체는 생성하지 마세요.',
-    '민감 정보, 개인사, 건강 정보, 보호특성 추정은 포함하지 마세요.',
-  ].join(' ')
-}
-
-async function callPerformanceBriefingModel(payload: Record<string, unknown>) {
-  const env = readAiAssistEnv()
-  if (!env.apiKey) {
-    throw new AppError(503, 'AI_API_KEY_MISSING', 'OPENAI_API_KEY is not configured.')
-  }
-
-  const response = await fetch(`${env.baseUrl}/responses`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: env.model,
-      input: [
-        {
-          role: 'system',
-          content: [{ type: 'input_text', text: buildSystemPrompt() }],
-        },
-        {
-          role: 'user',
-          content: [{ type: 'input_text', text: JSON.stringify(payload, null, 2) }],
-        },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'evaluation_performance_briefing',
-          schema: PERFORMANCE_BRIEFING_JSON_SCHEMA,
-          strict: true,
-        },
-      },
-    }),
-  })
-
-  const json = (await response.json()) as JsonRecord
-  if (!response.ok) {
-    const errorMessage =
-      typeof (json.error as JsonRecord | undefined)?.message === 'string'
-        ? String((json.error as JsonRecord).message)
-        : 'OpenAI Responses API request failed.'
-    throw new AppError(response.status, 'AI_REQUEST_FAILED', errorMessage)
-  }
-
-  const responseText = extractResponseText(json as never)
-  if (!responseText) {
-    throw new AppError(502, 'AI_EMPTY_RESPONSE', 'OpenAI response did not include structured output.')
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(responseText)
-  } catch {
-    throw new AppError(502, 'AI_INVALID_JSON', 'OpenAI response JSON could not be parsed.')
-  }
-
-  const validated = ParsedAiBriefingSchema.safeParse(parsed)
-  if (!validated.success) {
-    throw new AppError(502, 'AI_INVALID_SHAPE', 'OpenAI response did not match the expected schema.')
-  }
-
-  const usage = (json.usage ?? {}) as JsonRecord
-  const inputTokens = Number(usage.input_tokens ?? 0)
-  const outputTokens = Number(usage.output_tokens ?? 0)
-
-  return {
-    result: validated.data,
-    model: typeof json.model === 'string' ? json.model : env.model,
-    inputTokens,
-    outputTokens,
-    estimatedCostUsd: estimateAiCostUsd({ inputTokens, outputTokens }),
-  }
-}
-
 function buildEvidenceHref(params: {
   sourceType: EvaluationPerformanceBriefingEvidenceItem['sourceType']
   evaluationId: string
@@ -329,8 +93,8 @@ function buildEvidenceHref(params: {
   switch (params.sourceType) {
     case 'EVALUATION':
     case 'EVALUATION_HISTORY':
-      return `/evaluation/workbench?cycleId=${encodeURIComponent(params.cycleId)}&evaluationId=${encodeURIComponent(
-        params.evaluationId
+      return `/evaluation/performance/${encodeURIComponent(params.evaluationId)}?cycleId=${encodeURIComponent(
+        params.cycleId
       )}`
     case 'PERSONAL_KPI':
     case 'MONTHLY_RECORD':
@@ -457,6 +221,240 @@ function isManagerCommentSupported(comment: string | null | undefined, titles: s
   return titles.some((title) => normalizedComment.includes(title.slice(0, Math.min(title.length, 4))))
 }
 
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return [...new Set(values.map((value) => value?.trim() ?? '').filter(Boolean))]
+}
+
+function summarizeText(text: string | null | undefined, fallback = '요약 가능한 근거가 아직 충분하지 않습니다.') {
+  const normalized = (text ?? '').replace(/\s+/g, ' ').trim()
+  if (!normalized) {
+    return fallback
+  }
+
+  return normalized.length > 180 ? `${normalized.slice(0, 177)}...` : normalized
+}
+
+function inferAchievementTrend(item: NonNullable<LoadedEvaluation>['items'][number]) {
+  const latest = item.personalKpi.monthlyRecords[0]?.achievementRate
+  const previous = item.personalKpi.monthlyRecords[1]?.achievementRate
+
+  if (typeof latest !== 'number') {
+    return '데이터 부족'
+  }
+
+  if (typeof previous !== 'number') {
+    return '최근 실적 기준'
+  }
+
+  if (latest >= previous + 5) {
+    return '상승'
+  }
+
+  if (latest <= previous - 5) {
+    return '하락'
+  }
+
+  return '유지'
+}
+
+function mapEvidenceSeedToPromptDigestSourceType(
+  sourceType: EvidenceSeed['sourceType']
+): PromptEvidenceDigestItem['sourceType'] {
+  switch (sourceType) {
+    case 'PERSONAL_KPI':
+    case 'ORG_KPI':
+      return 'KPI'
+    case 'CHECKIN':
+      return 'CHECKIN'
+    case 'MONTHLY_RECORD':
+      return 'MONTHLY'
+    case 'FEEDBACK':
+      return 'FEEDBACK'
+    case 'EVALUATION':
+    case 'EVALUATION_HISTORY':
+      return 'REVIEW'
+  }
+}
+
+function buildExecutivePerformanceBriefingInput(params: {
+  evaluation: NonNullable<LoadedEvaluation>
+  referenceEvaluation: NonNullable<LoadedReferenceEvaluation>
+  checkins: Awaited<ReturnType<typeof loadEvaluationPerformanceBriefingContext>>['checkins']
+  feedbackRounds: Awaited<ReturnType<typeof loadEvaluationPerformanceBriefingContext>>['feedbackRounds']
+  previousEvaluations: Awaited<ReturnType<typeof loadEvaluationPerformanceBriefingContext>>['previousEvaluations']
+  managerScore: number | null
+  evidenceScore: number | null
+  evidenceSeeds: EvidenceSeed[]
+  coverage: EvaluationPerformanceBriefingSnapshot['evidenceCoverage']
+  managerCommentSupported: boolean
+  alignmentStatus: EvaluationPerformanceBriefingAlignmentStatus
+}): ExecutivePerformanceBriefingInput {
+  const {
+    evaluation,
+    referenceEvaluation,
+    checkins,
+    feedbackRounds,
+    previousEvaluations,
+    managerScore,
+    evidenceScore,
+    evidenceSeeds,
+    coverage,
+    managerCommentSupported,
+    alignmentStatus,
+  } = params
+
+  const sortedItems = [...evaluation.items].sort(
+    (left, right) =>
+      right.personalKpi.weight - left.personalKpi.weight ||
+      (right.personalKpi.monthlyRecords[0]?.achievementRate ?? -1) -
+        (left.personalKpi.monthlyRecords[0]?.achievementRate ?? -1)
+  )
+  const highAchievementItems = sortedItems.filter(
+    (item) => (item.personalKpi.monthlyRecords[0]?.achievementRate ?? 0) >= 90
+  )
+  const lowAchievementItems = sortedItems.filter(
+    (item) => typeof item.personalKpi.monthlyRecords[0]?.achievementRate === 'number'
+  ).filter((item) => (item.personalKpi.monthlyRecords[0]?.achievementRate ?? 0) < 80)
+  const comment = referenceEvaluation.comment?.trim() ?? ''
+  const mentionedKpiNames = sortedItems
+    .filter((item) => comment.includes(item.personalKpi.kpiName.slice(0, Math.min(item.personalKpi.kpiName.length, 4))))
+    .map((item) => item.personalKpi.kpiName)
+
+  const weightedKpiSummary = sortedItems.slice(0, 5).map(
+    (item) =>
+      `${item.personalKpi.kpiName}: 가중치 ${item.personalKpi.weight}% · 최근 달성률 ${formatPercent(
+        item.personalKpi.monthlyRecords[0]?.achievementRate
+      )}`
+  )
+
+  const highWeightKpis = sortedItems.slice(0, 3).map(
+    (item) =>
+      item.personalKpi.linkedOrgKpi
+        ? `${item.personalKpi.kpiName} (조직 목표: ${item.personalKpi.linkedOrgKpi.kpiName})`
+        : item.personalKpi.kpiName
+  )
+
+  const kpiAchievementTrend = sortedItems.slice(0, 5).map(
+    (item) =>
+      `${item.personalKpi.kpiName}: 최근 달성률 ${formatPercent(
+        item.personalKpi.monthlyRecords[0]?.achievementRate
+      )}, 추이 ${inferAchievementTrend(item)}`
+  )
+
+  const monthlyPerformanceSummary = sortedItems
+    .flatMap((item) =>
+      item.personalKpi.monthlyRecords.slice(0, 2).map((record) => ({
+        updatedAt: record.updatedAt,
+        summary: `${record.yearMonth} ${item.personalKpi.kpiName}: ${summarizeText(
+          [record.activities, record.efforts, record.obstacles].filter(Boolean).join(' / '),
+          '상세 메모 없음'
+        )}`,
+      }))
+    )
+    .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime())
+    .slice(0, 6)
+    .map((item) => item.summary)
+
+  const checkinSummary = checkins
+    .slice(0, 4)
+    .map((checkin) => `${toLocalDateLabel(checkin.scheduledDate)} 체크인: ${summarizeText(checkin.keyTakeaways || checkin.managerNotes || checkin.ownerNotes, '요약 메모 없음')}`)
+
+  const collaborationSummary = uniqueStrings([
+    ...feedbackRounds
+      .filter((round) => round.submittedCount > 0)
+      .slice(0, 4)
+      .map((round) => `${round.roundName}: ${round.summary ?? `응답 ${round.submittedCount}건`}`),
+    ...checkins
+      .filter((checkin) => Boolean(checkin.managerNotes))
+      .slice(0, 2)
+      .map((checkin) => `체크인 메모: ${summarizeText(checkin.managerNotes)}`),
+  ]).slice(0, 5)
+
+  const orgContributionSummary = uniqueStrings(
+    sortedItems
+      .filter((item) => item.personalKpi.linkedOrgKpi)
+      .slice(0, 4)
+      .map(
+        (item) =>
+          `${item.personalKpi.kpiName} → ${item.personalKpi.linkedOrgKpi?.department.deptName} ${item.personalKpi.linkedOrgKpi?.kpiName}`
+      )
+  )
+
+  const peerFeedbackSummary = feedbackRounds
+    .filter((round) => round.submittedCount > 0)
+    .slice(0, 4)
+    .map(
+      (round) =>
+        `${round.roundName}: 응답 ${round.submittedCount}건 · 평균 ${typeof round.averageRating === 'number' ? round.averageRating.toFixed(1) : '-'}${
+          round.summary ? ` · ${summarizeText(round.summary)}` : ''
+        }`
+    )
+
+  const riskEvents = uniqueStrings([
+    ...lowAchievementItems.slice(0, 4).map(
+      (item) =>
+        `${item.personalKpi.kpiName}: 최근 달성률 ${formatPercent(item.personalKpi.monthlyRecords[0]?.achievementRate)}`
+    ),
+    ...sortedItems
+      .flatMap((item) => item.personalKpi.monthlyRecords.slice(0, 2))
+      .filter((record) => Boolean(record.obstacles?.trim()))
+      .slice(0, 3)
+      .map((record) => `월간 장애 요소: ${summarizeText(record.obstacles)}`),
+  ]).slice(0, 5)
+
+  const missingEvidenceAreas = uniqueStrings([
+    coverage.monthlyRecordCount < 4 ? '최근 12개월 월간 실적 기록이 충분하지 않습니다.' : null,
+    coverage.checkinCount < 2 ? '체크인 근거가 부족합니다.' : null,
+    coverage.feedbackRoundCount < 1 ? '다면 피드백 근거가 부족합니다.' : null,
+    previousEvaluations.length < 1 ? '이전 평가 비교 이력이 부족합니다.' : null,
+    managerCommentSupported ? null : '팀장 코멘트가 구체적 근거와 직접 연결되지 않습니다.',
+    evidenceScore === null ? '근거 기반 성과 수준을 수치로 비교하기 어렵습니다.' : null,
+    alignmentStatus === 'INSUFFICIENT_EVIDENCE' ? '정합성 판단을 위한 전체 근거량이 부족합니다.' : null,
+  ])
+
+  return {
+    employeeId: evaluation.target.id,
+    employeeName: evaluation.target.empName,
+    departmentName: evaluation.target.department.deptName,
+    position: POSITION_LABELS[evaluation.target.position] ?? evaluation.target.position,
+    evaluationYear: evaluation.evalCycle.evalYear,
+    reviewPeriodStart: toLocalDateLabel(
+      evaluation.evalCycle.selfEvalStart ?? evaluation.evalCycle.kpiSetupStart ?? evaluation.createdAt
+    ),
+    reviewPeriodEnd: toLocalDateLabel(
+      evaluation.evalCycle.resultOpenEnd ?? evaluation.evalCycle.finalEvalEnd ?? evaluation.updatedAt
+    ),
+    managerRatingLabel: referenceEvaluation.gradeId ?? null,
+    managerScore,
+    managerComment: referenceEvaluation.comment ?? null,
+    managerStrengthKeywords: uniqueStrings([
+      ...highAchievementItems.slice(0, 3).map((item) => item.personalKpi.kpiName),
+      ...mentionedKpiNames.slice(0, 2),
+    ]).slice(0, 5),
+    managerRiskKeywords: uniqueStrings(lowAchievementItems.slice(0, 4).map((item) => item.personalKpi.kpiName)).slice(
+      0,
+      5
+    ),
+    weightedKpiSummary,
+    highWeightKpis,
+    kpiAchievementTrend,
+    checkinSummary,
+    monthlyPerformanceSummary,
+    projectSummary: [],
+    collaborationSummary,
+    orgContributionSummary,
+    peerFeedbackSummary,
+    riskEvents,
+    missingEvidenceAreas,
+    evidenceItems: evidenceSeeds.map<PromptEvidenceDigestItem>((item) => ({
+      id: item.id,
+      sourceType: mapEvidenceSeedToPromptDigestSourceType(item.sourceType),
+      title: item.title,
+      summary: summarizeText(item.snippet, item.title),
+    })),
+  }
+}
+
 async function loadEvaluationPerformanceBriefingContext(
   params: GenerateEvaluationPerformanceBriefingParams,
   db: PrismaClient
@@ -464,53 +462,55 @@ async function loadEvaluationPerformanceBriefingContext(
   const oneYearAgo = new Date()
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
 
-  const evaluation = await db.evaluation.findUnique({
-    where: { id: params.evaluationId },
-    include: {
-      evalCycle: true,
-      evaluator: {
-        include: {
-          department: {
-            select: { deptName: true },
-          },
+  const evaluationInclude = {
+    evalCycle: true,
+    evaluator: {
+      include: {
+        department: {
+          select: { deptName: true },
         },
       },
-      target: {
-        include: {
-          department: {
-            select: { deptName: true },
-          },
+    },
+    target: {
+      include: {
+        department: {
+          select: { deptName: true },
         },
       },
-      items: {
-        include: {
-          personalKpi: {
-            include: {
-              linkedOrgKpi: {
-                include: {
-                  department: {
-                    select: { deptName: true },
-                  },
+    },
+    items: {
+      include: {
+        personalKpi: {
+          include: {
+            linkedOrgKpi: {
+              include: {
+                department: {
+                  select: { deptName: true },
                 },
               },
-              monthlyRecords: {
-                orderBy: [{ yearMonth: 'desc' }, { updatedAt: 'desc' }],
-                take: 12,
-                select: {
-                  id: true,
-                  yearMonth: true,
-                  achievementRate: true,
-                  activities: true,
-                  obstacles: true,
-                  efforts: true,
-                  updatedAt: true,
-                },
+            },
+            monthlyRecords: {
+              orderBy: [{ yearMonth: 'desc' }, { updatedAt: 'desc' }],
+              take: 12,
+              select: {
+                id: true,
+                yearMonth: true,
+                achievementRate: true,
+                activities: true,
+                obstacles: true,
+                efforts: true,
+                updatedAt: true,
               },
             },
           },
         },
       },
     },
+  } satisfies Prisma.EvaluationInclude
+
+  const evaluation = await db.evaluation.findUnique({
+    where: { id: params.evaluationId },
+    include: evaluationInclude,
   })
 
   if (!evaluation) {
@@ -524,6 +524,23 @@ async function loadEvaluationPerformanceBriefingContext(
   if (!canUseBriefing) {
     throw new AppError(403, 'FORBIDDEN', 'AI 성과 브리핑을 볼 권한이 없습니다.')
   }
+
+  const previousStage = getPreviousEvaluationStage(evaluation.evalStage)
+  const referenceEvaluation =
+    evaluation.evalStage === 'FIRST' || !previousStage
+      ? evaluation
+      : await db.evaluation.findUnique({
+          where: {
+            evalCycleId_targetId_evalStage: {
+              evalCycleId: evaluation.evalCycleId,
+              targetId: evaluation.targetId,
+              evalStage: previousStage,
+            },
+          },
+          include: evaluationInclude,
+        })
+
+  const referenceEvaluationId = referenceEvaluation?.id ?? evaluation.id
 
   const [checkins, feedbackRounds, previousEvaluations] = await Promise.all([
     db.checkIn.findMany({
@@ -570,7 +587,9 @@ async function loadEvaluationPerformanceBriefingContext(
     db.evaluation.findMany({
       where: {
         targetId: evaluation.targetId,
-        id: { not: evaluation.id },
+        id: {
+          notIn: [...new Set([evaluation.id, referenceEvaluationId])],
+        },
         updatedAt: { gte: oneYearAgo },
       },
       orderBy: { updatedAt: 'desc' },
@@ -594,6 +613,7 @@ async function loadEvaluationPerformanceBriefingContext(
 
   return {
     evaluation,
+    referenceEvaluation: referenceEvaluation ?? evaluation,
     checkins,
     feedbackRounds: feedbackRounds.map((round) => {
       const ratings = round.feedbacks.flatMap((feedback) =>
@@ -629,10 +649,13 @@ async function loadEvaluationPerformanceBriefingContext(
   }
 }
 
-function buildFallbackSnapshot(context: Omit<BriefingContext, 'fallbackSnapshot'>): EvaluationPerformanceBriefingSnapshot {
-  const { evaluation, coverage, evidenceSeeds, managerScore, evidenceScore, alignmentStatus } = context
+function buildFallbackSnapshot(
+  context: Omit<BriefingContext, 'fallbackSnapshot' | 'promptInput'>
+): EvaluationPerformanceBriefingSnapshot {
+  const { evaluation, referenceEvaluation, coverage, evidenceSeeds, managerScore, evidenceScore, alignmentStatus } =
+    context
   const pickEvidence = (...items: Array<string | undefined>) => items.filter(Boolean) as string[]
-  const currentEvaluationEvidenceId = `evaluation:${evaluation.id}`
+  const currentEvaluationEvidenceId = `evaluation:${referenceEvaluation.id}`
   const topKpi = evaluation.items[0]
   const topKpiEvidenceId = topKpi ? `kpi:${topKpi.personalKpiId}` : currentEvaluationEvidenceId
   const topMonthly = topKpi?.personalKpi.monthlyRecords[0]
@@ -777,7 +800,7 @@ function buildFallbackSnapshot(context: Omit<BriefingContext, 'fallbackSnapshot'
 function buildBriefingContext(
   loaded: Awaited<ReturnType<typeof loadEvaluationPerformanceBriefingContext>>
 ): BriefingContext {
-  const { evaluation, checkins, feedbackRounds, previousEvaluations } = loaded
+  const { evaluation, referenceEvaluation, checkins, feedbackRounds, previousEvaluations } = loaded
 
   const evidenceSeeds: EvidenceSeed[] = []
   const addEvidence = (item: EvidenceSeed) => {
@@ -787,14 +810,15 @@ function buildBriefingContext(
   }
 
   addEvidence({
-    id: `evaluation:${evaluation.id}`,
+    id: `evaluation:${referenceEvaluation.id}`,
     sourceType: 'EVALUATION',
-    sourceId: evaluation.id,
-    title: `${evaluation.target.empName} 평가 의견`,
-    snippet: evaluation.comment?.trim() || '종합 의견이 아직 충분히 작성되지 않았습니다.',
+    sourceId: referenceEvaluation.id,
+    title: `${EVAL_STAGE_LABELS[referenceEvaluation.evalStage]} 평가 의견`,
+    snippet:
+      referenceEvaluation.comment?.trim() || '종합 의견이 아직 충분히 작성되지 않았습니다.',
     href: buildEvidenceHref({
       sourceType: 'EVALUATION',
-      evaluationId: evaluation.id,
+      evaluationId: referenceEvaluation.id,
       cycleId: evaluation.evalCycleId,
       employeeId: evaluation.targetId,
     }),
@@ -905,7 +929,7 @@ function buildBriefingContext(
     })
   }
 
-  const managerScore = computeManagerScore(evaluation)
+  const managerScore = computeManagerScore(referenceEvaluation)
   const evidenceScore = computeEvidenceScore(evaluation, feedbackRounds)
 
   const coverage: EvaluationPerformanceBriefingSnapshot['evidenceCoverage'] = {
@@ -925,7 +949,7 @@ function buildBriefingContext(
   }
 
   const managerCommentSupported = isManagerCommentSupported(
-    evaluation.comment,
+    referenceEvaluation.comment,
     evaluation.items.map((item) => item.personalKpi.kpiName)
   )
 
@@ -937,50 +961,39 @@ function buildBriefingContext(
     managerCommentSupported,
   })
 
+  const promptInput = buildExecutivePerformanceBriefingInput({
+    evaluation,
+    referenceEvaluation,
+    checkins,
+    feedbackRounds,
+    previousEvaluations,
+    managerScore,
+    evidenceScore,
+    evidenceSeeds,
+    coverage,
+    managerCommentSupported,
+    alignmentStatus,
+  })
+
   const payload = sanitizeAiPayload({
     promptVersion: PERFORMANCE_BRIEFING_PROMPT_VERSION,
-    employee: {
-      id: evaluation.target.id,
-      name: evaluation.target.empName,
-      department: evaluation.target.department.deptName,
-      position: POSITION_LABELS[evaluation.target.position] ?? evaluation.target.position,
-    },
-    cycle: {
-      id: evaluation.evalCycle.id,
-      name: evaluation.evalCycle.cycleName,
-      year: evaluation.evalCycle.evalYear,
-    },
-    evaluationContext: {
-      evaluationId: evaluation.id,
-      stage: EVAL_STAGE_LABELS[evaluation.evalStage],
-      evaluatorName: evaluation.evaluator.empName,
-      evaluatorPosition: POSITION_LABELS[evaluation.evaluator.position] ?? evaluation.evaluator.position,
-      managerScore,
-      managerComment: evaluation.comment || '',
-      managerCommentSupported,
-    },
-    evidenceSummary: {
-      evidenceLevel: coverage.evidenceLevel,
-      evidenceScore,
-      counts: coverage,
-    },
+    evaluationId: evaluation.id,
+    cycleId: evaluation.evalCycle.id,
+    promptInput,
     heuristics: {
       alignmentStatus,
       scoreGap:
         typeof managerScore === 'number' && typeof evidenceScore === 'number'
           ? roundScore(managerScore - evidenceScore)
           : null,
+      managerCommentSupported,
+      evidenceLevel: coverage.evidenceLevel,
     },
-    evidenceCatalog: evidenceSeeds.map((item) => ({
-      id: item.id,
-      sourceType: item.sourceType,
-      title: item.title,
-      snippet: item.snippet ?? '',
-    })),
   })
 
   const fallbackSnapshot = buildFallbackSnapshot({
     evaluation,
+    referenceEvaluation,
     managerScore,
     evidenceScore,
     evidenceLevel: coverage.evidenceLevel,
@@ -993,6 +1006,7 @@ function buildBriefingContext(
 
   return {
     evaluation,
+    referenceEvaluation,
     managerScore,
     evidenceScore,
     evidenceLevel: coverage.evidenceLevel,
@@ -1000,14 +1014,33 @@ function buildBriefingContext(
     alignmentStatus,
     evidenceSeeds,
     coverage,
+    promptInput,
     payload,
     fallbackSnapshot,
   }
 }
 
+function composeStatementText(title: string, detail: string) {
+  const normalizedTitle = title.trim()
+  const normalizedDetail = detail.trim()
+  if (!normalizedTitle) {
+    return normalizedDetail
+  }
+
+  if (!normalizedDetail) {
+    return normalizedTitle
+  }
+
+  if (normalizedDetail.startsWith(`${normalizedTitle}:`) || normalizedDetail.startsWith(normalizedTitle)) {
+    return normalizedDetail
+  }
+
+  return `${normalizedTitle}: ${normalizedDetail}`
+}
+
 function buildSnapshotFromAiResult(params: {
   context: BriefingContext
-  aiResult: AiBriefingResponse
+  aiResult: ExecutivePerformanceBriefing
   source: EvaluationPerformanceBriefingSnapshot['source']
   model?: string | null
 }) {
@@ -1016,6 +1049,83 @@ function buildSnapshotFromAiResult(params: {
     const filtered = [...new Set(items.filter((item) => evidenceIds.has(item)))]
     return filtered.length ? filtered.slice(0, 8) : fallback.slice(0, 8)
   }
+  const buildStatementDraft = (
+    item: { title: string; detail: string; evidenceRefs: string[] },
+    fallbackIds: string[]
+  ) =>
+    createStatement(
+      composeStatementText(item.title, item.detail),
+      sanitizeEvidenceIds(item.evidenceRefs, fallbackIds)
+    )
+
+  const summaryBlocks: StatementDraft[] = [
+    createStatement(
+      params.aiResult.performanceSummary.kpiAchievement.summary,
+      sanitizeEvidenceIds(
+        params.aiResult.performanceSummary.kpiAchievement.evidenceRefs,
+        params.context.fallbackSnapshot.kpiSummary[0]?.evidenceIds ??
+          params.context.fallbackSnapshot.headlineEvidenceIds
+      )
+    ),
+    createStatement(
+      params.aiResult.performanceSummary.continuity.summary,
+      sanitizeEvidenceIds(
+        params.aiResult.performanceSummary.continuity.evidenceRefs,
+        params.context.fallbackSnapshot.kpiSummary[1]?.evidenceIds ??
+          params.context.fallbackSnapshot.kpiSummary[0]?.evidenceIds ??
+          params.context.fallbackSnapshot.headlineEvidenceIds
+      )
+    ),
+  ]
+
+  const contributionBlocks: StatementDraft[] = [
+    createStatement(
+      params.aiResult.performanceSummary.collaboration.summary,
+      sanitizeEvidenceIds(
+        params.aiResult.performanceSummary.collaboration.evidenceRefs,
+        params.context.fallbackSnapshot.contributionSummary[0]?.evidenceIds ??
+          params.context.fallbackSnapshot.headlineEvidenceIds
+      )
+    ),
+    createStatement(
+      params.aiResult.performanceSummary.organizationContribution.summary,
+      sanitizeEvidenceIds(
+        params.aiResult.performanceSummary.organizationContribution.evidenceRefs,
+        params.context.fallbackSnapshot.contributionSummary[1]?.evidenceIds ??
+          params.context.fallbackSnapshot.contributionSummary[0]?.evidenceIds ??
+          params.context.fallbackSnapshot.headlineEvidenceIds
+      )
+    ),
+    ...params.aiResult.contributionSummary.map((item) =>
+      buildStatementDraft(
+        item,
+        params.context.fallbackSnapshot.contributionSummary[0]?.evidenceIds ??
+          params.context.fallbackSnapshot.headlineEvidenceIds
+      )
+    ),
+  ]
+
+  const alignmentEvidenceIds = sanitizeEvidenceIds(
+    [
+      ...params.aiResult.alignment.matchedPoints.flatMap((item) => item.evidenceRefs),
+      ...params.aiResult.alignment.mismatchPoints.flatMap((item) => item.evidenceRefs),
+    ],
+    params.context.fallbackSnapshot.alignment.evidenceIds
+  )
+
+  const headlineFallbackEvidence = sanitizeEvidenceIds(
+    [
+      ...params.aiResult.performanceSummary.kpiAchievement.evidenceRefs,
+      ...params.aiResult.performanceSummary.continuity.evidenceRefs,
+      ...params.aiResult.strengths.flatMap((item) => item.evidenceRefs),
+    ],
+    params.context.fallbackSnapshot.headlineEvidenceIds
+  )
+
+  const resolvedAlignmentStatus =
+    params.context.alignmentStatus === 'INSUFFICIENT_EVIDENCE'
+      ? 'INSUFFICIENT_EVIDENCE'
+      : params.aiResult.alignment.status
 
   return EvaluationPerformanceBriefingSnapshotSchema.parse({
     source: params.source,
@@ -1024,26 +1134,38 @@ function buildSnapshotFromAiResult(params: {
     model: params.model ?? null,
     stale: false,
     headline: params.aiResult.headline.trim() || params.context.fallbackSnapshot.headline,
-    headlineEvidenceIds: sanitizeEvidenceIds(
-      params.aiResult.headlineEvidenceIds,
-      params.context.fallbackSnapshot.headlineEvidenceIds
-    ),
-    strengths: clampStatements(params.aiResult.strengths, params.context.fallbackSnapshot.strengths),
-    kpiSummary: clampStatements(params.aiResult.kpiSummary, params.context.fallbackSnapshot.kpiSummary),
-    contributionSummary: clampStatements(
-      params.aiResult.contributionSummary,
-      params.context.fallbackSnapshot.contributionSummary
-    ),
-    risks: clampStatements(params.aiResult.risks, params.context.fallbackSnapshot.risks),
-    alignment: {
-      status: params.context.alignmentStatus,
-      reason: params.aiResult.alignmentReason.trim() || params.context.fallbackSnapshot.alignment.reason,
-      evidenceIds: sanitizeEvidenceIds(
-        params.aiResult.alignmentEvidenceIds,
-        params.context.fallbackSnapshot.alignment.evidenceIds
+    headlineEvidenceIds: headlineFallbackEvidence,
+    strengths: clampStatements(
+      params.aiResult.strengths.map((item) =>
+        buildStatementDraft(
+          item,
+          params.context.fallbackSnapshot.strengths[0]?.evidenceIds ??
+            params.context.fallbackSnapshot.headlineEvidenceIds
+        )
       ),
+      params.context.fallbackSnapshot.strengths
+    ),
+    kpiSummary: clampStatements(summaryBlocks, params.context.fallbackSnapshot.kpiSummary),
+    contributionSummary: clampStatements(contributionBlocks, params.context.fallbackSnapshot.contributionSummary),
+    risks: clampStatements(
+      params.aiResult.risks.map((item) =>
+        buildStatementDraft(
+          item,
+          params.context.fallbackSnapshot.risks[0]?.evidenceIds ??
+            params.context.fallbackSnapshot.headlineEvidenceIds
+        )
+      ),
+      params.context.fallbackSnapshot.risks
+    ),
+    alignment: {
+      status: resolvedAlignmentStatus,
+      reason: params.aiResult.alignment.reason.trim() || params.context.fallbackSnapshot.alignment.reason,
+      evidenceIds: alignmentEvidenceIds,
     },
-    questions: normalizeQuestions(params.aiResult.questions, params.context.fallbackSnapshot.questions),
+    questions: normalizeQuestions(
+      params.aiResult.followUpQuestions.map((item) => item.question),
+      params.context.fallbackSnapshot.questions
+    ),
     evidenceCoverage: params.context.coverage,
     evidence: params.context.evidenceSeeds.slice(0, 32),
   })
@@ -1066,7 +1188,7 @@ async function persistBriefingLog(params: {
   const log = await params.db.aiRequestLog.create({
     data: {
       requesterId: params.actorId,
-      requestType: AIRequestType.KPI_ASSIST,
+      requestType: AIRequestType.EVAL_PERFORMANCE_BRIEFING,
       requestStatus: params.requestStatus,
       sourceType: PERFORMANCE_BRIEFING_SOURCE_TYPE,
       sourceId: params.evaluationId,
@@ -1105,7 +1227,7 @@ export async function generateEvaluationPerformanceBriefing(
   params: GenerateEvaluationPerformanceBriefingParams,
   db: PrismaClient = prisma
 ) {
-  const env = readAiAssistEnv()
+  const env = readExecutivePerformanceBriefingEnv()
   const loaded = await loadEvaluationPerformanceBriefingContext(params, db)
   const context = buildBriefingContext(loaded)
   const disabledReason = !env.enabled
@@ -1153,7 +1275,7 @@ export async function generateEvaluationPerformanceBriefing(
   }
 
   try {
-    const aiResult = await callPerformanceBriefingModel(context.payload)
+    const aiResult = await requestExecutivePerformanceBriefingFromOpenAI(context.promptInput)
     const snapshot = buildSnapshotFromAiResult({
       context,
       aiResult: aiResult.result,
@@ -1193,7 +1315,7 @@ export async function generateEvaluationPerformanceBriefing(
       evaluationId: params.evaluationId,
       requestPayload: context.payload,
       snapshot,
-      model: env.model,
+      model: env.briefingModel,
       errorCode,
       errorMessage,
     })

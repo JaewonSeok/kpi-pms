@@ -67,7 +67,7 @@ export function Sidebar({ role, className, onNavigate }: SidebarProps) {
       </nav>
 
       <div className="border-t border-slate-100 px-5 py-4 text-xs text-slate-400">
-        v1.6 · Mobile + AI ready
+        v1.6 · 모바일 + AI 지원
       </div>
     </aside>
   )
@@ -141,17 +141,20 @@ function NavGroup({
 }
 
 function getNavIcon(href: string): ReactNode {
-  const iconClassName = href === '/evaluation/workbench' ? 'h-4 w-4' : 'h-5 w-5'
+  const iconClassName =
+    href === '/evaluation/performance' || href === '/evaluation/workbench' ? 'h-4 w-4' : 'h-5 w-5'
 
   const icons: Record<string, ReactNode> = {
     '/dashboard': <LayoutDashboard className={iconClassName} />,
     '/kpi': <BarChart3 className={iconClassName} />,
     '/evaluation': <ClipboardCheck className={iconClassName} />,
+    '/evaluation/performance': <ClipboardCheck className={iconClassName} />,
     '/evaluation/workbench': <Bot className={iconClassName} />,
     '/checkin': <CalendarClock className={iconClassName} />,
     '/compensation': <BriefcaseBusiness className={iconClassName} />,
     '/notifications': <Bell className={iconClassName} />,
     '/admin': <Settings className={iconClassName} />,
+    '/admin/performance-assignments': <Settings className={iconClassName} />,
   }
 
   return icons[href] ?? null

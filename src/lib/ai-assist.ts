@@ -5,6 +5,7 @@
   Prisma,
   type PrismaClient,
 } from '@prisma/client'
+import { EXECUTIVE_PERFORMANCE_BRIEFING_RESPONSE_FORMAT } from './ai/executive-performance-briefing-prompt'
 import { prisma } from './prisma'
 import { AppError } from './utils'
 import { isFeatureEnabled } from './feature-flags'
@@ -49,6 +50,7 @@ export const AI_REQUEST_LABELS: Record<AIRequestType, string> = {
   EVAL_COMMENT_DRAFT: '?됯? 肄붾찘??珥덉븞',
   BIAS_ANALYSIS: '?명뼢 遺꾩꽍',
   GROWTH_PLAN: '?깆옣 怨꾪쉷 異붿쿇',
+  EVAL_PERFORMANCE_BRIEFING: '성과평가 브리핑',
 }
 
 const KPI_SCHEMA = {
@@ -1233,6 +1235,12 @@ const AI_CONFIGS: Record<AIRequestType, AiConfig> = {
     schema: GROWTH_PLAN_SCHEMA,
     systemPrompt:
       'You are a career development assistant. Recommend a short growth plan grounded in the provided performance context. Keep it specific, realistic, and appropriate for manager review.',
+  },
+  EVAL_PERFORMANCE_BRIEFING: {
+    schemaName: 'executive_performance_briefing',
+    schema: EXECUTIVE_PERFORMANCE_BRIEFING_RESPONSE_FORMAT.schema as JsonRecord,
+    systemPrompt:
+      'You are an executive performance briefing assistant. Use only the provided evidence, never assign a final grade, and return strictly validated JSON.',
   },
 }
 

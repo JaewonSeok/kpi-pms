@@ -4,7 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
 import { RejectEvaluationSchema } from '@/lib/validations'
-import { errorResponse, successResponse, AppError } from '@/lib/utils'
+import { AppError, errorResponse, successResponse } from '@/lib/utils'
+import { getPreviousEvaluationStage } from '@/server/evaluation-performance-assignments'
 import {
   logImpersonationRiskExecution,
   validateImpersonationRiskRequest,
@@ -20,7 +21,9 @@ export async function PATCH(
 
   try {
     session = (await getServerSession(authOptions)) as AuthSession | null
-    if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
+    if (!session) {
+      throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
+    }
 
     const { id } = await params
     const evaluation = await prisma.evaluation.findUnique({
@@ -34,15 +37,24 @@ export async function PATCH(
       },
     })
 
-    if (!evaluation) throw new AppError(404, 'NOT_FOUND', '평가를 찾을 수 없습니다.')
+    if (!evaluation) {
+      throw new AppError(404, 'NOT_FOUND', '평가를 찾을 수 없습니다.')
+    }
 
-    const canReview = evaluation.evaluatorId === session.user.id || session.user.role === 'ROLE_ADMIN'
+    const canReview =
+      evaluation.evaluatorId === session.user.id || session.user.role === 'ROLE_ADMIN'
+
     if (!canReview) {
       throw new AppError(403, 'FORBIDDEN', '평가 반려 권한이 없습니다.')
     }
 
     if (evaluation.status === 'CONFIRMED') {
       throw new AppError(400, 'LOCKED', '확정된 평가는 반려할 수 없습니다.')
+    }
+
+    const previousStage = getPreviousEvaluationStage(evaluation.evalStage)
+    if (!previousStage) {
+      throw new AppError(400, 'PREVIOUS_STAGE_REQUIRED', '이전 단계가 없는 평가는 반려할 수 없습니다.')
     }
 
     riskContext = await validateImpersonationRiskRequest({
@@ -58,48 +70,116 @@ export async function PATCH(
     const validated = RejectEvaluationSchema.safeParse(body)
 
     if (!validated.success) {
-      throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '입력값이 올바르지 않습니다.')
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        validated.error.issues[0]?.message ?? '입력값이 올바르지 않습니다.'
+      )
+    }
+
+    const previousEvaluation = await prisma.evaluation.findUnique({
+      where: {
+        evalCycleId_targetId_evalStage: {
+          evalCycleId: evaluation.evalCycleId,
+          targetId: evaluation.targetId,
+          evalStage: previousStage,
+        },
+      },
+      select: {
+        id: true,
+        evaluatorId: true,
+      },
+    })
+
+    if (!previousEvaluation) {
+      throw new AppError(404, 'PREVIOUS_EVALUATION_NOT_FOUND', '되돌릴 이전 단계 평가를 찾을 수 없습니다.')
     }
 
     await prisma.$transaction(async (tx) => {
       await tx.evaluation.update({
-        where: { id },
+        where: { id: previousEvaluation.id },
         data: {
           status: 'REJECTED',
           isRejected: true,
           rejectionReason: validated.data.rejectionReason,
           rejectedAt: new Date(),
           isDraft: true,
+          submittedAt: null,
+        },
+      })
+
+      await tx.evaluation.update({
+        where: { id: evaluation.id },
+        data: {
+          status: 'PENDING',
+          totalScore: null,
+          gradeId: null,
+          comment: null,
+          isDraft: true,
+          submittedAt: null,
+          isRejected: false,
+          rejectionReason: null,
+          rejectedAt: null,
+        },
+      })
+
+      await tx.evaluationItem.updateMany({
+        where: {
+          evaluationId: evaluation.id,
+        },
+        data: {
+          quantScore: null,
+          planScore: null,
+          doScore: null,
+          checkScore: null,
+          actScore: null,
+          qualScore: null,
+          itemComment: null,
+          weightedScore: null,
         },
       })
 
       await tx.notification.create({
         data: {
-          recipientId: evaluation.targetId,
+          recipientId: previousEvaluation.evaluatorId,
           type: 'EVAL_REJECTED',
-          title: '평가 보완 요청',
-          message: `${evaluation.target.empName}의 평가가 반려되어 보완이 필요합니다.`,
-          link: '/evaluation/workbench',
+          title: '평가 보완 요청이 도착했습니다.',
+          message: `${evaluation.target.empName}님의 평가가 반려되어 이전 단계에서 다시 보완해야 합니다.`,
+          link: `/evaluation/performance/${encodeURIComponent(previousEvaluation.id)}?cycleId=${encodeURIComponent(
+            evaluation.evalCycleId
+          )}`,
           channel: 'IN_APP',
         },
       })
     })
 
-    const clientInfo = getClientInfo(request)
     await createAuditLog({
       userId: session.user.id,
-      action: 'EVALUATION_REJECT',
+      action: 'EVALUATION_RETURN_TO_PREVIOUS_STAGE',
       entityType: 'Evaluation',
       entityId: id,
       oldValue: {
         status: evaluation.status,
-        rejectionReason: evaluation.rejectionReason,
       },
+      newValue: {
+        status: 'PENDING',
+        returnedToStage: previousStage,
+        rejectionReason: validated.data.rejectionReason,
+      },
+      ...getClientInfo(request),
+    })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'EVALUATION_REOPEN_FOR_REVISION',
+      entityType: 'Evaluation',
+      entityId: previousEvaluation.id,
       newValue: {
         status: 'REJECTED',
         rejectionReason: validated.data.rejectionReason,
+        reopenedByStage: evaluation.evalStage,
       },
-      ...clientInfo,
+      ...getClientInfo(request),
     })
 
     await logImpersonationRiskExecution({
@@ -109,13 +189,15 @@ export async function PATCH(
       success: true,
       metadata: {
         targetId: evaluation.targetId,
+        previousStage,
       },
     })
 
     return successResponse({
       id,
-      status: 'REJECTED',
-      message: '평가를 반려하고 보완 요청을 보냈습니다.',
+      status: 'PENDING',
+      previousEvaluationId: previousEvaluation.id,
+      message: '평가를 반려하고 이전 단계 평가자에게 보완을 요청했습니다.',
     })
   } catch (error) {
     if (session && riskContext) {

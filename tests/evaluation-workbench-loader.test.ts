@@ -34,6 +34,7 @@ async function withStubbedWorkbenchData(
   const snapshot = {
     employeeFindUnique: prismaAny.employee.findUnique,
     evalCycleFindMany: prismaAny.evalCycle.findMany,
+    evaluationFindUnique: prismaAny.evaluation.findUnique,
     evaluationFindMany: prismaAny.evaluation.findMany,
     personalKpiCount: prismaAny.personalKpi.count,
     feedbackRoundCount: prismaAny.multiFeedbackRound.count,
@@ -71,6 +72,10 @@ async function withStubbedWorkbenchData(
         showScoreSummary: true,
       },
     ])
+
+  prismaAny.evaluation.findUnique =
+    overrides.evaluationFindUnique ??
+    (async () => null)
 
   prismaAny.evaluation.findMany =
     overrides.evaluationFindMany ??
@@ -216,6 +221,7 @@ async function withStubbedWorkbenchData(
   } finally {
     prismaAny.employee.findUnique = snapshot.employeeFindUnique
     prismaAny.evalCycle.findMany = snapshot.evalCycleFindMany
+    prismaAny.evaluation.findUnique = snapshot.evaluationFindUnique
     prismaAny.evaluation.findMany = snapshot.evaluationFindMany
     prismaAny.personalKpi.count = snapshot.personalKpiCount
     prismaAny.multiFeedbackRound.count = snapshot.feedbackRoundCount
@@ -512,6 +518,84 @@ async function main() {
         assert.equal(data.selected?.items[0]?.goalContext.approvalStatusKey, 'DRAFT')
         assert.equal(data.selected?.items[0]?.goalContext.approvalStatusLabel, '승인 상태: 초안')
         assert.equal(data.selected?.items[0]?.goalContext.linkedGoalLabel, null)
+      }
+    )
+  })
+
+  await run('evaluation workbench only requests self-stage rows for the target employee view', async () => {
+    const { getEvaluationWorkbenchPageData } = await import('../src/server/evaluation-workbench')
+
+    let capturedWhere: Record<string, unknown> | null = null
+
+    await withStubbedWorkbenchData(
+      {
+        employeeFindUnique: async () => ({
+          id: 'emp-member',
+          empName: '구성원',
+          role: 'ROLE_MEMBER',
+          department: {
+            deptName: '인사팀',
+            orgId: 'org-1',
+            organization: { id: 'org-1', orgName: 'RSUPPORT' },
+          },
+        }),
+        evaluationFindMany: async (args: { where: Record<string, unknown> }) => {
+          capturedWhere = args.where
+          return []
+        },
+      },
+      async () => {
+        const data = await getEvaluationWorkbenchPageData({
+          session: {
+            user: {
+              id: 'emp-member',
+              name: '구성원',
+              role: 'ROLE_MEMBER',
+            },
+          } as any,
+          cycleId: 'cycle-1',
+        })
+
+        assert.equal(data.state, 'ready')
+        assert.deepEqual(capturedWhere, {
+          evalCycleId: 'cycle-1',
+          OR: [
+            { evaluatorId: 'emp-member' },
+            { targetId: 'emp-member', evalStage: 'SELF' },
+          ],
+        })
+      }
+    )
+  })
+
+  await run('evaluation workbench exposes the previous stage evaluation summary when available', async () => {
+    const { getEvaluationWorkbenchPageData } = await import('../src/server/evaluation-workbench')
+
+    await withStubbedWorkbenchData(
+      {
+        evaluationFindUnique: async () => ({
+          id: 'eval-self-1',
+          evalStage: 'SELF',
+          totalScore: 74,
+          comment: '이전 단계 자기평가 의견입니다.',
+          submittedAt: new Date('2026-03-31T08:00:00Z'),
+          updatedAt: new Date('2026-03-31T08:10:00Z'),
+          evaluator: {
+            empName: '홍길동',
+          },
+        }),
+      },
+      async () => {
+        const data = await getEvaluationWorkbenchPageData({
+          session: makeSession(),
+          cycleId: 'cycle-1',
+          evaluationId: 'eval-1',
+        })
+
+        assert.equal(data.state, 'ready')
+        assert.equal(data.selected?.previousStageEvaluation?.id, 'eval-self-1')
+        assert.equal(Boolean(data.selected?.previousStageEvaluation?.comment?.includes('이전 단계')), true)
+        assert.equal(data.selected?.permissions.canReject, true)
       }
     )
   })

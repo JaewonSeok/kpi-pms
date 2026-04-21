@@ -14,6 +14,11 @@ export type AiAssistEnv = {
   baseUrl: string
 }
 
+export type ExecutivePerformanceBriefingEnv = AiAssistEnv & {
+  briefingModel: string
+  briefingModelSource: string
+}
+
 function readBooleanValue(rawValue: string | undefined, fallback: boolean) {
   if (rawValue == null || rawValue === '') {
     return fallback
@@ -45,5 +50,27 @@ export function readAiAssistEnv(env: EnvMap = process.env) : AiAssistEnv {
     model: (modelSetting.value ?? 'gpt-5-mini').trim(),
     modelSource: modelSetting.source,
     baseUrl: (baseUrlSetting.value ?? 'https://api.openai.com/v1').replace(/\/$/, ''),
+  }
+}
+
+export function readExecutivePerformanceBriefingEnv(
+  env: EnvMap = process.env
+): ExecutivePerformanceBriefingEnv {
+  const shared = readAiAssistEnv(env)
+  const briefingModelSetting = readFirstValue(env, ['OPENAI_BRIEFING_MODEL'])
+
+  const inheritedModel =
+    shared.modelSource !== 'default' && shared.model.trim() ? shared.model.trim() : undefined
+  const briefingModel = (briefingModelSetting.value ?? inheritedModel ?? 'gpt-5.4').trim()
+  const briefingModelSource = briefingModelSetting.value
+    ? briefingModelSetting.source
+    : inheritedModel
+      ? shared.modelSource
+      : 'default:gpt-5.4'
+
+  return {
+    ...shared,
+    briefingModel,
+    briefingModelSource,
   }
 }

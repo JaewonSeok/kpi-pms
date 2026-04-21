@@ -1,6 +1,4 @@
-import { getEvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
-import { requireProtectedPageSession } from '@/server/auth/protected-page'
-import { EvaluationWorkbenchClient } from '@/components/evaluation/EvaluationWorkbenchClient'
+import { redirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,17 +10,17 @@ type PageProps = {
 }
 
 export default async function EvaluationWorkbenchPage({ searchParams }: PageProps) {
-  const session = await requireProtectedPageSession({
-    route: '/evaluation/workbench',
-    pathname: '/evaluation/workbench',
-  })
-
   const resolvedSearchParams = (await searchParams) ?? {}
-  const data = await getEvaluationWorkbenchPageData({
-    session,
-    cycleId: resolvedSearchParams.cycleId,
-    evaluationId: resolvedSearchParams.evaluationId,
-  })
+  const params = new URLSearchParams()
 
-  return <EvaluationWorkbenchClient {...data} />
+  if (resolvedSearchParams.cycleId) {
+    params.set('cycleId', resolvedSearchParams.cycleId)
+  }
+
+  if (resolvedSearchParams.evaluationId) {
+    const base = `/evaluation/performance/${encodeURIComponent(resolvedSearchParams.evaluationId)}`
+    redirect(params.size ? `${base}?${params.toString()}` : base)
+  }
+
+  redirect(params.size ? `/evaluation/performance?${params.toString()}` : '/evaluation/performance')
 }

@@ -64,15 +64,16 @@ type EvidenceSectionKey = 'highlights' | 'kpi' | 'notes' | 'warnings'
 type EditableWorkbenchItem = NonNullable<EvaluationWorkbenchPageData['selected']>['items'][number] & {
   draft: DraftItemState
 }
+type EvaluationListEntry = NonNullable<EvaluationWorkbenchPageData['evaluations']>[number]
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
-  workbench: '평가 실행',
+  workbench: '종합',
   guide: '평가 가이드',
-  evidence: '근거 자료',
+  evidence: '근거 기록',
   feedback: '다면 피드백',
   briefing: 'AI 성과 브리핑',
   ai: 'AI 보조',
-  history: '제출 이력',
+  history: '이력',
 }
 
 export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
@@ -98,6 +99,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [growthMemo, setGrowthMemo] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [draftItems, setDraftItems] = useState<Record<string, DraftItemState>>({})
+  const [search, setSearch] = useState('')
+  const [stageFilter, setStageFilter] = useState<'ALL' | EvaluationListEntry['evalStage']>('ALL')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | EvaluationListEntry['status']>('ALL')
   const workbenchContextKey = `${props.selectedCycleId ?? ''}:${props.selectedEvaluationId ?? ''}`
   const previousWorkbenchContextKey = useRef(workbenchContextKey)
   const previousCycleId = useRef(props.selectedCycleId ?? '')
@@ -135,6 +139,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
     if (cycleChanged) {
       setActiveTab('workbench')
+      setSearch('')
+      setStageFilter('ALL')
+      setStatusFilter('ALL')
     }
   }, [props.selectedCycleId, workbenchContextKey])
 
@@ -220,6 +227,21 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       },
     }))
   }, [draftItems, selected])
+
+  const filteredEvaluations = useMemo(() => {
+    const keyword = search.trim().toLowerCase()
+    return (props.evaluations ?? []).filter((evaluation) => {
+      const matchesKeyword =
+        !keyword ||
+        evaluation.targetName.toLowerCase().includes(keyword) ||
+        evaluation.targetDepartment.toLowerCase().includes(keyword) ||
+        evaluation.evaluatorName.toLowerCase().includes(keyword)
+
+      const matchesStage = stageFilter === 'ALL' || evaluation.evalStage === stageFilter
+      const matchesStatus = statusFilter === 'ALL' || evaluation.status === statusFilter
+      return matchesKeyword && matchesStage && matchesStatus
+    })
+  }, [props.evaluations, search, stageFilter, statusFilter])
 
   const computedTotal = useMemo(
     () =>
@@ -386,8 +408,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         if (!json.success) throw new Error(json.error?.message ?? '자기평가를 시작하지 못했습니다.')
         const nextId = json.data?.id as string | undefined
         const nextUrl = nextId
-          ? `/evaluation/workbench?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}&evaluationId=${encodeURIComponent(nextId)}`
-          : `/evaluation/workbench?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
+          ? `/evaluation/performance/${encodeURIComponent(nextId)}?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
+          : `/evaluation/performance?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
         startTransition(() => router.push(nextUrl))
         setNotice('자기평가 초안을 생성했습니다.')
         return
@@ -616,14 +638,20 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   }
 
   function moveToCycle(cycleId: string) {
-    startTransition(() => router.push(`/evaluation/workbench?cycleId=${encodeURIComponent(cycleId)}`))
+    startTransition(() => router.push(`/evaluation/performance?cycleId=${encodeURIComponent(cycleId)}`))
   }
 
   function moveToEvaluation(evaluationId: string) {
     const params = new URLSearchParams()
     if (props.selectedCycleId) params.set('cycleId', props.selectedCycleId)
-    params.set('evaluationId', evaluationId)
-    startTransition(() => router.push(`/evaluation/workbench?${params.toString()}`))
+    const query = params.toString()
+    startTransition(() =>
+      router.push(
+        query
+          ? `/evaluation/performance/${encodeURIComponent(evaluationId)}?${query}`
+          : `/evaluation/performance/${encodeURIComponent(evaluationId)}`
+      )
+    )
   }
 
   if (props.state !== 'ready') {
@@ -662,9 +690,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
               {selected ? <Badge tone={statusTone(selected.status)}>{`${selected.stageLabel} · ${selected.statusLabel}`}</Badge> : null}
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">평가 실행 워크벤치</h1>
+              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">성과평가</h1>
               <p className="mt-2 text-sm text-slate-500">
-                목표, 월간 실적, 체크인, 다면 피드백을 한 화면에서 검토하고 평가 초안과 AI 보조를 함께 운영합니다.
+                평가 대상, 근거 기록, 이전 단계 의견, AI 보조를 한 화면에서 검토하며 초안 작성과 검토를 진행합니다.
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -692,7 +720,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
           <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-[440px]">
             <label className="space-y-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Cycle</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">평가 주기</span>
               <select
                 value={props.selectedCycleId}
                 onChange={(event) => moveToCycle(event.target.value)}
@@ -705,7 +733,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                 ))}
               </select>
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => runMutation('createSelf')}
@@ -721,6 +749,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
               >
                 결과 보기
               </Link>
+              {props.currentUser?.role === 'ROLE_ADMIN' ? (
+                <Link
+                  href={`/admin/performance-assignments${props.selectedCycleId ? `?cycleId=${encodeURIComponent(props.selectedCycleId)}` : ''}`}
+                  className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  배정 관리
+                </Link>
+              ) : null}
             </div>
             <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
               <button
@@ -796,8 +832,40 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{props.summary?.totalCount ?? 0}건</span>
           </div>
           <div className="mt-4 space-y-3">
-            {props.evaluations?.length ? (
-              props.evaluations.map((evaluation) => (
+            <div className="grid gap-3 md:grid-cols-3">
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="이름, 부서, 평가자로 검색"
+                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+              />
+              <select
+                value={stageFilter}
+                onChange={(event) => setStageFilter(event.target.value as typeof stageFilter)}
+                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+              >
+                <option value="ALL">전체 단계</option>
+                {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.evalStage))].map((stage) => (
+                  <option key={stage} value={stage}>
+                    {(props.evaluations ?? []).find((evaluation) => evaluation.evalStage === stage)?.stageLabel ?? stage}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+              >
+                <option value="ALL">전체 상태</option>
+                {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.status))].map((status) => (
+                  <option key={status} value={status}>
+                    {(props.evaluations ?? []).find((evaluation) => evaluation.status === status)?.statusLabel ?? status}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {filteredEvaluations.length ? (
+              filteredEvaluations.map((evaluation) => (
                 <button
                   key={evaluation.id}
                   type="button"
@@ -816,13 +884,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     <Badge tone={statusTone(evaluation.status)}>{evaluation.statusLabel}</Badge>
                   </div>
                   <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                    <span>{evaluation.isEvaluator ? '검토자 관점' : '내 평가'}</span>
+                    <span>{evaluation.isEvaluator ? '검토 대기 또는 진행 중' : '내 평가 작성 건'}</span>
                     <span>{evaluation.updatedAt}</span>
                   </div>
                 </button>
               ))
             ) : (
-              <EmptyBlock message="현재 선택한 주기에는 평가가 없습니다." />
+              <EmptyBlock message="조건에 맞는 평가가 없습니다." />
             )}
           </div>
         </section>
@@ -833,7 +901,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
               <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">Selected evaluation</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">선택한 평가</p>
                     <h2 className="mt-2 text-xl font-semibold text-slate-900">{selected.target.name} · {selected.stageLabel}</h2>
                     <p className="mt-2 text-sm text-slate-500">
                       {selected.cycle.year} / {selected.cycle.name} · 평가자 {selected.evaluator.name}
@@ -881,6 +949,56 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                       ))}
                     </div>
                   </Panel>
+
+                  {selected.previousStageEvaluation ? (
+                    <Panel
+                      title="이전 단계 평가 요약"
+                      description="상위 검토 시에는 바로 이전 단계에서 제출된 의견과 점수를 함께 확인하세요."
+                    >
+                      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              평가 단계
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-slate-900">
+                              {selected.previousStageEvaluation.stageLabel}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              작성자
+                            </div>
+                            <div className="mt-1 text-sm text-slate-700">
+                              {selected.previousStageEvaluation.evaluatorName}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              제출 시각
+                            </div>
+                            <div className="mt-1 text-sm text-slate-700">
+                              {selected.previousStageEvaluation.submittedAt ?? selected.previousStageEvaluation.updatedAt}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              저장 점수
+                            </div>
+                            <div className="mt-1 text-lg font-semibold text-slate-900">
+                              {selected.previousStageEvaluation.totalScore?.toFixed(1) ?? '-'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 p-4">
+                          <div className="text-sm font-semibold text-slate-900">이전 단계 종합 의견</div>
+                          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                            {selected.previousStageEvaluation.comment ?? '이전 단계 종합 의견이 아직 등록되지 않았습니다.'}
+                          </p>
+                        </div>
+                      </div>
+                    </Panel>
+                  ) : null}
 
                   <Panel title="종합 의견 및 등급" description="제출 후에는 다음 평가 단계로 자동 연결됩니다.">
                     <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -1168,9 +1286,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
               {activeTab === 'ai' ? (
                 <div className="space-y-6">
-                  <Panel title="근거 기반 평가 AI 워크벤치" description="AI는 초안 보조 도구이며, 최종 판단과 제출 책임은 평가자에게 있습니다.">
+                  <Panel title="근거 기반 AI 보조" description="AI는 초안 보조 도구이며, 최종 판단과 제출 책임은 평가자에게 있습니다.">
                     <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                      AI는 근거를 요약해 초안을 제안하지만, 최종 판단과 제출 책임은 사람에게 있습니다. 근거 부족 경고와 편향 가능성 경고를 함께 확인해 주세요.
+                      AI 보조는 최종 평가를 대체하지 않으며, 등록된 근거를 요약해 검토를 지원합니다. 근거 부족 경고와 편향 가능성 경고를 함께 확인해 주세요.
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-3">
                       <AiCard
@@ -1307,10 +1425,10 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 function PageHeader() {
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">Evaluation Operations</p>
-      <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">평가 실행 워크벤치</h1>
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">성과평가 운영</p>
+      <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">성과평가</h1>
       <p className="mt-2 max-w-3xl text-sm text-slate-500">
-        목표, 월간 실적, 체크인, 다면 피드백을 한 화면에서 검토하고 평가 초안과 AI 보조를 함께 운영합니다.
+        평가 대상 목록, 근거 기록, 검토 이력, AI 보조를 연결해 평가 작성과 상위 검토를 한 화면에서 진행합니다.
       </p>
     </section>
   )

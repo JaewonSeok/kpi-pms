@@ -60,6 +60,7 @@ function collectSourceFiles(relativeDir: string): string[] {
 const routeSource = readProjectFile('src/app/api/ai/evaluation-assist/route.ts')
 const serverSource = readProjectFile('src/server/ai/evaluation-assist.ts')
 const assistantRedirectSource = readProjectFile('src/app/(main)/evaluation/assistant/page.tsx')
+const performancePageSource = readProjectFile('src/app/(main)/evaluation/performance/page.tsx')
 const workbenchPageSource = readProjectFile('src/app/(main)/evaluation/workbench/page.tsx')
 const clientSource = readProjectFile('src/components/evaluation/EvaluationWorkbenchClient.tsx')
 const clientBundleSources = [...collectSourceFiles('src/app'), ...collectSourceFiles('src/components')]
@@ -129,23 +130,46 @@ run('frontend calls the dedicated evaluation AI route and renders evidence-based
   assert.doesNotMatch(clientSource, /\/api\/ai\/assist/)
 })
 
-run('legacy evaluation assistant route is redirect-only and points to the canonical workbench route', () => {
+run('legacy evaluation assistant route is redirect-only and points to the canonical performance route', () => {
   assert.match(assistantRedirectSource, /export const dynamic = 'force-dynamic'/)
   assert.match(
     assistantRedirectSource,
-    /redirect\(params\.size \? `\/evaluation\/workbench\?\$\{params\.toString\(\)\}` : '\/evaluation\/workbench'\)/
+    /redirect\(params\.size \? `\/evaluation\/performance\?\$\{params\.toString\(\)\}` : '\/evaluation\/performance'\)/
   )
   assert.doesNotMatch(assistantRedirectSource, /getEvaluationWorkbenchPageData/)
   assert.doesNotMatch(assistantRedirectSource, /EvaluationWorkbenchClient/)
   assert.doesNotMatch(assistantRedirectSource, /\/api\/ai\/assist/)
 })
 
-run('canonical evaluation workbench page owns the live evaluation AI experience', () => {
-  assert.match(workbenchPageSource, /import \{ getEvaluationWorkbenchPageData \} from '@\/server\/evaluation-workbench'/)
-  assert.match(workbenchPageSource, /import \{ EvaluationWorkbenchClient \} from '@\/components\/evaluation\/EvaluationWorkbenchClient'/)
-  assert.match(workbenchPageSource, /return <EvaluationWorkbenchClient \{\.\.\.data\} \/>/)
+run('legacy evaluation workbench route redirects into the canonical performance route', () => {
   assert.match(workbenchPageSource, /export const dynamic = 'force-dynamic'/)
-  assert.doesNotMatch(workbenchPageSource, /^'use client'$/m)
+  assert.match(workbenchPageSource, /redirect\(params\.size \? `\$\{base\}\?\$\{params\.toString\(\)\}` : base\)/)
+  assert.match(workbenchPageSource, /\/evaluation\/performance/)
+  assert.doesNotMatch(workbenchPageSource, /getEvaluationWorkbenchPageData/)
+  assert.doesNotMatch(workbenchPageSource, /EvaluationWorkbenchClient/)
+})
+
+run('canonical performance page owns the live evaluation AI experience', () => {
+  assert.match(performancePageSource, /requireProtectedPageSession/)
+  assert.match(performancePageSource, /import \{ getEvaluationWorkbenchPageData \} from '@\/server\/evaluation-workbench'/)
+  assert.match(performancePageSource, /import \{ EvaluationWorkbenchClient \} from '@\/components\/evaluation\/EvaluationWorkbenchClient'/)
+  assert.match(performancePageSource, /return <EvaluationWorkbenchClient \{\.\.\.data\} \/>/)
+  assert.match(performancePageSource, /export const dynamic = 'force-dynamic'/)
+  assert.doesNotMatch(performancePageSource, /^'use client'$/m)
+})
+
+run('performance detail route exists for direct evaluation deep links', () => {
+  const detailPageSource = readProjectFile('src/app/(main)/evaluation/performance/[evaluationId]/page.tsx')
+
+  assert.match(detailPageSource, /requireProtectedPageSession/)
+  assert.match(detailPageSource, /const \{ evaluationId \} = await params/)
+  assert.match(detailPageSource, /EvaluationWorkbenchClient/)
+})
+
+run('evaluation assistant surface no longer treats the workbench route as canonical', () => {
+  assert.match(workbenchPageSource, /redirect\(/)
+  assert.doesNotMatch(workbenchPageSource, /getEvaluationWorkbenchPageData/)
+  assert.doesNotMatch(workbenchPageSource, /return <EvaluationWorkbenchClient \{\.\.\.data\} \/>/)
 })
 
 run('evaluation workbench exposes exactly three assist modes on the dedicated route', () => {

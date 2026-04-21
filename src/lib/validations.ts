@@ -1441,7 +1441,13 @@ export const CompensationWorkflowSchema = z.object({
 // ============================================
 
 export const AIAssistRequestSchema = z.object({
-  requestType: z.enum(['KPI_ASSIST', 'EVAL_COMMENT_DRAFT', 'BIAS_ANALYSIS', 'GROWTH_PLAN']),
+  requestType: z.enum([
+    'KPI_ASSIST',
+    'EVAL_COMMENT_DRAFT',
+    'BIAS_ANALYSIS',
+    'GROWTH_PLAN',
+    'EVAL_PERFORMANCE_BRIEFING',
+  ]),
   sourceType: z.string().max(100).optional(),
   sourceId: z.string().max(100).optional(),
   payload: z.record(z.string(), z.unknown()),
@@ -1808,6 +1814,27 @@ export const DeleteAdminDepartmentSchema = z
 export const AdminEvaluatorAssignmentActionSchema = z.object({
   action: z.enum(['preview', 'apply']),
 })
+
+export const AdminPerformanceAssignmentActionSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('sync'),
+    evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
+  }),
+  z.object({
+    action: z.literal('override'),
+    evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
+    targetId: z.string().min(1, '대상자를 선택해 주세요.'),
+    evalStage: z.enum(['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']),
+    evaluatorId: z.string().min(1, '평가자를 선택해 주세요.'),
+    note: z.string().max(300).optional(),
+  }),
+  z.object({
+    action: z.literal('reset'),
+    evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
+    targetId: z.string().min(1, '대상자를 선택해 주세요.'),
+    evalStage: z.enum(['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']),
+  }),
+])
 
 export const AdminMasterLoginSchema = z.object({
   targetEmployeeId: z.string().min(1, '????좎?瑜??좏깮??二쇱꽭??'),

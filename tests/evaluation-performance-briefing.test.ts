@@ -23,6 +23,8 @@ function read(relativePath: string) {
 
 const routeSource = read('src/app/api/ai/evaluation-briefing/route.ts')
 const serverSource = read('src/server/ai/evaluation-performance-briefing.ts')
+const promptSource = read('src/lib/ai/executive-performance-briefing-prompt.ts')
+const openAiSource = read('src/server/ai/executive-performance-briefing-openai.ts')
 const loaderSource = read('src/server/evaluation-workbench.ts')
 const clientSource = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
 const panelSource = read('src/components/evaluation/EvaluationPerformanceBriefingPanel.tsx')
@@ -100,22 +102,30 @@ run('snapshot schema requires evidence traceability and preserves stored metadat
         sourceId: 'eval-1',
         title: '평가 의견',
         snippet: '근거 중심으로 다시 확인이 필요합니다.',
-        href: '/evaluation/workbench?cycleId=c1&evaluationId=eval-1',
+        href: '/evaluation/performance/eval-1?cycleId=c1',
       },
     ],
   })
 
   assert.equal(snapshot?.headlineEvidenceIds[0], 'evaluation:eval-1')
   assert.equal(snapshot?.alignment.status, 'REVIEW_NEEDED')
-  assert.equal(snapshot?.evidence[0]?.href?.includes('/evaluation/workbench'), true)
+  assert.equal(snapshot?.evidence[0]?.href?.includes('/evaluation/performance/eval-1'), true)
 })
 
 run('workbench integrates a dedicated AI performance briefing tab and route without auto-grading', () => {
   assert.match(routeSource, /EvaluationPerformanceBriefingRequestSchema\.safeParse/)
   assert.match(routeSource, /generateEvaluationPerformanceBriefing/)
   assert.match(serverSource, /PERFORMANCE_BRIEFING_SOURCE_TYPE = 'EvaluationPerformanceBriefing'/)
-  assert.match(serverSource, /requestType: AIRequestType\.KPI_ASSIST/)
-  assert.match(serverSource, /최종 평가 점수나 S\/A\/B\/C 등급을 추천하지 마세요/)
+  assert.match(serverSource, /requestType: AIRequestType\.EVAL_PERFORMANCE_BRIEFING/)
+  assert.match(serverSource, /referenceEvaluation/)
+  assert.match(serverSource, /requestExecutivePerformanceBriefingFromOpenAI/)
+  assert.match(serverSource, /buildExecutivePerformanceBriefingInput/)
+  assert.match(promptSource, /EXECUTIVE_PERFORMANCE_BRIEFING_SYSTEM_PROMPT/)
+  assert.match(promptSource, /최종 등급, 점수 상향\/하향 제안, 보상 제안은 절대 포함하지 마세요/)
+  assert.match(openAiSource, /buildExecutivePerformanceBriefingPrompt/)
+  assert.match(openAiSource, /EXECUTIVE_PERFORMANCE_BRIEFING_RESPONSE_FORMAT/)
+  assert.match(openAiSource, /ExecutivePerformanceBriefingSchema\.safeParse/)
+  assert.match(openAiSource, /fetcher\(`\$\{env\.baseUrl\}\/responses`/)
   assert.match(loaderSource, /sourceType: 'EvaluationPerformanceBriefing'/)
   assert.match(loaderSource, /normalizeEvaluationPerformanceBriefingSnapshot/)
   assert.match(clientSource, /briefing: 'AI 성과 브리핑'/)
@@ -126,4 +136,3 @@ run('workbench integrates a dedicated AI performance briefing tab and route with
 })
 
 console.log('Evaluation performance briefing tests completed')
-
