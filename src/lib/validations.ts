@@ -1468,6 +1468,10 @@ export const EvaluationAIAssistRequestSchema = z.object({
   items: z.array(EvaluationAssistItemSchema).max(50).default([]),
 })
 
+export const EvaluationPerformanceBriefingRequestSchema = z.object({
+  evaluationId: z.string().min(1).max(100),
+})
+
 export const EvaluationGuideActionSchema = z.object({
   action: z.enum(['view', 'confirm']),
 })

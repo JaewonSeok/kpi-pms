@@ -1,4 +1,5 @@
 import type {
+  AIRequestStatus,
   CycleStatus,
   EvalStage,
   EvalStatus,
@@ -11,6 +12,10 @@ import type {
 } from '@prisma/client'
 import type { Session } from 'next-auth'
 import { buildEvaluationAssistEvidenceView } from '@/lib/evaluation-ai-assist'
+import {
+  normalizeEvaluationPerformanceBriefingSnapshot,
+  type EvaluationPerformanceBriefingSnapshot,
+} from '@/lib/evaluation-performance-briefing'
 import { buildEvaluationQualityWarnings } from '@/lib/evaluation-writing-guide'
 import { prisma } from '@/lib/prisma'
 import type { SessionUserClaims } from '@/types/auth'
@@ -198,6 +203,10 @@ export type EvaluationWorkbenchPageData = {
       requestStatus: string
       approvalStatus: string
     }>
+    briefing?: {
+      canView: boolean
+      latestSnapshot?: EvaluationPerformanceBriefingSnapshot | null
+    }
     auditLogs: Array<{
       id: string
       timestamp: string
@@ -983,6 +992,7 @@ export async function getEvaluationWorkbenchPageData(
     const [
       auditLogsResult,
       aiLogsResult,
+      latestBriefingResult,
       recentMonthlyRecordsResult,
       recentCheckinsResult,
       gradeOptionsResult,
@@ -1014,6 +1024,22 @@ export async function getEvaluationWorkbenchPageData(
             },
             orderBy: { createdAt: 'desc' },
             take: 20,
+          }),
+      }),
+      loadWorkbenchSection({
+        title: 'performance briefing',
+        fallback: null as Awaited<ReturnType<typeof prisma.aiRequestLog.findFirst>> | null,
+        alert: 'AI 성과 브리핑 이력을 불러오지 못했지만 워크벤치는 계속 사용할 수 있습니다.',
+        load: () =>
+          prisma.aiRequestLog.findFirst({
+            where: {
+              sourceType: 'EvaluationPerformanceBriefing',
+              sourceId: selectedEvaluation.id,
+              requestStatus: {
+                in: ['SUCCESS', 'FALLBACK', 'DISABLED'] as AIRequestStatus[],
+              },
+            },
+            orderBy: { createdAt: 'desc' },
           }),
       }),
       loadWorkbenchSection({
@@ -1095,6 +1121,7 @@ export async function getEvaluationWorkbenchPageData(
 
     const auditLogs = auditLogsResult.value
     const aiLogs = aiLogsResult.value
+    const latestBriefingLog = latestBriefingResult.value
     const recentMonthlyRecords = recentMonthlyRecordsResult.value
     const recentCheckins = recentCheckinsResult.value
     const gradeOptions = gradeOptionsResult.value
@@ -1104,6 +1131,7 @@ export async function getEvaluationWorkbenchPageData(
     for (const alert of [
       auditLogsResult.alert,
       aiLogsResult.alert,
+      latestBriefingResult.alert,
       recentMonthlyRecordsResult.alert,
       recentCheckinsResult.alert,
       gradeOptionsResult.alert,
@@ -1143,6 +1171,16 @@ export async function getEvaluationWorkbenchPageData(
         checkinGoalContextByKpiId.set(discussion.kpiId, current)
       }
     }
+
+    const latestBriefingSnapshot = latestBriefingLog
+      ? normalizeEvaluationPerformanceBriefingSnapshot(latestBriefingLog.responsePayload, {
+          requestLogId: latestBriefingLog.id,
+          stale: latestBriefingLog.createdAt < selectedEvaluation.updatedAt,
+        })
+      : null
+    const canViewBriefing =
+      (sessionUser.role === 'ROLE_ADMIN' || selectedEvaluation.evaluator.id === sessionUser.id) &&
+      selectedEvaluation.evalStage !== 'SELF'
 
     pageData.selected = {
       id: selectedEvaluation.id,
@@ -1343,6 +1381,10 @@ export async function getEvaluationWorkbenchPageData(
         requestStatus: log.requestStatus,
         approvalStatus: log.approvalStatus,
       })),
+      briefing: {
+        canView: canViewBriefing,
+        latestSnapshot: latestBriefingSnapshot,
+      },
       auditLogs: auditLogs.map((log) => ({
         id: log.id,
         timestamp: formatDate(log.timestamp),

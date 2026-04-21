@@ -39,6 +39,7 @@ async function withStubbedWorkbenchData(
     feedbackRoundCount: prismaAny.multiFeedbackRound.count,
     auditLogFindMany: prismaAny.auditLog.findMany,
     aiRequestLogFindMany: prismaAny.aiRequestLog.findMany,
+    aiRequestLogFindFirst: prismaAny.aiRequestLog.findFirst,
     monthlyRecordFindMany: prismaAny.monthlyRecord.findMany,
     checkInFindMany: prismaAny.checkIn.findMany,
     gradeSettingFindMany: prismaAny.gradeSetting.findMany,
@@ -148,6 +149,7 @@ async function withStubbedWorkbenchData(
   prismaAny.multiFeedbackRound.count = overrides.feedbackRoundCount ?? (async () => 2)
   prismaAny.auditLog.findMany = overrides.auditLogFindMany ?? (async () => [])
   prismaAny.aiRequestLog.findMany = overrides.aiRequestLogFindMany ?? (async () => [])
+  prismaAny.aiRequestLog.findFirst = overrides.aiRequestLogFindFirst ?? (async () => null)
   prismaAny.monthlyRecord.findMany =
     overrides.monthlyRecordFindMany ??
     (async () => [
@@ -219,6 +221,7 @@ async function withStubbedWorkbenchData(
     prismaAny.multiFeedbackRound.count = snapshot.feedbackRoundCount
     prismaAny.auditLog.findMany = snapshot.auditLogFindMany
     prismaAny.aiRequestLog.findMany = snapshot.aiRequestLogFindMany
+    prismaAny.aiRequestLog.findFirst = snapshot.aiRequestLogFindFirst
     prismaAny.monthlyRecord.findMany = snapshot.monthlyRecordFindMany
     prismaAny.checkIn.findMany = snapshot.checkInFindMany
     prismaAny.gradeSetting.findMany = snapshot.gradeSettingFindMany

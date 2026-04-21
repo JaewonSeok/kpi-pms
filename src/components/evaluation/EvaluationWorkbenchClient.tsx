@@ -32,6 +32,11 @@ import {
   type EvaluationAssistPreview,
   type EvaluationAssistResult,
 } from '@/lib/evaluation-ai-assist'
+import {
+  normalizeEvaluationPerformanceBriefingSnapshot,
+  type EvaluationPerformanceBriefingSnapshot,
+} from '@/lib/evaluation-performance-briefing'
+import { EvaluationPerformanceBriefingPanel } from '@/components/evaluation/EvaluationPerformanceBriefingPanel'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 import {
   buildEvaluationQualityWarnings,
@@ -43,7 +48,7 @@ import {
 } from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 
-type WorkbenchTab = 'workbench' | 'guide' | 'evidence' | 'feedback' | 'ai' | 'history'
+type WorkbenchTab = 'workbench' | 'guide' | 'evidence' | 'feedback' | 'briefing' | 'ai' | 'history'
 
 type DraftItemState = {
   personalKpiId: string
@@ -65,6 +70,7 @@ const TAB_LABELS: Record<WorkbenchTab, string> = {
   guide: '평가 가이드',
   evidence: '근거 자료',
   feedback: '다면 피드백',
+  briefing: 'AI 성과 브리핑',
   ai: 'AI 보조',
   history: '제출 이력',
 }
@@ -84,6 +90,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [selectedEvidenceSection, setSelectedEvidenceSection] = useState<EvidenceSectionKey>('highlights')
   const [expandedGoalContextId, setExpandedGoalContextId] = useState<string | null>(null)
   const [guideBusy, setGuideBusy] = useState(false)
+  const [briefingBusy, setBriefingBusy] = useState(false)
+  const [briefing, setBriefing] = useState<EvaluationPerformanceBriefingSnapshot | null>(null)
   const [guideStatus, setGuideStatus] = useState({ viewed: false, confirmed: false })
   const [draftComment, setDraftComment] = useState('')
   const [draftGradeId, setDraftGradeId] = useState<string>('')
@@ -114,7 +122,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setErrorNotice('')
     setDecisionBusy(false)
     setGuideBusy(false)
+    setBriefingBusy(false)
     setPreview(null)
+    setBriefing(null)
     setAssistLoadingMode(null)
     setCopiedPreviewMode(null)
     setSelectedEvidenceSection('highlights')
@@ -141,6 +151,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setExpandedGoalContextId(null)
       setAssistMode('draft')
       setGuideBusy(false)
+      setBriefingBusy(false)
+      setBriefing(null)
       setGuideStatus({ viewed: false, confirmed: false })
       setDraftItems({})
       return
@@ -158,6 +170,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setExpandedGoalContextId(null)
     setAssistMode('draft')
     setGuideBusy(false)
+    setBriefingBusy(false)
+    setBriefing(selected.briefing?.latestSnapshot ?? null)
     guideViewRequestRef.current = null
     setDraftItems(
       Object.fromEntries(
@@ -176,6 +190,20 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       )
     )
   }, [selected])
+
+  const visibleTabs = useMemo(
+    () =>
+      (Object.keys(TAB_LABELS) as WorkbenchTab[]).filter(
+        (tab) => tab !== 'briefing' || Boolean(selected?.briefing?.canView)
+      ),
+    [selected?.briefing?.canView]
+  )
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab('workbench')
+    }
+  }, [activeTab, visibleTabs])
 
   const editableItems = useMemo(() => {
     if (!selected) return []
@@ -460,6 +488,44 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setErrorNotice(getEvaluationAssistRequestErrorMessage())
     } finally {
       setAssistLoadingMode(null)
+    }
+  }
+
+  async function handleGenerateBriefing() {
+    if (!selected || !selected.briefing?.canView) return
+    setNotice('')
+    setErrorNotice('')
+    setBriefingBusy(true)
+
+    try {
+      const response = await fetch('/api/ai/evaluation-briefing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          evaluationId: selected.id,
+        }),
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? 'AI 성과 브리핑을 생성하지 못했습니다.')
+      }
+
+      const nextBriefing = normalizeEvaluationPerformanceBriefingSnapshot(json.data)
+      if (!nextBriefing) {
+        throw new Error('AI 성과 브리핑 결과 형식을 확인하지 못했습니다.')
+      }
+
+      setBriefing(nextBriefing)
+      setActiveTab('briefing')
+      setNotice(
+        nextBriefing.source === 'ai'
+          ? 'AI 성과 브리핑을 생성했습니다.'
+          : '근거 기반 요약으로 AI 성과 브리핑을 준비했습니다.'
+      )
+    } catch (error) {
+      setErrorNotice(error instanceof Error ? error.message : 'AI 성과 브리핑을 생성하지 못했습니다.')
+    } finally {
+      setBriefingBusy(false)
     }
   }
 
@@ -789,7 +855,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
               <div className="overflow-x-auto">
                 <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-                  {(Object.keys(TAB_LABELS) as WorkbenchTab[]).map((tab) => (
+                  {visibleTabs.map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -1088,6 +1154,16 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     )) : <EmptyBlock message="연결된 다면 피드백 라운드가 없습니다." />}
                   </div>
                 </Panel>
+              ) : null}
+
+              {activeTab === 'briefing' ? (
+                <EvaluationPerformanceBriefingPanel
+                  targetName={selected.target.name}
+                  snapshot={briefing}
+                  busy={briefingBusy}
+                  canGenerate={selected.briefing?.canView ?? false}
+                  onGenerate={() => void handleGenerateBriefing()}
+                />
               ) : null}
 
               {activeTab === 'ai' ? (
