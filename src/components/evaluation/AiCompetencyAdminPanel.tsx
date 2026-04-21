@@ -10,6 +10,10 @@ import {
   resolveSafeReturnTo,
 } from '@/lib/ai-competency-gate-navigation'
 import {
+  toAiCompetencyGateCycleLocalInputValue,
+  toAiCompetencyGateCyclePayload,
+} from '@/lib/ai-competency-gate-cycle-form'
+import {
   EmptyBox,
   Field,
   inputClassName,
@@ -22,7 +26,6 @@ import {
   StateScreen,
   StatusPill,
   textareaClassName,
-  toLocalDateTimeInput,
 } from './AiCompetencyShared'
 
 type NoticeState =
@@ -57,11 +60,11 @@ function buildCycleForm(data: AiCompetencyGateAdminPageData): CycleFormState {
     evalCycleId: data.selectedCycle?.evalCycleId ?? data.evalCycleOptions[0]?.id ?? '',
     cycleName: data.selectedCycle?.cycleName ?? '',
     status: (data.selectedCycle?.status as CycleFormState['status']) ?? 'DRAFT',
-    submissionOpenAt: toLocalDateTimeInput(data.selectedCycle?.submissionOpenAt),
-    submissionCloseAt: toLocalDateTimeInput(data.selectedCycle?.submissionCloseAt),
-    reviewOpenAt: toLocalDateTimeInput(data.selectedCycle?.reviewOpenAt),
-    reviewCloseAt: toLocalDateTimeInput(data.selectedCycle?.reviewCloseAt),
-    resultPublishAt: toLocalDateTimeInput(data.selectedCycle?.resultPublishAt),
+    submissionOpenAt: toAiCompetencyGateCycleLocalInputValue(data.selectedCycle?.submissionOpenAt),
+    submissionCloseAt: toAiCompetencyGateCycleLocalInputValue(data.selectedCycle?.submissionCloseAt),
+    reviewOpenAt: toAiCompetencyGateCycleLocalInputValue(data.selectedCycle?.reviewOpenAt),
+    reviewCloseAt: toAiCompetencyGateCycleLocalInputValue(data.selectedCycle?.reviewCloseAt),
+    resultPublishAt: toAiCompetencyGateCycleLocalInputValue(data.selectedCycle?.resultPublishAt),
     promotionGateEnabled: data.selectedCycle?.promotionGateEnabled ?? true,
     policyAcknowledgementText: data.selectedCycle?.policyAcknowledgementText ?? '',
   }
@@ -244,7 +247,7 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
               disabled={isPending || !hasEvalCycleOptions || !cycleForm.evalCycleId}
               onClick={() =>
                 runMutation(async () => {
-                  await callJsonAction('upsertCycle', cycleForm)
+                  await callJsonAction('upsertCycle', toAiCompetencyGateCyclePayload(cycleForm))
                   setNotice({ tone: 'success', title: 'AI 역량평가 회차를 저장했습니다.' })
                   router.refresh()
                 })
