@@ -1006,67 +1006,6 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
             : undefined,
     [busy, pageData.permissions.canCreate, selectedKpi]
   )
-  const handleEditKpi = useCallback(
-    (kpi: OrgKpiViewModel) => {
-      openEditorWithForm(buildFormFromKpi(kpi), {
-        editingId: kpi.id,
-        recommendationIndex: null,
-        draftSourceLabel: null,
-      })
-    },
-    [openEditorWithForm]
-  )
-  const handleCreateChildGoal = useCallback(
-    (parentKpi: OrgKpiViewModel) => {
-      const nextForm = {
-        ...buildEmptyForm(pageData.selectedYear, parentKpi.departmentId),
-        parentOrgKpiId: parentKpi.id,
-      }
-
-      openEditorWithForm(nextForm, {
-        recommendationIndex: null,
-        draftSourceLabel: null,
-        bannerMessage: '선택한 상위 목표 아래에 연결할 하위 목표 초안을 작성합니다.',
-      })
-    },
-    [openEditorWithForm, pageData.selectedYear]
-  )
-  const handleEditParentLink = useCallback(
-    (kpi: OrgKpiViewModel) => {
-      openEditorWithForm(buildFormFromKpi(kpi), {
-        editingId: kpi.id,
-        recommendationIndex: null,
-        draftSourceLabel: null,
-        bannerMessage: '상위 목표 연결을 수정할 수 있는 편집 모드입니다.',
-      })
-    },
-    [openEditorWithForm]
-  )
-  const handleViewLinkage = useCallback(
-    (kpiId: string) => {
-      handleSelectKpi(kpiId)
-      setTab('linkage')
-    },
-    [handleSelectKpi]
-  )
-  const handleWorkflowAction = useCallback(
-    (action: 'SUBMIT' | 'LOCK' | 'REOPEN') => {
-      void runWorkflow(action)
-    },
-    [runWorkflow]
-  )
-  const handleStatusChange = useCallback(
-    (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => {
-      void changeStatus(status)
-    },
-    [changeStatus]
-  )
-  const handleAiAction = useCallback(
-    (action: AiAction) => {
-      void requestAi(action)
-    },
-    [requestAi]
-  )
   const bulkTargetIds = useMemo(() => filteredList.map((item) => item.id), [filteredList])
   const bulkEditDisabledReason =
     goalEditLocked
@@ -1435,6 +1374,67 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
     setShowDeleteConfirm(true)
   }, [deleteActionState])
+  const handleEditKpi = useCallback(
+    (kpi: OrgKpiViewModel) => {
+      openEditorWithForm(buildFormFromKpi(kpi), {
+        editingId: kpi.id,
+        recommendationIndex: null,
+        draftSourceLabel: null,
+      })
+    },
+    [openEditorWithForm]
+  )
+  const handleCreateChildGoal = useCallback(
+    (parentKpi: OrgKpiViewModel) => {
+      const nextForm = {
+        ...buildEmptyForm(pageData.selectedYear, parentKpi.departmentId),
+        parentOrgKpiId: parentKpi.id,
+      }
+
+      openEditorWithForm(nextForm, {
+        recommendationIndex: null,
+        draftSourceLabel: null,
+        bannerMessage: '선택한 상위 목표 아래에 연결할 하위 목표 초안을 작성합니다.',
+      })
+    },
+    [openEditorWithForm, pageData.selectedYear]
+  )
+  const handleEditParentLink = useCallback(
+    (kpi: OrgKpiViewModel) => {
+      openEditorWithForm(buildFormFromKpi(kpi), {
+        editingId: kpi.id,
+        recommendationIndex: null,
+        draftSourceLabel: null,
+        bannerMessage: '상위 목표 연결을 수정할 수 있는 편집 모드입니다.',
+      })
+    },
+    [openEditorWithForm]
+  )
+  const handleViewLinkage = useCallback(
+    (kpiId: string) => {
+      handleSelectKpi(kpiId)
+      setTab('linkage')
+    },
+    [handleSelectKpi]
+  )
+  const handleWorkflowAction = useCallback(
+    (action: 'SUBMIT' | 'LOCK' | 'REOPEN') => {
+      void runWorkflow(action)
+    },
+    [runWorkflow]
+  )
+  const handleStatusChange = useCallback(
+    (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => {
+      void changeStatus(status)
+    },
+    [changeStatus]
+  )
+  const handleAiAction = useCallback(
+    (action: AiAction) => {
+      void requestAi(action)
+    },
+    [requestAi]
+  )
 
   async function handleDeleteKpi() {
     if (!selectedKpi) {
