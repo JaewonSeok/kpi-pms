@@ -171,7 +171,7 @@ run('goal map cards expose connector-capable DOM structure for expanded and coll
   assert.match(clientSource, /하위 목표 펼치기/)
   assert.match(clientSource, /하위 목표 접기/)
   assert.match(clientSource, /연결 현황 보기/)
-  assert.match(clientSource, /expandedIds=\{expandedMapNodeIds\}/)
+  assert.match(clientSource, /expandedIdSet=\{expandedMapNodeIdSet\}/)
   assert.match(clientSource, /onToggleExpand=\{toggleMapNodeExpansion\}/)
 })
 

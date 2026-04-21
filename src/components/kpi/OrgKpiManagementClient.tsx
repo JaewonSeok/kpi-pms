@@ -38,8 +38,10 @@ import {
 import {
   buildOrgKpiHierarchySelectionView,
   buildOrgKpiHierarchyStructure,
+  getOrgKpiHierarchyInteractionChangedIds,
   getOrgKpiConnectionTone,
   getOrgKpiVisibleChildren,
+  isOrgKpiHierarchyNodeAffected,
   type OrgKpiHierarchyNode,
 } from '@/lib/org-kpi-hierarchy'
 import {
@@ -733,6 +735,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     }),
     [hierarchySelection, hierarchyStructure]
   )
+  const expandedMapNodeIdSet = useMemo(() => new Set(expandedMapNodeIds), [expandedMapNodeIds])
   const aiPreviewRecommendations = useMemo(
     () =>
       aiPreview?.source === 'ai' && aiAction === 'generate-draft'
@@ -974,28 +977,96 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setExpandedMapNodeIds((current) => Array.from(new Set([...current, selectedKpiId, ...hierarchyView.ancestorIds])))
   }, [hierarchyView.ancestorIds, selectedKpiId])
 
-  const deleteActionState = getOrgKpiDeleteActionState({
-    kpi: selectedKpi
-      ? {
-          id: selectedKpi.id,
-          title: selectedKpi.title,
-          status: selectedKpi.status,
-          linkedPersonalKpiCount: selectedKpi.linkedPersonalKpiCount,
-        }
-      : null,
-    canManage: pageData.permissions.canManage,
-    goalEditLocked,
-    busy,
-  })
+  const deleteActionState = useMemo(
+    () =>
+      getOrgKpiDeleteActionState({
+        kpi: selectedKpi
+          ? {
+              id: selectedKpi.id,
+              title: selectedKpi.title,
+              status: selectedKpi.status,
+              linkedPersonalKpiCount: selectedKpi.linkedPersonalKpiCount,
+            }
+          : null,
+        canManage: pageData.permissions.canManage,
+        goalEditLocked,
+        busy,
+      }),
+    [busy, goalEditLocked, pageData.permissions.canManage, selectedKpi]
+  )
 
-  const cloneDisabledReason =
-    !selectedKpi
-      ? '복제할 조직 KPI를 먼저 선택해 주세요.'
-      : !pageData.permissions.canCreate
-        ? '현재 권한으로는 조직 KPI를 복제할 수 없습니다.'
-        : busy
-          ? '다른 작업을 처리하는 중입니다.'
-          : undefined
+  const cloneDisabledReason = useMemo(
+    () =>
+      !selectedKpi
+        ? '복제할 조직 KPI를 먼저 선택해 주세요.'
+        : !pageData.permissions.canCreate
+          ? '현재 권한으로는 조직 KPI를 복제할 수 없습니다.'
+          : busy
+            ? '다른 작업을 처리하는 중입니다.'
+            : undefined,
+    [busy, pageData.permissions.canCreate, selectedKpi]
+  )
+  const handleEditKpi = useCallback(
+    (kpi: OrgKpiViewModel) => {
+      openEditorWithForm(buildFormFromKpi(kpi), {
+        editingId: kpi.id,
+        recommendationIndex: null,
+        draftSourceLabel: null,
+      })
+    },
+    [openEditorWithForm]
+  )
+  const handleCreateChildGoal = useCallback(
+    (parentKpi: OrgKpiViewModel) => {
+      const nextForm = {
+        ...buildEmptyForm(pageData.selectedYear, parentKpi.departmentId),
+        parentOrgKpiId: parentKpi.id,
+      }
+
+      openEditorWithForm(nextForm, {
+        recommendationIndex: null,
+        draftSourceLabel: null,
+        bannerMessage: '선택한 상위 목표 아래에 연결할 하위 목표 초안을 작성합니다.',
+      })
+    },
+    [openEditorWithForm, pageData.selectedYear]
+  )
+  const handleEditParentLink = useCallback(
+    (kpi: OrgKpiViewModel) => {
+      openEditorWithForm(buildFormFromKpi(kpi), {
+        editingId: kpi.id,
+        recommendationIndex: null,
+        draftSourceLabel: null,
+        bannerMessage: '상위 목표 연결을 수정할 수 있는 편집 모드입니다.',
+      })
+    },
+    [openEditorWithForm]
+  )
+  const handleViewLinkage = useCallback(
+    (kpiId: string) => {
+      handleSelectKpi(kpiId)
+      setTab('linkage')
+    },
+    [handleSelectKpi]
+  )
+  const handleWorkflowAction = useCallback(
+    (action: 'SUBMIT' | 'LOCK' | 'REOPEN') => {
+      void runWorkflow(action)
+    },
+    [runWorkflow]
+  )
+  const handleStatusChange = useCallback(
+    (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => {
+      void changeStatus(status)
+    },
+    [changeStatus]
+  )
+  const handleAiAction = useCallback(
+    (action: AiAction) => {
+      void requestAi(action)
+    },
+    [requestAi]
+  )
   const bulkTargetIds = useMemo(() => filteredList.map((item) => item.id), [filteredList])
   const bulkEditDisabledReason =
     goalEditLocked
@@ -1190,7 +1261,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     }
   }
 
-  async function runWorkflow(action: 'SUBMIT' | 'LOCK' | 'REOPEN') {
+  const runWorkflow = useCallback(async (action: 'SUBMIT' | 'LOCK' | 'REOPEN') => {
     if (!selectedKpi) return
     setBusy(true)
     try {
@@ -1214,9 +1285,9 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     } finally {
       setBusy(false)
     }
-  }
+  }, [router, selectedKpi])
 
-  async function changeStatus(status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') {
+  const changeStatus = useCallback(async (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => {
     if (!selectedKpi) return
     setBusy(true)
     try {
@@ -1240,9 +1311,9 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     } finally {
       setBusy(false)
     }
-  }
+  }, [router, selectedKpi])
 
-  async function requestAi(action: AiAction) {
+  const requestAi = useCallback(async (action: AiAction) => {
     setBusy(true)
     setAiAction(action)
     setSelectedAiRecommendationIndex(null)
@@ -1285,9 +1356,9 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     } finally {
       setBusy(false)
     }
-  }
+  }, [editingKpiId, form, pageData, selectedKpi])
 
-  function handleOpenClone() {
+  const handleOpenClone = useCallback(() => {
     if (cloneDisabledReason || !selectedKpi) {
       setBanner({ tone: 'error', message: cloneDisabledReason ?? '복제할 조직 KPI를 먼저 선택해 주세요.' })
       return
@@ -1295,7 +1366,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
     setCloneForm(buildCloneForm(pageData, selectedKpi))
     setShowClone(true)
-  }
+  }, [cloneDisabledReason, pageData, selectedKpi])
 
   async function handleClone() {
     if (!selectedKpi) {
@@ -1353,7 +1424,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     }
   }
 
-  function handleOpenDeleteConfirm() {
+  const handleOpenDeleteConfirm = useCallback(() => {
     if (deleteActionState.disabled) {
       setBanner({
         tone: 'error',
@@ -1363,7 +1434,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     }
 
     setShowDeleteConfirm(true)
-  }
+  }, [deleteActionState])
 
   async function handleDeleteKpi() {
     if (!selectedKpi) {
@@ -1754,7 +1825,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     }
   }
 
-  function closeEditorModal() {
+  const closeEditorModal = useCallback(() => {
     setShowForm(false)
     setEditingKpiId(null)
     setPendingRecommendationDecision(null)
@@ -1764,22 +1835,22 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setPendingAiRecommendationIndex(null)
     setShowEditorCloseConfirm(false)
     setForm(buildEmptyForm(pageData.selectedYear, activeTeamDepartmentId))
-  }
+  }, [activeTeamDepartmentId, pageData.selectedYear])
 
-  function closeEditorModalWithRetentionNotice() {
+  const closeEditorModalWithRetentionNotice = useCallback(() => {
     closeEditorModal()
     if (aiPreviewRecommendations.length) {
       setShowAiRecommendationRetainedNotice(true)
     }
-  }
+  }, [aiPreviewRecommendations.length, closeEditorModal])
 
-  function openEditorWithForm(nextForm: FormState, options: {
+  const openEditorWithForm = useCallback((nextForm: FormState, options: {
     recommendationIndex?: number | null
     draftSourceLabel?: string | null
     editingId?: string | null
     pendingDecision?: PendingRecommendationDecision | null
     bannerMessage?: string | null
-  }) {
+  }) => {
     setEditingKpiId(options.editingId ?? null)
     setPendingRecommendationDecision(options.pendingDecision ?? null)
     setSelectedAiRecommendationIndex(options.recommendationIndex ?? null)
@@ -1797,9 +1868,9 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
         message: options.bannerMessage,
       })
     }
-  }
+  }, [])
 
-  function applyAiPreviewRecommendationSelection(index: number) {
+  const applyAiPreviewRecommendationSelection = useCallback((index: number) => {
     const item = aiPreviewRecommendations[index]
 
     if (!item) {
@@ -1818,16 +1889,16 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     })
 
     return true
-  }
+  }, [activeTeamDepartmentId, aiPreviewRecommendations, openEditorWithForm, pageData.selectedYear])
 
-  function openAiPreviewRecommendationEditor(item: KpiAiPreviewRecommendation, index: number) {
+  const openAiPreviewRecommendationEditor = useCallback((item: KpiAiPreviewRecommendation, index: number) => {
     const nextForm = buildOrgKpiFormFromAiRecommendation(item, pageData.selectedYear, activeTeamDepartmentId)
     openEditorWithForm(nextForm, {
       recommendationIndex: index,
       draftSourceLabel: buildOrgKpiAiRecommendationSourceLabel(index),
       bannerMessage: `AI 추천안 ${index + 1}을 초안에 반영했습니다.`,
     })
-  }
+  }, [activeTeamDepartmentId, openEditorWithForm, pageData.selectedYear])
 
   function handleAiRecommendationSelection(index: number) {
     if (!aiPreviewRecommendations.length) {
@@ -1871,14 +1942,14 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     )
   }, [])
 
-  function openDirectKpiCreate() {
+  const openDirectKpiCreate = useCallback(() => {
     const nextForm = buildEmptyForm(pageData.selectedYear, activeTeamDepartmentId)
     openEditorWithForm(nextForm, {
       recommendationIndex: null,
       draftSourceLabel: null,
       bannerMessage: '직접 팀 KPI를 작성하는 편집 모드입니다.',
     })
-  }
+  }, [activeTeamDepartmentId, openEditorWithForm, pageData.selectedYear])
 
   function openRecommendationEditor(
     item: OrgKpiTeamRecommendationItemView,
@@ -2056,37 +2127,16 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                   selectedKpiId={activeKpiId || selectedKpi?.id || null}
                   ancestorIds={hierarchyView.ancestorIds}
                   descendantIds={hierarchyView.descendantIds}
-                  expandedIds={expandedMapNodeIds}
+                  expandedIdSet={expandedMapNodeIdSet}
                   onToggleExpand={toggleMapNodeExpansion}
                   onSelectKpi={handleSelectKpi}
                   canCreate={!isReadOnlyMemberView && pageData.permissions.canCreate && !goalEditLocked}
                   canManage={pageData.permissions.canManage}
                   readOnly={isReadOnlyMemberView}
                   goalEditLocked={goalEditLocked}
-                  onCreateChildGoal={(parentKpi) => {
-                    const nextForm = {
-                      ...buildEmptyForm(pageData.selectedYear, parentKpi.departmentId),
-                      parentOrgKpiId: parentKpi.id,
-                    }
-
-                    openEditorWithForm(nextForm, {
-                      recommendationIndex: null,
-                      draftSourceLabel: null,
-                      bannerMessage: '선택한 상위 목표 아래에 연결할 하위 목표 초안을 작성합니다.',
-                    })
-                  }}
-                  onEditParentLink={(kpi) => {
-                    openEditorWithForm(buildFormFromKpi(kpi), {
-                      editingId: kpi.id,
-                      recommendationIndex: null,
-                      draftSourceLabel: null,
-                      bannerMessage: '상위 목표 연결을 수정할 수 있는 편집 모드입니다.',
-                    })
-                  }}
-                  onViewLinkage={(kpiId) => {
-                    handleSelectKpi(kpiId)
-                    setTab('linkage')
-                  }}
+                  onCreateChildGoal={handleCreateChildGoal}
+                  onEditParentLink={handleEditParentLink}
+                  onViewLinkage={handleViewLinkage}
                 />
               </div>
 
@@ -2100,18 +2150,12 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 busy={busy}
                 cloneDisabledReason={cloneDisabledReason}
                 deleteActionState={deleteActionState}
-                onEdit={(kpi) => {
-                  openEditorWithForm(buildFormFromKpi(kpi), {
-                    editingId: kpi.id,
-                    recommendationIndex: null,
-                    draftSourceLabel: null,
-                  })
-                }}
+                onEdit={handleEditKpi}
                 onClone={handleOpenClone}
                 onDelete={handleOpenDeleteConfirm}
-                onWorkflow={(action) => void runWorkflow(action)}
-                onStatus={(status) => void changeStatus(status)}
-                onAi={(action) => void requestAi(action)}
+                onWorkflow={handleWorkflowAction}
+                onStatus={handleStatusChange}
+                onAi={handleAiAction}
                 onSelectRelatedKpi={handleSelectKpi}
               />
             </div>
@@ -2158,18 +2202,12 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 busy={busy}
                 cloneDisabledReason={cloneDisabledReason}
                 deleteActionState={deleteActionState}
-                onEdit={(kpi) => {
-                  openEditorWithForm(buildFormFromKpi(kpi), {
-                    editingId: kpi.id,
-                    recommendationIndex: null,
-                    draftSourceLabel: null,
-                  })
-                }}
+                onEdit={handleEditKpi}
                 onClone={handleOpenClone}
                 onDelete={handleOpenDeleteConfirm}
-                onWorkflow={(action) => void runWorkflow(action)}
-                onStatus={(status) => void changeStatus(status)}
-                onAi={(action) => void requestAi(action)}
+                onWorkflow={handleWorkflowAction}
+                onStatus={handleStatusChange}
+                onAi={handleAiAction}
                 onSelectRelatedKpi={handleSelectKpi}
               />
             </div>
@@ -2751,13 +2789,168 @@ function summarizeChildGoalConnections(children: OrgKpiViewModel[]) {
   }
 }
 
+type OrgKpiHierarchyNodeCardProps = {
+  node: OrgKpiHierarchyNode
+  selectedKpiId: string | null
+  ancestorIds: Set<string>
+  descendantIds: Set<string>
+  expandedIdSet: Set<string>
+  onToggleExpand: (kpiId: string) => void
+  onSelectKpi: (kpiId: string) => void
+  onViewLinkage: (kpiId: string) => void
+  onCreateChildGoal: (parentKpi: OrgKpiViewModel) => void
+  onEditParentLink: (kpi: OrgKpiViewModel) => void
+  canCreate: boolean
+  canManage: boolean
+  readOnly: boolean
+  goalEditLocked: boolean
+}
+
+type OrgKpiDisconnectedCardProps = {
+  kpi: OrgKpiViewModel
+  isSelected: boolean
+  isExpanded: boolean
+  onToggleExpand: (kpiId: string) => void
+  onSelectKpi: (kpiId: string) => void
+  onViewLinkage: (kpiId: string) => void
+  onCreateChildGoal: (parentKpi: OrgKpiViewModel) => void
+  onEditParentLink: (kpi: OrgKpiViewModel) => void
+  canCreate: boolean
+  canManage: boolean
+  readOnly: boolean
+  goalEditLocked: boolean
+}
+
+function areOrgKpiHierarchyNodeCardPropsEqual(
+  prevProps: Readonly<OrgKpiHierarchyNodeCardProps>,
+  nextProps: Readonly<OrgKpiHierarchyNodeCardProps>
+) {
+  if (prevProps.node !== nextProps.node) return false
+  if (prevProps.canCreate !== nextProps.canCreate) return false
+  if (prevProps.canManage !== nextProps.canManage) return false
+  if (prevProps.readOnly !== nextProps.readOnly) return false
+  if (prevProps.goalEditLocked !== nextProps.goalEditLocked) return false
+  if (prevProps.onToggleExpand !== nextProps.onToggleExpand) return false
+  if (prevProps.onSelectKpi !== nextProps.onSelectKpi) return false
+  if (prevProps.onViewLinkage !== nextProps.onViewLinkage) return false
+  if (prevProps.onCreateChildGoal !== nextProps.onCreateChildGoal) return false
+  if (prevProps.onEditParentLink !== nextProps.onEditParentLink) return false
+
+  const changedIds = getOrgKpiHierarchyInteractionChangedIds(
+    {
+      selectedKpiId: prevProps.selectedKpiId,
+      ancestorIds: prevProps.ancestorIds,
+      descendantIds: prevProps.descendantIds,
+      expandedIds: prevProps.expandedIdSet,
+    },
+    {
+      selectedKpiId: nextProps.selectedKpiId,
+      ancestorIds: nextProps.ancestorIds,
+      descendantIds: nextProps.descendantIds,
+      expandedIds: nextProps.expandedIdSet,
+    }
+  )
+
+  if (!changedIds.size) {
+    return true
+  }
+
+  return !isOrgKpiHierarchyNodeAffected(nextProps.node, changedIds)
+}
+
+const OrgKpiDisconnectedCard = memo(function OrgKpiDisconnectedCard(props: OrgKpiDisconnectedCardProps) {
+  const connectionBadges = useMemo(() => buildOrgKpiConnectionBadges(props.kpi), [props.kpi])
+
+  return (
+    <div
+      className={cls(
+        'rounded-2xl border px-4 py-4 transition',
+        props.isSelected ? 'border-blue-300 bg-blue-50' : 'border-amber-200 bg-white hover:bg-amber-50'
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            props.onSelectKpi(props.kpi.id)
+            props.onToggleExpand(props.kpi.id)
+          }}
+          className="min-w-0 flex-1 text-left"
+        >
+          <div className="font-semibold text-slate-900">{props.kpi.title}</div>
+          <div className="mt-1 text-sm text-slate-500">{props.kpi.departmentName}</div>
+        </button>
+        <RelationBadge tone="warning">미연결</RelationBadge>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {connectionBadges.map((badge) => (
+          <RelationBadge key={`${props.kpi.id}-${badge.label}`} tone={badge.tone}>
+            {badge.label}
+          </RelationBadge>
+        ))}
+      </div>
+      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+        <div className="text-sm font-semibold text-slate-900">상위 목표와 연결되지 않았습니다.</div>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          이 KPI는 아직 상위 목표와 정렬되지 않았습니다. 목표 구조 안에서 연결 관계를 확인해 주세요.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <MapInlineActionButton
+            label="상위 목표 연결하기"
+            onClick={() => props.onEditParentLink(props.kpi)}
+            disabled={props.readOnly || !props.canManage || props.goalEditLocked || props.kpi.status !== 'DRAFT'}
+          />
+          <MapInlineActionButton
+            label="연결 구조 보기"
+            onClick={() => {
+              props.onSelectKpi(props.kpi.id)
+              props.onToggleExpand(props.kpi.id)
+            }}
+          />
+        </div>
+      </div>
+      {props.isExpanded ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-amber-200 bg-white px-4 py-4">
+          <div className="text-sm font-semibold text-slate-900">하위 목표가 없습니다.</div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            이 목표 아래에 연결된 하위 조직 KPI가 아직 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 상태를 점검해 주세요.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <MapInlineActionButton
+              label="하위 목표 추가"
+              onClick={() => props.onCreateChildGoal(props.kpi)}
+              disabled={props.readOnly || !props.canCreate}
+            />
+            <MapInlineActionButton label="연결 상태 확인" onClick={() => props.onViewLinkage(props.kpi.id)} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.kpi === nextProps.kpi &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.isExpanded === nextProps.isExpanded &&
+    prevProps.canCreate === nextProps.canCreate &&
+    prevProps.canManage === nextProps.canManage &&
+    prevProps.readOnly === nextProps.readOnly &&
+    prevProps.goalEditLocked === nextProps.goalEditLocked &&
+    prevProps.onToggleExpand === nextProps.onToggleExpand &&
+    prevProps.onSelectKpi === nextProps.onSelectKpi &&
+    prevProps.onViewLinkage === nextProps.onViewLinkage &&
+    prevProps.onCreateChildGoal === nextProps.onCreateChildGoal &&
+    prevProps.onEditParentLink === nextProps.onEditParentLink
+  )
+})
+
 function OrgKpiHierarchyPanel(props: {
   roots: OrgKpiHierarchyNode[]
   disconnected: OrgKpiViewModel[]
   selectedKpiId: string | null
   ancestorIds: Set<string>
   descendantIds: Set<string>
-  expandedIds: string[]
+  expandedIdSet: Set<string>
   onToggleExpand: (kpiId: string) => void
   onSelectKpi: (kpiId: string) => void
   onViewLinkage: (kpiId: string) => void
@@ -2797,7 +2990,7 @@ function OrgKpiHierarchyPanel(props: {
               selectedKpiId={props.selectedKpiId}
               ancestorIds={props.ancestorIds}
               descendantIds={props.descendantIds}
-              expandedIds={props.expandedIds}
+              expandedIdSet={props.expandedIdSet}
               onToggleExpand={props.onToggleExpand}
               onSelectKpi={props.onSelectKpi}
               onViewLinkage={props.onViewLinkage}
@@ -2828,73 +3021,21 @@ function OrgKpiHierarchyPanel(props: {
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
             {props.disconnected.map((kpi) => (
-              <div
+              <OrgKpiDisconnectedCard
                 key={kpi.id}
-                className={cls(
-                  'rounded-2xl border px-4 py-4 transition',
-                  props.selectedKpiId === kpi.id
-                    ? 'border-blue-300 bg-blue-50'
-                    : 'border-amber-200 bg-white hover:bg-amber-50'
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <button
-                    type="button"
-                  onClick={() => {
-                      props.onSelectKpi(kpi.id)
-                      props.onToggleExpand(kpi.id)
-                    }}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <div className="font-semibold text-slate-900">{kpi.title}</div>
-                    <div className="mt-1 text-sm text-slate-500">{kpi.departmentName}</div>
-                  </button>
-                  <RelationBadge tone="warning">미연결</RelationBadge>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {buildOrgKpiConnectionBadges(kpi).map((badge) => (
-                    <RelationBadge key={`${kpi.id}-${badge.label}`} tone={badge.tone}>
-                      {badge.label}
-                    </RelationBadge>
-                  ))}
-                </div>
-                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-                  <div className="text-sm font-semibold text-slate-900">상위 목표와 연결되지 않았습니다.</div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    이 KPI는 아직 상위 목표와 정렬되지 않았습니다. 목표 구조 안에서 연결 관계를 확인해 주세요.
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <MapInlineActionButton
-                      label="상위 목표 연결하기"
-                      onClick={() => props.onEditParentLink(kpi)}
-                      disabled={props.readOnly || !props.canManage || props.goalEditLocked || kpi.status !== 'DRAFT'}
-                    />
-                    <MapInlineActionButton
-                      label="연결 구조 보기"
-                      onClick={() => {
-                        props.onSelectKpi(kpi.id)
-                        props.onToggleExpand(kpi.id)
-                      }}
-                    />
-                  </div>
-                </div>
-                {props.expandedIds.includes(kpi.id) ? (
-                  <div className="mt-4 rounded-2xl border border-dashed border-amber-200 bg-white px-4 py-4">
-                    <div className="text-sm font-semibold text-slate-900">하위 목표가 없습니다.</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      이 목표 아래에 연결된 하위 조직 KPI가 아직 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 상태를 점검해 주세요.
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <MapInlineActionButton
-                        label="하위 목표 추가"
-                        onClick={() => props.onCreateChildGoal(kpi)}
-                        disabled={props.readOnly || !props.canCreate}
-                      />
-                      <MapInlineActionButton label="연결 상태 확인" onClick={() => props.onViewLinkage(kpi.id)} />
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+                kpi={kpi}
+                isSelected={props.selectedKpiId === kpi.id}
+                isExpanded={props.expandedIdSet.has(kpi.id)}
+                onToggleExpand={props.onToggleExpand}
+                onSelectKpi={props.onSelectKpi}
+                onViewLinkage={props.onViewLinkage}
+                onCreateChildGoal={props.onCreateChildGoal}
+                onEditParentLink={props.onEditParentLink}
+                canCreate={props.canCreate}
+                canManage={props.canManage}
+                readOnly={props.readOnly}
+                goalEditLocked={props.goalEditLocked}
+              />
             ))}
           </div>
         </section>
@@ -2903,39 +3044,38 @@ function OrgKpiHierarchyPanel(props: {
   )
 }
 
-function OrgKpiHierarchyNodeCard(props: {
-  node: OrgKpiHierarchyNode
-  selectedKpiId: string | null
-  ancestorIds: Set<string>
-  descendantIds: Set<string>
-  expandedIds: string[]
-  onToggleExpand: (kpiId: string) => void
-  onSelectKpi: (kpiId: string) => void
-  onViewLinkage: (kpiId: string) => void
-  onCreateChildGoal: (parentKpi: OrgKpiViewModel) => void
-  onEditParentLink: (kpi: OrgKpiViewModel) => void
-  canCreate: boolean
-  canManage: boolean
-  readOnly: boolean
-  goalEditLocked: boolean
-}) {
+const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: OrgKpiHierarchyNodeCardProps) {
   const { node } = props
   const isSelected = props.selectedKpiId === node.kpi.id
   const isAncestor = props.ancestorIds.has(node.kpi.id)
   const isDescendant = props.descendantIds.has(node.kpi.id)
-  const isExpanded = props.expandedIds.includes(node.kpi.id)
+  const isExpanded = props.expandedIdSet.has(node.kpi.id)
   const totalChildCount = Math.max(node.kpi.childOrgKpiCount, node.children.length)
   const hiddenChildCount = Math.max(totalChildCount - node.children.length, 0)
   const hasVisibleChildren = node.children.length > 0
   const hasChildren = totalChildCount > 0
-  const structureStatusBadge = getOrgKpiStructureStatusBadge(node.kpi)
-  const parentLinkBadge = getOrgKpiParentLinkBadge(node.kpi)
-  const childGoalBadge = getOrgKpiChildGoalBadge(node.kpi)
-  const personalLinkBadge = getOrgKpiPersonalLinkBadge(node.kpi)
-  const coverageBadge = getOrgKpiCoverageBadge(node.kpi)
-  const monthlyBadge = getOrgKpiRecentMonthlyBadge(node.kpi)
-  const childGoalSummary = summarizeChildGoalConnections(node.children.map((child) => child.kpi))
-  const tone = getOrgKpiConnectionTone(node.kpi)
+  const {
+    structureStatusBadge,
+    parentLinkBadge,
+    childGoalBadge,
+    personalLinkBadge,
+    coverageBadge,
+    monthlyBadge,
+    tone,
+    childGoalSummary,
+  } = useMemo(
+    () => ({
+      structureStatusBadge: getOrgKpiStructureStatusBadge(node.kpi),
+      parentLinkBadge: getOrgKpiParentLinkBadge(node.kpi),
+      childGoalBadge: getOrgKpiChildGoalBadge(node.kpi),
+      personalLinkBadge: getOrgKpiPersonalLinkBadge(node.kpi),
+      coverageBadge: getOrgKpiCoverageBadge(node.kpi),
+      monthlyBadge: getOrgKpiRecentMonthlyBadge(node.kpi),
+      tone: getOrgKpiConnectionTone(node.kpi),
+      childGoalSummary: summarizeChildGoalConnections(node.children.map((child) => child.kpi)),
+    }),
+    [node]
+  )
   const toneClass =
     tone === 'critical'
       ? 'border-red-200 bg-red-50/80'
@@ -2944,10 +3084,21 @@ function OrgKpiHierarchyNodeCard(props: {
         : tone === 'linked'
           ? 'border-emerald-200 bg-white'
           : 'border-slate-200 bg-white'
-  const handleCardClick = () => {
+  const handleCardClick = useCallback(() => {
     props.onSelectKpi(node.kpi.id)
     props.onToggleExpand(node.kpi.id)
-  }
+  }, [node.kpi.id, props.onSelectKpi, props.onToggleExpand])
+  const handleJumpToParent = useCallback(() => {
+    if (node.kpi.parentOrgKpiId) {
+      props.onSelectKpi(node.kpi.parentOrgKpiId)
+    }
+  }, [node.kpi.parentOrgKpiId, props.onSelectKpi])
+  const handleViewLinkage = useCallback(() => {
+    props.onViewLinkage(node.kpi.id)
+  }, [node.kpi.id, props.onViewLinkage])
+  const handleCreateChildGoal = useCallback(() => {
+    props.onCreateChildGoal(node.kpi)
+  }, [node.kpi, props.onCreateChildGoal])
   const childSummaryLabel = hasChildren ? `하위 목표 ${totalChildCount}개` : '하위 목표 없음'
   const childConnectionSummaryLabel =
     hiddenChildCount > 0
@@ -2960,7 +3111,15 @@ function OrgKpiHierarchyNodeCard(props: {
 
   return (
     <div className={cls('relative', node.depth > 0 ? 'pl-1 sm:pl-2' : '')}>
-      <div className={cls('rounded-2xl border px-4 py-4 transition', toneClass, isSelected ? 'border-blue-400 bg-blue-50 shadow-sm' : '', isAncestor ? 'ring-1 ring-blue-200' : '', isDescendant ? 'ring-1 ring-emerald-200' : '')}>
+      <div
+        className={cls(
+          'rounded-2xl border px-4 py-4 transition',
+          toneClass,
+          isSelected ? 'border-blue-400 bg-blue-50 shadow-sm' : '',
+          isAncestor ? 'ring-1 ring-blue-200' : '',
+          isDescendant ? 'ring-1 ring-emerald-200' : ''
+        )}
+      >
         <div
           role="button"
           tabIndex={0}
@@ -3013,9 +3172,7 @@ function OrgKpiHierarchyNodeCard(props: {
           {node.kpi.riskFlags.some((flag) => flag.includes('cascade')) ? (
             <RelationBadge tone="warning">cascade 후보 부족</RelationBadge>
           ) : null}
-          {structureStatusBadge.label === '주의' ? (
-            <RelationBadge tone="warning">연결 주의</RelationBadge>
-          ) : null}
+          {structureStatusBadge.label === '주의' ? <RelationBadge tone="warning">연결 주의</RelationBadge> : null}
         </div>
         <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-2xl bg-white px-3 py-2">
@@ -3032,7 +3189,9 @@ function OrgKpiHierarchyNodeCard(props: {
           </div>
           <div className="rounded-2xl bg-white px-3 py-2">
             <div className="font-semibold text-slate-700">최근 월간 실적</div>
-            <div className="mt-1">{node.kpi.recentMonthlyRecords.length ? '최근 월간 실적 반영' : '최근 월간 실적 없음'}</div>
+            <div className="mt-1">
+              {node.kpi.recentMonthlyRecords.length ? '최근 월간 실적 반영' : '최근 월간 실적 없음'}
+            </div>
           </div>
           {node.kpi.owner ? (
             <div className="rounded-2xl bg-white px-3 py-2">
@@ -3045,33 +3204,25 @@ function OrgKpiHierarchyNodeCard(props: {
           ) : null}
           <div className="rounded-2xl bg-white px-3 py-2">
             <div className="font-semibold text-slate-700">상위 목표</div>
-            <div className="mt-1">
-              {node.kpi.parentOrgKpiTitle ? node.kpi.parentOrgKpiTitle : '상위 목표 없음'}
-            </div>
+            <div className="mt-1">{node.kpi.parentOrgKpiTitle ? node.kpi.parentOrgKpiTitle : '상위 목표 없음'}</div>
           </div>
           <div className="rounded-2xl bg-white px-3 py-2">
             <div className="font-semibold text-slate-700">연결 리스크</div>
-            <div className="mt-1">
-              {node.kpi.riskFlags.length ? node.kpi.riskFlags.join(' / ') : '정상 연결'}
-            </div>
+            <div className="mt-1">{node.kpi.riskFlags.length ? node.kpi.riskFlags.join(' / ') : '정상 연결'}</div>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <MapInlineActionButton label="상세 보기" onClick={() => props.onSelectKpi(node.kpi.id)} />
           <MapInlineActionButton
             label="상위 목표로 이동"
-            onClick={() => {
-              if (node.kpi.parentOrgKpiId) {
-                props.onSelectKpi(node.kpi.parentOrgKpiId)
-              }
-            }}
+            onClick={handleJumpToParent}
             disabled={!node.kpi.parentOrgKpiId}
           />
           <MapInlineActionButton
             label={isExpanded ? '하위 목표 접기' : '하위 목표 펼치기'}
             onClick={handleCardClick}
           />
-          <MapInlineActionButton label="연결 현황 보기" onClick={() => props.onViewLinkage(node.kpi.id)} />
+          <MapInlineActionButton label="연결 현황 보기" onClick={handleViewLinkage} />
         </div>
       </div>
 
@@ -3102,95 +3253,103 @@ function OrgKpiHierarchyNodeCard(props: {
             className="pointer-events-none absolute left-3 -top-3 h-8 border-l-2 border-dotted border-slate-400"
           />
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">하위 목표</div>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                현재 선택한 상위 목표 아래에 연결된 조직 KPI입니다. 각 목표의 연결 상태와 실행 준비도를 확인할 수 있습니다.
-              </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">하위 목표</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  현재 선택한 상위 목표 아래에 연결된 조직 KPI입니다. 각 목표의 연결 상태와 실행 준비도를 확인할 수 있습니다.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <RelationBadge tone="linked">하위 목표 {totalChildCount}개</RelationBadge>
+                <RelationBadge tone={childGoalSummary.disconnectedCount > 0 ? 'warning' : 'linked'}>
+                  {childConnectionSummaryLabel}
+                </RelationBadge>
+                <RelationBadge
+                  tone={
+                    childGoalSummary.averageCoverage >= 70
+                      ? 'linked'
+                      : childGoalSummary.averageCoverage > 0
+                        ? 'warning'
+                        : 'neutral'
+                  }
+                >
+                  {childCoverageSummaryLabel}
+                </RelationBadge>
+                {hiddenChildCount > 0 ? <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge> : null}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <RelationBadge tone="linked">하위 목표 {totalChildCount}개</RelationBadge>
-              <RelationBadge tone={childGoalSummary.disconnectedCount > 0 ? 'warning' : 'linked'}>
-                {childConnectionSummaryLabel}
-              </RelationBadge>
-              <RelationBadge tone={childGoalSummary.averageCoverage >= 70 ? 'linked' : childGoalSummary.averageCoverage > 0 ? 'warning' : 'neutral'}>
-                {childCoverageSummaryLabel}
-              </RelationBadge>
-              {hiddenChildCount > 0 ? <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge> : null}
-            </div>
-          </div>
 
-          {hasVisibleChildren ? (
-            <div className="relative mt-4 pl-8" data-testid="org-kpi-connector-branch-group">
-              <span
-                aria-hidden="true"
-                data-testid="org-kpi-connector-trunk"
-                className="pointer-events-none absolute left-2 top-0 bottom-6 border-l-2 border-dotted border-slate-400"
-              />
-              <div className="space-y-3">
-              {node.children.map((child) => (
-                <div key={child.kpi.id} className="relative pl-6" data-testid="org-kpi-connector-branch">
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-2 top-10 w-6 border-t-2 border-dotted border-slate-400"
-                  />
-                  <OrgKpiHierarchyNodeCard
-                    node={child}
-                    selectedKpiId={props.selectedKpiId}
-                    ancestorIds={props.ancestorIds}
-                    descendantIds={props.descendantIds}
-                    expandedIds={props.expandedIds}
-                    onToggleExpand={props.onToggleExpand}
-                    onSelectKpi={props.onSelectKpi}
-                    onViewLinkage={props.onViewLinkage}
-                    onCreateChildGoal={props.onCreateChildGoal}
-                    onEditParentLink={props.onEditParentLink}
-                    canCreate={props.canCreate}
-                    canManage={props.canManage}
-                    readOnly={props.readOnly}
-                    goalEditLocked={props.goalEditLocked}
-                  />
-                </div>
-              ))}
-              </div>
-            </div>
-          ) : hiddenChildCount > 0 ? (
-            <div
-              className="mt-4 rounded-2xl border border-dotted border-slate-300 bg-white px-4 py-4"
-              data-testid="org-kpi-filtered-child-hint"
-            >
-              <div className="text-sm font-semibold text-slate-900">필터로 숨겨진 하위 목표가 있습니다.</div>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                현재 검색 또는 부서 범위에서는 일부 하위 목표가 보이지 않습니다. 필터를 조정하면 점선 연결 구조를 다시 확인할 수 있습니다.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge>
-                <MapInlineActionButton label="연결 현황 보기" onClick={() => props.onViewLinkage(node.kpi.id)} />
-              </div>
-            </div>
-          ) : (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4">
-              <div className="text-sm font-semibold text-slate-900">하위 목표가 없습니다.</div>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                이 목표 아래에 연결된 하위 조직 KPI가 아직 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 상태를 점검해 주세요.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <MapInlineActionButton
-                  label="하위 목표 추가"
-                  onClick={() => props.onCreateChildGoal(node.kpi)}
-                  disabled={props.readOnly || !props.canCreate}
+            {hasVisibleChildren ? (
+              <div className="relative mt-4 pl-8" data-testid="org-kpi-connector-branch-group">
+                <span
+                  aria-hidden="true"
+                  data-testid="org-kpi-connector-trunk"
+                  className="pointer-events-none absolute bottom-6 left-2 top-0 border-l-2 border-dotted border-slate-400"
                 />
-                <MapInlineActionButton label="연결 상태 확인" onClick={() => props.onViewLinkage(node.kpi.id)} />
+                <div className="space-y-3">
+                  {node.children.map((child) => (
+                    <div key={child.kpi.id} className="relative pl-6" data-testid="org-kpi-connector-branch">
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute left-2 top-10 w-6 border-t-2 border-dotted border-slate-400"
+                      />
+                      <OrgKpiHierarchyNodeCard
+                        node={child}
+                        selectedKpiId={props.selectedKpiId}
+                        ancestorIds={props.ancestorIds}
+                        descendantIds={props.descendantIds}
+                        expandedIdSet={props.expandedIdSet}
+                        onToggleExpand={props.onToggleExpand}
+                        onSelectKpi={props.onSelectKpi}
+                        onViewLinkage={props.onViewLinkage}
+                        onCreateChildGoal={props.onCreateChildGoal}
+                        onEditParentLink={props.onEditParentLink}
+                        canCreate={props.canCreate}
+                        canManage={props.canManage}
+                        readOnly={props.readOnly}
+                        goalEditLocked={props.goalEditLocked}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            ) : hiddenChildCount > 0 ? (
+              <div
+                className="mt-4 rounded-2xl border border-dotted border-slate-300 bg-white px-4 py-4"
+                data-testid="org-kpi-filtered-child-hint"
+              >
+                <div className="text-sm font-semibold text-slate-900">필터로 숨겨진 하위 목표가 있습니다.</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  현재 검색 또는 부서 범위에서는 일부 하위 목표가 보이지 않습니다. 필터를 조정하면 점선 연결 구조를 다시 확인할 수 있습니다.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge>
+                  <MapInlineActionButton label="연결 현황 보기" onClick={handleViewLinkage} />
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4">
+                <div className="text-sm font-semibold text-slate-900">하위 목표가 없습니다.</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  이 목표 아래에 연결된 하위 조직 KPI가 아직 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 상태를 점검해 주세요.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <MapInlineActionButton
+                    label="하위 목표 추가"
+                    onClick={handleCreateChildGoal}
+                    disabled={props.readOnly || !props.canCreate}
+                  />
+                  <MapInlineActionButton label="연결 상태 확인" onClick={handleViewLinkage} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : null}
     </div>
   )
-}
+}, areOrgKpiHierarchyNodeCardPropsEqual)
 
 function InfoNoticeCard({ title, description }: { title: string; description: string }) {
   return (
@@ -3241,7 +3400,7 @@ function ConfirmActionDialog({
   )
 }
 
-function KpiDetailCard(props: {
+type KpiDetailCardProps = {
   kpi: OrgKpiViewModel | null
   parentKpi: OrgKpiViewModel | null
   childKpis: OrgKpiViewModel[]
@@ -3258,7 +3417,9 @@ function KpiDetailCard(props: {
   onStatus: (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => void
   onAi: (action: AiAction) => void
   onSelectRelatedKpi?: (kpiId: string) => void
-}) {
+}
+
+const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
   const { kpi } = props
   const goalEditLocked = props.goalEditLocked ?? false
   const isReadOnly = props.readOnly ?? false
@@ -3623,7 +3784,27 @@ function KpiDetailCard(props: {
       </div>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.kpi === nextProps.kpi &&
+    prevProps.parentKpi === nextProps.parentKpi &&
+    prevProps.childKpis === nextProps.childKpis &&
+    prevProps.permissions === nextProps.permissions &&
+    (prevProps.readOnly ?? false) === (nextProps.readOnly ?? false) &&
+    (prevProps.goalEditLocked ?? false) === (nextProps.goalEditLocked ?? false) &&
+    prevProps.busy === nextProps.busy &&
+    prevProps.cloneDisabledReason === nextProps.cloneDisabledReason &&
+    prevProps.deleteActionState.disabled === nextProps.deleteActionState.disabled &&
+    prevProps.deleteActionState.reason === nextProps.deleteActionState.reason &&
+    prevProps.onEdit === nextProps.onEdit &&
+    prevProps.onClone === nextProps.onClone &&
+    prevProps.onDelete === nextProps.onDelete &&
+    prevProps.onWorkflow === nextProps.onWorkflow &&
+    prevProps.onStatus === nextProps.onStatus &&
+    prevProps.onAi === nextProps.onAi &&
+    prevProps.onSelectRelatedKpi === nextProps.onSelectRelatedKpi
+  )
+})
 
 function DeleteOrgKpiDialog(props: {
   kpi: OrgKpiViewModel | null

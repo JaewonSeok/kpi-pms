@@ -3,6 +3,7 @@ import type { OrgKpiViewModel } from '@/server/org-kpi-page'
 export type OrgKpiHierarchyNode = {
   kpi: OrgKpiViewModel
   children: OrgKpiHierarchyNode[]
+  subtreeIds: Set<string>
   depth: number
   isOrphan: boolean
   isDisconnected: boolean
@@ -25,6 +26,13 @@ export type OrgKpiHierarchyStructureView = {
 export type OrgKpiHierarchySelectionView = {
   ancestorIds: Set<string>
   descendantIds: Set<string>
+}
+
+export type OrgKpiHierarchyInteractionState = {
+  selectedKpiId: string | null
+  ancestorIds: ReadonlySet<string>
+  descendantIds: ReadonlySet<string>
+  expandedIds: ReadonlySet<string>
 }
 
 function matchesSearch(item: OrgKpiViewModel, search: string) {
@@ -109,10 +117,17 @@ export function buildOrgKpiHierarchyStructure(params: {
     const children = sortItems(childrenByParentId.get(item.id) ?? [])
       .filter((child) => visibleIds.has(child.id) && !disconnectedIds.has(child.id))
       .map((child) => buildNode(child, depth + 1))
+    const subtreeIds = new Set<string>([item.id])
+    children.forEach((child) => {
+      child.subtreeIds.forEach((subtreeId) => {
+        subtreeIds.add(subtreeId)
+      })
+    })
 
     return {
       kpi: item,
       children,
+      subtreeIds,
       depth,
       isOrphan: isOrphan(item),
       isDisconnected:
@@ -206,6 +221,68 @@ export function buildOrgKpiHierarchyView(params: {
       selectedKpiId: params.selectedKpiId,
     }),
   }
+}
+
+function addSymmetricDifference(
+  target: Set<string>,
+  before: ReadonlySet<string>,
+  after: ReadonlySet<string>
+) {
+  before.forEach((value) => {
+    if (!after.has(value)) {
+      target.add(value)
+    }
+  })
+  after.forEach((value) => {
+    if (!before.has(value)) {
+      target.add(value)
+    }
+  })
+}
+
+export function getOrgKpiHierarchyInteractionChangedIds(
+  before: OrgKpiHierarchyInteractionState,
+  after: OrgKpiHierarchyInteractionState
+) {
+  const changedIds = new Set<string>()
+
+  if (before.selectedKpiId && before.selectedKpiId !== after.selectedKpiId) {
+    changedIds.add(before.selectedKpiId)
+  }
+  if (after.selectedKpiId && before.selectedKpiId !== after.selectedKpiId) {
+    changedIds.add(after.selectedKpiId)
+  }
+
+  addSymmetricDifference(changedIds, before.ancestorIds, after.ancestorIds)
+  addSymmetricDifference(changedIds, before.descendantIds, after.descendantIds)
+  addSymmetricDifference(changedIds, before.expandedIds, after.expandedIds)
+
+  return changedIds
+}
+
+export function isOrgKpiHierarchyNodeAffected(node: OrgKpiHierarchyNode, changedIds: ReadonlySet<string>) {
+  for (const changedId of changedIds) {
+    if (node.subtreeIds.has(changedId)) {
+      return true
+    }
+  }
+
+  return false
+}
+
+export function countOrgKpiHierarchyNodes(nodes: OrgKpiHierarchyNode[]): number {
+  return nodes.reduce((total, node) => total + 1 + countOrgKpiHierarchyNodes(node.children), 0)
+}
+
+export function countOrgKpiHierarchyAffectedNodes(
+  nodes: OrgKpiHierarchyNode[],
+  changedIds: ReadonlySet<string>
+): number {
+  return nodes.reduce(
+    (total, node) =>
+      total + (isOrgKpiHierarchyNodeAffected(node, changedIds) ? 1 : 0) + countOrgKpiHierarchyAffectedNodes(node.children, changedIds),
+    0
+  )
 }
 
 export function getOrgKpiVisibleChildren(items: OrgKpiViewModel[], parentId: string) {

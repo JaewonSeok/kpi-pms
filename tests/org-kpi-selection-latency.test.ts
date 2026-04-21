@@ -6,6 +6,9 @@ import {
   buildOrgKpiHierarchySelectionView,
   buildOrgKpiHierarchyStructure,
   buildOrgKpiHierarchyView,
+  countOrgKpiHierarchyAffectedNodes,
+  countOrgKpiHierarchyNodes,
+  getOrgKpiHierarchyInteractionChangedIds,
 } from '../src/lib/org-kpi-hierarchy'
 
 function run(name: string, fn: () => void) {
@@ -142,6 +145,109 @@ run('org KPI client keeps immediate active selection separate from deferred deta
   assert.match(clientSource, /selectedKpiId=\{activeKpiId \|\| selectedKpi\?\.id \|\| null\}/)
   assert.match(clientSource, /<OrgKpiListItemCard/)
   assert.match(clientSource, /const OrgKpiListItemCard = memo\(function OrgKpiListItemCard/)
+})
+
+run('hierarchy interaction changes can stay inside the affected branch instead of touching the whole tree', () => {
+  const rootA = makeKpi({
+    id: 'root-a',
+    title: 'Root A',
+    departmentId: 'dept-a',
+    departmentName: 'Dept A',
+    childOrgKpiCount: 3,
+  })
+  const branchA = makeKpi({
+    id: 'branch-a',
+    title: 'Branch A',
+    departmentId: 'dept-a',
+    departmentName: 'Dept A',
+    parentOrgKpiId: 'root-a',
+    childOrgKpiCount: 2,
+  })
+  const leafA1 = makeKpi({
+    id: 'leaf-a-1',
+    title: 'Leaf A1',
+    departmentId: 'dept-a',
+    departmentName: 'Dept A',
+    parentOrgKpiId: 'branch-a',
+  })
+  const leafA2 = makeKpi({
+    id: 'leaf-a-2',
+    title: 'Leaf A2',
+    departmentId: 'dept-a',
+    departmentName: 'Dept A',
+    parentOrgKpiId: 'branch-a',
+  })
+  const rootB = makeKpi({
+    id: 'root-b',
+    title: 'Root B',
+    departmentId: 'dept-b',
+    departmentName: 'Dept B',
+    childOrgKpiCount: 2,
+  })
+  const branchB = makeKpi({
+    id: 'branch-b',
+    title: 'Branch B',
+    departmentId: 'dept-b',
+    departmentName: 'Dept B',
+    parentOrgKpiId: 'root-b',
+    childOrgKpiCount: 1,
+  })
+  const leafB1 = makeKpi({
+    id: 'leaf-b-1',
+    title: 'Leaf B1',
+    departmentId: 'dept-b',
+    departmentName: 'Dept B',
+    parentOrgKpiId: 'branch-b',
+  })
+
+  const items = [rootA, branchA, leafA1, leafA2, rootB, branchB, leafB1]
+  const structure = buildOrgKpiHierarchyStructure({
+    items,
+    selectedDepartmentId: 'ALL',
+    search: '',
+  })
+  const beforeSelection = buildOrgKpiHierarchySelectionView({
+    items,
+    selectedKpiId: 'leaf-a-1',
+  })
+  const afterSelection = buildOrgKpiHierarchySelectionView({
+    items,
+    selectedKpiId: 'leaf-a-2',
+  })
+  const changedIds = getOrgKpiHierarchyInteractionChangedIds(
+    {
+      selectedKpiId: 'leaf-a-1',
+      ancestorIds: beforeSelection.ancestorIds,
+      descendantIds: beforeSelection.descendantIds,
+      expandedIds: new Set(['root-a', 'branch-a', 'root-b']),
+    },
+    {
+      selectedKpiId: 'leaf-a-2',
+      ancestorIds: afterSelection.ancestorIds,
+      descendantIds: afterSelection.descendantIds,
+      expandedIds: new Set(['root-a', 'branch-a', 'root-b']),
+    }
+  )
+
+  const totalNodes = countOrgKpiHierarchyNodes(structure.roots)
+  const affectedNodes = countOrgKpiHierarchyAffectedNodes(structure.roots, changedIds)
+
+  assert.equal(totalNodes, 7)
+  assert.equal(affectedNodes, 4)
+  assert.ok(affectedNodes < totalNodes)
+})
+
+run('org KPI map and detail regions are memoized behind branch-aware props', () => {
+  const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.match(clientSource, /const expandedMapNodeIdSet = useMemo\(\(\) => new Set\(expandedMapNodeIds\), \[expandedMapNodeIds\]\)/)
+  assert.match(clientSource, /function areOrgKpiHierarchyNodeCardPropsEqual/)
+  assert.match(clientSource, /const OrgKpiHierarchyNodeCard = memo\(function OrgKpiHierarchyNodeCard/)
+  assert.match(clientSource, /const OrgKpiDisconnectedCard = memo\(function OrgKpiDisconnectedCard/)
+  assert.match(clientSource, /const KpiDetailCard = memo\(function KpiDetailCard/)
+  assert.match(clientSource, /onCreateChildGoal=\{handleCreateChildGoal\}/)
+  assert.match(clientSource, /onEditParentLink=\{handleEditParentLink\}/)
+  assert.match(clientSource, /onViewLinkage=\{handleViewLinkage\}/)
 })
 
 console.log('Org KPI selection latency tests completed')
