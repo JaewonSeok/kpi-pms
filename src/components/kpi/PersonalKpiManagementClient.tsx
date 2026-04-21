@@ -2787,7 +2787,7 @@ function GoalReviewQueueSection(props: {
                 <div>
                   <div className="font-semibold">{item.title}</div>
                   <div className={`text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
-                    {item.employeeName} 쨌 {item.departmentName}
+                    {item.employeeName} · {item.departmentName}
                   </div>
                 </div>
                 <StatusBadge status={item.status} />

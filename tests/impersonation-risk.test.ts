@@ -7,6 +7,7 @@ import {
   buildImpersonationRiskHeaders,
   createImpersonationRiskCancelledError,
   createImpersonationSyncPayload,
+  decodeImpersonationHeaderValue,
   isImpersonationExpired,
   isImpersonationRiskCancelledError,
   parseImpersonationSyncPayload,
@@ -57,7 +58,10 @@ run('impersonation expiry helper detects active and expired sessions', () => {
   )
 })
 
-run('risk confirmation headers include session, action, reason, and confirmation text', () => {
+run('risk confirmation headers keep custom metadata ASCII-safe and decodable', () => {
+  const riskReason =
+    '\uc2e4\uc81c \ub2e4\uc6b4\ub85c\ub4dc \uc0ac\uc720\ub97c \ub2e4\uc2dc \uae30\ub85d\ud569\ub2c8\ub2e4.'
+  const confirmationText = '\ub2e4\uc6b4\ub85c\ub4dc'
   const headers = buildImpersonationRiskHeaders(
     {
       active: true,
@@ -68,21 +72,31 @@ run('risk confirmation headers include session, action, reason, and confirmation
       targetId: 'member-1',
       targetName: 'Member Park',
       targetEmail: 'member@rsupport.com',
-      reason: '운영 검증을 위해 대상 계정으로 로그인합니다.',
+      reason:
+        '\ub300\uc6a9 \uac80\uc99d\uc744 \uc704\ud574 \ud14c\uc2a4\ud2b8 \uacc4\uc815\uc73c\ub85c \ub85c\uadf8\uc778\ud569\ub2c8\ub2e4.',
       startedAt: '2026-04-08T00:00:00.000Z',
       expiresAt: '2026-04-08T01:00:00.000Z',
     },
     'DOWNLOAD_EXPORT',
     {
-      riskReason: '실제 다운로드 사유를 다시 기록합니다.',
-      confirmationText: '다운로드',
+      riskReason,
+      confirmationText,
     }
   )
 
   assert.equal(headers['x-impersonation-session-id'], 'imp-session-1')
   assert.equal(headers['x-impersonation-risk-action'], 'DOWNLOAD_EXPORT')
-  assert.equal(headers['x-impersonation-risk-reason'], '실제 다운로드 사유를 다시 기록합니다.')
-  assert.equal(headers['x-impersonation-confirm-text'], '다운로드')
+  assert.equal(/[^\u0000-\u00ff]/.test(headers['x-impersonation-risk-reason']), false)
+  assert.equal(headers['x-impersonation-confirm-text'], encodeURIComponent(confirmationText))
+  assert.equal(/[^\u0000-\u00ff]/.test(headers['x-impersonation-confirm-text'] ?? ''), false)
+  assert.equal(
+    decodeImpersonationHeaderValue(headers['x-impersonation-risk-reason']),
+    riskReason
+  )
+  assert.equal(
+    decodeImpersonationHeaderValue(headers['x-impersonation-confirm-text']),
+    confirmationText
+  )
 })
 
 run('sync payload roundtrip is parseable', () => {

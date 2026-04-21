@@ -43,6 +43,22 @@ export type ImpersonationRiskConfirmationPayload = {
   confirmationText?: string
 }
 
+function encodeImpersonationHeaderValue(value: string) {
+  return encodeURIComponent(value)
+}
+
+export function decodeImpersonationHeaderValue(value: string | null | undefined) {
+  if (!value) {
+    return ''
+  }
+
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
 export function buildImpersonationExpiry(startedAt = new Date()) {
   return new Date(startedAt.getTime() + IMPERSONATION_DEFAULT_TTL_MINUTES * 60_000)
 }
@@ -71,9 +87,13 @@ export function buildImpersonationRiskHeaders(
   return {
     [IMPERSONATION_HEADERS.sessionId]: masterLogin.sessionId,
     [IMPERSONATION_HEADERS.actionName]: actionName,
-    [IMPERSONATION_HEADERS.riskReason]: confirmation.riskReason,
+    [IMPERSONATION_HEADERS.riskReason]: encodeImpersonationHeaderValue(confirmation.riskReason),
     ...(confirmation.confirmationText
-      ? { [IMPERSONATION_HEADERS.confirmationText]: confirmation.confirmationText }
+      ? {
+          [IMPERSONATION_HEADERS.confirmationText]: encodeImpersonationHeaderValue(
+            confirmation.confirmationText
+          ),
+        }
       : {}),
   }
 }

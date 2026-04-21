@@ -775,6 +775,18 @@ async function main() {
     assert.equal(source.includes('kpiId: saved.id'), true)
   })
 
+  await run('personal KPI review queue cards use a clean middle-dot separator between employee and department', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const reviewQueueStart = source.indexOf('function GoalReviewQueueSection(props: {')
+    const reviewQueueEnd = source.indexOf('function BulkEditPersonalKpiModal(', reviewQueueStart)
+    const reviewQueueBlock = source.slice(reviewQueueStart, reviewQueueEnd)
+
+    assert.notEqual(reviewQueueStart, -1)
+    assert.notEqual(reviewQueueEnd, -1)
+    assert.equal(reviewQueueBlock.includes('{item.employeeName} · {item.departmentName}'), true)
+    assert.equal(reviewQueueBlock.includes('{item.employeeName} 쨌 {item.departmentName}'), false)
+  })
+
   await run('personal KPI selection preserves scroll when syncing kpiId into the URL', () => {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
     const routeSelectionStart = source.indexOf('function handleRouteSelection(next: {')

@@ -3,6 +3,7 @@ import type { Session } from 'next-auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import {
   buildImpersonationExpiry,
+  decodeImpersonationHeaderValue,
   IMPERSONATION_HEADERS,
   IMPERSONATION_RISK_REASON_MIN_LENGTH,
   isImpersonationExpired,
@@ -167,8 +168,12 @@ export async function validateImpersonationRiskRequest(
 
   const requestedSessionId = input.request.headers.get(IMPERSONATION_HEADERS.sessionId)
   const requestedActionName = input.request.headers.get(IMPERSONATION_HEADERS.actionName)
-  const riskReason = input.request.headers.get(IMPERSONATION_HEADERS.riskReason)?.trim() ?? ''
-  const confirmationText = input.request.headers.get(IMPERSONATION_HEADERS.confirmationText)?.trim() ?? ''
+  const riskReason = decodeImpersonationHeaderValue(
+    input.request.headers.get(IMPERSONATION_HEADERS.riskReason)
+  ).trim()
+  const confirmationText = decodeImpersonationHeaderValue(
+    input.request.headers.get(IMPERSONATION_HEADERS.confirmationText)
+  ).trim()
 
   if (!requestedSessionId || requestedSessionId !== masterLogin.sessionId) {
     await fail(
