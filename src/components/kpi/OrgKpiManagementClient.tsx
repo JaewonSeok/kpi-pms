@@ -2856,7 +2856,10 @@ function OrgKpiHierarchyNodeCard(props: {
   const isAncestor = props.ancestorIds.has(node.kpi.id)
   const isDescendant = props.descendantIds.has(node.kpi.id)
   const isExpanded = props.expandedIds.includes(node.kpi.id)
-  const hasChildren = node.children.length > 0
+  const totalChildCount = Math.max(node.kpi.childOrgKpiCount, node.children.length)
+  const hiddenChildCount = Math.max(totalChildCount - node.children.length, 0)
+  const hasVisibleChildren = node.children.length > 0
+  const hasChildren = totalChildCount > 0
   const structureStatusBadge = getOrgKpiStructureStatusBadge(node.kpi)
   const parentLinkBadge = getOrgKpiParentLinkBadge(node.kpi)
   const childGoalBadge = getOrgKpiChildGoalBadge(node.kpi)
@@ -2877,10 +2880,18 @@ function OrgKpiHierarchyNodeCard(props: {
     props.onSelectKpi(node.kpi.id)
     props.onToggleExpand(node.kpi.id)
   }
-  const childSummaryLabel = hasChildren ? `하위 목표 ${node.children.length}개` : '하위 목표 없음'
+  const childSummaryLabel = hasChildren ? `하위 목표 ${totalChildCount}개` : '하위 목표 없음'
+  const childConnectionSummaryLabel =
+    hiddenChildCount > 0
+      ? `표시 중 연결 완료 ${childGoalSummary.connectedCount}개 / 미연결 ${childGoalSummary.disconnectedCount}개`
+      : `연결 완료 ${childGoalSummary.connectedCount}개 / 미연결 ${childGoalSummary.disconnectedCount}개`
+  const childCoverageSummaryLabel =
+    hiddenChildCount > 0
+      ? `표시 중 평균 coverage ${childGoalSummary.averageCoverage}%`
+      : `평균 coverage ${childGoalSummary.averageCoverage}%`
 
   return (
-    <div className={node.depth > 0 ? 'pl-2' : ''}>
+    <div className={cls('relative', node.depth > 0 ? 'pl-1 sm:pl-2' : '')}>
       <div className={cls('rounded-2xl border px-4 py-4 transition', toneClass, isSelected ? 'border-blue-400 bg-blue-50 shadow-sm' : '', isAncestor ? 'ring-1 ring-blue-200' : '', isDescendant ? 'ring-1 ring-emerald-200' : '')}>
         <div
           role="button"
@@ -2996,8 +3007,33 @@ function OrgKpiHierarchyNodeCard(props: {
         </div>
       </div>
 
+      {hasChildren && !isExpanded ? (
+        <div className="relative ml-5 mt-2 pl-6" data-testid="org-kpi-connector-preview">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 -top-2 h-5 border-l-2 border-dotted border-slate-400"
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-3 w-5 border-t-2 border-dotted border-slate-400"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center rounded-xl border border-dotted border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+              하위 목표 {totalChildCount}개 연결
+            </span>
+            {hiddenChildCount > 0 ? <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge> : null}
+          </div>
+        </div>
+      ) : null}
+
       {isExpanded ? (
-        <div className="ml-5 mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="relative ml-5 mt-3 pl-6" data-testid="org-kpi-expanded-child-section">
+          <span
+            aria-hidden="true"
+            data-testid="org-kpi-connector-parent-stem"
+            className="pointer-events-none absolute left-3 -top-3 h-8 border-l-2 border-dotted border-slate-400"
+          />
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-slate-900">하위 목표</div>
@@ -3006,37 +3042,64 @@ function OrgKpiHierarchyNodeCard(props: {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <RelationBadge tone="linked">하위 목표 {childGoalSummary.childCount}개</RelationBadge>
+              <RelationBadge tone="linked">하위 목표 {totalChildCount}개</RelationBadge>
               <RelationBadge tone={childGoalSummary.disconnectedCount > 0 ? 'warning' : 'linked'}>
-                연결 완료 {childGoalSummary.connectedCount}개 / 미연결 {childGoalSummary.disconnectedCount}개
+                {childConnectionSummaryLabel}
               </RelationBadge>
               <RelationBadge tone={childGoalSummary.averageCoverage >= 70 ? 'linked' : childGoalSummary.averageCoverage > 0 ? 'warning' : 'neutral'}>
-                평균 coverage {childGoalSummary.averageCoverage}%
+                {childCoverageSummaryLabel}
               </RelationBadge>
+              {hiddenChildCount > 0 ? <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge> : null}
             </div>
           </div>
 
-          {hasChildren ? (
-            <div className="mt-4 space-y-3 border-l border-dashed border-slate-300 pl-4">
+          {hasVisibleChildren ? (
+            <div className="relative mt-4 pl-8" data-testid="org-kpi-connector-branch-group">
+              <span
+                aria-hidden="true"
+                data-testid="org-kpi-connector-trunk"
+                className="pointer-events-none absolute left-2 top-0 bottom-6 border-l-2 border-dotted border-slate-400"
+              />
+              <div className="space-y-3">
               {node.children.map((child) => (
-                <OrgKpiHierarchyNodeCard
-                  key={child.kpi.id}
-                  node={child}
-                  selectedKpiId={props.selectedKpiId}
-                  ancestorIds={props.ancestorIds}
-                  descendantIds={props.descendantIds}
-                  expandedIds={props.expandedIds}
-                  onToggleExpand={props.onToggleExpand}
-                  onSelectKpi={props.onSelectKpi}
-                  onViewLinkage={props.onViewLinkage}
-                  onCreateChildGoal={props.onCreateChildGoal}
-                  onEditParentLink={props.onEditParentLink}
-                  canCreate={props.canCreate}
-                  canManage={props.canManage}
-                  readOnly={props.readOnly}
-                  goalEditLocked={props.goalEditLocked}
-                />
+                <div key={child.kpi.id} className="relative pl-6" data-testid="org-kpi-connector-branch">
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute left-2 top-10 w-6 border-t-2 border-dotted border-slate-400"
+                  />
+                  <OrgKpiHierarchyNodeCard
+                    node={child}
+                    selectedKpiId={props.selectedKpiId}
+                    ancestorIds={props.ancestorIds}
+                    descendantIds={props.descendantIds}
+                    expandedIds={props.expandedIds}
+                    onToggleExpand={props.onToggleExpand}
+                    onSelectKpi={props.onSelectKpi}
+                    onViewLinkage={props.onViewLinkage}
+                    onCreateChildGoal={props.onCreateChildGoal}
+                    onEditParentLink={props.onEditParentLink}
+                    canCreate={props.canCreate}
+                    canManage={props.canManage}
+                    readOnly={props.readOnly}
+                    goalEditLocked={props.goalEditLocked}
+                  />
+                </div>
               ))}
+              </div>
+            </div>
+          ) : hiddenChildCount > 0 ? (
+            <div
+              className="mt-4 rounded-2xl border border-dotted border-slate-300 bg-white px-4 py-4"
+              data-testid="org-kpi-filtered-child-hint"
+            >
+              <div className="text-sm font-semibold text-slate-900">필터로 숨겨진 하위 목표가 있습니다.</div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                현재 검색 또는 부서 범위에서는 일부 하위 목표가 보이지 않습니다. 필터를 조정하면 점선 연결 구조를 다시 확인할 수 있습니다.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge>
+                <MapInlineActionButton label="연결 현황 보기" onClick={() => props.onViewLinkage(node.kpi.id)} />
+              </div>
             </div>
           ) : (
             <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4">
@@ -3054,6 +3117,7 @@ function OrgKpiHierarchyNodeCard(props: {
               </div>
             </div>
           )}
+          </div>
         </div>
       ) : null}
     </div>

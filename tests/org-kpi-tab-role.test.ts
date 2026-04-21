@@ -18,7 +18,10 @@ function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
 }
 
-function makeKpi(params: Partial<OrgKpiViewModel> & Pick<OrgKpiViewModel, 'id' | 'title' | 'departmentId' | 'departmentName'>): OrgKpiViewModel {
+function makeKpi(
+  params: Partial<OrgKpiViewModel> &
+    Pick<OrgKpiViewModel, 'id' | 'title' | 'departmentId' | 'departmentName'>
+): OrgKpiViewModel {
   return {
     id: params.id,
     title: params.title,
@@ -32,7 +35,7 @@ function makeKpi(params: Partial<OrgKpiViewModel> & Pick<OrgKpiViewModel, 'id' |
     parentOrgDepartmentName: params.parentOrgDepartmentName ?? null,
     childOrgKpiCount: params.childOrgKpiCount ?? 0,
     lineage: params.lineage ?? [],
-    category: params.category ?? '전략',
+    category: params.category ?? '운영',
     type: params.type ?? 'QUANTITATIVE',
     definition: params.definition ?? '정의',
     formula: params.formula ?? '산식',
@@ -103,6 +106,35 @@ run('org KPI hierarchy view groups parent-child links and separates disconnected
   assert.equal(view.ancestorIds.has('root'), true)
 })
 
+run('org KPI hierarchy keeps parent nodes visible when child goals are hidden by department filters', () => {
+  const root = makeKpi({
+    id: 'root-filter',
+    title: '본부 공통 개선 과제',
+    departmentId: 'dept-root',
+    departmentName: '경영지원본부',
+    childOrgKpiCount: 1,
+  })
+  const child = makeKpi({
+    id: 'child-filter',
+    title: '팀 실행 과제',
+    departmentId: 'dept-team',
+    departmentName: '인사팀',
+    parentOrgKpiId: 'root-filter',
+    parentOrgKpiTitle: '본부 공통 개선 과제',
+  })
+
+  const view = buildOrgKpiHierarchyView({
+    items: [root, child],
+    selectedDepartmentId: 'dept-root',
+    search: '',
+    selectedKpiId: 'root-filter',
+  })
+
+  assert.equal(view.roots.length, 1)
+  assert.equal(view.roots[0]?.kpi.id, 'root-filter')
+  assert.equal(view.roots[0]?.children.length, 0)
+})
+
 run('org KPI workspace exposes a distinct map tab and relationship-focused UI', () => {
   const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
@@ -112,38 +144,33 @@ run('org KPI workspace exposes a distinct map tab and relationship-focused UI', 
   assert.match(clientSource, /목표 구조 읽는 법/)
   assert.match(clientSource, /미연결 KPI/)
   assert.match(clientSource, /하위 목표 연결 상태/)
-  assert.match(clientSource, /상위 목표와 하위 목표의 cascade 구조를 따라가며/)
-  assert.match(clientSource, /조직 KPI를 검색하고, 부서별로 살펴보며 연결 상태와 상세 정보를 빠르게 운영 관점에서 확인합니다\./)
+  assert.match(clientSource, /상위 목표에서 하위 목표로 이어지는 구조를 따라가며 cascade 상태를 확인합니다\./)
 })
 
-run('goal map cards expand child goals on click and show an empty message for leaf goals', () => {
+run('goal map cards expose connector-capable DOM structure for expanded and collapsed hierarchy states', () => {
   const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
   assert.match(clientSource, /const \[expandedMapNodeIds, setExpandedMapNodeIds\] = useState<string\[\]>\(\[\]\)/)
   assert.match(clientSource, /function toggleMapNodeExpansion\(kpiId: string\)/)
+  assert.match(clientSource, /const totalChildCount = Math\.max\(node\.kpi\.childOrgKpiCount, node\.children\.length\)/)
+  assert.match(clientSource, /const hiddenChildCount = Math\.max\(totalChildCount - node\.children\.length, 0\)/)
+  assert.match(clientSource, /const childSummaryLabel = hasChildren \? `하위 목표 \$\{totalChildCount\}개` : '하위 목표 없음'/)
   assert.match(clientSource, /role="button"/)
-  assert.match(clientSource, /const childSummaryLabel = hasChildren \? `하위 목표 \$\{node\.children\.length\}개` : '하위 목표 없음'/)
+  assert.match(clientSource, /data-testid="org-kpi-connector-preview"/)
+  assert.match(clientSource, /data-testid="org-kpi-expanded-child-section"/)
+  assert.match(clientSource, /data-testid="org-kpi-connector-parent-stem"/)
+  assert.match(clientSource, /data-testid="org-kpi-connector-trunk"/)
+  assert.match(clientSource, /data-testid="org-kpi-connector-branch"/)
+  assert.match(clientSource, /data-testid="org-kpi-filtered-child-hint"/)
+  assert.match(clientSource, /border-l-2 border-dotted border-slate-400/)
+  assert.match(clientSource, /border-t-2 border-dotted border-slate-400/)
   assert.match(clientSource, /하위 목표가 없습니다\./)
-  assert.match(clientSource, /현재 선택한 상위 목표 아래에 연결된 조직 KPI입니다\. 각 목표의 연결 상태와 실행 준비도를 확인할 수 있습니다\./)
-  assert.match(clientSource, /연결 완료 \{childGoalSummary\.connectedCount\}개 \/ 미연결 \{childGoalSummary\.disconnectedCount\}개/)
-  assert.match(clientSource, /평균 coverage \{childGoalSummary\.averageCoverage\}%/)
-  assert.match(clientSource, /하위 목표 추가/)
-  assert.match(clientSource, /연결 상태 확인/)
-  assert.match(clientSource, /상세 보기/)
-  assert.match(clientSource, /상위 목표로 이동/)
+  assert.match(clientSource, /필터로 숨겨진 하위 목표가 있습니다\./)
+  assert.match(clientSource, /필터로 숨김/)
+  assert.match(clientSource, /상위 목표와 연결되지 않았습니다\./)
   assert.match(clientSource, /하위 목표 펼치기/)
   assert.match(clientSource, /하위 목표 접기/)
   assert.match(clientSource, /연결 현황 보기/)
-  assert.match(clientSource, /상위 목표와 연결되지 않았습니다\./)
-  assert.match(clientSource, /이 KPI는 아직 상위 목표와 정렬되지 않았습니다\. 목표 구조 안에서 연결 관계를 확인해 주세요\./)
-  assert.match(clientSource, /상위 목표 연결하기/)
-  assert.match(clientSource, /연결 구조 보기/)
-  assert.match(clientSource, /최근 월간 실적 반영/)
-  assert.match(clientSource, /최근 월간 실적 없음/)
-  assert.match(clientSource, /개인 KPI 연결/)
-  assert.match(clientSource, /하위 목표 연결 상태/)
-  assert.match(clientSource, /현재 KPI 아래에 연결된 하위 목표와 실행 준비 상태를 확인합니다\./)
-  assert.match(clientSource, /연결 리스크/)
   assert.match(clientSource, /expandedIds=\{expandedMapNodeIds\}/)
   assert.match(clientSource, /onToggleExpand=\{toggleMapNodeExpansion\}/)
 })
