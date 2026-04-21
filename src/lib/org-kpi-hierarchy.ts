@@ -16,6 +16,17 @@ export type OrgKpiHierarchyView = {
   visibleIds: Set<string>
 }
 
+export type OrgKpiHierarchyStructureView = {
+  roots: OrgKpiHierarchyNode[]
+  disconnected: OrgKpiViewModel[]
+  visibleIds: Set<string>
+}
+
+export type OrgKpiHierarchySelectionView = {
+  ancestorIds: Set<string>
+  descendantIds: Set<string>
+}
+
 function matchesSearch(item: OrgKpiViewModel, search: string) {
   const needle = search.trim().toLowerCase()
   if (!needle) return true
@@ -32,12 +43,11 @@ function sortItems(items: OrgKpiViewModel[]) {
   )
 }
 
-export function buildOrgKpiHierarchyView(params: {
+export function buildOrgKpiHierarchyStructure(params: {
   items: OrgKpiViewModel[]
   selectedDepartmentId: string
   search: string
-  selectedKpiId?: string | null
-}): OrgKpiHierarchyView {
+}): OrgKpiHierarchyStructureView {
   const itemsById = new Map(params.items.map((item) => [item.id, item]))
   const childrenByParentId = new Map<string, OrgKpiViewModel[]>()
 
@@ -118,33 +128,83 @@ export function buildOrgKpiHierarchyView(params: {
     )
     .map((item) => buildNode(item, 0))
 
-  const ancestorIds = new Set<string>()
-  const descendantIds = new Set<string>()
-  if (params.selectedKpiId && itemsById.has(params.selectedKpiId)) {
-    let currentParentId = itemsById.get(params.selectedKpiId)?.parentOrgKpiId ?? null
-    const visited = new Set<string>()
-    while (currentParentId && !visited.has(currentParentId)) {
-      visited.add(currentParentId)
-      ancestorIds.add(currentParentId)
-      currentParentId = itemsById.get(currentParentId)?.parentOrgKpiId ?? null
-    }
-
-    const walkChildren = (parentId: string) => {
-      ;(childrenByParentId.get(parentId) ?? []).forEach((child) => {
-        descendantIds.add(child.id)
-        walkChildren(child.id)
-      })
-    }
-
-    walkChildren(params.selectedKpiId)
-  }
-
   return {
     roots,
     disconnected,
+    visibleIds,
+  }
+}
+
+export function buildOrgKpiHierarchySelectionView(params: {
+  items: OrgKpiViewModel[]
+  selectedKpiId?: string | null
+}): OrgKpiHierarchySelectionView {
+  const ancestorIds = new Set<string>()
+  const descendantIds = new Set<string>()
+
+  if (!params.selectedKpiId) {
+    return {
+      ancestorIds,
+      descendantIds,
+    }
+  }
+
+  const itemsById = new Map(params.items.map((item) => [item.id, item]))
+  const childrenByParentId = new Map<string, OrgKpiViewModel[]>()
+
+  params.items.forEach((item) => {
+    if (!item.parentOrgKpiId) return
+    const bucket = childrenByParentId.get(item.parentOrgKpiId) ?? []
+    bucket.push(item)
+    childrenByParentId.set(item.parentOrgKpiId, bucket)
+  })
+
+  if (!itemsById.has(params.selectedKpiId)) {
+    return {
+      ancestorIds,
+      descendantIds,
+    }
+  }
+
+  let currentParentId = itemsById.get(params.selectedKpiId)?.parentOrgKpiId ?? null
+  const visited = new Set<string>()
+  while (currentParentId && !visited.has(currentParentId)) {
+    visited.add(currentParentId)
+    ancestorIds.add(currentParentId)
+    currentParentId = itemsById.get(currentParentId)?.parentOrgKpiId ?? null
+  }
+
+  const walkChildren = (parentId: string) => {
+    ;(childrenByParentId.get(parentId) ?? []).forEach((child) => {
+      descendantIds.add(child.id)
+      walkChildren(child.id)
+    })
+  }
+
+  walkChildren(params.selectedKpiId)
+
+  return {
     ancestorIds,
     descendantIds,
-    visibleIds,
+  }
+}
+
+export function buildOrgKpiHierarchyView(params: {
+  items: OrgKpiViewModel[]
+  selectedDepartmentId: string
+  search: string
+  selectedKpiId?: string | null
+}): OrgKpiHierarchyView {
+  return {
+    ...buildOrgKpiHierarchyStructure({
+      items: params.items,
+      selectedDepartmentId: params.selectedDepartmentId,
+      search: params.search,
+    }),
+    ...buildOrgKpiHierarchySelectionView({
+      items: params.items,
+      selectedKpiId: params.selectedKpiId,
+    }),
   }
 }
 

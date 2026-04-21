@@ -85,7 +85,7 @@ run('org KPI client resets stale selection and AI state when year or department 
   assert.equal(file.includes('/api/kpi/org/team-ai/recommendations/${pendingRecommendationDecision.itemId}/decision'), true)
   assert.equal(file.includes('applySavedOrgKpiToList'), true)
   assert.equal(file.includes("nextParams.set('dept', saved.deptId)"), true)
-  assert.equal(file.includes('setSelectedKpiId(saved.id)'), true)
+  assert.equal(file.includes('commitSelectedKpi(saved.id)'), true)
 })
 
 run('notification ops client uses real test send and dead-letter actions', () => {

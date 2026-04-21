@@ -151,7 +151,7 @@ run('goal map cards expose connector-capable DOM structure for expanded and coll
   const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
   assert.match(clientSource, /const \[expandedMapNodeIds, setExpandedMapNodeIds\] = useState<string\[\]>\(\[\]\)/)
-  assert.match(clientSource, /function toggleMapNodeExpansion\(kpiId: string\)/)
+  assert.match(clientSource, /const toggleMapNodeExpansion = useCallback\(\(kpiId: string\) =>/)
   assert.match(clientSource, /const totalChildCount = Math\.max\(node\.kpi\.childOrgKpiCount, node\.children\.length\)/)
   assert.match(clientSource, /const hiddenChildCount = Math\.max\(totalChildCount - node\.children\.length, 0\)/)
   assert.match(clientSource, /const childSummaryLabel = hasChildren \? `하위 목표 \$\{totalChildCount\}개` : '하위 목표 없음'/)

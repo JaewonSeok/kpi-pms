@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Archive,
   Bot,
@@ -36,7 +36,8 @@ import {
   buildOrgKpiServerListSignature,
 } from '@/lib/org-kpi-client-state'
 import {
-  buildOrgKpiHierarchyView,
+  buildOrgKpiHierarchySelectionView,
+  buildOrgKpiHierarchyStructure,
   getOrgKpiConnectionTone,
   getOrgKpiVisibleChildren,
   type OrgKpiHierarchyNode,
@@ -633,6 +634,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
   const [selectedDepartmentId, setSelectedDepartmentId] = useState(defaultDepartmentSelection)
   const [list, setList] = useState(pageData.list)
   const [selectedKpiId, setSelectedKpiId] = useState(initialSelectedKpiId ?? pageData.list[0]?.id ?? '')
+  const [activeKpiId, setActiveKpiId] = useState(initialSelectedKpiId ?? pageData.list[0]?.id ?? '')
   const [showForm, setShowForm] = useState(false)
   const [showBulkUpload, setShowBulkUpload] = useState(false)
   const [showClone, setShowClone] = useState(false)
@@ -707,15 +709,29 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       }),
     [list, search, selectedDepartmentId]
   )
-  const hierarchyView = useMemo(
+  const hierarchyStructure = useMemo(
     () =>
-      buildOrgKpiHierarchyView({
+      buildOrgKpiHierarchyStructure({
         items: list,
         selectedDepartmentId,
         search,
+      }),
+    [list, search, selectedDepartmentId]
+  )
+  const hierarchySelection = useMemo(
+    () =>
+      buildOrgKpiHierarchySelectionView({
+        items: list,
         selectedKpiId,
       }),
-    [list, search, selectedDepartmentId, selectedKpiId]
+    [list, selectedKpiId]
+  )
+  const hierarchyView = useMemo(
+    () => ({
+      ...hierarchyStructure,
+      ...hierarchySelection,
+    }),
+    [hierarchySelection, hierarchyStructure]
   )
   const aiPreviewRecommendations = useMemo(
     () =>
@@ -746,6 +762,16 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     editorIsDirty,
     selectedAiRecommendationIndex,
   ])
+  const commitSelectedKpi = useCallback((kpiId: string) => {
+    setActiveKpiId(kpiId)
+    setSelectedKpiId(kpiId)
+  }, [])
+  const handleSelectKpi = useCallback((kpiId: string) => {
+    setActiveKpiId((current) => (current === kpiId ? current : kpiId))
+    startTransition(() => {
+      setSelectedKpiId((current) => (current === kpiId ? current : kpiId))
+    })
+  }, [])
 
   useEffect(() => {
     if (visibleTabs.includes(tab)) {
@@ -754,6 +780,10 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
     setTab(visibleTabs[0] ?? 'map')
   }, [tab, visibleTabs])
+
+  useEffect(() => {
+    setActiveKpiId((current) => (current === selectedKpiId ? current : selectedKpiId))
+  }, [selectedKpiId])
 
   useEffect(() => {
     if (previousServerContextKey.current === serverContextKey) {
@@ -778,7 +808,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setTab(defaultTab)
     setSelectedDepartmentId(nextDepartmentSelection)
     setList(pageData.list)
-    setSelectedKpiId(nextSelectedKpiId)
+    commitSelectedKpi(nextSelectedKpiId)
     setShowForm(false)
     setShowBulkUpload(false)
     setShowClone(false)
@@ -813,6 +843,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setExpandedMapNodeIds([])
     setSearch('')
   }, [
+    commitSelectedKpi,
     selectedDepartmentId,
     selectedKpiId,
     defaultDepartmentSelection,
@@ -830,7 +861,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     }
 
     previousViewContextKey.current = viewContextKey
-    setSelectedKpiId('')
+    commitSelectedKpi('')
     setShowForm(false)
     setShowBulkUpload(false)
     setShowClone(false)
@@ -863,20 +894,20 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     setShowEditorCloseConfirm(false)
     setShowAiRecommendationRetainedNotice(false)
     setExpandedMapNodeIds([])
-  }, [pageData, viewContextKey])
+  }, [commitSelectedKpi, pageData, viewContextKey])
 
   useEffect(() => {
     const selectableItems =
-      tab === 'map' ? list.filter((item) => hierarchyView.visibleIds.has(item.id)) : filteredList
+      tab === 'map' ? list.filter((item) => hierarchyStructure.visibleIds.has(item.id)) : filteredList
 
     if (!selectableItems.length) {
-      setSelectedKpiId('')
+      commitSelectedKpi('')
       return
     }
     if (!selectableItems.some((item) => item.id === selectedKpiId)) {
-      setSelectedKpiId(selectableItems[0].id)
+      commitSelectedKpi(selectableItems[0].id)
     }
-  }, [filteredList, hierarchyView.visibleIds, list, selectedKpiId, tab])
+  }, [commitSelectedKpi, filteredList, hierarchyStructure.visibleIds, list, selectedKpiId, tab])
 
   useEffect(() => {
     if (!aiPreview) return
@@ -1126,7 +1157,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
         })
       )
       setSelectedDepartmentId(saved.deptId)
-      setSelectedKpiId(saved.id)
+      commitSelectedKpi(saved.id)
       setShowForm(false)
       setEditingKpiId(null)
       setPendingRecommendationDecision(null)
@@ -1311,7 +1342,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       setShowClone(false)
       setCloneForm(buildCloneForm(pageData))
       setSelectedDepartmentId((current) => (current === 'ALL' ? current : cloned.deptId))
-      setSelectedKpiId(cloned.id)
+      commitSelectedKpi(cloned.id)
       setTab('map')
       router.push(`/kpi/org?year=${encodeURIComponent(String(cloned.evalYear))}&tab=map&kpiId=${encodeURIComponent(cloned.id)}`)
       router.refresh()
@@ -1382,7 +1413,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       })
 
       setList((current) => current.filter((item) => item.id !== selectedKpi.id))
-      setSelectedKpiId(nextSelectedId)
+      commitSelectedKpi(nextSelectedId)
       setShowDeleteConfirm(false)
       setShowForm(false)
       setShowClone(false)
@@ -1687,7 +1718,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       const createdKpi = result.createdKpi
       if (createdKpi) {
         setSelectedDepartmentId(createdKpi.deptId)
-        setSelectedKpiId(createdKpi.id)
+        commitSelectedKpi(createdKpi.id)
       }
 
       await loadTeamAiContext(createdKpi?.deptId ?? selectedDepartmentId)
@@ -1834,11 +1865,11 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
     closeEditorModalWithRetentionNotice()
   }
 
-  function toggleMapNodeExpansion(kpiId: string) {
+  const toggleMapNodeExpansion = useCallback((kpiId: string) => {
     setExpandedMapNodeIds((current) =>
       current.includes(kpiId) ? current.filter((item) => item !== kpiId) : [...current, kpiId]
     )
-  }
+  }, [])
 
   function openDirectKpiCreate() {
     const nextForm = buildEmptyForm(pageData.selectedYear, activeTeamDepartmentId)
@@ -2022,12 +2053,12 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 <OrgKpiHierarchyPanel
                   roots={hierarchyView.roots}
                   disconnected={hierarchyView.disconnected}
-                  selectedKpiId={selectedKpi?.id ?? null}
+                  selectedKpiId={activeKpiId || selectedKpi?.id || null}
                   ancestorIds={hierarchyView.ancestorIds}
                   descendantIds={hierarchyView.descendantIds}
                   expandedIds={expandedMapNodeIds}
                   onToggleExpand={toggleMapNodeExpansion}
-                  onSelectKpi={setSelectedKpiId}
+                  onSelectKpi={handleSelectKpi}
                   canCreate={!isReadOnlyMemberView && pageData.permissions.canCreate && !goalEditLocked}
                   canManage={pageData.permissions.canManage}
                   readOnly={isReadOnlyMemberView}
@@ -2053,7 +2084,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                     })
                   }}
                   onViewLinkage={(kpiId) => {
-                    setSelectedKpiId(kpiId)
+                    handleSelectKpi(kpiId)
                     setTab('linkage')
                   }}
                 />
@@ -2081,7 +2112,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 onWorkflow={(action) => void runWorkflow(action)}
                 onStatus={(status) => void changeStatus(status)}
                 onAi={(action) => void requestAi(action)}
-                onSelectRelatedKpi={setSelectedKpiId}
+                onSelectRelatedKpi={handleSelectKpi}
               />
             </div>
           </div>
@@ -2108,39 +2139,12 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="space-y-3">
                 {filteredList.length ? filteredList.map((kpi) => (
-                  <button key={kpi.id} type="button" onClick={() => setSelectedKpiId(kpi.id)} className={cls('w-full rounded-2xl border px-4 py-4 text-left transition', selectedKpi?.id === kpi.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50')}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2"><span className="font-semibold text-slate-900">{kpi.title}</span><StatusBadge status={kpi.status} /></div>
-                        <p className="mt-1 text-sm text-slate-500">{kpi.departmentName} · {kpi.category ?? '카테고리 미지정'}</p>
-                      </div>
-                      <div className="text-right text-sm text-slate-600">
-                        <div className="font-semibold text-slate-900">
-                          {formatOrgKpiTargetValues({
-                            targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
-                            targetValueT: kpi.targetValueT,
-                            targetValueE: kpi.targetValueE,
-                            targetValueS: kpi.targetValueS,
-                            unit: kpi.unit,
-                          })}
-                        </div>
-                        <div className="mt-1">가중치 {formatValue(kpi.weight)}</div>
-                      </div>
-                    </div>
-                    <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
-                      <span>상위 {kpi.parentOrgKpiTitle ? '연결됨' : '없음'}</span>
-                      <span>하위 {kpi.childOrgKpiCount}개</span>
-                      <span>coverage {formatPercent(kpi.coverageRate)}</span>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {buildOrgKpiConnectionBadges(kpi).map((badge) => (
-                        <RelationBadge key={`${kpi.id}-${badge.label}`} tone={badge.tone}>
-                          {badge.label}
-                        </RelationBadge>
-                      ))}
-                    </div>
-                    {kpi.riskFlags.length ? <div className="mt-3 flex flex-wrap gap-2">{kpi.riskFlags.map((flag) => <span key={`${kpi.id}-${flag}`} className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">{flag}</span>)}</div> : null}
-                  </button>
+                  <OrgKpiListItemCard
+                    key={kpi.id}
+                    kpi={kpi}
+                    isSelected={(activeKpiId || selectedKpi?.id || '') === kpi.id}
+                    onSelect={handleSelectKpi}
+                  />
                 )) : <EmptyState title="표시할 KPI가 없습니다" description="조직 KPI를 추가하거나 검색 조건을 조정해 보세요." />}
               </div>
 
@@ -2166,7 +2170,7 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
                 onWorkflow={(action) => void runWorkflow(action)}
                 onStatus={(status) => void changeStatus(status)}
                 onAi={(action) => void requestAi(action)}
-                onSelectRelatedKpi={setSelectedKpiId}
+                onSelectRelatedKpi={handleSelectKpi}
               />
             </div>
           </div>
@@ -2609,6 +2613,70 @@ function MapInlineActionButton({
     </button>
   )
 }
+
+const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
+  kpi: OrgKpiViewModel
+  isSelected: boolean
+  onSelect: (kpiId: string) => void
+}) {
+  const connectionBadges = useMemo(() => buildOrgKpiConnectionBadges(props.kpi), [props.kpi])
+
+  return (
+    <button
+      type="button"
+      onClick={() => props.onSelect(props.kpi.id)}
+      className={cls(
+        'w-full rounded-2xl border px-4 py-4 text-left transition',
+        props.isSelected ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
+      )}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-900">{props.kpi.title}</span>
+            <StatusBadge status={props.kpi.status} />
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
+          </p>
+        </div>
+        <div className="text-right text-sm text-slate-600">
+          <div className="font-semibold text-slate-900">
+            {formatOrgKpiTargetValues({
+              targetValue: typeof props.kpi.targetValue === 'number' ? props.kpi.targetValue : undefined,
+              targetValueT: props.kpi.targetValueT,
+              targetValueE: props.kpi.targetValueE,
+              targetValueS: props.kpi.targetValueS,
+              unit: props.kpi.unit,
+            })}
+          </div>
+          <div className="mt-1">가중치 {formatValue(props.kpi.weight)}</div>
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
+        <span>상위 {props.kpi.parentOrgKpiTitle ? '연결됨' : '없음'}</span>
+        <span>하위 {props.kpi.childOrgKpiCount}개</span>
+        <span>coverage {formatPercent(props.kpi.coverageRate)}</span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {connectionBadges.map((badge) => (
+          <RelationBadge key={`${props.kpi.id}-${badge.label}`} tone={badge.tone}>
+            {badge.label}
+          </RelationBadge>
+        ))}
+      </div>
+      {props.kpi.riskFlags.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {props.kpi.riskFlags.map((flag) => (
+            <span key={`${props.kpi.id}-${flag}`} className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+              {flag}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </button>
+  )
+})
 
 function OrgKpiScopeSidebar(props: {
   search: string
