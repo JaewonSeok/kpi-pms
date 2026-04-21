@@ -1374,6 +1374,31 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
 
     setShowDeleteConfirm(true)
   }, [deleteActionState])
+  const openEditorWithForm = useCallback((nextForm: FormState, options: {
+    recommendationIndex?: number | null
+    draftSourceLabel?: string | null
+    editingId?: string | null
+    pendingDecision?: PendingRecommendationDecision | null
+    bannerMessage?: string | null
+  }) => {
+    setEditingKpiId(options.editingId ?? null)
+    setPendingRecommendationDecision(options.pendingDecision ?? null)
+    setSelectedAiRecommendationIndex(options.recommendationIndex ?? null)
+    setEditorDraftSourceLabel(options.draftSourceLabel ?? null)
+    setForm(nextForm)
+    setEditorBaselineForm(nextForm)
+    setShowForm(true)
+    setShowRecommendationSwitchConfirm(false)
+    setPendingAiRecommendationIndex(null)
+    setShowEditorCloseConfirm(false)
+    setShowAiRecommendationRetainedNotice(false)
+    if (options.bannerMessage) {
+      setBanner({
+        tone: 'info',
+        message: options.bannerMessage,
+      })
+    }
+  }, [])
   const handleEditKpi = useCallback(
     (kpi: OrgKpiViewModel) => {
       openEditorWithForm(buildFormFromKpi(kpi), {
@@ -1843,32 +1868,6 @@ export function OrgKpiManagementClient({ initialTab, initialSelectedKpiId, ...pa
       setShowAiRecommendationRetainedNotice(true)
     }
   }, [aiPreviewRecommendations.length, closeEditorModal])
-
-  const openEditorWithForm = useCallback((nextForm: FormState, options: {
-    recommendationIndex?: number | null
-    draftSourceLabel?: string | null
-    editingId?: string | null
-    pendingDecision?: PendingRecommendationDecision | null
-    bannerMessage?: string | null
-  }) => {
-    setEditingKpiId(options.editingId ?? null)
-    setPendingRecommendationDecision(options.pendingDecision ?? null)
-    setSelectedAiRecommendationIndex(options.recommendationIndex ?? null)
-    setEditorDraftSourceLabel(options.draftSourceLabel ?? null)
-    setForm(nextForm)
-    setEditorBaselineForm(nextForm)
-    setShowForm(true)
-    setShowRecommendationSwitchConfirm(false)
-    setPendingAiRecommendationIndex(null)
-    setShowEditorCloseConfirm(false)
-    setShowAiRecommendationRetainedNotice(false)
-    if (options.bannerMessage) {
-      setBanner({
-        tone: 'info',
-        message: options.bannerMessage,
-      })
-    }
-  }, [])
 
   const applyAiPreviewRecommendationSelection = useCallback((index: number) => {
     const item = aiPreviewRecommendations[index]
