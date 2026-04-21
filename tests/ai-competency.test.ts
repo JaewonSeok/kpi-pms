@@ -20,13 +20,21 @@ function readProjectFile(relativePath: string) {
 
 const pageSource = readProjectFile('src/app/(main)/evaluation/ai-competency/page.tsx')
 const adminPageSource = readProjectFile('src/app/(main)/evaluation/ai-competency/admin/page.tsx')
-const caseReviewPageSource = readProjectFile('src/app/(main)/evaluation/ai-competency/admin/[caseId]/page.tsx')
+const caseReviewPageSource = readProjectFile(
+  'src/app/(main)/evaluation/ai-competency/admin/[caseId]/page.tsx'
+)
 const actionRouteSource = readProjectFile('src/app/api/evaluation/ai-competency/actions/route.ts')
-const evidenceRouteSource = readProjectFile('src/app/api/evaluation/ai-competency/evidence/[evidenceId]/route.ts')
-const exportRouteSource = readProjectFile('src/app/api/evaluation/ai-competency/export/[cycleId]/route.ts')
+const evidenceRouteSource = readProjectFile(
+  'src/app/api/evaluation/ai-competency/evidence/[evidenceId]/route.ts'
+)
+const exportRouteSource = readProjectFile(
+  'src/app/api/evaluation/ai-competency/export/[cycleId]/route.ts'
+)
 const employeeClientSource = readProjectFile('src/components/evaluation/AiCompetencyClient.tsx')
 const adminPanelSource = readProjectFile('src/components/evaluation/AiCompetencyAdminPanel.tsx')
-const reviewPageClientSource = readProjectFile('src/components/evaluation/AiCompetencyCaseReviewPage.tsx')
+const reviewPageClientSource = readProjectFile(
+  'src/components/evaluation/AiCompetencyCaseReviewPage.tsx'
+)
 const resultsSource = readProjectFile('src/server/evaluation-results.ts')
 const calibrationSource = readProjectFile('src/server/evaluation-calibration.ts')
 const compensationSource = readProjectFile('src/server/compensation-manage.ts')
@@ -38,10 +46,15 @@ run('AI competency route remains registered under the existing evaluation naviga
   assert.equal(resolveMenuFromPath('/evaluation/ai-competency'), 'AI_COMPETENCY')
   assert.equal(resolveMenuFromPath('/api/evaluation/ai-competency/actions'), 'AI_COMPETENCY')
   assert.equal(
-    navigationItems.some((item) => item.href === '/evaluation/ai-competency' && item.menuKey === 'AI_COMPETENCY'),
+    navigationItems.some(
+      (item) => item.href === '/evaluation/ai-competency' && item.menuKey === 'AI_COMPETENCY'
+    ),
     true
   )
-  assert.equal(existsSync(path.resolve(process.cwd(), 'src/app/(main)/evaluation/ai-competency/page.tsx')), true)
+  assert.equal(
+    existsSync(path.resolve(process.cwd(), 'src/app/(main)/evaluation/ai-competency/page.tsx')),
+    true
+  )
   assert.match(pageSource, /getAiCompetencyGatePageData/)
   assert.match(pageSource, /AiCompetencyClient/)
 })
@@ -86,12 +99,14 @@ run('employee, admin, and reviewer UI shells expose Korean gate-oriented copy', 
   assert.equal(employeeClientSource.includes('이력 / 결정 내역'), true)
 
   assert.equal(adminPanelSource.includes('AI 역량평가 운영'), true)
+  assert.equal(adminPanelSource.includes('회차 선택'), true)
   assert.equal(adminPanelSource.includes('회차 관리'), true)
   assert.equal(adminPanelSource.includes('대상자 배정'), true)
   assert.equal(adminPanelSource.includes('제출 및 검토 대기열'), true)
+  assert.equal(adminPanelSource.includes('등록된 AI 역량평가 회차가 없습니다.'), true)
 
   assert.equal(reviewPageClientSource.includes('AI 역량평가 제출서 검토'), true)
-  assert.equal(reviewPageClientSource.includes('검토 입력'), true)
+  assert.equal(reviewPageClientSource.includes('검토 의견'), true)
   assert.equal(reviewPageClientSource.includes('보완 요청'), true)
   assert.equal(reviewPageClientSource.includes('통과'), true)
   assert.equal(reviewPageClientSource.includes('Fail'), true)

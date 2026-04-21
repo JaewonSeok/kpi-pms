@@ -266,6 +266,8 @@ export async function getAiCompetencyGateAdminPageData(params: {
       throw new AppError(403, 'AI_COMPETENCY_GATE_USER_NOT_FOUND', '사용자 정보를 찾을 수 없습니다.')
     }
 
+    const canManage = canManageGate(params.session.user.role)
+
     await ensureDefaultGuideEntries()
 
     const cycles = await prisma.aiCompetencyGateCycle.findMany({
@@ -284,12 +286,49 @@ export async function getAiCompetencyGateAdminPageData(params: {
       })
     )
 
+    const [employeeOptions, reviewerOptions, evalCycleOptions] = await Promise.all([
+      canManage
+        ? prisma.employee.findMany({
+            where: { status: 'ACTIVE' },
+            include: { department: true },
+            orderBy: [{ empName: 'asc' }],
+          })
+        : Promise.resolve([]),
+      canManage
+        ? prisma.employee.findMany({
+            where: {
+              status: 'ACTIVE',
+              role: {
+                in: ['ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_ADMIN', 'ROLE_CEO'],
+              },
+            },
+            include: { department: true },
+            orderBy: [{ empName: 'asc' }],
+          })
+        : Promise.resolve([]),
+      canManage
+        ? prisma.evalCycle.findMany({
+            include: {
+              organization: true,
+              aiCompetencyGateCycle: true,
+            },
+            orderBy: [{ evalYear: 'desc' }, { cycleName: 'desc' }],
+          })
+        : Promise.resolve([]),
+    ])
+
     if (!selectedCycle) {
       return {
         state: 'empty',
         currentUser: buildCurrentUser(employee),
         cycleOptions: [],
-        evalCycleOptions: [],
+        evalCycleOptions: evalCycleOptions.map((cycle) => ({
+          id: cycle.id,
+          name: cycle.cycleName,
+          year: cycle.evalYear,
+          organizationName: cycle.organization.name,
+          linkedGateCycleId: cycle.aiCompetencyGateCycle?.id,
+        })),
         summary: {
           totalCount: 0,
           notStartedCount: 0,
@@ -301,11 +340,19 @@ export async function getAiCompetencyGateAdminPageData(params: {
           failedCount: 0,
         },
         assignments: [],
-        employeeOptions: [],
-        reviewerOptions: [],
+        employeeOptions: employeeOptions.map((item) => ({
+          id: item.id,
+          name: item.empName,
+          departmentName: item.department?.deptName ?? '미지정',
+        })),
+        reviewerOptions: reviewerOptions.map((item) => ({
+          id: item.id,
+          name: item.empName,
+          departmentName: item.department?.deptName ?? '미지정',
+        })),
         guideLibrary,
-        canManageCycles: canManageGate(params.session.user.role),
-        canAssign: canManageGate(params.session.user.role),
+        canManageCycles: canManage,
+        canAssign: canManage,
         canReview: true,
         message: '운영 중인 AI 역량평가 회차가 아직 없습니다.',
       }
@@ -322,35 +369,6 @@ export async function getAiCompetencyGateAdminPageData(params: {
       },
       orderBy: [{ updatedAt: 'desc' }, { employeeNameSnapshot: 'asc' }],
     })
-
-    const [employeeOptions, reviewerOptions] = await Promise.all([
-      canManageGate(params.session.user.role)
-        ? prisma.employee.findMany({
-            where: { status: 'ACTIVE' },
-            include: { department: true },
-            orderBy: [{ empName: 'asc' }],
-          })
-        : Promise.resolve([]),
-      canManageGate(params.session.user.role)
-        ? prisma.employee.findMany({
-            where: {
-              status: 'ACTIVE',
-              role: { in: ['ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_ADMIN', 'ROLE_CEO'] },
-            },
-            include: { department: true },
-            orderBy: [{ empName: 'asc' }],
-          })
-        : Promise.resolve([]),
-    ])
-    const evalCycleOptions = canManageGate(params.session.user.role)
-      ? await prisma.evalCycle.findMany({
-          include: {
-            organization: true,
-            aiCompetencyGateCycle: true,
-          },
-          orderBy: [{ evalYear: 'desc' }, { cycleName: 'desc' }],
-        })
-      : []
 
     return {
       state: 'ready',
@@ -414,8 +432,8 @@ export async function getAiCompetencyGateAdminPageData(params: {
         departmentName: item.department?.deptName ?? '미지정',
       })),
       guideLibrary,
-      canManageCycles: canManageGate(params.session.user.role),
-      canAssign: canManageGate(params.session.user.role),
+      canManageCycles: canManage,
+      canAssign: canManage,
       canReview: true,
     }
   } catch (error) {
