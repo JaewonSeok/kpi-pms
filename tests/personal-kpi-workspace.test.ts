@@ -775,6 +775,19 @@ async function main() {
     assert.equal(source.includes('kpiId: saved.id'), true)
   })
 
+  await run('personal KPI selection preserves scroll when syncing kpiId into the URL', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const routeSelectionStart = source.indexOf('function handleRouteSelection(next: {')
+    const routeSelectionEnd = source.indexOf('function handleOpenCreate()', routeSelectionStart)
+    const routeSelectionBlock = source.slice(routeSelectionStart, routeSelectionEnd)
+
+    assert.notEqual(routeSelectionStart, -1)
+    assert.notEqual(routeSelectionEnd, -1)
+    assert.equal(routeSelectionBlock.includes('router.replace(`/kpi/personal?${query}`, { scroll: false })'), true)
+    assert.equal(source.includes('function handleSelectKpi(kpiId: string) {'), true)
+    assert.equal(source.includes('handleRouteSelection({ kpiId })'), true)
+  })
+
   await run('personal KPI client gates edit, review, and AI actions with live operational state instead of dead-ending in the API', () => {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 

@@ -759,7 +759,7 @@ export function PersonalKpiManagementClient(props: Props) {
       tab: next.tab ?? activeTab,
       kpiId: next.kpiId ?? selectedKpiId,
     })
-    router.replace(`/kpi/personal?${query}`)
+    router.replace(`/kpi/personal?${query}`, { scroll: false })
   }
 
   function handleOpenCreate() {
