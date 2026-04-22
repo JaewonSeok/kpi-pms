@@ -5,16 +5,25 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
 import { SubmitEvaluationSchema } from '@/lib/validations'
-import { AppError, calcPdcaScore, calcWeightedScore, errorResponse, successResponse } from '@/lib/utils'
 import {
-  getNextEvaluationStage,
-  resolveEvaluationStageAssignee,
-} from '@/server/evaluation-performance-assignments'
+  AppError,
+  calcPdcaScore,
+  calcWeightedScore,
+  errorResponse,
+  successResponse,
+} from '@/lib/utils'
+import { getEvaluationStageChain } from '@/server/evaluation-performance-assignments'
 import {
   logImpersonationRiskExecution,
   validateImpersonationRiskRequest,
   type ValidatedImpersonationRiskContext,
 } from '@/server/impersonation'
+
+type NextStageEntry = {
+  stage: EvalStage
+  stageLabel: string
+  evaluatorId: string
+}
 
 export async function PATCH(
   request: Request,
@@ -30,7 +39,6 @@ export async function PATCH(
     }
 
     const { id } = await params
-
     const evaluation = await prisma.evaluation.findUnique({
       where: { id },
       include: {
@@ -55,7 +63,7 @@ export async function PATCH(
     }
 
     if (evaluation.status === 'SUBMITTED' || evaluation.status === 'CONFIRMED') {
-      throw new AppError(400, 'ALREADY_SUBMITTED', '이미 제출되었거나 확정된 평가입니다.')
+      throw new AppError(400, 'ALREADY_SUBMITTED', '이미 제출했거나 확정된 평가입니다.')
     }
 
     riskContext = await validateImpersonationRiskRequest({
@@ -71,11 +79,17 @@ export async function PATCH(
     const validated = SubmitEvaluationSchema.safeParse(body)
 
     if (!validated.success) {
-      throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message ?? '입력값이 올바르지 않습니다.')
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        validated.error.issues[0]?.message ?? '입력값이 올바르지 않습니다.'
+      )
     }
 
     const { comment, gradeId, items } = validated.data
     let totalScore = 0
+    let finalized = false
+    let nextStageLabel: string | null = null
 
     await prisma.$transaction(async (tx) => {
       for (const itemInput of items) {
@@ -124,13 +138,27 @@ export async function PATCH(
         })
       }
 
+      const stageChain = await getEvaluationStageChain({
+        db: tx,
+        evalCycleId: evaluation.evalCycleId,
+        targetId: evaluation.targetId,
+      })
+      const currentStageIndex = stageChain.findIndex((entry) => entry.stage === evaluation.evalStage)
+      const nextStageEntry =
+        currentStageIndex >= 0 && currentStageIndex < stageChain.length - 1
+          ? stageChain[currentStageIndex + 1] ?? null
+          : null
+
+      finalized = !nextStageEntry
+      nextStageLabel = nextStageEntry?.stageLabel ?? null
+
       await tx.evaluation.update({
         where: { id },
         data: {
           totalScore,
           gradeId,
           comment,
-          status: 'SUBMITTED',
+          status: finalized ? 'CONFIRMED' : 'SUBMITTED',
           isDraft: false,
           submittedAt: new Date(),
           isRejected: false,
@@ -139,7 +167,13 @@ export async function PATCH(
         },
       })
 
-      await createNextStageEvaluation(tx, evaluation)
+      if (nextStageEntry) {
+        await createNextStageEvaluation(tx, evaluation, {
+          stage: nextStageEntry.stage,
+          stageLabel: nextStageEntry.stageLabel,
+          evaluatorId: nextStageEntry.evaluatorId,
+        })
+      }
     })
 
     await createAuditLog({
@@ -150,6 +184,7 @@ export async function PATCH(
       newValue: {
         stage: evaluation.evalStage,
         totalScore,
+        status: finalized ? 'CONFIRMED' : 'SUBMITTED',
         submittedAt: new Date(),
       },
       ...getClientInfo(request),
@@ -163,12 +198,15 @@ export async function PATCH(
       metadata: {
         evalStage: evaluation.evalStage,
         targetId: evaluation.targetId,
+        finalized,
       },
     })
 
     return successResponse({
-      message: '평가를 제출했습니다.',
+      message: finalized ? '평가를 최종 확정했습니다.' : '평가를 제출했습니다.',
       totalScore,
+      finalized,
+      nextStageLabel,
     })
   } catch (error) {
     if (session && riskContext) {
@@ -194,13 +232,9 @@ async function createNextStageEvaluation(
     evalCycleId: string
     targetId: string
     evalStage: EvalStage
-  }
+  },
+  nextStageEntry: NextStageEntry
 ) {
-  const nextStage = getNextEvaluationStage(evaluation.evalStage)
-  if (!nextStage) {
-    return
-  }
-
   const target = await tx.employee.findUnique({
     where: { id: evaluation.targetId },
     select: {
@@ -213,23 +247,12 @@ async function createNextStageEvaluation(
     return
   }
 
-  const nextEvaluatorId = await resolveEvaluationStageAssignee({
-    db: tx,
-    evalCycleId: evaluation.evalCycleId,
-    targetId: evaluation.targetId,
-    evalStage: nextStage,
-  })
-
-  if (!nextEvaluatorId) {
-    return
-  }
-
   const existing = await tx.evaluation.findUnique({
     where: {
       evalCycleId_targetId_evalStage: {
         evalCycleId: evaluation.evalCycleId,
         targetId: evaluation.targetId,
-        evalStage: nextStage,
+        evalStage: nextStageEntry.stage,
       },
     },
     select: {
@@ -251,8 +274,8 @@ async function createNextStageEvaluation(
       data: {
         evalCycleId: evaluation.evalCycleId,
         targetId: evaluation.targetId,
-        evaluatorId: nextEvaluatorId,
-        evalStage: nextStage,
+        evaluatorId: nextStageEntry.evaluatorId,
+        evalStage: nextStageEntry.stage,
         status: 'PENDING',
         isDraft: true,
         items: {
@@ -271,10 +294,10 @@ async function createNextStageEvaluation(
 
   await tx.notification.create({
     data: {
-      recipientId: nextEvaluatorId,
+      recipientId: nextStageEntry.evaluatorId,
       type: 'EVAL_RECEIVED',
       title: '새 평가가 배정되었습니다.',
-      message: `${target.empName}님의 ${getStageLabel(nextStage)} 대상 평가가 도착했습니다.`,
+      message: `${target.empName}님의 ${nextStageEntry.stageLabel} 대상 평가가 할당되었습니다.`,
       link: nextEvaluationId
         ? `/evaluation/performance/${encodeURIComponent(nextEvaluationId)}?cycleId=${encodeURIComponent(
             evaluation.evalCycleId
@@ -283,16 +306,4 @@ async function createNextStageEvaluation(
       channel: 'IN_APP',
     },
   })
-}
-
-function getStageLabel(stage: EvalStage) {
-  const labels: Record<EvalStage, string> = {
-    SELF: '자기평가',
-    FIRST: '1차 평가',
-    SECOND: '2차 평가',
-    FINAL: '최종 평가',
-    CEO_ADJUST: 'CEO 조정',
-  }
-
-  return labels[stage]
 }

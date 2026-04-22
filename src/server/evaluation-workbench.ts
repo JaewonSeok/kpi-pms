@@ -18,7 +18,7 @@ import {
 } from '@/lib/evaluation-performance-briefing'
 import { buildEvaluationQualityWarnings } from '@/lib/evaluation-writing-guide'
 import { prisma } from '@/lib/prisma'
-import { getPreviousEvaluationStage } from '@/server/evaluation-performance-assignments'
+import { getEvaluationStageChain } from '@/server/evaluation-performance-assignments'
 import type { SessionUserClaims } from '@/types/auth'
 import { EVAL_STAGE_LABELS, POSITION_LABELS, formatDate } from '@/lib/utils'
 
@@ -124,6 +124,32 @@ export type EvaluationWorkbenchPageData = {
       submittedAt?: string
       updatedAt: string
     } | null
+    priorStageEvaluations: Array<{
+      id: string
+      stage: EvalStage
+      stageLabel: string
+      evaluatorName: string
+      evaluatorPosition: string
+      totalScore?: number | null
+      comment?: string | null
+      submittedAt?: string
+      updatedAt: string
+    }>
+    stageChain: Array<{
+      stage: EvalStage
+      stageLabel: string
+      stageRoleLabel: string
+      evaluatorName: string
+      evaluatorPosition: string
+      evaluatorDepartment: string
+      reviewOrder: number
+      evaluationId?: string | null
+      status?: EvalStatus | null
+      statusLabel: string
+      submittedAt?: string
+      updatedAt?: string
+      isCurrent: boolean
+    }>
     reviewGuidance: string[]
     guideStatus: {
       viewed: boolean
@@ -1006,7 +1032,8 @@ export async function getEvaluationWorkbenchPageData(
       auditLogsResult,
       aiLogsResult,
       latestBriefingResult,
-      previousStageEvaluationResult,
+      stageChainResult,
+      stageEvaluationsResult,
       recentMonthlyRecordsResult,
       recentCheckinsResult,
       gradeOptionsResult,
@@ -1057,50 +1084,57 @@ export async function getEvaluationWorkbenchPageData(
           }),
       }),
       loadWorkbenchSection({
-        title: 'previous stage evaluation',
-        fallback: null as
-          | {
-              id: string
-              evalStage: EvalStage
-              totalScore: number | null
-              comment: string | null
-              submittedAt: Date | null
-              updatedAt: Date
-              evaluator: {
-                empName: string
-              }
-            }
-          | null,
-        alert: '이전 단계 평가 요약을 불러오지 못했지만 현재 평가 화면은 계속 사용할 수 있습니다.',
-        load: async () => {
-          const previousStage = getPreviousEvaluationStage(selectedEvaluation.evalStage)
-          if (!previousStage) {
-            return null
+        title: 'evaluation stage chain',
+        fallback: [] as Awaited<ReturnType<typeof getEvaluationStageChain>>,
+        alert: '?? ?? ??? ???? ???? ?? ?? ??? ?? ??? ? ????.',
+        load: () =>
+          getEvaluationStageChain({
+            db: prisma,
+            evalCycleId: selectedEvaluation.evalCycleId,
+            targetId: selectedEvaluation.target.id,
+          }),
+      }),
+      loadWorkbenchSection({
+        title: 'prior stage evaluations',
+        fallback: [] as Array<{
+          id: string
+          evalStage: EvalStage
+          totalScore: number | null
+          comment: string | null
+          status: EvalStatus
+          submittedAt: Date | null
+          updatedAt: Date
+          evaluator: {
+            empName: string
+            position: string
           }
-
-          return prisma.evaluation.findUnique({
+        }>,
+        alert: '?? ?? ?? ??? ???? ???? ?? ?? ??? ?? ??? ? ????.',
+        load: () =>
+          prisma.evaluation.findMany({
             where: {
-              evalCycleId_targetId_evalStage: {
-                evalCycleId: selectedEvaluation.evalCycleId,
-                targetId: selectedEvaluation.target.id,
-                evalStage: previousStage,
-              },
+              evalCycleId: selectedEvaluation.evalCycleId,
+              targetId: selectedEvaluation.target.id,
             },
             select: {
               id: true,
               evalStage: true,
               totalScore: true,
               comment: true,
+              status: true,
               submittedAt: true,
               updatedAt: true,
               evaluator: {
                 select: {
                   empName: true,
+                  position: true,
                 },
               },
             },
-          })
-        },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          }),
       }),
       loadWorkbenchSection({
         title: 'monthly evidence',
@@ -1182,7 +1216,8 @@ export async function getEvaluationWorkbenchPageData(
     const auditLogs = auditLogsResult.value
     const aiLogs = aiLogsResult.value
     const latestBriefingLog = latestBriefingResult.value
-    const previousStageEvaluation = previousStageEvaluationResult.value
+    const stageChain = stageChainResult.value
+    const stageEvaluations = stageEvaluationsResult.value
     const recentMonthlyRecords = recentMonthlyRecordsResult.value
     const recentCheckins = recentCheckinsResult.value
     const gradeOptions = gradeOptionsResult.value
@@ -1193,7 +1228,8 @@ export async function getEvaluationWorkbenchPageData(
       auditLogsResult.alert,
       aiLogsResult.alert,
       latestBriefingResult.alert,
-      previousStageEvaluationResult.alert,
+      stageChainResult.alert,
+      stageEvaluationsResult.alert,
       recentMonthlyRecordsResult.alert,
       recentCheckinsResult.alert,
       gradeOptionsResult.alert,
@@ -1240,9 +1276,58 @@ export async function getEvaluationWorkbenchPageData(
           stale: latestBriefingLog.createdAt < selectedEvaluation.updatedAt,
         })
       : null
+    const stageEvaluationMap = new Map(
+      stageEvaluations.map((evaluation) => [evaluation.evalStage, evaluation] as const)
+    )
+    const currentStageIndex = stageChain.findIndex((entry) => entry.stage === selectedEvaluation.evalStage)
+    const previousStage =
+      currentStageIndex > 0 ? stageChain[currentStageIndex - 1]?.stage ?? null : null
+    const previousStageEvaluation = previousStage
+      ? stageEvaluationMap.get(previousStage) ?? null
+      : null
+    const priorStageEvaluations = stageChain
+      .slice(0, currentStageIndex > 0 ? currentStageIndex : 0)
+      .map((entry) => {
+        const history = stageEvaluationMap.get(entry.stage)
+        if (!history) {
+          return null
+        }
+
+        return {
+          id: history.id,
+          stage: entry.stage,
+          stageLabel: entry.stageLabel,
+          evaluatorName: history.evaluator.empName,
+          evaluatorPosition:
+            POSITION_LABELS[history.evaluator.position] ?? history.evaluator.position,
+          totalScore: history.totalScore,
+          comment: history.comment,
+          submittedAt: history.submittedAt ? formatDate(history.submittedAt) : undefined,
+          updatedAt: formatDate(history.updatedAt),
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    const stageChainView = stageChain.map((entry) => {
+      const stageEvaluation = stageEvaluationMap.get(entry.stage)
+      return {
+        stage: entry.stage,
+        stageLabel: entry.stageLabel,
+        stageRoleLabel: entry.stageRoleLabel,
+        evaluatorName: entry.evaluatorName,
+        evaluatorPosition: entry.evaluatorPosition,
+        evaluatorDepartment: entry.evaluatorDepartment,
+        reviewOrder: entry.reviewOrder,
+        evaluationId: stageEvaluation?.id ?? null,
+        status: stageEvaluation?.status ?? null,
+        statusLabel: stageEvaluation ? STATUS_LABELS[stageEvaluation.status] : '대기',
+        submittedAt: stageEvaluation?.submittedAt ? formatDate(stageEvaluation.submittedAt) : undefined,
+        updatedAt: stageEvaluation ? formatDate(stageEvaluation.updatedAt) : undefined,
+        isCurrent: entry.stage === selectedEvaluation.evalStage,
+      }
+    })
     const canViewBriefing =
       (sessionUser.role === 'ROLE_ADMIN' || selectedEvaluation.evaluator.id === sessionUser.id) &&
-      selectedEvaluation.evalStage !== 'SELF'
+      ['SECOND', 'FINAL', 'CEO_ADJUST'].includes(selectedEvaluation.evalStage)
     const canManageSelected =
       selectedEvaluation.evaluator.id === sessionUser.id || sessionUser.role === 'ROLE_ADMIN'
     const canEditSelected =
@@ -1274,7 +1359,9 @@ export async function getEvaluationWorkbenchPageData(
           selectedEvaluation.evaluator.position,
       },
       evalStage: selectedEvaluation.evalStage,
-      stageLabel: EVAL_STAGE_LABELS[selectedEvaluation.evalStage],
+      stageLabel:
+        stageChain.find((entry) => entry.stage === selectedEvaluation.evalStage)?.stageLabel ??
+        EVAL_STAGE_LABELS[selectedEvaluation.evalStage],
       status: selectedEvaluation.status,
       statusLabel: STATUS_LABELS[selectedEvaluation.status],
       totalScore: selectedEvaluation.totalScore,
@@ -1285,7 +1372,9 @@ export async function getEvaluationWorkbenchPageData(
       previousStageEvaluation: previousStageEvaluation
         ? {
             id: previousStageEvaluation.id,
-            stageLabel: EVAL_STAGE_LABELS[previousStageEvaluation.evalStage],
+            stageLabel:
+              stageChain.find((entry) => entry.stage === previousStageEvaluation.evalStage)
+                ?.stageLabel ?? EVAL_STAGE_LABELS[previousStageEvaluation.evalStage],
             evaluatorName: previousStageEvaluation.evaluator.empName,
             totalScore: previousStageEvaluation.totalScore,
             comment: previousStageEvaluation.comment,
@@ -1295,6 +1384,8 @@ export async function getEvaluationWorkbenchPageData(
             updatedAt: formatDate(previousStageEvaluation.updatedAt),
           }
         : null,
+      priorStageEvaluations,
+      stageChain: stageChainView,
       reviewGuidance: buildReviewGuidance(selectedEvaluation),
       guideStatus,
       permissions: {

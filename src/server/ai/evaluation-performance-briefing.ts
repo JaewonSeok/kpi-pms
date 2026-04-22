@@ -25,7 +25,7 @@ import {
 import { recordOperationalEvent } from '@/lib/operations'
 import { prisma } from '@/lib/prisma'
 import { requestExecutivePerformanceBriefingFromOpenAI } from '@/server/ai/executive-performance-briefing-openai'
-import { getPreviousEvaluationStage } from '@/server/evaluation-performance-assignments'
+import { getPreviousActiveEvaluationStage } from '@/server/evaluation-performance-assignments'
 import { AppError, EVAL_STAGE_LABELS, POSITION_LABELS } from '@/lib/utils'
 
 type GenerateEvaluationPerformanceBriefingParams = {
@@ -519,13 +519,21 @@ async function loadEvaluationPerformanceBriefingContext(
 
   const canUseBriefing =
     params.actorRole === 'ROLE_ADMIN' ||
-    (evaluation.evaluatorId === params.actorId && evaluation.evalStage !== 'SELF')
+    (
+      evaluation.evaluatorId === params.actorId &&
+      ['SECOND', 'FINAL', 'CEO_ADJUST'].includes(evaluation.evalStage)
+    )
 
   if (!canUseBriefing) {
     throw new AppError(403, 'FORBIDDEN', 'AI 성과 브리핑을 볼 권한이 없습니다.')
   }
 
-  const previousStage = getPreviousEvaluationStage(evaluation.evalStage)
+  const previousStage = await getPreviousActiveEvaluationStage({
+    db,
+    evalCycleId: evaluation.evalCycleId,
+    targetId: evaluation.targetId,
+    currentStage: evaluation.evalStage,
+  })
   const referenceEvaluation =
     evaluation.evalStage === 'FIRST' || !previousStage
       ? evaluation

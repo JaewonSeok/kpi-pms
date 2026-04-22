@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
 import { RejectEvaluationSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
-import { getPreviousEvaluationStage } from '@/server/evaluation-performance-assignments'
+import { getPreviousActiveEvaluationStage } from '@/server/evaluation-performance-assignments'
 import {
   logImpersonationRiskExecution,
   validateImpersonationRiskRequest,
@@ -52,7 +52,11 @@ export async function PATCH(
       throw new AppError(400, 'LOCKED', '확정된 평가는 반려할 수 없습니다.')
     }
 
-    const previousStage = getPreviousEvaluationStage(evaluation.evalStage)
+    const previousStage = await getPreviousActiveEvaluationStage({
+      evalCycleId: evaluation.evalCycleId,
+      targetId: evaluation.targetId,
+      currentStage: evaluation.evalStage,
+    })
     if (!previousStage) {
       throw new AppError(400, 'PREVIOUS_STAGE_REQUIRED', '이전 단계가 없는 평가는 반려할 수 없습니다.')
     }

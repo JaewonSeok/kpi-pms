@@ -2,6 +2,7 @@ import {
   EvaluationAssignmentSource,
   EvalStage,
   EvalStatus,
+  type Position,
   type Prisma,
   type PrismaClient,
   type SystemRole,
@@ -12,6 +13,7 @@ import { buildAssignments } from '@/server/admin/employeeHierarchy'
 
 const PERFORMANCE_ASSIGNABLE_STAGES: EvalStage[] = ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']
 const EVALUATION_STAGE_ORDER: EvalStage[] = ['SELF', 'FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']
+type AssignableEvalStage = Exclude<EvalStage, 'SELF'>
 const STAGE_STATUS_LABELS: Record<EvalStatus, string> = {
   PENDING: '대기',
   IN_PROGRESS: '작성 중',
@@ -49,6 +51,43 @@ type AssignmentHierarchyEmployee = {
 }
 
 type AssignmentDbClient = PrismaClient | Prisma.TransactionClient
+
+type StageAssigneeProfile = {
+  id: string
+  empName: string
+  role: SystemRole
+  position: Position
+  departmentName: string
+}
+
+type RuntimeTargetProfile = {
+  id: string
+  empName: string
+  role: SystemRole
+  position: Position
+  departmentName: string
+  teamLeaderId: string | null
+  sectionChiefId: string | null
+  divisionHeadId: string | null
+}
+
+type RuntimeStageAssignment = {
+  stage: EvalStage
+  evaluatorId: string | null
+  evaluator: StageAssigneeProfile | null
+}
+
+export type EvaluationStageChainEntry = {
+  stage: EvalStage
+  reviewOrder: number
+  stageRoleLabel: string
+  stageLabel: string
+  evaluatorId: string
+  evaluatorName: string
+  evaluatorRole: SystemRole
+  evaluatorPosition: string
+  evaluatorDepartment: string
+}
 
 export type PerformanceAssignmentPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -179,6 +218,346 @@ async function runAssignmentTransaction<T>(
   }
 
   return fn(db)
+}
+
+function getStageRoleLabel(stage: EvalStage, evaluatorRole: SystemRole | null) {
+  if (stage === 'SELF') {
+    return '자기평가'
+  }
+
+  if (stage === 'CEO_ADJUST' || evaluatorRole === 'ROLE_CEO') {
+    return '대표이사 확정'
+  }
+
+  switch (evaluatorRole) {
+    case 'ROLE_TEAM_LEADER':
+      return '팀장평가'
+    case 'ROLE_SECTION_CHIEF':
+      return '실장평가'
+    case 'ROLE_DIV_HEAD':
+      return '본부장평가'
+    case 'ROLE_ADMIN':
+      return stage === 'FINAL' ? '최종 검토' : '관리자 검토'
+    default:
+      break
+  }
+
+  switch (stage) {
+    case 'FIRST':
+      return '1차 검토'
+    case 'SECOND':
+      return '상위 검토'
+    case 'FINAL':
+      return '최종 검토'
+  }
+}
+
+function buildStageDisplayLabel(stage: EvalStage, reviewOrder: number, evaluatorRole: SystemRole | null) {
+  const roleLabel = getStageRoleLabel(stage, evaluatorRole)
+  return stage === 'SELF' ? roleLabel : `${reviewOrder}차 ${roleLabel}`
+}
+
+async function loadRuntimeTargetProfile(db: AssignmentDbClient, targetId: string) {
+  const target = await db.employee.findUnique({
+    where: { id: targetId },
+    select: {
+      id: true,
+      empName: true,
+      role: true,
+      position: true,
+      teamLeaderId: true,
+      sectionChiefId: true,
+      divisionHeadId: true,
+      department: {
+        select: {
+          deptName: true,
+        },
+      },
+    },
+  })
+
+  if (!target) {
+    throw new AppError(404, 'EVALUATION_TARGET_NOT_FOUND', '평가 대상자를 찾을 수 없습니다.')
+  }
+
+  return {
+    id: target.id,
+    empName: target.empName,
+    role: target.role,
+    position: target.position,
+    departmentName: target.department.deptName,
+    teamLeaderId: target.teamLeaderId,
+    sectionChiefId: target.sectionChiefId,
+    divisionHeadId: target.divisionHeadId,
+  } satisfies RuntimeTargetProfile
+}
+
+async function loadStageAssigneeProfiles(
+  db: AssignmentDbClient,
+  employeeIds: string[]
+) {
+  if (!employeeIds.length) {
+    return new Map<string, StageAssigneeProfile>()
+  }
+
+  const employees = await db.employee.findMany({
+    where: {
+      id: {
+        in: employeeIds,
+      },
+      status: 'ACTIVE',
+    },
+    select: {
+      id: true,
+      empName: true,
+      role: true,
+      position: true,
+      department: {
+        select: {
+          deptName: true,
+        },
+      },
+    },
+  })
+
+  return new Map(
+    employees.map((employee) => [
+      employee.id,
+      {
+        id: employee.id,
+        empName: employee.empName,
+        role: employee.role,
+        position: employee.position,
+        departmentName: employee.department.deptName,
+      } satisfies StageAssigneeProfile,
+    ])
+  )
+}
+
+async function loadRuntimeStageAssignments(params: {
+  db: AssignmentDbClient
+  evalCycleId: string
+  targetId: string
+}) {
+  const { db, evalCycleId, targetId } = params
+  const target = await loadRuntimeTargetProfile(db, targetId)
+  const persistedAssignments = await db.evaluationAssignment.findMany({
+    where: {
+      evalCycleId,
+      targetId,
+      evalStage: {
+        in: PERFORMANCE_ASSIGNABLE_STAGES,
+      },
+    },
+    include: {
+      evaluator: {
+        select: {
+          id: true,
+          empName: true,
+          role: true,
+          position: true,
+          status: true,
+          department: {
+            select: {
+              deptName: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  const persistedMap = new Map(
+    persistedAssignments.map((assignment) => [assignment.evalStage, assignment])
+  )
+  const fallbackEvaluatorIds: Record<Exclude<EvalStage, 'SELF'>, string | null> = {
+    FIRST: target.teamLeaderId,
+    SECOND: target.sectionChiefId,
+    FINAL: target.divisionHeadId,
+    CEO_ADJUST: null,
+  }
+
+  const requiresCeoAssignment =
+    !persistedAssignments.some(
+      (assignment) =>
+        assignment.evalStage === 'CEO_ADJUST' &&
+        assignment.evaluator?.status === 'ACTIVE'
+    )
+
+  let ceoProfile: StageAssigneeProfile | null = null
+  if (requiresCeoAssignment) {
+    const ceo =
+      (await db.employee.findFirst({
+        where: {
+          status: 'ACTIVE',
+          role: 'ROLE_CEO',
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+        select: {
+          id: true,
+          empName: true,
+          role: true,
+          position: true,
+          department: {
+            select: {
+              deptName: true,
+            },
+          },
+        },
+      })) ??
+      (await db.employee.findFirst({
+        where: {
+          status: 'ACTIVE',
+          role: 'ROLE_ADMIN',
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+        select: {
+          id: true,
+          empName: true,
+          role: true,
+          position: true,
+          department: {
+            select: {
+              deptName: true,
+            },
+          },
+        },
+      }))
+
+    if (ceo) {
+      ceoProfile = {
+        id: ceo.id,
+        empName: ceo.empName,
+        role: ceo.role,
+        position: ceo.position,
+        departmentName: ceo.department.deptName,
+      }
+    }
+  }
+
+  fallbackEvaluatorIds.CEO_ADJUST = ceoProfile?.id ?? null
+
+  const fallbackIds = PERFORMANCE_ASSIGNABLE_STAGES.map(
+    (stage) => fallbackEvaluatorIds[stage as AssignableEvalStage]
+  ).filter((value): value is string => Boolean(value))
+  const missingFallbackIds = fallbackIds.filter(
+    (employeeId) =>
+      !persistedAssignments.some((assignment) => assignment.evaluatorId === employeeId)
+  )
+  const fallbackProfiles = await loadStageAssigneeProfiles(db, missingFallbackIds)
+
+  const assignments = PERFORMANCE_ASSIGNABLE_STAGES.map((stage) => {
+    const persisted = persistedMap.get(stage)
+    if (persisted?.evaluator?.status === 'ACTIVE') {
+      return {
+        stage,
+        evaluatorId: persisted.evaluatorId,
+        evaluator: {
+          id: persisted.evaluator.id,
+          empName: persisted.evaluator.empName,
+          role: persisted.evaluator.role,
+          position: persisted.evaluator.position,
+          departmentName: persisted.evaluator.department.deptName,
+        } satisfies StageAssigneeProfile,
+      } satisfies RuntimeStageAssignment
+    }
+
+    const fallbackId = fallbackEvaluatorIds[stage as AssignableEvalStage]
+    const fallbackProfile =
+      (fallbackId ? fallbackProfiles.get(fallbackId) ?? null : null) ??
+      (fallbackId && ceoProfile?.id === fallbackId ? ceoProfile : null)
+
+    return {
+      stage,
+      evaluatorId: fallbackProfile?.id ?? null,
+      evaluator: fallbackProfile,
+    } satisfies RuntimeStageAssignment
+  })
+
+  return {
+    target,
+    assignments,
+  }
+}
+
+export async function getEvaluationStageChain(params: {
+  db?: AssignmentDbClient
+  evalCycleId: string
+  targetId: string
+}) {
+  const db = params.db ?? prisma
+  const { target, assignments } = await loadRuntimeStageAssignments({
+    db,
+    evalCycleId: params.evalCycleId,
+    targetId: params.targetId,
+  })
+
+  const activeStages: EvaluationStageChainEntry[] = [
+    {
+      stage: 'SELF',
+      reviewOrder: 0,
+      stageRoleLabel: '자기평가',
+      stageLabel: '자기평가',
+      evaluatorId: target.id,
+      evaluatorName: target.empName,
+      evaluatorRole: target.role,
+      evaluatorPosition: POSITION_LABELS[target.position] ?? target.position,
+      evaluatorDepartment: target.departmentName,
+    },
+  ]
+
+  for (const assignment of assignments) {
+    if (!assignment.evaluatorId || !assignment.evaluator) {
+      continue
+    }
+    const reviewOrder = activeStages.filter((entry) => entry.stage !== 'SELF').length + 1
+    const stageRoleLabel = getStageRoleLabel(assignment.stage, assignment.evaluator.role)
+
+    activeStages.push({
+      stage: assignment.stage,
+      reviewOrder,
+      stageRoleLabel,
+      stageLabel: buildStageDisplayLabel(assignment.stage, reviewOrder, assignment.evaluator.role),
+      evaluatorId: assignment.evaluator.id,
+      evaluatorName: assignment.evaluator.empName,
+      evaluatorRole: assignment.evaluator.role,
+      evaluatorPosition:
+        POSITION_LABELS[assignment.evaluator.position] ?? assignment.evaluator.position,
+      evaluatorDepartment: assignment.evaluator.departmentName,
+    })
+  }
+
+  return activeStages
+}
+
+export async function getPreviousActiveEvaluationStage(params: {
+  db?: AssignmentDbClient
+  evalCycleId: string
+  targetId: string
+  currentStage: EvalStage
+}) {
+  const chain = await getEvaluationStageChain(params)
+  const currentIndex = chain.findIndex((entry) => entry.stage === params.currentStage)
+  return currentIndex > 0 ? chain[currentIndex - 1]?.stage ?? null : null
+}
+
+export async function getNextActiveEvaluationStage(params: {
+  db?: AssignmentDbClient
+  evalCycleId: string
+  targetId: string
+  currentStage: EvalStage
+}) {
+  const chain = await getEvaluationStageChain(params)
+  const currentIndex = chain.findIndex((entry) => entry.stage === params.currentStage)
+  if (currentIndex < 0 || currentIndex >= chain.length - 1) {
+    return null
+  }
+
+  return chain[currentIndex + 1]?.stage ?? null
 }
 
 export function getPreviousEvaluationStage(stage: EvalStage) {

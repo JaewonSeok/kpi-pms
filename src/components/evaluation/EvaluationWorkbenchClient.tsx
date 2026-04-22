@@ -48,7 +48,15 @@ import {
 } from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 
-type WorkbenchTab = 'workbench' | 'guide' | 'evidence' | 'feedback' | 'briefing' | 'ai' | 'history'
+type WorkbenchTab =
+  | 'workbench'
+  | 'guide'
+  | 'evidence'
+  | 'previous'
+  | 'feedback'
+  | 'briefing'
+  | 'ai'
+  | 'history'
 
 type DraftItemState = {
   personalKpiId: string
@@ -70,6 +78,7 @@ const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '종합',
   guide: '평가 가이드',
   evidence: '근거 기록',
+  previous: '이전 단계 의견',
   feedback: '다면 피드백',
   briefing: 'AI 성과 브리핑',
   ai: 'AI 보조',
@@ -242,6 +251,15 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       return matchesKeyword && matchesStage && matchesStatus
     })
   }, [props.evaluations, search, stageFilter, statusFilter])
+
+  const isLastReviewStage = useMemo(() => {
+    if (!selected?.stageChain?.length) {
+      return false
+    }
+
+    return selected.stageChain[selected.stageChain.length - 1]?.stage === selected.evalStage
+  }, [selected?.evalStage, selected?.stageChain])
+  const submitActionLabel = isLastReviewStage ? '최종 확정' : '제출'
 
   const computedTotal = useMemo(
     () =>
@@ -425,12 +443,15 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       let riskHeaders: Record<string, string> = {}
       if (action === 'submit') {
+        const confirmationText = isLastReviewStage ? '확정' : '제출'
         const confirmed = await requestRiskConfirmation({
           actionName: 'FINAL_SUBMIT',
-          actionLabel: '평가 최종 제출',
+          actionLabel: isLastReviewStage ? '평가 최종 확정' : '평가 최종 제출',
           targetLabel: selected.target.name,
-          detail: '현재 마스터 로그인 상태에서 평가를 최종 제출합니다.',
-          confirmationText: '제출',
+          detail: isLastReviewStage
+            ? '현재 마스터 로그인 상태에서 평가를 최종 확정합니다.'
+            : '현재 마스터 로그인 상태에서 평가를 최종 제출합니다.',
+          confirmationText,
         })
         if (confirmed === null) return
         riskHeaders = confirmed
@@ -453,7 +474,15 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       })
       const json = await response.json().catch(() => null)
       if (!json.success) throw new Error(json.error?.message ?? '작업을 처리하지 못했습니다.')
-      setNotice(action === 'saveDraft' ? '평가 초안을 저장했습니다.' : action === 'submit' ? '평가를 제출했습니다.' : '평가를 반려하고 보완을 요청했습니다.')
+      const successMessage =
+        typeof json?.data?.message === 'string'
+          ? json.data.message
+          : action === 'saveDraft'
+            ? '평가 초안을 저장했습니다.'
+            : action === 'submit'
+              ? `${submitActionLabel}을 완료했습니다.`
+              : '평가를 반려하고 보완을 요청했습니다.'
+      setNotice(successMessage)
       startTransition(() => router.refresh())
     } catch (error) {
       setErrorNotice(error instanceof Error ? error.message : '작업을 처리하지 못했습니다.')
@@ -802,7 +831,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
               >
                 <Send className="mr-2 h-4 w-4" />
-                제출
+                {submitActionLabel}
               </button>
               <button
                 type="button"
@@ -940,6 +969,50 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
               {activeTab === 'workbench' ? (
                 <div className="space-y-6">
+                  <Panel
+                    title="승인 단계"
+                    description="조직 체인과 수동 배정 설정을 반영한 실제 평가 단계를 순서대로 보여줍니다."
+                  >
+                    <div className="grid gap-3 xl:grid-cols-4">
+                      {selected.stageChain.map((entry) => (
+                        <div
+                          key={`${entry.stage}-${entry.reviewOrder}`}
+                          className={`rounded-2xl border p-4 ${
+                            entry.isCurrent
+                              ? 'border-blue-300 bg-blue-50'
+                              : 'border-slate-200 bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                {entry.stage === 'SELF' ? '본인 단계' : `${entry.reviewOrder}차 승인`}
+                              </div>
+                              <div className="mt-1 text-sm font-semibold text-slate-900">
+                                {entry.stageLabel}
+                              </div>
+                            </div>
+                            <Badge tone={entry.isCurrent ? 'success' : statusTone(entry.status ?? '')}>
+                              {entry.isCurrent ? '현재 단계' : entry.statusLabel}
+                            </Badge>
+                          </div>
+                          <div className="mt-3 space-y-2 text-sm text-slate-700">
+                            <div className="font-semibold text-slate-900">{entry.evaluatorName}</div>
+                            <div>{entry.evaluatorPosition}</div>
+                            <div className="text-slate-500">{entry.evaluatorDepartment}</div>
+                            <div className="text-xs text-slate-500">
+                              {entry.submittedAt
+                                ? `최근 제출 ${entry.submittedAt}`
+                                : entry.updatedAt
+                                  ? `최근 수정 ${entry.updatedAt}`
+                                  : '아직 진행 전'}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Panel>
+
                   <Panel title="검토 포인트" description="평가 단계별로 먼저 봐야 할 핵심 포인트입니다.">
                     <div className="grid gap-3 md:grid-cols-3">
                       {selected.reviewGuidance.map((item) => (
@@ -1270,6 +1343,43 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                         <p className="mt-3 text-sm text-slate-700">{round.summary}</p>
                       </div>
                     )) : <EmptyBlock message="연결된 다면 피드백 라운드가 없습니다." />}
+                  </div>
+                </Panel>
+              ) : null}
+
+              {activeTab === 'previous' ? (
+                <Panel
+                  title="이전 단계 의견"
+                  description="완료된 이전 단계의 점수와 의견은 읽기 전용으로 유지되며, 상위 검토 단계에서 비교 기준으로 활용됩니다."
+                >
+                  <div className="space-y-4">
+                    {selected.priorStageEvaluations.length ? (
+                      selected.priorStageEvaluations.map((history) => (
+                        <div key={history.id} className="rounded-2xl border border-slate-200 p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900">{history.stageLabel}</div>
+                              <div className="mt-1 text-xs text-slate-500">
+                                {history.evaluatorName} · {history.evaluatorPosition}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Badge tone="neutral">
+                                {history.submittedAt ?? history.updatedAt}
+                              </Badge>
+                              <Badge tone="success">
+                                {history.totalScore?.toFixed(1) ?? '-'}
+                              </Badge>
+                            </div>
+                          </div>
+                          <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                            {history.comment ?? '등록된 종합 의견이 없습니다.'}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <EmptyBlock message="현재 단계보다 앞선 완료 의견이 아직 없습니다." />
+                    )}
                   </div>
                 </Panel>
               ) : null}
