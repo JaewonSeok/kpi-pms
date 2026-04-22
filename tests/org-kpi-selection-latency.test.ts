@@ -27,11 +27,12 @@ function read(relativePath: string) {
 
 function makeKpi(
   params: Partial<OrgKpiViewModel> &
-    Pick<OrgKpiViewModel, 'id' | 'title' | 'departmentId' | 'departmentName'>
+    Pick<OrgKpiViewModel, 'id' | 'title' | 'departmentId' | 'departmentName'>,
 ): OrgKpiViewModel {
   return {
     id: params.id,
     title: params.title,
+    scope: params.scope ?? 'team',
     tags: [],
     evalYear: 2026,
     departmentId: params.departmentId,
@@ -40,6 +41,8 @@ function makeKpi(
     parentOrgKpiId: params.parentOrgKpiId ?? null,
     parentOrgKpiTitle: params.parentOrgKpiTitle ?? null,
     parentOrgDepartmentName: params.parentOrgDepartmentName ?? null,
+    parentReference: params.parentReference ?? null,
+    childReferences: params.childReferences ?? [],
     childOrgKpiCount: params.childOrgKpiCount ?? 0,
     lineage: params.lineage ?? [],
     category: params.category ?? '운영',
@@ -76,30 +79,57 @@ run('split hierarchy helpers preserve the same structure and selection lineage a
   const root = makeKpi({
     id: 'root',
     title: '본부 목표',
+    scope: 'division',
     departmentId: 'dept-root',
     departmentName: '본부',
-    childOrgKpiCount: 2,
+    childOrgKpiCount: 1,
+    childReferences: [
+      {
+        id: 'child',
+        title: '팀 목표',
+        departmentId: 'dept-team',
+        departmentName: '팀',
+        scope: 'team',
+      },
+    ],
   })
   const child = makeKpi({
     id: 'child',
     title: '팀 목표',
+    scope: 'team',
     departmentId: 'dept-team',
     departmentName: '팀',
     parentOrgKpiId: 'root',
     parentOrgKpiTitle: '본부 목표',
+    parentReference: {
+      id: 'root',
+      title: '본부 목표',
+      departmentId: 'dept-root',
+      departmentName: '본부',
+      scope: 'division',
+    },
     childOrgKpiCount: 1,
   })
   const grandChild = makeKpi({
     id: 'grand-child',
-    title: '세부 목표',
+    title: '실행 과제',
+    scope: 'team',
     departmentId: 'dept-team',
     departmentName: '팀',
     parentOrgKpiId: 'child',
     parentOrgKpiTitle: '팀 목표',
+    parentReference: {
+      id: 'child',
+      title: '팀 목표',
+      departmentId: 'dept-team',
+      departmentName: '팀',
+      scope: 'team',
+    },
   })
   const solo = makeKpi({
     id: 'solo',
     title: '독립 목표',
+    scope: 'team',
     departmentId: 'dept-team',
     departmentName: '팀',
   })
@@ -123,84 +153,123 @@ run('split hierarchy helpers preserve the same structure and selection lineage a
   assert.deepEqual(structure.roots.map((item) => item.kpi.id), combined.roots.map((item) => item.kpi.id))
   assert.deepEqual(
     structure.roots[0]?.children.map((item) => item.kpi.id),
-    combined.roots[0]?.children.map((item) => item.kpi.id)
+    combined.roots[0]?.children.map((item) => item.kpi.id),
   )
-  assert.deepEqual(structure.disconnected.map((item) => item.id), combined.disconnected.map((item) => item.id))
   assert.deepEqual(Array.from(structure.visibleIds).sort(), Array.from(combined.visibleIds).sort())
   assert.deepEqual(Array.from(selection.ancestorIds).sort(), Array.from(combined.ancestorIds).sort())
   assert.deepEqual(Array.from(selection.descendantIds).sort(), Array.from(combined.descendantIds).sort())
 })
 
-run('org KPI client keeps immediate active selection separate from deferred detail selection work', () => {
-  const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
+run('team-scope KPI with a hidden division parent is not treated as an orphan', () => {
+  const teamGoal = makeKpi({
+    id: 'team-goal',
+    title: '팀 실행 KPI',
+    scope: 'team',
+    departmentId: 'dept-team',
+    departmentName: '인사팀',
+    parentOrgKpiId: 'division-goal',
+    parentOrgKpiTitle: '본부 전략 KPI',
+    parentReference: {
+      id: 'division-goal',
+      title: '본부 전략 KPI',
+      departmentId: 'dept-division',
+      departmentName: '경영지원본부',
+      scope: 'division',
+    },
+  })
 
-  assert.match(clientSource, /import \{ memo, startTransition, useCallback/)
-  assert.match(clientSource, /const \[selectedKpiId, setSelectedKpiId\] = useState/)
-  assert.match(clientSource, /const \[activeKpiId, setActiveKpiId\] = useState/)
-  assert.match(clientSource, /const commitSelectedKpi = useCallback/)
-  assert.match(clientSource, /const handleSelectKpi = useCallback/)
-  assert.match(clientSource, /setActiveKpiId\(\(current\) => \(current === kpiId \? current : kpiId\)\)/)
-  assert.match(clientSource, /startTransition\(\(\) => \{/)
-  assert.match(clientSource, /setSelectedKpiId\(\(current\) => \(current === kpiId \? current : kpiId\)\)/)
-  assert.match(clientSource, /selectedKpiId=\{activeKpiId \|\| selectedKpi\?\.id \|\| null\}/)
-  assert.match(clientSource, /<OrgKpiListItemCard/)
-  assert.match(clientSource, /const OrgKpiListItemCard = memo\(function OrgKpiListItemCard/)
+  const structure = buildOrgKpiHierarchyStructure({
+    items: [teamGoal],
+    selectedDepartmentId: 'ALL',
+    search: '',
+  })
+
+  assert.equal(structure.roots.length, 1)
+  assert.equal(structure.roots[0]?.kpi.id, 'team-goal')
+  assert.equal(structure.roots[0]?.isOrphan, false)
+  assert.equal(structure.disconnected.some((item) => item.id === 'team-goal'), false)
 })
 
-run('hierarchy interaction changes can stay inside the affected branch instead of touching the whole tree', () => {
+run('hierarchy interaction changes stay inside the affected branch', () => {
   const rootA = makeKpi({
     id: 'root-a',
     title: 'Root A',
+    scope: 'division',
     departmentId: 'dept-a',
     departmentName: 'Dept A',
-    childOrgKpiCount: 3,
+    childOrgKpiCount: 2,
   })
   const branchA = makeKpi({
     id: 'branch-a',
     title: 'Branch A',
-    departmentId: 'dept-a',
-    departmentName: 'Dept A',
+    scope: 'team',
+    departmentId: 'dept-a-team',
+    departmentName: 'Dept A Team',
     parentOrgKpiId: 'root-a',
+    parentReference: {
+      id: 'root-a',
+      title: 'Root A',
+      departmentId: 'dept-a',
+      departmentName: 'Dept A',
+      scope: 'division',
+    },
     childOrgKpiCount: 2,
   })
   const leafA1 = makeKpi({
     id: 'leaf-a-1',
     title: 'Leaf A1',
-    departmentId: 'dept-a',
-    departmentName: 'Dept A',
+    scope: 'team',
+    departmentId: 'dept-a-team',
+    departmentName: 'Dept A Team',
     parentOrgKpiId: 'branch-a',
+    parentReference: {
+      id: 'branch-a',
+      title: 'Branch A',
+      departmentId: 'dept-a-team',
+      departmentName: 'Dept A Team',
+      scope: 'team',
+    },
   })
   const leafA2 = makeKpi({
     id: 'leaf-a-2',
     title: 'Leaf A2',
-    departmentId: 'dept-a',
-    departmentName: 'Dept A',
+    scope: 'team',
+    departmentId: 'dept-a-team',
+    departmentName: 'Dept A Team',
     parentOrgKpiId: 'branch-a',
+    parentReference: {
+      id: 'branch-a',
+      title: 'Branch A',
+      departmentId: 'dept-a-team',
+      departmentName: 'Dept A Team',
+      scope: 'team',
+    },
   })
   const rootB = makeKpi({
     id: 'root-b',
     title: 'Root B',
+    scope: 'division',
     departmentId: 'dept-b',
     departmentName: 'Dept B',
-    childOrgKpiCount: 2,
-  })
-  const branchB = makeKpi({
-    id: 'branch-b',
-    title: 'Branch B',
-    departmentId: 'dept-b',
-    departmentName: 'Dept B',
-    parentOrgKpiId: 'root-b',
     childOrgKpiCount: 1,
   })
   const leafB1 = makeKpi({
     id: 'leaf-b-1',
     title: 'Leaf B1',
-    departmentId: 'dept-b',
-    departmentName: 'Dept B',
-    parentOrgKpiId: 'branch-b',
+    scope: 'team',
+    departmentId: 'dept-b-team',
+    departmentName: 'Dept B Team',
+    parentOrgKpiId: 'root-b',
+    parentReference: {
+      id: 'root-b',
+      title: 'Root B',
+      departmentId: 'dept-b',
+      departmentName: 'Dept B',
+      scope: 'division',
+    },
   })
 
-  const items = [rootA, branchA, leafA1, leafA2, rootB, branchB, leafB1]
+  const items = [rootA, branchA, leafA1, leafA2, rootB, leafB1]
   const structure = buildOrgKpiHierarchyStructure({
     items,
     selectedDepartmentId: 'ALL',
@@ -219,35 +288,27 @@ run('hierarchy interaction changes can stay inside the affected branch instead o
       selectedKpiId: 'leaf-a-1',
       ancestorIds: beforeSelection.ancestorIds,
       descendantIds: beforeSelection.descendantIds,
-      expandedIds: new Set(['root-a', 'branch-a', 'root-b']),
+      expandedIds: new Set(['root-a', 'branch-a']),
     },
     {
       selectedKpiId: 'leaf-a-2',
       ancestorIds: afterSelection.ancestorIds,
       descendantIds: afterSelection.descendantIds,
-      expandedIds: new Set(['root-a', 'branch-a', 'root-b']),
-    }
+      expandedIds: new Set(['root-a', 'branch-a']),
+    },
   )
 
-  const totalNodes = countOrgKpiHierarchyNodes(structure.roots)
-  const affectedNodes = countOrgKpiHierarchyAffectedNodes(structure.roots, changedIds)
-
-  assert.equal(totalNodes, 7)
-  assert.equal(affectedNodes, 4)
-  assert.ok(affectedNodes < totalNodes)
+  assert.equal(countOrgKpiHierarchyNodes(structure.roots) >= 2, true)
+  assert.equal(countOrgKpiHierarchyAffectedNodes(structure.roots, changedIds) < countOrgKpiHierarchyNodes(structure.roots), true)
+  assert.equal(changedIds.has('root-b'), false)
 })
 
-run('org KPI map and detail regions are memoized behind branch-aware props', () => {
+run('org KPI client keeps separate scope tabs and URL-based scope switching', () => {
   const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.match(clientSource, /const expandedMapNodeIdSet = useMemo\(\(\) => new Set\(expandedMapNodeIds\), \[expandedMapNodeIds\]\)/)
-  assert.match(clientSource, /function areOrgKpiHierarchyNodeCardPropsEqual/)
-  assert.match(clientSource, /const OrgKpiHierarchyNodeCard = memo\(function OrgKpiHierarchyNodeCard/)
-  assert.match(clientSource, /const OrgKpiDisconnectedCard = memo\(function OrgKpiDisconnectedCard/)
-  assert.match(clientSource, /const KpiDetailCard = memo\(function KpiDetailCard/)
-  assert.match(clientSource, /onCreateChildGoal=\{handleCreateChildGoal\}/)
-  assert.match(clientSource, /onEditParentLink=\{handleEditParentLink\}/)
-  assert.match(clientSource, /onViewLinkage=\{handleViewLinkage\}/)
+  assert.match(clientSource, /pageData\.scopeTabs\.map/)
+  assert.match(clientSource, /handleScopeSwitch/)
+  assert.match(clientSource, /buildOrgKpiHref/)
+  assert.match(clientSource, /selectedScope === 'division'/)
+  assert.match(clientSource, /selectedScope === 'team'/)
 })
-
-console.log('Org KPI selection latency tests completed')

@@ -7,6 +7,13 @@ import type {
   KpiType,
   SystemRole,
 } from '@prisma/client'
+import {
+  buildOrgKpiDepartmentScopeMap,
+  filterDepartmentsByOrgKpiScope,
+  normalizeOrgKpiScope,
+  resolveOrgKpiScopeFromDepartmentId,
+  type OrgKpiScope,
+} from '@/lib/org-kpi-scope'
 import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
 import { resolveOrgKpiOperationalStatus, type OrgKpiOperationalStatus } from './org-kpi-workflow'
@@ -30,6 +37,23 @@ export type OrgKpiScopeOption = {
   parentDepartmentId: string | null
   organizationName: string
   level: number
+  scope: OrgKpiScope
+}
+
+export type OrgKpiRelationReference = {
+  id: string
+  title: string
+  departmentId: string
+  departmentName: string
+  scope: OrgKpiScope
+}
+
+export type OrgKpiScopeTab = {
+  key: OrgKpiScope
+  label: string
+  description: string
+  totalCount: number
+  departmentCount: number
 }
 
 export type OrgKpiTimelineItem = {
@@ -67,6 +91,7 @@ export type OrgKpiAiLogItem = {
 export type OrgKpiViewModel = {
   id: string
   title: string
+  scope: OrgKpiScope
   tags: string[]
   evalYear: number
   departmentId: string
@@ -75,7 +100,9 @@ export type OrgKpiViewModel = {
   parentOrgKpiId?: string | null
   parentOrgKpiTitle?: string | null
   parentOrgDepartmentName?: string | null
+  parentReference?: OrgKpiRelationReference | null
   childOrgKpiCount: number
+  childReferences: OrgKpiRelationReference[]
   lineage: Array<{
     id: string
     title: string
@@ -162,6 +189,8 @@ export type OrgKpiPageData = {
     title: string
     description: string
   }>
+  selectedScope: OrgKpiScope
+  scopeTabs: OrgKpiScopeTab[]
   selectedYear: number
   availableYears: number[]
   selectedDepartmentId: string
@@ -172,6 +201,7 @@ export type OrgKpiPageData = {
     departmentId: string
     departmentName: string
     evalYear: number
+    scope: OrgKpiScope
   }>
   summary: {
     totalCount: number
@@ -210,6 +240,22 @@ const DEFAULT_TEAM_AI_RUNTIME_STATE: OrgKpiTeamAiRuntimeState = {
   errorCode: null,
   prismaCode: null,
   shortMessage: null,
+}
+
+const ORG_KPI_SCOPE_TAB_META: Record<
+  OrgKpiScope,
+  Pick<OrgKpiScopeTab, 'label' | 'description'>
+> = {
+  division: {
+    label: '본부 KPI',
+    description:
+      '본부·실 등 상위 조직이 관리하는 KPI를 확인합니다. 하위 팀 KPI와의 연결 상태도 함께 볼 수 있습니다.',
+  },
+  team: {
+    label: '팀 KPI',
+    description:
+      '실제 실행 조직이 운영하는 KPI를 확인합니다. 상위 본부 KPI와의 정렬을 함께 관리합니다.',
+  },
 }
 
 function buildEmptyTeamAiContext(params: {
@@ -682,8 +728,19 @@ export async function getOrgKpiPageData(params: {
   accessibleDepartmentIds?: string[] | null
   year?: number
   selectedDepartmentId?: string
+  selectedScope?: string
+  selectedKpiId?: string
   userName: string
 }): Promise<OrgKpiPageData> {
+  const fallbackScope = normalizeOrgKpiScope(params.selectedScope) ?? 'division'
+  const emptyScopeTabs = (['division', 'team'] as OrgKpiScope[]).map((scope) => ({
+    key: scope,
+    label: ORG_KPI_SCOPE_TAB_META[scope].label,
+    description: ORG_KPI_SCOPE_TAB_META[scope].description,
+    totalCount: 0,
+    departmentCount: 0,
+  }))
+
   try {
     const alerts: OrgKpiPageAlert[] = []
     const scopeDepartmentIds = getEffectiveScopeDepartmentIds({
@@ -717,6 +774,8 @@ export async function getOrgKpiPageData(params: {
     if (!departments.length) {
       return {
         state: 'empty',
+        selectedScope: fallbackScope,
+        scopeTabs: emptyScopeTabs,
         message: '조직 정보가 아직 준비되지 않았습니다.',
         selectedYear: new Date().getFullYear(),
         availableYears: [new Date().getFullYear()],
@@ -738,11 +797,14 @@ export async function getOrgKpiPageData(params: {
         history: [],
         linkage: [],
         aiLogs: [],
-        teamAi: buildEmptyTeamAiContext({
-          targetDepartmentId: params.deptId,
-          departmentName: params.deptName,
-          evalYear: new Date().getFullYear(),
-        }),
+        teamAi:
+          fallbackScope === 'team'
+            ? buildEmptyTeamAiContext({
+                targetDepartmentId: params.deptId,
+                departmentName: params.deptName,
+                evalYear: new Date().getFullYear(),
+              })
+            : null,
         teamAiRuntimeState: DEFAULT_TEAM_AI_RUNTIME_STATE,
         alerts,
         permissions: {
@@ -763,17 +825,17 @@ export async function getOrgKpiPageData(params: {
 
     const departmentsById = new Map(departments.map((department) => [department.id, department]))
     const levelMap = buildDepartmentLevelMap(departments)
+    const departmentScopeMap = buildOrgKpiDepartmentScopeMap(departments)
     const effectiveScopeIds = new Set<string>(
       scopeDepartmentIds ?? departments.map((department) => department.id)
     )
-
-    const visibleTreeIds = new Set<string>()
-    effectiveScopeIds.forEach((departmentId) => {
-      visibleTreeIds.add(departmentId)
-      collectAncestorIds(departmentId, departmentsById).forEach((ancestorId) => {
-        visibleTreeIds.add(ancestorId)
-      })
-    })
+    const accessibleDepartments = departments.filter((department) =>
+      effectiveScopeIds.has(department.id)
+    )
+    const accessibleDepartmentsByScope = {
+      division: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'division'),
+      team: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'team'),
+    } satisfies Record<OrgKpiScope, DepartmentLite[]>
 
     const availableYearsRaw = await prisma.orgKpi.findMany({
       where: {
@@ -868,6 +930,35 @@ export async function getOrgKpiPageData(params: {
       orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
     })
 
+    const requestedScope = normalizeOrgKpiScope(params.selectedScope)
+    const requestedDepartmentScope =
+      params.selectedDepartmentId && departmentsById.has(params.selectedDepartmentId)
+        ? resolveOrgKpiScopeFromDepartmentId(params.selectedDepartmentId, departments)
+        : null
+    const requestedKpiScope = params.selectedKpiId
+      ? (() => {
+          const targetKpi = kpis.find((item) => item.id === params.selectedKpiId)
+          return targetKpi
+            ? resolveOrgKpiScopeFromDepartmentId(targetKpi.deptId, departments)
+            : null
+        })()
+      : null
+    const availableScopes = (['division', 'team'] as OrgKpiScope[]).filter(
+      (scope) =>
+        accessibleDepartmentsByScope[scope].length > 0 ||
+        kpis.some(
+          (item) =>
+            resolveOrgKpiScopeFromDepartmentId(item.deptId, departments) === scope
+        )
+    )
+    const selectedScope =
+      (requestedScope && availableScopes.includes(requestedScope) ? requestedScope : null) ??
+      (requestedKpiScope && availableScopes.includes(requestedKpiScope) ? requestedKpiScope : null) ??
+      (requestedDepartmentScope && availableScopes.includes(requestedDepartmentScope)
+        ? requestedDepartmentScope
+        : null) ??
+      (availableScopes.includes('division') ? 'division' : 'team')
+
     const [auditLogs, aiLogs] = await Promise.all([
       loadOrgKpiSection({
         title: '조직 KPI 이력',
@@ -956,7 +1047,7 @@ export async function getOrgKpiPageData(params: {
       return lineage
     }
 
-    const mappedList = kpis.map<OrgKpiViewModel>((kpi) => {
+    const mappedListAll = kpis.map<OrgKpiViewModel>((kpi) => {
       const resolvedTargetValues = resolveOrgKpiTargetValues({
         targetValue: kpi.targetValue,
         targetValueT: kpi.targetValueT,
@@ -1006,6 +1097,7 @@ export async function getOrgKpiPageData(params: {
       return {
         id: kpi.id,
         title: kpi.kpiName,
+        scope: departmentScopeMap.get(kpi.deptId) ?? 'team',
         tags: parseTags(kpi.tags),
         evalYear: kpi.evalYear,
         departmentId: kpi.deptId,
@@ -1014,7 +1106,26 @@ export async function getOrgKpiPageData(params: {
         parentOrgKpiId: kpi.parentOrgKpiId ?? null,
         parentOrgKpiTitle: kpi.parentOrgKpi?.kpiName ?? null,
         parentOrgDepartmentName: kpi.parentOrgKpi?.department?.deptName ?? null,
+        parentReference: kpi.parentOrgKpi
+          ? {
+              id: kpi.parentOrgKpi.id,
+              title: kpi.parentOrgKpi.kpiName,
+              departmentId: kpi.parentOrgKpi.deptId,
+              departmentName: kpi.parentOrgKpi.department.deptName,
+              scope: departmentScopeMap.get(kpi.parentOrgKpi.deptId) ?? 'team',
+            }
+          : null,
         childOrgKpiCount: kpi.childOrgKpis?.length ?? 0,
+        childReferences: (kpi.childOrgKpis ?? [])
+          .map((child) => kpisById.get(child.id))
+          .filter((child): child is OrgKpiWithRelations => Boolean(child))
+          .map((child) => ({
+            id: child.id,
+            title: child.kpiName,
+            departmentId: child.deptId,
+            departmentName: child.department.deptName,
+            scope: departmentScopeMap.get(child.deptId) ?? 'team',
+          })),
         lineage: buildLineage(kpi.id),
         category: kpi.kpiCategory,
         type: kpi.kpiType,
@@ -1072,6 +1183,7 @@ export async function getOrgKpiPageData(params: {
       }
     })
 
+    const mappedList = mappedListAll.filter((item) => item.scope === selectedScope)
     const mappedById = new Map(mappedList.map((item) => [item.id, item]))
     const kpisByDepartment = new Map<string, OrgKpiViewModel[]>()
     mappedList.forEach((kpi) => {
@@ -1114,35 +1226,44 @@ export async function getOrgKpiPageData(params: {
       : 0
     const confirmedRate = totalCount ? Math.round((confirmedCount / totalCount) * 100) : 0
 
-    const departmentsForSelector = departments
-      .filter((department) => effectiveScopeIds.has(department.id))
+    const departmentsForSelector = accessibleDepartmentsByScope[selectedScope]
       .map((department) => ({
         id: department.id,
         name: department.deptName,
         parentDepartmentId: department.parentDeptId,
         organizationName: department.organization.name,
         level: levelMap.get(department.id) ?? 0,
+        scope: departmentScopeMap.get(department.id) ?? 'team',
       }))
       .sort((left, right) => left.level - right.level || left.name.localeCompare(right.name))
 
     const selectedDepartmentId =
       params.selectedDepartmentId && departmentsForSelector.some((department) => department.id === params.selectedDepartmentId)
         ? params.selectedDepartmentId
-        : departmentsForSelector[0]?.id ?? params.deptId
+        : departmentsForSelector[0]?.id ?? accessibleDepartments[0]?.id ?? params.deptId
 
     const selectedDepartmentName =
       departmentsForSelector.find((department) => department.id === selectedDepartmentId)?.name ??
       departmentsById.get(selectedDepartmentId)?.deptName ??
       params.deptName
 
-    const parentGoalOptions = kpis
-      .filter((kpi) => visibleTreeIds.has(kpi.deptId))
-      .map((kpi) => ({
-        id: kpi.id,
-        title: kpi.kpiName,
-        departmentId: kpi.deptId,
-        departmentName: kpi.department.deptName,
-        evalYear: kpi.evalYear,
+    const visibleTreeIds = new Set<string>()
+    departmentsForSelector.forEach((department) => {
+      visibleTreeIds.add(department.id)
+      collectAncestorIds(department.id, departmentsById).forEach((ancestorId) => {
+        visibleTreeIds.add(ancestorId)
+      })
+    })
+
+    const parentGoalOptions = mappedListAll
+      .filter((item) => item.scope === 'division')
+      .map((item) => ({
+        id: item.id,
+        title: item.title,
+        departmentId: item.departmentId,
+        departmentName: item.departmentName,
+        evalYear: item.evalYear,
+        scope: item.scope,
       }))
 
     const history = makeTimelineItems({
@@ -1159,7 +1280,8 @@ export async function getOrgKpiPageData(params: {
 
     let teamAi: OrgKpiTeamAiContextView | null = null
     let teamAiRuntimeState: OrgKpiTeamAiRuntimeState = DEFAULT_TEAM_AI_RUNTIME_STATE
-    try {
+    if (selectedScope === 'team' && selectedDepartmentId) {
+      try {
       teamAi = await loadOrgKpiTeamAiContext({
         userId: params.userId,
         role: params.role,
@@ -1181,6 +1303,7 @@ export async function getOrgKpiPageData(params: {
         evalYear: selectedYear,
       })
     }
+    }
 
     const canManage = ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(
       params.role
@@ -1197,10 +1320,19 @@ export async function getOrgKpiPageData(params: {
       })
     }
 
-    const pageState: OrgKpiPageState = totalCount ? 'ready' : 'empty'
+    const pageState: OrgKpiPageState =
+      departmentsForSelector.length > 0 && totalCount > 0 ? 'ready' : 'empty'
 
     return {
       state: pageState,
+      selectedScope,
+      scopeTabs: (['division', 'team'] as OrgKpiScope[]).map((scope) => ({
+        key: scope,
+        label: ORG_KPI_SCOPE_TAB_META[scope].label,
+        description: ORG_KPI_SCOPE_TAB_META[scope].description,
+        totalCount: mappedListAll.filter((item) => item.scope === scope).length,
+        departmentCount: accessibleDepartmentsByScope[scope].length,
+      })),
       message: totalCount ? undefined : '해당 범위에 등록된 조직 KPI가 없습니다. 올해 목표부터 정리해 보세요.',
       selectedYear,
       availableYears,
@@ -1252,6 +1384,8 @@ export async function getOrgKpiPageData(params: {
     console.error('[org-kpi-page]', error)
     return {
       state: 'error',
+      selectedScope: fallbackScope,
+      scopeTabs: emptyScopeTabs,
       message: '조직 KPI 화면을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
       selectedYear: new Date().getFullYear(),
       availableYears: [new Date().getFullYear()],
@@ -1273,11 +1407,14 @@ export async function getOrgKpiPageData(params: {
       history: [],
       linkage: [],
       aiLogs: [],
-      teamAi: buildEmptyTeamAiContext({
-        targetDepartmentId: params.deptId,
-        departmentName: params.deptName,
-        evalYear: new Date().getFullYear(),
-      }),
+      teamAi:
+        fallbackScope === 'team'
+          ? buildEmptyTeamAiContext({
+              targetDepartmentId: params.deptId,
+              departmentName: params.deptName,
+              evalYear: new Date().getFullYear(),
+            })
+          : null,
       teamAiRuntimeState: DEFAULT_TEAM_AI_RUNTIME_STATE,
       alerts: [],
       permissions: {

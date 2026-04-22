@@ -6,6 +6,7 @@ type OrgKpiPageProps = {
   searchParams?: Promise<{
     year?: string
     dept?: string
+    scope?: string
     tab?: string
     kpiId?: string
   }>
@@ -28,12 +29,15 @@ export default async function OrgKpiPage({ searchParams }: OrgKpiPageProps) {
     accessibleDepartmentIds: session.user.accessibleDepartmentIds,
     year,
     selectedDepartmentId: resolvedSearchParams.dept,
+    selectedScope: resolvedSearchParams.scope,
+    selectedKpiId: resolvedSearchParams.kpiId,
     userName: session.user.name,
   })
 
   return (
     <OrgKpiManagementClient
       {...pageData}
+      initialDepartmentFilterId={resolvedSearchParams.dept}
       initialTab={resolvedSearchParams.tab}
       initialSelectedKpiId={resolvedSearchParams.kpiId}
     />

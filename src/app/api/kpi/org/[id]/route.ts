@@ -11,6 +11,7 @@ import {
 } from '@/server/org-kpi-workflow'
 import { validateOrgParentLink } from '@/server/goal-alignment'
 import { deleteOrgKpiRecord } from '@/server/org-kpi-delete'
+import { assertOrgKpiScopeMatchesDepartment } from '@/server/org-kpi-scope-validation'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -172,6 +173,12 @@ export async function PATCH(request: Request, context: RouteContext) {
     const targetDeptId = data.deptId ?? current.deptId
     const targetEvalYear = data.evalYear ?? current.evalYear
     const targetWeight = data.weight ?? current.weight
+
+    await assertOrgKpiScopeMatchesDepartment({
+      requestedScope: data.scope ?? null,
+      deptId: targetDeptId,
+    })
+
     const hasFieldUpdates =
       data.deptId !== undefined ||
       data.evalYear !== undefined ||

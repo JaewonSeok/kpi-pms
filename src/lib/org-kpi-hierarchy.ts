@@ -38,7 +38,7 @@ export type OrgKpiHierarchyInteractionState = {
 function matchesSearch(item: OrgKpiViewModel, search: string) {
   const needle = search.trim().toLowerCase()
   if (!needle) return true
-  return `${item.title} ${item.departmentName} ${item.category ?? ''} ${item.parentOrgKpiTitle ?? ''}`
+  return `${item.title} ${item.departmentName} ${item.category ?? ''} ${item.parentOrgKpiTitle ?? ''} ${item.parentReference?.title ?? ''} ${item.parentReference?.departmentName ?? ''}`
     .toLowerCase()
     .includes(needle)
 }
@@ -102,7 +102,8 @@ export function buildOrgKpiHierarchyStructure(params: {
   const visibleItems = sortItems(params.items.filter((item) => visibleIds.has(item.id)))
   const visibleItemById = new Map(visibleItems.map((item) => [item.id, item]))
 
-  const isOrphan = (item: OrgKpiViewModel) => Boolean(item.parentOrgKpiId && !itemsById.has(item.parentOrgKpiId))
+  const isOrphan = (item: OrgKpiViewModel) =>
+    Boolean(item.parentOrgKpiId && !item.parentReference && !itemsById.has(item.parentOrgKpiId))
   const visibleChildCount = (itemId: string) =>
     (childrenByParentId.get(itemId) ?? []).filter((child) => visibleIds.has(child.id)).length
 

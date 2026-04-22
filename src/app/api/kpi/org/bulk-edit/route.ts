@@ -10,6 +10,10 @@ import {
   resolveOrgKpiOperationalStatus,
 } from '@/server/org-kpi-workflow'
 import { validateOrgParentLink } from '@/server/goal-alignment'
+import {
+  assertOrgKpiScopeMatchesDepartment,
+  assertOrgKpiScopeMatchesDepartments,
+} from '@/server/org-kpi-scope-validation'
 
 function canManage(role: string) {
   return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
@@ -73,6 +77,18 @@ export async function PATCH(request: Request) {
       if (scopeDepartmentIds && !scopeDepartmentIds.includes(item.deptId)) {
         throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 조직 KPI가 포함되어 있습니다.')
       }
+    }
+
+    await assertOrgKpiScopeMatchesDepartments({
+      requestedScope: data.scope ?? null,
+      deptIds: selected.map((item) => item.deptId),
+    })
+
+    if (data.deptId) {
+      await assertOrgKpiScopeMatchesDepartment({
+        requestedScope: data.scope ?? null,
+        deptId: data.deptId,
+      })
     }
 
     const auditLogs = await prisma.auditLog.findMany({

@@ -199,7 +199,7 @@ async function main() {
       assert.equal(data.board.length, 2)
       assert.equal(data.board.some((node) => node.children.some((child) => child.id === 'org-team')), true)
       assert.equal(data.departmentSummary.length >= 1, true)
-      assert.equal(data.quickLinks.orgKpiHref.includes('/kpi/org?year=2026'), true)
+      assert.equal(data.quickLinks.orgKpiHref.includes('/kpi/org?scope=division&year=2026'), true)
     })
   })
 
@@ -420,7 +420,7 @@ async function main() {
           linkedPersonalGoalCount: 0,
           childGoalCount: 0,
           lineage: [],
-          href: '/kpi/org?year=2026&kpiId=org-1',
+          href: '/kpi/org?scope=division&year=2026&kpiId=org-1',
           children: [],
           personalGoals: [],
         },
@@ -443,7 +443,7 @@ async function main() {
       quickLinks: {
         readModeHref: '/admin/eval-cycle',
         reminderHref: '/admin/notifications',
-        orgKpiHref: '/kpi/org?year=2026',
+        orgKpiHref: '/kpi/org?scope=division&year=2026',
       },
     })
 

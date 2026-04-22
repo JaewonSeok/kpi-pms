@@ -30,6 +30,7 @@ export async function POST(request: Request, context: RouteContext) {
       sourceId: id,
       targetDeptId: validated.data.targetDeptId,
       targetEvalYear: validated.data.targetEvalYear,
+      requestedScope: validated.data.scope ?? null,
       targetCycleId: validated.data.targetCycleId,
       includeProgress: validated.data.includeProgress,
       includeCheckins: validated.data.includeCheckins,

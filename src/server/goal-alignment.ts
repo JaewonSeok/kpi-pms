@@ -1,4 +1,5 @@
 import type { CheckInStatus, KpiStatus, SystemRole } from '@prisma/client'
+import { resolveOrgKpiScopeFromDepartmentId } from '@/lib/org-kpi-scope'
 import { prisma } from '@/lib/prisma'
 import { AppError } from '@/lib/utils'
 import { getDescendantDeptIds } from '@/server/auth/org-scope'
@@ -562,7 +563,7 @@ export async function getGoalAlignmentPageData(
         linkedPersonalGoalCount: linkedPersonalNodes.length,
         childGoalCount: 0,
         lineage: [],
-        href: `/kpi/org?year=${selectedYear}&dept=${encodeURIComponent(goal.deptId)}&tab=map&kpiId=${encodeURIComponent(goal.id)}`,
+        href: `/kpi/org?scope=${resolveOrgKpiScopeFromDepartmentId(goal.deptId, departments)}&year=${selectedYear}&dept=${encodeURIComponent(goal.deptId)}&tab=map&kpiId=${encodeURIComponent(goal.id)}`,
         children: [],
         personalGoals: linkedPersonalNodes.filter((item) =>
           matchesStatusFilter({
@@ -586,7 +587,7 @@ export async function getGoalAlignmentPageData(
           id: current.id,
           title: current.kpiName,
           departmentName: current.department.deptName,
-          href: `/kpi/org?year=${current.evalYear}&dept=${encodeURIComponent(current.deptId)}&tab=map&kpiId=${encodeURIComponent(current.id)}`,
+          href: `/kpi/org?scope=${resolveOrgKpiScopeFromDepartmentId(current.deptId, departments)}&year=${current.evalYear}&dept=${encodeURIComponent(current.deptId)}&tab=map&kpiId=${encodeURIComponent(current.id)}`,
         })
         current = current.parentOrgKpiId ? orgGoalById.get(current.parentOrgKpiId) : null
       }
@@ -692,7 +693,7 @@ export async function getGoalAlignmentPageData(
           completedCheckInRate,
           averageProgressRate,
           riskCount: departmentOrgGoals.filter((goal) => (orgNodeById.get(goal.id)?.riskFlags.length ?? 0) > 0).length,
-          relatedUrl: `/kpi/org?year=${selectedYear}&dept=${encodeURIComponent(department.id)}&tab=linkage`,
+          relatedUrl: `/kpi/org?scope=${resolveOrgKpiScopeFromDepartmentId(department.id, departments)}&year=${selectedYear}&dept=${encodeURIComponent(department.id)}&tab=linkage`,
         } satisfies GoalAlignmentDepartmentSummary
       })
       .sort((left, right) => right.orphanGoalCount - left.orphanGoalCount || left.departmentName.localeCompare(right.departmentName, 'ko'))
@@ -736,8 +737,8 @@ export async function getGoalAlignmentPageData(
         reminderHref: '/admin/notifications',
         orgKpiHref:
           selectedDepartmentId === 'ALL'
-            ? `/kpi/org?year=${selectedYear}&tab=map`
-            : `/kpi/org?year=${selectedYear}&dept=${encodeURIComponent(selectedDepartmentId)}&tab=map`,
+            ? `/kpi/org?scope=division&year=${selectedYear}&tab=map`
+            : `/kpi/org?scope=${resolveOrgKpiScopeFromDepartmentId(selectedDepartmentId, departments)}&year=${selectedYear}&dept=${encodeURIComponent(selectedDepartmentId)}&tab=map`,
       },
     }
   } catch (error) {

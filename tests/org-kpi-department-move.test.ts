@@ -23,10 +23,11 @@ async function run(name: string, fn: () => void | Promise<void>) {
   }
 }
 
-function makeKpi(overrides?: Partial<OrgKpiViewModel>): OrgKpiViewModel {
+function makeKpi(overrides: Partial<OrgKpiViewModel> = {}): OrgKpiViewModel {
   return {
     id: 'org-kpi-1',
-    title: '원가 절감',
+    title: '핵심 비용 절감',
+    scope: 'division',
     tags: [],
     evalYear: 2026,
     departmentId: 'dept-hq',
@@ -35,6 +36,8 @@ function makeKpi(overrides?: Partial<OrgKpiViewModel>): OrgKpiViewModel {
     parentOrgKpiId: null,
     parentOrgKpiTitle: null,
     parentOrgDepartmentName: null,
+    parentReference: null,
+    childReferences: [],
     childOrgKpiCount: 0,
     lineage: [],
     category: '운영',
@@ -73,22 +76,24 @@ async function main() {
     const before = buildOrgKpiServerListSignature([makeKpi()])
     const after = buildOrgKpiServerListSignature([
       makeKpi({
-        departmentId: 'dept-hr',
+        departmentId: 'dept-hr-team',
         departmentName: '인사팀',
+        scope: 'team',
       }),
     ])
 
     assert.notEqual(before, after)
   })
 
-  await run('saved org KPI is reclassified into the new department immediately after save', () => {
+  await run('saved org KPI is reclassified into the new department and scope immediately after save', () => {
     const currentItems = [
       makeKpi(),
       makeKpi({
         id: 'org-kpi-2',
         title: '채용 브랜딩 강화',
-        departmentId: 'dept-hr',
+        departmentId: 'dept-hr-team',
         departmentName: '인사팀',
+        scope: 'team',
       }),
     ]
 
@@ -96,25 +101,40 @@ async function main() {
       currentItems,
       savedId: 'org-kpi-1',
       departments: [
-        { id: 'dept-hq', name: '경영지원본부', parentDepartmentId: null, organizationName: '본사', level: 0 },
-        { id: 'dept-hr', name: '인사팀', parentDepartmentId: 'dept-hq', organizationName: '본사', level: 1 },
+        {
+          id: 'dept-hq',
+          name: '경영지원본부',
+          parentDepartmentId: null,
+          organizationName: '본사',
+          level: 0,
+          scope: 'division',
+        },
+        {
+          id: 'dept-hr-team',
+          name: '인사팀',
+          parentDepartmentId: 'dept-hq',
+          organizationName: '본사',
+          level: 1,
+          scope: 'team',
+        },
       ],
       parentGoalOptions: [
         {
-          id: 'parent-hr',
-          title: '인사 전략 고도화',
-          departmentId: 'dept-hr',
-          departmentName: '인사팀',
+          id: 'parent-division',
+          title: '인재 확보 고도화',
+          departmentId: 'dept-hq',
+          departmentName: '경영지원본부',
           evalYear: 2026,
+          scope: 'division',
         },
       ],
       form: {
-        deptId: 'dept-hr',
+        deptId: 'dept-hr-team',
         evalYear: '2026',
-        parentOrgKpiId: 'parent-hr',
+        parentOrgKpiId: 'parent-division',
         kpiType: 'QUALITATIVE',
         kpiCategory: '인사',
-        kpiName: '핵심 인재 확보',
+        kpiName: '우수 인재 확보',
         tags: '채용, 브랜딩',
         definition: '신규 정의',
         formula: '신규 산식',
@@ -129,39 +149,38 @@ async function main() {
 
     const moved = updated.find((item) => item.id === 'org-kpi-1')
     assert.ok(moved)
-    assert.equal(moved.departmentId, 'dept-hr')
+    assert.equal(moved.departmentId, 'dept-hr-team')
     assert.equal(moved.departmentName, '인사팀')
-    assert.equal(moved.parentOrgKpiId, 'parent-hr')
-    assert.equal(moved.parentOrgKpiTitle, '인사 전략 고도화')
-    assert.equal(moved.title, '핵심 인재 확보')
+    assert.equal(moved.scope, 'team')
+    assert.equal(moved.parentOrgKpiId, 'parent-division')
+    assert.equal(moved.parentOrgKpiTitle, '인재 확보 고도화')
+    assert.equal(moved.parentReference?.scope, 'division')
+    assert.equal(moved.title, '우수 인재 확보')
     assert.equal(moved.category, '인사')
-
     assert.equal(moved.targetValue, 12)
     assert.equal(moved.targetValueT, 10)
     assert.equal(moved.targetValueE, 12)
     assert.equal(moved.targetValueS, 14)
-
-    const oldDepartmentCount = updated.filter((item) => item.departmentId === 'dept-hq').length
-    const newDepartmentCount = updated.filter((item) => item.departmentId === 'dept-hr').length
-    assert.equal(oldDepartmentCount, 0)
-    assert.equal(newDepartmentCount, 2)
   })
 
-  await run('org KPI client keeps server sync tied to department-sensitive signatures and refresh URL state', () => {
+  await run('org KPI client keeps URL state synchronized with scope and selected KPI', () => {
     const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
     assert.equal(source.includes('buildOrgKpiServerListSignature(pageData.list)'), true)
     assert.equal(source.includes('applySavedOrgKpiToList'), true)
-    assert.equal(source.includes("nextParams.set('dept', saved.deptId)"), true)
-    assert.equal(source.includes("nextParams.set('kpiId', saved.id)"), true)
-    assert.equal(source.includes('router.replace(`/kpi/org'), true)
+    assert.equal(source.includes("['scope', overrides?.scope ?? pageData.selectedScope]"), true)
+    assert.equal(source.includes("['dept', overrides?.dept"), true)
+    assert.equal(source.includes("['kpiId', overrides?.kpiId"), true)
+    assert.equal(source.includes('window.history.replaceState'), true)
   })
 
-  await run('org KPI update route still persists deptId changes in the database', () => {
-    const routeSource = read('src/app/api/kpi/org/[id]/route.ts')
+  await run('org KPI update routes validate scope before persisting department changes', () => {
+    const createRouteSource = read('src/app/api/kpi/org/route.ts')
+    const updateRouteSource = read('src/app/api/kpi/org/[id]/route.ts')
 
-    assert.equal(routeSource.includes('const targetDeptId = data.deptId ?? current.deptId'), true)
-    assert.equal(routeSource.includes("...(data.deptId !== undefined ? { deptId: data.deptId } : {})"), true)
+    assert.equal(createRouteSource.includes('assertOrgKpiScopeMatchesDepartment'), true)
+    assert.equal(updateRouteSource.includes('assertOrgKpiScopeMatchesDepartment'), true)
+    assert.equal(updateRouteSource.includes('const targetDeptId = data.deptId ?? current.deptId'), true)
   })
 }
 

@@ -6,6 +6,7 @@ import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateOrgKpiSchema } from '@/lib/validations'
 import { validateOrgParentLink } from '@/server/goal-alignment'
+import { assertOrgKpiScopeMatchesDepartment } from '@/server/org-kpi-scope-validation'
 
 function canManage(role: string) {
   return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
@@ -97,6 +98,11 @@ export async function POST(request: Request) {
     if (scopeDepartmentIds && !scopeDepartmentIds.includes(data.deptId)) {
       throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 부서입니다.')
     }
+
+    await assertOrgKpiScopeMatchesDepartment({
+      requestedScope: data.scope ?? null,
+      deptId: data.deptId,
+    })
 
     const targetDepartment = await prisma.department.findUnique({
       where: { id: data.deptId },

@@ -76,12 +76,23 @@ export function applySavedOrgKpiToList(params: {
     title: params.form.kpiName.trim(),
     tags: parseTagInput(params.form.tags),
     evalYear: Number(params.form.evalYear),
+    scope: nextDepartment?.scope ?? 'team',
     departmentId: params.form.deptId,
     departmentName: nextDepartment?.name ?? '',
     departmentCode: '',
     parentOrgKpiId: params.form.parentOrgKpiId || null,
     parentOrgKpiTitle: nextParent?.title ?? null,
     parentOrgDepartmentName: nextParent?.departmentName ?? null,
+    parentReference: nextParent
+      ? {
+          id: nextParent.id,
+          title: nextParent.title,
+          departmentId: nextParent.departmentId,
+          departmentName: nextParent.departmentName,
+          scope: nextParent.scope,
+        }
+      : null,
+    childReferences: [],
     childOrgKpiCount: 0,
     lineage: [],
     category: params.form.kpiCategory.trim(),
@@ -136,6 +147,9 @@ export function applySavedOrgKpiToList(params: {
       linkedPersonalKpis: item.linkedPersonalKpis,
       recentMonthlyRecords: item.recentMonthlyRecords,
       history: item.history,
+      parentReference: nextItem.parentReference,
+      childReferences: item.childReferences,
+      scope: nextItem.scope,
     }
   })
 

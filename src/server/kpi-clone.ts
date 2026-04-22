@@ -5,9 +5,11 @@ import {
   buildOrgKpiTargetValuePersistence,
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
+import type { OrgKpiScope } from '@/lib/org-kpi-scope'
 import { canManagePersonalKpi } from '@/lib/personal-kpi-access'
 import { AppError } from '@/lib/utils'
 import { canAccessEmployee } from '@/server/auth/authorize'
+import { assertOrgKpiScopeMatchesDepartment } from '@/server/org-kpi-scope-validation'
 
 type CloneClientInfo = {
   ipAddress?: string
@@ -47,6 +49,7 @@ type OrgCloneParams = {
   sourceId: string
   targetDeptId: string
   targetEvalYear: number
+  requestedScope?: OrgKpiScope | null
   targetCycleId?: string
   includeProgress: boolean
   includeCheckins: boolean
@@ -516,6 +519,11 @@ export async function cloneOrgKpi(params: OrgCloneParams) {
   if (!canManageOrgKpi(params.session.user.role)) {
     throw new AppError(403, 'FORBIDDEN', '조직 KPI를 복제할 권한이 없습니다.')
   }
+
+  await assertOrgKpiScopeMatchesDepartment({
+    requestedScope: params.requestedScope ?? null,
+    deptId: params.targetDeptId,
+  })
 
   const scopeDepartmentIds = getOrgKpiScopeDepartmentIds({
     role: params.session.user.role,

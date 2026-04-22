@@ -14,6 +14,7 @@ import {
   CALIBRATION_SESSION_TYPE_OPTIONS,
   CALIBRATION_VISIBLE_COLUMN_OPTIONS,
 } from './calibration-session-setup'
+import { ORG_KPI_SCOPE_VALUES } from './org-kpi-scope'
 
 // ============================================
 // 議곗쭅??愿??
@@ -93,6 +94,7 @@ const BUSINESS_PLAN_SUMMARY_MAX = 20_000
 const BUSINESS_PLAN_BODY_MAX = 100_000
 const JOB_DESCRIPTION_SUMMARY_MAX = 20_000
 const JOB_DESCRIPTION_BODY_MAX = 100_000
+const OrgKpiScopeSchema = z.enum(ORG_KPI_SCOPE_VALUES)
 
 const orgKpiLongTextSchema = (label: string) =>
   z
@@ -106,6 +108,7 @@ const jobDescriptionLongTextSchema = (label: string, max: number) =>
   z.string().max(max, `${label}???덈Т 源곷땲?? ${max.toLocaleString()}???대궡濡??낅젰??二쇱꽭??`)
 
 export const CreateOrgKpiSchema = z.object({
+  scope: OrgKpiScopeSchema.optional(),
   deptId: z.string().min(1),
   evalYear: z.number().int().min(2020).max(2100),
   kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']),
@@ -125,6 +128,7 @@ export const CreateOrgKpiSchema = z.object({
 })
 
 export const UpdateOrgKpiSchema = z.object({
+  scope: OrgKpiScopeSchema.optional(),
   deptId: z.string().min(1).optional(),
   evalYear: z.number().int().min(2020).max(2100).optional(),
   kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']).optional(),
@@ -169,6 +173,7 @@ export const DeleteOrgKpiSchema = z
   })
 
 export const CloneOrgKpiSchema = z.object({
+  scope: OrgKpiScopeSchema.optional(),
   targetDeptId: z.string().min(1),
   targetEvalYear: z.number().int().min(2020).max(2100),
   targetCycleId: z.string().min(1).optional(),
@@ -247,6 +252,7 @@ export const BulkPersonalKpiEditSchema = z
 
 export const BulkOrgKpiEditSchema = z
   .object({
+    scope: OrgKpiScopeSchema.optional(),
     ids: z.array(z.string().min(1)).min(1).max(100),
     deptId: z.string().min(1).optional(),
     kpiCategory: z.string().min(1).max(50).optional(),
@@ -1685,6 +1691,7 @@ export const BulkOrgKpiRowSchema = z.object({
 })
 
 export const BulkOrgKpiUploadSchema = z.object({
+  scope: OrgKpiScopeSchema.optional(),
   fileName: z.string().max(255).optional(),
   rows: z.array(BulkOrgKpiRowSchema).min(1).max(300),
 })

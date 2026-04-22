@@ -5,6 +5,7 @@ import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { BulkOrgKpiUploadSchema } from '@/lib/validations'
+import { assertOrgKpiScopeMatchesDepartments } from '@/server/org-kpi-scope-validation'
 
 function canManage(role: string) {
   return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
@@ -42,6 +43,11 @@ export async function POST(request: Request) {
     const scopeDepartmentIds = getScopeDepartmentIds(session)
     const rows = validated.data.rows
     const departmentIds = Array.from(new Set(rows.map((row) => row.deptId)))
+
+    await assertOrgKpiScopeMatchesDepartments({
+      requestedScope: validated.data.scope ?? null,
+      deptIds: departmentIds,
+    })
 
     if (scopeDepartmentIds) {
       const unauthorizedDept = departmentIds.find((deptId) => !scopeDepartmentIds.includes(deptId))
