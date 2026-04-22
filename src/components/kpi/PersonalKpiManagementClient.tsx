@@ -25,6 +25,7 @@ import {
   type PersonalKpiSubmitCtaState,
   type PersonalKpiTabKey,
 } from '@/lib/personal-kpi-cta'
+import { formatCountWithUnit, formatRateBaseCopy } from '@/lib/metric-copy'
 
 type Props = PersonalKpiPageData & {
   initialTab?: string
@@ -1628,16 +1629,17 @@ function HeroSection(props: {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="총 KPI 수" value={`${props.summary.totalCount}개`} />
-            <MetricCard label="총 가중치" value={`${props.summary.totalWeight}%`} />
-            <MetricCard label="남은 가중치" value={`${props.summary.remainingWeight}%`} />
+            <MetricCard label="전체 개인 KPI" value={formatCountWithUnit(props.summary.totalCount, '개')} helper="현재 선택 조건에 포함된 개인 KPI 수" />
+            <MetricCard label="총 가중치" value={`${props.summary.totalWeight}%`} helper="현재 개인 KPI 가중치 합계" />
+            <MetricCard label="남은 가중치" value={`${props.summary.remainingWeight}%`} helper="100% 대비 추가 배분 가능한 가중치" />
             <MetricCard
-              label="조직 KPI 연결률"
+              label="조직 KPI 연결 비율"
               value={
                 props.summary.totalCount > 0
                   ? `${Math.round((props.summary.linkedOrgKpiCount / props.summary.totalCount) * 100)}%`
                   : '0%'
               }
+              helper={formatRateBaseCopy('전체 개인 KPI')}
             />
           </div>
         </div>
@@ -1726,10 +1728,18 @@ function SummaryCards(props: { summary: Props['summary'] }) {
 
   return (
     <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <MetricCard label="연결된 조직 KPI 수" value={`${props.summary.linkedOrgKpiCount}개`} />
-      <MetricCard label="검토 대기 수" value={`${props.summary.reviewPendingCount}개`} />
-      <MetricCard label="반려 건수" value={`${props.summary.rejectedCount}개`} />
-      <MetricCard label="최근 월간 실적 반영률" value={`${props.summary.monthlyCoverageRate}%`} />
+      <MetricCard
+        label="조직 KPI에 연결된 개인 KPI"
+        value={formatCountWithUnit(props.summary.linkedOrgKpiCount, '건')}
+        helper="조직 KPI와 연결된 개인 KPI 건수"
+      />
+      <MetricCard label="검토 대기 KPI" value={formatCountWithUnit(props.summary.reviewPendingCount, '개')} helper="현재 검토 대기 상태의 개인 KPI 수" />
+      <MetricCard label="반려 KPI" value={formatCountWithUnit(props.summary.rejectedCount, '개')} helper="보완 후 다시 제출이 필요한 개인 KPI 수" />
+      <MetricCard
+        label="최근 월간 실적 반영 비율"
+        value={`${props.summary.monthlyCoverageRate}%`}
+        helper={formatRateBaseCopy('전체 개인 KPI')}
+      />
       <div className="md:col-span-2 xl:col-span-4">
         <SectionCard title="다음 행동" description={nextAction}>
           <div className="flex flex-wrap gap-2 text-xs text-slate-600">
@@ -3187,11 +3197,12 @@ function SectionCard(props: { title: string; description?: string; children: Rea
   )
 }
 
-function MetricCard(props: { label: string; value: string }) {
+function MetricCard(props: { label: string; value: string; helper?: string }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-sm text-slate-500">{props.label}</p>
       <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{props.value}</p>
+      {props.helper ? <p className="mt-2 text-xs text-slate-500">{props.helper}</p> : null}
     </div>
   )
 }

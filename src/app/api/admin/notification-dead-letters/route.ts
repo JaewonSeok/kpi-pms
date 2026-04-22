@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     })
 
     if (!letters.length) {
-      throw new AppError(404, 'NOT_FOUND', '선택한 dead letter 항목을 찾을 수 없습니다.')
+      throw new AppError(404, 'NOT_FOUND', '선택한 실패함 항목을 찾을 수 없습니다.')
     }
 
     const clientInfo = getClientInfo(request)

@@ -273,14 +273,14 @@ export function AdminOpsClient() {
               {staleData ? <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">데이터 갱신 지연</span> : null}
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetricCard label="failed jobs 24h" value={summary.metrics.failedJobs24h.toLocaleString('ko-KR')} />
-              <MetricCard label="dead letters" value={summary.metrics.notificationDeadLetters.toLocaleString('ko-KR')} />
-              <MetricCard label="AI fallback 발생 수" value={summary.metrics.aiFallback24h.toLocaleString('ko-KR')} />
-              <MetricCard label="over-budget scenarios" value={summary.metrics.overBudgetScenarios.toLocaleString('ko-KR')} />
+              <MetricCard label="24시간 실패 작업" value={`${summary.metrics.failedJobs24h.toLocaleString('ko-KR')}건`} />
+              <MetricCard label="실패함 알림" value={`${summary.metrics.notificationDeadLetters.toLocaleString('ko-KR')}건`} />
+              <MetricCard label="AI 대체 응답" value={`${summary.metrics.aiFallback24h.toLocaleString('ko-KR')}건`} />
+              <MetricCard label="예산 초과 시나리오" value={`${summary.metrics.overBudgetScenarios.toLocaleString('ko-KR')}건`} />
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 xl:w-[22rem]">
-            <button onClick={() => setTab('runbooks')} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50">Runbook 열기</button>
+            <button onClick={() => setTab('runbooks')} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50">운영 가이드 열기</button>
             <button onClick={() => setTab('events')} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50">운영 이력 보기</button>
             <Link href="/admin/notifications" className="rounded-xl bg-slate-900 px-4 py-3 text-center text-sm font-medium text-white">알림 운영으로 이동</Link>
             <Link href="/admin/google-access" className="rounded-xl border border-slate-200 px-4 py-3 text-center text-sm font-medium text-slate-700 hover:bg-slate-50">Google 계정 등록으로 이동</Link>
@@ -291,17 +291,17 @@ export function AdminOpsClient() {
       {banner ? <div className={cls('rounded-2xl border px-4 py-3 text-sm', banner.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : banner.tone === 'error' ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-blue-200 bg-blue-50 text-blue-700')}>{banner.message}</div> : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="failed jobs 24h" value={summary.metrics.failedJobs24h.toLocaleString('ko-KR')} helper="실패 작업 확인" />
-        <MetricCard label="dead letter 수" value={summary.metrics.notificationDeadLetters.toLocaleString('ko-KR')} helper="복구 필요 알림" />
-        <MetricCard label="AI fallback 수" value={summary.metrics.aiFallback24h.toLocaleString('ko-KR')} helper="품질/안정성 지표" />
-        <MetricCard label="over-budget scenario 수" value={summary.metrics.overBudgetScenarios.toLocaleString('ko-KR')} helper="보상 운영 리스크" />
-        <MetricCard label="로그인 준비 불가 계정 수" value={summary.metrics.loginUnavailableAccounts.toLocaleString('ko-KR')} helper="Google 계정 점검" />
-        <MetricCard label="진행 중 평가 주기 수" value={summary.metrics.activeEvalCycles.toLocaleString('ko-KR')} helper={`지연 ${summary.metrics.delayedEvalCycles}건`} />
+        <MetricCard label="24시간 실패 작업" value={`${summary.metrics.failedJobs24h.toLocaleString('ko-KR')}건`} helper="최근 24시간 기준" />
+        <MetricCard label="실패함 알림" value={`${summary.metrics.notificationDeadLetters.toLocaleString('ko-KR')}건`} helper="복구가 필요한 알림" />
+        <MetricCard label="AI 대체 응답" value={`${summary.metrics.aiFallback24h.toLocaleString('ko-KR')}건`} helper="품질 또는 안정성 지표" />
+        <MetricCard label="예산 초과 시나리오" value={`${summary.metrics.overBudgetScenarios.toLocaleString('ko-KR')}건`} helper="보상 운영 리스크" />
+        <MetricCard label="로그인 준비 불가 계정" value={`${summary.metrics.loginUnavailableAccounts.toLocaleString('ko-KR')}개`} helper="Google 계정 점검 필요" />
+        <MetricCard label="진행 중 평가 주기" value={`${summary.metrics.activeEvalCycles.toLocaleString('ko-KR')}개`} helper={`지연 ${summary.metrics.delayedEvalCycles}개`} />
         <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-sm font-medium text-slate-500">다음 행동</div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Link href="/admin/notifications" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">실패 작업 확인</Link>
-            <Link href="/admin/notifications" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">dead letter 재처리</Link>
+            <Link href="/admin/notifications" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">실패함 재처리</Link>
             <Link href="/admin/google-access" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">로그인 이슈 계정 점검</Link>
             <Link href="/compensation/manage" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">예산 초과 시나리오 확인</Link>
           </div>
@@ -313,7 +313,7 @@ export function AdminOpsClient() {
           ['health', '서비스 상태'],
           ['risks', '업무 리스크'],
           ['events', '이벤트 로그'],
-          ['runbooks', 'Runbook'],
+          ['runbooks', '운영 가이드'],
           ['ai', 'AI 보조'],
         ].map(([key, label]) => (
           <button key={key} onClick={() => setTab(key as Tab)} className={cls('whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition', tab === key ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50')}>{label}</button>
@@ -343,13 +343,13 @@ export function AdminOpsClient() {
             </div>
             <div className="mt-5 space-y-3">{summary.featureFlags.map((flag) => (
               <div key={flag.key} className="rounded-xl border border-slate-200 px-4 py-3">
-                <div className="flex items-center justify-between gap-3"><div><div className="font-medium text-slate-900">{flag.key}</div><div className="mt-1 text-xs text-slate-500">{flag.description}</div></div><span className={cls('rounded-full border px-3 py-1 text-xs font-semibold', toneClass(flag.enabled ? 'ok' : 'warn'))}>{flag.enabled ? 'enabled' : 'disabled'}</span></div>
+                <div className="flex items-center justify-between gap-3"><div><div className="font-medium text-slate-900">{flag.key}</div><div className="mt-1 text-xs text-slate-500">{flag.description}</div></div><span className={cls('rounded-full border px-3 py-1 text-xs font-semibold', toneClass(flag.enabled ? 'ok' : 'warn'))}>{flag.enabled ? '활성' : '비활성'}</span></div>
               </div>
             ))}</div>
             <div className="mt-5 space-y-3">{summary.secretChecks.map((item) => (
               <div key={item.name} className="rounded-xl border border-slate-200 px-4 py-3">
-                <div className="flex items-center justify-between gap-3"><div className="font-medium text-slate-900">{item.name}</div><span className={cls('rounded-full border px-3 py-1 text-xs font-semibold', toneClass(item.configured ? 'ok' : item.isRequired ? 'error' : 'warn'))}>{item.configured ? 'configured' : item.isRequired ? 'required' : 'optional'}</span></div>
-                <div className="mt-1 text-xs text-slate-500">required in {item.requiredIn.join(', ') || 'none'}</div>
+                <div className="flex items-center justify-between gap-3"><div className="font-medium text-slate-900">{item.name}</div><span className={cls('rounded-full border px-3 py-1 text-xs font-semibold', toneClass(item.configured ? 'ok' : item.isRequired ? 'error' : 'warn'))}>{item.configured ? '설정됨' : item.isRequired ? '필수' : '선택'}</span></div>
+                <div className="mt-1 text-xs text-slate-500">필수 환경: {item.requiredIn.join(', ') || '없음'}</div>
               </div>
             ))}</div>
           </Panel>
@@ -407,7 +407,7 @@ export function AdminOpsClient() {
 
       {tab === 'runbooks' ? (
         <div className="grid gap-6 xl:grid-cols-[1fr_0.95fr]">
-          <Panel title="Runbook">
+          <Panel title="운영 가이드">
             <div className="space-y-3">{summary.runbooks.map((item) => (
               <button key={item.id} onClick={() => setSelectedRunbookId(item.id)} className={cls('w-full rounded-2xl border px-4 py-4 text-left transition', currentRunbook?.id === item.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>
                 <div className="flex items-center justify-between gap-3"><div className="font-medium">{item.title}</div>{item.severity ? <span className={cls('rounded-full border px-3 py-1 text-xs font-semibold', currentRunbook?.id === item.id ? 'border-white/20 bg-white/10 text-white' : severityClass(item.severity === 'HIGH' ? 'HIGH' : item.severity === 'MEDIUM' ? 'MEDIUM' : 'LOW'))}>{item.severity}</span> : null}</div>
@@ -415,12 +415,12 @@ export function AdminOpsClient() {
               </button>
             ))}</div>
           </Panel>
-          <Panel title="Runbook 상세" action={currentRunbook?.relatedUrl ? <Link href={currentRunbook.relatedUrl} className="text-sm font-medium text-blue-600 hover:text-blue-700">관련 화면 이동</Link> : null}>
+          <Panel title="운영 가이드 상세" action={currentRunbook?.relatedUrl ? <Link href={currentRunbook.relatedUrl} className="text-sm font-medium text-blue-600 hover:text-blue-700">관련 화면 이동</Link> : null}>
             {currentRunbook ? <div className="space-y-4">
               <div className="text-lg font-semibold text-slate-900">{currentRunbook.title}</div>
               <p className="text-sm leading-6 text-slate-600">{currentRunbook.description}</p>
               {currentRunbook.docUrl ? <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-medium text-slate-900">문서 경로</div><div className="mt-2 break-all font-mono text-xs text-slate-600">{currentRunbook.docUrl}</div></div> : null}
-            </div> : <Empty message="runbook을 선택하면 조치 경로를 볼 수 있습니다." />}
+            </div> : <Empty message="운영 가이드를 선택하면 조치 경로를 볼 수 있습니다." />}
           </Panel>
         </div>
       ) : null}
@@ -431,7 +431,7 @@ export function AdminOpsClient() {
             <Panel title="AI 보조">
               <div className="grid gap-3">
                 <button onClick={() => aiMutation.mutate({ action: 'summarize-ops-status', payload: { metrics: summary.metrics, healthChecks: summary.healthChecks, risks: summary.risks } })} className="rounded-xl border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"><div className="font-medium text-slate-900">운영 상태 요약</div><div className="mt-1 text-slate-500">최근 운영 상태를 짧게 요약합니다.</div></button>
-                <button onClick={() => aiMutation.mutate({ action: 'summarize-incident-patterns', payload: { events: filteredEvents, risks: filteredRisks } })} className="rounded-xl border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"><div className="font-medium text-slate-900">이벤트 패턴 요약</div><div className="mt-1 text-slate-500">이벤트와 dead letter 패턴을 설명합니다.</div></button>
+                <button onClick={() => aiMutation.mutate({ action: 'summarize-incident-patterns', payload: { events: filteredEvents, risks: filteredRisks } })} className="rounded-xl border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"><div className="font-medium text-slate-900">이벤트 패턴 요약</div><div className="mt-1 text-slate-500">이벤트와 실패함 패턴을 설명합니다.</div></button>
                 <button onClick={() => aiMutation.mutate({ action: 'generate-daily-report', payload: { metrics: summary.metrics, status: summary.status, events: filteredEvents.slice(0, 8), risks: filteredRisks.slice(0, 6) } })} className="rounded-xl border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"><div className="font-medium text-slate-900">운영 보고 초안</div><div className="mt-1 text-slate-500">관리자/임원 공유용 보고 문장을 생성합니다.</div></button>
                 <button onClick={() => aiMutation.mutate({ action: 'prioritize-risks', payload: { risks: filteredRisks, metrics: summary.metrics } })} className="rounded-xl border border-slate-200 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"><div className="font-medium text-slate-900">리스크 우선순위 정리</div><div className="mt-1 text-slate-500">지금 먼저 봐야 할 항목 Top 3를 제안합니다.</div></button>
               </div>
@@ -447,15 +447,15 @@ export function AdminOpsClient() {
               ))}</div> : <Empty message="AI 사용 로그가 없습니다." />}
             </Panel>
           </div>
-          <Panel title="AI Preview">
+          <Panel title="AI 미리보기">
             {aiPreview ? <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3"><span className={cls('rounded-full border px-3 py-1 text-xs font-semibold', aiPreview.source === 'ai' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800')}>{aiPreview.source === 'ai' ? 'AI 응답' : aiPreview.source === 'fallback' ? 'Fallback 응답' : 'Disabled fallback'}</span>{aiPreview.fallbackReason ? <span className="text-xs text-slate-500">{aiPreview.fallbackReason}</span> : null}</div>
+              <div className="flex flex-wrap items-center gap-3"><span className={cls('rounded-full border px-3 py-1 text-xs font-semibold', aiPreview.source === 'ai' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800')}>{aiPreview.source === 'ai' ? 'AI 응답' : aiPreview.source === 'fallback' ? '대체 응답' : '대체 응답 비활성'}</span>{aiPreview.fallbackReason ? <span className="text-xs text-slate-500">{aiPreview.fallbackReason}</span> : null}</div>
               <pre className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-950 p-4 text-xs leading-6 text-slate-100">{JSON.stringify(aiPreview.result, null, 2)}</pre>
               <div className="flex flex-wrap gap-3">
                 <button onClick={() => aiDecisionMutation.mutate({ action: 'approve' })} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60" disabled={aiDecisionMutation.isPending}>승인</button>
                 <button onClick={() => aiDecisionMutation.mutate({ action: 'reject' })} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-60" disabled={aiDecisionMutation.isPending}>반려</button>
               </div>
-            </div> : <Empty message="왼쪽에서 AI 보조 작업을 실행하면 preview가 표시됩니다." />}
+            </div> : <Empty message="왼쪽에서 AI 보조 작업을 실행하면 미리보기 결과가 표시됩니다." />}
           </Panel>
         </div>
       ) : null}

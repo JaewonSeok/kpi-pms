@@ -9,6 +9,7 @@ import type {
   GoalAlignmentPageData,
   GoalAlignmentPersonalNode,
 } from '@/server/goal-alignment'
+import { formatRateBaseCopy } from '@/lib/metric-copy'
 
 type SelectedItem =
   | { kind: 'org'; node: GoalAlignmentOrgNode }
@@ -120,10 +121,10 @@ export function GoalAlignmentClient({ data }: { data: GoalAlignmentPageData }) {
         {actionMessage ? <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">{actionMessage}</p> : null}
 
         <div className="mt-6 grid gap-3 md:grid-cols-4">
-          <MetricCard label="조직 목표" value={`${data.summary.orgGoalCount}개`} />
-          <MetricCard label="개인 목표" value={`${data.summary.personalGoalCount}개`} />
-          <MetricCard label="개인 목표 수립률" value={`${data.summary.personalGoalSetupRate}%`} />
-          <MetricCard label="체크인 진행률" value={`${data.summary.completedCheckInRate}%`} />
+          <MetricCard label="조직 목표" value={`${data.summary.orgGoalCount}개`} helper="현재 선택 조건에 포함된 조직 목표 수" />
+          <MetricCard label="개인 목표" value={`${data.summary.personalGoalCount}개`} helper="현재 선택 조건에 포함된 개인 목표 수" />
+          <MetricCard label="개인 목표 수립 비율" value={`${data.summary.personalGoalSetupRate}%`} helper={formatRateBaseCopy('대상 인원')} />
+          <MetricCard label="체크인 완료 비율" value={`${data.summary.completedCheckInRate}%`} helper={formatRateBaseCopy('전체 체크인')} />
         </div>
       </section>
 
@@ -206,17 +207,17 @@ export function GoalAlignmentClient({ data }: { data: GoalAlignmentPageData }) {
 
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">운영 모니터링</h2>
-            <p className="mt-1 text-sm text-slate-500">조직별 수립률, 연결률, 체크인 진행률을 한 번에 확인할 수 있습니다.</p>
+            <p className="mt-1 text-sm text-slate-500">조직별 개인 목표 수립 비율, 조직 KPI 연결 비율, 체크인 완료 비율을 한 번에 확인할 수 있습니다.</p>
             <div className="mt-5 overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-[0.16em] text-slate-500">
                   <tr>
                     <th className="px-3 py-3 text-left">조직</th>
-                    <th className="px-3 py-3 text-right">수립률</th>
-                    <th className="px-3 py-3 text-right">연결률</th>
-                    <th className="px-3 py-3 text-right">체크인</th>
-                    <th className="px-3 py-3 text-right">주의</th>
-                    <th className="px-3 py-3 text-right">이동</th>
+                    <th className="px-3 py-3 text-right">개인 목표 수립 비율</th>
+                    <th className="px-3 py-3 text-right">조직 KPI 연결 비율</th>
+                    <th className="px-3 py-3 text-right">체크인 완료 비율</th>
+                    <th className="px-3 py-3 text-right">미연결 개인 목표</th>
+                    <th className="px-3 py-3 text-right">상세</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -360,8 +361,8 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl bg-slate-50 px-4 py-4"><div className="text-xs text-slate-500">{label}</div><div className="mt-2 text-lg font-semibold text-slate-900">{value}</div></div>
+function MetricCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
+  return <div className="rounded-2xl bg-slate-50 px-4 py-4"><div className="text-xs text-slate-500">{label}</div><div className="mt-2 text-lg font-semibold text-slate-900">{value}</div>{helper ? <div className="mt-2 text-xs text-slate-500">{helper}</div> : null}</div>
 }
 
 function FilterField({ label, children }: { label: string; children: ReactNode }) {

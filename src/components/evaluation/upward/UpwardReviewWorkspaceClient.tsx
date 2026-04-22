@@ -532,10 +532,10 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
       {props.data.state !== 'ready' ? (
         <SectionCard title="상태 안내" description={props.data.message}>
           <div className="grid gap-4 md:grid-cols-4">
-            <StatCard label="운영 라운드" value={`${props.data.summary.activeRounds}`} />
-            <StatCard label="미제출" value={`${props.data.summary.pendingAssignments}`} />
-            <StatCard label="제출 완료" value={`${props.data.summary.submittedAssignments}`} />
-            <StatCard label="공개 가능 대상" value={`${props.data.summary.releasedTargets}`} />
+            <StatCard label="운영 라운드" value={`${props.data.summary.activeRounds}개`} />
+            <StatCard label="미제출 응답" value={`${props.data.summary.pendingAssignments}건`} />
+            <StatCard label="제출 완료 응답" value={`${props.data.summary.submittedAssignments}건`} />
+            <StatCard label="공개 가능 대상자" value={`${props.data.summary.releasedTargets}명`} />
           </div>
         </SectionCard>
       ) : null}
@@ -543,10 +543,10 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
       {props.data.mode === 'overview' && props.data.overview ? (
         <div className="space-y-6">
           <section className="grid gap-4 md:grid-cols-4">
-            <StatCard label="진행 중 라운드" value={`${props.data.summary.activeRounds}`} />
+            <StatCard label="진행 중 라운드" value={`${props.data.summary.activeRounds}개`} />
             <StatCard label="내 미제출" value={`${props.data.overview.assignments.filter((item) => item.status !== 'SUBMITTED').length}건`} />
-            <StatCard label="내 제출 완료" value={`${props.data.overview.assignments.filter((item) => item.status === 'SUBMITTED').length}건`} />
-            <StatCard label="공개 가능 대상" value={`${props.data.summary.releasedTargets}명`} />
+            <StatCard label="내 제출 완료 응답" value={`${props.data.overview.assignments.filter((item) => item.status === 'SUBMITTED').length}건`} />
+            <StatCard label="공개 가능 대상자" value={`${props.data.summary.releasedTargets}명`} />
           </section>
 
           <SectionCard

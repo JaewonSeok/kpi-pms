@@ -178,11 +178,11 @@ export function PerformanceAssignmentAdminClient({
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <MetricCard label="전체 배정" value={String(data.summary?.totalCount ?? 0)} />
-              <MetricCard label="수동 조정" value={String(data.summary?.manualOverrideCount ?? 0)} />
-              <MetricCard label="제출 완료" value={String(data.summary?.submittedCount ?? 0)} />
-              <MetricCard label="마감 지연" value={String(data.summary?.overdueCount ?? 0)} />
-              <MetricCard label="미배정" value={String(data.summary?.unassignedCount ?? 0)} />
+              <MetricCard label="전체 평가 배정" value={`${data.summary?.totalCount ?? 0}건`} />
+              <MetricCard label="수동 조정 배정" value={`${data.summary?.manualOverrideCount ?? 0}건`} />
+              <MetricCard label="제출 완료 평가" value={`${data.summary?.submittedCount ?? 0}건`} />
+              <MetricCard label="마감 지연 평가" value={`${data.summary?.overdueCount ?? 0}건`} />
+              <MetricCard label="미배정 평가" value={`${data.summary?.unassignedCount ?? 0}건`} />
             </div>
           </div>
 

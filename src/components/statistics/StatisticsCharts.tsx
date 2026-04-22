@@ -68,9 +68,9 @@ export function StatisticsStageStatusChart({
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="pending" stackId="status" fill={STATUS_COLORS.pending} name="대기" />
         <Bar dataKey="inProgress" stackId="status" fill={STATUS_COLORS.inProgress} name="작성 중" />
-        <Bar dataKey="submitted" stackId="status" fill={STATUS_COLORS.submitted} name="제출 완료" />
-        <Bar dataKey="rejected" stackId="status" fill={STATUS_COLORS.rejected} name="반려" />
-        <Bar dataKey="confirmed" stackId="status" fill={STATUS_COLORS.confirmed} name="최종 확정" />
+        <Bar dataKey="submitted" stackId="status" fill={STATUS_COLORS.submitted} name="제출 완료 평가" />
+        <Bar dataKey="rejected" stackId="status" fill={STATUS_COLORS.rejected} name="반려 평가" />
+        <Bar dataKey="confirmed" stackId="status" fill={STATUS_COLORS.confirmed} name="최종 확정 평가" />
       </BarChart>
     </ResponsiveContainer>
   )

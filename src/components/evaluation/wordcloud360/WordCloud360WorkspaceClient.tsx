@@ -2117,7 +2117,7 @@ export function WordCloud360WorkspaceClient(props: { data: WordCloud360PageData 
               <div className="mt-4 space-y-3 text-sm">
                 <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"><span>대상자 수</span><span>{data.adminView?.progress.targetCount ?? 0}명</span></div>
                 <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"><span>편성 수</span><span>{data.adminView?.progress.assignmentCount ?? 0}건</span></div>
-                <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"><span>제출 완료</span><span>{data.adminView?.progress.submittedCount ?? 0}건</span></div>
+                <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"><span>제출 완료 응답</span><span>{data.adminView?.progress.submittedCount ?? 0}건</span></div>
                 <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"><span>임시 저장</span><span>{data.adminView?.progress.draftCount ?? 0}건</span></div>
                 <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3"><span>미응답</span><span>{data.adminView?.progress.pendingCount ?? 0}건</span></div>
               </div>

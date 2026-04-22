@@ -2958,7 +2958,7 @@ function buildMonthlyExecutionSummary(params: {
     {
       label: '목표 정렬률',
       value: formatPercent(alignmentRate),
-      description: '개인 목표와 조직 목표 연결 기준',
+      description: '개인 목표 기준 조직 KPI 연결 비율',
       tone: alignmentRate >= 80 ? 'success' : alignmentRate >= 60 ? 'warn' : 'error',
       href: buildGoalAlignmentHref({
         cycleId: params.selectedCycleId,
@@ -2967,9 +2967,9 @@ function buildMonthlyExecutionSummary(params: {
       }),
     },
     {
-      label: '개인 목표 설정률',
+      label: '개인 목표 수립 비율',
       value: formatPercent(personalGoalSetupRate),
-      description: '활성 인원 대비 목표 설정',
+      description: '대상 인원 기준 개인 목표 수립 비율',
       tone: personalGoalSetupRate >= 90 ? 'success' : personalGoalSetupRate >= 70 ? 'warn' : 'error',
       href: buildGoalAlignmentHref({
         cycleId: params.selectedCycleId,
@@ -2980,7 +2980,7 @@ function buildMonthlyExecutionSummary(params: {
     {
       label: '체크인 완료율',
       value: formatPercent(completedCheckInRate),
-      description: '선택 기간 기준',
+      description: '전체 체크인 기준 완료 비율',
       tone: completedCheckInRate >= 80 ? 'success' : completedCheckInRate >= 60 ? 'warn' : 'error',
       href: buildGoalAlignmentHref({
         cycleId: params.selectedCycleId,
@@ -2991,7 +2991,7 @@ function buildMonthlyExecutionSummary(params: {
     {
       label: '증빙 보유율',
       value: formatPercent(evidenceCoverageRate),
-      description: '선택 기간 중 증빙이 확인된 KPI',
+      description: '선택 기간 중 증빙 항목이 확인된 KPI 기준',
       tone: evidenceCoverageRate >= 75 ? 'success' : evidenceCoverageRate >= 50 ? 'warn' : 'error',
       href: buildGoalAlignmentHref({
         cycleId: params.selectedCycleId,
@@ -3471,7 +3471,7 @@ function buildStatisticsSummaryCards(params: {
     {
       label: '평가 진행률',
       value: formatPercent(params.evaluationProgressRate),
-      description: '예상 단계 기준 진행률',
+      description: '대상 평가 기준 예상 단계 진행 비율',
       tone:
         typeof params.evaluationProgressRate === 'number'
           ? params.evaluationProgressRate >= 85
@@ -3485,7 +3485,7 @@ function buildStatisticsSummaryCards(params: {
     {
       label: '최종 확정률',
       value: formatPercent(params.finalizedRate),
-      description: '대상 인원 기준',
+      description: '대상 평가 기준 최종 확정 비율',
       tone:
         typeof params.finalizedRate === 'number'
           ? params.finalizedRate >= 85
@@ -3499,7 +3499,7 @@ function buildStatisticsSummaryCards(params: {
     {
       label: '평균 KPI 달성률',
       value: formatPercent(params.averageAchievementRate),
-      description: '선택 기간 최신 실적 기준',
+      description: '선택 기간 최신 월간 기록 기준',
       tone:
         typeof params.averageAchievementRate === 'number'
           ? params.averageAchievementRate >= 90
@@ -3517,7 +3517,7 @@ function buildStatisticsSummaryCards(params: {
     {
       label: '리스크 조직 수',
       value: formatCount(params.riskDepartmentCount),
-      description: '성과·근거·이의제기 기준',
+      description: '성과·근거·이의 신청 신호가 있는 조직 수',
       tone:
         typeof params.riskDepartmentCount === 'number'
           ? params.riskDepartmentCount > 0
@@ -3529,7 +3529,7 @@ function buildStatisticsSummaryCards(params: {
     {
       label: '공정성 경고 건수',
       value: formatCount(params.fairnessWarningCount),
-      description: '분포·정합성·조정 이유 기준',
+      description: '분포·정합성·조정 사유 기준 경고 건수',
       tone:
         typeof params.fairnessWarningCount === 'number'
           ? params.fairnessWarningCount > 0

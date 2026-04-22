@@ -250,7 +250,7 @@ function EvaluationOperationsPanel(props: { section: StatisticsSections['evaluat
           ))}
         </div>
         <SectionTable
-          headers={['조직', '대상 인원', '진행률', '반려', '지연', '최종 확정']}
+          headers={['조직', '대상 평가', '평가 진행률', '반려 평가', '지연 평가', '최종 확정 평가']}
           rows={section.departmentRows.map((row) => [
             <SmartLink key={`${row.departmentId}-name`} href={row.filterHref} className="font-semibold text-slate-900 hover:text-blue-600">
               {row.departmentName}
@@ -321,7 +321,7 @@ function PerformanceDistributionPanel(props: { section: StatisticsSections['perf
           <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">{section.notice}</p>
         ) : null}
         <SectionTable
-          headers={['조직', '평균 점수', '상위 등급', '하위 등급', '조정 비율', '주의']}
+          headers={['조직', '평균 점수', '상위 등급 비율', '하위 등급 비율', '조정 적용 비율', '주의']}
           rows={section.departmentRows.map((row) => [
             <SmartLink key={`${row.departmentId}-name`} href={row.href} className="font-semibold text-slate-900 hover:text-blue-600">
               {row.departmentName}
@@ -366,7 +366,7 @@ function KpiExecutionPanel(props: { section: StatisticsSections['kpiExecution'] 
           ))}
         </div>
         <SectionTable
-          headers={['조직', '인원', '개인 목표 설정률', '정렬률', '체크인 완료율', '평균 진행률', '리스크']}
+          headers={['조직', '대상 인원', '개인 목표 수립 비율', '조직 KPI 연결 비율', '체크인 완료 비율', '평균 달성률', '리스크 KPI 수']}
           rows={section.departmentRows.map((row) => [
             <SmartLink key={`${row.departmentId}-name`} href={row.href} className="font-semibold text-slate-900 hover:text-blue-600">
               {row.departmentName}
@@ -418,7 +418,7 @@ function OrganizationRiskPanel(props: { section: StatisticsSections['organizatio
           )}
         </div>
         <SectionTable
-          headers={['조직', '80% 미만 실적', '근거 부족', '반려', '이의제기', '리스크']}
+          headers={['조직', '80% 미만 실적 KPI', '증빙 부족 KPI', '반려 평가', '활성 이의 신청', '리스크 점수']}
           rows={section.departmentRows.map((row) => [
             <SmartLink key={`${row.departmentId}-name`} href={row.href} className="font-semibold text-slate-900 hover:text-blue-600">
               {row.departmentName}
@@ -469,7 +469,7 @@ function ReadinessPanel(props: { section: StatisticsSections['readinessProxy'] }
           ) : null}
         </div>
         <SectionTable
-          headers={['조직', '평균 점수', '인원']}
+          headers={['조직', '평균 점수', '대상 인원']}
           rows={section.departmentRows.map((row) => [row.departmentName, `${row.averageScore}점`, String(row.count)])}
         />
         {section.feederPool.length ? (
@@ -523,7 +523,7 @@ function FairnessPanel(props: { section: StatisticsSections['fairness'] }) {
           {section.coverageLabel}
         </p>
         <SectionTable
-          headers={['품질 신호', '건수']}
+          headers={['경고 유형', '발생 건수']}
           rows={section.qualityWarnings.map((item) => [item.label, String(item.count)])}
         />
         <div className="mt-4">

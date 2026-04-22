@@ -761,10 +761,10 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <MetricCard label="작성/검토 필요" value={String(props.summary?.actionRequiredCount ?? 0)} help="지금 처리해야 하는 평가" />
-              <MetricCard label="제출 완료" value={String(props.summary?.submittedCount ?? 0)} help="현재 주기 제출 건수" />
-              <MetricCard label="반려 건수" value={String(props.summary?.rejectedCount ?? 0)} help="보완이 필요한 평가" />
-              <MetricCard label="다면 피드백" value={String(props.summary?.feedbackRoundCount ?? 0)} help={props.summary?.evidenceFreshnessLabel ?? '근거 데이터 상태'} />
+              <MetricCard label="작성/검토 필요 평가" value={`${props.summary?.actionRequiredCount ?? 0}건`} help="지금 처리해야 하는 평가 건수" />
+              <MetricCard label="제출 완료 평가" value={`${props.summary?.submittedCount ?? 0}건`} help="현재 주기 기준 제출 완료된 평가 건수" />
+              <MetricCard label="반려 평가" value={`${props.summary?.rejectedCount ?? 0}건`} help="보완이 필요한 평가 건수" />
+              <MetricCard label="다면 피드백 라운드" value={`${props.summary?.feedbackRoundCount ?? 0}개`} help={props.summary?.evidenceFreshnessLabel ?? '근거 데이터 상태'} />
             </div>
             {props.currentUser?.role === 'ROLE_ADMIN' && props.adminSummary ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -772,12 +772,12 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                   평가 품질 운영 요약
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-                  <MetricCard label="가이드 열람" value={String(props.adminSummary.guideViewedCount)} help="가이드를 연 평가 건수" compact />
-                  <MetricCard label="가이드 확인" value={String(props.adminSummary.guideConfirmedCount)} help="확인 완료 처리된 평가" compact />
-                  <MetricCard label="AI 사용" value={String(props.adminSummary.aiUsedCount)} help="AI 보조를 실행한 평가" compact />
-                  <MetricCard label="근거 부족" value={String(props.adminSummary.insufficientEvidenceWarningCount)} help="근거 보강이 필요한 평가" compact />
-                  <MetricCard label="편향 주의" value={String(props.adminSummary.biasWarningCount)} help="표현 점검이 필요한 평가" compact />
-                  <MetricCard label="코칭 보완" value={String(props.adminSummary.coachingGapCount)} help="다음 행동 제안이 약한 평가" compact />
+                  <MetricCard label="가이드 열람 평가" value={`${props.adminSummary.guideViewedCount}건`} help="가이드를 열람한 평가 건수" compact />
+                  <MetricCard label="가이드 확인 평가" value={`${props.adminSummary.guideConfirmedCount}건`} help="확인 완료 처리된 평가 건수" compact />
+                  <MetricCard label="AI 보조 사용 평가" value={`${props.adminSummary.aiUsedCount}건`} help="AI 보조를 실행한 평가 건수" compact />
+                  <MetricCard label="근거 부족 경고" value={`${props.adminSummary.insufficientEvidenceWarningCount}건`} help="근거 보강이 필요한 평가 건수" compact />
+                  <MetricCard label="편향 주의 경고" value={`${props.adminSummary.biasWarningCount}건`} help="표현 점검이 필요한 평가 건수" compact />
+                  <MetricCard label="코칭 보완 경고" value={`${props.adminSummary.coachingGapCount}건`} help="다음 행동 제안이 약한 평가 건수" compact />
                 </div>
               </div>
             ) : null}

@@ -389,7 +389,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
           href: '/admin/ops',
         },
         {
-          label: 'Dead Letter',
+          label: '실패함 알림',
           value: String(opsSummary?.metrics.notificationDeadLetters ?? 0),
           description: '처리가 필요한 알림 실패',
           tone: toTone(opsSummary?.metrics.notificationDeadLetters ?? 0, 1, 1),
@@ -412,11 +412,11 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
       ],
       actions: [
         { label: '운영 관제 보기', description: '시스템 상태와 이벤트 로그 확인', href: '/admin/ops' },
-        { label: '알림 운영', description: 'dead letter와 재처리 현황 확인', href: '/admin/notifications' },
+        { label: '알림 운영', description: '실패함과 재처리 현황 확인', href: '/admin/notifications' },
         { label: 'Google 계정 등록', description: '로그인 계정 매핑과 허용 상태 관리', href: '/admin/google-access' },
         { label: '보상 시뮬레이션', description: '예산 초과와 승인 상태 확인', href: '/compensation/manage' },
         { label: '성과 관리 일정', description: '리뷰, 목표, 서베이, 캘리브레이션, 입사일 일정을 한 화면에서 확인', href: '/admin/performance-calendar' },
-        { label: '성과 얼라인먼트', description: '조직별 목표 수립률, 연결률, 미연결 목표를 운영 화면에서 확인', href: '/admin/goal-alignment' },
+        { label: '성과 얼라인먼트', description: '조직별 개인 목표 수립 비율, 조직 KPI 연결 비율, 미연결 목표를 운영 화면에서 확인', href: '/admin/goal-alignment' },
       ],
       trend: myTrend,
       focusItems: [

@@ -1,0 +1,40 @@
+export type MetricUnit = '명' | '건' | '개'
+
+function normalizeMetricValue(value?: number | null) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+export function formatCountWithUnit(value?: number | null, unit: MetricUnit = '건') {
+  return `${normalizeMetricValue(value)}${unit}`
+}
+
+export function formatEntityCount(params: {
+  label: string
+  value?: number | null
+  unit?: MetricUnit
+}) {
+  return `${params.label} ${formatCountWithUnit(params.value, params.unit ?? '건')}`
+}
+
+export function formatExplicitRatio(params: {
+  numeratorLabel: string
+  numeratorValue?: number | null
+  numeratorUnit?: MetricUnit
+  denominatorLabel: string
+  denominatorValue?: number | null
+  denominatorUnit?: MetricUnit
+  separator?: string
+}) {
+  const separator = params.separator ?? ' / '
+  return [
+    `${params.numeratorLabel} ${formatCountWithUnit(params.numeratorValue, params.numeratorUnit ?? '건')}`,
+    `${params.denominatorLabel} ${formatCountWithUnit(
+      params.denominatorValue,
+      params.denominatorUnit ?? '건'
+    )}`,
+  ].join(separator)
+}
+
+export function formatRateBaseCopy(baseLabel: string) {
+  return `${baseLabel} 기준`
+}

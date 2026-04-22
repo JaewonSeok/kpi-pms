@@ -844,7 +844,7 @@ function AppealSummaryCards({
       />
       <SummaryCard
         icon={<Paperclip className="h-5 w-5" />}
-        label="첨부 수"
+        label="첨부 자료"
         value={`${attachmentCount}개`}
         description={`최근 업데이트 ${formatDateTime(viewModel.case.updatedAt)}`}
       />

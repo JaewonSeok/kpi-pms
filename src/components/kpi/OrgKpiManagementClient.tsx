@@ -53,6 +53,7 @@ import {
   formatOrgKpiTargetValues,
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
+import { formatCountWithUnit, formatExplicitRatio } from '@/lib/metric-copy'
 import { buildStrategicTeamRecommendationPayload } from '@/lib/org-kpi-team-ai-recommendation'
 import {
   extractKpiAiPreviewRecommendations,
@@ -2206,7 +2207,7 @@ export function OrgKpiManagementClient({
             </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <HeroStat label={`총 ${scopeLabel} 수`} value={`${pageData.summary.totalCount}개`} />
-              <HeroStat label="cascade 연결률" value={formatPercent(pageData.summary.cascadeRate)} />
+              <HeroStat label="하위 KPI 연결 비율" value={formatPercent(pageData.summary.cascadeRate)} />
               <HeroStat label={`미연결 ${scopeLabel} 수`} value={`${pageData.summary.unlinkedCount}개`} />
               <HeroStat label="확정률" value={formatPercent(pageData.summary.confirmedRate)} />
             </div>
@@ -2253,8 +2254,12 @@ export function OrgKpiManagementClient({
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard label={`확정 ${scopeLabel} 수`} value={`${pageData.summary.confirmedCount}개`} helper="확정 또는 잠금 상태 기준" />
-        <MetricCard label="개인 KPI 연결 수" value={`${pageData.summary.linkedPersonalKpiCount}개`} helper="연결된 개인 KPI 전체 건수" />
-        <MetricCard label={`${scopeLabel} 월간 실적 연결률`} value={formatPercent(pageData.summary.monthlyCoverageRate)} helper="최근 월간 실적이 있는 KPI 비율" />
+        <MetricCard
+          label="연결된 개인 KPI"
+          value={formatCountWithUnit(pageData.summary.linkedPersonalKpiCount, '건')}
+          helper="현재 화면에 표시되는 조직 KPI에 연결된 개인 KPI 전체 건수"
+        />
+        <MetricCard label={`${scopeLabel} 월간 실적 반영 비율`} value={formatPercent(pageData.summary.monthlyCoverageRate)} helper="최근 월간 실적이 있는 KPI 기준" />
         <MetricCard label={`위험 ${scopeLabel} 수`} value={`${pageData.summary.riskCount}개`} helper="연결 또는 실적 누락 등 위험 신호" />
       </div>
 
@@ -2396,8 +2401,8 @@ export function OrgKpiManagementClient({
             <h2 className="text-base font-semibold text-slate-900">연결 현황</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               {pageData.selectedScope === 'division'
-                ? '본부 KPI를 기준으로 개인 KPI 연결 수, coverage, 최근 실적, 하위 팀 정렬 리스크를 점검합니다.'
-                : '팀 KPI를 기준으로 상위 본부 KPI 정렬 여부와 개인 KPI/월간 실적 연결 상태를 점검합니다.'}
+                ? '본부 KPI를 기준으로 연결된 개인 KPI 건수, 대상 인원 연결률, 최근 실적, 하위 팀 정렬 리스크를 점검합니다.'
+                : '팀 KPI를 기준으로 상위 본부 KPI 정렬 여부와 연결된 개인 KPI, 대상 인원 연결률, 월간 실적 상태를 점검합니다.'}
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -2411,8 +2416,17 @@ export function OrgKpiManagementClient({
                 </div>
                 <p className="mt-1 text-xs text-slate-500">{item.departmentName}</p>
                 <div className="mt-4 space-y-2 text-sm text-slate-600">
-                  <div>개인 KPI 연결 {item.linkedPersonalKpiCount} / {item.targetPopulationCount}</div>
-                  <div>coverage {formatPercent(item.coverageRate)}</div>
+                  <div>
+                    {formatExplicitRatio({
+                      numeratorLabel: '연결된 개인 KPI',
+                      numeratorValue: item.linkedPersonalKpiCount,
+                      numeratorUnit: '건',
+                      denominatorLabel: '대상 인원',
+                      denominatorValue: item.targetPopulationCount,
+                      denominatorUnit: '명',
+                    })}
+                  </div>
+                  <div>대상 인원 연결률 {formatPercent(item.coverageRate)}</div>
                   <div>최근 월간 실적 {item.hasRecentMonthlyRecord ? '있음' : '없음'}</div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -2420,7 +2434,7 @@ export function OrgKpiManagementClient({
                   <Link href="/kpi/monthly" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">월간 실적</Link>
                 </div>
               </div>
-            )) : <EmptyState title={`${scopeLabel} 연결 현황이 없습니다`} description="개인 KPI와 월간 실적이 연결되면 coverage와 위험 지표를 확인할 수 있습니다." />}
+            )) : <EmptyState title={`${scopeLabel} 연결 현황이 없습니다`} description="개인 KPI와 월간 실적이 연결되면 연결된 개인 KPI 건수, 대상 인원 연결률, 위험 지표를 확인할 수 있습니다." />}
           </div>
         </div>
       ) : null}
@@ -2761,15 +2775,23 @@ function getOrgKpiPersonalLinkBadge(kpi: OrgKpiViewModel) {
   return {
     label:
       kpi.linkedPersonalKpiCount > 0
-        ? `개인 KPI 연결 ${kpi.linkedPersonalKpiCount}/${kpi.targetPopulationCount}`
-        : '개인 KPI 미연결',
+        ? formatExplicitRatio({
+            numeratorLabel: '연결된 개인 KPI',
+            numeratorValue: kpi.linkedPersonalKpiCount,
+            numeratorUnit: '건',
+            denominatorLabel: '대상 인원',
+            denominatorValue: kpi.targetPopulationCount,
+            denominatorUnit: '명',
+            separator: ' · ',
+          })
+        : '연결된 개인 KPI가 없습니다',
     tone: kpi.linkedPersonalKpiCount > 0 ? 'linked' : 'warning',
   } as const
 }
 
 function getOrgKpiCoverageBadge(kpi: OrgKpiViewModel) {
   return {
-    label: `coverage ${formatPercent(kpi.coverageRate)}`,
+    label: `대상 인원 연결률 ${formatPercent(kpi.coverageRate)}`,
     tone:
       kpi.coverageRate >= 70 ? 'linked' : kpi.coverageRate > 0 ? 'warning' : 'neutral',
   } as const
@@ -2881,7 +2903,7 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
       <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
         <span>상위 {props.kpi.parentOrgKpiTitle ? '연결됨' : '없음'}</span>
         <span>하위 {props.kpi.childOrgKpiCount}개</span>
-        <span>coverage {formatPercent(props.kpi.coverageRate)}</span>
+        <span>대상 인원 연결률 {formatPercent(props.kpi.coverageRate)}</span>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {connectionBadges.map((badge) => (
@@ -3307,8 +3329,8 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
       : `연결 완료 ${childGoalSummary.connectedCount}개 / 미연결 ${childGoalSummary.disconnectedCount}개`
   const childCoverageSummaryLabel =
     hiddenChildCount > 0
-      ? `표시 중 평균 coverage ${childGoalSummary.averageCoverage}%`
-      : `평균 coverage ${childGoalSummary.averageCoverage}%`
+      ? `표시 중 평균 대상 인원 연결률 ${childGoalSummary.averageCoverage}%`
+      : `평균 대상 인원 연결률 ${childGoalSummary.averageCoverage}%`
 
   return (
     <div className={cls('relative', node.depth > 0 ? 'pl-1 sm:pl-2' : '')}>
@@ -3384,8 +3406,15 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
             <div className="font-semibold text-slate-700">개인 KPI 연결</div>
             <div className="mt-1">
               {node.kpi.linkedPersonalKpiCount > 0
-                ? `${node.kpi.linkedPersonalKpiCount}/${node.kpi.targetPopulationCount}`
-                : '개인 KPI 미연결'}
+                ? formatExplicitRatio({
+                    numeratorLabel: '연결된 개인 KPI',
+                    numeratorValue: node.kpi.linkedPersonalKpiCount,
+                    numeratorUnit: '건',
+                    denominatorLabel: '대상 인원',
+                    denominatorValue: node.kpi.targetPopulationCount,
+                    denominatorUnit: '명',
+                  })
+                : '연결된 개인 KPI가 없습니다'}
             </div>
           </div>
           <div className="rounded-2xl bg-white px-3 py-2">
@@ -3702,7 +3731,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
             })}
           />
           <InfoPill label="가중치" value={formatValue(kpi.weight)} />
-          <InfoPill label="개인 KPI 연결" value={`${kpi.linkedPersonalKpiCount}개`} />
+          <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
           <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
         </div>
 
@@ -3805,12 +3834,19 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">개인 KPI 연결</div>
                 <div className="mt-2 text-sm text-slate-700">
                   {kpi.linkedPersonalKpiCount > 0
-                    ? `${kpi.linkedPersonalKpiCount}/${kpi.targetPopulationCount}`
-                    : '개인 KPI 미연결'}
+                    ? formatExplicitRatio({
+                        numeratorLabel: '연결된 개인 KPI',
+                        numeratorValue: kpi.linkedPersonalKpiCount,
+                        numeratorUnit: '건',
+                        denominatorLabel: '대상 인원',
+                        denominatorValue: kpi.targetPopulationCount,
+                        denominatorUnit: '명',
+                      })
+                    : '연결된 개인 KPI가 없습니다'}
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">coverage</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">대상 인원 연결률</div>
                 <div className="mt-2 text-sm text-slate-700">
                   {formatPercent(kpi.coverageRate)}
                 </div>
@@ -3828,6 +3864,9 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                 </div>
               </div>
             </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              개인 KPI 연결과 대상 인원 연결률은 하위 KPI 수가 아니라, 이 조직 KPI가 적용되는 대상 인원 기준으로 계산됩니다.
+            </p>
           </div>
         </div>
         {kpi.lineage.length ? (
@@ -3875,7 +3914,14 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
               </p>
             </div>
             <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
-              승인 완료 {kpi.linkedConfirmedPersonalKpiCount} / 전체 {kpi.linkedPersonalKpiCount}
+              {formatExplicitRatio({
+                numeratorLabel: '승인 완료 개인 KPI',
+                numeratorValue: kpi.linkedConfirmedPersonalKpiCount,
+                numeratorUnit: '건',
+                denominatorLabel: '연결된 개인 KPI',
+                denominatorValue: kpi.linkedPersonalKpiCount,
+                denominatorUnit: '건',
+              })}
             </span>
           </div>
           <div className="mt-3 space-y-2">

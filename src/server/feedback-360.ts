@@ -807,7 +807,7 @@ function describeReminderStatus(
       return { key: status, label: '작성 중', tone: 'blue' }
     }
     if (status === 'SUBMITTED') {
-      return { key: status, label: '제출 완료', tone: 'emerald' }
+      return { key: status, label: '응답 제출 완료', tone: 'emerald' }
     }
     return { key: 'PENDING', label: '미제출', tone: 'amber' }
   }

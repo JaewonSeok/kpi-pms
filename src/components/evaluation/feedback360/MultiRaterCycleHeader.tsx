@@ -52,7 +52,7 @@ export function MultiRaterCycleHeader(props: MultiRaterCycleHeaderProps) {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <SummaryMetric icon={<Users className="h-4 w-4" />} label="진행 중 라운드" value={String(props.data.summary.activeRounds)} />
             <SummaryMetric icon={<MessageSquareMore className="h-4 w-4" />} label="내 미응답" value={String(props.data.summary.pendingResponses)} />
-            <SummaryMetric icon={<ClipboardList className="h-4 w-4" />} label="내 제출 완료" value={String(props.data.summary.submittedResponses)} />
+            <SummaryMetric icon={<ClipboardList className="h-4 w-4" />} label="내 제출 완료 응답" value={String(props.data.summary.submittedResponses)} />
             <SummaryMetric icon={<BarChart3 className="h-4 w-4" />} label="평균 응답률" value={`${props.data.summary.averageResponseRate}%`} />
             <SummaryMetric icon={<Settings2 className="h-4 w-4" />} label="익명 기준 충족" value={String(props.data.summary.anonymityReadyCount)} />
           </div>

@@ -326,7 +326,7 @@ function buildRunbooks() {
     },
     {
       id: 'ai-fallback',
-      title: 'AI fallback 급증 대응',
+      title: 'AI 대체 응답 급증 대응',
       description: 'OpenAI 설정, feature flag, fallback 증가 패턴을 점검합니다.',
       severity: 'MEDIUM',
       relatedUrl: '/admin/notifications',
@@ -505,7 +505,7 @@ export async function buildOperationsSummary(db: PrismaClient = prisma) {
     },
     {
       id: 'dead-letters',
-      label: 'Dead Letter',
+      label: '실패함 알림',
       count: notificationDeadLetters,
       severity: notificationDeadLetters > 0 ? 'HIGH' : 'LOW',
       relatedUrl: '/admin/notifications',

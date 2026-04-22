@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
 import { getMonthlyLinkDisplayName, isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
+import { formatCountWithUnit, formatRateBaseCopy } from '@/lib/metric-copy'
 import type {
   MonthlyAttachmentViewModel,
   MonthlyPageData,
@@ -76,7 +77,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'entry', label: '입력' },
   { key: 'trend', label: '누적 추이' },
   { key: 'review', label: '리뷰/피드백' },
-  { key: 'evidence', label: '증빙' },
+  { key: 'evidence', label: '증빙 항목' },
   { key: 'ai', label: 'AI 보조' },
 ]
 
@@ -1194,16 +1195,16 @@ export function MonthlyKpiManagementClient({
                   : STATUS_LABELS[pageData.summary.overallStatus]}
               </span>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                제출률 {pageData.summary.submissionRate}%
+                제출 완료 비율 {pageData.summary.submissionRate}%
               </span>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                 평균 달성률 {formatPercent(pageData.summary.averageAchievementRate)}
               </span>
               <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700">
-                위험 KPI {pageData.summary.riskyCount}건
+                위험 신호 KPI {formatCountWithUnit(pageData.summary.riskyCount, '개')}
               </span>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                증빙 {pageData.summary.attachmentCount}건
+                증빙 항목 {formatCountWithUnit(pageData.summary.attachmentCount, '건')}
               </span>
             </div>
           </div>
@@ -1270,18 +1271,18 @@ export function MonthlyKpiManagementClient({
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="이번 달 KPI 수" value={`${pageData.summary.totalKpiCount}건`} />
-        <SummaryCard label="평균 달성률" value={formatPercent(pageData.summary.averageAchievementRate)} />
-        <SummaryCard label="제출 완료 KPI" value={`${pageData.summary.submittedCount}건`} />
-        <SummaryCard label="미입력 KPI" value={`${pageData.summary.missingCount}건`} />
-        <SummaryCard label="위험 KPI 수" value={`${pageData.summary.riskyCount}건`} />
-        <SummaryCard label="상사 리뷰 대기" value={`${pageData.summary.reviewPendingCount}건`} />
+        <SummaryCard label="이번 달 KPI" value={formatCountWithUnit(pageData.summary.totalKpiCount, '개')} helper="선택한 월에 관리 중인 개인 KPI 수" />
+        <SummaryCard label="평균 달성률" value={formatPercent(pageData.summary.averageAchievementRate)} helper={formatRateBaseCopy('선택한 월 KPI')} />
+        <SummaryCard label="제출 완료 KPI" value={formatCountWithUnit(pageData.summary.submittedCount, '개')} helper={formatRateBaseCopy('전체 KPI')} />
+        <SummaryCard label="미입력 KPI" value={formatCountWithUnit(pageData.summary.missingCount, '개')} helper="아직 월간 기록이 없는 KPI 수" />
+        <SummaryCard label="위험 신호 KPI" value={formatCountWithUnit(pageData.summary.riskyCount, '개')} helper="리스크 플래그가 있는 KPI 수" />
+        <SummaryCard label="상사 리뷰 대기 KPI" value={formatCountWithUnit(pageData.summary.reviewPendingCount, '개')} helper="제출 후 리뷰 대기 상태인 KPI 수" />
         <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm md:col-span-2">
           <div className="text-sm font-semibold text-blue-900">다음 행동</div>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <ActionRow label="미입력 KPI 채우기" done={pageData.summary.missingCount === 0} onClick={() => setTab('entry')} />
             <ActionRow label="위험 KPI 코멘트 보완" done={pageData.summary.riskyCount === 0} onClick={() => setTab('entry')} />
-            <ActionRow label="증빙 추가" done={pageData.summary.attachmentCount > 0} onClick={() => setTab('evidence')} />
+            <ActionRow label="증빙 항목 추가" done={pageData.summary.attachmentCount > 0} onClick={() => setTab('evidence')} />
             <ActionRow label="상사 리뷰 확인" done={pageData.summary.reviewPendingCount === 0} onClick={() => setTab('review')} />
           </div>
         </div>
@@ -1785,7 +1786,7 @@ function EntryTab({
                   ))
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-                    <p className="text-sm font-semibold text-slate-900">등록된 증빙이 없습니다.</p>
+                    <p className="text-sm font-semibold text-slate-900">등록된 증빙 항목이 없습니다.</p>
                   </div>
                 )}
               </div>
@@ -2009,7 +2010,7 @@ function EvidenceTab({
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
       <div className="mb-5">
-        <h2 className="text-lg font-semibold text-slate-900">증빙 / 근거 자료</h2>
+        <h2 className="text-lg font-semibold text-slate-900">증빙 항목 / 근거 자료</h2>
         <p className="mt-1 text-sm text-slate-500">
           KPI별 증빙을 한 곳에서 확인하고 파일 또는 링크를 바로 열 수 있습니다.
         </p>
@@ -2054,7 +2055,7 @@ function EvidenceTab({
           ))
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-slate-900">등록된 증빙이 없습니다.</p>
+            <p className="text-sm font-semibold text-slate-900">등록된 증빙 항목이 없습니다.</p>
           </div>
         )}
       </div>
@@ -2210,11 +2211,12 @@ function FilterSelect({
   )
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function SummaryCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <div className="text-sm text-slate-500">{label}</div>
       <div className="mt-3 text-2xl font-bold text-slate-900">{value}</div>
+      {helper ? <div className="mt-2 text-xs text-slate-500">{helper}</div> : null}
     </div>
   )
 }

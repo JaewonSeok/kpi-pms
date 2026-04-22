@@ -196,12 +196,12 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-4">
-        <MetricCard label="전체 대상자" value={`${pageData.summary.totalCount}명`} />
-        <MetricCard label="제출 완료" value={`${pageData.summary.submittedCount}명`} />
-        <MetricCard label="검토 중" value={`${pageData.summary.reviewCount}명`} />
+        <MetricCard label="전체 대상 인원" value={`${pageData.summary.totalCount}명`} />
+        <MetricCard label="제출 완료 인원" value={`${pageData.summary.submittedCount}명`} />
+        <MetricCard label="검토 중 인원" value={`${pageData.summary.reviewCount}명`} />
         <MetricCard
-          label="통과 / 미통과"
-          value={`${pageData.summary.passedCount} / ${pageData.summary.failedCount}`}
+          label="합격 / 미통과 인원"
+          value={`합격 ${pageData.summary.passedCount}명 / 미통과 ${pageData.summary.failedCount}명`}
         />
       </div>
 
