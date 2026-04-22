@@ -106,10 +106,11 @@ run('ai alignment summary counts warnings on the actual coverage denominator', (
   assert.equal(summary.counts.POSSIBLE_OVER_RATING, 1)
 })
 
-run('statistics dashboard source includes the approved executive sections and filters', () => {
+run('statistics dashboard source includes distinct fatal empty and partial messaging', () => {
   const source = read('src/components/statistics/ExecutiveStatisticsDashboardClient.tsx')
 
   for (const text of [
+    '통계',
     '경영 한눈 보기',
     '성과평가 운영 현황',
     '성과 수준 및 분포',
@@ -117,10 +118,9 @@ run('statistics dashboard source includes the approved executive sections and fi
     '조직 건강 / 리스크',
     '핵심인재 / 준비도(프록시)',
     '공정성 / 보정 필요 신호',
-    '평가 주기',
-    '기간',
-    '조직',
-    '직위',
+    '통계 페이지를 불러오는 중 오류가 발생했습니다.',
+    '표시할 통계가 없습니다.',
+    '일부 통계를 불러오지 못해 가능한 범위의 데이터만 표시합니다.',
   ]) {
     assert.equal(source.includes(text), true, `${text} should be present in the statistics dashboard UI`)
   }

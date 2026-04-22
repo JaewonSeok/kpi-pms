@@ -29,6 +29,7 @@ import {
 } from '@/server/statistics-helpers'
 
 export type StatisticsPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
+export type StatisticsSectionState = 'ready' | 'empty' | 'error'
 export type StatisticsTone = 'success' | 'warn' | 'error' | 'neutral'
 
 export type StatisticsMetricCard = {
@@ -43,6 +44,141 @@ export type StatisticsPageAlert = {
   title: string
   description: string
   tone: StatisticsTone
+}
+
+type StatisticsSectionBase = {
+  state?: StatisticsSectionState
+  message?: string
+}
+
+type StatisticsEvaluationOperationsSection = StatisticsSectionBase & {
+  progressRate?: number
+  finalizedRate?: number
+  stageStatus: Array<{
+    stage: EvalStage
+    label: string
+    pending: number
+    inProgress: number
+    submitted: number
+    rejected: number
+    confirmed: number
+  }>
+  exceptionCards: StatisticsMetricCard[]
+  departmentRows: Array<{
+    departmentId: string
+    departmentName: string
+    targetCount: number
+    progressRate: number
+    returnedCount: number
+    overdueCount: number
+    finalizedCount: number
+    filterHref: string
+    detailHref: string
+  }>
+}
+
+type StatisticsPerformanceDistributionSection = StatisticsSectionBase & {
+  outlierDepartmentCount?: number
+  missingAdjustmentReasonCount?: number
+  cards: StatisticsMetricCard[]
+  companyDistribution: Array<{
+    grade: string
+    count: number
+    ratio: number
+  }>
+  beforeAfterDistribution: Array<{
+    grade: string
+    before: number
+    after: number
+  }>
+  departmentRows: Array<{
+    departmentId: string
+    departmentName: string
+    averageScore?: number
+    highGradeRatio: number
+    lowGradeRatio: number
+    adjustedRate: number
+    isOutlier: boolean
+    href: string
+  }>
+  notice?: string
+}
+
+type StatisticsKpiExecutionSection = StatisticsSectionBase & {
+  averageAchievementRate?: number
+  trend: Array<{ label: string; value: number }>
+  cards: StatisticsMetricCard[]
+  departmentRows: Array<{
+    departmentId: string
+    departmentName: string
+    activeEmployeeCount: number
+    personalGoalSetupRate: number
+    alignmentRate: number
+    completedCheckInRate: number
+    averageProgressRate: number
+    riskCount: number
+    href: string
+  }>
+  exceptions: Array<{
+    departmentId: string
+    departmentName: string
+    averageProgressRate: number
+    riskCount: number
+    href: string
+  }>
+}
+
+type StatisticsOrganizationRiskSection = StatisticsSectionBase & {
+  riskDepartmentCount?: number
+  cards: StatisticsMetricCard[]
+  departmentRows: Array<{
+    departmentId: string
+    departmentName: string
+    lowAchievementCount: number
+    missingEvidenceCount: number
+    rejectedEvaluationCount: number
+    activeAppealCount: number
+    riskScore: number
+    href: string
+  }>
+}
+
+type StatisticsReadinessProxySection = StatisticsSectionBase & {
+  notice: string
+  readyTalentCount?: number
+  cards: StatisticsMetricCard[]
+  trackDistribution: Array<{
+    label: string
+    averageScore: number
+    count: number
+    passRate: number
+  }>
+  departmentRows: Array<{
+    departmentName: string
+    averageScore: number
+    count: number
+  }>
+  feederPool: Array<{
+    positionLabel: string
+    count: number
+  }>
+  href: string
+}
+
+type StatisticsFairnessSection = StatisticsSectionBase & {
+  warningCount?: number
+  cards: StatisticsMetricCard[]
+  alignmentDistribution: Array<{
+    label: string
+    count: number
+  }>
+  qualityWarnings: Array<{
+    label: string
+    count: number
+  }>
+  coverageLabel: string
+  notice?: string
+  detailHref: string
 }
 
 export type StatisticsPageData = {
@@ -77,124 +213,12 @@ export type StatisticsPageData = {
   }
   summaryCards: StatisticsMetricCard[]
   sections?: {
-    evaluationOperations: {
-      stageStatus: Array<{
-        stage: EvalStage
-        label: string
-        pending: number
-        inProgress: number
-        submitted: number
-        rejected: number
-        confirmed: number
-      }>
-      exceptionCards: StatisticsMetricCard[]
-      departmentRows: Array<{
-        departmentId: string
-        departmentName: string
-        targetCount: number
-        progressRate: number
-        returnedCount: number
-        overdueCount: number
-        finalizedCount: number
-        filterHref: string
-        detailHref: string
-      }>
-    }
-    performanceDistribution: {
-      cards: StatisticsMetricCard[]
-      companyDistribution: Array<{
-        grade: string
-        count: number
-        ratio: number
-      }>
-      beforeAfterDistribution: Array<{
-        grade: string
-        before: number
-        after: number
-      }>
-      departmentRows: Array<{
-        departmentId: string
-        departmentName: string
-        averageScore?: number
-        highGradeRatio: number
-        lowGradeRatio: number
-        adjustedRate: number
-        isOutlier: boolean
-        href: string
-      }>
-      notice?: string
-    }
-    kpiExecution: {
-      trend: Array<{ label: string; value: number }>
-      cards: StatisticsMetricCard[]
-      departmentRows: Array<{
-        departmentId: string
-        departmentName: string
-        activeEmployeeCount: number
-        personalGoalSetupRate: number
-        alignmentRate: number
-        completedCheckInRate: number
-        averageProgressRate: number
-        riskCount: number
-        href: string
-      }>
-      exceptions: Array<{
-        departmentId: string
-        departmentName: string
-        averageProgressRate: number
-        riskCount: number
-        href: string
-      }>
-    }
-    organizationRisk: {
-      cards: StatisticsMetricCard[]
-      departmentRows: Array<{
-        departmentId: string
-        departmentName: string
-        lowAchievementCount: number
-        missingEvidenceCount: number
-        rejectedEvaluationCount: number
-        activeAppealCount: number
-        riskScore: number
-        href: string
-      }>
-    }
-    readinessProxy: {
-      state: 'ready' | 'empty'
-      message?: string
-      notice: string
-      cards: StatisticsMetricCard[]
-      trackDistribution: Array<{
-        label: string
-        averageScore: number
-        count: number
-        passRate: number
-      }>
-      departmentRows: Array<{
-        departmentName: string
-        averageScore: number
-        count: number
-      }>
-      feederPool: Array<{
-        positionLabel: string
-        count: number
-      }>
-      href: string
-    }
-    fairness: {
-      cards: StatisticsMetricCard[]
-      alignmentDistribution: Array<{
-        label: string
-        count: number
-      }>
-      qualityWarnings: Array<{
-        label: string
-        count: number
-      }>
-      coverageLabel: string
-      notice?: string
-      detailHref: string
-    }
+    evaluationOperations: StatisticsEvaluationOperationsSection
+    performanceDistribution: StatisticsPerformanceDistributionSection
+    kpiExecution: StatisticsKpiExecutionSection
+    organizationRisk: StatisticsOrganizationRiskSection
+    readinessProxy: StatisticsReadinessProxySection
+    fairness: StatisticsFairnessSection
   }
 }
 
@@ -483,7 +507,879 @@ type StatisticsStageEntry = {
   isCompleted: boolean
 }
 
+type StatisticsActorSummary = NonNullable<StatisticsPageData['actor']>
+type StatisticsCycleSummary = NonNullable<StatisticsPageData['selectedCycle']>
+
+type StatisticsEvaluationOutcomeRow = {
+  employee: StatisticsEmployeeScope
+  evaluation: StatisticsEvaluationRecord
+  baseline: StatisticsEvaluationRecord | null
+}
+
+type StatisticsEvaluationDomainData = {
+  gradeSettings: ReturnType<typeof ensureGradeSettings>
+  evaluations: StatisticsEvaluationRecord[]
+  assignments: StatisticsAssignmentRecord[]
+  evaluationsByTarget: Map<string, StatisticsEvaluationRecord[]>
+  assignmentsByTarget: Map<string, StatisticsAssignmentRecord[]>
+  evaluationStageMatrix: ReturnType<typeof buildEvaluationStageMatrix>
+  effectiveOutcomeRows: StatisticsEvaluationOutcomeRow[]
+}
+
+type StatisticsKpiDomainData = {
+  personalKpis: StatisticsPersonalKpi[]
+  orgKpis: StatisticsOrgKpi[]
+  monthlyRecords: StatisticsMonthlyRecord[]
+  checkIns: StatisticsCheckIn[]
+  latestMonthlyByKpi: Map<string, StatisticsMonthlyRecord>
+}
+
+type StatisticsLoadResult<T> = {
+  state: 'ready' | 'error'
+  data: T
+  message?: string
+}
+
+type StatisticsDebugContext = {
+  actorId: string
+  role: SystemRole
+  cycleId?: string
+  period: StatisticsPeriod
+  orgId?: string
+  departmentId: string
+  position: 'ALL' | Position
+}
+
 export async function getStatisticsPageData(
+  session: Session,
+  searchParams: StatisticsSearchParams = {}
+): Promise<StatisticsPageData> {
+  const alerts: StatisticsPageAlert[] = []
+  const generatedAt = new Date().toISOString()
+  const sessionUser = session.user as StatisticsSessionUser | undefined
+  const requestedPeriod = parseStatisticsPeriod(searchParams.period)
+
+  if (!sessionUser?.id || !sessionUser.role) {
+    return {
+      state: 'permission-denied',
+      message: '통계 페이지에 접근할 권한이 없습니다.',
+      alerts,
+      generatedAt,
+      filters: buildEmptyFilterState(),
+      summaryCards: [],
+    }
+  }
+
+  if (!['ROLE_ADMIN', 'ROLE_CEO'].includes(sessionUser.role)) {
+    return {
+      state: 'permission-denied',
+      message: '통계 페이지는 CEO 또는 관리자만 볼 수 있습니다.',
+      alerts,
+      generatedAt,
+      filters: buildEmptyFilterState(),
+      summaryCards: [],
+    }
+  }
+
+  let actorSummary: StatisticsActorSummary | undefined
+  let filters = buildEmptyFilterState()
+  let selectedCycleSummary: StatisticsCycleSummary | undefined
+
+  try {
+    const actor = await prisma.employee.findUnique({
+      where: { id: sessionUser.id },
+      include: {
+        department: {
+          include: {
+            organization: true,
+          },
+        },
+      },
+    })
+
+    if (!actor) {
+      return {
+        state: 'permission-denied',
+        message: '사용자 조직 정보를 찾을 수 없어 통계를 불러올 수 없습니다.',
+        alerts,
+        generatedAt,
+        filters: buildEmptyFilterState(),
+        summaryCards: [],
+      }
+    }
+
+    actorSummary = {
+      name: actor.empName,
+      role: actor.role,
+      departmentName: actor.department.deptName,
+      organizationName: actor.department.organization.name,
+    }
+
+    const organizationOptions =
+      sessionUser.role === 'ROLE_ADMIN'
+        ? await prisma.organization.findMany({
+            select: {
+              id: true,
+              name: true,
+            },
+            orderBy: {
+              name: 'asc',
+            },
+          })
+        : [
+            {
+              id: actor.department.orgId,
+              name: actor.department.organization.name,
+            },
+          ]
+
+    const selectedOrgId = resolveSelectedOrgId({
+      actorOrgId: actor.department.orgId,
+      requestedOrgId: searchParams.orgId,
+      orgOptions: organizationOptions,
+    })
+
+    const [cycles, departments] = await Promise.all([
+      prisma.evalCycle.findMany({
+        where: {
+          orgId: selectedOrgId,
+        },
+        include: {
+          organization: {
+            select: {
+              name: true,
+            },
+          },
+        },
+        orderBy: [{ evalYear: 'desc' }, { createdAt: 'desc' }],
+      }),
+      prisma.department.findMany({
+        where: {
+          orgId: selectedOrgId,
+        },
+        select: {
+          id: true,
+          deptName: true,
+          deptCode: true,
+          parentDeptId: true,
+          orgId: true,
+        },
+        orderBy: [{ deptCode: 'asc' }, { deptName: 'asc' }],
+      }),
+    ])
+
+    filters = buildFilterState({
+      cycles,
+      orgOptions: organizationOptions,
+      departments,
+      selectedOrgId,
+      selectedCycleId: undefined,
+      selectedDepartmentId: 'ALL',
+      selectedPeriod: requestedPeriod,
+      selectedPosition: 'ALL',
+      positionOptions: [{ value: 'ALL', label: '전체 직위' }],
+      actorRole: sessionUser.role,
+    })
+
+    if (!cycles.length) {
+      return {
+        state: 'empty',
+        message: '표시할 평가 주기가 없습니다.',
+        alerts,
+        generatedAt,
+        actor: actorSummary,
+        filters,
+        summaryCards: [],
+      }
+    }
+
+    const selectedCycle =
+      cycles.find((cycle) => cycle.id === searchParams.cycleId) ??
+      cycles.find((cycle) => cycle.status !== 'SETUP') ??
+      cycles[0]
+
+    const selectedDepartmentId = resolveSelectedDepartmentId({
+      requestedDepartmentId: searchParams.departmentId,
+      departments,
+    })
+    const scopedDepartmentIds =
+      selectedDepartmentId === 'ALL'
+        ? departments.map((department) => department.id)
+        : [selectedDepartmentId, ...getDescendantDeptIds(selectedDepartmentId, departments)]
+
+    const allScopeEmployees = await prisma.employee.findMany({
+      where: {
+        status: 'ACTIVE',
+        deptId: {
+          in: scopedDepartmentIds,
+        },
+      },
+      select: {
+        id: true,
+        empName: true,
+        deptId: true,
+        position: true,
+        role: true,
+        teamLeaderId: true,
+        sectionChiefId: true,
+        divisionHeadId: true,
+        department: {
+          select: {
+            deptName: true,
+          },
+        },
+      },
+      orderBy: [{ deptId: 'asc' }, { empName: 'asc' }],
+    })
+
+    const positionOptions = buildPositionOptions(allScopeEmployees)
+    const selectedPosition = resolveSelectedPosition(searchParams.position, positionOptions)
+    const scopedEmployees =
+      selectedPosition === 'ALL'
+        ? allScopeEmployees
+        : allScopeEmployees.filter((employee) => employee.position === selectedPosition)
+
+    filters = buildFilterState({
+      cycles,
+      orgOptions: organizationOptions,
+      departments,
+      selectedOrgId,
+      selectedCycleId: selectedCycle.id,
+      selectedDepartmentId,
+      selectedPeriod: requestedPeriod,
+      selectedPosition,
+      positionOptions,
+      actorRole: sessionUser.role,
+    })
+    selectedCycleSummary = {
+      id: selectedCycle.id,
+      label: `${selectedCycle.evalYear} ${selectedCycle.cycleName}`,
+      year: selectedCycle.evalYear,
+      organizationName: selectedCycle.organization.name,
+    }
+
+    appendNormalizedFilterAlerts({
+      alerts,
+      searchParams,
+      filters,
+      selectedCycleId: selectedCycle.id,
+    })
+
+    if (!scopedEmployees.length) {
+      return {
+        state: 'empty',
+        message: '선택한 조건에 해당하는 인원이 없습니다.',
+        alerts,
+        generatedAt,
+        actor: actorSummary,
+        filters,
+        selectedCycle: selectedCycleSummary,
+        summaryCards: [],
+      }
+    }
+
+    const periodRange = getStatisticsPeriodRange({
+      period: filters.selectedPeriod,
+      cycleYear: selectedCycle.evalYear,
+      referenceDate:
+        selectedCycle.ceoAdjustEnd ??
+        selectedCycle.finalEvalEnd ??
+        selectedCycle.secondEvalEnd ??
+        selectedCycle.firstEvalEnd ??
+        new Date(`${selectedCycle.evalYear}-12-31T23:59:59.999Z`),
+    })
+    const employeeIds = scopedEmployees.map((employee) => employee.id)
+    const debugContext: StatisticsDebugContext = {
+      actorId: sessionUser.id,
+      role: sessionUser.role,
+      cycleId: selectedCycle.id,
+      period: filters.selectedPeriod,
+      orgId: selectedOrgId,
+      departmentId: selectedDepartmentId,
+      position: selectedPosition,
+    }
+
+    const [evaluationDomain, kpiDomain, appealDomain] = await Promise.all([
+      loadStatisticsResource({
+        key: 'evaluation-domain',
+        title: '성과평가 통계를 일부 불러오지 못했습니다.',
+        description: '평가 진행과 분포는 가능한 범위의 데이터만 표시합니다.',
+        message: '성과평가 데이터를 불러오지 못했습니다.',
+        alerts,
+        context: debugContext,
+        fallback: buildEmptyEvaluationDomainData(),
+        loader: async () => {
+          const [gradeSettings, evaluations, assignments] = await Promise.all([
+            prisma.gradeSetting.findMany({
+              where: {
+                orgId: selectedOrgId,
+                evalYear: selectedCycle.evalYear,
+                isActive: true,
+              },
+              select: {
+                id: true,
+                gradeName: true,
+                minScore: true,
+                maxScore: true,
+                targetDistRate: true,
+                gradeOrder: true,
+              },
+              orderBy: {
+                gradeOrder: 'asc',
+              },
+            }),
+            loadStatisticsEvaluations(selectedCycle.id, employeeIds),
+            loadStatisticsAssignments(selectedCycle.id, employeeIds),
+          ])
+
+          const evaluationsByTarget = groupBy(evaluations, (evaluation) => evaluation.targetId)
+          const assignmentsByTarget = groupBy(assignments, (assignment) => assignment.targetId)
+          const evaluationStageMatrix = buildEvaluationStageMatrix({
+            cycle: selectedCycle,
+            employees: scopedEmployees,
+            evaluationsByTarget,
+            assignmentsByTarget,
+          })
+          const effectiveOutcomeRows = scopedEmployees.reduce<StatisticsEvaluationOutcomeRow[]>((rows, employee) => {
+            const evaluation = pickEffectiveEvaluationOutcome(evaluationsByTarget.get(employee.id) ?? [])
+            if (!evaluation) {
+              return rows
+            }
+
+            rows.push({
+              employee,
+              evaluation,
+              baseline: pickBaselineEvaluationOutcome(evaluationsByTarget.get(employee.id) ?? []),
+            })
+            return rows
+          }, [])
+
+          return {
+            gradeSettings: ensureGradeSettings(gradeSettings),
+            evaluations,
+            assignments,
+            evaluationsByTarget,
+            assignmentsByTarget,
+            evaluationStageMatrix,
+            effectiveOutcomeRows,
+          }
+        },
+      }),
+      loadStatisticsResource({
+        key: 'kpi-domain',
+        title: 'KPI 실행 통계를 일부 불러오지 못했습니다.',
+        description: '목표 정렬과 월간 기록은 가능한 범위의 데이터만 표시합니다.',
+        message: 'KPI 데이터를 불러오지 못했습니다.',
+        alerts,
+        context: debugContext,
+        fallback: buildEmptyKpiDomainData(),
+        loader: async () => {
+          const [personalKpis, orgKpis, monthlyRecords, checkIns] = await Promise.all([
+            loadStatisticsPersonalKpis(employeeIds, selectedCycle.evalYear),
+            loadStatisticsOrgKpis(scopedDepartmentIds, selectedCycle.evalYear),
+            loadStatisticsMonthlyRecords(employeeIds, periodRange.startYearMonth, periodRange.endYearMonth),
+            loadStatisticsCheckIns(employeeIds, periodRange.startDate, periodRange.endDate),
+          ])
+
+          return {
+            personalKpis,
+            orgKpis,
+            monthlyRecords,
+            checkIns,
+            latestMonthlyByKpi: buildLatestMonthlyRecordMap(monthlyRecords),
+          }
+        },
+      }),
+      loadStatisticsResource({
+        key: 'appeal-domain',
+        title: '조직 리스크 통계를 일부 불러오지 못했습니다.',
+        description: '이의제기와 리스크 예외는 가능한 범위의 데이터만 표시합니다.',
+        message: '리스크 데이터를 불러오지 못했습니다.',
+        alerts,
+        context: debugContext,
+        fallback: { appeals: [] },
+        loader: async () => ({
+          appeals: await loadStatisticsAppeals(selectedCycle.id, employeeIds),
+        }),
+      }),
+    ])
+
+    const evaluationOperations =
+      evaluationDomain.state === 'error'
+        ? buildEvaluationOperationsSection('error', evaluationDomain.message)
+        : !evaluationDomain.data.evaluations.length && !evaluationDomain.data.assignments.length
+          ? buildEvaluationOperationsSection('empty', '선택한 조건의 성과평가 진행 데이터가 아직 없습니다.')
+          : buildEvaluationOperationsSection('ready', undefined, {
+              progressRate: evaluationDomain.data.evaluationStageMatrix.progressRate,
+              finalizedRate: evaluationDomain.data.evaluationStageMatrix.finalizedRate,
+              stageStatus: evaluationDomain.data.evaluationStageMatrix.stageRows,
+              exceptionCards: buildEvaluationExceptionCards({
+                returnedCount: evaluationDomain.data.evaluationStageMatrix.returnedCount,
+                unassignedCount: evaluationDomain.data.evaluationStageMatrix.unassignedCount,
+                overdueCount: evaluationDomain.data.evaluationStageMatrix.overdueCount,
+                pendingCalibrationCount: evaluationDomain.data.evaluationStageMatrix.pendingCalibrationCount,
+                selectedCycleId: selectedCycle.id,
+              }),
+              departmentRows: evaluationDomain.data.evaluationStageMatrix.departmentRows,
+            })
+
+    const performanceDistribution =
+      evaluationDomain.state === 'error'
+        ? buildPerformanceDistributionSection('error', evaluationDomain.message)
+        : (
+            await loadStatisticsResource({
+              key: 'performance-distribution',
+              title: '성과 분포 통계를 일부 불러오지 못했습니다.',
+              description: '성과 분포와 보정 비교는 가능한 범위의 데이터만 표시합니다.',
+              message: '성과 수준과 분포를 계산하지 못했습니다.',
+              alerts,
+              context: debugContext,
+              fallback: buildPerformanceDistributionSection('error', '성과 수준과 분포를 계산하지 못했습니다.'),
+              loader: async () => {
+                if (!evaluationDomain.data.effectiveOutcomeRows.length) {
+                  return buildPerformanceDistributionSection(
+                    'empty',
+                    '선택한 조건의 성과 수준과 분포 데이터가 아직 없습니다.'
+                  )
+                }
+
+                const performanceSummary = buildPerformanceSummary({
+                  effectiveOutcomeRows: evaluationDomain.data.effectiveOutcomeRows,
+                  gradeSettings: evaluationDomain.data.gradeSettings,
+                  selectedCycleId: selectedCycle.id,
+                  selectedDepartmentId,
+                })
+
+                return buildPerformanceDistributionSection('ready', undefined, {
+                  outlierDepartmentCount: performanceSummary.outlierDepartmentCount,
+                  missingAdjustmentReasonCount: performanceSummary.missingAdjustmentReasonCount,
+                  cards: performanceSummary.cards,
+                  companyDistribution: performanceSummary.companyDistribution,
+                  beforeAfterDistribution: performanceSummary.beforeAfterDistribution,
+                  departmentRows: performanceSummary.departmentRows,
+                  notice: performanceSummary.notice,
+                })
+              },
+            })
+          ).data
+
+    const kpiExecution =
+      kpiDomain.state === 'error'
+        ? buildKpiExecutionSection('error', kpiDomain.message)
+        : (
+            await loadStatisticsResource({
+              key: 'kpi-execution',
+              title: 'KPI 실행 통계를 일부 불러오지 못했습니다.',
+              description: '목표 정렬과 월간 실행은 가능한 범위의 데이터만 표시합니다.',
+              message: 'KPI 실행력을 계산하지 못했습니다.',
+              alerts,
+              context: debugContext,
+              fallback: buildKpiExecutionSection('error', 'KPI 실행력을 계산하지 못했습니다.'),
+              loader: async () => {
+                if (!hasKpiSourceData(kpiDomain.data)) {
+                  return buildKpiExecutionSection('empty', '선택한 기간의 KPI 실행 데이터가 아직 없습니다.')
+                }
+
+                const monthlySummary = buildMonthlyExecutionSummary({
+                  employees: scopedEmployees,
+                  personalKpis: kpiDomain.data.personalKpis,
+                  orgKpis: kpiDomain.data.orgKpis,
+                  monthlyRecords: kpiDomain.data.monthlyRecords,
+                  latestMonthlyByKpi: kpiDomain.data.latestMonthlyByKpi,
+                  checkIns: kpiDomain.data.checkIns,
+                  selectedCycleId: selectedCycle.id,
+                  selectedYear: selectedCycle.evalYear,
+                  selectedDepartmentId,
+                })
+
+                return buildKpiExecutionSection('ready', undefined, {
+                  averageAchievementRate: monthlySummary.averageAchievementRate,
+                  trend: monthlySummary.trend,
+                  cards: monthlySummary.cards,
+                  departmentRows: monthlySummary.departmentRows,
+                  exceptions: monthlySummary.exceptions,
+                })
+              },
+            })
+          ).data
+
+    const organizationRisk = (
+      await loadStatisticsResource({
+        key: 'organization-risk',
+        title: '조직 리스크 통계를 일부 불러오지 못했습니다.',
+        description: '리스크 조직과 이의제기 현황은 가능한 범위의 데이터만 표시합니다.',
+        message: '조직 리스크를 계산하지 못했습니다.',
+        alerts,
+        context: debugContext,
+        fallback: buildOrganizationRiskSection('error', '조직 리스크를 계산하지 못했습니다.'),
+        loader: async () => {
+          const hasRiskSource =
+            (kpiDomain.state === 'ready' && hasKpiSourceData(kpiDomain.data)) ||
+            (evaluationDomain.state === 'ready' && evaluationDomain.data.evaluations.length > 0) ||
+            (appealDomain.state === 'ready' && appealDomain.data.appeals.length > 0)
+
+          if (!hasRiskSource) {
+            return buildOrganizationRiskSection('empty', '선택한 조건의 조직 리스크 데이터가 아직 없습니다.')
+          }
+
+          const riskSummary = buildRiskSummary({
+            departments,
+            employees: scopedEmployees,
+            latestMonthlyByKpi:
+              kpiDomain.state === 'ready'
+                ? kpiDomain.data.latestMonthlyByKpi
+                : new Map<string, StatisticsMonthlyRecord>(),
+            personalKpis: kpiDomain.state === 'ready' ? kpiDomain.data.personalKpis : [],
+            evaluations: evaluationDomain.state === 'ready' ? evaluationDomain.data.evaluations : [],
+            appeals: appealDomain.state === 'ready' ? appealDomain.data.appeals : [],
+            selectedCycleId: selectedCycle.id,
+            selectedYear: selectedCycle.evalYear,
+            selectedDepartmentId,
+          })
+
+          if (!riskSummary.departmentRows.length && !riskSummary.cards.length) {
+            return buildOrganizationRiskSection('empty', '선택한 조건의 조직 리스크 데이터가 아직 없습니다.')
+          }
+
+          return buildOrganizationRiskSection('ready', undefined, {
+            riskDepartmentCount: riskSummary.riskDepartmentCount,
+            cards: riskSummary.cards,
+            departmentRows: riskSummary.departmentRows,
+          })
+        },
+      })
+    ).data
+
+    const aiAlignmentSummary =
+      evaluationDomain.state === 'error'
+        ? summarizeStatisticsAiAlignment([])
+        : (
+            await loadStatisticsResource({
+              key: 'ai-alignment-domain',
+              title: 'AI 브리핑 정합성 통계를 일부 불러오지 못했습니다.',
+              description: '생성된 AI 브리핑이 없어도 다른 통계는 계속 표시합니다.',
+              message: 'AI 브리핑 정합성을 계산하지 못했습니다.',
+              alerts,
+              context: debugContext,
+              fallback: summarizeStatisticsAiAlignment([]),
+              loader: async () => {
+                const evaluationIds = evaluationDomain.data.evaluations.map((evaluation) => evaluation.id)
+                if (!evaluationIds.length) {
+                  return summarizeStatisticsAiAlignment([])
+                }
+
+                const logs = await prisma.aiRequestLog.findMany({
+                  where: {
+                    requestType: 'EVAL_PERFORMANCE_BRIEFING' as AIRequestType,
+                    sourceId: {
+                      in: evaluationIds,
+                    },
+                  },
+                  select: {
+                    id: true,
+                    sourceId: true,
+                    createdAt: true,
+                    responsePayload: true,
+                  },
+                  orderBy: [{ createdAt: 'desc' }],
+                })
+
+                const latestByEvaluation = new Map<string, EvaluationPerformanceBriefingAlignmentStatus>()
+                for (const log of logs) {
+                  if (!log.sourceId || latestByEvaluation.has(log.sourceId)) continue
+                  const snapshot = normalizeEvaluationPerformanceBriefingSnapshot(log.responsePayload)
+                  if (!snapshot) continue
+                  latestByEvaluation.set(log.sourceId, snapshot.alignment.status)
+                }
+
+                return summarizeStatisticsAiAlignment([...latestByEvaluation.values()])
+              },
+            })
+          ).data
+
+    const readinessProxy =
+      evaluationDomain.state === 'error'
+        ? buildReadinessSection('error', evaluationDomain.message)
+        : (
+            await loadStatisticsResource({
+              key: 'readiness-domain',
+              title: '준비도 지표를 일부 불러오지 못했습니다.',
+              description: 'AI 역량 평가 결과가 없어도 다른 통계는 계속 표시합니다.',
+              message: '준비도 지표를 계산하지 못했습니다.',
+              alerts,
+              context: debugContext,
+              fallback: buildReadinessSection('error', '준비도 지표를 계산하지 못했습니다.'),
+              loader: async () => {
+                const aiCycle = await prisma.aiCompetencyCycle.findFirst({
+                  where: {
+                    evalCycleId: selectedCycle.id,
+                  },
+                  select: {
+                    id: true,
+                    firstRoundPassThreshold: true,
+                  },
+                })
+
+                if (!aiCycle) {
+                  return toReadinessSection(
+                    buildEmptyReadinessProxy('연결된 AI 역량 평가 결과가 없어 준비도 지표를 표시하지 않습니다.')
+                  )
+                }
+
+                const [aiAssignments, aiAttempts, aiResults] = await Promise.all([
+                  prisma.aiCompetencyAssignment.findMany({
+                    where: {
+                      cycleId: aiCycle.id,
+                      employeeId: {
+                        in: employeeIds,
+                      },
+                    },
+                    include: {
+                      employee: {
+                        select: {
+                          id: true,
+                          position: true,
+                          department: {
+                            select: {
+                              deptName: true,
+                            },
+                          },
+                        },
+                      },
+                      result: true,
+                    },
+                  }),
+                  prisma.aiCompetencyAttempt.findMany({
+                    where: {
+                      cycleId: aiCycle.id,
+                      employeeId: {
+                        in: employeeIds,
+                      },
+                    },
+                    select: {
+                      employeeId: true,
+                      status: true,
+                      passStatus: true,
+                    },
+                  }),
+                  prisma.aiCompetencyResult.findMany({
+                    where: {
+                      cycleId: aiCycle.id,
+                      employeeId: {
+                        in: employeeIds,
+                      },
+                    },
+                    include: {
+                      employee: {
+                        select: {
+                          id: true,
+                          position: true,
+                          department: {
+                            select: {
+                              deptName: true,
+                            },
+                          },
+                        },
+                      },
+                      assignment: {
+                        select: {
+                          track: true,
+                        },
+                      },
+                    },
+                  }),
+                ])
+
+                return toReadinessSection(
+                  buildReadinessProxy({
+                    aiCycleId: aiCycle.id,
+                    passThreshold: aiCycle.firstRoundPassThreshold,
+                    aiAssignments,
+                    aiAttempts,
+                    aiResults,
+                    effectiveOutcomeRows: evaluationDomain.data.effectiveOutcomeRows,
+                  })
+                )
+              },
+            })
+          ).data
+
+    const fairness =
+      evaluationDomain.state === 'error'
+        ? buildFairnessSection(
+            'error',
+            evaluationDomain.message,
+            buildCeoAdjustHref({
+              cycleId: selectedCycle.id,
+              departmentId: selectedDepartmentId === 'ALL' ? undefined : selectedDepartmentId,
+            })
+          )
+        : (
+            await loadStatisticsResource({
+              key: 'fairness-section',
+              title: '공정성 통계를 일부 불러오지 못했습니다.',
+              description: '정합성 점검과 리뷰 품질 경고는 가능한 범위의 데이터만 표시합니다.',
+              message: '공정성과 보정 필요 신호를 계산하지 못했습니다.',
+              alerts,
+              context: debugContext,
+              fallback: buildFairnessSection(
+                'error',
+                '공정성과 보정 필요 신호를 계산하지 못했습니다.',
+                buildCeoAdjustHref({
+                  cycleId: selectedCycle.id,
+                  departmentId: selectedDepartmentId === 'ALL' ? undefined : selectedDepartmentId,
+                })
+              ),
+              loader: async () => {
+                if (
+                  performanceDistribution.state !== 'ready' ||
+                  !evaluationDomain.data.evaluations.some((evaluation) => evaluation.evalStage !== 'SELF')
+                ) {
+                  return buildFairnessSection(
+                    'empty',
+                    '선택한 조건의 공정성 통계 데이터가 아직 없습니다.',
+                    buildCeoAdjustHref({
+                      cycleId: selectedCycle.id,
+                      departmentId: selectedDepartmentId === 'ALL' ? undefined : selectedDepartmentId,
+                    })
+                  )
+                }
+
+                const qualitySummary = buildStatisticsQualitySummary(
+                  evaluationDomain.data.evaluations.filter((evaluation) => evaluation.evalStage !== 'SELF')
+                )
+
+                const fairnessCards = buildFairnessCards({
+                  performanceSummary: {
+                    departmentRows: performanceDistribution.departmentRows,
+                    outlierDepartmentCount: performanceDistribution.outlierDepartmentCount ?? 0,
+                    missingAdjustmentReasonCount: performanceDistribution.missingAdjustmentReasonCount ?? 0,
+                  },
+                  qualitySummary,
+                  aiAlignmentSummary,
+                  selectedCycleId: selectedCycle.id,
+                  selectedDepartmentId,
+                })
+
+                return buildFairnessSection(
+                  'ready',
+                  undefined,
+                  buildCeoAdjustHref({
+                    cycleId: selectedCycle.id,
+                    departmentId: selectedDepartmentId === 'ALL' ? undefined : selectedDepartmentId,
+                  }),
+                  {
+                    warningCount:
+                      (performanceDistribution.outlierDepartmentCount ?? 0) +
+                      (performanceDistribution.missingAdjustmentReasonCount ?? 0) +
+                      aiAlignmentSummary.warningCount,
+                    cards: fairnessCards,
+                    alignmentDistribution: buildAlignmentDistributionRows(aiAlignmentSummary),
+                    qualityWarnings: [
+                      { label: '근거 부족', count: qualitySummary.insufficientEvidenceWarningCount },
+                      { label: '편향 위험', count: qualitySummary.biasWarningCount },
+                      { label: '코칭 가이드 누락', count: qualitySummary.coachingGapCount },
+                    ],
+                    coverageLabel:
+                      aiAlignmentSummary.totalCount > 0
+                        ? `AI 브리핑 ${aiAlignmentSummary.totalCount}건 기준`
+                        : '생성된 AI 브리핑이 없어 정합성 통계를 표시하지 않습니다.',
+                    notice: performanceDistribution.notice,
+                  }
+                )
+              },
+            })
+          ).data
+
+    const hasReadyPrimaryData =
+      (evaluationDomain.state === 'ready' &&
+        (evaluationDomain.data.evaluations.length > 0 || evaluationDomain.data.assignments.length > 0)) ||
+      (kpiDomain.state === 'ready' && hasKpiSourceData(kpiDomain.data)) ||
+      (appealDomain.state === 'ready' && appealDomain.data.appeals.length > 0) ||
+      readinessProxy.state === 'ready'
+
+    const hasDomainFailures =
+      evaluationDomain.state === 'error' ||
+      kpiDomain.state === 'error' ||
+      appealDomain.state === 'error' ||
+      performanceDistribution.state === 'error' ||
+      kpiExecution.state === 'error' ||
+      organizationRisk.state === 'error' ||
+      readinessProxy.state === 'error' ||
+      fairness.state === 'error'
+
+    if (!hasReadyPrimaryData && !hasDomainFailures) {
+      return {
+        state: 'empty',
+        message: '선택한 조건의 통계 데이터가 아직 없습니다.',
+        alerts,
+        generatedAt,
+        actor: actorSummary,
+        filters,
+        selectedCycle: selectedCycleSummary,
+        summaryCards: [],
+      }
+    }
+
+    const summaryCards = buildStatisticsSummaryCards({
+      evaluationProgressRate:
+        evaluationOperations.state === 'ready' ? evaluationOperations.progressRate : undefined,
+      finalizedRate: evaluationOperations.state === 'ready' ? evaluationOperations.finalizedRate : undefined,
+      averageAchievementRate:
+        kpiExecution.state === 'ready' ? kpiExecution.averageAchievementRate : undefined,
+      riskDepartmentCount:
+        organizationRisk.state === 'ready' ? organizationRisk.riskDepartmentCount : undefined,
+      fairnessWarningCount: fairness.state === 'ready' ? fairness.warningCount : undefined,
+      readinessReadyCount:
+        readinessProxy.state === 'ready' ? readinessProxy.readyTalentCount : undefined,
+      selectedCycleId: selectedCycle.id,
+      aiCycleHref: readinessProxy.href,
+      selectedYear: selectedCycle.evalYear,
+      selectedDepartmentId,
+    })
+
+    return {
+      state: 'ready',
+      alerts,
+      generatedAt,
+      actor: actorSummary,
+      filters,
+      selectedCycle: selectedCycleSummary,
+      summaryCards,
+      sections: {
+        evaluationOperations,
+        performanceDistribution,
+        kpiExecution,
+        organizationRisk,
+        readinessProxy,
+        fairness,
+      },
+    }
+  } catch (error) {
+    console.error('[statistics-page] fatal', {
+      actorId: sessionUser.id,
+      role: sessionUser.role,
+      cycleId: selectedCycleSummary?.id,
+      period: filters.selectedPeriod,
+      orgId: filters.selectedOrgId,
+      departmentId: filters.selectedDepartmentId,
+      position: filters.selectedPosition,
+      error,
+    })
+    return {
+      state: 'error',
+      message: '통계 페이지를 불러오는 중 오류가 발생했습니다.',
+      alerts,
+      generatedAt,
+      actor: actorSummary,
+      filters,
+      selectedCycle: selectedCycleSummary,
+      summaryCards: [],
+    }
+  }
+}
+
+export async function getStatisticsPageDataLegacy(
   session: Session,
   searchParams: StatisticsSearchParams = {}
 ): Promise<StatisticsPageData> {
@@ -1049,6 +1945,238 @@ export async function getStatisticsPageData(
   }
 }
 
+function buildEmptyEvaluationDomainData(): StatisticsEvaluationDomainData {
+  return {
+    gradeSettings: ensureGradeSettings([]),
+    evaluations: [],
+    assignments: [],
+    evaluationsByTarget: new Map(),
+    assignmentsByTarget: new Map(),
+    evaluationStageMatrix: {
+      stageRows: [],
+      progressRate: 0,
+      finalizedRate: 0,
+      returnedCount: 0,
+      overdueCount: 0,
+      unassignedCount: 0,
+      pendingCalibrationCount: 0,
+      departmentRows: [],
+    },
+    effectiveOutcomeRows: [],
+  }
+}
+
+function buildEmptyKpiDomainData(): StatisticsKpiDomainData {
+  return {
+    personalKpis: [],
+    orgKpis: [],
+    monthlyRecords: [],
+    checkIns: [],
+    latestMonthlyByKpi: new Map(),
+  }
+}
+
+function hasKpiSourceData(domain: StatisticsKpiDomainData) {
+  return (
+    domain.personalKpis.length > 0 ||
+    domain.orgKpis.length > 0 ||
+    domain.monthlyRecords.length > 0 ||
+    domain.checkIns.length > 0
+  )
+}
+
+function buildEvaluationOperationsSection(
+  state: StatisticsSectionState,
+  message?: string,
+  overrides?: Partial<StatisticsEvaluationOperationsSection>
+): StatisticsEvaluationOperationsSection {
+  return {
+    state,
+    message,
+    progressRate: overrides?.progressRate,
+    finalizedRate: overrides?.finalizedRate,
+    stageStatus: overrides?.stageStatus ?? [],
+    exceptionCards: overrides?.exceptionCards ?? [],
+    departmentRows: overrides?.departmentRows ?? [],
+  }
+}
+
+function buildPerformanceDistributionSection(
+  state: StatisticsSectionState,
+  message?: string,
+  overrides?: Partial<StatisticsPerformanceDistributionSection>
+): StatisticsPerformanceDistributionSection {
+  return {
+    state,
+    message,
+    outlierDepartmentCount: overrides?.outlierDepartmentCount,
+    missingAdjustmentReasonCount: overrides?.missingAdjustmentReasonCount,
+    cards: overrides?.cards ?? [],
+    companyDistribution: overrides?.companyDistribution ?? [],
+    beforeAfterDistribution: overrides?.beforeAfterDistribution ?? [],
+    departmentRows: overrides?.departmentRows ?? [],
+    notice: overrides?.notice,
+  }
+}
+
+function buildKpiExecutionSection(
+  state: StatisticsSectionState,
+  message?: string,
+  overrides?: Partial<StatisticsKpiExecutionSection>
+): StatisticsKpiExecutionSection {
+  return {
+    state,
+    message,
+    averageAchievementRate: overrides?.averageAchievementRate,
+    trend: overrides?.trend ?? [],
+    cards: overrides?.cards ?? [],
+    departmentRows: overrides?.departmentRows ?? [],
+    exceptions: overrides?.exceptions ?? [],
+  }
+}
+
+function buildOrganizationRiskSection(
+  state: StatisticsSectionState,
+  message?: string,
+  overrides?: Partial<StatisticsOrganizationRiskSection>
+): StatisticsOrganizationRiskSection {
+  return {
+    state,
+    message,
+    riskDepartmentCount: overrides?.riskDepartmentCount,
+    cards: overrides?.cards ?? [],
+    departmentRows: overrides?.departmentRows ?? [],
+  }
+}
+
+function getReadinessProxyNotice() {
+  return '현재 성과와 AI 역량 결과를 함께 본 준비도 프록시이며 공식 승계 지표는 아닙니다.'
+}
+
+function buildReadinessSection(
+  state: StatisticsSectionState,
+  message?: string,
+  overrides?: Partial<StatisticsReadinessProxySection>
+): StatisticsReadinessProxySection {
+  return {
+    state,
+    message,
+    notice: overrides?.notice ?? getReadinessProxyNotice(),
+    readyTalentCount: overrides?.readyTalentCount,
+    cards: overrides?.cards ?? [],
+    trackDistribution: overrides?.trackDistribution ?? [],
+    departmentRows: overrides?.departmentRows ?? [],
+    feederPool: overrides?.feederPool ?? [],
+    href: overrides?.href ?? '/evaluation/ai-competency/admin',
+  }
+}
+
+function buildFairnessSection(
+  state: StatisticsSectionState,
+  message: string | undefined,
+  detailHref: string,
+  overrides?: Partial<StatisticsFairnessSection>
+): StatisticsFairnessSection {
+  return {
+    state,
+    message,
+    warningCount: overrides?.warningCount,
+    cards: overrides?.cards ?? [],
+    alignmentDistribution: overrides?.alignmentDistribution ?? [],
+    qualityWarnings: overrides?.qualityWarnings ?? [],
+    coverageLabel: overrides?.coverageLabel ?? '생성된 AI 브리핑이 없어 정합성 통계를 표시하지 않습니다.',
+    notice: overrides?.notice,
+    detailHref,
+  }
+}
+
+function toReadinessSection(value:
+  | StatisticsReadinessProxySection
+  | {
+      readyTalentCount: number
+      section: Omit<StatisticsReadinessProxySection, 'readyTalentCount'>
+    }): StatisticsReadinessProxySection {
+  if ('section' in value) {
+    return {
+      ...value.section,
+      readyTalentCount: value.readyTalentCount,
+    }
+  }
+
+  return value
+}
+
+function appendNormalizedFilterAlerts(params: {
+  alerts: StatisticsPageAlert[]
+  searchParams: StatisticsSearchParams
+  filters: StatisticsPageData['filters']
+  selectedCycleId?: string
+}) {
+  const adjusted: string[] = []
+
+  if (params.searchParams.period && params.searchParams.period !== params.filters.selectedPeriod) {
+    adjusted.push('기간')
+  }
+  if (params.searchParams.cycleId && params.searchParams.cycleId !== params.selectedCycleId) {
+    adjusted.push('평가 주기')
+  }
+  if (params.searchParams.orgId && params.searchParams.orgId !== params.filters.selectedOrgId) {
+    adjusted.push('회사')
+  }
+  if (
+    params.searchParams.departmentId &&
+    params.searchParams.departmentId !== params.filters.selectedDepartmentId
+  ) {
+    adjusted.push('조직')
+  }
+  if (params.searchParams.position && params.searchParams.position !== params.filters.selectedPosition) {
+    adjusted.push('직위')
+  }
+
+  if (!adjusted.length) {
+    return
+  }
+
+  params.alerts.push({
+    title: '일부 필터를 현재 사용 가능한 값으로 조정했습니다.',
+    description: `${adjusted.join(', ')} 필터를 현재 범위에 맞게 다시 맞췄습니다.`,
+    tone: 'neutral',
+  })
+}
+
+async function loadStatisticsResource<T>(params: {
+  key: string
+  title: string
+  description: string
+  message?: string
+  fallback: T
+  alerts: StatisticsPageAlert[]
+  context?: StatisticsDebugContext
+  loader: () => Promise<T>
+}): Promise<StatisticsLoadResult<T>> {
+  try {
+    return {
+      state: 'ready',
+      data: await params.loader(),
+    }
+  } catch (error) {
+    console.error(`[statistics-page] ${params.key}`, {
+      ...params.context,
+      error,
+    })
+    params.alerts.push({
+      title: params.title,
+      description: params.description,
+      tone: 'warn',
+    })
+    return {
+      state: 'error',
+      data: params.fallback,
+      message: params.message,
+    }
+  }
+}
+
 function buildEmptyFilterState(): StatisticsPageData['filters'] {
   return {
     selectedCycleId: undefined,
@@ -1230,6 +2358,11 @@ function toPercent(value: number, total: number) {
 function formatPercent(value?: number | null) {
   if (typeof value !== 'number' || Number.isNaN(value)) return '-'
   return `${round(value)}%`
+}
+
+function formatCount(value?: number | null) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '-'
+  return String(value)
 }
 
 function average(values: Array<number | null | undefined>) {
@@ -2323,12 +3456,12 @@ function buildFairnessCards(params: {
 }
 
 function buildStatisticsSummaryCards(params: {
-  evaluationProgressRate: number
-  finalizedRate: number
+  evaluationProgressRate?: number
+  finalizedRate?: number
   averageAchievementRate?: number
-  riskDepartmentCount: number
-  fairnessWarningCount: number
-  readinessReadyCount: number
+  riskDepartmentCount?: number
+  fairnessWarningCount?: number
+  readinessReadyCount?: number
   selectedCycleId: string
   aiCycleHref: string
   selectedYear: number
@@ -2339,14 +3472,28 @@ function buildStatisticsSummaryCards(params: {
       label: '평가 진행률',
       value: formatPercent(params.evaluationProgressRate),
       description: '예상 단계 기준 진행률',
-      tone: params.evaluationProgressRate >= 85 ? 'success' : params.evaluationProgressRate >= 60 ? 'warn' : 'error',
+      tone:
+        typeof params.evaluationProgressRate === 'number'
+          ? params.evaluationProgressRate >= 85
+            ? 'success'
+            : params.evaluationProgressRate >= 60
+              ? 'warn'
+              : 'error'
+          : 'neutral',
       href: buildPerformanceHref(params.selectedCycleId),
     },
     {
       label: '최종 확정률',
       value: formatPercent(params.finalizedRate),
       description: '대상 인원 기준',
-      tone: params.finalizedRate >= 85 ? 'success' : params.finalizedRate >= 60 ? 'warn' : 'error',
+      tone:
+        typeof params.finalizedRate === 'number'
+          ? params.finalizedRate >= 85
+            ? 'success'
+            : params.finalizedRate >= 60
+              ? 'warn'
+              : 'error'
+          : 'neutral',
       href: buildEvaluationResultsHref(params.selectedCycleId),
     },
     {
@@ -2354,11 +3501,13 @@ function buildStatisticsSummaryCards(params: {
       value: formatPercent(params.averageAchievementRate),
       description: '선택 기간 최신 실적 기준',
       tone:
-        (params.averageAchievementRate ?? 0) >= 90
-          ? 'success'
-          : (params.averageAchievementRate ?? 0) >= 75
-            ? 'warn'
-            : 'error',
+        typeof params.averageAchievementRate === 'number'
+          ? params.averageAchievementRate >= 90
+            ? 'success'
+            : params.averageAchievementRate >= 75
+              ? 'warn'
+              : 'error'
+          : 'neutral',
       href: buildGoalAlignmentHref({
         cycleId: params.selectedCycleId,
         year: params.selectedYear,
@@ -2367,23 +3516,38 @@ function buildStatisticsSummaryCards(params: {
     },
     {
       label: '리스크 조직 수',
-      value: String(params.riskDepartmentCount),
+      value: formatCount(params.riskDepartmentCount),
       description: '성과·근거·이의제기 기준',
-      tone: params.riskDepartmentCount > 0 ? 'warn' : 'success',
+      tone:
+        typeof params.riskDepartmentCount === 'number'
+          ? params.riskDepartmentCount > 0
+            ? 'warn'
+            : 'success'
+          : 'neutral',
       href: '#risk-section',
     },
     {
       label: '공정성 경고 건수',
-      value: String(params.fairnessWarningCount),
+      value: formatCount(params.fairnessWarningCount),
       description: '분포·정합성·조정 이유 기준',
-      tone: params.fairnessWarningCount > 0 ? 'warn' : 'success',
+      tone:
+        typeof params.fairnessWarningCount === 'number'
+          ? params.fairnessWarningCount > 0
+            ? 'warn'
+            : 'success'
+          : 'neutral',
       href: '#fairness-section',
     },
     {
       label: '준비도 확보 인원(프록시)',
-      value: String(params.readinessReadyCount),
+      value: formatCount(params.readinessReadyCount),
       description: '성과와 인증 동시 충족',
-      tone: params.readinessReadyCount > 0 ? 'success' : 'neutral',
+      tone:
+        typeof params.readinessReadyCount === 'number'
+          ? params.readinessReadyCount > 0
+            ? 'success'
+            : 'neutral'
+          : 'neutral',
       href: params.aiCycleHref,
     },
   ]
