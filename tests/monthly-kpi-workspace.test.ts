@@ -367,6 +367,75 @@ async function main() {
     })
   })
 
+  await run('mixed file and link evidence are restored from saved monthly attachments', async () => {
+    await withStubbedMonthlyData(
+      {
+        personalKpiFindMany: async (args?: any) => {
+          if (args?.select?.evalYear) {
+            return [{ evalYear: 2026 }]
+          }
+
+          return [
+            makePersonalKpi({
+              id: 'pk-self',
+              employeeId: 'emp-self',
+              name: '회원 전환율',
+              monthlyRecords: [
+                {
+                  id: 'mr-self-04',
+                  yearMonth: '2026-04',
+                  actualValue: 72,
+                  achievementRate: 72,
+                  isDraft: true,
+                  attachments: [
+                    {
+                      id: 'legacy-file-1',
+                      name: '실적 정리.pdf',
+                      kind: 'REPORT',
+                      uploadedAt: '2026-04-05T09:00:00.000Z',
+                      uploadedBy: '구성원',
+                      sizeLabel: '1.2MB',
+                      dataUrl: 'data:application/pdf;base64,AAAA',
+                      comment: '월간 실적 보고서',
+                    },
+                    {
+                      id: 'drive-link-1',
+                      type: 'LINK',
+                      name: 'Google Docs 링크',
+                      kind: 'OTHER',
+                      uploadedAt: '2026-04-06T09:00:00.000Z',
+                      uploadedBy: '구성원',
+                      url: 'https://docs.google.com/document/d/123456789/edit',
+                      comment: '실적 상세 설명 문서',
+                    },
+                  ],
+                },
+              ],
+            }),
+          ]
+        },
+      },
+      async () => {
+        const data = await getMonthlyKpiPageData({
+          session: makeSession(),
+          year: 2026,
+          month: '2026-04',
+        })
+
+        assert.equal(data.state, 'ready')
+        assert.equal(data.records[0]?.attachments.length, 2)
+        assert.equal(data.records[0]?.attachments[0]?.type, 'FILE')
+        assert.equal(data.records[0]?.attachments[0]?.comment, '월간 실적 보고서')
+        assert.equal(data.records[0]?.attachments[1]?.type, 'LINK')
+        assert.equal(data.records[0]?.attachments[1]?.url, 'https://docs.google.com/document/d/123456789/edit')
+        assert.equal(data.records[0]?.attachments[1]?.comment, '실적 상세 설명 문서')
+        assert.equal(data.evidence.length, 2)
+        assert.equal(data.evidence[1]?.type, 'LINK')
+        assert.equal(data.evidence[1]?.comment, '실적 상세 설명 문서')
+      }
+    )
+  })
+
   await run('secondary AI log helper failure does not kill the monthly page', async () => {
     await withStubbedMonthlyData(
       {
@@ -416,6 +485,16 @@ async function main() {
     assert.equal(source.includes('disabled={busy !== null || generateSummaryActionState.disabled}'), true)
     assert.equal(source.includes('disabled={busy !== null || actionStates[action]?.disabled}'), true)
     assert.equal(source.includes('title={generateSummaryActionState.reason}'), true)
+  })
+
+  await run('monthly KPI client exposes mixed evidence controls and labels in the existing attachment section', () => {
+    const source = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
+    assert.equal(source.includes('구글 드라이브 링크'), true)
+    assert.equal(source.includes('간단 코멘트'), true)
+    assert.equal(source.includes('링크 추가'), true)
+    assert.equal(source.includes("attachment.type === 'LINK'"), true)
+    assert.equal(source.includes('openLinkAttachment'), true)
+    assert.equal(source.includes('증빙 변경 사항은 임시저장 또는 제출 시 반영됩니다.'), true)
   })
 
   console.log('Monthly KPI workspace tests completed')

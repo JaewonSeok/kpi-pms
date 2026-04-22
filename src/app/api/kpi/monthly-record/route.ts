@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { getMonthlyAttachmentAuditSummary } from '@/lib/monthly-attachments'
 import { AppError, calcAchievementRate, errorResponse, successResponse } from '@/lib/utils'
 import { MonthlyRecordSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
@@ -153,6 +154,7 @@ export async function POST(request: Request) {
             activities: existing.activities,
             obstacles: existing.obstacles,
             efforts: existing.efforts,
+            attachments: getMonthlyAttachmentAuditSummary(existing.attachments),
             isDraft: existing.isDraft,
           }
         : undefined,
@@ -162,6 +164,7 @@ export async function POST(request: Request) {
         activities: record.activities,
         obstacles: record.obstacles,
         efforts: record.efforts,
+        attachments: getMonthlyAttachmentAuditSummary(record.attachments),
         isDraft: record.isDraft,
         workflowStatus: record.isDraft ? 'DRAFT' : 'SUBMITTED',
       },

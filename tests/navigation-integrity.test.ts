@@ -63,6 +63,7 @@ run('member sidebar hides admin-only and restricted KPI routes', () => {
   assert.equal(memberHrefs.includes('/evaluation/upward/respond'), true)
   assert.equal(memberHrefs.includes('/evaluation/upward/admin'), false)
   assert.equal(memberHrefs.includes('/evaluation/word-cloud-360'), true)
+  assert.equal(memberHrefs.includes('/statistics'), false)
 })
 
 run('ceo sidebar excludes monthly record but keeps ceo-specific routes', () => {
@@ -74,6 +75,7 @@ run('ceo sidebar excludes monthly record but keeps ceo-specific routes', () => {
   assert.equal(ceoHrefs.includes('/evaluation/word-cloud-360'), true)
   assert.equal(ceoHrefs.includes('/evaluation/ceo-adjust'), true)
   assert.equal(ceoHrefs.includes('/compensation/manage'), true)
+  assert.equal(ceoHrefs.includes('/statistics'), true)
 })
 
 run('admin sidebar exposes every admin and setup route', () => {
@@ -91,6 +93,7 @@ run('admin sidebar exposes every admin and setup route', () => {
     '/evaluation/results',
     '/evaluation/appeal',
     '/evaluation/ceo-adjust',
+    '/statistics',
     '/admin/google-access?tab=org-chart',
     '/admin/grades',
     '/admin/eval-cycle',

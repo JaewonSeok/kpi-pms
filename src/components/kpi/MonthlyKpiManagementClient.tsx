@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
+import { getMonthlyLinkDisplayName, isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
 import type {
   MonthlyAttachmentViewModel,
   MonthlyPageData,
@@ -51,6 +52,8 @@ type Draft = {
   blockerNote: string
   effortNote: string
   attachments: MonthlyAttachmentViewModel[]
+  linkUrlInput: string
+  linkCommentInput: string
 }
 
 type AiAction =
@@ -264,6 +267,8 @@ function createDraft(record: MonthlyRecordViewModel): Draft {
     blockerNote: record.blockerNote ?? '',
     effortNote: record.effortNote ?? '',
     attachments: record.attachments ?? [],
+    linkUrlInput: '',
+    linkCommentInput: '',
   }
 }
 
@@ -277,12 +282,14 @@ async function readFiles(files: FileList, uploaderName: string) {
           reader.onload = () =>
             resolve({
               id: `${file.name}-${file.lastModified}`,
+              type: 'FILE',
               name: file.name,
               kind: file.name.toLowerCase().includes('report')
                 ? 'REPORT'
                 : file.name.toLowerCase().includes('output')
                   ? 'OUTPUT'
                   : 'OTHER',
+              comment: undefined,
               uploadedAt: new Date().toISOString(),
               uploadedBy: uploaderName,
               sizeLabel:
@@ -295,6 +302,26 @@ async function readFiles(files: FileList, uploaderName: string) {
         })
     )
   )
+}
+
+function createLinkAttachment(params: {
+  url: string
+  comment: string
+  uploaderName: string
+}): MonthlyAttachmentViewModel {
+  const trimmedUrl = params.url.trim()
+  const trimmedComment = params.comment.trim()
+
+  return {
+    id: `link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: 'LINK',
+    name: getMonthlyLinkDisplayName(trimmedUrl),
+    kind: 'OTHER',
+    comment: trimmedComment || undefined,
+    uploadedAt: new Date().toISOString(),
+    uploadedBy: params.uploaderName,
+    url: trimmedUrl,
+  }
 }
 
 async function parseJsonOrThrow<T>(response: Response) {
@@ -323,6 +350,10 @@ function downloadAttachment(attachment: MonthlyAttachmentViewModel, onMissing: (
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()
+}
+
+function openLinkAttachment(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 function buildQuery(params: Record<string, string | undefined>) {
@@ -651,6 +682,39 @@ export function MonthlyKpiManagementClient({
     }
   }
 
+  function handleLinkAttachmentCreate() {
+    if (!selected || !selectedDraft) return
+    if (!canEdit) {
+      setBanner({ tone: 'info', message: '현재 상태에서는 링크 증빙을 추가할 수 없습니다.' })
+      return
+    }
+
+    const nextUrl = selectedDraft.linkUrlInput.trim()
+    if (!nextUrl) {
+      setBanner({ tone: 'info', message: '구글 드라이브 링크를 입력해 주세요.' })
+      return
+    }
+
+    if (!isAllowedMonthlyEvidenceUrl(nextUrl)) {
+      setBanner({ tone: 'info', message: '구글 드라이브 링크만 등록할 수 있습니다.' })
+      return
+    }
+
+    const attachment = createLinkAttachment({
+      url: nextUrl,
+      comment: selectedDraft.linkCommentInput,
+      uploaderName: pageData.actor.name,
+    })
+
+    updateDraft({
+      attachments: [...selectedDraft.attachments, attachment],
+      linkUrlInput: '',
+      linkCommentInput: '',
+    })
+    setBanner({ tone: 'success', message: '링크 증빙을 추가했습니다.' })
+    setTab('evidence')
+  }
+
   async function saveRecord(mode: 'draft' | 'submit') {
     if (!selected || !selectedDraft) return
 
@@ -841,8 +905,11 @@ export function MonthlyKpiManagementClient({
               riskFlags: selected.riskFlags,
               linkedCheckins: selected.linkedCheckins,
               attachments: selectedDraft.attachments.map((item) => ({
+                type: item.type,
                 name: item.name,
                 kind: item.kind,
+                comment: item.comment,
+                url: item.type === 'LINK' ? item.url : undefined,
               })),
             },
           }),
@@ -1264,6 +1331,7 @@ export function MonthlyKpiManagementClient({
           onSubmit={() => void saveRecord('submit')}
           onReview={() => void handleReview('REVIEW')}
           onRequestUpdate={() => void handleReview('REQUEST_UPDATE')}
+          onAddLinkAttachment={() => handleLinkAttachmentCreate()}
           onUploadClick={() => {
             if (!canEdit) {
               setBanner({ tone: 'info', message: '현재 상태에서는 증빙을 추가할 수 없습니다.' })
@@ -1294,14 +1362,6 @@ export function MonthlyKpiManagementClient({
       {tab === 'evidence' ? (
         <EvidenceTab
           evidence={pageData.evidence}
-          canEdit={canEdit}
-          onUploadClick={() => {
-            if (!canEdit) {
-              setBanner({ tone: 'info', message: '현재 상태에서는 증빙을 추가할 수 없습니다.' })
-              return
-            }
-            fileInputRef.current?.click()
-          }}
           onDownload={(attachment) =>
             downloadAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
           }
@@ -1369,6 +1429,7 @@ function EntryTab({
   onSubmit,
   onReview,
   onRequestUpdate,
+  onAddLinkAttachment,
   onUploadClick,
   onAttachmentDownload,
   onAttachmentRemove,
@@ -1397,6 +1458,7 @@ function EntryTab({
   onSubmit: () => void
   onReview: () => void
   onRequestUpdate: () => void
+  onAddLinkAttachment: () => void
   onUploadClick: () => void
   onAttachmentDownload: (attachment: MonthlyAttachmentViewModel) => void
   onAttachmentRemove: (attachmentId: string) => void
@@ -1606,7 +1668,9 @@ function EntryTab({
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">증빙 첨부</p>
-                  <p className="mt-1 text-xs text-slate-500">제출 전까지 파일 추가와 삭제가 가능합니다.</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    증빙 변경 사항은 임시저장 또는 제출 시 반영됩니다.
+                  </p>
                 </div>
                 <Button
                   icon={<FilePlus2 className="h-4 w-4" />}
@@ -1614,35 +1678,114 @@ function EntryTab({
                   disabled={!canEdit}
                   title={uploadDisabledReason}
                 >
-                  증빙 추가
+                  파일 첨부
                 </Button>
+              </div>
+              <div className="mt-4 grid gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[1.3fr_1fr_auto]">
+                <label className="space-y-2">
+                  <span className="text-xs font-semibold text-slate-600">구글 드라이브 링크</span>
+                  <input
+                    value={selectedDraft.linkUrlInput}
+                    onChange={(event) => updateDraft({ linkUrlInput: event.target.value })}
+                    disabled={!canEdit}
+                    placeholder="https://drive.google.com/... 또는 https://docs.google.com/..."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-semibold text-slate-600">간단 코멘트</span>
+                  <input
+                    value={selectedDraft.linkCommentInput}
+                    onChange={(event) => updateDraft({ linkCommentInput: event.target.value })}
+                    disabled={!canEdit}
+                    maxLength={300}
+                    placeholder="링크 설명을 간단히 남겨 주세요."
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
+                  />
+                </label>
+                <div className="flex items-end">
+                  <Button
+                    icon={<Link2 className="h-4 w-4" />}
+                    onClick={onAddLinkAttachment}
+                    disabled={!canEdit}
+                    title={uploadDisabledReason}
+                  >
+                    링크 추가
+                  </Button>
+                </div>
               </div>
               <div className="mt-4 space-y-3">
                 {selectedDraft.attachments.length ? (
                   selectedDraft.attachments.map((attachment) => (
-                    <div
-                      key={attachment.id}
-                      className="flex flex-col gap-3 rounded-2xl bg-slate-50 p-4 md:flex-row md:items-center md:justify-between"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">{attachment.name}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {attachment.kind} / {attachment.sizeLabel ?? '-'} / {formatDate(attachment.uploadedAt)}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button icon={<FileDown className="h-4 w-4" />} onClick={() => onAttachmentDownload(attachment)}>
-                          다운로드
-                        </Button>
-                        <Button onClick={() => onAttachmentRemove(attachment.id)} disabled={!canEdit}>
-                          제거
-                        </Button>
+                    <div key={attachment.id} className="rounded-2xl bg-slate-50 p-4">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                attachment.type === 'LINK'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {attachment.type === 'LINK' ? '링크' : '파일'}
+                            </span>
+                            <p className="text-sm font-semibold text-slate-900">{attachment.name}</p>
+                          </div>
+                          <div className="mt-2 space-y-1 text-xs text-slate-500">
+                            <p className="break-all">
+                              {attachment.kind} /{' '}
+                              {attachment.type === 'LINK'
+                                ? attachment.url ?? '-'
+                                : attachment.sizeLabel ?? '-'}{' '}
+                              / {formatDate(attachment.uploadedAt)}
+                            </p>
+                            {attachment.uploadedBy ? <p>등록자: {attachment.uploadedBy}</p> : null}
+                          </div>
+                          <label className="mt-3 block space-y-2">
+                            <span className="text-xs font-semibold text-slate-600">간단 코멘트</span>
+                            <input
+                              value={attachment.comment ?? ''}
+                              onChange={(event) =>
+                                updateDraft({
+                                  attachments: selectedDraft.attachments.map((item) =>
+                                    item.id === attachment.id ? { ...item, comment: event.target.value } : item
+                                  ),
+                                })
+                              }
+                              disabled={!canEdit}
+                              maxLength={300}
+                              placeholder="증빙 설명을 간단히 남겨 주세요."
+                              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
+                            />
+                          </label>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {attachment.type === 'LINK' ? (
+                            <Button
+                              icon={<Link2 className="h-4 w-4" />}
+                              onClick={() => attachment.url && openLinkAttachment(attachment.url)}
+                            >
+                              열기
+                            </Button>
+                          ) : (
+                            <Button
+                              icon={<FileDown className="h-4 w-4" />}
+                              onClick={() => onAttachmentDownload(attachment)}
+                            >
+                              다운로드
+                            </Button>
+                          )}
+                          <Button onClick={() => onAttachmentRemove(attachment.id)} disabled={!canEdit}>
+                            삭제
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-                    <p className="text-sm font-semibold text-slate-900">첨부된 파일이 없습니다.</p>
+                    <p className="text-sm font-semibold text-slate-900">등록된 증빙이 없습니다.</p>
                   </div>
                 )}
               </div>
@@ -1858,25 +2001,18 @@ function ReviewTab({
 
 function EvidenceTab({
   evidence,
-  canEdit,
-  onUploadClick,
   onDownload,
 }: {
   evidence: MonthlyPageData['evidence']
-  canEdit: boolean
-  onUploadClick: () => void
   onDownload: (attachment: MonthlyAttachmentViewModel) => void
 }) {
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-slate-900">증빙 / 근거 자료</h2>
-        <p className="mt-1 text-sm text-slate-500">평가 결과를 설명할 수 있도록 KPI별 증빙을 한 곳에서 관리합니다.</p>
-      </div>
-      <div className="mb-4 flex flex-wrap gap-3">
-        <Button icon={<Paperclip className="h-4 w-4" />} onClick={onUploadClick} disabled={!canEdit}>
-          증빙 첨부
-        </Button>
+        <p className="mt-1 text-sm text-slate-500">
+          KPI별 증빙을 한 곳에서 확인하고 파일 또는 링크를 바로 열 수 있습니다.
+        </p>
       </div>
 
       <div className="space-y-3">
@@ -1886,20 +2022,39 @@ function EvidenceTab({
               key={item.id}
               className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between"
             >
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{item.name}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  {item.kpiTitle} / {item.kind} / {formatDate(item.uploadedAt)}
-                </p>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                      item.type === 'LINK' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {item.type === 'LINK' ? '링크' : '파일'}
+                  </span>
+                  <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                </div>
+                <div className="mt-2 space-y-1 text-xs text-slate-500">
+                  <p className="break-all">
+                    {item.kpiTitle} / {item.kind} /{' '}
+                    {item.type === 'LINK' ? item.url ?? '-' : item.sizeLabel ?? '-'} / {formatDate(item.uploadedAt)}
+                  </p>
+                  {item.comment ? <p>{item.comment}</p> : null}
+                </div>
               </div>
-              <Button icon={<FileDown className="h-4 w-4" />} onClick={() => onDownload(item)}>
-                다운로드
-              </Button>
+              {item.type === 'LINK' ? (
+                <Button icon={<Link2 className="h-4 w-4" />} onClick={() => item.url && openLinkAttachment(item.url)}>
+                  열기
+                </Button>
+              ) : (
+                <Button icon={<FileDown className="h-4 w-4" />} onClick={() => onDownload(item)}>
+                  다운로드
+                </Button>
+              )}
             </div>
           ))
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-slate-900">첨부된 증빙이 없습니다.</p>
+            <p className="text-sm font-semibold text-slate-900">등록된 증빙이 없습니다.</p>
           </div>
         )}
       </div>

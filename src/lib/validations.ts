@@ -2,6 +2,10 @@
 import { reviewEmailHtmlToText } from './review-email-editor'
 import { CALIBRATION_DISCUSSION_STATUS_OPTIONS } from './calibration-workspace'
 import {
+  isAllowedMonthlyEvidenceUrl,
+  MONTHLY_ATTACHMENT_KIND_VALUES,
+} from './monthly-attachments'
+import {
   CALIBRATION_DECISION_POLICY_OPTIONS,
   CALIBRATION_MEMO_COMMENT_POLICY_OPTIONS,
   CALIBRATION_REFERENCE_DISTRIBUTION_USE_OPTIONS,
@@ -291,6 +295,15 @@ export const PersonalKpiAiActionSchema = z.object({
 // ?붾퀎 ?ㅼ쟻 愿??
 // ============================================
 
+const MonthlyAttachmentCommentSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : undefined
+  },
+  z.string().max(300, '간단 코멘트는 300자 이하로 입력해 주세요.').optional()
+)
+
 export const MonthlyRecordSchema = z.object({
   personalKpiId: z.string().min(1),
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/, 'YYYY-MM 형식으로 입력해 주세요.'),
@@ -298,15 +311,51 @@ export const MonthlyRecordSchema = z.object({
   activities: z.string().max(1000).optional(),
   obstacles: z.string().max(500).optional(),
   efforts: z.string().max(500).optional(),
-  attachments: z.array(z.object({
-    id: z.string().max(100),
-    name: z.string().min(1).max(200),
-    kind: z.enum(['KPI', 'OUTPUT', 'REPORT', 'OTHER']).default('OTHER'),
-    uploadedAt: z.string().optional(),
-    uploadedBy: z.string().max(100).optional(),
-    sizeLabel: z.string().max(30).optional(),
-    dataUrl: z.string().max(2_000_000).optional(),
-  })).optional(),
+  attachments: z
+    .array(
+      z.union([
+        z.object({
+          id: z.string().max(100),
+          type: z.literal('FILE'),
+          name: z.string().min(1).max(200),
+          kind: z.enum(MONTHLY_ATTACHMENT_KIND_VALUES).default('OTHER'),
+          comment: MonthlyAttachmentCommentSchema,
+          uploadedAt: z.string().optional(),
+          uploadedBy: z.string().max(100).optional(),
+          sizeLabel: z.string().max(30).optional(),
+          dataUrl: z.string().max(2_000_000).optional(),
+        }),
+        z.object({
+          id: z.string().max(100),
+          type: z.literal('LINK'),
+          name: z.string().min(1).max(200),
+          kind: z.enum(MONTHLY_ATTACHMENT_KIND_VALUES).default('OTHER'),
+          comment: MonthlyAttachmentCommentSchema,
+          uploadedAt: z.string().optional(),
+          uploadedBy: z.string().max(100).optional(),
+          url: z
+            .string()
+            .trim()
+            .url('올바른 링크 주소를 입력해 주세요.')
+            .max(1000)
+            .refine(isAllowedMonthlyEvidenceUrl, '구글 드라이브 링크만 등록할 수 있습니다.'),
+        }),
+        z
+          .object({
+            id: z.string().max(100),
+            name: z.string().min(1).max(200),
+            kind: z.enum(MONTHLY_ATTACHMENT_KIND_VALUES).default('OTHER'),
+            comment: MonthlyAttachmentCommentSchema,
+            uploadedAt: z.string().optional(),
+            uploadedBy: z.string().max(100).optional(),
+            sizeLabel: z.string().max(30).optional(),
+            dataUrl: z.string().max(2_000_000).optional(),
+          })
+          .strict()
+          .transform((value) => ({ ...value, type: 'FILE' as const })),
+      ])
+    )
+    .optional(),
   isDraft: z.boolean().default(true),
 })
 
@@ -315,15 +364,51 @@ export const UpdateMonthlyRecordSchema = z.object({
   activities: z.string().max(1000).optional(),
   obstacles: z.string().max(500).optional(),
   efforts: z.string().max(500).optional(),
-  attachments: z.array(z.object({
-    id: z.string().max(100),
-    name: z.string().min(1).max(200),
-    kind: z.enum(['KPI', 'OUTPUT', 'REPORT', 'OTHER']).default('OTHER'),
-    uploadedAt: z.string().optional(),
-    uploadedBy: z.string().max(100).optional(),
-    sizeLabel: z.string().max(30).optional(),
-    dataUrl: z.string().max(2_000_000).optional(),
-  })).optional(),
+  attachments: z
+    .array(
+      z.union([
+        z.object({
+          id: z.string().max(100),
+          type: z.literal('FILE'),
+          name: z.string().min(1).max(200),
+          kind: z.enum(MONTHLY_ATTACHMENT_KIND_VALUES).default('OTHER'),
+          comment: MonthlyAttachmentCommentSchema,
+          uploadedAt: z.string().optional(),
+          uploadedBy: z.string().max(100).optional(),
+          sizeLabel: z.string().max(30).optional(),
+          dataUrl: z.string().max(2_000_000).optional(),
+        }),
+        z.object({
+          id: z.string().max(100),
+          type: z.literal('LINK'),
+          name: z.string().min(1).max(200),
+          kind: z.enum(MONTHLY_ATTACHMENT_KIND_VALUES).default('OTHER'),
+          comment: MonthlyAttachmentCommentSchema,
+          uploadedAt: z.string().optional(),
+          uploadedBy: z.string().max(100).optional(),
+          url: z
+            .string()
+            .trim()
+            .url('올바른 링크 주소를 입력해 주세요.')
+            .max(1000)
+            .refine(isAllowedMonthlyEvidenceUrl, '구글 드라이브 링크만 등록할 수 있습니다.'),
+        }),
+        z
+          .object({
+            id: z.string().max(100),
+            name: z.string().min(1).max(200),
+            kind: z.enum(MONTHLY_ATTACHMENT_KIND_VALUES).default('OTHER'),
+            comment: MonthlyAttachmentCommentSchema,
+            uploadedAt: z.string().optional(),
+            uploadedBy: z.string().max(100).optional(),
+            sizeLabel: z.string().max(30).optional(),
+            dataUrl: z.string().max(2_000_000).optional(),
+          })
+          .strict()
+          .transform((value) => ({ ...value, type: 'FILE' as const })),
+      ])
+    )
+    .optional(),
   isDraft: z.boolean().optional(),
 })
 

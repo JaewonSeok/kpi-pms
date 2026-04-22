@@ -30,6 +30,7 @@ export const MENU_KEYS = [
   'FEEDBACK_360',
   'WORD_CLOUD_360',
   'DASHBOARD',
+  'STATISTICS',
   'AUDIT_LOG',
   'SYSTEM_SETTING',
   'CHECKIN',

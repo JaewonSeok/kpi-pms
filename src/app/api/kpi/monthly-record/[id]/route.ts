@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { getMonthlyAttachmentAuditSummary } from '@/lib/monthly-attachments'
 import { AppError, calcAchievementRate, errorResponse, successResponse } from '@/lib/utils'
 import { UpdateMonthlyRecordSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
@@ -100,6 +101,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         activities: current.activities,
         obstacles: current.obstacles,
         efforts: current.efforts,
+        attachments: getMonthlyAttachmentAuditSummary(current.attachments),
         isDraft: current.isDraft,
       },
       newValue: {
@@ -108,6 +110,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         activities: updated.activities,
         obstacles: updated.obstacles,
         efforts: updated.efforts,
+        attachments: getMonthlyAttachmentAuditSummary(updated.attachments),
         isDraft: updated.isDraft,
       },
       ...getClientInfo(request),

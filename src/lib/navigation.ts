@@ -17,6 +17,11 @@ export const NAV_ITEMS: NavigationItem[] = [
     menuKey: 'DASHBOARD',
   },
   {
+    label: '통계',
+    href: '/statistics',
+    menuKey: 'STATISTICS',
+  },
+  {
     label: 'KPI 관리',
     href: '/kpi',
     children: [

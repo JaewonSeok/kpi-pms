@@ -204,6 +204,7 @@ export type EvaluationWorkbenchPageData = {
           label: string
           href: string
           uploadedBy?: string
+          comment?: string
         }>
         progressRate?: number | null
         progressLabel: string
@@ -305,6 +306,7 @@ type WorkbenchGoalContextLink = {
   label: string
   href: string
   uploadedBy?: string
+  comment?: string
 }
 
 type WorkbenchGoalContextStatus = 'DRAFT' | 'CONFIRMED' | 'ARCHIVED' | 'UNKNOWN'
@@ -328,14 +330,14 @@ function asWorkbenchRecord(value: unknown) {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
 }
 
-function parseGoalContextLinks(value: Prisma.JsonValue | null | undefined): WorkbenchGoalContextLink[] {
+function parseGoalContextLinksV2(
+  value: Prisma.JsonValue | null | undefined
+): WorkbenchGoalContextLink[] {
   if (!Array.isArray(value)) return []
 
-  const links: WorkbenchGoalContextLink[] = []
-
-  value.forEach((item, index) => {
+  return value.flatMap<WorkbenchGoalContextLink>((item, index) => {
     const record = asWorkbenchRecord(item)
-    if (!record) return
+    if (!record) return []
 
     const href =
       typeof record.dataUrl === 'string'
@@ -347,24 +349,31 @@ function parseGoalContextLinks(value: Prisma.JsonValue | null | undefined): Work
             : ''
 
     if (!href) {
-      return
+      return []
     }
 
-    links.push({
-      id: typeof record.id === 'string' ? record.id : `goal-link-${index}`,
-      label:
-        typeof record.name === 'string' && record.name.trim()
-          ? record.name.trim()
-          : `관련 링크 ${index + 1}`,
-      href,
-      uploadedBy:
-        typeof record.uploadedBy === 'string' && record.uploadedBy.trim()
-          ? record.uploadedBy.trim()
-          : undefined,
-    })
-  })
+    const uploadedBy =
+      typeof record.uploadedBy === 'string' && record.uploadedBy.trim()
+        ? record.uploadedBy.trim()
+        : undefined
+    const comment =
+      typeof record.comment === 'string' && record.comment.trim()
+        ? record.comment.trim()
+        : undefined
 
-  return links
+    return [
+      {
+        id: typeof record.id === 'string' ? record.id : `goal-link-${index}`,
+        label:
+          typeof record.name === 'string' && record.name.trim()
+            ? record.name.trim()
+            : `관련 링크 ${index + 1}`,
+        href,
+        ...(uploadedBy ? { uploadedBy } : {}),
+        ...(comment ? { comment } : {}),
+      },
+    ]
+  })
 }
 
 function parseGoalContextActionAssignees(value: Prisma.JsonValue | null | undefined) {
@@ -1444,7 +1453,7 @@ export async function getEvaluationWorkbenchPageData(
         const relatedRecords = recordsByKpiId.get(item.personalKpiId) ?? []
         const relatedCheckins = checkinGoalContextByKpiId.get(item.personalKpiId) ?? []
         const latestCheckin = relatedCheckins[0]
-        const links = relatedRecords.flatMap((record) => parseGoalContextLinks(record.attachments))
+        const links = relatedRecords.flatMap((record) => parseGoalContextLinksV2(record.attachments))
         const collaborators = Array.from(
           new Set(
             [

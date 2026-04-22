@@ -7,6 +7,11 @@ import type {
 } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { isFeatureEnabled } from '@/lib/feature-flags'
+import {
+  getMonthlyLinkDisplayName,
+  type MonthlyAttachmentKind,
+  type MonthlyAttachmentType,
+} from '@/lib/monthly-attachments'
 import { getManagedEmployees } from './checkin-access'
 import {
   resolveMonthlyOperationalStatus,
@@ -29,12 +34,15 @@ export type MonthlyPageAlert = {
 
 export type MonthlyAttachmentViewModel = {
   id: string
+  type: MonthlyAttachmentType
   name: string
-  kind: 'KPI' | 'OUTPUT' | 'REPORT' | 'OTHER'
+  kind: MonthlyAttachmentKind
+  comment?: string
   uploadedAt?: string
   uploadedBy?: string
   sizeLabel?: string
   dataUrl?: string
+  url?: string
 }
 
 export type MonthlyRecordTimelineItem = {
@@ -117,12 +125,15 @@ export type MonthlyEvidenceViewModel = {
   id: string
   recordId: string
   kpiTitle: string
+  type: MonthlyAttachmentType
   name: string
-  kind: 'KPI' | 'OUTPUT' | 'REPORT' | 'OTHER'
+  kind: MonthlyAttachmentKind
+  comment?: string
   uploadedAt?: string
   uploadedBy?: string
   sizeLabel?: string
   dataUrl?: string
+  url?: string
 }
 
 export type MonthlyAiLogItem = {
@@ -276,28 +287,53 @@ function toMonthString(year: number, monthIndex: number) {
   return `${year}-${String(monthIndex).padStart(2, '0')}`
 }
 
-function parseMonthlyAttachments(value: Prisma.JsonValue | null | undefined): MonthlyAttachmentViewModel[] {
+function parseMonthlyAttachmentsViewModel(
+  value: Prisma.JsonValue | null | undefined
+): MonthlyAttachmentViewModel[] {
   if (!Array.isArray(value)) return []
-  const items: MonthlyAttachmentViewModel[] = []
 
-  value.forEach((item, index) => {
+  return value.flatMap<MonthlyAttachmentViewModel>((item, index) => {
     const record = asRecord(item)
-    if (!record) return
-    items.push({
-      id: typeof record.id === 'string' ? record.id : `attachment-${index}`,
-      name: typeof record.name === 'string' ? record.name : `첨부 ${index + 1}`,
-      kind:
-        record.kind === 'KPI' || record.kind === 'OUTPUT' || record.kind === 'REPORT'
-          ? record.kind
-          : 'OTHER',
-      uploadedAt: typeof record.uploadedAt === 'string' ? record.uploadedAt : undefined,
-      uploadedBy: typeof record.uploadedBy === 'string' ? record.uploadedBy : undefined,
-      sizeLabel: typeof record.sizeLabel === 'string' ? record.sizeLabel : undefined,
-      dataUrl: typeof record.dataUrl === 'string' ? record.dataUrl : undefined,
-    })
-  })
+    if (!record) return []
 
-  return items
+    const type: MonthlyAttachmentType = record.type === 'LINK' ? 'LINK' : 'FILE'
+    const url =
+      typeof record.url === 'string'
+        ? record.url.trim()
+        : typeof record.href === 'string'
+          ? record.href.trim()
+          : undefined
+
+    if (type === 'LINK' && !url) {
+      return []
+    }
+
+    return [
+      {
+        id: typeof record.id === 'string' ? record.id : `attachment-${index}`,
+        type,
+        name:
+          typeof record.name === 'string' && record.name.trim().length > 0
+            ? record.name.trim()
+            : type === 'LINK' && url
+              ? getMonthlyLinkDisplayName(url)
+              : `첨부 ${index + 1}`,
+        kind:
+          record.kind === 'KPI' || record.kind === 'OUTPUT' || record.kind === 'REPORT'
+            ? record.kind
+            : 'OTHER',
+        comment:
+          typeof record.comment === 'string' && record.comment.trim().length > 0
+            ? record.comment.trim()
+            : undefined,
+        uploadedAt: typeof record.uploadedAt === 'string' ? record.uploadedAt : undefined,
+        uploadedBy: typeof record.uploadedBy === 'string' ? record.uploadedBy : undefined,
+        sizeLabel: typeof record.sizeLabel === 'string' ? record.sizeLabel : undefined,
+        dataUrl: type === 'FILE' && typeof record.dataUrl === 'string' ? record.dataUrl : undefined,
+        url,
+      },
+    ]
+  })
 }
 
 function getActorName(userId: string, employeesById: Map<string, EmployeeLite>) {
@@ -835,7 +871,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       const previousRecord = kpi.monthlyRecords.find((record) => record.yearMonth < selectedMonth)
       const logs = currentRecord ? logsByRecordId.get(currentRecord.id) ?? [] : []
       const reviewMeta = parseReviewComment(logs)
-      const attachments = parseMonthlyAttachments(currentRecord?.attachments)
+      const attachments = parseMonthlyAttachmentsViewModel(currentRecord?.attachments)
       const status = resolveMonthlyOperationalStatus({
         hasRecord: Boolean(currentRecord),
         isDraft: currentRecord?.isDraft,
@@ -947,12 +983,15 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         id: attachment.id,
         recordId: record.recordId ?? record.id,
         kpiTitle: record.kpiTitle,
+        type: attachment.type,
         name: attachment.name,
         kind: attachment.kind,
+        comment: attachment.comment,
         uploadedAt: attachment.uploadedAt,
         uploadedBy: attachment.uploadedBy,
         sizeLabel: attachment.sizeLabel,
         dataUrl: attachment.dataUrl,
+        url: attachment.url,
       }))
     )
 

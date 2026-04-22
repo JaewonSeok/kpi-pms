@@ -1103,7 +1103,7 @@ function buildEvaluationResultViewModel(params: {
         actionItems: parseActionItems(item.actionItems),
       })),
       feedbacks,
-      attachments: buildAttachmentSummary(params.personalKpis),
+      attachments: buildAttachmentSummaryV2(params.personalKpis),
       highlights: buildEvidenceHighlights({
         kpis: params.personalKpis,
         checkIns: params.checkIns,
@@ -1301,7 +1301,7 @@ function buildFeedbackSummary(
     .slice(0, 8)
 }
 
-function buildAttachmentSummary(personalKpis: PersonalKpiWithRecords[]) {
+function buildAttachmentSummaryV2(personalKpis: PersonalKpiWithRecords[]) {
   const attachments: Array<{ label: string; source: string }> = []
 
   for (const kpi of personalKpis) {
@@ -1309,14 +1309,23 @@ function buildAttachmentSummary(personalKpis: PersonalKpiWithRecords[]) {
       if (!Array.isArray(record.attachments)) continue
 
       record.attachments.forEach((item, index) => {
+        const attachment = item && typeof item === 'object' ? (item as Record<string, unknown>) : null
+        const typeLabel = attachment?.type === 'LINK' ? '링크' : '파일'
+        const comment =
+          typeof attachment?.comment === 'string' && attachment.comment.trim().length > 0
+            ? attachment.comment.trim()
+            : undefined
+
         attachments.push({
           label:
             typeof item === 'string'
               ? item
-              : typeof item === 'object' && item && 'name' in item
-                ? String(item.name)
+              : attachment && typeof attachment.name === 'string'
+                ? `${attachment.name} · ${typeLabel}`
                 : `${kpi.kpiName} 첨부 ${index + 1}`,
-          source: `${record.yearMonth} / ${kpi.kpiName}`,
+          source: comment
+            ? `${record.yearMonth} / ${kpi.kpiName} / ${comment}`
+            : `${record.yearMonth} / ${kpi.kpiName}`,
         })
       })
     }

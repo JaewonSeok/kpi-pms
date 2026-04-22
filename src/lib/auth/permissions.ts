@@ -68,6 +68,7 @@ export const MENU_PERMISSIONS: Record<MenuKey, AuthRole[]> = {
     'ROLE_TEAM_LEADER',
     'ROLE_MEMBER',
   ],
+  STATISTICS: ['ROLE_ADMIN', 'ROLE_CEO'],
   AUDIT_LOG: ['ROLE_ADMIN'],
   SYSTEM_SETTING: ['ROLE_ADMIN'],
   CHECKIN: [
@@ -140,6 +141,7 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/kpi/monthly', menuKey: 'MONTHLY_INPUT' },
   { prefix: '/api/kpi/monthly-record', menuKey: 'MONTHLY_INPUT' },
   { prefix: '/dashboard', menuKey: 'DASHBOARD' },
+  { prefix: '/statistics', menuKey: 'STATISTICS' },
   { prefix: '/checkin', menuKey: 'CHECKIN' },
   { prefix: '/api/checkin', menuKey: 'CHECKIN' },
   { prefix: '/evaluation/performance', menuKey: 'PERFORMANCE_EVALUATION' },
