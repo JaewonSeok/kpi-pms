@@ -386,47 +386,26 @@ async function loadRuntimeStageAssignments(params: {
 
   let ceoProfile: StageAssigneeProfile | null = null
   if (requiresCeoAssignment) {
-    const ceo =
-      (await db.employee.findFirst({
-        where: {
-          status: 'ACTIVE',
-          role: 'ROLE_CEO',
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-        select: {
-          id: true,
-          empName: true,
-          role: true,
-          position: true,
-          department: {
-            select: {
-              deptName: true,
-            },
+    const ceo = await db.employee.findFirst({
+      where: {
+        status: 'ACTIVE',
+        role: 'ROLE_CEO',
+      },
+      orderBy: {
+        createdAt: 'asc',
+      },
+      select: {
+        id: true,
+        empName: true,
+        role: true,
+        position: true,
+        department: {
+          select: {
+            deptName: true,
           },
         },
-      })) ??
-      (await db.employee.findFirst({
-        where: {
-          status: 'ACTIVE',
-          role: 'ROLE_ADMIN',
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-        select: {
-          id: true,
-          empName: true,
-          role: true,
-          position: true,
-          department: {
-            select: {
-              deptName: true,
-            },
-          },
-        },
-      }))
+      },
+    })
 
     if (ceo) {
       ceoProfile = {
@@ -510,10 +489,13 @@ export async function getEvaluationStageChain(params: {
     },
   ]
 
-  for (const assignment of assignments) {
-    if (!assignment.evaluatorId || !assignment.evaluator) {
-      continue
+  const assignmentMap = new Map(assignments.map((assignment) => [assignment.stage, assignment] as const))
+  const appendStage = (stage: AssignableEvalStage) => {
+    const assignment = assignmentMap.get(stage)
+    if (!assignment?.evaluatorId || !assignment.evaluator) {
+      return false
     }
+
     const reviewOrder = activeStages.filter((entry) => entry.stage !== 'SELF').length + 1
     const stageRoleLabel = getStageRoleLabel(assignment.stage, assignment.evaluator.role)
 
@@ -529,7 +511,21 @@ export async function getEvaluationStageChain(params: {
         POSITION_LABELS[assignment.evaluator.position] ?? assignment.evaluator.position,
       evaluatorDepartment: assignment.evaluator.departmentName,
     })
+
+    return true
   }
+
+  if (!appendStage('FIRST')) {
+    return activeStages
+  }
+
+  appendStage('SECOND')
+
+  if (!appendStage('FINAL')) {
+    return activeStages
+  }
+
+  appendStage('CEO_ADJUST')
 
   return activeStages
 }
@@ -634,10 +630,7 @@ async function buildDefaultAssignmentRecords(db: AssignmentDbClient): Promise<De
   const { departments, employees } = await loadHierarchyInputs(db)
   const activeEmployees = employees.filter((employee) => employee.status === 'ACTIVE')
   const assignmentMap = buildAssignments(departments, activeEmployees)
-  const ceoId =
-    activeEmployees.find((employee) => employee.role === 'ROLE_CEO')?.id ??
-    activeEmployees.find((employee) => employee.role === 'ROLE_ADMIN')?.id ??
-    null
+  const ceoId = activeEmployees.find((employee) => employee.role === 'ROLE_CEO')?.id ?? null
 
   const rows: DefaultAssignmentRecord[] = []
 

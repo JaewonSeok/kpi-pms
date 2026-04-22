@@ -104,6 +104,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [briefing, setBriefing] = useState<EvaluationPerformanceBriefingSnapshot | null>(null)
   const [guideStatus, setGuideStatus] = useState({ viewed: false, confirmed: false })
   const [draftComment, setDraftComment] = useState('')
+  const [draftStrengthComment, setDraftStrengthComment] = useState('')
+  const [draftImprovementComment, setDraftImprovementComment] = useState('')
+  const [draftNextStepGuidance, setDraftNextStepGuidance] = useState('')
   const [draftGradeId, setDraftGradeId] = useState<string>('')
   const [growthMemo, setGrowthMemo] = useState('')
   const [rejectReason, setRejectReason] = useState('')
@@ -111,6 +114,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState<'ALL' | EvaluationListEntry['evalStage']>('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | EvaluationListEntry['status']>('ALL')
+  const [scopeFilter, setScopeFilter] = useState<'ALL' | 'MY_SELF' | 'MY_REVIEWS' | 'PENDING_REVIEW'>('ALL')
+  const [departmentFilter, setDepartmentFilter] = useState<'ALL' | string>('ALL')
   const workbenchContextKey = `${props.selectedCycleId ?? ''}:${props.selectedEvaluationId ?? ''}`
   const previousWorkbenchContextKey = useRef(workbenchContextKey)
   const previousCycleId = useRef(props.selectedCycleId ?? '')
@@ -151,12 +156,17 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setSearch('')
       setStageFilter('ALL')
       setStatusFilter('ALL')
+      setScopeFilter('ALL')
+      setDepartmentFilter('ALL')
     }
   }, [props.selectedCycleId, workbenchContextKey])
 
   useEffect(() => {
     if (!selected) {
       setDraftComment('')
+      setDraftStrengthComment('')
+      setDraftImprovementComment('')
+      setDraftNextStepGuidance('')
       setDraftGradeId('')
       setGrowthMemo('')
       setRejectReason('')
@@ -176,6 +186,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
     setGuideStatus(selected.guideStatus)
     setDraftComment(selected.comment ?? '')
+    setDraftStrengthComment(selected.strengthComment ?? '')
+    setDraftImprovementComment(selected.improvementComment ?? '')
+    setDraftNextStepGuidance(selected.nextStepGuidance ?? '')
     setDraftGradeId(selected.gradeId ?? '')
     setGrowthMemo('')
     setRejectReason('')
@@ -248,18 +261,25 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       const matchesStage = stageFilter === 'ALL' || evaluation.evalStage === stageFilter
       const matchesStatus = statusFilter === 'ALL' || evaluation.status === statusFilter
-      return matchesKeyword && matchesStage && matchesStatus
+      const matchesScope =
+        scopeFilter === 'ALL'
+          ? true
+          : scopeFilter === 'MY_SELF'
+            ? evaluation.isMine && evaluation.evalStage === 'SELF'
+            : scopeFilter === 'MY_REVIEWS'
+              ? evaluation.isEvaluator
+              : evaluation.isEvaluator && ['PENDING', 'IN_PROGRESS', 'REJECTED'].includes(evaluation.status)
+      const matchesDepartment =
+        departmentFilter === 'ALL' || evaluation.targetDepartment === departmentFilter
+      return matchesKeyword && matchesStage && matchesStatus && matchesScope && matchesDepartment
     })
-  }, [props.evaluations, search, stageFilter, statusFilter])
+  }, [departmentFilter, props.evaluations, scopeFilter, search, stageFilter, statusFilter])
 
-  const isLastReviewStage = useMemo(() => {
-    if (!selected?.stageChain?.length) {
-      return false
-    }
-
-    return selected.stageChain[selected.stageChain.length - 1]?.stage === selected.evalStage
-  }, [selected?.evalStage, selected?.stageChain])
-  const submitActionLabel = isLastReviewStage ? '최종 확정' : '제출'
+  const submitActionLabel = selected?.permissions.canFinalize ? '최종 확정' : '제출'
+  const departmentOptions = useMemo(
+    () => ['ALL', ...new Set((props.evaluations ?? []).map((evaluation) => evaluation.targetDepartment))],
+    [props.evaluations]
+  )
 
   const computedTotal = useMemo(
     () =>
@@ -443,12 +463,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       let riskHeaders: Record<string, string> = {}
       if (action === 'submit') {
-        const confirmationText = isLastReviewStage ? '확정' : '제출'
+        const isFinalConfirmation = Boolean(selected.permissions.canFinalize)
+        const confirmationText = isFinalConfirmation ? '확정' : '제출'
         const confirmed = await requestRiskConfirmation({
           actionName: 'FINAL_SUBMIT',
-          actionLabel: isLastReviewStage ? '평가 최종 확정' : '평가 최종 제출',
+          actionLabel: isFinalConfirmation ? '평가 최종 확정' : '평가 최종 제출',
           targetLabel: selected.target.name,
-          detail: isLastReviewStage
+          detail: isFinalConfirmation
             ? '현재 마스터 로그인 상태에서 평가를 최종 확정합니다.'
             : '현재 마스터 로그인 상태에서 평가를 최종 제출합니다.',
           confirmationText,
@@ -506,6 +527,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
           mode,
           evaluationId: selected.id,
           draftComment,
+          strengthComment: draftStrengthComment,
+          improvementComment: draftImprovementComment,
+          nextStepGuidance: draftNextStepGuidance,
           growthMemo,
           draftGradeId: draftGradeId || null,
           items: editableItems.map((item) => ({
@@ -619,6 +643,18 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
         if (typeof applied.draftComment === 'string') {
           setDraftComment(applied.draftComment)
+        }
+
+        if (typeof applied.strengthComment === 'string') {
+          setDraftStrengthComment(applied.strengthComment)
+        }
+
+        if (typeof applied.improvementComment === 'string') {
+          setDraftImprovementComment(applied.improvementComment)
+        }
+
+        if (typeof applied.nextStepGuidance === 'string') {
+          setDraftNextStepGuidance(applied.nextStepGuidance)
         }
 
         if (typeof applied.growthMemo === 'string') {
@@ -793,6 +829,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                 onClick={() =>
                   runMutation('saveDraft', {
                     comment: draftComment,
+                    strengthComment: draftStrengthComment,
+                    improvementComment: draftImprovementComment,
+                    nextStepGuidance: draftNextStepGuidance,
                     gradeId: draftGradeId || null,
                     items: editableItems.map((item) => ({
                       personalKpiId: item.personalKpiId,
@@ -815,6 +854,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                 onClick={() =>
                   runMutation('submit', {
                     comment: draftComment,
+                    strengthComment: draftStrengthComment,
+                    improvementComment: draftImprovementComment,
+                    nextStepGuidance: draftNextStepGuidance || undefined,
                     gradeId: draftGradeId || undefined,
                     items: editableItems.map((item) => ({
                       personalKpiId: item.personalKpiId,
@@ -843,6 +885,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                 반려
               </button>
             </div>
+            {selected?.permissions.submitDisabledReason ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {selected.permissions.submitDisabledReason}
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -861,13 +908,23 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{props.summary?.totalCount ?? 0}건</span>
           </div>
           <div className="mt-4 space-y-3">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-5">
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="이름, 부서, 평가자로 검색"
                 className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
               />
+              <select
+                value={scopeFilter}
+                onChange={(event) => setScopeFilter(event.target.value as typeof scopeFilter)}
+                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+              >
+                <option value="ALL">전체 범위</option>
+                <option value="MY_SELF">내 자기평가</option>
+                <option value="MY_REVIEWS">내 검토 건</option>
+                <option value="PENDING_REVIEW">검토 대기</option>
+              </select>
               <select
                 value={stageFilter}
                 onChange={(event) => setStageFilter(event.target.value as typeof stageFilter)}
@@ -891,6 +948,20 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     {(props.evaluations ?? []).find((evaluation) => evaluation.status === status)?.statusLabel ?? status}
                   </option>
                 ))}
+              </select>
+              <select
+                value={departmentFilter}
+                onChange={(event) => setDepartmentFilter(event.target.value)}
+                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+              >
+                <option value="ALL">전체 부서</option>
+                {departmentOptions
+                  .filter((department) => department !== 'ALL')
+                  .map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
               </select>
             </div>
             {filteredEvaluations.length ? (
@@ -1068,12 +1139,32 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                           <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                             {selected.previousStageEvaluation.comment ?? '이전 단계 종합 의견이 아직 등록되지 않았습니다.'}
                           </p>
+                          <div className="mt-4 grid gap-3 md:grid-cols-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">강점 요약</div>
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                                {selected.previousStageEvaluation.strengthComment ?? '등록된 강점 요약이 없습니다.'}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">보완 포인트</div>
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                                {selected.previousStageEvaluation.improvementComment ?? '등록된 보완 포인트가 없습니다.'}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">다음 단계 가이드</div>
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                                {selected.previousStageEvaluation.nextStepGuidance ?? '등록된 다음 단계 가이드가 없습니다.'}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </Panel>
                   ) : null}
 
-                  <Panel title="종합 의견 및 등급" description="제출 후에는 다음 평가 단계로 자동 연결됩니다.">
+                  <Panel title="단계별 의견 및 등급" description="종합 의견, 강점, 보완 포인트, 다음 단계 가이드를 함께 기록합니다.">
                     <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
                       <label className="space-y-2">
                         <span className="text-sm font-semibold text-slate-700">제안 등급</span>
@@ -1099,6 +1190,38 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                           disabled={selected.permissions.readOnly}
                           className="min-h-32 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                           placeholder="강점, 보완점, 근거를 포함해 작성하세요."
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">강점 요약</span>
+                        <textarea
+                          value={draftStrengthComment}
+                          onChange={(event) => setDraftStrengthComment(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                          placeholder="이번 단계에서 확인한 강점과 핵심 성과를 정리하세요."
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">보완 포인트</span>
+                        <textarea
+                          value={draftImprovementComment}
+                          onChange={(event) => setDraftImprovementComment(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                          placeholder="추가 확인이 필요한 점이나 보완 포인트를 정리하세요."
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">다음 단계 가이드</span>
+                        <textarea
+                          value={draftNextStepGuidance}
+                          onChange={(event) => setDraftNextStepGuidance(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                          placeholder="다음 리뷰 단계나 코칭 대화에서 확인할 포인트를 남기세요."
                         />
                       </label>
                     </div>
@@ -1375,6 +1498,26 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                           <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">
                             {history.comment ?? '등록된 종합 의견이 없습니다.'}
                           </p>
+                          <div className="mt-4 grid gap-3 md:grid-cols-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">강점 요약</div>
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                                {history.strengthComment ?? '등록된 강점 요약이 없습니다.'}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">보완 포인트</div>
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                                {history.improvementComment ?? '등록된 보완 포인트가 없습니다.'}
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">다음 단계 가이드</div>
+                              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
+                                {history.nextStepGuidance ?? '등록된 다음 단계 가이드가 없습니다.'}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       ))
                     ) : (

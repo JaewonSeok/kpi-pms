@@ -350,8 +350,18 @@ export const MonthlyRecordAiActionSchema = z.object({
 // ?됯? 愿??
 // ============================================
 
+const EvaluationStageCommentSchema = z.string().trim().max(2000)
+const EvaluationGuidanceSchema = z.string().trim().max(1500)
+
 export const SubmitEvaluationSchema = z.object({
   comment: z.string().min(50, '종합 의견은 최소 50자 이상 입력해 주세요.').max(2000),
+  strengthComment: z.string().trim().min(10, '강점 요약은 최소 10자 이상 입력해 주세요.').max(2000),
+  improvementComment: z
+    .string()
+    .trim()
+    .min(10, '보완 포인트는 최소 10자 이상 입력해 주세요.')
+    .max(2000),
+  nextStepGuidance: EvaluationGuidanceSchema.optional(),
   gradeId: z.string().optional(),
   items: z.array(z.object({
     personalKpiId: z.string(),
@@ -365,7 +375,10 @@ export const SubmitEvaluationSchema = z.object({
 })
 
 export const SaveEvaluationDraftSchema = z.object({
-  comment: z.string().max(2000).optional(),
+  comment: EvaluationStageCommentSchema.optional(),
+  strengthComment: EvaluationStageCommentSchema.optional(),
+  improvementComment: EvaluationStageCommentSchema.optional(),
+  nextStepGuidance: EvaluationGuidanceSchema.optional(),
   gradeId: z.string().nullable().optional(),
   items: z.array(z.object({
     personalKpiId: z.string(),
@@ -1469,6 +1482,9 @@ export const EvaluationAIAssistRequestSchema = z.object({
   mode: z.enum(['draft', 'bias', 'growth']),
   evaluationId: z.string().min(1).max(100),
   draftComment: z.string().max(2000).optional().default(''),
+  strengthComment: z.string().max(2000).optional().default(''),
+  improvementComment: z.string().max(2000).optional().default(''),
+  nextStepGuidance: z.string().max(1500).optional().default(''),
   growthMemo: z.string().max(4000).optional().default(''),
   draftGradeId: z.string().max(100).nullable().optional(),
   items: z.array(EvaluationAssistItemSchema).max(50).default([]),

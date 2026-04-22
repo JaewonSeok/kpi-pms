@@ -86,7 +86,8 @@ export async function PATCH(
       )
     }
 
-    const { comment, gradeId, items } = validated.data
+    const { comment, strengthComment, improvementComment, nextStepGuidance, gradeId, items } =
+      validated.data
     let totalScore = 0
     let finalized = false
     let nextStageLabel: string | null = null
@@ -144,12 +145,28 @@ export async function PATCH(
         targetId: evaluation.targetId,
       })
       const currentStageIndex = stageChain.findIndex((entry) => entry.stage === evaluation.evalStage)
+      if (currentStageIndex < 0) {
+        throw new AppError(
+          400,
+          'INVALID_STAGE_CHAIN',
+          '현재 평가 단계 배정이 올바르지 않습니다. 배정 관리에서 승인 체인을 확인해 주세요.'
+        )
+      }
+
       const nextStageEntry =
         currentStageIndex >= 0 && currentStageIndex < stageChain.length - 1
           ? stageChain[currentStageIndex + 1] ?? null
           : null
 
-      finalized = !nextStageEntry
+      if (!nextStageEntry && evaluation.evalStage !== 'CEO_ADJUST') {
+        throw new AppError(
+          400,
+          'NEXT_STAGE_ASSIGNMENT_REQUIRED',
+          '다음 승인 단계 배정이 완료되지 않아 제출할 수 없습니다. 배정 관리에서 다음 승인자를 확인해 주세요.'
+        )
+      }
+
+      finalized = evaluation.evalStage === 'CEO_ADJUST' && !nextStageEntry
       nextStageLabel = nextStageEntry?.stageLabel ?? null
 
       await tx.evaluation.update({
@@ -158,6 +175,9 @@ export async function PATCH(
           totalScore,
           gradeId,
           comment,
+          strengthComment,
+          improvementComment,
+          nextStepGuidance: nextStepGuidance ?? null,
           status: finalized ? 'CONFIRMED' : 'SUBMITTED',
           isDraft: false,
           submittedAt: new Date(),
@@ -184,6 +204,9 @@ export async function PATCH(
       newValue: {
         stage: evaluation.evalStage,
         totalScore,
+        strengthComment,
+        improvementComment,
+        nextStepGuidance: nextStepGuidance ?? null,
         status: finalized ? 'CONFIRMED' : 'SUBMITTED',
         submittedAt: new Date(),
       },

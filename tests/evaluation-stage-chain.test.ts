@@ -15,6 +15,8 @@ async function run(name: string, fn: () => Promise<void> | void) {
 
 function createStageChainDb(params?: {
   sectionChiefId?: string | null
+  divisionHeadId?: string | null
+  ceoPresent?: boolean
   persistedAssignments?: Array<any>
 }) {
   const persistedAssignments = params?.persistedAssignments ?? []
@@ -22,23 +24,24 @@ function createStageChainDb(params?: {
   return {
     employee: {
       findUnique: async (args: { where?: { id?: string } }) => {
-        if (args?.where?.id === 'emp-target') {
-          return {
-            id: 'emp-target',
-            empName: 'Target Employee',
-            role: 'ROLE_MEMBER',
-            position: 'TEAM_LEADER',
-            teamLeaderId: 'emp-team-leader',
-            sectionChiefId:
-              params?.sectionChiefId === undefined ? 'emp-section-chief' : params.sectionChiefId,
-            divisionHeadId: 'emp-div-head',
-            department: {
-              deptName: '영업팀',
-            },
-          }
+        if (args?.where?.id !== 'emp-target') {
+          return null
         }
 
-        return null
+        return {
+          id: 'emp-target',
+          empName: 'Target Employee',
+          role: 'ROLE_MEMBER',
+          position: 'TEAM_LEADER',
+          teamLeaderId: 'emp-team-leader',
+          sectionChiefId:
+            params?.sectionChiefId === undefined ? 'emp-section-chief' : params.sectionChiefId,
+          divisionHeadId:
+            params?.divisionHeadId === undefined ? 'emp-div-head' : params.divisionHeadId,
+          department: {
+            deptName: 'Sales',
+          },
+        }
       },
       findMany: async (args: { where?: { id?: { in?: string[] } } }) => {
         const ids = args?.where?.id?.in ?? []
@@ -48,7 +51,7 @@ function createStageChainDb(params?: {
             empName: 'Leader Reviewer',
             role: 'ROLE_TEAM_LEADER',
             position: 'TEAM_LEADER',
-            department: { deptName: '영업팀' },
+            department: { deptName: 'Sales' },
             status: 'ACTIVE',
           },
           {
@@ -56,7 +59,7 @@ function createStageChainDb(params?: {
             empName: 'Section Reviewer',
             role: 'ROLE_SECTION_CHIEF',
             position: 'DIRECTOR',
-            department: { deptName: '실' },
+            department: { deptName: 'Section Office' },
             status: 'ACTIVE',
           },
           {
@@ -64,7 +67,15 @@ function createStageChainDb(params?: {
             empName: 'Division Reviewer',
             role: 'ROLE_DIV_HEAD',
             position: 'DIRECTOR',
-            department: { deptName: '본부' },
+            department: { deptName: 'Division HQ' },
+            status: 'ACTIVE',
+          },
+          {
+            id: 'emp-ceo',
+            empName: 'CEO Reviewer',
+            role: 'ROLE_CEO',
+            position: 'CEO',
+            department: { deptName: 'CEO Office' },
             status: 'ACTIVE',
           },
         ]
@@ -72,23 +83,13 @@ function createStageChainDb(params?: {
         return profiles.filter((profile) => ids.includes(profile.id))
       },
       findFirst: async (args: { where?: { role?: string } }) => {
-        if (args?.where?.role === 'ROLE_CEO') {
+        if (args?.where?.role === 'ROLE_CEO' && params?.ceoPresent !== false) {
           return {
             id: 'emp-ceo',
             empName: 'CEO Reviewer',
             role: 'ROLE_CEO',
             position: 'CEO',
-            department: { deptName: '대표이사실' },
-          }
-        }
-
-        if (args?.where?.role === 'ROLE_ADMIN') {
-          return {
-            id: 'emp-admin',
-            empName: 'Admin Reviewer',
-            role: 'ROLE_ADMIN',
-            position: 'DIRECTOR',
-            department: { deptName: '인사팀' },
+            department: { deptName: 'CEO Office' },
           }
         }
 
@@ -114,8 +115,8 @@ async function main() {
       chain.map((entry) => entry.stage),
       ['SELF', 'FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']
     )
-    assert.equal(chain.find((entry) => entry.stage === 'SECOND')?.stageLabel.includes('실장'), true)
-    assert.equal(chain.find((entry) => entry.stage === 'FINAL')?.stageLabel.includes('본부장'), true)
+    assert.equal(chain.find((entry) => entry.stage === 'SECOND')?.evaluatorName, 'Section Reviewer')
+    assert.equal(chain.find((entry) => entry.stage === 'FINAL')?.evaluatorName, 'Division Reviewer')
   })
 
   await run('stage chain skips section chief and falls back to division head when section chief is absent', async () => {
@@ -126,12 +127,9 @@ async function main() {
       targetId: 'emp-target',
     })
 
-    assert.deepEqual(
-      chain.map((entry) => entry.stage),
-      ['SELF', 'FIRST', 'FINAL', 'CEO_ADJUST']
-    )
+    assert.deepEqual(chain.map((entry) => entry.stage), ['SELF', 'FIRST', 'FINAL', 'CEO_ADJUST'])
     assert.equal(chain.some((entry) => entry.stage === 'SECOND'), false)
-    assert.equal(chain.find((entry) => entry.stage === 'FINAL')?.stageLabel.includes('본부장'), true)
+    assert.equal(chain.find((entry) => entry.stage === 'FINAL')?.evaluatorName, 'Division Reviewer')
   })
 
   await run('stage chain respects manual stage assignments even when hierarchy does not provide section chief', async () => {
@@ -150,7 +148,7 @@ async function main() {
               position: 'DIRECTOR',
               status: 'ACTIVE',
               department: {
-                deptName: '실',
+                deptName: 'Section Office',
               },
             },
           },
@@ -165,6 +163,33 @@ async function main() {
       ['SELF', 'FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']
     )
     assert.equal(chain.find((entry) => entry.stage === 'SECOND')?.evaluatorName, 'Section Reviewer')
+  })
+
+  await run('stage chain stops at final review when CEO is not assigned', async () => {
+    const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
+    const chain = await getEvaluationStageChain({
+      db: createStageChainDb({ ceoPresent: false }),
+      evalCycleId: 'cycle-1',
+      targetId: 'emp-target',
+    })
+
+    assert.deepEqual(chain.map((entry) => entry.stage), ['SELF', 'FIRST', 'SECOND', 'FINAL'])
+    assert.equal(chain.some((entry) => entry.stage === 'CEO_ADJUST'), false)
+  })
+
+  await run('stage chain does not jump to CEO when division head is absent', async () => {
+    const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
+    const chain = await getEvaluationStageChain({
+      db: createStageChainDb({
+        sectionChiefId: null,
+        divisionHeadId: null,
+      }),
+      evalCycleId: 'cycle-1',
+      targetId: 'emp-target',
+    })
+
+    assert.deepEqual(chain.map((entry) => entry.stage), ['SELF', 'FIRST'])
+    assert.equal(chain.some((entry) => entry.stage === 'CEO_ADJUST'), false)
   })
 
   console.log('Evaluation stage chain tests completed')

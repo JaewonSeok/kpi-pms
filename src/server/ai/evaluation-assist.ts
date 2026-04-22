@@ -18,6 +18,7 @@ import {
 import { recordOperationalEvent } from '@/lib/operations'
 import { prisma } from '@/lib/prisma'
 import { AppError, EVAL_STAGE_LABELS, POSITION_LABELS } from '@/lib/utils'
+import { getPreviousActiveEvaluationStage } from '@/server/evaluation-performance-assignments'
 
 type DraftItemInput = {
   personalKpiId: string
@@ -37,6 +38,9 @@ type GenerateEvaluationAssistParams = {
   mode: EvaluationAssistMode
   evaluationId: string
   draftComment: string
+  strengthComment: string
+  improvementComment: string
+  nextStepGuidance: string
   growthMemo: string
   draftGradeId?: string | null
   items: DraftItemInput[]
@@ -597,6 +601,41 @@ async function loadEvaluationAssistContext(
   })
 
   const requestType = resolveRequestType(params.mode)
+  const previousStage =
+    evaluation.evalStage === 'SELF'
+      ? null
+      : await getPreviousActiveEvaluationStage({
+          db,
+          evalCycleId: evaluation.evalCycleId,
+          targetId: evaluation.targetId,
+          currentStage: evaluation.evalStage,
+        })
+  const previousStageEvaluation = previousStage
+    ? await db.evaluation.findUnique({
+        where: {
+          evalCycleId_targetId_evalStage: {
+            evalCycleId: evaluation.evalCycleId,
+            targetId: evaluation.targetId,
+            evalStage: previousStage,
+          },
+        },
+        select: {
+          evalStage: true,
+          totalScore: true,
+          comment: true,
+          strengthComment: true,
+          improvementComment: true,
+          nextStepGuidance: true,
+          submittedAt: true,
+          evaluator: {
+            select: {
+              empName: true,
+              position: true,
+            },
+          },
+        },
+      })
+    : null
   const fallbackResult = buildEvaluationAssistFallbackResult(params.mode, {
     draftComment: params.draftComment || evaluation.comment || '',
     gradeName: selectedGradeName,
@@ -626,7 +665,26 @@ async function loadEvaluationAssistContext(
       },
       selectedGradeName,
       currentDraftComment: params.draftComment || evaluation.comment || '',
+      currentStrengthComment: params.strengthComment || evaluation.strengthComment || '',
+      currentImprovementComment:
+        params.improvementComment || evaluation.improvementComment || '',
+      currentNextStepGuidance: params.nextStepGuidance || evaluation.nextStepGuidance || '',
       currentGrowthMemo: params.growthMemo,
+      previousStageReview: previousStageEvaluation
+        ? {
+            stageLabel: EVAL_STAGE_LABELS[previousStageEvaluation.evalStage],
+            evaluatorName: previousStageEvaluation.evaluator.empName,
+            evaluatorPosition:
+              POSITION_LABELS[previousStageEvaluation.evaluator.position] ??
+              previousStageEvaluation.evaluator.position,
+            totalScore: previousStageEvaluation.totalScore,
+            comment: previousStageEvaluation.comment || '',
+            strengthComment: previousStageEvaluation.strengthComment || '',
+            improvementComment: previousStageEvaluation.improvementComment || '',
+            nextStepGuidance: previousStageEvaluation.nextStepGuidance || '',
+            submittedAt: previousStageEvaluation.submittedAt?.toISOString() ?? null,
+          }
+        : null,
       itemSummaries,
       evidence: {
         kpiSummaries,

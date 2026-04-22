@@ -112,6 +112,9 @@ export type EvaluationWorkbenchPageData = {
     statusLabel: string
     totalScore?: number | null
     comment?: string | null
+    strengthComment?: string | null
+    improvementComment?: string | null
+    nextStepGuidance?: string | null
     gradeId?: string | null
     submittedAt?: string
     updatedAt: string
@@ -121,6 +124,9 @@ export type EvaluationWorkbenchPageData = {
       evaluatorName: string
       totalScore?: number | null
       comment?: string | null
+      strengthComment?: string | null
+      improvementComment?: string | null
+      nextStepGuidance?: string | null
       submittedAt?: string
       updatedAt: string
     } | null
@@ -132,6 +138,9 @@ export type EvaluationWorkbenchPageData = {
       evaluatorPosition: string
       totalScore?: number | null
       comment?: string | null
+      strengthComment?: string | null
+      improvementComment?: string | null
+      nextStepGuidance?: string | null
       submittedAt?: string
       updatedAt: string
     }>
@@ -158,7 +167,9 @@ export type EvaluationWorkbenchPageData = {
     permissions: {
       canEdit: boolean
       canSubmit: boolean
+      canFinalize: boolean
       canReject: boolean
+      submitDisabledReason?: string | null
       readOnly: boolean
     }
     gradeOptions: Array<{
@@ -1101,6 +1112,9 @@ export async function getEvaluationWorkbenchPageData(
           evalStage: EvalStage
           totalScore: number | null
           comment: string | null
+          strengthComment: string | null
+          improvementComment: string | null
+          nextStepGuidance: string | null
           status: EvalStatus
           submittedAt: Date | null
           updatedAt: Date
@@ -1121,6 +1135,9 @@ export async function getEvaluationWorkbenchPageData(
               evalStage: true,
               totalScore: true,
               comment: true,
+              strengthComment: true,
+              improvementComment: true,
+              nextStepGuidance: true,
               status: true,
               submittedAt: true,
               updatedAt: true,
@@ -1302,6 +1319,9 @@ export async function getEvaluationWorkbenchPageData(
             POSITION_LABELS[history.evaluator.position] ?? history.evaluator.position,
           totalScore: history.totalScore,
           comment: history.comment,
+          strengthComment: history.strengthComment,
+          improvementComment: history.improvementComment,
+          nextStepGuidance: history.nextStepGuidance,
           submittedAt: history.submittedAt ? formatDate(history.submittedAt) : undefined,
           updatedAt: formatDate(history.updatedAt),
         }
@@ -1325,6 +1345,15 @@ export async function getEvaluationWorkbenchPageData(
         isCurrent: entry.stage === selectedEvaluation.evalStage,
       }
     })
+    const nextStageEntry =
+      currentStageIndex >= 0 && currentStageIndex < stageChain.length - 1
+        ? stageChain[currentStageIndex + 1] ?? null
+        : null
+    const canFinalize = selectedEvaluation.evalStage === 'CEO_ADJUST' && !nextStageEntry
+    const submitDisabledReason =
+      !canFinalize && !nextStageEntry
+        ? '다음 승인 단계 배정이 완료되지 않아 제출할 수 없습니다. 배정 관리에서 다음 승인자를 확인해 주세요.'
+        : null
     const canViewBriefing =
       (sessionUser.role === 'ROLE_ADMIN' || selectedEvaluation.evaluator.id === sessionUser.id) &&
       ['SECOND', 'FINAL', 'CEO_ADJUST'].includes(selectedEvaluation.evalStage)
@@ -1366,6 +1395,9 @@ export async function getEvaluationWorkbenchPageData(
       statusLabel: STATUS_LABELS[selectedEvaluation.status],
       totalScore: selectedEvaluation.totalScore,
       comment: selectedEvaluation.comment,
+      strengthComment: selectedEvaluation.strengthComment,
+      improvementComment: selectedEvaluation.improvementComment,
+      nextStepGuidance: selectedEvaluation.nextStepGuidance,
       gradeId: selectedEvaluation.gradeId,
       submittedAt: selectedEvaluation.submittedAt ? formatDate(selectedEvaluation.submittedAt) : undefined,
       updatedAt: formatDate(selectedEvaluation.updatedAt),
@@ -1378,6 +1410,9 @@ export async function getEvaluationWorkbenchPageData(
             evaluatorName: previousStageEvaluation.evaluator.empName,
             totalScore: previousStageEvaluation.totalScore,
             comment: previousStageEvaluation.comment,
+            strengthComment: previousStageEvaluation.strengthComment,
+            improvementComment: previousStageEvaluation.improvementComment,
+            nextStepGuidance: previousStageEvaluation.nextStepGuidance,
             submittedAt: previousStageEvaluation.submittedAt
               ? formatDate(previousStageEvaluation.submittedAt)
               : undefined,
@@ -1390,8 +1425,10 @@ export async function getEvaluationWorkbenchPageData(
       guideStatus,
       permissions: {
         canEdit: canEditSelected,
-        canSubmit: canEditSelected,
+        canSubmit: canEditSelected && !submitDisabledReason,
+        canFinalize: canEditSelected && canFinalize,
         canReject: canReturnToPreviousStage,
+        submitDisabledReason,
         readOnly:
           !(
             selectedEvaluation.evaluator.id === sessionUser.id || sessionUser.role === 'ROLE_ADMIN'

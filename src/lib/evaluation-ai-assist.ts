@@ -160,6 +160,13 @@ export function formatEvaluationAssistForDraft(result: EvaluationAssistResult) {
   return result.draftText
 }
 
+function joinAssistLines(values: string[]) {
+  return values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join('\n')
+}
+
 function formatEvaluationAssistForMemo(mode: EvaluationAssistMode, result: EvaluationAssistResult) {
   const heading = mode === 'bias' ? '코칭 대화 초안' : '성장/개선 과제 초안'
   const strengths = result.strengths.map((item) => `- ${item}`).join('\n')
@@ -185,15 +192,25 @@ function formatEvaluationAssistForMemo(mode: EvaluationAssistMode, result: Evalu
 }
 
 export function applyEvaluationAssistResult(mode: EvaluationAssistMode, result: EvaluationAssistResult) {
+  const strengthComment = joinAssistLines(result.strengths)
+  const improvementComment = joinAssistLines(result.concerns)
+  const nextStepGuidance = joinAssistLines([...result.coachingPoints, result.nextStep])
+
   if (mode === 'draft') {
     return {
       draftComment: formatEvaluationAssistForDraft(result),
+      strengthComment,
+      improvementComment,
+      nextStepGuidance,
       growthMemo: null,
     }
   }
 
   return {
     draftComment: null,
+    strengthComment,
+    improvementComment,
+    nextStepGuidance,
     growthMemo: formatEvaluationAssistForMemo(mode, result),
   }
 }

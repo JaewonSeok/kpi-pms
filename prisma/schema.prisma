@@ -714,6 +714,9 @@ model Evaluation {
   totalScore      Float?
   gradeId         String?
   comment         String?
+  strengthComment String?
+  improvementComment String?
+  nextStepGuidance String?
   status          EvalStatus @default(PENDING)
   isDraft         Boolean    @default(true)
   submittedAt     DateTime?

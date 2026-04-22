@@ -46,6 +46,9 @@ export async function PATCH(
 
     const previousSnapshot = {
       comment: evaluation.comment,
+      strengthComment: evaluation.strengthComment,
+      improvementComment: evaluation.improvementComment,
+      nextStepGuidance: evaluation.nextStepGuidance,
       gradeId: evaluation.gradeId,
       totalScore: evaluation.totalScore,
       status: evaluation.status,
@@ -105,6 +108,9 @@ export async function PATCH(
         where: { id },
         data: {
           comment: validated.data.comment ?? null,
+          strengthComment: validated.data.strengthComment ?? null,
+          improvementComment: validated.data.improvementComment ?? null,
+          nextStepGuidance: validated.data.nextStepGuidance ?? null,
           gradeId: validated.data.gradeId ?? null,
           totalScore,
           status: 'IN_PROGRESS',
@@ -125,6 +131,9 @@ export async function PATCH(
       oldValue: previousSnapshot,
       newValue: {
         comment: validated.data.comment ?? null,
+        strengthComment: validated.data.strengthComment ?? null,
+        improvementComment: validated.data.improvementComment ?? null,
+        nextStepGuidance: validated.data.nextStepGuidance ?? null,
         gradeId: validated.data.gradeId ?? null,
         totalScore,
         status: 'IN_PROGRESS',
