@@ -1,17 +1,38 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bot, ClipboardList, Copy, History, Link2, Plus, Send, Sparkles, Trash2, X } from 'lucide-react'
+import {
+  Bot,
+  CheckCircle2,
+  ClipboardList,
+  Copy,
+  FileDown,
+  FilePlus2,
+  History,
+  Link2,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
+import {
+  createEvidenceLinkAttachment,
+  downloadEvidenceAttachment,
+  openEvidenceLink,
+  readEvidenceFiles,
+} from '@/lib/evidence-attachments-client'
 import {
   getPersonalKpiDeleteActionState,
   resolveNextPersonalKpiSelectionAfterDelete,
 } from '@/lib/personal-kpi-delete'
 import type { KpiAiPreviewComparison } from '@/lib/kpi-ai-preview'
+import { isAllowedMonthlyEvidenceUrl, type MonthlyAttachmentItem } from '@/lib/monthly-attachments'
 import type {
   PersonalKpiAiLogItem,
   PersonalKpiPageData,
@@ -39,7 +60,18 @@ type Banner = {
 }
 
 type EditorMode = 'create' | 'edit'
-type BusyAction = 'save-form' | 'submit' | 'workflow' | 'ai' | 'ai-decision' | 'bulk-edit' | 'delete' | null
+type BusyAction =
+  | 'save-form'
+  | 'submit'
+  | 'workflow'
+  | 'ai'
+  | 'ai-decision'
+  | 'bulk-edit'
+  | 'delete'
+  | 'evidence-save'
+  | 'evidence-upload'
+  | 'midcheck-coach'
+  | null
 
 type KpiForm = {
   employeeId: string
@@ -101,6 +133,48 @@ type AiActionState = {
   reason?: string
 }
 
+type EvidenceDraft = {
+  recordId?: string
+  yearMonth: string
+  evidenceComment: string
+  attachments: MonthlyAttachmentItem[]
+  linkUrlInput: string
+  linkCommentInput: string
+}
+
+type MidcheckCoachStatus = 'on_track' | 'watch' | 'risk' | 'insufficient_data'
+
+type MidcheckCoachResult = {
+  status: MidcheckCoachStatus
+  headline: string
+  summary: string
+  strengths: string[]
+  gaps: string[]
+  risk_signals: string[]
+  next_actions: Array<{
+    title: string
+    reason: string
+    priority: 'high' | 'medium' | 'low'
+    due_hint: string
+  }>
+  coaching_questions: string[]
+  employee_update_draft: string
+  manager_share_draft: string
+  evidence_feedback: {
+    sufficiency: 'sufficient' | 'partial' | 'insufficient'
+    cited_evidence: string[]
+    missing_items: string[]
+  }
+  disclaimer: string
+}
+
+type MidcheckCoachPreview = {
+  requestLogId: string
+  source: 'ai' | 'fallback' | 'disabled'
+  fallbackReason?: string | null
+  result: MidcheckCoachResult
+}
+
 const TABS: Array<{ key: PersonalKpiTabKey; label: string }> = [
   { key: 'mine', label: '내 KPI' },
   { key: 'review', label: '검토 대기' },
@@ -152,6 +226,50 @@ const AI_ACTIONS: Array<{ action: AiAction; title: string; description: string }
 
 const PERSONAL_KPI_AI_PREVIEW_ERROR_MESSAGE =
   'AI 초안 생성 중 설정 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의해 주세요.'
+
+const MIDCHECK_STATUS_LABELS: Record<MidcheckCoachStatus, string> = {
+  on_track: '순항',
+  watch: '주의',
+  risk: '리스크',
+  insufficient_data: '정보 부족',
+}
+
+const MIDCHECK_STATUS_CLASS: Record<MidcheckCoachStatus, string> = {
+  on_track: 'bg-emerald-100 text-emerald-700',
+  watch: 'bg-amber-100 text-amber-800',
+  risk: 'bg-rose-100 text-rose-700',
+  insufficient_data: 'bg-slate-100 text-slate-700',
+}
+
+const MIDCHECK_PRIORITY_LABELS: Record<MidcheckCoachResult['next_actions'][number]['priority'], string> = {
+  high: '높음',
+  medium: '중간',
+  low: '낮음',
+}
+
+function createEvidenceDraft(kpi?: PersonalKpiViewModel): EvidenceDraft {
+  return {
+    recordId: kpi?.evidenceRecord.recordId,
+    yearMonth:
+      kpi?.evidenceRecord.yearMonth ??
+      `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+    evidenceComment: kpi?.evidenceRecord.evidenceComment ?? '',
+    attachments: kpi?.evidenceRecord.attachments ?? [],
+    linkUrlInput: '',
+    linkCommentInput: '',
+  }
+}
+
+function appendCoachDraft(currentValue: string, draft: string) {
+  const trimmedCurrent = currentValue.trim()
+  const trimmedDraft = draft.trim()
+
+  if (!trimmedDraft) return trimmedCurrent
+  if (!trimmedCurrent) return trimmedDraft
+  if (trimmedCurrent.includes(trimmedDraft)) return trimmedCurrent
+
+  return `${trimmedCurrent}\n\n[AI 제안]\n${trimmedDraft}`
+}
 
 function isTabKey(value?: string): value is PersonalKpiTabKey {
   return value === 'mine' || value === 'review' || value === 'history' || value === 'ai'
@@ -542,9 +660,18 @@ export function PersonalKpiManagementClient(props: Props) {
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
   const [reviewNote, setReviewNote] = useState('')
+  const [evidenceDrafts, setEvidenceDrafts] = useState<Record<string, EvidenceDraft>>(() =>
+    Object.fromEntries(props.mine.map((item) => [item.id, createEvidenceDraft(item)]))
+  )
+  const [midcheckCoachPreviews, setMidcheckCoachPreviews] = useState<Record<string, MidcheckCoachPreview | null>>({})
+  const [midcheckCoachErrors, setMidcheckCoachErrors] = useState<Record<string, string | null>>({})
 
   useEffect(() => {
     setMineItems(props.mine)
+  }, [props.mine])
+
+  useEffect(() => {
+    setEvidenceDrafts(Object.fromEntries(props.mine.map((item) => [item.id, createEvidenceDraft(item)])))
   }, [props.mine])
 
   useEffect(() => {
@@ -596,6 +723,9 @@ export function PersonalKpiManagementClient(props: Props) {
     setBulkEditForm(buildBulkEditForm(props))
     setShowDeleteConfirm(false)
     setAiPreview(null)
+    setEvidenceDrafts(Object.fromEntries(props.mine.map((item) => [item.id, createEvidenceDraft(item)])))
+    setMidcheckCoachPreviews({})
+    setMidcheckCoachErrors({})
     setBanner(null)
     setReviewNote('')
   }, [props.selectedEmployeeId, props.selectedYear, props.selectedCycleId])
@@ -630,6 +760,20 @@ export function PersonalKpiManagementClient(props: Props) {
     busy: busyAction === 'delete',
   })
   const canEditSelectedKpi = Boolean(selectedKpi && props.permissions.canEdit && isDraftStatus(selectedKpi.status))
+  const selectedEvidenceDraft = selectedKpi
+    ? evidenceDrafts[selectedKpi.id] ?? createEvidenceDraft(selectedKpi)
+    : null
+  const canEditSelectedEvidence = Boolean(
+    selectedKpi && (props.actor.id === selectedKpi.employeeId || props.actor.role === 'ROLE_ADMIN')
+  )
+  const selectedEvidenceEditReason =
+    !selectedKpi
+      ? '증빙을 관리할 KPI를 먼저 선택해 주세요.'
+      : canEditSelectedEvidence
+        ? undefined
+        : '증빙 자료는 KPI 작성자 또는 관리자만 수정할 수 있습니다.'
+  const selectedMidcheckCoachPreview = selectedKpi ? midcheckCoachPreviews[selectedKpi.id] ?? null : null
+  const selectedMidcheckCoachError = selectedKpi ? midcheckCoachErrors[selectedKpi.id] ?? null : null
   const selectedKpiEditReason =
     !selectedKpi
       ? '수정할 KPI를 먼저 선택해 주세요.'
@@ -1348,6 +1492,246 @@ export function PersonalKpiManagementClient(props: Props) {
     setEditorOpen(true)
   }
 
+  function updateSelectedEvidenceDraft(patch: Partial<EvidenceDraft>) {
+    if (!selectedKpi || !selectedEvidenceDraft) return
+
+    setEvidenceDrafts((current) => ({
+      ...current,
+      [selectedKpi.id]: {
+        ...selectedEvidenceDraft,
+        ...patch,
+      },
+    }))
+  }
+
+  function syncEvidenceDraftLocally(kpiId: string, draft: EvidenceDraft, recordId?: string) {
+    const nextDraft = {
+      ...draft,
+      recordId: recordId ?? draft.recordId,
+    }
+
+    setEvidenceDrafts((current) => ({
+      ...current,
+      [kpiId]: nextDraft,
+    }))
+
+    setMineItems((current) =>
+      current.map((item) =>
+        item.id === kpiId
+          ? {
+              ...item,
+              evidenceRecord: {
+                recordId: nextDraft.recordId,
+                yearMonth: nextDraft.yearMonth,
+                evidenceComment: nextDraft.evidenceComment.trim() || undefined,
+                attachments: nextDraft.attachments,
+              },
+              recentMonthlyRecords: item.recentMonthlyRecords.map((record) =>
+                record.month === nextDraft.yearMonth
+                  ? {
+                      ...record,
+                      evidenceComment: nextDraft.evidenceComment.trim() || null,
+                    }
+                  : record
+              ),
+            }
+          : item
+      )
+    )
+  }
+
+  async function handleEvidenceFileUpload(fileList: FileList | null) {
+    if (!fileList) return
+    if (!selectedKpi || !canEditSelectedEvidence || !selectedEvidenceDraft) {
+      setBanner({
+        tone: 'info',
+        message: selectedEvidenceEditReason ?? '현재 상태에서는 증빙 자료를 추가할 수 없습니다.',
+      })
+      return
+    }
+
+    setBusyAction('evidence-upload')
+    setBanner(null)
+
+    try {
+      const attachments = await readEvidenceFiles(fileList, props.actor.name)
+      updateSelectedEvidenceDraft({
+        attachments: [...selectedEvidenceDraft.attachments, ...attachments],
+      })
+      setBanner({
+        tone: 'success',
+        message: `${attachments.length}개의 파일 증빙을 추가했습니다. 저장 후 반영됩니다.`,
+      })
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '증빙 파일을 불러오지 못했습니다.',
+      })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  function handleAddEvidenceLink() {
+    if (!selectedKpi || !selectedEvidenceDraft) return
+    if (!canEditSelectedEvidence) {
+      setBanner({
+        tone: 'info',
+        message: selectedEvidenceEditReason ?? '현재 상태에서는 링크 증빙을 추가할 수 없습니다.',
+      })
+      return
+    }
+
+    const trimmedUrl = selectedEvidenceDraft.linkUrlInput.trim()
+    if (!trimmedUrl) {
+      setBanner({ tone: 'info', message: 'Google Drive 링크를 입력해 주세요.' })
+      return
+    }
+
+    if (!isAllowedMonthlyEvidenceUrl(trimmedUrl)) {
+      setBanner({
+        tone: 'info',
+        message: 'drive.google.com 또는 docs.google.com 링크만 등록할 수 있습니다.',
+      })
+      return
+    }
+
+    const attachment = createEvidenceLinkAttachment({
+      url: trimmedUrl,
+      comment: selectedEvidenceDraft.linkCommentInput,
+      uploaderName: props.actor.name,
+    })
+
+    updateSelectedEvidenceDraft({
+      attachments: [...selectedEvidenceDraft.attachments, attachment],
+      linkUrlInput: '',
+      linkCommentInput: '',
+    })
+    setBanner({ tone: 'success', message: 'Google Drive 링크 증빙을 추가했습니다. 저장 후 반영됩니다.' })
+  }
+
+  async function handleSaveEvidence() {
+    if (!selectedKpi || !selectedEvidenceDraft) return
+    if (!canEditSelectedEvidence) {
+      setBanner({
+        tone: 'info',
+        message: selectedEvidenceEditReason ?? '현재 상태에서는 증빙을 저장할 수 없습니다.',
+      })
+      return
+    }
+
+    setBusyAction('evidence-save')
+    setBanner(null)
+
+    try {
+      const saved = await parseJsonOrThrow<{ id: string }>(
+        await fetch('/api/kpi/monthly-record', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            personalKpiId: selectedKpi.id,
+            yearMonth: selectedEvidenceDraft.yearMonth,
+            evidenceComment: selectedEvidenceDraft.evidenceComment.trim() || undefined,
+            attachments: selectedEvidenceDraft.attachments,
+            isDraft: true,
+          }),
+        })
+      )
+
+      syncEvidenceDraftLocally(selectedKpi.id, selectedEvidenceDraft, saved.id)
+      setBanner({ tone: 'success', message: '증빙 자료를 저장했습니다.' })
+      router.refresh()
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '증빙 자료를 저장하지 못했습니다.',
+      })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleRunMidcheckCoach() {
+    if (!selectedKpi || !selectedEvidenceDraft) {
+      setBanner({ tone: 'info', message: 'AI 코칭을 받을 KPI를 먼저 선택해 주세요.' })
+      return
+    }
+
+    setBusyAction('midcheck-coach')
+    setBanner(null)
+    setMidcheckCoachErrors((current) => ({
+      ...current,
+      [selectedKpi.id]: null,
+    }))
+
+    try {
+      const data = await parseJsonOrThrow<MidcheckCoachPreview>(
+        await fetch(`/api/kpi/personal/${selectedKpi.id}/midcheck-coach`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            yearMonth: selectedEvidenceDraft.yearMonth,
+            evidenceComment: selectedEvidenceDraft.evidenceComment,
+            attachments: selectedEvidenceDraft.attachments,
+          }),
+        })
+      )
+
+      setMidcheckCoachPreviews((current) => ({
+        ...current,
+        [selectedKpi.id]: data,
+      }))
+      setBanner({
+        tone: data.source === 'ai' ? 'success' : 'info',
+        message:
+          data.source === 'ai'
+            ? 'AI 코칭 결과를 불러왔습니다.'
+            : data.fallbackReason || '입력된 정보가 충분하지 않아 일반적인 가이드 중심으로 제안했습니다.',
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : 'AI 코칭을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
+      setMidcheckCoachErrors((current) => ({
+        ...current,
+        [selectedKpi.id]: message,
+      }))
+      setBanner({ tone: 'error', message })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  function handleApplyCoachDraft() {
+    if (!selectedKpi || !selectedEvidenceDraft || !selectedMidcheckCoachPreview) return
+
+    updateSelectedEvidenceDraft({
+      evidenceComment: appendCoachDraft(
+        selectedEvidenceDraft.evidenceComment,
+        selectedMidcheckCoachPreview.result.employee_update_draft
+      ),
+    })
+    setBanner({
+      tone: 'success',
+      message: 'AI 업데이트 문안을 증빙 코멘트에 안전하게 추가했습니다. 저장 후 반영됩니다.',
+    })
+  }
+
+  async function handleCopyManagerShareDraft() {
+    if (!selectedMidcheckCoachPreview || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      setBanner({ tone: 'error', message: '현재 환경에서는 복사를 지원하지 않습니다.' })
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(selectedMidcheckCoachPreview.result.manager_share_draft)
+      setBanner({ tone: 'success', message: '관리자 공유용 문안을 복사했습니다.' })
+    } catch {
+      setBanner({ tone: 'error', message: '관리자 공유용 문안을 복사하지 못했습니다. 다시 시도해 주세요.' })
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader />
@@ -1400,6 +1784,41 @@ export function PersonalKpiManagementClient(props: Props) {
               editDisabledReason={selectedKpiEditReason}
               cloneDisabledReason={cloneDisabledReason}
               deleteActionState={deleteActionState}
+              detailChildren={
+                <>
+                  <PersonalKpiEvidencePanel
+                    selectedKpi={selectedKpi}
+                    draft={selectedEvidenceDraft}
+                    canEdit={canEditSelectedEvidence}
+                    editDisabledReason={selectedEvidenceEditReason}
+                    busy={busyAction === 'evidence-save' || busyAction === 'evidence-upload'}
+                    onDraftChange={updateSelectedEvidenceDraft}
+                    onUploadFiles={handleEvidenceFileUpload}
+                    onAddLink={handleAddEvidenceLink}
+                    onRemoveAttachment={(attachmentId) =>
+                      updateSelectedEvidenceDraft({
+                        attachments: (selectedEvidenceDraft?.attachments ?? []).filter((item) => item.id !== attachmentId),
+                      })
+                    }
+                    onSave={handleSaveEvidence}
+                    onDownload={(attachment) =>
+                      downloadEvidenceAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
+                    }
+                    onOpenLink={openEvidenceLink}
+                  />
+                  <PersonalKpiMidcheckCoachCard
+                    selectedKpi={selectedKpi}
+                    draft={selectedEvidenceDraft}
+                    preview={selectedMidcheckCoachPreview}
+                    errorMessage={selectedMidcheckCoachError}
+                    busy={busyAction === 'midcheck-coach'}
+                    canRun={Boolean(selectedKpi)}
+                    onRun={handleRunMidcheckCoach}
+                    onApplyDraft={handleApplyCoachDraft}
+                    onCopyManagerShare={handleCopyManagerShareDraft}
+                  />
+                </>
+              }
             />
           ) : null}
           {activeTab === 'review' ? (
@@ -1790,6 +2209,7 @@ function MineSection(props: {
   editDisabledReason?: string
   cloneDisabledReason?: string
   deleteActionState: ReturnType<typeof getPersonalKpiDeleteActionState>
+  detailChildren?: ReactNode
 }) {
   if (!props.items.length) {
     return (
@@ -1798,17 +2218,20 @@ function MineSection(props: {
           title="아직 작성된 KPI가 없습니다."
           description="상단의 KPI 추가 버튼으로 첫 개인 KPI를 작성해보세요."
         />
-        <GoalDetailPanel
-          selectedKpi={props.selectedKpi}
-          canEdit={props.canEdit}
-          editDisabledReason={props.editDisabledReason}
-          onEdit={props.onEdit}
-          canClone={!props.cloneDisabledReason}
-          cloneDisabledReason={props.cloneDisabledReason}
-          onClone={props.onClone}
-          onDelete={props.onDelete}
-          deleteActionState={props.deleteActionState}
-        />
+        <div className="space-y-6">
+          <GoalDetailPanel
+            selectedKpi={props.selectedKpi}
+            canEdit={props.canEdit}
+            editDisabledReason={props.editDisabledReason}
+            onEdit={props.onEdit}
+            canClone={!props.cloneDisabledReason}
+            cloneDisabledReason={props.cloneDisabledReason}
+            onClone={props.onClone}
+            onDelete={props.onDelete}
+            deleteActionState={props.deleteActionState}
+          />
+          {props.detailChildren}
+        </div>
       </div>
     )
   }
@@ -1856,17 +2279,20 @@ function MineSection(props: {
         </div>
       </SectionCard>
 
-      <GoalDetailPanel
-        selectedKpi={props.selectedKpi}
-        canEdit={props.canEdit}
-        editDisabledReason={props.editDisabledReason}
-        onEdit={props.onEdit}
-        canClone={!props.cloneDisabledReason}
-        cloneDisabledReason={props.cloneDisabledReason}
-        onClone={props.onClone}
-        onDelete={props.onDelete}
-        deleteActionState={props.deleteActionState}
-      />
+      <div className="space-y-6">
+        <GoalDetailPanel
+          selectedKpi={props.selectedKpi}
+          canEdit={props.canEdit}
+          editDisabledReason={props.editDisabledReason}
+          onEdit={props.onEdit}
+          canClone={!props.cloneDisabledReason}
+          cloneDisabledReason={props.cloneDisabledReason}
+          onClone={props.onClone}
+          onDelete={props.onDelete}
+          deleteActionState={props.deleteActionState}
+        />
+        {props.detailChildren}
+      </div>
     </div>
   )
 }
@@ -2535,6 +2961,423 @@ function WeightApprovalSummaryCard(props: {
         ) : null}
       </div>
     </Block>
+  )
+}
+
+function PersonalKpiEvidencePanel(props: {
+  selectedKpi?: PersonalKpiViewModel
+  draft: EvidenceDraft | null
+  canEdit: boolean
+  editDisabledReason?: string
+  busy: boolean
+  onDraftChange: (patch: Partial<EvidenceDraft>) => void
+  onUploadFiles: (fileList: FileList | null) => void
+  onAddLink: () => void
+  onRemoveAttachment: (attachmentId: string) => void
+  onSave: () => void
+  onDownload: (attachment: MonthlyAttachmentItem) => void
+  onOpenLink: (url: string) => void
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  if (!props.selectedKpi || !props.draft) {
+    return (
+      <SectionCard
+        title="증빙 자료"
+        description="파일, Google Drive 링크, 짧은 코멘트를 함께 관리할 수 있습니다."
+      >
+        <EmptyInline text="KPI를 선택하면 증빙 자료를 바로 정리할 수 있습니다." />
+      </SectionCard>
+    )
+  }
+
+  return (
+    <SectionCard
+      title="증빙 자료"
+      description="기존 파일 업로드를 유지하면서 Google Drive 링크와 짧은 코멘트를 함께 관리할 수 있습니다."
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(event) => {
+          void props.onUploadFiles(event.target.files)
+          event.target.value = ''
+        }}
+      />
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <InfoPill>{`기준 월 ${props.draft.yearMonth}`}</InfoPill>
+            {props.draft.attachments.length ? <InfoPill>{`증빙 ${props.draft.attachments.length}건`}</InfoPill> : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <ActionButton
+              icon={<FilePlus2 className="h-4 w-4" />}
+              variant="secondary"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!props.canEdit || props.busy}
+              title={props.editDisabledReason}
+            >
+              파일 첨부
+            </ActionButton>
+            <ActionButton
+              icon={<CheckCircle2 className="h-4 w-4" />}
+              onClick={props.onSave}
+              disabled={!props.canEdit || props.busy}
+              title={props.editDisabledReason}
+            >
+              {props.busy ? '증빙 저장 중...' : '증빙 저장'}
+            </ActionButton>
+          </div>
+        </div>
+
+        {props.editDisabledReason && !props.canEdit ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            {props.editDisabledReason}
+          </div>
+        ) : null}
+
+        <label className="space-y-2">
+          <span className="text-sm font-medium text-slate-700">증빙 코멘트</span>
+          <textarea
+            value={props.draft.evidenceComment}
+            onChange={(event) => props.onDraftChange({ evidenceComment: event.target.value })}
+            disabled={!props.canEdit}
+            rows={4}
+            maxLength={1000}
+            placeholder="이번 점검에서 함께 볼 증빙 설명을 간단히 적어 주세요."
+            className="w-full rounded-2xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
+          />
+        </label>
+
+        <div className="grid gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 md:grid-cols-[1.3fr_1fr_auto]">
+          <label className="space-y-2">
+            <span className="text-xs font-semibold text-slate-600">Google Drive 링크</span>
+            <input
+              value={props.draft.linkUrlInput}
+              onChange={(event) => props.onDraftChange({ linkUrlInput: event.target.value })}
+              disabled={!props.canEdit}
+              placeholder="https://drive.google.com/... 또는 https://docs.google.com/..."
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="text-xs font-semibold text-slate-600">짧은 설명</span>
+            <input
+              value={props.draft.linkCommentInput}
+              onChange={(event) => props.onDraftChange({ linkCommentInput: event.target.value })}
+              disabled={!props.canEdit}
+              maxLength={300}
+              placeholder="링크 증빙 설명을 간단히 적어 주세요."
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
+            />
+          </label>
+          <div className="flex items-end">
+            <ActionButton
+              icon={<Link2 className="h-4 w-4" />}
+              variant="secondary"
+              onClick={props.onAddLink}
+              disabled={!props.canEdit || props.busy}
+              title={props.editDisabledReason}
+            >
+              링크 추가
+            </ActionButton>
+          </div>
+        </div>
+
+        {props.draft.attachments.length ? (
+          <div className="space-y-3">
+            {props.draft.attachments.map((attachment) => (
+              <div key={attachment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <InfoPill>{attachment.type === 'LINK' ? '링크' : '파일'}</InfoPill>
+                      <span className="text-sm font-semibold text-slate-900">{attachment.name}</span>
+                    </div>
+                    <div className="space-y-1 text-xs text-slate-500">
+                      <p className="break-all">
+                        {attachment.type === 'LINK' ? attachment.url ?? '-' : attachment.sizeLabel ?? '-'}
+                      </p>
+                      <p>{joinInlineParts([attachment.uploadedBy, attachment.uploadedAt ? formatDateTime(attachment.uploadedAt) : undefined])}</p>
+                    </div>
+                    <label className="block space-y-2">
+                      <span className="text-xs font-semibold text-slate-600">증빙 설명</span>
+                      <input
+                        value={attachment.comment ?? ''}
+                        onChange={(event) =>
+                          props.onDraftChange({
+                            attachments: props.draft!.attachments.map((item) =>
+                              item.id === attachment.id ? { ...item, comment: event.target.value } : item
+                            ),
+                          })
+                        }
+                        disabled={!props.canEdit}
+                        maxLength={300}
+                        placeholder="증빙 설명을 간단히 남겨 주세요."
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {attachment.type === 'LINK' ? (
+                      <ActionButton
+                        icon={<Link2 className="h-4 w-4" />}
+                        variant="secondary"
+                        onClick={() => attachment.url && props.onOpenLink(attachment.url)}
+                      >
+                        열기
+                      </ActionButton>
+                    ) : (
+                      <ActionButton
+                        icon={<FileDown className="h-4 w-4" />}
+                        variant="secondary"
+                        onClick={() => props.onDownload(attachment)}
+                      >
+                        다운로드
+                      </ActionButton>
+                    )}
+                    <ActionButton
+                      icon={<Trash2 className="h-4 w-4" />}
+                      variant="secondary"
+                      onClick={() => props.onRemoveAttachment(attachment.id)}
+                      disabled={!props.canEdit}
+                    >
+                      제거
+                    </ActionButton>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyInline text="등록된 증빙 자료가 없습니다. 파일 또는 Google Drive 링크를 추가해 주세요." />
+        )}
+      </div>
+    </SectionCard>
+  )
+}
+
+function PersonalKpiMidcheckCoachCard(props: {
+  selectedKpi?: PersonalKpiViewModel
+  draft: EvidenceDraft | null
+  preview: MidcheckCoachPreview | null
+  errorMessage?: string | null
+  busy: boolean
+  canRun: boolean
+  onRun: () => void
+  onApplyDraft: () => void
+  onCopyManagerShare: () => void
+}) {
+  if (!props.selectedKpi || !props.draft) {
+    return (
+      <SectionCard
+        title="AI 중간 점검 코치"
+        description="현재 입력된 KPI/진행 현황/증빙 정보를 바탕으로 보완 포인트와 다음 액션을 제안합니다."
+      >
+        <EmptyInline text="KPI를 선택하면 AI 중간 점검 코치를 바로 사용할 수 있습니다." />
+      </SectionCard>
+    )
+  }
+
+  const preview = props.preview
+  const evidenceNeedsMore =
+    preview?.result.status === 'insufficient_data' ||
+    (preview ? preview.result.evidence_feedback.sufficiency !== 'sufficient' : false)
+
+  return (
+    <SectionCard
+      title="AI 중간 점검 코치"
+      description="현재 입력된 KPI/진행 현황/증빙 정보를 바탕으로 보완 포인트와 다음 액션을 제안합니다."
+    >
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <InfoPill>{`기준 월 ${props.draft.yearMonth}`}</InfoPill>
+            {preview ? (
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${MIDCHECK_STATUS_CLASS[preview.result.status]}`}>
+                {MIDCHECK_STATUS_LABELS[preview.result.status]}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <ActionButton
+              icon={<Bot className="h-4 w-4" />}
+              onClick={props.onRun}
+              disabled={!props.canRun || props.busy}
+            >
+              {props.busy ? 'AI 코칭 생성 중...' : preview ? '다시 생성' : 'AI 코칭 받기'}
+            </ActionButton>
+            {preview ? (
+              <>
+                <ActionButton
+                  icon={<Sparkles className="h-4 w-4" />}
+                  variant="secondary"
+                  onClick={props.onApplyDraft}
+                >
+                  업데이트 문안 반영
+                </ActionButton>
+                <ActionButton
+                  icon={<Copy className="h-4 w-4" />}
+                  variant="secondary"
+                  onClick={props.onCopyManagerShare}
+                >
+                  관리자 공유용 문안 복사
+                </ActionButton>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        {props.errorMessage ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {props.errorMessage || 'AI 코칭을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'}
+          </div>
+        ) : null}
+
+        {props.busy ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+            현재 입력된 정보로 AI 코칭을 준비하고 있습니다.
+          </div>
+        ) : !preview ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+            아직 생성된 코칭 결과가 없습니다. 현재 입력된 KPI와 증빙 정보를 기준으로 중간 점검 코칭을 받아 보세요.
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {preview.source !== 'ai' || evidenceNeedsMore ? (
+              <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
+                {preview.source !== 'ai'
+                  ? preview.fallbackReason || '입력된 정보가 충분하지 않아 일반적인 가이드 중심으로 제안했습니다.'
+                  : '증빙 자료가 부족하여 보완이 필요한 항목 위주로 안내합니다.'}
+              </div>
+            ) : null}
+
+            <Block title="한줄 진단">
+              <div className="space-y-2">
+                <p className="font-semibold text-slate-900">{preview.result.headline}</p>
+                <p>{preview.result.summary}</p>
+              </div>
+            </Block>
+
+            {preview.result.strengths.length ? (
+              <Block title="현재 강점">
+                <ul className="space-y-2">
+                  {preview.result.strengths.map((item, index) => (
+                    <li key={`${item}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </Block>
+            ) : null}
+
+            {preview.result.gaps.length ? (
+              <Block title="보완 필요 사항">
+                <ul className="space-y-2">
+                  {preview.result.gaps.map((item, index) => (
+                    <li key={`${item}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </Block>
+            ) : null}
+
+            {preview.result.risk_signals.length ? (
+              <Block title="리스크 신호">
+                <ul className="space-y-2">
+                  {preview.result.risk_signals.map((item, index) => (
+                    <li key={`${item}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </Block>
+            ) : null}
+
+            {preview.result.next_actions.length ? (
+              <Block title="다음 액션">
+                <div className="space-y-3">
+                  {preview.result.next_actions.map((action, index) => (
+                    <div key={`${action.title}-${index}`} className="rounded-2xl bg-white px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{action.title}</span>
+                        <InfoPill>{`우선순위 ${MIDCHECK_PRIORITY_LABELS[action.priority]}`}</InfoPill>
+                        {action.due_hint ? <InfoPill>{action.due_hint}</InfoPill> : null}
+                      </div>
+                      <p className="mt-2 text-sm text-slate-700">{action.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </Block>
+            ) : null}
+
+            {preview.result.coaching_questions.length ? (
+              <Block title="점검 질문">
+                <ul className="space-y-2">
+                  {preview.result.coaching_questions.map((item, index) => (
+                    <li key={`${item}-${index}`} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </Block>
+            ) : null}
+
+            <Block title="업데이트 문안 초안">{preview.result.employee_update_draft}</Block>
+            <Block title="관리자 공유용 문안">{preview.result.manager_share_draft}</Block>
+
+            <Block title="증빙 피드백">
+              <div className="space-y-3">
+                <Field
+                  label="충분도"
+                  value={
+                    preview.result.evidence_feedback.sufficiency === 'sufficient'
+                      ? '충분'
+                      : preview.result.evidence_feedback.sufficiency === 'partial'
+                        ? '부분 충족'
+                        : '부족'
+                  }
+                />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl bg-white p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">사용한 증빙</div>
+                    {preview.result.evidence_feedback.cited_evidence.length ? (
+                      <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                        {preview.result.evidence_feedback.cited_evidence.map((item, index) => (
+                          <li key={`${item}-${index}`}>{item}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-500">직접 인용할 증빙이 부족합니다.</p>
+                    )}
+                  </div>
+                  <div className="rounded-2xl bg-white p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">추가로 필요한 항목</div>
+                    {preview.result.evidence_feedback.missing_items.length ? (
+                      <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                        {preview.result.evidence_feedback.missing_items.map((item, index) => (
+                          <li key={`${item}-${index}`}>{item}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-500">추가 보완 항목이 없습니다.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Block>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              {preview.result.disclaimer}
+            </div>
+          </div>
+        )}
+      </div>
+    </SectionCard>
   )
 }
 

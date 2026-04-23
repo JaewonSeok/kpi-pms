@@ -84,6 +84,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         ...(validated.data.activities !== undefined ? { activities: validated.data.activities } : {}),
         ...(validated.data.obstacles !== undefined ? { obstacles: validated.data.obstacles } : {}),
         ...(validated.data.efforts !== undefined ? { efforts: validated.data.efforts } : {}),
+        ...(validated.data.evidenceComment !== undefined
+          ? { evidenceComment: validated.data.evidenceComment }
+          : {}),
         ...(validated.data.attachments !== undefined ? { attachments: validated.data.attachments as never } : {}),
         ...(validated.data.isDraft !== undefined ? { isDraft: validated.data.isDraft } : {}),
         ...(achievementRate !== undefined ? { achievementRate } : {}),
@@ -101,6 +104,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         activities: current.activities,
         obstacles: current.obstacles,
         efforts: current.efforts,
+        evidenceComment: current.evidenceComment,
         attachments: getMonthlyAttachmentAuditSummary(current.attachments),
         isDraft: current.isDraft,
       },
@@ -110,6 +114,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         activities: updated.activities,
         obstacles: updated.obstacles,
         efforts: updated.efforts,
+        evidenceComment: updated.evidenceComment,
         attachments: getMonthlyAttachmentAuditSummary(updated.attachments),
         isDraft: updated.isDraft,
       },

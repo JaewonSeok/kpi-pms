@@ -16,7 +16,13 @@ import {
 } from 'lucide-react'
 import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
-import { getMonthlyLinkDisplayName, isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
+import {
+  createEvidenceLinkAttachment,
+  downloadEvidenceAttachment,
+  openEvidenceLink,
+  readEvidenceFiles,
+} from '@/lib/evidence-attachments-client'
+import { isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
 import { formatCountWithUnit, formatRateBaseCopy } from '@/lib/metric-copy'
 import type {
   MonthlyAttachmentViewModel,
@@ -53,6 +59,7 @@ type Draft = {
   activityNote: string
   blockerNote: string
   effortNote: string
+  evidenceComment: string
   attachments: MonthlyAttachmentViewModel[]
   linkUrlInput: string
   linkCommentInput: string
@@ -268,61 +275,10 @@ function createDraft(record: MonthlyRecordViewModel): Draft {
     activityNote: record.activityNote ?? '',
     blockerNote: record.blockerNote ?? '',
     effortNote: record.effortNote ?? '',
+    evidenceComment: record.evidenceComment ?? '',
     attachments: record.attachments ?? [],
     linkUrlInput: '',
     linkCommentInput: '',
-  }
-}
-
-async function readFiles(files: FileList, uploaderName: string) {
-  return Promise.all(
-    Array.from(files).map(
-      (file) =>
-        new Promise<MonthlyAttachmentViewModel>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onerror = () => reject(new Error(`${file.name} 파일을 읽지 못했습니다.`))
-          reader.onload = () =>
-            resolve({
-              id: `${file.name}-${file.lastModified}`,
-              type: 'FILE',
-              name: file.name,
-              kind: file.name.toLowerCase().includes('report')
-                ? 'REPORT'
-                : file.name.toLowerCase().includes('output')
-                  ? 'OUTPUT'
-                  : 'OTHER',
-              comment: undefined,
-              uploadedAt: new Date().toISOString(),
-              uploadedBy: uploaderName,
-              sizeLabel:
-                file.size > 1024 * 1024
-                  ? `${(file.size / (1024 * 1024)).toFixed(1)}MB`
-                  : `${Math.max(1, Math.round(file.size / 1024))}KB`,
-              dataUrl: typeof reader.result === 'string' ? reader.result : undefined,
-            })
-          reader.readAsDataURL(file)
-        })
-    )
-  )
-}
-
-function createLinkAttachment(params: {
-  url: string
-  comment: string
-  uploaderName: string
-}): MonthlyAttachmentViewModel {
-  const trimmedUrl = params.url.trim()
-  const trimmedComment = params.comment.trim()
-
-  return {
-    id: `link-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    type: 'LINK',
-    name: getMonthlyLinkDisplayName(trimmedUrl),
-    kind: 'OTHER',
-    comment: trimmedComment || undefined,
-    uploadedAt: new Date().toISOString(),
-    uploadedBy: params.uploaderName,
-    url: trimmedUrl,
   }
 }
 
@@ -338,24 +294,6 @@ async function parseJsonOrThrow<T>(response: Response) {
   }
 
   return json.data as T
-}
-
-function downloadAttachment(attachment: MonthlyAttachmentViewModel, onMissing: (message: string) => void) {
-  if (!attachment.dataUrl) {
-    onMissing('이 증빙은 메타데이터만 남아 있어 브라우저에서 직접 다운로드할 수 없습니다.')
-    return
-  }
-
-  const anchor = document.createElement('a')
-  anchor.href = attachment.dataUrl
-  anchor.download = attachment.name
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-}
-
-function openLinkAttachment(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 function buildQuery(params: Record<string, string | undefined>) {
@@ -669,7 +607,7 @@ export function MonthlyKpiManagementClient({
 
     setBusy('upload')
     try {
-      const attachments = await readFiles(fileList, pageData.actor.name)
+      const attachments = await readEvidenceFiles(fileList, pageData.actor.name)
       updateDraft({ attachments: [...(selectedDraft?.attachments ?? []), ...attachments] })
       setBanner({ tone: 'success', message: `${attachments.length}개의 증빙을 추가했습니다.` })
       setTab('evidence')
@@ -702,7 +640,7 @@ export function MonthlyKpiManagementClient({
       return
     }
 
-    const attachment = createLinkAttachment({
+    const attachment = createEvidenceLinkAttachment({
       url: nextUrl,
       comment: selectedDraft.linkCommentInput,
       uploaderName: pageData.actor.name,
@@ -760,6 +698,7 @@ export function MonthlyKpiManagementClient({
         activities: selectedDraft.activityNote.trim() || undefined,
         obstacles: selectedDraft.blockerNote.trim() || undefined,
         efforts: selectedDraft.effortNote.trim() || undefined,
+        evidenceComment: selectedDraft.evidenceComment.trim() || undefined,
         attachments: selectedDraft.attachments,
       }
 
@@ -1351,7 +1290,7 @@ export function MonthlyKpiManagementClient({
             fileInputRef.current?.click()
           }}
           onAttachmentDownload={(attachment) =>
-            downloadAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
+            downloadEvidenceAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
           }
           onAttachmentRemove={(attachmentId) =>
             updateDraft({
@@ -1374,7 +1313,7 @@ export function MonthlyKpiManagementClient({
         <EvidenceTab
           evidence={pageData.evidence}
           onDownload={(attachment) =>
-            downloadAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
+            downloadEvidenceAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
           }
         />
       ) : null}
@@ -1692,6 +1631,18 @@ function EntryTab({
                   파일 첨부
                 </Button>
               </div>
+              <label className="mt-4 block space-y-2">
+                <span className="text-xs font-semibold text-slate-600">증빙 코멘트</span>
+                <textarea
+                  value={selectedDraft.evidenceComment}
+                  onChange={(event) => updateDraft({ evidenceComment: event.target.value })}
+                  disabled={!canEdit}
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="이번 점검에서 함께 볼 증빙 설명을 간단히 적어 주세요."
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
+                />
+              </label>
               <div className="mt-4 grid gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[1.3fr_1fr_auto]">
                 <label className="space-y-2">
                   <span className="text-xs font-semibold text-slate-600">구글 드라이브 링크</span>
@@ -1775,7 +1726,7 @@ function EntryTab({
                           {attachment.type === 'LINK' ? (
                             <Button
                               icon={<Link2 className="h-4 w-4" />}
-                              onClick={() => attachment.url && openLinkAttachment(attachment.url)}
+                              onClick={() => attachment.url && openEvidenceLink(attachment.url)}
                             >
                               열기
                             </Button>
@@ -2053,7 +2004,7 @@ function EvidenceTab({
                 </div>
               </div>
               {item.type === 'LINK' ? (
-                <Button icon={<Link2 className="h-4 w-4" />} onClick={() => item.url && openLinkAttachment(item.url)}>
+                <Button icon={<Link2 className="h-4 w-4" />} onClick={() => item.url && openEvidenceLink(item.url)}>
                   열기
                 </Button>
               ) : (

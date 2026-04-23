@@ -49,6 +49,7 @@ async function main() {
 
   await run('google docs link evidence with comment passes update validation', () => {
     const parsed = UpdateMonthlyRecordSchema.safeParse({
+      evidenceComment: '이번 점검에 참고할 외부 문서입니다.',
       attachments: [
         {
           id: 'link-1',
@@ -65,6 +66,7 @@ async function main() {
 
     assert.equal(parsed.success, true)
     if (!parsed.success) return
+    assert.equal(parsed.data.evidenceComment, '이번 점검에 참고할 외부 문서입니다.')
     assert.equal(parsed.data.attachments?.[0]?.type, 'LINK')
     assert.equal(parsed.data.attachments?.[0]?.comment, '상세 설명 문서')
   })
@@ -83,6 +85,24 @@ async function main() {
     })
 
     assert.equal(parsed.success, false)
+  })
+
+  await run('evidence comment is accepted on create and update payloads', () => {
+    const createParsed = MonthlyRecordSchema.safeParse({
+      personalKpiId: 'pk-1',
+      yearMonth: '2026-04',
+      evidenceComment: '이번 달 근거를 묶어 점검합니다.',
+      attachments: [],
+    })
+    const updateParsed = UpdateMonthlyRecordSchema.safeParse({
+      evidenceComment: '수정된 증빙 코멘트',
+    })
+
+    assert.equal(createParsed.success, true)
+    assert.equal(updateParsed.success, true)
+    if (!createParsed.success || !updateParsed.success) return
+    assert.equal(createParsed.data.evidenceComment, '이번 달 근거를 묶어 점검합니다.')
+    assert.equal(updateParsed.data.evidenceComment, '수정된 증빙 코멘트')
   })
 
   await run('legacy file evidence without type remains valid and is normalized to FILE', () => {

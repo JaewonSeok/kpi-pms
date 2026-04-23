@@ -504,6 +504,7 @@ model MonthlyRecord {
   activities      String?
   obstacles       String?
   efforts         String?
+  evidenceComment String?
   attachments     Json?
   isDraft         Boolean     @default(true)
   submittedAt     DateTime?

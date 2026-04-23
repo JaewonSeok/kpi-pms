@@ -54,6 +54,52 @@ export function getMonthlyLinkDisplayName(value: string) {
   return 'Google Drive 링크'
 }
 
+export function parseMonthlyAttachments(value: unknown): MonthlyAttachmentItem[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap<MonthlyAttachmentItem>((item, index) => {
+    if (!isRecord(item)) return []
+
+    const type: MonthlyAttachmentType = item.type === 'LINK' ? 'LINK' : 'FILE'
+    const url =
+      typeof item.url === 'string'
+        ? item.url.trim()
+        : typeof item.href === 'string'
+          ? item.href.trim()
+          : undefined
+
+    if (type === 'LINK' && !url) {
+      return []
+    }
+
+    return [
+      {
+        id: typeof item.id === 'string' ? item.id : `attachment-${index}`,
+        type,
+        name:
+          typeof item.name === 'string' && item.name.trim().length > 0
+            ? item.name.trim()
+            : type === 'LINK' && url
+              ? getMonthlyLinkDisplayName(url)
+              : `泥⑤? ${index + 1}`,
+        kind:
+          item.kind === 'KPI' || item.kind === 'OUTPUT' || item.kind === 'REPORT'
+            ? item.kind
+            : 'OTHER',
+        comment:
+          typeof item.comment === 'string' && item.comment.trim().length > 0
+            ? item.comment.trim()
+            : undefined,
+        uploadedAt: typeof item.uploadedAt === 'string' ? item.uploadedAt : undefined,
+        uploadedBy: typeof item.uploadedBy === 'string' ? item.uploadedBy : undefined,
+        sizeLabel: typeof item.sizeLabel === 'string' ? item.sizeLabel : undefined,
+        dataUrl: type === 'FILE' && typeof item.dataUrl === 'string' ? item.dataUrl : undefined,
+        url,
+      },
+    ]
+  })
+}
+
 export function getMonthlyAttachmentAuditSummary(value: unknown) {
   if (!Array.isArray(value)) return []
 

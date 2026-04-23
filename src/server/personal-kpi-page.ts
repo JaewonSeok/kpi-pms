@@ -8,6 +8,7 @@ import type {
   SystemRole,
 } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { parseMonthlyAttachments, type MonthlyAttachmentItem } from '@/lib/monthly-attachments'
 import {
   buildPersonalKpiPermissions,
   canManagePersonalKpi,
@@ -140,7 +141,14 @@ export type PersonalKpiViewModel = {
     achievementRate?: number
     activities?: string | null
     obstacles?: string | null
+    evidenceComment?: string | null
   }>
+  evidenceRecord: {
+    recordId?: string
+    yearMonth: string
+    evidenceComment?: string
+    attachments: MonthlyAttachmentItem[]
+  }
   weightApproval: PersonalKpiWeightApprovalSummary
   history: PersonalKpiTimelineItem[]
 }
@@ -571,6 +579,18 @@ function parseCloneInfo(kpi: PersonalKpiWithRelations): PersonalKpiViewModel['cl
 
 function parseTags(value: Prisma.JsonValue | null): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function resolvePersonalKpiEvidenceYearMonth(
+  selectedYear: number,
+  monthlyRecords: Array<{ yearMonth: string }>
+) {
+  const today = new Date()
+  const preferred = `${selectedYear}-${String(today.getMonth() + 1).padStart(2, '0')}`
+
+  return monthlyRecords.find((record) => record.yearMonth === preferred)?.yearMonth
+    ?? monthlyRecords[0]?.yearMonth
+    ?? preferred
 }
 
 function deriveOverallStatus(items: PersonalKpiViewModel[]): PersonalKpiPageData['summary']['overallStatus'] {
@@ -1092,6 +1112,8 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         const weightApproval = buildWeightApprovalSummary(logs, employeesById)
         const hasRejectedRevision = hasRejectedRevisionPending(logs)
         const latestRecord = kpi.monthlyRecords[0]
+        const evidenceYearMonth = resolvePersonalKpiEvidenceYearMonth(selectedYear, kpi.monthlyRecords)
+        const evidenceRecord = kpi.monthlyRecords.find((record) => record.yearMonth === evidenceYearMonth)
 
         return {
           id: kpi.id,
@@ -1129,7 +1151,14 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
             achievementRate: record.achievementRate ?? undefined,
             activities: record.activities,
             obstacles: record.obstacles,
+            evidenceComment: record.evidenceComment,
           })),
+          evidenceRecord: {
+            recordId: evidenceRecord?.id,
+            yearMonth: evidenceYearMonth,
+            evidenceComment: evidenceRecord?.evidenceComment ?? undefined,
+            attachments: parseMonthlyAttachments(evidenceRecord?.attachments),
+          },
           history: mapPersonalKpiSection({
             alerts,
             title: '개인 KPI 이력 일부를 구성하지 못했습니다.',

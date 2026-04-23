@@ -19,6 +19,11 @@ export type ExecutivePerformanceBriefingEnv = AiAssistEnv & {
   briefingModelSource: string
 }
 
+export type MidcheckCoachEnv = AiAssistEnv & {
+  coachModel: string
+  coachModelSource: string
+}
+
 function readBooleanValue(rawValue: string | undefined, fallback: boolean) {
   if (rawValue == null || rawValue === '') {
     return fallback
@@ -72,5 +77,25 @@ export function readExecutivePerformanceBriefingEnv(
     ...shared,
     briefingModel,
     briefingModelSource,
+  }
+}
+
+export function readMidcheckCoachEnv(env: EnvMap = process.env): MidcheckCoachEnv {
+  const shared = readAiAssistEnv(env)
+  const coachModelSetting = readFirstValue(env, ['OPENAI_MODEL_MIDCHECK_COACH'])
+
+  const inheritedModel =
+    shared.modelSource !== 'default' && shared.model.trim().length > 0 ? shared.model.trim() : undefined
+  const coachModel = (coachModelSetting.value ?? inheritedModel ?? 'gpt-5.4').trim()
+  const coachModelSource = coachModelSetting.value
+    ? coachModelSetting.source
+    : inheritedModel
+      ? shared.modelSource
+      : 'default:gpt-5.4'
+
+  return {
+    ...shared,
+    coachModel,
+    coachModelSource,
   }
 }

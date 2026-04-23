@@ -8,7 +8,7 @@ import type {
 import { prisma } from '@/lib/prisma'
 import { isFeatureEnabled } from '@/lib/feature-flags'
 import {
-  getMonthlyLinkDisplayName,
+  parseMonthlyAttachments,
   type MonthlyAttachmentKind,
   type MonthlyAttachmentType,
 } from '@/lib/monthly-attachments'
@@ -72,6 +72,7 @@ export type MonthlyRecordViewModel = {
   activityNote?: string
   blockerNote?: string
   effortNote?: string
+  evidenceComment?: string
   status: MonthlyRecordOperationalStatus
   reviewComment?: string
   reviewRequestComment?: string
@@ -285,55 +286,6 @@ function asRecord(value: unknown) {
 
 function toMonthString(year: number, monthIndex: number) {
   return `${year}-${String(monthIndex).padStart(2, '0')}`
-}
-
-function parseMonthlyAttachmentsViewModel(
-  value: Prisma.JsonValue | null | undefined
-): MonthlyAttachmentViewModel[] {
-  if (!Array.isArray(value)) return []
-
-  return value.flatMap<MonthlyAttachmentViewModel>((item, index) => {
-    const record = asRecord(item)
-    if (!record) return []
-
-    const type: MonthlyAttachmentType = record.type === 'LINK' ? 'LINK' : 'FILE'
-    const url =
-      typeof record.url === 'string'
-        ? record.url.trim()
-        : typeof record.href === 'string'
-          ? record.href.trim()
-          : undefined
-
-    if (type === 'LINK' && !url) {
-      return []
-    }
-
-    return [
-      {
-        id: typeof record.id === 'string' ? record.id : `attachment-${index}`,
-        type,
-        name:
-          typeof record.name === 'string' && record.name.trim().length > 0
-            ? record.name.trim()
-            : type === 'LINK' && url
-              ? getMonthlyLinkDisplayName(url)
-              : `첨부 ${index + 1}`,
-        kind:
-          record.kind === 'KPI' || record.kind === 'OUTPUT' || record.kind === 'REPORT'
-            ? record.kind
-            : 'OTHER',
-        comment:
-          typeof record.comment === 'string' && record.comment.trim().length > 0
-            ? record.comment.trim()
-            : undefined,
-        uploadedAt: typeof record.uploadedAt === 'string' ? record.uploadedAt : undefined,
-        uploadedBy: typeof record.uploadedBy === 'string' ? record.uploadedBy : undefined,
-        sizeLabel: typeof record.sizeLabel === 'string' ? record.sizeLabel : undefined,
-        dataUrl: type === 'FILE' && typeof record.dataUrl === 'string' ? record.dataUrl : undefined,
-        url,
-      },
-    ]
-  })
 }
 
 function getActorName(userId: string, employeesById: Map<string, EmployeeLite>) {
@@ -871,7 +823,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
       const previousRecord = kpi.monthlyRecords.find((record) => record.yearMonth < selectedMonth)
       const logs = currentRecord ? logsByRecordId.get(currentRecord.id) ?? [] : []
       const reviewMeta = parseReviewComment(logs)
-      const attachments = parseMonthlyAttachmentsViewModel(currentRecord?.attachments)
+      const attachments = parseMonthlyAttachments(currentRecord?.attachments)
       const status = resolveMonthlyOperationalStatus({
         hasRecord: Boolean(currentRecord),
         isDraft: currentRecord?.isDraft,
@@ -910,6 +862,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         activityNote: currentRecord?.activities ?? undefined,
         blockerNote: currentRecord?.obstacles ?? undefined,
         effortNote: currentRecord?.efforts ?? undefined,
+        evidenceComment: currentRecord?.evidenceComment ?? undefined,
         status,
         reviewComment: reviewMeta.reviewComment,
         reviewRequestComment:

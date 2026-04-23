@@ -493,7 +493,12 @@ async function main() {
     assert.equal(source.includes('간단 코멘트'), true)
     assert.equal(source.includes('링크 추가'), true)
     assert.equal(source.includes("attachment.type === 'LINK'"), true)
-    assert.equal(source.includes('openLinkAttachment'), true)
+    assert.equal(source.includes("evidenceComment: record.evidenceComment ?? ''"), true)
+    assert.equal(source.includes("evidenceComment: selectedDraft.evidenceComment.trim() || undefined"), true)
+    assert.equal(source.includes('증빙 코멘트'), true)
+    assert.equal(source.includes('파일 첨부'), true)
+    assert.equal(source.includes('openEvidenceLink'), true)
+    assert.equal(source.includes('downloadEvidenceAttachment'), true)
     assert.equal(source.includes('증빙 변경 사항은 임시저장 또는 제출 시 반영됩니다.'), true)
   })
 

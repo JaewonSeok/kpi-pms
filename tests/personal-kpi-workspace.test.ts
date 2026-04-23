@@ -497,6 +497,114 @@ async function main() {
     )
   })
 
+  await run('personal KPI loader exposes the evidence record snapshot used by the evidence panel', async () => {
+    await withStubbedPersonalKpiPageData(
+      {
+        personalKpiFindMany: async (args: any) => {
+          if (args?.select?.evalYear) {
+            return [{ evalYear: 2026 }]
+          }
+
+          return [
+            {
+              id: 'pk-evidence-1',
+              employeeId: 'member-2',
+              evalYear: 2026,
+              kpiName: '재계약률 향상',
+              tags: [],
+              kpiType: 'QUANTITATIVE',
+              definition: '핵심 고객 재계약률 유지',
+              formula: '재계약 고객 수 / 전체 고객 수',
+              targetValue: 95,
+              unit: '%',
+              weight: 40,
+              difficulty: 'MEDIUM',
+              status: 'CONFIRMED',
+              reviewComment: null,
+              linkedOrgKpiId: 'org-1',
+              linkedOrgKpi: {
+                id: 'org-1',
+                kpiName: '고객 유지율',
+                kpiCategory: '성과',
+                definition: '재계약률 유지',
+                department: {
+                  deptName: 'Business Ops',
+                },
+              },
+              employee: {
+                id: 'member-2',
+                empName: 'Member Two',
+                deptId: 'dept-1',
+                teamLeaderId: 'leader-1',
+                sectionChiefId: null,
+                divisionHeadId: null,
+                department: {
+                  deptName: 'Business Ops',
+                },
+              },
+              monthlyRecords: [
+                {
+                  id: 'monthly-evidence-1',
+                  yearMonth: '2026-04',
+                  achievementRate: 90,
+                  activities: '핵심 고객 follow-up',
+                  obstacles: null,
+                  evidenceComment: '4월 핵심 근거 정리',
+                  attachments: [
+                    {
+                      id: 'file-1',
+                      type: 'FILE',
+                      name: '실적 보고서.pdf',
+                      kind: 'REPORT',
+                      uploadedAt: '2026-04-05T09:00:00.000Z',
+                      uploadedBy: '구성원',
+                      sizeLabel: '1.2MB',
+                      dataUrl: 'data:application/pdf;base64,AAAA',
+                      comment: '핵심 실적 요약',
+                    },
+                    {
+                      id: 'link-1',
+                      type: 'LINK',
+                      name: 'Google Docs 링크',
+                      kind: 'OTHER',
+                      uploadedAt: '2026-04-06T09:00:00.000Z',
+                      uploadedBy: '구성원',
+                      url: 'https://docs.google.com/document/d/123/edit',
+                      comment: '상세 설명 문서',
+                    },
+                  ],
+                },
+              ],
+              updatedAt: new Date('2026-04-10T09:00:00Z'),
+              createdAt: new Date('2026-02-01T09:00:00Z'),
+            },
+          ]
+        },
+      },
+      async () => {
+        const data = await getPersonalKpiPageData({
+          session: {
+            user: {
+              id: 'member-2',
+              role: 'ROLE_MEMBER',
+              name: 'Member Two',
+              deptId: 'dept-1',
+              deptName: 'Business Ops',
+              accessibleDepartmentIds: ['dept-1'],
+            },
+          },
+          year: 2026,
+        })
+
+        assert.equal(data.state, 'ready')
+        assert.equal(data.mine[0]?.evidenceRecord.yearMonth, '2026-04')
+        assert.equal(data.mine[0]?.evidenceRecord.evidenceComment, '4월 핵심 근거 정리')
+        assert.equal(data.mine[0]?.evidenceRecord.attachments.length, 2)
+        assert.equal(data.mine[0]?.evidenceRecord.attachments[1]?.type, 'LINK')
+      }
+    )
+  })
+
   await run('scope helper and permission helper use deterministic fallbacks and disable actions outside operational states', () => {
     assert.deepEqual(
       getPersonalKpiScopeDepartmentIds({
@@ -833,6 +941,27 @@ async function main() {
     )
     assert.equal(source.includes('function toPersonalKpiAiPreviewErrorMessage('), true)
     assert.equal(source.includes('const data = await parseAiJsonOrThrow<{'), true)
+  })
+
+  await run('personal KPI mine panel now exposes evidence editing and AI midcheck coaching without removing the main edit flow', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+    assert.equal(source.includes('PersonalKpiEvidencePanel'), true)
+    assert.equal(source.includes('PersonalKpiMidcheckCoachCard'), true)
+    assert.equal(source.includes('증빙 자료'), true)
+    assert.equal(source.includes('증빙 코멘트'), true)
+    assert.equal(source.includes('Google Drive 링크'), true)
+    assert.equal(source.includes('파일 첨부'), true)
+    assert.equal(source.includes('증빙 저장'), true)
+    assert.equal(source.includes('/api/kpi/monthly-record'), true)
+    assert.equal(source.includes('/api/kpi/personal/${selectedKpi.id}/midcheck-coach'), true)
+    assert.equal(source.includes('AI 중간 점검 코치'), true)
+    assert.equal(source.includes('AI 코칭 받기'), true)
+    assert.equal(source.includes('다시 생성'), true)
+    assert.equal(source.includes('업데이트 문안 반영'), true)
+    assert.equal(source.includes('관리자 공유용 문안 복사'), true)
+    assert.equal(source.includes('navigator.clipboard.writeText'), true)
+    assert.equal(source.includes('appendCoachDraft('), true)
   })
 
   console.log('Personal KPI workspace tests completed')
