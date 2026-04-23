@@ -108,6 +108,18 @@ async function main() {
     assert.equal(exportMode.success, true)
   })
 
+  await run('calibration update schema allows blank adjustment reason so unchanged CEO confirmation can be saved', () => {
+    const parsed = CalibrationCandidateUpdateSchema.safeParse({
+      action: 'save',
+      cycleId: 'cycle-1',
+      targetId: 'target-1',
+      gradeId: 'grade-a',
+      adjustReason: '',
+    })
+
+    assert.equal(parsed.success, true)
+  })
+
   await run('calibration route supports partial bulk import failures and external data upload persistence', () => {
     const routeSource = read('src/app/api/evaluation/calibration/route.ts')
 
@@ -139,6 +151,7 @@ async function main() {
     assert.equal(workflowSource.includes('CALIBRATION_SESSION_DELETED'), true)
     assert.equal(workflowSource.includes('createEmptyCalibrationSessionConfig'), true)
     assert.equal(workflowSource.includes("evalStage: 'CEO_ADJUST'"), true)
+    assert.equal(workflowSource.includes('requiresCeoFinalAdjustmentReason'), true)
   })
 
   await run('calibration export route and workbook builder exist for xlsx download', () => {

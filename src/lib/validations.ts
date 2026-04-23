@@ -15,6 +15,7 @@ import {
   CALIBRATION_VISIBLE_COLUMN_OPTIONS,
 } from './calibration-session-setup'
 import { ORG_KPI_SCOPE_VALUES } from './org-kpi-scope'
+import { normalizeCeoAdjustmentReason } from './evaluation-ceo-final'
 
 // ============================================
 // 議곗쭅??愿??
@@ -487,7 +488,7 @@ export const RejectEvaluationSchema = z.object({
 export const CeoAdjustSchema = z.object({
   targetId: z.string(),
   gradeId: z.string().min(1, '등급을 선택해 주세요.'),
-  adjustReason: z.string().min(30, '조정 사유는 최소 30자 이상 입력해 주세요.').max(500),
+  adjustReason: z.string().max(500).optional(),
 })
 
 // ============================================
@@ -2276,7 +2277,7 @@ export const CalibrationCandidateUpdateSchema = z
         z.object({
           targetId: z.string().min(1),
           gradeId: z.string().min(1),
-          adjustReason: z.string().trim().min(30).max(500),
+          adjustReason: z.string().trim().max(500).optional(),
           rowNumber: z.number().int().min(1).optional(),
           identifier: z.string().trim().min(1).max(100).optional(),
         })
@@ -2496,11 +2497,11 @@ export const CalibrationCandidateUpdateSchema = z
       })
     }
 
-    if (!data.adjustReason || data.adjustReason.trim().length < 30) {
+    if (data.adjustReason && !normalizeCeoAdjustmentReason(data.adjustReason)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['adjustReason'],
-        message: '議곗젙 ?ъ쑀??理쒖냼 30???댁긽 ?낅젰??二쇱꽭??',
+        message: '조정 사유를 입력해 주세요.',
       })
     }
   })

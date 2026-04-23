@@ -16,10 +16,13 @@ import {
 } from '@/lib/calibration-follow-up'
 import {
   CALIBRATION_DEFAULT_FACILITATOR_PROMPTS,
-  isResolvedCalibrationDiscussionStatus,
   type CalibrationWorkspaceCandidateState,
   normalizeCalibrationWorkspaceCandidateState,
 } from '@/lib/calibration-workspace'
+import {
+  buildCeoFinalDivisionScopeMap,
+  type CeoFinalDivisionScope,
+} from '@/lib/evaluation-ceo-final'
 import { calcPdcaScore } from '@/lib/utils'
 import {
   buildCalibrationSetupReadiness,
@@ -48,16 +51,23 @@ export type CalibrationCandidate = {
   id: string
   employeeId: string
   employeeName: string
+  divisionId: string
+  divisionName: string
   departmentId: string
   department: string
   jobGroup?: string
   sourceStage: 'FIRST' | 'SECOND' | 'FINAL'
   hasMergedCalibration: boolean
   rawScore: number
+  originalGradeId?: string | null
+  finalGradeId?: string | null
   originalGrade: string
   adjustedGrade?: string
   adjusted: boolean
   reason?: string
+  finalized: boolean
+  finalizedAt?: string
+  finalizedBy?: string
   evaluatorName?: string
   reviewerName?: string
   performanceScore?: number
@@ -766,13 +776,17 @@ export async function getEvaluationCalibrationPageData(params: {
       ? auditLogs.filter((log) => log.timestamp >= latestSessionDeleteLog.timestamp)
       : auditLogs
     const groups = groupEvaluationsByTarget(evaluations)
-    const scopeOptions = buildScopeOptions(groups)
-    const selectedScopeId =
+    let scopeOptions = buildScopeOptions(groups, new Map<string, CeoFinalDivisionScope>())
+    let selectedScopeId =
       params.scopeId && (params.scopeId === 'all' || scopeOptions.some((option) => option.id === params.scopeId))
         ? params.scopeId
         : 'all'
 
-    const filteredGroups = filterGroupsByScope(groups, selectedScopeId).filter(
+    let filteredGroups = filterGroupsByScope(
+      groups,
+      selectedScopeId,
+      new Map<string, CeoFinalDivisionScope>()
+    ).filter(
       (group) => !sessionConfig.excludedTargetIds.includes(group.target.id)
     )
     if (!filteredGroups.length) {
@@ -850,6 +864,7 @@ export async function getEvaluationCalibrationPageData(params: {
         select: {
           id: true,
           deptName: true,
+          parentDeptId: true,
           leaderEmployeeId: true,
           leaderEmployee: {
             select: {
@@ -907,6 +922,32 @@ export async function getEvaluationCalibrationPageData(params: {
         return null
       })
 
+    const divisionScopeMap = buildCeoFinalDivisionScopeMap(
+      departments.map((department) => ({
+        id: department.id,
+        deptName: department.deptName,
+        parentDeptId: department.parentDeptId,
+      }))
+    )
+    scopeOptions = buildScopeOptions(groups, divisionScopeMap)
+    selectedScopeId =
+      params.scopeId && (params.scopeId === 'all' || scopeOptions.some((option) => option.id === params.scopeId))
+        ? params.scopeId
+        : 'all'
+    filteredGroups = filterGroupsByScope(groups, selectedScopeId, divisionScopeMap).filter(
+      (group) => !sessionConfig.excludedTargetIds.includes(group.target.id)
+    )
+
+    if (!filteredGroups.length) {
+      return {
+        state: 'empty',
+        availableCycles,
+        selectedCycleId: selectedCycle.id,
+        selectedScopeId,
+        message: '선택한 범위에 표시할 대표이사 확정 대상이 없습니다.',
+      }
+    }
+
     const aiCompetencyGateStatuses = aiCompetencyGateCycle
       ? await loadAiCompetencyGatePromotionStatuses({
           evalCycleIds: [selectedCycle.id],
@@ -939,7 +980,7 @@ export async function getEvaluationCalibrationPageData(params: {
         department.leaderEmployee?.empName ?? department.deptName,
       ])
     )
-    const byDepartment = buildDepartmentDistributions(filteredGroups, gradeSettings)
+    const byDepartment = buildDepartmentDistributions(filteredGroups, gradeSettings, divisionScopeMap)
     const outlierDepartmentIds = new Set(
       byDepartment.filter((department) => department.isOutlier).map((department) => department.departmentId)
     )
@@ -968,6 +1009,7 @@ export async function getEvaluationCalibrationPageData(params: {
         historicalEvaluations: historicalEvaluationMap.get(group.target.id) ?? [],
         feedbackSummary: feedbackSummaryMap.get(group.target.id),
         workspaceState: sessionConfig.workspace.candidateStates[group.target.id],
+        divisionScope: divisionScopeMap.get(group.target.department.id),
       })
     )
 
@@ -1120,7 +1162,10 @@ function groupEvaluationsByTarget(evaluations: EvaluationRecord[]) {
   return [...grouped.values()].filter((group) => group.finalEvaluation || group.adjustedEvaluation)
 }
 
-function buildScopeOptions(groups: CandidateGroup[]) {
+function buildScopeOptions(
+  groups: CandidateGroup[],
+  divisionScopeMap: Map<string, CeoFinalDivisionScope>
+) {
   const options = [
     {
       id: 'all',
@@ -1130,20 +1175,30 @@ function buildScopeOptions(groups: CandidateGroup[]) {
 
   const seen = new Set<string>()
   for (const group of groups) {
-    if (seen.has(group.target.department.id)) continue
-    seen.add(group.target.department.id)
+    const divisionScope = divisionScopeMap.get(group.target.department.id)
+    const scopeId = divisionScope?.divisionId ?? group.target.department.id
+    const scopeLabel = divisionScope?.divisionName ?? group.target.department.deptName
+    if (seen.has(scopeId)) continue
+    seen.add(scopeId)
     options.push({
-      id: group.target.department.id,
-      label: group.target.department.deptName,
+      id: scopeId,
+      label: scopeLabel,
     })
   }
 
   return options
 }
 
-function filterGroupsByScope(groups: CandidateGroup[], selectedScopeId: string) {
+function filterGroupsByScope(
+  groups: CandidateGroup[],
+  selectedScopeId: string,
+  divisionScopeMap: Map<string, CeoFinalDivisionScope>
+) {
   if (!selectedScopeId || selectedScopeId === 'all') return groups
-  return groups.filter((group) => group.target.department.id === selectedScopeId)
+  return groups.filter((group) => {
+    const divisionScope = divisionScopeMap.get(group.target.department.id)
+    return (divisionScope?.divisionId ?? group.target.department.id) === selectedScopeId
+  })
 }
 
 function resolveSourceStage(group: CandidateGroup): CalibrationCandidate['sourceStage'] {
@@ -1196,6 +1251,7 @@ function buildCalibrationCandidate(params: {
   }>
   feedbackSummary?: CalibrationCandidate['feedbackSummary']
   workspaceState?: CalibrationWorkspaceCandidateState
+  divisionScope?: CeoFinalDivisionScope
 }) {
   const { group, gradeSettings } = params
   const baseEvaluation = group.finalEvaluation ?? group.adjustedEvaluation
@@ -1237,9 +1293,10 @@ function buildCalibrationCandidate(params: {
         '최근 체크인에 남겨진 요약 메모가 없습니다.',
     }))
 
+  const divisionId = params.divisionScope?.divisionId ?? group.target.department.id
+  const divisionName = params.divisionScope?.divisionName ?? group.target.department.deptName
   const nearBoundary = isNearGradeBoundary(rawScore, gradeSettings)
-  const needsAttention =
-    reasonMissing || nearBoundary || params.departmentOutlierMap.has(group.target.department.id)
+  const needsAttention = reasonMissing || nearBoundary || params.departmentOutlierMap.has(divisionId)
   const externalData = params.externalColumns
     .map((column) => ({
       key: column.key,
@@ -1259,7 +1316,7 @@ function buildCalibrationCandidate(params: {
   const newlyPromoted = resolveBooleanFlagFromExternalData(externalData, ['recently promoted', 'newly promoted', '승진'])
   const promotionCandidate = resolveBooleanFlagFromExternalData(externalData, ['promotion', '승진'])
   const seniorLevel = ['SECTION_CHIEF', 'DIV_HEAD', 'CEO'].includes(String(group.target.position))
-  const outlierFlag = params.departmentOutlierMap.has(group.target.department.id)
+  const outlierFlag = params.departmentOutlierMap.has(divisionId)
   const aiGateNeedsAttention =
     promotionCandidate === true &&
     Boolean(params.aiCompetencyGateStatus) &&
@@ -1269,16 +1326,23 @@ function buildCalibrationCandidate(params: {
     id: group.target.id,
     employeeId: group.target.empId,
     employeeName: group.target.empName,
+    divisionId,
+    divisionName,
     departmentId: group.target.department.id,
     department: group.target.department.deptName,
     jobGroup: resolvePositionLabel(group.target.position),
     sourceStage,
     hasMergedCalibration: Boolean(adjustedEvaluation),
     rawScore: roundToSingle(rawScore),
+    originalGradeId: group.finalEvaluation?.gradeId ?? null,
+    finalGradeId: adjustedEvaluation?.gradeId ?? group.finalEvaluation?.gradeId ?? null,
     originalGrade: originalGrade ?? '미확정',
     adjustedGrade: adjustedGrade ?? originalGrade ?? '미확정',
     adjusted,
     reason,
+    finalized: adjustedEvaluation?.status === 'CONFIRMED',
+    finalizedAt: adjustedEvaluation?.submittedAt?.toISOString() ?? undefined,
+    finalizedBy: adjustedEvaluation?.evaluator.empName ?? undefined,
     evaluatorName: baseEvaluation?.evaluator.empName,
     reviewerName: group.reviewerEvaluation?.evaluator.empName,
     performanceScore,
@@ -1296,7 +1360,7 @@ function buildCalibrationCandidate(params: {
     suggestedReason: buildSuggestedReason({
       adjusted,
       reasonMissing,
-      isOutlier: params.departmentOutlierMap.has(group.target.department.id),
+      isOutlier: params.departmentOutlierMap.has(divisionId),
       nearBoundary,
       rawScore,
       originalGrade: originalGrade ?? '미확정',
@@ -1459,7 +1523,7 @@ function buildSummary(
   byDepartment: CalibrationViewModel['distributions']['byDepartment']
 ) {
   const adjustedCount = candidates.filter((candidate) => candidate.adjusted).length
-  const pendingCount = candidates.filter((candidate) => candidate.needsAttention && !candidate.adjusted).length
+  const pendingCount = candidates.filter((candidate) => !candidate.finalized).length
   const reviewedCount = candidates.length - pendingCount
   const highGradeRatio =
     candidates.length > 0
@@ -1492,17 +1556,7 @@ function buildSummary(
 
 function buildChecklist(candidates: CalibrationCandidate[]) {
   const missingReasonCount = candidates.filter((candidate) => candidate.adjusted && !candidate.reason?.trim()).length
-  const hasWorkspaceProgress = candidates.some(
-    (candidate) =>
-      candidate.workspace.status !== 'PENDING' ||
-      candidate.workspace.shortReason.length > 0 ||
-      candidate.workspace.discussionMemo.length > 0 ||
-      candidate.workspace.privateNote.length > 0 ||
-      candidate.workspace.publicComment.length > 0
-  )
-  const unresolvedCandidateCount = hasWorkspaceProgress
-    ? candidates.filter((candidate) => !isResolvedCalibrationDiscussionStatus(candidate.workspace.status)).length
-    : candidates.filter((candidate) => candidate.needsAttention && !candidate.adjusted).length
+  const unresolvedCandidateCount = candidates.filter((candidate) => !candidate.finalized).length
 
   return {
     missingReasonCount,
@@ -1528,17 +1582,21 @@ function buildGradeDistribution(candidates: CalibrationCandidate[], gradeSetting
 
 function buildDepartmentDistributions(
   groups: CandidateGroup[],
-  gradeSettings: GradeSettingLite[]
+  gradeSettings: GradeSettingLite[],
+  divisionScopeMap: Map<string, CeoFinalDivisionScope>
 ): CalibrationViewModel['distributions']['byDepartment'] {
   const departmentMap = new Map<string, CandidateGroup[]>()
 
   for (const group of groups) {
-    const current = departmentMap.get(group.target.department.id) ?? []
+    const divisionScope = divisionScopeMap.get(group.target.department.id)
+    const scopeId = divisionScope?.divisionId ?? group.target.department.id
+    const current = departmentMap.get(scopeId) ?? []
     current.push(group)
-    departmentMap.set(group.target.department.id, current)
+    departmentMap.set(scopeId, current)
   }
 
   return [...departmentMap.entries()].map(([departmentId, items]) => {
+    const scope = divisionScopeMap.get(items[0]?.target.department.id ?? '')
     const candidates = items.map((group) =>
       buildCalibrationCandidate({
         group,
@@ -1552,6 +1610,7 @@ function buildDepartmentDistributions(
         departmentOutlierMap: new Set<string>(),
         externalColumns: [],
         externalRow: {},
+        divisionScope: divisionScopeMap.get(group.target.department.id),
       })
     )
     const grades = buildGradeDistribution(candidates, gradeSettings)
@@ -1561,7 +1620,7 @@ function buildDepartmentDistributions(
 
     return {
       departmentId,
-      department: items[0]?.target.department.deptName ?? '미지정',
+      department: scope?.divisionName ?? items[0]?.target.department.deptName ?? '미지정',
       grades,
       totalCount: items.length,
       deltaScore,
@@ -1748,7 +1807,7 @@ function buildCalibrationFollowUp(params: {
   )
   const departmentComparisons = params.byDepartment.map((department) => {
     const departmentCandidates = params.candidates.filter(
-      (candidate) => candidate.departmentId === department.departmentId
+      (candidate) => candidate.divisionId === department.departmentId
     )
     const originalOrders = departmentCandidates
       .map((candidate) => gradeOrderMap.get(candidate.originalGrade))

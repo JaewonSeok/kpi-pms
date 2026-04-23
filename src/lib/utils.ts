@@ -142,7 +142,7 @@ export const EVAL_STAGE_LABELS: Record<string, string> = {
   FIRST: '1차 평가',
   SECOND: '2차 평가',
   FINAL: '최종 평가',
-  CEO_ADJUST: 'CEO 조정',
+  CEO_ADJUST: '대표이사 확정',
 }
 
 export const CHECKIN_TYPE_LABELS: Record<string, string> = {

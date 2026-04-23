@@ -3,6 +3,10 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { buildCalibrationSetupReadiness } from '@/lib/calibration-session-setup'
+import {
+  buildCeoFinalDivisionScopeMap,
+  requiresCeoFinalAdjustmentReason,
+} from '@/lib/evaluation-ceo-final'
 import { prisma } from '@/lib/prisma'
 import { CalibrationWorkflowSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -18,6 +22,7 @@ type CalibrationEvaluationRecord = Prisma.EvaluationGetPayload<{
       include: {
         department: {
           select: {
+            id: true,
             deptName: true
           }
         }
@@ -194,14 +199,16 @@ export async function POST(request: Request) {
       const missingReasonCount = adjustedEvaluations.filter((evaluation) => {
         const original = finalByTarget.get(evaluation.targetId)
         return (
-          evaluation.gradeId &&
-          evaluation.gradeId !== original?.gradeId &&
-          !(evaluation.comment && evaluation.comment.trim().length >= 30)
+          requiresCeoFinalAdjustmentReason({
+            originalDivisionHeadGradeId: original?.gradeId ?? null,
+            finalCeoGradeId: evaluation.gradeId,
+            adjustmentReason: evaluation.comment,
+          })
         )
       }).length
 
       if (missingReasonCount > 0) {
-        throw new AppError(400, 'MISSING_REASON', '사유가 비어 있는 조정 건이 있어 잠글 수 없습니다.')
+        throw new AppError(400, 'MISSING_REASON', '등급을 변경했지만 조정 사유가 없는 항목이 있어 최종 확정을 완료할 수 없습니다.')
       }
 
       await createAuditLog({
@@ -225,37 +232,55 @@ export async function POST(request: Request) {
       }
 
       const sessionConfig = parseCalibrationSessionConfig(cycle.calibrationSessionConfig)
-      const evaluations = await prisma.evaluation.findMany({
-        where: {
-          evalCycleId: cycle.id,
-          evalStage: {
-            in: ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'],
+      const [evaluations, departments] = await Promise.all([
+        prisma.evaluation.findMany({
+          where: {
+            evalCycleId: cycle.id,
+            evalStage: {
+              in: ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'],
+            },
           },
-          ...(scopeId && scopeId !== 'all'
-            ? {
-                target: {
-                  deptId: scopeId,
-                },
-              }
-            : {}),
-        },
-        include: {
-          target: {
-            include: {
-              department: {
-                select: {
-                  deptName: true,
+          include: {
+            target: {
+              include: {
+                department: {
+                  select: {
+                    id: true,
+                    deptName: true,
+                  },
                 },
               },
             },
+            items: true,
           },
-          items: true,
-        },
-      })
+        }),
+        prisma.department.findMany({
+          where: {
+            orgId: cycle.orgId,
+          },
+          select: {
+            id: true,
+            deptName: true,
+            parentDeptId: true,
+          },
+        }),
+      ])
 
+      const divisionScopeMap = buildCeoFinalDivisionScopeMap(departments)
       const grouped = groupEvaluationsByTarget(evaluations)
       const mergeableGroups = [...grouped.values()].filter(
-        (group) => !sessionConfig.excludedTargetIds.includes(group.targetId)
+        (group) => {
+          if (sessionConfig.excludedTargetIds.includes(group.targetId)) return false
+          if (!scopeId || scopeId === 'all') return true
+
+          const sourceEvaluation =
+            group.finalEvaluation ?? group.secondEvaluation ?? group.firstEvaluation ?? group.adjustedEvaluation
+          const departmentId = sourceEvaluation?.target.department.id
+          if (!departmentId) return false
+
+          const divisionId = divisionScopeMap.get(departmentId)?.divisionId ?? departmentId
+          return divisionId === scopeId
+        }
       )
 
       let createdCount = 0

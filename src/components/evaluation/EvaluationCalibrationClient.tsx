@@ -289,7 +289,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     if (!viewModel) return []
 
     return viewModel.candidates.filter((candidate) => {
-      if (departmentFilter !== 'all' && candidate.departmentId !== departmentFilter) return false
+      if (departmentFilter !== 'all' && candidate.divisionId !== departmentFilter) return false
       if (jobGroupFilter !== 'all' && candidate.jobGroup !== jobGroupFilter) return false
       if (originalGradeFilter !== 'all' && candidate.originalGrade !== originalGradeFilter) return false
 
@@ -300,7 +300,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
 
       if (adjustedGradeFilter !== 'all' && effectiveAdjustedGrade !== adjustedGradeFilter) return false
       if (adjustmentFilter === 'adjusted' && !candidate.adjusted) return false
-      if (adjustmentFilter === 'pending' && !candidate.needsAttention) return false
+      if (adjustmentFilter === 'pending' && candidate.finalized) return false
       if (missingReasonOnly && !candidate.reasonMissing) return false
       return true
     })
@@ -379,7 +379,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
     }
   }, [filteredCandidates])
   const selectedScopeLabel =
-    viewModel?.scopeOptions.find((scope) => scope.id === departmentFilter)?.label ?? '전체 조직'
+    viewModel?.scopeOptions.find((scope) => scope.id === departmentFilter)?.label ?? '전체 본부'
 
   function handleYearChange(year: number) {
     const nextCycle = cycleOptions.find((cycle) => cycle.year === year)
@@ -567,8 +567,8 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
   async function handleSaveCandidate(candidateId: string) {
     if (!viewModel) return
     const candidate = viewModel.candidates.find((item) => item.id === candidateId)
-    const draft = draftEdits[candidateId]
-    if (!candidate || !draft) return
+    if (!candidate) return
+    const draft = getCandidateDraft(viewModel, draftEdits, candidate)
 
     setIsSubmitting(true)
     try {
@@ -589,7 +589,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
         delete nextState[candidateId]
         return nextState
       })
-      setNotice(`${candidate.employeeName}님의 조정안을 저장했습니다.`)
+      setNotice(`${candidate.employeeName}님의 대표이사 최종 확정을 저장했습니다.`)
       router.refresh()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '조정 저장 중 오류가 발생했습니다.')
@@ -657,7 +657,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
         delete nextState[candidateId]
         return nextState
       })
-      setNotice(`${candidate.employeeName}님의 조정안을 해제했습니다.`)
+      setNotice(`${candidate.employeeName}님의 대표이사 최종 확정을 해제했습니다.`)
       router.refresh()
     } catch (error) {
       setNotice(error instanceof Error ? error.message : '조정 해제 중 오류가 발생했습니다.')
@@ -1021,7 +1021,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
                 title="HR Guardrail"
                 items={[
                   'HR과 facilitator는 흐름을 돕고 기준을 지키는 역할입니다.',
-                  '최종 등급 확정은 owner 또는 별도 확정 권한자 기준으로 운영합니다.',
+                  '최종 등급 확정은 대표이사 또는 대표이사 확정 권한자 기준으로 운영합니다.',
                   '참고 분포는 넛지일 뿐이며 강제 분포나 hard block으로 사용하지 않습니다.',
                 ]}
               />
@@ -1140,7 +1140,7 @@ export function EvaluationCalibrationClient(props: EvaluationCalibrationClientPr
             setActiveTab('candidates')
             setDepartmentFilter(departmentId)
             setSelectedCandidateId(
-              viewModel.candidates.find((candidate) => candidate.departmentId === departmentId)?.id ?? ''
+              viewModel.candidates.find((candidate) => candidate.divisionId === departmentId)?.id ?? ''
             )
           }}
           onPickGrade={(grade) => {
@@ -1616,7 +1616,7 @@ function CalibrationHero({
               onChange={onCycleChange}
             />
             <SelectorCard
-              label="조직 범위"
+              label="본부 범위"
               value={viewModel.cycle.selectedScopeId}
               options={viewModel.scopeOptions.map((scope) => ({ value: scope.id, label: scope.label }))}
               onChange={onScopeChange}
@@ -1965,7 +1965,7 @@ function DistributionOverviewSection({
       </SectionCard>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <SectionCard title="조직별 등급 분포" description="편차가 큰 조직을 선택해 바로 후보 테이블로 내려갈 수 있습니다.">
+        <SectionCard title="본부별 평가 결과 분포" description="편차가 큰 본부를 선택해 바로 최종 확정 대상 테이블로 내려갈 수 있습니다.">
           <div className="space-y-3">
             {viewModel.distributions.byDepartment.map((department) => (
               <button
@@ -2075,7 +2075,7 @@ function CalibrationCandidatesSection({
   nowTick: number
 }) {
   const departmentOptions = [
-    { value: 'all', label: '전체 조직' },
+    { value: 'all', label: '전체 본부' },
     ...viewModel.scopeOptions.filter((scope) => scope.id !== 'all').map((scope) => ({
       value: scope.id,
       label: scope.label,
@@ -2086,9 +2086,9 @@ function CalibrationCandidatesSection({
   const adjustedGrades = viewModel.gradeOptions.map((grade) => grade.grade)
   return (
     <div className="space-y-6">
-      <SectionCard title="조정 대상 필터" description="조직, 직군, 원등급, 조정등급, 사유 누락 여부로 후보군을 빠르게 좁힙니다.">
+      <SectionCard title="대표이사 확정 대상 필터" description="본부, 직군, 본부장 평가 등급, 대표이사 최종 등급, 사유 누락 여부로 대상을 빠르게 좁힙니다.">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <SelectorCard label="조직" value={departmentFilter} options={departmentOptions} onChange={setDepartmentFilter} />
+          <SelectorCard label="본부" value={departmentFilter} options={departmentOptions} onChange={setDepartmentFilter} />
           <SelectorCard
             label="직군"
             value={jobGroupFilter}
@@ -2096,24 +2096,24 @@ function CalibrationCandidatesSection({
             onChange={setJobGroupFilter}
           />
           <SelectorCard
-            label="원등급"
+            label="본부장 평가 등급"
             value={originalGradeFilter}
-            options={[{ value: 'all', label: '전체 원등급' }, ...originalGrades.map((grade) => ({ value: grade, label: grade }))]}
+            options={[{ value: 'all', label: '전체 본부장 평가 등급' }, ...originalGrades.map((grade) => ({ value: grade, label: grade }))]}
             onChange={setOriginalGradeFilter}
           />
           <SelectorCard
-            label="조정등급"
+            label="대표이사 최종 등급"
             value={adjustedGradeFilter}
-            options={[{ value: 'all', label: '전체 조정등급' }, ...adjustedGrades.map((grade) => ({ value: grade, label: grade }))]}
+            options={[{ value: 'all', label: '전체 대표이사 최종 등급' }, ...adjustedGrades.map((grade) => ({ value: grade, label: grade }))]}
             onChange={setAdjustedGradeFilter}
           />
           <SelectorCard
-            label="조정 여부"
+            label="확정 상태"
             value={adjustmentFilter}
             options={[
               { value: 'all', label: '전체' },
               { value: 'adjusted', label: '조정됨' },
-              { value: 'pending', label: '검토 필요' },
+              { value: 'pending', label: '미확정' },
             ]}
             onChange={(value) => setAdjustmentFilter(value as 'all' | 'adjusted' | 'pending')}
           />
@@ -2134,8 +2134,8 @@ function CalibrationCandidatesSection({
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
         <SectionCard
-          title="조정 대상 목록"
-          description={`총 ${candidates.length}명의 후보를 표시합니다. 후보를 선택하면 우측에서 근거와 사유를 함께 관리할 수 있습니다.`}
+          title="대표이사 확정 대상 목록"
+          description={`총 ${candidates.length}명의 대상을 표시합니다. 대상을 선택하면 우측에서 근거를 확인하고 최종 등급과 사유를 확정할 수 있습니다.`}
         >
           {candidates.length ? (
             <>
@@ -2144,16 +2144,15 @@ function CalibrationCandidatesSection({
                   <thead className="bg-slate-50 text-left text-slate-500">
                     <tr>
                       <th className="px-4 py-3 font-medium">이름</th>
-                      <th className="px-4 py-3 font-medium">부서</th>
+                      <th className="px-4 py-3 font-medium">직위/조직</th>
                       <th className="px-4 py-3 font-medium">원점수</th>
-                      <th className="px-4 py-3 font-medium">원등급</th>
-                      <th className="px-4 py-3 font-medium">최종 등급</th>
-                      <th className="px-4 py-3 font-medium">최종 코멘트</th>
-                      <th className="px-4 py-3 font-medium">외부 데이터</th>
+                      <th className="px-4 py-3 font-medium">본부장 평가 등급</th>
+                      <th className="px-4 py-3 font-medium">대표이사 최종 등급</th>
+                      <th className="px-4 py-3 font-medium">조정 사유</th>
                       <th className="px-4 py-3 font-medium">조정 여부</th>
-                      <th className="px-4 py-3 font-medium">사유 상태</th>
-                      <th className="px-4 py-3 font-medium">저장</th>
-                      <th className="px-4 py-3 font-medium">참고정보</th>
+                      <th className="px-4 py-3 font-medium">확정 상태</th>
+                      <th className="px-4 py-3 font-medium">최종 확정</th>
+                      <th className="px-4 py-3 font-medium">상세 보기</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
@@ -2181,7 +2180,12 @@ function CalibrationCandidatesSection({
                               </div>
                             ) : null}
                           </td>
-                          <td className="px-4 py-3">{candidate.department}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-900">{candidate.jobGroup ?? '구성원'}</div>
+                            <div className="text-xs text-slate-500">
+                              {candidate.divisionName} · {candidate.department}
+                            </div>
+                          </td>
                           <td className="px-4 py-3">{candidate.rawScore.toFixed(1)}</td>
                           <td className="px-4 py-3">{candidate.originalGrade}</td>
                           <td className="px-4 py-3">
@@ -2214,25 +2218,17 @@ function CalibrationCandidatesSection({
                               }
                               disabled={readOnly || isSubmitting}
                               className="min-h-10 w-56 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                              placeholder={candidate.suggestedReason ?? '최종 코멘트를 입력해 주세요.'}
+                              placeholder={candidate.suggestedReason ?? '등급을 변경한 경우 조정 사유를 입력해 주세요.'}
                             />
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-xs leading-5 text-slate-500">
-                              {candidate.externalData.length
-                                ? `${candidate.externalData
-                                    .slice(0, 2)
-                                    .map((item) => `${item.label}:${item.value}`)
-                                    .join(' / ')}${
-                                    candidate.externalData.length > 2 ? ` 외 ${candidate.externalData.length - 2}개` : ''
-                                  }`
-                                : '없음'}
-                            </div>
                           </td>
                           <td className="px-4 py-3">
                             {candidate.adjusted ? (
                               <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
                                 조정됨
+                              </span>
+                            ) : candidate.finalized ? (
+                              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                확정 완료
                               </span>
                             ) : candidate.needsAttention ? (
                               <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
@@ -2245,10 +2241,14 @@ function CalibrationCandidatesSection({
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            {candidate.reasonMissing ? (
-                              <WarningBadge label="사유 누락" />
+                            {candidate.finalized ? (
+                              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                확정 완료
+                              </span>
                             ) : (
-                              <span className="text-slate-500">{candidate.reason ? '입력됨' : '미입력'}</span>
+                              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                미확정
+                              </span>
                             )}
                           </td>
                           <td className="px-4 py-3">
@@ -2261,7 +2261,7 @@ function CalibrationCandidatesSection({
                               disabled={readOnly || isSubmitting}
                               className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              저장
+                              최종 확정
                             </button>
                           </td>
                           <td className="px-4 py-3">
@@ -2273,7 +2273,7 @@ function CalibrationCandidatesSection({
                               }}
                               className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                             >
-                              참고정보
+                              상세 보기
                             </button>
                           </td>
                         </tr>
@@ -2306,15 +2306,15 @@ function CalibrationCandidatesSection({
                         <div>
                           <div className="font-semibold text-slate-900">{candidate.employeeName}</div>
                           <div className="text-xs text-slate-500">
-                            {candidate.department} · {candidate.jobGroup}
+                            {candidate.divisionName} · {candidate.department} · {candidate.jobGroup}
                           </div>
                         </div>
-                        {candidate.needsAttention ? <WarningBadge label="검토 필요" /> : null}
+                        {!candidate.finalized ? <WarningBadge label="미확정" /> : null}
                       </div>
                       <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
                         <MiniMetric label="원점수" value={candidate.rawScore.toFixed(1)} />
-                        <MiniMetric label="원등급" value={candidate.originalGrade} />
-                        <MiniMetric label="조정등급" value={draftGrade} />
+                        <MiniMetric label="본부장 평가 등급" value={candidate.originalGrade} />
+                        <MiniMetric label="대표이사 최종 등급" value={draftGrade} />
                         {candidate.aiCompetencyGateStatusLabel ? <InfoBadge label={`AI 역량평가 ${candidate.aiCompetencyGateStatusLabel}`} /> : null}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -2328,7 +2328,7 @@ function CalibrationCandidatesSection({
               </div>
             </>
           ) : (
-            <EmptyCard title="조건에 맞는 조정 대상이 없습니다" description="필터를 완화하거나 분포 현황 탭에서 다른 조직/등급을 선택해 주세요." />
+            <EmptyCard title="조건에 맞는 확정 대상이 없습니다" description="필터를 완화하거나 분포 현황 탭에서 다른 본부/등급을 선택해 주세요." />
           )}
         </SectionCard>
 
@@ -2583,21 +2583,21 @@ function CandidateDetailPanel({
                   ? 'Facilitator/owner 권한으로 흐름 관리가 가능합니다.'
                   : '현재 계정은 흐름 관리용 컨트롤이 제한됩니다.',
                 viewModel.actor.canFinalizeAdjustments
-                  ? '최종 등급 제안 저장 권한이 있습니다.'
-                  : '최종 등급 제안 저장은 owner 또는 확정 권한자 기준으로 운영합니다.',
+                  ? '대표이사 최종 확정 저장 권한이 있습니다.'
+                  : '대표이사 최종 확정 저장은 대표이사 또는 확정 권한자 기준으로 운영합니다.',
               ]}
             />
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <CompareCard title="원등급" value={candidate.originalGrade} tone="neutral" />
-          <CompareCard title="조정등급" value={selectedGradeLabel} tone={candidate.originalGrade === selectedGradeLabel ? 'neutral' : 'attention'} />
+          <CompareCard title="본부장 평가 등급" value={candidate.originalGrade} tone="neutral" />
+          <CompareCard title="대표이사 최종 등급" value={selectedGradeLabel} tone={candidate.originalGrade === selectedGradeLabel ? 'neutral' : 'attention'} />
         </div>
 
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
           <div>
-            <FieldLabel>조정 등급</FieldLabel>
+            <FieldLabel>대표이사 최종 등급</FieldLabel>
             <select
               value={draft.gradeId}
               onChange={(event) => onDraftChange(candidate.id, { gradeId: event.target.value })}
@@ -2621,6 +2621,11 @@ function CandidateDetailPanel({
               className="min-h-36 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-slate-900"
               placeholder={candidate.suggestedReason}
             />
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              {candidate.originalGradeId && draft.gradeId !== candidate.originalGradeId
+                ? '등급을 변경하는 경우 조정 사유를 입력해 주세요.'
+                : '동일 등급으로 확정하는 경우 조정 사유는 선택 사항입니다.'}
+            </p>
             {candidate.suggestedReason ? (
               <p className="mt-2 text-xs leading-5 text-slate-500">{candidate.suggestedReason}</p>
             ) : null}
@@ -2629,7 +2634,7 @@ function CandidateDetailPanel({
           <div className="flex flex-wrap gap-3">
             <ActionButton
               icon={<Save className="h-4 w-4" />}
-              label="이 후보 저장"
+              label="최종 확정"
               onClick={() => onSaveCandidate(candidate.id)}
               disabled={!canFinalizeAdjustments || isSubmitting}
               variant="primary"
@@ -2637,7 +2642,7 @@ function CandidateDetailPanel({
             {candidate.adjusted ? (
               <ActionButton
                 icon={<span className="text-base">↺</span>}
-                label="조정 해제"
+                label="최종 확정 해제"
                 onClick={() => onClearAdjustment(candidate.id)}
                 disabled={!canFinalizeAdjustments || isSubmitting}
               />
@@ -2649,7 +2654,7 @@ function CandidateDetailPanel({
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-900">Note</div>
+                <div className="text-sm font-semibold text-slate-900">비공개 메모</div>
                 <p className="mt-1 text-sm text-slate-500">
                   note는 평가자, 참여자, HR, recorder가 보는 비공개 메모입니다. 대상자에게 공개되지 않습니다.
                 </p>
@@ -2672,7 +2677,7 @@ function CandidateDetailPanel({
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-slate-900">Comment</div>
+                <div className="text-sm font-semibold text-slate-900">공유용 코멘트</div>
                 <p className="mt-1 text-sm text-slate-500">
                   comment는 결과 공유 시 사용할 수 있는 공개 후보 문구입니다. note와 반드시 분리해 관리합니다.
                 </p>
@@ -3508,7 +3513,7 @@ function CalibrationPolicySection() {
     },
     {
       question: '조정 사유는 어느 정도로 남겨야 하나요?',
-      answer: '최소 30자 이상으로, 성과/역량/분포/상대비교 관점에서 왜 조정했는지 설명 가능하게 남겨야 합니다.',
+      answer: '등급을 변경한 경우에는 짧더라도 비어 있지 않은 사유를 남겨야 합니다. 동일 등급으로 확정하는 경우에는 선택 사항입니다.',
     },
     {
       question: '잠금 이후에는 무엇이 달라지나요?',
@@ -4363,19 +4368,10 @@ function parseCalibrationBulkImportText(
       continue
     }
 
-    if (reason.length < 30) {
-      issues.push({
-        rowNumber,
-        identifier,
-        message: '조정 사유는 30자 이상 입력해 주세요.',
-      })
-      continue
-    }
-
     rows.push({
       targetId: target.id,
       gradeId: grade.id,
-      adjustReason: reason,
+      adjustReason: reason.trim(),
       rowNumber,
       identifier,
     })
@@ -4417,15 +4413,6 @@ async function parseCalibrationBulkImportFile(
         rowNumber,
         identifier: identifier || target.employeeId,
         message: '등급 라벨이 유효하지 않습니다.',
-      })
-      continue
-    }
-
-    if (reason.trim().length < 30) {
-      issues.push({
-        rowNumber,
-        identifier: identifier || target.employeeId,
-        message: '조정 사유는 30자 이상 입력해 주세요.',
       })
       continue
     }

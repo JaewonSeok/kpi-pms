@@ -51,7 +51,7 @@ export const NAV_ITEMS: NavigationItem[] = [
       },
       { label: '평가 결과', href: '/evaluation/results', menuKey: 'EVAL_RESULT' },
       { label: '이의 요청', href: '/evaluation/appeal', menuKey: 'APPEAL' },
-      { label: '등급 조정', href: '/evaluation/ceo-adjust', menuKey: 'GRADE_ADJUST' },
+      { label: '대표이사 확정', href: '/evaluation/ceo-adjust', menuKey: 'GRADE_ADJUST' },
     ],
   },
   {

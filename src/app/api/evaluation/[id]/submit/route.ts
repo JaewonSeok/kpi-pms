@@ -10,9 +10,13 @@ import {
   calcPdcaScore,
   calcWeightedScore,
   errorResponse,
+  EVAL_STAGE_LABELS,
   successResponse,
 } from '@/lib/utils'
-import { getEvaluationStageChain } from '@/server/evaluation-performance-assignments'
+import {
+  getEvaluationStageChain,
+  resolveEvaluationStageAssignee,
+} from '@/server/evaluation-performance-assignments'
 import {
   logImpersonationRiskExecution,
   validateImpersonationRiskRequest,
@@ -153,10 +157,42 @@ export async function PATCH(
         )
       }
 
-      const nextStageEntry =
+      let nextStageEntry: NextStageEntry | null =
         currentStageIndex >= 0 && currentStageIndex < stageChain.length - 1
-          ? stageChain[currentStageIndex + 1] ?? null
+          ? (() => {
+              const candidate = stageChain[currentStageIndex + 1] ?? null
+              return candidate
+                ? {
+                    stage: candidate.stage,
+                    stageLabel: candidate.stageLabel,
+                    evaluatorId: candidate.evaluatorId,
+                  }
+                : null
+            })()
           : null
+
+      if (!nextStageEntry && evaluation.evalStage === 'FINAL') {
+        const ceoEvaluatorId = await resolveEvaluationStageAssignee({
+          db: tx,
+          evalCycleId: evaluation.evalCycleId,
+          targetId: evaluation.targetId,
+          evalStage: 'CEO_ADJUST',
+        })
+
+        if (!ceoEvaluatorId) {
+          throw new AppError(
+            400,
+            'CEO_FINAL_APPROVER_REQUIRED',
+            '대표이사 최종 확정자를 찾을 수 없어 본부장 평가를 제출할 수 없습니다. 배정 관리 또는 CEO 계정을 확인해 주세요.'
+          )
+        }
+
+        nextStageEntry = {
+          stage: 'CEO_ADJUST',
+          stageLabel: EVAL_STAGE_LABELS.CEO_ADJUST,
+          evaluatorId: ceoEvaluatorId,
+        }
+      }
 
       if (!nextStageEntry && evaluation.evalStage !== 'CEO_ADJUST') {
         throw new AppError(

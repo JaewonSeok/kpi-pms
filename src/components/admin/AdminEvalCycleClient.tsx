@@ -107,7 +107,7 @@ const STATUS_LABELS: Record<CycleStatus, string> = {
   FIRST_EVAL: '1차 평가',
   SECOND_EVAL: '2차 평가',
   FINAL_EVAL: '최종 평가',
-  CEO_ADJUST: '등급 조정',
+  CEO_ADJUST: '대표이사 확정',
   RESULT_OPEN: '결과 공개',
   APPEAL: '이의 신청',
   CLOSED: '종료',
@@ -124,8 +124,8 @@ const PHASE_FIELDS: Array<{ key: CyclePhaseFieldKey; label: string }> = [
   { key: 'secondEvalEnd', label: '2차 평가 종료' },
   { key: 'finalEvalStart', label: '최종 평가 시작' },
   { key: 'finalEvalEnd', label: '최종 평가 종료' },
-  { key: 'ceoAdjustStart', label: '등급 조정 시작' },
-  { key: 'ceoAdjustEnd', label: '등급 조정 종료' },
+  { key: 'ceoAdjustStart', label: '대표이사 확정 시작' },
+  { key: 'ceoAdjustEnd', label: '대표이사 확정 종료' },
   { key: 'resultOpenStart', label: '결과 공개 시작' },
   { key: 'resultOpenEnd', label: '결과 공개 종료' },
   { key: 'appealDeadline', label: '이의 신청 마감' },
@@ -269,7 +269,7 @@ function buildStatusRecommendation(cycle: EvalCycleItem, readinessPassed: boolea
     return { status: 'FINAL_EVAL' as CycleStatus, reason: '현재 최종 평가 기간 안에 있습니다.' }
   }
   if (inRange(cycle.ceoAdjustStart, cycle.ceoAdjustEnd)) {
-    return { status: 'CEO_ADJUST' as CycleStatus, reason: '현재 등급 조정 기간 안에 있습니다.' }
+    return { status: 'CEO_ADJUST' as CycleStatus, reason: '현재 대표이사 확정 기간 안에 있습니다.' }
   }
   if (cycle.resultOpenStart && new Date(cycle.resultOpenStart) <= now) {
     if (cycle.appealDeadline && new Date(cycle.appealDeadline) >= now) {
@@ -829,7 +829,7 @@ export function AdminEvalCycleClient({
                     ['1차 평가', selectedCycle.firstEvalStart, selectedCycle.firstEvalEnd],
                     ['2차 평가', selectedCycle.secondEvalStart, selectedCycle.secondEvalEnd],
                     ['최종 평가', selectedCycle.finalEvalStart, selectedCycle.finalEvalEnd],
-                    ['등급 조정', selectedCycle.ceoAdjustStart, selectedCycle.ceoAdjustEnd],
+                    ['대표이사 확정', selectedCycle.ceoAdjustStart, selectedCycle.ceoAdjustEnd],
                     ['결과 공개', selectedCycle.resultOpenStart, selectedCycle.resultOpenEnd],
                   ].map(([label, start, end]) => (
                     <div key={label} className="rounded-2xl bg-slate-50 px-4 py-3">

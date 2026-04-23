@@ -15,6 +15,11 @@ import {
   normalizeCalibrationSessionSetup,
   type CalibrationSessionSetupValue,
 } from '@/lib/calibration-session-setup'
+import {
+  isCeoFinalGradeAdjusted,
+  normalizeCeoAdjustmentReason,
+  requiresCeoFinalAdjustmentReason,
+} from '@/lib/evaluation-ceo-final'
 import { prisma } from '@/lib/prisma'
 import { CalibrationCandidateUpdateSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -563,11 +568,12 @@ export async function PATCH(request: Request) {
         identifier?: string
         targetId: string
         gradeId: string
-        adjustReason: string
+        adjustReason: string | null
         gradeName: string
         originalGrade: string
         finalEvaluation: (typeof evaluations)[number]
         adjustedEvaluation: (typeof evaluations)[number] | null
+        gradeChanged: boolean
       }> = []
       const failedRows: Array<{ rowNumber?: number; identifier?: string; message: string }> = []
 
@@ -602,16 +608,41 @@ export async function PATCH(request: Request) {
             gradeSettings
           ) ?? '미확정'
 
+        const normalizedReason = normalizeCeoAdjustmentReason(row.adjustReason)
+        const originalDivisionHeadGrade =
+          resolveGradeName(finalEvaluation.gradeId, finalEvaluation.totalScore, gradeSettings) ??
+          originalGrade
+        const gradeChanged = isCeoFinalGradeAdjusted({
+          originalDivisionHeadGradeId: finalEvaluation.gradeId,
+          finalCeoGradeId: row.gradeId,
+        })
+
+        if (
+          requiresCeoFinalAdjustmentReason({
+            originalDivisionHeadGradeId: finalEvaluation.gradeId,
+            finalCeoGradeId: row.gradeId,
+            adjustmentReason: normalizedReason,
+          })
+        ) {
+          failedRows.push({
+            rowNumber: row.rowNumber,
+            identifier: row.identifier ?? row.targetId,
+            message: '등급을 변경한 경우 조정 사유를 입력해 주세요.',
+          })
+          continue
+        }
+
         validRows.push({
           rowNumber: row.rowNumber,
           identifier: row.identifier,
           targetId: row.targetId,
           gradeId: row.gradeId,
-          adjustReason: row.adjustReason.trim(),
+          adjustReason: normalizedReason,
           gradeName: grade.gradeName,
-          originalGrade,
+          originalGrade: originalDivisionHeadGrade,
           finalEvaluation,
           adjustedEvaluation,
+          gradeChanged,
         })
       }
 
@@ -622,8 +653,10 @@ export async function PATCH(request: Request) {
         fromGrade: string
         toGrade: string
         rawScore: number
-        reason: string
+        reason: string | null
         evaluationId: string
+        adjusted: boolean
+        previousFinalGrade: string
       }> = []
 
       for (const row of validRows) {
@@ -682,6 +715,13 @@ export async function PATCH(request: Request) {
             rawScore: row.finalEvaluation.totalScore ?? 0,
             reason: row.adjustReason,
             evaluationId: savedEvaluation.id,
+            adjusted: row.gradeChanged,
+            previousFinalGrade:
+              resolveGradeName(
+                row.adjustedEvaluation?.gradeId ?? row.finalEvaluation.gradeId,
+                row.finalEvaluation.totalScore,
+                gradeSettings
+              ) ?? row.originalGrade,
           })
         } catch (error) {
           console.error('[calibration bulk-import] row apply failed', error)
@@ -703,7 +743,8 @@ export async function PATCH(request: Request) {
             targetId: row.targetId,
             targetName: row.targetName,
             department: row.department,
-            fromGrade: row.fromGrade,
+            fromGrade: row.previousFinalGrade,
+            originalDivisionHeadGrade: row.fromGrade,
           },
           newValue: {
             targetId: row.targetId,
@@ -713,6 +754,8 @@ export async function PATCH(request: Request) {
             toGrade: row.toGrade,
             rawScore: row.rawScore,
             reason: row.reason,
+            adjusted: row.adjusted,
+            originalDivisionHeadGrade: row.fromGrade,
             confirmedBy: session.user.name,
           },
           ...client,
@@ -840,6 +883,29 @@ export async function PATCH(request: Request) {
       throw new AppError(404, 'GRADE_NOT_FOUND', '선택한 조정 등급을 찾지 못했습니다.')
     }
 
+    const normalizedReason = normalizeCeoAdjustmentReason(body.adjustReason)
+    const gradeChanged = isCeoFinalGradeAdjusted({
+      originalDivisionHeadGradeId: finalEvaluation.gradeId,
+      finalCeoGradeId: nextGrade.id,
+    })
+
+    if (
+      requiresCeoFinalAdjustmentReason({
+        originalDivisionHeadGradeId: finalEvaluation.gradeId,
+        finalCeoGradeId: nextGrade.id,
+        adjustmentReason: normalizedReason,
+      })
+    ) {
+      throw new AppError(400, 'ADJUST_REASON_REQUIRED', '등급을 변경한 경우 조정 사유를 입력해 주세요.')
+    }
+
+    const previousFinalGrade =
+      resolveGradeName(
+        adjustedEvaluation?.gradeId ?? finalEvaluation.gradeId,
+        finalEvaluation.totalScore,
+        gradeSettings
+      ) ?? originalGrade
+
     const savedEvaluation = await prisma.$transaction(async (tx) => {
       if (adjustedEvaluation) {
         return tx.evaluation.update({
@@ -847,7 +913,7 @@ export async function PATCH(request: Request) {
           data: {
             gradeId: nextGrade.id,
             totalScore: finalEvaluation.totalScore,
-            comment: body.adjustReason?.trim(),
+            comment: normalizedReason,
             evaluatorId: session.user.id,
             status: 'CONFIRMED',
             isDraft: false,
@@ -864,7 +930,7 @@ export async function PATCH(request: Request) {
           evalStage: 'CEO_ADJUST',
           totalScore: finalEvaluation.totalScore,
           gradeId: nextGrade.id,
-          comment: body.adjustReason?.trim(),
+          comment: normalizedReason,
           status: 'CONFIRMED',
           isDraft: false,
           submittedAt: new Date(),
@@ -894,9 +960,8 @@ export async function PATCH(request: Request) {
         targetId: body.targetId,
         targetName: finalEvaluation.target.empName,
         department: finalEvaluation.target.department.deptName,
-        fromGrade:
-          resolveGradeName(adjustedEvaluation?.gradeId ?? finalEvaluation.gradeId, finalEvaluation.totalScore, gradeSettings) ??
-          originalGrade,
+        fromGrade: previousFinalGrade,
+        originalDivisionHeadGrade: originalGrade,
       },
       newValue: {
         targetId: body.targetId,
@@ -905,7 +970,9 @@ export async function PATCH(request: Request) {
         fromGrade: originalGrade,
         toGrade: nextGrade.gradeName,
         rawScore: finalEvaluation.totalScore ?? 0,
-        reason: body.adjustReason?.trim(),
+        reason: normalizedReason,
+        adjusted: gradeChanged,
+        originalDivisionHeadGrade: originalGrade,
         confirmedBy: session.user.name,
       },
       ...client,

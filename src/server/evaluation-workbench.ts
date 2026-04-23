@@ -1374,6 +1374,10 @@ export async function getEvaluationWorkbenchPageData(
       canManageSelected &&
       Boolean(previousStageEvaluation) &&
       !['SUBMITTED', 'CONFIRMED'].includes(selectedEvaluation.status)
+    const isCeoFinalStage = selectedEvaluation.evalStage === 'CEO_ADJUST'
+    const ceoStageReadOnlyReason = isCeoFinalStage
+      ? '대표이사 최종 확정은 대표이사 확정 화면에서 진행해 주세요.'
+      : null
 
     pageData.selected = {
       id: selectedEvaluation.id,
@@ -1433,15 +1437,17 @@ export async function getEvaluationWorkbenchPageData(
       reviewGuidance: buildReviewGuidance(selectedEvaluation),
       guideStatus,
       permissions: {
-        canEdit: canEditSelected,
-        canSubmit: canEditSelected && !submitDisabledReason,
-        canFinalize: canEditSelected && canFinalize,
-        canReject: canReturnToPreviousStage,
-        submitDisabledReason,
+        canEdit: canEditSelected && !isCeoFinalStage,
+        canSubmit: canEditSelected && !isCeoFinalStage && !submitDisabledReason,
+        canFinalize: canEditSelected && !isCeoFinalStage && canFinalize,
+        canReject: canReturnToPreviousStage && !isCeoFinalStage,
+        submitDisabledReason: ceoStageReadOnlyReason ?? submitDisabledReason,
         readOnly:
           !(
             selectedEvaluation.evaluator.id === sessionUser.id || sessionUser.role === 'ROLE_ADMIN'
-          ) || ['SUBMITTED', 'CONFIRMED'].includes(selectedEvaluation.status),
+          ) ||
+          isCeoFinalStage ||
+          ['SUBMITTED', 'CONFIRMED'].includes(selectedEvaluation.status),
       },
       gradeOptions: gradeOptions.map((grade) => ({
         id: grade.id,
