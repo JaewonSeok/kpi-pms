@@ -787,6 +787,17 @@ async function main() {
     assert.equal(reviewQueueBlock.includes('{item.employeeName} 쨌 {item.departmentName}'), false)
   })
 
+  await run('personal KPI approval, detail, and bulk edit labels use the inline separator helper without any broken token', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+    assert.equal(source.includes('쨌'), false)
+    assert.equal(source.includes("import { formatCountWithUnit, formatRateBaseCopy, joinInlineParts } from '@/lib/metric-copy'"), true)
+    assert.equal(source.includes('{joinInlineParts([segment.departmentName, segment.title])}'), true)
+    assert.equal(source.includes('{joinInlineParts([history.actor, history.note])}'), true)
+    assert.equal(source.includes('{joinInlineParts([employee.name, employee.departmentName])}'), true)
+    assert.equal(source.includes('{joinInlineParts([option.title, option.departmentName])}'), true)
+  })
+
   await run('personal KPI selection preserves scroll when syncing kpiId into the URL', () => {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
     const routeSelectionStart = source.indexOf('function handleRouteSelection(next: {')

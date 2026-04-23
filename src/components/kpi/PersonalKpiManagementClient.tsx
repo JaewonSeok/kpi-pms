@@ -25,7 +25,7 @@ import {
   type PersonalKpiSubmitCtaState,
   type PersonalKpiTabKey,
 } from '@/lib/personal-kpi-cta'
-import { formatCountWithUnit, formatRateBaseCopy } from '@/lib/metric-copy'
+import { formatCountWithUnit, formatRateBaseCopy, joinInlineParts } from '@/lib/metric-copy'
 
 type Props = PersonalKpiPageData & {
   initialTab?: string
@@ -1942,7 +1942,7 @@ function DetailPanel(props: {
             <div className="flex flex-wrap gap-2">
               {item.orgLineage.map((segment) => (
                 <span key={segment.id} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                  {segment.departmentName} · {segment.title}
+                  {joinInlineParts([segment.departmentName, segment.title])}
                 </span>
               ))}
             </div>
@@ -2502,7 +2502,7 @@ function WeightApprovalSummaryCard(props: {
           <div className="flex flex-wrap gap-2">
             {props.orgLineage.map((segment) => (
               <span key={segment.id} className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
-                {segment.departmentName} 쨌 {segment.title}
+                {joinInlineParts([segment.departmentName, segment.title])}
               </span>
             ))}
           </div>
@@ -2526,8 +2526,7 @@ function WeightApprovalSummaryCard(props: {
                   <span className="text-xs text-slate-500">{formatDateTime(history.at)}</span>
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {history.actor}
-                  {history.note ? ` 쨌 ${history.note}` : ''}
+                  {joinInlineParts([history.actor, history.note])}
                 </div>
               </div>
             ))}
@@ -2630,7 +2629,7 @@ function GoalDetailPanel(props: {
             <div className="flex flex-wrap gap-2">
               {item.orgLineage.map((segment) => (
                 <span key={segment.id} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                  {segment.departmentName} 쨌 {segment.title}
+                  {joinInlineParts([segment.departmentName, segment.title])}
                 </span>
               ))}
             </div>
@@ -2908,7 +2907,7 @@ function BulkEditPersonalKpiModal(props: {
             >
               {props.employeeOptions.map((employee) => (
                 <option key={employee.id} value={employee.id}>
-                  {employee.name} 쨌 {employee.departmentName}
+                  {joinInlineParts([employee.name, employee.departmentName])}
                 </option>
               ))}
             </select>
@@ -2936,7 +2935,7 @@ function BulkEditPersonalKpiModal(props: {
               <option value="">연결 해제</option>
               {props.orgKpiOptions.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {option.title} 쨌 {option.departmentName}
+                  {joinInlineParts([option.title, option.departmentName])}
                 </option>
               ))}
             </select>
@@ -3164,7 +3163,7 @@ function EditorModal(props: {
                 <option value="">연결 안 함</option>
                 {props.orgKpiOptions.map((option) => (
                   <option key={option.id} value={option.id}>
-                    {option.title} · {option.departmentName}
+                    {joinInlineParts([option.title, option.departmentName])}
                   </option>
                 ))}
               </select>

@@ -1,9 +1,32 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
+}
+
+function collectFiles(relativeDir: string): string[] {
+  const absoluteDir = path.resolve(process.cwd(), relativeDir)
+  const entries = readdirSync(absoluteDir)
+  const files: string[] = []
+
+  for (const entry of entries) {
+    const absolutePath = path.join(absoluteDir, entry)
+    const relativePath = path.relative(process.cwd(), absolutePath)
+    const stat = statSync(absolutePath)
+
+    if (stat.isDirectory()) {
+      files.push(...collectFiles(relativePath))
+      continue
+    }
+
+    if (/\.(ts|tsx)$/.test(entry)) {
+      files.push(relativePath)
+    }
+  }
+
+  return files
 }
 
 async function run(name: string, fn: () => void | Promise<void>) {
@@ -168,6 +191,15 @@ async function main() {
     assertNoBrokenKorean(performanceDesignServer)
     assertNoBrokenKorean(orgKpiClient)
     assertNoBrokenKorean(calibrationRoute)
+  })
+
+  await run('runtime product source does not contain the broken separator token', () => {
+    const runtimeFiles = ['src/components', 'src/server', 'src/lib', 'src/app'].flatMap((relativeDir) => collectFiles(relativeDir))
+
+    for (const relativePath of runtimeFiles) {
+      const source = read(relativePath)
+      assert.equal(source.includes('쨌'), false, `broken separator token should not exist in ${relativePath}`)
+    }
   })
 
   console.log('Korean copy hotfix tests completed')

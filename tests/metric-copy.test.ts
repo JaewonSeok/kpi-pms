@@ -4,6 +4,8 @@ import {
   formatEntityCount,
   formatExplicitRatio,
   formatRateBaseCopy,
+  joinHierarchyParts,
+  joinInlineParts,
 } from '../src/lib/metric-copy'
 
 function run(name: string, fn: () => void) {
@@ -46,6 +48,18 @@ run('formatExplicitRatio keeps numerator and denominator entities explicit', () 
 run('formatRateBaseCopy explains the denominator base', () => {
   assert.equal(formatRateBaseCopy('대상 인원'), '대상 인원 기준')
   assert.equal(formatRateBaseCopy('전체 KPI'), '전체 KPI 기준')
+})
+
+run('joinInlineParts uses the approved inline separator and skips empty values', () => {
+  assert.equal(joinInlineParts(['인사팀', '비용절감 및 이익 창출']), '인사팀 · 비용절감 및 이익 창출')
+  assert.equal(joinInlineParts(['경영지원본부', '', '전사 영업이익율 개선']), '경영지원본부 · 전사 영업이익율 개선')
+  assert.equal(joinInlineParts(['인사팀', undefined]), '인사팀')
+})
+
+run('joinHierarchyParts uses the approved path separator and skips empty values', () => {
+  assert.equal(joinHierarchyParts(['본부 KPI', '팀 KPI']), '본부 KPI → 팀 KPI')
+  assert.equal(joinHierarchyParts(['초안', '', '확정']), '초안 → 확정')
+  assert.equal(joinHierarchyParts([undefined, '팀 KPI']), '팀 KPI')
 })
 
 console.log('Metric copy tests completed')
