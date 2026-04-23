@@ -44,6 +44,7 @@ import {
   buildOrgKpiHierarchyStructure,
   getOrgKpiHierarchyInteractionChangedIds,
   isOrgKpiHierarchyNodeAffected,
+  isOrgKpiTopLevelDivisionGoal,
   type OrgKpiHierarchyNode,
 } from '@/lib/org-kpi-hierarchy'
 import {
@@ -2773,6 +2774,7 @@ function getOrgKpiParentSummaryText(
   } = {}
 ) {
   if (kpi.parentOrgKpiTitle) return kpi.parentOrgKpiTitle
+  if (isOrgKpiTopLevelDivisionGoal(kpi) && !options.isOrphan) return '최상위 목표'
   if (options.isDisconnected || options.isOrphan) return '연결 필요'
   if (options.hasChildren) return '최상위 목표'
   return '연결된 상위 목표 없음'
@@ -3431,6 +3433,18 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
     )
   }
 
+  const isTopLevelDivisionGoal = isOrgKpiTopLevelDivisionGoal(kpi) && !props.parentReference
+  const topLevelDivisionParentCopy = '본부 KPI는 최상위 목표로 관리되며, 별도의 상위 KPI가 없습니다.'
+  const relationshipSummaryHelper = isTopLevelDivisionGoal
+    ? '현재 목표와 연결된 하위 목표 및 실행 상태를 확인할 수 있습니다.'
+    : '상위·하위 구조와 연결 상태를 자세히 확인할 수 있습니다.'
+  const missingParentCopy = isTopLevelDivisionGoal
+    ? topLevelDivisionParentCopy
+    : '현재 KPI는 상위 목표와 아직 연결되지 않았습니다.'
+  const actualParentCopy = isTopLevelDivisionGoal
+    ? topLevelDivisionParentCopy
+    : '현재 KPI는 상위 조직 목표와 아직 연결되지 않았습니다.'
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="space-y-5">
@@ -3495,14 +3509,14 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
           value={
             kpi.parentOrgKpiTitle
               ? `${kpi.parentOrgDepartmentName ?? '상위 조직'} · ${kpi.parentOrgKpiTitle}`
-              : '현재 KPI는 상위 조직 목표와 아직 연결되지 않았습니다.'
+              : actualParentCopy
           }
         />
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="org-kpi-relationship-summary">
           <div>
             <div className="text-sm font-semibold text-slate-900">연결 현황 요약</div>
             <p className="mt-1 text-xs text-slate-500">
-              상위·하위 구조와 연결 상태를 자세히 확인할 수 있습니다.
+              {relationshipSummaryHelper}
             </p>
           </div>
 
@@ -3526,7 +3540,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                   </span>
                 </div>
               ) : (
-                <p className="mt-2">현재 KPI는 상위 목표와 아직 연결되지 않았습니다.</p>
+                <p className="mt-2">{missingParentCopy}</p>
               )}
             </div>
 

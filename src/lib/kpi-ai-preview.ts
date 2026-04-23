@@ -55,6 +55,17 @@ export type KpiAiPreviewRecommendation = {
   alignmentScore?: string
   qualityScore?: string
   recommendedPriority?: string
+  draftAngleLabel?: string
+  whyThisOption?: string
+  alignmentSummary?: string
+  primaryLinkedOrgKpiId?: string | null
+  primaryLinkedOrgKpiTitle?: string
+  secondaryLinkedOrgKpiId?: string | null
+  secondaryLinkedOrgKpiTitle?: string | null
+  divisionKpiId?: string | null
+  divisionKpiTitle?: string | null
+  teamKpiId?: string | null
+  teamKpiTitle?: string | null
 }
 
 export type KpiAiPreviewSection =
@@ -227,8 +238,10 @@ function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendati
       const category = toStringValue(item.category)
       const definition = toStringValue(item.recommendedDefinition) ?? toStringValue(item.definition)
       const formula = toStringValue(item.formula)
-      const linkedParentKpiId = toStringValue(item.linkedParentKpiId)
-      const linkedParentKpiTitle = toStringValue(item.linkedParentKpiTitle)
+      const linkedParentKpiId =
+        toStringValue(item.primaryLinkedOrgKpiId) ?? toStringValue(item.linkedParentKpiId)
+      const linkedParentKpiTitle =
+        toStringValue(item.primaryLinkedOrgKpiTitle) ?? toStringValue(item.linkedParentKpiTitle)
       const linkageReason = toStringValue(item.linkageReason) ?? toStringValue(item.linkageExplanation)
       const metricSource = toStringValue(item.metricSource)
       const whyThisIsHighQuality = toStringValue(item.whyThisIsHighQuality)
@@ -284,6 +297,18 @@ function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendati
         alignmentScore: toNumberString(item.alignmentScore) ?? undefined,
         qualityScore: toNumberString(item.qualityScore) ?? undefined,
         recommendedPriority: toNumberString(item.recommendedPriority) ?? undefined,
+        draftAngleLabel: toStringValue(item.draftAngleLabel) ?? undefined,
+        whyThisOption: toStringValue(item.whyThisOption) ?? undefined,
+        alignmentSummary: toStringValue(item.alignmentSummary) ?? undefined,
+        primaryLinkedOrgKpiId: toStringValue(item.primaryLinkedOrgKpiId) ?? linkedParentKpiId ?? undefined,
+        primaryLinkedOrgKpiTitle:
+          toStringValue(item.primaryLinkedOrgKpiTitle) ?? linkedParentKpiTitle ?? undefined,
+        secondaryLinkedOrgKpiId: toStringValue(item.secondaryLinkedOrgKpiId) ?? undefined,
+        secondaryLinkedOrgKpiTitle: toStringValue(item.secondaryLinkedOrgKpiTitle) ?? undefined,
+        divisionKpiId: toStringValue(item.divisionKpiId) ?? undefined,
+        divisionKpiTitle: toStringValue(item.divisionKpiTitle) ?? undefined,
+        teamKpiId: toStringValue(item.teamKpiId) ?? undefined,
+        teamKpiTitle: toStringValue(item.teamKpiTitle) ?? undefined,
         },
       ]
     })

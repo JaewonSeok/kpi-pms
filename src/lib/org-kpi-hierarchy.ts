@@ -303,6 +303,17 @@ export function getOrgKpiConnectionTone(kpi: OrgKpiViewModel) {
   return 'neutral'
 }
 
+export function isOrgKpiTopLevelDivisionGoal(
+  kpi: Pick<OrgKpiViewModel, 'scope' | 'parentOrgKpiId' | 'parentOrgKpiTitle' | 'parentReference'>
+) {
+  return (
+    kpi.scope === 'division' &&
+    !kpi.parentOrgKpiId &&
+    !kpi.parentOrgKpiTitle &&
+    !kpi.parentReference
+  )
+}
+
 export function buildOrgKpiStructureSummary(
   kpi: OrgKpiViewModel,
   options: {

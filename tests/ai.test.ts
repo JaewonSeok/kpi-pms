@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import './register-path-aliases'
 
 process.env.DATABASE_URL ||= 'postgresql://postgres:password@localhost:5432/kpi_pms'
 process.env.OPENAI_INPUT_COST_PER_1M = '0.5'
@@ -78,6 +79,11 @@ async function main() {
     isAiFeatureEnabled,
     sanitizeAiPayload,
   } = await import('../src/lib/ai-assist')
+  const {
+    buildPersonalKpiDraftFallbackResult,
+    mapPersonalKpiDraftStatusLabel,
+  } = await import('../src/lib/personal-kpi-ai-draft')
+  const { PersonalKpiAiActionSchema } = await import('../src/lib/validations')
 
   run('PII sanitization removes direct identifiers and redacts free text', () => {
     const sanitized = sanitizeAiPayload({
@@ -143,13 +149,91 @@ async function main() {
     const orgAlignmentSchemaObject = extractSchemaObject(source, 'ORG_KPI_ALIGNMENT_SCHEMA')
 
     assert.equal(personalDraftSchema.includes("'formula'"), true)
-    assert.equal(personalDraftSchema.includes("formula: { type: ['string', 'null'] }"), true)
+    assert.equal(personalDraftSchema.includes("formula: { type: 'string' }"), true)
+    assert.equal(personalDraftSchema.includes("'recommendations'"), true)
+    assert.equal(personalDraftSchema.includes('minItems: 3'), true)
+    assert.equal(personalDraftSchema.includes('maxItems: 5'), true)
+    assert.equal(personalDraftSchema.includes("'draftAngleLabel'"), true)
+    assert.equal(personalDraftSchema.includes("'primaryLinkedOrgKpiTitle'"), true)
     assert.equal(personalDuplicateSchema.includes("required: ['id', 'title', 'overlapLevel', 'similarityReason']"), true)
     assert.equal(personalDuplicateSchema.includes("id: { type: ['string', 'null'] }"), true)
     assert.equal(orgDuplicateSchema.includes("required: ['id', 'title', 'overlapLevel', 'similarityReason']"), true)
     assert.equal(orgDuplicateSchema.includes("id: { type: ['string', 'null'] }"), true)
     assertStrictSchemaRequiredParity(orgDraftSchemaObject)
     assertStrictSchemaRequiredParity(orgAlignmentSchemaObject)
+  })
+
+  run('personal KPI draft fallback builder returns distinct angle-labelled options', () => {
+    const fallback = buildPersonalKpiDraftFallbackResult({
+      currentDraft: {
+        title: '고객 문의 응답 고도화',
+        definition: '고객 문의 응답 흐름을 개선합니다.',
+        formula: '기한 내 처리 건수 / 전체 처리 건수 x 100',
+        unit: '%',
+        weight: 20,
+        difficulty: 'MEDIUM',
+        category: '운영 실행',
+      },
+      employeeProfile: {
+        departmentLabel: '고객경험팀',
+        roleLabel: 'ROLE_MEMBER',
+        positionLabel: 'MEMBER',
+        jobTitleText: '고객경험 매니저',
+      },
+      orgKpiName: '고객 문의 응답 체계 고도화',
+      orgCascade: {
+        pathLabels: ['고객지원본부 · 고객 경험 품질 고도화', '고객경험팀 · 고객 문의 응답 체계 고도화'],
+        linkedGoal: { title: '고객 문의 응답 체계 고도화' },
+        divisionGoal: { title: '고객 경험 품질 고도화' },
+        teamGoal: { title: '고객 문의 응답 체계 고도화' },
+      },
+    })
+
+    assert.equal(fallback.recommendations.length >= 3, true)
+    assert.equal(new Set(fallback.recommendations.map((item) => item.draftAngleLabel)).size, fallback.recommendations.length)
+  })
+
+  run('personal KPI draft status labels are mapped for preview badges', () => {
+    assert.equal(mapPersonalKpiDraftStatusLabel('recommended'), '추천')
+    assert.equal(mapPersonalKpiDraftStatusLabel('warning'), '주의')
+    assert.equal(mapPersonalKpiDraftStatusLabel('review'), '검토 필요')
+  })
+
+  run('personal KPI AI draft validation requires employee and linked org KPI context', () => {
+    const missingEmployee = PersonalKpiAiActionSchema.safeParse({
+      action: 'generate-draft',
+      payload: {
+        selectedYear: 2026,
+        linkedOrgKpiId: 'org-team-1',
+      },
+    })
+    const missingLinkedGoal = PersonalKpiAiActionSchema.safeParse({
+      action: 'generate-draft',
+      payload: {
+        selectedYear: 2026,
+        employeeId: 'employee-1',
+      },
+    })
+    const validDraftRequest = PersonalKpiAiActionSchema.safeParse({
+      action: 'generate-draft',
+      payload: {
+        selectedYear: 2026,
+        employeeId: 'employee-1',
+        linkedOrgKpiId: 'org-team-1',
+      },
+    })
+
+    assert.equal(missingEmployee.success, false)
+    assert.equal(
+      missingEmployee.success ? '' : missingEmployee.error.issues[0]?.message,
+      'AI 초안 생성을 위해 대상 직원을 먼저 선택해 주세요.'
+    )
+    assert.equal(missingLinkedGoal.success, false)
+    assert.equal(
+      missingLinkedGoal.success ? '' : missingLinkedGoal.error.issues[0]?.message,
+      'AI 초안 생성을 위해 연계 조직 KPI를 먼저 선택해 주세요.'
+    )
+    assert.equal(validDraftRequest.success, true)
   })
 
   console.log('AI assistant tests completed')

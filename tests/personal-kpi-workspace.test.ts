@@ -964,6 +964,40 @@ async function main() {
     assert.equal(source.includes('appendCoachDraft('), true)
   })
 
+  await run('personal KPI AI draft payload now carries real cascade and existing KPI context instead of a shallow single-title prompt', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const serverSource = read('src/server/ai/personal-kpi.ts')
+
+    assert.equal(source.includes('employeeProfile:'), true)
+    assert.equal(source.includes('linkedOrgKpiId,'), true)
+    assert.equal(source.includes('orgLineage:'), true)
+    assert.equal(source.includes('existingPersonalKpis:'), true)
+    assert.equal(serverSource.includes('loadOrgKpiCascade('), true)
+    assert.equal(serverSource.includes('divisionGoal:'), true)
+    assert.equal(serverSource.includes('teamGoal:'), true)
+    assert.equal(serverSource.includes('teamRecommendationContext:'), true)
+    assert.equal(serverSource.includes('businessContext:'), true)
+    assert.equal(serverSource.includes("sourceType: 'PersonalKpiDraft'"), true)
+  })
+
+  await run('personal KPI AI preview now supports selecting truly different draft options with cascade-aware labels', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const previewSource = read('src/components/kpi/KpiAiPreviewPanel.tsx')
+
+    assert.equal(source.includes('extractKpiAiPreviewRecommendations'), true)
+    assert.equal(source.includes('selectedAiRecommendationIndex'), true)
+    assert.equal(source.includes('handleSelectAiRecommendation'), true)
+    assert.equal(source.includes('AiRecommendationSwitchDialog'), true)
+    assert.equal(previewSource.includes('초안 유형'), true)
+    assert.equal(previewSource.includes('정렬 기준'), true)
+    assert.equal(previewSource.includes('추천 이유'), true)
+    assert.equal(previewSource.includes('연계 조직 KPI'), true)
+    assert.equal(previewSource.includes('본부 KPI'), true)
+    assert.equal(previewSource.includes('팀 KPI'), true)
+    assert.equal(previewSource.includes('이 초안 적용'), true)
+    assert.equal(source.includes('다른 관점으로 다시 생성'), true)
+  })
+
   console.log('Personal KPI workspace tests completed')
 }
 

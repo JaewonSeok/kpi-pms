@@ -315,7 +315,17 @@ function renderSection(
       )
     case 'recommendations':
       return (
-        <SectionCard key={section.key} title={section.title} helper="상위 본부 KPI와 직접 연결되는 팀 KPI 추천안을 우선순위 순서대로 검토할 수 있습니다.">
+        <SectionCard
+          key={section.key}
+          title={section.title}
+          helper={
+            section.items.some(
+              (item) => item.draftAngleLabel || item.alignmentSummary || item.divisionKpiTitle || item.teamKpiTitle,
+            )
+              ? '본부 KPI와 팀 KPI 흐름 안에서 서로 다른 실행 관점의 개인 KPI 초안을 비교할 수 있습니다.'
+              : '상위 본부 KPI와 직접 연결되는 팀 KPI 추천안을 우선순위 순서대로 검토할 수 있습니다.'
+          }
+        >
           <div className="space-y-3">
             {section.items.map((item, index) => (
               <div key={`${section.key}-${item.title}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -325,6 +335,11 @@ function renderSection(
                       <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white">
                         추천 {item.recommendedPriority ?? String(index + 1)}
                       </span>
+                      {item.draftAngleLabel ? (
+                        <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+                          초안 유형 {item.draftAngleLabel}
+                        </span>
+                      ) : null}
                       {item.difficultyLevel ? (
                         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600">
                           난이도 {item.difficultyLevel}
@@ -366,6 +381,42 @@ function renderSection(
                   </div>
                 </div>
 
+                {item.draftAngleLabel || item.alignmentSummary || item.whyThisOption || item.divisionKpiTitle || item.teamKpiTitle ? (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {item.alignmentSummary ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">정렬 기준</div>
+                        <ExpandableText value={item.alignmentSummary} previewLength={180} className="mt-2" />
+                      </div>
+                    ) : null}
+                    {item.whyThisOption ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">추천 이유</div>
+                        <ExpandableText value={item.whyThisOption} previewLength={180} className="mt-2" />
+                      </div>
+                    ) : null}
+                    {(item.primaryLinkedOrgKpiTitle || item.divisionKpiTitle || item.teamKpiTitle) ? (
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">연계 조직 KPI</div>
+                        <div className="mt-2 space-y-2 text-sm text-slate-700">
+                          <div>
+                            <span className="font-semibold text-slate-900">기준 KPI</span>
+                            <p className="mt-1">{item.primaryLinkedOrgKpiTitle ?? item.linkedParentKpiTitle}</p>
+                          </div>
+                          <div>
+                            <span className="font-semibold text-slate-900">본부 KPI</span>
+                            <p className="mt-1">{item.divisionKpiTitle ?? '-'}</p>
+                          </div>
+                          <div>
+                            <span className="font-semibold text-slate-900">팀 KPI</span>
+                            <p className="mt-1">{item.teamKpiTitle ?? item.primaryLinkedOrgKpiTitle ?? item.linkedParentKpiTitle}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {(item.alignmentScore || item.qualityScore) ? (
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     {item.alignmentScore ? (
@@ -386,13 +437,18 @@ function renderSection(
                   <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
                     {(() => {
                       const isCurrentRecommendation = recommendationUi.selectedRecommendationIndex === index
-                      const buttonLabel = isCurrentRecommendation
-                        ? recommendationUi.isRecommendationDraftOpen
-                          ? '현재 초안에 반영됨'
-                          : '이 추천안으로 다시 채우기'
-                        : recommendationUi.selectedRecommendationIndex !== null
-                          ? '이 추천안으로 다시 채우기'
-                          : recommendationUi.recommendationActionLabel ?? '이 추천안으로 작성'
+                      const isPersonalDraftOption = Boolean(
+                        item.draftAngleLabel || item.alignmentSummary || item.divisionKpiTitle || item.teamKpiTitle,
+                      )
+                      const buttonLabel = isPersonalDraftOption
+                        ? recommendationUi.recommendationActionLabel ?? '이 초안 적용'
+                        : isCurrentRecommendation
+                          ? recommendationUi.isRecommendationDraftOpen
+                            ? '현재 초안에 반영됨'
+                            : '이 추천안으로 다시 채우기'
+                          : recommendationUi.selectedRecommendationIndex !== null
+                            ? '이 추천안으로 다시 채우기'
+                            : recommendationUi.recommendationActionLabel ?? '이 추천안으로 작성'
 
                       return (
                     <button

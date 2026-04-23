@@ -31,7 +31,11 @@ import {
   getPersonalKpiDeleteActionState,
   resolveNextPersonalKpiSelectionAfterDelete,
 } from '@/lib/personal-kpi-delete'
-import type { KpiAiPreviewComparison } from '@/lib/kpi-ai-preview'
+import {
+  extractKpiAiPreviewRecommendations,
+  type KpiAiPreviewComparison,
+  type KpiAiPreviewRecommendation,
+} from '@/lib/kpi-ai-preview'
 import { isAllowedMonthlyEvidenceUrl, type MonthlyAttachmentItem } from '@/lib/monthly-attachments'
 import type {
   PersonalKpiAiLogItem,
@@ -472,33 +476,88 @@ function buildAiPayload(
   action: AiAction,
   candidates: PersonalKpiViewModel[]
 ) {
+  const targetEmployeeId = selectedKpi?.employeeId ?? form.employeeId ?? props.selectedEmployeeId
+  const selectedEmployee =
+    props.employeeOptions.find((item) => item.id === targetEmployeeId) ??
+    props.employeeOptions.find((item) => item.id === props.selectedEmployeeId)
+  const linkedOrgKpiId = selectedKpi?.orgKpiId ?? form.linkedOrgKpiId
+  const linkedOrgKpi = props.orgKpiOptions.find((item) => item.id === linkedOrgKpiId)
+  const currentTitle = selectedKpi?.title ?? form.kpiName
+
   return {
     action,
-    employeeName: props.actor.name,
-    departmentName: props.actor.departmentName,
-    role: props.actor.role,
-    kpiName: selectedKpi?.title ?? form.kpiName,
-    goal: selectedKpi?.title ?? form.kpiName,
+    selectedYear: props.selectedYear,
+    selectedCycleId: props.selectedCycleId ?? null,
+    employeeId: targetEmployeeId,
+    employeeProfile: {
+      displayLabel: selectedEmployee ? `${selectedEmployee.departmentName} ${selectedEmployee.name}` : props.actor.name,
+      departmentLabel: selectedEmployee?.departmentName ?? props.actor.departmentName,
+      roleLabel: selectedEmployee?.role ?? props.actor.role,
+    },
+    currentKpiId: selectedKpi?.id ?? null,
+    kpiName: currentTitle,
+    goal: currentTitle,
     definition: selectedKpi?.definition ?? form.definition,
     formula: selectedKpi?.formula ?? form.formula,
     targetValue: selectedKpi?.targetValue ?? toNumberOrUndefined(form.targetValue) ?? form.targetValue,
     unit: selectedKpi?.unit ?? form.unit,
     weight: selectedKpi?.weight ?? toNumberOrUndefined(form.weight) ?? form.weight,
     kpiType: selectedKpi?.type ?? form.kpiType,
-    orgKpiName: selectedKpi?.orgKpiTitle ?? props.orgKpiOptions.find((item) => item.id === form.linkedOrgKpiId)?.title,
+    linkedOrgKpiId,
+    orgKpiName: selectedKpi?.orgKpiTitle ?? linkedOrgKpi?.title,
     orgKpiCategory:
       selectedKpi?.orgKpiCategory ??
-      props.orgKpiOptions.find((item) => item.id === form.linkedOrgKpiId)?.category,
+      linkedOrgKpi?.category,
     reviewComment: selectedKpi?.reviewComment,
+    orgLineage: selectedKpi?.orgLineage.map((item) => ({
+      id: item.id,
+      title: item.title,
+      departmentLabel: item.departmentName,
+    })) ?? [],
+    currentDraft: {
+      title: currentTitle,
+      definition: selectedKpi?.definition ?? form.definition,
+      formula: selectedKpi?.formula ?? form.formula,
+      targetValue: selectedKpi?.targetValue ?? toNumberOrUndefined(form.targetValue) ?? form.targetValue,
+      unit: selectedKpi?.unit ?? form.unit,
+      weight: selectedKpi?.weight ?? toNumberOrUndefined(form.weight) ?? form.weight,
+      difficulty: selectedKpi?.difficulty ?? form.difficulty,
+      category: selectedKpi?.orgKpiCategory ?? linkedOrgKpi?.category ?? null,
+    },
     recentMonthlyRecords: selectedKpi?.recentMonthlyRecords ?? [],
-    candidates: candidates.map((item) => ({
+    existingPersonalKpis: candidates.map((item) => ({
       id: item.id,
       title: item.title,
       definition: item.definition,
+      formula: item.formula,
       type: item.type,
       weight: item.weight,
+      status: item.status,
+      orgKpiTitle: item.orgKpiTitle,
+      orgLineage: item.orgLineage.map((node) => `${node.departmentName} · ${node.title}`).join(' → '),
     })),
   }
+}
+
+function normalizeKpiForm(form: KpiForm) {
+  return {
+    employeeId: form.employeeId.trim(),
+    evalYear: form.evalYear,
+    kpiType: form.kpiType,
+    kpiName: form.kpiName.trim(),
+    tags: form.tags.trim(),
+    definition: form.definition.trim(),
+    formula: form.formula.trim(),
+    targetValue: form.targetValue.trim(),
+    unit: form.unit.trim(),
+    weight: form.weight.trim(),
+    difficulty: form.difficulty,
+    linkedOrgKpiId: form.linkedOrgKpiId.trim(),
+  }
+}
+
+function areKpiFormsEqual(left: KpiForm, right: KpiForm) {
+  return JSON.stringify(normalizeKpiForm(left)) === JSON.stringify(normalizeKpiForm(right))
 }
 
 function applyPreviewToForm(form: KpiForm, preview: Record<string, unknown>) {
@@ -519,6 +578,31 @@ function applyPreviewToForm(form: KpiForm, preview: Record<string, unknown>) {
   }
 }
 
+function applyRecommendationToForm(
+  form: KpiForm,
+  recommendation: KpiAiPreviewRecommendation
+) {
+  const difficulty = toStringValue(recommendation.difficultyLevel, form.difficulty)
+  const nextDifficulty = ['HIGH', 'MEDIUM', 'LOW'].includes(difficulty)
+    ? (difficulty as KpiForm['difficulty'])
+    : form.difficulty
+
+  return {
+    ...form,
+    kpiName: recommendation.title || form.kpiName,
+    definition: recommendation.definition || form.definition,
+    formula: recommendation.formula || form.formula,
+    targetValue: toStringValue(recommendation.targetValueE ?? recommendation.targetText, form.targetValue),
+    unit: toStringValue(recommendation.unit, form.unit),
+    weight: toStringValue(recommendation.weightSuggestion, form.weight),
+    difficulty: nextDifficulty,
+    linkedOrgKpiId:
+      recommendation.primaryLinkedOrgKpiId ??
+      recommendation.linkedParentKpiId ??
+      form.linkedOrgKpiId,
+  }
+}
+
 function isDraftStatus(status?: PersonalKpiViewModel['status']) {
   return status === 'DRAFT'
 }
@@ -527,6 +611,7 @@ function buildAiActionState(params: {
   action: AiAction
   canUseAi: boolean
   selectedKpi?: PersonalKpiViewModel
+  linkedOrgKpiId?: string
   reviewQueueCount: number
   totalKpiCount: number
 }): AiActionState {
@@ -535,11 +620,16 @@ function buildAiActionState(params: {
       disabled: true,
       reason: '현재 조건에서는 AI 보조를 사용할 수 없습니다.',
     }
-  }
+    }
 
   switch (params.action) {
     case 'generate-draft':
-      return { disabled: false }
+      return params.selectedKpi?.orgKpiId || params.selectedKpi?.orgLineage.length || params.linkedOrgKpiId
+        ? { disabled: false }
+        : {
+            disabled: true,
+            reason: '연계된 조직 KPI를 선택한 뒤 AI 초안 생성을 실행해 주세요.',
+          }
     case 'detect-duplicates':
       return params.totalKpiCount > 0
         ? { disabled: false }
@@ -651,6 +741,7 @@ export function PersonalKpiManagementClient(props: Props) {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>('create')
   const [form, setForm] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
+  const [formBaseline, setFormBaseline] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
   const [cloneOpen, setCloneOpen] = useState(false)
   const [cloneForm, setCloneForm] = useState<PersonalCloneForm>(buildCloneForm(props))
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
@@ -659,6 +750,10 @@ export function PersonalKpiManagementClient(props: Props) {
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
+  const [selectedAiRecommendationIndex, setSelectedAiRecommendationIndex] = useState<number | null>(null)
+  const [pendingAiRecommendationIndex, setPendingAiRecommendationIndex] = useState<number | null>(null)
+  const [showAiRecommendationSwitchConfirm, setShowAiRecommendationSwitchConfirm] = useState(false)
+  const [approvedAiRequestLogIds, setApprovedAiRequestLogIds] = useState<string[]>([])
   const [reviewNote, setReviewNote] = useState('')
   const [evidenceDrafts, setEvidenceDrafts] = useState<Record<string, EvidenceDraft>>(() =>
     Object.fromEntries(props.mine.map((item) => [item.id, createEvidenceDraft(item)]))
@@ -714,7 +809,9 @@ export function PersonalKpiManagementClient(props: Props) {
         : props.mine[0]?.id ?? ''
     )
     setSelectedReviewId(props.reviewQueue[0]?.id ?? '')
-    setForm(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
+    const emptyForm = buildEmptyForm(props.selectedYear, props.selectedEmployeeId)
+    setForm(emptyForm)
+    setFormBaseline(emptyForm)
     setEditorOpen(false)
     setEditorMode('create')
     setCloneOpen(false)
@@ -723,6 +820,10 @@ export function PersonalKpiManagementClient(props: Props) {
     setBulkEditForm(buildBulkEditForm(props))
     setShowDeleteConfirm(false)
     setAiPreview(null)
+    setSelectedAiRecommendationIndex(null)
+    setPendingAiRecommendationIndex(null)
+    setShowAiRecommendationSwitchConfirm(false)
+    setApprovedAiRequestLogIds([])
     setEvidenceDrafts(Object.fromEntries(props.mine.map((item) => [item.id, createEvidenceDraft(item)])))
     setMidcheckCoachPreviews({})
     setMidcheckCoachErrors({})
@@ -801,6 +902,7 @@ export function PersonalKpiManagementClient(props: Props) {
         action: item.action,
         canUseAi: props.permissions.canUseAi,
         selectedKpi,
+        linkedOrgKpiId: form.linkedOrgKpiId,
         reviewQueueCount: props.reviewQueue.length,
         totalKpiCount: mineItems.length,
       }),
@@ -808,6 +910,62 @@ export function PersonalKpiManagementClient(props: Props) {
   ) as Record<AiAction, AiActionState>
   const goalEditLocked =
     props.alerts?.some((alert) => alert.title.includes('읽기 전용 모드')) ?? false
+  const aiPreviewRecommendations = useMemo(
+    () => (aiPreview?.action === 'generate-draft' ? extractKpiAiPreviewRecommendations(aiPreview.result) : []),
+    [aiPreview]
+  )
+
+  function openEditorWithForm(mode: EditorMode, nextForm: KpiForm) {
+    setEditorMode(mode)
+    setForm(nextForm)
+    setFormBaseline(nextForm)
+    setEditorOpen(true)
+  }
+
+  function applyAiRecommendationToEditor(recommendationIndex: number) {
+    const recommendation = aiPreviewRecommendations[recommendationIndex]
+    if (!recommendation) {
+      setBanner({ tone: 'error', message: '적용할 AI 초안을 찾지 못했습니다. 다시 생성해 주세요.' })
+      return
+    }
+
+    const nextForm = applyRecommendationToForm(form, recommendation)
+    openEditorWithForm(selectedKpi ? 'edit' : 'create', nextForm)
+    setSelectedAiRecommendationIndex(recommendationIndex)
+    setPendingAiRecommendationIndex(null)
+    setShowAiRecommendationSwitchConfirm(false)
+    setBanner({
+      tone: 'success',
+      message: '선택한 AI 초안을 편집기에 반영했습니다. 저장 전에 내용을 확인해 주세요.',
+    })
+  }
+
+  async function ensureAiPreviewApproved() {
+    if (!aiPreview) {
+      throw new Error('AI 미리보기 정보가 없습니다.')
+    }
+
+    if (approvedAiRequestLogIds.includes(aiPreview.requestLogId)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/ai/request-logs/${aiPreview.requestLogId}/decision`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', approvedPayload: aiPreview.result }),
+      })
+      await parseJsonOrThrow(response)
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('already been decided')) {
+        throw error
+      }
+    }
+
+    setApprovedAiRequestLogIds((current) =>
+      current.includes(aiPreview.requestLogId) ? current : [...current, aiPreview.requestLogId]
+    )
+  }
 
   const submitCtaState = goalEditLocked
     ? {
@@ -916,10 +1074,11 @@ export function PersonalKpiManagementClient(props: Props) {
 
     const transition = getPersonalKpiHeroCtaTransition('create')
     setActiveTab(transition.nextTab)
-    setEditorMode('create')
-    setForm(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
+    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
     setAiPreview(null)
-    setEditorOpen(true)
+    setSelectedAiRecommendationIndex(null)
+    setPendingAiRecommendationIndex(null)
+    setShowAiRecommendationSwitchConfirm(false)
   }
 
   function handleOpenClone() {
@@ -1139,6 +1298,7 @@ export function PersonalKpiManagementClient(props: Props) {
             })
 
       const saved = await parseJsonOrThrow<{ id: string; employeeId: string }>(response)
+      setFormBaseline(form)
       setEditorOpen(false)
       setSelectedKpiId(saved.id)
       handleRouteSelection({
@@ -1260,6 +1420,9 @@ export function PersonalKpiManagementClient(props: Props) {
       setSelectedKpiId(nextSelectedId)
       setShowDeleteConfirm(false)
       setAiPreview(null)
+      setSelectedAiRecommendationIndex(null)
+      setPendingAiRecommendationIndex(null)
+      setShowAiRecommendationSwitchConfirm(false)
       setBanner({ tone: 'success', message: '개인 KPI를 삭제했습니다.' })
 
       const query = buildSearch({
@@ -1377,6 +1540,9 @@ export function PersonalKpiManagementClient(props: Props) {
 
     if (!props.permissions.canUseAi) {
       setAiPreview(null)
+      setSelectedAiRecommendationIndex(null)
+      setPendingAiRecommendationIndex(null)
+      setShowAiRecommendationSwitchConfirm(false)
       setBanner({
         tone: 'info',
         message: '현재 계정은 AI 보조를 사용할 수 없습니다. 기본 작성 가이드를 확인해주세요.',
@@ -1403,6 +1569,14 @@ export function PersonalKpiManagementClient(props: Props) {
       }>(response)
 
       setAiPreview({ ...data, action })
+      setSelectedAiRecommendationIndex(
+        action === 'generate-draft' && extractKpiAiPreviewRecommendations(data.result).length ? 0 : null
+      )
+      setPendingAiRecommendationIndex(null)
+      setShowAiRecommendationSwitchConfirm(false)
+      setApprovedAiRequestLogIds((current) =>
+        current.filter((requestLogId) => requestLogId !== data.requestLogId)
+      )
       setBanner({
         tone: data.source === 'ai' ? 'success' : 'info',
         message:
@@ -1418,9 +1592,8 @@ export function PersonalKpiManagementClient(props: Props) {
   }
 
   async function handleApproveAiPreview() {
-    if (!aiPreview) return
-    setBusyAction('ai-decision')
-    setBanner(null)
+    return handleApplyAiPreview()
+    /*
 
     try {
       const response = await fetch(`/api/ai/request-logs/${aiPreview.requestLogId}/decision`, {
@@ -1447,6 +1620,121 @@ export function PersonalKpiManagementClient(props: Props) {
     }
   }
 
+  async function handleApplyAiPreview() {
+    if (!aiPreview) return
+    setBusyAction('ai-decision')
+    setBanner(null)
+
+    try {
+      if (aiPreview.action === 'generate-draft' && aiPreviewRecommendations.length) {
+        const recommendationIndex = selectedAiRecommendationIndex ?? 0
+        if (editorOpen && !areKpiFormsEqual(form, formBaseline)) {
+          setPendingAiRecommendationIndex(recommendationIndex)
+          setShowAiRecommendationSwitchConfirm(true)
+          return
+        }
+
+        await ensureAiPreviewApproved()
+        applyAiRecommendationToEditor(recommendationIndex)
+      } else {
+        await ensureAiPreviewApproved()
+
+        if (aiPreview.action === 'generate-draft' || aiPreview.action === 'improve-wording') {
+          openEditorWithForm(selectedKpi ? 'edit' : 'create', applyPreviewToForm(form, aiPreview.result))
+        }
+
+        setBanner({
+          tone: 'success',
+          message: 'AI 제안을 편집기에 반영했습니다. 저장 전에 내용을 확인해 주세요.',
+        })
+      }
+    } catch (error) {
+      setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'AI 제안을 적용하지 못했습니다.' })
+    } finally {
+      setBusyAction(null)
+    }
+    */
+  }
+
+  async function handleApplyAiPreview() {
+    if (!aiPreview) return
+    setBusyAction('ai-decision')
+    setBanner(null)
+
+    try {
+      if (aiPreview.action === 'generate-draft' && aiPreviewRecommendations.length) {
+        const recommendationIndex = selectedAiRecommendationIndex ?? 0
+        if (editorOpen && !areKpiFormsEqual(form, formBaseline)) {
+          setPendingAiRecommendationIndex(recommendationIndex)
+          setShowAiRecommendationSwitchConfirm(true)
+          return
+        }
+
+        await ensureAiPreviewApproved()
+        applyAiRecommendationToEditor(recommendationIndex)
+      } else {
+        await ensureAiPreviewApproved()
+
+        if (aiPreview.action === 'generate-draft' || aiPreview.action === 'improve-wording') {
+          openEditorWithForm(selectedKpi ? 'edit' : 'create', applyPreviewToForm(form, aiPreview.result))
+        }
+
+        setBanner({
+          tone: 'success',
+          message: 'AI 제안을 편집기에 반영했습니다. 저장 전에 내용을 확인해 주세요.',
+        })
+      }
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'AI 제안을 적용하지 못했습니다.',
+      })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleSelectAiRecommendation(_recommendation: KpiAiPreviewRecommendation, index: number) {
+    if (!aiPreview) return
+
+    if (editorOpen && !areKpiFormsEqual(form, formBaseline)) {
+      setPendingAiRecommendationIndex(index)
+      setShowAiRecommendationSwitchConfirm(true)
+      return
+    }
+
+    setBusyAction('ai-decision')
+    setBanner(null)
+
+    try {
+      await ensureAiPreviewApproved()
+      applyAiRecommendationToEditor(index)
+    } catch (error) {
+      setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'AI 초안을 적용하지 못했습니다.' })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function handleConfirmAiRecommendationSwitch() {
+    if (pendingAiRecommendationIndex === null) {
+      setShowAiRecommendationSwitchConfirm(false)
+      return
+    }
+
+    setBusyAction('ai-decision')
+    setBanner(null)
+
+    try {
+      await ensureAiPreviewApproved()
+      applyAiRecommendationToEditor(pendingAiRecommendationIndex)
+    } catch (error) {
+      setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'AI 초안을 적용하지 못했습니다.' })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function handleRejectAiPreview() {
     if (!aiPreview) return
     setBusyAction('ai-decision')
@@ -1463,6 +1751,9 @@ export function PersonalKpiManagementClient(props: Props) {
       })
       await parseJsonOrThrow(response)
       setAiPreview(null)
+      setSelectedAiRecommendationIndex(null)
+      setPendingAiRecommendationIndex(null)
+      setShowAiRecommendationSwitchConfirm(false)
       setBanner({ tone: 'info', message: 'AI 제안을 반려했습니다.' })
     } catch (error) {
       setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'AI 제안을 반려하지 못했습니다.' })
@@ -1486,10 +1777,11 @@ export function PersonalKpiManagementClient(props: Props) {
       return
     }
     setSelectedKpiId(kpi.id)
-    setEditorMode('edit')
-    setForm(buildFormFromKpi(kpi))
+    openEditorWithForm('edit', buildFormFromKpi(kpi))
     setAiPreview(null)
-    setEditorOpen(true)
+    setSelectedAiRecommendationIndex(null)
+    setPendingAiRecommendationIndex(null)
+    setShowAiRecommendationSwitchConfirm(false)
   }
 
   function updateSelectedEvidenceDraft(patch: Partial<EvidenceDraft>) {
@@ -1849,6 +2141,9 @@ export function PersonalKpiManagementClient(props: Props) {
               onRun={handleRunAi}
               onApprove={handleApproveAiPreview}
               onReject={handleRejectAiPreview}
+              onSelectRecommendation={handleSelectAiRecommendation}
+              selectedRecommendationIndex={selectedAiRecommendationIndex}
+              isRecommendationDraftOpen={editorOpen}
               decisionBusy={busyAction === 'ai-decision'}
             />
           ) : null}
@@ -1885,6 +2180,9 @@ export function PersonalKpiManagementClient(props: Props) {
               onRun={handleRunAi}
               onApprove={handleApproveAiPreview}
               onReject={handleRejectAiPreview}
+              onSelectRecommendation={handleSelectAiRecommendation}
+              selectedRecommendationIndex={selectedAiRecommendationIndex}
+              isRecommendationDraftOpen={editorOpen}
               decisionBusy={busyAction === 'ai-decision'}
             />
           ) : null}
@@ -1934,6 +2232,16 @@ export function PersonalKpiManagementClient(props: Props) {
           busy={busyAction === 'delete'}
           onClose={() => setShowDeleteConfirm(false)}
           onConfirm={handleDeleteKpi}
+        />
+      ) : null}
+      {showAiRecommendationSwitchConfirm ? (
+        <AiRecommendationSwitchDialog
+          busy={busyAction === 'ai-decision'}
+          onClose={() => {
+            setPendingAiRecommendationIndex(null)
+            setShowAiRecommendationSwitchConfirm(false)
+          }}
+          onConfirm={handleConfirmAiRecommendationSwitch}
         />
       ) : null}
       {riskDialog}
@@ -2584,6 +2892,9 @@ function AiSection(props: {
   onRun: (action: AiAction) => void
   onApprove: () => void
   onReject: () => void
+  onSelectRecommendation: (item: KpiAiPreviewRecommendation, index: number) => void
+  selectedRecommendationIndex: number | null
+  isRecommendationDraftOpen: boolean
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
@@ -2634,9 +2945,15 @@ function AiSection(props: {
             emptyDescription="왼쪽에서 AI 기능을 실행하면 이 영역에 preview가 표시됩니다."
             onApprove={props.onApprove}
             onReject={props.onReject}
-            approveLabel="제안 적용"
+            approveLabel="선택한 초안 적용"
             rejectLabel="제안 반려"
+            onRetry={props.preview.action === 'generate-draft' ? () => props.onRun('generate-draft') : undefined}
+            retryLabel={props.preview.action === 'generate-draft' ? '다른 관점으로 다시 생성' : '다시 시도'}
             decisionBusy={props.decisionBusy}
+            onSelectRecommendation={props.preview.action === 'generate-draft' ? props.onSelectRecommendation : undefined}
+            selectedRecommendationIndex={props.selectedRecommendationIndex}
+            recommendationActionLabel="이 초안 적용"
+            isRecommendationDraftOpen={props.isRecommendationDraftOpen}
           />
           {props.preview ? <div className="hidden space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -3595,6 +3912,57 @@ function DeletePersonalKpiDialog(props: {
               disabled={props.busy}
               variant="destructive"
               testId="personal-kpi-delete-confirm"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AiRecommendationSwitchDialog(props: {
+  busy: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+      <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">다른 AI 초안으로 바꾸기</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              현재 편집 중인 내용이 있습니다. 선택한 AI 초안으로 바꾸면 아직 저장하지 않은 변경 내용이 사라질 수 있습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={props.onClose}
+            disabled={props.busy}
+            className="rounded-full p-2 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+            저장하지 않은 변경 사항이 있으면 먼저 저장하거나, 지금 선택한 AI 초안으로 덮어써 주세요.
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <ActionButton
+              label="현재 내용 유지"
+              icon={<X className="h-4 w-4" />}
+              onClick={props.onClose}
+              disabled={props.busy}
+              variant="secondary"
+            />
+            <ActionButton
+              label={props.busy ? '적용 중...' : '이 초안으로 바꾸기'}
+              icon={<Sparkles className="h-4 w-4" />}
+              onClick={props.onConfirm}
+              disabled={props.busy}
             />
           </div>
         </div>

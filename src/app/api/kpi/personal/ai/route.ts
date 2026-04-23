@@ -55,6 +55,12 @@ export async function POST(request: Request) {
       requesterId: session.user.id,
       sourceId: validated.data.sourceId,
       payload: validated.data.payload,
+      actor: {
+        id: session.user.id,
+        role: session.user.role,
+        deptId: session.user.deptId,
+        accessibleDepartmentIds: session.user.accessibleDepartmentIds ?? [],
+      },
     }
 
     const result = await (async () => {

@@ -282,20 +282,51 @@ export const PersonalKpiWorkflowActionSchema = z.object({
   note: z.string().max(1000).optional(),
 })
 
-export const PersonalKpiAiActionSchema = z.object({
-  action: z.enum([
-    'generate-draft',
-    'improve-wording',
-    'smart-check',
-    'suggest-weight',
-    'suggest-org-alignment',
-    'detect-duplicates',
-    'summarize-review-risks',
-    'draft-monthly-comment',
-  ]),
-  sourceId: z.string().optional(),
-  payload: z.record(z.string(), z.unknown()).default({}),
-})
+export const PersonalKpiAiActionSchema = z
+  .object({
+    action: z.enum([
+      'generate-draft',
+      'improve-wording',
+      'smart-check',
+      'suggest-weight',
+      'suggest-org-alignment',
+      'detect-duplicates',
+      'summarize-review-risks',
+      'draft-monthly-comment',
+    ]),
+    sourceId: z.string().optional(),
+    payload: z.record(z.string(), z.unknown()).default({}),
+  })
+  .superRefine((data, ctx) => {
+    if (data.action !== 'generate-draft') {
+      return
+    }
+
+    const employeeId =
+      typeof data.payload.employeeId === 'string' && data.payload.employeeId.trim().length
+        ? data.payload.employeeId.trim()
+        : null
+    const linkedOrgKpiId =
+      typeof data.payload.linkedOrgKpiId === 'string' && data.payload.linkedOrgKpiId.trim().length
+        ? data.payload.linkedOrgKpiId.trim()
+        : null
+
+    if (!employeeId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['payload', 'employeeId'],
+        message: 'AI 초안 생성을 위해 대상 직원을 먼저 선택해 주세요.',
+      })
+    }
+
+    if (!linkedOrgKpiId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['payload', 'linkedOrgKpiId'],
+        message: 'AI 초안 생성을 위해 연계 조직 KPI를 먼저 선택해 주세요.',
+      })
+    }
+  })
 
 // ============================================
 // ?붾퀎 ?ㅼ쟻 愿??
