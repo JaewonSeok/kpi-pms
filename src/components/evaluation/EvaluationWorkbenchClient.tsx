@@ -37,6 +37,7 @@ import {
   type EvaluationPerformanceBriefingSnapshot,
 } from '@/lib/evaluation-performance-briefing'
 import { EvaluationPerformanceBriefingPanel } from '@/components/evaluation/EvaluationPerformanceBriefingPanel'
+import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 import {
   buildEvaluationQualityWarnings,
@@ -1020,6 +1021,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                   )}
                 </div>
               </section>
+
+              <MidReviewReferencePanel
+                kind="employee"
+                targetId={selected.target.id}
+                title="중간 점검 참고"
+                helper="최근 중간 점검에서 정리한 목표 유효성, 기대 기준, 다음 액션을 평가 전에 참고합니다."
+              />
 
               <div className="overflow-x-auto">
                 <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">

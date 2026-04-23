@@ -9,6 +9,7 @@ import {
   BarChart3,
   BriefcaseBusiness,
   Building2,
+  ClipboardList,
   LineChart,
   ShieldAlert,
   Users,
@@ -204,6 +205,8 @@ export function ExecutiveStatisticsDashboardClient({ data }: { data: StatisticsP
             </div>
           </section>
 
+          <MidReviewOperationsPanel section={data.sections.midReviewOperations} />
+
           <div className="grid gap-6 xl:grid-cols-2">
             <EvaluationOperationsPanel section={data.sections.evaluationOperations} />
             <PerformanceDistributionPanel section={data.sections.performanceDistribution} />
@@ -262,6 +265,68 @@ function EvaluationOperationsPanel(props: { section: StatisticsSections['evaluat
             String(row.finalizedCount),
           ])}
         />
+      </SectionGuard>
+    </Panel>
+  )
+}
+
+function MidReviewOperationsPanel(props: { section: StatisticsSections['midReviewOperations'] }) {
+  const { section } = props
+
+  return (
+    <Panel
+      id="mid-review-section"
+      title="중간 점검 운영"
+      description="목표 재설계, 기대 정렬, 후속 액션이 실제로 진행되는지 부서 단위로 확인합니다."
+    >
+      <SectionGuard
+        state={section.state}
+        message={section.message}
+        emptyMessage="선택한 평가 주기에 연결된 중간 점검 운영 데이터가 아직 없습니다."
+        icon={<ClipboardList className="h-6 w-6" />}
+      >
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {section.cards.map((card) => (
+            <MetricCard key={card.label} card={card} compact />
+          ))}
+        </div>
+        {section.departmentRows.length ? (
+          <SectionTable
+            headers={[
+              '조직',
+              '대상 중간 점검',
+              '완료',
+              '진행률',
+              '지연',
+              '액션 없음',
+              '목표 수정 필요',
+              '유지 리스크',
+              '정렬 리스크',
+            ]}
+            rows={section.departmentRows.map((row) => [
+              <SmartLink
+                key={`${row.departmentId}-name`}
+                href={row.href}
+                className="font-semibold text-slate-900 hover:text-blue-600"
+              >
+                {row.departmentName}
+              </SmartLink>,
+              String(row.totalAssignments),
+              String(row.completedAssignments),
+              formatPercentValue(row.progressRate),
+              String(row.overdueCount),
+              String(row.noActionCount),
+              String(row.revisionRequestedCount),
+              String(row.peopleRiskWithoutPlanCount),
+              String(row.alignmentRiskCount),
+            ])}
+          />
+        ) : (
+          <EmptyState
+            icon={<ClipboardList className="h-6 w-6" />}
+            message="선택한 평가 주기에 연결된 중간 점검 운영 데이터가 아직 없습니다."
+          />
+        )}
       </SectionGuard>
     </Panel>
   )

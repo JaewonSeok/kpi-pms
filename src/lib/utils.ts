@@ -150,7 +150,7 @@ export const CHECKIN_TYPE_LABELS: Record<string, string> = {
   BIWEEKLY: '격주 체크인',
   MONTHLY: '월간 체크인',
   AD_HOC: '수시 체크인',
-  MIDYEAR_REVIEW: '중간 리뷰',
+  MIDYEAR_REVIEW: '중간 점검',
   QUARTERLY: '분기 리뷰',
 }
 

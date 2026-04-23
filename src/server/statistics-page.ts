@@ -18,6 +18,7 @@ import { prisma } from '@/lib/prisma'
 import { POSITION_LABELS } from '@/lib/utils'
 import { buildEvaluationQualityWarnings } from '@/lib/evaluation-writing-guide'
 import { getDescendantDeptIds } from '@/server/auth/org-scope'
+import { getMidReviewMonitoringView } from '@/server/mid-review'
 import {
   buildStatisticsStageFlow,
   parseStatisticsPeriod,
@@ -181,6 +182,24 @@ type StatisticsFairnessSection = StatisticsSectionBase & {
   detailHref: string
 }
 
+type StatisticsMidReviewOperationsSection = StatisticsSectionBase & {
+  progressRate?: number
+  cards: StatisticsMetricCard[]
+  departmentRows: Array<{
+    departmentId: string
+    departmentName: string
+    totalAssignments: number
+    completedAssignments: number
+    progressRate: number
+    overdueCount: number
+    noActionCount: number
+    revisionRequestedCount: number
+    peopleRiskWithoutPlanCount: number
+    alignmentRiskCount: number
+    href: string
+  }>
+}
+
 export type StatisticsPageData = {
   state: StatisticsPageState
   message?: string
@@ -214,6 +233,7 @@ export type StatisticsPageData = {
   summaryCards: StatisticsMetricCard[]
   sections?: {
     evaluationOperations: StatisticsEvaluationOperationsSection
+    midReviewOperations: StatisticsMidReviewOperationsSection
     performanceDistribution: StatisticsPerformanceDistributionSection
     kpiExecution: StatisticsKpiExecutionSection
     organizationRisk: StatisticsOrganizationRiskSection
@@ -1291,12 +1311,81 @@ export async function getStatisticsPageData(
             })
           ).data
 
+    const midReviewOperations = await loadStatisticsOptional({
+      alerts,
+      title: '중간 점검 운영 현황을 불러오지 못했습니다.',
+      description: '중간 점검 진행률과 액션 누락 신호는 현재 불러올 수 있는 범위만 표시합니다.',
+      fallback: buildMidReviewOperationsSection('error', '중간 점검 운영 현황을 계산하지 못했습니다.'),
+      load: async () => {
+        const monitoring = await getMidReviewMonitoringView(selectedCycle.id)
+        if (monitoring.summary.activeAssignmentCount === 0) {
+          return buildMidReviewOperationsSection('empty', '선택한 평가 주기에 연결된 중간 점검이 아직 없습니다.')
+        }
+
+        return buildMidReviewOperationsSection('ready', undefined, {
+          progressRate: monitoring.summary.progressRate,
+          cards: [
+            {
+              label: '중간 점검 진행률',
+              value: formatPercent(monitoring.summary.progressRate),
+              description: '대상 중간 점검 assignment 기준',
+              tone:
+                monitoring.summary.progressRate >= 85
+                  ? 'success'
+                  : monitoring.summary.progressRate >= 60
+                    ? 'warn'
+                    : 'error',
+              href: buildStatisticsFilterHref({ cycleId: selectedCycle.id }),
+            },
+            {
+              label: '액션 없는 조직',
+              value: formatCount(monitoring.summary.noActionTeamCount),
+              description: '후속 액션이 없는 조직 기준',
+              tone: monitoring.summary.noActionTeamCount > 0 ? 'warn' : 'success',
+              href: buildStatisticsFilterHref({ cycleId: selectedCycle.id }),
+            },
+            {
+              label: '목표 수정 필요 건수',
+              value: formatCount(monitoring.summary.revisionRequestedCount),
+              description: '목표 재검토 또는 수정 필요 건수',
+              tone: monitoring.summary.revisionRequestedCount > 0 ? 'warn' : 'success',
+              href: buildStatisticsFilterHref({ cycleId: selectedCycle.id }),
+            },
+            {
+              label: '방향 정렬 리스크',
+              value: formatCount(monitoring.summary.alignmentRiskCount),
+              description: '방향 이해 또는 기대 정렬 위험 신호',
+              tone: monitoring.summary.alignmentRiskCount > 0 ? 'warn' : 'success',
+              href: buildStatisticsFilterHref({ cycleId: selectedCycle.id }),
+            },
+          ],
+          departmentRows: monitoring.departments.map((item) => ({
+            departmentId: item.departmentId,
+            departmentName: item.departmentName,
+            totalAssignments: item.totalAssignments,
+            completedAssignments: item.completedAssignments,
+            progressRate: item.progressRate,
+            overdueCount: item.overdueCount,
+            noActionCount: item.noActionCount,
+            revisionRequestedCount: item.revisionRequestedCount,
+            peopleRiskWithoutPlanCount: item.highRiskWithoutPlanCount,
+            alignmentRiskCount: item.alignmentRiskCount,
+            href: buildStatisticsFilterHref({
+              cycleId: selectedCycle.id,
+              departmentId: item.departmentId,
+            }),
+          })),
+        })
+      },
+    })
+
     const hasReadyPrimaryData =
       (evaluationDomain.state === 'ready' &&
         (evaluationDomain.data.evaluations.length > 0 || evaluationDomain.data.assignments.length > 0)) ||
       (kpiDomain.state === 'ready' && hasKpiSourceData(kpiDomain.data)) ||
       (appealDomain.state === 'ready' && appealDomain.data.appeals.length > 0) ||
-      readinessProxy.state === 'ready'
+      readinessProxy.state === 'ready' ||
+      midReviewOperations.state === 'ready'
 
     const hasDomainFailures =
       evaluationDomain.state === 'error' ||
@@ -1306,7 +1395,8 @@ export async function getStatisticsPageData(
       kpiExecution.state === 'error' ||
       organizationRisk.state === 'error' ||
       readinessProxy.state === 'error' ||
-      fairness.state === 'error'
+      fairness.state === 'error' ||
+      midReviewOperations.state === 'error'
 
     if (!hasReadyPrimaryData && !hasDomainFailures) {
       return {
@@ -1348,6 +1438,7 @@ export async function getStatisticsPageData(
       summaryCards,
       sections: {
         evaluationOperations,
+        midReviewOperations,
         performanceDistribution,
         kpiExecution,
         organizationRisk,
@@ -1848,6 +1939,71 @@ export async function getStatisticsPageDataLegacy(
       selectedDepartmentId,
     })
 
+    const midReviewMonitoring = await loadStatisticsOptional({
+      alerts,
+      title: '중간 점검 운영 현황을 불러오지 못했습니다.',
+      description: '중간 점검 진행률과 액션 누락 신호는 현재 불러올 수 있는 범위만 표시합니다.',
+      fallback: null,
+      load: () => getMidReviewMonitoringView(selectedCycle.id),
+    })
+    const midReviewOperations =
+      !midReviewMonitoring || midReviewMonitoring.summary.activeAssignmentCount === 0
+        ? buildMidReviewOperationsSection('empty', '선택한 평가 주기에 연결된 중간 점검이 아직 없습니다.')
+        : buildMidReviewOperationsSection('ready', undefined, {
+            progressRate: midReviewMonitoring.summary.progressRate,
+            cards: [
+              {
+                label: '중간 점검 진행률',
+                value: formatPercent(midReviewMonitoring.summary.progressRate),
+                description: '대상 중간 점검 assignment 기준',
+                tone:
+                  midReviewMonitoring.summary.progressRate >= 85
+                    ? 'success'
+                    : midReviewMonitoring.summary.progressRate >= 60
+                      ? 'warn'
+                      : 'error',
+                href: buildStatisticsFilterHref({ cycleId: selectedCycle.id }),
+              },
+              {
+                label: '액션 없는 조직',
+                value: formatCount(midReviewMonitoring.summary.noActionTeamCount),
+                description: '후속 액션이 없는 조직 기준',
+                tone: midReviewMonitoring.summary.noActionTeamCount > 0 ? 'warn' : 'success',
+                href: buildStatisticsFilterHref({ cycleId: selectedCycle.id }),
+              },
+              {
+                label: '목표 수정 필요 건수',
+                value: formatCount(midReviewMonitoring.summary.revisionRequestedCount),
+                description: '목표 재검토 또는 수정 필요 건수',
+                tone: midReviewMonitoring.summary.revisionRequestedCount > 0 ? 'warn' : 'success',
+                href: buildStatisticsFilterHref({ cycleId: selectedCycle.id }),
+              },
+              {
+                label: '방향 정렬 리스크',
+                value: formatCount(midReviewMonitoring.summary.alignmentRiskCount),
+                description: '방향 이해 또는 기대 정렬 위험 신호',
+                tone: midReviewMonitoring.summary.alignmentRiskCount > 0 ? 'warn' : 'success',
+                href: buildStatisticsFilterHref({ cycleId: selectedCycle.id }),
+              },
+            ],
+            departmentRows: midReviewMonitoring.departments.map((item) => ({
+              departmentId: item.departmentId,
+              departmentName: item.departmentName,
+              totalAssignments: item.totalAssignments,
+              completedAssignments: item.completedAssignments,
+              progressRate: item.progressRate,
+              overdueCount: item.overdueCount,
+              noActionCount: item.noActionCount,
+              revisionRequestedCount: item.revisionRequestedCount,
+              peopleRiskWithoutPlanCount: item.highRiskWithoutPlanCount,
+              alignmentRiskCount: item.alignmentRiskCount,
+              href: buildStatisticsFilterHref({
+                cycleId: selectedCycle.id,
+                departmentId: item.departmentId,
+              }),
+            })),
+          })
+
     const summaryCards = buildStatisticsSummaryCards({
       evaluationProgressRate: evaluationStageMatrix.progressRate,
       finalizedRate: evaluationStageMatrix.finalizedRate,
@@ -1894,6 +2050,7 @@ export async function getStatisticsPageDataLegacy(
           }),
           departmentRows: evaluationStageMatrix.departmentRows,
         },
+        midReviewOperations,
         performanceDistribution: {
           cards: performanceSummary.cards,
           companyDistribution: performanceSummary.companyDistribution,
@@ -2087,6 +2244,20 @@ function buildFairnessSection(
     coverageLabel: overrides?.coverageLabel ?? '생성된 AI 브리핑이 없어 정합성 통계를 표시하지 않습니다.',
     notice: overrides?.notice,
     detailHref,
+  }
+}
+
+function buildMidReviewOperationsSection(
+  state: StatisticsSectionState,
+  message?: string,
+  overrides?: Partial<StatisticsMidReviewOperationsSection>
+): StatisticsMidReviewOperationsSection {
+  return {
+    state,
+    message,
+    progressRate: overrides?.progressRate,
+    cards: overrides?.cards ?? [],
+    departmentRows: overrides?.departmentRows ?? [],
   }
 }
 

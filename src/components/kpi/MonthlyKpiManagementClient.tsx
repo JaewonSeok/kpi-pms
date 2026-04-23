@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
+import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 import { getMonthlyLinkDisplayName, isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
 import { formatCountWithUnit, formatRateBaseCopy } from '@/lib/metric-copy'
 import type {
@@ -1287,6 +1288,15 @@ export function MonthlyKpiManagementClient({
           </div>
         </div>
       </section>
+
+      {selected?.personalKpiId ? (
+        <MidReviewReferencePanel
+          kind="personal-kpi"
+          targetId={selected.personalKpiId}
+          title="중간 점검"
+          helper="이 KPI와 연결된 최근 중간 점검 판단, 기대 상태, 다음 기간 계획을 함께 확인합니다."
+        />
+      ) : null}
 
       <div className="overflow-x-auto">
         <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">

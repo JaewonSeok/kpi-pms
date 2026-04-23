@@ -50,6 +50,8 @@ model Department {
   teamKpiRecommendationTargetSets TeamKpiRecommendationSet[] @relation("TeamKpiRecommendationTargetDepartment")
   teamKpiReviewSourceRuns TeamKpiReviewRun[] @relation("TeamKpiReviewSourceDepartment")
   teamKpiReviewTargetRuns TeamKpiReviewRun[] @relation("TeamKpiReviewTargetDepartment")
+  midReviewScopeCycles MidReviewCycle[] @relation("MidReviewScopeDepartment")
+  midReviewAssignments MidReviewAssignment[] @relation("MidReviewTargetDepartment")
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -129,6 +131,9 @@ model Employee {
   wordCloud360EvaluateeAssignments WordCloud360Assignment[] @relation("WordCloud360Evaluatee")
   wordCloud360EvaluatorResponses   WordCloud360Response[] @relation("WordCloud360ResponseEvaluator")
   wordCloud360EvaluateeResponses   WordCloud360Response[] @relation("WordCloud360ResponseEvaluatee")
+  midReviewAssignmentsAsTarget      MidReviewAssignment[] @relation("MidReviewTargetEmployee")
+  midReviewAssignmentsAsManager     MidReviewAssignment[] @relation("MidReviewManager")
+  midReviewActionItems              MidReviewActionItem[] @relation("MidReviewActionOwner")
 
   @@map("employees")
 }
@@ -219,6 +224,7 @@ model OrgKpi {
   personalKpis PersonalKpi[]
   adoptedRecommendationItems TeamKpiRecommendationItem[]
   teamKpiReviewItems TeamKpiReviewItem[]
+  midReviewGoalReviews MidReviewGoalReview[]
 
   @@unique([deptId, evalYear, kpiName])
   @@index([evalYear, parentOrgKpiId])
@@ -424,6 +430,7 @@ model PersonalKpi {
 
   monthlyRecords  MonthlyRecord[]
   evaluationItems EvaluationItem[]
+  midReviewGoalReviews MidReviewGoalReview[]
 
   @@unique([employeeId, evalYear, kpiName])
   @@map("personal_kpis")
@@ -554,6 +561,7 @@ model EvalCycle {
   jobDescriptions     JobDescriptionDocument[]
   teamKpiRecommendationSets TeamKpiRecommendationSet[]
   teamKpiReviewRuns   TeamKpiReviewRun[]
+  midReviewCycles     MidReviewCycle[]
 
   @@map("eval_cycles")
 }
@@ -1390,8 +1398,153 @@ model CheckIn {
   blockerCount      Int?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
+  midReviewAssignment MidReviewAssignment?
 
   @@map("check_ins")
+}
+
+model MidReviewCycle {
+  id                         String                @id @default(cuid())
+  evalCycleId                String
+  evalCycle                  EvalCycle             @relation(fields: [evalCycleId], references: [id], onDelete: Cascade)
+  name                       String
+  reviewType                 MidReviewType
+  workflowMode               MidReviewWorkflowMode
+  scopeTargetKind            MidReviewScopeTargetKind
+  scopeDepartmentId          String?
+  scopeDepartment            Department?           @relation("MidReviewScopeDepartment", fields: [scopeDepartmentId], references: [id], onDelete: SetNull)
+  includeDescendants         Boolean               @default(false)
+  startsAt                   DateTime?
+  selfDueAt                  DateTime?
+  leaderDueAt                DateTime?
+  closesAt                   DateTime?
+  status                     MidReviewCycleStatus  @default(DRAFT)
+  peopleReviewEnabled        Boolean               @default(false)
+  expectationTemplateEnabled Boolean               @default(true)
+  createdAt                  DateTime              @default(now())
+  updatedAt                  DateTime              @updatedAt
+
+  assignments MidReviewAssignment[]
+
+  @@index([evalCycleId, reviewType, status])
+  @@index([scopeDepartmentId, reviewType])
+  @@map("mid_review_cycles")
+}
+
+model MidReviewAssignment {
+  id               String                    @id @default(cuid())
+  cycleId          String
+  cycle            MidReviewCycle            @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  targetEmployeeId String?
+  targetEmployee   Employee?                 @relation("MidReviewTargetEmployee", fields: [targetEmployeeId], references: [id], onDelete: SetNull)
+  targetDepartmentId String?
+  targetDepartment Department?               @relation("MidReviewTargetDepartment", fields: [targetDepartmentId], references: [id], onDelete: SetNull)
+  managerId        String
+  manager          Employee                  @relation("MidReviewManager", fields: [managerId], references: [id], onDelete: Restrict)
+  relatedCheckInId String?                   @unique
+  relatedCheckIn   CheckIn?                  @relation(fields: [relatedCheckInId], references: [id], onDelete: SetNull)
+  status           MidReviewAssignmentStatus @default(NOT_STARTED)
+  scheduledAt      DateTime?
+  openedAt         DateTime?
+  completedAt      DateTime?
+  lastReminderAt   DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  record MidReviewRecord?
+
+  @@index([cycleId, status])
+  @@index([managerId, status])
+  @@index([targetEmployeeId, status])
+  @@index([targetDepartmentId, status])
+  @@map("mid_review_assignments")
+}
+
+model MidReviewRecord {
+  id                  String                 @id @default(cuid())
+  assignmentId        String                 @unique
+  assignment          MidReviewAssignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  memberAchievements  String?
+  milestoneReview     String?
+  issueRiskSummary    String?
+  nextPeriodPlan      String?
+  agreedContext       String?
+  directionClarity    DirectionClarityLevel?
+  directionClarityNote String?
+  leaderSummary       String?
+  leaderCoachingMemo  String?
+  aiFollowUpQuestions Json?
+  aiCommentSupport    Json?
+  memberSubmittedAt   DateTime?
+  leaderSubmittedAt   DateTime?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  goalReviews  MidReviewGoalReview[]
+  peopleReview MidReviewPeopleReview?
+  actionItems  MidReviewActionItem[]
+
+  @@map("mid_review_records")
+}
+
+model MidReviewGoalReview {
+  id                      String               @id @default(cuid())
+  recordId                String
+  record                  MidReviewRecord      @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  orgKpiId                String?
+  orgKpi                  OrgKpi?              @relation(fields: [orgKpiId], references: [id], onDelete: SetNull)
+  personalKpiId           String?
+  personalKpi             PersonalKpi?         @relation(fields: [personalKpiId], references: [id], onDelete: SetNull)
+  goalValidityDecision    GoalValidityDecision
+  decisionReason          String?
+  priorityAdjustmentMemo  String?
+  executionAdjustmentMemo String?
+  expectedState           String?
+  successScene            String?
+  criteriaExceeds         String?
+  criteriaMeets           String?
+  criteriaBelow           String?
+  revisionRequested       Boolean              @default(false)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+
+  @@index([recordId])
+  @@index([orgKpiId])
+  @@index([personalKpiId])
+  @@map("mid_review_goal_reviews")
+}
+
+model MidReviewPeopleReview {
+  id                String              @id @default(cuid())
+  recordId          String              @unique
+  record            MidReviewRecord     @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  retentionRiskLevel RetentionRiskLevel?
+  stayInterviewMemo String?
+  reboundGoal       String?
+  supportPlan       String?
+  coachingPlan      String?
+  nextFollowUpAt    DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@map("mid_review_people_reviews")
+}
+
+model MidReviewActionItem {
+  id         String                @id @default(cuid())
+  recordId   String
+  record     MidReviewRecord       @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  actionText String
+  ownerId    String?
+  owner      Employee?             @relation("MidReviewActionOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  dueDate    DateTime?
+  status     MidReviewActionStatus @default(OPEN)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@index([recordId, status])
+  @@index([ownerId, status])
+  @@map("mid_review_action_items")
 }
 
 enum CheckInType {
@@ -1409,6 +1562,63 @@ enum CheckInStatus {
   COMPLETED
   CANCELLED
   RESCHEDULED
+}
+
+enum MidReviewType {
+  ALIGNMENT
+  RETROSPECTIVE
+  ASSESSMENT
+  DEVELOPMENT
+}
+
+enum MidReviewCycleStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum MidReviewWorkflowMode {
+  LEADER_ONLY
+  SELF_THEN_LEADER
+}
+
+enum MidReviewScopeTargetKind {
+  DEPARTMENT
+  EMPLOYEE
+}
+
+enum MidReviewAssignmentStatus {
+  NOT_STARTED
+  SELF_DRAFT
+  SELF_SUBMITTED
+  LEADER_DRAFT
+  LEADER_SUBMITTED
+  CLOSED
+}
+
+enum GoalValidityDecision {
+  KEEP_GOAL
+  ADJUST_PRIORITY_OR_METHOD
+  REVISE_GOAL
+}
+
+enum RetentionRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DirectionClarityLevel {
+  CLEAR
+  PARTIAL
+  UNCLEAR
+}
+
+enum MidReviewActionStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
 }
 
 // ============================================
@@ -2611,6 +2821,7 @@ enum AIRequestType {
   EVAL_COMMENT_DRAFT
   BIAS_ANALYSIS
   GROWTH_PLAN
+  MID_REVIEW_ASSIST
 }
 
 enum AIRequestStatus {

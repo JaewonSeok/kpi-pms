@@ -1233,6 +1233,206 @@ export const UpdateCheckInSchema = z.object({
   status: z.enum(['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'RESCHEDULED']).optional(),
 })
 
+export const MidReviewTypeSchema = z.enum(['ALIGNMENT', 'RETROSPECTIVE', 'ASSESSMENT', 'DEVELOPMENT'])
+export const MidReviewCycleStatusSchema = z.enum(['DRAFT', 'ACTIVE', 'CLOSED', 'ARCHIVED'])
+export const MidReviewWorkflowModeSchema = z.enum(['LEADER_ONLY', 'SELF_THEN_LEADER'])
+export const MidReviewScopeTargetKindSchema = z.enum(['DEPARTMENT', 'EMPLOYEE'])
+export const MidReviewAssignmentStatusSchema = z.enum([
+  'NOT_STARTED',
+  'SELF_DRAFT',
+  'SELF_SUBMITTED',
+  'LEADER_DRAFT',
+  'LEADER_SUBMITTED',
+  'CLOSED',
+])
+export const GoalValidityDecisionSchema = z.enum([
+  'KEEP_GOAL',
+  'ADJUST_PRIORITY_OR_METHOD',
+  'REVISE_GOAL',
+])
+export const RetentionRiskLevelSchema = z.enum(['LOW', 'MEDIUM', 'HIGH'])
+export const DirectionClarityLevelSchema = z.enum(['CLEAR', 'PARTIAL', 'UNCLEAR'])
+export const MidReviewActionStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'DONE'])
+
+const MidReviewCycleBaseSchema = z.object({
+  name: z.string().min(1, '중간 점검 이름을 입력해 주세요.').max(100),
+  reviewType: MidReviewTypeSchema,
+  workflowMode: MidReviewWorkflowModeSchema,
+  scopeTargetKind: MidReviewScopeTargetKindSchema,
+  scopeDepartmentId: z.string().nullable().optional(),
+  includeDescendants: z.boolean().default(false),
+  startsAt: z.string().datetime().nullable().optional(),
+  selfDueAt: z.string().datetime().nullable().optional(),
+  leaderDueAt: z.string().datetime().nullable().optional(),
+  closesAt: z.string().datetime().nullable().optional(),
+  status: MidReviewCycleStatusSchema.default('DRAFT'),
+  peopleReviewEnabled: z.boolean().default(false),
+  expectationTemplateEnabled: z.boolean().default(true),
+})
+
+export const MidReviewCycleSchema = MidReviewCycleBaseSchema
+  .refine(
+    (data) => data.scopeTargetKind === 'EMPLOYEE' || Boolean(data.scopeDepartmentId?.trim()),
+    {
+      message: '부서형 중간 점검은 대상 조직을 선택해 주세요.',
+      path: ['scopeDepartmentId'],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.workflowMode === 'LEADER_ONLY') return true
+      return Boolean(data.selfDueAt)
+    },
+    {
+      message: '구성원 입력이 있는 중간 점검은 구성원 제출 마감일이 필요합니다.',
+      path: ['selfDueAt'],
+    }
+  )
+  .refine(
+    (data) => {
+      const startsAt = data.startsAt ? new Date(data.startsAt).getTime() : null
+      const selfDueAt = data.selfDueAt ? new Date(data.selfDueAt).getTime() : null
+      const leaderDueAt = data.leaderDueAt ? new Date(data.leaderDueAt).getTime() : null
+      const closesAt = data.closesAt ? new Date(data.closesAt).getTime() : null
+
+      if (startsAt && selfDueAt && startsAt > selfDueAt) return false
+      if (selfDueAt && leaderDueAt && selfDueAt > leaderDueAt) return false
+      if (leaderDueAt && closesAt && leaderDueAt > closesAt) return false
+      return true
+    },
+    {
+      message: '중간 점검 일정 순서를 다시 확인해 주세요.',
+      path: ['startsAt'],
+    }
+  )
+
+export const UpdateMidReviewCycleSchema = MidReviewCycleBaseSchema.partial()
+
+const MidReviewGoalReviewItemSchema = z
+  .object({
+    id: z.string().min(1).optional(),
+    orgKpiId: z.string().nullable().optional(),
+    personalKpiId: z.string().nullable().optional(),
+    goalValidityDecision: GoalValidityDecisionSchema,
+    decisionReason: z.string().max(4000).optional().default(''),
+    priorityAdjustmentMemo: z.string().max(4000).optional().default(''),
+    executionAdjustmentMemo: z.string().max(4000).optional().default(''),
+    expectedState: z.string().max(4000).optional().default(''),
+    successScene: z.string().max(4000).optional().default(''),
+    criteriaExceeds: z.string().max(4000).optional().default(''),
+    criteriaMeets: z.string().max(4000).optional().default(''),
+    criteriaBelow: z.string().max(4000).optional().default(''),
+    revisionRequested: z.boolean().default(false),
+  })
+  .refine((data) => Boolean(data.orgKpiId || data.personalKpiId), {
+    message: '중간 점검 대상 목표를 선택해 주세요.',
+    path: ['orgKpiId'],
+  })
+  .refine(
+    (data) => {
+      if (data.goalValidityDecision === 'KEEP_GOAL') return true
+      return data.decisionReason.trim().length > 0
+    },
+    {
+      message: '목표 조정 또는 수정 사유를 입력해 주세요.',
+      path: ['decisionReason'],
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.goalValidityDecision === 'KEEP_GOAL') return true
+      return (
+        data.priorityAdjustmentMemo.trim().length > 0 || data.executionAdjustmentMemo.trim().length > 0
+      )
+    },
+    {
+      message: '우선순위 또는 달성 방식 조정 내용을 입력해 주세요.',
+      path: ['priorityAdjustmentMemo'],
+    }
+  )
+
+const MidReviewPeopleReviewSchema = z
+  .object({
+    retentionRiskLevel: RetentionRiskLevelSchema.nullable().optional(),
+    stayInterviewMemo: z.string().max(4000).optional().default(''),
+    reboundGoal: z.string().max(4000).optional().default(''),
+    supportPlan: z.string().max(4000).optional().default(''),
+    coachingPlan: z.string().max(4000).optional().default(''),
+    nextFollowUpAt: z.string().datetime().nullable().optional(),
+  })
+  .refine(
+    (data) => data.retentionRiskLevel !== 'HIGH' || data.supportPlan.trim().length > 0,
+    {
+      message: '고위험 유지 이슈에는 지원 계획이 필요합니다.',
+      path: ['supportPlan'],
+    }
+  )
+  .refine(
+    (data) => data.retentionRiskLevel !== 'HIGH' || Boolean(data.nextFollowUpAt),
+    {
+      message: '고위험 유지 이슈에는 다음 후속 일정을 지정해 주세요.',
+      path: ['nextFollowUpAt'],
+    }
+  )
+
+const MidReviewActionItemSchema = z.object({
+  id: z.string().min(1).optional(),
+  actionText: z.string().min(1, '후속 액션을 입력해 주세요.').max(500),
+  ownerId: z.string().nullable().optional(),
+  dueDate: z.string().datetime().nullable().optional(),
+  status: MidReviewActionStatusSchema.default('OPEN'),
+})
+
+const MidReviewRecordBaseSchema = z.object({
+  memberAchievements: z.string().max(6000).optional().default(''),
+  milestoneReview: z.string().max(6000).optional().default(''),
+  issueRiskSummary: z.string().max(6000).optional().default(''),
+  nextPeriodPlan: z.string().max(6000).optional().default(''),
+  agreedContext: z.string().max(6000).optional().default(''),
+  directionClarity: DirectionClarityLevelSchema.nullable().optional(),
+  directionClarityNote: z.string().max(4000).optional().default(''),
+  leaderSummary: z.string().max(6000).optional().default(''),
+  leaderCoachingMemo: z.string().max(6000).optional().default(''),
+  goalReviews: z.array(MidReviewGoalReviewItemSchema).max(30).default([]),
+  peopleReview: MidReviewPeopleReviewSchema.optional(),
+  actionItems: z.array(MidReviewActionItemSchema).max(30).default([]),
+  aiFollowUpQuestions: z.array(z.string().max(500)).max(10).optional(),
+  aiCommentSupport: z
+    .object({
+      summary: z.string().max(6000).optional(),
+      draftComment: z.string().max(6000).optional(),
+      warnings: z.array(z.string().max(500)).max(10).optional(),
+    })
+    .optional(),
+})
+
+export const SaveMidReviewRecordSchema = MidReviewRecordBaseSchema
+
+export const SubmitMidReviewRecordSchema = MidReviewRecordBaseSchema.refine(
+  (data) => {
+    if (data.directionClarity === 'PARTIAL' || data.directionClarity === 'UNCLEAR') {
+      return data.actionItems.length > 0 || data.leaderCoachingMemo.trim().length > 0
+    }
+    return true
+  },
+  {
+    message: '방향 이해가 불충분하면 후속 액션 또는 코칭 메모가 필요합니다.',
+    path: ['directionClarity'],
+  }
+).refine(
+  (data) => {
+    const hasSummary =
+      data.memberAchievements.trim().length > 0 ||
+      data.leaderSummary.trim().length > 0 ||
+      data.goalReviews.length > 0
+    return hasSummary
+  },
+  {
+    message: '중간 점검 제출 전에는 성과 요약 또는 목표 검토 내용을 입력해 주세요.',
+    path: ['memberAchievements'],
+  }
+)
+
 // ============================================
 // ?댁쓽?좎껌 愿??
 // ============================================
@@ -1551,6 +1751,7 @@ export const AIAssistRequestSchema = z.object({
     'BIAS_ANALYSIS',
     'GROWTH_PLAN',
     'EVAL_PERFORMANCE_BRIEFING',
+    'MID_REVIEW_ASSIST',
   ]),
   sourceType: z.string().max(100).optional(),
   sourceId: z.string().max(100).optional(),

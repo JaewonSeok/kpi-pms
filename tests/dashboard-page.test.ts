@@ -47,6 +47,7 @@ type DashboardPrismaSnapshot = {
   notificationFindMany: PrismaDelegateMethod
   personalKpiFindMany: PrismaDelegateMethod
   checkInFindMany: PrismaDelegateMethod
+  midReviewAssignmentFindMany: PrismaDelegateMethod
   evaluationFindMany: PrismaDelegateMethod
   monthlyRecordCount: PrismaDelegateMethod
   buildOperationsSummary: typeof operations.buildOperationsSummary
@@ -60,6 +61,7 @@ function captureSnapshot(): DashboardPrismaSnapshot {
     notificationFindMany: prismaAny.notification.findMany,
     personalKpiFindMany: prismaAny.personalKpi.findMany,
     checkInFindMany: prismaAny.checkIn.findMany,
+    midReviewAssignmentFindMany: prismaAny.midReviewAssignment.findMany,
     evaluationFindMany: prismaAny.evaluation.findMany,
     monthlyRecordCount: prismaAny.monthlyRecord.count,
     buildOperationsSummary: operations.buildOperationsSummary,
@@ -73,6 +75,7 @@ function restoreSnapshot(snapshot: DashboardPrismaSnapshot) {
   prismaAny.notification.findMany = snapshot.notificationFindMany
   prismaAny.personalKpi.findMany = snapshot.personalKpiFindMany
   prismaAny.checkIn.findMany = snapshot.checkInFindMany
+  prismaAny.midReviewAssignment.findMany = snapshot.midReviewAssignmentFindMany
   prismaAny.evaluation.findMany = snapshot.evaluationFindMany
   prismaAny.monthlyRecord.count = snapshot.monthlyRecordCount
   operations.buildOperationsSummary = snapshot.buildOperationsSummary
@@ -100,6 +103,7 @@ async function withStubbedDashboardData(
   prismaAny.notification.findMany = overrides.notificationFindMany ?? (async () => [])
   prismaAny.personalKpi.findMany = overrides.personalKpiFindMany ?? (async () => [])
   prismaAny.checkIn.findMany = overrides.checkInFindMany ?? (async () => [])
+  prismaAny.midReviewAssignment.findMany = overrides.midReviewAssignmentFindMany ?? (async () => [])
   prismaAny.evaluation.findMany = overrides.evaluationFindMany ?? (async () => [])
   prismaAny.monthlyRecord.count = overrides.monthlyRecordCount ?? (async () => 0)
   operations.buildOperationsSummary =
@@ -220,6 +224,43 @@ async function main() {
         } finally {
           console.error = originalConsoleError
         }
+      }
+    )
+  })
+
+  await run('leader dashboard surfaces pending mid-review queue items alongside evaluation work', async () => {
+    await withStubbedDashboardData(
+      {
+        midReviewAssignmentFindMany: async () => [
+          {
+            id: 'mid-review-assignment-1',
+            status: 'LEADER_DRAFT',
+            cycle: {
+              name: '2026 상반기 중간 점검',
+              reviewType: 'ASSESSMENT',
+              leaderDueAt: new Date('2026-05-10T09:00:00Z'),
+            },
+            relatedCheckIn: {
+              id: 'checkin-mid-1',
+            },
+            targetEmployee: {
+              empName: '김민수',
+              department: {
+                deptName: '영업1팀',
+              },
+            },
+            targetDepartment: null,
+          },
+        ],
+      },
+      async () => {
+        const data = await getDashboardPageData(makeSession())
+
+        assert.equal(
+          data.reviewQueue.some((item) => item.href?.includes('/checkin?recordId=checkin-mid-1') ?? false),
+          true
+        )
+        assert.equal(data.reviewQueue.some((item) => item.title.includes('2026 상반기 중간 점검')), true)
       }
     )
   })

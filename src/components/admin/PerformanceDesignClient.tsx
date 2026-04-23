@@ -28,6 +28,7 @@ import {
   recommendIndicatorStatus,
   resolveNonQuantitativeTemplateBinding,
 } from '@/lib/performance-design'
+import { MidReviewOperationsPanel } from '@/components/admin/MidReviewOperationsPanel'
 import type { PerformanceDesignPageData } from '@/server/admin/performance-design'
 
 function deepClone<T>(value: T): T {
@@ -654,6 +655,12 @@ export function PerformanceDesignClient({ data }: { data: PerformanceDesignPageD
           </div>
         </section>
       ) : null}
+
+      <MidReviewOperationsPanel
+        cycleId={data.selectedCycleId}
+        cycleName={data.selectedCycleName}
+        departments={data.departments}
+      />
 
       <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="space-y-6">

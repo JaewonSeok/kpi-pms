@@ -4,6 +4,11 @@ import assert from 'node:assert/strict'
 type PrismaMethod = (...args: any[]) => Promise<any>
 
 process.env.DATABASE_URL ||= 'postgresql://postgres:password@localhost:5432/kpi_pms'
+process.env.AUTH_URL ||= 'http://localhost:3000'
+process.env.AUTH_SECRET ||= 'test-secret'
+process.env.GOOGLE_CLIENT_ID ||= 'test-google-client'
+process.env.GOOGLE_CLIENT_SECRET ||= 'test-google-secret'
+process.env.ALLOWED_DOMAIN ||= 'example.com'
 
 async function run(name: string, fn: () => Promise<void> | void) {
   try {
@@ -299,6 +304,7 @@ async function withStubbedStatisticsPrisma(
     orgKpiFindMany: prismaAny.orgKpi.findMany,
     monthlyRecordFindMany: prismaAny.monthlyRecord.findMany,
     checkInFindMany: prismaAny.checkIn.findMany,
+    midReviewAssignmentFindMany: prismaAny.midReviewAssignment.findMany,
     appealFindMany: prismaAny.appeal.findMany,
     aiRequestLogFindMany: prismaAny.aiRequestLog.findMany,
     aiCompetencyCycleFindFirst: prismaAny.aiCompetencyCycle.findFirst,
@@ -356,6 +362,7 @@ async function withStubbedStatisticsPrisma(
   prismaAny.orgKpi.findMany = overrides.orgKpiFindMany ?? (async () => buildOrgKpis())
   prismaAny.monthlyRecord.findMany = overrides.monthlyRecordFindMany ?? (async () => buildMonthlyRecords())
   prismaAny.checkIn.findMany = overrides.checkInFindMany ?? (async () => buildCheckIns())
+  prismaAny.midReviewAssignment.findMany = overrides.midReviewAssignmentFindMany ?? (async () => [])
   prismaAny.appeal.findMany = overrides.appealFindMany ?? (async () => [])
   prismaAny.aiRequestLog.findMany = overrides.aiRequestLogFindMany ?? (async () => [])
   prismaAny.aiCompetencyCycle.findFirst = overrides.aiCompetencyCycleFindFirst ?? (async () => null)
@@ -379,6 +386,7 @@ async function withStubbedStatisticsPrisma(
     prismaAny.orgKpi.findMany = snapshot.orgKpiFindMany
     prismaAny.monthlyRecord.findMany = snapshot.monthlyRecordFindMany
     prismaAny.checkIn.findMany = snapshot.checkInFindMany
+    prismaAny.midReviewAssignment.findMany = snapshot.midReviewAssignmentFindMany
     prismaAny.appeal.findMany = snapshot.appealFindMany
     prismaAny.aiRequestLog.findMany = snapshot.aiRequestLogFindMany
     prismaAny.aiCompetencyCycle.findFirst = snapshot.aiCompetencyCycleFindFirst

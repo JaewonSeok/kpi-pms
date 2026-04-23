@@ -72,6 +72,7 @@ import {
   type JobDescriptionFormState,
   type RecommendationDecisionMode,
 } from './OrgKpiTeamAiWorkspace'
+import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 
 type Props = OrgKpiPageData & {
   initialDepartmentFilterId?: string
@@ -3607,6 +3608,13 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
             </p>
           </div>
         </div>
+
+        <MidReviewReferencePanel
+          kind="org-kpi"
+          targetId={kpi.id}
+          title="중간 점검"
+          helper="최근 중간 점검에서 이 목표의 방향, 수정 필요 여부, 다음 기간 계획을 확인합니다."
+        />
         {kpi.lineage.length ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="text-sm font-semibold text-slate-900">정렬 경로</div>

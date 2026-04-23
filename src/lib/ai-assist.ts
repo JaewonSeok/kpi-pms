@@ -51,6 +51,7 @@ export const AI_REQUEST_LABELS: Record<AIRequestType, string> = {
   BIAS_ANALYSIS: '?명뼢 遺꾩꽍',
   GROWTH_PLAN: '?깆옣 怨꾪쉷 異붿쿇',
   EVAL_PERFORMANCE_BRIEFING: '성과평가 브리핑',
+  MID_REVIEW_ASSIST: '중간 점검 AI 코치',
 }
 
 const KPI_SCHEMA = {
@@ -1211,6 +1212,60 @@ const GROWTH_PLAN_SCHEMA = {
   },
 } satisfies JsonRecord
 
+const MID_REVIEW_ASSIST_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'performanceSummary',
+    'goalValidityReview',
+    'executionCoachingReview',
+    'followUpQuestions',
+    'commentDraft',
+    'vagueCommentSignals',
+    'nextActions',
+    'lowConfidenceNotice',
+  ],
+  properties: {
+    performanceSummary: { type: 'string' },
+    goalValidityReview: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['status', 'summary'],
+      properties: {
+        status: { type: 'string', enum: ['KEEP', 'ADJUST', 'REVISE'] },
+        summary: { type: 'string' },
+      },
+    },
+    executionCoachingReview: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['status', 'summary'],
+      properties: {
+        status: { type: 'string', enum: ['ON_TRACK', 'NEEDS_SUPPORT', 'REDESIGN_REQUIRED'] },
+        summary: { type: 'string' },
+      },
+    },
+    followUpQuestions: {
+      type: 'array',
+      minItems: 3,
+      maxItems: 5,
+      items: { type: 'string' },
+    },
+    commentDraft: { type: 'string' },
+    vagueCommentSignals: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+    nextActions: {
+      type: 'array',
+      minItems: 2,
+      maxItems: 5,
+      items: { type: 'string' },
+    },
+    lowConfidenceNotice: { type: 'string' },
+  },
+} satisfies JsonRecord
+
 const AI_CONFIGS: Record<AIRequestType, AiConfig> = {
   KPI_ASSIST: {
     schemaName: 'kpi_assist',
@@ -1241,6 +1296,12 @@ const AI_CONFIGS: Record<AIRequestType, AiConfig> = {
     schema: EXECUTIVE_PERFORMANCE_BRIEFING_RESPONSE_FORMAT.schema as JsonRecord,
     systemPrompt:
       'You are an executive performance briefing assistant. Use only the provided evidence, never assign a final grade, and return strictly validated JSON.',
+  },
+  MID_REVIEW_ASSIST: {
+    schemaName: 'mid_review_assist',
+    schema: MID_REVIEW_ASSIST_SCHEMA,
+    systemPrompt:
+      'You are a mid-review coaching assistant. Reply in Korean. Use only the provided evidence. Distinguish between goal validity issues and execution coaching issues. Never make final HR or evaluation decisions. When evidence is weak, explicitly say so.',
   },
 }
 
@@ -1478,6 +1539,24 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     schema: COMPENSATION_DECISION_EXPLANATION_SCHEMA,
     systemPrompt:
       'You are a compensation explanation assistant. Reply in Korean. Explain the main drivers of a compensation decision in concise, employee-friendly language without exposing internal-only details.',
+  },
+  'MID_REVIEW_ASSIST:evidence-summary': {
+    schemaName: 'mid_review_evidence_summary',
+    schema: MID_REVIEW_ASSIST_SCHEMA,
+    systemPrompt:
+      'You are a mid-review evidence assistant. Reply in Korean. Summarize current performance evidence, clarify what is supported versus missing, and do not infer unsupported conclusions.',
+  },
+  'MID_REVIEW_ASSIST:leader-coach': {
+    schemaName: 'mid_review_leader_coach',
+    schema: MID_REVIEW_ASSIST_SCHEMA,
+    systemPrompt:
+      'You are a leader enablement coach for mid-review meetings. Reply in Korean. Separate goal redesign from execution coaching, provide follow-up questions for a one-on-one, and suggest concrete next actions grounded only in the given evidence.',
+  },
+  'MID_REVIEW_ASSIST:comment-support': {
+    schemaName: 'mid_review_comment_support',
+    schema: MID_REVIEW_ASSIST_SCHEMA,
+    systemPrompt:
+      'You are a comment drafting assistant for mid-review conversations. Reply in Korean. Produce evidence-backed wording, flag vague or unsupported statements, and avoid final ratings or people decisions.',
   },
 }
 
@@ -2556,6 +2635,33 @@ export function buildFallbackResult(
           '?꾩슂??援먯쑁?대굹 硫섑넗留??먯썝???ъ쟾???뺣낫?⑸땲??',
         ],
         milestone: grade ? `${grade} 寃곌낵 ?쇰뱶諛?諛섏쁺 ??90????以묎컙 ?먭?` : '90????以묎컙 ?먭?',
+      }
+    case AIRequestType.MID_REVIEW_ASSIST:
+      return {
+        performanceSummary:
+          summary || '현재 확보된 KPI, 월간 실적, 체크인 기록을 기준으로 중간 점검 대화를 준비했습니다.',
+        goalValidityReview: {
+          status: 'ADJUST',
+          summary:
+            '현재 목표는 완전히 폐기할 수준은 아니지만, 우선순위나 달성 방식 조정이 필요한지 확인해 보세요.',
+        },
+        executionCoachingReview: {
+          status: 'NEEDS_SUPPORT',
+          summary: '성과 대화에서는 실행 장애 요인과 필요한 지원이 구체적으로 정리되어야 합니다.',
+        },
+        followUpQuestions: [
+          '현재 목표가 여전히 가장 중요한 우선순위인지 확인할 수 있는 근거는 무엇인가요?',
+          '지금까지의 실행에서 가장 큰 병목은 무엇이었고, 어떤 지원이 있으면 달라질까요?',
+          '다음 기간에 꼭 달라져야 하는 행동이나 결과를 한 문장으로 정리하면 무엇인가요?',
+        ],
+        commentDraft:
+          '현재까지의 성과와 이슈를 바탕으로 목표 자체의 유효성과 실행 방식 모두를 다시 점검할 필요가 있습니다. 다음 기간에는 기대 상태와 판단 기준을 더 구체적으로 합의하고, 필요한 지원 계획을 함께 정리해 주세요.',
+        vagueCommentSignals: ['근거 없이 추상적인 표현은 구체적인 사례나 지표로 보강해 주세요.'],
+        nextActions: [
+          '목표 유지 여부와 조정 필요성을 먼저 합의해 주세요.',
+          '다음 기간의 기대 상태와 판단 기준을 문장으로 명확히 남겨 주세요.',
+        ],
+        lowConfidenceNotice: '근거가 부족한 영역은 최종 판단 전에 추가 확인이 필요합니다.',
       }
     default:
       return {

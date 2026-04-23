@@ -2,6 +2,7 @@ import type { Session } from 'next-auth'
 import { prisma } from '@/lib/prisma'
 import { buildOperationsSummary } from '@/lib/operations'
 import { getCurrentYear } from '@/lib/utils'
+import { getMidReviewMonitoringView } from '@/server/mid-review'
 
 export type DashboardTone = 'success' | 'warn' | 'error' | 'neutral'
 
@@ -117,6 +118,27 @@ function resolveDashboardScopeDepartmentIds(sessionUser: DashboardSessionUser) {
   }
 
   return sessionUser.deptId ? [sessionUser.deptId] : []
+}
+
+const MID_REVIEW_TYPE_LABELS: Record<string, string> = {
+  ALIGNMENT: '정렬형',
+  RETROSPECTIVE: '회고형',
+  ASSESSMENT: '평가형',
+  DEVELOPMENT: '발전형',
+}
+
+const MID_REVIEW_STATUS_LABELS: Record<string, string> = {
+  NOT_STARTED: '미시작',
+  SELF_DRAFT: '구성원 작성 중',
+  SELF_SUBMITTED: '구성원 제출 완료',
+  LEADER_DRAFT: '리더 검토 중',
+  LEADER_SUBMITTED: '리더 제출 완료',
+  CLOSED: '완료',
+}
+
+function formatDueDateLabel(value?: Date | null) {
+  if (!value) return '마감일 미정'
+  return `${value.toLocaleDateString('ko-KR')} 마감`
 }
 
 async function loadDashboardSection<T>(params: {
@@ -309,7 +331,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
 
   const teamMemberIds = teamMembers.map((item) => item.id)
 
-  const [teamRiskyMonthly, teamUpcomingCheckins, opsSummary] = await Promise.all([
+  const [teamRiskyMonthly, teamUpcomingCheckins, opsSummary, pendingMidReviews, midReviewMonitoring] = await Promise.all([
     teamMemberIds.length
       ? loadDashboardSection({
           key: 'team-risk',
@@ -355,9 +377,220 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
           loader: () => buildOperationsSummary(),
         })
       : Promise.resolve(null),
+    sessionUser.role !== 'ROLE_MEMBER' && sessionUser.role !== 'ROLE_ADMIN' && sessionUser.role !== 'ROLE_CEO'
+      ? loadDashboardSection({
+          key: 'mid-review-queue',
+          title: '중간 점검 대기 항목 일부 생략',
+          description: '중간 점검 대기 항목을 불러오지 못해 기본 큐만 표시합니다.',
+          fallback: [],
+          alerts,
+          loader: () =>
+            prisma.midReviewAssignment.findMany({
+              where: {
+                managerId: sessionUser.id,
+                status: { notIn: ['LEADER_SUBMITTED', 'CLOSED'] },
+                cycle: { status: 'ACTIVE' },
+              },
+              include: {
+                cycle: {
+                  select: {
+                    name: true,
+                    reviewType: true,
+                    leaderDueAt: true,
+                  },
+                },
+                targetEmployee: {
+                  select: {
+                    empName: true,
+                    department: { select: { deptName: true } },
+                  },
+                },
+                targetDepartment: {
+                  select: {
+                    deptName: true,
+                  },
+                },
+                relatedCheckIn: {
+                  select: {
+                    id: true,
+                  },
+                },
+              },
+              orderBy: { updatedAt: 'desc' },
+              take: 4,
+            }),
+        })
+      : Promise.resolve([]),
+    sessionUser.role === 'ROLE_ADMIN' || sessionUser.role === 'ROLE_CEO'
+      ? loadDashboardSection({
+          key: 'mid-review-monitoring',
+          title: '중간 점검 운영 신호 일부 생략',
+          description: '중간 점검 운영 현황을 불러오지 못해 운영 신호 일부가 제외되었습니다.',
+          fallback: null,
+          alerts,
+          loader: () => getMidReviewMonitoringView(),
+        })
+      : Promise.resolve(null),
   ])
 
   const hasDegradedSections = alerts.length > 0
+  const midReviewQueueItems = pendingMidReviews.map((assignment) => {
+    const targetLabel = assignment.targetEmployee?.empName ?? assignment.targetDepartment?.deptName ?? '중간 점검'
+    const departmentLabel =
+      assignment.targetEmployee?.department?.deptName ??
+      assignment.targetDepartment?.deptName ??
+      '대상 조직 미지정'
+
+    const midReviewFocusItems = midReviewMonitoring
+      ? [
+          {
+            title: '중간 점검 액션 누락 조직',
+            description: `${midReviewMonitoring.summary.noActionTeamCount}개 조직에서 후속 액션 없이 점검이 멈춰 있습니다.`,
+            badge: '중간 점검',
+            href: '/statistics#mid-review-section',
+            tone: toTone(midReviewMonitoring.summary.noActionTeamCount, 1, 3),
+          },
+          {
+            title: '목표 수정 필요 건수',
+            description: `${midReviewMonitoring.summary.revisionRequestedCount}건의 목표가 유지 여부 재검토 또는 수정이 필요합니다.`,
+            badge: 'Goal review',
+            href: '/statistics#mid-review-section',
+            tone: toTone(midReviewMonitoring.summary.revisionRequestedCount, 1, 5),
+          },
+        ]
+      : []
+    const midReviewRisks = midReviewMonitoring
+      ? [
+          ...(midReviewMonitoring.summary.noActionTeamCount > 0
+            ? [
+                {
+                  title: '중간 점검 액션 누락',
+                  description: `${midReviewMonitoring.summary.noActionTeamCount}개 조직에 후속 액션이 없는 중간 점검이 있습니다.`,
+                  badge: 'Mid-review',
+                  href: '/statistics#mid-review-section',
+                  tone: toTone(midReviewMonitoring.summary.noActionTeamCount, 1, 3),
+                },
+              ]
+            : []),
+          ...(midReviewMonitoring.summary.peopleRiskWithoutPlanCount > 0
+            ? [
+                {
+                  title: '유지 리스크 후속 계획 없음',
+                  description: `${midReviewMonitoring.summary.peopleRiskWithoutPlanCount}건의 고위험 유지 이슈에 지원 계획이 없습니다.`,
+                  badge: 'People review',
+                  href: '/statistics#mid-review-section',
+                  tone: toTone(midReviewMonitoring.summary.peopleRiskWithoutPlanCount, 1, 2),
+                },
+              ]
+            : []),
+          ...(midReviewMonitoring.summary.alignmentRiskCount > 0
+            ? [
+                {
+                  title: '방향 정렬 리스크',
+                  description: `${midReviewMonitoring.summary.alignmentRiskCount}건의 중간 점검에서 방향 이해 또는 기대 정렬 위험 신호가 남아 있습니다.`,
+                  badge: 'Alignment',
+                  href: '/statistics#mid-review-section',
+                  tone: toTone(midReviewMonitoring.summary.alignmentRiskCount, 1, 4),
+                },
+              ]
+            : []),
+        ]
+      : []
+    const hasMidReviewRisk =
+      (midReviewMonitoring?.summary.noActionTeamCount ?? 0) > 0 ||
+      (midReviewMonitoring?.summary.peopleRiskWithoutPlanCount ?? 0) > 0 ||
+      (midReviewMonitoring?.summary.alignmentRiskCount ?? 0) > 0
+    void midReviewFocusItems
+    void midReviewRisks
+    void hasMidReviewRisk
+
+    return {
+      title: `${targetLabel} · ${assignment.cycle.name}`,
+      description: `${departmentLabel} / ${
+        MID_REVIEW_TYPE_LABELS[assignment.cycle.reviewType] ?? assignment.cycle.reviewType
+      } / ${formatDueDateLabel(assignment.cycle.leaderDueAt)}`,
+      badge: MID_REVIEW_STATUS_LABELS[assignment.status] ?? assignment.status,
+      href: assignment.relatedCheckIn?.id ? `/checkin?recordId=${encodeURIComponent(assignment.relatedCheckIn.id)}` : '/checkin',
+    }
+  })
+  const evaluationQueueItems = reviewQueue.map((item) => ({
+    title: `${item.target.empName} · ${item.evalCycle.cycleName}`,
+    description: `${item.target.department?.deptName ?? '소속 조직 미지정'} / ${item.evalStage} / ${item.status}`,
+    badge: item.status,
+    href: `/evaluation/workbench?cycleId=${encodeURIComponent(item.evalCycleId)}&evaluationId=${encodeURIComponent(item.id)}`,
+  }))
+  const combinedReviewQueue = [...midReviewQueueItems, ...evaluationQueueItems].slice(0, 6)
+  const combinedReviewCount = reviewQueue.length + pendingMidReviews.length
+  const midReviewFocusItems = midReviewMonitoring
+    ? [
+        {
+          title: '중간 점검 액션 누락 조직',
+          description: `${midReviewMonitoring.summary.noActionTeamCount}개 조직에서 후속 액션 없이 점검이 멈춰 있습니다.`,
+          badge: '중간 점검',
+          href: '/statistics#mid-review-section',
+          tone: toTone(midReviewMonitoring.summary.noActionTeamCount, 1, 3),
+        },
+        {
+          title: '목표 수정 필요 건수',
+          description: `${midReviewMonitoring.summary.revisionRequestedCount}건의 목표가 유지 여부 재검토 또는 수정이 필요합니다.`,
+          badge: 'Goal review',
+          href: '/statistics#mid-review-section',
+          tone: toTone(midReviewMonitoring.summary.revisionRequestedCount, 1, 5),
+        },
+      ]
+    : []
+  const midReviewRisks = midReviewMonitoring
+    ? [
+        ...(midReviewMonitoring.summary.noActionTeamCount > 0
+          ? [
+              {
+                title: '중간 점검 액션 누락',
+                description: `${midReviewMonitoring.summary.noActionTeamCount}개 조직에 후속 액션이 없는 중간 점검이 있습니다.`,
+                badge: 'Mid-review',
+                href: '/statistics#mid-review-section',
+                tone: toTone(midReviewMonitoring.summary.noActionTeamCount, 1, 3),
+              },
+            ]
+          : []),
+        ...(midReviewMonitoring.summary.peopleRiskWithoutPlanCount > 0
+          ? [
+              {
+                title: '유지 리스크 후속 계획 없음',
+                description: `${midReviewMonitoring.summary.peopleRiskWithoutPlanCount}건의 고위험 유지 이슈에 지원 계획이 없습니다.`,
+                badge: 'People review',
+                href: '/statistics#mid-review-section',
+                tone: toTone(midReviewMonitoring.summary.peopleRiskWithoutPlanCount, 1, 2),
+              },
+            ]
+          : []),
+        ...(midReviewMonitoring.summary.alignmentRiskCount > 0
+          ? [
+              {
+                title: '방향 정렬 리스크',
+                description: `${midReviewMonitoring.summary.alignmentRiskCount}건의 중간 점검에서 방향 이해 또는 기대 정렬 위험 신호가 남아 있습니다.`,
+                badge: 'Alignment',
+                href: '/statistics#mid-review-section',
+                tone: toTone(midReviewMonitoring.summary.alignmentRiskCount, 1, 4),
+              },
+            ]
+          : []),
+      ]
+    : []
+  const hasMidReviewRisk =
+    (midReviewMonitoring?.summary.noActionTeamCount ?? 0) > 0 ||
+    (midReviewMonitoring?.summary.peopleRiskWithoutPlanCount ?? 0) > 0 ||
+    (midReviewMonitoring?.summary.alignmentRiskCount ?? 0) > 0
+  const memberMidReviewFocusItems = pendingMidReviews.length
+    ? [
+        {
+          title: '내가 완료해야 할 중간 점검',
+          description: `${pendingMidReviews.length}건의 중간 점검이 검토 또는 후속 액션을 기다리고 있습니다.`,
+          badge: 'Mid-review',
+          href: '/checkin',
+          tone: toTone(pendingMidReviews.length, 1, 3),
+        },
+      ]
+    : []
 
   if (sessionUser.role === 'ROLE_ADMIN' || sessionUser.role === 'ROLE_CEO') {
     const title = sessionUser.role === 'ROLE_CEO' ? '경영 대시보드' : '운영 대시보드'
@@ -372,9 +605,11 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
       year,
       title,
       description,
-      statusLabel: hasDegradedSections ? '주의' : opsSummary?.status.label ?? '정상',
+      statusLabel: hasDegradedSections || hasMidReviewRisk ? '주의' : opsSummary?.status.label ?? '정상',
       statusTone: hasDegradedSections
         ? 'warn'
+        : hasMidReviewRisk
+          ? 'warn'
         : opsSummary?.status.tone === 'error'
           ? 'error'
           : opsSummary?.status.tone === 'warn'
@@ -419,7 +654,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         { label: '성과 얼라인먼트', description: '조직별 개인 목표 수립 비율, 조직 KPI 연결 비율, 미연결 목표를 운영 화면에서 확인', href: '/admin/goal-alignment' },
       ],
       trend: myTrend,
-      focusItems: [
+      focusItems: [...midReviewFocusItems,
         {
           title: '로그인 준비 미완료 계정',
           description: `${opsSummary?.metrics.loginUnavailableAccounts ?? 0}건의 계정에 로그인 준비 이슈가 있습니다.`,
@@ -442,7 +677,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
           tone: toTone(opsSummary?.metrics.unresolvedCalibrationCount ?? 0, 1, 1),
         },
       ],
-      reviewQueue: reviewQueue.map((item) => ({
+      reviewQueue: combinedReviewQueue.length ? combinedReviewQueue : reviewQueue.map((item) => ({
         title: `${item.target.empName} · ${item.evalCycle.cycleName}`,
         description: `${item.target.department?.deptName ?? '부서 미지정'} / ${item.evalStage} / ${item.status}`,
         badge: item.status,
@@ -459,13 +694,13 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         description: item.message,
         href: item.link || '/notifications',
       })),
-      risks: (opsSummary?.risks ?? []).slice(0, 6).map((risk) => ({
+      risks: [...midReviewRisks, ...(opsSummary?.risks ?? []).slice(0, 6).map((risk) => ({
         title: risk.label,
         description: risk.description,
         badge: `${risk.count}건`,
         href: risk.relatedUrl,
-        tone: risk.severity === 'HIGH' ? 'error' : risk.severity === 'MEDIUM' ? 'warn' : 'neutral',
-      })),
+        tone: (risk.severity === 'HIGH' ? 'error' : risk.severity === 'MEDIUM' ? 'warn' : 'neutral') as DashboardTone,
+      }))].slice(0, 6),
       alerts,
     }
   }
@@ -487,8 +722,8 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
     year,
     title,
     description,
-    statusLabel: hasDegradedSections || reviewQueue.length > 0 || teamRiskyMonthly > 0 ? '주의' : '정상',
-    statusTone: hasDegradedSections || reviewQueue.length > 0 || teamRiskyMonthly > 0 ? 'warn' : 'success',
+    statusLabel: hasDegradedSections || combinedReviewCount > 0 || teamRiskyMonthly > 0 ? '주의' : '정상',
+    statusTone: hasDegradedSections || combinedReviewCount > 0 || teamRiskyMonthly > 0 ? 'warn' : 'success',
     summary: [
       {
         label: '평균 달성률',
@@ -506,9 +741,9 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
       },
       {
         label: '검토 대기 평가',
-        value: String(reviewQueue.length),
+        value: String(combinedReviewCount),
         description: '내가 검토하거나 작성 중인 평가',
-        tone: toTone(reviewQueue.length, 1, 4),
+        tone: toTone(combinedReviewCount, 1, 4),
         href: '/evaluation/workbench',
       },
       {
@@ -526,7 +761,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
       { label: '체크인 일정', description: '이번 주 1:1 일정과 후속 액션 확인', href: '/checkin' },
     ],
     trend: myTrend,
-    focusItems: [
+    focusItems: [...memberMidReviewFocusItems,
       {
         title: '개인 KPI 정렬 상태',
         description: `${myKpis.filter((item) => item.linkedOrgKpiId).length}/${myKpis.length}개 KPI가 조직 목표와 연결되어 있습니다.`,
@@ -553,7 +788,7 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         tone: toTone(teamRiskyMonthly, 1, 5),
       },
     ],
-    reviewQueue: reviewQueue.map((item) => ({
+    reviewQueue: combinedReviewQueue.length ? combinedReviewQueue : reviewQueue.map((item) => ({
       title: `${item.target.empName} · ${item.evalCycle.cycleName}`,
       description: `${item.target.department?.deptName ?? '부서 미지정'} / ${item.evalStage} / ${item.status}`,
       badge: item.status,
@@ -573,10 +808,10 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
     risks: [
       {
         title: '검토 대기 평가',
-        description: `${reviewQueue.length}건이 아직 제출 또는 확정되지 않았습니다.`,
+        description: `${combinedReviewCount}건이 아직 제출 또는 확정되지 않았습니다.`,
         badge: 'Review',
         href: '/evaluation/workbench',
-        tone: toTone(reviewQueue.length, 1, 4),
+        tone: toTone(combinedReviewCount, 1, 4),
       },
       {
         title: '팀 월간 리스크',

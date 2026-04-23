@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Bot, ClipboardList, Copy, History, Link2, Plus, Send, Sparkles, Trash2, X } from 'lucide-react'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
 import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
+import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 import {
   getPersonalKpiDeleteActionState,
   resolveNextPersonalKpiSelectionAfterDelete,
@@ -2635,6 +2636,13 @@ function GoalDetailPanel(props: {
             </div>
           </Block>
         ) : null}
+
+        <MidReviewReferencePanel
+          kind="personal-kpi"
+          targetId={item.id}
+          title="중간 점검"
+          helper="최근 중간 점검에서 합의한 목표 유지 여부, 기대 상태, 다음 계획을 확인합니다."
+        />
 
         <WeightApprovalSummaryCard approval={item.weightApproval} weight={item.weight} orgLineage={item.orgLineage} />
 

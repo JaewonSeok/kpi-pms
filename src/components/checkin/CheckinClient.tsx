@@ -20,6 +20,7 @@ import {
   Target,
   Users,
 } from 'lucide-react'
+import { MidReviewDetailDrawer } from '@/components/checkin/MidReviewDetailDrawer'
 import type {
   CheckinActionItemViewModel,
   CheckinPageData,
@@ -83,7 +84,7 @@ const TYPE_LABELS: Record<string, string> = {
   BIWEEKLY: '격주 체크인',
   MONTHLY: '월간 체크인',
   AD_HOC: '수시 체크인',
-  MIDYEAR_REVIEW: '중간 리뷰',
+  MIDYEAR_REVIEW: '중간 점검',
   QUARTERLY: '분기 리뷰',
 }
 
@@ -119,6 +120,7 @@ export function CheckinClient(props: CheckinPageData) {
   })
 
   const viewModel = props.viewModel
+  const requestedRecordId = searchParams.get('recordId') ?? ''
 
   const initialCreateForm = useMemo<NewCheckinFormState>(() => {
     const defaultOwnerId =
@@ -153,6 +155,16 @@ export function CheckinClient(props: CheckinPageData) {
       setSelectedRecordId(viewModel.records[0].id)
     }
   }, [selectedRecordId, viewModel?.records])
+
+  useEffect(() => {
+    if (!requestedRecordId || !viewModel?.records.some((record) => record.id === requestedRecordId)) {
+      return
+    }
+
+    setSelectedRecordId(requestedRecordId)
+    setActiveTab('list')
+    setIsDrawerOpen(true)
+  }, [requestedRecordId, viewModel?.records])
 
   const selectedRecord =
     viewModel?.records.find((record) => record.id === selectedRecordId) ?? viewModel?.records[0] ?? null
@@ -234,6 +246,13 @@ export function CheckinClient(props: CheckinPageData) {
   function handleSelectRecord(id: string) {
     setSelectedRecordId(id)
     setIsDrawerOpen(true)
+  }
+
+  function handleCloseDrawer() {
+    setIsDrawerOpen(false)
+    if (requestedRecordId) {
+      updateQuery({ recordId: undefined })
+    }
   }
 
   function updateQuery(next: Record<string, string | undefined>) {
@@ -560,21 +579,30 @@ export function CheckinClient(props: CheckinPageData) {
 
       <RelatedActionLinks />
 
-      <CheckinDetailDrawer
-        record={isDrawerOpen ? selectedRecord : null}
-        prep={focusPrep}
-        editForm={editForm}
-        completeForm={completeForm}
-        isPending={isMutating}
-        onClose={() => setIsDrawerOpen(false)}
-        onChangeEditForm={setEditForm}
-        onChangeCompleteForm={setCompleteForm}
-        onSave={saveRecordEdits}
-        onComplete={completeRecord}
-        onCancel={cancelRecord}
-        onToggleAction={toggleActionItem}
-        onOpenNext={openNextCheckinFromRecord}
-      />
+      {isDrawerOpen && selectedRecord?.type === 'MIDYEAR_REVIEW' ? (
+        <MidReviewDetailDrawer
+          record={selectedRecord}
+          open={isDrawerOpen}
+          onClose={handleCloseDrawer}
+          onUpdated={() => router.refresh()}
+        />
+      ) : (
+        <CheckinDetailDrawer
+          record={isDrawerOpen ? selectedRecord : null}
+          prep={focusPrep}
+          editForm={editForm}
+          completeForm={completeForm}
+          isPending={isMutating}
+          onClose={handleCloseDrawer}
+          onChangeEditForm={setEditForm}
+          onChangeCompleteForm={setCompleteForm}
+          onSave={saveRecordEdits}
+          onComplete={completeRecord}
+          onCancel={cancelRecord}
+          onToggleAction={toggleActionItem}
+          onOpenNext={openNextCheckinFromRecord}
+        />
+      )}
 
       <CreateCheckinModal
         open={isCreateOpen}
