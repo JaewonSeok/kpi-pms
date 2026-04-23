@@ -6,15 +6,12 @@ import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useStat
 import {
   Archive,
   Bot,
-  ChevronDown,
-  ChevronRight,
   Copy,
   FilePenLine,
   FileUp,
   GitBranchPlus,
   Link2,
   Lock,
-  Network,
   Plus,
   Send,
   ShieldCheck,
@@ -42,10 +39,10 @@ import {
 } from '@/lib/org-kpi-client-state'
 import type { OrgKpiScope } from '@/lib/org-kpi-scope'
 import {
+  buildOrgKpiStructureSummary,
   buildOrgKpiHierarchySelectionView,
   buildOrgKpiHierarchyStructure,
   getOrgKpiHierarchyInteractionChangedIds,
-  getOrgKpiConnectionTone,
   isOrgKpiHierarchyNodeAffected,
   type OrgKpiHierarchyNode,
 } from '@/lib/org-kpi-hierarchy'
@@ -2296,7 +2293,6 @@ export function OrgKpiManagementClient({
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="space-y-4">
-                <OrgKpiStructureLegend />
                 <OrgKpiHierarchyPanel
                   roots={hierarchyView.roots}
                   disconnected={hierarchyView.disconnected}
@@ -2333,6 +2329,8 @@ export function OrgKpiManagementClient({
                 onStatus={handleStatusChange}
                 onAi={handleAiAction}
                 onSelectRelatedKpi={handleOpenRelatedReference}
+                onCreateChildGoal={handleCreateChildGoal}
+                onViewLinkage={handleViewLinkage}
               />
             </div>
           </div>
@@ -2389,6 +2387,8 @@ export function OrgKpiManagementClient({
                 onStatus={handleStatusChange}
                 onAi={handleAiAction}
                 onSelectRelatedKpi={handleOpenRelatedReference}
+                onCreateChildGoal={handleCreateChildGoal}
+                onViewLinkage={handleViewLinkage}
               />
             </div>
           </div>
@@ -2736,97 +2736,6 @@ function EmptyState({ title, description, compact = false }: { title: string; de
 
 type RelationBadgeTone = 'neutral' | 'linked' | 'warning' | 'critical'
 
-function getOrgKpiStructureStatusBadge(
-  kpi: OrgKpiViewModel,
-): { label: string; tone: RelationBadgeTone } {
-  if (!kpi.parentOrgKpiTitle && kpi.childOrgKpiCount === 0) {
-    return { label: '미연결', tone: 'warning' }
-  }
-
-  const tone = getOrgKpiConnectionTone(kpi)
-  if (tone === 'critical') {
-    return { label: '위험 높음', tone: 'critical' }
-  }
-  if (tone === 'warning') {
-    return { label: '주의', tone: 'warning' }
-  }
-  if (tone === 'linked') {
-    return { label: '정상 연결', tone: 'linked' }
-  }
-
-  return { label: '미연결', tone: 'neutral' }
-}
-
-function getOrgKpiParentLinkBadge(kpi: OrgKpiViewModel) {
-  return {
-    label: kpi.parentOrgKpiTitle ? '상위 연결됨' : '상위 목표 없음',
-    tone: kpi.parentOrgKpiTitle ? 'linked' : 'warning',
-  } as const
-}
-
-function getOrgKpiChildGoalBadge(kpi: OrgKpiViewModel) {
-  return {
-    label: kpi.childOrgKpiCount > 0 ? `하위 목표 ${kpi.childOrgKpiCount}개` : '하위 목표 없음',
-    tone: kpi.childOrgKpiCount > 0 ? 'linked' : 'neutral',
-  } as const
-}
-
-function getOrgKpiPersonalLinkBadge(kpi: OrgKpiViewModel) {
-  return {
-    label:
-      kpi.linkedPersonalKpiCount > 0
-        ? formatExplicitRatio({
-            numeratorLabel: '연결된 개인 KPI',
-            numeratorValue: kpi.linkedPersonalKpiCount,
-            numeratorUnit: '건',
-            denominatorLabel: '대상 인원',
-            denominatorValue: kpi.targetPopulationCount,
-            denominatorUnit: '명',
-            separator: ' · ',
-          })
-        : '연결된 개인 KPI가 없습니다',
-    tone: kpi.linkedPersonalKpiCount > 0 ? 'linked' : 'warning',
-  } as const
-}
-
-function getOrgKpiCoverageBadge(kpi: OrgKpiViewModel) {
-  return {
-    label: `대상 인원 연결률 ${formatPercent(kpi.coverageRate)}`,
-    tone:
-      kpi.coverageRate >= 70 ? 'linked' : kpi.coverageRate > 0 ? 'warning' : 'neutral',
-  } as const
-}
-
-function getOrgKpiRecentMonthlyBadge(kpi: OrgKpiViewModel) {
-  return {
-    label: kpi.recentMonthlyRecords.length ? '최근 월간 실적 반영' : '최근 월간 실적 없음',
-    tone: kpi.recentMonthlyRecords.length ? 'linked' : 'warning',
-  } as const
-}
-
-function buildOrgKpiConnectionBadges(kpi: OrgKpiViewModel) {
-  const badges: Array<{ label: string; tone: RelationBadgeTone }> = []
-  const structureStatusBadge = getOrgKpiStructureStatusBadge(kpi)
-
-  badges.push(structureStatusBadge)
-  badges.push(getOrgKpiParentLinkBadge(kpi))
-  badges.push(getOrgKpiChildGoalBadge(kpi))
-  badges.push(getOrgKpiPersonalLinkBadge(kpi))
-  badges.push(getOrgKpiCoverageBadge(kpi))
-  badges.push(getOrgKpiRecentMonthlyBadge(kpi))
-
-  if (kpi.riskFlags.some((flag) => flag.includes('cascade'))) {
-    badges.push({ label: 'cascade 후보 부족', tone: 'warning' })
-  }
-  if (structureStatusBadge.label === '위험 높음') {
-    badges.push({ label: '위험 높음', tone: 'critical' })
-  } else if (structureStatusBadge.label === '주의') {
-    badges.push({ label: '연결 주의', tone: 'warning' })
-  }
-
-  return badges.filter((badge, index, array) => array.findIndex((item) => item.label === badge.label) === index)
-}
-
 function RelationBadge({ tone, children }: { tone: RelationBadgeTone; children: ReactNode }) {
   const toneClass =
     tone === 'linked'
@@ -2838,6 +2747,34 @@ function RelationBadge({ tone, children }: { tone: RelationBadgeTone; children: 
           : 'border-slate-200 bg-slate-100 text-slate-600'
 
   return <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', toneClass)}>{children}</span>
+}
+
+function HierarchySummaryField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-white px-3 py-2">
+      <div className="text-xs font-semibold text-slate-700">{label}</div>
+      <div className="mt-1 text-sm text-slate-600">{value}</div>
+    </div>
+  )
+}
+
+function formatOrgKpiOwnerSummary(owner?: OrgKpiViewModel['owner']) {
+  if (!owner) return '미지정'
+  return owner.position ? `${owner.name} · ${owner.position}` : owner.name
+}
+
+function getOrgKpiParentSummaryText(
+  kpi: OrgKpiViewModel,
+  options: {
+    isDisconnected?: boolean
+    isOrphan?: boolean
+    hasChildren?: boolean
+  } = {}
+) {
+  if (kpi.parentOrgKpiTitle) return kpi.parentOrgKpiTitle
+  if (options.isDisconnected || options.isOrphan) return '연결 필요'
+  if (options.hasChildren) return '최상위 목표'
+  return '연결된 상위 목표 없음'
 }
 
 function MapInlineActionButton({
@@ -2866,7 +2803,8 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
   isSelected: boolean
   onSelect: (kpiId: string) => void
 }) {
-  const connectionBadges = useMemo(() => buildOrgKpiConnectionBadges(props.kpi), [props.kpi])
+  const structureSummary = useMemo(() => buildOrgKpiStructureSummary(props.kpi), [props.kpi])
+  const hasChildren = props.kpi.childOrgKpiCount > 0
 
   return (
     <button
@@ -2878,14 +2816,15 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-slate-900">{props.kpi.title}</span>
-            <StatusBadge status={props.kpi.status} />
+            <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
           </div>
           <p className="mt-1 text-sm text-slate-500">
             {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
           </p>
+          <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
         </div>
         <div className="text-right text-sm text-slate-600">
           <div className="font-semibold text-slate-900">
@@ -2900,27 +2839,14 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
           <div className="mt-1">가중치 {formatValue(props.kpi.weight)}</div>
         </div>
       </div>
-      <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
-        <span>상위 {props.kpi.parentOrgKpiTitle ? '연결됨' : '없음'}</span>
-        <span>하위 {props.kpi.childOrgKpiCount}개</span>
-        <span>대상 인원 연결률 {formatPercent(props.kpi.coverageRate)}</span>
+      <div className="mt-4 grid gap-3 text-xs text-slate-500 sm:grid-cols-3">
+        <HierarchySummaryField label="담당자" value={formatOrgKpiOwnerSummary(props.kpi.owner)} />
+        <HierarchySummaryField
+          label="상위 목표"
+          value={getOrgKpiParentSummaryText(props.kpi, { hasChildren })}
+        />
+        <HierarchySummaryField label="하위 목표" value={formatCountWithUnit(props.kpi.childOrgKpiCount, '개')} />
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {connectionBadges.map((badge) => (
-          <RelationBadge key={`${props.kpi.id}-${badge.label}`} tone={badge.tone}>
-            {badge.label}
-          </RelationBadge>
-        ))}
-      </div>
-      {props.kpi.riskFlags.length ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {props.kpi.riskFlags.map((flag) => (
-            <span key={`${props.kpi.id}-${flag}`} className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
-              {flag}
-            </span>
-          ))}
-        </div>
-      ) : null}
     </button>
   )
 })
@@ -2977,41 +2903,6 @@ function OrgKpiScopeSidebar(props: {
   )
 }
 
-function OrgKpiStructureLegend() {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4" data-testid="org-kpi-structure-legend">
-      <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
-        <Network className="h-4 w-4 text-slate-500" />
-        목표 구조 읽는 법
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <RelationBadge tone="linked">정상 연결</RelationBadge>
-        <RelationBadge tone="warning">주의</RelationBadge>
-        <RelationBadge tone="critical">위험 높음</RelationBadge>
-        <RelationBadge tone="neutral">미연결</RelationBadge>
-      </div>
-      <p className="mt-3 text-xs leading-5 text-slate-500">
-        파란 강조는 현재 선택 KPI, 점선 연결은 상위에서 하위로 이어지는 구조, 미연결 섹션은 상위와 하위가 모두 없는 KPI를 의미합니다.
-      </p>
-    </div>
-  )
-}
-
-function summarizeChildGoalConnections(children: OrgKpiViewModel[]) {
-  const connectedCount = children.filter((child) => Boolean(child.parentOrgKpiId)).length
-  const disconnectedCount = Math.max(children.length - connectedCount, 0)
-  const averageCoverage = children.length
-    ? Math.round(children.reduce((sum, child) => sum + child.coverageRate, 0) / children.length)
-    : 0
-
-  return {
-    childCount: children.length,
-    connectedCount,
-    disconnectedCount,
-    averageCoverage,
-  }
-}
-
 type OrgKpiHierarchyNodeCardProps = {
   node: OrgKpiHierarchyNode
   selectedKpiId: string | null
@@ -3032,13 +2923,9 @@ type OrgKpiHierarchyNodeCardProps = {
 type OrgKpiDisconnectedCardProps = {
   kpi: OrgKpiViewModel
   isSelected: boolean
-  isExpanded: boolean
-  onToggleExpand: (kpiId: string) => void
   onSelectKpi: (kpiId: string) => void
   onViewLinkage: (kpiId: string) => void
-  onCreateChildGoal: (parentKpi: OrgKpiViewModel) => void
   onEditParentLink: (kpi: OrgKpiViewModel) => void
-  canCreate: boolean
   canManage: boolean
   readOnly: boolean
   goalEditLocked: boolean
@@ -3082,7 +2969,10 @@ function areOrgKpiHierarchyNodeCardPropsEqual(
 }
 
 const OrgKpiDisconnectedCard = memo(function OrgKpiDisconnectedCard(props: OrgKpiDisconnectedCardProps) {
-  const connectionBadges = useMemo(() => buildOrgKpiConnectionBadges(props.kpi), [props.kpi])
+  const structureSummary = useMemo(
+    () => buildOrgKpiStructureSummary(props.kpi, { isDisconnected: true }),
+    [props.kpi]
+  )
 
   return (
     <div
@@ -3091,78 +2981,45 @@ const OrgKpiDisconnectedCard = memo(function OrgKpiDisconnectedCard(props: OrgKp
         props.isSelected ? 'border-blue-300 bg-blue-50' : 'border-amber-200 bg-white hover:bg-amber-50'
       )}
     >
-      <div className="flex items-start justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => {
-            props.onSelectKpi(props.kpi.id)
-            props.onToggleExpand(props.kpi.id)
-          }}
-          className="min-w-0 flex-1 text-left"
-        >
-          <div className="font-semibold text-slate-900">{props.kpi.title}</div>
-          <div className="mt-1 text-sm text-slate-500">{props.kpi.departmentName}</div>
-        </button>
-        <RelationBadge tone="warning">미연결</RelationBadge>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="font-semibold text-slate-900">{props.kpi.title}</div>
+            <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
+          </p>
+          <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {connectionBadges.map((badge) => (
-          <RelationBadge key={`${props.kpi.id}-${badge.label}`} tone={badge.tone}>
-            {badge.label}
-          </RelationBadge>
-        ))}
+      <div className="mt-4 grid gap-3 text-xs text-slate-500 sm:grid-cols-2 xl:grid-cols-4">
+        <HierarchySummaryField label="소속 조직" value={props.kpi.departmentName} />
+        <HierarchySummaryField label="담당자" value={formatOrgKpiOwnerSummary(props.kpi.owner)} />
+        <HierarchySummaryField label="상위 목표" value={getOrgKpiParentSummaryText(props.kpi, { isDisconnected: true })} />
+        <HierarchySummaryField label="하위 목표" value={formatCountWithUnit(props.kpi.childOrgKpiCount, '개')} />
       </div>
-      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-        <div className="text-sm font-semibold text-slate-900">상위 목표와 연결되지 않았습니다.</div>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          이 KPI는 아직 상위 목표와 정렬되지 않았습니다. 목표 구조 안에서 연결 관계를 확인해 주세요.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
+        <MapInlineActionButton label="상세 보기" onClick={() => props.onSelectKpi(props.kpi.id)} />
+        {!props.readOnly && props.canManage && !props.goalEditLocked && props.kpi.status === 'DRAFT' ? (
           <MapInlineActionButton
             label="상위 목표 연결하기"
             onClick={() => props.onEditParentLink(props.kpi)}
-            disabled={props.readOnly || !props.canManage || props.goalEditLocked || props.kpi.status !== 'DRAFT'}
           />
-          <MapInlineActionButton
-            label="연결 구조 보기"
-            onClick={() => {
-              props.onSelectKpi(props.kpi.id)
-              props.onToggleExpand(props.kpi.id)
-            }}
-          />
-        </div>
+        ) : null}
+        <MapInlineActionButton label="연결 현황 보기" onClick={() => props.onViewLinkage(props.kpi.id)} />
       </div>
-      {props.isExpanded ? (
-        <div className="mt-4 rounded-2xl border border-dashed border-amber-200 bg-white px-4 py-4">
-          <div className="text-sm font-semibold text-slate-900">하위 목표가 없습니다.</div>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            이 목표 아래에 연결된 하위 조직 KPI가 아직 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 상태를 점검해 주세요.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <MapInlineActionButton
-              label="하위 목표 추가"
-              onClick={() => props.onCreateChildGoal(props.kpi)}
-              disabled={props.readOnly || !props.canCreate}
-            />
-            <MapInlineActionButton label="연결 상태 확인" onClick={() => props.onViewLinkage(props.kpi.id)} />
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }, (prevProps, nextProps) => {
   return (
     prevProps.kpi === nextProps.kpi &&
     prevProps.isSelected === nextProps.isSelected &&
-    prevProps.isExpanded === nextProps.isExpanded &&
-    prevProps.canCreate === nextProps.canCreate &&
     prevProps.canManage === nextProps.canManage &&
     prevProps.readOnly === nextProps.readOnly &&
     prevProps.goalEditLocked === nextProps.goalEditLocked &&
-    prevProps.onToggleExpand === nextProps.onToggleExpand &&
     prevProps.onSelectKpi === nextProps.onSelectKpi &&
     prevProps.onViewLinkage === nextProps.onViewLinkage &&
-    prevProps.onCreateChildGoal === nextProps.onCreateChildGoal &&
     prevProps.onEditParentLink === nextProps.onEditParentLink
   )
 })
@@ -3197,14 +3054,11 @@ function OrgKpiHierarchyPanel(props: {
     <div className="space-y-5" data-testid="org-kpi-hierarchy-panel">
       {props.roots.length ? (
         <section className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-semibold text-slate-900">연결된 목표 구조</h3>
-              <p className="mt-1 text-sm text-slate-500">상위 목표에서 하위 목표로 이어지는 구조를 따라가며 cascade 상태를 확인합니다.</p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-              구조 그룹 {props.roots.length}개
-            </span>
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">연결된 목표 구조</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              현재 선택한 목표와 연결된 상위·하위 구조를 간단히 확인할 수 있습니다.
+            </p>
           </div>
           {props.roots.map((root) => (
             <OrgKpiHierarchyNodeCard
@@ -3236,7 +3090,7 @@ function OrgKpiHierarchyPanel(props: {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">미연결 KPI</h3>
-              <p className="mt-1 text-sm text-slate-600">상위 목표가 없고 하위 cascade도 없는 KPI를 따로 모아 연결 누락 여부를 빠르게 확인합니다.</p>
+              <p className="mt-1 text-sm text-slate-600">상위 목표와 아직 연결되지 않은 KPI를 따로 모아 빠르게 확인합니다.</p>
             </div>
             <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800">
               미연결 {props.disconnected.length}개
@@ -3248,13 +3102,9 @@ function OrgKpiHierarchyPanel(props: {
                 key={kpi.id}
                 kpi={kpi}
                 isSelected={props.selectedKpiId === kpi.id}
-                isExpanded={props.expandedIdSet.has(kpi.id)}
-                onToggleExpand={props.onToggleExpand}
                 onSelectKpi={props.onSelectKpi}
                 onViewLinkage={props.onViewLinkage}
-                onCreateChildGoal={props.onCreateChildGoal}
                 onEditParentLink={props.onEditParentLink}
-                canCreate={props.canCreate}
                 canManage={props.canManage}
                 readOnly={props.readOnly}
                 goalEditLocked={props.goalEditLocked}
@@ -3277,60 +3127,29 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
   const hiddenChildCount = Math.max(totalChildCount - node.children.length, 0)
   const hasVisibleChildren = node.children.length > 0
   const hasChildren = totalChildCount > 0
-  const {
-    structureStatusBadge,
-    parentLinkBadge,
-    childGoalBadge,
-    personalLinkBadge,
-    coverageBadge,
-    monthlyBadge,
-    tone,
-    childGoalSummary,
-  } = useMemo(
-    () => ({
-      structureStatusBadge: getOrgKpiStructureStatusBadge(node.kpi),
-      parentLinkBadge: getOrgKpiParentLinkBadge(node.kpi),
-      childGoalBadge: getOrgKpiChildGoalBadge(node.kpi),
-      personalLinkBadge: getOrgKpiPersonalLinkBadge(node.kpi),
-      coverageBadge: getOrgKpiCoverageBadge(node.kpi),
-      monthlyBadge: getOrgKpiRecentMonthlyBadge(node.kpi),
-      tone: getOrgKpiConnectionTone(node.kpi),
-      childGoalSummary: summarizeChildGoalConnections(node.children.map((child) => child.kpi)),
-    }),
+  const structureSummary = useMemo(
+    () =>
+      buildOrgKpiStructureSummary(node.kpi, {
+        isDisconnected: node.isDisconnected,
+        isOrphan: node.isOrphan,
+        visibleChildCount: node.children.length,
+      }),
     [node]
   )
   const toneClass =
-    tone === 'critical'
+    structureSummary.tone === 'critical'
       ? 'border-red-200 bg-red-50/80'
-      : tone === 'warning'
+      : structureSummary.tone === 'warning'
         ? 'border-amber-200 bg-amber-50/80'
-        : tone === 'linked'
+        : structureSummary.tone === 'linked'
           ? 'border-emerald-200 bg-white'
           : 'border-slate-200 bg-white'
-  const handleCardClick = useCallback(() => {
-    props.onSelectKpi(node.kpi.id)
-    props.onToggleExpand(node.kpi.id)
-  }, [node.kpi.id, props.onSelectKpi, props.onToggleExpand])
-  const handleJumpToParent = useCallback(() => {
-    if (node.kpi.parentOrgKpiId) {
-      props.onSelectKpi(node.kpi.parentOrgKpiId)
-    }
-  }, [node.kpi.parentOrgKpiId, props.onSelectKpi])
   const handleViewLinkage = useCallback(() => {
     props.onViewLinkage(node.kpi.id)
   }, [node.kpi.id, props.onViewLinkage])
   const handleCreateChildGoal = useCallback(() => {
     props.onCreateChildGoal(node.kpi)
   }, [node.kpi, props.onCreateChildGoal])
-  const childSummaryLabel = hasChildren ? `하위 목표 ${totalChildCount}개` : '하위 목표 없음'
-  const childConnectionSummaryLabel =
-    hiddenChildCount > 0
-      ? `표시 중 연결 완료 ${childGoalSummary.connectedCount}개 / 미연결 ${childGoalSummary.disconnectedCount}개`
-      : `연결 완료 ${childGoalSummary.connectedCount}개 / 미연결 ${childGoalSummary.disconnectedCount}개`
-  const childCoverageSummaryLabel =
-    hiddenChildCount > 0
-      ? `표시 중 평균 대상 인원 연결률 ${childGoalSummary.averageCoverage}%`
-      : `평균 대상 인원 연결률 ${childGoalSummary.averageCoverage}%`
 
   return (
     <div className={cls('relative', node.depth > 0 ? 'pl-1 sm:pl-2' : '')}>
@@ -3343,115 +3162,39 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
           isDescendant ? 'ring-1 ring-emerald-200' : ''
         )}
       >
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={handleCardClick}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              handleCardClick()
-            }
-          }}
-          className="flex cursor-pointer flex-wrap items-start justify-between gap-3"
-        >
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1 text-left">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold text-slate-900">{node.kpi.title}</span>
-              <StatusBadge status={node.kpi.status} />
-              {isSelected ? <RelationBadge tone="linked">현재 선택 KPI</RelationBadge> : null}
-              {isAncestor ? <RelationBadge tone="linked">상위 경로</RelationBadge> : null}
-              {isDescendant ? <RelationBadge tone="warning">하위 경로</RelationBadge> : null}
+              <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
             </div>
             <p className="mt-1 text-sm text-slate-500">
               {node.kpi.departmentName} · {node.kpi.category ?? '카테고리 미지정'}
             </p>
+            <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
           </div>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation()
-              handleCardClick()
-            }}
-            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            {childSummaryLabel}
-          </button>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {[
-            structureStatusBadge,
-            parentLinkBadge,
-            childGoalBadge,
-            personalLinkBadge,
-            coverageBadge,
-            monthlyBadge,
-          ].map((badge) => (
-            <RelationBadge key={`${node.kpi.id}-${badge.label}`} tone={badge.tone}>
-              {badge.label}
-            </RelationBadge>
-          ))}
-          {node.kpi.riskFlags.some((flag) => flag.includes('cascade')) ? (
-            <RelationBadge tone="warning">cascade 후보 부족</RelationBadge>
-          ) : null}
-          {structureStatusBadge.label === '주의' ? <RelationBadge tone="warning">연결 주의</RelationBadge> : null}
-        </div>
-        <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="rounded-2xl bg-white px-3 py-2">
-            <div className="font-semibold text-slate-700">소속 조직</div>
-            <div className="mt-1">{node.kpi.departmentName}</div>
-          </div>
-          <div className="rounded-2xl bg-white px-3 py-2">
-            <div className="font-semibold text-slate-700">개인 KPI 연결</div>
-            <div className="mt-1">
-              {node.kpi.linkedPersonalKpiCount > 0
-                ? formatExplicitRatio({
-                    numeratorLabel: '연결된 개인 KPI',
-                    numeratorValue: node.kpi.linkedPersonalKpiCount,
-                    numeratorUnit: '건',
-                    denominatorLabel: '대상 인원',
-                    denominatorValue: node.kpi.targetPopulationCount,
-                    denominatorUnit: '명',
-                  })
-                : '연결된 개인 KPI가 없습니다'}
-            </div>
-          </div>
-          <div className="rounded-2xl bg-white px-3 py-2">
-            <div className="font-semibold text-slate-700">최근 월간 실적</div>
-            <div className="mt-1">
-              {node.kpi.recentMonthlyRecords.length ? '최근 월간 실적 반영' : '최근 월간 실적 없음'}
-            </div>
-          </div>
-          {node.kpi.owner ? (
-            <div className="rounded-2xl bg-white px-3 py-2">
-              <div className="font-semibold text-slate-700">owner</div>
-              <div className="mt-1">
-                {node.kpi.owner.name}
-                {node.kpi.owner.position ? ` · ${node.kpi.owner.position}` : ''}
-              </div>
-            </div>
-          ) : null}
-          <div className="rounded-2xl bg-white px-3 py-2">
-            <div className="font-semibold text-slate-700">상위 목표</div>
-            <div className="mt-1">{node.kpi.parentOrgKpiTitle ? node.kpi.parentOrgKpiTitle : '상위 목표 없음'}</div>
-          </div>
-          <div className="rounded-2xl bg-white px-3 py-2">
-            <div className="font-semibold text-slate-700">연결 리스크</div>
-            <div className="mt-1">{node.kpi.riskFlags.length ? node.kpi.riskFlags.join(' / ') : '정상 연결'}</div>
-          </div>
+        <div className="mt-4 grid gap-3 text-xs text-slate-500 sm:grid-cols-2 xl:grid-cols-4">
+          <HierarchySummaryField label="소속 조직" value={node.kpi.departmentName} />
+          <HierarchySummaryField label="담당자" value={formatOrgKpiOwnerSummary(node.kpi.owner)} />
+          <HierarchySummaryField
+            label="상위 목표"
+            value={getOrgKpiParentSummaryText(node.kpi, {
+              isDisconnected: node.isDisconnected,
+              isOrphan: node.isOrphan,
+              hasChildren,
+            })}
+          />
+          <HierarchySummaryField label="하위 목표" value={formatCountWithUnit(totalChildCount, '개')} />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <MapInlineActionButton label="상세 보기" onClick={() => props.onSelectKpi(node.kpi.id)} />
-          <MapInlineActionButton
-            label="상위 목표로 이동"
-            onClick={handleJumpToParent}
-            disabled={!node.kpi.parentOrgKpiId}
-          />
-          <MapInlineActionButton
-            label={isExpanded ? '하위 목표 접기' : '하위 목표 펼치기'}
-            onClick={handleCardClick}
-          />
+          {hasChildren ? (
+            <MapInlineActionButton
+              label={isExpanded ? '하위 목표 접기' : '하위 목표 펼치기'}
+              onClick={() => props.onToggleExpand(node.kpi.id)}
+            />
+          ) : null}
           <MapInlineActionButton label="연결 현황 보기" onClick={handleViewLinkage} />
         </div>
       </div>
@@ -3466,11 +3209,8 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
             aria-hidden="true"
             className="pointer-events-none absolute left-3 top-3 w-5 border-t-2 border-dotted border-slate-400"
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-xl border border-dotted border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-              하위 목표 {totalChildCount}개 연결
-            </span>
-            {hiddenChildCount > 0 ? <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge> : null}
+          <div className="rounded-2xl border border-dotted border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+            하위 목표 {totalChildCount}개가 연결되어 있습니다.
           </div>
         </div>
       ) : null}
@@ -3487,31 +3227,19 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
               <div>
                 <div className="text-sm font-semibold text-slate-900">하위 목표</div>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  현재 선택한 상위 목표 아래에 연결된 조직 KPI입니다. 각 목표의 연결 상태와 실행 준비도를 확인할 수 있습니다.
+                  이 목표 아래 연결된 하위 목표를 확인할 수 있습니다.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <RelationBadge tone="linked">하위 목표 {totalChildCount}개</RelationBadge>
-                <RelationBadge tone={childGoalSummary.disconnectedCount > 0 ? 'warning' : 'linked'}>
-                  {childConnectionSummaryLabel}
-                </RelationBadge>
-                <RelationBadge
-                  tone={
-                    childGoalSummary.averageCoverage >= 70
-                      ? 'linked'
-                      : childGoalSummary.averageCoverage > 0
-                        ? 'warning'
-                        : 'neutral'
-                  }
-                >
-                  {childCoverageSummaryLabel}
-                </RelationBadge>
-                {hiddenChildCount > 0 ? <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge> : null}
-              </div>
+              <div className="text-sm font-semibold text-slate-500">하위 목표 {totalChildCount}개</div>
             </div>
 
             {hasVisibleChildren ? (
               <div className="relative mt-4 pl-8" data-testid="org-kpi-connector-branch-group">
+                {hiddenChildCount > 0 ? (
+                  <p className="mb-3 text-xs leading-5 text-slate-500">
+                    현재 필터 조건으로 일부 하위 목표는 숨겨져 있습니다.
+                  </p>
+                ) : null}
                 <span
                   aria-hidden="true"
                   data-testid="org-kpi-connector-trunk"
@@ -3549,28 +3277,28 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
                 className="mt-4 rounded-2xl border border-dotted border-slate-300 bg-white px-4 py-4"
                 data-testid="org-kpi-filtered-child-hint"
               >
-                <div className="text-sm font-semibold text-slate-900">필터로 숨겨진 하위 목표가 있습니다.</div>
+                <div className="text-sm font-semibold text-slate-900">현재 필터 조건에서 보이는 하위 목표가 없습니다</div>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  현재 검색 또는 부서 범위에서는 일부 하위 목표가 보이지 않습니다. 필터를 조정하면 점선 연결 구조를 다시 확인할 수 있습니다.
+                  검색어나 부서 조건을 조정하면 연결된 하위 목표를 다시 확인할 수 있습니다.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <RelationBadge tone="warning">필터로 숨김 {hiddenChildCount}개</RelationBadge>
                   <MapInlineActionButton label="연결 현황 보기" onClick={handleViewLinkage} />
                 </div>
               </div>
             ) : (
               <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4">
-                <div className="text-sm font-semibold text-slate-900">하위 목표가 없습니다.</div>
+                <div className="text-sm font-semibold text-slate-900">표시할 하위 목표가 없습니다</div>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  이 목표 아래에 연결된 하위 조직 KPI가 아직 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 상태를 점검해 주세요.
+                  이 목표 아래 연결된 하위 목표가 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 상태를 점검해 주세요.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <MapInlineActionButton
-                    label="하위 목표 추가"
-                    onClick={handleCreateChildGoal}
-                    disabled={props.readOnly || !props.canCreate}
-                  />
-                  <MapInlineActionButton label="연결 상태 확인" onClick={handleViewLinkage} />
+                  {!props.readOnly && props.canCreate ? (
+                    <MapInlineActionButton
+                      label="하위 목표 추가"
+                      onClick={handleCreateChildGoal}
+                    />
+                  ) : null}
+                  <MapInlineActionButton label="연결 현황 보기" onClick={handleViewLinkage} />
                 </div>
               </div>
             )}
@@ -3666,6 +3394,8 @@ type KpiDetailCardProps = {
   onStatus: (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => void
   onAi: (action: AiAction) => void
   onSelectRelatedKpi?: (reference: OrgKpiRelationReference) => void
+  onCreateChildGoal?: (parentKpi: OrgKpiViewModel) => void
+  onViewLinkage?: (kpiId: string) => void
 }
 
 const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
@@ -3714,8 +3444,8 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
             </p>
           </div>
           <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
-            <div className="text-xs text-slate-500">owner</div>
-            <div className="text-sm font-semibold text-slate-900">{kpi.owner?.name ?? '미지정'}</div>
+            <div className="text-xs text-slate-500">담당자</div>
+            <div className="text-sm font-semibold text-slate-900">{formatOrgKpiOwnerSummary(kpi.owner)}</div>
           </div>
         </div>
 
@@ -3768,20 +3498,11 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
           }
         />
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="org-kpi-relationship-summary">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">하위 목표 연결 상태</div>
-              <p className="mt-1 text-xs text-slate-500">
-                현재 KPI 아래에 연결된 하위 목표와 실행 준비 상태를 확인합니다.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {buildOrgKpiConnectionBadges(kpi).map((badge) => (
-                <RelationBadge key={`${kpi.id}-detail-${badge.label}`} tone={badge.tone}>
-                  {badge.label}
-                </RelationBadge>
-              ))}
-            </div>
+          <div>
+            <div className="text-sm font-semibold text-slate-900">연결 현황 요약</div>
+            <p className="mt-1 text-xs text-slate-500">
+              상위·하위 구조와 연결 상태를 자세히 확인할 수 있습니다.
+            </p>
           </div>
 
           <div className="mt-4 space-y-4 text-sm text-slate-600">
@@ -3825,7 +3546,26 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                   ))}
                 </div>
               ) : (
-                <p className="mt-2">아직 연결된 하위 목표가 없습니다.</p>
+                <div className="mt-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4">
+                  <div className="text-sm font-semibold text-slate-900">표시할 하위 목표가 없습니다</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    이 목표 아래 연결된 하위 목표가 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 현황을 확인해 주세요.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {props.onCreateChildGoal && !isReadOnly && props.permissions.canCreate ? (
+                      <MapInlineActionButton
+                        label="하위 목표 추가"
+                        onClick={() => props.onCreateChildGoal?.(kpi)}
+                      />
+                    ) : null}
+                    {props.onViewLinkage ? (
+                      <MapInlineActionButton
+                        label="연결 현황 보기"
+                        onClick={() => props.onViewLinkage?.(kpi.id)}
+                      />
+                    ) : null}
+                  </div>
+                </div>
               )}
             </div>
 
@@ -3847,9 +3587,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">대상 인원 연결률</div>
-                <div className="mt-2 text-sm text-slate-700">
-                  {formatPercent(kpi.coverageRate)}
-                </div>
+                <div className="mt-2 text-sm text-slate-700">{formatPercent(kpi.coverageRate)}</div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">최근 월간 실적</div>

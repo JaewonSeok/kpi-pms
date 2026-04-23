@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { OrgKpiViewModel } from '../src/server/org-kpi-page'
 import {
+  buildOrgKpiStructureSummary,
   buildOrgKpiHierarchySelectionView,
   buildOrgKpiHierarchyStructure,
   buildOrgKpiHierarchyView,
@@ -301,6 +302,92 @@ run('hierarchy interaction changes stay inside the affected branch', () => {
   assert.equal(countOrgKpiHierarchyNodes(structure.roots) >= 2, true)
   assert.equal(countOrgKpiHierarchyAffectedNodes(structure.roots, changedIds) < countOrgKpiHierarchyNodes(structure.roots), true)
   assert.equal(changedIds.has('root-b'), false)
+})
+
+run('disconnected KPI summary is prioritized as structure work', () => {
+  const kpi = makeKpi({
+    id: 'disconnected',
+    title: 'Disconnected Goal',
+    departmentId: 'dept-a',
+    departmentName: 'Dept A',
+    linkedPersonalKpiCount: 0,
+    recentMonthlyRecords: [],
+  })
+
+  const summary = buildOrgKpiStructureSummary(kpi, { isDisconnected: true })
+
+  assert.equal(summary.label, '연결 보완 필요')
+  assert.equal(summary.tone, 'warning')
+})
+
+run('healthy structure without recent monthly records asks for execution input', () => {
+  const kpi = makeKpi({
+    id: 'execution-gap',
+    title: 'Execution Gap',
+    departmentId: 'dept-a',
+    departmentName: 'Dept A',
+    parentOrgKpiId: 'root-a',
+    parentOrgKpiTitle: 'Root A',
+    parentReference: {
+      id: 'root-a',
+      title: 'Root A',
+      departmentId: 'dept-a',
+      departmentName: 'Dept A',
+      scope: 'division',
+    },
+    linkedPersonalKpiCount: 2,
+    coverageRate: 100,
+    recentMonthlyRecords: [],
+  })
+
+  const summary = buildOrgKpiStructureSummary(kpi)
+
+  assert.equal(summary.label, '실적 입력 필요')
+  assert.equal(summary.tone, 'warning')
+})
+
+run('linkage warning stays secondary to structure and execution', () => {
+  const kpi = makeKpi({
+    id: 'linkage-gap',
+    title: 'Linkage Gap',
+    departmentId: 'dept-a',
+    departmentName: 'Dept A',
+    parentOrgKpiId: 'root-a',
+    parentOrgKpiTitle: 'Root A',
+    parentReference: {
+      id: 'root-a',
+      title: 'Root A',
+      departmentId: 'dept-a',
+      departmentName: 'Dept A',
+      scope: 'division',
+    },
+    linkedPersonalKpiCount: 0,
+    coverageRate: 0,
+    recentMonthlyRecords: [{ id: 'monthly-linkage-gap', employeeName: '홍길동', month: '2026-03', achievementRate: 82 }],
+  })
+
+  const summary = buildOrgKpiStructureSummary(kpi)
+
+  assert.equal(summary.label, '확인 필요')
+  assert.equal(summary.tone, 'warning')
+})
+
+run('healthy root KPI with children is not flagged just for lacking a parent', () => {
+  const kpi = makeKpi({
+    id: 'root-healthy',
+    title: 'Healthy Root',
+    departmentId: 'dept-root',
+    departmentName: 'Root Dept',
+    childOrgKpiCount: 2,
+    linkedPersonalKpiCount: 2,
+    coverageRate: 100,
+    recentMonthlyRecords: [{ id: 'monthly-root', employeeName: '홍길동', month: '2026-03', achievementRate: 91 }],
+  })
+
+  const summary = buildOrgKpiStructureSummary(kpi, { visibleChildCount: 2 })
+
+  assert.equal(summary.label, '정상')
+  assert.equal(summary.tone, 'linked')
 })
 
 run('org KPI client keeps separate scope tabs and URL-based scope switching', () => {

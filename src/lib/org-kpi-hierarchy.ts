@@ -35,6 +35,12 @@ export type OrgKpiHierarchyInteractionState = {
   expandedIds: ReadonlySet<string>
 }
 
+export type OrgKpiStructureSummary = {
+  label: '정상' | '확인 필요' | '연결 보완 필요' | '실적 입력 필요'
+  tone: 'linked' | 'warning' | 'critical'
+  helper: string
+}
+
 function matchesSearch(item: OrgKpiViewModel, search: string) {
   const needle = search.trim().toLowerCase()
   if (!needle) return true
@@ -295,4 +301,59 @@ export function getOrgKpiConnectionTone(kpi: OrgKpiViewModel) {
   if (kpi.riskFlags.length > 0) return 'warning'
   if (kpi.parentOrgKpiId || kpi.childOrgKpiCount > 0) return 'linked'
   return 'neutral'
+}
+
+export function buildOrgKpiStructureSummary(
+  kpi: OrgKpiViewModel,
+  options: {
+    isDisconnected?: boolean
+    isOrphan?: boolean
+    visibleChildCount?: number
+  } = {}
+): OrgKpiStructureSummary {
+  const childCount = Math.max(options.visibleChildCount ?? 0, kpi.childOrgKpiCount)
+  const hasParent = Boolean(kpi.parentOrgKpiId || kpi.parentOrgKpiTitle || kpi.parentReference)
+  const hasChildren = childCount > 0
+  const isValidRootGoal = !hasParent && hasChildren
+  const hasStructuralGap =
+    Boolean(options.isDisconnected || options.isOrphan) ||
+    (!hasParent && !isValidRootGoal && !hasChildren) ||
+    kpi.riskFlags.some((flag) => flag.includes('cascade'))
+  const hasExecutionGap = kpi.recentMonthlyRecords.length === 0
+  const hasLinkageGap =
+    kpi.linkedPersonalKpiCount === 0 ||
+    (kpi.targetPopulationCount > 0 && kpi.coverageRate < 70) ||
+    (getOrgKpiConnectionTone(kpi) === 'warning' && !hasStructuralGap)
+
+  if (hasStructuralGap) {
+    return {
+      label: '연결 보완 필요',
+      tone: options.isOrphan ? 'critical' : 'warning',
+      helper: '상위·하위 구조와 연결 상태를 확인하세요.',
+    }
+  }
+
+  if (hasExecutionGap) {
+    return {
+      label: '실적 입력 필요',
+      tone: 'warning',
+      helper: '연결 상태와 최근 실행 기록을 점검해 주세요.',
+    }
+  }
+
+  if (hasLinkageGap) {
+    return {
+      label: '확인 필요',
+      tone: 'warning',
+      helper: '상위·하위 구조와 연결 상태를 확인하세요.',
+    }
+  }
+
+  return {
+    label: '정상',
+    tone: 'linked',
+    helper: hasChildren
+      ? '이 목표 아래 연결된 하위 목표를 확인할 수 있습니다.'
+      : '상위·하위 구조와 연결 상태를 확인하세요.',
+  }
 }
