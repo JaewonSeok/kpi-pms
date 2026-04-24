@@ -70,6 +70,7 @@ run('org KPI map tab promotes the search field into the upper toolbar area', () 
 
   assert.match(source, /<OrgKpiSearchField\s+value=\{search\}\s+onChange=\{setSearch\}\s+departmentFilterLabel=\{departmentFilterLabel\}/)
   assert.match(source, /tab === 'map' \? \(\s*<div className="w-full lg:w-80 xl:w-96">\s*<OrgKpiSearchField/)
+  assert.match(source, /mt-5 border-t border-slate-200 pt-4/)
   assert.match(source, /placeholder=\{`KPI명 또는 \$\{props\.departmentFilterLabel\.replace\(' 범위', ''\)\} 검색`\}/)
 })
 
@@ -80,4 +81,13 @@ run('org KPI map tab uses a true two-column body with the department filter move
   assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_440px\]/)
   assert.match(source, /function OrgKpiDepartmentFilterButtons/)
   assert.match(source, /className="self-start space-y-3"/)
+})
+
+run('org KPI workspace removes dashboard-style summary metric rows from the top area', () => {
+  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.doesNotMatch(source, /하위 KPI 연결 비율/)
+  assert.doesNotMatch(source, /미연결 .* 수/)
+  assert.doesNotMatch(source, /월간 실적 반영 비율/)
+  assert.doesNotMatch(source, /function MetricCard/)
 })

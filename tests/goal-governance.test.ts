@@ -119,7 +119,14 @@ async function main() {
     assert.equal(clientSource.includes('OrgKpiDepartmentFilterToolbar'), true)
     assert.equal(clientSource.includes('OrgKpiDepartmentFilterButtons'), true)
     assert.equal(clientSource.includes('xl:grid-cols-[minmax(0,1fr)_440px]'), true)
+    assert.equal(clientSource.includes('mt-5 border-t border-slate-200 pt-4'), true)
     assert.equal(clientSource.includes('className="self-start space-y-3"'), true)
+    assert.equal(clientSource.includes('하위 KPI 연결 비율'), false)
+    assert.equal(clientSource.includes('월간 실적 반영 비율'), false)
+    assert.equal(clientSource.includes('function MetricCard'), false)
+    assert.equal(loaderSource.includes('unlinkedCount'), false)
+    assert.equal(loaderSource.includes('cascadeRate'), false)
+    assert.equal(loaderSource.includes('monthlyCoverageRate'), false)
   })
 
   await run('org KPI workspace supports bulk edit and export mode selection routes', () => {

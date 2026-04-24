@@ -206,11 +206,8 @@ export type OrgKpiPageData = {
   summary: {
     totalCount: number
     confirmedCount: number
-    unlinkedCount: number
-    cascadeRate: number
     riskCount: number
     linkedPersonalKpiCount: number
-    monthlyCoverageRate: number
     confirmedRate: number
   }
   tree: OrgKpiTreeNode[]
@@ -785,11 +782,8 @@ export async function getOrgKpiPageData(params: {
         summary: {
           totalCount: 0,
           confirmedCount: 0,
-          unlinkedCount: 0,
-          cascadeRate: 0,
           riskCount: 0,
           linkedPersonalKpiCount: 0,
-          monthlyCoverageRate: 0,
           confirmedRate: 0,
         },
         tree: [],
@@ -1208,22 +1202,11 @@ export async function getOrgKpiPageData(params: {
     const confirmedCount = mappedList.filter((item) =>
       ['CONFIRMED', 'LOCKED'].includes(item.status)
     ).length
-    const unlinkedCount = mappedList.filter((item) => item.linkedPersonalKpiCount === 0).length
     const linkedPersonalKpiCount = mappedList.reduce(
       (sum, item) => sum + item.linkedPersonalKpiCount,
       0
     )
     const riskCount = mappedList.filter((item) => item.riskFlags.length > 0).length
-    const cascadeRate = totalCount
-      ? Math.round(
-          (mappedList.filter((item) => item.suggestedParent || item.suggestedChildren.length).length /
-            totalCount) *
-            100
-        )
-      : 0
-    const monthlyCoverageRate = totalCount
-      ? Math.round((mappedList.filter((item) => item.recentMonthlyRecords.length > 0).length / totalCount) * 100)
-      : 0
     const confirmedRate = totalCount ? Math.round((confirmedCount / totalCount) * 100) : 0
 
     const departmentsForSelector = accessibleDepartmentsByScope[selectedScope]
@@ -1342,11 +1325,8 @@ export async function getOrgKpiPageData(params: {
       summary: {
         totalCount,
         confirmedCount,
-        unlinkedCount,
-        cascadeRate,
         riskCount,
         linkedPersonalKpiCount,
-        monthlyCoverageRate,
         confirmedRate,
       },
       tree,
@@ -1395,11 +1375,8 @@ export async function getOrgKpiPageData(params: {
       summary: {
         totalCount: 0,
         confirmedCount: 0,
-        unlinkedCount: 0,
-        cascadeRate: 0,
         riskCount: 0,
         linkedPersonalKpiCount: 0,
-        monthlyCoverageRate: 0,
         confirmedRate: 0,
       },
       tree: [],

@@ -2154,10 +2154,10 @@ export function OrgKpiManagementClient({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-4">
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">Goal Alignment</span>
               <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">{scopeLabel}</span>
@@ -2175,7 +2175,7 @@ export function OrgKpiManagementClient({
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">조직 KPI</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{scopeDescription}</p>
+              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">{scopeDescription}</p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2">
               <div className="grid gap-2 sm:grid-cols-2">
@@ -2203,12 +2203,6 @@ export function OrgKpiManagementClient({
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <HeroStat label={`총 ${scopeLabel} 수`} value={`${pageData.summary.totalCount}개`} />
-              <HeroStat label="하위 KPI 연결 비율" value={formatPercent(pageData.summary.cascadeRate)} />
-              <HeroStat label={`미연결 ${scopeLabel} 수`} value={`${pageData.summary.unlinkedCount}개`} />
-              <HeroStat label="확정률" value={formatPercent(pageData.summary.confirmedRate)} />
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="연도">
@@ -2246,42 +2240,30 @@ export function OrgKpiManagementClient({
           </div>
           )}
         </div>
+        <div className="mt-5 border-t border-slate-200 pt-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {visibleTabs.map((tabKey) => (
+                <button key={tabKey} type="button" onClick={() => setTab(tabKey)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === tabKey ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>
+                  {TAB_LABELS[tabKey]}
+                </button>
+              ))}
+            </div>
+            {tab === 'map' ? (
+              <div className="w-full lg:w-80 xl:w-96">
+                <OrgKpiSearchField
+                  value={search}
+                  onChange={setSearch}
+                  departmentFilterLabel={departmentFilterLabel}
+                />
+              </div>
+            ) : null}
+          </div>
+        </div>
       </section>
 
       {loadAlerts}
       {banner ? <BannerBox tone={banner.tone} message={banner.message} /> : null}
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label={`확정 ${scopeLabel} 수`} value={`${pageData.summary.confirmedCount}개`} helper="확정 또는 잠금 상태 기준" />
-        <MetricCard
-          label="연결된 개인 KPI"
-          value={formatCountWithUnit(pageData.summary.linkedPersonalKpiCount, '건')}
-          helper="현재 화면에 표시되는 조직 KPI에 연결된 개인 KPI 전체 건수"
-        />
-        <MetricCard label={`${scopeLabel} 월간 실적 반영 비율`} value={formatPercent(pageData.summary.monthlyCoverageRate)} helper="최근 월간 실적이 있는 KPI 기준" />
-        <MetricCard label={`위험 ${scopeLabel} 수`} value={`${pageData.summary.riskCount}개`} helper="연결 또는 실적 누락 등 위험 신호" />
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {visibleTabs.map((tabKey) => (
-              <button key={tabKey} type="button" onClick={() => setTab(tabKey)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === tabKey ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>
-                {TAB_LABELS[tabKey]}
-              </button>
-            ))}
-          </div>
-          {tab === 'map' ? (
-            <div className="w-full lg:w-80 xl:w-96">
-              <OrgKpiSearchField
-                value={search}
-                onChange={setSearch}
-                departmentFilterLabel={departmentFilterLabel}
-              />
-            </div>
-          ) : null}
-        </div>
-      </div>
 
       {tab === 'map' ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2667,10 +2649,6 @@ export function OrgKpiManagementClient({
 
 function HeroStat({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-lg font-semibold text-slate-900">{value}</div></div>
-}
-
-function MetricCard({ label, value, helper }: { label: string; value: string; helper: string }) {
-  return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="text-sm text-slate-500">{label}</div><div className="mt-3 text-2xl font-semibold text-slate-900">{value}</div><div className="mt-2 text-xs text-slate-500">{helper}</div></div>
 }
 
 function MemberReadOnlySummaryCard(props: {
