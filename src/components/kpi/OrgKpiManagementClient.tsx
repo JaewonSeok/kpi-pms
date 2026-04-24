@@ -2293,60 +2293,57 @@ export function OrgKpiManagementClient({
                 : '팀 KPI를 중심으로 상위 본부 KPI 정렬 상태와 실행 리스크를 구조 관점에서 확인합니다.'}
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-            <OrgKpiScopeSidebar
-              search={search}
-              onSearchChange={setSearch}
+          {pageData.departments.length > 1 ? (
+            <OrgKpiDepartmentFilterToolbar
               departments={pageData.departments}
               allDepartmentLabel={allDepartmentLabel}
               departmentFilterLabel={departmentFilterLabel}
               selectedDepartmentId={selectedDepartmentId}
               onSelectDepartment={setSelectedDepartmentId}
-              showSearch={false}
             />
+          ) : null}
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-              <div className="space-y-4">
-                <OrgKpiHierarchyPanel
-                  roots={hierarchyView.roots}
-                  disconnected={hierarchyView.disconnected}
-                  selectedKpiId={activeKpiId || selectedKpi?.id || null}
-                  ancestorIds={hierarchyView.ancestorIds}
-                  descendantIds={hierarchyView.descendantIds}
-                  expandedIdSet={expandedMapNodeIdSet}
-                  onToggleExpand={toggleMapNodeExpansion}
-                  onSelectKpi={handleSelectKpi}
-                  canCreate={!isReadOnlyMemberView && pageData.permissions.canCreate && !goalEditLocked}
-                  canManage={pageData.permissions.canManage}
-                  readOnly={isReadOnlyMemberView}
-                  goalEditLocked={goalEditLocked}
-                  onCreateChildGoal={handleCreateChildGoal}
-                  onEditParentLink={handleEditParentLink}
-                  onViewLinkage={handleViewLinkage}
-                />
-              </div>
-
-              <KpiDetailCard
-                kpi={selectedKpi}
-                parentReference={selectedParentReference}
-                childReferences={selectedChildReferences}
-                permissions={pageData.permissions}
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+            <div className="space-y-4">
+              <OrgKpiHierarchyPanel
+                roots={hierarchyView.roots}
+                disconnected={hierarchyView.disconnected}
+                selectedKpiId={activeKpiId || selectedKpi?.id || null}
+                ancestorIds={hierarchyView.ancestorIds}
+                descendantIds={hierarchyView.descendantIds}
+                expandedIdSet={expandedMapNodeIdSet}
+                onToggleExpand={toggleMapNodeExpansion}
+                onSelectKpi={handleSelectKpi}
+                canCreate={!isReadOnlyMemberView && pageData.permissions.canCreate && !goalEditLocked}
+                canManage={pageData.permissions.canManage}
                 readOnly={isReadOnlyMemberView}
                 goalEditLocked={goalEditLocked}
-                busy={busy}
-                cloneDisabledReason={cloneDisabledReason}
-                deleteActionState={deleteActionState}
-                onEdit={handleEditKpi}
-                onClone={handleOpenClone}
-                onDelete={handleOpenDeleteConfirm}
-                onWorkflow={handleWorkflowAction}
-                onStatus={handleStatusChange}
-                onAi={handleAiAction}
-                onSelectRelatedKpi={handleOpenRelatedReference}
                 onCreateChildGoal={handleCreateChildGoal}
+                onEditParentLink={handleEditParentLink}
                 onViewLinkage={handleViewLinkage}
               />
             </div>
+
+            <KpiDetailCard
+              kpi={selectedKpi}
+              parentReference={selectedParentReference}
+              childReferences={selectedChildReferences}
+              permissions={pageData.permissions}
+              readOnly={isReadOnlyMemberView}
+              goalEditLocked={goalEditLocked}
+              busy={busy}
+              cloneDisabledReason={cloneDisabledReason}
+              deleteActionState={deleteActionState}
+              onEdit={handleEditKpi}
+              onClone={handleOpenClone}
+              onDelete={handleOpenDeleteConfirm}
+              onWorkflow={handleWorkflowAction}
+              onStatus={handleStatusChange}
+              onAi={handleAiAction}
+              onSelectRelatedKpi={handleOpenRelatedReference}
+              onCreateChildGoal={handleCreateChildGoal}
+              onViewLinkage={handleViewLinkage}
+            />
           </div>
         </div>
       ) : null}
@@ -2874,48 +2871,89 @@ function OrgKpiScopeSidebar(props: {
   departmentFilterLabel: string
   selectedDepartmentId: string
   onSelectDepartment: (value: string) => void
-  showSearch?: boolean
 }) {
   return (
     <div className="self-start space-y-3">
-      {props.showSearch === false ? null : (
-        <OrgKpiSearchField
-          value={props.search}
-          onChange={props.onSearchChange}
-          departmentFilterLabel={props.departmentFilterLabel}
-        />
-      )}
-      {props.departments.length > 1 ? (
-        <div className="space-y-2">
-          <button
-            type="button"
-            onClick={() => props.onSelectDepartment('ALL')}
-            className={cls(
-              'w-full rounded-2xl border px-4 py-3 text-left text-sm transition',
-              props.selectedDepartmentId === 'ALL'
-                ? 'border-blue-300 bg-blue-50'
-                : 'border-slate-200 hover:bg-slate-50'
-            )}
-          >
-            {props.allDepartmentLabel}
-          </button>
-          {props.departments.map((department) => (
-            <button
-              key={department.id}
-              type="button"
-              onClick={() => props.onSelectDepartment(department.id)}
-              className={cls(
-                'w-full rounded-2xl border px-4 py-3 text-left text-sm transition',
-                props.selectedDepartmentId === department.id
-                  ? 'border-blue-300 bg-blue-50'
-                  : 'border-slate-200 hover:bg-slate-50'
-              )}
-            >
-              {department.name}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <OrgKpiSearchField
+        value={props.search}
+        onChange={props.onSearchChange}
+        departmentFilterLabel={props.departmentFilterLabel}
+      />
+      <OrgKpiDepartmentFilterButtons
+        departments={props.departments}
+        allDepartmentLabel={props.allDepartmentLabel}
+        selectedDepartmentId={props.selectedDepartmentId}
+        onSelectDepartment={props.onSelectDepartment}
+        layout="stacked"
+      />
+    </div>
+  )
+}
+
+function OrgKpiDepartmentFilterToolbar(props: {
+  departments: OrgKpiPageData['departments']
+  allDepartmentLabel: string
+  departmentFilterLabel: string
+  selectedDepartmentId: string
+  onSelectDepartment: (value: string) => void
+}) {
+  return (
+    <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{props.departmentFilterLabel}</p>
+      <OrgKpiDepartmentFilterButtons
+        departments={props.departments}
+        allDepartmentLabel={props.allDepartmentLabel}
+        selectedDepartmentId={props.selectedDepartmentId}
+        onSelectDepartment={props.onSelectDepartment}
+        layout="toolbar"
+      />
+    </div>
+  )
+}
+
+function OrgKpiDepartmentFilterButtons(props: {
+  departments: OrgKpiPageData['departments']
+  allDepartmentLabel: string
+  selectedDepartmentId: string
+  onSelectDepartment: (value: string) => void
+  layout: 'stacked' | 'toolbar'
+}) {
+  if (props.departments.length <= 1) return null
+
+  const containerClass = props.layout === 'toolbar' ? 'flex flex-wrap gap-2' : 'space-y-2'
+  const baseButtonClass = props.layout === 'toolbar'
+    ? 'rounded-full border px-3.5 py-2 text-sm transition'
+    : 'w-full rounded-2xl border px-4 py-3 text-left text-sm transition'
+
+  return (
+    <div className={containerClass}>
+      <button
+        type="button"
+        onClick={() => props.onSelectDepartment('ALL')}
+        className={cls(
+          baseButtonClass,
+          props.selectedDepartmentId === 'ALL'
+            ? 'border-blue-300 bg-blue-50 text-blue-700'
+            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+        )}
+      >
+        {props.allDepartmentLabel}
+      </button>
+      {props.departments.map((department) => (
+        <button
+          key={department.id}
+          type="button"
+          onClick={() => props.onSelectDepartment(department.id)}
+          className={cls(
+            baseButtonClass,
+            props.selectedDepartmentId === department.id
+              ? 'border-blue-300 bg-blue-50 text-blue-700'
+              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+          )}
+        >
+          {department.name}
+        </button>
+      ))}
     </div>
   )
 }
