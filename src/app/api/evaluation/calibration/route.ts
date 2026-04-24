@@ -42,9 +42,6 @@ export async function PATCH(request: Request) {
     }
 
     const body = parsed.data
-    if (['save', 'clear', 'bulk-import'].includes(body.action) && session.user.role !== 'ROLE_CEO') {
-      throw new AppError(403, 'CEO_ONLY', '대표이사만 최종 등급을 조정하거나 확정할 수 있습니다.')
-    }
 
     const client = getClientInfo(request)
     const cycle = await prisma.evalCycle.findUnique({

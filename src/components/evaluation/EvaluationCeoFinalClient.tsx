@@ -64,6 +64,10 @@ function buildPerformanceDetailHref(cycleId: string, evaluationId?: string | nul
   return `/evaluation/performance/${encodeURIComponent(evaluationId)}?cycleId=${encodeURIComponent(cycleId)}`
 }
 
+function canManageFinalReview(role?: CeoFinalViewModel['actor']['role'] | null) {
+  return role === 'ROLE_CEO' || role === 'ROLE_ADMIN'
+}
+
 function getDisplayCycleStatus(cycle?: CeoFinalViewModel['cycle'] | null) {
   if (!cycle) return { label: '대상 없음', tone: 'slate' as const }
   if (cycle.isLocked) return { label: '최종 확정 완료', tone: 'emerald' as const }
@@ -230,9 +234,34 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
   const cycleOptions = props.availableCycles.filter((item) => item.year === selectedYear)
   const scopeOptions = props.viewModel?.scopeOptions ?? []
   const selectedScopeId = cycle?.selectedScopeId ?? 'all'
+  const selectedScopeOption = scopeOptions.find((item) => item.id === selectedScopeId)
+  const selectedScope =
+    props.viewModel?.selectedScope ??
+    (selectedScopeOption
+      ? {
+          id: selectedScopeOption.id,
+          label: selectedScopeOption.label,
+          isAll: selectedScopeOption.id === 'all',
+        }
+      : {
+      id: selectedScopeId,
+      label: selectedScopeId === 'all' ? '전사 전체' : '선택 본부',
+      isAll: selectedScopeId === 'all',
+      })
   const statusChip = getDisplayCycleStatus(cycle)
   const allGroups = useMemo(() => buildDivisionGroups(rows), [rows])
   const summary = useMemo(() => buildSummary(allGroups), [allGroups])
+  const scopeHeading = selectedScope.isAll ? '전사 전체 보기' : `선택 본부: ${selectedScope.label}`
+  const scopeDescription = selectedScope.isAll
+    ? '모든 본부의 결과를 함께 검토합니다. 특정 본부만 집중해서 보려면 본부 필터에서 선택해 주세요.'
+    : `${selectedScope.label} 소속 직원 결과만 표시합니다. 다른 본부를 보려면 상단 본부 필터에서 전환해 주세요.`
+  const listHeading = selectedScope.isAll ? '본부별 최종 확정' : `${selectedScope.label} 최종 확정`
+  const listDescription = selectedScope.isAll
+    ? '직원별 본부장 평가 등급과 최종 등급을 나란히 확인하고, 검토가 필요한 직원만 바로 열어 확정할 수 있습니다.'
+    : `${selectedScope.label} 소속 직원의 본부장 평가 등급과 최종 등급을 비교하고, 필요한 직원을 바로 열어 확정할 수 있습니다.`
+  const emptyStateDescription = selectedScope.isAll
+    ? '검색어나 필터를 조정하면 다른 본부 또는 직원을 다시 확인할 수 있습니다.'
+    : '현재 선택한 본부에 표시할 대상이 없습니다. 검색어나 필터를 조정하거나 전사 전체로 돌아가 다시 확인해 주세요.'
 
   const filteredGroups = useMemo(() => {
     const keyword = deferredKeyword.toLocaleLowerCase('ko-KR')
@@ -495,10 +524,10 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
         current
           ? {
               ...current,
-              canEdit: current.role === 'ROLE_CEO',
-              canFinalizeCycle: current.role === 'ROLE_CEO',
+              canEdit: canManageFinalReview(current.role),
+              canFinalizeCycle: canManageFinalReview(current.role),
               canReopenCycle: false,
-              readOnly: current.role !== 'ROLE_CEO',
+              readOnly: false,
             }
           : current
       )
@@ -625,9 +654,25 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
 
       {banner ? <Banner tone={banner.tone}>{banner.message}</Banner> : null}
 
-      {actor?.role === 'ROLE_ADMIN' ? (
-        <Banner tone="info">관리자는 이 화면에서 결과를 조회할 수만 있으며 등급 조정과 최종 확정은 할 수 없습니다.</Banner>
-      ) : null}
+      <section className="rounded-[28px] border border-sky-200 bg-sky-50/80 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">본부별 선택</p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-950">{scopeHeading}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{scopeDescription}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <StatusChip tone="blue">총 {summary.totalCount}명</StatusChip>
+            <StatusChip tone={summary.pendingCount > 0 ? 'amber' : 'emerald'}>
+              미확정 {summary.pendingCount}명
+            </StatusChip>
+            <StatusChip tone={summary.adjustedCount > 0 ? 'blue' : 'slate'}>
+              조정 발생 {summary.adjustedCount}명
+            </StatusChip>
+          </div>
+        </div>
+      </section>
+
       {cycle?.isLocked ? (
         <Banner tone="success">대표이사 최종 확정이 완료되어 수정이 잠겨 있습니다. 필요 시 재오픈 후 다시 검토할 수 있습니다.</Banner>
       ) : null}
@@ -643,11 +688,9 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-4">
           <div className="flex items-center gap-2 text-slate-900">
             <Building2 className="h-5 w-5 text-sky-600" />
-            <h2 className="text-lg font-semibold">본부별 최종 확정</h2>
+            <h2 className="text-lg font-semibold">{listHeading}</h2>
           </div>
-          <p className="text-sm text-slate-500">
-            직원별 본부장 평가 등급과 대표이사 최종 등급을 나란히 확인하고, 검토가 필요한 직원만 바로 열어 확정할 수 있습니다.
-          </p>
+          <p className="text-sm text-slate-500">{listDescription}</p>
         </div>
 
         {props.state !== 'ready' || !props.viewModel ? (
@@ -704,7 +747,7 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
 
                       <RowMetric label="본부장 평가 등급" value={employee.originalDivisionHeadRating} />
                       <RowMetric
-                        label="대표이사 최종 등급"
+                        label="최종 등급"
                         value={employee.finalCeoRating}
                         accent={employee.isAdjusted}
                       />
@@ -744,7 +787,7 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
           <div className="py-10">
             <EmptyState
               title="조건에 맞는 대상이 없습니다."
-              description="검색어나 필터를 조정하면 다른 본부 또는 직원을 다시 확인할 수 있습니다."
+              description={emptyStateDescription}
             />
           </div>
         )}
@@ -755,15 +798,30 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
           <div className="mx-auto flex max-w-[1440px] flex-col gap-4 px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
             <div className="space-y-1">
               <div className="text-sm font-semibold text-slate-900">
-                총 {summary.totalCount}명 중 {summary.finalizedCount}명 확정 완료
+                {selectedScope.isAll
+                  ? `총 ${summary.totalCount}명 중 ${summary.finalizedCount}명 확정 완료`
+                  : `${selectedScope.label}에서 ${summary.totalCount}명 중 ${summary.finalizedCount}명 확정 완료`}
               </div>
               <p className="text-sm text-slate-500">
-                {summary.readyToLock
-                  ? '모든 대상의 대표이사 확정이 완료되어 최종 확정을 진행할 수 있습니다.'
-                  : `아직 ${summary.pendingCount}명이 미확정 상태입니다. 모든 직원을 확정한 뒤 최종 확정을 진행해 주세요.`}
+                {selectedScope.isAll
+                  ? summary.readyToLock
+                    ? '모든 대상의 대표이사 확정이 완료되어 최종 확정을 진행할 수 있습니다.'
+                    : `아직 ${summary.pendingCount}명이 미확정 상태입니다. 모든 직원을 확정한 뒤 최종 확정을 진행해 주세요.`
+                  : '현재 선택한 본부만 표시 중입니다. 사이클 전체 최종 확정 완료는 전사 전체 보기에서 진행해 주세요.'}
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
+              {!selectedScope.isAll ? (
+                <button
+                  type="button"
+                  onClick={() => navigate({ cycleId: props.selectedCycleId ?? selectedCycle?.id, scope: 'all' })}
+                  disabled={isNavigating}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Building2 className="h-4 w-4" />
+                  전사 전체 보기
+                </button>
+              ) : null}
               {actor.canReopenCycle ? (
                 <button
                   type="button"
@@ -775,7 +833,7 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
                   재오픈
                 </button>
               ) : null}
-              {actor.canFinalizeCycle ? (
+              {actor.canFinalizeCycle && selectedScope.isAll ? (
                 <button
                   type="button"
                   onClick={() => void handleFinalizeCycle()}
@@ -886,7 +944,7 @@ function EmployeeDrawer(props: {
               </div>
               {props.employee.finalizedAt ? (
                 <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                  {props.employee.finalizedBy ?? '대표이사'} · {formatDateTime(props.employee.finalizedAt)} 확정
+                  {props.employee.finalizedBy ?? '최종 확정자'} · {formatDateTime(props.employee.finalizedAt)} 확정
                 </div>
               ) : null}
             </SectionCard>
@@ -894,7 +952,7 @@ function EmployeeDrawer(props: {
             <SectionCard title="평가 단계 요약" icon={<CheckCircle2 className="h-4 w-4" />}>
               <div className="grid gap-3 md:grid-cols-2">
                 <InfoTile label="본부장 평가 등급" value={props.employee.originalDivisionHeadRating} />
-                <InfoTile label="대표이사 최종 등급" value={props.employee.finalCeoRating} />
+                <InfoTile label="최종 등급" value={props.employee.finalCeoRating} />
                 <InfoTile label="조정 여부" value={props.employee.isAdjusted ? '조정 발생' : '조정 없음'} />
                 <InfoTile label="조정 사유" value={props.employee.adjustmentReason || '-'} />
               </div>
@@ -1021,15 +1079,15 @@ function EmployeeDrawer(props: {
               ) : null}
             </SectionCard>
 
-            <SectionCard title="대표이사 최종 확정" icon={<Clock3 className="h-4 w-4" />}>
+            <SectionCard title="최종 확정" icon={<Clock3 className="h-4 w-4" />}>
               {!editable ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  현재 화면은 읽기 전용입니다. 최종 등급 수정과 확정은 대표이사만 수행할 수 있습니다.
+                  현재 화면은 읽기 전용입니다. 잠금 해제 후 다시 최종 등급을 수정하거나 확정해 주세요.
                 </div>
               ) : null}
               <div className="grid gap-4">
                 <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-800">대표이사 최종 등급</span>
+                  <span className="mb-2 block text-sm font-medium text-slate-800">최종 등급</span>
                   <select
                     value={props.selectedGradeId}
                     onChange={(event) => props.onSelectedGradeIdChange(event.target.value)}

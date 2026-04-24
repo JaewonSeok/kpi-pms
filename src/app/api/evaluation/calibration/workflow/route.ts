@@ -46,9 +46,6 @@ export async function POST(request: Request) {
     }
 
     const { cycleId, action, scopeId } = parsed.data
-    if (['CONFIRM_REVIEW', 'LOCK', 'REOPEN_REQUEST'].includes(action) && session.user.role !== 'ROLE_CEO') {
-      throw new AppError(403, 'CEO_ONLY', '대표이사만 최종 확정 단계를 진행할 수 있습니다.')
-    }
 
     const cycle = await prisma.evalCycle.findUnique({
       where: { id: cycleId },
@@ -139,10 +136,6 @@ export async function POST(request: Request) {
     }
 
     if (action === 'LOCK') {
-      if (session.user.role !== 'ROLE_CEO') {
-        throw new AppError(403, 'CEO_ONLY', '최종 잠금은 CEO만 수행할 수 있습니다.')
-      }
-
       if (isPublishedCycle(cycle.status) || latestAction?.action === 'CALIBRATION_LOCKED') {
         throw new AppError(400, 'CALIBRATION_LOCKED', '이미 잠긴 주기입니다.')
       }

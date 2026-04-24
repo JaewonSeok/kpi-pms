@@ -101,6 +101,11 @@ export type CeoFinalViewModel = {
     id: string
     label: string
   }>
+  selectedScope: {
+    id: string
+    label: string
+    isAll: boolean
+  }
   gradeOptions: Array<{
     id: string
     grade: string
@@ -201,9 +206,10 @@ export function buildCeoFinalActorCapabilities(params: {
   isLocked: boolean
   rawStatus: CycleStatus
 }) {
-  const readOnly = params.role !== 'ROLE_CEO' || params.isLocked
+  const canManageFinalReview = params.role === 'ROLE_CEO' || params.role === 'ROLE_ADMIN'
+  const readOnly = !canManageFinalReview || params.isLocked
   const canReopenCycle =
-    params.role === 'ROLE_CEO' &&
+    canManageFinalReview &&
     params.isLocked &&
     !['RESULT_OPEN', 'APPEAL', 'CLOSED'].includes(params.rawStatus)
 
@@ -211,8 +217,8 @@ export function buildCeoFinalActorCapabilities(params: {
     userId: params.userId,
     displayName: params.displayName,
     role: params.role,
-    canEdit: params.role === 'ROLE_CEO' && !params.isLocked,
-    canFinalizeCycle: params.role === 'ROLE_CEO' && !params.isLocked,
+    canEdit: canManageFinalReview && !params.isLocked,
+    canFinalizeCycle: canManageFinalReview && !params.isLocked,
     canReopenCycle,
     readOnly,
   }
@@ -383,6 +389,13 @@ export async function getEvaluationCeoFinalPageData(params: {
   const isLocked = calibrationData.viewModel.cycle.status === 'FINAL_LOCKED'
   const isReviewConfirmed =
     calibrationData.viewModel.cycle.status === 'REVIEW_CONFIRMED' || isLocked
+  const selectedScope =
+    calibrationData.viewModel.scopeOptions.find(
+      (option) => option.id === calibrationData.viewModel!.cycle.selectedScopeId
+    ) ?? {
+      id: 'all',
+      label: '전사 전체',
+    }
 
   if (!groups.length) {
     return {
@@ -417,6 +430,11 @@ export async function getEvaluationCeoFinalPageData(params: {
         selectedScopeId: calibrationData.viewModel.cycle.selectedScopeId,
       },
       scopeOptions: calibrationData.viewModel.scopeOptions,
+      selectedScope: {
+        id: selectedScope.id,
+        label: selectedScope.label,
+        isAll: selectedScope.id === 'all',
+      },
       gradeOptions: calibrationData.viewModel.gradeOptions,
       summary,
       groups,
