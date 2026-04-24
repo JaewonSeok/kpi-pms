@@ -117,6 +117,9 @@ async function main() {
     assert.equal(clientSource.includes('xl:overscroll-y-contain'), true)
     assert.equal(clientSource.includes('OrgKpiSearchField'), true)
     assert.equal(clientSource.includes('showSearch={false}'), true)
+    assert.equal(clientSource.includes('md:grid-cols-[220px_minmax(0,1fr)]'), true)
+    assert.equal(clientSource.includes('xl:grid-cols-[minmax(0,1fr)_420px]'), true)
+    assert.equal(clientSource.includes('className="self-start space-y-3"'), true)
   })
 
   await run('org KPI workspace supports bulk edit and export mode selection routes', () => {

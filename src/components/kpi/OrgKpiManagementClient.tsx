@@ -2293,7 +2293,7 @@ export function OrgKpiManagementClient({
                 : '팀 KPI를 중심으로 상위 본부 KPI 정렬 상태와 실행 리스크를 구조 관점에서 확인합니다.'}
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
+          <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
             <OrgKpiScopeSidebar
               search={search}
               onSearchChange={setSearch}
@@ -2305,7 +2305,7 @@ export function OrgKpiManagementClient({
               showSearch={false}
             />
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
               <div className="space-y-4">
                 <OrgKpiHierarchyPanel
                   roots={hierarchyView.roots}
@@ -2877,7 +2877,7 @@ function OrgKpiScopeSidebar(props: {
   showSearch?: boolean
 }) {
   return (
-    <div className="space-y-3">
+    <div className="self-start space-y-3">
       {props.showSearch === false ? null : (
         <OrgKpiSearchField
           value={props.search}

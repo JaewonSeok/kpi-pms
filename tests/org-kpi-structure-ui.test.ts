@@ -73,3 +73,11 @@ run('org KPI map tab promotes the search field into the upper toolbar area', () 
   assert.match(source, /showSearch=\{false\}/)
   assert.match(source, /placeholder=\{`KPI명 또는 \$\{props\.departmentFilterLabel\.replace\(' 범위', ''\)\} 검색`\}/)
 })
+
+run('org KPI map tab rebalances the workspace with a wider detail sidebar and non-stretching filter rail', () => {
+  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.match(source, /md:grid-cols-\[220px_minmax\(0,1fr\)\]/)
+  assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_420px\]/)
+  assert.match(source, /className="self-start space-y-3"/)
+})
