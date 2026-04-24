@@ -41,6 +41,13 @@ type BannerState = {
   message: string
 } | null
 
+type RowDraftState = {
+  gradeId: string
+  reason: string
+  error: string
+  saving: boolean
+}
+
 const cls = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
 
 function formatDateTime(value?: string) {
@@ -145,6 +152,46 @@ function flattenGroups(groups: CeoFinalDivisionGroup[]) {
   return groups.flatMap((group) => group.employees)
 }
 
+function normalizeGradeValue(value?: string | null) {
+  return value?.trim() ?? ''
+}
+
+function getRowCurrentGradeId(row: CeoFinalEmployeeRow) {
+  return normalizeGradeValue(row.finalCeoRatingId ?? row.originalDivisionHeadRatingId ?? '')
+}
+
+function buildInitialRowDraftState(row: CeoFinalEmployeeRow): RowDraftState {
+  return {
+    gradeId: getRowCurrentGradeId(row),
+    reason: row.adjustmentReason ?? '',
+    error: '',
+    saving: false,
+  }
+}
+
+function getRowDraftState(
+  row: CeoFinalEmployeeRow,
+  drafts: Record<string, RowDraftState>
+): RowDraftState {
+  return drafts[row.id] ?? buildInitialRowDraftState(row)
+}
+
+function isRowDraftAdjusted(row: CeoFinalEmployeeRow, draft: RowDraftState) {
+  const originalGradeId = normalizeGradeValue(row.originalDivisionHeadRatingId)
+  return Boolean(originalGradeId) && draft.gradeId !== '' && draft.gradeId !== originalGradeId
+}
+
+function isRowDraftDirty(row: CeoFinalEmployeeRow, draft: RowDraftState) {
+  return (
+    draft.gradeId !== getRowCurrentGradeId(row) ||
+    normalizeReason(draft.reason) !== normalizeReason(row.adjustmentReason ?? '')
+  )
+}
+
+function shouldShowInlineReasonField(row: CeoFinalEmployeeRow, draft: RowDraftState) {
+  return isRowDraftDirty(row, draft) || Boolean(draft.error)
+}
+
 async function requestJson<T>(url: string, init: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -179,6 +226,7 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
   const [selectedGradeId, setSelectedGradeId] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
   const [formError, setFormError] = useState('')
+  const [rowDrafts, setRowDrafts] = useState<Record<string, RowDraftState>>({})
   const [banner, setBanner] = useState<BannerState>(null)
   const [saving, setSaving] = useState(false)
   const [locking, setLocking] = useState(false)
@@ -188,6 +236,7 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
     setRows(flattenGroups(props.viewModel?.groups ?? []))
     setActor(props.viewModel?.actor ?? null)
     setCycle(props.viewModel?.cycle ?? null)
+    setRowDrafts({})
   }, [props.viewModel])
 
   useEffect(() => {
@@ -214,12 +263,12 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
       return
     }
 
-    setSelectedGradeId(
-      selectedEmployee.finalCeoRatingId ?? selectedEmployee.originalDivisionHeadRatingId ?? ''
-    )
-    setAdjustReason(selectedEmployee.adjustmentReason ?? '')
-    setFormError('')
+    const draft = getRowDraftState(selectedEmployee, rowDrafts)
+    setSelectedGradeId(draft.gradeId)
+    setAdjustReason(draft.reason)
+    setFormError(draft.error)
   }, [
+    rowDrafts,
     selectedEmployee,
     selectedEmployee?.id,
     selectedEmployee?.finalCeoRatingId,
@@ -296,8 +345,28 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
     selectedEmployee?.originalDivisionHeadRatingId !== selectedGradeId
   const normalizedReason = normalizeReason(adjustReason)
   const formHelper = gradeChanged
-    ? '등급을 조정한 경우 사유를 입력해 주세요.'
+    ? '등급이 변경된 경우 조정 사유를 입력해 주세요.'
     : '조정 없음. 동일 등급으로 확정할 수 있습니다.'
+
+  function updateRowDraft(targetId: string, updater: (draft: RowDraftState) => RowDraftState) {
+    const targetRow = rows.find((row) => row.id === targetId)
+    if (!targetRow) return
+
+    setRowDrafts((current) => ({
+      ...current,
+      [targetId]: updater(current[targetId] ?? buildInitialRowDraftState(targetRow)),
+    }))
+  }
+
+  function resetRowDraft(targetId: string) {
+    setRowDrafts((current) => {
+      if (!(targetId in current)) return current
+
+      const next = { ...current }
+      delete next[targetId]
+      return next
+    })
+  }
 
   function navigate(next: { cycleId?: string; scope?: string }) {
     const params = new URLSearchParams()
@@ -366,6 +435,7 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
           performanceDetailHref: buildPerformanceDetailHref(cycle.id, data.evaluationId),
         },
       }))
+      resetRowDraft(selectedEmployee.id)
 
       setBanner({
         tone: 'success',
@@ -415,6 +485,7 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
           performanceDetailHref: buildPerformanceDetailHref(cycle.id, row.finalEvaluationId ?? null),
         },
       }))
+      resetRowDraft(selectedEmployee.id)
 
       setBanner({
         tone: 'info',
@@ -429,6 +500,95 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleInlineSave(targetId: string) {
+    if (!cycle || !actor?.canEdit) return
+
+    const targetRow = rows.find((row) => row.id === targetId)
+    if (!targetRow) return
+
+    const draft = getRowDraftState(targetRow, rowDrafts)
+    const inlineGradeChanged = isRowDraftAdjusted(targetRow, draft)
+    const inlineReason = normalizeReason(draft.reason)
+    const draftGrade = gradeOptions.find((item) => item.id === draft.gradeId) ?? null
+
+    if (!draft.gradeId) {
+      updateRowDraft(targetId, (current) => ({
+        ...current,
+        error: '대표이사 최종 등급을 선택해 주세요.',
+      }))
+      return
+    }
+
+    if (inlineGradeChanged && !inlineReason) {
+      updateRowDraft(targetId, (current) => ({
+        ...current,
+        error: '등급을 조정한 경우 사유를 입력해 주세요.',
+      }))
+      return
+    }
+
+    updateRowDraft(targetId, (current) => ({
+      ...current,
+      saving: true,
+      error: '',
+    }))
+
+    try {
+      const data = await requestJson<{
+        evaluationId: string
+        adjustedGrade: string
+      }>('/api/evaluation/calibration', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          action: 'save',
+          cycleId: cycle.id,
+          targetId,
+          gradeId: draft.gradeId,
+          adjustReason: draft.reason,
+        }),
+      })
+
+      const finalizedAt = new Date().toISOString()
+
+      updateRow(targetId, (row) => ({
+        ...row,
+        finalCeoRatingId: draft.gradeId,
+        finalCeoRating: draftGrade?.grade ?? data.adjustedGrade,
+        isAdjusted: draft.gradeId !== row.originalDivisionHeadRatingId,
+        adjustmentReason: inlineReason || undefined,
+        finalized: true,
+        finalizedAt,
+        finalizedBy: actor.displayName,
+        adjustedEvaluationId: data.evaluationId,
+        detailEvaluationId: data.evaluationId,
+        detail: {
+          ...row.detail,
+          performanceDetailHref: buildPerformanceDetailHref(cycle.id, data.evaluationId),
+        },
+      }))
+
+      resetRowDraft(targetId)
+      setBanner({
+        tone: 'success',
+        message: '저장 완료',
+      })
+
+      startNavigation(() => {
+        router.refresh()
+      })
+    } catch (error) {
+      updateRowDraft(targetId, (current) => ({
+        ...current,
+        saving: false,
+        error: error instanceof Error ? error.message : '변경 저장에 실패했습니다.',
+      }))
+    }
+  }
+
+  function handleInlineReset(targetId: string) {
+    resetRowDraft(targetId)
   }
 
   async function handleFinalizeCycle() {
@@ -720,15 +880,25 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
                 </div>
 
                 <div className="mt-4 space-y-3">
-                  {group.employees.map((employee) => (
-                    <div
-                      key={employee.id}
-                      className={cls(
-                        'grid gap-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm transition',
-                        selectedEmployee?.id === employee.id && 'border-sky-300 ring-2 ring-sky-100',
-                        'lg:grid-cols-[minmax(0,1.2fr)_140px_140px_110px_110px_110px]'
-                      )}
-                    >
+                  {group.employees.map((employee) => {
+                    const rowDraft = getRowDraftState(employee, rowDrafts)
+                    const rowDraftAdjusted = isRowDraftAdjusted(employee, rowDraft)
+                    const rowDraftDirty = isRowDraftDirty(employee, rowDraft)
+                    const showInlineReason = shouldShowInlineReasonField(employee, rowDraft)
+                    const rowDraftGrade =
+                      gradeOptions.find((grade) => grade.id === rowDraft.gradeId)?.grade ??
+                      employee.finalCeoRating ??
+                      '-'
+
+                    return (
+                      <div
+                        key={employee.id}
+                        className={cls(
+                          'grid gap-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm transition',
+                          selectedEmployee?.id === employee.id && 'border-sky-300 ring-2 ring-sky-100',
+                          'lg:grid-cols-[minmax(0,1.2fr)_140px_140px_110px_110px_110px]'
+                        )}
+                      >
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <button
@@ -739,6 +909,9 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
                             {employee.employeeName}
                           </button>
                           {employee.positionLabel ? <StatusChip tone="slate">{employee.positionLabel}</StatusChip> : null}
+                          {rowDraftDirty ? (
+                            <StatusChip tone="amber">변경됨</StatusChip>
+                          ) : null}
                         </div>
                         <p className="mt-2 text-sm text-slate-500">
                           {employee.departmentName} · {employee.divisionName}
@@ -748,14 +921,42 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
                       <RowMetric label="본부장 평가 등급" value={employee.originalDivisionHeadRating} />
                       <RowMetric
                         label="최종 등급"
-                        value={employee.finalCeoRating}
-                        accent={employee.isAdjusted}
+                        value={rowDraftGrade}
+                        accent={rowDraftAdjusted || rowDraftDirty}
                       />
+                      {actor?.canEdit ? (
+                        <div className="lg:col-start-3 lg:row-start-1 lg:mt-7">
+                          <select
+                            value={rowDraft.gradeId}
+                            onChange={(event) =>
+                              updateRowDraft(employee.id, (current) => ({
+                                ...current,
+                                gradeId: event.target.value,
+                                error: '',
+                              }))
+                            }
+                            disabled={rowDraft.saving}
+                            className={cls(
+                              'h-11 w-full rounded-2xl border bg-white px-3 text-sm font-semibold text-slate-900',
+                              rowDraftAdjusted || rowDraftDirty
+                                ? 'border-sky-300 ring-2 ring-sky-100'
+                                : 'border-slate-200'
+                            )}
+                          >
+                            <option value="">등급을 선택해 주세요.</option>
+                            {gradeOptions.map((grade) => (
+                              <option key={grade.id} value={grade.id}>
+                                {grade.grade}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : null}
                       <RowBadgeCell
                         label="조정 여부"
                         badge={
-                          <StatusChip tone={employee.isAdjusted ? 'blue' : 'slate'}>
-                            {employee.isAdjusted ? '조정 발생' : '조정 없음'}
+                          <StatusChip tone={rowDraftDirty ? 'amber' : rowDraftAdjusted || employee.isAdjusted ? 'blue' : 'slate'}>
+                            {rowDraftDirty ? '변경됨' : rowDraftAdjusted || employee.isAdjusted ? '조정 발생' : '조정 없음'}
                           </StatusChip>
                         }
                       />
@@ -767,7 +968,35 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
                           </StatusChip>
                         }
                       />
-                      <div className="flex items-center justify-end">
+                      <div className="flex flex-col items-stretch justify-center gap-2 lg:items-end">
+                        {actor?.canEdit ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleInlineSave(employee.id)}
+                            disabled={
+                              rowDraft.saving ||
+                              (employee.finalized && !rowDraftDirty)
+                            }
+                            className={cls(
+                              'inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold text-white transition',
+                              rowDraft.saving ||
+                                (employee.finalized && !rowDraftDirty)
+                                ? 'cursor-not-allowed bg-slate-300'
+                                : 'bg-slate-950 hover:bg-slate-800'
+                            )}
+                          >
+                            {rowDraft.saving ? (
+                              <LoaderCircle className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4" />
+                            )}
+                            {rowDraftDirty
+                              ? '변경 저장'
+                              : employee.finalized
+                                ? '확정 완료'
+                                : '최종 확정'}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setSelectedEmployeeId(employee.id)}
@@ -777,8 +1006,55 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
                           <ArrowRight className="h-4 w-4" />
                         </button>
                       </div>
-                    </div>
-                  ))}
+                      {showInlineReason ? (
+                        <div className="space-y-3 lg:col-span-6">
+                          <label className="block">
+                            <span className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-800">
+                              조정 사유
+                              {rowDraftAdjusted ? (
+                                <span className="text-rose-600">*</span>
+                              ) : null}
+                            </span>
+                            <textarea
+                              rows={2}
+                              value={rowDraft.reason}
+                              onChange={(event) =>
+                                updateRowDraft(employee.id, (current) => ({
+                                  ...current,
+                                  reason: event.target.value,
+                                  error: '',
+                                }))
+                              }
+                              disabled={!actor?.canEdit || rowDraft.saving}
+                              placeholder="사유를 입력해 주세요"
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 disabled:bg-slate-100"
+                            />
+                          </label>
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                              {rowDraftAdjusted
+                                ? '등급이 변경된 경우 조정 사유를 입력해 주세요.'
+                                : '조정 없음. 동일 등급으로 확정할 수 있습니다.'}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleInlineReset(employee.id)}
+                              disabled={rowDraft.saving}
+                              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              취소
+                            </button>
+                          </div>
+                          {rowDraft.error ? (
+                            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                              {rowDraft.error}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
               </article>
             ))}
@@ -855,9 +1131,31 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
         cycleId={cycle?.id}
         gradeOptions={gradeOptions}
         selectedGradeId={selectedGradeId}
-        onSelectedGradeIdChange={setSelectedGradeId}
+        onSelectedGradeIdChange={(value) => {
+          setSelectedGradeId(value)
+          setFormError('')
+
+          if (!selectedEmployee) return
+
+          updateRowDraft(selectedEmployee.id, (current) => ({
+            ...current,
+            gradeId: value,
+            error: '',
+          }))
+        }}
         adjustReason={adjustReason}
-        onAdjustReasonChange={setAdjustReason}
+        onAdjustReasonChange={(value) => {
+          setAdjustReason(value)
+          setFormError('')
+
+          if (!selectedEmployee) return
+
+          updateRowDraft(selectedEmployee.id, (current) => ({
+            ...current,
+            reason: value,
+            error: '',
+          }))
+        }}
         formHelper={formHelper}
         formError={formError}
         reasonRequired={gradeChanged}
