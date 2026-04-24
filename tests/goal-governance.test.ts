@@ -110,6 +110,11 @@ async function main() {
     assert.equal(clientSource.includes('kpi.linkedConfirmedPersonalKpiCount'), true)
     assert.equal(clientSource.includes('kpi.linkedPersonalKpis.length'), true)
     assert.equal(clientSource.includes("!['DRAFT', 'SUBMITTED', 'LOCKED'].includes(kpi.status)"), true)
+    assert.equal(clientSource.includes('data-testid="org-kpi-detail-scroll-region"'), true)
+    assert.equal(clientSource.includes('data-testid="org-kpi-detail-sticky-header"'), true)
+    assert.equal(clientSource.includes('xl:max-h-[calc(100vh-8rem)]'), true)
+    assert.equal(clientSource.includes('xl:overflow-y-auto'), true)
+    assert.equal(clientSource.includes('xl:overscroll-y-contain'), true)
   })
 
   await run('org KPI workspace supports bulk edit and export mode selection routes', () => {

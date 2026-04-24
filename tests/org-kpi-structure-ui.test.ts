@@ -51,3 +51,16 @@ run('org KPI detail summary keeps diagnostics after first-view simplification', 
   assert.match(source, /개인 KPI 연결과 대상 인원 연결률은 하위 KPI 수가 아니라/)
   assert.match(source, /하위 목표 추가/)
 })
+
+run('org KPI detail card exposes an independently scrollable sidebar shell on wide layouts', () => {
+  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.match(source, /data-testid="org-kpi-detail-scroll-region"/)
+  assert.match(source, /xl:max-h-\[calc\(100vh-8rem\)\]/)
+  assert.match(source, /xl:overflow-y-auto/)
+  assert.match(source, /xl:overscroll-y-contain/)
+  assert.match(source, /data-testid="org-kpi-detail-sticky-header"/)
+  assert.match(source, /xl:sticky/)
+  assert.match(source, /role="region"/)
+  assert.match(source, /tabIndex=\{0\}/)
+})

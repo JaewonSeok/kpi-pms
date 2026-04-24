@@ -3446,38 +3446,51 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
     : '현재 KPI는 상위 조직 목표와 아직 연결되지 않았습니다.'
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div
+      data-testid="org-kpi-detail-scroll-region"
+      role="region"
+      aria-label={`${kpi.title} KPI 상세`}
+      tabIndex={0}
+      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 xl:min-h-0 xl:self-start xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto xl:overscroll-y-contain"
+    >
       <div className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xl font-semibold text-slate-900">{kpi.title}</span>
-              <StatusBadge status={kpi.status} />
+        <div
+          data-testid="org-kpi-detail-sticky-header"
+          className="xl:sticky xl:top-0 xl:z-10 xl:-mx-5 xl:-mt-5 xl:border-b xl:border-slate-200 xl:bg-white/95 xl:px-5 xl:pt-5 xl:pb-4 xl:backdrop-blur"
+        >
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl font-semibold text-slate-900">{kpi.title}</span>
+                  <StatusBadge status={kpi.status} />
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {kpi.departmentName} · {kpi.category ?? '카테고리 미지정'}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
+                <div className="text-xs text-slate-500">담당자</div>
+                <div className="text-sm font-semibold text-slate-900">{formatOrgKpiOwnerSummary(kpi.owner)}</div>
+              </div>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
-              {kpi.departmentName} · {kpi.category ?? '카테고리 미지정'}
-            </p>
-          </div>
-          <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
-            <div className="text-xs text-slate-500">담당자</div>
-            <div className="text-sm font-semibold text-slate-900">{formatOrgKpiOwnerSummary(kpi.owner)}</div>
-          </div>
-        </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <InfoPill
-            label="목표값"
-            value={formatOrgKpiTargetValues({
-              targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
-              targetValueT: kpi.targetValueT,
-              targetValueE: kpi.targetValueE,
-              targetValueS: kpi.targetValueS,
-              unit: kpi.unit,
-            })}
-          />
-          <InfoPill label="가중치" value={formatValue(kpi.weight)} />
-          <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
-          <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <InfoPill
+                label="목표값"
+                value={formatOrgKpiTargetValues({
+                  targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
+                  targetValueT: kpi.targetValueT,
+                  targetValueE: kpi.targetValueE,
+                  targetValueS: kpi.targetValueS,
+                  unit: kpi.unit,
+                })}
+              />
+              <InfoPill label="가중치" value={formatValue(kpi.weight)} />
+              <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
+              <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
+            </div>
+          </div>
         </div>
 
         {kpi.tags.length ? (
