@@ -2263,12 +2263,23 @@ export function OrgKpiManagementClient({
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {visibleTabs.map((tabKey) => (
-            <button key={tabKey} type="button" onClick={() => setTab(tabKey)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === tabKey ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>
-              {TAB_LABELS[tabKey]}
-            </button>
-          ))}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {visibleTabs.map((tabKey) => (
+              <button key={tabKey} type="button" onClick={() => setTab(tabKey)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === tabKey ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>
+                {TAB_LABELS[tabKey]}
+              </button>
+            ))}
+          </div>
+          {tab === 'map' ? (
+            <div className="w-full lg:w-80 xl:w-96">
+              <OrgKpiSearchField
+                value={search}
+                onChange={setSearch}
+                departmentFilterLabel={departmentFilterLabel}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -2291,6 +2302,7 @@ export function OrgKpiManagementClient({
               departmentFilterLabel={departmentFilterLabel}
               selectedDepartmentId={selectedDepartmentId}
               onSelectDepartment={setSelectedDepartmentId}
+              showSearch={false}
             />
 
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -2862,15 +2874,17 @@ function OrgKpiScopeSidebar(props: {
   departmentFilterLabel: string
   selectedDepartmentId: string
   onSelectDepartment: (value: string) => void
+  showSearch?: boolean
 }) {
   return (
     <div className="space-y-3">
-      <input
-        value={props.search}
-        onChange={(event) => props.onSearchChange(event.target.value)}
-        className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
-        placeholder={`KPI명 또는 ${props.departmentFilterLabel.replace(' 범위', '')} 검색`}
-      />
+      {props.showSearch === false ? null : (
+        <OrgKpiSearchField
+          value={props.search}
+          onChange={props.onSearchChange}
+          departmentFilterLabel={props.departmentFilterLabel}
+        />
+      )}
       {props.departments.length > 1 ? (
         <div className="space-y-2">
           <button
@@ -2903,6 +2917,21 @@ function OrgKpiScopeSidebar(props: {
         </div>
       ) : null}
     </div>
+  )
+}
+
+function OrgKpiSearchField(props: {
+  value: string
+  onChange: (value: string) => void
+  departmentFilterLabel: string
+}) {
+  return (
+    <input
+      value={props.value}
+      onChange={(event) => props.onChange(event.target.value)}
+      className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
+      placeholder={`KPI명 또는 ${props.departmentFilterLabel.replace(' 범위', '')} 검색`}
+    />
   )
 }
 

@@ -64,3 +64,12 @@ run('org KPI detail card exposes an independently scrollable sidebar shell on wi
   assert.match(source, /role="region"/)
   assert.match(source, /tabIndex=\{0\}/)
 })
+
+run('org KPI map tab promotes the search field into the upper toolbar area', () => {
+  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.match(source, /<OrgKpiSearchField\s+value=\{search\}\s+onChange=\{setSearch\}\s+departmentFilterLabel=\{departmentFilterLabel\}/)
+  assert.match(source, /tab === 'map' \? \(\s*<div className="w-full lg:w-80 xl:w-96">\s*<OrgKpiSearchField/)
+  assert.match(source, /showSearch=\{false\}/)
+  assert.match(source, /placeholder=\{`KPI명 또는 \$\{props\.departmentFilterLabel\.replace\(' 범위', ''\)\} 검색`\}/)
+})
