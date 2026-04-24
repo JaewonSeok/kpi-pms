@@ -374,7 +374,7 @@ export function AdminOpsClient() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <Link href="/admin/google-access" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">Google 계정 등록</Link>
                 <Link href="/admin/notifications" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">알림 운영</Link>
-                <Link href="/evaluation/ceo-adjust" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">등급 조정</Link>
+                <Link href="/evaluation/ceo-adjust" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">대표이사 확정</Link>
                 <Link href="/compensation/manage" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">시뮬레이션 관리</Link>
                 <Link href="/kpi/monthly" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">월간 실적</Link>
                 <Link href="/notifications" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">알림 센터</Link>

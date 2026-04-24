@@ -1,8 +1,8 @@
 import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { authOptions } from '@/lib/auth'
-import { getEvaluationCalibrationPageData } from '@/server/evaluation-calibration'
-import { EvaluationCalibrationClient } from '@/components/evaluation/EvaluationCalibrationClient'
+import { EvaluationCeoFinalClient } from '@/components/evaluation/EvaluationCeoFinalClient'
+import { getEvaluationCeoFinalPageData } from '@/server/evaluation-ceo-final-page'
 
 type EvaluationCeoAdjustPageProps = {
   searchParams?: Promise<{
@@ -25,12 +25,13 @@ export default async function EvaluationCeoAdjustPage({
   }
 
   const resolvedSearchParams = (await searchParams) ?? {}
-  const pageData = await getEvaluationCalibrationPageData({
+  const pageData = await getEvaluationCeoFinalPageData({
     userId: session.user.id,
+    userName: session.user.name,
     role: session.user.role,
     cycleId: resolvedSearchParams.cycleId,
     scopeId: resolvedSearchParams.scope,
   })
 
-  return <EvaluationCalibrationClient {...pageData} />
+  return <EvaluationCeoFinalClient {...pageData} />
 }

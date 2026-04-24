@@ -51,6 +51,10 @@ export type CalibrationCandidate = {
   id: string
   employeeId: string
   employeeName: string
+  finalEvaluationId?: string | null
+  adjustedEvaluationId?: string | null
+  detailEvaluationId?: string | null
+  detailEvaluationUpdatedAt?: string
   divisionId: string
   divisionName: string
   departmentId: string
@@ -569,7 +573,7 @@ export async function getEvaluationCalibrationPageData(params: {
       return {
         state: 'permission-denied',
         availableCycles: [],
-        message: '등급 조정 화면은 관리자 또는 CEO만 접근할 수 있습니다.',
+        message: '대표이사 확정 화면은 관리자 또는 CEO만 접근할 수 있습니다.',
       }
     }
 
@@ -588,7 +592,7 @@ export async function getEvaluationCalibrationPageData(params: {
       return {
         state: 'permission-denied',
         availableCycles: [],
-        message: '등급 조정 화면을 조회할 직원 정보를 찾지 못했습니다.',
+        message: '대표이사 확정 화면을 조회할 직원 정보를 찾지 못했습니다.',
       }
     }
 
@@ -1131,7 +1135,7 @@ export async function getEvaluationCalibrationPageData(params: {
     return {
       state: 'error',
       availableCycles: [],
-      message: '등급 조정 화면을 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+      message: '대표이사 확정 화면을 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
     }
   }
 }
@@ -1326,6 +1330,12 @@ function buildCalibrationCandidate(params: {
     id: group.target.id,
     employeeId: group.target.empId,
     employeeName: group.target.empName,
+    finalEvaluationId: group.finalEvaluation?.id ?? null,
+    adjustedEvaluationId: adjustedEvaluation?.id ?? null,
+    detailEvaluationId: adjustedEvaluation?.id ?? group.finalEvaluation?.id ?? null,
+    detailEvaluationUpdatedAt:
+      (adjustedEvaluation?.updatedAt ?? group.finalEvaluation?.updatedAt)?.toISOString() ??
+      undefined,
     divisionId,
     divisionName,
     departmentId: group.target.department.id,

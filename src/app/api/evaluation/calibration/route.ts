@@ -33,7 +33,7 @@ export async function PATCH(request: Request) {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
     if (!['ROLE_ADMIN', 'ROLE_CEO'].includes(session.user.role)) {
-      throw new AppError(403, 'FORBIDDEN', '등급 조정 권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '대표이사 확정 권한이 없습니다.')
     }
 
     const parsed = CalibrationCandidateUpdateSchema.safeParse(await request.json())
@@ -42,6 +42,10 @@ export async function PATCH(request: Request) {
     }
 
     const body = parsed.data
+    if (['save', 'clear', 'bulk-import'].includes(body.action) && session.user.role !== 'ROLE_CEO') {
+      throw new AppError(403, 'CEO_ONLY', '대표이사만 최종 등급을 조정하거나 확정할 수 있습니다.')
+    }
+
     const client = getClientInfo(request)
     const cycle = await prisma.evalCycle.findUnique({
       where: { id: body.cycleId },
@@ -829,7 +833,7 @@ export async function PATCH(request: Request) {
     }
 
     if (!targetId) {
-      throw new AppError(400, 'TARGET_REQUIRED', '등급 조정 대상자를 찾지 못했습니다.')
+      throw new AppError(400, 'TARGET_REQUIRED', '대표이사 확정 대상자를 찾지 못했습니다.')
     }
 
     const originalGrade =

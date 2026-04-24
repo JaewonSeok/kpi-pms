@@ -735,7 +735,7 @@ function CompensationStatePanel({ state, message }: { state: CompensationManageC
 function RelatedLinks() {
   const links = [
     { href: '/evaluation/results', label: '평가 결과' },
-    { href: '/evaluation/ceo-adjust', label: '등급 조정' },
+    { href: '/evaluation/ceo-adjust', label: '대표이사 확정' },
     { href: '/admin/grades', label: '등급 설정' },
     { href: '/compensation/my', label: '내 보상 결과' },
   ]

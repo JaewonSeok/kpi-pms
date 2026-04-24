@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
     if (!['ROLE_ADMIN', 'ROLE_CEO'].includes(session.user.role)) {
-      throw new AppError(403, 'FORBIDDEN', '등급 조정 워크플로 권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '대표이사 확정 워크플로 권한이 없습니다.')
     }
 
     const parsed = CalibrationWorkflowSchema.safeParse(await request.json())
@@ -46,6 +46,10 @@ export async function POST(request: Request) {
     }
 
     const { cycleId, action, scopeId } = parsed.data
+    if (['CONFIRM_REVIEW', 'LOCK', 'REOPEN_REQUEST'].includes(action) && session.user.role !== 'ROLE_CEO') {
+      throw new AppError(403, 'CEO_ONLY', '대표이사만 최종 확정 단계를 진행할 수 있습니다.')
+    }
+
     const cycle = await prisma.evalCycle.findUnique({
       where: { id: cycleId },
     })
@@ -168,6 +172,7 @@ export async function POST(request: Request) {
             comment: true,
             gradeId: true,
             totalScore: true,
+            status: true,
           },
         }),
         prisma.auditLog.findFirst({
@@ -194,6 +199,20 @@ export async function POST(request: Request) {
             totalScore: evaluation.totalScore,
           })
         }
+      }
+
+      const adjustedByTarget = new Map(adjustedEvaluations.map((evaluation) => [evaluation.targetId, evaluation]))
+      const pendingFinalConfirmationCount = [...finalByTarget.keys()].filter((targetId) => {
+        const adjustedEvaluation = adjustedByTarget.get(targetId)
+        return adjustedEvaluation?.status !== 'CONFIRMED'
+      }).length
+
+      if (pendingFinalConfirmationCount > 0) {
+        throw new AppError(
+          400,
+          'FINAL_CONFIRMATION_INCOMPLETE',
+          '아직 대표이사 최종 확정이 완료되지 않은 대상이 있어 최종 확정을 완료할 수 없습니다.'
+        )
       }
 
       const missingReasonCount = adjustedEvaluations.filter((evaluation) => {
