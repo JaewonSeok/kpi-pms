@@ -889,169 +889,197 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
                       gradeOptions.find((grade) => grade.id === rowDraft.gradeId)?.grade ??
                       employee.finalCeoRating ??
                       '-'
+                    const showInlinePrimaryAction = Boolean(actor?.canEdit) && (rowDraftDirty || !employee.finalized)
 
                     return (
                       <div
                         key={employee.id}
                         className={cls(
-                          'grid gap-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm transition',
+                          'rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm transition',
                           selectedEmployee?.id === employee.id && 'border-sky-300 ring-2 ring-sky-100',
-                          'lg:grid-cols-[minmax(0,1.2fr)_140px_140px_110px_110px_110px]'
                         )}
                       >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedEmployeeId(employee.id)}
-                            className="text-left text-base font-semibold text-slate-950 hover:text-sky-700"
-                          >
-                            {employee.employeeName}
-                          </button>
-                          {employee.positionLabel ? <StatusChip tone="slate">{employee.positionLabel}</StatusChip> : null}
-                          {rowDraftDirty ? (
-                            <StatusChip tone="amber">변경됨</StatusChip>
-                          ) : null}
-                        </div>
-                        <p className="mt-2 text-sm text-slate-500">
-                          {employee.departmentName} · {employee.divisionName}
-                        </p>
-                      </div>
-
-                      <RowMetric label="본부장 평가 등급" value={employee.originalDivisionHeadRating} />
-                      <RowMetric
-                        label="최종 등급"
-                        value={rowDraftGrade}
-                        accent={rowDraftAdjusted || rowDraftDirty}
-                      />
-                      {actor?.canEdit ? (
-                        <div className="lg:col-start-3 lg:row-start-1 lg:mt-7">
-                          <select
-                            value={rowDraft.gradeId}
-                            onChange={(event) =>
-                              updateRowDraft(employee.id, (current) => ({
-                                ...current,
-                                gradeId: event.target.value,
-                                error: '',
-                              }))
-                            }
-                            disabled={rowDraft.saving}
-                            className={cls(
-                              'h-11 w-full rounded-2xl border bg-white px-3 text-sm font-semibold text-slate-900',
-                              rowDraftAdjusted || rowDraftDirty
-                                ? 'border-sky-300 ring-2 ring-sky-100'
-                                : 'border-slate-200'
-                            )}
-                          >
-                            <option value="">등급을 선택해 주세요.</option>
-                            {gradeOptions.map((grade) => (
-                              <option key={grade.id} value={grade.id}>
-                                {grade.grade}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : null}
-                      <RowBadgeCell
-                        label="조정 여부"
-                        badge={
-                          <StatusChip tone={rowDraftDirty ? 'amber' : rowDraftAdjusted || employee.isAdjusted ? 'blue' : 'slate'}>
-                            {rowDraftDirty ? '변경됨' : rowDraftAdjusted || employee.isAdjusted ? '조정 발생' : '조정 없음'}
-                          </StatusChip>
-                        }
-                      />
-                      <RowBadgeCell
-                        label="확정 상태"
-                        badge={
-                          <StatusChip tone={employee.finalized ? 'emerald' : 'amber'}>
-                            {employee.finalized ? '확정 완료' : '미확정'}
-                          </StatusChip>
-                        }
-                      />
-                      <div className="flex flex-col items-stretch justify-center gap-2 lg:items-end">
-                        {actor?.canEdit ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleInlineSave(employee.id)}
-                            disabled={
-                              rowDraft.saving ||
-                              (employee.finalized && !rowDraftDirty)
-                            }
-                            className={cls(
-                              'inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold text-white transition',
-                              rowDraft.saving ||
-                                (employee.finalized && !rowDraftDirty)
-                                ? 'cursor-not-allowed bg-slate-300'
-                                : 'bg-slate-950 hover:bg-slate-800'
-                            )}
-                          >
-                            {rowDraft.saving ? (
-                              <LoaderCircle className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <CheckCircle2 className="h-4 w-4" />
-                            )}
-                            {rowDraftDirty
-                              ? '변경 저장'
-                              : employee.finalized
-                                ? '확정 완료'
-                                : '최종 확정'}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedEmployeeId(employee.id)}
-                          className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                        >
-                          검토하기
-                          <ArrowRight className="h-4 w-4" />
-                        </button>
-                      </div>
-                      {showInlineReason ? (
-                        <div className="space-y-3 lg:col-span-6">
-                          <label className="block">
-                            <span className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-800">
-                              조정 사유
-                              {rowDraftAdjusted ? (
-                                <span className="text-rose-600">*</span>
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedEmployeeId(employee.id)}
+                                className="text-left text-base font-semibold text-slate-950 hover:text-sky-700"
+                              >
+                                {employee.employeeName}
+                              </button>
+                              {employee.positionLabel ? <StatusChip tone="slate">{employee.positionLabel}</StatusChip> : null}
+                              {rowDraftDirty ? (
+                                <StatusChip tone="amber">변경됨</StatusChip>
                               ) : null}
-                            </span>
-                            <textarea
-                              rows={2}
-                              value={rowDraft.reason}
-                              onChange={(event) =>
-                                updateRowDraft(employee.id, (current) => ({
-                                  ...current,
-                                  reason: event.target.value,
-                                  error: '',
-                                }))
-                              }
-                              disabled={!actor?.canEdit || rowDraft.saving}
-                              placeholder="사유를 입력해 주세요"
-                              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 disabled:bg-slate-100"
-                            />
-                          </label>
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                              {rowDraftAdjusted
-                                ? '등급이 변경된 경우 조정 사유를 입력해 주세요.'
-                                : '조정 없음. 동일 등급으로 확정할 수 있습니다.'}
                             </div>
+                            <p className="mt-2 text-sm text-slate-500">
+                              {employee.departmentName} · {employee.divisionName}
+                            </p>
+                          </div>
+
+                          <div className="flex items-start justify-end lg:shrink-0 lg:pl-6">
                             <button
                               type="button"
-                              onClick={() => handleInlineReset(employee.id)}
-                              disabled={rowDraft.saving}
-                              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              onClick={() => setSelectedEmployeeId(employee.id)}
+                              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
                             >
-                              취소
+                              검토하기
+                              <ArrowRight className="h-4 w-4" />
                             </button>
                           </div>
-                          {rowDraft.error ? (
-                            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                              {rowDraft.error}
-                            </div>
-                          ) : null}
                         </div>
-                      ) : null}
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          <RowMetric label="본부장 평가 등급" value={employee.originalDivisionHeadRating} />
+                          <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                              최종 등급
+                            </span>
+                            {actor?.canEdit ? (
+                              <select
+                                value={rowDraft.gradeId}
+                                onChange={(event) =>
+                                  updateRowDraft(employee.id, (current) => ({
+                                    ...current,
+                                    gradeId: event.target.value,
+                                    error: '',
+                                  }))
+                                }
+                                disabled={rowDraft.saving}
+                                className={cls(
+                                  'mt-2 h-11 w-full rounded-2xl border bg-white px-3 text-sm font-semibold text-slate-900',
+                                  rowDraftAdjusted || rowDraftDirty
+                                    ? 'border-sky-300 ring-2 ring-sky-100'
+                                    : 'border-slate-200'
+                                )}
+                              >
+                                <option value="">등급을 선택해 주세요.</option>
+                                {gradeOptions.map((grade) => (
+                                  <option key={grade.id} value={grade.id}>
+                                    {grade.grade}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span
+                                className={cls(
+                                  'mt-2 block text-sm font-semibold',
+                                  rowDraftAdjusted || rowDraftDirty ? 'text-sky-700' : 'text-slate-900'
+                                )}
+                              >
+                                {rowDraftGrade}
+                              </span>
+                            )}
+                          </div>
+                          <RowBadgeCell
+                            label="조정 여부"
+                            badge={
+                              <StatusChip tone={rowDraftDirty ? 'amber' : rowDraftAdjusted || employee.isAdjusted ? 'blue' : 'slate'}>
+                                {rowDraftDirty ? '변경됨' : rowDraftAdjusted || employee.isAdjusted ? '조정 발생' : '조정 없음'}
+                              </StatusChip>
+                            }
+                          />
+                          <RowBadgeCell
+                            label="확정 상태"
+                            badge={
+                              <StatusChip tone={employee.finalized ? 'emerald' : 'amber'}>
+                                {employee.finalized ? '확정 완료' : '미확정'}
+                              </StatusChip>
+                            }
+                          />
+                        </div>
+
+                        {showInlineReason ? (
+                          <div className="mt-4 rounded-[20px] border border-sky-200 bg-sky-50/60 p-4">
+                            <div className="space-y-4">
+                              <label className="block">
+                                <span className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-800">
+                                  조정 사유
+                                  {rowDraftAdjusted ? <span className="text-rose-600">*</span> : null}
+                                </span>
+                                <textarea
+                                  rows={2}
+                                  value={rowDraft.reason}
+                                  onChange={(event) =>
+                                    updateRowDraft(employee.id, (current) => ({
+                                      ...current,
+                                      reason: event.target.value,
+                                      error: '',
+                                    }))
+                                  }
+                                  disabled={!actor?.canEdit || rowDraft.saving}
+                                  placeholder="사유를 입력해 주세요"
+                                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 disabled:bg-slate-100"
+                                />
+                              </label>
+                              {rowDraft.error ? (
+                                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                                  {rowDraft.error}
+                                </div>
+                              ) : null}
+                              <div className="border-t border-sky-200/80 pt-3">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                                    {rowDraftAdjusted
+                                      ? '등급이 변경된 경우 조정 사유를 입력해 주세요.'
+                                      : '조정 없음. 동일 등급으로 확정할 수 있습니다.'}
+                                  </div>
+                                  <div className="flex flex-wrap justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInlineReset(employee.id)}
+                                      disabled={rowDraft.saving}
+                                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      취소
+                                    </button>
+                                    {showInlinePrimaryAction ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => void handleInlineSave(employee.id)}
+                                        disabled={rowDraft.saving}
+                                        className={cls(
+                                          'inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold text-white shadow-sm transition',
+                                          rowDraft.saving ? 'cursor-not-allowed bg-slate-300' : 'bg-slate-950 hover:bg-slate-800'
+                                        )}
+                                      >
+                                        {rowDraft.saving ? (
+                                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <CheckCircle2 className="h-4 w-4" />
+                                        )}
+                                        변경 저장
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : showInlinePrimaryAction ? (
+                          <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleInlineSave(employee.id)}
+                              disabled={rowDraft.saving || (employee.finalized && !rowDraftDirty)}
+                              className={cls(
+                                'inline-flex h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold text-white shadow-sm transition',
+                                rowDraft.saving || (employee.finalized && !rowDraftDirty)
+                                  ? 'cursor-not-allowed bg-slate-300'
+                                  : 'bg-slate-950 hover:bg-slate-800'
+                              )}
+                            >
+                              {rowDraft.saving ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="h-4 w-4" />
+                              )}
+                              {employee.finalized ? '확정 완료' : '최종 확정'}
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     )
                   })}

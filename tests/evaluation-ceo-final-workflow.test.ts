@@ -166,6 +166,14 @@ async function main() {
 
   await run('CEO final client keeps division selection visible and promotes the final grade select as the primary control', () => {
     const clientSource = read('src/components/evaluation/EvaluationCeoFinalClient.tsx')
+    const rowCardSection = clientSource.slice(
+      clientSource.indexOf('const showInlinePrimaryAction'),
+      clientSource.indexOf('function EmployeeDrawer')
+    )
+    const reviewActionIndex = rowCardSection.indexOf('검토하기')
+    const inlineReasonIndex = rowCardSection.indexOf('조정 사유')
+    const cancelIndex = rowCardSection.indexOf('취소')
+    const saveIndex = rowCardSection.indexOf('변경 저장')
 
     assert.equal(clientSource.includes('buildDivisionGroups'), true)
     assert.equal(clientSource.includes('buildSummary'), true)
@@ -192,9 +200,18 @@ async function main() {
     assert.equal(clientSource.includes('선택 본부:'), true)
     assert.equal(clientSource.includes('전사 전체 보기'), true)
     assert.equal(clientSource.includes('selectedScope.isAll'), true)
+    assert.equal(clientSource.includes('border-t border-sky-200/80 pt-3'), true)
+    assert.equal(clientSource.includes('mt-4 flex justify-end border-t border-slate-100 pt-3'), true)
     assert.equal(clientSource.includes('InfoTile label="최종 등급"'), false)
     assert.equal(clientSource.includes(ADMIN_READ_ONLY_MESSAGE), false)
     assert.equal(clientSource.includes(FINAL_REVIEW_READ_ONLY_MESSAGE), false)
+    assert.equal(rowCardSection.length > 0, true)
+    assert.equal(reviewActionIndex > -1, true)
+    assert.equal(inlineReasonIndex > -1, true)
+    assert.equal(cancelIndex > -1, true)
+    assert.equal(saveIndex > -1, true)
+    assert.equal(reviewActionIndex < inlineReasonIndex, true)
+    assert.equal(cancelIndex < saveIndex, true)
   })
 
   await run('CEO save route preserves audit fields while allowing admin and CEO final confirmation mutations', () => {
