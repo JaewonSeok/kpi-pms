@@ -952,12 +952,89 @@ function EmployeeDrawer(props: {
             <SectionCard title="평가 단계 요약" icon={<CheckCircle2 className="h-4 w-4" />}>
               <div className="grid gap-3 md:grid-cols-2">
                 <InfoTile label="본부장 평가 등급" value={props.employee.originalDivisionHeadRating} />
-                <InfoTile label="최종 등급" value={props.employee.finalCeoRating} />
                 <InfoTile label="조정 여부" value={props.employee.isAdjusted ? '조정 발생' : '조정 없음'} />
                 <InfoTile label="조정 사유" value={props.employee.adjustmentReason || '-'} />
               </div>
               <ReadOnlyText label="본부장 코멘트" value={props.employee.detail.evaluationComment} />
               <ReadOnlyText label="이전 단계 의견" value={props.employee.detail.reviewerComment} />
+            </SectionCard>
+
+            <SectionCard title="최종 등급 확정" icon={<Clock3 className="h-4 w-4" />}>
+              {!editable ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  현재 화면은 읽기 전용입니다. 잠금 해제 후 다시 최종 등급을 수정하거나 확정해 주세요.
+                </div>
+              ) : null}
+              <div className="grid gap-4">
+                <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                  본부장 평가 등급 <span className="font-semibold">{props.employee.originalDivisionHeadRating}</span>을
+                  기준으로 최종 등급을 선택해 주세요.
+                </div>
+
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-slate-800">최종 등급</span>
+                  <select
+                    value={props.selectedGradeId}
+                    onChange={(event) => props.onSelectedGradeIdChange(event.target.value)}
+                    disabled={!editable || props.saving}
+                    className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 disabled:bg-slate-100"
+                  >
+                    <option value="">등급을 선택해 주세요.</option>
+                    {props.gradeOptions.map((grade) => (
+                      <option key={grade.id} value={grade.id}>
+                        {grade.grade}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-800">
+                    조정 사유
+                    {props.reasonRequired ? <span className="text-rose-600">*</span> : null}
+                  </span>
+                  <textarea
+                    rows={4}
+                    value={props.adjustReason}
+                    onChange={(event) => props.onAdjustReasonChange(event.target.value)}
+                    disabled={!editable || props.saving}
+                    placeholder="등급을 조정한 경우 사유를 입력해 주세요."
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 disabled:bg-slate-100"
+                  />
+                </label>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  {props.formHelper}
+                </div>
+                {props.formError ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    {props.formError}
+                  </div>
+                ) : null}
+
+                {editable ? (
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={props.onSave}
+                      disabled={props.saving}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      {props.saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      최종 확정
+                    </button>
+                    <button
+                      type="button"
+                      onClick={props.onClear}
+                      disabled={props.saving}
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Undo2 className="h-4 w-4" />
+                      원래 등급으로 되돌리기
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </SectionCard>
 
             <SectionCard title="근거 자료" icon={<CalendarDays className="h-4 w-4" />}>
@@ -1079,78 +1156,6 @@ function EmployeeDrawer(props: {
               ) : null}
             </SectionCard>
 
-            <SectionCard title="최종 확정" icon={<Clock3 className="h-4 w-4" />}>
-              {!editable ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  현재 화면은 읽기 전용입니다. 잠금 해제 후 다시 최종 등급을 수정하거나 확정해 주세요.
-                </div>
-              ) : null}
-              <div className="grid gap-4">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-slate-800">최종 등급</span>
-                  <select
-                    value={props.selectedGradeId}
-                    onChange={(event) => props.onSelectedGradeIdChange(event.target.value)}
-                    disabled={!editable || props.saving}
-                    className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-800 disabled:bg-slate-100"
-                  >
-                    <option value="">등급을 선택해 주세요.</option>
-                    {props.gradeOptions.map((grade) => (
-                      <option key={grade.id} value={grade.id}>
-                        {grade.grade}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-800">
-                    조정 사유
-                    {props.reasonRequired ? <span className="text-rose-600">*</span> : null}
-                  </span>
-                  <textarea
-                    rows={4}
-                    value={props.adjustReason}
-                    onChange={(event) => props.onAdjustReasonChange(event.target.value)}
-                    disabled={!editable || props.saving}
-                    placeholder="등급을 조정한 경우 사유를 입력해 주세요."
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 disabled:bg-slate-100"
-                  />
-                </label>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  {props.formHelper}
-                </div>
-                {props.formError ? (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    {props.formError}
-                  </div>
-                ) : null}
-
-                {editable ? (
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={props.onSave}
-                      disabled={props.saving}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    >
-                      {props.saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                      최종 확정
-                    </button>
-                    <button
-                      type="button"
-                      onClick={props.onClear}
-                      disabled={props.saving}
-                      className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <Undo2 className="h-4 w-4" />
-                      원래 등급으로 되돌리기
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </SectionCard>
           </div>
         </div>
       </aside>

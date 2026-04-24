@@ -8,15 +8,16 @@ import {
 } from '../src/lib/evaluation-ceo-final'
 import { CalibrationCandidateUpdateSchema } from '../src/lib/validations'
 
-const CEO_PAGE_LABEL = '\uB300\uD45C\uC774\uC0AC \uD655\uC815'
-const CEO_REASON_REQUIRED = '\uB4F1\uAE09\uC744 \uC870\uC815\uD55C \uACBD\uC6B0 \uC0AC\uC720\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.'
+const CEO_PAGE_LABEL = '대표이사 확정'
+const CEO_REASON_REQUIRED = '등급을 조정한 경우 사유를 입력해 주세요.'
 const CEO_REDIRECT_MESSAGE =
-  '\uB300\uD45C\uC774\uC0AC \uCD5C\uC885 \uD655\uC815\uC740 \uB300\uD45C\uC774\uC0AC \uD655\uC815 \uD654\uBA74\uC5D0\uC11C \uC9C4\uD589\uD574 \uC8FC\uC138\uC694.'
+  '대표이사 최종 확정은 대표이사 확정 화면에서 진행해 주세요.'
 const ADMIN_READ_ONLY_MESSAGE =
-  '\uAD00\uB9AC\uC790\uB294 \uC774 \uD654\uBA74\uC5D0\uC11C \uACB0\uACFC\uB97C \uC870\uD68C\uD560 \uC218\uB9CC \uC788\uC73C\uBA70 \uB4F1\uAE09 \uC870\uC815\uACFC \uCD5C\uC885 \uD655\uC815\uC740 \uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.'
+  '관리자는 이 화면에서 결과를 조회할 수만 있으며 등급 조정과 최종 확정은 할 수 없습니다.'
 const FINAL_REVIEW_READ_ONLY_MESSAGE =
-  '\uD604\uC7AC \uD654\uBA74\uC740 \uC77D\uAE30 \uC804\uC6A9\uC785\uB2C8\uB2E4. \uCD5C\uC885 \uB4F1\uAE09 \uC218\uC815\uACFC \uD655\uC815\uC740 \uB300\uD45C\uC774\uC0AC\uB9CC \uC218\uD589\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.'
-const DIVISION_SELECTION_LABEL = '\uBCF8\uBD80\uBCC4 \uC120\uD0DD'
+  '현재 화면은 읽기 전용입니다. 최종 등급 수정과 확정은 대표이사만 수행할 수 있습니다.'
+const DIVISION_SELECTION_LABEL = '본부별 선택'
+const FINAL_GRADE_CONFIRMATION_LABEL = '최종 등급 확정'
 
 function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
@@ -60,9 +61,43 @@ async function main() {
     )
   })
 
-  await run('division scope map keeps headquarters as the grouping key for nested departments', () => {
+  await run(
+    'division scope map keeps the top-level division for both direct child teams and nested departments',
+    () => {
+      const scopeMap = buildCeoFinalDivisionScopeMap([
+        { id: 'dept-hq', deptName: '경영본부', parentDeptId: null },
+        { id: 'dept-biz', deptName: '사업본부', parentDeptId: 'dept-hq' },
+        { id: 'dept-hr-team', deptName: 'HR팀', parentDeptId: 'dept-hq' },
+        { id: 'dept-dev-office', deptName: '개발실', parentDeptId: 'dept-biz' },
+        { id: 'dept-dev-team', deptName: '개발1팀', parentDeptId: 'dept-dev-office' },
+      ])
+
+      assert.deepEqual(scopeMap.get('dept-hq'), {
+        divisionId: 'dept-hq',
+        divisionName: '경영본부',
+      })
+      assert.deepEqual(scopeMap.get('dept-biz'), {
+        divisionId: 'dept-biz',
+        divisionName: '사업본부',
+      })
+      assert.deepEqual(scopeMap.get('dept-hr-team'), {
+        divisionId: 'dept-hq',
+        divisionName: '경영본부',
+      })
+      assert.deepEqual(scopeMap.get('dept-dev-office'), {
+        divisionId: 'dept-biz',
+        divisionName: '사업본부',
+      })
+      assert.deepEqual(scopeMap.get('dept-dev-team'), {
+        divisionId: 'dept-biz',
+        divisionName: '사업본부',
+      })
+    }
+  )
+
+  await run('division scope map still recognizes division-named departments in English hierarchies', () => {
     const scopeMap = buildCeoFinalDivisionScopeMap([
-      { id: 'dept-root', deptName: 'RSUPPORT', parentDeptId: null },
+      { id: 'dept-root', deptName: 'Corporate', parentDeptId: null },
       { id: 'dept-div', deptName: 'Customer Division', parentDeptId: 'dept-root' },
       { id: 'dept-team', deptName: 'CX Team', parentDeptId: 'dept-div' },
       { id: 'dept-pod', deptName: 'VOC Pod', parentDeptId: 'dept-team' },
@@ -119,12 +154,17 @@ async function main() {
     assert.equal(loaderSource.includes('buildCeoFinalSummary'), true)
     assert.equal(loaderSource.includes('loadBriefingPreviewMap'), true)
     assert.equal(loaderSource.includes('performanceDetailHref'), true)
-    assert.equal(loaderSource.includes('const canManageFinalReview = params.role === \'ROLE_CEO\' || params.role === \'ROLE_ADMIN\''), true)
+    assert.equal(
+      loaderSource.includes(
+        "const canManageFinalReview = params.role === 'ROLE_CEO' || params.role === 'ROLE_ADMIN'"
+      ),
+      true
+    )
     assert.equal(loaderSource.includes('selectedScope'), true)
     assert.equal(loaderSource.includes(CEO_PAGE_LABEL), true)
   })
 
-  await run('CEO final client is review-first, keeps division selection visible, and removes the old admin read-only copy', () => {
+  await run('CEO final client keeps division selection visible and promotes the final grade select as the primary control', () => {
     const clientSource = read('src/components/evaluation/EvaluationCeoFinalClient.tsx')
 
     assert.equal(clientSource.includes('buildDivisionGroups'), true)
@@ -140,9 +180,11 @@ async function main() {
     assert.equal(clientSource.includes(CEO_PAGE_LABEL), true)
     assert.equal(clientSource.includes(CEO_REASON_REQUIRED), true)
     assert.equal(clientSource.includes(DIVISION_SELECTION_LABEL), true)
+    assert.equal(clientSource.includes(FINAL_GRADE_CONFIRMATION_LABEL), true)
     assert.equal(clientSource.includes('선택 본부:'), true)
     assert.equal(clientSource.includes('전사 전체 보기'), true)
     assert.equal(clientSource.includes('selectedScope.isAll'), true)
+    assert.equal(clientSource.includes('InfoTile label="최종 등급"'), false)
     assert.equal(clientSource.includes(ADMIN_READ_ONLY_MESSAGE), false)
     assert.equal(clientSource.includes(FINAL_REVIEW_READ_ONLY_MESSAGE), false)
   })

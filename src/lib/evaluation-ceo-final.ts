@@ -9,6 +9,8 @@ export type CeoFinalDivisionScope = {
   divisionName: string
 }
 
+const DIVISION_SCOPE_NAME_PATTERN = /(본부|부문|division|headquarters?|hq)/i
+
 function normalizeGradeId(value?: string | null) {
   const trimmed = value?.trim()
   return trimmed && trimmed.length ? trimmed : null
@@ -49,7 +51,38 @@ export function normalizeCeoAdjustmentReason(reason?: string | null) {
 
 export function buildCeoFinalDivisionScopeMap(departments: CeoFinalDepartmentNode[]) {
   const byId = new Map(departments.map((department) => [department.id, department]))
+  const childCountByParentId = new Map<string, number>()
   const cache = new Map<string, CeoFinalDivisionScope>()
+
+  for (const department of departments) {
+    if (!department.parentDeptId) continue
+    childCountByParentId.set(
+      department.parentDeptId,
+      (childCountByParentId.get(department.parentDeptId) ?? 0) + 1
+    )
+  }
+
+  const resolveScopeDepartment = (chain: CeoFinalDepartmentNode[]) => {
+    const namedDivision = chain.find((department) =>
+      DIVISION_SCOPE_NAME_PATTERN.test(department.deptName)
+    )
+    if (namedDivision) return namedDivision
+
+    if (chain.length >= 3) {
+      return chain[chain.length - 2] ?? chain[chain.length - 1] ?? chain[0] ?? null
+    }
+
+    if (chain.length === 2) {
+      const [leafDepartment, parentDepartment] = chain
+      if (leafDepartment && childCountByParentId.has(leafDepartment.id)) {
+        return leafDepartment
+      }
+
+      return parentDepartment ?? leafDepartment ?? null
+    }
+
+    return chain[0] ?? null
+  }
 
   const resolveScope = (departmentId: string): CeoFinalDivisionScope => {
     const cached = cache.get(departmentId)
@@ -65,11 +98,7 @@ export function buildCeoFinalDivisionScopeMap(departments: CeoFinalDepartmentNod
       current = current.parentDeptId ? byId.get(current.parentDeptId) ?? null : null
     }
 
-    const scopeDepartment =
-      chain.length <= 2
-        ? chain[0] ?? byId.get(departmentId) ?? null
-        : chain[chain.length - 2] ?? chain[chain.length - 1] ?? chain[0]
-
+    const scopeDepartment = resolveScopeDepartment(chain) ?? byId.get(departmentId) ?? null
     const fallbackDepartment = byId.get(departmentId)
     const resolved = {
       divisionId: scopeDepartment?.id ?? fallbackDepartment?.id ?? departmentId,
