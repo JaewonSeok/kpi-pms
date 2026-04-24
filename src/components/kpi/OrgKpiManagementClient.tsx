@@ -146,12 +146,15 @@ type AiPreview = {
 }
 
 const TAB_LABELS: Record<TabKey, string> = {
-  map: '목표맵',
   list: '목록',
+  map: '목표맵',
   linkage: '연결 현황',
   history: '이력',
   ai: 'AI 보조',
 }
+
+const TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history', 'ai']
+const MEMBER_TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history']
 
 const ORG_KPI_SCOPE_LABELS: Record<OrgKpiScope, string> = {
   division: '본부 KPI',
@@ -646,10 +649,10 @@ export function OrgKpiManagementClient({
   const isReadOnlyMemberView = pageData.actor.role === 'ROLE_MEMBER'
   const normalizedInitialTab = normalizeOrgKpiTab(initialTab)
   const visibleTabs = isReadOnlyMemberView
-    ? (['map', 'list', 'linkage', 'history'] as TabKey[])
-    : (Object.keys(TAB_LABELS) as TabKey[])
+    ? MEMBER_TAB_ORDER
+    : TAB_ORDER
   const defaultTab =
-    normalizedInitialTab && visibleTabs.includes(normalizedInitialTab) ? normalizedInitialTab : 'map'
+    normalizedInitialTab && visibleTabs.includes(normalizedInitialTab) ? normalizedInitialTab : visibleTabs[0] ?? 'list'
   const selectedScopeTab =
     pageData.scopeTabs.find((item) => item.key === pageData.selectedScope) ??
     ({
@@ -891,7 +894,7 @@ export function OrgKpiManagementClient({
       return
     }
 
-    setTab(visibleTabs[0] ?? 'map')
+    setTab(visibleTabs[0] ?? 'list')
   }, [tab, visibleTabs])
 
   useEffect(() => {

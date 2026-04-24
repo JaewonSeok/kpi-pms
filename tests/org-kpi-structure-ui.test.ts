@@ -91,3 +91,14 @@ run('org KPI workspace removes dashboard-style summary metric rows from the top 
   assert.doesNotMatch(source, /월간 실적 반영 비율/)
   assert.doesNotMatch(source, /function MetricCard/)
 })
+
+run('org KPI tabs use list-first ordering with stable key-based content mapping', () => {
+  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.match(source, /const TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history', 'ai'\]/)
+  assert.match(source, /const MEMBER_TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history'\]/)
+  assert.match(source, /const defaultTab =\s*normalizedInitialTab && visibleTabs\.includes\(normalizedInitialTab\) \? normalizedInitialTab : visibleTabs\[0\] \?\? 'list'/)
+  assert.match(source, /setTab\(visibleTabs\[0\] \?\? 'list'\)/)
+  assert.match(source, /\{tab === 'list' \? \(/)
+  assert.match(source, /\{tab === 'map' \? \(/)
+})

@@ -43,10 +43,8 @@ run('member org KPI screen switches to a read-only workspace instead of manageme
   const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
   assert.match(clientSource, /const isReadOnlyMemberView = pageData\.actor\.role === 'ROLE_MEMBER'/)
-  assert.match(
-    clientSource,
-    /const visibleTabs = isReadOnlyMemberView\s*\?\s*\(\['map', 'list', 'linkage', 'history'\] as TabKey\[\]\)/
-  )
+  assert.match(clientSource, /const MEMBER_TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history'\]/)
+  assert.match(clientSource, /const visibleTabs = isReadOnlyMemberView\s*\?\s*MEMBER_TAB_ORDER\s*:\s*TAB_ORDER/)
   assert.match(clientSource, /data-testid="org-kpi-member-readonly-badge"/)
   assert.match(clientSource, /MemberReadOnlySummaryCard/)
   assert.match(clientSource, /readOnly=\{isReadOnlyMemberView\}/)
