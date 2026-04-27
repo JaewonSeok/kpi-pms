@@ -109,3 +109,14 @@ run('org KPI action areas remove lock and duplicate history-view entry points wh
   assert.doesNotMatch(source, /\(action: 'SUBMIT' \| 'LOCK' \| 'REOPEN'\)/)
   assert.match(source, /\{tab === 'history' \? \(/)
 })
+
+run('org KPI selected-detail actions remove the bounded AI improve trigger while preserving the AI tab workspace', () => {
+  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.doesNotMatch(source, /ActionButton label="AI 개선"/)
+  assert.doesNotMatch(source, /onAi:\s*\(action:\s*AiAction\)\s*=>\s*void/)
+  assert.doesNotMatch(source, /onAi=\{handleAiAction\}/)
+  assert.doesNotMatch(source, /const handleAiAction = useCallback/)
+  assert.match(source, /\{tab === 'ai' \? \(/)
+  assert.match(source, /<KpiAiPreviewPanel/)
+})

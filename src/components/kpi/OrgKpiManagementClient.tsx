@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Archive,
-  Bot,
   Copy,
   FilePenLine,
   FileUp,
@@ -14,7 +13,6 @@ import {
   Plus,
   Send,
   ShieldCheck,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -24,10 +22,6 @@ import type {
   OrgKpiScopeTab,
   OrgKpiViewModel,
 } from '@/server/org-kpi-page'
-import type {
-  OrgKpiTeamAiContextView,
-  OrgKpiTeamRecommendationItemView,
-} from '@/server/org-kpi-team-ai'
 import {
   getOrgKpiDeleteActionState,
   resolveNextOrgKpiSelectionAfterDelete,
@@ -51,27 +45,7 @@ import {
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
 import { formatCountWithUnit, formatExplicitRatio } from '@/lib/metric-copy'
-import { buildStrategicTeamRecommendationPayload } from '@/lib/org-kpi-team-ai-recommendation'
-import {
-  extractKpiAiPreviewRecommendations,
-  type KpiAiPreviewComparison,
-  type KpiAiPreviewRecommendation,
-} from '@/lib/kpi-ai-preview'
-import {
-  buildOrgKpiAiRecommendationDraftStatusLabel,
-  buildOrgKpiAiRecommendationOptionLabel,
-  buildOrgKpiAiRecommendationSourceLabel,
-  buildOrgKpiFormFromAiRecommendation,
-  isOrgKpiAiRecommendationDraftDirty,
-} from '@/lib/org-kpi-ai-recommendation-draft'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
-import { KpiAiPreviewPanel } from './KpiAiPreviewPanel'
-import {
-  OrgKpiTeamAiWorkspace,
-  type BusinessPlanFormState,
-  type JobDescriptionFormState,
-  type RecommendationDecisionMode,
-} from './OrgKpiTeamAiWorkspace'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 
 type Props = OrgKpiPageData & {
@@ -79,14 +53,8 @@ type Props = OrgKpiPageData & {
   initialSelectedKpiId?: string
 }
 
-type TabKey = 'map' | 'list' | 'linkage' | 'history' | 'ai'
+type TabKey = 'map' | 'list' | 'linkage' | 'history'
 type Banner = { tone: 'success' | 'error' | 'info'; message: string }
-type TeamAiRuntimeState = {
-  mode: 'NORMAL_RESULT' | 'TRUE_FALLBACK'
-  errorCode?: string | null
-  prismaCode?: string | null
-  shortMessage?: string | null
-}
 type FormState = {
   deptId: string
   evalYear: string
@@ -124,34 +92,15 @@ type GoalExportForm = {
   mode: 'goal' | 'employee'
   departmentId: string
 }
-type PendingRecommendationDecision = {
-  itemId: string
-  decision: RecommendationDecisionMode
-}
-type AiAction =
-  | 'generate-draft'
-  | 'improve-wording'
-  | 'smart-check'
-  | 'detect-duplicates'
-  | 'suggest-alignment'
-  | 'summarize-risk'
-  | 'draft-monthly-comment'
-type AiPreview = {
-  requestLogId: string
-  source: 'ai' | 'fallback' | 'disabled'
-  fallbackReason?: string | null
-  result: Record<string, unknown>
-}
 
 const TAB_LABELS: Record<TabKey, string> = {
   list: '목록',
   map: '목표맵',
   linkage: '연결 현황',
   history: '이력',
-  ai: 'AI 보조',
 }
 
-const TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history', 'ai']
+const TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history']
 const MEMBER_TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history']
 
 const ORG_KPI_SCOPE_LABELS: Record<OrgKpiScope, string> = {
@@ -161,7 +110,7 @@ const ORG_KPI_SCOPE_LABELS: Record<OrgKpiScope, string> = {
 
 function normalizeOrgKpiTab(value?: string | null): TabKey | null {
   if (!value) return null
-  if (value === 'map' || value === 'list' || value === 'linkage' || value === 'history' || value === 'ai')
+  if (value === 'map' || value === 'list' || value === 'linkage' || value === 'history')
     return value
   return null
 }
@@ -180,25 +129,6 @@ const STATUS_CLASS: Record<OrgKpiViewModel['status'], string> = {
   CONFIRMED: 'bg-emerald-100 text-emerald-700 border-emerald-200',
   LOCKED: 'bg-violet-100 text-violet-700 border-violet-200',
   ARCHIVED: 'bg-amber-100 text-amber-700 border-amber-200',
-}
-
-const AI_LABELS: Record<AiAction, string> = {
-  'generate-draft': 'KPI 초안 생성',
-  'improve-wording': 'KPI 문장 개선',
-  'smart-check': 'SMART 점검',
-  'detect-duplicates': '중복/유사 KPI 탐지',
-  'suggest-alignment': '상위·하위 정렬 추천',
-  'summarize-risk': '운영 리스크 요약',
-  'draft-monthly-comment': '월간 실적 코멘트 초안',
-}
-
-const ORG_KPI_AI_PREVIEW_ERROR_MESSAGE =
-  'AI 결과 형식을 불러오는 중 문제가 발생해 기본 결과로 표시했습니다. 잠시 후 다시 시도해 주세요.'
-const DEFAULT_TEAM_AI_RUNTIME_STATE: TeamAiRuntimeState = {
-  mode: 'NORMAL_RESULT',
-  errorCode: null,
-  prismaCode: null,
-  shortMessage: null,
 }
 
 const cls = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
@@ -239,123 +169,6 @@ function previewRecord(value: unknown) {
 
 function previewStringValue(value: unknown) {
   return typeof value === 'string' && value.trim().length ? value.trim() : null
-}
-
-function toOrgKpiAiPreviewErrorMessage(message?: string | null) {
-  const trimmed = typeof message === 'string' ? message.trim() : ''
-  if (!trimmed) return ORG_KPI_AI_PREVIEW_ERROR_MESSAGE
-
-  const lower = trimmed.toLowerCase()
-  if (
-    lower.includes('response_format') ||
-    lower.includes('json_schema') ||
-    lower.includes('structured output') ||
-    lower.includes('recommendedparentid') ||
-    lower.includes('invalid schema') ||
-    lower.includes('could not be parsed') ||
-    lower.includes('did not include structured output')
-  ) {
-    return ORG_KPI_AI_PREVIEW_ERROR_MESSAGE
-  }
-
-  return trimmed
-}
-
-function logOrgKpiAiResultMode(
-  event:
-    | 'ORG_KPI_AI_RESULT_MODE_FALLBACK'
-    | 'ORG_KPI_AI_RESULT_MODE_NORMAL',
-  params: {
-    stepName: AiAction
-    errorCode?: string | null
-    prismaCode?: string | null
-  },
-) {
-  console.info(`[org-kpi-ai] ${event}`, params)
-}
-
-function isTeamAiFallbackAlert(alert: { title: string; description: string }) {
-  return alert.title.includes('팀 KPI AI 추천')
-}
-
-function previewNumberValue(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100)
-  }
-
-  if (typeof value === 'string' && value.trim().length) {
-    return value.trim()
-  }
-
-  return null
-}
-
-function previewNumericValue(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-
-  if (typeof value === 'string' && value.trim().length) {
-    const parsed = Number(value.trim())
-    return Number.isFinite(parsed) ? parsed : undefined
-  }
-
-  return undefined
-}
-
-function buildOrgAiPreviewComparisons(params: {
-  action: AiAction
-  result: Record<string, unknown>
-  selectedKpi: OrgKpiViewModel | null
-  form: FormState
-}): KpiAiPreviewComparison[] {
-  const record = previewRecord(params.result) ?? {}
-  const comparisons: KpiAiPreviewComparison[] = []
-
-  const pushComparison = (label: string, before?: string | null, after?: string | null) => {
-    if (!after || before?.trim() === after.trim()) return
-    comparisons.push({ label, before, after })
-  }
-
-  pushComparison(
-    'KPI명',
-    params.selectedKpi?.title ?? params.form.kpiName,
-    previewStringValue(record.improvedTitle ?? record.title),
-  )
-  pushComparison(
-    '정의',
-    params.selectedKpi?.definition ?? params.form.definition,
-    previewStringValue(record.improvedDefinition ?? record.definition),
-  )
-  pushComparison(
-    '산식',
-    params.selectedKpi?.formula ?? params.form.formula,
-    previewStringValue(record.formula),
-  )
-  pushComparison(
-    '목표값',
-    formatOrgKpiTargetValues({
-      targetValueT: params.selectedKpi?.targetValueT ?? previewNumericValue(params.form.targetValueT),
-      targetValueE:
-        params.selectedKpi?.targetValueE ??
-        previewNumericValue(params.selectedKpi?.targetValue) ??
-        previewNumericValue(params.form.targetValueE),
-      targetValueS: params.selectedKpi?.targetValueS ?? previewNumericValue(params.form.targetValueS),
-    }),
-    formatOrgKpiTargetValues({
-      targetValueT: previewNumericValue(record.targetValueT),
-      targetValueE: previewNumericValue(record.targetValueE ?? record.targetValueSuggestion),
-      targetValueS: previewNumericValue(record.targetValueS),
-    }),
-  )
-  pushComparison(
-    '가중치',
-    params.selectedKpi ? `${params.selectedKpi.weight}%` : params.form.weight,
-    previewNumberValue(record.weightSuggestion),
-  )
-  pushComparison('상위 정렬', params.selectedKpi?.parentOrgKpiTitle, previewStringValue(record.recommendedParentTitle))
-
-  return comparisons
 }
 
 function buildEmptyForm(year: number, departmentId: string): FormState {
@@ -437,78 +250,6 @@ function buildGoalExportForm(pageData: Props, selectedDepartmentId: string): Goa
   }
 }
 
-function buildBusinessPlanForm(
-  context: OrgKpiTeamAiContextView | null,
-  evalYear: number,
-  fallbackDepartmentId: string
-): BusinessPlanFormState {
-  const document = context?.businessPlan
-
-  return {
-    id: document?.id,
-    deptId: document?.departmentId ?? context?.planningDepartmentId ?? fallbackDepartmentId,
-    evalYear: document?.evalYear ?? context?.evalYear ?? evalYear,
-    evalCycleId: document?.evalCycleId ?? context?.evalCycleId ?? null,
-    title: document?.title ?? `${context?.planningDepartmentName ?? '본부'} 사업계획서`,
-    sourceType: document?.sourceType ?? 'TEXT',
-    summaryText: document?.summaryText ?? '',
-    bodyText: document?.bodyText ?? '',
-  }
-}
-
-function buildJobDescriptionForm(
-  context: OrgKpiTeamAiContextView | null,
-  scope: JobDescriptionFormState['scope'],
-  evalYear: number,
-  fallbackDepartmentId: string
-): JobDescriptionFormState {
-  const document = scope === 'DIVISION' ? context?.divisionJobDescription : context?.teamJobDescription
-  const departmentId =
-    document?.departmentId ??
-    (scope === 'DIVISION' ? context?.planningDepartmentId : context?.targetDepartmentId) ??
-    fallbackDepartmentId
-  const departmentName =
-    document?.departmentName ??
-    (scope === 'DIVISION' ? context?.planningDepartmentName : null) ??
-    '조직'
-
-  return {
-    id: document?.id,
-    deptId: departmentId,
-    scope,
-    evalYear: document?.evalYear ?? context?.evalYear ?? evalYear,
-    evalCycleId: document?.evalCycleId ?? context?.evalCycleId ?? null,
-    title: document?.title ?? `${departmentName} ${scope === 'DIVISION' ? '본부' : '팀'} 직무기술서`,
-    summaryText: document?.summaryText ?? '',
-    bodyText: document?.bodyText ?? '',
-  }
-}
-
-function buildFormFromTeamRecommendation(
-  item: OrgKpiTeamRecommendationItemView,
-  evalYear: number,
-  departmentId: string
-): FormState {
-  return {
-    deptId: departmentId,
-    evalYear: String(evalYear),
-    parentOrgKpiId:
-      item.recommendationType === 'ALIGNED_WITH_DIVISION_KPI' ? item.sourceOrgKpiId ?? '' : '',
-    kpiType: 'QUANTITATIVE',
-    kpiCategory: item.recommendationType === 'TEAM_INDEPENDENT' ? 'AI 독립형 KPI' : 'AI 연계형 KPI',
-    kpiName: item.title,
-    tags: item.recommendationType === 'TEAM_INDEPENDENT' ? 'AI추천, 독립형KPI' : 'AI추천, 연계형KPI',
-    definition: item.definition ?? '',
-    formula: item.formula ?? '',
-    targetValueT: item.targetValueT !== undefined && item.targetValueT !== null ? String(item.targetValueT) : '',
-    targetValueE: item.targetValueE !== undefined && item.targetValueE !== null ? String(item.targetValueE) : '',
-    targetValueS: item.targetValueS !== undefined && item.targetValueS !== null ? String(item.targetValueS) : '',
-    unit: item.unit ?? '%',
-    weight: item.weightSuggestion !== undefined && item.weightSuggestion !== null ? String(item.weightSuggestion) : '20',
-    difficulty: (item.difficultySuggestion ?? 'MEDIUM') as FormState['difficulty'],
-  }
-}
-
 async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
   const response = await fetch(input, init)
   const json = (await response.json()) as {
@@ -520,121 +261,6 @@ async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
   return json.data as T
 }
 
-function buildAiPayload(action: AiAction, kpi: OrgKpiViewModel | null, form: FormState, pageData: Props) {
-  const departmentName =
-    kpi?.departmentName ??
-    pageData.departments.find((department) => department.id === form.deptId)?.name ??
-    pageData.actor.departmentName
-  const formTargetValues = resolveOrgKpiTargetValues({
-    targetValueT: parseNumber(form.targetValueT),
-    targetValueE: parseNumber(form.targetValueE),
-    targetValueS: parseNumber(form.targetValueS),
-  })
-  const kpiTargetValues = kpi
-    ? resolveOrgKpiTargetValues({
-        targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
-        targetValueT: kpi.targetValueT,
-        targetValueE: kpi.targetValueE,
-        targetValueS: kpi.targetValueS,
-      })
-    : null
-
-  const basePayload = {
-    departmentName,
-    year: Number(form.evalYear || pageData.selectedYear),
-    kpiName: kpi?.title ?? form.kpiName,
-    category: kpi?.category ?? form.kpiCategory,
-    definition: kpi?.definition ?? form.definition,
-    formula: kpi?.formula ?? form.formula,
-    targetValue: kpiTargetValues?.targetValue ?? formTargetValues.targetValue,
-    targetValueT: kpiTargetValues?.targetValueT ?? formTargetValues.targetValueT,
-    targetValueE: kpiTargetValues?.targetValueE ?? formTargetValues.targetValueE,
-    targetValueS: kpiTargetValues?.targetValueS ?? formTargetValues.targetValueS,
-    unit: kpi?.unit ?? form.unit,
-    weight: kpi?.weight ?? parseNumber(form.weight),
-    difficulty: kpi?.difficulty ?? form.difficulty,
-    linkedPersonalKpiCount: kpi?.linkedPersonalKpiCount ?? 0,
-    monthlyAchievementRate: kpi?.monthlyAchievementRate ?? null,
-    riskFlags: kpi?.riskFlags ?? [],
-    action,
-  }
-
-  if (
-    pageData.selectedScope !== 'team' ||
-    action !== 'generate-draft' ||
-    !pageData.teamAi?.businessPlan
-  ) {
-    return basePayload
-  }
-
-  const teamAi = pageData.teamAi
-  const businessPlan = teamAi.businessPlan!
-  const targetDepartmentId = kpi?.departmentId ?? form.deptId ?? teamAi.targetDepartmentId
-  const sourceOrgKpis = teamAi.sourceOrgKpis.map((item) => {
-    const full = pageData.list.find((candidate) => candidate.id === item.id)
-    return {
-      id: item.id,
-      kpiName: item.title,
-      kpiCategory: item.category ?? full?.category ?? null,
-      definition: full?.definition ?? null,
-      formula: full?.formula ?? null,
-      targetValueText: item.targetValuesText,
-      weight: item.weight ?? full?.weight ?? 20,
-      difficulty: item.difficulty ?? full?.difficulty ?? 'MEDIUM',
-    }
-  })
-  const existingTeamKpis = pageData.list
-    .filter((item) => item.departmentId === targetDepartmentId)
-    .map((item) => ({
-      id: item.id,
-      kpiName: item.title,
-      kpiCategory: item.category ?? null,
-      definition: item.definition ?? null,
-      formula: item.formula ?? null,
-      weight: item.weight ?? 0,
-      parentOrgKpiId: item.parentOrgKpiId ?? null,
-    }))
-  const strategicPayload = buildStrategicTeamRecommendationPayload({
-    teamDepartment: {
-      id: targetDepartmentId,
-      name: departmentName,
-      organizationName:
-        pageData.departments.find((department) => department.id === targetDepartmentId)?.organizationName ??
-        teamAi.planningSourceLabel,
-    },
-    planningDepartment: {
-      id: teamAi.planningDepartmentId,
-      name: teamAi.planningDepartmentName,
-      organizationName:
-        pageData.departments.find((department) => department.id === teamAi.planningDepartmentId)
-          ?.organizationName ??
-        teamAi.planningSourceLabel,
-    },
-    evalYear: Number(form.evalYear || pageData.selectedYear),
-    businessPlan: {
-      title: businessPlan.title,
-      summaryText: businessPlan.summaryText,
-      bodyText: businessPlan.bodyText,
-    },
-    currentDraft: {
-      title: String(basePayload.kpiName ?? ''),
-      category: String(basePayload.category ?? ''),
-      definition: String(basePayload.definition ?? ''),
-      formula: String(basePayload.formula ?? ''),
-      unit: String(basePayload.unit ?? '%'),
-      weight: typeof basePayload.weight === 'number' ? basePayload.weight : null,
-      difficulty: String(basePayload.difficulty ?? 'MEDIUM'),
-    },
-    sourceOrgKpis,
-    existingTeamKpis,
-    preferredParentOrgKpiId: kpi?.parentOrgKpiId ?? form.parentOrgKpiId ?? null,
-  })
-
-  return {
-    ...basePayload,
-    ...strategicPayload,
-  }
-}
 export function OrgKpiManagementClient({
   initialTab,
   initialSelectedKpiId,
@@ -693,29 +319,12 @@ export function OrgKpiManagementClient({
   const [editingKpiId, setEditingKpiId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
   const [editorBaselineForm, setEditorBaselineForm] = useState<FormState | null>(null)
-  const [teamAiContext, setTeamAiContext] = useState<OrgKpiTeamAiContextView | null>(pageData.teamAi)
-  const [teamAiRuntimeState, setTeamAiRuntimeState] = useState<TeamAiRuntimeState>(
-    pageData.teamAiRuntimeState ?? DEFAULT_TEAM_AI_RUNTIME_STATE
-  )
-  const [teamAiLoading, setTeamAiLoading] = useState(false)
-  const [businessPlanForm, setBusinessPlanForm] = useState<BusinessPlanFormState>(
-    buildBusinessPlanForm(pageData.teamAi, pageData.selectedYear, pageData.selectedDepartmentId)
-  )
-  const [divisionJobDescriptionForm, setDivisionJobDescriptionForm] = useState<JobDescriptionFormState>(
-    buildJobDescriptionForm(pageData.teamAi, 'DIVISION', pageData.selectedYear, pageData.selectedDepartmentId)
-  )
-  const [teamJobDescriptionForm, setTeamJobDescriptionForm] = useState<JobDescriptionFormState>(
-    buildJobDescriptionForm(pageData.teamAi, 'TEAM', pageData.selectedYear, pageData.selectedDepartmentId)
-  )
-  const [pendingRecommendationDecision, setPendingRecommendationDecision] =
-    useState<PendingRecommendationDecision | null>(null)
   const selectedKpiDepartmentId =
     list.find((item) => item.id === (selectedKpiId || activeKpiId))?.departmentId ?? null
   const activeScopeDepartmentId =
     selectedDepartmentId === 'ALL'
       ? selectedKpiDepartmentId ?? pageData.selectedDepartmentId
       : selectedDepartmentId
-  const hasReviewableTeamKpis = list.some((item) => item.departmentId === activeScopeDepartmentId)
   const [cloneForm, setCloneForm] = useState<OrgCloneForm>(buildCloneForm(pageData, pageData.list[0]))
   const [bulkEditForm, setBulkEditForm] = useState<OrgBulkEditForm>(
     buildOrgBulkEditForm(pageData, defaultDepartmentSelection)
@@ -725,21 +334,9 @@ export function OrgKpiManagementClient({
   )
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busy, setBusy] = useState(false)
-  const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
-  const [aiAction, setAiAction] = useState<AiAction>('generate-draft')
-  const [selectedAiRecommendationIndex, setSelectedAiRecommendationIndex] = useState<number | null>(null)
-  const [editorDraftSourceLabel, setEditorDraftSourceLabel] = useState<string | null>(null)
-  const [pendingAiRecommendationIndex, setPendingAiRecommendationIndex] = useState<number | null>(null)
-  const [showRecommendationSwitchConfirm, setShowRecommendationSwitchConfirm] = useState(false)
-  const [showEditorCloseConfirm, setShowEditorCloseConfirm] = useState(false)
-  const [showAiRecommendationRetainedNotice, setShowAiRecommendationRetainedNotice] = useState(false)
   const [expandedMapNodeIds, setExpandedMapNodeIds] = useState<string[]>([])
   const [search, setSearch] = useState('')
-  const visibleLoadAlerts = useMemo(
-    () => (pageData.alerts ?? []).filter((alert) => !isTeamAiFallbackAlert(alert)),
-    [pageData.alerts]
-  )
-  const loadAlerts = visibleLoadAlerts.length ? <LoadAlerts alerts={visibleLoadAlerts} /> : null
+  const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
   const serverListSignature = useMemo(() => buildOrgKpiServerListSignature(pageData.list), [pageData.list])
   const serverContextKey = `${pageData.selectedScope}:${pageData.selectedYear}:${pageData.selectedDepartmentId}:${serverListSignature}:${defaultSelectedKpiId}:${defaultTab}`
   const previousServerContextKey = useRef(serverContextKey)
@@ -821,35 +418,10 @@ export function OrgKpiManagementClient({
     [hierarchySelection, hierarchyStructure]
   )
   const expandedMapNodeIdSet = useMemo(() => new Set(expandedMapNodeIds), [expandedMapNodeIds])
-  const aiPreviewRecommendations = useMemo(
-    () =>
-      aiPreview?.source === 'ai' && aiAction === 'generate-draft'
-        ? extractKpiAiPreviewRecommendations(aiPreview.result)
-        : [],
-    [aiAction, aiPreview]
-  )
-  const canUseAiRecommendationDraftOptions =
-    aiPreview?.source === 'ai' &&
-    aiAction === 'generate-draft' &&
-    !editingKpiId &&
-    !pendingRecommendationDecision &&
-    aiPreviewRecommendations.length > 0
   const editorIsDirty = useMemo(
-    () => isOrgKpiAiRecommendationDraftDirty(form, editorBaselineForm),
+    () => JSON.stringify(form) !== JSON.stringify(editorBaselineForm),
     [editorBaselineForm, form]
   )
-  const editorRecommendationStatusLabel = useMemo(() => {
-    if (canUseAiRecommendationDraftOptions && selectedAiRecommendationIndex !== null) {
-      return buildOrgKpiAiRecommendationDraftStatusLabel(selectedAiRecommendationIndex, editorIsDirty)
-    }
-
-    return editorDraftSourceLabel
-  }, [
-    canUseAiRecommendationDraftOptions,
-    editorDraftSourceLabel,
-    editorIsDirty,
-    selectedAiRecommendationIndex,
-  ])
   const commitSelectedKpi = useCallback((kpiId: string) => {
     setActiveKpiId(kpiId)
     setSelectedKpiId(kpiId)
@@ -925,30 +497,12 @@ export function OrgKpiManagementClient({
     setShowExport(false)
     setShowDeleteConfirm(false)
     setEditingKpiId(null)
-    setPendingRecommendationDecision(null)
     setForm(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
     setEditorBaselineForm(null)
-    setTeamAiContext(pageData.teamAi)
-    setTeamAiRuntimeState(pageData.teamAiRuntimeState ?? DEFAULT_TEAM_AI_RUNTIME_STATE)
-    setTeamAiLoading(false)
-    setBusinessPlanForm(buildBusinessPlanForm(pageData.teamAi, pageData.selectedYear, pageData.selectedDepartmentId))
-    setDivisionJobDescriptionForm(
-      buildJobDescriptionForm(pageData.teamAi, 'DIVISION', pageData.selectedYear, pageData.selectedDepartmentId)
-    )
-    setTeamJobDescriptionForm(
-      buildJobDescriptionForm(pageData.teamAi, 'TEAM', pageData.selectedYear, pageData.selectedDepartmentId)
-    )
     setCloneForm(buildCloneForm(pageData, pageData.list[0]))
     setBulkEditForm(buildOrgBulkEditForm(pageData, defaultDepartmentSelection))
     setExportForm(buildGoalExportForm(pageData, defaultDepartmentSelection))
     setBanner(null)
-    setAiPreview(null)
-    setSelectedAiRecommendationIndex(null)
-    setEditorDraftSourceLabel(null)
-    setPendingAiRecommendationIndex(null)
-    setShowRecommendationSwitchConfirm(false)
-    setShowEditorCloseConfirm(false)
-    setShowAiRecommendationRetainedNotice(false)
     setExpandedMapNodeIds([])
     setSearch('')
   }, [
@@ -977,29 +531,11 @@ export function OrgKpiManagementClient({
     setShowExport(false)
     setShowDeleteConfirm(false)
     setEditingKpiId(null)
-    setPendingRecommendationDecision(null)
     setEditorBaselineForm(null)
     setBanner(null)
-    setAiPreview(null)
-    setTeamAiContext(pageData.teamAi)
-    setTeamAiRuntimeState(pageData.teamAiRuntimeState ?? DEFAULT_TEAM_AI_RUNTIME_STATE)
-    setTeamAiLoading(false)
-    setBusinessPlanForm(buildBusinessPlanForm(pageData.teamAi, pageData.selectedYear, pageData.selectedDepartmentId))
-    setDivisionJobDescriptionForm(
-      buildJobDescriptionForm(pageData.teamAi, 'DIVISION', pageData.selectedYear, pageData.selectedDepartmentId)
-    )
-    setTeamJobDescriptionForm(
-      buildJobDescriptionForm(pageData.teamAi, 'TEAM', pageData.selectedYear, pageData.selectedDepartmentId)
-    )
     setCloneForm(buildCloneForm(pageData))
     setBulkEditForm(buildOrgBulkEditForm(pageData, selectedDepartmentId))
     setExportForm(buildGoalExportForm(pageData, selectedDepartmentId))
-    setSelectedAiRecommendationIndex(null)
-    setEditorDraftSourceLabel(null)
-    setPendingAiRecommendationIndex(null)
-    setShowRecommendationSwitchConfirm(false)
-    setShowEditorCloseConfirm(false)
-    setShowAiRecommendationRetainedNotice(false)
     setExpandedMapNodeIds([])
   }, [commitSelectedKpi, pageData, viewContextKey])
 
@@ -1015,55 +551,6 @@ export function OrgKpiManagementClient({
       commitSelectedKpi(selectableItems[0].id)
     }
   }, [commitSelectedKpi, filteredList, hierarchyStructure.visibleIds, list, selectedKpiId, tab])
-
-  useEffect(() => {
-    if (!aiPreview) return
-
-    if (aiPreview.source === 'fallback') {
-      logOrgKpiAiResultMode('ORG_KPI_AI_RESULT_MODE_FALLBACK', {
-        stepName: aiAction,
-        errorCode: 'FALLBACK_RESULT',
-        prismaCode: null,
-      })
-      return
-    }
-
-    if (aiPreview.source === 'ai') {
-      logOrgKpiAiResultMode('ORG_KPI_AI_RESULT_MODE_NORMAL', {
-        stepName: aiAction,
-        errorCode: null,
-        prismaCode: null,
-      })
-    }
-  }, [aiAction, aiPreview])
-
-  useEffect(() => {
-    if (
-      pageData.selectedScope !== 'team' ||
-      tab !== 'ai' ||
-      selectedDepartmentId === 'ALL' ||
-      isReadOnlyMemberView
-    ) {
-      return
-    }
-
-    if (
-      teamAiContext &&
-      teamAiContext.targetDepartmentId === selectedDepartmentId &&
-      teamAiContext.evalYear === pageData.selectedYear
-    ) {
-      return
-    }
-
-    void loadTeamAiContext(selectedDepartmentId)
-  }, [
-    isReadOnlyMemberView,
-    pageData.selectedScope,
-    pageData.selectedYear,
-    selectedDepartmentId,
-    tab,
-    teamAiContext,
-  ])
 
   const selectedKpi =
     filteredList.find((item) => item.id === selectedKpiId) ??
@@ -1557,13 +1044,6 @@ export function OrgKpiManagementClient({
     },
     [changeStatus]
   )
-  const handleAiAction = useCallback(
-    (action: AiAction) => {
-      void requestAi(action)
-    },
-    [requestAi]
-  )
-
   async function handleDeleteKpi() {
     if (!selectedKpi) {
       setBanner({ tone: 'error', message: '삭제할 조직 KPI를 먼저 선택해 주세요.' })
@@ -2260,7 +1740,6 @@ export function OrgKpiManagementClient({
               onDelete={handleOpenDeleteConfirm}
               onWorkflow={handleWorkflowAction}
               onStatus={handleStatusChange}
-              onAi={handleAiAction}
               onSelectRelatedKpi={handleOpenRelatedReference}
               onCreateChildGoal={handleCreateChildGoal}
               onViewLinkage={handleViewLinkage}
@@ -2306,7 +1785,6 @@ export function OrgKpiManagementClient({
               onDelete={handleOpenDeleteConfirm}
               onWorkflow={handleWorkflowAction}
               onStatus={handleStatusChange}
-              onAi={handleAiAction}
               onSelectRelatedKpi={handleOpenRelatedReference}
               onCreateChildGoal={handleCreateChildGoal}
               onViewLinkage={handleViewLinkage}
@@ -3272,7 +2750,6 @@ type KpiDetailCardProps = {
   onDelete: () => void
   onWorkflow: (action: 'SUBMIT' | 'REOPEN') => void
   onStatus: (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => void
-  onAi: (action: AiAction) => void
   onSelectRelatedKpi?: (reference: OrgKpiRelationReference) => void
   onCreateChildGoal?: (parentKpi: OrgKpiViewModel) => void
   onViewLinkage?: (kpiId: string) => void
@@ -3656,12 +3133,6 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
               testId="org-kpi-delete-button"
               title={props.deleteActionState.reason}
             />
-            <ActionButton
-              label="AI 개선"
-              icon={<Sparkles className="h-4 w-4" />}
-              onClick={() => props.onAi('improve-wording')}
-              disabled={!props.permissions.canUseAi || goalEditLocked}
-            />
           </div>
         ) : null}
 
@@ -3715,7 +3186,6 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
     prevProps.onDelete === nextProps.onDelete &&
     prevProps.onWorkflow === nextProps.onWorkflow &&
     prevProps.onStatus === nextProps.onStatus &&
-    prevProps.onAi === nextProps.onAi &&
     prevProps.onSelectRelatedKpi === nextProps.onSelectRelatedKpi
   )
 })
