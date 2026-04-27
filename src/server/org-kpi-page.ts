@@ -207,14 +207,14 @@ const ORG_KPI_SCOPE_TAB_META: Record<
   Pick<OrgKpiScopeTab, 'label' | 'description'>
 > = {
   division: {
-    label: '蹂몃? KPI',
+    label: '본부 KPI',
     description:
-      '蹂몃?쨌?????곸쐞 議곗쭅??愿由ы븯??KPI瑜??뺤씤?⑸땲?? ?섏쐞 ? KPI????곌껐 ?곹깭???④퍡 蹂????덉뒿?덈떎.',
+      '본부·실 등 상위 조직이 관리하는 KPI를 확인합니다. 하위 팀 KPI와의 연결 상태도 함께 볼 수 있습니다.',
   },
   team: {
-    label: '? KPI',
+    label: '팀 KPI',
     description:
-      '?ㅼ젣 ?ㅽ뻾 議곗쭅???댁쁺?섎뒗 KPI瑜??뺤씤?⑸땲?? ?곸쐞 蹂몃? KPI????뺣젹???④퍡 愿由ы빀?덈떎.',
+      '실제 실행 조직이 운영하는 KPI를 확인합니다. 상위 본부 KPI와의 정렬을 함께 관리합니다.',
   },
 }
 
@@ -670,7 +670,7 @@ export async function getOrgKpiPageData(params: {
         state: 'empty',
         selectedScope: fallbackScope,
         scopeTabs: emptyScopeTabs,
-        message: '議곗쭅 ?뺣낫媛 ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??',
+        message: '조직 정보가 아직 준비되지 않았습니다.',
         selectedYear: new Date().getFullYear(),
         selectedDepartmentId: params.deptId,
         departments: [],
