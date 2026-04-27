@@ -65,22 +65,23 @@ run('org KPI detail card exposes an independently scrollable sidebar shell on wi
   assert.match(source, /tabIndex=\{0\}/)
 })
 
-run('org KPI map tab promotes the search field into the upper toolbar area', () => {
+run('org KPI map and list tabs promote the search field into the upper toolbar area', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
   assert.match(source, /<OrgKpiSearchField\s+value=\{search\}\s+onChange=\{setSearch\}\s+departmentFilterLabel=\{departmentFilterLabel\}/)
-  assert.match(source, /tab === 'map' \? \(\s*<div className="w-full lg:w-80 xl:w-96">\s*<OrgKpiSearchField/)
+  assert.match(source, /tab === 'map' \|\| tab === 'list' \? \(\s*<div className="w-full lg:w-80 xl:w-96">\s*<OrgKpiSearchField/)
   assert.match(source, /mt-5 border-t border-slate-200 pt-4/)
   assert.match(source, /placeholder=\{`KPI명 또는 \$\{props\.departmentFilterLabel\.replace\(' 범위', ''\)\} 검색`\}/)
 })
 
-run('org KPI map tab uses a true two-column body with the department filter moved above the workspace', () => {
+run('org KPI map and list tabs use true two-column bodies with the department filter moved above the workspace', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
   assert.match(source, /<OrgKpiDepartmentFilterToolbar/)
   assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_440px\]/)
   assert.match(source, /function OrgKpiDepartmentFilterButtons/)
-  assert.match(source, /className="self-start space-y-3"/)
+  assert.doesNotMatch(source, /function OrgKpiScopeSidebar/)
+  assert.match(source, /\{tab === 'list' \? \([\s\S]*?<OrgKpiDepartmentFilterToolbar[\s\S]*?xl:grid-cols-\[minmax\(0,1fr\)_440px\]/)
 })
 
 run('org KPI workspace removes dashboard-style summary metric rows from the top area', () => {

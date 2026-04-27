@@ -2252,7 +2252,7 @@ export function OrgKpiManagementClient({
                 </button>
               ))}
             </div>
-            {tab === 'map' ? (
+            {tab === 'map' || tab === 'list' ? (
               <div className="w-full lg:w-80 xl:w-96">
                 <OrgKpiSearchField
                   value={search}
@@ -2343,50 +2343,48 @@ export function OrgKpiManagementClient({
                 : '팀 KPI를 검색하고, 상위 본부 KPI 정렬 상태와 실행 맥락을 함께 확인합니다.'}
             </p>
           </div>
-          <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
-            <OrgKpiScopeSidebar
-              search={search}
-              onSearchChange={setSearch}
+          {pageData.departments.length > 1 ? (
+            <OrgKpiDepartmentFilterToolbar
               departments={pageData.departments}
               allDepartmentLabel={allDepartmentLabel}
               departmentFilterLabel={departmentFilterLabel}
               selectedDepartmentId={selectedDepartmentId}
               onSelectDepartment={setSelectedDepartmentId}
             />
+          ) : null}
 
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="space-y-3">
-                {filteredList.length ? filteredList.map((kpi) => (
-                  <OrgKpiListItemCard
-                    key={kpi.id}
-                    kpi={kpi}
-                    isSelected={(activeKpiId || selectedKpi?.id || '') === kpi.id}
-                    onSelect={handleSelectKpi}
-                  />
-                )) : <EmptyState title={`등록된 ${scopeLabel}가 없습니다`} description={`${scopeCreateLabel}를 등록하거나 검색 조건을 조정해 보세요.`} />}
-              </div>
-
-              <KpiDetailCard
-                kpi={selectedKpi}
-                parentReference={selectedParentReference}
-                childReferences={selectedChildReferences}
-                permissions={pageData.permissions}
-                readOnly={isReadOnlyMemberView}
-                goalEditLocked={goalEditLocked}
-                busy={busy}
-                cloneDisabledReason={cloneDisabledReason}
-                deleteActionState={deleteActionState}
-                onEdit={handleEditKpi}
-                onClone={handleOpenClone}
-                onDelete={handleOpenDeleteConfirm}
-                onWorkflow={handleWorkflowAction}
-                onStatus={handleStatusChange}
-                onAi={handleAiAction}
-                onSelectRelatedKpi={handleOpenRelatedReference}
-                onCreateChildGoal={handleCreateChildGoal}
-                onViewLinkage={handleViewLinkage}
-              />
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+            <div className="space-y-3">
+              {filteredList.length ? filteredList.map((kpi) => (
+                <OrgKpiListItemCard
+                  key={kpi.id}
+                  kpi={kpi}
+                  isSelected={(activeKpiId || selectedKpi?.id || '') === kpi.id}
+                  onSelect={handleSelectKpi}
+                />
+              )) : <EmptyState title={`등록된 ${scopeLabel}가 없습니다`} description={`${scopeCreateLabel}를 등록하거나 검색 조건을 조정해 보세요.`} />}
             </div>
+
+            <KpiDetailCard
+              kpi={selectedKpi}
+              parentReference={selectedParentReference}
+              childReferences={selectedChildReferences}
+              permissions={pageData.permissions}
+              readOnly={isReadOnlyMemberView}
+              goalEditLocked={goalEditLocked}
+              busy={busy}
+              cloneDisabledReason={cloneDisabledReason}
+              deleteActionState={deleteActionState}
+              onEdit={handleEditKpi}
+              onClone={handleOpenClone}
+              onDelete={handleOpenDeleteConfirm}
+              onWorkflow={handleWorkflowAction}
+              onStatus={handleStatusChange}
+              onAi={handleAiAction}
+              onSelectRelatedKpi={handleOpenRelatedReference}
+              onCreateChildGoal={handleCreateChildGoal}
+              onViewLinkage={handleViewLinkage}
+            />
           </div>
         </div>
       ) : null}
@@ -2844,33 +2842,6 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
   )
 })
 
-function OrgKpiScopeSidebar(props: {
-  search: string
-  onSearchChange: (value: string) => void
-  departments: OrgKpiPageData['departments']
-  allDepartmentLabel: string
-  departmentFilterLabel: string
-  selectedDepartmentId: string
-  onSelectDepartment: (value: string) => void
-}) {
-  return (
-    <div className="self-start space-y-3">
-      <OrgKpiSearchField
-        value={props.search}
-        onChange={props.onSearchChange}
-        departmentFilterLabel={props.departmentFilterLabel}
-      />
-      <OrgKpiDepartmentFilterButtons
-        departments={props.departments}
-        allDepartmentLabel={props.allDepartmentLabel}
-        selectedDepartmentId={props.selectedDepartmentId}
-        onSelectDepartment={props.onSelectDepartment}
-        layout="stacked"
-      />
-    </div>
-  )
-}
-
 function OrgKpiDepartmentFilterToolbar(props: {
   departments: OrgKpiPageData['departments']
   allDepartmentLabel: string
@@ -2886,7 +2857,6 @@ function OrgKpiDepartmentFilterToolbar(props: {
         allDepartmentLabel={props.allDepartmentLabel}
         selectedDepartmentId={props.selectedDepartmentId}
         onSelectDepartment={props.onSelectDepartment}
-        layout="toolbar"
       />
     </div>
   )
@@ -2897,22 +2867,16 @@ function OrgKpiDepartmentFilterButtons(props: {
   allDepartmentLabel: string
   selectedDepartmentId: string
   onSelectDepartment: (value: string) => void
-  layout: 'stacked' | 'toolbar'
 }) {
   if (props.departments.length <= 1) return null
 
-  const containerClass = props.layout === 'toolbar' ? 'flex flex-wrap gap-2' : 'space-y-2'
-  const baseButtonClass = props.layout === 'toolbar'
-    ? 'rounded-full border px-3.5 py-2 text-sm transition'
-    : 'w-full rounded-2xl border px-4 py-3 text-left text-sm transition'
-
   return (
-    <div className={containerClass}>
+    <div className="flex flex-wrap gap-2">
       <button
         type="button"
         onClick={() => props.onSelectDepartment('ALL')}
         className={cls(
-          baseButtonClass,
+          'rounded-full border px-3.5 py-2 text-sm transition',
           props.selectedDepartmentId === 'ALL'
             ? 'border-blue-300 bg-blue-50 text-blue-700'
             : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
@@ -2926,7 +2890,7 @@ function OrgKpiDepartmentFilterButtons(props: {
           type="button"
           onClick={() => props.onSelectDepartment(department.id)}
           className={cls(
-            baseButtonClass,
+            'rounded-full border px-3.5 py-2 text-sm transition',
             props.selectedDepartmentId === department.id
               ? 'border-blue-300 bg-blue-50 text-blue-700'
               : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
