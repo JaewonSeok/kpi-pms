@@ -26,12 +26,12 @@ async function run(name: string, fn: () => void | Promise<void>) {
 function makeKpi(overrides: Partial<OrgKpiViewModel> = {}): OrgKpiViewModel {
   return {
     id: 'org-kpi-1',
-    title: '핵심 비용 절감',
+    title: 'Operating Cost Reduction',
     scope: 'division',
     tags: [],
     evalYear: 2026,
     departmentId: 'dept-hq',
-    departmentName: '경영지원본부',
+    departmentName: 'Division HQ',
     departmentCode: 'HQ',
     parentOrgKpiId: null,
     parentOrgKpiTitle: null,
@@ -58,7 +58,6 @@ function makeKpi(overrides: Partial<OrgKpiViewModel> = {}): OrgKpiViewModel {
     linkedConfirmedPersonalKpiCount: 0,
     monthlyAchievementRate: undefined,
     updatedAt: '2026-04-15T00:00:00.000Z',
-    riskFlags: [],
     coverageRate: 0,
     targetPopulationCount: 0,
     cloneInfo: undefined,
@@ -77,7 +76,7 @@ async function main() {
     const after = buildOrgKpiServerListSignature([
       makeKpi({
         departmentId: 'dept-hr-team',
-        departmentName: '인사팀',
+        departmentName: 'HR Team',
         scope: 'team',
       }),
     ])
@@ -90,9 +89,9 @@ async function main() {
       makeKpi(),
       makeKpi({
         id: 'org-kpi-2',
-        title: '채용 브랜딩 강화',
+        title: 'Recruiting Brand Strengthening',
         departmentId: 'dept-hr-team',
-        departmentName: '인사팀',
+        departmentName: 'HR Team',
         scope: 'team',
       }),
     ]
@@ -103,17 +102,17 @@ async function main() {
       departments: [
         {
           id: 'dept-hq',
-          name: '경영지원본부',
+          name: 'Division HQ',
           parentDepartmentId: null,
-          organizationName: '본사',
+          organizationName: 'Head Office',
           level: 0,
           scope: 'division',
         },
         {
           id: 'dept-hr-team',
-          name: '인사팀',
+          name: 'HR Team',
           parentDepartmentId: 'dept-hq',
-          organizationName: '본사',
+          organizationName: 'Head Office',
           level: 1,
           scope: 'team',
         },
@@ -121,9 +120,9 @@ async function main() {
       parentGoalOptions: [
         {
           id: 'parent-division',
-          title: '인재 확보 고도화',
+          title: 'Talent Information Advancement',
           departmentId: 'dept-hq',
-          departmentName: '경영지원본부',
+          departmentName: 'Division HQ',
           evalYear: 2026,
           scope: 'division',
         },
@@ -134,7 +133,7 @@ async function main() {
         parentOrgKpiId: 'parent-division',
         kpiType: 'QUALITATIVE',
         kpiCategory: '인사',
-        kpiName: '우수 인재 확보',
+        kpiName: 'Core Talent Information',
         tags: '채용, 브랜딩',
         definition: '신규 정의',
         formula: '신규 산식',
@@ -150,12 +149,12 @@ async function main() {
     const moved = updated.find((item) => item.id === 'org-kpi-1')
     assert.ok(moved)
     assert.equal(moved.departmentId, 'dept-hr-team')
-    assert.equal(moved.departmentName, '인사팀')
+    assert.equal(moved.departmentName, 'HR Team')
     assert.equal(moved.scope, 'team')
     assert.equal(moved.parentOrgKpiId, 'parent-division')
-    assert.equal(moved.parentOrgKpiTitle, '인재 확보 고도화')
+    assert.equal(moved.parentOrgKpiTitle, 'Talent Information Advancement')
     assert.equal(moved.parentReference?.scope, 'division')
-    assert.equal(moved.title, '우수 인재 확보')
+    assert.equal(moved.title, 'Core Talent Information')
     assert.equal(moved.category, '인사')
     assert.equal(moved.targetValue, 12)
     assert.equal(moved.targetValueT, 10)
@@ -163,15 +162,16 @@ async function main() {
     assert.equal(moved.targetValueS, 14)
   })
 
-  await run('org KPI client keeps URL state synchronized with scope and selected KPI', () => {
+  await run('org KPI client keeps URL state synchronized with scope, tab, and selected KPI', () => {
     const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
     assert.equal(source.includes('buildOrgKpiServerListSignature(pageData.list)'), true)
     assert.equal(source.includes('applySavedOrgKpiToList'), true)
     assert.equal(source.includes("['scope', overrides?.scope ?? pageData.selectedScope]"), true)
-    assert.equal(source.includes("['dept', overrides?.dept"), true)
+    assert.equal(source.includes("['tab', overrides?.tab]"), true)
     assert.equal(source.includes("['kpiId', overrides?.kpiId"), true)
     assert.equal(source.includes('window.history.replaceState'), true)
+    assert.equal(source.includes("['dept', overrides?.dept"), false)
   })
 
   await run('org KPI update routes validate scope before persisting department changes', () => {

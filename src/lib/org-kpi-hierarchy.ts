@@ -36,8 +36,8 @@ export type OrgKpiHierarchyInteractionState = {
 }
 
 export type OrgKpiStructureSummary = {
-  label: '정상' | '확인 필요' | '연결 보완 필요' | '실적 입력 필요'
-  tone: 'linked' | 'warning' | 'critical'
+  label: '정상' | '실적 입력 필요' | null
+  tone: 'neutral' | 'linked' | 'warning'
   helper: string
 }
 
@@ -296,13 +296,6 @@ export function getOrgKpiVisibleChildren(items: OrgKpiViewModel[], parentId: str
   return sortItems(items.filter((item) => item.parentOrgKpiId === parentId))
 }
 
-export function getOrgKpiConnectionTone(kpi: OrgKpiViewModel) {
-  if (kpi.riskFlags.length >= 3) return 'critical'
-  if (kpi.riskFlags.length > 0) return 'warning'
-  if (kpi.parentOrgKpiId || kpi.childOrgKpiCount > 0) return 'linked'
-  return 'neutral'
-}
-
 export function isOrgKpiTopLevelDivisionGoal(
   kpi: Pick<OrgKpiViewModel, 'scope' | 'parentOrgKpiId' | 'parentOrgKpiTitle' | 'parentReference'>
 ) {
@@ -328,19 +321,16 @@ export function buildOrgKpiStructureSummary(
   const isValidRootGoal = !hasParent && hasChildren
   const hasStructuralGap =
     Boolean(options.isDisconnected || options.isOrphan) ||
-    (!hasParent && !isValidRootGoal && !hasChildren) ||
-    kpi.riskFlags.some((flag) => flag.includes('cascade'))
+    (!hasParent && !isValidRootGoal && !hasChildren)
   const hasExecutionGap = kpi.recentMonthlyRecords.length === 0
-  const hasLinkageGap =
-    kpi.linkedPersonalKpiCount === 0 ||
-    (kpi.targetPopulationCount > 0 && kpi.coverageRate < 70) ||
-    (getOrgKpiConnectionTone(kpi) === 'warning' && !hasStructuralGap)
 
   if (hasStructuralGap) {
     return {
-      label: '연결 보완 필요',
-      tone: options.isOrphan ? 'critical' : 'warning',
-      helper: '상위·하위 구조와 연결 상태를 확인하세요.',
+      label: null,
+      tone: 'neutral',
+      helper: hasChildren
+        ? '상위 목표 없이도 하위 목표가 연결된 구조입니다.'
+        : '상위 목표 없이 단독으로 표시되는 KPI입니다.',
     }
   }
 
@@ -348,15 +338,7 @@ export function buildOrgKpiStructureSummary(
     return {
       label: '실적 입력 필요',
       tone: 'warning',
-      helper: '연결 상태와 최근 실행 기록을 점검해 주세요.',
-    }
-  }
-
-  if (hasLinkageGap) {
-    return {
-      label: '확인 필요',
-      tone: 'warning',
-      helper: '상위·하위 구조와 연결 상태를 확인하세요.',
+      helper: '연결 구조는 유지되고 있으며 최근 실행 기록만 확인하면 됩니다.',
     }
   }
 
@@ -365,6 +347,6 @@ export function buildOrgKpiStructureSummary(
     tone: 'linked',
     helper: hasChildren
       ? '이 목표 아래 연결된 하위 목표를 확인할 수 있습니다.'
-      : '상위·하위 구조와 연결 상태를 확인하세요.',
+      : '상위·하위 구조가 안정적으로 연결되어 있습니다.',
   }
 }

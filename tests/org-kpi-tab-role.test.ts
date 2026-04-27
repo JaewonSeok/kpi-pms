@@ -56,7 +56,6 @@ function makeKpi(
     linkedConfirmedPersonalKpiCount: params.linkedConfirmedPersonalKpiCount ?? 1,
     monthlyAchievementRate: params.monthlyAchievementRate ?? 95,
     updatedAt: params.updatedAt,
-    riskFlags: params.riskFlags ?? [],
     coverageRate: params.coverageRate ?? 75,
     targetPopulationCount: params.targetPopulationCount ?? 4,
     cloneInfo: params.cloneInfo,
@@ -71,47 +70,46 @@ function makeKpi(
 run('org KPI hierarchy view groups parent-child links and separates disconnected goals', () => {
   const root = makeKpi({
     id: 'root',
-    title: '본부 비용 구조 개선',
+    title: 'Division Goal',
     scope: 'division',
     departmentId: 'dept-root',
-    departmentName: '경영지원본부',
+    departmentName: 'Division',
     childOrgKpiCount: 1,
     childReferences: [
       {
         id: 'child',
-        title: '인사팀 채용 효율화',
+        title: 'Team Goal',
         departmentId: 'dept-team',
-        departmentName: '인사팀',
+        departmentName: 'HR Team',
         scope: 'team',
       },
     ],
   })
   const child = makeKpi({
     id: 'child',
-    title: '인사팀 채용 효율화',
+    title: 'Team Goal',
     scope: 'team',
     departmentId: 'dept-team',
-    departmentName: '인사팀',
+    departmentName: 'HR Team',
     parentOrgKpiId: 'root',
-    parentOrgKpiTitle: '본부 비용 구조 개선',
+    parentOrgKpiTitle: 'Division Goal',
     parentReference: {
       id: 'root',
-      title: '본부 비용 구조 개선',
+      title: 'Division Goal',
       departmentId: 'dept-root',
-      departmentName: '경영지원본부',
+      departmentName: 'Division',
       scope: 'division',
     },
   })
   const disconnected = makeKpi({
     id: 'solo',
-    title: '독립 운영 지표',
+    title: 'Solo Goal',
     scope: 'team',
     departmentId: 'dept-team',
-    departmentName: '인사팀',
+    departmentName: 'HR Team',
     linkedPersonalKpiCount: 0,
     coverageRate: 0,
     childOrgKpiCount: 0,
-    riskFlags: ['개인 KPI 연결 없음'],
   })
 
   const view = buildOrgKpiHierarchyView({
@@ -128,28 +126,18 @@ run('org KPI hierarchy view groups parent-child links and separates disconnected
   assert.equal(view.ancestorIds.has('root'), true)
 })
 
-run('org KPI page exposes a two-level scope UX with division and team tabs', () => {
+run('org KPI page exposes division and team scope tabs without the removed AI tab', () => {
   const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.match(clientSource, /본부 KPI/)
-  assert.match(clientSource, /팀 KPI/)
   assert.match(clientSource, /pageData\.scopeTabs\.map/)
-  assert.match(clientSource, /type TabKey = 'map' \| 'list' \| 'linkage' \| 'history' \| 'ai'/)
   assert.match(clientSource, /scopeCreateLabel/)
   assert.match(clientSource, /scopeMapTitle/)
   assert.match(clientSource, /scopeHistoryTitle/)
+  assert.match(clientSource, /const TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history'\]/)
+  assert.doesNotMatch(clientSource, /tab === 'ai' \? \(/)
 })
 
-run('AI workspace stays in team scope and division scope offers a real jump action', () => {
-  const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
-
-  assert.match(clientSource, /pageData\.selectedScope === 'team'/)
-  assert.match(clientSource, /팀 KPI AI 추천은 팀 KPI 탭에서 사용할 수 있습니다\./)
-  assert.match(clientSource, /actionLabel="팀 KPI로 이동"/)
-  assert.match(clientSource, /<OrgKpiTeamAiWorkspace/)
-})
-
-run('goal alignment links now preserve the org KPI scope in deep links', () => {
+run('goal alignment links preserve the org KPI scope in deep links', () => {
   const source = read('src/server/goal-alignment.ts')
 
   assert.equal(source.includes('scope='), true)

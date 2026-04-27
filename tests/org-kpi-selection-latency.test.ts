@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict'
+﻿import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import type { OrgKpiViewModel } from '../src/server/org-kpi-page'
@@ -46,10 +46,10 @@ function makeKpi(
     childReferences: params.childReferences ?? [],
     childOrgKpiCount: params.childOrgKpiCount ?? 0,
     lineage: params.lineage ?? [],
-    category: params.category ?? '운영',
+    category: params.category ?? '?댁쁺',
     type: params.type ?? 'QUANTITATIVE',
-    definition: params.definition ?? '정의',
-    formula: params.formula ?? '산식',
+    definition: params.definition ?? '?뺤쓽',
+    formula: params.formula ?? '?곗떇',
     targetValue: params.targetValue ?? 100,
     targetValueT: params.targetValueT ?? 90,
     targetValueE: params.targetValueE ?? 100,
@@ -64,7 +64,6 @@ function makeKpi(
     linkedConfirmedPersonalKpiCount: params.linkedConfirmedPersonalKpiCount ?? 1,
     monthlyAchievementRate: params.monthlyAchievementRate ?? 95,
     updatedAt: params.updatedAt,
-    riskFlags: params.riskFlags ?? [],
     coverageRate: params.coverageRate ?? 75,
     targetPopulationCount: params.targetPopulationCount ?? 4,
     cloneInfo: params.cloneInfo,
@@ -79,60 +78,60 @@ function makeKpi(
 run('split hierarchy helpers preserve the same structure and selection lineage as the combined builder', () => {
   const root = makeKpi({
     id: 'root',
-    title: '본부 목표',
+    title: '蹂몃? 紐⑺몴',
     scope: 'division',
     departmentId: 'dept-root',
-    departmentName: '본부',
+    departmentName: '蹂몃?',
     childOrgKpiCount: 1,
     childReferences: [
       {
         id: 'child',
-        title: '팀 목표',
+        title: '? 紐⑺몴',
         departmentId: 'dept-team',
-        departmentName: '팀',
+        departmentName: '?',
         scope: 'team',
       },
     ],
   })
   const child = makeKpi({
     id: 'child',
-    title: '팀 목표',
+    title: '? 紐⑺몴',
     scope: 'team',
     departmentId: 'dept-team',
-    departmentName: '팀',
+    departmentName: '?',
     parentOrgKpiId: 'root',
-    parentOrgKpiTitle: '본부 목표',
+    parentOrgKpiTitle: '蹂몃? 紐⑺몴',
     parentReference: {
       id: 'root',
-      title: '본부 목표',
+      title: '蹂몃? 紐⑺몴',
       departmentId: 'dept-root',
-      departmentName: '본부',
+      departmentName: '蹂몃?',
       scope: 'division',
     },
     childOrgKpiCount: 1,
   })
   const grandChild = makeKpi({
     id: 'grand-child',
-    title: '실행 과제',
+    title: '?ㅽ뻾 怨쇱젣',
     scope: 'team',
     departmentId: 'dept-team',
-    departmentName: '팀',
+    departmentName: '?',
     parentOrgKpiId: 'child',
-    parentOrgKpiTitle: '팀 목표',
+    parentOrgKpiTitle: '? 紐⑺몴',
     parentReference: {
       id: 'child',
-      title: '팀 목표',
+      title: '? 紐⑺몴',
       departmentId: 'dept-team',
-      departmentName: '팀',
+      departmentName: '?',
       scope: 'team',
     },
   })
   const solo = makeKpi({
     id: 'solo',
-    title: '독립 목표',
+    title: '?낅┰ 紐⑺몴',
     scope: 'team',
     departmentId: 'dept-team',
-    departmentName: '팀',
+    departmentName: '?',
   })
 
   const combined = buildOrgKpiHierarchyView({
@@ -164,17 +163,17 @@ run('split hierarchy helpers preserve the same structure and selection lineage a
 run('team-scope KPI with a hidden division parent is not treated as an orphan', () => {
   const teamGoal = makeKpi({
     id: 'team-goal',
-    title: '팀 실행 KPI',
+    title: '? ?ㅽ뻾 KPI',
     scope: 'team',
     departmentId: 'dept-team',
-    departmentName: '인사팀',
+    departmentName: '?몄궗?',
     parentOrgKpiId: 'division-goal',
-    parentOrgKpiTitle: '본부 전략 KPI',
+    parentOrgKpiTitle: '蹂몃? ?꾨왂 KPI',
     parentReference: {
       id: 'division-goal',
-      title: '본부 전략 KPI',
+      title: '蹂몃? ?꾨왂 KPI',
       departmentId: 'dept-division',
-      departmentName: '경영지원본부',
+      departmentName: '寃쎌쁺吏?먮낯遺',
       scope: 'division',
     },
   })
@@ -304,7 +303,7 @@ run('hierarchy interaction changes stay inside the affected branch', () => {
   assert.equal(changedIds.has('root-b'), false)
 })
 
-run('disconnected KPI summary is prioritized as structure work', () => {
+run('disconnected KPI summary stays informational without warning-remediation badges', () => {
   const kpi = makeKpi({
     id: 'disconnected',
     title: 'Disconnected Goal',
@@ -316,8 +315,8 @@ run('disconnected KPI summary is prioritized as structure work', () => {
 
   const summary = buildOrgKpiStructureSummary(kpi, { isDisconnected: true })
 
-  assert.equal(summary.label, '연결 보완 필요')
-  assert.equal(summary.tone, 'warning')
+  assert.equal(summary.label, null)
+  assert.equal(summary.tone, 'neutral')
 })
 
 run('healthy structure without recent monthly records asks for execution input', () => {
@@ -346,7 +345,7 @@ run('healthy structure without recent monthly records asks for execution input',
   assert.equal(summary.tone, 'warning')
 })
 
-run('linkage warning stays secondary to structure and execution', () => {
+run('linkage gaps no longer surface a dedicated warning-remediation badge', () => {
   const kpi = makeKpi({
     id: 'linkage-gap',
     title: 'Linkage Gap',
@@ -363,13 +362,13 @@ run('linkage warning stays secondary to structure and execution', () => {
     },
     linkedPersonalKpiCount: 0,
     coverageRate: 0,
-    recentMonthlyRecords: [{ id: 'monthly-linkage-gap', employeeName: '홍길동', month: '2026-03', achievementRate: 82 }],
+    recentMonthlyRecords: [{ id: 'monthly-linkage-gap', employeeName: 'Sample', month: '2026-03', achievementRate: 82 }],
   })
 
   const summary = buildOrgKpiStructureSummary(kpi)
 
-  assert.equal(summary.label, '확인 필요')
-  assert.equal(summary.tone, 'warning')
+  assert.equal(summary.label, '정상')
+  assert.equal(summary.tone, 'linked')
 })
 
 run('healthy root KPI with children is not flagged just for lacking a parent', () => {
@@ -381,7 +380,7 @@ run('healthy root KPI with children is not flagged just for lacking a parent', (
     childOrgKpiCount: 2,
     linkedPersonalKpiCount: 2,
     coverageRate: 100,
-    recentMonthlyRecords: [{ id: 'monthly-root', employeeName: '홍길동', month: '2026-03', achievementRate: 91 }],
+    recentMonthlyRecords: [{ id: 'monthly-root', employeeName: 'Sample', month: '2026-03', achievementRate: 91 }],
   })
 
   const summary = buildOrgKpiStructureSummary(kpi, { visibleChildCount: 2 })
@@ -397,5 +396,7 @@ run('org KPI client keeps separate scope tabs and URL-based scope switching', ()
   assert.match(clientSource, /handleScopeSwitch/)
   assert.match(clientSource, /buildOrgKpiHref/)
   assert.match(clientSource, /selectedScope === 'division'/)
-  assert.match(clientSource, /selectedScope === 'team'/)
+  assert.match(clientSource, /ORG_KPI_SCOPE_LABELS/)
 })
+
+

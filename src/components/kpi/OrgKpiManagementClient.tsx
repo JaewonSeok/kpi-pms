@@ -1329,19 +1329,14 @@ export function OrgKpiManagementClient({
             <h2 className="text-base font-semibold text-slate-900">연결 현황</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               {pageData.selectedScope === 'division'
-                ? '본부 KPI를 기준으로 연결된 개인 KPI 건수, 대상 인원 연결률, 최근 실적, 하위 팀 정렬 리스크를 점검합니다.'
-                : '팀 KPI를 기준으로 상위 본부 KPI 정렬 여부와 연결된 개인 KPI, 대상 인원 연결률, 월간 실적 상태를 점검합니다.'}
+                ? '본부 KPI를 기준으로 연결된 개인 KPI 건수, 대상 인원 연결률, 최근 실적, 하위 팀 정렬 현황을 확인합니다.'
+                : '팀 KPI를 기준으로 상위 본부 KPI 정렬 여부와 연결된 개인 KPI, 대상 인원 연결률, 월간 실적 상태를 확인합니다.'}
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {pageData.linkage.length ? pageData.linkage.map((item) => (
               <div key={item.orgKpiId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-semibold text-slate-900">{item.title}</div>
-                  <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', item.riskLevel === 'HIGH' ? 'border-red-200 bg-red-100 text-red-700' : item.riskLevel === 'MEDIUM' ? 'border-amber-200 bg-amber-100 text-amber-800' : 'border-emerald-200 bg-emerald-100 text-emerald-700')}>
-                    {item.riskLevel === 'HIGH' ? '위험 높음' : item.riskLevel === 'MEDIUM' ? '주의' : '정상'}
-                  </span>
-                </div>
+                <div className="font-semibold text-slate-900">{item.title}</div>
                 <p className="mt-1 text-xs text-slate-500">{item.departmentName}</p>
                 <div className="mt-4 space-y-2 text-sm text-slate-600">
                   <div>
@@ -1362,7 +1357,7 @@ export function OrgKpiManagementClient({
                   <Link href="/kpi/monthly" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">월간 실적</Link>
                 </div>
               </div>
-            )) : <EmptyState title={`${scopeLabel} 연결 현황이 없습니다`} description="개인 KPI와 월간 실적이 연결되면 연결된 개인 KPI 건수, 대상 인원 연결률, 위험 지표를 확인할 수 있습니다." />}
+            )) : <EmptyState title={`${scopeLabel} 연결 현황이 없습니다`} description="개인 KPI와 월간 실적이 연결되면 연결된 개인 KPI 건수와 대상 인원 연결률을 확인할 수 있습니다." />}
           </div>
         </div>
       ) : null}
@@ -1486,7 +1481,7 @@ function EmptyState({ title, description, compact = false }: { title: string; de
   return <div className={cls('rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center text-slate-500', compact ? 'px-4 py-6' : 'px-4 py-10')}><div className="text-sm font-semibold text-slate-900">{title}</div><p className="mt-2 text-sm leading-6">{description}</p></div>
 }
 
-type RelationBadgeTone = 'neutral' | 'linked' | 'warning' | 'critical'
+type RelationBadgeTone = 'neutral' | 'linked' | 'warning'
 
 function RelationBadge({ tone, children }: { tone: RelationBadgeTone; children: ReactNode }) {
   const toneClass =
@@ -1494,9 +1489,7 @@ function RelationBadge({ tone, children }: { tone: RelationBadgeTone; children: 
       ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
       : tone === 'warning'
         ? 'border-amber-200 bg-amber-100 text-amber-800'
-        : tone === 'critical'
-          ? 'border-red-200 bg-red-100 text-red-700'
-          : 'border-slate-200 bg-slate-100 text-slate-600'
+        : 'border-slate-200 bg-slate-100 text-slate-600'
 
   return <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', toneClass)}>{children}</span>
 }
@@ -1525,9 +1518,9 @@ function getOrgKpiParentSummaryText(
 ) {
   if (kpi.parentOrgKpiTitle) return kpi.parentOrgKpiTitle
   if (isOrgKpiTopLevelDivisionGoal(kpi) && !options.isOrphan) return '최상위 목표'
-  if (options.isDisconnected || options.isOrphan) return '연결 필요'
+  if (options.isDisconnected || options.isOrphan) return '상위 목표 없음'
   if (options.hasChildren) return '최상위 목표'
-  return '연결된 상위 목표 없음'
+  return '상위 목표 없음'
 }
 
 function MapInlineActionButton({
@@ -1572,7 +1565,9 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-slate-900">{props.kpi.title}</span>
-            <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
+            {structureSummary.label ? (
+              <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
+            ) : null}
           </div>
           <p className="mt-1 text-sm text-slate-500">
             {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
@@ -1701,7 +1696,9 @@ const OrgKpiDisconnectedCard = memo(function OrgKpiDisconnectedCard(props: OrgKp
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <div className="font-semibold text-slate-900">{props.kpi.title}</div>
-            <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
+            {structureSummary.label ? (
+              <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
+            ) : null}
           </div>
           <p className="mt-1 text-sm text-slate-500">
             {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
@@ -1806,7 +1803,7 @@ function OrgKpiHierarchyPanel(props: {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">미연결 KPI</h3>
-              <p className="mt-1 text-sm text-slate-600">상위 목표와 아직 연결되지 않은 KPI를 따로 모아 빠르게 확인합니다.</p>
+              <p className="mt-1 text-sm text-slate-600">상위 목표 없이 단독으로 표시되는 KPI를 따로 모아 빠르게 확인합니다.</p>
             </div>
             <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800">
               미연결 {props.disconnected.length}개
@@ -1853,13 +1850,11 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
     [node]
   )
   const toneClass =
-    structureSummary.tone === 'critical'
-      ? 'border-red-200 bg-red-50/80'
-      : structureSummary.tone === 'warning'
-        ? 'border-amber-200 bg-amber-50/80'
-        : structureSummary.tone === 'linked'
-          ? 'border-emerald-200 bg-white'
-          : 'border-slate-200 bg-white'
+    structureSummary.tone === 'warning'
+      ? 'border-amber-200 bg-amber-50/80'
+      : structureSummary.tone === 'linked'
+        ? 'border-emerald-200 bg-white'
+        : 'border-slate-200 bg-white'
   const handleViewLinkage = useCallback(() => {
     props.onViewLinkage(node.kpi.id)
   }, [node.kpi.id, props.onViewLinkage])
@@ -1882,7 +1877,9 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
           <div className="min-w-0 flex-1 text-left">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-semibold text-slate-900">{node.kpi.title}</span>
-              <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
+              {structureSummary.label ? (
+                <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
+              ) : null}
             </div>
             <p className="mt-1 text-sm text-slate-500">
               {node.kpi.departmentName} · {node.kpi.category ?? '카테고리 미지정'}
@@ -2005,7 +2002,7 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
               <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4">
                 <div className="text-sm font-semibold text-slate-900">표시할 하위 목표가 없습니다</div>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  이 목표 아래 연결된 하위 목표가 없습니다. 필요한 경우 하위 목표를 추가하거나 연결 상태를 점검해 주세요.
+                  이 목표 아래 연결된 하위 목표가 없습니다. 필요한 경우 하위 목표를 추가할 수 있습니다.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {!props.readOnly && props.canCreate ? (
@@ -2295,12 +2292,6 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                   {kpi.recentMonthlyRecords.length ? '최근 월간 실적 반영' : '최근 월간 실적 없음'}
                 </div>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">연결 리스크</div>
-                <div className="mt-2 text-sm text-slate-700">
-                  {kpi.riskFlags.length ? kpi.riskFlags.join(' / ') : '정상 연결'}
-                </div>
-              </div>
             </div>
             <p className="mt-3 text-xs leading-5 text-slate-500">
               개인 KPI 연결과 대상 인원 연결률은 하위 KPI 수가 아니라, 이 조직 KPI가 적용되는 대상 인원 기준으로 계산됩니다.
@@ -2335,19 +2326,6 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
             title="복제 정보"
             value={`${kpi.cloneInfo.sourceDepartmentName ?? '원본 조직'}의 "${kpi.cloneInfo.sourceTitle}"에서 복제되었습니다. 진행 snapshot ${kpi.cloneInfo.progressEntryCount}건, 체크인 snapshot ${kpi.cloneInfo.checkinEntryCount}건을 이관했습니다.`}
           />
-        ) : null}
-
-        {kpi.riskFlags.length ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
-            <div className="text-sm font-semibold text-red-700">연결 위험 신호</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {kpi.riskFlags.map((flag) => (
-                <span key={flag} className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-red-700">
-                  {flag}
-                </span>
-              ))}
-            </div>
-          </div>
         ) : null}
 
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

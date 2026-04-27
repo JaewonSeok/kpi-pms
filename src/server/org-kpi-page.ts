@@ -59,7 +59,6 @@ export type OrgKpiLinkageItem = {
   linkedPersonalKpiCount: number
   targetPopulationCount: number
   coverageRate: number
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
   hasRecentMonthlyRecord: boolean
   departmentName: string
 }
@@ -106,7 +105,6 @@ export type OrgKpiViewModel = {
   linkedConfirmedPersonalKpiCount: number
   monthlyAchievementRate?: number
   updatedAt?: string
-  riskFlags: string[]
   coverageRate: number
   targetPopulationCount: number
   cloneInfo?: {
@@ -181,7 +179,6 @@ export type OrgKpiPageData = {
   summary: {
     totalCount: number
     confirmedCount: number
-    riskCount: number
     linkedPersonalKpiCount: number
     confirmedRate: number
   }
@@ -678,7 +675,6 @@ export async function getOrgKpiPageData(params: {
         summary: {
           totalCount: 0,
           confirmedCount: 0,
-          riskCount: 0,
           linkedPersonalKpiCount: 0,
           confirmedRate: 0,
         },
@@ -923,20 +919,6 @@ export async function getOrgKpiPageData(params: {
         .sort((left, right) => right.month.localeCompare(left.month))
         .slice(0, 5)
 
-      const riskFlags: string[] = []
-      if (kpi._count.personalKpis === 0) {
-        riskFlags.push('개인 KPI 연결 없음')
-      }
-      if (!recentMonthlyRecords.length) {
-        riskFlags.push('최근 월간 실적 없음')
-      }
-      if (typeof monthlyAchievementRate === 'number' && monthlyAchievementRate < 80) {
-        riskFlags.push('달성률 저하')
-      }
-      if (!findSuggestedChildren({ kpi, accessibleKpis: kpis, departmentsById }).length) {
-        riskFlags.push('하위 cascade 후보 부족')
-      }
-
       return {
         id: kpi.id,
         title: kpi.kpiName,
@@ -997,7 +979,6 @@ export async function getOrgKpiPageData(params: {
         linkedConfirmedPersonalKpiCount,
         monthlyAchievementRate,
         updatedAt: kpi.updatedAt.toISOString(),
-        riskFlags,
         coverageRate,
         targetPopulationCount,
         cloneInfo: parseCloneInfo(kpi),
@@ -1041,8 +1022,6 @@ export async function getOrgKpiPageData(params: {
       linkedPersonalKpiCount: kpi.linkedPersonalKpiCount,
       targetPopulationCount: kpi.targetPopulationCount,
       coverageRate: kpi.coverageRate,
-      riskLevel:
-        kpi.riskFlags.length >= 3 ? 'HIGH' : kpi.riskFlags.length >= 1 ? 'MEDIUM' : 'LOW',
       hasRecentMonthlyRecord: kpi.recentMonthlyRecords.length > 0,
       departmentName: kpi.departmentName,
     }))
@@ -1055,7 +1034,6 @@ export async function getOrgKpiPageData(params: {
       (sum, item) => sum + item.linkedPersonalKpiCount,
       0
     )
-    const riskCount = mappedList.filter((item) => item.riskFlags.length > 0).length
     const confirmedRate = totalCount ? Math.round((confirmedCount / totalCount) * 100) : 0
 
     const departmentsForSelector = accessibleDepartmentsByScope[selectedScope]
@@ -1140,7 +1118,6 @@ export async function getOrgKpiPageData(params: {
       summary: {
         totalCount,
         confirmedCount,
-        riskCount,
         linkedPersonalKpiCount,
         confirmedRate,
       },
@@ -1175,7 +1152,6 @@ export async function getOrgKpiPageData(params: {
       summary: {
         totalCount: 0,
         confirmedCount: 0,
-        riskCount: 0,
         linkedPersonalKpiCount: 0,
         confirmedRate: 0,
       },

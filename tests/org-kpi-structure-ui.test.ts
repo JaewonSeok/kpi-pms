@@ -31,6 +31,10 @@ run('org KPI hierarchy source removes noisy badge-cloud era helpers', () => {
   assert.doesNotMatch(source, /buildOrgKpiConnectionBadges\(/)
   assert.doesNotMatch(source, /function OrgKpiStructureLegend/)
   assert.doesNotMatch(source, /StatusBadge status=\{node\.kpi\.status\}/)
+  assert.doesNotMatch(source, /연결 리스크/)
+  assert.doesNotMatch(source, /연결 위험 신호/)
+  assert.doesNotMatch(source, /위험 지표/)
+  assert.doesNotMatch(source, /연결 보완 필요/)
 })
 
 run('org KPI detail card exposes an independently scrollable sidebar shell on wide layouts', () => {
