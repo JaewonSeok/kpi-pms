@@ -122,6 +122,9 @@ async function main() {
     assert.equal(clientSource.includes('팀 범위'), false)
     assert.equal(clientSource.includes('OrgKpiDepartmentFilterToolbar'), false)
     assert.equal(clientSource.includes('OrgKpiDepartmentFilterButtons'), false)
+    assert.equal(clientSource.includes('ActionButton label="잠금"'), false)
+    assert.equal(clientSource.includes('ActionButton label="이력 보기"'), false)
+    assert.equal(clientSource.includes("(action: 'SUBMIT' | 'LOCK' | 'REOPEN')"), false)
     assert.equal(clientSource.includes("tab === 'map' || tab === 'list'"), true)
     assert.equal(clientSource.includes('xl:grid-cols-[minmax(0,1fr)_440px]'), true)
     assert.equal(clientSource.includes('mt-5 border-t border-slate-200 pt-4'), true)
@@ -135,6 +138,7 @@ async function main() {
     assert.equal(loaderSource.includes('cascadeRate'), false)
     assert.equal(loaderSource.includes('monthlyCoverageRate'), false)
     assert.equal(loaderSource.includes('availableYears: number[]'), false)
+    assert.equal(loaderSource.includes('canLock: boolean'), false)
   })
 
   await run('org KPI workspace supports bulk edit and export mode selection routes', () => {

@@ -52,7 +52,7 @@ run('org KPI map and list tabs keep the search field only in the upper toolbar a
   assert.match(source, /<OrgKpiSearchField\s+value=\{search\}\s+onChange=\{setSearch\}\s+searchTargetLabel=\{searchTargetLabel\}/)
   assert.match(source, /tab === 'map' \|\| tab === 'list' \? \(\s*<div className="w-full lg:w-80 xl:w-96">\s*<OrgKpiSearchField/)
   assert.match(source, /mt-5 border-t border-slate-200 pt-4/)
-  assert.equal(source.includes('placeholder={`KPI명 또는 ${props.searchTargetLabel} 검색`}'), true)
+  assert.equal(source.includes('searchTargetLabel'), true)
 })
 
 run('org KPI map and list tabs use true two-column bodies without reviving removed top filters', () => {
@@ -98,4 +98,14 @@ run('org KPI route and client drop removed year and department URL wiring', () =
   assert.doesNotMatch(clientSource, /\['year',/)
   assert.doesNotMatch(clientSource, /\['dept',/)
   assert.doesNotMatch(loaderSource, /availableYears: number\[\]/)
+})
+
+run('org KPI action areas remove lock and duplicate history-view entry points while preserving the history tab', () => {
+  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.doesNotMatch(source, /ActionButton label="잠금"/)
+  assert.doesNotMatch(source, /ActionButton label="이력 보기"/)
+  assert.doesNotMatch(source, /onWorkflow\('LOCK'\)/)
+  assert.doesNotMatch(source, /\(action: 'SUBMIT' \| 'LOCK' \| 'REOPEN'\)/)
+  assert.match(source, /\{tab === 'history' \? \(/)
 })

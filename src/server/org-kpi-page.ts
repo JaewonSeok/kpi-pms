@@ -220,7 +220,6 @@ export type OrgKpiPageData = {
     canManage: boolean
     canCreate: boolean
     canConfirm: boolean
-    canLock: boolean
     canArchive: boolean
     canUseAi: boolean
   }
@@ -803,7 +802,6 @@ export async function getOrgKpiPageData(params: {
           canManage: false,
           canCreate: false,
           canConfirm: false,
-          canLock: false,
           canArchive: false,
           canUseAi: false,
         },
@@ -1292,8 +1290,6 @@ export async function getOrgKpiPageData(params: {
     const canConfirm = ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF'].includes(
       params.role
     )
-    const canLock = ['ROLE_ADMIN', 'ROLE_CEO'].includes(params.role)
-
     if (goalEditLocked) {
       alerts.push({
         title: '현재 목표는 읽기 전용 모드입니다.',
@@ -1347,7 +1343,6 @@ export async function getOrgKpiPageData(params: {
         canManage,
         canCreate: goalEditLocked ? false : canManage,
         canConfirm,
-        canLock,
         canArchive: canManage,
         canUseAi: canManage,
       },
@@ -1394,7 +1389,6 @@ export async function getOrgKpiPageData(params: {
         canManage: false,
         canCreate: false,
         canConfirm: false,
-        canLock: false,
         canArchive: false,
         canUseAi: false,
       },

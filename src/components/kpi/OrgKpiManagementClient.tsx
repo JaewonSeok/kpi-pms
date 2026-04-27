@@ -11,7 +11,6 @@ import {
   FileUp,
   GitBranchPlus,
   Link2,
-  Lock,
   Plus,
   Send,
   ShieldCheck,
@@ -1301,7 +1300,7 @@ export function OrgKpiManagementClient({
     }
   }
 
-  const runWorkflow = useCallback(async (action: 'SUBMIT' | 'LOCK' | 'REOPEN') => {
+  const runWorkflow = useCallback(async (action: 'SUBMIT' | 'REOPEN') => {
     if (!selectedKpi) return
     setBusy(true)
     try {
@@ -1315,9 +1314,7 @@ export function OrgKpiManagementClient({
         message:
           action === 'SUBMIT'
             ? '조직 KPI를 제출했습니다.'
-            : action === 'LOCK'
-              ? '조직 KPI를 잠금 처리했습니다.'
-              : '조직 KPI를 다시 열었습니다.',
+            : '조직 KPI를 다시 열었습니다.',
       })
       router.refresh()
     } catch (error) {
@@ -1549,7 +1546,7 @@ export function OrgKpiManagementClient({
     [handleSelectKpi]
   )
   const handleWorkflowAction = useCallback(
-    (action: 'SUBMIT' | 'LOCK' | 'REOPEN') => {
+    (action: 'SUBMIT' | 'REOPEN') => {
       void runWorkflow(action)
     },
     [runWorkflow]
@@ -2189,8 +2186,6 @@ export function OrgKpiManagementClient({
             <ActionButton label="엑셀 다운로드" icon={<Archive className="h-4 w-4" />} onClick={handleOpenExport} disabled={Boolean(exportDisabledReason) || busy} />
             <ActionButton label="제출" icon={<Send className="h-4 w-4" />} onClick={() => void runWorkflow('SUBMIT')} disabled={!selectedKpi || !pageData.permissions.canManage || busy} />
             <ActionButton label="확정" icon={<ShieldCheck className="h-4 w-4" />} onClick={() => void changeStatus('CONFIRMED')} disabled={!selectedKpi || !pageData.permissions.canConfirm || busy} />
-            <ActionButton label="잠금" icon={<Lock className="h-4 w-4" />} onClick={() => void runWorkflow('LOCK')} disabled={!selectedKpi || !pageData.permissions.canLock || busy} />
-            <ActionButton label="이력 보기" icon={<Archive className="h-4 w-4" />} onClick={() => setTab('history')} disabled={false} />
           </div>
           )}
         </div>
@@ -3275,7 +3270,7 @@ type KpiDetailCardProps = {
   onEdit: (kpi: OrgKpiViewModel) => void
   onClone: () => void
   onDelete: () => void
-  onWorkflow: (action: 'SUBMIT' | 'LOCK' | 'REOPEN') => void
+  onWorkflow: (action: 'SUBMIT' | 'REOPEN') => void
   onStatus: (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => void
   onAi: (action: AiAction) => void
   onSelectRelatedKpi?: (reference: OrgKpiRelationReference) => void
@@ -3647,12 +3642,6 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
               disabled={!props.permissions.canConfirm || props.busy || ['CONFIRMED', 'LOCKED'].includes(kpi.status)}
             />
             <ActionButton
-              label="잠금"
-              icon={<Lock className="h-4 w-4" />}
-              onClick={() => props.onWorkflow('LOCK')}
-              disabled={!props.permissions.canLock || props.busy || kpi.status !== 'CONFIRMED'}
-            />
-            <ActionButton
               label="보관"
               icon={<Archive className="h-4 w-4" />}
               onClick={() => props.onStatus('ARCHIVED')}
@@ -3693,7 +3682,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
             <div className="font-semibold">구성원 조회 전용 화면입니다.</div>
             <p className="mt-2 leading-6 text-blue-800">
               소속 팀의 조직 KPI와 연결된 개인 목표 현황만 확인할 수 있습니다. 목표 등록, 수정, 제출, 확정,
-              잠금, 삭제와 같은 운영 작업은 팀장 이상 권한에서만 가능합니다.
+              삭제와 같은 운영 작업은 팀장 이상 권한에서만 가능합니다.
             </p>
           </div>
         ) : null}
