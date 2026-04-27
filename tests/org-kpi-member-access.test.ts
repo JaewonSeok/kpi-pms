@@ -46,9 +46,9 @@ run('member org KPI screen switches to a read-only workspace instead of manageme
   assert.match(clientSource, /const MEMBER_TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history'\]/)
   assert.match(clientSource, /const visibleTabs = isReadOnlyMemberView\s*\?\s*MEMBER_TAB_ORDER\s*:\s*TAB_ORDER/)
   assert.match(clientSource, /data-testid="org-kpi-member-readonly-badge"/)
-  assert.match(clientSource, /MemberReadOnlySummaryCard/)
   assert.match(clientSource, /readOnly=\{isReadOnlyMemberView\}/)
-  assert.match(clientSource, /data-testid="org-kpi-member-readonly-panel"/)
+  assert.doesNotMatch(clientSource, /MemberReadOnlySummaryCard/)
+  assert.doesNotMatch(clientSource, /data-testid="org-kpi-member-readonly-panel-header"/)
 })
 
 run('member org KPI flow keeps write APIs server-blocked', () => {

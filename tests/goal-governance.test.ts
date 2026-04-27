@@ -120,6 +120,8 @@ async function main() {
     assert.equal(clientSource.includes('xl:overscroll-y-contain'), true)
     assert.equal(clientSource.includes('OrgKpiSearchField'), true)
     assert.equal(clientSource.includes('searchTargetLabel'), true)
+    assert.equal(clientSource.includes('MemberReadOnlySummaryCard'), false)
+    assert.equal(clientSource.includes('이 화면은 소속 팀에 등록된 조직 KPI만 조회할 수 있는 읽기 전용 화면입니다.'), false)
     assert.equal(clientSource.includes('Field label="연도"'), false)
     assert.equal(clientSource.includes('본부 범위'), false)
     assert.equal(clientSource.includes('팀 범위'), false)

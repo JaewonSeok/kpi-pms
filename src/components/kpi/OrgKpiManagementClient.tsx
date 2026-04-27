@@ -1188,15 +1188,7 @@ export function OrgKpiManagementClient({
             </div>
           </div>
 
-          {isReadOnlyMemberView ? (
-            <MemberReadOnlySummaryCard
-              scopeLabel={scopeLabel}
-              departmentName={pageData.actor.departmentName}
-              totalCount={pageData.summary.totalCount}
-              linkedPersonalKpiCount={pageData.summary.linkedPersonalKpiCount}
-              riskCount={pageData.summary.riskCount}
-            />
-          ) : (
+          {!isReadOnlyMemberView ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
             <ActionButton label={scopeCreateLabel} icon={<Plus className="h-4 w-4" />} onClick={openDirectKpiCreate} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
             <ActionButton label={scopeBulkUploadLabel} icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
@@ -1205,7 +1197,7 @@ export function OrgKpiManagementClient({
             <ActionButton label="제출" icon={<Send className="h-4 w-4" />} onClick={() => void runWorkflow('SUBMIT')} disabled={!selectedKpi || !pageData.permissions.canManage || busy} />
             <ActionButton label="확정" icon={<ShieldCheck className="h-4 w-4" />} onClick={() => void changeStatus('CONFIRMED')} disabled={!selectedKpi || !pageData.permissions.canConfirm || busy} />
           </div>
-          )}
+          ) : null}
         </div>
         <div className="mt-5 border-t border-slate-200 pt-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -1443,35 +1435,6 @@ export function OrgKpiManagementClient({
           onConfirm={() => void handleDeleteKpi()}
         />
       ) : null}
-    </div>
-  )
-}
-
-function HeroStat({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-lg font-semibold text-slate-900">{value}</div></div>
-}
-
-function MemberReadOnlySummaryCard(props: {
-  scopeLabel: string
-  departmentName: string
-  totalCount: number
-  linkedPersonalKpiCount: number
-  riskCount: number
-}) {
-  return (
-    <div className="rounded-3xl border border-blue-200 bg-blue-50 p-5 xl:w-[360px]">
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
-        {props.scopeLabel}
-      </div>
-      <div className="mt-3 text-lg font-semibold text-slate-900">{props.departmentName}</div>
-      <p className="mt-2 text-sm leading-6 text-slate-600">
-        이 화면은 소속 팀에 등록된 조직 KPI만 조회할 수 있는 읽기 전용 화면입니다.
-      </p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-        <HeroStat label={props.scopeLabel} value={`${props.totalCount}개`} />
-        <HeroStat label="연결된 개인 KPI" value={`${props.linkedPersonalKpiCount}개`} />
-        <HeroStat label="위험 신호 KPI" value={`${props.riskCount}개`} />
-      </div>
     </div>
   )
 }
