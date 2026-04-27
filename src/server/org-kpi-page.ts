@@ -192,7 +192,6 @@ export type OrgKpiPageData = {
   selectedScope: OrgKpiScope
   scopeTabs: OrgKpiScopeTab[]
   selectedYear: number
-  availableYears: number[]
   selectedDepartmentId: string
   departments: OrgKpiScopeOption[]
   parentGoalOptions: Array<{
@@ -775,7 +774,6 @@ export async function getOrgKpiPageData(params: {
         scopeTabs: emptyScopeTabs,
         message: '조직 정보가 아직 준비되지 않았습니다.',
         selectedYear: new Date().getFullYear(),
-        availableYears: [new Date().getFullYear()],
         selectedDepartmentId: params.deptId,
         departments: [],
         parentGoalOptions: [],
@@ -1318,7 +1316,6 @@ export async function getOrgKpiPageData(params: {
       })),
       message: totalCount ? undefined : '해당 범위에 등록된 조직 KPI가 없습니다. 올해 목표부터 정리해 보세요.',
       selectedYear,
-      availableYears,
       selectedDepartmentId,
       departments: departmentsForSelector,
       parentGoalOptions,
@@ -1368,7 +1365,6 @@ export async function getOrgKpiPageData(params: {
       scopeTabs: emptyScopeTabs,
       message: '조직 KPI 화면을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
       selectedYear: new Date().getFullYear(),
-      availableYears: [new Date().getFullYear()],
       selectedDepartmentId: params.deptId,
       departments: [],
       parentGoalOptions: [],

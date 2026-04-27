@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Archive,
@@ -76,7 +76,6 @@ import {
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 
 type Props = OrgKpiPageData & {
-  initialDepartmentFilterId?: string
   initialTab?: string
   initialSelectedKpiId?: string
 }
@@ -638,13 +637,11 @@ function buildAiPayload(action: AiAction, kpi: OrgKpiViewModel | null, form: For
   }
 }
 export function OrgKpiManagementClient({
-  initialDepartmentFilterId,
   initialTab,
   initialSelectedKpiId,
   ...pageData
 }: Props) {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const canRenderWorkspace = pageData.state === 'ready' || pageData.state === 'empty'
   const isReadOnlyMemberView = pageData.actor.role === 'ROLE_MEMBER'
   const normalizedInitialTab = normalizeOrgKpiTab(initialTab)
@@ -672,15 +669,11 @@ export function OrgKpiManagementClient({
   const scopeListTitle = `${scopeLabel} 목록`
   const scopeMapTitle = `${scopeLabel} 목표맵`
   const scopeHistoryTitle = `${scopeLabel} 이력`
-  const allDepartmentLabel = pageData.selectedScope === 'division' ? '전체 본부' : '전체 팀'
-  const departmentFilterLabel = pageData.selectedScope === 'division' ? '본부 범위' : '팀 범위'
+  const searchTargetLabel = pageData.selectedScope === 'division' ? '본부' : '팀'
   const defaultDepartmentSelection =
-    initialDepartmentFilterId &&
-    pageData.departments.some((department) => department.id === initialDepartmentFilterId)
-      ? initialDepartmentFilterId
-      : pageData.departments.length > 1
-        ? 'ALL'
-        : pageData.selectedDepartmentId
+    pageData.selectedScope === 'division' && pageData.departments.length > 1
+      ? 'ALL'
+      : pageData.selectedDepartmentId
   const defaultSelectedKpiId =
     (initialSelectedKpiId && pageData.list.some((item) => item.id === initialSelectedKpiId)
       ? initialSelectedKpiId
@@ -717,8 +710,12 @@ export function OrgKpiManagementClient({
   )
   const [pendingRecommendationDecision, setPendingRecommendationDecision] =
     useState<PendingRecommendationDecision | null>(null)
+  const selectedKpiDepartmentId =
+    list.find((item) => item.id === (selectedKpiId || activeKpiId))?.departmentId ?? null
   const activeScopeDepartmentId =
-    selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId
+    selectedDepartmentId === 'ALL'
+      ? selectedKpiDepartmentId ?? pageData.selectedDepartmentId
+      : selectedDepartmentId
   const hasReviewableTeamKpis = list.some((item) => item.departmentId === activeScopeDepartmentId)
   const [cloneForm, setCloneForm] = useState<OrgCloneForm>(buildCloneForm(pageData, pageData.list[0]))
   const [bulkEditForm, setBulkEditForm] = useState<OrgBulkEditForm>(
@@ -745,20 +742,18 @@ export function OrgKpiManagementClient({
   )
   const loadAlerts = visibleLoadAlerts.length ? <LoadAlerts alerts={visibleLoadAlerts} /> : null
   const serverListSignature = useMemo(() => buildOrgKpiServerListSignature(pageData.list), [pageData.list])
-  const serverContextKey = `${pageData.selectedScope}:${pageData.selectedYear}:${pageData.selectedDepartmentId}:${serverListSignature}:${defaultSelectedKpiId}:${defaultTab}:${initialDepartmentFilterId ?? ''}`
+  const serverContextKey = `${pageData.selectedScope}:${pageData.selectedYear}:${pageData.selectedDepartmentId}:${serverListSignature}:${defaultSelectedKpiId}:${defaultTab}`
   const previousServerContextKey = useRef(serverContextKey)
   const viewContextKey = `${pageData.selectedScope}:${pageData.selectedYear}:${selectedDepartmentId}`
   const previousViewContextKey = useRef(viewContextKey)
   const buildOrgKpiHref = useCallback(
-    (overrides?: Partial<Record<'scope' | 'year' | 'dept' | 'tab' | 'kpiId', string | null>>) => {
-      const nextParams = new URLSearchParams(searchParams.toString())
+    (overrides?: Partial<Record<'scope' | 'tab' | 'kpiId', string | null>>) => {
+      const nextParams = new URLSearchParams()
       const entries: Array<[
-        'scope' | 'year' | 'dept' | 'tab' | 'kpiId',
+        'scope' | 'tab' | 'kpiId',
         string | null | undefined,
       ]> = [
         ['scope', overrides?.scope ?? pageData.selectedScope],
-        ['year', overrides?.year ?? String(pageData.selectedYear)],
-        ['dept', overrides?.dept],
         ['tab', overrides?.tab],
         ['kpiId', overrides?.kpiId],
       ]
@@ -775,11 +770,11 @@ export function OrgKpiManagementClient({
       const query = nextParams.toString()
       return `/kpi/org${query ? `?${query}` : ''}`
     },
-    [pageData.selectedScope, pageData.selectedYear, searchParams]
+    [pageData.selectedScope]
   )
 
   const replaceOrgKpiUrl = useCallback(
-    (overrides?: Partial<Record<'scope' | 'year' | 'dept' | 'tab' | 'kpiId', string | null>>) => {
+    (overrides?: Partial<Record<'scope' | 'tab' | 'kpiId', string | null>>) => {
       if (typeof window === 'undefined') return
       window.history.replaceState(null, '', buildOrgKpiHref(overrides))
     },
@@ -869,9 +864,6 @@ export function OrgKpiManagementClient({
   const handleOpenRelatedReference = useCallback(
     (reference: OrgKpiRelationReference) => {
       if (reference.scope === pageData.selectedScope) {
-        setSelectedDepartmentId((current) =>
-          current === reference.departmentId ? current : reference.departmentId
-        )
         handleSelectKpi(reference.id)
         setTab('map')
         return
@@ -880,7 +872,6 @@ export function OrgKpiManagementClient({
       router.push(
         buildOrgKpiHref({
           scope: reference.scope,
-          dept: reference.departmentId,
           tab: 'map',
           kpiId: reference.id,
         })
@@ -901,11 +892,10 @@ export function OrgKpiManagementClient({
     if (!canRenderWorkspace) return
 
     replaceOrgKpiUrl({
-      dept: selectedDepartmentId === 'ALL' ? null : selectedDepartmentId,
       tab,
       kpiId: selectedKpiId || null,
     })
-  }, [canRenderWorkspace, replaceOrgKpiUrl, selectedDepartmentId, selectedKpiId, tab])
+  }, [canRenderWorkspace, replaceOrgKpiUrl, selectedKpiId, tab])
 
   useEffect(() => {
     setActiveKpiId((current) => (current === selectedKpiId ? current : selectedKpiId))
@@ -916,12 +906,6 @@ export function OrgKpiManagementClient({
       return
     }
 
-    const nextDepartmentSelection =
-      selectedDepartmentId === 'ALL'
-        ? 'ALL'
-        : pageData.departments.some((department) => department.id === selectedDepartmentId)
-          ? selectedDepartmentId
-          : defaultDepartmentSelection
     const nextSelectedKpiId =
       (selectedKpiId && pageData.list.some((item) => item.id === selectedKpiId) ? selectedKpiId : null) ??
       (initialSelectedKpiId && pageData.list.some((item) => item.id === initialSelectedKpiId)
@@ -932,7 +916,7 @@ export function OrgKpiManagementClient({
 
     previousServerContextKey.current = serverContextKey
     setTab(defaultTab)
-    setSelectedDepartmentId(nextDepartmentSelection)
+    setSelectedDepartmentId(defaultDepartmentSelection)
     setList(pageData.list)
     commitSelectedKpi(nextSelectedKpiId)
     setShowForm(false)
@@ -956,8 +940,8 @@ export function OrgKpiManagementClient({
       buildJobDescriptionForm(pageData.teamAi, 'TEAM', pageData.selectedYear, pageData.selectedDepartmentId)
     )
     setCloneForm(buildCloneForm(pageData, pageData.list[0]))
-    setBulkEditForm(buildOrgBulkEditForm(pageData, nextDepartmentSelection))
-    setExportForm(buildGoalExportForm(pageData, nextDepartmentSelection))
+    setBulkEditForm(buildOrgBulkEditForm(pageData, defaultDepartmentSelection))
+    setExportForm(buildGoalExportForm(pageData, defaultDepartmentSelection))
     setBanner(null)
     setAiPreview(null)
     setSelectedAiRecommendationIndex(null)
@@ -970,7 +954,6 @@ export function OrgKpiManagementClient({
     setSearch('')
   }, [
     commitSelectedKpi,
-    selectedDepartmentId,
     selectedKpiId,
     defaultDepartmentSelection,
     defaultTab,
@@ -1289,7 +1272,6 @@ export function OrgKpiManagementClient({
           form,
         })
       )
-      setSelectedDepartmentId(saved.deptId)
       commitSelectedKpi(saved.id)
       setShowForm(false)
       setEditingKpiId(null)
@@ -1301,8 +1283,6 @@ export function OrgKpiManagementClient({
       setShowAiRecommendationRetainedNotice(false)
       router.replace(
         buildOrgKpiHref({
-          year: String(Number(form.evalYear || pageData.selectedYear)),
-          dept: saved.deptId,
           tab,
           kpiId: saved.id,
         })
@@ -1473,13 +1453,10 @@ export function OrgKpiManagementClient({
       })
       setShowClone(false)
       setCloneForm(buildCloneForm(pageData))
-      setSelectedDepartmentId((current) => (current === 'ALL' ? current : cloned.deptId))
       commitSelectedKpi(cloned.id)
       setTab('map')
       router.push(
         buildOrgKpiHref({
-          year: String(cloned.evalYear),
-          dept: cloned.deptId,
           tab: 'map',
           kpiId: cloned.id,
         })
@@ -1651,7 +1628,6 @@ export function OrgKpiManagementClient({
       })
       router.replace(
         buildOrgKpiHref({
-          dept: selectedDepartmentId === 'ALL' ? null : selectedDepartmentId,
           tab,
           kpiId: nextSelectedId || null,
         })
@@ -1880,7 +1856,7 @@ export function OrgKpiManagementClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formState),
       })
-      await loadTeamAiContext(scope === 'DIVISION' ? selectedDepartmentId : formState.deptId)
+      await loadTeamAiContext(scope === 'DIVISION' ? activeScopeDepartmentId : formState.deptId)
       setBanner({ tone: 'success', message: successMessage })
     } catch (error) {
       setBanner({
@@ -1931,11 +1907,10 @@ export function OrgKpiManagementClient({
 
       const createdKpi = result.createdKpi
       if (createdKpi) {
-        setSelectedDepartmentId(createdKpi.deptId)
         commitSelectedKpi(createdKpi.id)
       }
 
-      await loadTeamAiContext(createdKpi?.deptId ?? selectedDepartmentId)
+      await loadTeamAiContext(createdKpi?.deptId ?? activeScopeDepartmentId)
       setBanner({ tone: 'success', message: 'AI 추천 KPI를 그대로 채택했습니다.' })
       router.refresh()
     } catch (error) {
@@ -1956,7 +1931,7 @@ export function OrgKpiManagementClient({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision: 'DISMISSED' }),
       })
-      await loadTeamAiContext(selectedDepartmentId)
+      await loadTeamAiContext(activeScopeDepartmentId)
       setBanner({ tone: 'info', message: '추천 KPI를 제외했습니다.' })
     } catch (error) {
       setBanner({
@@ -2124,17 +2099,6 @@ export function OrgKpiManagementClient({
     router.push(
       buildOrgKpiHref({
         scope: nextScope,
-        dept: null,
-        kpiId: null,
-      })
-    )
-  }
-
-  function handleYearChange(nextYear: string) {
-    router.push(
-      buildOrgKpiHref({
-        year: nextYear,
-        dept: null,
         kpiId: null,
       })
     )
@@ -2207,19 +2171,6 @@ export function OrgKpiManagementClient({
                 ))}
               </div>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="연도">
-                <select value={pageData.selectedYear} onChange={(event) => handleYearChange(event.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
-                  {pageData.availableYears.map((year) => <option key={year} value={year}>{year}년</option>)}
-                </select>
-              </Field>
-              <Field label={departmentFilterLabel}>
-                <select value={selectedDepartmentId} onChange={(event) => setSelectedDepartmentId(event.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
-                  {pageData.departments.length > 1 ? <option value="ALL">{allDepartmentLabel}</option> : null}
-                  {pageData.departments.map((department) => <option key={department.id} value={department.id}>{'- '.repeat(department.level)}{department.name}</option>)}
-                </select>
-              </Field>
-            </div>
           </div>
 
           {isReadOnlyMemberView ? (
@@ -2257,7 +2208,7 @@ export function OrgKpiManagementClient({
                 <OrgKpiSearchField
                   value={search}
                   onChange={setSearch}
-                  departmentFilterLabel={departmentFilterLabel}
+                  searchTargetLabel={searchTargetLabel}
                 />
               </div>
             ) : null}
@@ -2278,16 +2229,6 @@ export function OrgKpiManagementClient({
                 : '팀 KPI를 중심으로 상위 본부 KPI 정렬 상태와 실행 리스크를 구조 관점에서 확인합니다.'}
             </p>
           </div>
-          {pageData.departments.length > 1 ? (
-            <OrgKpiDepartmentFilterToolbar
-              departments={pageData.departments}
-              allDepartmentLabel={allDepartmentLabel}
-              departmentFilterLabel={departmentFilterLabel}
-              selectedDepartmentId={selectedDepartmentId}
-              onSelectDepartment={setSelectedDepartmentId}
-            />
-          ) : null}
-
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
             <div className="space-y-4">
               <OrgKpiHierarchyPanel
@@ -2343,16 +2284,6 @@ export function OrgKpiManagementClient({
                 : '팀 KPI를 검색하고, 상위 본부 KPI 정렬 상태와 실행 맥락을 함께 확인합니다.'}
             </p>
           </div>
-          {pageData.departments.length > 1 ? (
-            <OrgKpiDepartmentFilterToolbar
-              departments={pageData.departments}
-              allDepartmentLabel={allDepartmentLabel}
-              departmentFilterLabel={departmentFilterLabel}
-              selectedDepartmentId={selectedDepartmentId}
-              onSelectDepartment={setSelectedDepartmentId}
-            />
-          ) : null}
-
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
             <div className="space-y-3">
               {filteredList.length ? filteredList.map((kpi) => (
@@ -2842,78 +2773,17 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
   )
 })
 
-function OrgKpiDepartmentFilterToolbar(props: {
-  departments: OrgKpiPageData['departments']
-  allDepartmentLabel: string
-  departmentFilterLabel: string
-  selectedDepartmentId: string
-  onSelectDepartment: (value: string) => void
-}) {
-  return (
-    <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{props.departmentFilterLabel}</p>
-      <OrgKpiDepartmentFilterButtons
-        departments={props.departments}
-        allDepartmentLabel={props.allDepartmentLabel}
-        selectedDepartmentId={props.selectedDepartmentId}
-        onSelectDepartment={props.onSelectDepartment}
-      />
-    </div>
-  )
-}
-
-function OrgKpiDepartmentFilterButtons(props: {
-  departments: OrgKpiPageData['departments']
-  allDepartmentLabel: string
-  selectedDepartmentId: string
-  onSelectDepartment: (value: string) => void
-}) {
-  if (props.departments.length <= 1) return null
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      <button
-        type="button"
-        onClick={() => props.onSelectDepartment('ALL')}
-        className={cls(
-          'rounded-full border px-3.5 py-2 text-sm transition',
-          props.selectedDepartmentId === 'ALL'
-            ? 'border-blue-300 bg-blue-50 text-blue-700'
-            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-        )}
-      >
-        {props.allDepartmentLabel}
-      </button>
-      {props.departments.map((department) => (
-        <button
-          key={department.id}
-          type="button"
-          onClick={() => props.onSelectDepartment(department.id)}
-          className={cls(
-            'rounded-full border px-3.5 py-2 text-sm transition',
-            props.selectedDepartmentId === department.id
-              ? 'border-blue-300 bg-blue-50 text-blue-700'
-              : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-          )}
-        >
-          {department.name}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function OrgKpiSearchField(props: {
   value: string
   onChange: (value: string) => void
-  departmentFilterLabel: string
+  searchTargetLabel: string
 }) {
   return (
     <input
       value={props.value}
       onChange={(event) => props.onChange(event.target.value)}
       className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
-      placeholder={`KPI명 또는 ${props.departmentFilterLabel.replace(' 범위', '')} 검색`}
+      placeholder={`KPI명 또는 ${props.searchTargetLabel} 검색`}
     />
   )
 }

@@ -16,40 +16,21 @@ function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
 }
 
-run('org KPI hierarchy panel uses the simplified structure copy and actions', () => {
+run('org KPI hierarchy panel keeps the current structure workspace hooks', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.match(source, /연결된 목표 구조/)
-  assert.match(source, /현재 선택한 목표와 연결된 상위·하위 구조를 간단히 확인할 수 있습니다\./)
-  assert.match(source, /연결 현황 요약/)
-  assert.match(source, /표시할 하위 목표가 없습니다/)
-  assert.match(source, /현재 필터 조건에서 보이는 하위 목표가 없습니다/)
-  assert.match(source, /상세 보기/)
-  assert.match(source, /하위 목표 펼치기/)
-  assert.match(source, /하위 목표 접기/)
-  assert.match(source, /연결 현황 보기/)
-  assert.match(source, /담당자/)
+  assert.equal(source.includes('function OrgKpiHierarchyPanel'), true)
+  assert.equal(source.includes('HierarchySummaryField'), true)
+  assert.equal(source.includes('handleCreateChildGoal'), true)
+  assert.equal(source.includes('handleViewLinkage'), true)
 })
 
-run('org KPI hierarchy source removes noisy badge-cloud era strings', () => {
+run('org KPI hierarchy source removes noisy badge-cloud era helpers', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
   assert.doesNotMatch(source, /buildOrgKpiConnectionBadges\(/)
   assert.doesNotMatch(source, /function OrgKpiStructureLegend/)
-  assert.doesNotMatch(source, /연결 상태 확인/)
-  assert.doesNotMatch(source, /상위 목표로 이동/)
-  assert.doesNotMatch(source, /연결 주의/)
-  assert.doesNotMatch(source, /cascade 후보 부족/)
   assert.doesNotMatch(source, /StatusBadge status=\{node\.kpi\.status\}/)
-})
-
-run('org KPI detail summary keeps diagnostics after first-view simplification', () => {
-  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
-
-  assert.match(source, /대상 인원 연결률/)
-  assert.match(source, /연결 리스크/)
-  assert.match(source, /개인 KPI 연결과 대상 인원 연결률은 하위 KPI 수가 아니라/)
-  assert.match(source, /하위 목표 추가/)
 })
 
 run('org KPI detail card exposes an independently scrollable sidebar shell on wide layouts', () => {
@@ -65,31 +46,32 @@ run('org KPI detail card exposes an independently scrollable sidebar shell on wi
   assert.match(source, /tabIndex=\{0\}/)
 })
 
-run('org KPI map and list tabs promote the search field into the upper toolbar area', () => {
+run('org KPI map and list tabs keep the search field only in the upper toolbar area', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.match(source, /<OrgKpiSearchField\s+value=\{search\}\s+onChange=\{setSearch\}\s+departmentFilterLabel=\{departmentFilterLabel\}/)
+  assert.match(source, /<OrgKpiSearchField\s+value=\{search\}\s+onChange=\{setSearch\}\s+searchTargetLabel=\{searchTargetLabel\}/)
   assert.match(source, /tab === 'map' \|\| tab === 'list' \? \(\s*<div className="w-full lg:w-80 xl:w-96">\s*<OrgKpiSearchField/)
   assert.match(source, /mt-5 border-t border-slate-200 pt-4/)
-  assert.match(source, /placeholder=\{`KPI명 또는 \$\{props\.departmentFilterLabel\.replace\(' 범위', ''\)\} 검색`\}/)
+  assert.equal(source.includes('placeholder={`KPI명 또는 ${props.searchTargetLabel} 검색`}'), true)
 })
 
-run('org KPI map and list tabs use true two-column bodies with the department filter moved above the workspace', () => {
+run('org KPI map and list tabs use true two-column bodies without reviving removed top filters', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.match(source, /<OrgKpiDepartmentFilterToolbar/)
   assert.match(source, /xl:grid-cols-\[minmax\(0,1fr\)_440px\]/)
-  assert.match(source, /function OrgKpiDepartmentFilterButtons/)
+  assert.doesNotMatch(source, /Field label="연도"/)
+  assert.doesNotMatch(source, /본부 범위/)
+  assert.doesNotMatch(source, /팀 범위/)
+  assert.doesNotMatch(source, /function OrgKpiDepartmentFilterToolbar/)
+  assert.doesNotMatch(source, /function OrgKpiDepartmentFilterButtons/)
   assert.doesNotMatch(source, /function OrgKpiScopeSidebar/)
-  assert.match(source, /\{tab === 'list' \? \([\s\S]*?<OrgKpiDepartmentFilterToolbar[\s\S]*?xl:grid-cols-\[minmax\(0,1fr\)_440px\]/)
+  assert.match(source, /\{tab === 'list' \? \([\s\S]*?xl:grid-cols-\[minmax\(0,1fr\)_440px\]/)
+  assert.match(source, /\{tab === 'map' \? \([\s\S]*?xl:grid-cols-\[minmax\(0,1fr\)_440px\]/)
 })
 
 run('org KPI workspace removes dashboard-style summary metric rows from the top area', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.doesNotMatch(source, /하위 KPI 연결 비율/)
-  assert.doesNotMatch(source, /미연결 .* 수/)
-  assert.doesNotMatch(source, /월간 실적 반영 비율/)
   assert.doesNotMatch(source, /function MetricCard/)
 })
 
@@ -102,4 +84,18 @@ run('org KPI tabs use list-first ordering with stable key-based content mapping'
   assert.match(source, /setTab\(visibleTabs\[0\] \?\? 'list'\)/)
   assert.match(source, /\{tab === 'list' \? \(/)
   assert.match(source, /\{tab === 'map' \? \(/)
+})
+
+run('org KPI route and client drop removed year and department URL wiring', () => {
+  const pageSource = read('src/app/(main)/kpi/org/page.tsx')
+  const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
+  const loaderSource = read('src/server/org-kpi-page.ts')
+
+  assert.doesNotMatch(pageSource, /selectedDepartmentId: resolvedSearchParams\.dept/)
+  assert.doesNotMatch(pageSource, /initialDepartmentFilterId/)
+  assert.doesNotMatch(pageSource, /const year = resolvedSearchParams\.year/)
+  assert.doesNotMatch(clientSource, /useSearchParams/)
+  assert.doesNotMatch(clientSource, /\['year',/)
+  assert.doesNotMatch(clientSource, /\['dept',/)
+  assert.doesNotMatch(loaderSource, /availableYears: number\[\]/)
 })

@@ -4,8 +4,6 @@ import { OrgKpiManagementClient } from '@/components/kpi/OrgKpiManagementClient'
 
 type OrgKpiPageProps = {
   searchParams?: Promise<{
-    year?: string
-    dept?: string
     scope?: string
     tab?: string
     kpiId?: string
@@ -19,7 +17,6 @@ export default async function OrgKpiPage({ searchParams }: OrgKpiPageProps) {
   })
 
   const resolvedSearchParams = (await searchParams) ?? {}
-  const year = resolvedSearchParams.year ? Number(resolvedSearchParams.year) : undefined
 
   const pageData = await getOrgKpiPageData({
     userId: session.user.id,
@@ -27,8 +24,6 @@ export default async function OrgKpiPage({ searchParams }: OrgKpiPageProps) {
     deptId: session.user.deptId,
     deptName: session.user.deptName,
     accessibleDepartmentIds: session.user.accessibleDepartmentIds,
-    year,
-    selectedDepartmentId: resolvedSearchParams.dept,
     selectedScope: resolvedSearchParams.scope,
     selectedKpiId: resolvedSearchParams.kpiId,
     userName: session.user.name,
@@ -37,7 +32,6 @@ export default async function OrgKpiPage({ searchParams }: OrgKpiPageProps) {
   return (
     <OrgKpiManagementClient
       {...pageData}
-      initialDepartmentFilterId={resolvedSearchParams.dept}
       initialTab={resolvedSearchParams.tab}
       initialSelectedKpiId={resolvedSearchParams.kpiId}
     />
