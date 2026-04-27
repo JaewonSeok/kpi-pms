@@ -315,7 +315,6 @@ run('disconnected KPI summary stays informational without warning-remediation ba
 
   const summary = buildOrgKpiStructureSummary(kpi, { isDisconnected: true })
 
-  assert.equal(summary.label, null)
   assert.equal(summary.tone, 'neutral')
 })
 
@@ -341,7 +340,6 @@ run('healthy structure without recent monthly records asks for execution input',
 
   const summary = buildOrgKpiStructureSummary(kpi)
 
-  assert.equal(summary.label, '정상')
   assert.equal(summary.tone, 'linked')
 })
 
@@ -367,7 +365,6 @@ run('linkage gaps no longer surface a dedicated warning-remediation badge', () =
 
   const summary = buildOrgKpiStructureSummary(kpi)
 
-  assert.equal(summary.label, '정상')
   assert.equal(summary.tone, 'linked')
 })
 
@@ -385,7 +382,6 @@ run('healthy root KPI with children is not flagged just for lacking a parent', (
 
   const summary = buildOrgKpiStructureSummary(kpi, { visibleChildCount: 2 })
 
-  assert.equal(summary.label, '정상')
   assert.equal(summary.tone, 'linked')
 })
 

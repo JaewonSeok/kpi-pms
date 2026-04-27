@@ -36,7 +36,6 @@ export type OrgKpiHierarchyInteractionState = {
 }
 
 export type OrgKpiStructureSummary = {
-  label: '정상' | null
   tone: 'neutral' | 'linked'
   helper: string
 }
@@ -324,7 +323,6 @@ export function buildOrgKpiStructureSummary(
     (!hasParent && !isValidRootGoal && !hasChildren)
   if (hasStructuralGap) {
     return {
-      label: null,
       tone: 'neutral',
       helper: hasChildren
         ? '상위 목표 없이도 하위 목표가 연결된 구조입니다.'
@@ -333,7 +331,6 @@ export function buildOrgKpiStructureSummary(
   }
 
   return {
-    label: '정상',
     tone: 'linked',
     helper: hasChildren
       ? '이 목표 아래 연결된 하위 목표를 확인할 수 있습니다.'

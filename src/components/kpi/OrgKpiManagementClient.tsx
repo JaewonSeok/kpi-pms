@@ -1481,17 +1481,6 @@ function EmptyState({ title, description, compact = false }: { title: string; de
   return <div className={cls('rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center text-slate-500', compact ? 'px-4 py-6' : 'px-4 py-10')}><div className="text-sm font-semibold text-slate-900">{title}</div><p className="mt-2 text-sm leading-6">{description}</p></div>
 }
 
-type RelationBadgeTone = 'neutral' | 'linked'
-
-function RelationBadge({ tone, children }: { tone: RelationBadgeTone; children: ReactNode }) {
-  const toneClass =
-    tone === 'linked'
-      ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
-      : 'border-slate-200 bg-slate-100 text-slate-600'
-
-  return <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', toneClass)}>{children}</span>
-}
-
 function HierarchySummaryField({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl bg-white px-3 py-2">
@@ -1561,12 +1550,7 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-slate-900">{props.kpi.title}</span>
-            {structureSummary.label ? (
-              <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
-            ) : null}
-          </div>
+          <div className="font-semibold text-slate-900">{props.kpi.title}</div>
           <p className="mt-1 text-sm text-slate-500">
             {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
           </p>
@@ -1692,12 +1676,7 @@ const OrgKpiDisconnectedCard = memo(function OrgKpiDisconnectedCard(props: OrgKp
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="font-semibold text-slate-900">{props.kpi.title}</div>
-            {structureSummary.label ? (
-              <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
-            ) : null}
-          </div>
+          <div className="font-semibold text-slate-900">{props.kpi.title}</div>
           <p className="mt-1 text-sm text-slate-500">
             {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
           </p>
@@ -1871,12 +1850,7 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1 text-left">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-slate-900">{node.kpi.title}</span>
-              {structureSummary.label ? (
-                <RelationBadge tone={structureSummary.tone}>{structureSummary.label}</RelationBadge>
-              ) : null}
-            </div>
+            <span className="font-semibold text-slate-900">{node.kpi.title}</span>
             <p className="mt-1 text-sm text-slate-500">
               {node.kpi.departmentName} · {node.kpi.category ?? '카테고리 미지정'}
             </p>
