@@ -162,6 +162,7 @@ async function main() {
     assert.equal(clientSource.includes('연결 위험 신호'), false)
     assert.equal(clientSource.includes('위험 지표'), false)
     assert.equal(clientSource.includes('연결 보완 필요'), false)
+    assert.equal(clientSource.includes('실적 입력 필요'), false)
   })
 
   await run('org KPI workspace supports bulk edit and export mode selection routes', () => {

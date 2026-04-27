@@ -1481,15 +1481,13 @@ function EmptyState({ title, description, compact = false }: { title: string; de
   return <div className={cls('rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center text-slate-500', compact ? 'px-4 py-6' : 'px-4 py-10')}><div className="text-sm font-semibold text-slate-900">{title}</div><p className="mt-2 text-sm leading-6">{description}</p></div>
 }
 
-type RelationBadgeTone = 'neutral' | 'linked' | 'warning'
+type RelationBadgeTone = 'neutral' | 'linked'
 
 function RelationBadge({ tone, children }: { tone: RelationBadgeTone; children: ReactNode }) {
   const toneClass =
     tone === 'linked'
       ? 'border-emerald-200 bg-emerald-100 text-emerald-700'
-      : tone === 'warning'
-        ? 'border-amber-200 bg-amber-100 text-amber-800'
-        : 'border-slate-200 bg-slate-100 text-slate-600'
+      : 'border-slate-200 bg-slate-100 text-slate-600'
 
   return <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', toneClass)}>{children}</span>
 }
@@ -1850,11 +1848,9 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
     [node]
   )
   const toneClass =
-    structureSummary.tone === 'warning'
-      ? 'border-amber-200 bg-amber-50/80'
-      : structureSummary.tone === 'linked'
-        ? 'border-emerald-200 bg-white'
-        : 'border-slate-200 bg-white'
+    structureSummary.tone === 'linked'
+      ? 'border-emerald-200 bg-white'
+      : 'border-slate-200 bg-white'
   const handleViewLinkage = useCallback(() => {
     props.onViewLinkage(node.kpi.id)
   }, [node.kpi.id, props.onViewLinkage])

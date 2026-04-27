@@ -36,8 +36,8 @@ export type OrgKpiHierarchyInteractionState = {
 }
 
 export type OrgKpiStructureSummary = {
-  label: '정상' | '실적 입력 필요' | null
-  tone: 'neutral' | 'linked' | 'warning'
+  label: '정상' | null
+  tone: 'neutral' | 'linked'
   helper: string
 }
 
@@ -322,8 +322,6 @@ export function buildOrgKpiStructureSummary(
   const hasStructuralGap =
     Boolean(options.isDisconnected || options.isOrphan) ||
     (!hasParent && !isValidRootGoal && !hasChildren)
-  const hasExecutionGap = kpi.recentMonthlyRecords.length === 0
-
   if (hasStructuralGap) {
     return {
       label: null,
@@ -331,14 +329,6 @@ export function buildOrgKpiStructureSummary(
       helper: hasChildren
         ? '상위 목표 없이도 하위 목표가 연결된 구조입니다.'
         : '상위 목표 없이 단독으로 표시되는 KPI입니다.',
-    }
-  }
-
-  if (hasExecutionGap) {
-    return {
-      label: '실적 입력 필요',
-      tone: 'warning',
-      helper: '연결 구조는 유지되고 있으며 최근 실행 기록만 확인하면 됩니다.',
     }
   }
 

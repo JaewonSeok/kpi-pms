@@ -35,6 +35,7 @@ run('org KPI hierarchy source removes noisy badge-cloud era helpers', () => {
   assert.doesNotMatch(source, /연결 위험 신호/)
   assert.doesNotMatch(source, /위험 지표/)
   assert.doesNotMatch(source, /연결 보완 필요/)
+  assert.doesNotMatch(source, /실적 입력 필요/)
 })
 
 run('org KPI detail card exposes an independently scrollable sidebar shell on wide layouts', () => {

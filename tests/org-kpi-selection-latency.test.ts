@@ -341,8 +341,8 @@ run('healthy structure without recent monthly records asks for execution input',
 
   const summary = buildOrgKpiStructureSummary(kpi)
 
-  assert.equal(summary.label, '실적 입력 필요')
-  assert.equal(summary.tone, 'warning')
+  assert.equal(summary.label, '정상')
+  assert.equal(summary.tone, 'linked')
 })
 
 run('linkage gaps no longer surface a dedicated warning-remediation badge', () => {
