@@ -1,7 +1,5 @@
-import { Prisma } from '@prisma/client'
+﻿import { Prisma } from '@prisma/client'
 import type {
-  AIApprovalStatus,
-  AIRequestStatus,
   Difficulty,
   KpiStatus,
   KpiType,
@@ -17,19 +15,8 @@ import {
 import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
 import { resolveOrgKpiOperationalStatus, type OrgKpiOperationalStatus } from './org-kpi-workflow'
-import {
-  loadOrgKpiTeamAiContext,
-  type OrgKpiTeamAiContextView,
-} from './org-kpi-team-ai'
 
 export type OrgKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
-
-export type OrgKpiTeamAiRuntimeState = {
-  mode: 'NORMAL_RESULT' | 'TRUE_FALLBACK'
-  errorCode?: string | null
-  prismaCode?: string | null
-  shortMessage?: string | null
-}
 
 export type OrgKpiScopeOption = {
   id: string
@@ -75,17 +62,6 @@ export type OrgKpiLinkageItem = {
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
   hasRecentMonthlyRecord: boolean
   departmentName: string
-}
-
-export type OrgKpiAiLogItem = {
-  id: string
-  createdAt: string
-  sourceType: string
-  sourceId?: string
-  requesterName: string
-  requestStatus: AIRequestStatus
-  approvalStatus: AIApprovalStatus
-  summary: string
 }
 
 export type OrgKpiViewModel = {
@@ -213,15 +189,11 @@ export type OrgKpiPageData = {
   list: OrgKpiViewModel[]
   history: OrgKpiTimelineItem[]
   linkage: OrgKpiLinkageItem[]
-  aiLogs: OrgKpiAiLogItem[]
-  teamAi: OrgKpiTeamAiContextView | null
-  teamAiRuntimeState?: OrgKpiTeamAiRuntimeState
   permissions: {
     canManage: boolean
     canCreate: boolean
     canConfirm: boolean
     canArchive: boolean
-    canUseAi: boolean
   }
   actor: {
     role: SystemRole
@@ -230,72 +202,20 @@ export type OrgKpiPageData = {
   }
 }
 
-const DEFAULT_TEAM_AI_RUNTIME_STATE: OrgKpiTeamAiRuntimeState = {
-  mode: 'NORMAL_RESULT',
-  errorCode: null,
-  prismaCode: null,
-  shortMessage: null,
-}
-
 const ORG_KPI_SCOPE_TAB_META: Record<
   OrgKpiScope,
   Pick<OrgKpiScopeTab, 'label' | 'description'>
 > = {
   division: {
-    label: '본부 KPI',
+    label: '蹂몃? KPI',
     description:
-      '본부·실 등 상위 조직이 관리하는 KPI를 확인합니다. 하위 팀 KPI와의 연결 상태도 함께 볼 수 있습니다.',
+      '蹂몃?쨌?????곸쐞 議곗쭅??愿由ы븯??KPI瑜??뺤씤?⑸땲?? ?섏쐞 ? KPI????곌껐 ?곹깭???④퍡 蹂????덉뒿?덈떎.',
   },
   team: {
-    label: '팀 KPI',
+    label: '? KPI',
     description:
-      '실제 실행 조직이 운영하는 KPI를 확인합니다. 상위 본부 KPI와의 정렬을 함께 관리합니다.',
+      '?ㅼ젣 ?ㅽ뻾 議곗쭅???댁쁺?섎뒗 KPI瑜??뺤씤?⑸땲?? ?곸쐞 蹂몃? KPI????뺣젹???④퍡 愿由ы빀?덈떎.',
   },
-}
-
-function buildEmptyTeamAiContext(params: {
-  targetDepartmentId: string
-  departmentName: string
-  evalYear: number
-}): OrgKpiTeamAiContextView {
-  return {
-    targetDepartmentId: params.targetDepartmentId,
-    planningDepartmentId: params.targetDepartmentId,
-    planningDepartmentName: params.departmentName,
-    planningSourceLabel: '현재 조직 기준',
-    evalYear: params.evalYear,
-    evalCycleId: null,
-    canEditBusinessPlan: false,
-    canEditDivisionJobDescription: false,
-    canEditTeamJobDescription: false,
-    canRequestRecommendation: false,
-    canRunReview: false,
-    businessPlan: null,
-    divisionJobDescription: null,
-    teamJobDescription: null,
-    sourceOrgKpis: [],
-    recommendationSets: [],
-    reviewRuns: [],
-  }
-}
-
-function buildOrgKpiTeamAiRuntimeState(error?: unknown): OrgKpiTeamAiRuntimeState {
-  if (!error) {
-    return DEFAULT_TEAM_AI_RUNTIME_STATE
-  }
-
-  const prismaCode =
-    error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null
-  const errorCode = error instanceof Error && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
-    ? (error as { code: string }).code
-    : 'ORG_KPI_TEAM_AI_CONTEXT_LOAD_FAILED'
-
-  return {
-    mode: 'TRUE_FALLBACK',
-    errorCode,
-    prismaCode,
-    shortMessage: error instanceof Error ? error.message : '팀 KPI AI 정보를 불러오지 못했습니다.',
-  }
 }
 
 type AuditLogLite = {
@@ -654,27 +574,6 @@ function buildTree(params: {
   return roots.filter(shouldKeep)
 }
 
-function parseAiSummary(record: Prisma.JsonValue | null | undefined) {
-  if (!record || typeof record !== 'object' || Array.isArray(record)) {
-    return 'AI 요청 결과'
-  }
-
-  const payload = record as Record<string, unknown>
-  const candidates = [
-    payload.kpiName,
-    payload.title,
-    payload.improvedTitle,
-    payload.summary,
-    payload.executiveSummary,
-    payload.comment,
-  ]
-
-  const match = candidates.find((candidate) => typeof candidate === 'string' && candidate.trim().length > 0)
-  if (typeof match === 'string') return match
-
-  return 'AI 요청 결과'
-}
-
 function asRecord(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -771,7 +670,7 @@ export async function getOrgKpiPageData(params: {
         state: 'empty',
         selectedScope: fallbackScope,
         scopeTabs: emptyScopeTabs,
-        message: '조직 정보가 아직 준비되지 않았습니다.',
+        message: '議곗쭅 ?뺣낫媛 ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??',
         selectedYear: new Date().getFullYear(),
         selectedDepartmentId: params.deptId,
         departments: [],
@@ -787,23 +686,12 @@ export async function getOrgKpiPageData(params: {
         list: [],
         history: [],
         linkage: [],
-        aiLogs: [],
-        teamAi:
-          fallbackScope === 'team'
-            ? buildEmptyTeamAiContext({
-                targetDepartmentId: params.deptId,
-                departmentName: params.deptName,
-                evalYear: new Date().getFullYear(),
-              })
-            : null,
-        teamAiRuntimeState: DEFAULT_TEAM_AI_RUNTIME_STATE,
-        alerts,
+        alerts: [],
         permissions: {
           canManage: false,
           canCreate: false,
           canConfirm: false,
           canArchive: false,
-          canUseAi: false,
         },
         actor: {
           role: params.role,
@@ -813,15 +701,13 @@ export async function getOrgKpiPageData(params: {
       }
     }
 
-    const departmentsById = new Map(departments.map((department) => [department.id, department]))
     const levelMap = buildDepartmentLevelMap(departments)
+    const departmentsById = new Map(departments.map((department) => [department.id, department]))
+    const accessibleDepartments = scopeDepartmentIds
+      ? departments.filter((department) => scopeDepartmentIds.includes(department.id))
+      : departments
+
     const departmentScopeMap = buildOrgKpiDepartmentScopeMap(departments)
-    const effectiveScopeIds = new Set<string>(
-      scopeDepartmentIds ?? departments.map((department) => department.id)
-    )
-    const accessibleDepartments = departments.filter((department) =>
-      effectiveScopeIds.has(department.id)
-    )
     const accessibleDepartmentsByScope = {
       division: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'division'),
       team: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'team'),
@@ -842,18 +728,19 @@ export async function getOrgKpiPageData(params: {
     ).sort((left, right) => right - left)
 
     const selectedYear = params.year && availableYears.includes(params.year) ? params.year : availableYears[0]
-    const selectedOrgId = departments.find((department) => department.id === params.deptId)?.organization.id ?? departments[0]?.organization.id
-    const cycleRecords =
-      selectedOrgId
-        ? await prisma.evalCycle.findMany({
-            where: {
-              orgId: selectedOrgId,
-              evalYear: selectedYear,
-            },
-            orderBy: [{ createdAt: 'desc' }],
-            take: 5,
-          })
-        : []
+    const selectedOrgId =
+      departments.find((department) => department.id === params.deptId)?.organization.id ??
+      departments[0]?.organization.id
+    const cycleRecords = selectedOrgId
+      ? await prisma.evalCycle.findMany({
+          where: {
+            orgId: selectedOrgId,
+            evalYear: selectedYear,
+          },
+          orderBy: [{ createdAt: 'desc' }],
+          take: 5,
+        })
+      : []
     const goalEditLocked = cycleRecords.some((cycle) => cycle.goalEditMode === 'CHECKIN_ONLY')
 
     const kpis = await prisma.orgKpi.findMany({
@@ -949,54 +836,20 @@ export async function getOrgKpiPageData(params: {
         : null) ??
       (availableScopes.includes('division') ? 'division' : 'team')
 
-    const [auditLogs, aiLogs] = await Promise.all([
-      loadOrgKpiSection({
-        title: '조직 KPI 이력',
-        description: '조직 KPI 변경 이력을 불러오지 못해 상세 이력은 표시되지 않습니다.',
-        alerts,
-        loader: () =>
-          prisma.auditLog.findMany({
-            where: {
-              entityType: 'OrgKpi',
-            },
-            orderBy: { timestamp: 'desc' },
-            take: 200,
-          }),
-        fallback: [] as AuditLogLite[],
-      }),
-      loadOrgKpiSection({
-        title: '조직 KPI AI 보조',
-        description: 'AI 보조 이력을 불러오지 못해 AI 탭은 기본 정보만 표시됩니다.',
-        alerts,
-        loader: () =>
-          prisma.aiRequestLog.findMany({
-            where: {
-              requesterId: params.userId,
-              sourceType: {
-                startsWith: 'Org',
-              },
-            },
-            include: {
-              requester: {
-                select: {
-                  empName: true,
-                },
-              },
-            },
-            orderBy: { createdAt: 'desc' },
-            take: 30,
-          }),
-        fallback: [] as Prisma.AiRequestLogGetPayload<{
-          include: {
-            requester: {
-              select: {
-                empName: true
-              }
-            }
-          }
-        }>[],
-      }),
-    ])
+    const auditLogs = await loadOrgKpiSection({
+      title: '조직 KPI 이력',
+      description: '조직 KPI 변경 이력을 불러오지 못해 상세 이력은 표시되지 않습니다.',
+      alerts,
+      loader: () =>
+        prisma.auditLog.findMany({
+          where: {
+            entityType: 'OrgKpi',
+          },
+          orderBy: { timestamp: 'desc' },
+          take: 200,
+        }),
+      fallback: [] as AuditLogLite[],
+    })
 
     const employeeNameMap = new Map(employees.map((employee) => [employee.id, employee.empName]))
     const employeesByDept = new Map<string, EmployeeLite[]>()
@@ -1217,14 +1070,10 @@ export async function getOrgKpiPageData(params: {
       .sort((left, right) => left.level - right.level || left.name.localeCompare(right.name))
 
     const selectedDepartmentId =
-      params.selectedDepartmentId && departmentsForSelector.some((department) => department.id === params.selectedDepartmentId)
+      params.selectedDepartmentId &&
+      departmentsForSelector.some((department) => department.id === params.selectedDepartmentId)
         ? params.selectedDepartmentId
         : departmentsForSelector[0]?.id ?? accessibleDepartments[0]?.id ?? params.deptId
-
-    const selectedDepartmentName =
-      departmentsForSelector.find((department) => department.id === selectedDepartmentId)?.name ??
-      departmentsById.get(selectedDepartmentId)?.deptName ??
-      params.deptName
 
     const visibleTreeIds = new Set<string>()
     departmentsForSelector.forEach((department) => {
@@ -1256,33 +1105,6 @@ export async function getOrgKpiPageData(params: {
       kpisByDepartment,
       selectedScopeIds: visibleTreeIds,
     })
-
-    let teamAi: OrgKpiTeamAiContextView | null = null
-    let teamAiRuntimeState: OrgKpiTeamAiRuntimeState = DEFAULT_TEAM_AI_RUNTIME_STATE
-    if (selectedScope === 'team' && selectedDepartmentId) {
-      try {
-      teamAi = await loadOrgKpiTeamAiContext({
-        userId: params.userId,
-        role: params.role,
-        deptId: params.deptId,
-        accessibleDepartmentIds: params.accessibleDepartmentIds,
-        targetDepartmentId: selectedDepartmentId,
-        evalYear: selectedYear,
-      })
-    } catch (error) {
-      console.warn('[org-kpi-page:team-ai]', error)
-      teamAiRuntimeState = buildOrgKpiTeamAiRuntimeState(error)
-      alerts.push({
-        title: '팀 KPI AI 추천',
-        description: '사업계획서 기반 AI 추천/검토 정보를 불러오지 못해 기본 화면만 표시합니다.',
-      })
-      teamAi = buildEmptyTeamAiContext({
-        targetDepartmentId: selectedDepartmentId,
-        departmentName: selectedDepartmentName,
-        evalYear: selectedYear,
-      })
-    }
-    }
 
     const canManage = ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(
       params.role
@@ -1326,25 +1148,12 @@ export async function getOrgKpiPageData(params: {
       list: mappedList,
       history,
       linkage,
-      aiLogs: aiLogs.map((log) => ({
-        id: log.id,
-        createdAt: log.createdAt.toISOString(),
-        sourceType: log.sourceType ?? 'OrgKpiAssist',
-        sourceId: log.sourceId ?? undefined,
-        requesterName: log.requester.empName,
-        requestStatus: log.requestStatus,
-        approvalStatus: log.approvalStatus,
-        summary: parseAiSummary(log.responsePayload),
-      })),
-      teamAi,
-      teamAiRuntimeState,
       alerts,
       permissions: {
         canManage,
         canCreate: goalEditLocked ? false : canManage,
         canConfirm,
         canArchive: canManage,
-        canUseAi: canManage,
       },
       actor: {
         role: params.role,
@@ -1374,23 +1183,12 @@ export async function getOrgKpiPageData(params: {
       list: [],
       history: [],
       linkage: [],
-      aiLogs: [],
-      teamAi:
-        fallbackScope === 'team'
-          ? buildEmptyTeamAiContext({
-              targetDepartmentId: params.deptId,
-              departmentName: params.deptName,
-              evalYear: new Date().getFullYear(),
-            })
-          : null,
-      teamAiRuntimeState: DEFAULT_TEAM_AI_RUNTIME_STATE,
       alerts: [],
       permissions: {
         canManage: false,
         canCreate: false,
         canConfirm: false,
         canArchive: false,
-        canUseAi: false,
       },
       actor: {
         role: params.role,

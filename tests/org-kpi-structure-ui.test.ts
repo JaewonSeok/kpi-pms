@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict'
+﻿import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -78,12 +78,13 @@ run('org KPI workspace removes dashboard-style summary metric rows from the top 
 run('org KPI tabs use list-first ordering with stable key-based content mapping', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.match(source, /const TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history', 'ai'\]/)
+  assert.match(source, /const TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history'\]/)
   assert.match(source, /const MEMBER_TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history'\]/)
   assert.match(source, /const defaultTab =\s*normalizedInitialTab && visibleTabs\.includes\(normalizedInitialTab\) \? normalizedInitialTab : visibleTabs\[0\] \?\? 'list'/)
   assert.match(source, /setTab\(visibleTabs\[0\] \?\? 'list'\)/)
   assert.match(source, /\{tab === 'list' \? \(/)
   assert.match(source, /\{tab === 'map' \? \(/)
+  assert.doesNotMatch(source, /\{tab === 'ai' \? \(/)
 })
 
 run('org KPI route and client drop removed year and department URL wiring', () => {
@@ -103,20 +104,24 @@ run('org KPI route and client drop removed year and department URL wiring', () =
 run('org KPI action areas remove lock and duplicate history-view entry points while preserving the history tab', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.doesNotMatch(source, /ActionButton label="잠금"/)
-  assert.doesNotMatch(source, /ActionButton label="이력 보기"/)
+  assert.doesNotMatch(source, /ActionButton label="?좉툑"/)
+  assert.doesNotMatch(source, /ActionButton label="?대젰 蹂닿린"/)
   assert.doesNotMatch(source, /onWorkflow\('LOCK'\)/)
   assert.doesNotMatch(source, /\(action: 'SUBMIT' \| 'LOCK' \| 'REOPEN'\)/)
   assert.match(source, /\{tab === 'history' \? \(/)
 })
 
-run('org KPI selected-detail actions remove the bounded AI improve trigger while preserving the AI tab workspace', () => {
+run('org KPI removes the bounded AI improve trigger and the dedicated AI tab workspace', () => {
   const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.doesNotMatch(source, /ActionButton label="AI 개선"/)
+  assert.doesNotMatch(source, /ActionButton label=\"AI 媛쒖꽑\"/)
   assert.doesNotMatch(source, /onAi:\s*\(action:\s*AiAction\)\s*=>\s*void/)
   assert.doesNotMatch(source, /onAi=\{handleAiAction\}/)
   assert.doesNotMatch(source, /const handleAiAction = useCallback/)
-  assert.match(source, /\{tab === 'ai' \? \(/)
-  assert.match(source, /<KpiAiPreviewPanel/)
+  assert.doesNotMatch(source, /\{tab === 'ai' \? \(/)
+  assert.doesNotMatch(source, /<KpiAiPreviewPanel/)
+  assert.doesNotMatch(source, /OrgKpiTeamAiWorkspace/)
+  assert.doesNotMatch(source, /requestAi\(/)
+  assert.doesNotMatch(source, /decideAi\(/)
 })
+

@@ -613,40 +613,6 @@ export function OrgKpiManagementClient({
         ? '현재 필터 조건에 맞는 조직 KPI가 없습니다.'
         : undefined
 
-  async function loadTeamAiContext(targetDepartmentId = selectedDepartmentId) {
-    if (targetDepartmentId === 'ALL') {
-      setTeamAiContext(pageData.teamAi)
-      setTeamAiRuntimeState(DEFAULT_TEAM_AI_RUNTIME_STATE)
-      return pageData.teamAi
-    }
-
-    setTeamAiLoading(true)
-    setTeamAiRuntimeState(DEFAULT_TEAM_AI_RUNTIME_STATE)
-    try {
-      const next = await fetchJson<OrgKpiTeamAiContextView>(
-        `/api/kpi/org/team-ai/context?deptId=${encodeURIComponent(targetDepartmentId)}&evalYear=${encodeURIComponent(
-          String(pageData.selectedYear)
-        )}`
-      )
-      setTeamAiContext(next)
-      setTeamAiRuntimeState(DEFAULT_TEAM_AI_RUNTIME_STATE)
-      setBusinessPlanForm(buildBusinessPlanForm(next, pageData.selectedYear, targetDepartmentId))
-      setDivisionJobDescriptionForm(buildJobDescriptionForm(next, 'DIVISION', pageData.selectedYear, targetDepartmentId))
-      setTeamJobDescriptionForm(buildJobDescriptionForm(next, 'TEAM', pageData.selectedYear, targetDepartmentId))
-      return next
-    } catch (error) {
-      setTeamAiRuntimeState({
-        mode: 'TRUE_FALLBACK',
-        errorCode: 'ORG_KPI_TEAM_AI_CONTEXT_LOAD_FAILED',
-        prismaCode: null,
-        shortMessage: error instanceof Error ? error.message : '팀 KPI AI 정보를 불러오지 못했습니다.',
-      })
-      return null
-    } finally {
-      setTeamAiLoading(false)
-    }
-  }
-
   async function saveKpi() {
     if (goalEditLocked) {
       setBanner({ tone: 'error', message: '현재는 목표 읽기 전용 모드라 조직 KPI를 저장할 수 없습니다.' })
@@ -705,46 +671,14 @@ export function OrgKpiManagementClient({
 
     setBusy(true)
     try {
-      const saved = pendingRecommendationDecision
-        ? await fetchJson<{ createdKpi: { id: string; deptId: string } | null }>(
-            `/api/kpi/org/team-ai/recommendations/${pendingRecommendationDecision.itemId}/decision`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                decision: pendingRecommendationDecision.decision,
-                draft: {
-                  kpiType: draftPayload.kpiType,
-                  kpiCategory: draftPayload.kpiCategory,
-                  kpiName: draftPayload.kpiName,
-                  definition: draftPayload.definition,
-                  formula: draftPayload.formula,
-                  targetValueT: draftPayload.targetValueT,
-                  targetValueE: draftPayload.targetValueE,
-                  targetValueS: draftPayload.targetValueS,
-                  unit: draftPayload.unit,
-                  weight: draftPayload.weight,
-                  difficulty: draftPayload.difficulty,
-                  tags: draftPayload.tags,
-                  parentOrgKpiId: draftPayload.parentOrgKpiId,
-                },
-              }),
-            }
-          ).then((response) => {
-            if (!response.createdKpi) {
-              throw new Error('추천 KPI 저장 결과를 확인하지 못했습니다.')
-            }
-
-            return response.createdKpi
-          })
-        : await fetchJson<{ id: string; deptId: string }>(
-            editingKpiId ? `/api/kpi/org/${editingKpiId}` : '/api/kpi/org',
-            {
-              method: editingKpiId ? 'PATCH' : 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(draftPayload),
-            }
-          )
+      const saved = await fetchJson<{ id: string; deptId: string }>(
+        editingKpiId ? `/api/kpi/org/${editingKpiId}` : '/api/kpi/org',
+        {
+          method: editingKpiId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(draftPayload),
+        }
+      )
       setBanner({
         tone: 'success',
         message: editingKpiId ? `${scopeLabel}를 수정했습니다.` : `${scopeLabel}를 저장했습니다.`,
@@ -761,21 +695,13 @@ export function OrgKpiManagementClient({
       commitSelectedKpi(saved.id)
       setShowForm(false)
       setEditingKpiId(null)
-      setPendingRecommendationDecision(null)
       setEditorBaselineForm(null)
-      setEditorDraftSourceLabel(null)
-      setShowRecommendationSwitchConfirm(false)
-      setShowEditorCloseConfirm(false)
-      setShowAiRecommendationRetainedNotice(false)
       router.replace(
         buildOrgKpiHref({
           tab,
           kpiId: saved.id,
         })
       )
-      if (pageData.selectedScope === 'team' && saved.deptId !== 'ALL') {
-        await loadTeamAiContext(saved.deptId)
-      }
       router.refresh()
     } catch (error) {
       setBanner({
@@ -836,51 +762,6 @@ export function OrgKpiManagementClient({
       setBusy(false)
     }
   }, [router, selectedKpi])
-
-  const requestAi = useCallback(async (action: AiAction) => {
-    setBusy(true)
-    setAiAction(action)
-    setSelectedAiRecommendationIndex(null)
-    setEditorDraftSourceLabel(null)
-    setPendingAiRecommendationIndex(null)
-    setShowRecommendationSwitchConfirm(false)
-    setShowEditorCloseConfirm(false)
-    setShowAiRecommendationRetainedNotice(false)
-    try {
-      const data = await fetchJson<AiPreview>('/api/kpi/org/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          sourceId: selectedKpi?.id ?? editingKpiId ?? 'new-org-kpi',
-          payload: buildAiPayload(action, selectedKpi, form, pageData),
-        }),
-      })
-      setAiPreview({
-        ...data,
-        fallbackReason:
-          data.source === 'ai' ? null : toOrgKpiAiPreviewErrorMessage(data.fallbackReason),
-      })
-      setTab('ai')
-      setBanner({
-        tone: data.source === 'ai' ? 'success' : 'info',
-        message:
-          data.source === 'ai'
-            ? 'AI 결과를 준비했습니다. 미리보기 후 적용해 주세요.'
-            : toOrgKpiAiPreviewErrorMessage(data.fallbackReason),
-      })
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message:
-          error instanceof Error
-            ? toOrgKpiAiPreviewErrorMessage(error.message)
-            : ORG_KPI_AI_PREVIEW_ERROR_MESSAGE,
-      })
-    } finally {
-      setBusy(false)
-    }
-  }, [editingKpiId, form, pageData, selectedKpi])
 
   const handleOpenClone = useCallback(() => {
     if (cloneDisabledReason || !selectedKpi) {
@@ -965,23 +846,13 @@ export function OrgKpiManagementClient({
     setShowDeleteConfirm(true)
   }, [deleteActionState])
   const openEditorWithForm = useCallback((nextForm: FormState, options: {
-    recommendationIndex?: number | null
-    draftSourceLabel?: string | null
     editingId?: string | null
-    pendingDecision?: PendingRecommendationDecision | null
     bannerMessage?: string | null
   }) => {
     setEditingKpiId(options.editingId ?? null)
-    setPendingRecommendationDecision(options.pendingDecision ?? null)
-    setSelectedAiRecommendationIndex(options.recommendationIndex ?? null)
-    setEditorDraftSourceLabel(options.draftSourceLabel ?? null)
     setForm(nextForm)
     setEditorBaselineForm(nextForm)
     setShowForm(true)
-    setShowRecommendationSwitchConfirm(false)
-    setPendingAiRecommendationIndex(null)
-    setShowEditorCloseConfirm(false)
-    setShowAiRecommendationRetainedNotice(false)
     if (options.bannerMessage) {
       setBanner({
         tone: 'info',
@@ -993,8 +864,6 @@ export function OrgKpiManagementClient({
     (kpi: OrgKpiViewModel) => {
       openEditorWithForm(buildFormFromKpi(kpi), {
         editingId: kpi.id,
-        recommendationIndex: null,
-        draftSourceLabel: null,
       })
     },
     [openEditorWithForm]
@@ -1007,8 +876,6 @@ export function OrgKpiManagementClient({
       }
 
       openEditorWithForm(nextForm, {
-        recommendationIndex: null,
-        draftSourceLabel: null,
         bannerMessage: '선택한 상위 목표 아래에 연결할 하위 목표 초안을 작성합니다.',
       })
     },
@@ -1018,8 +885,6 @@ export function OrgKpiManagementClient({
     (kpi: OrgKpiViewModel) => {
       openEditorWithForm(buildFormFromKpi(kpi), {
         editingId: kpi.id,
-        recommendationIndex: null,
-        draftSourceLabel: null,
         bannerMessage: '상위 목표 연결을 수정할 수 있는 편집 모드입니다.',
       })
     },
@@ -1097,8 +962,6 @@ export function OrgKpiManagementClient({
       setShowForm(false)
       setShowClone(false)
       setEditingKpiId((current) => (current === selectedKpi.id ? null : current))
-      setAiPreview(null)
-      setTab((current) => (current === 'ai' ? 'map' : current))
       setBanner({
         tone: 'success',
         message: `"${selectedKpi.title}" ${scopeLabel}를 삭제했습니다.`,
@@ -1223,287 +1086,12 @@ export function OrgKpiManagementClient({
     }
   }
 
-  async function decideAi(action: 'approve' | 'reject') {
-    if (!aiPreview) return
-    setBusy(true)
-    try {
-      await fetchJson(`/api/ai/request-logs/${aiPreview.requestLogId}/decision`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action,
-          approvedPayload: action === 'approve' ? aiPreview.result : undefined,
-          rejectionReason: action === 'reject' ? 'User rejected org KPI AI result.' : undefined,
-        }),
-      })
-
-      if (action === 'approve') {
-        if (aiAction === 'generate-draft') {
-          const primaryRecommendation = extractKpiAiPreviewRecommendations(aiPreview.result)[0]
-
-          if (primaryRecommendation) {
-            openAiPreviewRecommendationEditor(primaryRecommendation, 0)
-          } else {
-            const nextForm = (() => {
-              const current = form
-              const suggestedTargetValue = String(
-                aiPreview.result.targetValueSuggestion ?? aiPreview.result.targetValueE ?? current.targetValueE
-              )
-
-              return {
-                ...current,
-                kpiCategory: String(aiPreview.result.category ?? current.kpiCategory),
-                kpiName: String(aiPreview.result.title ?? current.kpiName),
-                definition: String(aiPreview.result.definition ?? current.definition),
-                formula: String(aiPreview.result.formula ?? current.formula),
-                targetValueT: String(aiPreview.result.targetValueT ?? suggestedTargetValue),
-                targetValueE: String(aiPreview.result.targetValueE ?? suggestedTargetValue),
-                targetValueS: String(aiPreview.result.targetValueS ?? suggestedTargetValue),
-                unit: String(aiPreview.result.unit ?? current.unit),
-                weight: String(aiPreview.result.weightSuggestion ?? current.weight),
-              }
-            })()
-            openEditorWithForm(nextForm, {
-              recommendationIndex: null,
-              draftSourceLabel: 'AI 대표 추천 기반 초안',
-            })
-          }
-        }
-
-        if (aiAction === 'improve-wording' && selectedKpi) {
-          openEditorWithForm(
-            {
-              ...buildFormFromKpi(selectedKpi),
-              kpiName: String(aiPreview.result.improvedTitle ?? selectedKpi.title),
-              definition: String(aiPreview.result.improvedDefinition ?? selectedKpi.definition ?? ''),
-            },
-            {
-              editingId: selectedKpi.id,
-            }
-          )
-        }
-
-        setBanner({ tone: 'success', message: 'AI 제안을 반영했습니다.' })
-        if (aiAction === 'generate-draft') {
-          return
-        }
-      } else {
-        setBanner({ tone: 'info', message: 'AI 제안을 반려했습니다.' })
-      }
-
-      setAiPreview(null)
-      router.refresh()
-    } catch (error) {
-      setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'AI 처리에 실패했습니다.' })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function saveBusinessPlan() {
-    if (!teamAiContext) return
-
-    setBusy(true)
-    try {
-      await fetchJson('/api/kpi/org/business-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(businessPlanForm),
-      })
-      await loadTeamAiContext(teamAiContext.targetDepartmentId)
-      setBanner({ tone: 'success', message: '본부 사업계획서를 저장했습니다.' })
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message: error instanceof Error ? error.message : '본부 사업계획서 저장에 실패했습니다.',
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function saveJobDescription(scope: JobDescriptionFormState['scope']) {
-    const formState = scope === 'DIVISION' ? divisionJobDescriptionForm : teamJobDescriptionForm
-    const successMessage = scope === 'DIVISION' ? '본부 직무기술서를 저장했습니다.' : '팀 직무기술서를 저장했습니다.'
-
-    setBusy(true)
-    try {
-      await fetchJson('/api/kpi/org/job-description', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formState),
-      })
-      await loadTeamAiContext(scope === 'DIVISION' ? activeScopeDepartmentId : formState.deptId)
-      setBanner({ tone: 'success', message: successMessage })
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message: error instanceof Error ? error.message : '직무기술서 저장에 실패했습니다.',
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function requestTeamRecommendations() {
-    const targetDeptId = selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId
-
-    setBusy(true)
-    try {
-      await fetchJson('/api/kpi/org/team-ai/recommend', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetDeptId,
-          evalYear: pageData.selectedYear,
-        }),
-      })
-      await loadTeamAiContext(targetDeptId)
-      setBanner({ tone: 'success', message: '연계형/독립형 팀 KPI AI 추천을 생성했습니다.' })
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message: error instanceof Error ? error.message : '팀 KPI AI 추천 생성에 실패했습니다.',
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function applyRecommendationAsIs(itemId: string) {
-    setBusy(true)
-    try {
-      const result = await fetchJson<{ createdKpi: { id: string; deptId: string } | null }>(
-        `/api/kpi/org/team-ai/recommendations/${itemId}/decision`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ decision: 'ADOPT_AS_IS' }),
-        }
-      )
-
-      const createdKpi = result.createdKpi
-      if (createdKpi) {
-        commitSelectedKpi(createdKpi.id)
-      }
-
-      await loadTeamAiContext(createdKpi?.deptId ?? activeScopeDepartmentId)
-      setBanner({ tone: 'success', message: 'AI 추천 KPI를 그대로 채택했습니다.' })
-      router.refresh()
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'AI 추천 KPI 채택에 실패했습니다.',
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function dismissRecommendation(itemId: string) {
-    setBusy(true)
-    try {
-      await fetchJson(`/api/kpi/org/team-ai/recommendations/${itemId}/decision`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: 'DISMISSED' }),
-      })
-      await loadTeamAiContext(activeScopeDepartmentId)
-      setBanner({ tone: 'info', message: '추천 KPI를 제외했습니다.' })
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message: error instanceof Error ? error.message : '추천 KPI 제외에 실패했습니다.',
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const closeEditorModal = useCallback(() => {
     setShowForm(false)
     setEditingKpiId(null)
-    setPendingRecommendationDecision(null)
-    setEditorDraftSourceLabel(null)
     setEditorBaselineForm(null)
-    setShowRecommendationSwitchConfirm(false)
-    setPendingAiRecommendationIndex(null)
-    setShowEditorCloseConfirm(false)
     setForm(buildEmptyForm(pageData.selectedYear, activeScopeDepartmentId))
   }, [activeScopeDepartmentId, pageData.selectedYear])
-
-  const closeEditorModalWithRetentionNotice = useCallback(() => {
-    closeEditorModal()
-    if (aiPreviewRecommendations.length) {
-      setShowAiRecommendationRetainedNotice(true)
-    }
-  }, [aiPreviewRecommendations.length, closeEditorModal])
-
-  const applyAiPreviewRecommendationSelection = useCallback((index: number) => {
-    const item = aiPreviewRecommendations[index]
-
-    if (!item) {
-      setBanner({
-        tone: 'error',
-        message: '선택할 수 있는 AI 추천안이 없습니다. 먼저 추천을 생성해 주세요.',
-      })
-      return false
-    }
-
-    const nextForm = buildOrgKpiFormFromAiRecommendation(item, pageData.selectedYear, activeScopeDepartmentId)
-    openEditorWithForm(nextForm, {
-      recommendationIndex: index,
-      draftSourceLabel: buildOrgKpiAiRecommendationSourceLabel(index),
-      bannerMessage: `AI 추천안 ${index + 1}을 초안에 반영했습니다.`,
-    })
-
-    return true
-  }, [activeScopeDepartmentId, aiPreviewRecommendations, openEditorWithForm, pageData.selectedYear])
-
-  const openAiPreviewRecommendationEditor = useCallback((item: KpiAiPreviewRecommendation, index: number) => {
-    const nextForm = buildOrgKpiFormFromAiRecommendation(item, pageData.selectedYear, activeScopeDepartmentId)
-    openEditorWithForm(nextForm, {
-      recommendationIndex: index,
-      draftSourceLabel: buildOrgKpiAiRecommendationSourceLabel(index),
-      bannerMessage: `AI 추천안 ${index + 1}을 초안에 반영했습니다.`,
-    })
-  }, [activeScopeDepartmentId, openEditorWithForm, pageData.selectedYear])
-
-  function handleAiRecommendationSelection(index: number) {
-    if (!aiPreviewRecommendations.length) {
-      setBanner({
-        tone: 'error',
-        message: '선택할 수 있는 AI 추천안이 없습니다. 먼저 추천을 생성해 주세요.',
-      })
-      return
-    }
-
-    if (selectedAiRecommendationIndex === index && showForm) {
-      return
-    }
-
-    if (showForm && editorIsDirty) {
-      setPendingAiRecommendationIndex(index)
-      setShowRecommendationSwitchConfirm(true)
-      return
-    }
-
-    applyAiPreviewRecommendationSelection(index)
-  }
-
-  function confirmAiRecommendationSwitch() {
-    if (pendingAiRecommendationIndex === null) return
-    applyAiPreviewRecommendationSelection(pendingAiRecommendationIndex)
-  }
-
-  function requestCloseEditorModal() {
-    if (editorIsDirty) {
-      setShowEditorCloseConfirm(true)
-      return
-    }
-
-    closeEditorModalWithRetentionNotice()
-  }
 
   const toggleMapNodeExpansion = useCallback((kpiId: string) => {
     setExpandedMapNodeIds((current) =>
@@ -1514,62 +1102,12 @@ export function OrgKpiManagementClient({
   const openDirectKpiCreate = useCallback(() => {
     const nextForm = buildEmptyForm(pageData.selectedYear, activeScopeDepartmentId)
     openEditorWithForm(nextForm, {
-      recommendationIndex: null,
-      draftSourceLabel: null,
       bannerMessage:
         pageData.selectedScope === 'division'
           ? '직접 본부 KPI를 작성하는 편집 모드입니다.'
           : '직접 팀 KPI를 작성하는 편집 모드입니다.',
     })
   }, [activeScopeDepartmentId, openEditorWithForm, pageData.selectedScope, pageData.selectedYear])
-
-  function openRecommendationEditor(
-    item: OrgKpiTeamRecommendationItemView,
-    decision: RecommendationDecisionMode
-  ) {
-    openEditorWithForm(buildFormFromTeamRecommendation(item, pageData.selectedYear, activeScopeDepartmentId), {
-      pendingDecision: { itemId: item.id, decision },
-      draftSourceLabel: decision === 'REFERENCED_NEW' ? 'AI 추천 참고 신규 초안' : 'AI 추천 수정 채택 초안',
-      bannerMessage:
-        decision === 'REFERENCED_NEW'
-          ? 'AI 추천을 참고해 새 팀 KPI를 작성합니다.'
-          : 'AI 추천을 수정 후 채택하는 편집 모드입니다.',
-    })
-  }
-
-  async function runTeamAiReview() {
-    const targetDeptId = selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId
-    const targetOrgKpiIds = list
-      .filter((item) => item.departmentId === targetDeptId)
-      .map((item) => item.id)
-
-    if (!targetOrgKpiIds.length) {
-      setBanner({ tone: 'error', message: 'AI 재검토를 실행할 팀 KPI가 없습니다.' })
-      return
-    }
-
-    setBusy(true)
-    try {
-      await fetchJson('/api/kpi/org/team-ai/review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetDeptId,
-          evalYear: pageData.selectedYear,
-          orgKpiIds: targetOrgKpiIds,
-        }),
-      })
-      await loadTeamAiContext(targetDeptId)
-      setBanner({ tone: 'success', message: '팀 KPI AI 재검토 결과를 저장했습니다.' })
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message: error instanceof Error ? error.message : '팀 KPI AI 재검토에 실패했습니다.',
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
 
   function handleScopeSwitch(nextScope: OrgKpiScope) {
     if (nextScope === pageData.selectedScope) return
@@ -1846,120 +1384,6 @@ export function OrgKpiManagementClient({
         </div>
       ) : null}
 
-      {tab === 'ai' ? (
-        <div className="space-y-6">
-          <div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="space-y-3">
-                {(Object.keys(AI_LABELS) as AiAction[]).map((action) => (
-                  <button key={action} type="button" onClick={() => void requestAi(action)} disabled={busy || !pageData.permissions.canUseAi || goalEditLocked} className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-left transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">
-                    <div className="flex items-center gap-2 font-semibold text-slate-900"><Bot className="h-4 w-4 text-slate-500" />{AI_LABELS[action]}</div>
-                    <p className="mt-2 text-sm text-slate-500">결과는 preview 후 승인해야만 반영됩니다.</p>
-                  </button>
-                ))}
-              </div>
-              <div className="mt-6">
-                <h3 className="text-sm font-semibold text-slate-900">AI 사용 로그</h3>
-                <div className="mt-3 space-y-3">
-                  {pageData.aiLogs.length ? pageData.aiLogs.map((log) => (
-                    <div key={log.id} className="rounded-2xl border border-slate-200 px-4 py-3">
-                      <div className="font-medium text-slate-900">{log.summary}</div>
-                      <div className="mt-1 text-xs text-slate-500">{formatDateTime(log.createdAt)} · {log.requesterName} · {log.requestStatus} · 승인 {log.approvalStatus}</div>
-                    </div>
-                  )) : <EmptyState title="AI 로그가 없습니다" description="AI 사용 이력이 여기에 남습니다." compact />}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <KpiAiPreviewPanel
-                preview={
-                  aiPreview
-                    ? {
-                        action: aiAction,
-                        actionLabel: AI_LABELS[aiAction],
-                        source: aiPreview.source,
-                        fallbackReason: aiPreview.fallbackReason,
-                        result: aiPreview.result,
-                      }
-                    : null
-                }
-                comparisons={
-                  aiPreview
-                    ? buildOrgAiPreviewComparisons({
-                        action: aiAction,
-                        result: aiPreview.result,
-                        selectedKpi,
-                        form,
-                      })
-                    : []
-                }
-                emptyTitle="AI 결과가 아직 없습니다"
-                emptyDescription="AI 보조 기능을 실행하면 이 영역에 읽기 쉬운 미리보기가 표시됩니다."
-                onReject={aiPreview ? () => void decideAi('reject') : undefined}
-                onApprove={aiPreview ? () => void decideAi('approve') : undefined}
-                rejectLabel="반려"
-                approveLabel="적용"
-                onRetry={aiPreview ? () => void requestAi(aiAction) : undefined}
-                retryLabel="다시 시도"
-                decisionBusy={busy}
-                onSelectRecommendation={
-                  aiPreview && aiAction === 'generate-draft'
-                    ? (_item, index) => handleAiRecommendationSelection(index)
-                    : undefined
-                }
-                selectedRecommendationIndex={aiAction === 'generate-draft' ? selectedAiRecommendationIndex : null}
-                recommendationActionLabel="이 추천안으로 작성"
-                isRecommendationDraftOpen={showForm}
-              />
-            </div>
-          </div>
-
-          {showAiRecommendationRetainedNotice && aiPreviewRecommendations.length ? (
-            <InfoNoticeCard
-              title="AI 추천 결과가 유지되고 있습니다."
-              description="팝업을 닫아도 추천안은 사라지지 않습니다. 원하는 추천안을 다시 선택해 초안으로 불러올 수 있습니다."
-            />
-          ) : null}
-
-          {!isReadOnlyMemberView && pageData.selectedScope === 'team' ? (
-            <OrgKpiTeamAiWorkspace
-              selectedDepartmentId={selectedDepartmentId}
-              context={teamAiContext}
-              runtimeState={teamAiRuntimeState}
-              loading={teamAiLoading}
-              busy={busy}
-              canCreateKpi={pageData.permissions.canCreate && !goalEditLocked}
-              canRunReviewAction={teamAiContext?.canRunReview === true && hasReviewableTeamKpis}
-              businessPlanForm={businessPlanForm}
-              divisionJobDescriptionForm={divisionJobDescriptionForm}
-              teamJobDescriptionForm={teamJobDescriptionForm}
-              onBusinessPlanFormChange={setBusinessPlanForm}
-              onDivisionJobDescriptionFormChange={setDivisionJobDescriptionForm}
-              onTeamJobDescriptionFormChange={setTeamJobDescriptionForm}
-              onSaveBusinessPlan={() => void saveBusinessPlan()}
-              onSaveDivisionJobDescription={() => void saveJobDescription('DIVISION')}
-              onSaveTeamJobDescription={() => void saveJobDescription('TEAM')}
-              onRequestRecommendation={() => void requestTeamRecommendations()}
-              onAdoptRecommendationAsIs={(itemId) => void applyRecommendationAsIs(itemId)}
-              onDismissRecommendation={(itemId) => void dismissRecommendation(itemId)}
-              onOpenRecommendationEditor={openRecommendationEditor}
-              onRetryRuntimeFallback={() => void loadTeamAiContext(selectedDepartmentId)}
-              onContinueWithoutAi={() => setTab('list')}
-              onCreateKpi={openDirectKpiCreate}
-              onRunReview={() => void runTeamAiReview()}
-            />
-          ) : !isReadOnlyMemberView ? (
-            <InfoNoticeCard
-              title="팀 KPI AI 추천은 팀 KPI 탭에서 사용할 수 있습니다."
-              description="본부 KPI에서는 상위 조직 KPI 초안과 문장 개선만 사용하고, 팀 실행 KPI 추천/검토는 팀 KPI 탭으로 이동해 진행해 주세요."
-              actionLabel="팀 KPI로 이동"
-              onAction={() => handleScopeSwitch('team')}
-            />
-          ) : null}
-        </div>
-      ) : null}
-
       <OrgKpiQuickLinks showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'} readOnly={isReadOnlyMemberView} />
 
       {showForm ? (
@@ -1971,39 +1395,10 @@ export function OrgKpiManagementClient({
           editingKpiId={editingKpiId}
           form={form}
           onChange={setForm}
-          onClose={requestCloseEditorModal}
+          onClose={closeEditorModal}
           onSubmit={() => void saveKpi()}
           busy={busy}
           editing={Boolean(editingKpiId)}
-          draftSourceLabel={editorRecommendationStatusLabel}
-          recommendationOptions={canUseAiRecommendationDraftOptions ? aiPreviewRecommendations : []}
-          selectedRecommendationIndex={canUseAiRecommendationDraftOptions ? selectedAiRecommendationIndex : null}
-          onSelectRecommendation={canUseAiRecommendationDraftOptions ? handleAiRecommendationSelection : undefined}
-        />
-      ) : null}
-      {showRecommendationSwitchConfirm ? (
-        <ConfirmActionDialog
-          title="다른 추천안으로 변경하시겠습니까?"
-          description="현재 수정 중인 내용이 있습니다. 다른 추천안을 선택하면 지금 입력한 내용이 새 추천안으로 덮어써집니다."
-          helperText="저장하지 않은 변경 사항은 복구할 수 없습니다."
-          cancelLabel="취소"
-          confirmLabel="추천안 변경"
-          onCancel={() => {
-            setShowRecommendationSwitchConfirm(false)
-            setPendingAiRecommendationIndex(null)
-          }}
-          onConfirm={confirmAiRecommendationSwitch}
-        />
-      ) : null}
-      {showEditorCloseConfirm ? (
-        <ConfirmActionDialog
-          title="작성 중인 초안을 닫으시겠습니까?"
-          description="현재 팝업의 입력 내용은 닫히지만, AI 추천 결과는 화면에 그대로 유지됩니다."
-          helperText="다시 열어서 같은 추천안 또는 다른 추천안을 선택할 수 있습니다."
-          cancelLabel="계속 작성"
-          confirmLabel="닫기"
-          onCancel={() => setShowEditorCloseConfirm(false)}
-          onConfirm={closeEditorModalWithRetentionNotice}
         />
       ) : null}
       {showBulkUpload ? <OrgKpiBulkUploadModal scope={pageData.selectedScope} scopeLabel={scopeLabel} departments={pageData.departments} selectedYear={pageData.selectedYear} defaultDepartmentId={selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId} onClose={() => setShowBulkUpload(false)} onUploaded={(message, tone = 'success') => { setBanner({ tone, message }); router.refresh() }} /> : null}
@@ -2691,46 +2086,6 @@ function InfoNoticeCard({
           {actionLabel}
         </button>
       ) : null}
-    </div>
-  )
-}
-
-function ConfirmActionDialog({
-  title,
-  description,
-  helperText,
-  cancelLabel,
-  confirmLabel,
-  onCancel,
-  onConfirm,
-}: {
-  title: string
-  description: string
-  helperText?: string
-  cancelLabel: string
-  confirmLabel: string
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
-        <div className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-          <p className="text-sm leading-6 text-slate-600">{description}</p>
-          {helperText ? <p className="text-xs leading-5 text-slate-500">{helperText}</p> : null}
-        </div>
-        <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <ActionButton label={cancelLabel} icon={<Archive className="h-4 w-4" />} onClick={onCancel} disabled={false} />
-          <ActionButton
-            label={confirmLabel}
-            icon={<FilePenLine className="h-4 w-4" />}
-            onClick={onConfirm}
-            disabled={false}
-            primary
-          />
-        </div>
-      </div>
     </div>
   )
 }
@@ -3628,10 +2983,6 @@ function EditorModal({
   editing,
   parentGoalOptions,
   editingKpiId,
-  draftSourceLabel,
-  recommendationOptions,
-  selectedRecommendationIndex,
-  onSelectRecommendation,
 }: {
   scope: OrgKpiScope
   scopeLabel: string
@@ -3644,15 +2995,10 @@ function EditorModal({
   editing: boolean
   parentGoalOptions: OrgKpiPageData['parentGoalOptions']
   editingKpiId?: string | null
-  draftSourceLabel?: string | null
-  recommendationOptions?: KpiAiPreviewRecommendation[]
-  selectedRecommendationIndex?: number | null
-  onSelectRecommendation?: (index: number) => void
 }) {
   const filteredParentOptions = parentGoalOptions.filter(
     (option) => option.evalYear === Number(form.evalYear || new Date().getFullYear()) && option.id !== editingKpiId
   )
-  const canChooseRecommendation = Boolean(recommendationOptions?.length && onSelectRecommendation)
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/40 px-4 py-8 backdrop-blur-sm">
@@ -3671,53 +3017,6 @@ function EditorModal({
             닫기
           </button>
         </div>
-
-        {canChooseRecommendation ? (
-          <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-slate-900">추천안 선택</label>
-                <p className="text-sm leading-6 text-slate-600">
-                  AI 추천안 중 하나를 선택해 초안에 반영한 뒤 필요한 내용을 수정해 저장하세요.
-                </p>
-                <select
-                  value={selectedRecommendationIndex !== null && selectedRecommendationIndex !== undefined ? String(selectedRecommendationIndex) : ''}
-                  onChange={(event) => {
-                    if (!event.target.value) return
-                    onSelectRecommendation?.(Number(event.target.value))
-                  }}
-                  className="w-full rounded-2xl border border-blue-200 bg-white px-3 py-2.5 text-sm"
-                >
-                  <option value="">추천안을 선택해 주세요</option>
-                  {recommendationOptions?.map((_, index) => (
-                    <option key={`ai-recommendation-${index}`} value={String(index)}>
-                      {buildOrgKpiAiRecommendationOptionLabel(index)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {draftSourceLabel ? (
-                <div className="space-y-2">
-                  <div className="inline-flex rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700">
-                    {draftSourceLabel}
-                  </div>
-                  <p className="max-w-xs text-xs leading-5 text-slate-600">
-                    현재 선택한 추천안을 기준으로 초안이 채워져 있습니다. 저장 전까지 자유롭게 수정할 수 있습니다.
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : draftSourceLabel ? (
-          <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
-            <div className="inline-flex rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700">
-              {draftSourceLabel}
-            </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              현재 선택한 추천안을 기준으로 초안이 채워져 있습니다. 저장 전까지 자유롭게 수정할 수 있습니다.
-            </p>
-          </div>
-        ) : null}
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <Field label={scope === 'division' ? '본부·실 조직' : '팀 조직'}>

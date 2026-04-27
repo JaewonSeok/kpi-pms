@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict'
+﻿import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { EvalCycleSchema, UpdateEvalCycleSchema } from '../src/lib/validations'
@@ -18,11 +18,11 @@ async function run(name: string, fn: () => void | Promise<void>) {
 }
 
 async function main() {
-  await run('eval cycle schemas accept goal edit mode values for 운영 읽기 모드 설정', () => {
+  await run('eval cycle schemas accept goal edit mode values for goal edit mode settings', () => {
     const createParsed = EvalCycleSchema.safeParse({
       orgId: 'org-1',
       evalYear: 2026,
-      cycleName: '2026 상반기',
+      cycleName: '2026 H1',
       goalEditMode: 'CHECKIN_ONLY',
     })
     const updateParsed = UpdateEvalCycleSchema.safeParse({
@@ -91,7 +91,7 @@ async function main() {
     assert.equal(clientSource.includes('current weight'), false)
     assert.equal(clientSource.includes('orgLineage'), true)
     assert.equal(clientSource.includes('submitLabel'), true)
-    assert.equal(clientSource.includes('수정 후 승인 재요청'), true)
+    assert.equal(clientSource.includes("weightApprovalStatus: 'REQUESTED'"), false)
     assert.equal(bulkRoute.includes('PERSONAL_KPI_BULK_UPDATED'), true)
     assert.equal(workflowRoute.includes("weightApprovalStatus: 'REQUESTED'"), true)
   })
@@ -132,10 +132,12 @@ async function main() {
     assert.equal(clientSource.includes('onAi: (action: AiAction) => void'), false)
     assert.equal(clientSource.includes('onAi={handleAiAction}'), false)
     assert.equal(clientSource.includes('const handleAiAction = useCallback'), false)
-    assert.equal(clientSource.includes("tab === 'ai' ? ("), true)
+    assert.equal(clientSource.includes("tab === 'ai' ? ("), false)
     assert.equal(clientSource.includes('function OrgKpiScopeSidebar'), false)
-    assert.equal(clientSource.includes("const TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history', 'ai']"), true)
+    assert.equal(clientSource.includes("const TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history']"), true)
     assert.equal(clientSource.includes("const MEMBER_TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history']"), true)
+    assert.equal(clientSource.includes('KpiAiPreviewPanel'), false)
+    assert.equal(clientSource.includes('OrgKpiTeamAiWorkspace'), false)
     assert.equal(clientSource.includes('하위 KPI 연결 비율'), false)
     assert.equal(clientSource.includes('월간 실적 반영 비율'), false)
     assert.equal(clientSource.includes('function MetricCard'), false)
@@ -144,6 +146,10 @@ async function main() {
     assert.equal(loaderSource.includes('monthlyCoverageRate'), false)
     assert.equal(loaderSource.includes('availableYears: number[]'), false)
     assert.equal(loaderSource.includes('canLock: boolean'), false)
+    assert.equal(loaderSource.includes('aiLogs:'), false)
+    assert.equal(loaderSource.includes('teamAi:'), false)
+    assert.equal(loaderSource.includes('teamAiRuntimeState'), false)
+    assert.equal(loaderSource.includes('canUseAi: boolean'), false)
   })
 
   await run('org KPI workspace supports bulk edit and export mode selection routes', () => {
@@ -178,3 +184,4 @@ main().catch((error) => {
   console.error(error)
   process.exit(1)
 })
+

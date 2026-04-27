@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
 import 'dotenv/config'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -556,7 +556,7 @@ async function main() {
     })
   })
 
-  await run('org KPI page stays ready when only AI log loading fails', async () => {
+  await run('org KPI page stays ready without reviving the removed AI tab loader path', async () => {
     await withStubbedOperationalData(
       {
         orgKpiFindMany: async (args?: { select?: { evalYear?: boolean } }) => {
@@ -617,8 +617,8 @@ async function main() {
           })
 
           assert.equal(data.state, 'ready')
-          assert.equal(data.aiLogs.length, 0)
-          assert.equal(data.alerts?.some((item) => item.title === '조직 KPI AI 보조'), true)
+          assert.equal(Array.isArray(data.list), true)
+          assert.equal(data.alerts?.some((item) => item.title === '조직 KPI AI 보조'), false)
         } finally {
           console.error = originalConsoleError
         }
