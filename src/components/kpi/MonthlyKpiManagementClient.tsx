@@ -27,7 +27,7 @@ import {
   type MonthlySubmitValidationResult,
 } from '@/lib/monthly-submit-validation'
 import { isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
-import { formatCountWithUnit, formatRateBaseCopy } from '@/lib/metric-copy'
+import { formatCountWithUnit } from '@/lib/metric-copy'
 import type {
   MonthlyAttachmentViewModel,
   MonthlyPageData,
@@ -1386,21 +1386,37 @@ export function MonthlyKpiManagementClient({
         </div>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="이번 달 KPI" value={formatCountWithUnit(pageData.summary.totalKpiCount, '개')} helper="선택한 월에 관리 중인 개인 KPI 수" />
-        <SummaryCard label="평균 달성률" value={formatPercent(pageData.summary.averageAchievementRate)} helper={formatRateBaseCopy('선택한 월 KPI')} />
-        <SummaryCard label="제출 완료 KPI" value={formatCountWithUnit(pageData.summary.submittedCount, '개')} helper={formatRateBaseCopy('전체 KPI')} />
-        <SummaryCard label="미입력 KPI" value={formatCountWithUnit(pageData.summary.missingCount, '개')} helper="아직 월간 기록이 없는 KPI 수" />
-        <SummaryCard label="위험 신호 KPI" value={formatCountWithUnit(pageData.summary.riskyCount, '개')} helper="리스크 플래그가 있는 KPI 수" />
-        <SummaryCard label="상사 리뷰 대기 KPI" value={formatCountWithUnit(pageData.summary.reviewPendingCount, '개')} helper="제출 후 리뷰 대기 상태인 KPI 수" />
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm md:col-span-2">
-          <div className="text-sm font-semibold text-blue-900">다음 행동</div>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <ActionRow label="미입력 KPI 채우기" done={pageData.summary.missingCount === 0} onClick={() => setTab('entry')} />
-            <ActionRow label="위험 KPI 코멘트 보완" done={pageData.summary.riskyCount === 0} onClick={() => setTab('entry')} />
-            <ActionRow label="증빙 항목 추가" done={pageData.summary.attachmentCount > 0} onClick={() => setTab('evidence')} />
-            <ActionRow label="상사 리뷰 확인" done={pageData.summary.reviewPendingCount === 0} onClick={() => setTab('review')} />
+      <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-blue-900">다음 행동</div>
+            <p className="mt-1 text-sm text-blue-800/80">
+              제출 차단 사유를 해소하고 {monthContext.fullLabel} 입력을 마무리하는 데 필요한 항목만 바로 확인하세요.
+            </p>
           </div>
+          <div className="flex flex-wrap gap-2">
+            <CompactActionChip
+              label="미입력 KPI"
+              value={formatCountWithUnit(pageData.summary.missingCount, '개')}
+              tone={pageData.summary.missingCount > 0 ? 'danger' : 'neutral'}
+            />
+            <CompactActionChip
+              label="위험 신호 KPI"
+              value={formatCountWithUnit(pageData.summary.riskyCount, '개')}
+              tone={pageData.summary.riskyCount > 0 ? 'danger' : 'neutral'}
+            />
+            <CompactActionChip
+              label="상사 리뷰 대기 KPI"
+              value={formatCountWithUnit(pageData.summary.reviewPendingCount, '개')}
+              tone={pageData.summary.reviewPendingCount > 0 ? 'warning' : 'neutral'}
+            />
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <ActionRow label="미입력 KPI 채우기" done={pageData.summary.missingCount === 0} onClick={() => setTab('entry')} />
+          <ActionRow label="위험 KPI 코멘트 보완" done={pageData.summary.riskyCount === 0} onClick={() => setTab('entry')} />
+          <ActionRow label="증빙 항목 추가" done={pageData.summary.attachmentCount > 0} onClick={() => setTab('evidence')} />
+          <ActionRow label="상사 리뷰 확인" done={pageData.summary.reviewPendingCount === 0} onClick={() => setTab('review')} />
         </div>
       </section>
 
@@ -2374,12 +2390,26 @@ function FilterSelect({
   )
 }
 
-function SummaryCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
+function CompactActionChip({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: string
+  tone: 'neutral' | 'warning' | 'danger'
+}) {
+  const toneClass =
+    tone === 'danger'
+      ? 'border-rose-200 bg-rose-100 text-rose-800'
+      : tone === 'warning'
+        ? 'border-amber-200 bg-amber-100 text-amber-800'
+        : 'border-slate-200 bg-white text-slate-700'
+
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="text-sm text-slate-500">{label}</div>
-      <div className="mt-3 text-2xl font-bold text-slate-900">{value}</div>
-      {helper ? <div className="mt-2 text-xs text-slate-500">{helper}</div> : null}
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${toneClass}`}>
+      <span>{label}</span>
+      <span>{value}</span>
     </div>
   )
 }

@@ -53,6 +53,22 @@ async function main() {
     assert.equal(source.includes('{monthContext.fullLabel}에 입력할 KPI를 선택해 주세요.'), true)
   })
 
+  await run('monthly KPI client removes the large dashboard summary cards and keeps compact next actions', () => {
+    const source = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
+    assert.equal(source.includes('function SummaryCard('), false)
+    assert.equal(source.includes('<SummaryCard label="이번 달 KPI"'), false)
+    assert.equal(source.includes('<SummaryCard label="평균 달성률"'), false)
+    assert.equal(source.includes('<SummaryCard label="제출 완료 KPI"'), false)
+    assert.equal(source.includes('<SummaryCard label="미입력 KPI"'), false)
+    assert.equal(source.includes('<SummaryCard label="위험 신호 KPI"'), false)
+    assert.equal(source.includes('<SummaryCard label="상사 리뷰 대기 KPI"'), false)
+    assert.equal(source.includes('function CompactActionChip('), true)
+    assert.equal(source.includes('다음 행동'), true)
+    assert.equal(source.includes('미입력 KPI'), true)
+    assert.equal(source.includes('위험 신호 KPI'), true)
+    assert.equal(source.includes('상사 리뷰 대기 KPI'), true)
+  })
+
   console.log('Monthly month UX tests completed')
 }
 
