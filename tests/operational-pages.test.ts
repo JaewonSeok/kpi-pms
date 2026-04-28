@@ -53,6 +53,8 @@ type OperationalSnapshot = {
   departmentFindMany: PrismaDelegateMethod
   departmentFindUnique: PrismaDelegateMethod
   evalCycleFindMany: PrismaDelegateMethod
+  evalCycleFindFirst: PrismaDelegateMethod
+  orgKpiFindFirst: PrismaDelegateMethod
   orgKpiFindMany: PrismaDelegateMethod
   personalKpiFindMany: PrismaDelegateMethod
   auditLogFindMany: PrismaDelegateMethod
@@ -72,6 +74,8 @@ function captureSnapshot(): OperationalSnapshot {
     departmentFindMany: prismaAny.department.findMany,
     departmentFindUnique: prismaAny.department.findUnique,
     evalCycleFindMany: prismaAny.evalCycle.findMany,
+    evalCycleFindFirst: prismaAny.evalCycle.findFirst,
+    orgKpiFindFirst: prismaAny.orgKpi.findFirst,
     orgKpiFindMany: prismaAny.orgKpi.findMany,
     personalKpiFindMany: prismaAny.personalKpi.findMany,
     auditLogFindMany: prismaAny.auditLog.findMany,
@@ -91,6 +95,8 @@ function restoreSnapshot(snapshot: OperationalSnapshot) {
   prismaAny.department.findMany = snapshot.departmentFindMany
   prismaAny.department.findUnique = snapshot.departmentFindUnique
   prismaAny.evalCycle.findMany = snapshot.evalCycleFindMany
+  prismaAny.evalCycle.findFirst = snapshot.evalCycleFindFirst
+  prismaAny.orgKpi.findFirst = snapshot.orgKpiFindFirst
   prismaAny.orgKpi.findMany = snapshot.orgKpiFindMany
   prismaAny.personalKpi.findMany = snapshot.personalKpiFindMany
   prismaAny.auditLog.findMany = snapshot.auditLogFindMany
@@ -200,15 +206,17 @@ async function withStubbedOperationalData(
         organization: { name: 'RSUPPORT' },
       },
     ])
+  prismaAny.evalCycle.findFirst =
+    overrides.evalCycleFindFirst ??
+    (async () => null)
+
+  prismaAny.orgKpi.findFirst =
+    overrides.orgKpiFindFirst ??
+    (async () => null)
 
   prismaAny.orgKpi.findMany =
     overrides.orgKpiFindMany ??
-    (async (args?: { select?: { evalYear?: boolean } }) => {
-      if (args?.select?.evalYear) {
-        return []
-      }
-      return []
-    })
+    (async () => [])
 
   let personalKpiFindManyCallCount = 0
   prismaAny.personalKpi.findMany =
@@ -622,6 +630,90 @@ async function main() {
         } finally {
           console.error = originalConsoleError
         }
+      }
+    )
+  })
+
+  await run('org KPI page overlaps latest-year, KPI, cycle-lock, and audit loading instead of serializing the whole route', async () => {
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+    await withStubbedOperationalData(
+      {
+        orgKpiFindFirst: async () => {
+          await delay(70)
+          return { evalYear: 2026 }
+        },
+        orgKpiFindMany: async () => {
+          await delay(140)
+          return [
+            {
+              id: 'org-kpi-1',
+              kpiName: '핵심 고객 유지율 개선',
+              evalYear: 2026,
+              deptId: 'dept-1',
+              kpiCategory: '고객 성공',
+              kpiType: 'QUALITATIVE',
+              definition: '핵심 고객 유지율을 높입니다.',
+              formula: null,
+              targetValue: null,
+              targetValueT: null,
+              targetValueE: null,
+              targetValueS: null,
+              unit: '%',
+              weight: 40,
+              difficulty: 'MEDIUM',
+              status: 'DRAFT',
+              updatedAt: new Date('2026-03-01T00:00:00.000Z'),
+              tags: [],
+              copyMetadata: null,
+              copiedFromOrgKpiId: null,
+              copiedFromOrgKpi: null,
+              parentOrgKpiId: null,
+              parentOrgKpi: null,
+              childOrgKpis: [],
+              department: {
+                id: 'dept-1',
+                deptName: '경영지원팀',
+                deptCode: 'MGMT',
+                parentDeptId: null,
+                organization: {
+                  id: 'org-1',
+                  name: 'RSUPPORT',
+                },
+              },
+              personalKpis: [],
+              _count: {
+                personalKpis: 0,
+              },
+            },
+          ]
+        },
+        evalCycleFindFirst: async () => {
+          await delay(140)
+          return null
+        },
+        auditLogFindMany: async () => {
+          await delay(140)
+          return []
+        },
+      },
+      async () => {
+        const startedAt = Date.now()
+        const data = await getOrgKpiPageData({
+          userId: 'emp-1',
+          role: 'ROLE_MEMBER',
+          deptId: 'dept-1',
+          deptName: '경영지원팀',
+          accessibleDepartmentIds: ['dept-1'],
+          userName: '홍길동',
+        })
+        const durationMs = Date.now() - startedAt
+
+        assert.equal(data.state, 'ready')
+        assert.ok(
+          durationMs < 320,
+          `expected overlapped org KPI loader stages to finish under 320ms in the stubbed scenario, got ${durationMs}ms`
+        )
       }
     )
   })

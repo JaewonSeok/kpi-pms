@@ -99,6 +99,8 @@ async function main() {
   await run('org KPI loader and client reflect read-only gating, team approval state, and tag context in the live workspace', () => {
     const loaderSource = read('src/server/org-kpi-page.ts')
     const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
+    const protectedSessionSource = read('src/server/auth/protected-page.ts')
+    const authSource = read('src/lib/auth.ts')
 
     assert.equal(loaderSource.includes("title: '현재 목표는 읽기 전용 모드입니다.'"), true)
     assert.equal(loaderSource.includes('canCreate: goalEditLocked ? false : canManage'), true)
@@ -129,6 +131,13 @@ async function main() {
     assert.equal(clientSource.includes('OrgKpiDepartmentFilterButtons'), false)
     assert.equal(clientSource.includes('ActionButton label="잠금"'), false)
     assert.equal(clientSource.includes('ActionButton label="이력 보기"'), false)
+    assert.equal(clientSource.includes('개인 KPI 보기'), false)
+    assert.equal(clientSource.includes('월간 실적 보기'), false)
+    assert.equal(clientSource.includes('평가 결과 보기'), false)
+    assert.equal(clientSource.includes('AI 평가 보조'), false)
+    assert.equal(clientSource.includes('function OrgKpiQuickLinks'), true)
+    assert.equal(clientSource.includes('관련 바로가기'), true)
+    assert.equal(clientSource.includes('AI 보조 작성'), true)
     assert.equal(clientSource.includes("(action: 'SUBMIT' | 'LOCK' | 'REOPEN')"), false)
     assert.equal(clientSource.includes("tab === 'map' || tab === 'list'"), true)
     assert.equal(clientSource.includes('xl:grid-cols-[minmax(0,1fr)_440px]'), true)
@@ -153,6 +162,9 @@ async function main() {
     assert.equal(loaderSource.includes('riskFlags: string[]'), false)
     assert.equal(loaderSource.includes("riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'"), false)
     assert.equal(loaderSource.includes('availableYears: number[]'), false)
+    assert.equal(loaderSource.includes("const latestKpiYearRecord = await measure('latestKpiYear'"), true)
+    assert.equal(loaderSource.includes("const [goalEditLockedRecord, kpis, auditLogs] = await Promise.all(["), true)
+    assert.equal(loaderSource.includes("distinct: ['evalYear']"), false)
     assert.equal(loaderSource.includes('canLock: boolean'), false)
     assert.equal(loaderSource.includes('aiLogs:'), false)
     assert.equal(loaderSource.includes('teamAi:'), false)
@@ -165,6 +177,10 @@ async function main() {
     assert.equal(clientSource.includes('실적 입력 필요'), false)
     assert.equal(clientSource.includes('function RelationBadge'), false)
     assert.equal(clientSource.includes('RelationBadge tone='), false)
+    assert.equal(protectedSessionSource.includes('const getCachedServerSession = cache(() => getServerSession(authOptions))'), true)
+    assert.equal(protectedSessionSource.includes('const session = await getCachedServerSession()'), true)
+    assert.equal(authSource.includes('const loadDepartmentScopeCached = unstable_cache(loadDepartmentScope'), true)
+    assert.equal(authSource.includes('const loadAllDepartmentIdsCached = unstable_cache(loadAllDepartmentIds'), true)
   })
 
   await run('org KPI workspace supports bulk edit and export mode selection routes', () => {

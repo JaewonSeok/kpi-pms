@@ -20,7 +20,19 @@ export default async function MainLayout({
     role: session.user.role,
   })
 
+  const shellSession = {
+    user: {
+      name: session.user.name,
+      email: session.user.email,
+      image: session.user.image,
+      role: session.user.role,
+      empId: session.user.empId,
+      deptName: session.user.deptName,
+      masterLogin: session.user.masterLogin ?? null,
+    },
+  }
+
   return (
-    <MainShell session={session}>{children}</MainShell>
+    <MainShell session={shellSession}>{children}</MainShell>
   )
 }

@@ -633,6 +633,14 @@ export async function getOrgKpiPageData(params: {
   }))
 
   try {
+    const startedAt = Date.now()
+    const timings: Record<string, number> = {}
+    const measure = async <T,>(label: string, task: () => Promise<T>) => {
+      const taskStartedAt = Date.now()
+      const result = await task()
+      timings[label] = Date.now() - taskStartedAt
+      return result
+    }
     const alerts: OrgKpiPageAlert[] = []
     const scopeDepartmentIds = getEffectiveScopeDepartmentIds({
       role: params.role,
@@ -641,25 +649,29 @@ export async function getOrgKpiPageData(params: {
     })
 
     const [departments, employees] = await Promise.all([
-      prisma.department.findMany({
-        include: {
-          organization: true,
-        },
-        orderBy: [{ deptName: 'asc' }],
-      }),
-      prisma.employee.findMany({
-        where: {
-          ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
-        },
-        select: {
-          id: true,
-          empName: true,
-          deptId: true,
-          position: true,
-          role: true,
-          status: true,
-        },
-      }),
+      measure('departments', () =>
+        prisma.department.findMany({
+          include: {
+            organization: true,
+          },
+          orderBy: [{ deptName: 'asc' }],
+        })
+      ),
+      measure('employees', () =>
+        prisma.employee.findMany({
+          where: {
+            ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
+          },
+          select: {
+            id: true,
+            empName: true,
+            deptId: true,
+            position: true,
+            role: true,
+            status: true,
+          },
+        })
+      ),
     ])
 
     if (!departments.length) {
@@ -709,99 +721,126 @@ export async function getOrgKpiPageData(params: {
       team: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'team'),
     } satisfies Record<OrgKpiScope, DepartmentLite[]>
 
-    const availableYearsRaw = await prisma.orgKpi.findMany({
-      where: {
-        ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
-      },
-      select: { evalYear: true },
-      distinct: ['evalYear'],
-      orderBy: { evalYear: 'desc' },
-    })
-
     const currentYear = new Date().getFullYear()
-    const availableYears = Array.from(
-      new Set([currentYear, ...availableYearsRaw.map((item) => item.evalYear)])
-    ).sort((left, right) => right - left)
+    const latestKpiYearRecord = await measure('latestKpiYear', () =>
+      prisma.orgKpi.findFirst({
+        where: {
+          ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
+        },
+        select: {
+          evalYear: true,
+        },
+        orderBy: {
+          evalYear: 'desc',
+        },
+      })
+    )
 
-    const selectedYear = params.year && availableYears.includes(params.year) ? params.year : availableYears[0]
+    const selectedYear =
+      typeof params.year === 'number' && Number.isFinite(params.year)
+        ? params.year
+        : latestKpiYearRecord?.evalYear ?? currentYear
     const selectedOrgId =
       departments.find((department) => department.id === params.deptId)?.organization.id ??
       departments[0]?.organization.id
-    const cycleRecords = selectedOrgId
-      ? await prisma.evalCycle.findMany({
-          where: {
-            orgId: selectedOrgId,
-            evalYear: selectedYear,
-          },
-          orderBy: [{ createdAt: 'desc' }],
-          take: 5,
-        })
-      : []
-    const goalEditLocked = cycleRecords.some((cycle) => cycle.goalEditMode === 'CHECKIN_ONLY')
-
-    const kpis = await prisma.orgKpi.findMany({
-      where: {
-        evalYear: selectedYear,
-        ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
-      },
-      include: {
-        department: {
-          include: {
-            organization: true,
-          },
-        },
-        personalKpis: {
-          include: {
-            employee: {
+    const [goalEditLockedRecord, kpis, auditLogs] = await Promise.all([
+      selectedOrgId
+        ? measure('goalEditLock', () =>
+            prisma.evalCycle.findFirst({
+              where: {
+                orgId: selectedOrgId,
+                evalYear: selectedYear,
+                goalEditMode: 'CHECKIN_ONLY',
+              },
               select: {
                 id: true,
-                empId: true,
-                empName: true,
               },
-            },
-            monthlyRecords: {
-              orderBy: [{ yearMonth: 'desc' }],
-              take: 3,
-            },
+            })
+          )
+        : Promise.resolve(null),
+      measure('kpis', () =>
+        prisma.orgKpi.findMany({
+          where: {
+            evalYear: selectedYear,
+            ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
           },
-        },
-        _count: {
-          select: {
-            personalKpis: true,
-          },
-        },
-        copiedFromOrgKpi: {
-          select: {
-            id: true,
-            kpiName: true,
-            evalYear: true,
+          include: {
             department: {
+              include: {
+                organization: true,
+              },
+            },
+            personalKpis: {
+              include: {
+                employee: {
+                  select: {
+                    id: true,
+                    empId: true,
+                    empName: true,
+                  },
+                },
+                monthlyRecords: {
+                  orderBy: [{ yearMonth: 'desc' }],
+                  take: 3,
+                },
+              },
+            },
+            _count: {
               select: {
-                deptName: true,
+                personalKpis: true,
+              },
+            },
+            copiedFromOrgKpi: {
+              select: {
+                id: true,
+                kpiName: true,
+                evalYear: true,
+                department: {
+                  select: {
+                    deptName: true,
+                  },
+                },
+              },
+            },
+            parentOrgKpi: {
+              select: {
+                id: true,
+                kpiName: true,
+                deptId: true,
+                department: {
+                  select: {
+                    deptName: true,
+                  },
+                },
+              },
+            },
+            childOrgKpis: {
+              select: {
+                id: true,
               },
             },
           },
-        },
-        parentOrgKpi: {
-          select: {
-            id: true,
-            kpiName: true,
-            deptId: true,
-            department: {
-              select: {
-                deptName: true,
+          orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
+        })
+      ),
+      measure('auditLogs', () =>
+        loadOrgKpiSection({
+          title: '조직 KPI 이력',
+          description: '조직 KPI 변경 이력을 불러오지 못해 상세 이력은 표시되지 않습니다.',
+          alerts,
+          loader: () =>
+            prisma.auditLog.findMany({
+              where: {
+                entityType: 'OrgKpi',
               },
-            },
-          },
-        },
-        childOrgKpis: {
-          select: {
-            id: true,
-          },
-        },
-      },
-      orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
-    })
+              orderBy: { timestamp: 'desc' },
+              take: 200,
+            }),
+          fallback: [] as AuditLogLite[],
+        })
+      ),
+    ])
+    const goalEditLocked = Boolean(goalEditLockedRecord)
 
     const requestedScope = normalizeOrgKpiScope(params.selectedScope)
     const requestedDepartmentScope =
@@ -831,21 +870,6 @@ export async function getOrgKpiPageData(params: {
         ? requestedDepartmentScope
         : null) ??
       (availableScopes.includes('division') ? 'division' : 'team')
-
-    const auditLogs = await loadOrgKpiSection({
-      title: '조직 KPI 이력',
-      description: '조직 KPI 변경 이력을 불러오지 못해 상세 이력은 표시되지 않습니다.',
-      alerts,
-      loader: () =>
-        prisma.auditLog.findMany({
-          where: {
-            entityType: 'OrgKpi',
-          },
-          orderBy: { timestamp: 'desc' },
-          take: 200,
-        }),
-      fallback: [] as AuditLogLite[],
-    })
 
     const employeeNameMap = new Map(employees.map((employee) => [employee.id, employee.empName]))
     const employeesByDept = new Map<string, EmployeeLite[]>()
@@ -1008,6 +1032,16 @@ export async function getOrgKpiPageData(params: {
     })
 
     const mappedList = mappedListAll.filter((item) => item.scope === selectedScope)
+    const scopeCounts = mappedListAll.reduce<Record<OrgKpiScope, number>>(
+      (counts, item) => {
+        counts[item.scope] += 1
+        return counts
+      },
+      {
+        division: 0,
+        team: 0,
+      }
+    )
     const mappedById = new Map(mappedList.map((item) => [item.id, item]))
     const kpisByDepartment = new Map<string, OrgKpiViewModel[]>()
     mappedList.forEach((kpi) => {
@@ -1100,6 +1134,18 @@ export async function getOrgKpiPageData(params: {
     const pageState: OrgKpiPageState =
       departmentsForSelector.length > 0 && totalCount > 0 ? 'ready' : 'empty'
 
+    const durationMs = Date.now() - startedAt
+    if (process.env.NODE_ENV !== 'test' && durationMs >= 800) {
+      console.warn('[org-kpi-page] slow loader', {
+        durationMs,
+        selectedScope,
+        selectedYear,
+        totalCount,
+        auditLogCount: auditLogs.length,
+        timings,
+      })
+    }
+
     return {
       state: pageState,
       selectedScope,
@@ -1107,7 +1153,7 @@ export async function getOrgKpiPageData(params: {
         key: scope,
         label: ORG_KPI_SCOPE_TAB_META[scope].label,
         description: ORG_KPI_SCOPE_TAB_META[scope].description,
-        totalCount: mappedListAll.filter((item) => item.scope === scope).length,
+        totalCount: scopeCounts[scope],
         departmentCount: accessibleDepartmentsByScope[scope].length,
       })),
       message: totalCount ? undefined : '해당 범위에 등록된 조직 KPI가 없습니다. 올해 목표부터 정리해 보세요.',

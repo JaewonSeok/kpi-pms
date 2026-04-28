@@ -1130,7 +1130,10 @@ export function OrgKpiManagementClient({
           </h2>
           <p className="mt-2 text-sm text-slate-500">{pageData.message ?? '잠시 후 다시 시도해 주세요.'}</p>
         </div>
-        <QuickLinks />
+        <OrgKpiQuickLinks
+          showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'}
+          readOnly={isReadOnlyMemberView}
+        />
       </div>
     )
   }
@@ -2423,15 +2426,6 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
             </p>
           </div>
         ) : null}
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Link href="/kpi/personal" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">개인 KPI 보기</Link>
-          <Link href="/kpi/monthly" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">월간 실적 보기</Link>
-          <Link href="/evaluation/results" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">평가 결과 보기</Link>
-          {isReadOnly ? null : (
-            <Link href="/evaluation/workbench" className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">AI 평가 보조</Link>
-          )}
-        </div>
       </div>
     </div>
   )
@@ -3029,10 +3023,6 @@ function EditorModal({
       </div>
     </div>
   )
-}
-
-function QuickLinks() {
-  return <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><h3 className="text-lg font-semibold text-slate-900">연결 화면</h3><p className="mt-2 text-sm text-slate-500">조직 KPI는 개인 KPI, 월간 실적, 평가 결과와 함께 운영될 때 가장 강력해집니다.</p><div className="mt-5 grid gap-3 md:grid-cols-4">{[['/kpi/personal', '개인 KPI'], ['/kpi/monthly', '월간 실적'], ['/evaluation/results', '평가 결과'], ['/evaluation/workbench', 'AI 평가 보조']].map(([href, label]) => <Link key={href} href={href} className="inline-flex min-h-12 items-center justify-between rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">{label}<span>→</span></Link>)}</div></section>
 }
 
 function InfoPill({ label, value }: { label: string; value: string }) {

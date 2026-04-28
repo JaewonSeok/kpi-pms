@@ -128,7 +128,6 @@ async function main() {
       'src/app/(main)/kpi/org/page.tsx',
       'src/app/(main)/evaluation/results/page.tsx',
       'src/app/(main)/evaluation/appeal/page.tsx',
-      'src/app/(main)/evaluation/workbench/page.tsx',
       'src/app/(main)/evaluation/ai-competency/page.tsx',
       'src/app/(main)/evaluation/upward/admin/page.tsx',
       'src/app/(main)/evaluation/upward/respond/page.tsx',
@@ -146,6 +145,27 @@ async function main() {
     const googleAccessPage = read('src/app/(main)/admin/google-access/page.tsx')
     assert.equal(googleAccessPage.includes("canAccessMenu(session.user.role, 'SYSTEM_SETTING')"), true)
     assert.equal(googleAccessPage.includes("redirect('/403')"), true)
+
+    const evaluationWorkbenchRedirect = read('src/app/(main)/evaluation/workbench/page.tsx')
+    assert.equal(evaluationWorkbenchRedirect.includes('requireProtectedPageSession'), false)
+    assert.equal(evaluationWorkbenchRedirect.includes("redirect(params.size ? `/evaluation/performance?${params.toString()}` : '/evaluation/performance')"), true)
+  })
+
+  await run('protected page session helper caches shared getServerSession lookups for layout and page transitions', () => {
+    const source = read('src/server/auth/protected-page.ts')
+
+    assert.equal(source.includes("import { cache } from 'react'"), true)
+    assert.equal(source.includes('const getCachedServerSession = cache(() => getServerSession(authOptions))'), true)
+    assert.equal(source.includes('const session = await getCachedServerSession()'), true)
+  })
+
+  await run('main layout only serializes the shell session fields needed by shared client chrome', () => {
+    const layoutSource = read('src/app/(main)/layout.tsx')
+
+    assert.equal(layoutSource.includes('const shellSession = {'), true)
+    assert.equal(layoutSource.includes('accessibleDepartmentIds'), false)
+    assert.equal(layoutSource.includes('departmentAccessMode'), false)
+    assert.equal(layoutSource.includes('<MainShell session={shellSession}>'), true)
   })
 
   await run('upward review admin loader degrades to an error state when template schema lookup fails', async () => {

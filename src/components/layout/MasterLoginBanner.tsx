@@ -9,11 +9,26 @@ import {
   IMPERSONATION_SYNC_STORAGE_KEY,
   parseImpersonationSyncPayload,
 } from '@/lib/impersonation'
-import type { SessionUserClaims } from '@/types/auth'
+
+type MasterLoginBannerSessionUser = {
+  masterLogin?: {
+    active: boolean
+    sessionId: string
+    actorId: string
+    actorName: string
+    actorEmail: string
+    targetId: string
+    startedAt: string
+    expiresAt: string
+    reason: string
+    targetName: string
+    targetEmail: string
+  } | null
+}
 
 type MasterLoginBannerProps = {
   session: {
-    user: SessionUserClaims
+    user: MasterLoginBannerSessionUser
   }
 }
 

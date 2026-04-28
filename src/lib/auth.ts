@@ -1,4 +1,5 @@
 import { Prisma, type SystemRole } from '@prisma/client'
+import { unstable_cache } from 'next/cache'
 import type { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
@@ -130,6 +131,10 @@ async function loadDepartmentScope() {
   }) as Promise<DepartmentScopeNode[]>
 }
 
+const loadDepartmentScopeCached = unstable_cache(loadDepartmentScope, ['auth-department-scope'], {
+  revalidate: 300,
+})
+
 async function loadAllDepartmentIds() {
   const departments = await prisma.department.findMany({
     select: {
@@ -140,8 +145,12 @@ async function loadAllDepartmentIds() {
   return departments.map((department) => department.id)
 }
 
+const loadAllDepartmentIdsCached = unstable_cache(loadAllDepartmentIds, ['auth-all-department-ids'], {
+  revalidate: 300,
+})
+
 async function buildAuthClaims(employee: AuthEmployeeRecord): Promise<AuthClaims> {
-  const departments = await loadDepartmentScope()
+  const departments = await loadDepartmentScopeCached()
 
   return {
     id: employee.id,
@@ -477,7 +486,7 @@ async function hydrateTokenClaimsFromDirectory(
 
 async function resolveSessionAccessibleDepartmentIds(claims: AuthClaims) {
   if (claims.departmentAccessMode === 'GLOBAL') {
-    return loadAllDepartmentIds()
+    return loadAllDepartmentIdsCached()
   }
 
   return claims.accessibleDepartmentIds
@@ -925,6 +934,7 @@ export const authOptions: NextAuthOptions = {
     },
 
     async session({ session, token }) {
+      const startedAt = Date.now()
       if (token) {
         try {
           let claims = extractAuthClaimsFromToken(token)
@@ -999,6 +1009,17 @@ export const authOptions: NextAuthOptions = {
       } else {
         authTrace('warn', 'SESSION_TOKEN_MISSING', {
           hasSessionUser: Boolean(session.user),
+        })
+      }
+
+      const durationMs = Date.now() - startedAt
+      if (durationMs >= 250) {
+        authTrace('warn', 'AUTH_SESSION_CALLBACK_SLOW', {
+          durationMs,
+          tokenSub: token?.sub ?? null,
+          role: session.user.role ?? token?.role ?? null,
+          departmentAccessMode:
+            session.user.departmentAccessMode ?? token?.departmentAccessMode ?? null,
         })
       }
 

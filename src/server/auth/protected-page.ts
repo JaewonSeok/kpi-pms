@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { headers } from 'next/headers'
 import { getServerSession, type Session } from 'next-auth'
 import { redirect } from 'next/navigation'
@@ -9,6 +10,8 @@ import { authTrace, maskAuthEmail } from '@/lib/auth-trace'
 
 const authSecret = readAuthSecretValue()
 const authCookieCandidates = buildAuthCookieNameCandidates()
+
+const getCachedServerSession = cache(() => getServerSession(authOptions))
 
 async function resolveProtectedFallbackToken(pathname: string) {
   const requestHeaders = await headers()
@@ -32,7 +35,8 @@ export async function requireProtectedPageSession(params: {
   route: string
   pathname: string
 }): Promise<Session> {
-  const session = await getServerSession(authOptions)
+  const startedAt = Date.now()
+  const session = await getCachedServerSession()
   let accessDecision = resolveProtectedSessionAccess({ session })
   let fallbackToken: Awaited<
     ReturnType<typeof resolveProtectedFallbackToken>
@@ -99,6 +103,17 @@ export async function requireProtectedPageSession(params: {
       reason: 'MISSING_SESSION_AFTER_ACCESS_ALLOW',
     })
     redirect('/login?error=SessionRequired')
+  }
+
+  const durationMs = Date.now() - startedAt
+  if (process.env.NODE_ENV !== 'test' && durationMs >= 250) {
+    authTrace('warn', 'PROTECTED_PAGE_SESSION_SLOW', {
+      route: params.route,
+      pathname: params.pathname,
+      durationMs,
+      role: session.user.role,
+      departmentAccessMode: session.user.departmentAccessMode ?? null,
+    })
   }
 
   return session

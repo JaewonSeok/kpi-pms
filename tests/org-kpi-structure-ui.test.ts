@@ -108,6 +108,15 @@ run('org KPI route and client drop removed year and department URL wiring', () =
   assert.doesNotMatch(loaderSource, /availableYears: number\[\]/)
 })
 
+run('org KPI loader resolves the active year with a single latest-year lookup and overlaps follow-up fetches', () => {
+  const loaderSource = read('src/server/org-kpi-page.ts')
+
+  assert.match(loaderSource, /const latestKpiYearRecord = await measure\('latestKpiYear'/)
+  assert.doesNotMatch(loaderSource, /distinct: \['evalYear'\]/)
+  assert.match(loaderSource, /const \[goalEditLockedRecord, kpis, auditLogs\] = await Promise\.all\(/)
+  assert.match(loaderSource, /console\.warn\('\[org-kpi-page\] slow loader'/)
+})
+
 run('org KPI loader keeps scope labels and empty-state copy as readable Korean UTF-8 literals', () => {
   const loaderSource = read('src/server/org-kpi-page.ts')
 
@@ -126,6 +135,18 @@ run('org KPI action areas remove lock and duplicate history-view entry points wh
   assert.doesNotMatch(source, /onWorkflow\('LOCK'\)/)
   assert.doesNotMatch(source, /\(action: 'SUBMIT' \| 'LOCK' \| 'REOPEN'\)/)
   assert.match(source, /\{tab === 'history' \? \(/)
+})
+
+run('org KPI detail panel removes duplicated lower-right shortcut buttons and keeps the canonical quick-links section', () => {
+  const source = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+  assert.doesNotMatch(source, /개인 KPI 보기/)
+  assert.doesNotMatch(source, /월간 실적 보기/)
+  assert.doesNotMatch(source, /평가 결과 보기/)
+  assert.doesNotMatch(source, /AI 평가 보조/)
+  assert.match(source, /function OrgKpiQuickLinks/)
+  assert.match(source, /관련 바로가기/)
+  assert.match(source, /AI 보조 작성/)
 })
 
 run('org KPI removes the bounded AI improve trigger and the dedicated AI tab workspace', () => {
