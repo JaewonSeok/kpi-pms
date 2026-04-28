@@ -1,6 +1,9 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { resolvePersonalKpiAiAccess } from '@/lib/personal-kpi-access'
+import {
+  canAccessPersonalKpiTarget,
+  resolvePersonalKpiAiAccess,
+} from '@/lib/personal-kpi-access'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { PersonalKpiAiActionSchema } from '@/lib/validations'
 import {
@@ -49,6 +52,26 @@ export async function POST(request: Request) {
     const validated = PersonalKpiAiActionSchema.safeParse(body)
     if (!validated.success) {
       throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message || '잘못된 AI 요청입니다.')
+    }
+
+    const requestedEmployeeId =
+      typeof validated.data.payload?.employeeId === 'string'
+        ? validated.data.payload.employeeId.trim()
+        : ''
+
+    if (
+      requestedEmployeeId &&
+      !canAccessPersonalKpiTarget({
+        actorId: session.user.id,
+        actorRole: session.user.role,
+        targetEmployeeId: requestedEmployeeId,
+      })
+    ) {
+      throw new AppError(
+        403,
+        'FORBIDDEN',
+        '본인 개인 KPI에서만 AI 초안 생성을 사용할 수 있습니다.'
+      )
     }
 
     const commonParams = {

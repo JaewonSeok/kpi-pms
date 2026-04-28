@@ -1064,6 +1064,10 @@ export function PersonalKpiManagementClient(props: Props) {
       : props.state === 'permission-denied' || !props.permissions.canCreate
         ? '현재 범위에서는 개인 KPI를 추가할 권한이 없습니다.'
         : undefined
+  const aiAccessDeniedReason =
+    props.actor.role === 'ROLE_MEMBER' && props.actor.id !== props.selectedEmployeeId
+      ? '본인 개인 KPI에서만 AI 초안 생성을 사용할 수 있습니다.'
+      : 'AI 기능이 비활성화되어 있거나 현재 계정 권한으로는 사용할 수 없습니다.'
   const aiDisabledReason =
     props.state === 'error'
       ? '개인 KPI 데이터를 아직 불러오지 못해 AI 보조를 시작할 수 없습니다.'
@@ -1074,6 +1078,12 @@ export function PersonalKpiManagementClient(props: Props) {
       : !props.permissions.canUseAi
         ? 'AI 기능이 비활성화되어 있거나 현재 계정 권한으로는 사용할 수 없습니다.'
         : undefined
+  const resolvedAiDisabledReason =
+    props.state === 'ready' || props.state === 'empty'
+      ? !props.permissions.canUseAi
+        ? aiAccessDeniedReason
+        : undefined
+      : aiDisabledReason
   const reviewDisabledReason =
     props.state === 'error'
       ? '페이지 상태를 복구한 뒤 검토 대기열을 확인해 주세요.'
@@ -1179,10 +1189,10 @@ export function PersonalKpiManagementClient(props: Props) {
   }
 
   function handleOpenAiDraft() {
-    if (aiDisabledReason) {
+    if (resolvedAiDisabledReason) {
       setBanner({
         tone: 'info',
-        message: aiDisabledReason,
+        message: resolvedAiDisabledReason,
       })
       return
     }
@@ -1622,7 +1632,7 @@ export function PersonalKpiManagementClient(props: Props) {
       setShowAiRecommendationSwitchConfirm(false)
       setBanner({
         tone: 'info',
-        message: '현재 계정은 AI 보조를 사용할 수 없습니다. 기본 작성 가이드를 확인해주세요.',
+        message: aiAccessDeniedReason,
       })
       setBusyAction(null)
       return
@@ -2110,7 +2120,7 @@ export function PersonalKpiManagementClient(props: Props) {
         submitLabel={submitLabel}
         createDisabledReason={createDisabledReason}
         bulkEditDisabledReason={bulkEditDisabledReason}
-        aiDisabledReason={aiDisabledReason}
+        aiDisabledReason={resolvedAiDisabledReason}
         reviewDisabledReason={reviewDisabledReason}
         historyDisabledReason={historyDisabledReason}
         onOpenCreate={handleOpenCreate}
@@ -2196,6 +2206,7 @@ export function PersonalKpiManagementClient(props: Props) {
           {activeTab === 'ai' ? (
             <AiSection
               canUseAi={props.permissions.canUseAi}
+              unavailableReason={resolvedAiDisabledReason}
               actions={AI_ACTIONS}
               busy={busyAction === 'ai'}
               preview={aiPreview}
@@ -2235,6 +2246,7 @@ export function PersonalKpiManagementClient(props: Props) {
           {activeTab === 'ai' ? (
             <AiSection
               canUseAi={props.permissions.canUseAi}
+              unavailableReason={resolvedAiDisabledReason}
               actions={AI_ACTIONS}
               busy={busyAction === 'ai'}
               preview={aiPreview}
@@ -2816,6 +2828,7 @@ function HistorySection(props: { history: PersonalKpiTimelineItem[]; aiLogs: Per
 
 function AiSection(props: {
   canUseAi: boolean
+  unavailableReason?: string
   actions: Array<{ action: AiAction; title: string; description: string }>
   actionStates: Record<AiAction, AiActionState>
   busy: boolean
@@ -2836,7 +2849,7 @@ function AiSection(props: {
         {!props.canUseAi ? (
           <EmptyState
             title="AI 보조를 사용할 수 없습니다."
-            description="권한이 없거나 현재 환경에서 AI 기능이 비활성화되어 있습니다. 기본 작성 가이드를 참고해주세요."
+            description={props.unavailableReason ?? '권한이 없거나 현재 환경에서 AI 기능이 비활성화되어 있습니다. 기본 작성 가이드를 참고해주세요.'}
           />
         ) : (
           <div className="grid gap-3 md:grid-cols-2">

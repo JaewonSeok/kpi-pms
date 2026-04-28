@@ -60,6 +60,14 @@ export function canManagePersonalKpi(role: SystemRole) {
   return PERSONAL_KPI_MANAGE_ROLES.includes(role)
 }
 
+export function canAccessPersonalKpiTarget(params: {
+  actorId: string
+  actorRole: SystemRole
+  targetEmployeeId: string
+}) {
+  return params.actorId === params.targetEmployeeId || canManagePersonalKpi(params.actorRole)
+}
+
 export function canReviewPersonalKpi(role: SystemRole) {
   return PERSONAL_KPI_REVIEW_ROLES.includes(role)
 }
@@ -108,7 +116,11 @@ export function buildPersonalKpiPermissions(params: {
 }) {
   const pageReadyForAction =
     params.pageState === 'ready' || params.pageState === 'empty'
-  const canManageTarget = params.actorId === params.targetEmployeeId || canManagePersonalKpi(params.actorRole)
+  const canManageTarget = canAccessPersonalKpiTarget({
+    actorId: params.actorId,
+    actorRole: params.actorRole,
+    targetEmployeeId: params.targetEmployeeId,
+  })
   const aiAccess = params.aiAccess ?? resolvePersonalKpiAiAccess({ role: params.actorRole })
 
   return {
@@ -117,7 +129,7 @@ export function buildPersonalKpiPermissions(params: {
     canSubmit: pageReadyForAction && canManageTarget,
     canReview: pageReadyForAction && canReviewPersonalKpi(params.actorRole),
     canLock: pageReadyForAction && canReviewPersonalKpi(params.actorRole),
-    canUseAi: pageReadyForAction && aiAccess.allowed,
+    canUseAi: pageReadyForAction && canManageTarget && aiAccess.allowed,
     canOverride: pageReadyForAction && params.actorRole === 'ROLE_ADMIN',
   }
 }

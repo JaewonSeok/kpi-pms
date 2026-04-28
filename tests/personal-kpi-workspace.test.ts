@@ -655,6 +655,32 @@ async function main() {
     assert.equal(setupPermissions.canCreate, false)
     assert.equal(setupPermissions.canSubmit, false)
     assert.equal(setupPermissions.canUseAi, false)
+
+    const memberSelfPermissions = buildPersonalKpiPermissions({
+      actorId: 'member-2',
+      actorRole: 'ROLE_MEMBER',
+      targetEmployeeId: 'member-2',
+      pageState: 'ready',
+      aiAccess: {
+        allowed: true,
+        reason: null,
+      },
+    })
+    const memberCrossPermissions = buildPersonalKpiPermissions({
+      actorId: 'member-2',
+      actorRole: 'ROLE_MEMBER',
+      targetEmployeeId: 'member-3',
+      pageState: 'ready',
+      aiAccess: {
+        allowed: true,
+        reason: null,
+      },
+    })
+
+    assert.equal(memberSelfPermissions.canCreate, true)
+    assert.equal(memberSelfPermissions.canUseAi, true)
+    assert.equal(memberCrossPermissions.canCreate, false)
+    assert.equal(memberCrossPermissions.canUseAi, false)
   })
 
   await run('AI access resolver disables personal KPI AI consistently when feature or configuration is unavailable', () => {
@@ -848,6 +874,9 @@ async function main() {
     assert.equal(source.includes('disabled={Boolean(props.aiDisabledReason)}'), true)
     assert.equal(source.includes("const createDisabledReason ="), true)
     assert.equal(source.includes("const aiDisabledReason ="), true)
+    assert.equal(source.includes('const resolvedAiDisabledReason ='), true)
+    assert.equal(source.includes('본인 개인 KPI에서만 AI 초안 생성을 사용할 수 있습니다.'), true)
+    assert.equal(source.includes("description={props.unavailableReason ?? '권한이 없거나 현재 환경에서 AI 기능이 비활성화되어 있습니다. 기본 작성 가이드를 참고해주세요.'}"), true)
     assert.equal(source.includes('일부 운영 정보를 불러오지 못해 기본 화면으로 표시 중입니다.'), true)
   })
 
@@ -855,7 +884,9 @@ async function main() {
     const routeSource = read('src/app/api/kpi/personal/ai/route.ts')
 
     assert.equal(routeSource.includes('resolvePersonalKpiAiAccess'), true)
+    assert.equal(routeSource.includes('canAccessPersonalKpiTarget'), true)
     assert.equal(routeSource.includes("throw new AppError(403, 'FORBIDDEN', aiAccess.message"), true)
+    assert.equal(routeSource.includes('본인 개인 KPI에서만 AI 초안 생성을 사용할 수 있습니다.'), true)
   })
 
   await run('personal KPI AI route masks raw structured-output failures with a Korean fallback message', () => {
