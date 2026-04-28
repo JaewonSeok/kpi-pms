@@ -34,6 +34,21 @@ export const PERSONAL_KPI_AI_ROLES: SystemRole[] = [
   'ROLE_MEMBER',
 ]
 
+export const PERSONAL_KPI_MIDCHECK_COACH_ROLES: SystemRole[] = [
+  'ROLE_ADMIN',
+  'ROLE_CEO',
+  'ROLE_DIV_HEAD',
+  'ROLE_SECTION_CHIEF',
+  'ROLE_TEAM_LEADER',
+]
+
+type PersonalKpiCoachingTarget = {
+  id: string
+  teamLeaderId?: string | null
+  sectionChiefId?: string | null
+  divisionHeadId?: string | null
+}
+
 export function normalizeAccessibleDepartmentIds(accessibleDepartmentIds?: string[] | null) {
   if (!Array.isArray(accessibleDepartmentIds)) return []
   return accessibleDepartmentIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
@@ -66,6 +81,30 @@ export function canAccessPersonalKpiTarget(params: {
   targetEmployeeId: string
 }) {
   return params.actorId === params.targetEmployeeId || canManagePersonalKpi(params.actorRole)
+}
+
+export function canCoachPersonalKpiTarget(params: {
+  actorId: string
+  actorRole: SystemRole
+  targetEmployee: PersonalKpiCoachingTarget
+}) {
+  if (!PERSONAL_KPI_MIDCHECK_COACH_ROLES.includes(params.actorRole)) {
+    return false
+  }
+
+  if (params.targetEmployee.id === params.actorId) {
+    return false
+  }
+
+  if (params.actorRole === 'ROLE_ADMIN' || params.actorRole === 'ROLE_CEO') {
+    return true
+  }
+
+  return (
+    params.targetEmployee.teamLeaderId === params.actorId ||
+    params.targetEmployee.sectionChiefId === params.actorId ||
+    params.targetEmployee.divisionHeadId === params.actorId
+  )
 }
 
 export function canReviewPersonalKpi(role: SystemRole) {
@@ -111,6 +150,7 @@ export function buildPersonalKpiPermissions(params: {
   actorId: string
   actorRole: SystemRole
   targetEmployeeId: string
+  targetEmployee?: PersonalKpiCoachingTarget
   pageState: PersonalKpiPageState
   aiAccess?: PersonalKpiAiAccess
 }) {
@@ -130,6 +170,14 @@ export function buildPersonalKpiPermissions(params: {
     canReview: pageReadyForAction && canReviewPersonalKpi(params.actorRole),
     canLock: pageReadyForAction && canReviewPersonalKpi(params.actorRole),
     canUseAi: pageReadyForAction && canManageTarget && aiAccess.allowed,
+    canUseMidcheckCoach:
+      pageReadyForAction &&
+      Boolean(params.targetEmployee) &&
+      canCoachPersonalKpiTarget({
+        actorId: params.actorId,
+        actorRole: params.actorRole,
+        targetEmployee: params.targetEmployee!,
+      }),
     canOverride: pageReadyForAction && params.actorRole === 'ROLE_ADMIN',
   }
 }

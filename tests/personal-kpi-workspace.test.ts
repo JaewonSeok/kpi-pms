@@ -7,6 +7,7 @@ import path from 'node:path'
 import { prisma } from '../src/lib/prisma'
 import {
   buildPersonalKpiPermissions,
+  canCoachPersonalKpiTarget,
   getPersonalKpiScopeDepartmentIds,
   resolvePersonalKpiAiAccess,
 } from '../src/lib/personal-kpi-access'
@@ -679,8 +680,72 @@ async function main() {
 
     assert.equal(memberSelfPermissions.canCreate, true)
     assert.equal(memberSelfPermissions.canUseAi, true)
+    assert.equal(memberSelfPermissions.canUseMidcheckCoach, false)
     assert.equal(memberCrossPermissions.canCreate, false)
     assert.equal(memberCrossPermissions.canUseAi, false)
+    assert.equal(memberCrossPermissions.canUseMidcheckCoach, false)
+
+    const leaderCoachingPermissions = buildPersonalKpiPermissions({
+      actorId: 'leader-1',
+      actorRole: 'ROLE_TEAM_LEADER',
+      targetEmployeeId: 'member-2',
+      targetEmployee: {
+        id: 'member-2',
+        teamLeaderId: 'leader-1',
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      pageState: 'ready',
+      aiAccess: {
+        allowed: true,
+        reason: null,
+      },
+    })
+    const leaderSelfPermissions = buildPersonalKpiPermissions({
+      actorId: 'leader-1',
+      actorRole: 'ROLE_TEAM_LEADER',
+      targetEmployeeId: 'leader-1',
+      targetEmployee: {
+        id: 'leader-1',
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      pageState: 'ready',
+      aiAccess: {
+        allowed: true,
+        reason: null,
+      },
+    })
+
+    assert.equal(leaderCoachingPermissions.canUseMidcheckCoach, true)
+    assert.equal(leaderSelfPermissions.canUseMidcheckCoach, false)
+    assert.equal(
+      canCoachPersonalKpiTarget({
+        actorId: 'leader-1',
+        actorRole: 'ROLE_TEAM_LEADER',
+        targetEmployee: {
+          id: 'member-2',
+          teamLeaderId: 'leader-1',
+          sectionChiefId: null,
+          divisionHeadId: null,
+        },
+      }),
+      true
+    )
+    assert.equal(
+      canCoachPersonalKpiTarget({
+        actorId: 'member-2',
+        actorRole: 'ROLE_MEMBER',
+        targetEmployee: {
+          id: 'member-2',
+          teamLeaderId: 'leader-1',
+          sectionChiefId: null,
+          divisionHeadId: null,
+        },
+      }),
+      false
+    )
   })
 
   await run('AI access resolver disables personal KPI AI consistently when feature or configuration is unavailable', () => {
@@ -1024,7 +1089,7 @@ async function main() {
     assert.equal(source.includes('const data = await parseAiJsonOrThrow<{'), true)
   })
 
-  await run('personal KPI mine panel now exposes evidence editing and AI midcheck coaching without removing the main edit flow', () => {
+  await run('personal KPI mine panel keeps evidence editing and only shows AI midcheck coaching in authorized leadership scope', () => {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
     assert.equal(source.includes('PersonalKpiEvidencePanel'), true)
@@ -1036,6 +1101,7 @@ async function main() {
     assert.equal(source.includes('증빙 저장'), true)
     assert.equal(source.includes('/api/kpi/monthly-record'), true)
     assert.equal(source.includes('/api/kpi/personal/${selectedKpi.id}/midcheck-coach'), true)
+    assert.equal(source.includes('{props.permissions.canUseMidcheckCoach ? ('), true)
     assert.equal(source.includes('AI 중간 점검 코치'), true)
     assert.equal(source.includes('AI 코칭 받기'), true)
     assert.equal(source.includes('다시 생성'), true)

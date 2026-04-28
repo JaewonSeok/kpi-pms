@@ -24,37 +24,48 @@ async function run(name: string, fn: () => Promise<void> | void) {
   }
 }
 
-function makeSession(overrides?: Partial<Record<string, unknown>>) {
+function makeLeaderSession(overrides?: Partial<Record<string, unknown>>) {
   return {
     user: {
-      id: 'member-1',
-      role: 'ROLE_MEMBER',
-      name: '구성원',
-      deptId: 'dept-1',
-      deptName: '사업운영팀',
-      accessibleDepartmentIds: ['dept-1'],
+      id: 'leader-1',
+      role: 'ROLE_TEAM_LEADER',
+      name: 'Leader One',
       ...overrides,
     },
   } as never
 }
 
-function makePersonalKpiRecord() {
+function makeMemberSession(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    user: {
+      id: 'member-1',
+      role: 'ROLE_MEMBER',
+      name: 'Member One',
+      ...overrides,
+    },
+  } as never
+}
+
+function makePersonalKpiRecord(overrides?: Record<string, unknown>) {
   return {
     id: 'pk-1',
     employeeId: 'member-1',
-    kpiName: '고객 유지율 향상',
+    kpiName: '고객 응답률 향상',
     status: 'CONFIRMED',
-    definition: '핵심 고객 재계약률 유지',
-    formula: '재계약 고객 수 / 전체 고객 수',
+    definition: '응답 고객 비율을 높이는 KPI',
+    formula: '응답 고객 수 / 전체 고객 수',
     targetValue: 95,
     unit: '%',
     linkedOrgKpiId: 'org-1',
     linkedOrgKpi: {
-      kpiName: '전사 고객 유지율 개선',
+      kpiName: '고객 경험 개선',
     },
     employee: {
       id: 'member-1',
       deptId: 'dept-1',
+      teamLeaderId: 'leader-1',
+      sectionChiefId: 'section-1',
+      divisionHeadId: 'division-1',
       department: {
         deptName: '사업운영팀',
       },
@@ -64,11 +75,12 @@ function makePersonalKpiRecord() {
         id: 'mr-1',
         yearMonth: '2026-04',
         achievementRate: 82,
-        activities: '핵심 고객 follow-up',
+        activities: '4월 고객 follow-up',
         obstacles: '일정 지연',
-        evidenceComment: '실적 코멘트',
+        evidenceComment: '4월 핵심 근거 정리',
       },
     ],
+    ...overrides,
   }
 }
 
@@ -99,7 +111,7 @@ function makeDb(overrides?: {
 }
 
 async function main() {
-  await run('midcheck coach route source enforces session, access resolver, and dedicated helper usage', () => {
+  await run('midcheck coach route source keeps server session enforcement and dedicated generation helper usage', () => {
     const source = read('src/app/api/kpi/personal/[id]/midcheck-coach/route.ts')
 
     assert.equal(source.includes("export const runtime = 'nodejs'"), true)
@@ -108,26 +120,48 @@ async function main() {
     assert.equal(source.includes('generatePersonalKpiMidcheckCoach'), true)
   })
 
-  await run('context loader blocks out-of-scope KPI access', async () => {
+  await run('midcheck coach service source now enforces leadership coaching scope', () => {
+    const source = read('src/server/ai/personal-kpi-midcheck-coach.ts')
+
+    assert.equal(source.includes('canCoachPersonalKpiTarget'), true)
+    assert.equal(source.includes('팀원 코칭 범위를 벗어난 개인 KPI입니다.'), true)
+    assert.equal(source.includes('getPersonalKpiScopeDepartmentIds'), false)
+  })
+
+  await run('context loader blocks ordinary member self access', async () => {
+    await assert.rejects(
+      () =>
+        loadPersonalKpiMidcheckCoachContext({
+          session: makeMemberSession(),
+          personalKpiId: 'pk-1',
+        }, makeDb() as never),
+      (error: unknown) => error instanceof AppError && error.statusCode === 403
+    )
+  })
+
+  await run('context loader blocks leader outside coaching scope', async () => {
     const db = makeDb({
-      personalKpiFindUnique: async () => ({
-        ...makePersonalKpiRecord(),
-        employeeId: 'member-2',
-        employee: {
-          id: 'member-2',
-          deptId: 'dept-9',
-          department: {
-            deptName: '재무팀',
+      personalKpiFindUnique: async () =>
+        makePersonalKpiRecord({
+          employeeId: 'member-2',
+          employee: {
+            id: 'member-2',
+            deptId: 'dept-9',
+            teamLeaderId: 'other-leader',
+            sectionChiefId: 'other-section',
+            divisionHeadId: 'other-division',
+            department: {
+              deptName: '재무팀',
+            },
           },
-        },
-      }),
+        }),
     })
 
     await assert.rejects(
       () =>
         loadPersonalKpiMidcheckCoachContext(
           {
-            session: makeSession(),
+            session: makeLeaderSession(),
             personalKpiId: 'pk-2',
           },
           db as never
@@ -136,15 +170,15 @@ async function main() {
     )
   })
 
-  await run('authorized coach request returns structured AI result on success', async () => {
+  await run('authorized leader coach request returns structured AI result on success', async () => {
     const db = makeDb()
     const response = await generatePersonalKpiMidcheckCoach(
       {
-        session: makeSession(),
+        session: makeLeaderSession(),
         personalKpiId: 'pk-1',
         input: {
           yearMonth: '2026-04',
-          evidenceComment: '핵심 증빙 정리',
+          evidenceComment: '4월 증빙 정리',
           attachments: [
             {
               id: 'link-1',
@@ -153,7 +187,7 @@ async function main() {
               kind: 'OTHER',
               comment: '상세 설명',
               uploadedAt: '2026-04-20T09:00:00.000Z',
-              uploadedBy: '구성원',
+              uploadedBy: 'Leader One',
               url: 'https://docs.google.com/document/d/123/edit',
             },
           ],
@@ -174,9 +208,9 @@ async function main() {
                 status: 'watch',
                 headline: '보완이 필요한 상태입니다.',
                 summary: '최근 증빙을 기준으로 우선순위 재정리가 필요합니다.',
-                strengths: ['상위 목표 연결이 명확합니다.'],
+                strengths: ['상위 목표 연결은 명확합니다.'],
                 gaps: ['최근 증빙 설명이 부족합니다.'],
-                risk_signals: ['핵심 지표 변화 근거가 약합니다.'],
+                risk_signals: ['일정 지연 변경 근거가 포함됩니다.'],
                 next_actions: [
                   {
                     title: '주간 기준 정리',
@@ -185,13 +219,13 @@ async function main() {
                     due_hint: '이번 주',
                   },
                 ],
-                coaching_questions: ['현재 목표가 여전히 중요한가요?'],
+                coaching_questions: ['현재 목표가 사전에 중요했나요?'],
                 employee_update_draft: '현재 상황과 다음 액션을 정리했습니다.',
                 manager_share_draft: '관리자 공유용 중간 점검 문안입니다.',
                 evidence_feedback: {
                   sufficiency: 'partial',
                   cited_evidence: ['4월 활동 메모'],
-                  missing_items: ['최근 산출물 링크'],
+                  missing_items: ['최근 제출물 링크'],
                 },
                 disclaimer: '증빙 보강이 필요할 수 있습니다.',
               }),
@@ -220,7 +254,7 @@ async function main() {
       () =>
         generatePersonalKpiMidcheckCoach(
           {
-            session: makeSession(),
+            session: makeLeaderSession(),
             personalKpiId: 'pk-1',
             input: {
               yearMonth: '2026/04',
@@ -239,11 +273,11 @@ async function main() {
     const db = makeDb()
     const response = await generatePersonalKpiMidcheckCoach(
       {
-        session: makeSession(),
+        session: makeLeaderSession(),
         personalKpiId: 'pk-1',
         input: {
           yearMonth: '2026-04',
-          evidenceComment: '핵심 증빙 정리',
+          evidenceComment: '4월 증빙 정리',
           attachments: [],
         },
       },
@@ -269,11 +303,11 @@ async function main() {
     const db = makeDb()
     const response = await generatePersonalKpiMidcheckCoach(
       {
-        session: makeSession(),
+        session: makeLeaderSession(),
         personalKpiId: 'pk-1',
         input: {
           yearMonth: '2026-04',
-          evidenceComment: '핵심 증빙 정리',
+          evidenceComment: '4월 증빙 정리',
           attachments: [],
         },
       },
@@ -289,7 +323,7 @@ async function main() {
             ok: true,
             json: async () => ({
               output_text: JSON.stringify({
-                headline: '형식 누락',
+                headline: '형식 오류',
               }),
               model: 'gpt-5.4-mini',
             }),
@@ -306,13 +340,13 @@ async function main() {
       {
         ...(await loadPersonalKpiMidcheckCoachContext(
           {
-            session: makeSession(),
+            session: makeLeaderSession(),
             personalKpiId: 'pk-1',
           },
           makeDb() as never
         )),
         yearMonth: '2026-04',
-        evidenceComment: '핵심 증빙 정리',
+        evidenceComment: '4월 증빙 정리',
         attachments: [],
       },
       {
@@ -334,12 +368,12 @@ async function main() {
               output_text: JSON.stringify({
                 status: 'on_track',
                 headline: '현재 흐름은 안정적입니다.',
-                summary: '입력된 정보 범위 안에서는 큰 이슈가 없습니다.',
-                strengths: ['상위 목표 연결이 명확합니다.'],
+                summary: '입력된 정보 범위에서는 큰 이슈가 없습니다.',
+                strengths: ['상위 목표 연결은 명확합니다.'],
                 gaps: [],
                 risk_signals: [],
                 next_actions: [],
-                coaching_questions: ['다음 기간에 무엇을 더 확인해야 하나요?'],
+                coaching_questions: ['다음 기간엔 무엇을 더 확인해야 하나요?'],
                 employee_update_draft: '업데이트 초안입니다.',
                 manager_share_draft: '관리자 공유 초안입니다.',
                 evidence_feedback: {

@@ -222,6 +222,7 @@ export type PersonalKpiPageData = {
     canReview: boolean
     canLock: boolean
     canUseAi: boolean
+    canUseMidcheckCoach: boolean
     canOverride: boolean
   }
   actor: {
@@ -776,6 +777,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           actorId: params.session.user.id,
           actorRole: params.session.user.role,
           targetEmployeeId: params.employeeId ?? params.session.user.id,
+          targetEmployee,
           pageState,
           aiAccess,
         }),
@@ -1251,6 +1253,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       actorId: params.session.user.id,
       actorRole: params.session.user.role,
       targetEmployeeId: targetEmployee.id,
+      targetEmployee,
       pageState,
       aiAccess,
     })
@@ -1350,6 +1353,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           actorId: params.session.user.id,
           actorRole: params.session.user.role,
           targetEmployeeId: shellTargetEmployee?.id ?? params.employeeId ?? params.session.user.id,
+          targetEmployee: shellTargetEmployee,
           pageState,
           aiAccess,
         }),
@@ -1376,6 +1380,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         actorId: params.session.user.id,
         actorRole: params.session.user.role,
         targetEmployeeId: params.employeeId ?? params.session.user.id,
+        targetEmployee: shellTargetEmployee,
         pageState: 'error',
         aiAccess,
       }),

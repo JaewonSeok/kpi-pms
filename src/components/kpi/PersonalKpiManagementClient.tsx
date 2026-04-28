@@ -2173,17 +2173,19 @@ export function PersonalKpiManagementClient(props: Props) {
                     }
                     onOpenLink={openEvidenceLink}
                   />
-                  <PersonalKpiMidcheckCoachCard
-                    selectedKpi={selectedKpi}
-                    draft={selectedEvidenceDraft}
-                    preview={selectedMidcheckCoachPreview}
-                    errorMessage={selectedMidcheckCoachError}
-                    busy={busyAction === 'midcheck-coach'}
-                    canRun={Boolean(selectedKpi)}
-                    onRun={handleRunMidcheckCoach}
-                    onApplyDraft={handleApplyCoachDraft}
-                    onCopyManagerShare={handleCopyManagerShareDraft}
-                  />
+                  {props.permissions.canUseMidcheckCoach ? (
+                    <PersonalKpiMidcheckCoachCard
+                      selectedKpi={selectedKpi}
+                      draft={selectedEvidenceDraft}
+                      preview={selectedMidcheckCoachPreview}
+                      errorMessage={selectedMidcheckCoachError}
+                      busy={busyAction === 'midcheck-coach'}
+                      canRun={Boolean(selectedKpi)}
+                      onRun={handleRunMidcheckCoach}
+                      onApplyDraft={handleApplyCoachDraft}
+                      onCopyManagerShare={handleCopyManagerShareDraft}
+                    />
+                  ) : null}
                 </>
               }
             />

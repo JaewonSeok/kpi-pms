@@ -14,7 +14,7 @@ import {
   PersonalKpiMidcheckCoachResultSchema,
   type PersonalKpiMidcheckCoachRequest,
 } from '@/lib/personal-kpi-midcheck-coach'
-import { getPersonalKpiScopeDepartmentIds } from '@/lib/personal-kpi-access'
+import { canCoachPersonalKpiTarget } from '@/lib/personal-kpi-access'
 import { prisma } from '@/lib/prisma'
 import { AppError } from '@/lib/utils'
 
@@ -37,9 +37,7 @@ export type PersonalKpiMidcheckCoachSource = 'ai' | 'fallback' | 'disabled'
 type PersonalKpiMidcheckCoachSession = {
   user: {
     id: string
-    role: Parameters<typeof getPersonalKpiScopeDepartmentIds>[0]['role']
-    deptId: string
-    accessibleDepartmentIds?: string[] | null
+    role: Parameters<typeof canCoachPersonalKpiTarget>[0]['actorRole']
   }
 }
 
@@ -115,12 +113,6 @@ export async function loadPersonalKpiMidcheckCoachContext(
   },
   db: PrismaClient = prisma
 ): Promise<PersonalKpiMidcheckCoachContext> {
-  const scopeDepartmentIds = getPersonalKpiScopeDepartmentIds({
-    role: params.session.user.role,
-    deptId: params.session.user.deptId,
-    accessibleDepartmentIds: params.session.user.accessibleDepartmentIds,
-  })
-
   const kpi = await db.personalKpi.findUnique({
     where: { id: params.personalKpiId },
     include: {
@@ -147,8 +139,19 @@ export async function loadPersonalKpiMidcheckCoachContext(
     throw new AppError(404, 'PERSONAL_KPI_NOT_FOUND', '개인 KPI를 찾을 수 없습니다.')
   }
 
-  if (scopeDepartmentIds && !scopeDepartmentIds.includes(kpi.employee.deptId) && params.session.user.id !== kpi.employeeId) {
-    throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 개인 KPI입니다.')
+  if (
+    !canCoachPersonalKpiTarget({
+      actorId: params.session.user.id,
+      actorRole: params.session.user.role,
+      targetEmployee: {
+        id: kpi.employeeId,
+        teamLeaderId: kpi.employee.teamLeaderId,
+        sectionChiefId: kpi.employee.sectionChiefId,
+        divisionHeadId: kpi.employee.divisionHeadId,
+      },
+    })
+  ) {
+    throw new AppError(403, 'FORBIDDEN', '팀원 코칭 범위를 벗어난 개인 KPI입니다.')
   }
 
   const latestRecord = kpi.monthlyRecords[0]
