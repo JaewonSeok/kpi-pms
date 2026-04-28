@@ -427,7 +427,7 @@ function formatPercent(value?: number) {
   return `${Math.round(value * 10) / 10}%`
 }
 
-function buildEmptyForm(year: number, employeeId: string): KpiForm {
+function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = ''): KpiForm {
   return {
     employeeId,
     evalYear: year,
@@ -441,7 +441,7 @@ function buildEmptyForm(year: number, employeeId: string): KpiForm {
     unit: '%',
     weight: '',
     difficulty: 'MEDIUM',
-    linkedOrgKpiId: '',
+    linkedOrgKpiId: defaultLinkedOrgKpiId,
   }
 }
 function buildCloneForm(props: Props, selectedKpi?: PersonalKpiViewModel): PersonalCloneForm {
@@ -809,14 +809,15 @@ function validateKpiForm(form: KpiForm) {
 export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
+  const defaultLinkedOrgKpiId = props.orgKpiOptions[0]?.id ?? ''
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
   const [mineItems, setMineItems] = useState(props.mine)
   const [selectedKpiId, setSelectedKpiId] = useState(props.initialKpiId ?? props.mine[0]?.id ?? '')
   const [selectedReviewId, setSelectedReviewId] = useState(props.reviewQueue[0]?.id ?? '')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>('create')
-  const [form, setForm] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
-  const [formBaseline, setFormBaseline] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
+  const [form, setForm] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId))
+  const [formBaseline, setFormBaseline] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId))
   const [cloneOpen, setCloneOpen] = useState(false)
   const [cloneForm, setCloneForm] = useState<PersonalCloneForm>(buildCloneForm(props))
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
@@ -884,7 +885,7 @@ export function PersonalKpiManagementClient(props: Props) {
         : props.mine[0]?.id ?? ''
     )
     setSelectedReviewId(props.reviewQueue[0]?.id ?? '')
-    const emptyForm = buildEmptyForm(props.selectedYear, props.selectedEmployeeId)
+    const emptyForm = buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)
     setForm(emptyForm)
     setFormBaseline(emptyForm)
     setEditorOpen(false)
@@ -904,7 +905,7 @@ export function PersonalKpiManagementClient(props: Props) {
     setMidcheckCoachErrors({})
     setBanner(null)
     setReviewNote('')
-  }, [props.selectedEmployeeId, props.selectedYear, props.selectedCycleId])
+  }, [props.selectedEmployeeId, props.selectedYear, props.selectedCycleId, defaultLinkedOrgKpiId])
 
   const activeTab = activeTabState
   const selectedKpi = useMemo(
@@ -1159,7 +1160,7 @@ export function PersonalKpiManagementClient(props: Props) {
 
     const transition = getPersonalKpiHeroCtaTransition('create')
     setActiveTab(transition.nextTab)
-    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId))
+    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId))
     setAiPreview(null)
     setSelectedAiRecommendationIndex(null)
     setPendingAiRecommendationIndex(null)

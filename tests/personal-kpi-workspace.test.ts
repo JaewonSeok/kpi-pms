@@ -880,6 +880,15 @@ async function main() {
     assert.equal(source.includes('일부 운영 정보를 불러오지 못해 기본 화면으로 표시 중입니다.'), true)
   })
 
+  await run('personal KPI AI draft generation keeps a default linked org KPI in zero-KPI self-service context', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+    assert.equal(source.includes("function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = '')"), true)
+    assert.equal(source.includes('const defaultLinkedOrgKpiId = props.orgKpiOptions[0]?.id ?? \'\''), true)
+    assert.equal(source.includes('linkedOrgKpiId: defaultLinkedOrgKpiId,'), true)
+    assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), true)
+  })
+
   await run('personal KPI AI route now uses the same access resolver as the page', () => {
     const routeSource = read('src/app/api/kpi/personal/ai/route.ts')
 
