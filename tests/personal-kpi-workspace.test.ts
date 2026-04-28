@@ -508,9 +508,24 @@ async function main() {
 
   await run('leadership targets auto-import only their exact org KPI scope into personal KPI and remain idempotent', async () => {
     const departments = [
-      { id: 'dept-team', deptName: 'Customer Ops Team', parentDeptId: 'dept-section' },
-      { id: 'dept-section', deptName: 'Customer Ops Section', parentDeptId: 'dept-division' },
-      { id: 'dept-division', deptName: 'Customer Experience Division', parentDeptId: null },
+      {
+        id: 'dept-team',
+        deptName: 'Customer Ops Team',
+        parentDeptId: 'dept-section',
+        leaderEmployeeId: 'leader-hr',
+      },
+      {
+        id: 'dept-section',
+        deptName: 'Customer Ops Section',
+        parentDeptId: 'dept-division',
+        leaderEmployeeId: 'leader-section',
+      },
+      {
+        id: 'dept-division',
+        deptName: 'Customer Experience Division',
+        parentDeptId: null,
+        leaderEmployeeId: 'leader-division',
+      },
     ]
 
     const orgKpis = [
@@ -708,6 +723,40 @@ async function main() {
       assert.equal(teamHarness.getCreatedCount(), 1)
       assert.equal(second.mine.length, 1)
       assert.equal(teamHarness.personalKpis.length, 1)
+    })
+
+    const hrTeamLeaderHarness = buildLoaderHarness([
+      {
+        id: 'leader-hr',
+        empId: 'EMP-HR-TL',
+        empName: '인사팀장',
+        role: 'ROLE_MEMBER',
+        deptId: 'dept-team',
+        teamLeaderId: null,
+        sectionChiefId: 'leader-section',
+        divisionHeadId: 'leader-division',
+      },
+    ])
+
+    await withStubbedPersonalKpiPageData(hrTeamLeaderHarness.overrides, async () => {
+      const data = await getPersonalKpiPageData({
+        session: {
+          user: {
+            id: 'leader-hr',
+            role: 'ROLE_MEMBER',
+            name: '인사팀장',
+            deptId: 'dept-team',
+            deptName: 'Customer Ops Team',
+            accessibleDepartmentIds: ['dept-team'],
+          },
+        },
+        year: 2026,
+      })
+
+      assert.equal(data.mine.length, 1)
+      assert.equal(data.mine[0]?.orgKpiId, 'org-team-1')
+      assert.equal(hrTeamLeaderHarness.getCreatedCount(), 1)
+      assert.equal(hrTeamLeaderHarness.personalKpis[0]?.linkedOrgKpiId, 'org-team-1')
     })
 
     const sectionHarness = buildLoaderHarness([

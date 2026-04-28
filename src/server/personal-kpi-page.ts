@@ -326,6 +326,13 @@ type EmployeeLite = Prisma.EmployeeGetPayload<{
   }
 }>
 
+type DepartmentLite = {
+  id: string
+  deptName: string | null
+  parentDeptId: string | null
+  leaderEmployeeId: string | null
+}
+
 type LeadershipBootstrapScope = 'TEAM' | 'SECTION' | 'DIVISION'
 
 type LeadershipBootstrapOrgKpi = Prisma.OrgKpiGetPayload<{
@@ -434,17 +441,27 @@ function resolveDepartmentLabel(department?: { deptName?: string | null } | null
   return name?.length ? name : '미지정 부서'
 }
 
-function resolveLeadershipBootstrapScope(role: SystemRole): LeadershipBootstrapScope | null {
-  switch (role) {
-    case 'ROLE_TEAM_LEADER':
-      return 'TEAM'
-    case 'ROLE_SECTION_CHIEF':
-      return 'SECTION'
+function resolveLeadershipBootstrapScope(params: {
+  targetEmployee: EmployeeLite
+  departmentsById: Map<string, DepartmentLite>
+}): LeadershipBootstrapScope | null {
+  switch (params.targetEmployee.role) {
     case 'ROLE_DIV_HEAD':
       return 'DIVISION'
+    case 'ROLE_SECTION_CHIEF':
+      return 'SECTION'
+    case 'ROLE_TEAM_LEADER':
+      return 'TEAM'
     default:
-      return null
+      break
   }
+
+  const currentDepartment = params.departmentsById.get(params.targetEmployee.deptId)
+  if (currentDepartment?.leaderEmployeeId === params.targetEmployee.id) {
+    return 'TEAM'
+  }
+
+  return null
 }
 
 function buildLeadershipBootstrapMetadata(params: {
@@ -501,10 +518,14 @@ function buildPersonalKpiBootstrapPayloadFromOrgKpi(params: {
 async function autoBootstrapLeadershipPersonalKpis(params: {
   sessionUserId: string
   targetEmployee: EmployeeLite
+  departmentsById: Map<string, DepartmentLite>
   selectedYear: number
   goalEditLocked: boolean
 }) {
-  const scope = resolveLeadershipBootstrapScope(params.targetEmployee.role)
+  const scope = resolveLeadershipBootstrapScope({
+    targetEmployee: params.targetEmployee,
+    departmentsById: params.departmentsById,
+  })
   if (!scope || params.goalEditLocked) {
     return
   }
@@ -853,7 +874,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           alerts,
           title: '대상자 부서 정보를 모두 불러오지 못했습니다.',
           description: '대상자 목록은 유지하고, 확인되지 않은 부서는 미지정으로 표시합니다.',
-          fallback: [] as Array<{ id: string; deptName: string | null; parentDeptId: string | null }>,
+          fallback: [] as DepartmentLite[],
           loader: () =>
             prisma.department.findMany({
               where: {
@@ -865,6 +886,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
                 id: true,
                 deptName: true,
                 parentDeptId: true,
+                leaderEmployeeId: true,
               },
             }),
         })
@@ -1018,6 +1040,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         autoBootstrapLeadershipPersonalKpis({
           sessionUserId: params.session.user.id,
           targetEmployee,
+          departmentsById,
           selectedYear,
           goalEditLocked,
         }),
