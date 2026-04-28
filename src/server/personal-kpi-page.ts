@@ -10,6 +10,10 @@ import type {
 import { prisma } from '@/lib/prisma'
 import { parseMonthlyAttachments, type MonthlyAttachmentItem } from '@/lib/monthly-attachments'
 import {
+  formatPersonalKpiTargetValues,
+  resolvePersonalKpiTargetValues,
+} from '@/lib/personal-kpi-target-values'
+import {
   buildPersonalKpiPermissions,
   canManagePersonalKpi,
   getPersonalKpiScopeDepartmentIds,
@@ -108,6 +112,9 @@ export type PersonalKpiViewModel = {
   definition?: string
   formula?: string
   targetValue?: number | string
+  targetValueT?: number
+  targetValueE?: number
+  targetValueS?: number
   unit?: string
   weight: number
   difficulty?: Difficulty
@@ -189,7 +196,6 @@ export type PersonalKpiPageData = {
   message?: string
   alerts?: PersonalKpiPageAlert[]
   selectedYear: number
-  availableYears: number[]
   selectedEmployeeId: string
   selectedCycleId?: string
   cycleOptions: EvalCycleOption[]
@@ -498,10 +504,14 @@ function buildSummaryText(record: Record<string, unknown> | null) {
   if (!record) return undefined
   const title = typeof record.kpiName === 'string' ? record.kpiName : ''
   const weight = typeof record.weight === 'number' ? `${record.weight}%` : ''
-  const targetValue =
-    typeof record.targetValue === 'number'
-      ? `${record.targetValue}${typeof record.unit === 'string' ? ` ${record.unit}` : ''}`
-      : ''
+  const targetValue = formatPersonalKpiTargetValues({
+    targetValue: typeof record.targetValue === 'number' ? record.targetValue : undefined,
+    targetValueT: typeof record.targetValueT === 'number' ? record.targetValueT : undefined,
+    targetValueE: typeof record.targetValueE === 'number' ? record.targetValueE : undefined,
+    targetValueS: typeof record.targetValueS === 'number' ? record.targetValueS : undefined,
+    copyMetadata: record.copyMetadata,
+    unit: typeof record.unit === 'string' ? record.unit : undefined,
+  })
   return [title, targetValue, weight].filter(Boolean).join(' · ')
 }
 
@@ -720,7 +730,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         message: '현재 범위에서 조회할 대상자를 찾지 못했습니다. 대상자를 다시 선택해 주세요.',
         alerts,
         selectedYear,
-        availableYears: [selectedYear],
         selectedEmployeeId: '',
         cycleOptions: [],
         employeeOptions,
@@ -754,7 +763,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
             : '조회 가능한 직원 범위를 찾을 수 없습니다.',
         alerts,
         selectedYear,
-        availableYears: [selectedYear],
         selectedEmployeeId: '',
         cycleOptions: [],
         employeeOptions,
@@ -820,31 +828,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         ? params.cycleId
         : cycleOptions[0]?.id
     const selectedCycleRecord = cycleRecords.find((cycle) => cycle.id === selectedCycleId)
-
-    failureStage = 'available-years'
-    const availableYearsRaw = await loadPersonalKpiSection({
-      alerts,
-      title: '개인 KPI 연도 옵션을 불러오지 못했습니다.',
-      description: '연도 선택은 현재 연도 기준으로 표시합니다.',
-      fallback: [] as Array<{ evalYear: number }>,
-      loader: () =>
-        prisma.personalKpi.findMany({
-          where: {
-            employeeId: targetEmployee.id,
-          },
-          select: {
-            evalYear: true,
-          },
-          distinct: ['evalYear'],
-          orderBy: {
-            evalYear: 'desc',
-          },
-        }),
-    })
-
-    const availableYears = Array.from(
-      new Set([selectedYear, ...availableYearsRaw.map((item) => item.evalYear), ...cycleOptions.map((item) => item.year)])
-    ).sort((a, b) => b - a)
 
     failureStage = 'mine-query'
     const mine = await loadPersonalKpiSection({
@@ -1104,6 +1087,15 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       description: '일부 KPI 항목을 제외하고 화면을 계속 표시합니다.',
       items: mine,
       mapper: (kpi) => {
+        const resolvedTargetValues = resolvePersonalKpiTargetValues(
+          kpi as typeof kpi & {
+            targetValue?: number | string | null
+            targetValueT?: number | null
+            targetValueE?: number | null
+            targetValueS?: number | null
+            copyMetadata?: unknown
+          }
+        )
         const logs = logsByKpiId.get(kpi.id) ?? []
         const status = resolvePersonalKpiOperationalStatus({
           status: kpi.status,
@@ -1130,7 +1122,10 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           type: kpi.kpiType,
           definition: kpi.definition ?? undefined,
           formula: kpi.formula ?? undefined,
-          targetValue: kpi.targetValue ?? undefined,
+          targetValue: resolvedTargetValues.targetValue,
+          targetValueT: resolvedTargetValues.targetValueT,
+          targetValueE: resolvedTargetValues.targetValueE,
+          targetValueS: resolvedTargetValues.targetValueS,
           unit: kpi.unit ?? undefined,
           weight: kpi.weight,
           difficulty: kpi.difficulty,
@@ -1276,7 +1271,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           : undefined,
       alerts,
       selectedYear,
-      availableYears,
       selectedEmployeeId: targetEmployee.id,
       selectedCycleId,
       cycleOptions,
@@ -1342,7 +1336,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           },
         ],
         selectedYear,
-        availableYears: [selectedYear],
         selectedEmployeeId: shellTargetEmployee?.id ?? '',
         selectedCycleId: shellCycleOptions[0]?.id,
         cycleOptions: shellCycleOptions,
@@ -1369,7 +1362,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       message: '개인 KPI 데이터를 불러오는 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
       alerts: shellAlerts,
       selectedYear,
-      availableYears: [selectedYear],
       selectedEmployeeId: params.employeeId ?? params.session.user.id,
       selectedCycleId: shellCycleOptions[0]?.id,
       cycleOptions: shellCycleOptions,

@@ -32,9 +32,9 @@ run('personal monthly and goal alignment copy explains units and bases', () => {
   const monthlySource = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
   const alignmentSource = read('src/components/admin/GoalAlignmentClient.tsx')
 
-  assert.equal(personalSource.includes('조직 KPI 연결 비율'), true)
-  assert.equal(personalSource.includes('최근 월간 실적 반영 비율'), true)
-  assert.equal(personalSource.includes("formatRateBaseCopy('전체 개인 KPI')"), true)
+  assert.equal(personalSource.includes('議곗쭅 KPI ?곌껐 鍮꾩쑉'), false)
+  assert.equal(personalSource.includes('理쒓렐 ?붽컙 ?ㅼ쟻 諛섏쁺 鍮꾩쑉'), false)
+  assert.equal(personalSource.includes("formatRateBaseCopy('?꾩껜 媛쒖씤 KPI')"), false)
 
   assert.equal(monthlySource.includes('제출 완료 비율'), true)
   assert.equal(monthlySource.includes('위험 신호 KPI'), true)

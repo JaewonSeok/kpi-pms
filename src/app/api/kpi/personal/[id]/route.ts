@@ -5,6 +5,10 @@ import {
   getPersonalKpiScopeDepartmentIds,
 } from '@/lib/personal-kpi-access'
 import { prisma } from '@/lib/prisma'
+import {
+  buildPersonalKpiTargetValuePersistence,
+  resolvePersonalKpiTargetValues,
+} from '@/lib/personal-kpi-target-values'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { DeletePersonalKpiSchema, UpdatePersonalKpiSchema } from '@/lib/validations'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
@@ -145,11 +149,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.kpiName !== undefined ||
       data.definition !== undefined ||
       data.formula !== undefined ||
-      data.targetValue !== undefined ||
+      data.targetValueT !== undefined ||
+      data.targetValueE !== undefined ||
+      data.targetValueS !== undefined ||
       data.unit !== undefined ||
       data.weight !== undefined ||
       data.difficulty !== undefined ||
-      data.tags !== undefined ||
       data.linkedOrgKpiId !== undefined
 
     if (hasFieldUpdates && !canEditPersonalKpiByOperationalStatus(operationalStatus)) {
@@ -254,11 +259,17 @@ export async function PATCH(request: Request, context: RouteContext) {
         ...(data.kpiName !== undefined ? { kpiName: data.kpiName } : {}),
         ...(data.definition !== undefined ? { definition: data.definition || null } : {}),
         ...(data.formula !== undefined ? { formula: data.formula || null } : {}),
-        ...(data.targetValue !== undefined ? { targetValue: data.targetValue } : {}),
+        ...(data.targetValueT !== undefined && data.targetValueT !== null
+          ? buildPersonalKpiTargetValuePersistence({
+              targetValueT: data.targetValueT,
+              targetValueE: data.targetValueE ?? null,
+              targetValueS: data.targetValueS ?? null,
+              copyMetadata: current.copyMetadata,
+            })
+          : {}),
         ...(data.unit !== undefined ? { unit: data.unit || null } : {}),
         ...(data.weight !== undefined ? { weight: data.weight } : {}),
         ...(data.difficulty !== undefined ? { difficulty: data.difficulty } : {}),
-        ...(data.tags !== undefined ? { tags: data.tags } : {}),
         ...(data.linkedOrgKpiId !== undefined || data.employeeId !== undefined || data.evalYear !== undefined
           ? { linkedOrgKpiId }
           : {}),
@@ -282,6 +293,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       },
     })
 
+    const resolvedCurrentTargetValues = resolvePersonalKpiTargetValues(current)
+    const resolvedUpdatedTargetValues = resolvePersonalKpiTargetValues(updated)
+
     await createAuditLog({
       userId: session.user.id,
       action: data.status && data.status !== current.status ? 'PERSONAL_KPI_STATUS_CHANGED' : 'PERSONAL_KPI_UPDATED',
@@ -294,11 +308,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         kpiName: current.kpiName,
         definition: current.definition,
         formula: current.formula,
-        targetValue: current.targetValue,
+        targetValue: resolvedCurrentTargetValues.targetValue,
+        targetValueT: resolvedCurrentTargetValues.targetValueT,
+        targetValueE: resolvedCurrentTargetValues.targetValueE,
+        targetValueS: resolvedCurrentTargetValues.targetValueS,
         unit: current.unit,
         weight: current.weight,
         difficulty: current.difficulty,
-        tags: current.tags,
         linkedOrgKpiId: current.linkedOrgKpiId,
         status: current.status,
         workflowStatus: operationalStatus,
@@ -310,11 +326,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         kpiName: updated.kpiName,
         definition: updated.definition,
         formula: updated.formula,
-        targetValue: updated.targetValue,
+        targetValue: resolvedUpdatedTargetValues.targetValue,
+        targetValueT: resolvedUpdatedTargetValues.targetValueT,
+        targetValueE: resolvedUpdatedTargetValues.targetValueE,
+        targetValueS: resolvedUpdatedTargetValues.targetValueS,
         unit: updated.unit,
         weight: updated.weight,
         difficulty: updated.difficulty,
-        tags: updated.tags,
         linkedOrgKpiId: updated.linkedOrgKpiId,
         status: updated.status,
       },

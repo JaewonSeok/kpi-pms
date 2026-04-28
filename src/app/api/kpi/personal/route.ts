@@ -2,11 +2,13 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { canManagePersonalKpi } from '@/lib/personal-kpi-access'
+import { buildPersonalKpiTargetValuePersistence } from '@/lib/personal-kpi-target-values'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreatePersonalKpiSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { validatePersonalOrgLink } from '@/server/goal-alignment'
+import { resolvePersonalKpiTargetValues } from '@/lib/personal-kpi-target-values'
 
 export async function GET(request: Request) {
   try {
@@ -149,9 +151,22 @@ export async function POST(request: Request) {
 
     const kpi = await prisma.personalKpi.create({
       data: {
-        ...data,
+        employeeId: data.employeeId,
+        evalYear: data.evalYear,
+        kpiType: data.kpiType,
+        kpiName: data.kpiName,
+        definition: data.definition,
+        formula: data.formula,
+        ...buildPersonalKpiTargetValuePersistence({
+          targetValueT: data.targetValueT,
+          targetValueE: data.targetValueE,
+          targetValueS: data.targetValueS,
+          copyMetadata: null,
+        }),
+        unit: data.unit,
+        weight: data.weight,
+        difficulty: data.difficulty,
         linkedOrgKpiId,
-        tags: data.tags ?? [],
         status: 'DRAFT',
       },
       include: {
@@ -168,6 +183,8 @@ export async function POST(request: Request) {
       },
     })
 
+    const resolvedTargetValues = resolvePersonalKpiTargetValues(kpi)
+
     await createAuditLog({
       userId: session.user.id,
       action: 'PERSONAL_KPI_CREATED',
@@ -178,12 +195,14 @@ export async function POST(request: Request) {
         evalYear: kpi.evalYear,
         kpiName: kpi.kpiName,
         kpiType: kpi.kpiType,
-        targetValue: kpi.targetValue,
+        targetValue: resolvedTargetValues.targetValue,
+        targetValueT: resolvedTargetValues.targetValueT,
+        targetValueE: resolvedTargetValues.targetValueE,
+        targetValueS: resolvedTargetValues.targetValueS,
         unit: kpi.unit,
         weight: kpi.weight,
         difficulty: kpi.difficulty,
         linkedOrgKpiId: kpi.linkedOrgKpiId,
-        tags: kpi.tags,
         status: kpi.status,
       },
       ...getClientInfo(request),

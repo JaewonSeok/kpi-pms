@@ -51,7 +51,11 @@ import {
   type PersonalKpiSubmitCtaState,
   type PersonalKpiTabKey,
 } from '@/lib/personal-kpi-cta'
-import { formatCountWithUnit, formatRateBaseCopy, joinInlineParts } from '@/lib/metric-copy'
+import {
+  formatPersonalKpiTargetValues,
+  resolvePersonalKpiTargetValues,
+} from '@/lib/personal-kpi-target-values'
+import { joinInlineParts } from '@/lib/metric-copy'
 
 type Props = PersonalKpiPageData & {
   initialTab?: string
@@ -82,10 +86,11 @@ type KpiForm = {
   evalYear: number
   kpiType: 'QUANTITATIVE' | 'QUALITATIVE'
   kpiName: string
-  tags: string
   definition: string
   formula: string
-  targetValue: string
+  targetValueT: string
+  targetValueE: string
+  targetValueS: string
   unit: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
@@ -307,6 +312,25 @@ function toNumberOrUndefined(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+function formatTargetValuesForDisplay(input: {
+  targetValue?: number | string | null
+  targetValueT?: number | string | null
+  targetValueE?: number | string | null
+  targetValueS?: number | string | null
+  unit?: string | null
+}) {
+  return formatPersonalKpiTargetValues(input)
+}
+
+function formatTargetValuesForForm(form: Pick<KpiForm, 'targetValueT' | 'targetValueE' | 'targetValueS' | 'unit'>) {
+  return formatPersonalKpiTargetValues({
+    targetValueT: toNumberOrUndefined(form.targetValueT),
+    targetValueE: toNumberOrUndefined(form.targetValueE),
+    targetValueS: toNumberOrUndefined(form.targetValueS),
+    unit: form.unit.trim() || undefined,
+  })
+}
+
 function previewRecord(value: unknown) {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
@@ -335,7 +359,7 @@ function buildPersonalAiPreviewComparisons(params: {
   push('산식', params.selectedKpi?.formula ?? params.form.formula, previewStringValue(record.formula))
   push(
     '목표값',
-    typeof params.selectedKpi?.targetValue === 'number' ? String(params.selectedKpi.targetValue) : params.form.targetValue,
+    params.selectedKpi ? formatTargetValuesForDisplay(params.selectedKpi) : formatTargetValuesForForm(params.form),
     previewStringValue(record.targetValueSuggestion)
   )
   push('가중치', params.selectedKpi ? String(params.selectedKpi.weight) : params.form.weight, previewStringValue(record.weightSuggestion))
@@ -343,7 +367,6 @@ function buildPersonalAiPreviewComparisons(params: {
 
   return comparisons
 }
-
 function parseTagInput(value: string) {
   return Array.from(
     new Set(
@@ -410,17 +433,17 @@ function buildEmptyForm(year: number, employeeId: string): KpiForm {
     evalYear: year,
     kpiType: 'QUANTITATIVE',
     kpiName: '',
-    tags: '',
     definition: '',
     formula: '',
-    targetValue: '',
+    targetValueT: '',
+    targetValueE: '',
+    targetValueS: '',
     unit: '%',
     weight: '',
     difficulty: 'MEDIUM',
     linkedOrgKpiId: '',
   }
 }
-
 function buildCloneForm(props: Props, selectedKpi?: PersonalKpiViewModel): PersonalCloneForm {
   return {
     targetEmployeeId: selectedKpi?.employeeId ?? props.selectedEmployeeId,
@@ -453,22 +476,24 @@ function getSubmitActionLabel(kpi?: PersonalKpiViewModel) {
 }
 
 function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
+  const targetValues = resolvePersonalKpiTargetValues(kpi)
+
   return {
     employeeId: kpi.employeeId,
     evalYear: new Date(kpi.updatedAt ?? Date.now()).getFullYear(),
     kpiType: kpi.type,
     kpiName: kpi.title,
-    tags: kpi.tags.join(', '),
     definition: kpi.definition ?? '',
     formula: kpi.formula ?? '',
-    targetValue: toNumberString(kpi.targetValue),
+    targetValueT: toNumberString(targetValues.targetValueT),
+    targetValueE: toNumberString(targetValues.targetValueE),
+    targetValueS: toNumberString(targetValues.targetValueS),
     unit: kpi.unit ?? '',
     weight: toNumberString(kpi.weight),
     difficulty: (kpi.difficulty ?? 'MEDIUM') as KpiForm['difficulty'],
     linkedOrgKpiId: kpi.orgKpiId ?? '',
   }
 }
-
 function buildAiPayload(
   props: Props,
   selectedKpi: PersonalKpiViewModel | undefined,
@@ -483,6 +508,18 @@ function buildAiPayload(
   const linkedOrgKpiId = selectedKpi?.orgKpiId ?? form.linkedOrgKpiId
   const linkedOrgKpi = props.orgKpiOptions.find((item) => item.id === linkedOrgKpiId)
   const currentTitle = selectedKpi?.title ?? form.kpiName
+  const resolvedFormTargets = resolvePersonalKpiTargetValues({
+    targetValueT: toNumberOrUndefined(form.targetValueT),
+    targetValueE: toNumberOrUndefined(form.targetValueE),
+    targetValueS: toNumberOrUndefined(form.targetValueS),
+  })
+  const resolvedSelectedTargets = selectedKpi ? resolvePersonalKpiTargetValues(selectedKpi) : null
+  const currentTargetValue = resolvedSelectedTargets?.targetValue ?? resolvedFormTargets.targetValue
+  const currentTargetValues = {
+    targetValueT: resolvedSelectedTargets?.targetValueT ?? resolvedFormTargets.targetValueT,
+    targetValueE: resolvedSelectedTargets?.targetValueE ?? resolvedFormTargets.targetValueE,
+    targetValueS: resolvedSelectedTargets?.targetValueS ?? resolvedFormTargets.targetValueS,
+  }
 
   return {
     action,
@@ -499,7 +536,7 @@ function buildAiPayload(
     goal: currentTitle,
     definition: selectedKpi?.definition ?? form.definition,
     formula: selectedKpi?.formula ?? form.formula,
-    targetValue: selectedKpi?.targetValue ?? toNumberOrUndefined(form.targetValue) ?? form.targetValue,
+    targetValue: currentTargetValue,
     unit: selectedKpi?.unit ?? form.unit,
     weight: selectedKpi?.weight ?? toNumberOrUndefined(form.weight) ?? form.weight,
     kpiType: selectedKpi?.type ?? form.kpiType,
@@ -518,7 +555,8 @@ function buildAiPayload(
       title: currentTitle,
       definition: selectedKpi?.definition ?? form.definition,
       formula: selectedKpi?.formula ?? form.formula,
-      targetValue: selectedKpi?.targetValue ?? toNumberOrUndefined(form.targetValue) ?? form.targetValue,
+      targetValue: currentTargetValue,
+      ...currentTargetValues,
       unit: selectedKpi?.unit ?? form.unit,
       weight: selectedKpi?.weight ?? toNumberOrUndefined(form.weight) ?? form.weight,
       difficulty: selectedKpi?.difficulty ?? form.difficulty,
@@ -538,24 +576,23 @@ function buildAiPayload(
     })),
   }
 }
-
 function normalizeKpiForm(form: KpiForm) {
   return {
     employeeId: form.employeeId.trim(),
     evalYear: form.evalYear,
     kpiType: form.kpiType,
     kpiName: form.kpiName.trim(),
-    tags: form.tags.trim(),
     definition: form.definition.trim(),
     formula: form.formula.trim(),
-    targetValue: form.targetValue.trim(),
+    targetValueT: form.targetValueT.trim(),
+    targetValueE: form.targetValueE.trim(),
+    targetValueS: form.targetValueS.trim(),
     unit: form.unit.trim(),
     weight: form.weight.trim(),
     difficulty: form.difficulty,
     linkedOrgKpiId: form.linkedOrgKpiId.trim(),
   }
 }
-
 function areKpiFormsEqual(left: KpiForm, right: KpiForm) {
   return JSON.stringify(normalizeKpiForm(left)) === JSON.stringify(normalizeKpiForm(right))
 }
@@ -571,13 +608,12 @@ function applyPreviewToForm(form: KpiForm, preview: Record<string, unknown>) {
     kpiName: toStringValue(preview.title || preview.improvedTitle, form.kpiName),
     definition: toStringValue(preview.definition || preview.improvedDefinition, form.definition),
     formula: toStringValue(preview.formula, form.formula),
-    targetValue: toStringValue(preview.targetValueSuggestion, form.targetValue),
+    targetValueT: toStringValue(preview.targetValueSuggestion, form.targetValueT),
     unit: toStringValue(preview.unit || preview.unitSuggestion, form.unit),
     weight: preview.weightSuggestion ? String(preview.weightSuggestion) : form.weight,
     difficulty: nextDifficulty,
   }
 }
-
 function applyRecommendationToForm(
   form: KpiForm,
   recommendation: KpiAiPreviewRecommendation
@@ -592,7 +628,9 @@ function applyRecommendationToForm(
     kpiName: recommendation.title || form.kpiName,
     definition: recommendation.definition || form.definition,
     formula: recommendation.formula || form.formula,
-    targetValue: toStringValue(recommendation.targetValueE ?? recommendation.targetText, form.targetValue),
+    targetValueT: toStringValue(recommendation.targetValueT ?? recommendation.targetText, form.targetValueT),
+    targetValueE: toStringValue(recommendation.targetValueE, form.targetValueE),
+    targetValueS: toStringValue(recommendation.targetValueS, form.targetValueS),
     unit: toStringValue(recommendation.unit, form.unit),
     weight: toStringValue(recommendation.weightSuggestion, form.weight),
     difficulty: nextDifficulty,
@@ -602,7 +640,6 @@ function applyRecommendationToForm(
       form.linkedOrgKpiId,
   }
 }
-
 function isDraftStatus(status?: PersonalKpiViewModel['status']) {
   return status === 'DRAFT'
 }
@@ -708,11 +745,50 @@ function getReviewActionState(status: PersonalKpiReviewQueueItem['status'], acti
 
 function validateKpiForm(form: KpiForm) {
   if (!form.employeeId.trim()) {
-    return '대상자를 먼저 선택한 뒤 KPI를 저장해 주세요.'
+    return 'KPI 대상자를 먼저 선택해 주세요.'
   }
 
   if (!form.kpiName.trim()) {
     return 'KPI명을 입력해 주세요.'
+  }
+
+  if (!form.targetValueT.trim()) {
+    return 'T 목표값을 입력해 주세요.'
+  }
+
+  const targetValueT = Number(form.targetValueT)
+  if (!Number.isFinite(targetValueT) || targetValueT < 0) {
+    return 'T 목표값은 0 이상의 숫자로 입력해 주세요.'
+  }
+
+  const targetValueERaw = form.targetValueE.trim()
+  let targetValueE: number | undefined
+  if (targetValueERaw) {
+    targetValueE = Number(targetValueERaw)
+    if (!Number.isFinite(targetValueE) || targetValueE < 0) {
+      return 'E 목표값은 0 이상의 숫자로 입력해 주세요.'
+    }
+  }
+
+  const targetValueSRaw = form.targetValueS.trim()
+  let targetValueS: number | undefined
+  if (targetValueSRaw) {
+    targetValueS = Number(targetValueSRaw)
+    if (!Number.isFinite(targetValueS) || targetValueS < 0) {
+      return 'S 목표값은 0 이상의 숫자로 입력해 주세요.'
+    }
+  }
+
+  if (targetValueE !== undefined && targetValueT > targetValueE) {
+    return '목표값은 T <= E <= S 순서를 유지해 주세요.'
+  }
+
+  if (targetValueE !== undefined && targetValueS !== undefined && targetValueE > targetValueS) {
+    return '목표값은 T <= E <= S 순서를 유지해 주세요.'
+  }
+
+  if (targetValueE === undefined && targetValueS !== undefined && targetValueT > targetValueS) {
+    return '목표값은 T <= E <= S 순서를 유지해 주세요.'
   }
 
   if (!form.weight.trim()) {
@@ -730,7 +806,6 @@ function validateKpiForm(form: KpiForm) {
 
   return undefined
 }
-
 export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
@@ -1270,10 +1345,11 @@ export function PersonalKpiManagementClient(props: Props) {
         evalYear: props.selectedYear,
         kpiType: form.kpiType,
         kpiName: form.kpiName.trim(),
-        tags: parseTagInput(form.tags),
         definition: form.definition.trim() || undefined,
         formula: form.formula.trim() || undefined,
-        targetValue: toNumberOrUndefined(form.targetValue),
+        targetValueT: Number(form.targetValueT),
+        targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : undefined,
+        targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : undefined,
         unit: form.unit.trim() || undefined,
         weight: Number(form.weight),
         difficulty: form.difficulty,
@@ -1292,7 +1368,8 @@ export function PersonalKpiManagementClient(props: Props) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 ...payload,
-                targetValue: form.targetValue.trim() ? Number(form.targetValue) : null,
+                targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : null,
+                targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : null,
                 linkedOrgKpiId: form.linkedOrgKpiId || null,
               }),
             })
@@ -2028,15 +2105,6 @@ export function PersonalKpiManagementClient(props: Props) {
     <div className="space-y-6">
       <PageHeader />
       <HeroSection
-        state={props.state}
-        actorName={props.actor.name}
-        selectedYear={props.selectedYear}
-        availableYears={props.availableYears}
-        selectedCycleId={props.selectedCycleId}
-        cycleOptions={props.cycleOptions}
-        selectedEmployeeId={props.selectedEmployeeId}
-        employeeOptions={props.employeeOptions}
-        summary={derivedSummary}
         rejectedCount={derivedSummary.rejectedCount}
         submitState={submitCtaState}
         submitLabel={submitLabel}
@@ -2045,9 +2113,6 @@ export function PersonalKpiManagementClient(props: Props) {
         aiDisabledReason={aiDisabledReason}
         reviewDisabledReason={reviewDisabledReason}
         historyDisabledReason={historyDisabledReason}
-        onChangeYear={(year) => handleRouteSelection({ year, tab: 'mine', kpiId: '' })}
-        onChangeCycle={(cycleId) => handleRouteSelection({ cycleId, tab: 'mine', kpiId: '' })}
-        onChangeEmployee={(employeeId) => handleRouteSelection({ employeeId, tab: 'mine', kpiId: '' })}
         onOpenCreate={handleOpenCreate}
         onOpenBulkEdit={handleOpenBulkEdit}
         onOpenAiDraft={handleOpenAiDraft}
@@ -2061,7 +2126,6 @@ export function PersonalKpiManagementClient(props: Props) {
 
       {props.state === 'ready' ? (
         <>
-          <SummaryCards summary={derivedSummary} />
           <Tabs activeTab={activeTab} onChange={setActiveTab} />
           {activeTab === 'mine' ? (
             <MineSection
@@ -2264,15 +2328,6 @@ function PageHeader() {
 }
 
 function HeroSection(props: {
-  state: Props['state']
-  actorName: string
-  selectedYear: number
-  availableYears: number[]
-  selectedCycleId?: string
-  cycleOptions: Props['cycleOptions']
-  selectedEmployeeId: string
-  employeeOptions: Props['employeeOptions']
-  summary: Props['summary']
   rejectedCount: number
   submitState: PersonalKpiSubmitCtaState
   submitLabel: string
@@ -2281,9 +2336,6 @@ function HeroSection(props: {
   aiDisabledReason?: string
   reviewDisabledReason?: string
   historyDisabledReason?: string
-  onChangeYear: (year: string) => void
-  onChangeCycle: (cycleId: string) => void
-  onChangeEmployee: (employeeId: string) => void
   onOpenCreate: () => void
   onOpenBulkEdit: () => void
   onOpenAiDraft: () => void
@@ -2293,86 +2345,8 @@ function HeroSection(props: {
 }) {
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={props.summary.overallStatus} />
-            <InfoPill>{props.actorName}</InfoPill>
-            <InfoPill>
-              {props.state === 'ready'
-                ? '운영 중'
-                : props.state === 'empty'
-                  ? '초안 준비'
-                  : props.state === 'no-target'
-                    ? '대상 선택 필요'
-                    : props.state === 'setup-required'
-                      ? '운영 설정 필요'
-                      : '확인 필요'}
-            </InfoPill>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <SelectorCard label="연도">
-              <select
-                value={String(props.selectedYear)}
-                onChange={(event) => props.onChangeYear(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-              >
-                {props.availableYears.map((year) => (
-                  <option key={year} value={year}>
-                    {year}년
-                  </option>
-                ))}
-              </select>
-            </SelectorCard>
-
-            <SelectorCard label="평가 주기">
-              <select
-                value={props.selectedCycleId ?? ''}
-                onChange={(event) => props.onChangeCycle(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">전체 주기</option>
-                {props.cycleOptions.map((cycle) => (
-                  <option key={cycle.id} value={cycle.id}>
-                    {cycle.name}
-                  </option>
-                ))}
-              </select>
-            </SelectorCard>
-
-            <SelectorCard label="대상자">
-              <select
-                value={props.selectedEmployeeId}
-                onChange={(event) => props.onChangeEmployee(event.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-              >
-                {props.employeeOptions.map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.name} · {employee.departmentName}
-                  </option>
-                ))}
-              </select>
-            </SelectorCard>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="전체 개인 KPI" value={formatCountWithUnit(props.summary.totalCount, '개')} helper="현재 선택 조건에 포함된 개인 KPI 수" />
-            <MetricCard label="총 가중치" value={`${props.summary.totalWeight}%`} helper="현재 개인 KPI 가중치 합계" />
-            <MetricCard label="남은 가중치" value={`${props.summary.remainingWeight}%`} helper="100% 대비 추가 배분 가능한 가중치" />
-            <MetricCard
-              label="조직 KPI 연결 비율"
-              value={
-                props.summary.totalCount > 0
-                  ? `${Math.round((props.summary.linkedOrgKpiCount / props.summary.totalCount) * 100)}%`
-                  : '0%'
-              }
-              helper={formatRateBaseCopy('전체 개인 KPI')}
-            />
-          </div>
-        </div>
-
-        <div className="flex w-full flex-col gap-3 xl:max-w-md">
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <ActionButton
             icon={<Plus className="h-4 w-4" />}
             onClick={props.onOpenCreate}
@@ -2419,64 +2393,24 @@ function HeroSection(props: {
           </ActionButton>
           <ActionButton
             icon={<Send className="h-4 w-4" />}
-            label={props.submitLabel}
-            variant="secondary"
             onClick={props.onSubmit}
             disabled={props.submitState.disabled}
             title={props.submitState.reason}
           >
-            제출
+            승인 요청
           </ActionButton>
-          <p data-testid="personal-kpi-submit-helper" className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            {props.submitState.reason}
-          </p>
-          {props.rejectedCount > 0 ? (
-            <p
-              data-testid="personal-kpi-rejected-count"
-              className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
-            >
-              반려된 목표 {props.rejectedCount}개를 수정했다면 바로 승인 요청을 다시 보낼 수 있습니다.
-            </p>
-          ) : null}
         </div>
-      </div>
-    </section>
-  )
-}
-
-function SummaryCards(props: { summary: Props['summary'] }) {
-  const nextAction =
-    props.summary.remainingWeight !== 0
-      ? '가중치가 100%가 되도록 조정하세요.'
-      : props.summary.reviewPendingCount > 0
-        ? '검토 대기 중인 KPI를 확인하세요.'
-        : props.summary.rejectedCount > 0
-          ? '반려된 KPI를 수정하고 다시 제출하세요.'
-          : '월간 실적 입력과 검토 흐름으로 이어갈 준비가 되었습니다.'
-
-  return (
-    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <MetricCard
-        label="조직 KPI에 연결된 개인 KPI"
-        value={formatCountWithUnit(props.summary.linkedOrgKpiCount, '건')}
-        helper="조직 KPI와 연결된 개인 KPI 건수"
-      />
-      <MetricCard label="검토 대기 KPI" value={formatCountWithUnit(props.summary.reviewPendingCount, '개')} helper="현재 검토 대기 상태의 개인 KPI 수" />
-      <MetricCard label="반려 KPI" value={formatCountWithUnit(props.summary.rejectedCount, '개')} helper="보완 후 다시 제출이 필요한 개인 KPI 수" />
-      <MetricCard
-        label="최근 월간 실적 반영 비율"
-        value={`${props.summary.monthlyCoverageRate}%`}
-        helper={formatRateBaseCopy('전체 개인 KPI')}
-      />
-      <div className="md:col-span-2 xl:col-span-4">
-        <SectionCard title="다음 행동" description={nextAction}>
-          <div className="flex flex-wrap gap-2 text-xs text-slate-600">
-            <InfoPill>가중치 100 맞추기</InfoPill>
-            <InfoPill>조직 KPI 연결 누락 확인</InfoPill>
-            <InfoPill>반려 KPI 재검토</InfoPill>
-            <InfoPill>월간 실적 입력 준비</InfoPill>
-          </div>
-        </SectionCard>
+        <p data-testid="personal-kpi-submit-helper" className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          {props.submitState.reason}
+        </p>
+        {props.rejectedCount > 0 ? (
+          <p
+            data-testid="personal-kpi-rejected-count"
+            className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"
+          >
+            반려된 목표 {props.rejectedCount}개를 수정했다면 바로 승인 요청을 다시 보낼 수 있습니다.
+          </p>
+        ) : null}
       </div>
     </section>
   )
@@ -2656,7 +2590,7 @@ function DetailPanel(props: {
           <Field label="가중치" value={`${item.weight}%`} />
           <Field label="난이도" value={item.difficulty ? DIFFICULTY_LABELS[item.difficulty as KpiForm['difficulty']] : '-'} />
           <Field label="최근 달성률" value={formatPercent(item.monthlyAchievementRate)} />
-          <Field label="목표값" value={item.targetValue ? `${item.targetValue}${item.unit ? ` ${item.unit}` : ''}` : '-'} />
+          <Field label="목표값" value={formatTargetValuesForDisplay(item)} />
           <Field label="조직 KPI 연결" value={item.orgKpiTitle ?? '미연결'} />
         </div>
 
@@ -3769,7 +3703,7 @@ function GoalDetailPanel(props: {
           <Field label="가중치" value={`${item.weight}%`} />
           <Field label="난이도" value={item.difficulty ? DIFFICULTY_LABELS[item.difficulty as KpiForm['difficulty']] : '-'} />
           <Field label="최근 달성률" value={formatPercent(item.monthlyAchievementRate)} />
-          <Field label="목표값" value={item.targetValue ? `${item.targetValue}${item.unit ? ` ${item.unit}` : ''}` : '-'} />
+          <Field label="목표값" value={formatTargetValuesForDisplay(item)} />
           <Field label="조직 KPI 연결" value={item.orgKpiTitle ?? '미연결'} />
         </div>
 
@@ -4243,7 +4177,7 @@ function EditorModal(props: {
           <div>
             <h2 className="text-xl font-semibold text-slate-900">{props.mode === 'create' ? '개인 KPI 추가' : '개인 KPI 수정'}</h2>
             <p className="text-sm text-slate-500">
-              조직 KPI 연결, 가중치, 검토 기준을 함께 입력해 이후 월간 실적과 평가까지 연결하세요.
+              조직 KPI 연결, 가중치, 목표값을 입력한 뒤 월간 실적과 검토 흐름으로 이어가세요.
             </p>
           </div>
           <button type="button" onClick={props.onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
@@ -4259,7 +4193,7 @@ function EditorModal(props: {
                 value={props.form.kpiName}
                 onChange={(event) => props.onChange((current) => ({ ...current, kpiName: event.target.value }))}
                 className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                placeholder="예: 주요 고객 이슈 해결 리드타임 단축"
+                placeholder="예: 주요 고객 이슈 해결 리드타임 개선"
               />
             </label>
 
@@ -4294,18 +4228,7 @@ function EditorModal(props: {
             />
           </label>
 
-          <label className="space-y-2">
-            <span className="text-sm font-medium text-slate-900">목표 태그</span>
-            <input
-              value={props.form.tags}
-              onChange={(event) => props.onChange((current) => ({ ...current, tags: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-              placeholder="예: 매출, 고객, 운영 안정화"
-            />
-            <p className="text-xs text-slate-500">쉼표로 구분해 입력하면 승인과 검토 화면에서 함께 표시됩니다.</p>
-          </label>
-
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-900">산식 또는 평가 기준</span>
               <textarea
@@ -4316,21 +4239,51 @@ function EditorModal(props: {
                 placeholder={
                   props.form.kpiType === 'QUANTITATIVE'
                     ? '예: 실제 실적 / 목표 x 100'
-                    : '예: 핵심 이해관계자 피드백과 프로젝트 리뷰를 기반으로 3단계 기준 평가'
+                    : '예: 분기별 이해관계자 피드백과 프로젝트 리뷰를 기준으로 3단계 평가'
                 }
               />
             </label>
 
-            <div className="grid gap-4">
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-900">목표값</span>
-                <input
-                  value={props.form.targetValue}
-                  onChange={(event) => props.onChange((current) => ({ ...current, targetValue: event.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                  placeholder={props.form.kpiType === 'QUANTITATIVE' ? '예: 95' : '예: 분기 4건'}
-                />
-              </label>
+            <div className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-slate-900">목표값</span>
+                  <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">T 필수</span>
+                </div>
+                <p className="text-xs text-slate-500">T는 필수이며 E와 S는 필요할 때만 입력하세요.</p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-900">T <span className="text-rose-600">*</span></span>
+                  <input
+                    value={props.form.targetValueT}
+                    onChange={(event) => props.onChange((current) => ({ ...current, targetValueT: event.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder={props.form.kpiType === 'QUANTITATIVE' ? '예: 95' : '예: 4'}
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-900">E</span>
+                  <input
+                    value={props.form.targetValueE}
+                    onChange={(event) => props.onChange((current) => ({ ...current, targetValueE: event.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder="선택 입력"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-900">S</span>
+                  <input
+                    value={props.form.targetValueS}
+                    onChange={(event) => props.onChange((current) => ({ ...current, targetValueS: event.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder="선택 입력"
+                  />
+                </label>
+              </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="space-y-2">
@@ -4338,7 +4291,7 @@ function EditorModal(props: {
                   <input
                     value={props.form.unit}
                     onChange={(event) => props.onChange((current) => ({ ...current, unit: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
                     placeholder="예: %, 건, 점"
                   />
                 </label>
@@ -4348,7 +4301,7 @@ function EditorModal(props: {
                   <input
                     value={props.form.weight}
                     onChange={(event) => props.onChange((current) => ({ ...current, weight: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
                     placeholder="예: 25"
                   />
                 </label>
@@ -4366,9 +4319,9 @@ function EditorModal(props: {
                 }
                 className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
               >
-                <option value="HIGH">상</option>
-                <option value="MEDIUM">중</option>
-                <option value="LOW">하</option>
+                <option value="HIGH">높음</option>
+                <option value="MEDIUM">중간</option>
+                <option value="LOW">낮음</option>
               </select>
             </label>
 
@@ -4395,14 +4348,13 @@ function EditorModal(props: {
             취소
           </ActionButton>
           <ActionButton disabled={props.busy} onClick={props.onSave}>
-            {props.busy ? '저장 중...' : props.mode === 'create' ? '개인 KPI 추가' : '변경 저장'}
+            {props.busy ? '저장 중...' : props.mode === 'create' ? '개인 KPI 추가' : '개인 KPI 저장'}
           </ActionButton>
         </div>
       </div>
     </div>
   )
 }
-
 function SectionCard(props: { title: string; description?: string; children: ReactNode }) {
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -4412,25 +4364,6 @@ function SectionCard(props: { title: string; description?: string; children: Rea
       </div>
       {props.children}
     </section>
-  )
-}
-
-function MetricCard(props: { label: string; value: string; helper?: string }) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm text-slate-500">{props.label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{props.value}</p>
-      {props.helper ? <p className="mt-2 text-xs text-slate-500">{props.helper}</p> : null}
-    </div>
-  )
-}
-
-function SelectorCard(props: { label: string; children: ReactNode }) {
-  return (
-    <label className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{props.label}</span>
-      {props.children}
-    </label>
   )
 }
 

@@ -875,7 +875,6 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
               <StatCard key={card.label} label={card.label} value={card.value} />
             ))}
           </section>
-
           <SectionCard title="템플릿 라이브러리" description="리더십 문항을 직접 추가, 수정, 삭제, 정렬할 수 있습니다.">
             <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
               <div className="space-y-3">

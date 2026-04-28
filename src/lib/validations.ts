@@ -189,13 +189,34 @@ export const CreatePersonalKpiSchema = z.object({
   kpiName: z.string().min(1).max(100),
   definition: z.string().max(500).optional(),
   formula: z.string().max(500).optional(),
-  targetValue: z.number().optional(),
+  targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.'),
+  targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.').optional(),
+  targetValueS: z.number().min(0, 'S 목표값은 0 이상이어야 합니다.').optional(),
   unit: z.string().max(20).optional(),
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   linkedOrgKpiId: z.string().optional(),
-  tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
-})
+}).refine(
+  (data) => {
+    if (data.targetValueE !== undefined && data.targetValueT > data.targetValueE) {
+      return false
+    }
+
+    if (data.targetValueS !== undefined && data.targetValueE !== undefined) {
+      return data.targetValueE <= data.targetValueS
+    }
+
+    if (data.targetValueS !== undefined) {
+      return data.targetValueT <= data.targetValueS
+    }
+
+    return true
+  },
+  {
+    message: '목표값은 T <= E <= S 순서를 유지해 주세요.',
+    path: ['targetValueT'],
+  }
+)
 
 export const UpdatePersonalKpiSchema = z.object({
   employeeId: z.string().min(1).optional(),
@@ -204,14 +225,56 @@ export const UpdatePersonalKpiSchema = z.object({
   kpiName: z.string().min(1).max(100).optional(),
   definition: z.string().max(500).optional(),
   formula: z.string().max(500).optional(),
-  targetValue: z.number().nullable().optional(),
+  targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.').nullable().optional(),
+  targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.').nullable().optional(),
+  targetValueS: z.number().min(0, 'S 목표값은 0 이상이어야 합니다.').nullable().optional(),
   unit: z.string().max(20).optional(),
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   linkedOrgKpiId: z.string().nullable().optional(),
-  tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
 })
+  .refine(
+    (data) => {
+      const usesTargetValues =
+        data.targetValueT !== undefined || data.targetValueE !== undefined || data.targetValueS !== undefined
+
+      if (!usesTargetValues) {
+        return true
+      }
+
+      return data.targetValueT !== undefined && data.targetValueT !== null
+    },
+    {
+      message: 'T 목표값을 입력해 주세요.',
+      path: ['targetValueT'],
+    }
+  )
+  .refine(
+    (data) => {
+      const targetValueT = data.targetValueT ?? undefined
+      const targetValueE = data.targetValueE ?? undefined
+      const targetValueS = data.targetValueS ?? undefined
+
+      if (targetValueT !== undefined && targetValueE !== undefined && targetValueT > targetValueE) {
+        return false
+      }
+
+      if (targetValueE !== undefined && targetValueS !== undefined) {
+        return targetValueE <= targetValueS
+      }
+
+      if (targetValueT !== undefined && targetValueS !== undefined) {
+        return targetValueT <= targetValueS
+      }
+
+      return true
+    },
+    {
+      message: '목표값은 T <= E <= S 순서를 유지해 주세요.',
+      path: ['targetValueT'],
+    }
+  )
 
 export const DeletePersonalKpiSchema = z
   .object({
@@ -554,7 +617,7 @@ export const UpwardReviewTemplateQuestionSchema = z.object({
   templateId: z.string().min(1),
   questionId: z.string().optional(),
   category: z.string().trim().max(50).optional(),
-  questionText: z.string().trim().min(1, '吏덈Ц ?댁슜???낅젰??二쇱꽭??').max(500),
+  questionText: z.string().trim().min(1, '질문 내용을 입력해 주세요.').max(500),
   description: z.string().trim().max(500).optional(),
   questionType: z.enum(['TEXT', 'RATING_SCALE', 'MULTIPLE_CHOICE']),
   scaleMin: z.number().int().min(1).max(5).optional(),
@@ -566,57 +629,57 @@ export const UpwardReviewTemplateQuestionSchema = z.object({
 
 export const UpwardReviewTemplateSchema = z.object({
   templateId: z.string().optional(),
-  name: z.string().trim().min(1, '?쒗뵆由??대쫫???낅젰??二쇱꽭??').max(100),
+  name: z.string().trim().min(1, '템플릿 이름을 입력해 주세요.').max(100),
   description: z.string().trim().max(500).optional(),
   isActive: z.boolean().default(true),
   defaultMinResponses: z.number().int().min(1).max(10).default(3),
   defaultTargetTypes: z
     .array(z.enum(['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM', 'CUSTOM']))
-    .min(1, '理쒖냼 ??媛??댁긽???됯? ????좏삎???좏깮??二쇱꽭??'),
+    .min(1, '최소 한 가지 이상의 평가 대상 유형을 선택해 주세요.'),
 })
 
 export const UpwardReviewRoundSchema = z.object({
   roundId: z.string().optional(),
-  evalCycleId: z.string().min(1, '?됯? 二쇨린瑜??좏깮??二쇱꽭??'),
-  roundName: z.string().trim().min(1, '?쇱슫?쒕챸???낅젰??二쇱꽭??').max(100),
-  templateId: z.string().min(1, '吏덈Ц ?쒗뵆由우쓣 ?좏깮??二쇱꽭??'),
+  evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
+  roundName: z.string().trim().min(1, '라운드명을 입력해 주세요.').max(100),
+  templateId: z.string().min(1, '질문 템플릿을 선택해 주세요.'),
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
   minRaters: z.number().int().min(1).max(10).default(3),
   targetTypes: z
     .array(z.enum(['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM', 'CUSTOM']))
-    .min(1, '理쒖냼 ??媛??댁긽???됯? ????좏삎???좏깮??二쇱꽭??'),
+    .min(1, '최소 한 가지 이상의 평가 대상 유형을 선택해 주세요.'),
   resultViewerMode: z.enum(['TARGET_ONLY', 'TARGET_AND_PRIMARY_MANAGER']).default('TARGET_ONLY'),
   rawResponsePolicy: z.enum(['ADMIN_ONLY', 'REVIEW_ADMIN_CONTENT']).default('ADMIN_ONLY'),
 })
 
 export const UpwardReviewAssignmentSchema = z.object({
   roundId: z.string().min(1),
-  evaluatorId: z.string().min(1, '?됯??먮? ?좏깮??二쇱꽭??'),
-  evaluateeId: z.string().min(1, '?쇳룊媛?먮? ?좏깮??二쇱꽭??'),
+  evaluatorId: z.string().min(1, '평가자를 선택해 주세요.'),
+  evaluateeId: z.string().min(1, '피평가자를 선택해 주세요.'),
   relationship: z.enum(['SUBORDINATE', 'PEER', 'CROSS_DEPT']).default('SUBORDINATE'),
 })
 
 export const UpwardReviewSuggestionSchema = z.object({
   roundId: z.string().min(1),
-  evaluateeId: z.string().min(1, '異붿쿇???앹꽦???쇳룊媛?먮? ?좏깮??二쇱꽭??').optional(),
+  evaluateeId: z.string().min(1, '추천을 생성할 피평가자를 선택해 주세요.').optional(),
 })
 
 export const UpwardReviewResponseSchema = z.object({
-  overallComment: z.string().max(1000, '怨듯넻 ?섍껄? 1000???대궡濡??낅젰??二쇱꽭??').optional(),
+  overallComment: z.string().max(1000, '공통 의견은 1000자 이내로 입력해 주세요.').optional(),
   responses: z.array(
     z.object({
-      questionId: z.string().min(1, '臾명빆 ?뺣낫媛 ?щ컮瑜댁? ?딆뒿?덈떎.'),
+      questionId: z.string().min(1, '문항 정보가 올바르지 않습니다.'),
       ratingValue: z
         .number()
-        .int('泥숇룄???묐떟? ?뺤닔濡??낅젰??二쇱꽭??')
-        .min(1, '泥숇룄???묐떟? 1???댁긽?댁뼱???⑸땲??')
-        .max(10, '泥숇룄???묐떟???덉슜 踰붿쐞瑜?珥덇낵?덉뒿?덈떎.')
+        .int('척도형 응답은 정수로 입력해 주세요.')
+        .min(1, '척도형 응답은 1 이상이어야 합니다.')
+        .max(10, '척도형 응답이 허용 범위를 초과했습니다.')
         .nullable()
         .optional(),
-      textValue: z.string().max(4000, '?쒖닠???묐떟? 4000???대궡濡??낅젰??二쇱꽭??').nullable().optional(),
+      textValue: z.string().max(4000, '서술형 응답은 4000자 이내로 입력해 주세요.').nullable().optional(),
     })
-  ).max(200, '?묐떟 臾명빆 ?섍? ?덈Т 留롮뒿?덈떎. ?ㅼ떆 ?쒕룄??二쇱꽭??'),
+  ).max(200, '응답 문항 수가 너무 많습니다. 다시 시도해 주세요.'),
 })
 
 export const UpwardReviewResultReleaseSchema = z.object({

@@ -73,7 +73,7 @@ async function main() {
     assert.equal(loaderSource.includes('tags: parseTags(kpi.tags)'), true)
     assert.equal(clientSource.includes('parseTagInput'), true)
     assert.equal(clientSource.includes('목표 태그'), true)
-    assert.equal(clientSource.includes('props.summary.rejectedCount'), true)
+    assert.equal(clientSource.includes('rejectedCount={derivedSummary.rejectedCount}'), true)
     assert.equal(clientSource.includes('selectedItem.tags.length'), true)
     assert.equal(clientSource.includes('data-testid="personal-kpi-rejected-count"'), true)
     assert.equal(clientSource.includes('goalEditLocked'), true)

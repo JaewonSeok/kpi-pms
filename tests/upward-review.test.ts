@@ -135,7 +135,7 @@ async function main() {
       const messages = invalid.error.issues.map((issue) => issue.message).join('\n')
       assert.equal(messages.includes('공통 의견은 1000자 이내로 입력해 주세요.'), true)
       assert.equal(messages.includes('문항 정보가 올바르지 않습니다.'), true)
-      assert.equal(messages.includes('척도형 응답은 1점 이상이어야 합니다.'), true)
+      assert.equal(messages.includes('척도형 응답은 1 이상이어야 합니다.'), true)
       assert.equal(messages.includes('서술형 응답은 4000자 이내로 입력해 주세요.'), true)
     }
   })
