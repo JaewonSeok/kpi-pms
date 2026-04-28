@@ -107,3 +107,27 @@ export async function canAccessCheckin(
     owner.divisionHeadId === sessionUserId
   )
 }
+
+export function canAccessManagedEmployeeContext(
+  sessionUserId: string,
+  sessionRole: SystemRole,
+  employee: Pick<Employee, 'id' | 'teamLeaderId' | 'sectionChiefId' | 'divisionHeadId'>
+) {
+  if (!canOperateCheckinRole(sessionRole)) {
+    return false
+  }
+
+  if (employee.id === sessionUserId) {
+    return false
+  }
+
+  if (sessionRole === 'ROLE_ADMIN' || sessionRole === 'ROLE_CEO') {
+    return true
+  }
+
+  return (
+    employee.teamLeaderId === sessionUserId ||
+    employee.sectionChiefId === sessionUserId ||
+    employee.divisionHeadId === sessionUserId
+  )
+}

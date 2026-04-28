@@ -126,6 +126,75 @@ const DEFAULT_FILTERS: FilterState = {
   review: 'ALL',
 }
 
+function parseYearMonth(selectedYear: number, selectedMonth: string) {
+  const [rawYear, rawMonth] = selectedMonth.split('-')
+  const resolvedYear = Number(rawYear) || selectedYear
+  const resolvedMonth = Math.min(12, Math.max(1, Number(rawMonth) || 1))
+  return {
+    year: resolvedYear,
+    month: resolvedMonth,
+    value: `${resolvedYear}-${String(resolvedMonth).padStart(2, '0')}`,
+    fullLabel: `${resolvedYear}년 ${resolvedMonth}월`,
+    shortLabel: `${resolvedMonth}월`,
+    screenTitle: `${resolvedYear}년 ${resolvedMonth}월 월간 실적`,
+  }
+}
+
+function getQuickMonthOptions(selectedYear: number, selectedMonth: string) {
+  const { month } = parseYearMonth(selectedYear, selectedMonth)
+  const start = Math.max(1, month - 2)
+  const end = Math.min(12, start + 4)
+  const adjustedStart = Math.max(1, end - 4)
+  return Array.from({ length: end - adjustedStart + 1 }, (_, index) => {
+    const monthNumber = adjustedStart + index
+    return {
+      value: `${selectedYear}-${String(monthNumber).padStart(2, '0')}`,
+      label: `${monthNumber}월`,
+      monthNumber,
+    }
+  })
+}
+
+function MonthQuickSwitch({
+  selectedYear,
+  selectedMonth,
+  onChange,
+}: {
+  selectedYear: number
+  selectedMonth: string
+  onChange: (month: string) => void
+}) {
+  const quickMonths = getQuickMonthOptions(selectedYear, selectedMonth)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+        빠른 월 이동
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {quickMonths.map((month) => {
+          const selected = month.value === selectedMonth
+          return (
+            <button
+              key={month.value}
+              type="button"
+              onClick={() => onChange(month.value)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                selected
+                  ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+              aria-pressed={selected}
+            >
+              {month.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function hasMeaningfulMonthlyContent(record: MonthlyRecordViewModel | null, draft: Draft | null) {
   if (!record || !draft) return false
   if (record.recordId) return true
@@ -213,11 +282,12 @@ function getReviewActionState(
 function buildAiActionState(params: {
   action: AiAction
   canUseAi: boolean
+  canUseMonthlyCommentDraft: boolean
   selected: MonthlyRecordViewModel | null
   selectedDraft: Draft | null
   canReview: boolean
 }): ActionState {
-  const { action, canUseAi, selected, selectedDraft, canReview } = params
+  const { action, canUseAi, canUseMonthlyCommentDraft, selected, selectedDraft, canReview } = params
 
   if (!selected || !selectedDraft) {
     return { disabled: true, reason: 'KPI를 먼저 선택하세요.' }
@@ -232,6 +302,15 @@ function buildAiActionState(params: {
 
   switch (action) {
     case 'generate-summary':
+      if (!canUseMonthlyCommentDraft) {
+        return {
+          disabled: true,
+          reason: '팀장·실장·본부장 등 리뷰 권한이 있는 화면에서만 사용할 수 있습니다.',
+        }
+      }
+      return hasContent
+        ? { disabled: false }
+        : { disabled: true, reason: '?대쾲 ???ㅼ쟻 ?낅젰?대굹 洹쇨굅媛 ?덉뼱??AI 珥덉븞???앹꽦?????덉뒿?덈떎.' }
     case 'generate-retrospective':
     case 'summarize-evaluation-evidence':
       return hasContent
@@ -384,9 +463,26 @@ function RecoveryScopeControls(props: {
   onChangeScope: (scope: string) => void
   onChangeEmployee: (employeeId: string) => void
 }) {
+  const monthContext = parseYearMonth(props.pageData.selectedYear, props.pageData.selectedMonth)
+
   return (
     <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#ffffff_45%,#f9fafb_100%)] p-6 shadow-sm lg:p-8">
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-slate-900 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">현재 선택 월</p>
+          <h2 className="mt-1 text-xl font-bold">{monthContext.screenTitle}</h2>
+          <p className="mt-1 text-sm text-slate-600">{monthContext.fullLabel} 기준으로 월간 실적 화면을 다시 불러옵니다.</p>
+        </div>
+        <span className="inline-flex w-fit rounded-full bg-white px-3 py-1 text-sm font-semibold text-blue-700 shadow-sm">
+          {monthContext.shortLabel} 화면
+        </span>
+      </div>
+      <MonthQuickSwitch
+        selectedYear={props.pageData.selectedYear}
+        selectedMonth={props.pageData.selectedMonth}
+        onChange={props.onChangeMonth}
+      />
+      <div className="mt-5 grid gap-3 md:grid-cols-4">
         <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">연도</span>
           <select
@@ -515,9 +611,14 @@ export function MonthlyKpiManagementClient({
       `${pageData.selectedScope}:${pageData.selectedEmployeeId}:${pageData.selectedYear}:${pageData.selectedMonth}`,
     [pageData.selectedEmployeeId, pageData.selectedMonth, pageData.selectedScope, pageData.selectedYear]
   )
+  const monthContext = useMemo(
+    () => parseYearMonth(pageData.selectedYear, pageData.selectedMonth),
+    [pageData.selectedMonth, pageData.selectedYear]
+  )
   const editDisabledReason = getEditBlockedReason(selected, canEdit)
   const submitValidation = getSubmitValidationResult(selected, canSubmit, selectedDraft)
   const submitDisabledReason = submitValidation.summary
+  const canUseMonthlyCommentDraft = pageData.permissions.canReview
   const reviewActionState = getReviewActionState(selected, pageData.permissions.canReview, 'REVIEW')
   const requestUpdateActionState = getReviewActionState(selected, pageData.permissions.canReview, 'REQUEST_UPDATE')
   const aiActionStates = Object.fromEntries(
@@ -526,12 +627,16 @@ export function MonthlyKpiManagementClient({
       buildAiActionState({
         action,
         canUseAi: pageData.permissions.canUseAi,
+        canUseMonthlyCommentDraft,
         selected,
         selectedDraft,
         canReview: pageData.permissions.canReview,
       }),
     ])
   ) as Record<AiAction, ActionState>
+  const visibleAiActions = (Object.keys(AI_LABELS) as AiAction[]).filter(
+    (action) => action !== 'generate-summary' || canUseMonthlyCommentDraft
+  )
   const copyPreviousReason =
     !selected
       ? 'KPI를 먼저 선택하세요.'
@@ -1005,7 +1110,8 @@ export function MonthlyKpiManagementClient({
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">
               Monthly Performance Operations
             </p>
-            <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">월간 실적</h1>
+            <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">{monthContext.screenTitle}</h1>
+            <p className="mt-2 text-sm text-slate-500">{monthContext.fullLabel} 기준 대상을 다시 선택해 월간 실적 화면을 준비합니다.</p>
           </section>
           <RecoveryScopeControls
             pageData={pageData}
@@ -1033,7 +1139,8 @@ export function MonthlyKpiManagementClient({
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">
             Monthly Performance Operations
           </p>
-          <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">월간 실적</h1>
+          <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">{monthContext.screenTitle}</h1>
+          <p className="mt-2 text-sm text-slate-500">{monthContext.fullLabel} 기준 월간 실적 상태를 확인하고 있습니다.</p>
         </section>
         {loadAlerts}
         <StatePanel
@@ -1059,16 +1166,33 @@ export function MonthlyKpiManagementClient({
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">
           Monthly Performance Operations
         </p>
-        <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">월간 실적</h1>
-        <p className="mt-2 text-sm text-slate-500">
-          개인 KPI 기준으로 월간 실적을 기록하고, 리뷰와 증빙을 누적해 평가 근거로 연결합니다.
-        </p>
-        </section>
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">{monthContext.screenTitle}</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              선택한 {monthContext.fullLabel}의 실적을 기록하고, 리뷰와 증빙을 누적해 평가 근거로 연결합니다.
+            </p>
+          </div>
+          <span className="inline-flex w-fit rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
+            현재 선택 월: {monthContext.fullLabel}
+          </span>
+        </div>
+      </section>
 
       {loadAlerts}
       <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#ffffff_45%,#f9fafb_100%)] p-6 shadow-sm lg:p-8">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-5">
+            <div className="flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-slate-900 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">월간 입력 컨텍스트</p>
+                <div className="mt-1 text-lg font-bold">{monthContext.fullLabel} 월간 실적</div>
+                <p className="mt-1 text-sm text-slate-600">드롭다운과 빠른 월 칩 모두 {monthContext.fullLabel}을 같은 기준으로 전환합니다.</p>
+              </div>
+              <span className="inline-flex w-fit rounded-full bg-white px-3 py-1 text-sm font-semibold text-blue-700 shadow-sm">
+                {monthContext.shortLabel} 입력 중
+              </span>
+            </div>
             <div className="grid gap-3 md:grid-cols-4">
               <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -1147,6 +1271,11 @@ export function MonthlyKpiManagementClient({
                 </select>
               </label>
             </div>
+            <MonthQuickSwitch
+              selectedYear={pageData.selectedYear}
+              selectedMonth={pageData.selectedMonth}
+              onChange={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
+            />
 
             <div className="flex flex-wrap items-center gap-2">
               <span
@@ -1305,6 +1434,7 @@ export function MonthlyKpiManagementClient({
 
       {tab === 'entry' ? (
         <EntryTab
+          monthContext={monthContext}
           visibleRecords={visibleRecords}
           filters={filters}
           setFilters={setFilters}
@@ -1317,6 +1447,7 @@ export function MonthlyKpiManagementClient({
           submitDisabledReason={submitDisabledReason}
           reviewActionState={reviewActionState}
           requestUpdateActionState={requestUpdateActionState}
+          showGenerateSummaryAction={canUseMonthlyCommentDraft}
           generateSummaryActionState={aiActionStates['generate-summary']}
           uploadDisabledReason={uploadDisabledReason}
           busy={busy}
@@ -1349,15 +1480,16 @@ export function MonthlyKpiManagementClient({
       ) : null}
 
       {tab === 'trend' ? (
-        <TrendTab selectedTrend={selectedTrend} selectedMonth={pageData.selectedMonth} />
+        <TrendTab selectedTrend={selectedTrend} selectedMonth={pageData.selectedMonth} monthContext={monthContext} />
       ) : null}
 
       {tab === 'review' ? (
-        <ReviewTab reviews={pageData.reviews} history={selected?.history ?? []} />
+        <ReviewTab reviews={pageData.reviews} history={selected?.history ?? []} monthContext={monthContext} />
       ) : null}
 
       {tab === 'evidence' ? (
         <EvidenceTab
+          monthContext={monthContext}
           evidence={pageData.evidence}
           onDownload={(attachment) =>
             downloadEvidenceAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
@@ -1370,6 +1502,8 @@ export function MonthlyKpiManagementClient({
           aiLogs={pageData.aiLogs}
           aiPreview={aiPreview}
           lastAiAction={lastAiAction}
+          monthContext={monthContext}
+          visibleActions={visibleAiActions}
           actionStates={aiActionStates}
           busy={busy}
           onRunAi={(action) => void runAi(action)}
@@ -1403,6 +1537,7 @@ export function MonthlyKpiManagementClient({
 }
 
 function EntryTab({
+  monthContext,
   visibleRecords,
   filters,
   setFilters,
@@ -1415,6 +1550,7 @@ function EntryTab({
   submitDisabledReason,
   reviewActionState,
   requestUpdateActionState,
+  showGenerateSummaryAction,
   generateSummaryActionState,
   uploadDisabledReason,
   busy,
@@ -1432,6 +1568,7 @@ function EntryTab({
   onAttachmentRemove,
   onRunAi,
 }: {
+  monthContext: ReturnType<typeof parseYearMonth>
   visibleRecords: MonthlyRecordViewModel[]
   filters: { status: string; risk: string; type: string; review: string }
   setFilters: Dispatch<SetStateAction<{ status: string; risk: string; type: string; review: string }>>
@@ -1444,6 +1581,7 @@ function EntryTab({
   submitDisabledReason?: string
   reviewActionState: ActionState
   requestUpdateActionState: ActionState
+  showGenerateSummaryAction: boolean
   generateSummaryActionState: ActionState
   uploadDisabledReason?: string
   busy: BusyState
@@ -1465,9 +1603,9 @@ function EntryTab({
     <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
         <div className="mb-5">
-          <h2 className="text-lg font-semibold text-slate-900">KPI별 월간 입력</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{monthContext.fullLabel} KPI별 월간 입력</h2>
           <p className="mt-1 text-sm text-slate-500">
-            개별 KPI 상태와 위험 신호를 확인하고 상세 입력으로 이동하세요.
+            선택한 {monthContext.fullLabel} 기준 KPI 상태와 위험 신호를 확인하고 상세 입력으로 이동하세요.
           </p>
         </div>
 
@@ -1579,7 +1717,7 @@ function EntryTab({
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-              <p className="text-sm font-semibold text-slate-900">조건에 맞는 월간 실적이 없습니다.</p>
+              <p className="text-sm font-semibold text-slate-900">{monthContext.fullLabel} 기준 조건에 맞는 월간 실적이 없습니다.</p>
             </div>
           )}
         </div>
@@ -1588,10 +1726,10 @@ function EntryTab({
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
         <div className="mb-5">
           <h2 className="text-lg font-semibold text-slate-900">
-            {selected ? `${selected.kpiTitle} 입력 상세` : '입력 상세'}
+            {selected ? `${selected.kpiTitle} · ${monthContext.fullLabel} 입력 상세` : `${monthContext.fullLabel} 입력 상세`}
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            정량 KPI는 숫자 입력과 자동 계산, 정성 KPI는 메모 중심으로 기록합니다.
+            {monthContext.fullLabel} 기준 정량 KPI는 숫자 입력과 자동 계산, 정성 KPI는 메모 중심으로 기록합니다.
           </p>
         </div>
 
@@ -1614,7 +1752,7 @@ function EntryTab({
 
             {selected.type === 'QUANTITATIVE' ? (
               <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">이번 달 실적값</span>
+                <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 실적값</span>
                 <input
                   value={selectedDraft.actualValue}
                   onChange={(event) => updateDraft({ actualValue: event.target.value })}
@@ -1627,7 +1765,7 @@ function EntryTab({
 
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">
-                {selected.type === 'QUANTITATIVE' ? '활동 내용' : '진행 수준 메모'}
+                {selected.type === 'QUANTITATIVE' ? `${monthContext.shortLabel} 활동 내용` : `${monthContext.shortLabel} 진행 수준 메모`}
               </span>
               <textarea
                 value={selectedDraft.activityNote}
@@ -1640,7 +1778,7 @@ function EntryTab({
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">장애요인</span>
+                <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 장애요인</span>
                 <textarea
                   value={selectedDraft.blockerNote}
                   onChange={(event) => updateDraft({ blockerNote: event.target.value })}
@@ -1650,7 +1788,7 @@ function EntryTab({
                 />
               </label>
               <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">극복 노력</span>
+                <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 극복 노력</span>
                 <textarea
                   value={selectedDraft.effortNote}
                   onChange={(event) => updateDraft({ effortNote: event.target.value })}
@@ -1666,7 +1804,7 @@ function EntryTab({
                 <div>
                   <p className="text-sm font-semibold text-slate-900">증빙 첨부</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    증빙 변경 사항은 임시저장 또는 제출 시 반영됩니다.
+                    {monthContext.shortLabel} 증빙 변경 사항은 임시저장 또는 제출 시 반영됩니다.
                   </p>
                 </div>
                 <Button
@@ -1686,7 +1824,7 @@ function EntryTab({
                   disabled={!canEdit}
                   rows={3}
                   maxLength={1000}
-                  placeholder="이번 점검에서 함께 볼 증빙 설명을 간단히 적어 주세요."
+                  placeholder={`${monthContext.shortLabel} 점검에 사용할 증빙 설명을 간단히 적어 주세요.`}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
                 />
               </label>
@@ -1708,7 +1846,7 @@ function EntryTab({
                     onChange={(event) => updateDraft({ linkCommentInput: event.target.value })}
                     disabled={!canEdit}
                     maxLength={300}
-                    placeholder="링크 설명을 간단히 남겨 주세요."
+                    placeholder={`${monthContext.shortLabel} 링크 설명을 간단히 남겨 주세요.`}
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
                   />
                 </label>
@@ -1764,7 +1902,7 @@ function EntryTab({
                               }
                               disabled={!canEdit}
                               maxLength={300}
-                              placeholder="증빙 설명을 간단히 남겨 주세요."
+                              placeholder={`${monthContext.shortLabel} 증빙 설명을 간단히 남겨 주세요.`}
                               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
                             />
                           </label>
@@ -1794,7 +1932,7 @@ function EntryTab({
                   ))
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-                    <p className="text-sm font-semibold text-slate-900">등록된 증빙 항목이 없습니다.</p>
+                    <p className="text-sm font-semibold text-slate-900">{monthContext.fullLabel}에 등록된 증빙 항목이 없습니다.</p>
                   </div>
                 )}
               </div>
@@ -1809,7 +1947,7 @@ function EntryTab({
 
             {canReview && selected.recordId ? (
               <div className="rounded-2xl border border-slate-200 p-4">
-                <div className="mb-3 text-sm font-semibold text-slate-900">리더 리뷰 입력</div>
+                <div className="mb-3 text-sm font-semibold text-slate-900">{monthContext.shortLabel} 리더 리뷰 입력</div>
                 <textarea
                   value={reviewComment}
                   onChange={(event) => setReviewComment(event.target.value)}
@@ -1854,14 +1992,16 @@ function EntryTab({
               >
                 제출
               </Button>
-              <Button
-                icon={<Sparkles className="h-4 w-4" />}
-                onClick={onRunAi}
-                disabled={busy !== null || generateSummaryActionState.disabled}
-                title={generateSummaryActionState.reason}
-              >
-                AI preview
-              </Button>
+              {showGenerateSummaryAction ? (
+                <Button
+                  icon={<Sparkles className="h-4 w-4" />}
+                  onClick={onRunAi}
+                  disabled={busy !== null || generateSummaryActionState.disabled}
+                  title={generateSummaryActionState.reason}
+                >
+                  AI preview
+                </Button>
+              ) : null}
               <Link
                 href="/checkin"
                 className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
@@ -1877,7 +2017,7 @@ function EntryTab({
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-slate-900">상세를 볼 KPI가 없습니다.</p>
+            <p className="text-sm font-semibold text-slate-900">{monthContext.fullLabel}에 입력할 KPI를 선택해 주세요.</p>
           </div>
         )}
       </section>
@@ -1888,9 +2028,11 @@ function EntryTab({
 function TrendTab({
   selectedTrend,
   selectedMonth,
+  monthContext,
 }: {
   selectedTrend: MonthlyPageData['trends'][number] | null | undefined
   selectedMonth: string
+  monthContext: ReturnType<typeof parseYearMonth>
 }) {
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
@@ -1937,9 +2079,11 @@ function TrendTab({
 function ReviewTab({
   reviews,
   history,
+  monthContext,
 }: {
   reviews: MonthlyPageData['reviews']
   history: MonthlyRecordViewModel['history']
+  monthContext: ReturnType<typeof parseYearMonth>
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
@@ -2014,9 +2158,11 @@ function ReviewTab({
 }
 
 function EvidenceTab({
+  monthContext,
   evidence,
   onDownload,
 }: {
+  monthContext: ReturnType<typeof parseYearMonth>
   evidence: MonthlyPageData['evidence']
   onDownload: (attachment: MonthlyAttachmentViewModel) => void
 }) {
@@ -2080,6 +2226,8 @@ function AiTab({
   aiLogs,
   aiPreview,
   lastAiAction,
+  monthContext,
+  visibleActions,
   actionStates,
   busy,
   onRunAi,
@@ -2089,6 +2237,8 @@ function AiTab({
   aiLogs: MonthlyPageData['aiLogs']
   aiPreview: AiPreview | null
   lastAiAction: AiAction
+  monthContext: ReturnType<typeof parseYearMonth>
+  visibleActions: AiAction[]
   actionStates: Record<AiAction, ActionState>
   busy: BusyState
   onRunAi: (action: AiAction) => void
@@ -2103,7 +2253,7 @@ function AiTab({
           <p className="mt-1 text-sm text-slate-500">초안 생성과 요약은 AI가 돕고, 적용 여부는 사람이 직접 결정합니다.</p>
         </div>
         <div className="space-y-3">
-          {(Object.keys(AI_LABELS) as AiAction[]).map((action) => (
+          {visibleActions.map((action) => (
             <button
               key={action}
               type="button"

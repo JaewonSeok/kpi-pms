@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
 import 'dotenv/config'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
