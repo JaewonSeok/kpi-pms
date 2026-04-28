@@ -22,6 +22,10 @@ import {
   openEvidenceLink,
   readEvidenceFiles,
 } from '@/lib/evidence-attachments-client'
+import {
+  evaluateMonthlySubmit,
+  type MonthlySubmitValidationResult,
+} from '@/lib/monthly-submit-validation'
 import { isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
 import { formatCountWithUnit, formatRateBaseCopy } from '@/lib/metric-copy'
 import type {
@@ -157,6 +161,27 @@ function getSubmitBlockedReason(record: MonthlyRecordViewModel | null, canSubmit
   }
 
   return undefined
+}
+
+function getSubmitValidationResult(
+  record: MonthlyRecordViewModel | null,
+  canSubmit: boolean,
+  draft: Draft | null
+): MonthlySubmitValidationResult {
+  return evaluateMonthlySubmit({
+    hasSelection: Boolean(record),
+    hasSubmitPermission: canSubmit,
+    status: record?.status,
+    type: record?.type,
+    actualValue: draft?.actualValue ?? record?.actualValue,
+    activityNote: draft?.activityNote ?? record?.activityNote,
+    blockerNote: draft?.blockerNote ?? record?.blockerNote,
+    effortNote: draft?.effortNote ?? record?.effortNote,
+    evidenceComment: draft?.evidenceComment ?? record?.evidenceComment,
+    attachmentsCount: draft?.attachments.length ?? record?.attachments.length ?? 0,
+    linkedCheckinCount: record?.linkedCheckins.length ?? 0,
+    achievementRate: record?.achievementRate,
+  })
 }
 
 function getReviewActionState(
@@ -491,7 +516,8 @@ export function MonthlyKpiManagementClient({
     [pageData.selectedEmployeeId, pageData.selectedMonth, pageData.selectedScope, pageData.selectedYear]
   )
   const editDisabledReason = getEditBlockedReason(selected, canEdit)
-  const submitDisabledReason = getSubmitBlockedReason(selected, canSubmit, selectedDraft)
+  const submitValidation = getSubmitValidationResult(selected, canSubmit, selectedDraft)
+  const submitDisabledReason = submitValidation.summary
   const reviewActionState = getReviewActionState(selected, pageData.permissions.canReview, 'REVIEW')
   const requestUpdateActionState = getReviewActionState(selected, pageData.permissions.canReview, 'REQUEST_UPDATE')
   const aiActionStates = Object.fromEntries(
@@ -1192,9 +1218,30 @@ export function MonthlyKpiManagementClient({
             <Button icon={<History className="h-4 w-4" />} onClick={() => setTab('review')} disabled={busy !== null}>
               이력 보기
             </Button>
+            {submitValidation.summary ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                {submitValidation.summary}
+              </div>
+            ) : null}
+            {submitValidation.recommendationReasons.length ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                {submitValidation.recommendationReasons.join(' ')}
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
+
+      {submitValidation.summary ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          <div className="font-semibold">제출 차단 사유</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {submitValidation.blockingReasons.map((reason) => (
+              <li key={reason}>{reason}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {banner ? (
         <div
@@ -1802,7 +1849,7 @@ function EntryTab({
                 icon={<CheckCircle2 className="h-4 w-4" />}
                 variant="primary"
                 onClick={onSubmit}
-                disabled={!canSubmit || busy !== null}
+                disabled={busy !== null || Boolean(submitDisabledReason)}
                 title={submitDisabledReason}
               >
                 제출
@@ -1822,6 +1869,11 @@ function EntryTab({
                 체크인으로 이동
               </Link>
             </div>
+            {submitDisabledReason ? (
+              <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                {submitDisabledReason}
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">

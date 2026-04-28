@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { getMonthlyAttachmentAuditSummary } from '@/lib/monthly-attachments'
+import { evaluateMonthlySubmit } from '@/lib/monthly-submit-validation'
 import { AppError, calcAchievementRate, errorResponse, successResponse } from '@/lib/utils'
 import { MonthlyRecordSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
@@ -99,6 +100,31 @@ export async function POST(request: Request) {
     let achievementRate: number | undefined
     if (kpi.kpiType === 'QUANTITATIVE' && data.actualValue !== undefined && kpi.targetValue) {
       achievementRate = calcAchievementRate(data.actualValue, kpi.targetValue)
+    }
+
+    if (!data.isDraft) {
+      const submitValidation = evaluateMonthlySubmit({
+        hasSelection: true,
+        hasSubmitPermission: true,
+        status: 'DRAFT',
+        type: kpi.kpiType,
+        actualValue: data.actualValue,
+        activityNote: data.activities,
+        blockerNote: data.obstacles,
+        effortNote: data.efforts,
+        evidenceComment: data.evidenceComment,
+        attachmentsCount: data.attachments?.length ?? 0,
+        linkedCheckinCount: 0,
+        achievementRate,
+      })
+
+      if (!submitValidation.canSubmit) {
+        throw new AppError(
+          409,
+          'MONTHLY_RECORD_NOT_SUBMITTABLE',
+          submitValidation.summary ?? '현재 상태에서는 제출할 수 없습니다.'
+        )
+      }
     }
 
     const existing = await prisma.monthlyRecord.findUnique({

@@ -2,6 +2,8 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { parseMonthlyAttachments } from '@/lib/monthly-attachments'
+import { evaluateMonthlySubmit } from '@/lib/monthly-submit-validation'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { MonthlyRecordWorkflowActionSchema } from '@/lib/validations'
 import {
@@ -68,6 +70,29 @@ export async function POST(request: Request, context: RouteContext) {
     if (validated.data.action === 'SUBMIT') {
       if (record.employeeId !== session.user.id && session.user.role !== 'ROLE_ADMIN') {
         throw new AppError(403, 'FORBIDDEN', '월간 실적을 제출할 권한이 없습니다.')
+      }
+
+      const submitValidation = evaluateMonthlySubmit({
+        hasSelection: true,
+        hasSubmitPermission: canSubmitMonthlyRecord(operationalStatus),
+        status: operationalStatus,
+        type: record.personalKpi.kpiType,
+        actualValue: record.actualValue,
+        activityNote: record.activities,
+        blockerNote: record.obstacles,
+        effortNote: record.efforts,
+        evidenceComment: record.evidenceComment,
+        attachmentsCount: parseMonthlyAttachments(record.attachments).length,
+        linkedCheckinCount: 0,
+        achievementRate: record.achievementRate,
+      })
+
+      if (!submitValidation.canSubmit) {
+        throw new AppError(
+          409,
+          'MONTHLY_RECORD_NOT_SUBMITTABLE',
+          submitValidation.summary ?? '?꾩옱 ?곹깭?먯꽌???쒖텧?????놁뒿?덈떎.'
+        )
       }
 
       if (!canSubmitMonthlyRecord(operationalStatus)) {
