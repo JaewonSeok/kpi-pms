@@ -10,6 +10,7 @@ import type {
 import { prisma } from '@/lib/prisma'
 import { parseMonthlyAttachments, type MonthlyAttachmentItem } from '@/lib/monthly-attachments'
 import {
+  buildPersonalKpiTargetValuePersistence,
   formatPersonalKpiTargetValues,
   resolvePersonalKpiTargetValues,
 } from '@/lib/personal-kpi-target-values'
@@ -325,6 +326,28 @@ type EmployeeLite = Prisma.EmployeeGetPayload<{
   }
 }>
 
+type LeadershipBootstrapScope = 'TEAM' | 'SECTION' | 'DIVISION'
+
+type LeadershipBootstrapOrgKpi = Prisma.OrgKpiGetPayload<{
+  select: {
+    id: true
+    deptId: true
+    evalYear: true
+    kpiType: true
+    kpiName: true
+    definition: true
+    formula: true
+    targetValue: true
+    targetValueT: true
+    targetValueE: true
+    targetValueS: true
+    unit: true
+    weight: true
+    difficulty: true
+    status: true
+  }
+}>
+
 type AuditLogLite = {
   id: string
   action: string
@@ -409,6 +432,159 @@ function asRecord(value: unknown) {
 function resolveDepartmentLabel(department?: { deptName?: string | null } | null) {
   const name = department?.deptName?.trim()
   return name?.length ? name : '미지정 부서'
+}
+
+function resolveLeadershipBootstrapScope(role: SystemRole): LeadershipBootstrapScope | null {
+  switch (role) {
+    case 'ROLE_TEAM_LEADER':
+      return 'TEAM'
+    case 'ROLE_SECTION_CHIEF':
+      return 'SECTION'
+    case 'ROLE_DIV_HEAD':
+      return 'DIVISION'
+    default:
+      return null
+  }
+}
+
+function buildLeadershipBootstrapMetadata(params: {
+  scope: LeadershipBootstrapScope
+  sourceOrgKpiId: string
+  sourceStatus: string
+}) {
+  return {
+    autoBootstrapFromOrgKpi: {
+      sourceOrgKpiId: params.sourceOrgKpiId,
+      scope: params.scope,
+      sourceStatus: params.sourceStatus,
+      version: 1,
+    },
+  } satisfies Prisma.InputJsonValue
+}
+
+function buildPersonalKpiBootstrapPayloadFromOrgKpi(params: {
+  employeeId: string
+  evalYear: number
+  scope: LeadershipBootstrapScope
+  orgKpi: LeadershipBootstrapOrgKpi
+}) {
+  const metadata = buildLeadershipBootstrapMetadata({
+    scope: params.scope,
+    sourceOrgKpiId: params.orgKpi.id,
+    sourceStatus: params.orgKpi.status,
+  })
+  const resolvedTargetValues = resolvePersonalKpiTargetValues(params.orgKpi)
+
+  return {
+    employeeId: params.employeeId,
+    evalYear: params.evalYear,
+    kpiType: params.orgKpi.kpiType,
+    kpiName: params.orgKpi.kpiName,
+    definition: params.orgKpi.definition,
+    formula: params.orgKpi.formula,
+    ...(resolvedTargetValues.targetValueT !== undefined
+      ? buildPersonalKpiTargetValuePersistence({
+          targetValueT: resolvedTargetValues.targetValueT,
+          targetValueE: resolvedTargetValues.targetValueE ?? null,
+          targetValueS: resolvedTargetValues.targetValueS ?? null,
+          copyMetadata: metadata,
+        })
+      : { copyMetadata: metadata }),
+    unit: params.orgKpi.unit,
+    weight: params.orgKpi.weight,
+    difficulty: params.orgKpi.difficulty,
+    linkedOrgKpiId: params.orgKpi.id,
+    status: 'DRAFT' as const,
+  }
+}
+
+async function autoBootstrapLeadershipPersonalKpis(params: {
+  sessionUserId: string
+  targetEmployee: EmployeeLite
+  selectedYear: number
+  goalEditLocked: boolean
+}) {
+  const scope = resolveLeadershipBootstrapScope(params.targetEmployee.role)
+  if (!scope || params.goalEditLocked) {
+    return
+  }
+
+  const sourceOrgKpis = await prisma.orgKpi.findMany({
+    where: {
+      deptId: params.targetEmployee.deptId,
+      evalYear: params.selectedYear,
+      status: {
+        not: 'ARCHIVED',
+      },
+    },
+    select: {
+      id: true,
+      deptId: true,
+      evalYear: true,
+      kpiType: true,
+      kpiName: true,
+      definition: true,
+      formula: true,
+      targetValue: true,
+      targetValueT: true,
+      targetValueE: true,
+      targetValueS: true,
+      unit: true,
+      weight: true,
+      difficulty: true,
+      status: true,
+    },
+    orderBy: [{ createdAt: 'asc' }],
+  })
+
+  if (!sourceOrgKpis.length) {
+    return
+  }
+
+  const existingLinked = await prisma.personalKpi.findMany({
+    where: {
+      employeeId: params.targetEmployee.id,
+      evalYear: params.selectedYear,
+      linkedOrgKpiId: {
+        in: sourceOrgKpis.map((item) => item.id),
+      },
+    },
+    select: {
+      linkedOrgKpiId: true,
+    },
+  })
+
+  const existingLinkedIds = new Set(
+    existingLinked
+      .map((item) => item.linkedOrgKpiId)
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+  )
+
+  const missingOrgKpis = sourceOrgKpis.filter((item) => !existingLinkedIds.has(item.id))
+  if (!missingOrgKpis.length) {
+    return
+  }
+
+  await prisma.personalKpi.createMany({
+    data: missingOrgKpis.map((orgKpi) =>
+      buildPersonalKpiBootstrapPayloadFromOrgKpi({
+        employeeId: params.targetEmployee.id,
+        evalYear: params.selectedYear,
+        scope,
+        orgKpi,
+      })
+    ),
+  })
+
+  console.info('[personal-kpi-bootstrap] leadership scope imported', {
+    actorId: params.sessionUserId,
+    targetEmployeeId: params.targetEmployee.id,
+    targetRole: params.targetEmployee.role,
+    scope,
+    evalYear: params.selectedYear,
+    createdCount: missingOrgKpis.length,
+    linkedOrgKpiIds: missingOrgKpis.map((item) => item.id),
+  })
 }
 
 function getReviewerCandidate(employee: EmployeeLite, employeesById: Map<string, EmployeeLite>) {
@@ -830,6 +1006,22 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         ? params.cycleId
         : cycleOptions[0]?.id
     const selectedCycleRecord = cycleRecords.find((cycle) => cycle.id === selectedCycleId)
+    const goalEditLocked = selectedCycleRecord?.goalEditMode === 'CHECKIN_ONLY'
+
+    failureStage = 'leadership-bootstrap'
+    await loadPersonalKpiSection({
+      alerts,
+      title: '리더십 개인 KPI 자동 반영을 완료하지 못했습니다.',
+      description: '기존 개인 KPI 화면은 그대로 표시하고, 자동 반영은 이번 요청에서 건너뜁니다.',
+      fallback: undefined,
+      loader: () =>
+        autoBootstrapLeadershipPersonalKpis({
+          sessionUserId: params.session.user.id,
+          targetEmployee,
+          selectedYear,
+          goalEditLocked,
+        }),
+    })
 
     failureStage = 'mine-query'
     const mine = await loadPersonalKpiSection({
@@ -1257,7 +1449,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       pageState,
       aiAccess,
     })
-    const goalEditLocked = selectedCycleRecord?.goalEditMode === 'CHECKIN_ONLY'
 
     if (goalEditLocked) {
       alerts.push({
