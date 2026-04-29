@@ -10,6 +10,7 @@ import {
   filterDepartmentsByOrgKpiScope,
   normalizeOrgKpiScope,
   resolveOrgKpiScopeFromDepartmentId,
+  ORG_KPI_SCOPE_ORDER,
   type OrgKpiScope,
 } from '@/lib/org-kpi-scope'
 import { prisma } from '@/lib/prisma'
@@ -205,14 +206,31 @@ const ORG_KPI_SCOPE_TAB_META: Record<
 > = {
   division: {
     label: '본부 KPI',
+    description: '본부 KPI를 확인합니다. 실·팀 KPI와의 연결 구조를 함께 관리합니다.',
+  },
+  section: {
+    label: '실 KPI',
     description:
-      '본부·실 등 상위 조직이 관리하는 KPI를 확인합니다. 하위 팀 KPI와의 연결 상태도 함께 볼 수 있습니다.',
+      '실 KPI를 확인합니다. 상위 본부 KPI와 하위 팀 KPI 사이의 정렬 흐름을 함께 관리합니다.',
   },
   team: {
     label: '팀 KPI',
     description:
-      '실제 실행 조직이 운영하는 KPI를 확인합니다. 상위 본부 KPI와의 정렬을 함께 관리합니다.',
+      '팀 KPI를 확인합니다. 상위 본부·실 KPI와의 정렬 상태를 함께 관리합니다.',
   },
+}
+
+function getAllowedParentGoalScopes(scope: OrgKpiScope): OrgKpiScope[] {
+  switch (scope) {
+    case 'division':
+      return []
+    case 'section':
+      return ['division']
+    case 'team':
+      return ['division', 'section']
+    default:
+      return []
+  }
 }
 
 type AuditLogLite = {
@@ -624,7 +642,7 @@ export async function getOrgKpiPageData(params: {
   userName: string
 }): Promise<OrgKpiPageData> {
   const fallbackScope = normalizeOrgKpiScope(params.selectedScope) ?? 'division'
-  const emptyScopeTabs = (['division', 'team'] as OrgKpiScope[]).map((scope) => ({
+  const emptyScopeTabs = ORG_KPI_SCOPE_ORDER.filter((scope) => scope !== 'section').map((scope) => ({
     key: scope,
     label: ORG_KPI_SCOPE_TAB_META[scope].label,
     description: ORG_KPI_SCOPE_TAB_META[scope].description,
@@ -718,6 +736,7 @@ export async function getOrgKpiPageData(params: {
     const departmentScopeMap = buildOrgKpiDepartmentScopeMap(departments)
     const accessibleDepartmentsByScope = {
       division: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'division'),
+      section: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'section'),
       team: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'team'),
     } satisfies Record<OrgKpiScope, DepartmentLite[]>
 
@@ -855,7 +874,7 @@ export async function getOrgKpiPageData(params: {
             : null
         })()
       : null
-    const availableScopes = (['division', 'team'] as OrgKpiScope[]).filter(
+    const availableScopes = ORG_KPI_SCOPE_ORDER.filter(
       (scope) =>
         accessibleDepartmentsByScope[scope].length > 0 ||
         kpis.some(
@@ -869,7 +888,8 @@ export async function getOrgKpiPageData(params: {
       (requestedDepartmentScope && availableScopes.includes(requestedDepartmentScope)
         ? requestedDepartmentScope
         : null) ??
-      (availableScopes.includes('division') ? 'division' : 'team')
+      availableScopes[0] ??
+      'team'
 
     const employeeNameMap = new Map(employees.map((employee) => [employee.id, employee.empName]))
     const employeesByDept = new Map<string, EmployeeLite[]>()
@@ -1039,6 +1059,7 @@ export async function getOrgKpiPageData(params: {
       },
       {
         division: 0,
+        section: 0,
         team: 0,
       }
     )
@@ -1096,7 +1117,7 @@ export async function getOrgKpiPageData(params: {
     })
 
     const parentGoalOptions = mappedListAll
-      .filter((item) => item.scope === 'division')
+      .filter((item) => getAllowedParentGoalScopes(selectedScope).includes(item.scope))
       .map((item) => ({
         id: item.id,
         title: item.title,
@@ -1149,7 +1170,7 @@ export async function getOrgKpiPageData(params: {
     return {
       state: pageState,
       selectedScope,
-      scopeTabs: (['division', 'team'] as OrgKpiScope[]).map((scope) => ({
+      scopeTabs: availableScopes.map((scope) => ({
         key: scope,
         label: ORG_KPI_SCOPE_TAB_META[scope].label,
         description: ORG_KPI_SCOPE_TAB_META[scope].description,

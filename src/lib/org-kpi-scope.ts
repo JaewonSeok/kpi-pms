@@ -1,6 +1,7 @@
-export type OrgKpiScope = 'division' | 'team'
+export type OrgKpiScope = 'division' | 'section' | 'team'
 
-export const ORG_KPI_SCOPE_VALUES = ['division', 'team'] as const
+export const ORG_KPI_SCOPE_VALUES = ['division', 'section', 'team'] as const
+export const ORG_KPI_SCOPE_ORDER: OrgKpiScope[] = ['division', 'section', 'team']
 
 type ScopeDepartmentLike = {
   id: string
@@ -26,7 +27,7 @@ function getParentDepartmentId(department: ScopeDepartmentLike) {
 }
 
 export function normalizeOrgKpiScope(value?: string | null): OrgKpiScope | null {
-  if (value === 'division' || value === 'team') {
+  if (value === 'division' || value === 'section' || value === 'team') {
     return value
   }
 
@@ -50,7 +51,11 @@ export function buildOrgKpiDepartmentScopeMap<TDepartment extends ScopeDepartmen
   return new Map(
     departments.map((department) => [
       department.id,
-      childCountByParentId.has(department.id) ? 'division' : 'team',
+      childCountByParentId.has(department.id)
+        ? getParentDepartmentId(department)
+          ? 'section'
+          : 'division'
+        : 'team',
     ] as const),
   )
 }

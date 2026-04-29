@@ -105,6 +105,7 @@ async function main() {
     assert.equal(loaderSource.includes("title: '현재 목표는 읽기 전용 모드입니다.'"), true)
     assert.equal(loaderSource.includes('canCreate: goalEditLocked ? false : canManage'), true)
     assert.equal(loaderSource.includes("label: '본부 KPI'"), true)
+    assert.equal(loaderSource.includes("label: '실 KPI'"), true)
     assert.equal(loaderSource.includes("label: '팀 KPI'"), true)
     assert.equal(loaderSource.includes('조직 정보가 아직 준비되지 않았습니다.'), true)
     assert.equal(loaderSource.includes('tags: parseTags(kpi.tags)'), true)

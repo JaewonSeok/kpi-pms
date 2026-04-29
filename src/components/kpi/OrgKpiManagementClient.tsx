@@ -105,7 +105,116 @@ const MEMBER_TAB_ORDER: TabKey[] = ['list', 'map', 'linkage', 'history']
 
 const ORG_KPI_SCOPE_LABELS: Record<OrgKpiScope, string> = {
   division: '본부 KPI',
+  section: '실 KPI',
   team: '팀 KPI',
+}
+
+function getOrgKpiScopeDescription(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '본부 KPI를 확인합니다. 실·팀 KPI와의 연결 구조를 함께 관리합니다.'
+    case 'section':
+      return '실 KPI를 확인합니다. 상위 본부 KPI와 하위 팀 KPI 사이의 정렬 흐름을 함께 관리합니다.'
+    case 'team':
+    default:
+      return '팀 KPI를 확인합니다. 상위 본부·실 KPI와의 정렬 상태를 함께 관리합니다.'
+  }
+}
+
+function getOrgKpiSearchTargetLabel(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '본부'
+    case 'section':
+      return '실'
+    case 'team':
+    default:
+      return '팀'
+  }
+}
+
+function getOrgKpiDirectCreateMessage(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '직접 본부 KPI를 작성하는 편집 모드입니다.'
+    case 'section':
+      return '직접 실 KPI를 작성하는 편집 모드입니다.'
+    case 'team':
+    default:
+      return '직접 팀 KPI를 작성하는 편집 모드입니다.'
+  }
+}
+
+function getOrgKpiMapDescription(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '상위 본부 KPI 구조를 따라가며 하위 실·팀 KPI와의 연결 흐름과 누락 정렬 지점을 한눈에 확인합니다.'
+    case 'section':
+      return '실 KPI를 중심으로 상위 본부 KPI 정렬 상태와 하위 팀 KPI 연결 흐름을 구조 관점에서 확인합니다.'
+    case 'team':
+    default:
+      return '팀 KPI를 중심으로 상위 본부·실 KPI 정렬 상태와 실행 리스크를 구조 관점에서 확인합니다.'
+  }
+}
+
+function getOrgKpiListDescription(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '본부 KPI를 검색하고, 실·팀 KPI와의 연결 상태를 운영 관점에서 빠르게 확인합니다.'
+    case 'section':
+      return '실 KPI를 검색하고, 상위 본부 KPI 및 하위 팀 KPI와의 정렬 흐름을 함께 확인합니다.'
+    case 'team':
+    default:
+      return '팀 KPI를 검색하고, 상위 본부·실 KPI 정렬 상태와 실행 맥락을 함께 확인합니다.'
+  }
+}
+
+function getOrgKpiLinkageDescription(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '본부 KPI를 기준으로 연결된 개인 KPI, 대상 인원 연결률, 최근 실적, 하위 실·팀 정렬 현황을 확인합니다.'
+    case 'section':
+      return '실 KPI를 기준으로 상위 본부 KPI 정렬 여부와 하위 팀 KPI 및 개인 KPI 연결 상태를 함께 확인합니다.'
+    case 'team':
+    default:
+      return '팀 KPI를 기준으로 상위 본부·실 KPI 정렬 여부와 연결된 개인 KPI, 대상 인원 연결률, 월간 실적 상태를 확인합니다.'
+  }
+}
+
+function getOrgKpiFormDescription(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '상위 본부 KPI를 등록합니다. 실·팀 KPI가 정렬할 기준 목표를 관리합니다.'
+    case 'section':
+      return '실 KPI를 등록합니다. 상위 본부 KPI와 하위 팀 KPI 사이의 연결 흐름을 관리합니다.'
+    case 'team':
+    default:
+      return '팀 실행 KPI를 등록합니다. 가능하면 상위 본부 또는 실 KPI와 연결해 cascade를 유지하세요.'
+  }
+}
+
+function getOrgKpiDepartmentFieldLabel(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '본부 조직'
+    case 'section':
+      return '실 조직'
+    case 'team':
+    default:
+      return '팀 조직'
+  }
+}
+
+function getOrgKpiParentFieldLabel(scope: OrgKpiScope) {
+  switch (scope) {
+    case 'division':
+      return '연결 가능한 상위 KPI'
+    case 'section':
+      return '정렬 가능한 상위 본부 KPI'
+    case 'team':
+    default:
+      return '정렬 가능한 상위 본부·실 KPI'
+  }
 }
 
 function normalizeOrgKpiTab(value?: string | null): TabKey | null {
@@ -280,10 +389,7 @@ export function OrgKpiManagementClient({
     ({
       key: pageData.selectedScope,
       label: ORG_KPI_SCOPE_LABELS[pageData.selectedScope],
-      description:
-        pageData.selectedScope === 'division'
-          ? '본부·실 등 상위 조직이 관리하는 KPI를 확인합니다. 하위 팀 KPI와의 연결 상태도 함께 볼 수 있습니다.'
-          : '실제 실행 조직이 운영하는 KPI를 확인합니다. 상위 본부 KPI와의 정렬을 함께 관리합니다.',
+      description: getOrgKpiScopeDescription(pageData.selectedScope),
       totalCount: pageData.list.length,
       departmentCount: pageData.departments.length,
     } satisfies OrgKpiScopeTab)
@@ -294,9 +400,9 @@ export function OrgKpiManagementClient({
   const scopeListTitle = `${scopeLabel} 목록`
   const scopeMapTitle = `${scopeLabel} 목표맵`
   const scopeHistoryTitle = `${scopeLabel} 이력`
-  const searchTargetLabel = pageData.selectedScope === 'division' ? '본부' : '팀'
+  const searchTargetLabel = getOrgKpiSearchTargetLabel(pageData.selectedScope)
   const defaultDepartmentSelection =
-    pageData.selectedScope === 'division' && pageData.departments.length > 1
+    pageData.selectedScope !== 'team' && pageData.departments.length > 1
       ? 'ALL'
       : pageData.selectedDepartmentId
   const defaultSelectedKpiId =
@@ -1102,10 +1208,7 @@ export function OrgKpiManagementClient({
   const openDirectKpiCreate = useCallback(() => {
     const nextForm = buildEmptyForm(pageData.selectedYear, activeScopeDepartmentId)
     openEditorWithForm(nextForm, {
-      bannerMessage:
-        pageData.selectedScope === 'division'
-          ? '직접 본부 KPI를 작성하는 편집 모드입니다.'
-          : '직접 팀 KPI를 작성하는 편집 모드입니다.',
+      bannerMessage: getOrgKpiDirectCreateMessage(pageData.selectedScope),
     })
   }, [activeScopeDepartmentId, openEditorWithForm, pageData.selectedScope, pageData.selectedYear])
 
@@ -1161,10 +1264,10 @@ export function OrgKpiManagementClient({
             <div>
               <h1 className="text-2xl font-bold text-slate-900">조직 KPI</h1>
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">{scopeDescription}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {pageData.scopeTabs.map((scopeTab) => (
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                <div className="grid gap-2 md:grid-cols-3">
+                  {pageData.scopeTabs.map((scopeTab) => (
                   <button
                     key={scopeTab.key}
                     type="button"
@@ -1232,9 +1335,7 @@ export function OrgKpiManagementClient({
           <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-4">
             <h2 className="text-base font-semibold text-slate-900">{scopeMapTitle}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              {pageData.selectedScope === 'division'
-                ? '상위 조직 KPI 구조를 따라가며 하위 팀 KPI와의 연결 흐름, 누락 KPI, 위험 신호를 한눈에 확인합니다.'
-                : '팀 KPI를 중심으로 상위 본부 KPI 정렬 상태와 실행 리스크를 구조 관점에서 확인합니다.'}
+              {getOrgKpiMapDescription(pageData.selectedScope)}
             </p>
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -1286,9 +1387,7 @@ export function OrgKpiManagementClient({
           <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
             <h2 className="text-base font-semibold text-slate-900">{scopeListTitle}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              {pageData.selectedScope === 'division'
-                ? '본부·실 등 상위 조직 KPI를 검색하고, 연결 상태와 하위 실행 흐름을 운영 관점에서 빠르게 확인합니다.'
-                : '팀 KPI를 검색하고, 상위 본부 KPI 정렬 상태와 실행 맥락을 함께 확인합니다.'}
+              {getOrgKpiListDescription(pageData.selectedScope)}
             </p>
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -1331,9 +1430,7 @@ export function OrgKpiManagementClient({
           <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-4">
             <h2 className="text-base font-semibold text-slate-900">연결 현황</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              {pageData.selectedScope === 'division'
-                ? '본부 KPI를 기준으로 연결된 개인 KPI 건수, 대상 인원 연결률, 최근 실적, 하위 팀 정렬 현황을 확인합니다.'
-                : '팀 KPI를 기준으로 상위 본부 KPI 정렬 여부와 연결된 개인 KPI, 대상 인원 연결률, 월간 실적 상태를 확인합니다.'}
+              {getOrgKpiLinkageDescription(pageData.selectedScope)}
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -2191,7 +2288,9 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                   <span className="text-xs text-slate-500">
                     {props.parentReference.scope === 'division'
                       ? '상위 본부 KPI로 바로 이동해 cascade 관계를 확인할 수 있습니다.'
-                      : '상위 연결 KPI로 바로 이동해 cascade 관계를 확인할 수 있습니다.'}
+                      : props.parentReference.scope === 'section'
+                        ? '상위 실 KPI로 바로 이동해 cascade 관계를 확인할 수 있습니다.'
+                        : '상위 연결 KPI로 바로 이동해 cascade 관계를 확인할 수 있습니다.'}
                   </span>
                 </div>
               ) : (
@@ -2902,7 +3001,13 @@ function EditorModal({
   editingKpiId?: string | null
 }) {
   const filteredParentOptions = parentGoalOptions.filter(
-    (option) => option.evalYear === Number(form.evalYear || new Date().getFullYear()) && option.id !== editingKpiId
+    (option) => {
+      if (option.evalYear !== Number(form.evalYear || new Date().getFullYear())) return false
+      if (option.id === editingKpiId) return false
+      if (scope === 'division') return false
+      if (scope === 'section') return option.scope === 'division'
+      return option.scope === 'division' || option.scope === 'section'
+    }
   )
 
   return (
@@ -2913,9 +3018,7 @@ function EditorModal({
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">Org KPI Form</p>
             <h2 className="mt-2 text-xl font-bold text-slate-900">{editing ? `${scopeLabel} 수정` : `${scopeLabel} 추가`}</h2>
             <p className="mt-2 text-sm text-slate-500">
-              {scope === 'division'
-                ? '상위 조직 KPI를 등록합니다. 하위 팀 KPI가 정렬할 기준 목표를 관리합니다.'
-                : '팀 실행 KPI를 등록합니다. 가능하면 상위 본부 KPI와 연결해 cascade를 유지하세요.'}
+              {getOrgKpiFormDescription(scope)}
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200">
@@ -2924,7 +3027,7 @@ function EditorModal({
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <Field label={scope === 'division' ? '본부·실 조직' : '팀 조직'}>
+          <Field label={getOrgKpiDepartmentFieldLabel(scope)}>
             <select value={form.deptId} onChange={(event) => onChange({ ...form, deptId: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
               {departments.map((department) => (
                 <option key={department.id} value={department.id}>
@@ -2937,7 +3040,7 @@ function EditorModal({
           <Field label="평가 연도">
             <input type="number" value={form.evalYear} onChange={(event) => onChange({ ...form, evalYear: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>
-          <Field label={scope === 'division' ? '연결 가능한 상위 본부 KPI' : '정렬 가능한 상위 본부 KPI'}>
+          <Field label={getOrgKpiParentFieldLabel(scope)}>
             <select value={form.parentOrgKpiId} onChange={(event) => onChange({ ...form, parentOrgKpiId: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
               <option value="">연결 안 함</option>
               {filteredParentOptions.map((option) => (

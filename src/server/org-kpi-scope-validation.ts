@@ -17,6 +17,24 @@ async function loadDepartments(prismaClient: PrismaClient | typeof prisma) {
   }) as Promise<DepartmentScopeLite[]>
 }
 
+function getOrgKpiScopeMismatchMessage(scope: OrgKpiScope, mode: 'select' | 'write') {
+  switch (scope) {
+    case 'division':
+      return mode === 'select'
+        ? '본부 KPI 탭에서는 본부 조직만 선택할 수 있습니다.'
+        : '본부 KPI 탭에서는 본부 조직만 업로드하거나 수정할 수 있습니다.'
+    case 'section':
+      return mode === 'select'
+        ? '실 KPI 탭에서는 실 조직만 선택할 수 있습니다.'
+        : '실 KPI 탭에서는 실 조직만 업로드하거나 수정할 수 있습니다.'
+    case 'team':
+    default:
+      return mode === 'select'
+        ? '팀 KPI 탭에서는 팀 조직만 선택할 수 있습니다.'
+        : '팀 KPI 탭에서는 팀 조직만 업로드하거나 수정할 수 있습니다.'
+  }
+}
+
 export async function assertOrgKpiScopeMatchesDepartment(params: {
   requestedScope?: OrgKpiScope | null
   deptId: string
@@ -39,9 +57,7 @@ export async function assertOrgKpiScopeMatchesDepartment(params: {
     throw new AppError(
       400,
       'ORG_KPI_SCOPE_MISMATCH',
-      params.requestedScope === 'division'
-        ? '본부 KPI 탭에서는 본부·실 등 상위 조직만 선택할 수 있습니다.'
-        : '팀 KPI 탭에서는 팀 조직만 선택할 수 있습니다.',
+      getOrgKpiScopeMismatchMessage(params.requestedScope, 'select'),
     )
   }
 }
@@ -69,9 +85,7 @@ export async function assertOrgKpiScopeMatchesDepartments(params: {
       throw new AppError(
         400,
         'ORG_KPI_SCOPE_MISMATCH',
-        params.requestedScope === 'division'
-          ? '본부 KPI 탭에서는 본부·실 등 상위 조직만 업로드하거나 수정할 수 있습니다.'
-          : '팀 KPI 탭에서는 팀 조직만 업로드하거나 수정할 수 있습니다.',
+        getOrgKpiScopeMismatchMessage(params.requestedScope, 'write'),
       )
     }
   }

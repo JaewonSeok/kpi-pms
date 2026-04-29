@@ -391,8 +391,8 @@ run('org KPI client keeps separate scope tabs and URL-based scope switching', ()
   assert.match(clientSource, /pageData\.scopeTabs\.map/)
   assert.match(clientSource, /handleScopeSwitch/)
   assert.match(clientSource, /buildOrgKpiHref/)
-  assert.match(clientSource, /selectedScope === 'division'/)
   assert.match(clientSource, /ORG_KPI_SCOPE_LABELS/)
+  assert.match(clientSource, /getOrgKpiSearchTargetLabel/)
 })
 
 

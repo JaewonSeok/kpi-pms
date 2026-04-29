@@ -119,11 +119,18 @@ run('org KPI loader resolves the active year with a single latest-year lookup an
 
 run('org KPI loader keeps scope labels and empty-state copy as readable Korean UTF-8 literals', () => {
   const loaderSource = read('src/server/org-kpi-page.ts')
+  const scopeModelSource = read('src/lib/org-kpi-scope.ts')
 
+  assert.match(scopeModelSource, /ORG_KPI_SCOPE_ORDER: OrgKpiScope\[] = \['division', 'section', 'team'\]/)
+  assert.match(scopeModelSource, /value === 'division' \|\| value === 'section' \|\| value === 'team'/)
   assert.match(loaderSource, /label: '본부 KPI'/)
+  assert.match(loaderSource, /label: '실 KPI'/)
   assert.match(loaderSource, /label: '팀 KPI'/)
-  assert.match(loaderSource, /본부·실 등 상위 조직이 관리하는 KPI를 확인합니다/)
-  assert.match(loaderSource, /실제 실행 조직이 운영하는 KPI를 확인합니다/)
+  assert.match(loaderSource, /본부 KPI를 확인합니다/)
+  assert.match(loaderSource, /실 KPI를 확인합니다/)
+  assert.match(loaderSource, /팀 KPI를 확인합니다/)
+  assert.match(loaderSource, /section: filterDepartmentsByOrgKpiScope\(accessibleDepartments, 'section'\)/)
+  assert.match(loaderSource, /scopeTabs: availableScopes\.map/)
   assert.match(loaderSource, /message: '조직 정보가 아직 준비되지 않았습니다\.'/)
 })
 
