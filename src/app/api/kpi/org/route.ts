@@ -6,6 +6,7 @@ import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateOrgKpiSchema } from '@/lib/validations'
 import { validateOrgParentLink } from '@/server/goal-alignment'
+import { resolveReadableOrgKpiDepartmentIds } from '@/server/org-kpi-access'
 import { assertOrgKpiScopeMatchesDepartment } from '@/server/org-kpi-scope-validation'
 
 function canManage(role: string) {
@@ -16,9 +17,6 @@ function getScopeDepartmentIds(session: Session | null) {
   if (!session) return []
   if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') {
     return null
-  }
-  if (session.user.role === 'ROLE_MEMBER') {
-    return [session.user.deptId]
   }
   return session.user.accessibleDepartmentIds.length
     ? session.user.accessibleDepartmentIds
@@ -33,7 +31,20 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const evalYear = Number(searchParams.get('evalYear') || new Date().getFullYear())
     const deptId = searchParams.get('deptId')
-    const scopeDepartmentIds = getScopeDepartmentIds(session)
+    const scopeDepartmentIds =
+      session.user.role === 'ROLE_MEMBER'
+        ? resolveReadableOrgKpiDepartmentIds({
+            role: session.user.role,
+            deptId: session.user.deptId,
+            accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+            departments: await prisma.department.findMany({
+              select: {
+                id: true,
+                parentDeptId: true,
+              },
+            }),
+          })
+        : getScopeDepartmentIds(session)
 
     if (deptId && scopeDepartmentIds && !scopeDepartmentIds.includes(deptId)) {
       throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 부서입니다.')

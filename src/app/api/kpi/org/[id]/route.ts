@@ -11,6 +11,7 @@ import {
 } from '@/server/org-kpi-workflow'
 import { validateOrgParentLink } from '@/server/goal-alignment'
 import { deleteOrgKpiRecord } from '@/server/org-kpi-delete'
+import { resolveReadableOrgKpiDepartmentIds } from '@/server/org-kpi-access'
 import { assertOrgKpiScopeMatchesDepartment } from '@/server/org-kpi-scope-validation'
 
 type RouteContext = {
@@ -26,9 +27,6 @@ function getScopeDepartmentIds(session: Session | null) {
   if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') {
     return null
   }
-  if (session.user.role === 'ROLE_MEMBER') {
-    return [session.user.deptId]
-  }
   return session.user.accessibleDepartmentIds.length
     ? session.user.accessibleDepartmentIds
     : [session.user.deptId]
@@ -40,7 +38,20 @@ export async function GET(_request: Request, context: RouteContext) {
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
 
     const { id } = await context.params
-    const scopeDepartmentIds = getScopeDepartmentIds(session)
+    const scopeDepartmentIds =
+      session.user.role === 'ROLE_MEMBER'
+        ? resolveReadableOrgKpiDepartmentIds({
+            role: session.user.role,
+            deptId: session.user.deptId,
+            accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+            departments: await prisma.department.findMany({
+              select: {
+                id: true,
+                parentDeptId: true,
+              },
+            }),
+          })
+        : getScopeDepartmentIds(session)
 
     const kpi = await prisma.orgKpi.findUnique({
       where: { id },

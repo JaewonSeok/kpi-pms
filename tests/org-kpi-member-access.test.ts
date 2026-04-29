@@ -31,8 +31,10 @@ run('member org KPI data is server-scoped to the actor department', () => {
   const pageSource = read('src/server/org-kpi-page.ts')
   const routeSource = read('src/app/api/kpi/org/route.ts')
 
-  assert.match(pageSource, /if \(params\.role === 'ROLE_MEMBER'\) \{\s*return \[params\.deptId\]/)
-  assert.match(routeSource, /if \(session\.user\.role === 'ROLE_MEMBER'\) \{\s*return \[session\.user\.deptId\]/)
+  assert.match(pageSource, /resolveReadableOrgKpiDepartmentIds/)
+  assert.match(pageSource, /collectDepartmentAncestorIds/)
+  assert.match(routeSource, /session\.user\.role === 'ROLE_MEMBER'/)
+  assert.match(routeSource, /resolveReadableOrgKpiDepartmentIds/)
   assert.match(
     routeSource,
     /if \(deptId && scopeDepartmentIds && !scopeDepartmentIds\.includes\(deptId\)\) \{/
@@ -56,8 +58,8 @@ run('member org KPI flow keeps write APIs server-blocked', () => {
   const updateRouteSource = read('src/app/api/kpi/org/[id]/route.ts')
   const workflowRouteSource = read('src/app/api/kpi/org/[id]/workflow/route.ts')
 
-  assert.match(createRouteSource, /if \(session\.user\.role === 'ROLE_MEMBER'\) \{/)
-  assert.match(updateRouteSource, /if \(session\.user\.role === 'ROLE_MEMBER'\) \{/)
+  assert.match(createRouteSource, /if \(!canManage\(session\.user\.role\)\) \{/)
+  assert.match(updateRouteSource, /if \(!canManage\(session\.user\.role\)\) \{/)
   assert.match(
     workflowRouteSource,
     /return \['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'\]\.includes\(role\)/

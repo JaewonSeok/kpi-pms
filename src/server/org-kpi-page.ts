@@ -16,6 +16,7 @@ import {
 import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
 import { resolveOrgKpiOperationalStatus, type OrgKpiOperationalStatus } from './org-kpi-workflow'
+import { collectDepartmentAncestorIds, resolveReadableOrgKpiDepartmentIds } from './org-kpi-access'
 
 export type OrgKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -198,26 +199,38 @@ export type OrgKpiPageData = {
     name: string
     departmentName: string
   }
+  hasSectionScope: boolean
 }
 
 const ORG_KPI_SCOPE_TAB_META: Record<
   OrgKpiScope,
-  Pick<OrgKpiScopeTab, 'label' | 'description'>
+  Pick<OrgKpiScopeTab, 'label'>
 > = {
   division: {
     label: '본부 KPI',
-    description: '본부 KPI를 확인합니다. 실·팀 KPI와의 연결 구조를 함께 관리합니다.',
   },
   section: {
     label: '실 KPI',
-    description:
-      '실 KPI를 확인합니다. 상위 본부 KPI와 하위 팀 KPI 사이의 정렬 흐름을 함께 관리합니다.',
   },
   team: {
     label: '팀 KPI',
-    description:
-      '팀 KPI를 확인합니다. 상위 본부·실 KPI와의 정렬 상태를 함께 관리합니다.',
   },
+}
+
+function getOrgKpiScopeDescription(scope: OrgKpiScope, hasSectionScope: boolean) {
+  switch (scope) {
+    case 'division':
+      return hasSectionScope
+        ? '본부 KPI를 확인합니다. 실·팀 KPI와의 연결 구조를 함께 관리합니다.'
+        : '본부 KPI를 확인합니다. 하위 팀 KPI와의 연결 구조를 함께 관리합니다.'
+    case 'section':
+      return '실 KPI를 확인합니다. 상위 본부 KPI와 하위 팀 KPI 사이의 정렬 흐름을 함께 관리합니다.'
+    case 'team':
+    default:
+      return hasSectionScope
+        ? '팀 KPI를 확인합니다. 상위 본부·실 KPI와의 정렬 상태를 함께 관리합니다.'
+        : '팀 KPI를 확인합니다. 상위 본부 KPI와의 정렬 상태를 함께 관리합니다.'
+  }
 }
 
 function getAllowedParentGoalScopes(scope: OrgKpiScope): OrgKpiScope[] {
@@ -324,28 +337,6 @@ type EmployeeLite = Prisma.EmployeeGetPayload<{
 
 type OrgKpiPageAlert = NonNullable<OrgKpiPageData['alerts']>[number]
 
-function normalizeScopeDepartmentIds(accessibleDepartmentIds?: string[] | null) {
-  if (!Array.isArray(accessibleDepartmentIds)) return []
-  return accessibleDepartmentIds.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-}
-
-function getEffectiveScopeDepartmentIds(params: {
-  role: SystemRole
-  deptId: string
-  accessibleDepartmentIds?: string[] | null
-}) {
-  if (params.role === 'ROLE_ADMIN' || params.role === 'ROLE_CEO') {
-    return null
-  }
-
-  if (params.role === 'ROLE_MEMBER') {
-    return [params.deptId]
-  }
-
-  const normalizedIds = normalizeScopeDepartmentIds(params.accessibleDepartmentIds)
-  return normalizedIds.length ? normalizedIds : [params.deptId]
-}
-
 async function loadOrgKpiSection<T>(params: {
   title: string
   description: string
@@ -386,18 +377,6 @@ function buildDepartmentLevelMap(departments: DepartmentLite[]) {
   })
 
   return memo
-}
-
-function collectAncestorIds(departmentId: string, departmentsById: Map<string, DepartmentLite>) {
-  const ids: string[] = []
-  let current = departmentsById.get(departmentId)
-
-  while (current?.parentDeptId) {
-    ids.push(current.parentDeptId)
-    current = departmentsById.get(current.parentDeptId)
-  }
-
-  return ids
 }
 
 function rankPosition(position: EmployeeLite['position']) {
@@ -490,7 +469,7 @@ function findSuggestedParent(params: {
   accessibleKpis: OrgKpiWithRelations[]
   departmentsById: Map<string, DepartmentLite>
 }) {
-  const ancestors = collectAncestorIds(params.kpi.deptId, params.departmentsById)
+  const ancestors = collectDepartmentAncestorIds(params.kpi.deptId, params.departmentsById)
   const titleTokens = new Set(tokenizeTitle(params.kpi.kpiName))
   const category = params.kpi.kpiCategory
 
@@ -645,7 +624,7 @@ export async function getOrgKpiPageData(params: {
   const emptyScopeTabs = ORG_KPI_SCOPE_ORDER.filter((scope) => scope !== 'section').map((scope) => ({
     key: scope,
     label: ORG_KPI_SCOPE_TAB_META[scope].label,
-    description: ORG_KPI_SCOPE_TAB_META[scope].description,
+    description: getOrgKpiScopeDescription(scope, false),
     totalCount: 0,
     departmentCount: 0,
   }))
@@ -660,37 +639,35 @@ export async function getOrgKpiPageData(params: {
       return result
     }
     const alerts: OrgKpiPageAlert[] = []
-    const scopeDepartmentIds = getEffectiveScopeDepartmentIds({
+    const departments = await measure('departments', () =>
+      prisma.department.findMany({
+        include: {
+          organization: true,
+        },
+        orderBy: [{ deptName: 'asc' }],
+      })
+    )
+    const scopeDepartmentIds = resolveReadableOrgKpiDepartmentIds({
       role: params.role,
       deptId: params.deptId,
       accessibleDepartmentIds: params.accessibleDepartmentIds,
+      departments,
     })
-
-    const [departments, employees] = await Promise.all([
-      measure('departments', () =>
-        prisma.department.findMany({
-          include: {
-            organization: true,
-          },
-          orderBy: [{ deptName: 'asc' }],
-        })
-      ),
-      measure('employees', () =>
-        prisma.employee.findMany({
-          where: {
-            ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
-          },
-          select: {
-            id: true,
-            empName: true,
-            deptId: true,
-            position: true,
-            role: true,
-            status: true,
-          },
-        })
-      ),
-    ])
+    const employees = await measure('employees', () =>
+      prisma.employee.findMany({
+        where: {
+          ...(scopeDepartmentIds ? { deptId: { in: scopeDepartmentIds } } : {}),
+        },
+        select: {
+          id: true,
+          empName: true,
+          deptId: true,
+          position: true,
+          role: true,
+          status: true,
+        },
+      })
+    )
 
     if (!departments.length) {
       return {
@@ -724,6 +701,7 @@ export async function getOrgKpiPageData(params: {
           name: params.userName,
           departmentName: params.deptName,
         },
+        hasSectionScope: false,
       }
     }
 
@@ -740,7 +718,15 @@ export async function getOrgKpiPageData(params: {
       team: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'team'),
     } satisfies Record<OrgKpiScope, DepartmentLite[]>
 
-    const currentYear = new Date().getFullYear()
+    const hasSectionScopeInLineage = accessibleDepartmentsByScope.section.length > 0
+    const memberReadableDepartmentIds =
+      params.role === 'ROLE_MEMBER'
+        ? new Set([
+            params.deptId,
+            ...collectDepartmentAncestorIds(params.deptId, departmentsById),
+          ])
+        : null
+
     const latestKpiYearRecord = await measure('latestKpiYear', () =>
       prisma.orgKpi.findFirst({
         where: {
@@ -754,6 +740,7 @@ export async function getOrgKpiPageData(params: {
         },
       })
     )
+    const currentYear = new Date().getFullYear()
 
     const selectedYear =
       typeof params.year === 'number' && Number.isFinite(params.year)
@@ -879,9 +866,11 @@ export async function getOrgKpiPageData(params: {
         accessibleDepartmentsByScope[scope].length > 0 ||
         kpis.some(
           (item) =>
-            resolveOrgKpiScopeFromDepartmentId(item.deptId, departments) === scope
+            resolveOrgKpiScopeFromDepartmentId(item.deptId, departments) === scope &&
+            (!memberReadableDepartmentIds || memberReadableDepartmentIds.has(item.deptId))
         )
     )
+    const hasSectionScope = hasSectionScopeInLineage && availableScopes.includes('section')
     const selectedScope =
       (requestedScope && availableScopes.includes(requestedScope) ? requestedScope : null) ??
       (requestedKpiScope && availableScopes.includes(requestedKpiScope) ? requestedKpiScope : null) ??
@@ -1111,7 +1100,7 @@ export async function getOrgKpiPageData(params: {
     const visibleTreeIds = new Set<string>()
     departmentsForSelector.forEach((department) => {
       visibleTreeIds.add(department.id)
-      collectAncestorIds(department.id, departmentsById).forEach((ancestorId) => {
+      collectDepartmentAncestorIds(department.id, departmentsById).forEach((ancestorId) => {
         visibleTreeIds.add(ancestorId)
       })
     })
@@ -1173,7 +1162,7 @@ export async function getOrgKpiPageData(params: {
       scopeTabs: availableScopes.map((scope) => ({
         key: scope,
         label: ORG_KPI_SCOPE_TAB_META[scope].label,
-        description: ORG_KPI_SCOPE_TAB_META[scope].description,
+        description: getOrgKpiScopeDescription(scope, hasSectionScope),
         totalCount: scopeCounts[scope],
         departmentCount: accessibleDepartmentsByScope[scope].length,
       })),
@@ -1204,6 +1193,7 @@ export async function getOrgKpiPageData(params: {
         name: params.userName,
         departmentName: params.deptName,
       },
+      hasSectionScope,
     }
   } catch (error) {
     console.error('[org-kpi-page]', error)
@@ -1238,6 +1228,7 @@ export async function getOrgKpiPageData(params: {
         name: params.userName,
         departmentName: params.deptName,
       },
+      hasSectionScope: false,
     }
   }
 }

@@ -109,15 +109,19 @@ const ORG_KPI_SCOPE_LABELS: Record<OrgKpiScope, string> = {
   team: '팀 KPI',
 }
 
-function getOrgKpiScopeDescription(scope: OrgKpiScope) {
+function getOrgKpiScopeDescription(scope: OrgKpiScope, hasSectionScope: boolean) {
   switch (scope) {
     case 'division':
-      return '본부 KPI를 확인합니다. 실·팀 KPI와의 연결 구조를 함께 관리합니다.'
+      return hasSectionScope
+        ? '본부 KPI를 확인합니다. 실·팀 KPI와의 연결 구조를 함께 관리합니다.'
+        : '본부 KPI를 확인합니다. 하위 팀 KPI와의 연결 구조를 함께 관리합니다.'
     case 'section':
       return '실 KPI를 확인합니다. 상위 본부 KPI와 하위 팀 KPI 사이의 정렬 흐름을 함께 관리합니다.'
     case 'team':
     default:
-      return '팀 KPI를 확인합니다. 상위 본부·실 KPI와의 정렬 상태를 함께 관리합니다.'
+      return hasSectionScope
+        ? '팀 KPI를 확인합니다. 상위 본부·실 KPI와의 정렬 상태를 함께 관리합니다.'
+        : '팀 KPI를 확인합니다. 상위 본부 KPI와의 정렬 상태를 함께 관리합니다.'
   }
 }
 
@@ -145,51 +149,67 @@ function getOrgKpiDirectCreateMessage(scope: OrgKpiScope) {
   }
 }
 
-function getOrgKpiMapDescription(scope: OrgKpiScope) {
+function getOrgKpiMapDescription(scope: OrgKpiScope, hasSectionScope: boolean) {
   switch (scope) {
     case 'division':
-      return '상위 본부 KPI 구조를 따라가며 하위 실·팀 KPI와의 연결 흐름과 누락 정렬 지점을 한눈에 확인합니다.'
+      return hasSectionScope
+        ? '상위 본부 KPI 구조를 따라가며 하위 실·팀 KPI와의 연결 흐름과 누락 정렬 지점을 한눈에 확인합니다.'
+        : '상위 본부 KPI 구조를 따라가며 하위 팀 KPI와의 연결 흐름과 누락 정렬 지점을 한눈에 확인합니다.'
     case 'section':
       return '실 KPI를 중심으로 상위 본부 KPI 정렬 상태와 하위 팀 KPI 연결 흐름을 구조 관점에서 확인합니다.'
     case 'team':
     default:
-      return '팀 KPI를 중심으로 상위 본부·실 KPI 정렬 상태와 실행 리스크를 구조 관점에서 확인합니다.'
+      return hasSectionScope
+        ? '팀 KPI를 중심으로 상위 본부·실 KPI 정렬 상태와 실행 리스크를 구조 관점에서 확인합니다.'
+        : '팀 KPI를 중심으로 상위 본부 KPI 정렬 상태와 실행 리스크를 구조 관점에서 확인합니다.'
   }
 }
 
-function getOrgKpiListDescription(scope: OrgKpiScope) {
+function getOrgKpiListDescription(scope: OrgKpiScope, hasSectionScope: boolean) {
   switch (scope) {
     case 'division':
-      return '본부 KPI를 검색하고, 실·팀 KPI와의 연결 상태를 운영 관점에서 빠르게 확인합니다.'
+      return hasSectionScope
+        ? '본부 KPI를 검색하고, 실·팀 KPI와의 연결 상태를 운영 관점에서 빠르게 확인합니다.'
+        : '본부 KPI를 검색하고, 팀 KPI와의 연결 상태를 운영 관점에서 빠르게 확인합니다.'
     case 'section':
       return '실 KPI를 검색하고, 상위 본부 KPI 및 하위 팀 KPI와의 정렬 흐름을 함께 확인합니다.'
     case 'team':
     default:
-      return '팀 KPI를 검색하고, 상위 본부·실 KPI 정렬 상태와 실행 맥락을 함께 확인합니다.'
+      return hasSectionScope
+        ? '팀 KPI를 검색하고, 상위 본부·실 KPI 정렬 상태와 실행 맥락을 함께 확인합니다.'
+        : '팀 KPI를 검색하고, 상위 본부 KPI 정렬 상태와 실행 맥락을 함께 확인합니다.'
   }
 }
 
-function getOrgKpiLinkageDescription(scope: OrgKpiScope) {
+function getOrgKpiLinkageDescription(scope: OrgKpiScope, hasSectionScope: boolean) {
   switch (scope) {
     case 'division':
-      return '본부 KPI를 기준으로 연결된 개인 KPI, 대상 인원 연결률, 최근 실적, 하위 실·팀 정렬 현황을 확인합니다.'
+      return hasSectionScope
+        ? '본부 KPI를 기준으로 연결된 개인 KPI, 대상 인원 연결률, 최근 실적, 하위 실·팀 정렬 현황을 확인합니다.'
+        : '본부 KPI를 기준으로 연결된 개인 KPI, 대상 인원 연결률, 최근 실적, 하위 팀 정렬 현황을 확인합니다.'
     case 'section':
       return '실 KPI를 기준으로 상위 본부 KPI 정렬 여부와 하위 팀 KPI 및 개인 KPI 연결 상태를 함께 확인합니다.'
     case 'team':
     default:
-      return '팀 KPI를 기준으로 상위 본부·실 KPI 정렬 여부와 연결된 개인 KPI, 대상 인원 연결률, 월간 실적 상태를 확인합니다.'
+      return hasSectionScope
+        ? '팀 KPI를 기준으로 상위 본부·실 KPI 정렬 여부와 연결된 개인 KPI, 대상 인원 연결률, 월간 실적 상태를 확인합니다.'
+        : '팀 KPI를 기준으로 상위 본부 KPI 정렬 여부와 연결된 개인 KPI, 대상 인원 연결률, 월간 실적 상태를 확인합니다.'
   }
 }
 
-function getOrgKpiFormDescription(scope: OrgKpiScope) {
+function getOrgKpiFormDescription(scope: OrgKpiScope, hasSectionScope: boolean) {
   switch (scope) {
     case 'division':
-      return '상위 본부 KPI를 등록합니다. 실·팀 KPI가 정렬할 기준 목표를 관리합니다.'
+      return hasSectionScope
+        ? '상위 본부 KPI를 등록합니다. 실·팀 KPI가 정렬할 기준 목표를 관리합니다.'
+        : '상위 본부 KPI를 등록합니다. 하위 팀 KPI가 정렬할 기준 목표를 관리합니다.'
     case 'section':
       return '실 KPI를 등록합니다. 상위 본부 KPI와 하위 팀 KPI 사이의 연결 흐름을 관리합니다.'
     case 'team':
     default:
-      return '팀 실행 KPI를 등록합니다. 가능하면 상위 본부 또는 실 KPI와 연결해 cascade를 유지하세요.'
+      return hasSectionScope
+        ? '팀 실행 KPI를 등록합니다. 가능하면 상위 본부 또는 실 KPI와 연결해 cascade를 유지하세요.'
+        : '팀 실행 KPI를 등록합니다. 가능하면 상위 본부 KPI와 연결해 cascade를 유지하세요.'
   }
 }
 
@@ -205,7 +225,7 @@ function getOrgKpiDepartmentFieldLabel(scope: OrgKpiScope) {
   }
 }
 
-function getOrgKpiParentFieldLabel(scope: OrgKpiScope) {
+function getOrgKpiParentFieldLabel(scope: OrgKpiScope, hasSectionScope: boolean) {
   switch (scope) {
     case 'division':
       return '연결 가능한 상위 KPI'
@@ -213,7 +233,7 @@ function getOrgKpiParentFieldLabel(scope: OrgKpiScope) {
       return '정렬 가능한 상위 본부 KPI'
     case 'team':
     default:
-      return '정렬 가능한 상위 본부·실 KPI'
+      return hasSectionScope ? '정렬 가능한 상위 본부·실 KPI' : '정렬 가능한 상위 본부 KPI'
   }
 }
 
@@ -382,6 +402,7 @@ export function OrgKpiManagementClient({
   const visibleTabs = isReadOnlyMemberView
     ? MEMBER_TAB_ORDER
     : TAB_ORDER
+  const hasSectionScope = pageData.hasSectionScope
   const defaultTab =
     normalizedInitialTab && visibleTabs.includes(normalizedInitialTab) ? normalizedInitialTab : visibleTabs[0] ?? 'list'
   const selectedScopeTab =
@@ -389,7 +410,7 @@ export function OrgKpiManagementClient({
     ({
       key: pageData.selectedScope,
       label: ORG_KPI_SCOPE_LABELS[pageData.selectedScope],
-      description: getOrgKpiScopeDescription(pageData.selectedScope),
+      description: getOrgKpiScopeDescription(pageData.selectedScope, hasSectionScope),
       totalCount: pageData.list.length,
       departmentCount: pageData.departments.length,
     } satisfies OrgKpiScopeTab)
@@ -1266,7 +1287,7 @@ export function OrgKpiManagementClient({
               <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">{scopeDescription}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2">
-                <div className="grid gap-2 md:grid-cols-3">
+                <div className={cls('grid gap-2', pageData.scopeTabs.length >= 3 ? 'md:grid-cols-3' : 'sm:grid-cols-2')}>
                   {pageData.scopeTabs.map((scopeTab) => (
                   <button
                     key={scopeTab.key}
@@ -1335,7 +1356,7 @@ export function OrgKpiManagementClient({
           <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-4">
             <h2 className="text-base font-semibold text-slate-900">{scopeMapTitle}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              {getOrgKpiMapDescription(pageData.selectedScope)}
+              {getOrgKpiMapDescription(pageData.selectedScope, hasSectionScope)}
             </p>
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -1387,7 +1408,7 @@ export function OrgKpiManagementClient({
           <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
             <h2 className="text-base font-semibold text-slate-900">{scopeListTitle}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              {getOrgKpiListDescription(pageData.selectedScope)}
+              {getOrgKpiListDescription(pageData.selectedScope, hasSectionScope)}
             </p>
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -1430,7 +1451,7 @@ export function OrgKpiManagementClient({
           <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-4">
             <h2 className="text-base font-semibold text-slate-900">연결 현황</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              {getOrgKpiLinkageDescription(pageData.selectedScope)}
+              {getOrgKpiLinkageDescription(pageData.selectedScope, hasSectionScope)}
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1474,11 +1495,12 @@ export function OrgKpiManagementClient({
       <OrgKpiQuickLinks showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'} readOnly={isReadOnlyMemberView} />
 
       {showForm ? (
-        <EditorModal
-          scope={pageData.selectedScope}
-          scopeLabel={scopeLabel}
-          departments={pageData.departments}
-          parentGoalOptions={pageData.parentGoalOptions}
+          <EditorModal
+            scope={pageData.selectedScope}
+            scopeLabel={scopeLabel}
+            hasSectionScope={hasSectionScope}
+            departments={pageData.departments}
+            parentGoalOptions={pageData.parentGoalOptions}
           editingKpiId={editingKpiId}
           form={form}
           onChange={setForm}
@@ -2978,6 +3000,7 @@ function Timeline({ title, items }: { title: string; items: OrgKpiPageData['hist
 function EditorModal({
   scope,
   scopeLabel,
+  hasSectionScope,
   departments,
   form,
   onChange,
@@ -2990,6 +3013,7 @@ function EditorModal({
 }: {
   scope: OrgKpiScope
   scopeLabel: string
+  hasSectionScope: boolean
   departments: OrgKpiPageData['departments']
   form: FormState
   onChange: (value: FormState) => void
@@ -3018,7 +3042,7 @@ function EditorModal({
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">Org KPI Form</p>
             <h2 className="mt-2 text-xl font-bold text-slate-900">{editing ? `${scopeLabel} 수정` : `${scopeLabel} 추가`}</h2>
             <p className="mt-2 text-sm text-slate-500">
-              {getOrgKpiFormDescription(scope)}
+              {getOrgKpiFormDescription(scope, hasSectionScope)}
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200">
@@ -3040,7 +3064,7 @@ function EditorModal({
           <Field label="평가 연도">
             <input type="number" value={form.evalYear} onChange={(event) => onChange({ ...form, evalYear: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>
-          <Field label={getOrgKpiParentFieldLabel(scope)}>
+          <Field label={getOrgKpiParentFieldLabel(scope, hasSectionScope)}>
             <select value={form.parentOrgKpiId} onChange={(event) => onChange({ ...form, parentOrgKpiId: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
               <option value="">연결 안 함</option>
               {filteredParentOptions.map((option) => (
