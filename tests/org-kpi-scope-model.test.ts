@@ -80,3 +80,19 @@ run('orgs without a section layer continue to expose division and team only', ()
     [],
   )
 })
+
+run('multi-level org trees still preserve division above a real section layer', () => {
+  const layeredDepartments = [
+    { id: 'dept-root', parentDeptId: null },
+    { id: 'dept-division', parentDeptId: 'dept-root' },
+    { id: 'dept-section', parentDeptId: 'dept-division' },
+    { id: 'dept-team', parentDeptId: 'dept-section' },
+  ]
+
+  const scopeMap = buildOrgKpiDepartmentScopeMap(layeredDepartments)
+
+  assert.equal(scopeMap.get('dept-root'), 'division')
+  assert.equal(scopeMap.get('dept-division'), 'division')
+  assert.equal(scopeMap.get('dept-section'), 'section')
+  assert.equal(scopeMap.get('dept-team'), 'team')
+})

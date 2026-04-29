@@ -37,25 +37,47 @@ export function normalizeOrgKpiScope(value?: string | null): OrgKpiScope | null 
 export function buildOrgKpiDepartmentScopeMap<TDepartment extends ScopeDepartmentLike>(
   departments: TDepartment[],
 ) {
-  const childCountByParentId = new Map<string, number>()
+  const childIdsByParentId = new Map<string, string[]>()
 
   departments.forEach((department) => {
     const parentDepartmentId = getParentDepartmentId(department)
     if (!parentDepartmentId) return
-    childCountByParentId.set(
-      parentDepartmentId,
-      (childCountByParentId.get(parentDepartmentId) ?? 0) + 1,
-    )
+    const children = childIdsByParentId.get(parentDepartmentId) ?? []
+    children.push(department.id)
+    childIdsByParentId.set(parentDepartmentId, children)
   })
+
+  const subtreeDepthMemo = new Map<string, number>()
+
+  function getSubtreeDepth(departmentId: string): number {
+    if (subtreeDepthMemo.has(departmentId)) {
+      return subtreeDepthMemo.get(departmentId) ?? 0
+    }
+
+    const childIds = childIdsByParentId.get(departmentId) ?? []
+    if (!childIds.length) {
+      subtreeDepthMemo.set(departmentId, 0)
+      return 0
+    }
+
+    const depth = Math.max(...childIds.map((childId) => getSubtreeDepth(childId))) + 1
+    subtreeDepthMemo.set(departmentId, depth)
+    return depth
+  }
 
   return new Map(
     departments.map((department) => [
       department.id,
-      childCountByParentId.has(department.id)
-        ? getParentDepartmentId(department)
-          ? 'section'
-          : 'division'
-        : 'team',
+      (() => {
+        const subtreeDepth = getSubtreeDepth(department.id)
+        if (subtreeDepth <= 0) return 'team'
+        const parentDepartmentId = getParentDepartmentId(department)
+        const parentSubtreeDepth = parentDepartmentId ? getSubtreeDepth(parentDepartmentId) : null
+        if (subtreeDepth === 1 && parentSubtreeDepth !== null && parentSubtreeDepth >= 2) {
+          return 'section'
+        }
+        return 'division'
+      })(),
     ] as const),
   )
 }
