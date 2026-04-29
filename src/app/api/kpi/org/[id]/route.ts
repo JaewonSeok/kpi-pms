@@ -1,4 +1,4 @@
-import { getServerSession, type Session } from 'next-auth'
+import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
@@ -11,25 +11,15 @@ import {
 } from '@/server/org-kpi-workflow'
 import { validateOrgParentLink } from '@/server/goal-alignment'
 import { deleteOrgKpiRecord } from '@/server/org-kpi-delete'
-import { resolveReadableOrgKpiDepartmentIds } from '@/server/org-kpi-access'
+import {
+  canManageOrgKpiWriteScope,
+  resolveEditableOrgKpiDepartmentIds,
+  resolveReadableOrgKpiDepartmentIds,
+} from '@/server/org-kpi-access'
 import { assertOrgKpiScopeMatchesDepartment } from '@/server/org-kpi-scope-validation'
 
 type RouteContext = {
   params: Promise<{ id: string }>
-}
-
-function canManage(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
-}
-
-function getScopeDepartmentIds(session: Session | null) {
-  if (!session) return []
-  if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') {
-    return null
-  }
-  return session.user.accessibleDepartmentIds.length
-    ? session.user.accessibleDepartmentIds
-    : [session.user.deptId]
 }
 
 export async function GET(_request: Request, context: RouteContext) {
@@ -38,20 +28,20 @@ export async function GET(_request: Request, context: RouteContext) {
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
 
     const { id } = await context.params
-    const scopeDepartmentIds =
-      session.user.role === 'ROLE_MEMBER'
-        ? resolveReadableOrgKpiDepartmentIds({
-            role: session.user.role,
-            deptId: session.user.deptId,
-            accessibleDepartmentIds: session.user.accessibleDepartmentIds,
-            departments: await prisma.department.findMany({
-              select: {
-                id: true,
-                parentDeptId: true,
-              },
-            }),
-          })
-        : getScopeDepartmentIds(session)
+    const departments = await prisma.department.findMany({
+      select: {
+        id: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+    })
+    const scopeDepartmentIds = resolveReadableOrgKpiDepartmentIds({
+      userId: session.user.id,
+      role: session.user.role,
+      deptId: session.user.deptId,
+      accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+      departments,
+    })
 
     const kpi = await prisma.orgKpi.findUnique({
       where: { id },
@@ -113,7 +103,22 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
-    if (!canManage(session.user.role)) {
+    const departments = await prisma.department.findMany({
+      select: {
+        id: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+    })
+    if (
+      !canManageOrgKpiWriteScope({
+        userId: session.user.id,
+        role: session.user.role,
+        deptId: session.user.deptId,
+        accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+        departments,
+      })
+    ) {
       throw new AppError(403, 'FORBIDDEN', '권한이 없습니다.')
     }
 
@@ -160,7 +165,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       throw new AppError(404, 'ORG_KPI_NOT_FOUND', '조직 KPI를 찾을 수 없습니다.')
     }
 
-    const scopeDepartmentIds = getScopeDepartmentIds(session)
+    const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
+      userId: session.user.id,
+      role: session.user.role,
+      deptId: session.user.deptId,
+      accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+      departments,
+    })
     if (scopeDepartmentIds && !scopeDepartmentIds.includes(current.deptId)) {
       throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 조직 KPI입니다.')
     }

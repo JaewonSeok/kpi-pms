@@ -1,4 +1,4 @@
-import { getServerSession, type Session } from 'next-auth'
+import { getServerSession } from 'next-auth'
 import type { Prisma } from '@prisma/client'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -9,34 +9,36 @@ import {
   canEditOrgKpiByOperationalStatus,
   resolveOrgKpiOperationalStatus,
 } from '@/server/org-kpi-workflow'
+import {
+  canManageOrgKpiWriteScope,
+  resolveEditableOrgKpiDepartmentIds,
+} from '@/server/org-kpi-access'
 import { validateOrgParentLink } from '@/server/goal-alignment'
 import {
   assertOrgKpiScopeMatchesDepartment,
   assertOrgKpiScopeMatchesDepartments,
 } from '@/server/org-kpi-scope-validation'
 
-function canManage(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
-}
-
-function getScopeDepartmentIds(session: Session | null) {
-  if (!session) return []
-  if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') {
-    return null
-  }
-  if (session.user.role === 'ROLE_MEMBER') {
-    return [session.user.deptId]
-  }
-  return session.user.accessibleDepartmentIds.length
-    ? session.user.accessibleDepartmentIds
-    : [session.user.deptId]
-}
-
 export async function PATCH(request: Request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
-    if (!canManage(session.user.role)) {
+    const departments = await prisma.department.findMany({
+      select: {
+        id: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+    })
+    if (
+      !canManageOrgKpiWriteScope({
+        userId: session.user.id,
+        role: session.user.role,
+        deptId: session.user.deptId,
+        accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+        departments,
+      })
+    ) {
       throw new AppError(403, 'FORBIDDEN', '목표 일괄 수정 권한이 없습니다.')
     }
 
@@ -47,7 +49,13 @@ export async function PATCH(request: Request) {
     }
 
     const data = validated.data
-    const scopeDepartmentIds = getScopeDepartmentIds(session)
+    const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
+      userId: session.user.id,
+      role: session.user.role,
+      deptId: session.user.deptId,
+      accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+      departments,
+    })
 
     if (data.deptId && scopeDepartmentIds && !scopeDepartmentIds.includes(data.deptId)) {
       throw new AppError(403, 'FORBIDDEN', '변경 대상 조직 범위에 접근할 수 없습니다.')

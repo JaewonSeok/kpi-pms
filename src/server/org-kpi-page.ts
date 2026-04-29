@@ -16,7 +16,11 @@ import {
 import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
 import { resolveOrgKpiOperationalStatus, type OrgKpiOperationalStatus } from './org-kpi-workflow'
-import { collectDepartmentAncestorIds, resolveReadableOrgKpiDepartmentIds } from './org-kpi-access'
+import {
+  collectDepartmentAncestorIds,
+  resolveEditableOrgKpiDepartmentIds,
+  resolveReadableOrgKpiDepartmentIds,
+} from './org-kpi-access'
 
 export type OrgKpiPageState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -648,6 +652,14 @@ export async function getOrgKpiPageData(params: {
       })
     )
     const scopeDepartmentIds = resolveReadableOrgKpiDepartmentIds({
+      userId: params.userId,
+      role: params.role,
+      deptId: params.deptId,
+      accessibleDepartmentIds: params.accessibleDepartmentIds,
+      departments,
+    })
+    const editableDepartmentIds = resolveEditableOrgKpiDepartmentIds({
+      userId: params.userId,
       role: params.role,
       deptId: params.deptId,
       accessibleDepartmentIds: params.accessibleDepartmentIds,
@@ -1128,12 +1140,17 @@ export async function getOrgKpiPageData(params: {
       selectedScopeIds: visibleTreeIds,
     })
 
-    const canManage = ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(
-      params.role
-    )
-    const canConfirm = ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF'].includes(
-      params.role
-    )
+    const editableDepartmentIdSet =
+      editableDepartmentIds === null ? null : new Set(editableDepartmentIds)
+    const canManage =
+      editableDepartmentIdSet === null
+        ? true
+        : accessibleDepartmentsByScope[selectedScope].some((department) =>
+            editableDepartmentIdSet.has(department.id)
+          )
+    const canConfirm =
+      ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF'].includes(params.role) &&
+      canManage
     if (goalEditLocked) {
       alerts.push({
         title: '현재 목표는 읽기 전용 모드입니다.',

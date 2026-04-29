@@ -397,9 +397,13 @@ export function OrgKpiManagementClient({
 }: Props) {
   const router = useRouter()
   const canRenderWorkspace = pageData.state === 'ready' || pageData.state === 'empty'
-  const isReadOnlyMemberView = pageData.actor.role === 'ROLE_MEMBER'
+  const isReadOnlyScopeView =
+    !pageData.permissions.canManage &&
+    !pageData.permissions.canCreate &&
+    !pageData.permissions.canConfirm &&
+    !pageData.permissions.canArchive
   const normalizedInitialTab = normalizeOrgKpiTab(initialTab)
-  const visibleTabs = isReadOnlyMemberView
+  const visibleTabs = isReadOnlyScopeView
     ? MEMBER_TAB_ORDER
     : TAB_ORDER
   const hasSectionScope = pageData.hasSectionScope
@@ -1256,7 +1260,7 @@ export function OrgKpiManagementClient({
         </div>
         <OrgKpiQuickLinks
           showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'}
-          readOnly={isReadOnlyMemberView}
+          readOnly={isReadOnlyScopeView}
         />
       </div>
     )
@@ -1270,12 +1274,12 @@ export function OrgKpiManagementClient({
             <div className="flex flex-wrap items-center gap-3">
               <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">Goal Alignment</span>
               <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">{scopeLabel}</span>
-              {isReadOnlyMemberView ? (
+              {isReadOnlyScopeView ? (
                 <span
-                  data-testid="org-kpi-member-readonly-badge"
+                  data-testid="org-kpi-readonly-badge"
                   className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"
                 >
-                  내 팀 조회 전용
+                  현재 범위 조회 전용
                 </span>
               ) : null}
               <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', STATUS_CLASS[pageData.summary.confirmedRate === 100 ? 'CONFIRMED' : pageData.summary.confirmedCount > 0 ? 'SUBMITTED' : 'DRAFT'])}>
@@ -1315,7 +1319,7 @@ export function OrgKpiManagementClient({
             </div>
           </div>
 
-          {!isReadOnlyMemberView ? (
+          {!isReadOnlyScopeView ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
             <ActionButton label={scopeCreateLabel} icon={<Plus className="h-4 w-4" />} onClick={openDirectKpiCreate} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
             <ActionButton label={scopeBulkUploadLabel} icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
@@ -1370,9 +1374,9 @@ export function OrgKpiManagementClient({
                 expandedIdSet={expandedMapNodeIdSet}
                 onToggleExpand={toggleMapNodeExpansion}
                 onSelectKpi={handleSelectKpi}
-                canCreate={!isReadOnlyMemberView && pageData.permissions.canCreate && !goalEditLocked}
+                canCreate={!isReadOnlyScopeView && pageData.permissions.canCreate && !goalEditLocked}
                 canManage={pageData.permissions.canManage}
-                readOnly={isReadOnlyMemberView}
+                readOnly={isReadOnlyScopeView}
                 goalEditLocked={goalEditLocked}
                 onCreateChildGoal={handleCreateChildGoal}
                 onEditParentLink={handleEditParentLink}
@@ -1385,7 +1389,7 @@ export function OrgKpiManagementClient({
               parentReference={selectedParentReference}
               childReferences={selectedChildReferences}
               permissions={pageData.permissions}
-              readOnly={isReadOnlyMemberView}
+              readOnly={isReadOnlyScopeView}
               goalEditLocked={goalEditLocked}
               busy={busy}
               cloneDisabledReason={cloneDisabledReason}
@@ -1428,7 +1432,7 @@ export function OrgKpiManagementClient({
               parentReference={selectedParentReference}
               childReferences={selectedChildReferences}
               permissions={pageData.permissions}
-              readOnly={isReadOnlyMemberView}
+              readOnly={isReadOnlyScopeView}
               goalEditLocked={goalEditLocked}
               busy={busy}
               cloneDisabledReason={cloneDisabledReason}
@@ -1492,7 +1496,7 @@ export function OrgKpiManagementClient({
         </div>
       ) : null}
 
-      <OrgKpiQuickLinks showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'} readOnly={isReadOnlyMemberView} />
+      <OrgKpiQuickLinks showAdminLinks={pageData.actor.role === 'ROLE_ADMIN'} readOnly={isReadOnlyScopeView} />
 
       {showForm ? (
           <EditorModal

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import {
+  canManageOrgKpiWriteScope,
   collectDepartmentAncestorIds,
+  resolveEditableOrgKpiDepartmentIds,
   resolveReadableOrgKpiDepartmentIds,
 } from '../src/server/org-kpi-access'
 
@@ -20,9 +22,9 @@ const directHierarchy = [
 ]
 
 const sectionHierarchy = [
-  { id: 'dept-division', parentDeptId: null },
-  { id: 'dept-section', parentDeptId: 'dept-division' },
-  { id: 'dept-team', parentDeptId: 'dept-section' },
+  { id: 'dept-division', parentDeptId: null, leaderEmployeeId: 'leader-division' },
+  { id: 'dept-section', parentDeptId: 'dept-division', leaderEmployeeId: 'leader-section' },
+  { id: 'dept-team', parentDeptId: 'dept-section', leaderEmployeeId: 'leader-team' },
 ]
 
 run('member lineage includes own team and direct division when no section exists', () => {
@@ -47,7 +49,19 @@ run('member lineage includes own team, section, and division when a real section
   assert.deepEqual(ids, ['dept-team', 'dept-section', 'dept-division'])
 })
 
-run('manager scopes continue to use accessible department ids instead of broadening to all ancestors', () => {
+run('actual section leader can read team descendants plus section and division lineage', () => {
+  const ids = resolveReadableOrgKpiDepartmentIds({
+    userId: 'leader-section',
+    role: 'ROLE_MEMBER',
+    deptId: 'dept-section',
+    accessibleDepartmentIds: [],
+    departments: sectionHierarchy,
+  })
+
+  assert.deepEqual(ids, ['dept-section', 'dept-team', 'dept-division'])
+})
+
+run('team-level leaders can read their own lineage up through section and division', () => {
   const ids = resolveReadableOrgKpiDepartmentIds({
     role: 'ROLE_TEAM_LEADER',
     deptId: 'dept-team',
@@ -55,7 +69,41 @@ run('manager scopes continue to use accessible department ids instead of broaden
     departments: sectionHierarchy,
   })
 
-  assert.deepEqual(ids, ['dept-team'])
+  assert.deepEqual(ids, ['dept-team', 'dept-section', 'dept-division'])
+})
+
+run('ordinary members stay non-editable even when they can read ancestor scopes', () => {
+  const ids = resolveEditableOrgKpiDepartmentIds({
+    userId: 'member-1',
+    role: 'ROLE_MEMBER',
+    deptId: 'dept-team',
+    accessibleDepartmentIds: [],
+    departments: sectionHierarchy,
+  })
+
+  assert.deepEqual(ids, [])
+})
+
+run('department leader can edit their own section even without elevated role string', () => {
+  const ids = resolveEditableOrgKpiDepartmentIds({
+    userId: 'leader-section',
+    role: 'ROLE_MEMBER',
+    deptId: 'dept-section',
+    accessibleDepartmentIds: [],
+    departments: sectionHierarchy,
+  })
+
+  assert.deepEqual(ids, ['dept-section'])
+  assert.equal(
+    canManageOrgKpiWriteScope({
+      userId: 'leader-section',
+      role: 'ROLE_MEMBER',
+      deptId: 'dept-section',
+      accessibleDepartmentIds: [],
+      departments: sectionHierarchy,
+    }),
+    true,
+  )
 })
 
 run('ancestor helper walks only the current lineage', () => {

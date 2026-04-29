@@ -3,13 +3,14 @@ import type { SystemRole } from '@prisma/client'
 type DepartmentScopeNode = {
   id: string
   parentDeptId: string | null
+  leaderEmployeeId?: string | null
 }
 
 function normalizeScopeDepartmentIds(accessibleDepartmentIds?: string[] | null) {
   if (!Array.isArray(accessibleDepartmentIds)) return []
-  return accessibleDepartmentIds.filter(
+  return [...new Set(accessibleDepartmentIds.filter(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
-  )
+  ))]
 }
 
 export function collectDepartmentAncestorIds(
@@ -27,7 +28,42 @@ export function collectDepartmentAncestorIds(
   return ids
 }
 
+export function collectDepartmentDescendantIds(
+  departmentId: string,
+  departments: DepartmentScopeNode[],
+) {
+  const childrenByParent = new Map<string, string[]>()
+
+  for (const department of departments) {
+    if (!department.parentDeptId) continue
+    const current = childrenByParent.get(department.parentDeptId) ?? []
+    current.push(department.id)
+    childrenByParent.set(department.parentDeptId, current)
+  }
+
+  const descendants: string[] = []
+  const queue = [...(childrenByParent.get(departmentId) ?? [])]
+
+  while (queue.length) {
+    const currentId = queue.shift()
+    if (!currentId || descendants.includes(currentId)) continue
+    descendants.push(currentId)
+    queue.push(...(childrenByParent.get(currentId) ?? []))
+  }
+
+  return descendants
+}
+
+function isDepartmentLeader(params: {
+  userId: string
+  deptId: string
+  departmentsById: Map<string, DepartmentScopeNode>
+}) {
+  return params.departmentsById.get(params.deptId)?.leaderEmployeeId === params.userId
+}
+
 export function resolveReadableOrgKpiDepartmentIds(params: {
+  userId?: string
   role: SystemRole
   deptId: string
   accessibleDepartmentIds?: string[] | null
@@ -37,17 +73,72 @@ export function resolveReadableOrgKpiDepartmentIds(params: {
     return null
   }
 
-  if (params.role === 'ROLE_MEMBER') {
-    const departmentsById = new Map(
-      params.departments.map((department) => [department.id, department] as const),
-    )
+  const departmentsById = new Map(
+    params.departments.map((department) => [department.id, department] as const),
+  )
+  const normalizedIds = normalizeScopeDepartmentIds(params.accessibleDepartmentIds)
+  const leaderReadableIds =
+    params.userId &&
+    isDepartmentLeader({
+      userId: params.userId,
+      deptId: params.deptId,
+      departmentsById,
+    })
+      ? collectDepartmentDescendantIds(params.deptId, params.departments)
+      : []
+  const baseIds = normalizedIds.length ? normalizedIds : [params.deptId, ...leaderReadableIds]
 
-    return [
+  return [
+    ...new Set([
+      ...baseIds,
       params.deptId,
       ...collectDepartmentAncestorIds(params.deptId, departmentsById),
-    ]
+    ]),
+  ]
+}
+
+export function resolveEditableOrgKpiDepartmentIds(params: {
+  userId: string
+  role: SystemRole
+  deptId: string
+  accessibleDepartmentIds?: string[] | null
+  departments: DepartmentScopeNode[]
+}) {
+  if (params.role === 'ROLE_ADMIN' || params.role === 'ROLE_CEO') {
+    return null
   }
 
   const normalizedIds = normalizeScopeDepartmentIds(params.accessibleDepartmentIds)
-  return normalizedIds.length ? normalizedIds : [params.deptId]
+  if (normalizedIds.length) {
+    return normalizedIds
+  }
+
+  const departmentsById = new Map(
+    params.departments.map((department) => [department.id, department] as const),
+  )
+
+  if (isDepartmentLeader({
+    userId: params.userId,
+    deptId: params.deptId,
+    departmentsById,
+  })) {
+    return [params.deptId]
+  }
+
+  if (params.role === 'ROLE_MEMBER') {
+    return []
+  }
+
+  return [params.deptId]
+}
+
+export function canManageOrgKpiWriteScope(params: {
+  userId: string
+  role: SystemRole
+  deptId: string
+  accessibleDepartmentIds?: string[] | null
+  departments: DepartmentScopeNode[]
+}) {
+  const editableDepartmentIds = resolveEditableOrgKpiDepartmentIds(params)
+  return editableDepartmentIds === null || editableDepartmentIds.length > 0
 }

@@ -10,13 +10,13 @@ import {
   canSubmitOrgKpi,
   resolveOrgKpiOperationalStatus,
 } from '@/server/org-kpi-workflow'
+import {
+  canManageOrgKpiWriteScope,
+  resolveEditableOrgKpiDepartmentIds,
+} from '@/server/org-kpi-access'
 
 type RouteContext = {
   params: Promise<{ id: string }>
-}
-
-function canManage(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
 }
 
 async function isGoalEditLocked(deptId: string, evalYear: number) {
@@ -48,7 +48,22 @@ export async function POST(request: Request, context: RouteContext) {
       throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
     }
 
-    if (!canManage(session.user.role)) {
+    const departments = await prisma.department.findMany({
+      select: {
+        id: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+    })
+    if (
+      !canManageOrgKpiWriteScope({
+        userId: session.user.id,
+        role: session.user.role,
+        deptId: session.user.deptId,
+        accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+        departments,
+      })
+    ) {
       throw new AppError(403, 'FORBIDDEN', '조직 KPI 워크플로를 변경할 권한이 없습니다.')
     }
 
@@ -74,11 +89,14 @@ export async function POST(request: Request, context: RouteContext) {
       throw new AppError(404, 'ORG_KPI_NOT_FOUND', '조직 KPI를 찾을 수 없습니다.')
     }
 
-    const isInScope =
-      session.user.role === 'ROLE_ADMIN' ||
-      session.user.role === 'ROLE_CEO' ||
-      session.user.accessibleDepartmentIds.includes(kpi.deptId) ||
-      session.user.deptId === kpi.deptId
+    const editableDepartmentIds = resolveEditableOrgKpiDepartmentIds({
+      userId: session.user.id,
+      role: session.user.role,
+      deptId: session.user.deptId,
+      accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+      departments,
+    })
+    const isInScope = editableDepartmentIds === null || editableDepartmentIds.includes(kpi.deptId)
 
     if (!isInScope) {
       throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 조직 KPI입니다.')

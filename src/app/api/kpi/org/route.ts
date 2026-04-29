@@ -1,4 +1,4 @@
-import { getServerSession, type Session } from 'next-auth'
+import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
@@ -6,22 +6,12 @@ import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateOrgKpiSchema } from '@/lib/validations'
 import { validateOrgParentLink } from '@/server/goal-alignment'
-import { resolveReadableOrgKpiDepartmentIds } from '@/server/org-kpi-access'
+import {
+  canManageOrgKpiWriteScope,
+  resolveEditableOrgKpiDepartmentIds,
+  resolveReadableOrgKpiDepartmentIds,
+} from '@/server/org-kpi-access'
 import { assertOrgKpiScopeMatchesDepartment } from '@/server/org-kpi-scope-validation'
-
-function canManage(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
-}
-
-function getScopeDepartmentIds(session: Session | null) {
-  if (!session) return []
-  if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') {
-    return null
-  }
-  return session.user.accessibleDepartmentIds.length
-    ? session.user.accessibleDepartmentIds
-    : [session.user.deptId]
-}
 
 export async function GET(request: Request) {
   try {
@@ -31,20 +21,20 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const evalYear = Number(searchParams.get('evalYear') || new Date().getFullYear())
     const deptId = searchParams.get('deptId')
-    const scopeDepartmentIds =
-      session.user.role === 'ROLE_MEMBER'
-        ? resolveReadableOrgKpiDepartmentIds({
-            role: session.user.role,
-            deptId: session.user.deptId,
-            accessibleDepartmentIds: session.user.accessibleDepartmentIds,
-            departments: await prisma.department.findMany({
-              select: {
-                id: true,
-                parentDeptId: true,
-              },
-            }),
-          })
-        : getScopeDepartmentIds(session)
+    const departments = await prisma.department.findMany({
+      select: {
+        id: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+    })
+    const scopeDepartmentIds = resolveReadableOrgKpiDepartmentIds({
+      userId: session.user.id,
+      role: session.user.role,
+      deptId: session.user.deptId,
+      accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+      departments,
+    })
 
     if (deptId && scopeDepartmentIds && !scopeDepartmentIds.includes(deptId)) {
       throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 부서입니다.')
@@ -93,7 +83,22 @@ export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
-    if (!canManage(session.user.role)) {
+    const departments = await prisma.department.findMany({
+      select: {
+        id: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+    })
+    if (
+      !canManageOrgKpiWriteScope({
+        userId: session.user.id,
+        role: session.user.role,
+        deptId: session.user.deptId,
+        accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+        departments,
+      })
+    ) {
       throw new AppError(403, 'FORBIDDEN', '권한이 없습니다.')
     }
 
@@ -105,7 +110,13 @@ export async function POST(request: Request) {
     }
 
     const data = validated.data
-    const scopeDepartmentIds = getScopeDepartmentIds(session)
+    const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
+      userId: session.user.id,
+      role: session.user.role,
+      deptId: session.user.deptId,
+      accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+      departments,
+    })
     if (scopeDepartmentIds && !scopeDepartmentIds.includes(data.deptId)) {
       throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 부서입니다.')
     }

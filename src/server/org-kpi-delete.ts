@@ -1,11 +1,15 @@
-import { Prisma } from '@prisma/client'
+import { Prisma, type SystemRole } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { AppError } from '@/lib/utils'
 import { resolveOrgKpiOperationalStatus } from './org-kpi-workflow'
+import {
+  canManageOrgKpiWriteScope,
+  resolveEditableOrgKpiDepartmentIds,
+} from './org-kpi-access'
 
 type DeleteActor = {
   id: string
-  role: string
+  role: SystemRole
   deptId: string
   accessibleDepartmentIds: string[]
 }
@@ -16,22 +20,6 @@ type DeleteClientInfo = {
 }
 
 type PrismaLike = typeof prisma
-
-function canManage(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
-}
-
-function getScopeDepartmentIds(actor: DeleteActor) {
-  if (actor.role === 'ROLE_ADMIN' || actor.role === 'ROLE_CEO') {
-    return null
-  }
-
-  if (actor.role === 'ROLE_MEMBER') {
-    return [actor.deptId]
-  }
-
-  return actor.accessibleDepartmentIds.length ? actor.accessibleDepartmentIds : [actor.deptId]
-}
 
 async function isGoalEditLocked(db: PrismaLike, deptId: string, evalYear: number) {
   const department = await db.department.findUnique({
@@ -74,7 +62,23 @@ export async function deleteOrgKpiRecord(
 ) {
   const db = deps.prisma ?? prisma
 
-  if (!canManage(params.actor.role)) {
+  const departments = await db.department.findMany({
+    select: {
+      id: true,
+      parentDeptId: true,
+      leaderEmployeeId: true,
+    },
+  })
+
+  if (
+    !canManageOrgKpiWriteScope({
+      userId: params.actor.id,
+      role: params.actor.role,
+      deptId: params.actor.deptId,
+      accessibleDepartmentIds: params.actor.accessibleDepartmentIds,
+      departments,
+    })
+  ) {
     throw new AppError(403, 'FORBIDDEN', '현재 권한으로는 조직 KPI를 삭제할 수 없습니다.')
   }
 
@@ -102,7 +106,13 @@ export async function deleteOrgKpiRecord(
     throw new AppError(404, 'ORG_KPI_NOT_FOUND', '조직 KPI를 찾을 수 없습니다.')
   }
 
-  const scopeDepartmentIds = getScopeDepartmentIds(params.actor)
+  const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
+    userId: params.actor.id,
+    role: params.actor.role,
+    deptId: params.actor.deptId,
+    accessibleDepartmentIds: params.actor.accessibleDepartmentIds,
+    departments,
+  })
   if (scopeDepartmentIds && !scopeDepartmentIds.includes(current.deptId)) {
     throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 조직 KPI입니다.')
   }

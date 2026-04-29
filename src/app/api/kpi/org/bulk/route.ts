@@ -1,28 +1,15 @@
-import { getServerSession, type Session } from 'next-auth'
+import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { BulkOrgKpiUploadSchema } from '@/lib/validations'
+import {
+  canManageOrgKpiWriteScope,
+  resolveEditableOrgKpiDepartmentIds,
+} from '@/server/org-kpi-access'
 import { assertOrgKpiScopeMatchesDepartments } from '@/server/org-kpi-scope-validation'
-
-function canManage(role: string) {
-  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
-}
-
-function getScopeDepartmentIds(session: Session | null) {
-  if (!session) return []
-  if (session.user.role === 'ROLE_ADMIN' || session.user.role === 'ROLE_CEO') {
-    return null
-  }
-  if (session.user.role === 'ROLE_MEMBER') {
-    return [session.user.deptId]
-  }
-  return session.user.accessibleDepartmentIds.length
-    ? session.user.accessibleDepartmentIds
-    : [session.user.deptId]
-}
 
 type WeightKey = `${string}:${number}`
 
@@ -30,7 +17,22 @@ export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
-    if (!canManage(session.user.role)) {
+    const authDepartments = await prisma.department.findMany({
+      select: {
+        id: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+    })
+    if (
+      !canManageOrgKpiWriteScope({
+        userId: session.user.id,
+        role: session.user.role,
+        deptId: session.user.deptId,
+        accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+        departments: authDepartments,
+      })
+    ) {
       throw new AppError(403, 'FORBIDDEN', '조직 KPI 일괄 업로드 권한이 없습니다.')
     }
 
@@ -40,7 +42,13 @@ export async function POST(request: Request) {
       throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message || '업로드 형식이 올바르지 않습니다.')
     }
 
-    const scopeDepartmentIds = getScopeDepartmentIds(session)
+    const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
+      userId: session.user.id,
+      role: session.user.role,
+      deptId: session.user.deptId,
+      accessibleDepartmentIds: session.user.accessibleDepartmentIds,
+      departments: authDepartments,
+    })
     const rows = validated.data.rows
     const departmentIds = Array.from(new Set(rows.map((row) => row.deptId)))
 
@@ -56,7 +64,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const [departments, existingKpis] = await Promise.all([
+    const [targetDepartments, existingKpis] = await Promise.all([
       prisma.department.findMany({
         where: { id: { in: departmentIds } },
         select: { id: true, deptName: true },
@@ -78,7 +86,7 @@ export async function POST(request: Request) {
       }),
     ])
 
-    const departmentNameMap = new Map(departments.map((department) => [department.id, department.deptName]))
+    const departmentNameMap = new Map(targetDepartments.map((department) => [department.id, department.deptName]))
     const existingWeightMap = new Map<WeightKey, number>()
     const existingNameSet = new Set<string>()
 

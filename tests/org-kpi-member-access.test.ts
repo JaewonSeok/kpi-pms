@@ -32,9 +32,10 @@ run('member org KPI data is server-scoped to the actor department', () => {
   const routeSource = read('src/app/api/kpi/org/route.ts')
 
   assert.match(pageSource, /resolveReadableOrgKpiDepartmentIds/)
+  assert.match(pageSource, /resolveEditableOrgKpiDepartmentIds/)
   assert.match(pageSource, /collectDepartmentAncestorIds/)
-  assert.match(routeSource, /session\.user\.role === 'ROLE_MEMBER'/)
   assert.match(routeSource, /resolveReadableOrgKpiDepartmentIds/)
+  assert.match(routeSource, /resolveEditableOrgKpiDepartmentIds/)
   assert.match(
     routeSource,
     /if \(deptId && scopeDepartmentIds && !scopeDepartmentIds\.includes\(deptId\)\) \{/
@@ -44,11 +45,11 @@ run('member org KPI data is server-scoped to the actor department', () => {
 run('member org KPI screen switches to a read-only workspace instead of management actions', () => {
   const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-  assert.match(clientSource, /const isReadOnlyMemberView = pageData\.actor\.role === 'ROLE_MEMBER'/)
+  assert.match(clientSource, /const isReadOnlyScopeView =/)
   assert.match(clientSource, /const MEMBER_TAB_ORDER: TabKey\[\] = \['list', 'map', 'linkage', 'history'\]/)
-  assert.match(clientSource, /const visibleTabs = isReadOnlyMemberView\s*\?\s*MEMBER_TAB_ORDER\s*:\s*TAB_ORDER/)
-  assert.match(clientSource, /data-testid="org-kpi-member-readonly-badge"/)
-  assert.match(clientSource, /readOnly=\{isReadOnlyMemberView\}/)
+  assert.match(clientSource, /const visibleTabs = isReadOnlyScopeView\s*\?\s*MEMBER_TAB_ORDER\s*:\s*TAB_ORDER/)
+  assert.match(clientSource, /data-testid="org-kpi-readonly-badge"/)
+  assert.match(clientSource, /readOnly=\{isReadOnlyScopeView\}/)
   assert.doesNotMatch(clientSource, /MemberReadOnlySummaryCard/)
   assert.doesNotMatch(clientSource, /data-testid="org-kpi-member-readonly-panel-header"/)
 })
@@ -58,12 +59,9 @@ run('member org KPI flow keeps write APIs server-blocked', () => {
   const updateRouteSource = read('src/app/api/kpi/org/[id]/route.ts')
   const workflowRouteSource = read('src/app/api/kpi/org/[id]/workflow/route.ts')
 
-  assert.match(createRouteSource, /if \(!canManage\(session\.user\.role\)\) \{/)
-  assert.match(updateRouteSource, /if \(!canManage\(session\.user\.role\)\) \{/)
-  assert.match(
-    workflowRouteSource,
-    /return \['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'\]\.includes\(role\)/
-  )
+  assert.match(createRouteSource, /canManageOrgKpiWriteScope/)
+  assert.match(updateRouteSource, /canManageOrgKpiWriteScope/)
+  assert.match(workflowRouteSource, /canManageOrgKpiWriteScope/)
 })
 
 console.log('Org KPI member access tests completed')
