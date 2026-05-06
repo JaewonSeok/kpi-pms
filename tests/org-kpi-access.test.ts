@@ -61,6 +61,17 @@ run('actual section leader can read team descendants plus section and division l
   assert.deepEqual(ids, ['dept-section', 'dept-team', 'dept-division'])
 })
 
+run('section-lineage members can still read lower team scope in the same branch', () => {
+  const ids = resolveReadableOrgKpiDepartmentIds({
+    role: 'ROLE_MEMBER',
+    deptId: 'dept-section',
+    accessibleDepartmentIds: [],
+    departments: sectionHierarchy,
+  })
+
+  assert.deepEqual(ids, ['dept-section', 'dept-team', 'dept-division'])
+})
+
 run('team-level leaders can read their own lineage up through section and division', () => {
   const ids = resolveReadableOrgKpiDepartmentIds({
     role: 'ROLE_TEAM_LEADER',

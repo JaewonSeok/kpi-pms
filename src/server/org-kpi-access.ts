@@ -1,4 +1,5 @@
 import type { SystemRole } from '@prisma/client'
+import { buildOrgKpiDepartmentScopeMap } from '../lib/org-kpi-scope'
 
 type DepartmentScopeNode = {
   id: string
@@ -76,6 +77,7 @@ export function resolveReadableOrgKpiDepartmentIds(params: {
   const departmentsById = new Map(
     params.departments.map((department) => [department.id, department] as const),
   )
+  const scopeMap = buildOrgKpiDepartmentScopeMap(params.departments)
   const normalizedIds = normalizeScopeDepartmentIds(params.accessibleDepartmentIds)
   const leaderReadableIds =
     params.userId &&
@@ -86,7 +88,15 @@ export function resolveReadableOrgKpiDepartmentIds(params: {
     })
       ? collectDepartmentDescendantIds(params.deptId, params.departments)
       : []
-  const baseIds = normalizedIds.length ? normalizedIds : [params.deptId, ...leaderReadableIds]
+  const sectionTeamReadableIds =
+    !normalizedIds.length && scopeMap.get(params.deptId) === 'section'
+      ? collectDepartmentDescendantIds(params.deptId, params.departments).filter(
+          (departmentId) => scopeMap.get(departmentId) === 'team',
+        )
+      : []
+  const baseIds = normalizedIds.length
+    ? normalizedIds
+    : [params.deptId, ...leaderReadableIds, ...sectionTeamReadableIds]
 
   return [
     ...new Set([
