@@ -79,7 +79,6 @@ export async function POST(request: Request) {
       role: validated.data.role,
       employmentStatus: validated.data.employmentStatus,
       managerEmployeeNumber: validated.data.managerEmployeeNumber,
-      sortOrder: validated.data.sortOrder ?? null,
       notes: validated.data.notes,
     })
 
@@ -128,7 +127,6 @@ export async function PUT(request: Request) {
       role: validated.data.role,
       employmentStatus: validated.data.employmentStatus,
       managerEmployeeNumber: validated.data.managerEmployeeNumber,
-      sortOrder: validated.data.sortOrder ?? null,
       notes: validated.data.notes,
     })
 

@@ -2107,7 +2107,6 @@ export const AdminEmployeeRecordSchema = z
     role: AdminEmployeeRoleSchema,
     employmentStatus: AdminEmployeeStatusSchema.default('ACTIVE'),
     managerEmployeeNumber: EmptyStringToUndefined(z.string().max(50)),
-    sortOrder: SortOrderSchema,
     notes: EmptyStringToUndefined(z.string().max(500)),
   })
   .superRefine((data, ctx) => {

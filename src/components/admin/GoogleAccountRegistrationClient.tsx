@@ -215,7 +215,6 @@ type EmployeeFormState = {
   role: EmployeeRole
   employmentStatus: EmployeeStatus
   managerEmployeeNumber: string
-  sortOrder: string
   notes: string
 }
 
@@ -252,7 +251,6 @@ const EMPTY_FORM: EmployeeFormState = {
   role: 'ROLE_MEMBER',
   employmentStatus: 'ACTIVE',
   managerEmployeeNumber: '',
-  sortOrder: '',
   notes: '',
 }
 
@@ -517,7 +515,6 @@ export function GoogleAccountRegistrationClient() {
         role: input.role,
         employmentStatus: input.employmentStatus,
         managerEmployeeNumber: input.managerEmployeeNumber,
-        sortOrder: input.sortOrder ? Number(input.sortOrder) : undefined,
         notes: input.notes,
       }
       const response = await fetch('/api/admin/employees/google-account', {
@@ -714,7 +711,6 @@ export function GoogleAccountRegistrationClient() {
       role: employee.role,
       employmentStatus: employee.employmentStatus,
       managerEmployeeNumber: employee.managerEmployeeNumber ?? '',
-      sortOrder: employee.sortOrder !== null ? String(employee.sortOrder) : '',
       notes: employee.notes ?? '',
     })
     setFeedback(null)
@@ -1091,12 +1087,6 @@ export function GoogleAccountRegistrationClient() {
                   </option>
                 ))}
               </select>
-              <input
-                value={form.sortOrder}
-                onChange={(event) => setForm((current) => ({ ...current, sortOrder: event.target.value }))}
-                placeholder="정렬 순서"
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
             </div>
 
             <textarea

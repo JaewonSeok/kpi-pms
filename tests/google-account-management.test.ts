@@ -778,19 +778,33 @@ run('single employee create mode stays available in manage tab and uses the POST
   assert.match(serverSource, /GOOGLE_EMAIL_ALREADY_ASSIGNED/)
 })
 
-run('employee registration form uses hierarchy selectors and removes ambiguous date inputs', () => {
+run('employee registration form uses hierarchy selectors and removes low-value single-form fields', () => {
   const registrationClientSource = readFileSync(
     path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
     'utf8',
   )
+  const validationSource = readFileSync(
+    path.resolve(process.cwd(), 'src/lib/validations.ts'),
+    'utf8',
+  )
+  const routeSource = readFileSync(
+    path.resolve(process.cwd(), 'src/app/api/admin/employees/google-account/route.ts'),
+    'utf8',
+  )
 
   assert.match(registrationClientSource, /buildDepartmentSelectionState/)
-  assert.match(registrationClientSource, /조직 계층 선택/)
-  assert.match(registrationClientSource, /본부 선택/)
-  assert.match(registrationClientSource, /실 선택/)
-  assert.match(registrationClientSource, /팀 선택/)
+  assert.match(registrationClientSource, /handleDivisionDepartmentChange/)
+  assert.match(registrationClientSource, /handleSectionDepartmentChange/)
+  assert.match(registrationClientSource, /handleTeamDepartmentChange/)
+  assert.match(registrationClientSource, /departmentSelection\.selectedSectionId/)
   assert.doesNotMatch(registrationClientSource, /form\.joinDate/)
   assert.doesNotMatch(registrationClientSource, /form\.resignationDate/)
+  assert.doesNotMatch(registrationClientSource, /form\.sortOrder/)
+  assert.doesNotMatch(routeSource, /sortOrder: validated\.data\.sortOrder \?\? null/)
+  assert.doesNotMatch(
+    validationSource,
+    /managerEmployeeNumber: EmptyStringToUndefined\(z\.string\(\)\.max\(50\)\),\s*sortOrder: SortOrderSchema,/
+  )
 })
 
 run('admin employee save path syncs section leader authority through real department leadership', () => {
