@@ -106,6 +106,28 @@ run('department leader can edit their own section even without elevated role str
   )
 })
 
+run('team-manage lineage also gains editable section and division scopes in the same branch', () => {
+  const ids = resolveEditableOrgKpiDepartmentIds({
+    userId: 'leader-team',
+    role: 'ROLE_TEAM_LEADER',
+    deptId: 'dept-team',
+    accessibleDepartmentIds: ['dept-team'],
+    departments: sectionHierarchy,
+  })
+
+  assert.deepEqual(ids, ['dept-team', 'dept-section', 'dept-division'])
+  assert.equal(
+    canManageOrgKpiWriteScope({
+      userId: 'leader-team',
+      role: 'ROLE_TEAM_LEADER',
+      deptId: 'dept-team',
+      accessibleDepartmentIds: ['dept-team'],
+      departments: sectionHierarchy,
+    }),
+    true,
+  )
+})
+
 run('ancestor helper walks only the current lineage', () => {
   const byId = new Map(sectionHierarchy.map((department) => [department.id, department] as const))
 

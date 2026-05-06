@@ -108,14 +108,20 @@ export function resolveEditableOrgKpiDepartmentIds(params: {
     return null
   }
 
-  const normalizedIds = normalizeScopeDepartmentIds(params.accessibleDepartmentIds)
-  if (normalizedIds.length) {
-    return normalizedIds
-  }
-
   const departmentsById = new Map(
     params.departments.map((department) => [department.id, department] as const),
   )
+  const normalizedIds = normalizeScopeDepartmentIds(params.accessibleDepartmentIds)
+  if (normalizedIds.length) {
+    return [
+      ...new Set(
+        normalizedIds.flatMap((departmentId) => [
+          departmentId,
+          ...collectDepartmentAncestorIds(departmentId, departmentsById),
+        ]),
+      ),
+    ]
+  }
 
   if (isDepartmentLeader({
     userId: params.userId,

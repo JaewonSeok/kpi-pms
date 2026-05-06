@@ -5,6 +5,7 @@ export const ORG_KPI_SCOPE_ORDER: OrgKpiScope[] = ['division', 'section', 'team'
 
 type ScopeDepartmentLike = {
   id: string
+  deptName?: string | null
   parentDeptId?: string | null
   parentDepartmentId?: string | null
 }
@@ -24,6 +25,10 @@ function getParentDepartmentId(department: ScopeDepartmentLike) {
   }
 
   return null
+}
+
+function looksLikeSectionDepartment(department: ScopeDepartmentLike) {
+  return typeof department.deptName === 'string' && department.deptName.trim().endsWith('실')
 }
 
 export function normalizeOrgKpiScope(value?: string | null): OrgKpiScope | null {
@@ -70,9 +75,19 @@ export function buildOrgKpiDepartmentScopeMap<TDepartment extends ScopeDepartmen
       department.id,
       (() => {
         const subtreeDepth = getSubtreeDepth(department.id)
-        if (subtreeDepth <= 0) return 'team'
         const parentDepartmentId = getParentDepartmentId(department)
         const parentSubtreeDepth = parentDepartmentId ? getSubtreeDepth(parentDepartmentId) : null
+        if (subtreeDepth <= 0) {
+          if (
+            parentDepartmentId &&
+            parentSubtreeDepth !== null &&
+            parentSubtreeDepth >= 1 &&
+            looksLikeSectionDepartment(department)
+          ) {
+            return 'section'
+          }
+          return 'team'
+        }
         if (subtreeDepth === 1 && parentSubtreeDepth !== null && parentSubtreeDepth >= 2) {
           return 'section'
         }

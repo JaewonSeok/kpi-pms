@@ -96,3 +96,25 @@ run('multi-level org trees still preserve division above a real section layer', 
   assert.equal(scopeMap.get('dept-section'), 'section')
   assert.equal(scopeMap.get('dept-team'), 'team')
 })
+
+run('mixed division children keep leaf 실 as section and sibling teams as team', () => {
+  const mixedDepartments = [
+    { id: 'dept-division', deptName: '경영지원본부', parentDeptId: null },
+    { id: 'dept-section-leaf', deptName: '재무관리실', parentDeptId: 'dept-division' },
+    { id: 'dept-team-direct', deptName: '인사팀', parentDeptId: 'dept-division' },
+  ]
+
+  const scopeMap = buildOrgKpiDepartmentScopeMap(mixedDepartments)
+
+  assert.equal(scopeMap.get('dept-division'), 'division')
+  assert.equal(scopeMap.get('dept-section-leaf'), 'section')
+  assert.equal(scopeMap.get('dept-team-direct'), 'team')
+  assert.deepEqual(
+    filterDepartmentsByOrgKpiScope(mixedDepartments, 'section').map((item) => item.id),
+    ['dept-section-leaf'],
+  )
+  assert.deepEqual(
+    filterDepartmentsByOrgKpiScope(mixedDepartments, 'team').map((item) => item.id),
+    ['dept-team-direct'],
+  )
+})
