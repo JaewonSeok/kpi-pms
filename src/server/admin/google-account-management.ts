@@ -6,6 +6,10 @@ import {
   getAllowedGoogleWorkspaceDomain,
   normalizeGoogleWorkspaceEmail,
 } from '../../lib/google-workspace'
+import {
+  buildOrgKpiDepartmentScopeMap,
+  resolveOrgKpiScopeFromDepartmentId,
+} from '../../lib/org-kpi-scope'
 import { resolveMasterLoginAccess } from '../../lib/master-login-shared'
 import { AppError } from '../../lib/utils'
 
@@ -39,6 +43,12 @@ export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
     required: true,
     description: '부서명입니다.',
     example: '인사운영팀',
+  },
+  {
+    key: 'parentDepartmentCode',
+    required: false,
+    description: '상위 조직 코드를 입력하면 본부/실/팀 계층을 함께 구성합니다.',
+    example: 'HR',
   },
   {
     key: 'team',
@@ -120,6 +130,7 @@ type ExistingDepartmentSnapshot = {
   id: string
   deptCode: string
   deptName: string
+  parentDeptId: string | null
 }
 
 export type EmployeeUploadNormalizedRow = {
@@ -129,6 +140,7 @@ export type EmployeeUploadNormalizedRow = {
   googleEmail: string
   departmentCode: string
   department: string
+  parentDepartmentCode: string | null
   team: string | null
   title: string | null
   role: SystemRole
@@ -273,12 +285,44 @@ export type EmployeeOrgChartMember = EmployeeOrgChartNode['employee'] & {
   sortOrder: number | null
 }
 
+const LEGACY_HEADER_ALIASES: Partial<Record<EmployeeUploadTemplateKey, string[]>> = {
+  employeeNumber: ['employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
+  name: ['name', 'employeeName', 'empName', '직원명', '이름'],
+  googleEmail: ['googleEmail', 'google_email', 'gwsEmail', 'gws_email', '구글이메일', 'google'],
+  departmentCode: ['departmentCode', 'department_code', 'deptCode', 'dept_code', '부서코드'],
+  department: ['department', 'departmentName', 'deptName', 'dept_name', '부서명', '부서'],
+  team: ['team', 'teamName', 'team_name', '팀', '팀명'],
+  title: ['title', 'jobTitle', 'job_title', 'positionTitle', '직책', '직위'],
+  role: ['role', 'systemRole', '권한', '직급'],
+  employmentStatus: ['employmentStatus', 'employment_status', 'status', '재직상태', '상태'],
+  managerEmployeeNumber: [
+    'managerEmployeeNumber',
+    'manager_employee_number',
+    'managerEmpId',
+    'managerId',
+    '상위사번',
+    '관리자사번',
+    'manager',
+  ],
+  joinDate: ['joinDate', 'join_date', '입사일', 'startDate'],
+  resignationDate: ['resignationDate', 'resignation_date', '퇴사일', 'endDate'],
+  sortOrder: ['sortOrder', 'sort_order', '정렬순서', 'displayOrder'],
+  notes: ['notes', 'note', 'memo', '비고'],
+}
+
 const HEADER_ALIASES: Record<EmployeeUploadTemplateKey, string[]> = {
   employeeNumber: ['employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
   name: ['name', 'employeeName', 'empName', '직원명', '이름'],
   googleEmail: ['googleEmail', 'google_email', 'gwsEmail', 'gws_email', '구글이메일', 'google'],
   departmentCode: ['departmentCode', 'department_code', 'deptCode', 'dept_code', '부서코드'],
   department: ['department', 'departmentName', 'deptName', 'dept_name', '부서명', '부서'],
+  parentDepartmentCode: [
+    'parentDepartmentCode',
+    'parent_department_code',
+    'parentDeptCode',
+    'parent_dept_code',
+    '상위조직코드',
+  ],
   team: ['team', 'teamName', 'team_name', '팀', '팀명'],
   title: ['title', 'jobTitle', 'job_title', 'positionTitle', '직책', '직위'],
   role: ['role', 'systemRole', '권한', '직급'],
@@ -641,6 +685,8 @@ export function validateEmployeeUploadRows(params: {
     const googleEmailValue = normalizeTextValue(getUploadValue(rawRow, 'googleEmail'))
     const departmentCode = normalizeTextValue(getUploadValue(rawRow, 'departmentCode'))
     const departmentName = normalizeTextValue(getUploadValue(rawRow, 'department'))
+    const parentDepartmentCode =
+      normalizeTextValue(getUploadValue(rawRow, 'parentDepartmentCode')).toUpperCase() || null
     const team = normalizeTextValue(getUploadValue(rawRow, 'team')) || null
     const title = normalizeTextValue(getUploadValue(rawRow, 'title')) || null
     const managerEmployeeNumber =
@@ -721,6 +767,7 @@ export function validateEmployeeUploadRows(params: {
         googleEmail: normalizedEmail,
         departmentCode,
         department: departmentName,
+        parentDepartmentCode,
         team,
         title,
         role,
@@ -847,6 +894,7 @@ export async function loadEmployeeValidationContext() {
         id: true,
         deptCode: true,
         deptName: true,
+        parentDeptId: true,
       },
       orderBy: [{ deptName: 'asc' }],
     }),
@@ -1135,6 +1183,67 @@ async function resolveDepartmentLeaderOrThrow(leaderEmployeeId?: string | null) 
   return leader
 }
 
+async function syncSectionLeaderDepartment(params: {
+  employeeId: string
+  deptId: string
+  role: SystemRole
+  departments?: Array<{
+    id: string
+    parentDeptId: string | null
+    leaderEmployeeId: string | null
+  }>
+}) {
+  const departments =
+    params.departments ??
+    (await prisma.department.findMany({
+      select: {
+        id: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+    }))
+  const scopeMap = buildOrgKpiDepartmentScopeMap(departments)
+  const selectedScope = resolveOrgKpiScopeFromDepartmentId(params.deptId, departments)
+
+  if (params.role === 'ROLE_SECTION_CHIEF' && selectedScope !== 'section') {
+    throw new AppError(400, 'SECTION_CHIEF_SCOPE_INVALID', '실장은 실 조직에만 지정할 수 있습니다.')
+  }
+
+  const currentSectionLeaderDepartmentIds = departments
+    .filter(
+      (department) =>
+        department.leaderEmployeeId === params.employeeId && (scopeMap.get(department.id) ?? 'team') === 'section',
+    )
+    .map((department) => department.id)
+
+  const shouldLeadSelectedSection = params.role === 'ROLE_SECTION_CHIEF' && selectedScope === 'section'
+  const sectionDepartmentIdsToClear = currentSectionLeaderDepartmentIds.filter(
+    (departmentId) => departmentId !== params.deptId,
+  )
+
+  if (sectionDepartmentIdsToClear.length > 0) {
+    await prisma.department.updateMany({
+      where: {
+        id: { in: sectionDepartmentIdsToClear },
+        leaderEmployeeId: params.employeeId,
+      },
+      data: { leaderEmployeeId: null },
+    })
+  }
+
+  if (shouldLeadSelectedSection) {
+    await prisma.department.update({
+      where: { id: params.deptId },
+      data: { leaderEmployeeId: params.employeeId },
+    })
+  } else if (currentSectionLeaderDepartmentIds.includes(params.deptId)) {
+    await prisma.department.update({
+      where: { id: params.deptId },
+      data: { leaderEmployeeId: null },
+    })
+  }
+}
+
 export async function loadEvaluatorAssignmentPreview(): Promise<EvaluatorAssignmentPreview> {
   const preview = await previewLeadershipLinks()
 
@@ -1418,6 +1527,13 @@ export async function upsertEmployeeRecord(params: {
   notes?: string | null
 }) {
   const department = await resolveDepartmentOrThrow(params.deptId)
+  const leadershipDepartments = await prisma.department.findMany({
+    select: {
+      id: true,
+      parentDeptId: true,
+      leaderEmployeeId: true,
+    },
+  })
   const normalizedEmail = assertAllowedGoogleWorkspaceEmail(params.gwsEmail)
   const existingTarget = params.employeeId
     ? await prisma.employee.findUnique({
@@ -1469,6 +1585,13 @@ export async function upsertEmployeeRecord(params: {
       'GOOGLE_EMAIL_ALREADY_ASSIGNED',
       `${normalizedEmail} 이메일은 이미 ${duplicateEmail.empName}(${duplicateEmail.empId})에게 연결되어 있습니다.`
     )
+  }
+
+  if (params.role === 'ROLE_SECTION_CHIEF') {
+    const scope = resolveOrgKpiScopeFromDepartmentId(params.deptId, leadershipDepartments)
+    if (scope !== 'section') {
+      throw new AppError(400, 'SECTION_CHIEF_SCOPE_INVALID', '실장 권한은 실 조직에만 지정할 수 있습니다.')
+    }
   }
 
   const employee = params.employeeId
@@ -1537,6 +1660,13 @@ export async function upsertEmployeeRecord(params: {
           },
         },
       })
+
+  await syncSectionLeaderDepartment({
+    employeeId: employee.id,
+    deptId: department.id,
+    role: params.role,
+    departments: leadershipDepartments,
+  })
 
   const hierarchyResult = await recalculateLeadershipLinks()
   const employeeMasterLoginAccess = resolveMasterLoginStateForEmployee(employee)
@@ -2550,6 +2680,7 @@ export async function applyEmployeeUpload(params: {
       id: true,
       deptCode: true,
       deptName: true,
+      parentDeptId: true,
     },
   })
   const departmentIdByCode = new Map(
@@ -2557,36 +2688,92 @@ export async function applyEmployeeUpload(params: {
   )
 
   let createdDepartmentCount = 0
-  for (const department of new Map(
-    params.rows.map((row) => [
-      row.departmentCode.toUpperCase(),
-      {
-        departmentCode: row.departmentCode,
-        departmentName: row.department,
-      },
-    ])
-  ).values()) {
-    const departmentCode = department.departmentCode.toUpperCase()
-    if (departmentIdByCode.has(departmentCode)) {
-      await prisma.department.update({
-        where: { id: departmentIdByCode.get(departmentCode)! },
-        data: { deptName: department.departmentName },
-      })
+  const departmentRows = Array.from(
+    new Map(
+      params.rows.map((row) => [
+        row.departmentCode.toUpperCase(),
+        {
+          departmentCode: row.departmentCode,
+          departmentName: row.department,
+          parentDepartmentCode: row.parentDepartmentCode?.toUpperCase() ?? null,
+        },
+      ]),
+    ).values(),
+  )
+  const pendingDepartmentRows = [...departmentRows]
+
+  while (pendingDepartmentRows.length > 0) {
+    const unresolvedBefore = pendingDepartmentRows.length
+
+    for (let index = pendingDepartmentRows.length - 1; index >= 0; index -= 1) {
+      const department = pendingDepartmentRows[index]
+      const departmentCode = department.departmentCode.toUpperCase()
+      const parentDeptId = department.parentDepartmentCode
+        ? departmentIdByCode.get(department.parentDepartmentCode) ?? null
+        : null
+
+      if (department.parentDepartmentCode && !parentDeptId) {
+        continue
+      }
+
+      if (departmentIdByCode.has(departmentCode)) {
+        await prisma.department.update({
+          where: { id: departmentIdByCode.get(departmentCode)! },
+          data: {
+            deptName: department.departmentName,
+            parentDeptId,
+          },
+        })
+      } else {
+        const createdDepartment = await prisma.department.create({
+          data: {
+            deptCode: department.departmentCode,
+            deptName: department.departmentName,
+            parentDeptId,
+            orgId: organization.id,
+          },
+          select: {
+            id: true,
+          },
+        })
+        departmentIdByCode.set(departmentCode, createdDepartment.id)
+        createdDepartmentCount += 1
+      }
+
+      pendingDepartmentRows.splice(index, 1)
+    }
+
+    if (pendingDepartmentRows.length === unresolvedBefore) {
+      throw new AppError(
+        400,
+        'DEPARTMENT_PARENT_RESOLVE_FAILED',
+        '상위 조직 코드가 없는 부서가 있어 업로드 계층을 구성할 수 없습니다.',
+      )
+    }
+  }
+
+  const departmentsForScopeValidation = await prisma.department.findMany({
+    select: {
+      id: true,
+      parentDeptId: true,
+      leaderEmployeeId: true,
+    },
+  })
+  const departmentScopeMap = buildOrgKpiDepartmentScopeMap(departmentsForScopeValidation)
+
+  for (const row of params.rows) {
+    if (row.role !== 'ROLE_SECTION_CHIEF') {
       continue
     }
 
-    const createdDepartment = await prisma.department.create({
-      data: {
-        deptCode: department.departmentCode,
-        deptName: department.departmentName,
-        orgId: organization.id,
-      },
-      select: {
-        id: true,
-      },
-    })
-    departmentIdByCode.set(departmentCode, createdDepartment.id)
-    createdDepartmentCount += 1
+    const departmentId = departmentIdByCode.get(row.departmentCode.toUpperCase())
+    if (!departmentId) {
+      continue
+    }
+
+    if ((departmentScopeMap.get(departmentId) ?? 'team') !== 'section') {
+      throw new AppError(400, 'SECTION_CHIEF_SCOPE_INVALID', '실장 권한은 실 조직에만 지정할 수 있습니다.')
+    }
   }
 
   const existingEmployees = await prisma.employee.findMany({
@@ -2701,6 +2888,38 @@ export async function applyEmployeeUpload(params: {
           : null,
       },
     })
+  }
+
+  const uploadedSectionChiefIds = params.rows
+    .filter((row) => row.role === 'ROLE_SECTION_CHIEF')
+    .map((row) => employeeIdByEmployeeNumber.get(row.employeeNumber))
+    .filter((employeeId): employeeId is string => Boolean(employeeId))
+
+  if (uploadedSectionChiefIds.length > 0) {
+    await prisma.department.updateMany({
+      where: {
+        leaderEmployeeId: { in: uploadedSectionChiefIds },
+        id: {
+          in: departmentsForScopeValidation
+            .filter((department) => (departmentScopeMap.get(department.id) ?? 'team') === 'section')
+            .map((department) => department.id),
+        },
+      },
+      data: { leaderEmployeeId: null },
+    })
+
+    for (const row of params.rows.filter((item) => item.role === 'ROLE_SECTION_CHIEF')) {
+      const employeeId = employeeIdByEmployeeNumber.get(row.employeeNumber)
+      const departmentId = departmentIdByCode.get(row.departmentCode.toUpperCase())
+      if (!employeeId || !departmentId) {
+        continue
+      }
+
+      await prisma.department.update({
+        where: { id: departmentId },
+        data: { leaderEmployeeId: employeeId },
+      })
+    }
   }
 
   const hierarchyResult = await recalculateLeadershipLinks()

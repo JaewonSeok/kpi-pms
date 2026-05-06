@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2, X } from 'lucide-react'
@@ -10,6 +10,7 @@ import {
   resolveAdminGoogleAccessTab,
   type AdminGoogleAccessTab,
 } from '@/lib/admin-google-access-tabs'
+import { buildDepartmentSelectionState } from '@/lib/admin-department-hierarchy'
 import { EvaluatorAssignmentAdminPanel } from './EvaluatorAssignmentAdminPanel'
 import { MasterLoginAdminPanel } from './MasterLoginAdminPanel'
 import { OrgMemberManagementPanel } from './OrgMemberManagementPanel'
@@ -214,8 +215,6 @@ type EmployeeFormState = {
   role: EmployeeRole
   employmentStatus: EmployeeStatus
   managerEmployeeNumber: string
-  joinDate: string
-  resignationDate: string
   sortOrder: string
   notes: string
 }
@@ -253,8 +252,6 @@ const EMPTY_FORM: EmployeeFormState = {
   role: 'ROLE_MEMBER',
   employmentStatus: 'ACTIVE',
   managerEmployeeNumber: '',
-  joinDate: '',
-  resignationDate: '',
   sortOrder: '',
   notes: '',
 }
@@ -520,8 +517,6 @@ export function GoogleAccountRegistrationClient() {
         role: input.role,
         employmentStatus: input.employmentStatus,
         managerEmployeeNumber: input.managerEmployeeNumber,
-        joinDate: input.joinDate || undefined,
-        resignationDate: input.resignationDate || undefined,
         sortOrder: input.sortOrder ? Number(input.sortOrder) : undefined,
         notes: input.notes,
       }
@@ -684,6 +679,10 @@ export function GoogleAccountRegistrationClient() {
   const managerOptions = directoryData?.managerOptions ?? []
   const employees = directoryData?.employees ?? []
   const summary = directoryData?.summary
+  const departmentSelection = useMemo(
+    () => buildDepartmentSelectionState(departmentOptions, form.deptId),
+    [departmentOptions, form.deptId],
+  )
 
   const uploadRowsToShow = uploadResult?.rows.slice(0, 80) ?? []
 
@@ -715,8 +714,6 @@ export function GoogleAccountRegistrationClient() {
       role: employee.role,
       employmentStatus: employee.employmentStatus,
       managerEmployeeNumber: employee.managerEmployeeNumber ?? '',
-      joinDate: employee.joinDate ?? '',
-      resignationDate: employee.resignationDate ?? '',
       sortOrder: employee.sortOrder !== null ? String(employee.sortOrder) : '',
       notes: employee.notes ?? '',
     })
@@ -735,6 +732,30 @@ export function GoogleAccountRegistrationClient() {
     if (activeTab !== 'manage') {
       applyTab('manage')
     }
+  }
+
+  const handleDivisionDepartmentChange = (divisionDepartmentId: string) => {
+    setForm((current) => ({
+      ...current,
+      deptId: divisionDepartmentId,
+    }))
+  }
+
+  const handleSectionDepartmentChange = (sectionDepartmentId: string) => {
+    setForm((current) => ({
+      ...current,
+      deptId: sectionDepartmentId || departmentSelection.selectedDivisionId,
+    }))
+  }
+
+  const handleTeamDepartmentChange = (teamDepartmentId: string) => {
+    setForm((current) => ({
+      ...current,
+      deptId:
+        teamDepartmentId ||
+        departmentSelection.selectedSectionId ||
+        departmentSelection.selectedDivisionId,
+    }))
   }
 
   const handleLifecycle = (employee: EmployeeListItem, action: 'DEACTIVATE' | 'RESIGN' | 'REACTIVATE') => {
@@ -934,6 +955,73 @@ export function GoogleAccountRegistrationClient() {
               </button>
             </div>
 
+            <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-medium text-slate-900">조직 계층 선택</div>
+              <p className="mt-1 text-sm text-slate-500">
+                본부, 실, 팀 순서로 소속을 선택합니다. 실이 없는 조직은 본부와 팀만 선택하면 됩니다.
+              </p>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <label className="space-y-2 text-sm text-slate-700">
+                  <span>본부</span>
+                  <select
+                    value={departmentSelection.selectedDivisionId}
+                    onChange={(event) => handleDivisionDepartmentChange(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">본부 선택</option>
+                    {departmentSelection.divisionOptions.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.deptName} ({department.deptCode})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {departmentSelection.hasSectionLayer ? (
+                  <label className="space-y-2 text-sm text-slate-700">
+                    <span>실</span>
+                    <select
+                      value={departmentSelection.selectedSectionId}
+                      onChange={(event) => handleSectionDepartmentChange(event.target.value)}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">실 선택</option>
+                      {departmentSelection.sectionOptions.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.deptName} ({department.deptCode})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="space-y-2 text-sm text-slate-500">
+                    <span className="block text-slate-700">실</span>
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-2">
+                      이 본부에는 등록된 실 계층이 없습니다.
+                    </div>
+                  </div>
+                )}
+                <label className="space-y-2 text-sm text-slate-700">
+                  <span>팀</span>
+                  <select
+                    value={departmentSelection.selectedTeamId}
+                    onChange={(event) => handleTeamDepartmentChange(event.target.value)}
+                    disabled={!departmentSelection.teamOptions.length}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    <option value="">팀 선택</option>
+                    {departmentSelection.teamOptions.map((department) => (
+                      <option key={department.id} value={department.id}>
+                        {department.deptName} ({department.deptCode})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="mt-3 text-sm text-slate-600">
+                최종 소속: {departmentOptions.find((department) => department.id === form.deptId)?.deptName ?? '미선택'}
+              </div>
+            </div>
+
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <input
                 value={form.employeeNumber}
@@ -953,18 +1041,6 @@ export function GoogleAccountRegistrationClient() {
                 placeholder="Google 이메일"
                 className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
-              <select
-                value={form.deptId}
-                onChange={(event) => setForm((current) => ({ ...current, deptId: event.target.value }))}
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              >
-                <option value="">부서 선택</option>
-                {departmentOptions.map((department) => (
-                  <option key={department.id} value={department.id}>
-                    {department.deptName} ({department.deptCode})
-                  </option>
-                ))}
-              </select>
               <input
                 value={form.teamName}
                 onChange={(event) => setForm((current) => ({ ...current, teamName: event.target.value }))}
@@ -1015,18 +1091,6 @@ export function GoogleAccountRegistrationClient() {
                   </option>
                 ))}
               </select>
-              <input
-                type="date"
-                value={form.joinDate}
-                onChange={(event) => setForm((current) => ({ ...current, joinDate: event.target.value }))}
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-              <input
-                type="date"
-                value={form.resignationDate}
-                onChange={(event) => setForm((current) => ({ ...current, resignationDate: event.target.value }))}
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
               <input
                 value={form.sortOrder}
                 onChange={(event) => setForm((current) => ({ ...current, sortOrder: event.target.value }))}

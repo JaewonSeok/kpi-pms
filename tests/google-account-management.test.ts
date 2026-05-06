@@ -63,7 +63,7 @@ const existingEmployees = [
   },
 ]
 
-const existingDepartments = [{ id: 'dept-1', deptCode: 'HR', deptName: '인사팀' }]
+const existingDepartments = [{ id: 'dept-1', deptCode: 'HR', deptName: '인사팀', parentDeptId: null }]
 
 function buildWorkbookBuffer(rows: Array<Record<string, unknown>>) {
   const workbook = XLSX.utils.book_new()
@@ -776,6 +776,32 @@ run('single employee create mode stays available in manage tab and uses the POST
   assert.match(serverSource, /await prisma\.employee\.create\(\{/)
   assert.match(serverSource, /EMPLOYEE_NUMBER_ALREADY_EXISTS/)
   assert.match(serverSource, /GOOGLE_EMAIL_ALREADY_ASSIGNED/)
+})
+
+run('employee registration form uses hierarchy selectors and removes ambiguous date inputs', () => {
+  const registrationClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
+    'utf8',
+  )
+
+  assert.match(registrationClientSource, /buildDepartmentSelectionState/)
+  assert.match(registrationClientSource, /조직 계층 선택/)
+  assert.match(registrationClientSource, /본부 선택/)
+  assert.match(registrationClientSource, /실 선택/)
+  assert.match(registrationClientSource, /팀 선택/)
+  assert.doesNotMatch(registrationClientSource, /form\.joinDate/)
+  assert.doesNotMatch(registrationClientSource, /form\.resignationDate/)
+})
+
+run('admin employee save path syncs section leader authority through real department leadership', () => {
+  const serverSource = readFileSync(
+    path.resolve(process.cwd(), 'src/server/admin/google-account-management.ts'),
+    'utf8',
+  )
+
+  assert.match(serverSource, /syncSectionLeaderDepartment/)
+  assert.match(serverSource, /leaderEmployeeId: params\.employeeId|leaderEmployeeId: employeeId/)
+  assert.match(serverSource, /SECTION_CHIEF_SCOPE_INVALID/)
 })
 
 console.log('Google account management tests completed')

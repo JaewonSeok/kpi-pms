@@ -2107,8 +2107,6 @@ export const AdminEmployeeRecordSchema = z
     role: AdminEmployeeRoleSchema,
     employmentStatus: AdminEmployeeStatusSchema.default('ACTIVE'),
     managerEmployeeNumber: EmptyStringToUndefined(z.string().max(50)),
-    joinDate: EmptyStringToUndefined(EmployeeDateSchema),
-    resignationDate: EmptyStringToUndefined(EmployeeDateSchema),
     sortOrder: SortOrderSchema,
     notes: EmptyStringToUndefined(z.string().max(500)),
   })
@@ -2118,14 +2116,6 @@ export const AdminEmployeeRecordSchema = z
         code: z.ZodIssueCode.custom,
         path: ['managerEmployeeNumber'],
         message: '蹂몄씤??愿由ъ옄濡?吏?뺥븷 ???놁뒿?덈떎.',
-      })
-    }
-
-    if (data.employmentStatus === 'ACTIVE' && data.resignationDate) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['resignationDate'],
-        message: '?ъ쭅 ?곹깭媛 ACTIVE?대㈃ ?댁궗?쇱쓣 ?낅젰?????놁뒿?덈떎.',
       })
     }
   })
