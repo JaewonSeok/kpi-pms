@@ -3,6 +3,7 @@ import { buildOrgKpiDepartmentScopeMap } from '../lib/org-kpi-scope'
 
 type DepartmentScopeNode = {
   id: string
+  deptName?: string | null
   parentDeptId: string | null
   leaderEmployeeId?: string | null
 }

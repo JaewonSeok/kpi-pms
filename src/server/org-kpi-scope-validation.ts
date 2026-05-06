@@ -5,6 +5,7 @@ import { AppError } from '@/lib/utils'
 
 type DepartmentScopeLite = {
   id: string
+  deptName?: string | null
   parentDeptId: string | null
 }
 
@@ -12,6 +13,7 @@ async function loadDepartments(prismaClient: PrismaClient | typeof prisma) {
   return prismaClient.department.findMany({
     select: {
       id: true,
+      deptName: true,
       parentDeptId: true,
     },
   }) as Promise<DepartmentScopeLite[]>
