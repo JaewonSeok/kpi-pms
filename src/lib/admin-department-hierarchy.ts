@@ -23,6 +23,7 @@ export type DepartmentSelectionState = {
   sectionOptions: DepartmentSelectorOption[]
   teamOptions: DepartmentSelectorOption[]
   hasSectionLayer: boolean
+  hasDirectDivisionTeams: boolean
 }
 
 function sortOptions<T extends DepartmentLike>(departments: T[]) {
@@ -84,25 +85,33 @@ export function buildDepartmentSelectionState<T extends DepartmentLike>(
     null
 
   const selectedDivisionId = selectedDivision?.id ?? ''
+  const divisionChildren = childrenByParentId.get(selectedDivisionId) ?? []
+
   const sectionOptions = sortOptions(
-    (childrenByParentId.get(selectedDivisionId) ?? []).filter(
-      (department) => (scopeMap.get(department.id) ?? 'team') === 'section',
-    ),
+    divisionChildren.filter((department) => (scopeMap.get(department.id) ?? 'team') === 'section'),
   )
+  const directDivisionTeamOptions = sortOptions(
+    divisionChildren.filter((department) => (scopeMap.get(department.id) ?? 'team') === 'team'),
+  )
+
   const hasSectionLayer = sectionOptions.length > 0
+  const hasDirectDivisionTeams = directDivisionTeamOptions.length > 0
+
   const selectedSection =
     lineage.find((department) => (scopeMap.get(department.id) ?? 'team') === 'section') ?? null
   const selectedSectionId = selectedSection?.id ?? ''
 
-  const teamParentId = hasSectionLayer ? selectedSectionId : selectedDivisionId
-  const teamOptions = sortOptions(
-    (childrenByParentId.get(teamParentId || null) ?? []).filter(
-      (department) => (scopeMap.get(department.id) ?? 'team') === 'team',
-    ),
-  )
   const selectedTeam =
     lineage.find((department) => (scopeMap.get(department.id) ?? 'team') === 'team') ?? null
   const selectedTeamId = selectedTeam?.id ?? ''
+
+  const teamOptions = selectedSectionId
+    ? sortOptions(
+        (childrenByParentId.get(selectedSectionId) ?? []).filter(
+          (department) => (scopeMap.get(department.id) ?? 'team') === 'team',
+        ),
+      )
+    : directDivisionTeamOptions
 
   return {
     selectedDivisionId,
@@ -128,5 +137,6 @@ export function buildDepartmentSelectionState<T extends DepartmentLike>(
       scope: scopeMap.get(department.id) ?? 'team',
     })),
     hasSectionLayer,
+    hasDirectDivisionTeams,
   }
 }
