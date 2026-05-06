@@ -22,6 +22,11 @@ const twoLayerDepartments = [
   { id: 'dept-team', deptCode: 'TEAM', deptName: '영업팀', parentDeptId: 'dept-division' },
 ]
 
+const leafSectionDepartments = [
+  { id: 'dept-division', deptCode: 'HQ', deptName: '경영지원본부', parentDeptId: null },
+  { id: 'dept-section-leaf', deptCode: 'FIN-SEC', deptName: '재무관리실', parentDeptId: 'dept-division' },
+]
+
 run('three-layer lineage resolves division, section, and team selectors', () => {
   const state = buildDepartmentSelectionState(threeLayerDepartments, 'dept-team')
 
@@ -50,6 +55,20 @@ run('two-layer lineage keeps section selector empty and resolves direct team sel
     state.teamOptions.map((department) => department.id),
     ['dept-team'],
   )
+})
+
+run('leaf child departments ending with 실 are treated as section options in admin registration', () => {
+  const state = buildDepartmentSelectionState(leafSectionDepartments, 'dept-section-leaf')
+
+  assert.equal(state.selectedDivisionId, 'dept-division')
+  assert.equal(state.selectedSectionId, 'dept-section-leaf')
+  assert.equal(state.selectedTeamId, '')
+  assert.equal(state.hasSectionLayer, true)
+  assert.deepEqual(
+    state.sectionOptions.map((department) => department.id),
+    ['dept-section-leaf'],
+  )
+  assert.deepEqual(state.teamOptions, [])
 })
 
 console.log('Admin department hierarchy tests completed')

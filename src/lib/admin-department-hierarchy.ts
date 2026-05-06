@@ -33,11 +33,15 @@ function sortOptions<T extends DepartmentLike>(departments: T[]) {
   )
 }
 
+function looksLikeSectionDepartment(department: DepartmentLike) {
+  return department.deptName.trim().endsWith('실')
+}
+
 export function buildDepartmentSelectionState<T extends DepartmentLike>(
   departments: T[],
   selectedDepartmentId: string,
 ): DepartmentSelectionState {
-  const scopeMap = buildOrgKpiDepartmentScopeMap(departments)
+  const baseScopeMap = buildOrgKpiDepartmentScopeMap(departments)
   const departmentById = new Map(departments.map((department) => [department.id, department] as const))
   const childrenByParentId = new Map<string | null, T[]>()
 
@@ -46,6 +50,22 @@ export function buildDepartmentSelectionState<T extends DepartmentLike>(
     children.push(department)
     childrenByParentId.set(department.parentDeptId, children)
   })
+
+  const scopeMap = new Map(
+    departments.map((department) => {
+      const baseScope = baseScopeMap.get(department.id) ?? 'team'
+      const parentDepartment = department.parentDeptId
+        ? departmentById.get(department.parentDeptId) ?? null
+        : null
+      const parentScope = parentDepartment ? baseScopeMap.get(parentDepartment.id) ?? 'team' : null
+
+      if (baseScope === 'team' && parentScope === 'division' && looksLikeSectionDepartment(department)) {
+        return [department.id, 'section' satisfies OrgKpiScope] as const
+      }
+
+      return [department.id, baseScope] as const
+    }),
+  )
 
   const divisionDepartments = sortOptions(
     departments.filter((department) => (scopeMap.get(department.id) ?? 'team') === 'division'),
