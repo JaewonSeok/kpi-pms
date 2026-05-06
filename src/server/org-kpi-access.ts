@@ -89,13 +89,13 @@ export function resolveReadableOrgKpiDepartmentIds(params: {
       ? collectDepartmentDescendantIds(params.deptId, params.departments)
       : []
   const sectionTeamReadableIds =
-    !normalizedIds.length && scopeMap.get(params.deptId) === 'section'
+    scopeMap.get(params.deptId) === 'section'
       ? collectDepartmentDescendantIds(params.deptId, params.departments).filter(
           (departmentId) => scopeMap.get(departmentId) === 'team',
         )
       : []
   const baseIds = normalizedIds.length
-    ? normalizedIds
+    ? [...normalizedIds, ...sectionTeamReadableIds]
     : [params.deptId, ...leaderReadableIds, ...sectionTeamReadableIds]
 
   return [

@@ -72,6 +72,17 @@ run('section-lineage members can still read lower team scope in the same branch'
   assert.deepEqual(ids, ['dept-section', 'dept-team', 'dept-division'])
 })
 
+run('section-lineage readable scope keeps lower teams even when normalized access already includes the section', () => {
+  const ids = resolveReadableOrgKpiDepartmentIds({
+    role: 'ROLE_MEMBER',
+    deptId: 'dept-section',
+    accessibleDepartmentIds: ['dept-section'],
+    departments: sectionHierarchy,
+  })
+
+  assert.deepEqual(ids, ['dept-section', 'dept-team', 'dept-division'])
+})
+
 run('team-level leaders can read their own lineage up through section and division', () => {
   const ids = resolveReadableOrgKpiDepartmentIds({
     role: 'ROLE_TEAM_LEADER',
