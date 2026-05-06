@@ -924,11 +924,174 @@ function getHistoryNumber(value: unknown, key: string) {
   return Number((value as Record<string, unknown>)[key] ?? 0)
 }
 
+function looksLikeLegacySectionName(value?: string | null) {
+  return typeof value === 'string' && value.trim().endsWith('실')
+}
+
+function buildGeneratedSectionDepartmentCode(
+  parentDepartmentCode: string,
+  existingDepartmentCodes: Set<string>,
+) {
+  let sequence = 1
+  while (true) {
+    const candidate = `${parentDepartmentCode}-SEC-${sequence}`
+    if (!existingDepartmentCodes.has(candidate)) {
+      return candidate
+    }
+    sequence += 1
+  }
+}
+
+async function reconcileLegacySectionDepartments() {
+  const [departments, employees] = await Promise.all([
+    prisma.department.findMany({
+      select: {
+        id: true,
+        orgId: true,
+        deptCode: true,
+        deptName: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+      orderBy: [{ deptName: 'asc' }],
+    }),
+    prisma.employee.findMany({
+      select: {
+        id: true,
+        deptId: true,
+        teamName: true,
+        role: true,
+      },
+    }),
+  ])
+
+  const departmentById = new Map(departments.map((department) => [department.id, department] as const))
+  const scopeMap = buildOrgKpiDepartmentScopeMap(departments)
+  const existingDepartmentCodes = new Set(departments.map((department) => department.deptCode))
+  const childrenByParentId = new Map<string, typeof departments>()
+
+  departments.forEach((department) => {
+    const children = childrenByParentId.get(department.parentDeptId ?? '') ?? []
+    children.push(department)
+    childrenByParentId.set(department.parentDeptId ?? '', children)
+  })
+
+  const candidateEmployees = employees.filter((employee) => {
+    if (!looksLikeLegacySectionName(employee.teamName)) return false
+    const department = departmentById.get(employee.deptId)
+    if (!department) return false
+    return (scopeMap.get(department.id) ?? 'team') === 'division'
+  })
+
+  if (candidateEmployees.length === 0) {
+    return { createdDepartmentCount: 0, migratedEmployeeCount: 0 }
+  }
+
+  const reconciliationTargets = new Map<
+    string,
+    {
+      divisionDepartment: (typeof departments)[number]
+      sectionName: string
+      employeeIds: string[]
+      sectionLeaderEmployeeId: string | null
+    }
+  >()
+
+  candidateEmployees.forEach((employee) => {
+    const divisionDepartment = departmentById.get(employee.deptId)
+    const sectionName = employee.teamName?.trim()
+    if (!divisionDepartment || !sectionName) return
+
+    const key = `${divisionDepartment.id}:${sectionName}`
+    const existing = reconciliationTargets.get(key)
+    if (existing) {
+      existing.employeeIds.push(employee.id)
+      if (!existing.sectionLeaderEmployeeId && employee.role === 'ROLE_SECTION_CHIEF') {
+        existing.sectionLeaderEmployeeId = employee.id
+      }
+      return
+    }
+
+    reconciliationTargets.set(key, {
+      divisionDepartment,
+      sectionName,
+      employeeIds: [employee.id],
+      sectionLeaderEmployeeId: employee.role === 'ROLE_SECTION_CHIEF' ? employee.id : null,
+    })
+  })
+
+  let createdDepartmentCount = 0
+  let migratedEmployeeCount = 0
+
+  for (const target of reconciliationTargets.values()) {
+    const existingSectionDepartment =
+      (childrenByParentId.get(target.divisionDepartment.id) ?? []).find(
+        (department) => department.deptName === target.sectionName,
+      ) ?? null
+
+    const sectionDepartment =
+      existingSectionDepartment ??
+      (await prisma.department.create({
+        data: {
+          orgId: target.divisionDepartment.orgId,
+          deptCode: buildGeneratedSectionDepartmentCode(
+            target.divisionDepartment.deptCode,
+            existingDepartmentCodes,
+          ),
+          deptName: target.sectionName,
+          parentDeptId: target.divisionDepartment.id,
+          leaderEmployeeId: target.sectionLeaderEmployeeId,
+        },
+      }))
+
+    if (!existingSectionDepartment) {
+      createdDepartmentCount += 1
+      existingDepartmentCodes.add(sectionDepartment.deptCode)
+      const siblings = childrenByParentId.get(target.divisionDepartment.id) ?? []
+      siblings.push(sectionDepartment)
+      childrenByParentId.set(target.divisionDepartment.id, siblings)
+    } else if (
+      target.sectionLeaderEmployeeId &&
+      existingSectionDepartment.leaderEmployeeId !== target.sectionLeaderEmployeeId
+    ) {
+      await prisma.department.update({
+        where: { id: existingSectionDepartment.id },
+        data: { leaderEmployeeId: target.sectionLeaderEmployeeId },
+      })
+    }
+
+    const migrationResult = await prisma.employee.updateMany({
+      where: {
+        id: { in: target.employeeIds },
+        deptId: target.divisionDepartment.id,
+        teamName: target.sectionName,
+      },
+      data: {
+        deptId: sectionDepartment.id,
+        teamName: null,
+      },
+    })
+
+    migratedEmployeeCount += migrationResult.count
+  }
+
+  if (createdDepartmentCount > 0 || migratedEmployeeCount > 0) {
+    await recalculateLeadershipLinks()
+  }
+
+  return {
+    createdDepartmentCount,
+    migratedEmployeeCount,
+  }
+}
+
 export async function loadEmployeeDirectory(params: {
   query?: string
   status?: string
   departmentId?: string
 }) {
+  await reconcileLegacySectionDepartments()
+
   const [departments, employees, uploadHistory] = await Promise.all([
     prisma.department.findMany({
       select: {

@@ -814,6 +814,9 @@ run('admin employee save path syncs section leader authority through real depart
   )
 
   assert.match(serverSource, /syncSectionLeaderDepartment/)
+  assert.match(serverSource, /reconcileLegacySectionDepartments/)
+  assert.match(serverSource, /looksLikeLegacySectionName/)
+  assert.match(serverSource, /teamName: null/)
   assert.match(serverSource, /leaderEmployeeId: params\.employeeId|leaderEmployeeId: employeeId/)
   assert.match(serverSource, /SECTION_CHIEF_SCOPE_INVALID/)
 })
