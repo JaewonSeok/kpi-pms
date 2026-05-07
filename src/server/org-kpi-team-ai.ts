@@ -63,8 +63,8 @@ type OrgKpiDraftInput = {
   definition?: string
   formula?: string
   targetValueT: number
-  targetValueE: number
-  targetValueS: number
+  targetValueE?: number
+  targetValueS?: number
   unit?: string
   weight: number
   difficulty: Difficulty

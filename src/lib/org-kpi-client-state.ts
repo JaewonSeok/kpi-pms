@@ -33,6 +33,13 @@ function parseTagInput(value: string) {
   )
 }
 
+function parseOptionalNumber(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 export function buildOrgKpiServerListSignature(items: OrgKpiViewModel[]) {
   return items
     .map((item) =>
@@ -67,8 +74,8 @@ export function applySavedOrgKpiToList(params: {
       : null
   const nextTargetValues = buildOrgKpiTargetValuePersistence({
     targetValueT: Number(params.form.targetValueT),
-    targetValueE: Number(params.form.targetValueE),
-    targetValueS: Number(params.form.targetValueS),
+    targetValueE: parseOptionalNumber(params.form.targetValueE),
+    targetValueS: parseOptionalNumber(params.form.targetValueS),
   })
 
   const nextItem: OrgKpiViewModel = {
@@ -99,10 +106,10 @@ export function applySavedOrgKpiToList(params: {
     type: params.form.kpiType,
     definition: params.form.definition.trim() || undefined,
     formula: params.form.formula.trim() || undefined,
-    targetValue: nextTargetValues.targetValue,
-    targetValueT: nextTargetValues.targetValueT,
-    targetValueE: nextTargetValues.targetValueE,
-    targetValueS: nextTargetValues.targetValueS,
+    targetValue: nextTargetValues.targetValue ?? undefined,
+    targetValueT: nextTargetValues.targetValueT ?? undefined,
+    targetValueE: nextTargetValues.targetValueE ?? undefined,
+    targetValueS: nextTargetValues.targetValueS ?? undefined,
     unit: params.form.unit.trim() || undefined,
     weight: Number(params.form.weight),
     difficulty: params.form.difficulty,

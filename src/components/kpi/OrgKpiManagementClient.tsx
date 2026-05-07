@@ -45,7 +45,7 @@ import {
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
 import { formatCountWithUnit, formatExplicitRatio } from '@/lib/metric-copy'
-import { CreateOrgKpiSchema } from '@/lib/validations'
+import { CreateOrgKpiSchema, UpdateOrgKpiSchema } from '@/lib/validations'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 
@@ -793,13 +793,6 @@ export function OrgKpiManagementClient({
       return
     }
 
-    if (!form.targetValueE.trim()) {
-      const message = 'E 목표값을 입력해 주세요.'
-      setEditorError(message)
-      setBanner({ tone: 'error', message })
-      return
-    }
-
     if (!form.weight.trim()) {
       const message = '가중치를 입력해 주세요.'
       setEditorError(message)
@@ -808,18 +801,26 @@ export function OrgKpiManagementClient({
     }
 
     const parsedTargetValueT = parseNumber(form.targetValueT)
-    const parsedTargetValueE = parseNumber(form.targetValueE)
-    const parsedTargetValueS = form.targetValueS.trim()
-      ? parseNumber(form.targetValueS)
-      : parsedTargetValueE
+    const parsedTargetValueE = form.targetValueE.trim() ? parseNumber(form.targetValueE) : undefined
+    const parsedTargetValueS = form.targetValueS.trim() ? parseNumber(form.targetValueS) : undefined
     const parsedWeight = parseWeightInput(form.weight)
 
-    if (
-      parsedTargetValueT === undefined ||
-      parsedTargetValueE === undefined ||
-      parsedTargetValueS === undefined
-    ) {
-      const message = 'T / E / S 목표값은 숫자로 입력해 주세요.'
+    if (parsedTargetValueT === undefined) {
+      const message = 'T 목표값은 숫자로 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
+    if (form.targetValueE.trim() && parsedTargetValueE === undefined) {
+      const message = 'E 목표값은 숫자로 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
+    if (form.targetValueS.trim() && parsedTargetValueS === undefined) {
+      const message = 'S 목표값은 숫자로 입력해 주세요.'
       setEditorError(message)
       setBanner({ tone: 'error', message })
       return
@@ -832,7 +833,15 @@ export function OrgKpiManagementClient({
       return
     }
 
-    if (parsedTargetValueT > parsedTargetValueE || parsedTargetValueE > parsedTargetValueS) {
+    if (
+      (parsedTargetValueE !== undefined && parsedTargetValueT > parsedTargetValueE) ||
+      (parsedTargetValueS !== undefined &&
+        parsedTargetValueE !== undefined &&
+        parsedTargetValueE > parsedTargetValueS) ||
+      (parsedTargetValueS !== undefined &&
+        parsedTargetValueE === undefined &&
+        parsedTargetValueT > parsedTargetValueS)
+    ) {
       const message = '목표값은 T <= E <= S 순서여야 합니다.'
       setEditorError(message)
       setBanner({ tone: 'error', message })
@@ -851,14 +860,14 @@ export function OrgKpiManagementClient({
       definition: form.definition.trim() || undefined,
       formula: form.formula.trim() || undefined,
       targetValueT: parsedTargetValueT,
-      targetValueE: parsedTargetValueE,
-      targetValueS: parsedTargetValueS,
+      ...(editingKpiId || parsedTargetValueE !== undefined ? { targetValueE: parsedTargetValueE ?? null } : {}),
+      ...(editingKpiId || parsedTargetValueS !== undefined ? { targetValueS: parsedTargetValueS ?? null } : {}),
       unit: form.unit.trim() || undefined,
       weight: parsedWeight,
       difficulty: form.difficulty,
     }
 
-    const validatedDraft = CreateOrgKpiSchema.safeParse(draftPayload)
+    const validatedDraft = (editingKpiId ? UpdateOrgKpiSchema : CreateOrgKpiSchema).safeParse(draftPayload)
     if (!validatedDraft.success) {
       const message = validatedDraft.error.issues[0]?.message || '입력값을 다시 확인해 주세요.'
       setEditorError(message)

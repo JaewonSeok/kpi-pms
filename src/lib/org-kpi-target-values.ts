@@ -24,12 +24,14 @@ export function resolveOrgKpiTargetValues(input: OrgKpiTargetValueInput) {
     }
   }
 
-  const targetValueE = rawE ?? legacy
-  const targetValueT = rawT ?? targetValueE
-  const targetValueS = rawS ?? targetValueE
+  const hasExplicitBand = rawT !== undefined || rawE !== undefined || rawS !== undefined
+  const targetValueT = rawT ?? legacy
+  const targetValueE = hasExplicitBand ? rawE : undefined
+  const targetValueS = hasExplicitBand ? rawS : undefined
+  const targetValue = rawE ?? targetValueT ?? rawS
 
   return {
-    targetValue: targetValueE,
+    targetValue,
     targetValueT,
     targetValueE,
     targetValueS,
@@ -56,22 +58,28 @@ export function formatOrgKpiTargetValues(input: OrgKpiTargetValueInput & { unit?
   }
 
   const unitSuffix = input.unit ? ` ${input.unit}` : ''
-  return [
-    `T ${formatMetric(resolved.targetValueT)}${unitSuffix}`,
-    `E ${formatMetric(resolved.targetValueE)}${unitSuffix}`,
-    `S ${formatMetric(resolved.targetValueS)}${unitSuffix}`,
-  ].join(' / ')
+  const segments = [
+    resolved.targetValueT !== undefined ? `T ${formatMetric(resolved.targetValueT)}${unitSuffix}` : null,
+    resolved.targetValueE !== undefined ? `E ${formatMetric(resolved.targetValueE)}${unitSuffix}` : null,
+    resolved.targetValueS !== undefined ? `S ${formatMetric(resolved.targetValueS)}${unitSuffix}` : null,
+  ].filter((segment): segment is string => Boolean(segment))
+
+  return segments.join(' / ')
 }
 
 export function buildOrgKpiTargetValuePersistence(input: {
   targetValueT: number
-  targetValueE: number
-  targetValueS: number
+  targetValueE?: number | null
+  targetValueS?: number | null
 }) {
+  const targetValueT = normalizeNumericValue(input.targetValueT)
+  const targetValueE = normalizeNumericValue(input.targetValueE)
+  const targetValueS = normalizeNumericValue(input.targetValueS)
+
   return {
-    targetValue: input.targetValueE,
-    targetValueT: input.targetValueT,
-    targetValueE: input.targetValueE,
-    targetValueS: input.targetValueS,
+    targetValue: targetValueE ?? targetValueT ?? null,
+    targetValueT: targetValueT ?? null,
+    targetValueE: targetValueE ?? null,
+    targetValueS: targetValueS ?? null,
   }
 }

@@ -25,89 +25,148 @@ async function run(name: string, fn: () => void | Promise<void>) {
 }
 
 async function main() {
-  await run('legacy org KPI target value falls back to T / E / S consistently', () => {
+  await run('legacy org KPI target value resolves to T-only when only legacy target exists', () => {
     const resolved = resolveOrgKpiTargetValues({ targetValue: 12 })
 
     assert.equal(resolved.targetValue, 12)
     assert.equal(resolved.targetValueT, 12)
-    assert.equal(resolved.targetValueE, 12)
-    assert.equal(resolved.targetValueS, 12)
+    assert.equal(resolved.targetValueE, undefined)
+    assert.equal(resolved.targetValueS, undefined)
   })
 
-  await run('org KPI target formatter renders T / E / S values with unit', () => {
-    const formatted = formatOrgKpiTargetValues({
-      targetValueT: 10,
-      targetValueE: 12,
-      targetValueS: 14,
-      unit: '%',
-    })
+  await run('org KPI target formatter omits missing optional E/S values', () => {
+    assert.equal(
+      formatOrgKpiTargetValues({
+        targetValueT: 10,
+        unit: '점',
+      }),
+      'T 10 점'
+    )
 
-    assert.equal(formatted, 'T 10 % / E 12 % / S 14 %')
+    assert.equal(
+      formatOrgKpiTargetValues({
+        targetValueT: 10,
+        targetValueE: 12,
+        unit: '%',
+      }),
+      'T 10 % / E 12 %'
+    )
+
+    assert.equal(
+      formatOrgKpiTargetValues({
+        targetValueT: 10,
+        targetValueS: 14,
+        unit: '건',
+      }),
+      'T 10 건 / S 14 건'
+    )
   })
 
-  await run('org KPI persistence stores E as legacy targetValue while keeping T / E / S columns', () => {
-    const persisted = buildOrgKpiTargetValuePersistence({
+  await run('org KPI persistence stores optional E/S as null and keeps legacy targetValue compatible', () => {
+    const tOnly = buildOrgKpiTargetValuePersistence({
       targetValueT: 10,
-      targetValueE: 12,
+    })
+
+    assert.deepEqual(tOnly, {
+      targetValue: 10,
+      targetValueT: 10,
+      targetValueE: null,
+      targetValueS: null,
+    })
+
+    const tAndSOnly = buildOrgKpiTargetValuePersistence({
+      targetValueT: 10,
       targetValueS: 14,
     })
 
-    assert.deepEqual(persisted, {
-      targetValue: 12,
+    assert.deepEqual(tAndSOnly, {
+      targetValue: 10,
       targetValueT: 10,
-      targetValueE: 12,
+      targetValueE: null,
       targetValueS: 14,
     })
   })
 
-  await run('create schema requires ordered T / E / S target values', () => {
-    const result = CreateOrgKpiSchema.safeParse({
+  await run('create schema accepts T-only, T+E, T+S, and T+E+S while still requiring T', () => {
+    const base = {
       deptId: 'dept-hr',
       evalYear: 2026,
-      kpiType: 'QUANTITATIVE',
-      kpiCategory: '인사',
-      kpiName: '채용 완료율',
-      targetValueT: 10,
-      targetValueE: 12,
-      targetValueS: 14,
-      weight: 20,
-      difficulty: 'MEDIUM',
+      kpiType: 'QUANTITATIVE' as const,
+      kpiCategory: '업무혁신',
+      kpiName: '경영지원본부장 만족도',
+      weight: 10,
+      difficulty: 'MEDIUM' as const,
+      unit: '점',
+    }
+
+    assert.equal(
+      CreateOrgKpiSchema.safeParse({
+        ...base,
+        targetValueT: 80,
+      }).success,
+      true
+    )
+
+    assert.equal(
+      CreateOrgKpiSchema.safeParse({
+        ...base,
+        targetValueT: 80,
+        targetValueE: 90,
+      }).success,
+      true
+    )
+
+    assert.equal(
+      CreateOrgKpiSchema.safeParse({
+        ...base,
+        targetValueT: 80,
+        targetValueS: 100,
+      }).success,
+      true
+    )
+
+    assert.equal(
+      CreateOrgKpiSchema.safeParse({
+        ...base,
+        targetValueT: 80,
+        targetValueE: 90,
+        targetValueS: 100,
+      }).success,
+      true
+    )
+
+    const missingT = CreateOrgKpiSchema.safeParse({
+      ...base,
+      targetValueE: 90,
     })
 
-    assert.equal(result.success, true)
-
-    const invalid = CreateOrgKpiSchema.safeParse({
-      deptId: 'dept-hr',
-      evalYear: 2026,
-      kpiType: 'QUANTITATIVE',
-      kpiCategory: '인사',
-      kpiName: '채용 완료율',
-      targetValueT: 15,
-      targetValueE: 12,
-      targetValueS: 14,
-      weight: 20,
-      difficulty: 'MEDIUM',
-    })
-
-    assert.equal(invalid.success, false)
-    assert.equal(invalid.error?.issues[0]?.message.includes('T <= E <= S'), true)
+    assert.equal(missingT.success, false)
   })
 
-  await run('update schema requires complete T / E / S sets when one target band changes', () => {
-    const partial = UpdateOrgKpiSchema.safeParse({
-      targetValueT: 10,
+  await run('update schema allows clearing E/S while still requiring T when target values are edited', () => {
+    assert.equal(
+      UpdateOrgKpiSchema.safeParse({
+        targetValueT: 80,
+        targetValueE: null,
+        targetValueS: null,
+      }).success,
+      true
+    )
+
+    assert.equal(
+      UpdateOrgKpiSchema.safeParse({
+        targetValueT: 80,
+        targetValueS: 100,
+      }).success,
+      true
+    )
+
+    const missingT = UpdateOrgKpiSchema.safeParse({
+      targetValueE: 90,
     })
 
-    assert.equal(partial.success, false)
-    assert.equal(partial.error?.issues[0]?.message.includes('T / E / S'), true)
-
-    const ordered = UpdateOrgKpiSchema.safeParse({
-      targetValueT: 10,
-      targetValueE: 12,
-      targetValueS: 14,
-    })
-
-    assert.equal(ordered.success, true)
+    assert.equal(missingT.success, false)
+    assert.equal(missingT.error?.issues[0]?.message.includes('T'), true)
   })
 
   await run('org KPI unit schema accepts Korean and common business units while rejecting overly long values', () => {
@@ -119,8 +178,6 @@ async function main() {
         kpiCategory: '인사',
         kpiName: `단위 검증 ${unit}`,
         targetValueT: 10,
-        targetValueE: 12,
-        targetValueS: 14,
         unit,
         weight: 20,
         difficulty: 'MEDIUM',
@@ -139,8 +196,6 @@ async function main() {
       kpiCategory: '인사',
       kpiName: '공백 단위 검증',
       targetValueT: 10,
-      targetValueE: 12,
-      targetValueS: 14,
       unit: '   ',
       weight: 20,
       difficulty: 'MEDIUM',
@@ -158,8 +213,6 @@ async function main() {
       kpiCategory: '인사',
       kpiName: '긴 단위 검증',
       targetValueT: 10,
-      targetValueE: 12,
-      targetValueS: 14,
       unit: '가'.repeat(21),
       weight: 20,
       difficulty: 'MEDIUM',
@@ -168,45 +221,27 @@ async function main() {
     assert.equal(tooLong.success, false)
   })
 
-  await run('org KPI client form renders dedicated T / E / S inputs and no longer submits a single targetValue field', () => {
+  await run('org KPI client form supports optional E/S and edit-time clearing without fake defaults', () => {
     const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
-    assert.equal(clientSource.includes('label="T 목표값"'), true)
-    assert.equal(clientSource.includes('label="E 목표값"'), true)
-    assert.equal(clientSource.includes('label="S 목표값"'), true)
-    assert.equal(clientSource.includes('targetValueT: parsedTargetValueT'), true)
-    assert.equal(clientSource.includes('targetValueE: parsedTargetValueE'), true)
-    assert.equal(clientSource.includes('targetValueS: parsedTargetValueS'), true)
-    assert.equal(clientSource.includes('targetValue: parseNumber(form.targetValue)'), false)
-    assert.equal(clientSource.includes('formatOrgKpiTargetValues({'), true)
+    assert.equal(clientSource.includes("const message = 'E 목표값을 입력해 주세요.'"), false)
+    assert.equal(clientSource.includes('const parsedTargetValueE = form.targetValueE.trim() ? parseNumber(form.targetValueE) : undefined'), true)
+    assert.equal(clientSource.includes('const parsedTargetValueS = form.targetValueS.trim() ? parseNumber(form.targetValueS) : undefined'), true)
+    assert.equal(clientSource.includes("{ targetValueE: parsedTargetValueE ?? null }"), true)
+    assert.equal(clientSource.includes("{ targetValueS: parsedTargetValueS ?? null }"), true)
+    assert.equal(clientSource.includes('const validatedDraft = (editingKpiId ? UpdateOrgKpiSchema : CreateOrgKpiSchema).safeParse(draftPayload)'), true)
   })
 
-  await run('org KPI client form validates with shared schema and renders modal-scoped submit errors', () => {
-    const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
-
-    assert.equal(clientSource.includes('const [editorError, setEditorError] = useState<string | null>(null)'), true)
-    assert.equal(clientSource.includes('const parsedWeight = parseWeightInput(form.weight)'), true)
-    assert.equal(clientSource.includes("const parsedTargetValueS = form.targetValueS.trim()"), true)
-    assert.equal(clientSource.includes(': parsedTargetValueE'), true)
-    assert.equal(clientSource.includes('const validatedDraft = CreateOrgKpiSchema.safeParse(draftPayload)'), true)
-    assert.equal(clientSource.includes('errorMessage={editorError}'), true)
-    assert.equal(clientSource.includes('role="alert"'), true)
-    assert.equal(clientSource.includes("error instanceof Error && error.message.trim().length"), true)
-    assert.equal(clientSource.includes('가중치는 숫자로 입력해 주세요. 예: 10 또는 10%'), true)
-  })
-
-  await run('org KPI routes persist T / E / S target values and keep legacy targetValue for compatibility', () => {
+  await run('org KPI routes and page model preserve optional E/S fields instead of forcing all three bands', () => {
     const createRouteSource = read('src/app/api/kpi/org/route.ts')
     const updateRouteSource = read('src/app/api/kpi/org/[id]/route.ts')
     const pageSource = read('src/server/org-kpi-page.ts')
 
     assert.equal(createRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(updateRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
-    assert.equal(updateRouteSource.includes('targetValueT: true'), true)
-    assert.equal(updateRouteSource.includes('targetValueE: true'), true)
-    assert.equal(updateRouteSource.includes('targetValueS: true'), true)
+    assert.equal(updateRouteSource.includes('data.targetValueT !== undefined'), true)
+    assert.equal(updateRouteSource.includes('data.targetValueE !== undefined &&'), false)
     assert.equal(pageSource.includes('resolveOrgKpiTargetValues'), true)
-    assert.equal(pageSource.includes('targetValueT: resolvedTargetValues.targetValueT'), true)
     assert.equal(pageSource.includes('targetValueE: resolvedTargetValues.targetValueE'), true)
     assert.equal(pageSource.includes('targetValueS: resolvedTargetValues.targetValueS'), true)
   })

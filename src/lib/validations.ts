@@ -56,38 +56,31 @@ export const UpdateGradeSettingsSchema = z.object({
 
 const OrgKpiTargetValueSchema = {
   targetValueT: z.number().min(0, 'T 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??'),
-  targetValueE: z.number().min(0, 'E 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??'),
-  targetValueS: z.number().min(0, 'S 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??'),
-}
-
-function hasCompleteOrgKpiTargetValues(data: {
-  targetValueT?: number
-  targetValueE?: number
-  targetValueS?: number
-}) {
-  return (
-    data.targetValueT !== undefined &&
-    data.targetValueE !== undefined &&
-    data.targetValueS !== undefined
-  )
+  targetValueE: z.number().min(0, 'E 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??').optional(),
+  targetValueS: z.number().min(0, 'S 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??').optional(),
 }
 
 function isOrderedOrgKpiTargetValues(data: {
   targetValueT?: number
-  targetValueE?: number
-  targetValueS?: number
+  targetValueE?: number | null
+  targetValueS?: number | null
 }) {
-  if (!hasCompleteOrgKpiTargetValues(data)) {
+  if (data.targetValueT === undefined) {
     return true
   }
+  const targetValueE = data.targetValueE ?? undefined
+  const targetValueS = data.targetValueS ?? undefined
 
-  const { targetValueT, targetValueE, targetValueS } = data as {
-    targetValueT: number
-    targetValueE: number
-    targetValueS: number
+  if (targetValueE !== undefined && data.targetValueT > targetValueE) {
+    return false
   }
-
-  return targetValueT <= targetValueE && targetValueE <= targetValueS
+  if (targetValueS !== undefined && targetValueE !== undefined) {
+    return targetValueE <= targetValueS
+  }
+  if (targetValueS !== undefined) {
+    return data.targetValueT <= targetValueS
+  }
+  return true
 }
 
 const ORG_KPI_LONG_TEXT_MAX = 50_000
@@ -125,7 +118,9 @@ export const CreateOrgKpiSchema = z.object({
   kpiName: z.string().min(1).max(100),
   definition: orgKpiLongTextSchema('KPI ?뺤쓽').optional(),
   formula: orgKpiLongTextSchema('KPI ?곗떇').optional(),
-  ...OrgKpiTargetValueSchema,
+  targetValueT: OrgKpiTargetValueSchema.targetValueT,
+  targetValueE: OrgKpiTargetValueSchema.targetValueE,
+  targetValueS: OrgKpiTargetValueSchema.targetValueS,
   unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
@@ -146,8 +141,8 @@ export const UpdateOrgKpiSchema = z.object({
   definition: orgKpiLongTextSchema('KPI ?뺤쓽').optional(),
   formula: orgKpiLongTextSchema('KPI ?곗떇').optional(),
   targetValueT: OrgKpiTargetValueSchema.targetValueT.optional(),
-  targetValueE: OrgKpiTargetValueSchema.targetValueE.optional(),
-  targetValueS: OrgKpiTargetValueSchema.targetValueS.optional(),
+  targetValueE: OrgKpiTargetValueSchema.targetValueE.nullable().optional(),
+  targetValueS: OrgKpiTargetValueSchema.targetValueS.nullable().optional(),
   unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
@@ -157,13 +152,17 @@ export const UpdateOrgKpiSchema = z.object({
 })
   .refine(
     (data) => {
-      const providedCount = [data.targetValueT, data.targetValueE, data.targetValueS].filter(
-        (value) => value !== undefined
-      ).length
-      return providedCount === 0 || providedCount === 3
+      const usesTargetValues =
+        data.targetValueT !== undefined || data.targetValueE !== undefined || data.targetValueS !== undefined
+
+      if (!usesTargetValues) {
+        return true
+      }
+
+      return data.targetValueT !== undefined
     },
     {
-      message: 'T / E / S 紐⑺몴媛믪쓣 紐⑤몢 ?낅젰??二쇱꽭??',
+      message: 'T 목표값을 입력해 주세요.',
       path: ['targetValueT'],
     }
   )

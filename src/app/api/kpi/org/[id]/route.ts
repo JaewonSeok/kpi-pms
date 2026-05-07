@@ -329,9 +329,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         ...(data.kpiName !== undefined ? { kpiName: data.kpiName } : {}),
         ...(data.definition !== undefined ? { definition: data.definition || null } : {}),
         ...(data.formula !== undefined ? { formula: data.formula || null } : {}),
-        ...(data.targetValueT !== undefined &&
-        data.targetValueE !== undefined &&
-        data.targetValueS !== undefined
+        ...(data.targetValueT !== undefined
           ? buildOrgKpiTargetValuePersistence({
               targetValueT: data.targetValueT,
               targetValueE: data.targetValueE,
