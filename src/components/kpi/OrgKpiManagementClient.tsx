@@ -44,6 +44,10 @@ import {
   formatOrgKpiTargetValues,
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
+import {
+  calculateOrgKpiWeightSummary,
+  formatOrgKpiWeight,
+} from '@/lib/org-kpi-weight'
 import { formatCountWithUnit, formatExplicitRatio } from '@/lib/metric-copy'
 import { CreateOrgKpiSchema, UpdateOrgKpiSchema } from '@/lib/validations'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
@@ -385,6 +389,40 @@ function buildGoalExportForm(pageData: Props, selectedDepartmentId: string): Goa
   }
 }
 
+function formatWeightStatusContext(params: {
+  year: number
+  scopeLabel: string
+  departmentName: string
+  includeSearchNote: boolean
+}) {
+  const base = `${params.year}년 · ${params.departmentName} · ${params.scopeLabel}`
+  return params.includeSearchNote ? `${base} · 현재 검색 결과` : base
+}
+
+function formatWeightStatusMessage(summary: ReturnType<typeof calculateOrgKpiWeightSummary>) {
+  if (summary.status === 'normal') {
+    return '가중치 합계가 100%입니다.'
+  }
+
+  if (summary.status === 'under') {
+    return `가중치 합계가 100%보다 낮습니다. 남은 ${formatOrgKpiWeight(summary.remainingWeight)}를 추가 배분해 주세요.`
+  }
+
+  return `가중치 합계가 100%를 초과했습니다. ${formatOrgKpiWeight(summary.excessWeight)}를 줄여 주세요.`
+}
+
+function formatWeightStatusLabel(status: ReturnType<typeof calculateOrgKpiWeightSummary>['status']) {
+  if (status === 'normal') return '정상'
+  if (status === 'under') return '부족'
+  return '초과'
+}
+
+function formatWeightStatusTone(status: ReturnType<typeof calculateOrgKpiWeightSummary>['status']) {
+  if (status === 'normal') return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  if (status === 'under') return 'border-amber-200 bg-amber-50 text-amber-700'
+  return 'border-red-200 bg-red-50 text-red-700'
+}
+
 async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
   const response = await fetch(input, init)
   const json = (await response.json()) as {
@@ -541,6 +579,34 @@ export function OrgKpiManagementClient({
         return true
       }),
     [list, search, selectedDepartmentId]
+  )
+  const selectedDepartmentName = useMemo(() => {
+    if (selectedDepartmentId === 'ALL') {
+      return `${scopeLabel} 전체`
+    }
+
+    return (
+      pageData.departments.find((department) => department.id === selectedDepartmentId)?.name ??
+      pageData.departments.find((department) => department.id === pageData.selectedDepartmentId)?.name ??
+      pageData.actor.departmentName
+    )
+  }, [
+    pageData.actor.departmentName,
+    pageData.departments,
+    pageData.selectedDepartmentId,
+    scopeLabel,
+    selectedDepartmentId,
+  ])
+  const weightSummary = useMemo(() => calculateOrgKpiWeightSummary(filteredList), [filteredList])
+  const weightStatusContext = useMemo(
+    () =>
+      formatWeightStatusContext({
+        year: pageData.selectedYear,
+        scopeLabel,
+        departmentName: selectedDepartmentName,
+        includeSearchNote: search.trim().length > 0,
+      }),
+    [pageData.selectedYear, scopeLabel, search, selectedDepartmentName]
   )
   const hierarchyStructure = useMemo(
     () =>
@@ -1483,6 +1549,13 @@ export function OrgKpiManagementClient({
               {getOrgKpiListDescription(pageData.selectedScope, hasSectionScope)}
             </p>
           </div>
+          <div className="mb-5">
+            <WeightStatusPanel
+              contextLabel={weightStatusContext}
+              summary={weightSummary}
+              items={filteredList}
+            />
+          </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
             <div className="space-y-3">
               {filteredList.length ? filteredList.map((kpi) => (
@@ -1677,6 +1750,82 @@ function EmptyState({ title, description, compact = false }: { title: string; de
   return <div className={cls('rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center text-slate-500', compact ? 'px-4 py-6' : 'px-4 py-10')}><div className="text-sm font-semibold text-slate-900">{title}</div><p className="mt-2 text-sm leading-6">{description}</p></div>
 }
 
+function WeightStatusPanel(props: {
+  contextLabel: string
+  summary: ReturnType<typeof calculateOrgKpiWeightSummary>
+  items: OrgKpiViewModel[]
+}) {
+  const statusLabel = formatWeightStatusLabel(props.summary.status)
+  const statusMessage = formatWeightStatusMessage(props.summary)
+  const statusToneClass = formatWeightStatusTone(props.summary.status)
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-semibold text-slate-900">가중치 현황</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-600">{props.contextLabel}</p>
+        </div>
+        <span className={cls('inline-flex shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold leading-none', statusToneClass)}>
+          {statusLabel}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <InfoPill label="총 가중치" value={formatOrgKpiWeight(props.summary.totalWeight)} />
+        <InfoPill
+          label={props.summary.status === 'over' ? '초과 가중치' : '남은 가중치'}
+          value={
+            props.summary.status === 'over'
+              ? formatOrgKpiWeight(props.summary.excessWeight)
+              : formatOrgKpiWeight(props.summary.remainingWeight)
+          }
+        />
+        <InfoPill
+          label="집계 KPI"
+          value={formatCountWithUnit(props.summary.countedItemCount, '개')}
+        />
+      </div>
+
+      <div className={cls('mt-4 rounded-2xl border px-4 py-3 text-sm leading-6', statusToneClass)}>
+        {statusMessage}
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-slate-900">가중치 구성 KPI</div>
+          <div className="text-xs text-slate-500">현재 목록 기준</div>
+        </div>
+
+        {props.items.length ? (
+          <div className="mt-3 space-y-2">
+            {props.items.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-3 py-2.5 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="break-keep font-medium text-slate-900">{item.title}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {item.departmentName} · {item.category ?? '카테고리 미지정'}
+                  </div>
+                </div>
+                <div className="shrink-0 font-semibold text-slate-700">
+                  {formatOrgKpiWeight(item.weight)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+            집계할 KPI가 없습니다.
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function HierarchySummaryField({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl bg-white px-3 py-2">
@@ -1762,7 +1911,7 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
               unit: props.kpi.unit,
             })}
           </div>
-          <div className="mt-1">가중치 {formatValue(props.kpi.weight)}</div>
+          <div className="mt-1">가중치 {formatOrgKpiWeight(props.kpi.weight)}</div>
         </div>
       </div>
       <div className="mt-4 grid gap-3 text-xs text-slate-500 sm:grid-cols-3">
@@ -2321,7 +2470,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                   unit: kpi.unit,
                 })}
               />
-              <InfoPill label="가중치" value={formatValue(kpi.weight)} />
+              <InfoPill label="가중치" value={formatOrgKpiWeight(kpi.weight)} />
               <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
               <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
             </div>
@@ -3211,9 +3360,10 @@ function EditorModal({
             <input value={form.unit} onChange={(event) => onChange({ ...form, unit: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>
           <Field label="가중치">
-            <input value={form.weight} onChange={(event) => onChange({ ...form, weight: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
+            <input value={form.weight} onChange={(event) => onChange({ ...form, weight: event.target.value })} placeholder="예: 10 또는 10%" className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>
         </div>
+        <p className="mt-2 text-xs leading-5 text-slate-500">가중치는 숫자로 저장되고 화면에서는 자동으로 %와 함께 표시됩니다.</p>
 
         {errorMessage ? (
           <div
