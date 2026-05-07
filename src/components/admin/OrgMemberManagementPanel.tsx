@@ -207,7 +207,6 @@ function DepartmentTreeNode(props: {
             </div>
 
             <div className="flex flex-wrap gap-x-3 gap-y-1 break-keep text-[11px] leading-snug text-slate-500 sm:text-xs">
-              <span className="whitespace-nowrap">{props.node.deptCode}</span>
               {props.node.leaderEmployeeName ? (
                 <span className="break-keep">리더 {props.node.leaderEmployeeName}</span>
               ) : null}
@@ -652,7 +651,6 @@ export function OrgMemberManagementPanel(props: Props) {
                       </td>
                       <td className="px-3 py-3">
                         <div className="text-slate-700">{employee.departmentName}</div>
-                        <div className="mt-1 text-xs text-slate-500">{employee.departmentCode}</div>
                       </td>
                       <td className="px-3 py-3">{ROLE_LABELS[employee.role]}</td>
                       <td className="px-3 py-3 text-slate-700">{employee.googleEmail}</td>
@@ -752,7 +750,7 @@ export function OrgMemberManagementPanel(props: Props) {
                   </option>
                   {allowedParentOptions.map((department) => (
                     <option key={department.id} value={department.id}>
-                      {department.deptName} ({department.deptCode}) · {DEPARTMENT_TYPE_LABELS[department.scope]}
+                      {department.deptName} · {DEPARTMENT_TYPE_LABELS[department.scope]}
                     </option>
                   ))}
                 </select>
@@ -876,7 +874,7 @@ export function OrgMemberManagementPanel(props: Props) {
             <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-4">
               <div className="text-sm font-semibold text-red-800">삭제 대상</div>
               <div data-testid="department-delete-name" className="mt-2 text-base font-semibold text-red-900">
-                {editingDepartment.deptName} ({editingDepartment.deptCode})
+                {editingDepartment.deptName}
               </div>
               <ul className="mt-3 space-y-1 text-sm text-red-700">
                 <li>하위 조직 수: {editingDepartmentChildCount}</li>

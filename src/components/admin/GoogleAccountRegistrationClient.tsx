@@ -900,7 +900,7 @@ export function GoogleAccountRegistrationClient() {
             <option value="">부서 전체</option>
             {departmentOptions.map((department) => (
               <option key={department.id} value={department.id}>
-                {department.deptName} ({department.deptCode})
+                {department.deptName}
               </option>
             ))}
           </select>
@@ -969,7 +969,7 @@ export function GoogleAccountRegistrationClient() {
                     <option value="">본부 선택</option>
                     {departmentSelection.divisionOptions.map((department) => (
                       <option key={department.id} value={department.id}>
-                        {department.deptName} ({department.deptCode})
+                        {department.deptName}
                       </option>
                     ))}
                   </select>
@@ -985,7 +985,7 @@ export function GoogleAccountRegistrationClient() {
                       <option value="">실 선택</option>
                       {departmentSelection.sectionOptions.map((department) => (
                         <option key={department.id} value={department.id}>
-                          {department.deptName} ({department.deptCode})
+                          {department.deptName}
                         </option>
                       ))}
                     </select>
@@ -1009,7 +1009,7 @@ export function GoogleAccountRegistrationClient() {
                     <option value="">팀 선택</option>
                     {departmentSelection.teamOptions.map((department) => (
                       <option key={department.id} value={department.id}>
-                        {department.deptName} ({department.deptCode})
+                        {department.deptName}
                       </option>
                     ))}
                   </select>
@@ -1155,10 +1155,9 @@ export function GoogleAccountRegistrationClient() {
                       </td>
                       <td className="px-3 py-3">
                         <div>{employee.departmentName}</div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          {employee.departmentCode}
-                          {employee.teamName ? ` · ${employee.teamName}` : ''}
-                        </div>
+                        {employee.teamName ? (
+                          <div className="mt-1 text-xs text-slate-500">{employee.teamName}</div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-3">
                         <div>{ROLE_LABELS[employee.role]}</div>

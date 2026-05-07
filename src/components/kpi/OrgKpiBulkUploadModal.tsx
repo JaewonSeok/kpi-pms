@@ -8,7 +8,6 @@ import type { OrgKpiScopeOption } from '@/server/org-kpi-page'
 
 type UploadRow = {
   deptId: string
-  deptCode: string
   deptName: string
   evalYear: number
   kpiType: 'QUANTITATIVE' | 'QUALITATIVE'
@@ -49,6 +48,26 @@ function normalizeEnum<T extends string>(value: unknown, fallback: T, allowed: r
   return allowed.includes(normalized) ? normalized : fallback
 }
 
+function buildDepartmentPathMap(departments: OrgKpiScopeOption[]) {
+  const departmentById = new Map(departments.map((department) => [department.id, department]))
+
+  const resolvePath = (department: OrgKpiScopeOption) => {
+    const segments = [department.name]
+    let currentParentId = department.parentDepartmentId
+
+    while (currentParentId) {
+      const parent = departmentById.get(currentParentId)
+      if (!parent) break
+      segments.unshift(parent.name)
+      currentParentId = parent.parentDepartmentId
+    }
+
+    return segments.join(' / ')
+  }
+
+  return new Map(departments.map((department) => [department.id, resolvePath(department)] as const))
+}
+
 function buildTemplateWorkbook(params: {
   selectedYear: number
   departments: OrgKpiScopeOption[]
@@ -58,10 +77,14 @@ function buildTemplateWorkbook(params: {
   const sampleDepartment =
     params.departments.find((department) => department.id === params.defaultDepartmentId) ??
     params.departments[0]
+  const departmentPathMap = buildDepartmentPathMap(params.departments)
+  const sampleDepartmentPath = sampleDepartment
+    ? departmentPathMap.get(sampleDepartment.id) ?? sampleDepartment.name
+    : ''
 
   const sampleRows = [
     {
-      deptCode: sampleDepartment?.id ?? '',
+      departmentName: sampleDepartmentPath,
       evalYear: params.selectedYear,
       kpiType: 'QUANTITATIVE',
       kpiCategory: '매출 성장',
@@ -76,7 +99,7 @@ function buildTemplateWorkbook(params: {
   ]
 
   const guideRows = [
-    { column: 'deptCode', description: 'departments 시트의 deptCode 값을 그대로 입력합니다.' },
+    { column: 'departmentName', description: 'departments 시트의 조직 경로를 그대로 입력합니다.' },
     { column: 'evalYear', description: '평가 연도입니다. 비우면 현재 선택한 연도를 사용합니다.' },
     { column: 'kpiType', description: 'QUANTITATIVE 또는 QUALITATIVE' },
     { column: 'kpiCategory', description: '예: 매출 성장, 고객 성공, 운영 효율' },
@@ -90,8 +113,7 @@ function buildTemplateWorkbook(params: {
   ]
 
   const departmentRows = params.departments.map((department) => ({
-    deptCode: department.id,
-    deptName: department.name,
+    departmentName: departmentPathMap.get(department.id) ?? department.name,
     organizationName: department.organizationName,
     level: department.level,
     scope: department.scope,
@@ -106,6 +128,20 @@ function buildTemplateWorkbook(params: {
 
 async function parseWorkbook(file: File, departments: OrgKpiScopeOption[], selectedYear: number) {
   const departmentMap = new Map(departments.map((department) => [department.id, department]))
+  const departmentPathMap = buildDepartmentPathMap(departments)
+  const departmentByPath = new Map(
+    departments.map((department) => [
+      (departmentPathMap.get(department.id) ?? department.name).trim().toLowerCase(),
+      department,
+    ])
+  )
+  const departmentsByName = new Map<string, OrgKpiScopeOption[]>()
+  departments.forEach((department) => {
+    const key = department.name.trim().toLowerCase()
+    const bucket = departmentsByName.get(key) ?? []
+    bucket.push(department)
+    departmentsByName.set(key, bucket)
+  })
   const buffer = await file.arrayBuffer()
   const workbook = XLSX.read(buffer, { type: 'array' })
   const sheet = workbook.Sheets[workbook.SheetNames[0]]
@@ -115,13 +151,28 @@ async function parseWorkbook(file: File, departments: OrgKpiScopeOption[], selec
 
   rows.forEach((row, index) => {
     const rowNumber = index + 2
-    const deptCode = String(row.deptCode ?? '').trim()
+    const departmentName = String(row.departmentName ?? row.deptName ?? '').trim()
+    const legacyDeptCode = String(row.deptCode ?? '').trim()
     const kpiCategory = String(row.kpiCategory ?? '').trim()
     const kpiName = String(row.kpiName ?? '').trim()
     const weight = Number(row.weight ?? '')
 
-    if (!deptCode || !departmentMap.has(deptCode)) {
-      issues.push({ row: rowNumber, message: '조직 코드가 비어 있거나 현재 탭에서 사용할 수 없는 조직입니다.' })
+    const resolvedDepartment =
+      (departmentName
+        ? departmentByPath.get(departmentName.toLowerCase()) ??
+          ((departmentsByName.get(departmentName.toLowerCase())?.length ?? 0) === 1
+            ? departmentsByName.get(departmentName.toLowerCase())?.[0]
+            : undefined)
+        : undefined) ??
+      (legacyDeptCode ? departmentMap.get(legacyDeptCode) : undefined)
+
+    if (!resolvedDepartment) {
+      issues.push({
+        row: rowNumber,
+        message: departmentName
+          ? '조직명을 현재 탭에서 사용할 수 없거나 같은 이름의 조직이 여러 개 있습니다.'
+          : '조직명을 입력해 주세요.',
+      })
       return
     }
 
@@ -135,13 +186,12 @@ async function parseWorkbook(file: File, departments: OrgKpiScopeOption[], selec
       return
     }
 
-    const department = departmentMap.get(deptCode)!
+    const department = resolvedDepartment
     const rawTargetValue = String(row.targetValue ?? '').trim()
     const numericTargetValue = rawTargetValue === '' ? null : Number(rawTargetValue)
 
     parsedRows.push({
       deptId: department.id,
-      deptCode,
       deptName: department.name,
       evalYear: Number(row.evalYear) || selectedYear,
       kpiType: normalizeEnum(String(row.kpiType ?? ''), 'QUANTITATIVE', [
@@ -298,7 +348,7 @@ export function OrgKpiBulkUploadModal(props: Props) {
               <div className="text-sm font-semibold text-slate-900">1. 템플릿 다운로드</div>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 <code>org_kpis</code> 시트에 입력하고, <code>departments</code> 시트의 조직
-                코드를 그대로 사용해 주세요.
+                경로를 그대로 사용해 주세요.
               </p>
               <button
                 type="button"

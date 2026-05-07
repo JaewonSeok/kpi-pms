@@ -353,6 +353,32 @@ run('upload validation accepts rows without manual department codes', () => {
   assert.equal(result.rows[0]?.valid, true)
 })
 
+run('admin org and employee UI hide organization codes from visible labels', () => {
+  const registrationClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
+    'utf8'
+  )
+  const orgMemberPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/OrgMemberManagementPanel.tsx'),
+    'utf8'
+  )
+
+  assert.doesNotMatch(registrationClientSource, /\{department\.deptName\} \(\{department\.deptCode\}\)/)
+  assert.doesNotMatch(orgMemberPanelSource, /\{department\.deptName\} \(\{department\.deptCode\}\)/)
+  assert.doesNotMatch(orgMemberPanelSource, /\{editingDepartment\.deptName\} \(\{editingDepartment\.deptCode\}\)/)
+})
+
+run('org kpi bulk upload UI uses organization names instead of visible organization codes', () => {
+  const bulkUploadModalSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/kpi/OrgKpiBulkUploadModal.tsx'),
+    'utf8'
+  )
+
+  assert.match(bulkUploadModalSource, /departmentName/)
+  assert.match(bulkUploadModalSource, /조직 경로|議곗쭅 寃쎈줈/)
+  assert.doesNotMatch(bulkUploadModalSource, /departments .*deptCode|deptCode 값을 그대로 입력/)
+})
+
 run('evaluator assignment action schema accepts preview and apply actions', () => {
   assert.equal(
     AdminEvaluatorAssignmentActionSchema.safeParse({ action: 'preview' }).success,
