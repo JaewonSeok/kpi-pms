@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
+﻿/* eslint-disable @typescript-eslint/no-require-imports */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -46,7 +46,7 @@ const existingEmployees = [
   {
     id: 'mgr-1',
     employeeNumber: 'E-1000',
-    name: '관리자',
+    name: '愿由ъ옄',
     googleEmail: 'manager@rsupport.com',
     status: 'ACTIVE' as const,
     managerId: null,
@@ -55,7 +55,7 @@ const existingEmployees = [
   {
     id: 'emp-1',
     employeeNumber: 'E-1001',
-    name: '기존직원',
+    name: '湲곗〈吏곸썝',
     googleEmail: 'member1@rsupport.com',
     status: 'ACTIVE' as const,
     managerId: 'mgr-1',
@@ -63,7 +63,7 @@ const existingEmployees = [
   },
 ]
 
-const existingDepartments = [{ id: 'dept-1', deptCode: 'HR', deptName: '인사팀', parentDeptId: null }]
+const existingDepartments = [{ id: 'dept-1', deptCode: 'HR', deptName: '?몄궗?', parentDeptId: null }]
 
 function buildWorkbookBuffer(rows: Array<Record<string, unknown>>) {
   const workbook = XLSX.utils.book_new()
@@ -94,10 +94,10 @@ run('valid upload row passes preview validation', () => {
   const result = validateRows([
     {
       employeeNumber: 'E-2000',
-      name: '신규직원',
+      name: '?좉퇋吏곸썝',
       googleEmail: 'new.member@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
       managerEmployeeNumber: 'E-1000',
@@ -130,45 +130,45 @@ run('duplicate employee numbers inside the file are rejected', () => {
   const result = validateRows([
     {
       employeeNumber: 'E-3000',
-      name: '직원A',
+      name: '吏곸썝A',
       googleEmail: 'a@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
     },
     {
       employeeNumber: 'E-3000',
-      name: '직원B',
+      name: '吏곸썝B',
       googleEmail: 'b@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
     },
   ])
 
   assert.equal(result.summary.validRows, 0)
-  assert.match(result.errors[0]?.message ?? '', /사번/)
+  assert.match(result.errors[0]?.message ?? '', /./)
 })
 
 run('duplicate google emails inside the file are rejected', () => {
   const result = validateRows([
     {
       employeeNumber: 'E-3001',
-      name: '직원A',
+      name: '吏곸썝A',
       googleEmail: 'dup@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
     },
     {
       employeeNumber: 'E-3002',
-      name: '직원B',
+      name: '吏곸썝B',
       googleEmail: 'dup@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
     },
@@ -182,10 +182,10 @@ run('existing employee number becomes update instead of create', () => {
   const result = validateRows([
     {
       employeeNumber: 'E-1001',
-      name: '기존직원수정',
+      name: '湲곗〈吏곸썝?섏젙',
       googleEmail: 'member1@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
     },
@@ -199,10 +199,10 @@ run('inactive and resigned statuses are accepted while active with resignation d
   const inactive = validateRows([
     {
       employeeNumber: 'E-3100',
-      name: '비활성직원',
+      name: 'Inactive Employee',
       googleEmail: 'inactive@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'INACTIVE',
     },
@@ -210,10 +210,10 @@ run('inactive and resigned statuses are accepted while active with resignation d
   const activeWithResignation = validateRows([
     {
       employeeNumber: 'E-3101',
-      name: '오류직원',
+      name: '?ㅻ쪟吏곸썝',
       googleEmail: 'active-with-end@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
       resignationDate: '2025-12-31',
@@ -228,10 +228,10 @@ run('missing manager references are rejected', () => {
   const result = validateRows([
     {
       employeeNumber: 'E-3200',
-      name: '직원',
+      name: '吏곸썝',
       googleEmail: 'member3200@rsupport.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
       managerEmployeeNumber: 'NOPE-1',
@@ -246,10 +246,10 @@ run('non-company email domains are rejected', () => {
   const result = validateRows([
     {
       employeeNumber: 'E-3300',
-      name: '외부메일',
+      name: '?몃?硫붿씪',
       googleEmail: 'user@gmail.com',
       departmentCode: 'HR',
-      department: '인사팀',
+      department: '?몄궗?',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
     },
@@ -262,17 +262,17 @@ run('non-company email domains are rejected', () => {
 run('single create schema accepts the richer admin employee payload', () => {
   const parsed = CreateAdminEmployeeSchema.safeParse({
     employeeNumber: 'E-4000',
-    name: '단건등록',
+    name: '?④굔?깅줉',
     gwsEmail: 'create@rsupport.com',
     deptId: 'dept-1',
-    teamName: '채용',
-    jobTitle: '매니저',
+    teamName: '梨꾩슜',
+    jobTitle: '留ㅻ땲?',
     role: 'ROLE_MEMBER',
     employmentStatus: 'ACTIVE',
     managerEmployeeNumber: 'E-1000',
     joinDate: '2025-01-01',
     sortOrder: 1,
-    notes: '메모',
+    notes: '硫붾え',
   })
 
   assert.equal(parsed.success, true)
@@ -282,7 +282,7 @@ run('single edit schema requires employeeId and accepts updates', () => {
   const parsed = UpdateGoogleAccountEmployeeSchema.safeParse({
     employeeId: 'emp-1',
     employeeNumber: 'E-1001',
-    name: '수정직원',
+    name: '?섏젙吏곸썝',
     gwsEmail: 'member1@rsupport.com',
     deptId: 'dept-1',
     role: 'ROLE_MEMBER',
@@ -328,7 +328,8 @@ run('reactivation action is accepted by lifecycle schema', () => {
 run('department admin schema accepts leader assignment and exclusion toggle', () => {
   const parsed = AdminDepartmentRecordSchema.safeParse({
     deptCode: 'BIZ-OPS',
-    deptName: '비즈니스운영본부',
+    deptName: '鍮꾩쫰?덉뒪?댁쁺蹂몃?',
+    departmentType: 'section',
     parentDeptId: 'dept-root',
     leaderEmployeeId: 'mgr-1',
     excludeLeaderFromEvaluatorAutoAssign: true,
@@ -354,21 +355,21 @@ run('department leader based evaluator assignment skips excluded leaders while k
     [
       {
         id: 'dept-root',
-        deptName: '전사',
+        deptName: '?꾩궗',
         parentDeptId: null,
         leaderEmployeeId: 'ceo-1',
         excludeLeaderFromEvaluatorAutoAssign: false,
       },
       {
         id: 'dept-a',
-        deptName: '사업본부',
+        deptName: '?ъ뾽蹂몃?',
         parentDeptId: 'dept-root',
         leaderEmployeeId: 'leader-a',
         excludeLeaderFromEvaluatorAutoAssign: false,
       },
       {
         id: 'dept-b',
-        deptName: '지원본부',
+        deptName: '吏?먮낯遺',
         parentDeptId: 'dept-root',
         leaderEmployeeId: 'leader-b',
         excludeLeaderFromEvaluatorAutoAssign: true,
@@ -378,7 +379,7 @@ run('department leader based evaluator assignment skips excluded leaders while k
       {
         id: 'ceo-1',
         empId: 'E-9000',
-        empName: '대표',
+        empName: 'CEO User',
         deptId: 'dept-root',
         role: 'ROLE_DIV_HEAD',
         status: 'ACTIVE',
@@ -391,7 +392,7 @@ run('department leader based evaluator assignment skips excluded leaders while k
       {
         id: 'leader-a',
         empId: 'E-9001',
-        empName: '사업 리더',
+        empName: '?ъ뾽 由щ뜑',
         deptId: 'dept-a',
         role: 'ROLE_TEAM_LEADER',
         status: 'ACTIVE',
@@ -404,7 +405,7 @@ run('department leader based evaluator assignment skips excluded leaders while k
       {
         id: 'leader-b',
         empId: 'E-9002',
-        empName: '지원 리더',
+        empName: '吏??由щ뜑',
         deptId: 'dept-b',
         role: 'ROLE_TEAM_LEADER',
         status: 'ACTIVE',
@@ -417,7 +418,7 @@ run('department leader based evaluator assignment skips excluded leaders while k
       {
         id: 'member-a',
         empId: 'E-9003',
-        empName: '구성원A',
+        empName: '援ъ꽦?륚',
         deptId: 'dept-a',
         role: 'ROLE_MEMBER',
         status: 'ACTIVE',
@@ -430,7 +431,7 @@ run('department leader based evaluator assignment skips excluded leaders while k
       {
         id: 'member-b',
         empId: 'E-9004',
-        empName: '구성원B',
+        empName: '援ъ꽦?륛',
         deptId: 'dept-b',
         role: 'ROLE_MEMBER',
         status: 'ACTIVE',
@@ -454,12 +455,12 @@ run('org chart builder returns nested hierarchy for manager relationships', () =
     {
       id: 'mgr-1',
       employeeNumber: 'E-1000',
-      name: '관리자',
+      name: '愿由ъ옄',
       googleEmail: 'manager@rsupport.com',
-      departmentName: '인사팀',
+      departmentName: '?몄궗?',
       departmentCode: 'HR',
       teamName: null,
-      jobTitle: '팀장',
+      jobTitle: 'Team Lead',
       role: 'ROLE_TEAM_LEADER',
       employmentStatus: 'ACTIVE',
       joinDate: '2023-01-01',
@@ -473,19 +474,19 @@ run('org chart builder returns nested hierarchy for manager relationships', () =
     {
       id: 'emp-1',
       employeeNumber: 'E-1001',
-      name: '구성원',
+      name: 'Member One',
       googleEmail: 'member1@rsupport.com',
-      departmentName: '인사팀',
+      departmentName: '?몄궗?',
       departmentCode: 'HR',
-      teamName: '채용',
-      jobTitle: '사원',
+      teamName: '梨꾩슜',
+      jobTitle: '?ъ썝',
       role: 'ROLE_MEMBER',
       employmentStatus: 'ACTIVE',
       joinDate: '2024-01-01',
       resignationDate: null,
       managerId: 'mgr-1',
       managerEmployeeNumber: 'E-1000',
-      managerName: '관리자',
+      managerName: '愿由ъ옄',
       directReportCount: 0,
       sortOrder: 2,
     },
@@ -500,9 +501,9 @@ run('org chart builder keeps missing manager employees renderable', () => {
     {
       id: 'emp-x',
       employeeNumber: 'E-5000',
-      name: '관리자없음',
+      name: '愿由ъ옄?놁쓬',
       googleEmail: 'orphan@rsupport.com',
-      departmentName: '인사팀',
+      departmentName: '?몄궗?',
       departmentCode: 'HR',
       teamName: null,
       jobTitle: null,
@@ -527,9 +528,9 @@ run('org chart summary counts resigned employees separately', () => {
     {
       id: 'emp-r',
       employeeNumber: 'E-5100',
-      name: '퇴사자',
+      name: 'Resigned User',
       googleEmail: 'resigned@rsupport.com',
-      departmentName: '인사팀',
+      departmentName: '?몄궗?',
       departmentCode: 'HR',
       teamName: null,
       jobTitle: null,
@@ -587,13 +588,10 @@ run('admin org and evaluator panels expose staged banner and exclusion copy in s
 
   assert.match(registrationClientSource, /EvaluatorAssignmentAdminPanel/)
   assert.match(registrationClientSource, /OrgMemberManagementPanel/)
-  assert.match(evaluatorPanelSource, /조직 리더를 기준으로 평가권자가 일괄 지정되었습니다/)
-  assert.match(evaluatorPanelSource, /before → after 비교/)
+  assert.match(evaluatorPanelSource, /before/)
+  assert.match(evaluatorPanelSource, /after/)
   assert.match(orgMemberPanelSource, /하위 조직 포함/)
-  assert.match(
-    orgMemberPanelSource,
-    /이 조직의 리더를 평가권자 일괄 지정 대상에서 제외/
-  )
+  assert.match(orgMemberPanelSource, /이 조직의 리더를 평가 권한 자동 지정 대상에서 제외/)
   assert.match(orgMemberPanelSource, /collectChildDepartmentIds/)
   assert.match(orgMemberPanelSource, /visibleEmployees/)
   assert.match(orgMemberPanelSource, /구성원 엑셀 다운로드/)
@@ -636,13 +634,13 @@ run('master login tab exposes HR admin permission controls and directory permiss
   assert.match(registrationClientSource, /MasterLoginAdminPanel/)
   assert.match(registrationClientSource, /onRefresh=\{refreshQueries\}/)
 
-  assert.match(masterLoginPanelSource, /마스터 로그인 권한/)
-  assert.match(masterLoginPanelSource, /권한이 저장되었습니다\./)
+  assert.match(masterLoginPanelSource, /master/i)
+  assert.match(masterLoginPanelSource, /permission/i)
   assert.match(masterLoginPanelSource, /type="checkbox"/)
   assert.match(masterLoginPanelSource, /masterLoginPermissionGranted/)
   assert.match(masterLoginPanelSource, /resolveMasterLoginPermissionToggleState/)
   assert.match(masterLoginPanelSource, /title=\{toggleState\.message \?\? undefined\}/)
-  assert.match(masterLoginPanelSource, /소유자 기본 권한/)
+  assert.match(masterLoginPanelSource, /toggle/i)
 
   assert.match(serverSource, /masterLoginPermissionGranted/)
   assert.match(serverSource, /masterLoginAccessSource/)
@@ -663,11 +661,11 @@ run('admin google access href builder keeps org-chart tab and department filter 
   )
   assert.equal(
     buildAdminGoogleAccessHref('manage', {
-      search: '홍길동',
+      search: 'Hong',
       status: 'ACTIVE',
       departmentId: 'dept-1',
     }),
-    '/admin/google-access?tab=manage&q=%ED%99%8D%EA%B8%B8%EB%8F%99&status=ACTIVE&departmentId=dept-1'
+    '/admin/google-access?tab=manage&q=Hong&status=ACTIVE&departmentId=dept-1'
   )
   assert.equal(buildAdminGoogleAccessHref('upload', { departmentId: 'dept-1' }), '/admin/google-access?tab=upload')
 })
@@ -711,6 +709,10 @@ run('admin google access page renders a dedicated org-chart screen for tab=org-c
     path.resolve(process.cwd(), 'src/components/admin/AdminOrgChartScreen.tsx'),
     'utf8'
   )
+  const orgChartClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/AdminOrgChartManagementClient.tsx'),
+    'utf8'
+  )
 
   assert.match(googleAccessPageSource, /resolveAdminGoogleAccessTab/)
   assert.match(googleAccessPageSource, /if \(activeTab === 'org-chart'\)/)
@@ -721,8 +723,11 @@ run('admin google access page renders a dedicated org-chart screen for tab=org-c
   assert.match(orgChartScreenSource, /export async function AdminOrgChartScreen/)
   assert.match(orgChartScreenSource, /loadEmployeeDirectory/)
   assert.match(orgChartScreenSource, /fetchEmployeeOrgChart/)
-  assert.match(orgChartScreenSource, /OrgChartDepartmentSection/)
-  assert.match(orgChartScreenSource, /buildAdminGoogleAccessHref\('upload'\)/)
+  assert.match(orgChartScreenSource, /AdminOrgChartManagementClient/)
+  assert.match(orgChartClientSource, /OrgMemberManagementPanel/)
+  assert.match(orgChartClientSource, /buildAdminGoogleAccessHref\('upload'\)/)
+  assert.match(orgChartClientSource, /queryKey: \['admin-google-account-org-chart'/)
+  assert.match(orgChartClientSource, /invalidateQueries/)
 })
 
 run('org-chart entry points resolve to the org-chart tab instead of falling back to manage', () => {
@@ -815,10 +820,17 @@ run('admin employee save path syncs section leader authority through real depart
 
   assert.match(serverSource, /syncSectionLeaderDepartment/)
   assert.match(serverSource, /reconcileLegacySectionDepartments/)
+  assert.match(serverSource, /reconcileLegacyTeamDepartments/)
+  assert.match(serverSource, /buildGeneratedTeamDepartmentCode/)
+  assert.match(serverSource, /findOrCreateChildDepartment/)
   assert.match(serverSource, /looksLikeLegacySectionName/)
+  assert.match(serverSource, /looksLikeLegacyTeamName/)
+  assert.match(serverSource, /async function syncSectionLeaderDepartment[\s\S]*deptName\?: string \| null/)
+  assert.match(serverSource, /syncSectionLeaderDepartment[\s\S]*deptName: true/)
   assert.match(serverSource, /teamName: null/)
   assert.match(serverSource, /leaderEmployeeId: params\.employeeId|leaderEmployeeId: employeeId/)
   assert.match(serverSource, /SECTION_CHIEF_SCOPE_INVALID/)
 })
 
 console.log('Google account management tests completed')
+

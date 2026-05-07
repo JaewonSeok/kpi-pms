@@ -2152,10 +2152,13 @@ export const DeleteGoogleAccountEmployeeSchema = z
 
 export const CreateAdminEmployeeSchema = AdminEmployeeRecordSchema
 
+export const AdminDepartmentTypeSchema = z.enum(ORG_KPI_SCOPE_VALUES)
+
 export const AdminDepartmentRecordSchema = z.object({
   departmentId: z.string().min(1).optional(),
   deptCode: z.string().trim().min(1).max(50),
   deptName: z.string().trim().min(1).max(100),
+  departmentType: AdminDepartmentTypeSchema,
   parentDeptId: EmptyStringToUndefined(z.string().min(1).max(191)).nullable().optional(),
   leaderEmployeeId: EmptyStringToUndefined(z.string().min(1).max(191)).nullable().optional(),
   excludeLeaderFromEvaluatorAutoAssign: z.boolean().default(false),

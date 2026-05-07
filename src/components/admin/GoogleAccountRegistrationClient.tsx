@@ -32,6 +32,7 @@ type DepartmentOption = {
   deptCode: string
   deptName: string
   parentDeptId: string | null
+  scope: 'division' | 'section' | 'team'
   leaderEmployeeId: string | null
   leaderEmployeeNumber: string | null
   leaderEmployeeName: string | null
@@ -751,6 +752,7 @@ export function GoogleAccountRegistrationClient() {
         teamDepartmentId ||
         departmentSelection.selectedSectionId ||
         departmentSelection.selectedDivisionId,
+      teamName: teamDepartmentId ? '' : current.teamName,
     }))
   }
 

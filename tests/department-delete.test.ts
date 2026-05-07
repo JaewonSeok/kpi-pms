@@ -108,6 +108,24 @@ async function main() {
     assert.equal(panelSource.includes('submitDepartment'), true)
     assert.equal(panelSource.includes('props.onOpenCreateEmployee'), true)
     assert.equal(panelSource.includes('props.onOpenUpload'), true)
+    assert.equal(panelSource.includes('departmentType'), true)
+    assert.equal(panelSource.includes('하위 조직 추가'), true)
+    assert.equal(panelSource.includes('DEPARTMENT_TYPE_LABELS'), true)
+  })
+
+  await run('department upsert path carries organization type and server-side hierarchy validation', () => {
+    const routeSource = read('src/app/api/admin/employees/google-account/departments/route.ts')
+    const serverSource = read('src/server/admin/google-account-management.ts')
+    const validationSource = read('src/lib/validations.ts')
+
+    assert.equal(validationSource.includes('AdminDepartmentTypeSchema'), true)
+    assert.equal(validationSource.includes('departmentType: AdminDepartmentTypeSchema'), true)
+    assert.equal(serverSource.includes('validateRequestedDepartmentType'), true)
+    assert.equal(serverSource.includes('DEPARTMENT_TYPE_PARENT_INVALID'), true)
+    assert.equal(serverSource.includes('DEPARTMENT_TYPE_CHILD_INVALID'), true)
+    assert.equal(serverSource.includes('DEPARTMENT_SECTION_NAME_INVALID'), true)
+    assert.equal(serverSource.includes('params.departmentType'), true)
+    assert.equal(routeSource.includes('AdminDepartmentRecordSchema'), true)
   })
 
   await run('department delete route uses validation, authz, delete service, and audit logging', () => {

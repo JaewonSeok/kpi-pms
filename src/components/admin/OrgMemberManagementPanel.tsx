@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+import type { OrgKpiScope } from '@/lib/org-kpi-scope'
 
 type EmployeeRole =
   | 'ROLE_MEMBER'
@@ -18,6 +19,7 @@ type DepartmentOption = {
   deptCode: string
   deptName: string
   parentDeptId: string | null
+  scope: OrgKpiScope
   leaderEmployeeId: string | null
   leaderEmployeeNumber: string | null
   leaderEmployeeName: string | null
@@ -82,6 +84,7 @@ type DepartmentFormState = {
   departmentId?: string
   deptCode: string
   deptName: string
+  departmentType: OrgKpiScope
   parentDeptId: string
   leaderEmployeeId: string
   excludeLeaderFromEvaluatorAutoAssign: boolean
@@ -107,9 +110,16 @@ const STATUS_LABELS: Record<EmployeeStatus, string> = {
   RESIGNED: '퇴사',
 }
 
+const DEPARTMENT_TYPE_LABELS: Record<OrgKpiScope, string> = {
+  division: '본부',
+  section: '실',
+  team: '팀',
+}
+
 const EMPTY_DEPARTMENT_FORM: DepartmentFormState = {
   deptCode: '',
   deptName: '',
+  departmentType: 'team',
   parentDeptId: '',
   leaderEmployeeId: '',
   excludeLeaderFromEvaluatorAutoAssign: false,
@@ -150,11 +160,19 @@ function collectChildDepartmentIds(node: DepartmentNode): string[] {
   return [node.id, ...node.children.flatMap(collectChildDepartmentIds)]
 }
 
+function compareEmployees(left: EmployeeListItem, right: EmployeeListItem) {
+  return (
+    left.name.localeCompare(right.name, 'ko') ||
+    left.employeeNumber.localeCompare(right.employeeNumber, 'ko')
+  )
+}
+
 function DepartmentTreeNode(props: {
   node: DepartmentNode
   selectedDepartmentId: string
   onSelect: (departmentId: string) => void
   onEdit: (departmentId: string) => void
+  onAddChild: (departmentId: string) => void
   level?: number
 }) {
   const level = props.level ?? 0
@@ -175,9 +193,14 @@ function DepartmentTreeNode(props: {
         >
           <div className="flex items-center justify-between gap-3">
             <span className="font-medium text-slate-900">{props.node.deptName}</span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-              {props.node.memberCount}명
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
+                {DEPARTMENT_TYPE_LABELS[props.node.scope]}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+                {props.node.memberCount}명
+              </span>
+            </div>
           </div>
           <div className="mt-1 text-xs text-slate-500">
             {props.node.deptCode}
@@ -186,10 +209,17 @@ function DepartmentTreeNode(props: {
         </button>
         <button
           type="button"
+          onClick={() => props.onAddChild(props.node.id)}
+          className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
+        >
+          하위 조직 추가
+        </button>
+        <button
+          type="button"
           onClick={() => props.onEdit(props.node.id)}
           className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
         >
-          설정
+          수정
         </button>
       </div>
 
@@ -202,6 +232,7 @@ function DepartmentTreeNode(props: {
               selectedDepartmentId={props.selectedDepartmentId}
               onSelect={props.onSelect}
               onEdit={props.onEdit}
+              onAddChild={props.onAddChild}
               level={level + 1}
             />
           ))}
@@ -256,9 +287,12 @@ export function OrgMemberManagementPanel(props: Props) {
 
   const visibleEmployees = useMemo(
     () =>
-      props.employees.filter((employee) =>
-        props.selectedDepartmentId ? visibleDepartmentIds.has(employee.departmentId) : true
-      ),
+      props.employees
+        .filter((employee) =>
+          props.selectedDepartmentId ? visibleDepartmentIds.has(employee.departmentId) : true
+        )
+        .slice()
+        .sort(compareEmployees),
     [props.employees, props.selectedDepartmentId, visibleDepartmentIds]
   )
 
@@ -268,18 +302,43 @@ export function OrgMemberManagementPanel(props: Props) {
   const editingDepartment = props.departments.find(
     (department) => department.id === departmentForm.departmentId
   )
-  const editingDepartmentChildCount = editingDepartment
-    ? props.departments.filter((department) => department.parentDeptId === editingDepartment.id).length
-    : 0
+  const editingDepartmentNode = editingDepartment
+    ? departmentNodeById.get(editingDepartment.id) ?? null
+    : null
+  const editingDepartmentChildCount = editingDepartmentNode?.children.length ?? 0
+  const editingDepartmentDescendantIds = editingDepartmentNode
+    ? new Set(collectChildDepartmentIds(editingDepartmentNode))
+    : new Set<string>()
   const departmentDeleteBlockers = editingDepartment
     ? [
         editingDepartmentChildCount > 0 ? `하위 조직 ${editingDepartmentChildCount}개` : null,
-        editingDepartment.memberCount > 0 ? `구성원 ${editingDepartment.memberCount}명` : null,
+        editingDepartment.memberCount > 0 ? `소속 직원 ${editingDepartment.memberCount}명` : null,
         editingDepartment.orgKpiCount > 0 ? `조직 KPI ${editingDepartment.orgKpiCount}건` : null,
       ].filter((value): value is string => Boolean(value))
     : []
   const departmentDeleteBlockedReason = departmentDeleteBlockers.length
     ? `${departmentDeleteBlockers.join(', ')}이 남아 있어 삭제할 수 없습니다.`
+    : null
+
+  const allowedParentOptions = useMemo(() => {
+    return props.departments.filter((department) => {
+      if (department.id === departmentForm.departmentId) return false
+      if (editingDepartmentDescendantIds.has(department.id)) return false
+
+      if (departmentForm.departmentType === 'division') {
+        return false
+      }
+
+      if (departmentForm.departmentType === 'section') {
+        return department.scope === 'division'
+      }
+
+      return department.scope === 'division' || department.scope === 'section'
+    })
+  }, [departmentForm.departmentId, departmentForm.departmentType, editingDepartmentDescendantIds, props.departments])
+
+  const selectedParentLabel = departmentForm.parentDeptId
+    ? props.departments.find((department) => department.id === departmentForm.parentDeptId)?.deptName ?? null
     : null
 
   function closeDepartmentModal() {
@@ -288,11 +347,45 @@ export function OrgMemberManagementPanel(props: Props) {
     setDepartmentForm(EMPTY_DEPARTMENT_FORM)
   }
 
-  function openCreateDepartment() {
+  function syncParentForType(nextType: OrgKpiScope, currentParentId: string) {
+    if (!currentParentId) {
+      return nextType === 'division' ? '' : currentParentId
+    }
+
+    const currentParent = props.departments.find((department) => department.id === currentParentId)
+    if (!currentParent) {
+      return ''
+    }
+
+    if (nextType === 'division') {
+      return ''
+    }
+
+    if (nextType === 'section') {
+      return currentParent.scope === 'division' ? currentParentId : ''
+    }
+
+    return currentParent.scope === 'division' || currentParent.scope === 'section'
+      ? currentParentId
+      : ''
+  }
+
+  function openCreateDepartment(parentDepartmentId?: string) {
+    const parentDepartment = parentDepartmentId
+      ? props.departments.find((department) => department.id === parentDepartmentId) ?? null
+      : null
+    const inferredType: OrgKpiScope =
+      parentDepartment?.scope === 'section'
+        ? 'team'
+        : parentDepartment?.scope === 'division'
+          ? 'team'
+          : 'division'
+
     setDepartmentDeleteConfirmOpen(false)
     setDepartmentForm({
       ...EMPTY_DEPARTMENT_FORM,
-      parentDeptId: props.selectedDepartmentId || '',
+      departmentType: inferredType,
+      parentDeptId: inferredType === 'division' ? '' : parentDepartment?.id ?? '',
     })
     setDepartmentModalOpen(true)
   }
@@ -306,6 +399,7 @@ export function OrgMemberManagementPanel(props: Props) {
       departmentId: department.id,
       deptCode: department.deptCode,
       deptName: department.deptName,
+      departmentType: department.scope,
       parentDeptId: department.parentDeptId ?? '',
       leaderEmployeeId: department.leaderEmployeeId ?? '',
       excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
@@ -325,6 +419,7 @@ export function OrgMemberManagementPanel(props: Props) {
           departmentId: departmentForm.departmentId,
           deptCode: departmentForm.deptCode,
           deptName: departmentForm.deptName,
+          departmentType: departmentForm.departmentType,
           parentDeptId: departmentForm.parentDeptId || null,
           leaderEmployeeId: departmentForm.leaderEmployeeId || null,
           excludeLeaderFromEvaluatorAutoAssign:
@@ -337,7 +432,7 @@ export function OrgMemberManagementPanel(props: Props) {
       await props.onRefresh()
       props.onFeedback({
         type: 'success',
-        message: `조직 정보를 저장했습니다. 평가권자 연결 ${data.hierarchyUpdatedCount}건을 다시 계산했습니다.`,
+        message: `조직 정보를 저장했습니다. 평가 권한 연결 ${data.hierarchyUpdatedCount}건을 다시 계산했습니다.`,
       })
     } catch (error) {
       props.onFeedback({
@@ -403,7 +498,7 @@ export function OrgMemberManagementPanel(props: Props) {
       await props.onRefresh()
       props.onFeedback({
         type: 'success',
-        message: `${data.deletedDepartment.deptName} 조직을 삭제했습니다. 평가권자 연결 ${data.hierarchyUpdatedCount}건을 다시 계산했습니다.`,
+        message: `${data.deletedDepartment.deptName} 조직을 삭제했습니다. 평가 권한 연결 ${data.hierarchyUpdatedCount}건을 다시 계산했습니다.`,
       })
     } catch (error) {
       props.onFeedback({
@@ -440,17 +535,18 @@ export function OrgMemberManagementPanel(props: Props) {
           <div>
             <h2 className="text-lg font-semibold text-slate-900">조직 · 구성원 관리</h2>
             <p className="mt-1 text-sm text-slate-500">
-              좌측 조직 트리와 우측 구성원 목록을 함께 보면서 조직 리더와 구성원을 운영할 수
-              있습니다.
+              조직 트리를 직접 관리하고, 같은 화면에서 소속 직원과 조직 리더를 함께 정리할 수 있습니다.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => (selectedDepartment ? openEditDepartment(selectedDepartment.id) : openCreateDepartment())}
+              onClick={() =>
+                selectedDepartment ? openEditDepartment(selectedDepartment.id) : openCreateDepartment()
+              }
               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
             >
-              {selectedDepartment ? '선택 조직 설정' : '조직 추가'}
+              {selectedDepartment ? '선택 조직 수정' : '조직 추가'}
             </button>
             <button
               type="button"
@@ -464,7 +560,7 @@ export function OrgMemberManagementPanel(props: Props) {
               onClick={props.onOpenUpload}
               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
             >
-              엑셀 일괄 수정
+              일괄 업로드
             </button>
             <button
               type="button"
@@ -479,10 +575,10 @@ export function OrgMemberManagementPanel(props: Props) {
         <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-medium text-slate-900">조직</h3>
+              <h3 className="font-medium text-slate-900">조직 트리</h3>
               <button
                 type="button"
-                onClick={openCreateDepartment}
+                onClick={() => openCreateDepartment()}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
               >
                 조직 추가
@@ -496,6 +592,7 @@ export function OrgMemberManagementPanel(props: Props) {
                   selectedDepartmentId={props.selectedDepartmentId}
                   onSelect={props.onSelectDepartment}
                   onEdit={openEditDepartment}
+                  onAddChild={openCreateDepartment}
                 />
               ))}
             </ul>
@@ -587,10 +684,10 @@ export function OrgMemberManagementPanel(props: Props) {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">
-                  {departmentForm.departmentId ? '조직 정보 수정' : '조직 추가'}
+                  {departmentForm.departmentId ? '조직 수정' : '조직 추가'}
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  조직 리더와 평가권자 자동 지정 제외 옵션을 함께 관리할 수 있습니다.
+                  조직명, 코드, 조직 유형, 상위 조직, 리더를 함께 관리합니다.
                 </p>
               </div>
               <button
@@ -614,7 +711,7 @@ export function OrgMemberManagementPanel(props: Props) {
                 />
               </label>
               <label className="space-y-2 text-sm text-slate-700">
-                <span>조직 이름</span>
+                <span>조직명</span>
                 <input
                   value={departmentForm.deptName}
                   onChange={(event) =>
@@ -624,25 +721,45 @@ export function OrgMemberManagementPanel(props: Props) {
                 />
               </label>
               <label className="space-y-2 text-sm text-slate-700">
+                <span>조직 유형</span>
+                <select
+                  value={departmentForm.departmentType}
+                  onChange={(event) => {
+                    const nextType = event.target.value as OrgKpiScope
+                    setDepartmentForm((current) => ({
+                      ...current,
+                      departmentType: nextType,
+                      parentDeptId: syncParentForType(nextType, current.parentDeptId),
+                    }))
+                  }}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                >
+                  <option value="division">본부</option>
+                  <option value="section">실</option>
+                  <option value="team">팀</option>
+                </select>
+              </label>
+              <label className="space-y-2 text-sm text-slate-700">
                 <span>상위 조직</span>
                 <select
                   value={departmentForm.parentDeptId}
                   onChange={(event) =>
                     setDepartmentForm((current) => ({ ...current, parentDeptId: event.target.value }))
                   }
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2"
+                  disabled={departmentForm.departmentType === 'division'}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 disabled:bg-slate-100"
                 >
-                  <option value="">최상위 조직</option>
-                  {props.departments
-                    .filter((department) => department.id !== departmentForm.departmentId)
-                    .map((department) => (
-                      <option key={department.id} value={department.id}>
-                        {department.deptName} ({department.deptCode})
-                      </option>
-                    ))}
+                  <option value="">
+                    {departmentForm.departmentType === 'division' ? '최상위 조직' : '상위 조직 선택'}
+                  </option>
+                  {allowedParentOptions.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.deptName} ({department.deptCode}) · {DEPARTMENT_TYPE_LABELS[department.scope]}
+                    </option>
+                  ))}
                 </select>
               </label>
-              <label className="space-y-2 text-sm text-slate-700">
+              <label className="space-y-2 text-sm text-slate-700 md:col-span-2">
                 <span>조직 리더</span>
                 <select
                   value={departmentForm.leaderEmployeeId}
@@ -666,6 +783,17 @@ export function OrgMemberManagementPanel(props: Props) {
               </label>
             </div>
 
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div className="font-semibold text-slate-900">이동/저장 전 확인</div>
+              <ul className="mt-2 space-y-1 text-sm text-slate-600">
+                <li>조직 유형과 상위 조직 조합은 서버에서 다시 검증합니다.</li>
+                <li>본부는 최상위만 허용됩니다.</li>
+                <li>실은 본부 아래만 허용되며, 조직명은 "실"로 끝나야 합니다.</li>
+                <li>팀은 본부 또는 실 아래로만 이동할 수 있습니다.</li>
+                {selectedParentLabel ? <li>현재 선택한 상위 조직: {selectedParentLabel}</li> : null}
+              </ul>
+            </div>
+
             <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
               <input
                 type="checkbox"
@@ -679,19 +807,24 @@ export function OrgMemberManagementPanel(props: Props) {
                 className="mt-1"
               />
               <span>
-                이 조직의 리더를 평가권자 일괄 지정 대상에서 제외
+                이 조직의 리더를 평가 권한 자동 지정 대상에서 제외
                 <span className="mt-1 block text-xs text-slate-500">
-                  조직 리더 정보는 유지하되, 평가권자 자동 지정 preview와 저장에는 포함하지 않습니다.
+                  리더 연결은 유지하되, 평가자 자동 지정 미리보기에는 포함하지 않습니다.
                 </span>
               </span>
             </label>
 
             {departmentForm.departmentId ? (
               <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-                <div className="font-semibold">조직 삭제</div>
+                <div className="font-semibold">조직 삭제 안내</div>
                 <p className="mt-1">
-                  삭제 후에는 되돌릴 수 없습니다. 하위 조직, 구성원, 조직 KPI가 남아 있으면 삭제가 차단됩니다.
+                  삭제 전 의존성을 확인합니다. 하위 조직, 소속 직원, 조직 KPI가 남아 있으면 서버에서 차단됩니다.
                 </p>
+                <ul className="mt-2 space-y-1 text-xs text-red-600">
+                  <li>하위 조직 수: {editingDepartmentChildCount}</li>
+                  <li>소속 직원 수: {editingDepartment?.memberCount ?? 0}</li>
+                  <li>연결된 조직 KPI 수: {editingDepartment?.orgKpiCount ?? 0}</li>
+                </ul>
                 {departmentDeleteBlockedReason ? (
                   <p className="mt-2 text-xs text-red-600">{departmentDeleteBlockedReason}</p>
                 ) : null}
@@ -739,7 +872,7 @@ export function OrgMemberManagementPanel(props: Props) {
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
             <h3 className="text-lg font-semibold text-slate-900">조직 삭제</h3>
             <p className="mt-2 text-sm text-slate-600">
-              삭제 후에는 되돌릴 수 없습니다. 삭제할 조직과 연결 상태를 다시 확인한 뒤 진행해 주세요.
+              삭제 전에 하위 조직, 직원, KPI 연결 여부를 다시 확인해 주세요. 이 작업은 되돌릴 수 없습니다.
             </p>
 
             <div className="mt-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-4">
@@ -747,9 +880,11 @@ export function OrgMemberManagementPanel(props: Props) {
               <div data-testid="department-delete-name" className="mt-2 text-base font-semibold text-red-900">
                 {editingDepartment.deptName} ({editingDepartment.deptCode})
               </div>
-              <p className="mt-2 text-sm text-red-700">
-                하위 조직이나 구성원이 남아 있으면 삭제가 차단되며, 이 작업은 되돌릴 수 없습니다.
-              </p>
+              <ul className="mt-3 space-y-1 text-sm text-red-700">
+                <li>하위 조직 수: {editingDepartmentChildCount}</li>
+                <li>소속 직원 수: {editingDepartment.memberCount}</li>
+                <li>연결된 조직 KPI 수: {editingDepartment.orgKpiCount}</li>
+              </ul>
             </div>
 
             <div className="mt-6 flex justify-end gap-2">

@@ -8,6 +8,7 @@ import {
 } from '../../lib/google-workspace'
 import {
   buildOrgKpiDepartmentScopeMap,
+  type OrgKpiScope,
   resolveOrgKpiScopeFromDepartmentId,
 } from '../../lib/org-kpi-scope'
 import { resolveMasterLoginAccess } from '../../lib/master-login-shared'
@@ -220,6 +221,7 @@ export type DepartmentDirectoryItem = {
   deptCode: string
   deptName: string
   parentDeptId: string | null
+  scope: OrgKpiScope
   leaderEmployeeId: string | null
   leaderEmployeeNumber: string | null
   leaderEmployeeName: string | null
@@ -928,6 +930,16 @@ function looksLikeLegacySectionName(value?: string | null) {
   return typeof value === 'string' && value.trim().endsWith('실')
 }
 
+function normalizeLegacyTeamName(value?: string | null) {
+  const normalized = value?.trim() ?? ''
+  return normalized.length > 0 ? normalized : null
+}
+
+function looksLikeLegacyTeamName(value?: string | null) {
+  const normalized = normalizeLegacyTeamName(value)
+  return Boolean(normalized && !looksLikeLegacySectionName(normalized))
+}
+
 function buildGeneratedSectionDepartmentCode(
   parentDepartmentCode: string,
   existingDepartmentCodes: Set<string>,
@@ -940,6 +952,84 @@ function buildGeneratedSectionDepartmentCode(
     }
     sequence += 1
   }
+}
+
+function buildGeneratedTeamDepartmentCode(
+  parentDepartmentCode: string,
+  existingDepartmentCodes: Set<string>,
+) {
+  let sequence = 1
+  while (true) {
+    const candidate = `${parentDepartmentCode}-TEAM-${sequence}`
+    if (!existingDepartmentCodes.has(candidate)) {
+      return candidate
+    }
+    sequence += 1
+  }
+}
+
+async function findOrCreateChildDepartment(params: {
+  parentDepartment: {
+    id: string
+    orgId: string
+    deptCode: string
+  }
+  childDepartmentName: string
+  existingDepartmentCodes?: Set<string>
+  codeBuilder: (parentDepartmentCode: string, existingDepartmentCodes: Set<string>) => string
+}) {
+  const normalizedChildName = params.childDepartmentName.trim()
+  const existingChildDepartment = await prisma.department.findFirst({
+    where: {
+      parentDeptId: params.parentDepartment.id,
+      deptName: normalizedChildName,
+    },
+    select: {
+      id: true,
+      orgId: true,
+      deptCode: true,
+      deptName: true,
+      parentDeptId: true,
+      leaderEmployeeId: true,
+    },
+  })
+
+  if (existingChildDepartment) {
+    return existingChildDepartment
+  }
+
+  const existingDepartmentCodes =
+    params.existingDepartmentCodes ??
+    new Set(
+      (
+        await prisma.department.findMany({
+          select: {
+            deptCode: true,
+          },
+        })
+      ).map((department) => department.deptCode),
+    )
+
+  const createdDepartment = await prisma.department.create({
+    data: {
+      orgId: params.parentDepartment.orgId,
+      deptCode: params.codeBuilder(params.parentDepartment.deptCode, existingDepartmentCodes),
+      deptName: normalizedChildName,
+      parentDeptId: params.parentDepartment.id,
+    },
+    select: {
+      id: true,
+      orgId: true,
+      deptCode: true,
+      deptName: true,
+      parentDeptId: true,
+      leaderEmployeeId: true,
+    },
+  })
+
+  existingDepartmentCodes.add(createdDepartment.deptCode)
+
+  return createdDepartment
 }
 
 async function reconcileLegacySectionDepartments() {
@@ -1085,12 +1175,126 @@ async function reconcileLegacySectionDepartments() {
   }
 }
 
+async function reconcileLegacyTeamDepartments() {
+  const [departments, employees] = await Promise.all([
+    prisma.department.findMany({
+      select: {
+        id: true,
+        orgId: true,
+        deptCode: true,
+        deptName: true,
+        parentDeptId: true,
+        leaderEmployeeId: true,
+      },
+      orderBy: [{ deptName: 'asc' }],
+    }),
+    prisma.employee.findMany({
+      select: {
+        id: true,
+        deptId: true,
+        teamName: true,
+      },
+    }),
+  ])
+
+  const departmentById = new Map(departments.map((department) => [department.id, department] as const))
+  const scopeMap = buildOrgKpiDepartmentScopeMap(departments)
+  const existingDepartmentCodes = new Set(departments.map((department) => department.deptCode))
+
+  const candidateEmployees = employees.filter((employee) => {
+    if (!looksLikeLegacyTeamName(employee.teamName)) return false
+    const department = departmentById.get(employee.deptId)
+    if (!department) return false
+    const departmentScope = scopeMap.get(department.id) ?? 'team'
+    return departmentScope === 'division' || departmentScope === 'section'
+  })
+
+  if (candidateEmployees.length === 0) {
+    return { createdDepartmentCount: 0, migratedEmployeeCount: 0 }
+  }
+
+  const reconciliationTargets = new Map<
+    string,
+    {
+      parentDepartment: (typeof departments)[number]
+      teamName: string
+      employeeIds: string[]
+    }
+  >()
+
+  candidateEmployees.forEach((employee) => {
+    const parentDepartment = departmentById.get(employee.deptId)
+    const teamName = normalizeLegacyTeamName(employee.teamName)
+    if (!parentDepartment || !teamName) return
+
+    const key = `${parentDepartment.id}:${teamName}`
+    const existing = reconciliationTargets.get(key)
+    if (existing) {
+      existing.employeeIds.push(employee.id)
+      return
+    }
+
+    reconciliationTargets.set(key, {
+      parentDepartment,
+      teamName,
+      employeeIds: [employee.id],
+    })
+  })
+
+  let createdDepartmentCount = 0
+  let migratedEmployeeCount = 0
+
+  for (const target of reconciliationTargets.values()) {
+    const existingTeamDepartment = departments.find(
+      (department) =>
+        department.parentDeptId === target.parentDepartment.id && department.deptName === target.teamName,
+    )
+
+    const teamDepartment =
+      existingTeamDepartment ??
+      (await findOrCreateChildDepartment({
+        parentDepartment: target.parentDepartment,
+        childDepartmentName: target.teamName,
+        existingDepartmentCodes,
+        codeBuilder: buildGeneratedTeamDepartmentCode,
+      }))
+
+    if (!existingTeamDepartment) {
+      createdDepartmentCount += 1
+    }
+
+    const migrationResult = await prisma.employee.updateMany({
+      where: {
+        id: { in: target.employeeIds },
+        deptId: target.parentDepartment.id,
+        teamName: target.teamName,
+      },
+      data: {
+        deptId: teamDepartment.id,
+        teamName: null,
+      },
+    })
+
+    migratedEmployeeCount += migrationResult.count
+  }
+
+  if (createdDepartmentCount > 0 || migratedEmployeeCount > 0) {
+    await recalculateLeadershipLinks()
+  }
+
+  return {
+    createdDepartmentCount,
+    migratedEmployeeCount,
+  }
+}
+
 export async function loadEmployeeDirectory(params: {
   query?: string
   status?: string
   departmentId?: string
 }) {
   await reconcileLegacySectionDepartments()
+  await reconcileLegacyTeamDepartments()
 
   const [departments, employees, uploadHistory] = await Promise.all([
     prisma.department.findMany({
@@ -1136,6 +1340,7 @@ export async function loadEmployeeDirectory(params: {
   const employeeNameById = new Map(employees.map((employee) => [employee.id, employee.empName]))
   const directReportCountByManagerId = new Map<string, number>()
   const memberCountByDepartmentId = new Map<string, number>()
+  const departmentScopeMap = buildOrgKpiDepartmentScopeMap(departments)
 
   for (const employee of employees) {
     memberCountByDepartmentId.set(employee.deptId, (memberCountByDepartmentId.get(employee.deptId) ?? 0) + 1)
@@ -1210,6 +1415,7 @@ export async function loadEmployeeDirectory(params: {
       deptCode: department.deptCode,
       deptName: department.deptName,
       parentDeptId: department.parentDeptId,
+      scope: departmentScopeMap.get(department.id) ?? 'team',
       leaderEmployeeId: department.leaderEmployeeId,
       leaderEmployeeNumber: department.leaderEmployeeId
         ? employeeNumberById.get(department.leaderEmployeeId) ?? null
@@ -1304,6 +1510,7 @@ async function resolveDepartmentOrThrow(deptId: string) {
     where: { id: deptId },
     select: {
       id: true,
+      orgId: true,
       deptCode: true,
       deptName: true,
       parentDeptId: true,
@@ -1346,12 +1553,75 @@ async function resolveDepartmentLeaderOrThrow(leaderEmployeeId?: string | null) 
   return leader
 }
 
+function validateRequestedDepartmentType(params: {
+  departmentType: OrgKpiScope
+  deptName: string
+  parentDepartment: {
+    id: string
+    deptName?: string | null
+    parentDeptId: string | null
+  } | null
+  existingChildren: Array<{
+    id: string
+    deptName?: string | null
+    parentDeptId: string | null
+  }>
+  allDepartments: Array<{
+    id: string
+    deptName?: string | null
+    parentDeptId: string | null
+  }>
+}) {
+  const scopeMap = buildOrgKpiDepartmentScopeMap(params.allDepartments)
+  const parentScope = params.parentDepartment
+    ? scopeMap.get(params.parentDepartment.id) ?? 'team'
+    : null
+  const childScopes = params.existingChildren.map((department) => scopeMap.get(department.id) ?? 'team')
+
+  if (params.departmentType === 'division') {
+    if (params.parentDepartment) {
+      throw new AppError(400, 'DEPARTMENT_TYPE_PARENT_INVALID', '본부 조직은 최상위 조직으로만 생성하거나 이동할 수 있습니다.')
+    }
+
+    if (childScopes.some((scope) => scope === 'division')) {
+      throw new AppError(409, 'DEPARTMENT_TYPE_CHILD_INVALID', '본부 아래에는 본부를 둘 수 없습니다. 하위 조직 유형을 먼저 정리해 주세요.')
+    }
+
+    return
+  }
+
+  if (params.departmentType === 'section') {
+    if (!params.parentDepartment || parentScope !== 'division') {
+      throw new AppError(400, 'DEPARTMENT_TYPE_PARENT_INVALID', '실 조직은 본부 바로 아래에만 생성하거나 이동할 수 있습니다.')
+    }
+
+    if (!params.deptName.trim().endsWith('실')) {
+      throw new AppError(400, 'DEPARTMENT_SECTION_NAME_INVALID', '실 조직명은 "실"로 끝나야 합니다.')
+    }
+
+    if (childScopes.some((scope) => scope !== 'team')) {
+      throw new AppError(409, 'DEPARTMENT_TYPE_CHILD_INVALID', '실 아래에는 팀 조직만 둘 수 있습니다. 하위 조직을 먼저 정리해 주세요.')
+    }
+
+    return
+  }
+
+  if (!params.parentDepartment || (parentScope !== 'division' && parentScope !== 'section')) {
+    throw new AppError(400, 'DEPARTMENT_TYPE_PARENT_INVALID', '팀 조직은 본부 또는 실 바로 아래에만 생성하거나 이동할 수 있습니다.')
+  }
+
+  if (params.existingChildren.length > 0) {
+    throw new AppError(409, 'DEPARTMENT_TYPE_CHILD_INVALID', '팀 조직 아래에는 하위 조직을 둘 수 없습니다. 하위 조직을 먼저 이동하거나 삭제해 주세요.')
+  }
+}
+
 async function syncSectionLeaderDepartment(params: {
   employeeId: string
   deptId: string
   role: SystemRole
   departments?: Array<{
     id: string
+    deptName?: string | null
     parentDeptId: string | null
     leaderEmployeeId: string | null
   }>
@@ -1361,6 +1631,7 @@ async function syncSectionLeaderDepartment(params: {
     (await prisma.department.findMany({
       select: {
         id: true,
+        deptName: true,
         parentDeptId: true,
         leaderEmployeeId: true,
       },
@@ -1440,6 +1711,7 @@ export async function upsertDepartmentRecord(params: {
   departmentId?: string
   deptCode: string
   deptName: string
+  departmentType: OrgKpiScope
   parentDeptId?: string | null
   leaderEmployeeId?: string | null
   excludeLeaderFromEvaluatorAutoAssign?: boolean
@@ -1480,6 +1752,7 @@ export async function upsertDepartmentRecord(params: {
     | {
         id: string
         orgId: string
+        deptName: string
         parentDeptId: string | null
       }
     | null = null
@@ -1487,7 +1760,7 @@ export async function upsertDepartmentRecord(params: {
   if (parentDeptId) {
     parentDepartment = await prisma.department.findUnique({
       where: { id: parentDeptId },
-      select: { id: true, orgId: true, parentDeptId: true },
+      select: { id: true, orgId: true, deptName: true, parentDeptId: true },
     })
 
     if (!parentDepartment) {
@@ -1526,6 +1799,26 @@ export async function upsertDepartmentRecord(params: {
     throw new AppError(500, 'ORG_NOT_FOUND', '조직 기준 정보가 없어 조직을 저장할 수 없습니다.')
   }
 
+  const hierarchyDepartments = await prisma.department.findMany({
+    where: { orgId },
+    select: {
+      id: true,
+      deptName: true,
+      parentDeptId: true,
+    },
+  })
+  const existingChildren = params.departmentId
+    ? hierarchyDepartments.filter((department) => department.parentDeptId === params.departmentId)
+    : []
+
+  validateRequestedDepartmentType({
+    departmentType: params.departmentType,
+    deptName: normalizedName,
+    parentDepartment,
+    existingChildren,
+    allDepartments: hierarchyDepartments,
+  })
+
   const department = params.departmentId
     ? await prisma.department.update({
         where: { id: params.departmentId },
@@ -1556,6 +1849,7 @@ export async function upsertDepartmentRecord(params: {
       deptCode: department.deptCode,
       deptName: department.deptName,
       parentDeptId: department.parentDeptId,
+      scope: params.departmentType,
       leaderEmployeeId: leader?.id ?? null,
       leaderEmployeeNumber: leader?.empId ?? null,
       leaderEmployeeName: leader?.empName ?? null,
@@ -1693,10 +1987,33 @@ export async function upsertEmployeeRecord(params: {
   const leadershipDepartments = await prisma.department.findMany({
     select: {
       id: true,
+      deptName: true,
       parentDeptId: true,
       leaderEmployeeId: true,
+      orgId: true,
+      deptCode: true,
     },
   })
+  const departmentScope = resolveOrgKpiScopeFromDepartmentId(department.id, leadershipDepartments)
+  const normalizedTeamName = normalizeLegacyTeamName(params.teamName)
+  const canonicalDepartment =
+    normalizedTeamName &&
+    departmentScope === 'division' &&
+    looksLikeLegacySectionName(normalizedTeamName)
+      ? await findOrCreateChildDepartment({
+          parentDepartment: department,
+          childDepartmentName: normalizedTeamName,
+          codeBuilder: buildGeneratedSectionDepartmentCode,
+        })
+      : normalizedTeamName && (departmentScope === 'division' || departmentScope === 'section')
+        ? await findOrCreateChildDepartment({
+            parentDepartment: department,
+            childDepartmentName: normalizedTeamName,
+            codeBuilder: buildGeneratedTeamDepartmentCode,
+          })
+      : department
+  const canonicalTeamName =
+    canonicalDepartment.id === department.id ? normalizedTeamName : null
   const normalizedEmail = assertAllowedGoogleWorkspaceEmail(params.gwsEmail)
   const existingTarget = params.employeeId
     ? await prisma.employee.findUnique({
@@ -1751,7 +2068,7 @@ export async function upsertEmployeeRecord(params: {
   }
 
   if (params.role === 'ROLE_SECTION_CHIEF') {
-    const scope = resolveOrgKpiScopeFromDepartmentId(params.deptId, leadershipDepartments)
+    const scope = resolveOrgKpiScopeFromDepartmentId(canonicalDepartment.id, leadershipDepartments)
     if (scope !== 'section') {
       throw new AppError(400, 'SECTION_CHIEF_SCOPE_INVALID', '실장 권한은 실 조직에만 지정할 수 있습니다.')
     }
@@ -1764,8 +2081,8 @@ export async function upsertEmployeeRecord(params: {
           empId: params.employeeNumber,
           empName: params.name.trim(),
           gwsEmail: normalizedEmail,
-          deptId: department.id,
-          teamName: params.teamName?.trim() || null,
+          deptId: canonicalDepartment.id,
+          teamName: canonicalTeamName,
           jobTitle: params.jobTitle?.trim() || null,
           role: params.role,
           position: mapRoleToPosition(params.role),
@@ -1797,8 +2114,8 @@ export async function upsertEmployeeRecord(params: {
           empId: params.employeeNumber,
           empName: params.name.trim(),
           gwsEmail: normalizedEmail,
-          deptId: department.id,
-          teamName: params.teamName?.trim() || null,
+          deptId: canonicalDepartment.id,
+          teamName: canonicalTeamName,
           jobTitle: params.jobTitle?.trim() || null,
           role: params.role,
           position: mapRoleToPosition(params.role),
@@ -1826,7 +2143,7 @@ export async function upsertEmployeeRecord(params: {
 
   await syncSectionLeaderDepartment({
     employeeId: employee.id,
-    deptId: department.id,
+    deptId: canonicalDepartment.id,
     role: params.role,
     departments: leadershipDepartments,
   })
@@ -2918,8 +3235,11 @@ export async function applyEmployeeUpload(params: {
   const departmentsForScopeValidation = await prisma.department.findMany({
     select: {
       id: true,
+      deptName: true,
       parentDeptId: true,
       leaderEmployeeId: true,
+      orgId: true,
+      deptCode: true,
     },
   })
   const departmentScopeMap = buildOrgKpiDepartmentScopeMap(departmentsForScopeValidation)
@@ -2964,6 +3284,31 @@ export async function applyEmployeeUpload(params: {
       throw new AppError(500, 'DEPARTMENT_RESOLVE_FAILED', '부서 정보를 반영하는 중 오류가 발생했습니다.')
     }
 
+    const baseDepartment = departmentsForScopeValidation.find((department) => department.id === departmentId)
+    const normalizedTeamName = normalizeLegacyTeamName(row.team)
+    const baseDepartmentScope = departmentScopeMap.get(departmentId) ?? 'team'
+    const canonicalDepartment =
+      baseDepartment &&
+      normalizedTeamName &&
+      baseDepartmentScope === 'division' &&
+      looksLikeLegacySectionName(normalizedTeamName)
+        ? await findOrCreateChildDepartment({
+            parentDepartment: baseDepartment,
+            childDepartmentName: normalizedTeamName,
+            codeBuilder: buildGeneratedSectionDepartmentCode,
+          })
+        : baseDepartment &&
+            normalizedTeamName &&
+            (baseDepartmentScope === 'division' || baseDepartmentScope === 'section')
+          ? await findOrCreateChildDepartment({
+              parentDepartment: baseDepartment,
+              childDepartmentName: normalizedTeamName,
+              codeBuilder: buildGeneratedTeamDepartmentCode,
+            })
+        : baseDepartment
+    const targetDepartmentId = canonicalDepartment?.id ?? departmentId
+    const canonicalTeamName = targetDepartmentId === departmentId ? normalizedTeamName : null
+
     const existing = existingByEmployeeNumber.get(row.employeeNumber)
     if (existing) {
       await prisma.employee.update({
@@ -2971,8 +3316,8 @@ export async function applyEmployeeUpload(params: {
         data: {
           empName: row.name,
           gwsEmail: row.googleEmail,
-          deptId: departmentId,
-          teamName: row.team,
+          deptId: targetDepartmentId,
+          teamName: canonicalTeamName,
           jobTitle: row.title,
           role: row.role,
           position: mapRoleToPosition(row.role),
@@ -2996,8 +3341,8 @@ export async function applyEmployeeUpload(params: {
         empId: row.employeeNumber,
         empName: row.name,
         gwsEmail: row.googleEmail,
-        deptId: departmentId,
-        teamName: row.team,
+        deptId: targetDepartmentId,
+        teamName: canonicalTeamName,
         jobTitle: row.title,
         role: row.role,
         position: mapRoleToPosition(row.role),
