@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -12,6 +13,56 @@ import {
   resolveReadableOrgKpiDepartmentIds,
 } from '@/server/org-kpi-access'
 import { assertOrgKpiScopeMatchesDepartment } from '@/server/org-kpi-scope-validation'
+
+type CreateFailureStep =
+  | 'authenticate'
+  | 'load-departments'
+  | 'validate-payload'
+  | 'resolve-editable-scope'
+  | 'validate-scope'
+  | 'load-cycle'
+  | 'validate-weight'
+  | 'validate-parent-link'
+  | 'create-kpi'
+  | 'write-audit-log'
+
+function formatCreateFailureStep(step: CreateFailureStep) {
+  switch (step) {
+    case 'authenticate':
+      return '인증 확인'
+    case 'load-departments':
+      return '조직 정보 조회'
+    case 'validate-payload':
+      return '입력값 검증'
+    case 'resolve-editable-scope':
+      return '권한 범위 계산'
+    case 'validate-scope':
+      return '조직 범위 검증'
+    case 'load-cycle':
+      return '평가 주기 확인'
+    case 'validate-weight':
+      return '가중치 검증'
+    case 'validate-parent-link':
+      return '상위 KPI 연결 검증'
+    case 'create-kpi':
+      return '조직 KPI 저장'
+    case 'write-audit-log':
+      return '감사 로그 기록'
+    default:
+      return '요청 처리'
+  }
+}
+
+function buildValidationFieldErrors(issues: Array<{ path: PropertyKey[]; message: string }>) {
+  return Object.fromEntries(
+    issues
+      .map((issue) => {
+        const field = issue.path[0]
+        return typeof field === 'string' ? [field, issue.message] : null
+      })
+      .filter((entry): entry is [string, string] => Array.isArray(entry))
+  )
+}
 
 export async function GET(request: Request) {
   try {
@@ -37,7 +88,7 @@ export async function GET(request: Request) {
     })
 
     if (deptId && scopeDepartmentIds && !scopeDepartmentIds.includes(deptId)) {
-      throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 부서입니다.')
+      throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 조직입니다.')
     }
 
     const kpis = await prisma.orgKpi.findMany({
@@ -80,9 +131,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let failureStep: CreateFailureStep = 'authenticate'
+
   try {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
+
+    failureStep = 'load-departments'
     const departments = await prisma.department.findMany({
       select: {
         id: true,
@@ -99,17 +154,29 @@ export async function POST(request: Request) {
         departments,
       })
     ) {
-      throw new AppError(403, 'FORBIDDEN', '권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '현재 권한으로는 조직 KPI를 작성할 수 없습니다.')
     }
 
+    failureStep = 'validate-payload'
     const body = await request.json()
     const validated = CreateOrgKpiSchema.safeParse(body)
 
     if (!validated.success) {
-      throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0].message)
+      const fieldErrors = buildValidationFieldErrors(validated.error.issues)
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        validated.error.issues[0]?.message ?? '입력값을 확인해 주세요.',
+        {
+          step: failureStep,
+          ...(Object.keys(fieldErrors).length ? { fieldErrors } : {}),
+        }
+      )
     }
 
     const data = validated.data
+
+    failureStep = 'resolve-editable-scope'
     const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
       userId: session.user.id,
       role: session.user.role,
@@ -118,14 +185,16 @@ export async function POST(request: Request) {
       departments,
     })
     if (scopeDepartmentIds && !scopeDepartmentIds.includes(data.deptId)) {
-      throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 부서입니다.')
+      throw new AppError(403, 'FORBIDDEN', '권한 범위를 벗어난 조직입니다.')
     }
 
+    failureStep = 'validate-scope'
     await assertOrgKpiScopeMatchesDepartment({
       requestedScope: data.scope ?? null,
       deptId: data.deptId,
     })
 
+    failureStep = 'load-cycle'
     const targetDepartment = await prisma.department.findUnique({
       where: { id: data.deptId },
       select: { orgId: true },
@@ -146,10 +215,11 @@ export async function POST(request: Request) {
       throw new AppError(
         400,
         'GOAL_EDIT_LOCKED',
-        '현재 주기는 읽기 전용 모드입니다. 목표 생성/수정은 막혀 있으며 체크인과 코멘트만 허용됩니다.'
+        '현재 주기는 체크인 전용 모드입니다. 목표 생성/수정은 잠겨 있으며 체크인과 코멘트만 허용됩니다.'
       )
     }
 
+    failureStep = 'validate-weight'
     const related = await prisma.orgKpi.findMany({
       where: { deptId: data.deptId, evalYear: data.evalYear },
       select: { weight: true },
@@ -160,10 +230,11 @@ export async function POST(request: Request) {
       throw new AppError(
         400,
         'WEIGHT_EXCEEDED',
-        `가중치 합계가 100을 초과합니다. (현재: ${Math.round((totalWeight - data.weight) * 10) / 10}, 추가: ${data.weight})`
+        `가중치 합계가 100%를 초과합니다. (현재: ${Math.round((totalWeight - data.weight) * 10) / 10}, 추가: ${data.weight})`
       )
     }
 
+    failureStep = 'validate-parent-link'
     const parentOrgKpiId = await validateOrgParentLink({
       parentOrgKpiId: data.parentOrgKpiId ?? null,
       targetDeptId: data.deptId,
@@ -171,6 +242,7 @@ export async function POST(request: Request) {
       editableDepartmentIds: scopeDepartmentIds,
     })
 
+    failureStep = 'create-kpi'
     const kpi = await prisma.orgKpi.create({
       data: {
         deptId: data.deptId,
@@ -214,6 +286,7 @@ export async function POST(request: Request) {
       },
     })
 
+    failureStep = 'write-audit-log'
     const clientInfo = getClientInfo(request)
     await createAuditLog({
       userId: session.user.id,
@@ -240,6 +313,35 @@ export async function POST(request: Request) {
 
     return successResponse(kpi)
   } catch (error) {
+    if (error instanceof AppError) {
+      return errorResponse(error)
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      return errorResponse(
+        new AppError(
+          500,
+          'ORG_KPI_CREATE_DB_ERROR',
+          '조직 KPI를 저장하는 중 데이터베이스 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
+          {
+            step: failureStep,
+            prismaCode: error.code,
+          }
+        )
+      )
+    }
+
+    if (error instanceof Error) {
+      return errorResponse(
+        new AppError(
+          500,
+          'ORG_KPI_CREATE_FAILED',
+          `${formatCreateFailureStep(failureStep)} 단계에서 오류가 발생했습니다. ${error.message}`.trim(),
+          { step: failureStep }
+        )
+      )
+    }
+
     return errorResponse(error)
   }
 }

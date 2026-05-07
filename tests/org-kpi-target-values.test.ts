@@ -238,6 +238,8 @@ async function main() {
     const pageSource = read('src/server/org-kpi-page.ts')
 
     assert.equal(createRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
+    assert.equal(createRouteSource.includes('fieldErrors'), true)
+    assert.equal(createRouteSource.includes('ORG_KPI_CREATE_FAILED'), true)
     assert.equal(updateRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(updateRouteSource.includes('data.targetValueT !== undefined'), true)
     assert.equal(updateRouteSource.includes('data.targetValueE !== undefined &&'), false)
@@ -256,6 +258,15 @@ async function main() {
     assert.equal(bulkRouteSource.includes('targetValueT: row.targetValue'), true)
     assert.equal(bulkRouteSource.includes('targetValueE: row.targetValue'), true)
     assert.equal(bulkRouteSource.includes('targetValueS: row.targetValue'), true)
+  })
+
+  await run('org KPI modal preserves structured API validation errors inside the editor', () => {
+    const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
+
+    assert.equal(clientSource.includes('type ModalErrorState = {'), true)
+    assert.equal(clientSource.includes('error.fieldErrors = json.error?.fieldErrors'), true)
+    assert.equal(clientSource.includes('errorFieldErrors={editorError?.fieldErrors}'), true)
+    assert.equal(clientSource.includes('Object.entries(errorFieldErrors)'), true)
   })
 }
 

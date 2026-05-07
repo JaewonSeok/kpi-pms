@@ -13,6 +13,7 @@ export type ApiResponse<T> = {
     message: string
     step?: string
     prismaCode?: string
+    fieldErrors?: Record<string, string>
   }
   pagination?: { page: number; pageSize: number; total: number }
 }
@@ -25,6 +26,7 @@ export class AppError extends Error {
     public details?: {
       step?: string
       prismaCode?: string
+      fieldErrors?: Record<string, string>
     }
   ) {
     super(message)
@@ -53,6 +55,7 @@ export function errorResponse(
           message: error.message,
           ...(error.details?.step ? { step: error.details.step } : {}),
           ...(error.details?.prismaCode ? { prismaCode: error.details.prismaCode } : {}),
+          ...(error.details?.fieldErrors ? { fieldErrors: error.details.fieldErrors } : {}),
         },
       },
       { status: error.statusCode }

@@ -56,6 +56,12 @@ type Props = OrgKpiPageData & {
 
 type TabKey = 'map' | 'list' | 'linkage' | 'history'
 type Banner = { tone: 'success' | 'error' | 'info'; message: string }
+type ModalErrorState = {
+  message: string
+  fieldErrors?: Record<string, string>
+  step?: string
+  code?: string
+}
 type FormState = {
   deptId: string
   evalYear: string
@@ -392,9 +398,20 @@ async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
   const json = (await response.json()) as {
     success?: boolean
     data?: T
-    error?: { message?: string }
+    error?: {
+      code?: string
+      message?: string
+      step?: string
+      fieldErrors?: Record<string, string>
+    }
   }
-  if (!json.success) throw new Error(json.error?.message || '요청을 처리하지 못했습니다.')
+  if (!json.success) {
+    const error = new Error(json.error?.message || '요청을 처리하지 못했습니다.') as Error & ModalErrorState
+    error.code = json.error?.code
+    error.step = json.error?.step
+    error.fieldErrors = json.error?.fieldErrors
+    throw error
+  }
   return json.data as T
 }
 
@@ -458,7 +475,7 @@ export function OrgKpiManagementClient({
   const [editingKpiId, setEditingKpiId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
   const [editorBaselineForm, setEditorBaselineForm] = useState<FormState | null>(null)
-  const [editorError, setEditorError] = useState<string | null>(null)
+  const [editorError, setEditorError] = useState<ModalErrorState | null>(null)
   const selectedKpiDepartmentId =
     list.find((item) => item.id === (selectedKpiId || activeKpiId))?.departmentId ?? null
   const activeScopeDepartmentId =
@@ -758,7 +775,7 @@ export function OrgKpiManagementClient({
   async function saveKpi() {
     if (goalEditLocked) {
       const message = '현재는 목표 읽기 전용 모드라 조직 KPI를 저장할 수 없습니다.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
@@ -767,35 +784,35 @@ export function OrgKpiManagementClient({
 
     if (!form.deptId) {
       const message = `${getOrgKpiDepartmentFieldLabel(pageData.selectedScope)}을 선택해 주세요.`
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
 
     if (!form.kpiCategory.trim()) {
       const message = '카테고리를 입력해 주세요.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
 
     if (!form.kpiName.trim()) {
       const message = 'KPI명을 입력해 주세요.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
 
     if (!form.targetValueT.trim()) {
       const message = 'T 목표값을 입력해 주세요.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
 
     if (!form.weight.trim()) {
       const message = '가중치를 입력해 주세요.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
@@ -807,28 +824,28 @@ export function OrgKpiManagementClient({
 
     if (parsedTargetValueT === undefined) {
       const message = 'T 목표값은 숫자로 입력해 주세요.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
 
     if (form.targetValueE.trim() && parsedTargetValueE === undefined) {
       const message = 'E 목표값은 숫자로 입력해 주세요.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
 
     if (form.targetValueS.trim() && parsedTargetValueS === undefined) {
       const message = 'S 목표값은 숫자로 입력해 주세요.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
 
     if (parsedWeight === undefined) {
       const message = '가중치는 숫자로 입력해 주세요. 예: 10 또는 10%'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
@@ -843,7 +860,7 @@ export function OrgKpiManagementClient({
         parsedTargetValueT > parsedTargetValueS)
     ) {
       const message = '목표값은 T <= E <= S 순서여야 합니다.'
-      setEditorError(message)
+      setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
     }
@@ -870,7 +887,16 @@ export function OrgKpiManagementClient({
     const validatedDraft = (editingKpiId ? UpdateOrgKpiSchema : CreateOrgKpiSchema).safeParse(draftPayload)
     if (!validatedDraft.success) {
       const message = validatedDraft.error.issues[0]?.message || '입력값을 다시 확인해 주세요.'
-      setEditorError(message)
+      setEditorError({
+        message,
+        fieldErrors: validatedDraft.error.flatten().fieldErrors
+          ? Object.fromEntries(
+              Object.entries(validatedDraft.error.flatten().fieldErrors).flatMap(([field, messages]) =>
+                Array.isArray(messages) && messages[0] ? [[field, messages[0]]] : []
+              )
+            )
+          : undefined,
+      })
       setBanner({ tone: 'error', message })
       return
     }
@@ -915,7 +941,12 @@ export function OrgKpiManagementClient({
         error instanceof Error && error.message.trim().length
           ? error.message
           : `${scopeLabel} 저장 중 문제가 발생했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요.`
-      setEditorError(message)
+      setEditorError({
+        message,
+        ...(error instanceof Error && 'fieldErrors' in error && error.fieldErrors ? { fieldErrors: error.fieldErrors as Record<string, string> } : {}),
+        ...(error instanceof Error && 'step' in error && typeof error.step === 'string' ? { step: error.step } : {}),
+        ...(error instanceof Error && 'code' in error && typeof error.code === 'string' ? { code: error.code } : {}),
+      })
       setBanner({
         tone: 'error',
         message,
@@ -1591,7 +1622,8 @@ export function OrgKpiManagementClient({
             parentGoalOptions={pageData.parentGoalOptions}
             editingKpiId={editingKpiId}
             form={form}
-            errorMessage={editorError}
+            errorMessage={editorError?.message}
+            errorFieldErrors={editorError?.fieldErrors}
             onChange={setForm}
             onClose={closeEditorModal}
             onSubmit={() => void saveKpi()}
@@ -3093,6 +3125,7 @@ function EditorModal({
   departments,
   form,
   errorMessage,
+  errorFieldErrors,
   onChange,
   onClose,
   onSubmit,
@@ -3107,6 +3140,7 @@ function EditorModal({
   departments: OrgKpiPageData['departments']
   form: FormState
   errorMessage?: string | null
+  errorFieldErrors?: Record<string, string>
   onChange: (value: FormState) => void
   onClose: () => void
   onSubmit: () => void
@@ -3239,7 +3273,16 @@ function EditorModal({
             role="alert"
             className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"
           >
-            {errorMessage}
+            <p>{errorMessage}</p>
+            {errorFieldErrors && Object.keys(errorFieldErrors).length ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-rose-700">
+                {Object.entries(errorFieldErrors).map(([field, message]) => (
+                  <li key={`${field}-${message}`}>
+                    {message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
         ) : null}
 
