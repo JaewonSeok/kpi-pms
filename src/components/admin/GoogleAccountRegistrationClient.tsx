@@ -1247,10 +1247,11 @@ export function GoogleAccountRegistrationClient() {
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">일괄 업로드</h2>
             <div className="mt-3 space-y-2 text-sm text-slate-600">
-              <p>1. 템플릿을 내려받아 사번, 이름, Google 이메일, 부서 코드를 채워 주세요.</p>
+              <p>1. 템플릿을 내려받아 사번, 이름, Google 이메일과 조직명을 채워 주세요.</p>
               <p>2. 사번이 이미 있으면 해당 직원을 수정하고, 없으면 신규 등록합니다.</p>
-              <p>3. 오류가 있는 행은 제외하고 유효한 행만 반영할 수 있습니다.</p>
-              <p>4. ACTIVE 상태에서는 퇴사일을 입력할 수 없고, 관리자 사번은 기존/동일 파일 내 직원이어야 합니다.</p>
+              <p>3. 상위 조직명이 있으면 본부/실/팀 계층을 함께 반영합니다.</p>
+              <p>4. 오류가 있는 행은 제외하고 유효한 행만 반영할 수 있습니다.</p>
+              <p>5. ACTIVE 상태에서는 퇴사일을 입력할 수 없고, 관리자 사번은 기존/동일 파일 내 직원이어야 합니다.</p>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-3">

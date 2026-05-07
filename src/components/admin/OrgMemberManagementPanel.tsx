@@ -82,7 +82,6 @@ type Props = {
 
 type DepartmentFormState = {
   departmentId?: string
-  deptCode: string
   deptName: string
   departmentType: OrgKpiScope
   parentDeptId: string
@@ -117,7 +116,6 @@ const DEPARTMENT_TYPE_LABELS: Record<OrgKpiScope, string> = {
 }
 
 const EMPTY_DEPARTMENT_FORM: DepartmentFormState = {
-  deptCode: '',
   deptName: '',
   departmentType: 'team',
   parentDeptId: '',
@@ -409,7 +407,6 @@ export function OrgMemberManagementPanel(props: Props) {
     setDepartmentDeleteConfirmOpen(false)
     setDepartmentForm({
       departmentId: department.id,
-      deptCode: department.deptCode,
       deptName: department.deptName,
       departmentType: department.scope,
       parentDeptId: department.parentDeptId ?? '',
@@ -429,7 +426,6 @@ export function OrgMemberManagementPanel(props: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           departmentId: departmentForm.departmentId,
-          deptCode: departmentForm.deptCode,
           deptName: departmentForm.deptName,
           departmentType: departmentForm.departmentType,
           parentDeptId: departmentForm.parentDeptId || null,
@@ -699,7 +695,7 @@ export function OrgMemberManagementPanel(props: Props) {
                   {departmentForm.departmentId ? '조직 수정' : '조직 추가'}
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  조직명, 코드, 조직 유형, 상위 조직, 리더를 함께 관리합니다.
+                  조직명, 조직 유형, 상위 조직, 리더를 함께 관리합니다.
                 </p>
               </div>
               <button
@@ -712,16 +708,6 @@ export function OrgMemberManagementPanel(props: Props) {
             </div>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <label className="space-y-2 text-sm text-slate-700">
-                <span>조직 코드</span>
-                <input
-                  value={departmentForm.deptCode}
-                  onChange={(event) =>
-                    setDepartmentForm((current) => ({ ...current, deptCode: event.target.value }))
-                  }
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2"
-                />
-              </label>
               <label className="space-y-2 text-sm text-slate-700">
                 <span>조직명</span>
                 <input

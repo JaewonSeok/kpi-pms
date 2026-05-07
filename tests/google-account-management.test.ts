@@ -327,7 +327,6 @@ run('reactivation action is accepted by lifecycle schema', () => {
 
 run('department admin schema accepts leader assignment and exclusion toggle', () => {
   const parsed = AdminDepartmentRecordSchema.safeParse({
-    deptCode: 'BIZ-OPS',
     deptName: '鍮꾩쫰?덉뒪?댁쁺蹂몃?',
     departmentType: 'section',
     parentDeptId: 'dept-root',
@@ -336,6 +335,22 @@ run('department admin schema accepts leader assignment and exclusion toggle', ()
   })
 
   assert.equal(parsed.success, true)
+})
+
+run('upload validation accepts rows without manual department codes', () => {
+  const result = validateRows([
+    {
+      employeeNumber: 'E-2001',
+      name: '組織無코드',
+      googleEmail: 'nocode.member@rsupport.com',
+      department: '?몄궗?',
+      role: 'ROLE_MEMBER',
+      employmentStatus: 'ACTIVE',
+    },
+  ])
+
+  assert.equal(result.summary.validRows, 1)
+  assert.equal(result.rows[0]?.valid, true)
 })
 
 run('evaluator assignment action schema accepts preview and apply actions', () => {

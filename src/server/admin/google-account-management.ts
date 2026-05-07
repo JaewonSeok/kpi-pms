@@ -34,22 +34,16 @@ export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
     example: 'hong.gildong@company.example.com',
   },
   {
-    key: 'departmentCode',
-    required: true,
-    description: '부서 코드입니다. 없으면 새 부서를 생성하고, 있으면 해당 부서를 갱신합니다.',
-    example: 'HR-OPS',
-  },
-  {
     key: 'department',
     required: true,
     description: '부서명입니다.',
     example: '인사운영팀',
   },
   {
-    key: 'parentDepartmentCode',
+    key: 'parentDepartment',
     required: false,
-    description: '상위 조직 코드를 입력하면 본부/실/팀 계층을 함께 구성합니다.',
-    example: 'HR',
+    description: '상위 조직명입니다. 입력하면 본부/실/팀 계층을 함께 구성합니다.',
+    example: '경영지원본부',
   },
   {
     key: 'team',
@@ -139,9 +133,9 @@ export type EmployeeUploadNormalizedRow = {
   employeeNumber: string
   name: string
   googleEmail: string
-  departmentCode: string
   department: string
-  parentDepartmentCode: string | null
+  departmentCode: string | null
+  parentDepartment: string | null
   team: string | null
   title: string | null
   role: SystemRole
@@ -291,8 +285,8 @@ const LEGACY_HEADER_ALIASES: Partial<Record<EmployeeUploadTemplateKey, string[]>
   employeeNumber: ['employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
   name: ['name', 'employeeName', 'empName', '직원명', '이름'],
   googleEmail: ['googleEmail', 'google_email', 'gwsEmail', 'gws_email', '구글이메일', 'google'],
-  departmentCode: ['departmentCode', 'department_code', 'deptCode', 'dept_code', '부서코드'],
   department: ['department', 'departmentName', 'deptName', 'dept_name', '부서명', '부서'],
+  parentDepartment: ['parentDepartment', 'parent_department', 'parentDeptName', '상위조직명'],
   team: ['team', 'teamName', 'team_name', '팀', '팀명'],
   title: ['title', 'jobTitle', 'job_title', 'positionTitle', '직책', '직위'],
   role: ['role', 'systemRole', '권한', '직급'],
@@ -316,14 +310,15 @@ const HEADER_ALIASES: Record<EmployeeUploadTemplateKey, string[]> = {
   employeeNumber: ['employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
   name: ['name', 'employeeName', 'empName', '직원명', '이름'],
   googleEmail: ['googleEmail', 'google_email', 'gwsEmail', 'gws_email', '구글이메일', 'google'],
-  departmentCode: ['departmentCode', 'department_code', 'deptCode', 'dept_code', '부서코드'],
   department: ['department', 'departmentName', 'deptName', 'dept_name', '부서명', '부서'],
-  parentDepartmentCode: [
-    'parentDepartmentCode',
-    'parent_department_code',
-    'parentDeptCode',
-    'parent_dept_code',
-    '상위조직코드',
+  parentDepartment: [
+    'parentDepartment',
+    'parent_department',
+    'parentDeptName',
+    'parent_dept_name',
+    '상위조직명',
+    '상위조직',
+    '상위부서명',
   ],
   team: ['team', 'teamName', 'team_name', '팀', '팀명'],
   title: ['title', 'jobTitle', 'job_title', 'positionTitle', '직책', '직위'],
@@ -685,10 +680,21 @@ export function validateEmployeeUploadRows(params: {
     const employeeNumber = normalizeTextValue(getUploadValue(rawRow, 'employeeNumber'))
     const name = normalizeTextValue(getUploadValue(rawRow, 'name'))
     const googleEmailValue = normalizeTextValue(getUploadValue(rawRow, 'googleEmail'))
-    const departmentCode = normalizeTextValue(getUploadValue(rawRow, 'departmentCode'))
     const departmentName = normalizeTextValue(getUploadValue(rawRow, 'department'))
-    const parentDepartmentCode =
-      normalizeTextValue(getUploadValue(rawRow, 'parentDepartmentCode')).toUpperCase() || null
+    const legacyDepartmentCode = normalizeTextValue((rawRow as Record<string, unknown>).departmentCode ?? '')
+    const departmentCode =
+      legacyDepartmentCode ||
+      normalizeTextValue((rawRow as Record<string, unknown>).department_code ?? '') ||
+      normalizeTextValue((rawRow as Record<string, unknown>).deptCode ?? '') ||
+      normalizeTextValue((rawRow as Record<string, unknown>).dept_code ?? '') ||
+      null
+    const parentDepartment =
+      normalizeTextValue(getUploadValue(rawRow, 'parentDepartment')) ||
+      normalizeTextValue((rawRow as Record<string, unknown>).parentDepartmentCode ?? '') ||
+      normalizeTextValue((rawRow as Record<string, unknown>).parent_department_code ?? '') ||
+      normalizeTextValue((rawRow as Record<string, unknown>).parentDeptCode ?? '') ||
+      normalizeTextValue((rawRow as Record<string, unknown>).상위조직코드 ?? '') ||
+      null
     const team = normalizeTextValue(getUploadValue(rawRow, 'team')) || null
     const title = normalizeTextValue(getUploadValue(rawRow, 'title')) || null
     const managerEmployeeNumber =
@@ -714,7 +720,6 @@ export function validateEmployeeUploadRows(params: {
     if (!employeeNumber) addIssue(row, 'employeeNumber', '사번은 필수입니다.')
     if (!name) addIssue(row, 'name', '직원명은 필수입니다.')
     if (!googleEmailValue) addIssue(row, 'googleEmail', 'Google 이메일은 필수입니다.')
-    if (!departmentCode) addIssue(row, 'departmentCode', '부서 코드는 필수입니다.')
     if (!departmentName) addIssue(row, 'department', '부서명은 필수입니다.')
     if (!role) addIssue(row, 'role', '권한 값이 올바르지 않습니다.')
     if (!employmentStatus) addIssue(row, 'employmentStatus', '재직 상태 값이 올바르지 않습니다.')
@@ -769,7 +774,7 @@ export function validateEmployeeUploadRows(params: {
         googleEmail: normalizedEmail,
         departmentCode,
         department: departmentName,
-        parentDepartmentCode,
+        parentDepartment,
         team,
         title,
         role,
@@ -961,6 +966,17 @@ function buildGeneratedTeamDepartmentCode(
   let sequence = 1
   while (true) {
     const candidate = `${parentDepartmentCode}-TEAM-${sequence}`
+    if (!existingDepartmentCodes.has(candidate)) {
+      return candidate
+    }
+    sequence += 1
+  }
+}
+
+function buildGeneratedDivisionDepartmentCode(existingDepartmentCodes: Set<string>) {
+  let sequence = 1
+  while (true) {
+    const candidate = `DIV-${sequence}`
     if (!existingDepartmentCodes.has(candidate)) {
       return candidate
     }
@@ -1709,14 +1725,12 @@ export async function applyEvaluatorAssignments() {
 
 export async function upsertDepartmentRecord(params: {
   departmentId?: string
-  deptCode: string
   deptName: string
   departmentType: OrgKpiScope
   parentDeptId?: string | null
   leaderEmployeeId?: string | null
   excludeLeaderFromEvaluatorAutoAssign?: boolean
 }) {
-  const normalizedCode = params.deptCode.trim().toUpperCase()
   const normalizedName = params.deptName.trim()
   const parentDeptId = params.parentDeptId?.trim() || null
   const leader = await resolveDepartmentLeaderOrThrow(params.leaderEmployeeId)
@@ -1724,7 +1738,7 @@ export async function upsertDepartmentRecord(params: {
   const existingDepartment = params.departmentId
     ? await prisma.department.findUnique({
         where: { id: params.departmentId },
-        select: { id: true, orgId: true },
+        select: { id: true, orgId: true, deptCode: true },
       })
     : null
 
@@ -1736,22 +1750,11 @@ export async function upsertDepartmentRecord(params: {
     throw new AppError(400, 'DEPARTMENT_PARENT_SELF', '조직의 상위 조직을 자기 자신으로 지정할 수 없습니다.')
   }
 
-  const duplicateCode = await prisma.department.findFirst({
-    where: {
-      deptCode: normalizedCode,
-      NOT: params.departmentId ? { id: params.departmentId } : undefined,
-    },
-    select: { id: true },
-  })
-
-  if (duplicateCode) {
-    throw new AppError(409, 'DEPARTMENT_CODE_EXISTS', '이미 사용 중인 조직 코드입니다.')
-  }
-
   let parentDepartment:
     | {
         id: string
         orgId: string
+        deptCode: string
         deptName: string
         parentDeptId: string | null
       }
@@ -1760,7 +1763,7 @@ export async function upsertDepartmentRecord(params: {
   if (parentDeptId) {
     parentDepartment = await prisma.department.findUnique({
       where: { id: parentDeptId },
-      select: { id: true, orgId: true, deptName: true, parentDeptId: true },
+      select: { id: true, orgId: true, deptName: true, parentDeptId: true, deptCode: true },
     })
 
     if (!parentDepartment) {
@@ -1799,6 +1802,15 @@ export async function upsertDepartmentRecord(params: {
     throw new AppError(500, 'ORG_NOT_FOUND', '조직 기준 정보가 없어 조직을 저장할 수 없습니다.')
   }
 
+  const existingDepartmentCodes = new Set(
+    (
+      await prisma.department.findMany({
+        where: { orgId },
+        select: { deptCode: true },
+      })
+    ).map((department) => department.deptCode)
+  )
+
   const hierarchyDepartments = await prisma.department.findMany({
     where: { orgId },
     select: {
@@ -1818,6 +1830,20 @@ export async function upsertDepartmentRecord(params: {
     existingChildren,
     allDepartments: hierarchyDepartments,
   })
+
+  const normalizedCode = existingDepartment?.id
+    ? existingDepartment.deptCode
+    : params.departmentType === 'division'
+      ? buildGeneratedDivisionDepartmentCode(existingDepartmentCodes)
+      : parentDepartment
+        ? params.departmentType === 'section'
+          ? buildGeneratedSectionDepartmentCode(parentDepartment.deptCode, existingDepartmentCodes)
+          : buildGeneratedTeamDepartmentCode(parentDepartment.deptCode, existingDepartmentCodes)
+        : null
+
+  if (!normalizedCode) {
+    throw new AppError(400, 'DEPARTMENT_CODE_GENERATION_FAILED', '조직 코드를 자동 생성할 수 없습니다.')
+  }
 
   const department = params.departmentId
     ? await prisma.department.update({
@@ -3166,16 +3192,22 @@ export async function applyEmployeeUpload(params: {
   const departmentIdByCode = new Map(
     existingDepartments.map((department) => [department.deptCode.toUpperCase(), department.id] as const)
   )
+  const departmentIdByHierarchy = new Map(
+    existingDepartments.map((department) => [
+      `${department.parentDeptId ?? 'ROOT'}::${department.deptName.trim().toUpperCase()}`,
+      department.id,
+    ] as const)
+  )
 
   let createdDepartmentCount = 0
   const departmentRows = Array.from(
     new Map(
       params.rows.map((row) => [
-        row.departmentCode.toUpperCase(),
+        (row.departmentCode?.toUpperCase() ?? `${row.parentDepartment ?? 'ROOT'}::${row.department}`),
         {
           departmentCode: row.departmentCode,
           departmentName: row.department,
-          parentDepartmentCode: row.parentDepartmentCode?.toUpperCase() ?? null,
+          parentDepartment: row.parentDepartment?.trim() ?? null,
         },
       ]),
     ).values(),
@@ -3187,36 +3219,72 @@ export async function applyEmployeeUpload(params: {
 
     for (let index = pendingDepartmentRows.length - 1; index >= 0; index -= 1) {
       const department = pendingDepartmentRows[index]
-      const departmentCode = department.departmentCode.toUpperCase()
-      const parentDeptId = department.parentDepartmentCode
-        ? departmentIdByCode.get(department.parentDepartmentCode) ?? null
+      const parentDeptId = department.parentDepartment
+        ? Array.from(departmentIdByHierarchy.entries()).find(
+            ([key]) => key.endsWith(`::${department.parentDepartment!.trim().toUpperCase()}`)
+          )?.[1] ?? null
         : null
 
-      if (department.parentDepartmentCode && !parentDeptId) {
+      if (department.parentDepartment && !parentDeptId) {
         continue
       }
 
-      if (departmentIdByCode.has(departmentCode)) {
+      const existingDepartmentId =
+        (department.departmentCode ? departmentIdByCode.get(department.departmentCode.toUpperCase()) : null) ??
+        departmentIdByHierarchy.get(
+          `${parentDeptId ?? 'ROOT'}::${department.departmentName.trim().toUpperCase()}`
+        ) ??
+        null
+
+      if (existingDepartmentId) {
         await prisma.department.update({
-          where: { id: departmentIdByCode.get(departmentCode)! },
+          where: { id: existingDepartmentId },
           data: {
             deptName: department.departmentName,
             parentDeptId,
           },
         })
       } else {
+        const inferredScope: OrgKpiScope = !parentDeptId
+          ? 'division'
+          : looksLikeLegacySectionName(department.departmentName)
+            ? 'section'
+            : 'team'
+        const generatedCode =
+          inferredScope === 'division'
+            ? buildGeneratedDivisionDepartmentCode(new Set(departmentIdByCode.keys()))
+            : inferredScope === 'section'
+              ? buildGeneratedSectionDepartmentCode(
+                  existingDepartments.find((item) => item.id === parentDeptId)?.deptCode ?? 'DIV',
+                  new Set(departmentIdByCode.keys()),
+                )
+              : buildGeneratedTeamDepartmentCode(
+                  existingDepartments.find((item) => item.id === parentDeptId)?.deptCode ?? 'DIV',
+                  new Set(departmentIdByCode.keys()),
+                )
         const createdDepartment = await prisma.department.create({
           data: {
-            deptCode: department.departmentCode,
+            deptCode: department.departmentCode ?? generatedCode,
             deptName: department.departmentName,
             parentDeptId,
             orgId: organization.id,
           },
           select: {
             id: true,
+            deptCode: true,
           },
         })
-        departmentIdByCode.set(departmentCode, createdDepartment.id)
+        departmentIdByCode.set((department.departmentCode ?? createdDepartment.deptCode).toUpperCase(), createdDepartment.id)
+        departmentIdByHierarchy.set(
+          `${parentDeptId ?? 'ROOT'}::${department.departmentName.trim().toUpperCase()}`,
+          createdDepartment.id
+        )
+        existingDepartments.push({
+          id: createdDepartment.id,
+          deptCode: createdDepartment.deptCode,
+          deptName: department.departmentName,
+          parentDeptId,
+        })
         createdDepartmentCount += 1
       }
 
@@ -3227,7 +3295,7 @@ export async function applyEmployeeUpload(params: {
       throw new AppError(
         400,
         'DEPARTMENT_PARENT_RESOLVE_FAILED',
-        '상위 조직 코드가 없는 부서가 있어 업로드 계층을 구성할 수 없습니다.',
+        '상위 조직명을 찾을 수 없는 부서가 있어 업로드 계층을 구성할 수 없습니다.',
       )
     }
   }
@@ -3249,7 +3317,15 @@ export async function applyEmployeeUpload(params: {
       continue
     }
 
-    const departmentId = departmentIdByCode.get(row.departmentCode.toUpperCase())
+    const departmentId =
+      (row.departmentCode ? departmentIdByCode.get(row.departmentCode.toUpperCase()) : null) ??
+      departmentIdByHierarchy.get(
+        `${(row.parentDepartment
+          ? Array.from(departmentIdByHierarchy.entries()).find(([key]) =>
+              key.endsWith(`::${row.parentDepartment!.trim().toUpperCase()}`)
+            )?.[1] ?? 'ROOT'
+          : 'ROOT')}::${row.department.trim().toUpperCase()}`
+      )
     if (!departmentId) {
       continue
     }
@@ -3279,7 +3355,11 @@ export async function applyEmployeeUpload(params: {
   let updatedCount = 0
 
   for (const row of params.rows) {
-    const departmentId = departmentIdByCode.get(row.departmentCode.toUpperCase())
+    const departmentId =
+      (row.departmentCode ? departmentIdByCode.get(row.departmentCode.toUpperCase()) : null) ??
+      Array.from(departmentIdByHierarchy.entries()).find(
+        ([key]) => key.endsWith(`::${row.department.trim().toUpperCase()}`)
+      )?.[1]
     if (!departmentId) {
       throw new AppError(500, 'DEPARTMENT_RESOLVE_FAILED', '부서 정보를 반영하는 중 오류가 발생했습니다.')
     }
@@ -3418,7 +3498,11 @@ export async function applyEmployeeUpload(params: {
 
     for (const row of params.rows.filter((item) => item.role === 'ROLE_SECTION_CHIEF')) {
       const employeeId = employeeIdByEmployeeNumber.get(row.employeeNumber)
-      const departmentId = departmentIdByCode.get(row.departmentCode.toUpperCase())
+      const departmentId =
+        (row.departmentCode ? departmentIdByCode.get(row.departmentCode.toUpperCase()) : null) ??
+        Array.from(departmentIdByHierarchy.entries()).find(
+          ([key]) => key.endsWith(`::${row.department.trim().toUpperCase()}`)
+        )?.[1]
       if (!employeeId || !departmentId) {
         continue
       }

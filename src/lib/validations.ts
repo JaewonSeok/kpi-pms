@@ -2156,7 +2156,6 @@ export const AdminDepartmentTypeSchema = z.enum(ORG_KPI_SCOPE_VALUES)
 
 export const AdminDepartmentRecordSchema = z.object({
   departmentId: z.string().min(1).optional(),
-  deptCode: z.string().trim().min(1).max(50),
   deptName: z.string().trim().min(1).max(100),
   departmentType: AdminDepartmentTypeSchema,
   parentDeptId: EmptyStringToUndefined(z.string().min(1).max(191)).nullable().optional(),
@@ -2213,8 +2212,9 @@ export const AdminEmployeeUploadRowSchema = z.object({
   employeeNumber: z.string().trim().min(1).max(50),
   name: z.string().trim().min(1).max(100),
   googleEmail: z.string().email().max(255),
-  departmentCode: z.string().trim().min(1).max(50),
   department: z.string().trim().min(1).max(100),
+  departmentCode: EmptyStringToUndefined(z.string().trim().max(50)),
+  parentDepartment: EmptyStringToUndefined(z.string().trim().max(100)),
   team: EmptyStringToUndefined(z.string().max(100)),
   title: EmptyStringToUndefined(z.string().max(100)),
   role: AdminEmployeeRoleSchema,
