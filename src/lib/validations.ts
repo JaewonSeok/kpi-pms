@@ -96,6 +96,14 @@ const BUSINESS_PLAN_BODY_MAX = 100_000
 const JOB_DESCRIPTION_SUMMARY_MAX = 20_000
 const JOB_DESCRIPTION_BODY_MAX = 100_000
 const OrgKpiScopeSchema = z.enum(ORG_KPI_SCOPE_VALUES)
+const OrgKpiUnitSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : undefined
+  },
+  z.string().max(20, '단위는 20자 이하로 입력해 주세요.').optional()
+)
 
 const orgKpiLongTextSchema = (label: string) =>
   z
@@ -118,7 +126,7 @@ export const CreateOrgKpiSchema = z.object({
   definition: orgKpiLongTextSchema('KPI ?뺤쓽').optional(),
   formula: orgKpiLongTextSchema('KPI ?곗떇').optional(),
   ...OrgKpiTargetValueSchema,
-  unit: z.string().max(20).optional(),
+  unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
@@ -140,7 +148,7 @@ export const UpdateOrgKpiSchema = z.object({
   targetValueT: OrgKpiTargetValueSchema.targetValueT.optional(),
   targetValueE: OrgKpiTargetValueSchema.targetValueE.optional(),
   targetValueS: OrgKpiTargetValueSchema.targetValueS.optional(),
-  unit: z.string().max(20).optional(),
+  unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
@@ -192,7 +200,7 @@ export const CreatePersonalKpiSchema = z.object({
   targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.'),
   targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.').optional(),
   targetValueS: z.number().min(0, 'S 목표값은 0 이상이어야 합니다.').optional(),
-  unit: z.string().max(20).optional(),
+  unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   linkedOrgKpiId: z.string().optional(),
@@ -228,7 +236,7 @@ export const UpdatePersonalKpiSchema = z.object({
   targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.').nullable().optional(),
   targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.').nullable().optional(),
   targetValueS: z.number().min(0, 'S 목표값은 0 이상이어야 합니다.').nullable().optional(),
-  unit: z.string().max(20).optional(),
+  unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   linkedOrgKpiId: z.string().nullable().optional(),
@@ -1905,7 +1913,7 @@ export const TeamKpiAdoptDraftSchema = z
     definition: orgKpiLongTextSchema('팀 KPI 정의').optional(),
     formula: orgKpiLongTextSchema('팀 KPI 산식').optional(),
     ...OrgKpiTargetValueSchema,
-    unit: z.string().max(20).optional(),
+    unit: OrgKpiUnitSchema,
     weight: z.number().min(0).max(100),
     difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
     tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
@@ -1948,7 +1956,7 @@ export const BulkOrgKpiRowSchema = z.object({
   definition: orgKpiLongTextSchema('KPI 정의').optional(),
   formula: orgKpiLongTextSchema('KPI 산식').optional(),
   targetValue: z.number().nullable().optional(),
-  unit: z.string().max(20).optional(),
+  unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).default('MEDIUM'),
 })

@@ -45,6 +45,7 @@ import {
   resolveOrgKpiTargetValues,
 } from '@/lib/org-kpi-target-values'
 import { formatCountWithUnit, formatExplicitRatio } from '@/lib/metric-copy'
+import { CreateOrgKpiSchema } from '@/lib/validations'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 
@@ -450,6 +451,7 @@ export function OrgKpiManagementClient({
   const [editingKpiId, setEditingKpiId] = useState<string | null>(null)
   const [form, setForm] = useState<FormState>(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
   const [editorBaselineForm, setEditorBaselineForm] = useState<FormState | null>(null)
+  const [editorError, setEditorError] = useState<string | null>(null)
   const selectedKpiDepartmentId =
     list.find((item) => item.id === (selectedKpiId || activeKpiId))?.departmentId ?? null
   const activeScopeDepartmentId =
@@ -630,6 +632,7 @@ export function OrgKpiManagementClient({
     setEditingKpiId(null)
     setForm(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
     setEditorBaselineForm(null)
+    setEditorError(null)
     setCloneForm(buildCloneForm(pageData, pageData.list[0]))
     setBulkEditForm(buildOrgBulkEditForm(pageData, defaultDepartmentSelection))
     setExportForm(buildGoalExportForm(pageData, defaultDepartmentSelection))
@@ -663,6 +666,7 @@ export function OrgKpiManagementClient({
     setShowDeleteConfirm(false)
     setEditingKpiId(null)
     setEditorBaselineForm(null)
+    setEditorError(null)
     setBanner(null)
     setCloneForm(buildCloneForm(pageData))
     setBulkEditForm(buildOrgBulkEditForm(pageData, selectedDepartmentId))
@@ -746,9 +750,13 @@ export function OrgKpiManagementClient({
 
   async function saveKpi() {
     if (goalEditLocked) {
-      setBanner({ tone: 'error', message: '현재는 목표 읽기 전용 모드라 조직 KPI를 저장할 수 없습니다.' })
+      const message = '현재는 목표 읽기 전용 모드라 조직 KPI를 저장할 수 없습니다.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
       return
     }
+
+    setEditorError(null)
 
     if (
       !form.deptId ||
@@ -759,7 +767,9 @@ export function OrgKpiManagementClient({
       !form.targetValueE.trim() ||
       !form.targetValueS.trim()
     ) {
-      setBanner({ tone: 'error', message: '부서, 카테고리, KPI명, 가중치를 입력해 주세요.' })
+      const message = '부서, 카테고리, KPI명, 가중치를 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
       return
     }
 
@@ -772,12 +782,16 @@ export function OrgKpiManagementClient({
       parsedTargetValueE === undefined ||
       parsedTargetValueS === undefined
     ) {
-      setBanner({ tone: 'error', message: 'T / E / S 목표값은 숫자로 입력해 주세요.' })
+      const message = 'T / E / S 목표값은 숫자로 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
       return
     }
 
     if (parsedTargetValueT > parsedTargetValueE || parsedTargetValueE > parsedTargetValueS) {
-      setBanner({ tone: 'error', message: '목표값은 T <= E <= S 순서여야 합니다.' })
+      const message = '목표값은 T <= E <= S 순서여야 합니다.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
       return
     }
 
@@ -800,6 +814,14 @@ export function OrgKpiManagementClient({
       difficulty: form.difficulty,
     }
 
+    const validatedDraft = CreateOrgKpiSchema.safeParse(draftPayload)
+    if (!validatedDraft.success) {
+      const message = validatedDraft.error.issues[0]?.message || '입력값을 다시 확인해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
     setBusy(true)
     try {
       const saved = await fetchJson<{ id: string; deptId: string }>(
@@ -814,6 +836,7 @@ export function OrgKpiManagementClient({
         tone: 'success',
         message: editingKpiId ? `${scopeLabel}를 수정했습니다.` : `${scopeLabel}를 저장했습니다.`,
       })
+      setEditorError(null)
       setList((current) =>
         applySavedOrgKpiToList({
           currentItems: current,
@@ -835,9 +858,14 @@ export function OrgKpiManagementClient({
       )
       router.refresh()
     } catch (error) {
+      const message =
+        error instanceof Error && error.message.trim().length
+          ? error.message
+          : `${scopeLabel} 저장 중 문제가 발생했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요.`
+      setEditorError(message)
       setBanner({
         tone: 'error',
-        message: `${scopeLabel} 저장 중 문제가 발생했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요.`,
+        message,
       })
     } finally {
       setBusy(false)
@@ -983,6 +1011,7 @@ export function OrgKpiManagementClient({
     setEditingKpiId(options.editingId ?? null)
     setForm(nextForm)
     setEditorBaselineForm(nextForm)
+    setEditorError(null)
     setShowForm(true)
     if (options.bannerMessage) {
       setBanner({
@@ -1221,6 +1250,7 @@ export function OrgKpiManagementClient({
     setShowForm(false)
     setEditingKpiId(null)
     setEditorBaselineForm(null)
+    setEditorError(null)
     setForm(buildEmptyForm(pageData.selectedYear, activeScopeDepartmentId))
   }, [activeScopeDepartmentId, pageData.selectedYear])
 
@@ -1506,14 +1536,15 @@ export function OrgKpiManagementClient({
             hasSectionScope={hasSectionScope}
             departments={pageData.departments}
             parentGoalOptions={pageData.parentGoalOptions}
-          editingKpiId={editingKpiId}
-          form={form}
-          onChange={setForm}
-          onClose={closeEditorModal}
-          onSubmit={() => void saveKpi()}
-          busy={busy}
-          editing={Boolean(editingKpiId)}
-        />
+            editingKpiId={editingKpiId}
+            form={form}
+            errorMessage={editorError}
+            onChange={setForm}
+            onClose={closeEditorModal}
+            onSubmit={() => void saveKpi()}
+            busy={busy}
+            editing={Boolean(editingKpiId)}
+          />
       ) : null}
       {showBulkUpload ? <OrgKpiBulkUploadModal scope={pageData.selectedScope} scopeLabel={scopeLabel} departments={pageData.departments} selectedYear={pageData.selectedYear} defaultDepartmentId={selectedDepartmentId === 'ALL' ? pageData.selectedDepartmentId : selectedDepartmentId} onClose={() => setShowBulkUpload(false)} onUploaded={(message, tone = 'success') => { setBanner({ tone, message }); router.refresh() }} /> : null}
       {showClone ? (
@@ -3008,6 +3039,7 @@ function EditorModal({
   hasSectionScope,
   departments,
   form,
+  errorMessage,
   onChange,
   onClose,
   onSubmit,
@@ -3021,6 +3053,7 @@ function EditorModal({
   hasSectionScope: boolean
   departments: OrgKpiPageData['departments']
   form: FormState
+  errorMessage?: string | null
   onChange: (value: FormState) => void
   onClose: () => void
   onSubmit: () => void
@@ -3147,6 +3180,15 @@ function EditorModal({
             <input value={form.weight} onChange={(event) => onChange({ ...form, weight: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>
         </div>
+
+        {errorMessage ? (
+          <div
+            role="alert"
+            className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"
+          >
+            {errorMessage}
+          </div>
+        ) : null}
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <ActionButton label="취소" icon={<Archive className="h-4 w-4" />} onClick={onClose} disabled={false} />
