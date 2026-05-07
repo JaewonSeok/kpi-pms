@@ -17,6 +17,7 @@ export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
     if (!session) throw new AppError(401, 'UNAUTHORIZED', '로그인이 필요합니다.')
+
     const authDepartments = await prisma.department.findMany({
       select: {
         id: true,
@@ -77,10 +78,8 @@ export async function POST(request: Request) {
           })),
         },
         select: {
-          id: true,
           deptId: true,
           evalYear: true,
-          kpiName: true,
           weight: true,
         },
       }),
@@ -88,12 +87,10 @@ export async function POST(request: Request) {
 
     const departmentNameMap = new Map(targetDepartments.map((department) => [department.id, department.deptName]))
     const existingWeightMap = new Map<WeightKey, number>()
-    const existingNameSet = new Set<string>()
 
     existingKpis.forEach((kpi) => {
       const weightKey = `${kpi.deptId}:${kpi.evalYear}` as WeightKey
       existingWeightMap.set(weightKey, (existingWeightMap.get(weightKey) ?? 0) + kpi.weight)
-      existingNameSet.add(`${kpi.deptId}:${kpi.evalYear}:${kpi.kpiName.toLowerCase()}`)
     })
 
     const clientInfo = getClientInfo(request)
@@ -104,13 +101,7 @@ export async function POST(request: Request) {
       const rowNumber = index + 2
       const deptName = departmentNameMap.get(row.deptId)
       if (!deptName) {
-        errors.push({ row: rowNumber, kpiName: row.kpiName, message: '대상 부서를 찾을 수 없습니다.' })
-        continue
-      }
-
-      const duplicateKey = `${row.deptId}:${row.evalYear}:${row.kpiName.toLowerCase()}`
-      if (existingNameSet.has(duplicateKey)) {
-        errors.push({ row: rowNumber, kpiName: row.kpiName, message: '같은 부서/연도에 동일한 KPI명이 이미 있습니다.' })
+        errors.push({ row: rowNumber, kpiName: row.kpiName, message: '선택한 부서를 찾을 수 없습니다.' })
         continue
       }
 
@@ -120,7 +111,7 @@ export async function POST(request: Request) {
         errors.push({
           row: rowNumber,
           kpiName: row.kpiName,
-          message: `가중치 합이 100을 초과합니다. (${Math.round(nextWeight * 10) / 10})`,
+          message: `가중치 합이 100%를 초과합니다. (${Math.round(nextWeight * 10) / 10})`,
         })
         continue
       }
@@ -149,7 +140,6 @@ export async function POST(request: Request) {
       })
 
       createdIds.push(created.id)
-      existingNameSet.add(duplicateKey)
       existingWeightMap.set(weightKey, nextWeight)
 
       await createAuditLog({

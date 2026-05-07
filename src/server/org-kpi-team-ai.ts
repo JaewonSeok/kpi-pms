@@ -1684,9 +1684,6 @@ export async function applyTeamKpiRecommendationDecision(params: ApplyRecommenda
       },
     }
   } catch (error) {
-    if (extractPrismaCode(error) === 'P2002') {
-      throw new AppError(409, 'ORG_KPI_DUPLICATED', '같은 팀에 같은 이름의 KPI가 이미 존재합니다.')
-    }
     throw error
   }
 }

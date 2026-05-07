@@ -14,7 +14,7 @@ employee,legacy_hr,EMP_MASTER,dept_code,Employee,deptId,Lookup Department by dep
 employee,legacy_hr,EMP_MASTER,join_date,Employee,joinDate,Cast to ISO date,Required,
 employee,legacy_hr,EMP_MASTER,status,Employee,status,Map active/leave/resigned flags,Enum validation,ACTIVE/ON_LEAVE/RESIGNED
 employee,legacy_hr,EMP_MASTER,current_salary,Employee,currentSalary,Cast to number,>=0,Optional for early pilot but required before compensation rollout
-kpi_org,legacy_pms,ORG_KPI,kpi_name,OrgKpi,kpiName,Trim whitespace,Required and unique within dept/year,
+kpi_org,legacy_pms,ORG_KPI,kpi_name,OrgKpi,kpiName,Trim whitespace,Required,
 kpi_org,legacy_pms,ORG_KPI,kpi_category,OrgKpi,kpiCategory,Normalize controlled vocabulary,Required,
 kpi_org,legacy_pms,ORG_KPI,kpi_type,OrgKpi,kpiType,Map numeric/text code to enum,Enum validation,QUANTITATIVE/QUALITATIVE
 kpi_org,legacy_pms,ORG_KPI,target_value,OrgKpi,targetValue,Cast to float,Nullable,

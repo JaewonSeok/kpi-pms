@@ -236,12 +236,14 @@ async function main() {
     const createRouteSource = read('src/app/api/kpi/org/route.ts')
     const updateRouteSource = read('src/app/api/kpi/org/[id]/route.ts')
     const pageSource = read('src/server/org-kpi-page.ts')
+    const schemaSource = read('prisma/schema.prisma')
 
     assert.equal(createRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(createRouteSource.includes('fieldErrors'), true)
     assert.equal(createRouteSource.includes('ORG_KPI_CREATE_FAILED'), true)
-    assert.equal(createRouteSource.includes('ORG_KPI_NAME_DUPLICATED'), true)
-    assert.equal(createRouteSource.includes("error.code === 'P2002'"), true)
+    assert.equal(createRouteSource.includes('ORG_KPI_NAME_DUPLICATED'), false)
+    assert.equal(createRouteSource.includes('validate-duplicate'), false)
+    assert.equal(schemaSource.includes('@@unique([deptId, evalYear, kpiName])'), false)
     assert.equal(updateRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(updateRouteSource.includes('data.targetValueT !== undefined'), true)
     assert.equal(updateRouteSource.includes('data.targetValueE !== undefined &&'), false)
@@ -253,6 +255,7 @@ async function main() {
   await run('org KPI clone and bulk create paths keep legacy rows compatible by filling T / E / S bands', () => {
     const cloneSource = read('src/server/kpi-clone.ts')
     const bulkRouteSource = read('src/app/api/kpi/org/bulk/route.ts')
+    const teamAiSource = read('src/server/org-kpi-team-ai.ts')
 
     assert.equal(cloneSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(cloneSource.includes('resolveOrgKpiTargetValues'), true)
@@ -260,6 +263,9 @@ async function main() {
     assert.equal(bulkRouteSource.includes('targetValueT: row.targetValue'), true)
     assert.equal(bulkRouteSource.includes('targetValueE: row.targetValue'), true)
     assert.equal(bulkRouteSource.includes('targetValueS: row.targetValue'), true)
+    assert.equal(bulkRouteSource.includes('duplicateKey'), false)
+    assert.equal(bulkRouteSource.includes('동일한 KPI명'), false)
+    assert.equal(teamAiSource.includes('ORG_KPI_DUPLICATED'), false)
   })
 
   await run('org KPI modal preserves structured API validation errors inside the editor', () => {

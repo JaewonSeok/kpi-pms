@@ -1,4 +1,4 @@
-import {
+﻿import {
   PrismaClient,
   Position,
   SystemRole,
@@ -956,55 +956,62 @@ async function main() {
   console.log('✅ Final evaluations created for compensation simulation')
 
   // 6. 조직 KPI 생성
-  const orgKpi1 = await prisma.orgKpi.upsert({
-    where: { deptId_evalYear_kpiName: { deptId: devTeam.id, evalYear: 2026, kpiName: '소프트웨어 개발 완료율' } },
-    update: {},
-    create: {
-      deptId: devTeam.id,
-      evalYear: 2026,
-      kpiType: 'QUANTITATIVE',
-      kpiCategory: '부서고유지표',
-      kpiName: '소프트웨어 개발 완료율',
-      definition: '계획된 개발 과제 대비 실제 완료된 과제의 비율',
-      formula: '완료 과제수 / 계획 과제수 × 100',
-      targetValue: 95,
-      unit: '%',
-      weight: 50,
-      difficulty: 'MEDIUM',
-    },
+  const existingOrgKpis = await prisma.orgKpi.findMany({
+    where: { deptId: devTeam.id, evalYear: 2026 },
+    select: { id: true, kpiName: true },
   })
 
-  const orgKpi2 = await prisma.orgKpi.upsert({
-    where: { deptId_evalYear_kpiName: { deptId: devTeam.id, evalYear: 2026, kpiName: '코드 품질 점수' } },
-    update: {},
-    create: {
-      deptId: devTeam.id,
-      evalYear: 2026,
-      kpiType: 'QUANTITATIVE',
-      kpiCategory: '내부운영',
-      kpiName: '코드 품질 점수',
-      definition: '정적 분석 도구 기준 코드 품질 점수',
-      targetValue: 85,
-      unit: '점',
-      weight: 30,
-      difficulty: 'MEDIUM',
-    },
-  })
+  const orgKpiByName = new Map(existingOrgKpis.map((kpi) => [kpi.kpiName, kpi]))
 
-  const orgKpi3 = await prisma.orgKpi.upsert({
-    where: { deptId_evalYear_kpiName: { deptId: devTeam.id, evalYear: 2026, kpiName: '애자일 개발 문화 정착' } },
-    update: {},
-    create: {
-      deptId: devTeam.id,
-      evalYear: 2026,
-      kpiType: 'QUALITATIVE',
-      kpiCategory: '내부운영',
-      kpiName: '애자일 개발 문화 정착',
-      definition: '스프린트 리뷰, 회고, 스탠드업 미팅 등 애자일 프랙티스 정착',
-      weight: 20,
-      difficulty: 'MEDIUM',
-    },
-  })
+  const orgKpi1 =
+    orgKpiByName.get('소프트웨어 개발 완료율') ??
+    (await prisma.orgKpi.create({
+      data: {
+        deptId: devTeam.id,
+        evalYear: 2026,
+        kpiType: 'QUANTITATIVE',
+        kpiCategory: '부서고유지표',
+        kpiName: '소프트웨어 개발 완료율',
+        definition: '계획된 개발 과제 대비 실제 완료된 과제의 비율',
+        formula: '완료 과제수 / 계획 과제수 × 100',
+        targetValue: 95,
+        unit: '%',
+        weight: 50,
+        difficulty: 'MEDIUM',
+      },
+    }))
+
+  const orgKpi2 =
+    orgKpiByName.get('코드 품질 점수') ??
+    (await prisma.orgKpi.create({
+      data: {
+        deptId: devTeam.id,
+        evalYear: 2026,
+        kpiType: 'QUANTITATIVE',
+        kpiCategory: '내부운영',
+        kpiName: '코드 품질 점수',
+        definition: '정적 분석 도구 기준 코드 품질 점수',
+        targetValue: 85,
+        unit: '점',
+        weight: 30,
+        difficulty: 'MEDIUM',
+      },
+    }))
+
+  const orgKpi3 =
+    orgKpiByName.get('애자일 개발 문화 정착') ??
+    (await prisma.orgKpi.create({
+      data: {
+        deptId: devTeam.id,
+        evalYear: 2026,
+        kpiType: 'QUALITATIVE',
+        kpiCategory: '내부운영',
+        kpiName: '애자일 개발 문화 정착',
+        definition: '스프린트 리뷰, 회고, 스탠드업 미팅 등 애자일 프랙티스 정착',
+        weight: 20,
+        difficulty: 'MEDIUM',
+      },
+    }))
 
   console.log('✅ Org KPIs created')
 

@@ -226,7 +226,6 @@ model OrgKpi {
   teamKpiReviewItems TeamKpiReviewItem[]
   midReviewGoalReviews MidReviewGoalReview[]
 
-  @@unique([deptId, evalYear, kpiName])
   @@index([evalYear, parentOrgKpiId])
   @@map("org_kpis")
 }
