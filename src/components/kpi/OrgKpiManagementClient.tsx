@@ -482,7 +482,10 @@ export function OrgKpiManagementClient({
   const scopeHistoryTitle = `${scopeLabel} 이력`
   const searchTargetLabel = getOrgKpiSearchTargetLabel(pageData.selectedScope)
   const defaultDepartmentSelection =
-    pageData.selectedScope !== 'team' && pageData.departments.length > 1
+    ((pageData.selectedScope !== 'team') ||
+      (pageData.selectedScope === 'team' &&
+        pageData.scopeContext?.scope === 'section')) &&
+    pageData.departments.length > 1
       ? 'ALL'
       : pageData.selectedDepartmentId
   const defaultSelectedKpiId =
@@ -510,7 +513,7 @@ export function OrgKpiManagementClient({
     list.find((item) => item.id === (selectedKpiId || activeKpiId))?.departmentId ?? null
   const activeScopeDepartmentId =
     selectedDepartmentId === 'ALL'
-      ? selectedKpiDepartmentId ?? pageData.selectedDepartmentId
+      ? selectedKpiDepartmentId ?? pageData.scopeContext?.departmentId ?? pageData.selectedDepartmentId
       : selectedDepartmentId
   const [cloneForm, setCloneForm] = useState<OrgCloneForm>(buildCloneForm(pageData, pageData.list[0]))
   const [bulkEditForm, setBulkEditForm] = useState<OrgBulkEditForm>(
@@ -530,15 +533,16 @@ export function OrgKpiManagementClient({
   const viewContextKey = `${pageData.selectedScope}:${pageData.selectedYear}:${selectedDepartmentId}`
   const previousViewContextKey = useRef(viewContextKey)
   const buildOrgKpiHref = useCallback(
-    (overrides?: Partial<Record<'scope' | 'tab' | 'kpiId', string | null>>) => {
+    (overrides?: Partial<Record<'scope' | 'tab' | 'kpiId' | 'departmentId', string | null>>) => {
       const nextParams = new URLSearchParams()
       const entries: Array<[
-        'scope' | 'tab' | 'kpiId',
+        'scope' | 'tab' | 'kpiId' | 'departmentId',
         string | null | undefined,
       ]> = [
         ['scope', overrides?.scope ?? pageData.selectedScope],
         ['tab', overrides?.tab],
         ['kpiId', overrides?.kpiId],
+        ['departmentId', overrides?.departmentId],
       ]
 
       entries.forEach(([key, value]) => {
@@ -557,7 +561,7 @@ export function OrgKpiManagementClient({
   )
 
   const replaceOrgKpiUrl = useCallback(
-    (overrides?: Partial<Record<'scope' | 'tab' | 'kpiId', string | null>>) => {
+    (overrides?: Partial<Record<'scope' | 'tab' | 'kpiId' | 'departmentId', string | null>>) => {
       if (typeof window === 'undefined') return
       window.history.replaceState(null, '', buildOrgKpiHref(overrides))
     },
@@ -680,8 +684,9 @@ export function OrgKpiManagementClient({
     replaceOrgKpiUrl({
       tab,
       kpiId: selectedKpiId || null,
+      departmentId: activeScopeDepartmentId || pageData.scopeContext?.departmentId || null,
     })
-  }, [canRenderWorkspace, replaceOrgKpiUrl, selectedKpiId, tab])
+  }, [activeScopeDepartmentId, canRenderWorkspace, pageData.scopeContext?.departmentId, replaceOrgKpiUrl, selectedKpiId, tab])
 
   useEffect(() => {
     setActiveKpiId((current) => (current === selectedKpiId ? current : selectedKpiId))
@@ -1376,6 +1381,10 @@ export function OrgKpiManagementClient({
       buildOrgKpiHref({
         scope: nextScope,
         kpiId: null,
+        departmentId:
+          pageData.scopeContext?.departmentId ??
+          activeScopeDepartmentId ??
+          pageData.selectedDepartmentId,
       })
     )
   }

@@ -7,6 +7,7 @@ type OrgKpiPageProps = {
     scope?: string
     tab?: string
     kpiId?: string
+    departmentId?: string
   }>
 }
 
@@ -25,6 +26,7 @@ export default async function OrgKpiPage({ searchParams }: OrgKpiPageProps) {
     deptName: session.user.deptName,
     accessibleDepartmentIds: session.user.accessibleDepartmentIds,
     selectedScope: resolvedSearchParams.scope,
+    selectedDepartmentId: resolvedSearchParams.departmentId,
     selectedKpiId: resolvedSearchParams.kpiId,
     userName: session.user.name,
   })

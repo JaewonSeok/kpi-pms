@@ -7,6 +7,7 @@ import type {
 } from '@prisma/client'
 import {
   buildOrgKpiDepartmentScopeMap,
+  filterTeamDepartmentsForOrgKpiContext,
   filterDepartmentsByOrgKpiScope,
   normalizeOrgKpiScope,
   resolveOrgKpiScopeFromDepartmentId,
@@ -203,6 +204,11 @@ export type OrgKpiPageData = {
     name: string
     departmentName: string
   }
+  scopeContext?: {
+    departmentId: string
+    departmentName: string
+    scope: OrgKpiScope
+  } | null
   hasSectionScope: boolean
 }
 
@@ -724,11 +730,19 @@ export async function getOrgKpiPageData(params: {
       : departments
 
     const departmentScopeMap = buildOrgKpiDepartmentScopeMap(departments)
-    const accessibleDepartmentsByScope = {
+    const actorDepartmentScope = resolveOrgKpiScopeFromDepartmentId(params.deptId, departments)
+    const requestedContextDepartmentId =
+      params.selectedDepartmentId && departmentsById.has(params.selectedDepartmentId)
+        ? params.selectedDepartmentId
+        : null
+    const requestedContextScope = requestedContextDepartmentId
+      ? resolveOrgKpiScopeFromDepartmentId(requestedContextDepartmentId, departments)
+      : null
+    const accessibleDepartmentsByScope: Record<OrgKpiScope, DepartmentLite[]> = {
       division: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'division'),
       section: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'section'),
-      team: filterDepartmentsByOrgKpiScope(accessibleDepartments, 'team'),
-    } satisfies Record<OrgKpiScope, DepartmentLite[]>
+      team: [],
+    }
 
     const hasSectionScopeInLineage = accessibleDepartmentsByScope.section.length > 0
     const memberReadableDepartmentIds =
@@ -873,6 +887,25 @@ export async function getOrgKpiPageData(params: {
             : null
         })()
       : null
+    const requestedKpiContextDepartmentId = params.selectedKpiId
+      ? kpis.find((item) => item.id === params.selectedKpiId)?.deptId ?? null
+      : null
+    const requestedKpiContextScope = requestedKpiContextDepartmentId
+      ? resolveOrgKpiScopeFromDepartmentId(requestedKpiContextDepartmentId, departments)
+      : null
+    const scopeContextDepartmentId =
+      (requestedContextScope === 'section' ? requestedContextDepartmentId : null) ??
+      (requestedKpiContextScope === 'section' ? requestedKpiContextDepartmentId : null) ??
+      (actorDepartmentScope === 'section' ? params.deptId : null) ??
+      (requestedContextScope === 'division' ? requestedContextDepartmentId : null) ??
+      (requestedKpiContextScope === 'division' ? requestedKpiContextDepartmentId : null) ??
+      (actorDepartmentScope === 'division' ? params.deptId : null) ??
+      null
+    accessibleDepartmentsByScope.team = filterTeamDepartmentsForOrgKpiContext(
+      departments,
+      accessibleDepartments,
+      scopeContextDepartmentId,
+    )
     const availableScopes = ORG_KPI_SCOPE_ORDER.filter(
       (scope) =>
         accessibleDepartmentsByScope[scope].length > 0 ||
@@ -1210,6 +1243,13 @@ export async function getOrgKpiPageData(params: {
         name: params.userName,
         departmentName: params.deptName,
       },
+      scopeContext: scopeContextDepartmentId
+        ? {
+            departmentId: scopeContextDepartmentId,
+            departmentName: departmentsById.get(scopeContextDepartmentId)?.deptName ?? params.deptName,
+            scope: resolveOrgKpiScopeFromDepartmentId(scopeContextDepartmentId, departments),
+          }
+        : null,
       hasSectionScope,
     }
   } catch (error) {
@@ -1245,6 +1285,7 @@ export async function getOrgKpiPageData(params: {
         name: params.userName,
         departmentName: params.deptName,
       },
+      scopeContext: null,
       hasSectionScope: false,
     }
   }

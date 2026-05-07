@@ -119,3 +119,44 @@ export function filterDepartmentsByOrgKpiScope<TDepartment extends ScopeDepartme
   const scopeMap = buildOrgKpiDepartmentScopeMap(departments)
   return departments.filter((department) => (scopeMap.get(department.id) ?? 'team') === scope)
 }
+
+export function filterTeamDepartmentsForOrgKpiContext<TDepartment extends ScopeDepartmentLike>(
+  departments: TDepartment[],
+  accessibleDepartments: TDepartment[],
+  contextDepartmentId?: string | null,
+) {
+  const scopeMap = buildOrgKpiDepartmentScopeMap(departments)
+  const teamDepartments = filterDepartmentsByOrgKpiScope(accessibleDepartments, 'team')
+
+  if (!contextDepartmentId || (scopeMap.get(contextDepartmentId) ?? 'team') !== 'section') {
+    return teamDepartments
+  }
+
+  const childrenByParentId = new Map<string, string[]>()
+
+  departments.forEach((department) => {
+    const parentDepartmentId = getParentDepartmentId(department)
+    if (!parentDepartmentId) {
+      return
+    }
+
+    const current = childrenByParentId.get(parentDepartmentId) ?? []
+    current.push(department.id)
+    childrenByParentId.set(parentDepartmentId, current)
+  })
+
+  const descendantIds = new Set<string>()
+  const queue = [...(childrenByParentId.get(contextDepartmentId) ?? [])]
+
+  while (queue.length) {
+    const currentId = queue.shift()
+    if (!currentId || descendantIds.has(currentId)) {
+      continue
+    }
+
+    descendantIds.add(currentId)
+    queue.push(...(childrenByParentId.get(currentId) ?? []))
+  }
+
+  return teamDepartments.filter((department) => descendantIds.has(department.id))
+}
