@@ -22,6 +22,7 @@ type CreateFailureStep =
   | 'validate-scope'
   | 'load-cycle'
   | 'validate-weight'
+  | 'validate-duplicate'
   | 'validate-parent-link'
   | 'create-kpi'
   | 'write-audit-log'
@@ -42,6 +43,8 @@ function formatCreateFailureStep(step: CreateFailureStep) {
       return '평가 주기 확인'
     case 'validate-weight':
       return '가중치 검증'
+    case 'validate-duplicate':
+      return 'KPI명 중복 검증'
     case 'validate-parent-link':
       return '상위 KPI 연결 검증'
     case 'create-kpi':
@@ -61,6 +64,21 @@ function buildValidationFieldErrors(issues: Array<{ path: PropertyKey[]; message
         return typeof field === 'string' ? [field, issue.message] : null
       })
       .filter((entry): entry is [string, string] => Array.isArray(entry))
+  )
+}
+
+function buildDuplicateKpiNameError(step: CreateFailureStep, prismaCode?: string) {
+  return new AppError(
+    409,
+    'ORG_KPI_NAME_DUPLICATED',
+    '같은 조직과 평가 연도에 동일한 KPI명이 이미 등록되어 있습니다. KPI명을 다르게 입력해 주세요.',
+    {
+      step,
+      ...(prismaCode ? { prismaCode } : {}),
+      fieldErrors: {
+        kpiName: '같은 조직과 평가 연도에 동일한 KPI명이 이미 등록되어 있습니다.',
+      },
+    }
   )
 }
 
@@ -234,6 +252,19 @@ export async function POST(request: Request) {
       )
     }
 
+    failureStep = 'validate-duplicate'
+    const existingDuplicate = await prisma.orgKpi.findFirst({
+      where: {
+        deptId: data.deptId,
+        evalYear: data.evalYear,
+        kpiName: data.kpiName,
+      },
+      select: { id: true },
+    })
+    if (existingDuplicate) {
+      throw buildDuplicateKpiNameError(failureStep)
+    }
+
     failureStep = 'validate-parent-link'
     const parentOrgKpiId = await validateOrgParentLink({
       parentOrgKpiId: data.parentOrgKpiId ?? null,
@@ -318,6 +349,10 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        return errorResponse(buildDuplicateKpiNameError(failureStep, error.code))
+      }
+
       return errorResponse(
         new AppError(
           500,

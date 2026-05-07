@@ -240,6 +240,8 @@ async function main() {
     assert.equal(createRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(createRouteSource.includes('fieldErrors'), true)
     assert.equal(createRouteSource.includes('ORG_KPI_CREATE_FAILED'), true)
+    assert.equal(createRouteSource.includes('ORG_KPI_NAME_DUPLICATED'), true)
+    assert.equal(createRouteSource.includes("error.code === 'P2002'"), true)
     assert.equal(updateRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(updateRouteSource.includes('data.targetValueT !== undefined'), true)
     assert.equal(updateRouteSource.includes('data.targetValueE !== undefined &&'), false)
