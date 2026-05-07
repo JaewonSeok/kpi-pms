@@ -181,7 +181,7 @@ function DepartmentTreeNode(props: {
   return (
     <li className="space-y-2">
       <div
-        className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${
+        className={`flex flex-col gap-2 rounded-xl border px-3 py-3 sm:flex-row sm:items-start sm:gap-3 ${
           isSelected ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'
         }`}
         style={{ marginLeft: `${level * 12}px` }}
@@ -189,38 +189,43 @@ function DepartmentTreeNode(props: {
         <button
           type="button"
           onClick={() => props.onSelect(props.node.id)}
-          className="flex-1 text-left"
+          title={props.node.deptName}
+          className="min-w-0 flex-1 text-left"
         >
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-medium text-slate-900">{props.node.deptName}</span>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <span className="min-w-0 break-keep text-sm font-semibold leading-tight text-slate-900 sm:text-[15px]">
+              {props.node.deptName}
+            </span>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium leading-none text-blue-700">
                 {DEPARTMENT_TYPE_LABELS[props.node.scope]}
               </span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+              <span className="shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium leading-none text-slate-600">
                 {props.node.memberCount}명
               </span>
             </div>
           </div>
-          <div className="mt-1 text-xs text-slate-500">
+          <div className="mt-1 break-keep text-[11px] leading-snug text-slate-500 sm:text-xs">
             {props.node.deptCode}
             {props.node.leaderEmployeeName ? ` · 리더 ${props.node.leaderEmployeeName}` : ''}
           </div>
         </button>
-        <button
-          type="button"
-          onClick={() => props.onAddChild(props.node.id)}
-          className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
-        >
-          하위 조직 추가
-        </button>
-        <button
-          type="button"
-          onClick={() => props.onEdit(props.node.id)}
-          className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700"
-        >
-          수정
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <button
+            type="button"
+            onClick={() => props.onAddChild(props.node.id)}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium leading-none text-slate-700"
+          >
+            하위 조직 추가
+          </button>
+          <button
+            type="button"
+            onClick={() => props.onEdit(props.node.id)}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium leading-none text-slate-700"
+          >
+            수정
+          </button>
+        </div>
       </div>
 
       {props.node.children.length ? (
@@ -531,7 +536,7 @@ export function OrgMemberManagementPanel(props: Props) {
   return (
     <div className="space-y-6">
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">조직 · 구성원 관리</h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -544,28 +549,28 @@ export function OrgMemberManagementPanel(props: Props) {
               onClick={() =>
                 selectedDepartment ? openEditDepartment(selectedDepartment.id) : openCreateDepartment()
               }
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+              className="shrink-0 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium leading-none text-slate-700"
             >
               {selectedDepartment ? '선택 조직 수정' : '조직 추가'}
             </button>
             <button
               type="button"
               onClick={props.onOpenCreateEmployee}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+              className="shrink-0 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium leading-none text-slate-700"
             >
               구성원 추가
             </button>
             <button
               type="button"
               onClick={props.onOpenUpload}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700"
+              className="shrink-0 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium leading-none text-slate-700"
             >
               일괄 업로드
             </button>
             <button
               type="button"
               onClick={exportVisibleEmployees}
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+              className="shrink-0 whitespace-nowrap rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium leading-none text-white"
             >
               구성원 엑셀 다운로드
             </button>
@@ -574,15 +579,15 @@ export function OrgMemberManagementPanel(props: Props) {
 
         <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-medium text-slate-900">조직 트리</h3>
-              <button
-                type="button"
-                onClick={() => openCreateDepartment()}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
-              >
-                조직 추가
-              </button>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="font-medium text-slate-900">조직 트리</h3>
+                <button
+                  type="button"
+                  onClick={() => openCreateDepartment()}
+                  className="shrink-0 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium leading-none text-slate-700"
+                >
+                  조직 추가
+                </button>
             </div>
             <ul className="space-y-2">
               {departmentTree.map((node) => (
@@ -599,7 +604,7 @@ export function OrgMemberManagementPanel(props: Props) {
           </section>
 
           <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <h3 className="font-medium text-slate-900">
                   {selectedDepartment ? `${selectedDepartment.deptName} 구성원` : '전체 구성원'}
@@ -649,7 +654,7 @@ export function OrgMemberManagementPanel(props: Props) {
                       <td className="px-3 py-3">{ROLE_LABELS[employee.role]}</td>
                       <td className="px-3 py-3 text-slate-700">{employee.googleEmail}</td>
                       <td className="px-3 py-3">
-                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700">
+                        <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2.5 py-1 text-xs leading-none text-slate-700">
                           {STATUS_LABELS[employee.employmentStatus]}
                         </span>
                       </td>
@@ -657,7 +662,7 @@ export function OrgMemberManagementPanel(props: Props) {
                         <button
                           type="button"
                           onClick={() => props.onEditEmployee(employee.id)}
-                          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700"
+                          className="shrink-0 whitespace-nowrap rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium leading-none text-slate-700"
                         >
                           수정
                         </button>

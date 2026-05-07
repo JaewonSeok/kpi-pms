@@ -1272,17 +1272,17 @@ export function OrgKpiManagementClient({
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">Goal Alignment</span>
-              <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">{scopeLabel}</span>
+              <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold leading-none text-blue-700">Goal Alignment</span>
+              <span className="shrink-0 whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold leading-none text-white">{scopeLabel}</span>
               {isReadOnlyScopeView ? (
                 <span
                   data-testid="org-kpi-readonly-badge"
-                  className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700"
+                  className="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold leading-none text-emerald-700"
                 >
                   현재 범위 조회 전용
                 </span>
               ) : null}
-              <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', STATUS_CLASS[pageData.summary.confirmedRate === 100 ? 'CONFIRMED' : pageData.summary.confirmedCount > 0 ? 'SUBMITTED' : 'DRAFT'])}>
+              <span className={cls('shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold leading-none', STATUS_CLASS[pageData.summary.confirmedRate === 100 ? 'CONFIRMED' : pageData.summary.confirmedCount > 0 ? 'SUBMITTED' : 'DRAFT'])}>
                 {pageData.summary.confirmedRate === 100 ? '확정' : pageData.summary.confirmedCount > 0 ? '제출됨' : '초안'}
               </span>
             </div>
@@ -1297,20 +1297,21 @@ export function OrgKpiManagementClient({
                     key={scopeTab.key}
                     type="button"
                     onClick={() => handleScopeSwitch(scopeTab.key)}
+                    title={scopeTab.label}
                     className={cls(
-                      'rounded-2xl border px-4 py-4 text-left transition',
+                      'min-w-0 rounded-2xl border px-4 py-4 text-left transition',
                       scopeTab.key === pageData.selectedScope
                         ? 'border-slate-900 bg-slate-900 text-white'
                         : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
                     )}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-semibold">{scopeTab.label}</div>
-                      <div className={cls('rounded-full px-2.5 py-1 text-xs font-semibold', scopeTab.key === pageData.selectedScope ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-700')}>
+                      <div className="min-w-0 break-keep text-sm font-semibold leading-tight">{scopeTab.label}</div>
+                      <div className={cls('shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold leading-none', scopeTab.key === pageData.selectedScope ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-700')}>
                         {scopeTab.totalCount}개
                       </div>
                     </div>
-                    <p className={cls('mt-2 text-xs leading-5', scopeTab.key === pageData.selectedScope ? 'text-slate-200' : 'text-slate-500')}>
+                    <p className={cls('mt-2 break-keep text-xs leading-5', scopeTab.key === pageData.selectedScope ? 'text-slate-200' : 'text-slate-500')}>
                       {scopeTab.description}
                     </p>
                   </button>
@@ -1578,7 +1579,7 @@ function ActionButton(props: {
   title?: string
   testId?: string
 }) {
-  return <button type="button" onClick={props.onClick} disabled={props.disabled} title={props.title} data-testid={props.testId} className={cls('inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60', props.primary ? 'bg-slate-900 text-white hover:bg-slate-800' : props.destructive ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>{props.icon}{props.label}</button>
+  return <button type="button" onClick={props.onClick} disabled={props.disabled} title={props.title} data-testid={props.testId} className={cls('inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold leading-none transition disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap', props.primary ? 'bg-slate-900 text-white hover:bg-slate-800' : props.destructive ? 'border border-red-200 bg-red-50 text-red-700 hover:bg-red-100' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50')}>{props.icon}{props.label}</button>
 }
 
 function LoadAlerts({ alerts }: { alerts: NonNullable<Props['alerts']> }) {
@@ -1600,7 +1601,7 @@ function StatusBadge({ status }: { status: string }) {
   const toneClass = STATUS_CLASS[status as OrgKpiViewModel['status']] ?? 'bg-slate-100 text-slate-700 border-slate-200'
   const label = STATUS_LABELS[status as OrgKpiViewModel['status']] ?? status
 
-  return <span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', toneClass)}>{label}</span>
+  return <span className={cls('inline-flex shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold leading-none', toneClass)}>{label}</span>
 }
 
 function EmptyState({ title, description, compact = false }: { title: string; description: string; compact?: boolean }) {
@@ -3157,9 +3158,9 @@ function EditorModal({
 }
 
 function InfoPill({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl bg-slate-50 px-4 py-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-sm font-semibold text-slate-900">{value}</div></div>
+  return <div className="min-w-0 rounded-2xl bg-slate-50 px-4 py-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 break-keep text-sm font-semibold leading-tight text-slate-900">{value}</div></div>
 }
 
 function InfoBox({ title, value }: { title: string; value: string }) {
-  return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-semibold text-slate-900">{title}</div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{value}</p></div>
+  return <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="break-keep text-sm font-semibold leading-tight text-slate-900">{title}</div><p className="mt-2 break-keep whitespace-pre-wrap text-sm leading-6 text-slate-700">{value}</p></div>
 }
