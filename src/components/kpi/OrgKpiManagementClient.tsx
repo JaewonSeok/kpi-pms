@@ -283,6 +283,13 @@ const parseNumber = (value: string) => {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+const parseWeightInput = (value: string) => {
+  const normalized = value.trim().replace(/%$/, '').trim()
+  if (!normalized) return undefined
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 const parseTagInput = (value: string) =>
   Array.from(
     new Set(
@@ -758,16 +765,43 @@ export function OrgKpiManagementClient({
 
     setEditorError(null)
 
-    if (
-      !form.deptId ||
-      !form.kpiCategory.trim() ||
-      !form.kpiName.trim() ||
-      !form.weight.trim() ||
-      !form.targetValueT.trim() ||
-      !form.targetValueE.trim() ||
-      !form.targetValueS.trim()
-    ) {
-      const message = '부서, 카테고리, KPI명, 가중치를 입력해 주세요.'
+    if (!form.deptId) {
+      const message = `${getOrgKpiDepartmentFieldLabel(pageData.selectedScope)}을 선택해 주세요.`
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
+    if (!form.kpiCategory.trim()) {
+      const message = '카테고리를 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
+    if (!form.kpiName.trim()) {
+      const message = 'KPI명을 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
+    if (!form.targetValueT.trim()) {
+      const message = 'T 목표값을 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
+    if (!form.targetValueE.trim()) {
+      const message = 'E 목표값을 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
+    if (!form.weight.trim()) {
+      const message = '가중치를 입력해 주세요.'
       setEditorError(message)
       setBanner({ tone: 'error', message })
       return
@@ -775,7 +809,10 @@ export function OrgKpiManagementClient({
 
     const parsedTargetValueT = parseNumber(form.targetValueT)
     const parsedTargetValueE = parseNumber(form.targetValueE)
-    const parsedTargetValueS = parseNumber(form.targetValueS)
+    const parsedTargetValueS = form.targetValueS.trim()
+      ? parseNumber(form.targetValueS)
+      : parsedTargetValueE
+    const parsedWeight = parseWeightInput(form.weight)
 
     if (
       parsedTargetValueT === undefined ||
@@ -783,6 +820,13 @@ export function OrgKpiManagementClient({
       parsedTargetValueS === undefined
     ) {
       const message = 'T / E / S 목표값은 숫자로 입력해 주세요.'
+      setEditorError(message)
+      setBanner({ tone: 'error', message })
+      return
+    }
+
+    if (parsedWeight === undefined) {
+      const message = '가중치는 숫자로 입력해 주세요. 예: 10 또는 10%'
       setEditorError(message)
       setBanner({ tone: 'error', message })
       return
@@ -810,7 +854,7 @@ export function OrgKpiManagementClient({
       targetValueE: parsedTargetValueE,
       targetValueS: parsedTargetValueS,
       unit: form.unit.trim() || undefined,
-      weight: Number(form.weight),
+      weight: parsedWeight,
       difficulty: form.difficulty,
     }
 

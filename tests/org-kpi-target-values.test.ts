@@ -185,10 +185,14 @@ async function main() {
     const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
     assert.equal(clientSource.includes('const [editorError, setEditorError] = useState<string | null>(null)'), true)
+    assert.equal(clientSource.includes('const parsedWeight = parseWeightInput(form.weight)'), true)
+    assert.equal(clientSource.includes("const parsedTargetValueS = form.targetValueS.trim()"), true)
+    assert.equal(clientSource.includes(': parsedTargetValueE'), true)
     assert.equal(clientSource.includes('const validatedDraft = CreateOrgKpiSchema.safeParse(draftPayload)'), true)
     assert.equal(clientSource.includes('errorMessage={editorError}'), true)
     assert.equal(clientSource.includes('role="alert"'), true)
     assert.equal(clientSource.includes("error instanceof Error && error.message.trim().length"), true)
+    assert.equal(clientSource.includes('가중치는 숫자로 입력해 주세요. 예: 10 또는 10%'), true)
   })
 
   await run('org KPI routes persist T / E / S target values and keep legacy targetValue for compatibility', () => {
