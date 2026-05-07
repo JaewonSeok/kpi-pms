@@ -43,10 +43,10 @@ type OrgKpiCascadeNode = {
   category: string
   definition: string | null
   formula: string | null
-  targetValue: number | null
-  targetValueT: number | null
-  targetValueE: number | null
-  targetValueS: number | null
+  targetValue: number | string | null
+  targetValueT: number | string | null
+  targetValueE: number | string | null
+  targetValueS: number | string | null
   unit: string | null
   weight: number
   difficulty: Difficulty
@@ -131,10 +131,10 @@ async function loadOrgKpiCascade(orgKpiId: string, db: PrismaClient) {
       kpiCategory: string
       definition: string | null
       formula: string | null
-      targetValue: number | null
-      targetValueT: number | null
-      targetValueE: number | null
-      targetValueS: number | null
+      targetValue: number | string | null
+      targetValueT: number | string | null
+      targetValueE: number | string | null
+      targetValueS: number | string | null
       unit: string | null
       weight: number
       difficulty: Difficulty
@@ -201,10 +201,10 @@ function buildOrgKpiSnapshot(
         category: string
         definition: string | null
         formula: string | null
-        targetValue: number | null
-        targetValueT: number | null
-        targetValueE: number | null
-        targetValueS: number | null
+        targetValue: number | string | null
+        targetValueT: number | string | null
+        targetValueE: number | string | null
+        targetValueS: number | string | null
         unit: string | null
         departmentName: string
       }

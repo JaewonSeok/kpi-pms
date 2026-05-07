@@ -46,7 +46,7 @@ export function buildOrgKpiFormFromAiRecommendation(
     targetValueT: item.targetValueT ?? '',
     targetValueE: item.targetValueE ?? '',
     targetValueS: item.targetValueS ?? '',
-    unit: item.unit?.trim() || '%',
+    unit: item.unit?.trim() || '',
     weight: item.weightSuggestion ?? '20',
     difficulty: normalizeDifficulty(item.difficultyLevel),
   }

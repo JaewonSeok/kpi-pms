@@ -1,19 +1,30 @@
+type OrgKpiTargetPrimitive = number | string | null | undefined
+
 type OrgKpiTargetValueInput = {
-  targetValue?: number | null
-  targetValueT?: number | null
-  targetValueE?: number | null
-  targetValueS?: number | null
+  targetValue?: OrgKpiTargetPrimitive
+  targetValueT?: OrgKpiTargetPrimitive
+  targetValueE?: OrgKpiTargetPrimitive
+  targetValueS?: OrgKpiTargetPrimitive
 }
 
-function normalizeNumericValue(value?: number | null) {
-  return typeof value === 'number' && Number.isFinite(value) ? Number(value) : undefined
+function normalizeTargetValue(value?: OrgKpiTargetPrimitive) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value)
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : undefined
+  }
+
+  return undefined
 }
 
 export function resolveOrgKpiTargetValues(input: OrgKpiTargetValueInput) {
-  const legacy = normalizeNumericValue(input.targetValue)
-  const rawT = normalizeNumericValue(input.targetValueT)
-  const rawE = normalizeNumericValue(input.targetValueE)
-  const rawS = normalizeNumericValue(input.targetValueS)
+  const legacy = normalizeTargetValue(input.targetValue)
+  const rawT = normalizeTargetValue(input.targetValueT)
+  const rawE = normalizeTargetValue(input.targetValueE)
+  const rawS = normalizeTargetValue(input.targetValueS)
 
   if ([legacy, rawT, rawE, rawS].every((value) => value === undefined)) {
     return {
@@ -38,12 +49,11 @@ export function resolveOrgKpiTargetValues(input: OrgKpiTargetValueInput) {
   }
 }
 
-function formatMetric(value?: number) {
+function formatMetric(value?: string) {
   if (value === undefined) {
     return '-'
   }
-
-  return Number.isInteger(value) ? new Intl.NumberFormat('ko-KR').format(value) : `${value}`
+  return value
 }
 
 export function formatOrgKpiTargetValues(input: OrgKpiTargetValueInput & { unit?: string | null }) {
@@ -57,7 +67,7 @@ export function formatOrgKpiTargetValues(input: OrgKpiTargetValueInput & { unit?
     return '-'
   }
 
-  const unitSuffix = input.unit ? ` ${input.unit}` : ''
+  const unitSuffix = input.unit ? `${input.unit}` : ''
   const segments = [
     resolved.targetValueT !== undefined ? `T ${formatMetric(resolved.targetValueT)}${unitSuffix}` : null,
     resolved.targetValueE !== undefined ? `E ${formatMetric(resolved.targetValueE)}${unitSuffix}` : null,
@@ -68,13 +78,13 @@ export function formatOrgKpiTargetValues(input: OrgKpiTargetValueInput & { unit?
 }
 
 export function buildOrgKpiTargetValuePersistence(input: {
-  targetValueT: number
-  targetValueE?: number | null
-  targetValueS?: number | null
+  targetValueT: OrgKpiTargetPrimitive
+  targetValueE?: OrgKpiTargetPrimitive
+  targetValueS?: OrgKpiTargetPrimitive
 }) {
-  const targetValueT = normalizeNumericValue(input.targetValueT)
-  const targetValueE = normalizeNumericValue(input.targetValueE)
-  const targetValueS = normalizeNumericValue(input.targetValueS)
+  const targetValueT = normalizeTargetValue(input.targetValueT)
+  const targetValueE = normalizeTargetValue(input.targetValueE)
+  const targetValueS = normalizeTargetValue(input.targetValueS)
 
   return {
     targetValue: targetValueE ?? targetValueT ?? null,

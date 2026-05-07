@@ -94,9 +94,9 @@ export type OrgKpiViewModel = {
   definition?: string
   formula?: string
   targetValue?: number | string
-  targetValueT?: number
-  targetValueE?: number
-  targetValueS?: number
+  targetValueT?: number | string
+  targetValueE?: number | string
+  targetValueS?: number | string
   unit?: string
   weight?: number
   difficulty?: Difficulty

@@ -106,7 +106,7 @@ type OrgKpiLite = {
   kpiName: string
   definition: string | null
   formula: string | null
-  targetValue: number | null
+  targetValue: number | string | null
   unit: string | null
   weight: number
   department: {

@@ -202,10 +202,10 @@ model OrgKpi {
   kpiName      String
   definition   String?
   formula      String?
-  targetValue  Float?
-  targetValueT Float?
-  targetValueE Float?
-  targetValueS Float?
+  targetValue  String?
+  targetValueT String?
+  targetValueE String?
+  targetValueS String?
   unit         String?
   weight       Float
   difficulty   Difficulty

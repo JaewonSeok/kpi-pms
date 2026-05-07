@@ -60,6 +60,47 @@ const OrgKpiTargetValueSchema = {
   targetValueS: z.number().min(0, 'S 紐⑺몴媛믪? 0 ?댁긽?댁뼱???⑸땲??').optional(),
 }
 
+const ORG_KPI_TARGET_TEXT_MAX = 200
+
+const OrgKpiTextTargetRequiredSchema = z.preprocess(
+  (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    if (typeof value !== 'string') return value
+    return value.trim()
+  },
+  z
+    .string()
+    .min(1, 'T 목표값을 입력해 주세요.')
+    .max(ORG_KPI_TARGET_TEXT_MAX, `목표값은 ${ORG_KPI_TARGET_TEXT_MAX}자 이내로 입력해 주세요.`)
+)
+
+const OrgKpiTextTargetOptionalSchema = z.preprocess(
+  (value) => {
+    if (value === null || value === undefined) return undefined
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    if (typeof value !== 'string') return value
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : undefined
+  },
+  z.string().max(ORG_KPI_TARGET_TEXT_MAX, `목표값은 ${ORG_KPI_TARGET_TEXT_MAX}자 이내로 입력해 주세요.`).optional()
+)
+
+const OrgKpiTextTargetNullableOptionalSchema = z.preprocess(
+  (value) => {
+    if (value === null) return null
+    if (value === undefined) return undefined
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+    if (typeof value !== 'string') return value
+    const trimmed = value.trim()
+    return trimmed.length ? trimmed : null
+  },
+  z
+    .string()
+    .max(ORG_KPI_TARGET_TEXT_MAX, `목표값은 ${ORG_KPI_TARGET_TEXT_MAX}자 이내로 입력해 주세요.`)
+    .nullable()
+    .optional()
+)
+
 function isOrderedOrgKpiTargetValues(data: {
   targetValueT?: number
   targetValueE?: number | null
@@ -118,17 +159,14 @@ export const CreateOrgKpiSchema = z.object({
   kpiName: z.string().min(1).max(100),
   definition: orgKpiLongTextSchema('KPI ?뺤쓽').optional(),
   formula: orgKpiLongTextSchema('KPI ?곗떇').optional(),
-  targetValueT: OrgKpiTargetValueSchema.targetValueT,
-  targetValueE: OrgKpiTargetValueSchema.targetValueE,
-  targetValueS: OrgKpiTargetValueSchema.targetValueS,
+  targetValueT: OrgKpiTextTargetRequiredSchema,
+  targetValueE: OrgKpiTextTargetOptionalSchema,
+  targetValueS: OrgKpiTextTargetOptionalSchema,
   unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   parentOrgKpiId: z.string().nullable().optional(),
-}).refine(isOrderedOrgKpiTargetValues, {
-  message: '紐⑺몴媛믪? T <= E <= S ?쒖꽌?ъ빞 ?⑸땲??',
-  path: ['targetValueT'],
 })
 
 export const UpdateOrgKpiSchema = z.object({
@@ -140,9 +178,9 @@ export const UpdateOrgKpiSchema = z.object({
   kpiName: z.string().min(1).max(100).optional(),
   definition: orgKpiLongTextSchema('KPI ?뺤쓽').optional(),
   formula: orgKpiLongTextSchema('KPI ?곗떇').optional(),
-  targetValueT: OrgKpiTargetValueSchema.targetValueT.optional(),
-  targetValueE: OrgKpiTargetValueSchema.targetValueE.nullable().optional(),
-  targetValueS: OrgKpiTargetValueSchema.targetValueS.nullable().optional(),
+  targetValueT: OrgKpiTextTargetRequiredSchema.optional(),
+  targetValueE: OrgKpiTextTargetNullableOptionalSchema,
+  targetValueS: OrgKpiTextTargetNullableOptionalSchema,
   unit: OrgKpiUnitSchema,
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
@@ -166,10 +204,6 @@ export const UpdateOrgKpiSchema = z.object({
       path: ['targetValueT'],
     }
   )
-  .refine(isOrderedOrgKpiTargetValues, {
-    message: '紐⑺몴媛믪? T <= E <= S ?쒖꽌?ъ빞 ?⑸땲??',
-    path: ['targetValueT'],
-  })
 
 export const DeleteOrgKpiSchema = z
   .object({

@@ -284,11 +284,6 @@ const formatValue = (value?: number | string | null, unit?: string | null) =>
     ? '-'
     : `${typeof value === 'number' ? new Intl.NumberFormat('ko-KR').format(value) : value}${unit ? ` ${unit}` : ''}`
 
-const parseNumber = (value: string) => {
-  const parsed = Number(value.trim())
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
 const parseWeightInput = (value: string) => {
   const normalized = value.trim().replace(/%$/, '').trim()
   if (!normalized) return undefined
@@ -328,7 +323,7 @@ function buildEmptyForm(year: number, departmentId: string): FormState {
     targetValueT: '',
     targetValueE: '',
     targetValueS: '',
-    unit: '%',
+    unit: '',
     weight: '',
     difficulty: 'MEDIUM',
   }
@@ -336,7 +331,7 @@ function buildEmptyForm(year: number, departmentId: string): FormState {
 
 function buildFormFromKpi(kpi: OrgKpiViewModel): FormState {
   const resolvedTargetValues = resolveOrgKpiTargetValues({
-    targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
+    targetValue: kpi.targetValue,
     targetValueT: kpi.targetValueT,
     targetValueE: kpi.targetValueE,
     targetValueS: kpi.targetValueS,
@@ -352,12 +347,9 @@ function buildFormFromKpi(kpi: OrgKpiViewModel): FormState {
     tags: kpi.tags.join(', '),
     definition: kpi.definition ?? '',
     formula: kpi.formula ?? '',
-    targetValueT:
-      resolvedTargetValues.targetValueT !== undefined ? String(resolvedTargetValues.targetValueT) : '',
-    targetValueE:
-      resolvedTargetValues.targetValueE !== undefined ? String(resolvedTargetValues.targetValueE) : '',
-    targetValueS:
-      resolvedTargetValues.targetValueS !== undefined ? String(resolvedTargetValues.targetValueS) : '',
+    targetValueT: resolvedTargetValues.targetValueT !== undefined ? resolvedTargetValues.targetValueT : '',
+    targetValueE: resolvedTargetValues.targetValueE !== undefined ? resolvedTargetValues.targetValueE : '',
+    targetValueS: resolvedTargetValues.targetValueS !== undefined ? resolvedTargetValues.targetValueS : '',
     unit: kpi.unit ?? '',
     weight: typeof kpi.weight === 'number' ? String(kpi.weight) : '',
     difficulty: (kpi.difficulty ?? 'MEDIUM') as FormState['difficulty'],
@@ -817,49 +809,10 @@ export function OrgKpiManagementClient({
       return
     }
 
-    const parsedTargetValueT = parseNumber(form.targetValueT)
-    const parsedTargetValueE = form.targetValueE.trim() ? parseNumber(form.targetValueE) : undefined
-    const parsedTargetValueS = form.targetValueS.trim() ? parseNumber(form.targetValueS) : undefined
     const parsedWeight = parseWeightInput(form.weight)
-
-    if (parsedTargetValueT === undefined) {
-      const message = 'T 목표값은 숫자로 입력해 주세요.'
-      setEditorError({ message })
-      setBanner({ tone: 'error', message })
-      return
-    }
-
-    if (form.targetValueE.trim() && parsedTargetValueE === undefined) {
-      const message = 'E 목표값은 숫자로 입력해 주세요.'
-      setEditorError({ message })
-      setBanner({ tone: 'error', message })
-      return
-    }
-
-    if (form.targetValueS.trim() && parsedTargetValueS === undefined) {
-      const message = 'S 목표값은 숫자로 입력해 주세요.'
-      setEditorError({ message })
-      setBanner({ tone: 'error', message })
-      return
-    }
 
     if (parsedWeight === undefined) {
       const message = '가중치는 숫자로 입력해 주세요. 예: 10 또는 10%'
-      setEditorError({ message })
-      setBanner({ tone: 'error', message })
-      return
-    }
-
-    if (
-      (parsedTargetValueE !== undefined && parsedTargetValueT > parsedTargetValueE) ||
-      (parsedTargetValueS !== undefined &&
-        parsedTargetValueE !== undefined &&
-        parsedTargetValueE > parsedTargetValueS) ||
-      (parsedTargetValueS !== undefined &&
-        parsedTargetValueE === undefined &&
-        parsedTargetValueT > parsedTargetValueS)
-    ) {
-      const message = '목표값은 T <= E <= S 순서여야 합니다.'
       setEditorError({ message })
       setBanner({ tone: 'error', message })
       return
@@ -876,9 +829,9 @@ export function OrgKpiManagementClient({
       tags: parseTagInput(form.tags),
       definition: form.definition.trim() || undefined,
       formula: form.formula.trim() || undefined,
-      targetValueT: parsedTargetValueT,
-      ...(editingKpiId || parsedTargetValueE !== undefined ? { targetValueE: parsedTargetValueE ?? null } : {}),
-      ...(editingKpiId || parsedTargetValueS !== undefined ? { targetValueS: parsedTargetValueS ?? null } : {}),
+      targetValueT: form.targetValueT.trim(),
+      ...(editingKpiId || form.targetValueE.trim() ? { targetValueE: form.targetValueE.trim() || null } : {}),
+      ...(editingKpiId || form.targetValueS.trim() ? { targetValueS: form.targetValueS.trim() || null } : {}),
       unit: form.unit.trim() || undefined,
       weight: parsedWeight,
       difficulty: form.difficulty,
@@ -1802,7 +1755,7 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
         <div className="text-right text-sm text-slate-600">
           <div className="font-semibold text-slate-900">
             {formatOrgKpiTargetValues({
-              targetValue: typeof props.kpi.targetValue === 'number' ? props.kpi.targetValue : undefined,
+              targetValue: props.kpi.targetValue,
               targetValueT: props.kpi.targetValueT,
               targetValueE: props.kpi.targetValueE,
               targetValueS: props.kpi.targetValueS,
@@ -2361,7 +2314,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
               <InfoPill
                 label="목표값"
                 value={formatOrgKpiTargetValues({
-                  targetValue: typeof kpi.targetValue === 'number' ? kpi.targetValue : undefined,
+                  targetValue: kpi.targetValue,
                   targetValueT: kpi.targetValueT,
                   targetValueE: kpi.targetValueE,
                   targetValueS: kpi.targetValueS,
@@ -3232,8 +3185,6 @@ function EditorModal({
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <Field label="T 목표값">
             <input
-              type="number"
-              inputMode="decimal"
               value={form.targetValueT}
               onChange={(event) => onChange({ ...form, targetValueT: event.target.value })}
               className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
@@ -3241,8 +3192,6 @@ function EditorModal({
           </Field>
           <Field label="E 목표값">
             <input
-              type="number"
-              inputMode="decimal"
               value={form.targetValueE}
               onChange={(event) => onChange({ ...form, targetValueE: event.target.value })}
               className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
@@ -3250,8 +3199,6 @@ function EditorModal({
           </Field>
           <Field label="S 목표값">
             <input
-              type="number"
-              inputMode="decimal"
               value={form.targetValueS}
               onChange={(event) => onChange({ ...form, targetValueS: event.target.value })}
               className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"

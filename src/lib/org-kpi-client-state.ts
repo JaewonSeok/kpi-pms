@@ -1,5 +1,5 @@
 import type { OrgKpiPageData, OrgKpiViewModel } from '@/server/org-kpi-page'
-import { buildOrgKpiTargetValuePersistence } from './org-kpi-target-values'
+import { buildOrgKpiTargetValuePersistence, resolveOrgKpiTargetValues } from './org-kpi-target-values'
 
 type OrgKpiDepartmentOption = OrgKpiPageData['departments'][number]
 type OrgKpiParentGoalOption = OrgKpiPageData['parentGoalOptions'][number]
@@ -31,13 +31,6 @@ function parseTagInput(value: string) {
         .filter(Boolean)
     )
   )
-}
-
-function parseOptionalNumber(value: string) {
-  const trimmed = value.trim()
-  if (!trimmed) return undefined
-  const parsed = Number(trimmed)
-  return Number.isFinite(parsed) ? parsed : undefined
 }
 
 export function buildOrgKpiServerListSignature(items: OrgKpiViewModel[]) {
@@ -73,10 +66,11 @@ export function applySavedOrgKpiToList(params: {
       ? params.parentGoalOptions.find((option) => option.id === params.form.parentOrgKpiId)
       : null
   const nextTargetValues = buildOrgKpiTargetValuePersistence({
-    targetValueT: Number(params.form.targetValueT),
-    targetValueE: parseOptionalNumber(params.form.targetValueE),
-    targetValueS: parseOptionalNumber(params.form.targetValueS),
+    targetValueT: params.form.targetValueT,
+    targetValueE: params.form.targetValueE,
+    targetValueS: params.form.targetValueS,
   })
+  const resolvedTargetValues = resolveOrgKpiTargetValues(nextTargetValues)
 
   const nextItem: OrgKpiViewModel = {
     id: params.savedId,
@@ -106,10 +100,10 @@ export function applySavedOrgKpiToList(params: {
     type: params.form.kpiType,
     definition: params.form.definition.trim() || undefined,
     formula: params.form.formula.trim() || undefined,
-    targetValue: nextTargetValues.targetValue ?? undefined,
-    targetValueT: nextTargetValues.targetValueT ?? undefined,
-    targetValueE: nextTargetValues.targetValueE ?? undefined,
-    targetValueS: nextTargetValues.targetValueS ?? undefined,
+    targetValue: resolvedTargetValues.targetValue ?? undefined,
+    targetValueT: resolvedTargetValues.targetValueT ?? undefined,
+    targetValueE: resolvedTargetValues.targetValueE ?? undefined,
+    targetValueS: resolvedTargetValues.targetValueS ?? undefined,
     unit: params.form.unit.trim() || undefined,
     weight: Number(params.form.weight),
     difficulty: params.form.difficulty,
