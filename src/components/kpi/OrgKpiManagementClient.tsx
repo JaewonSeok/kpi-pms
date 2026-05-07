@@ -48,6 +48,14 @@ import {
   calculateOrgKpiWeightSummary,
   formatOrgKpiWeight,
 } from '@/lib/org-kpi-weight'
+import {
+  buildOrgKpiEffectiveDepartmentIds,
+  buildOrgKpiFilterContextLabel,
+  getOrgKpiDivisionOptions,
+  getOrgKpiSectionOptions,
+  getOrgKpiTeamOptions,
+  resolveOrgKpiFilterContext,
+} from '@/lib/org-kpi-filters'
 import { formatCountWithUnit, formatExplicitRatio } from '@/lib/metric-copy'
 import { CreateOrgKpiSchema, UpdateOrgKpiSchema } from '@/lib/validations'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
@@ -56,6 +64,10 @@ import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewRefere
 type Props = OrgKpiPageData & {
   initialTab?: string
   initialSelectedKpiId?: string
+  initialDivisionId?: string
+  initialSectionId?: string
+  initialTeamId?: string
+  initialSearch?: string
 }
 
 type TabKey = 'map' | 'list' | 'linkage' | 'history'
@@ -448,6 +460,10 @@ async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
 export function OrgKpiManagementClient({
   initialTab,
   initialSelectedKpiId,
+  initialDivisionId: initialDivisionIdProp,
+  initialSectionId: initialSectionIdProp,
+  initialTeamId: initialTeamIdProp,
+  initialSearch: initialSearchProp,
   ...pageData
 }: Props) {
   const router = useRouter()
@@ -481,13 +497,44 @@ export function OrgKpiManagementClient({
   const scopeMapTitle = `${scopeLabel} 목표맵`
   const scopeHistoryTitle = `${scopeLabel} 이력`
   const searchTargetLabel = getOrgKpiSearchTargetLabel(pageData.selectedScope)
-  const defaultDepartmentSelection =
-    ((pageData.selectedScope !== 'team') ||
-      (pageData.selectedScope === 'team' &&
-        pageData.scopeContext?.scope === 'section')) &&
-    pageData.departments.length > 1
-      ? 'ALL'
-      : pageData.selectedDepartmentId
+  const hierarchyDepartments = pageData.hierarchyDepartments.length ? pageData.hierarchyDepartments : pageData.departments
+  const divisionOptions = getOrgKpiDivisionOptions(hierarchyDepartments)
+  const baseFilterContext = resolveOrgKpiFilterContext(
+    pageData.scopeContext?.departmentId ?? pageData.selectedDepartmentId,
+    hierarchyDepartments
+  )
+  const initialDivisionId =
+    (initialDivisionIdProp &&
+    divisionOptions.some((department) => department.id === initialDivisionIdProp)
+      ? initialDivisionIdProp
+      : null) ??
+    baseFilterContext.divisionId ??
+    divisionOptions[0]?.id ??
+    null
+  const initialSectionOptions = getOrgKpiSectionOptions(hierarchyDepartments, initialDivisionId)
+  const initialSectionId =
+    (initialSectionIdProp &&
+    initialSectionOptions.some((department) => department.id === initialSectionIdProp)
+      ? initialSectionIdProp
+      : null) ??
+    (baseFilterContext.sectionId &&
+    initialSectionOptions.some((department) => department.id === baseFilterContext.sectionId)
+      ? baseFilterContext.sectionId
+      : null)
+  const initialTeamOptions = getOrgKpiTeamOptions({
+    departments: hierarchyDepartments,
+    divisionId: initialDivisionId,
+    sectionId: initialSectionId,
+  })
+  const initialTeamId =
+    (initialTeamIdProp &&
+    initialTeamOptions.some((department) => department.id === initialTeamIdProp)
+      ? initialTeamIdProp
+      : null) ??
+    (baseFilterContext.teamId &&
+    initialTeamOptions.some((department) => department.id === baseFilterContext.teamId)
+      ? baseFilterContext.teamId
+      : null)
   const defaultSelectedKpiId =
     (initialSelectedKpiId && pageData.list.some((item) => item.id === initialSelectedKpiId)
       ? initialSelectedKpiId
@@ -495,7 +542,9 @@ export function OrgKpiManagementClient({
     pageData.list[0]?.id ??
     ''
   const [tab, setTab] = useState<TabKey>(defaultTab)
-  const [selectedDepartmentId, setSelectedDepartmentId] = useState(defaultDepartmentSelection)
+  const [selectedDivisionId, setSelectedDivisionId] = useState<string | null>(initialDivisionId)
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(initialSectionId)
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(initialTeamId)
   const [list, setList] = useState(pageData.list)
   const [selectedKpiId, setSelectedKpiId] = useState(defaultSelectedKpiId)
   const [activeKpiId, setActiveKpiId] = useState(defaultSelectedKpiId)
@@ -509,40 +558,85 @@ export function OrgKpiManagementClient({
   const [form, setForm] = useState<FormState>(buildEmptyForm(pageData.selectedYear, pageData.selectedDepartmentId))
   const [editorBaselineForm, setEditorBaselineForm] = useState<FormState | null>(null)
   const [editorError, setEditorError] = useState<ModalErrorState | null>(null)
-  const selectedKpiDepartmentId =
-    list.find((item) => item.id === (selectedKpiId || activeKpiId))?.departmentId ?? null
+  const [search, setSearch] = useState(initialSearchProp ?? '')
+  const sectionOptions = useMemo(
+    () => getOrgKpiSectionOptions(hierarchyDepartments, selectedDivisionId),
+    [hierarchyDepartments, selectedDivisionId]
+  )
+  const teamOptions = useMemo(
+    () =>
+      getOrgKpiTeamOptions({
+        departments: hierarchyDepartments,
+        divisionId: selectedDivisionId,
+        sectionId: selectedSectionId,
+      }),
+    [hierarchyDepartments, selectedDivisionId, selectedSectionId]
+  )
+  const effectiveDepartmentIds = useMemo(
+    () =>
+      buildOrgKpiEffectiveDepartmentIds({
+        scope: pageData.selectedScope,
+        divisionId: selectedDivisionId,
+        sectionId: selectedSectionId,
+        teamId: selectedTeamId,
+        divisionOptions,
+        sectionOptions,
+        teamOptions,
+      }),
+    [
+      divisionOptions,
+      pageData.selectedScope,
+      sectionOptions,
+      selectedDivisionId,
+      selectedSectionId,
+      selectedTeamId,
+      teamOptions,
+    ]
+  )
+  const effectiveDepartmentIdArray = useMemo(() => Array.from(effectiveDepartmentIds), [effectiveDepartmentIds])
   const activeScopeDepartmentId =
-    selectedDepartmentId === 'ALL'
-      ? selectedKpiDepartmentId ?? pageData.scopeContext?.departmentId ?? pageData.selectedDepartmentId
-      : selectedDepartmentId
+    (pageData.selectedScope === 'division'
+      ? selectedDivisionId
+      : pageData.selectedScope === 'section'
+        ? selectedSectionId ?? sectionOptions[0]?.id ?? null
+        : selectedTeamId ?? teamOptions[0]?.id ?? null) ??
+    pageData.scopeContext?.departmentId ??
+    pageData.selectedDepartmentId
   const [cloneForm, setCloneForm] = useState<OrgCloneForm>(buildCloneForm(pageData, pageData.list[0]))
   const [bulkEditForm, setBulkEditForm] = useState<OrgBulkEditForm>(
-    buildOrgBulkEditForm(pageData, defaultDepartmentSelection)
+    buildOrgBulkEditForm(pageData, activeScopeDepartmentId)
   )
   const [exportForm, setExportForm] = useState<GoalExportForm>(
-    buildGoalExportForm(pageData, defaultDepartmentSelection)
+    buildGoalExportForm(pageData, activeScopeDepartmentId)
   )
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busy, setBusy] = useState(false)
   const [expandedMapNodeIds, setExpandedMapNodeIds] = useState<string[]>([])
-  const [search, setSearch] = useState('')
   const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
   const serverListSignature = useMemo(() => buildOrgKpiServerListSignature(pageData.list), [pageData.list])
   const serverContextKey = `${pageData.selectedScope}:${pageData.selectedYear}:${pageData.selectedDepartmentId}:${serverListSignature}:${defaultSelectedKpiId}:${defaultTab}`
   const previousServerContextKey = useRef(serverContextKey)
-  const viewContextKey = `${pageData.selectedScope}:${pageData.selectedYear}:${selectedDepartmentId}`
+  const viewContextKey = `${pageData.selectedScope}:${pageData.selectedYear}:${selectedDivisionId ?? ''}:${selectedSectionId ?? ''}:${selectedTeamId ?? ''}`
   const previousViewContextKey = useRef(viewContextKey)
   const buildOrgKpiHref = useCallback(
-    (overrides?: Partial<Record<'scope' | 'tab' | 'kpiId' | 'departmentId', string | null>>) => {
+    (
+      overrides?: Partial<
+        Record<'scope' | 'tab' | 'kpiId' | 'departmentId' | 'divisionId' | 'sectionId' | 'teamId' | 'q', string | null>
+      >
+    ) => {
       const nextParams = new URLSearchParams()
       const entries: Array<[
-        'scope' | 'tab' | 'kpiId' | 'departmentId',
+        'scope' | 'tab' | 'kpiId' | 'departmentId' | 'divisionId' | 'sectionId' | 'teamId' | 'q',
         string | null | undefined,
       ]> = [
         ['scope', overrides?.scope ?? pageData.selectedScope],
         ['tab', overrides?.tab],
         ['kpiId', overrides?.kpiId],
-        ['departmentId', overrides?.departmentId],
+        ['departmentId', overrides?.departmentId ?? activeScopeDepartmentId],
+        ['divisionId', overrides?.divisionId ?? selectedDivisionId],
+        ['sectionId', overrides?.sectionId ?? selectedSectionId],
+        ['teamId', overrides?.teamId ?? selectedTeamId],
+        ['q', overrides?.q ?? (search.trim() || null)],
       ]
 
       entries.forEach(([key, value]) => {
@@ -557,11 +651,15 @@ export function OrgKpiManagementClient({
       const query = nextParams.toString()
       return `/kpi/org${query ? `?${query}` : ''}`
     },
-    [pageData.selectedScope]
+    [activeScopeDepartmentId, pageData.selectedScope, search, selectedDivisionId, selectedSectionId, selectedTeamId]
   )
 
   const replaceOrgKpiUrl = useCallback(
-    (overrides?: Partial<Record<'scope' | 'tab' | 'kpiId' | 'departmentId', string | null>>) => {
+    (
+      overrides?: Partial<
+        Record<'scope' | 'tab' | 'kpiId' | 'departmentId' | 'divisionId' | 'sectionId' | 'teamId' | 'q', string | null>
+      >
+    ) => {
       if (typeof window === 'undefined') return
       window.history.replaceState(null, '', buildOrgKpiHref(overrides))
     },
@@ -571,7 +669,7 @@ export function OrgKpiManagementClient({
   const filteredList = useMemo(
     () =>
       list.filter((item) => {
-        if (selectedDepartmentId !== 'ALL' && item.departmentId !== selectedDepartmentId) return false
+        if (effectiveDepartmentIds.size > 0 && !effectiveDepartmentIds.has(item.departmentId)) return false
         if (
           search.trim() &&
           !`${item.title} ${item.departmentName} ${item.category ?? ''}`
@@ -582,44 +680,52 @@ export function OrgKpiManagementClient({
         }
         return true
       }),
-    [list, search, selectedDepartmentId]
+    [effectiveDepartmentIds, list, search]
   )
-  const selectedDepartmentName = useMemo(() => {
-    if (selectedDepartmentId === 'ALL') {
-      return `${scopeLabel} 전체`
-    }
-
-    return (
-      pageData.departments.find((department) => department.id === selectedDepartmentId)?.name ??
-      pageData.departments.find((department) => department.id === pageData.selectedDepartmentId)?.name ??
-      pageData.actor.departmentName
-    )
-  }, [
-    pageData.actor.departmentName,
-    pageData.departments,
-    pageData.selectedDepartmentId,
-    scopeLabel,
-    selectedDepartmentId,
-  ])
+  const selectedDivisionName = useMemo(
+    () => divisionOptions.find((department) => department.id === selectedDivisionId)?.name ?? null,
+    [divisionOptions, selectedDivisionId]
+  )
+  const selectedSectionName = useMemo(
+    () => sectionOptions.find((department) => department.id === selectedSectionId)?.name ?? null,
+    [sectionOptions, selectedSectionId]
+  )
+  const selectedTeamName = useMemo(
+    () => teamOptions.find((department) => department.id === selectedTeamId)?.name ?? null,
+    [selectedTeamId, teamOptions]
+  )
+  const selectedContextLabel = useMemo(
+    () =>
+      buildOrgKpiFilterContextLabel({
+        scopeLabel,
+        divisionName: selectedDivisionName,
+        sectionName: pageData.selectedScope === 'division' ? null : selectedSectionName,
+        teamName: pageData.selectedScope === 'team' ? selectedTeamName : null,
+      }),
+    [pageData.selectedScope, scopeLabel, selectedDivisionName, selectedSectionName, selectedTeamName]
+  )
   const weightSummary = useMemo(() => calculateOrgKpiWeightSummary(filteredList), [filteredList])
   const weightStatusContext = useMemo(
     () =>
       formatWeightStatusContext({
         year: pageData.selectedYear,
         scopeLabel,
-        departmentName: selectedDepartmentName,
+        departmentName:
+          [selectedDivisionName, pageData.selectedScope !== 'division' ? selectedSectionName : null, pageData.selectedScope === 'team' ? selectedTeamName : null]
+            .filter((value): value is string => Boolean(value))
+            .join(' / ') || pageData.actor.departmentName,
         includeSearchNote: search.trim().length > 0,
       }),
-    [pageData.selectedYear, scopeLabel, search, selectedDepartmentName]
+    [pageData.actor.departmentName, pageData.selectedScope, pageData.selectedYear, scopeLabel, search, selectedDivisionName, selectedSectionName, selectedTeamName]
   )
   const hierarchyStructure = useMemo(
     () =>
       buildOrgKpiHierarchyStructure({
         items: list,
-        selectedDepartmentId,
+        selectedDepartmentIds: effectiveDepartmentIdArray,
         search,
       }),
-    [list, search, selectedDepartmentId]
+    [effectiveDepartmentIdArray, list, search]
   )
   const hierarchySelection = useMemo(
     () =>
@@ -685,12 +791,34 @@ export function OrgKpiManagementClient({
       tab,
       kpiId: selectedKpiId || null,
       departmentId: activeScopeDepartmentId || pageData.scopeContext?.departmentId || null,
+      divisionId: selectedDivisionId,
+      sectionId: selectedSectionId,
+      teamId: selectedTeamId,
+      q: search.trim() || null,
     })
-  }, [activeScopeDepartmentId, canRenderWorkspace, pageData.scopeContext?.departmentId, replaceOrgKpiUrl, selectedKpiId, tab])
+  }, [activeScopeDepartmentId, canRenderWorkspace, pageData.scopeContext?.departmentId, replaceOrgKpiUrl, search, selectedDivisionId, selectedKpiId, selectedSectionId, selectedTeamId, tab])
 
   useEffect(() => {
     setActiveKpiId((current) => (current === selectedKpiId ? current : selectedKpiId))
   }, [selectedKpiId])
+
+  useEffect(() => {
+    if (selectedDivisionId && !divisionOptions.some((department) => department.id === selectedDivisionId)) {
+      setSelectedDivisionId(divisionOptions[0]?.id ?? null)
+    }
+  }, [divisionOptions, selectedDivisionId])
+
+  useEffect(() => {
+    if (selectedSectionId && !sectionOptions.some((department) => department.id === selectedSectionId)) {
+      setSelectedSectionId(null)
+    }
+  }, [sectionOptions, selectedSectionId])
+
+  useEffect(() => {
+    if (selectedTeamId && !teamOptions.some((department) => department.id === selectedTeamId)) {
+      setSelectedTeamId(null)
+    }
+  }, [selectedTeamId, teamOptions])
 
   useEffect(() => {
     if (previousServerContextKey.current === serverContextKey) {
@@ -707,7 +835,9 @@ export function OrgKpiManagementClient({
 
     previousServerContextKey.current = serverContextKey
     setTab(defaultTab)
-    setSelectedDepartmentId(defaultDepartmentSelection)
+    setSelectedDivisionId(initialDivisionId)
+    setSelectedSectionId(initialSectionId)
+    setSelectedTeamId(initialTeamId)
     setList(pageData.list)
     commitSelectedKpi(nextSelectedKpiId)
     setShowForm(false)
@@ -721,17 +851,21 @@ export function OrgKpiManagementClient({
     setEditorBaselineForm(null)
     setEditorError(null)
     setCloneForm(buildCloneForm(pageData, pageData.list[0]))
-    setBulkEditForm(buildOrgBulkEditForm(pageData, defaultDepartmentSelection))
-    setExportForm(buildGoalExportForm(pageData, defaultDepartmentSelection))
+    setBulkEditForm(buildOrgBulkEditForm(pageData, activeScopeDepartmentId))
+    setExportForm(buildGoalExportForm(pageData, activeScopeDepartmentId))
     setBanner(null)
     setExpandedMapNodeIds([])
-    setSearch('')
+    setSearch(initialSearchProp ?? '')
   }, [
+    activeScopeDepartmentId,
     commitSelectedKpi,
     selectedKpiId,
-    defaultDepartmentSelection,
     defaultTab,
+    initialDivisionId,
     initialSelectedKpiId,
+    initialSectionId,
+    initialSearchProp,
+    initialTeamId,
     pageData.list,
     pageData.selectedDepartmentId,
     pageData.selectedYear,
@@ -756,10 +890,10 @@ export function OrgKpiManagementClient({
     setEditorError(null)
     setBanner(null)
     setCloneForm(buildCloneForm(pageData))
-    setBulkEditForm(buildOrgBulkEditForm(pageData, selectedDepartmentId))
-    setExportForm(buildGoalExportForm(pageData, selectedDepartmentId))
+    setBulkEditForm(buildOrgBulkEditForm(pageData, activeScopeDepartmentId))
+    setExportForm(buildGoalExportForm(pageData, activeScopeDepartmentId))
     setExpandedMapNodeIds([])
-  }, [commitSelectedKpi, pageData, viewContextKey])
+  }, [activeScopeDepartmentId, commitSelectedKpi, pageData, viewContextKey])
 
   useEffect(() => {
     const selectableItems =
@@ -831,7 +965,7 @@ export function OrgKpiManagementClient({
   const exportDisabledReason =
     !pageData.permissions.canManage
       ? '현재 권한으로는 목표 엑셀을 내려받을 수 없습니다.'
-      : !bulkTargetIds.length && selectedDepartmentId !== 'ALL'
+      : !bulkTargetIds.length
         ? '현재 필터 조건에 맞는 조직 KPI가 없습니다.'
         : undefined
 
@@ -1257,7 +1391,7 @@ export function OrgKpiManagementClient({
       return
     }
 
-    setBulkEditForm(buildOrgBulkEditForm(pageData, selectedDepartmentId))
+    setBulkEditForm(buildOrgBulkEditForm(pageData, activeScopeDepartmentId))
     setShowBulkEdit(true)
   }
 
@@ -1316,7 +1450,7 @@ export function OrgKpiManagementClient({
       return
     }
 
-    setExportForm(buildGoalExportForm(pageData, selectedDepartmentId))
+    setExportForm(buildGoalExportForm(pageData, activeScopeDepartmentId))
     setShowExport(true)
   }
 
@@ -1382,9 +1516,13 @@ export function OrgKpiManagementClient({
         scope: nextScope,
         kpiId: null,
         departmentId:
-          pageData.scopeContext?.departmentId ??
-          activeScopeDepartmentId ??
-          pageData.selectedDepartmentId,
+          nextScope === 'division'
+            ? selectedDivisionId
+            : nextScope === 'section'
+              ? selectedSectionId ?? pageData.scopeContext?.departmentId ?? null
+              : selectedSectionId ?? selectedDivisionId ?? pageData.scopeContext?.departmentId ?? null,
+        sectionId: nextScope === 'division' ? null : selectedSectionId,
+        teamId: nextScope === 'team' ? selectedTeamId : null,
       })
     )
   }
@@ -1832,6 +1970,83 @@ function WeightStatusPanel(props: {
         )}
       </div>
     </section>
+  )
+}
+
+function OrgHierarchyFilterBar(props: {
+  scope: OrgKpiScope
+  divisionOptions: Props['hierarchyDepartments']
+  sectionOptions: Props['hierarchyDepartments']
+  teamOptions: Props['hierarchyDepartments']
+  selectedDivisionId: string | null
+  selectedSectionId: string | null
+  selectedTeamId: string | null
+  contextLabel: string
+  onDivisionChange: (value: string | null) => void
+  onSectionChange: (value: string | null) => void
+  onTeamChange: (value: string | null) => void
+}) {
+  const showSectionFilter = props.scope !== 'division' && props.sectionOptions.length > 0
+  const showTeamFilter = props.scope === 'team'
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <Field label="본부">
+            <select
+              value={props.selectedDivisionId ?? ''}
+              onChange={(event) => props.onDivisionChange(event.target.value || null)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+            >
+              {props.divisionOptions.map((department) => (
+                <option key={department.id} value={department.id}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          {showSectionFilter ? (
+            <Field label="실">
+              <select
+                value={props.selectedSectionId ?? ''}
+                onChange={(event) => props.onSectionChange(event.target.value || null)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+              >
+                <option value="">전체</option>
+                {props.sectionOptions.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+
+          {showTeamFilter ? (
+            <Field label="팀">
+              <select
+                value={props.selectedTeamId ?? ''}
+                onChange={(event) => props.onTeamChange(event.target.value || null)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm"
+              >
+                <option value="">전체</option>
+                {props.teamOptions.map((department) => (
+                  <option key={department.id} value={department.id}>
+                    {department.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+        </div>
+
+        <div className="rounded-2xl bg-white px-4 py-3 text-sm font-medium text-slate-700">
+          {props.contextLabel}
+        </div>
+      </div>
+    </div>
   )
 }
 

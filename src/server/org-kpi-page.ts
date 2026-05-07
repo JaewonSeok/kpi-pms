@@ -175,6 +175,7 @@ export type OrgKpiPageData = {
   selectedYear: number
   selectedDepartmentId: string
   departments: OrgKpiScopeOption[]
+  hierarchyDepartments: OrgKpiScopeOption[]
   parentGoalOptions: Array<{
     id: string
     title: string
@@ -696,6 +697,7 @@ export async function getOrgKpiPageData(params: {
         selectedYear: new Date().getFullYear(),
         selectedDepartmentId: params.deptId,
         departments: [],
+        hierarchyDepartments: [],
         parentGoalOptions: [],
         summary: {
           totalCount: 0,
@@ -1135,6 +1137,16 @@ export async function getOrgKpiPageData(params: {
         scope: departmentScopeMap.get(department.id) ?? 'team',
       }))
       .sort((left, right) => left.level - right.level || left.name.localeCompare(right.name))
+    const hierarchyDepartments = accessibleDepartments
+      .map((department) => ({
+        id: department.id,
+        name: department.deptName,
+        parentDepartmentId: department.parentDeptId,
+        organizationName: department.organization.name,
+        level: levelMap.get(department.id) ?? 0,
+        scope: departmentScopeMap.get(department.id) ?? 'team',
+      }))
+      .sort((left, right) => left.level - right.level || left.name.localeCompare(right.name))
 
     const selectedDepartmentId =
       params.selectedDepartmentId &&
@@ -1220,6 +1232,7 @@ export async function getOrgKpiPageData(params: {
       selectedYear,
       selectedDepartmentId,
       departments: departmentsForSelector,
+      hierarchyDepartments,
       parentGoalOptions,
       summary: {
         totalCount,
@@ -1262,6 +1275,7 @@ export async function getOrgKpiPageData(params: {
       selectedYear: new Date().getFullYear(),
       selectedDepartmentId: params.deptId,
       departments: [],
+      hierarchyDepartments: [],
       parentGoalOptions: [],
       summary: {
         totalCount: 0,

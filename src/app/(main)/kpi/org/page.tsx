@@ -8,6 +8,10 @@ type OrgKpiPageProps = {
     tab?: string
     kpiId?: string
     departmentId?: string
+    divisionId?: string
+    sectionId?: string
+    teamId?: string
+    q?: string
   }>
 }
 
@@ -36,6 +40,10 @@ export default async function OrgKpiPage({ searchParams }: OrgKpiPageProps) {
       {...pageData}
       initialTab={resolvedSearchParams.tab}
       initialSelectedKpiId={resolvedSearchParams.kpiId}
+      initialDivisionId={resolvedSearchParams.divisionId}
+      initialSectionId={resolvedSearchParams.sectionId}
+      initialTeamId={resolvedSearchParams.teamId}
+      initialSearch={resolvedSearchParams.q}
     />
   )
 }
