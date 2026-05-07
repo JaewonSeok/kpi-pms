@@ -279,6 +279,7 @@ export type EmployeeOrgChartMember = EmployeeOrgChartNode['employee'] & {
   id: string
   managerId: string | null
   sortOrder: number | null
+  managerExists?: boolean
 }
 
 const LEGACY_HEADER_ALIASES: Partial<Record<EmployeeUploadTemplateKey, string[]>> = {
@@ -3596,7 +3597,7 @@ export function buildEmployeeOrgChart(members: EmployeeOrgChartMember[]) {
       continue
     }
 
-    if (member.managerId) {
+    if (member.managerId && member.managerExists !== true) {
       orphanedEmployees.push(node.employee)
     }
     roots.push(node)
@@ -3699,6 +3700,7 @@ export async function fetchEmployeeOrgChart(params: {
         joinDate: employee.joinDate.toISOString().slice(0, 10),
         resignationDate: employee.resignationDate ? employee.resignationDate.toISOString().slice(0, 10) : null,
         managerId: employee.managerId,
+        managerExists: Boolean(manager),
         managerEmployeeNumber: manager?.empId ?? null,
         managerName: manager?.empName ?? null,
         directReportCount: directReportCountByManagerId.get(employee.id) ?? 0,

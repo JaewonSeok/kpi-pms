@@ -564,6 +564,34 @@ run('org chart builder keeps missing manager employees renderable', () => {
   assert.equal(chart.orphanedEmployees.length, 1)
 })
 
+run('org chart builder does not mark filtered employees orphaned when their manager exists outside the current slice', () => {
+  const chart = buildEmployeeOrgChart([
+    {
+      id: 'emp-filtered',
+      employeeNumber: 'E-5001',
+      name: '필터된 구성원',
+      googleEmail: 'filtered@rsupport.com',
+      departmentName: '재무관리실',
+      departmentCode: 'HQ-SEC-1',
+      teamName: null,
+      jobTitle: '실장',
+      role: 'ROLE_SECTION_CHIEF',
+      employmentStatus: 'ACTIVE',
+      joinDate: '2024-01-01',
+      resignationDate: null,
+      managerId: 'manager-outside-slice',
+      managerExists: true,
+      managerEmployeeNumber: 'E-4000',
+      managerName: '상위 본부장',
+      directReportCount: 1,
+      sortOrder: 1,
+    },
+  ])
+
+  assert.equal(chart.roots.length, 1)
+  assert.equal(chart.orphanedEmployees.length, 0)
+})
+
 run('org chart summary counts resigned employees separately', () => {
   const chart = buildEmployeeOrgChart([
     {
