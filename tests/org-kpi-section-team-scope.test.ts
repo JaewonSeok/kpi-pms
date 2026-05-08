@@ -69,8 +69,8 @@ async function main() {
 
     assert.equal(pageSource.includes('departmentId?: string'), true)
     assert.equal(pageSource.includes('selectedDepartmentId: resolvedSearchParams.departmentId'), true)
-    assert.equal(clientSource.includes("['departmentId', overrides?.departmentId]"), true)
-    assert.equal(clientSource.includes('pageData.scopeContext?.scope === \'section\''), true)
+    assert.equal(clientSource.includes("['departmentId', overrides?.departmentId ?? activeScopeDepartmentId]"), true)
+    assert.equal(clientSource.includes("scopeContext?.scope === 'section'"), true)
     assert.equal(loaderSource.includes('filterTeamDepartmentsForOrgKpiContext'), true)
     assert.equal(loaderSource.includes('scopeContext:'), true)
   })

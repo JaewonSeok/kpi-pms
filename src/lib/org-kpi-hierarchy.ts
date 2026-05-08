@@ -58,7 +58,8 @@ function sortItems(items: OrgKpiViewModel[]) {
 
 export function buildOrgKpiHierarchyStructure(params: {
   items: OrgKpiViewModel[]
-  selectedDepartmentId: string
+  selectedDepartmentIds?: string[]
+  selectedDepartmentId?: string
   search: string
 }): OrgKpiHierarchyStructureView {
   const itemsById = new Map(params.items.map((item) => [item.id, item]))
@@ -71,8 +72,12 @@ export function buildOrgKpiHierarchyStructure(params: {
     childrenByParentId.set(item.parentOrgKpiId, bucket)
   })
 
+  const selectedDepartmentIdSet = new Set(
+    params.selectedDepartmentIds ?? (params.selectedDepartmentId ? [params.selectedDepartmentId] : [])
+  )
+  const allowAllDepartments = selectedDepartmentIdSet.size === 0
   const matchesDepartment = (item: OrgKpiViewModel) =>
-    params.selectedDepartmentId === 'ALL' || item.departmentId === params.selectedDepartmentId
+    allowAllDepartments || selectedDepartmentIdSet.has(item.departmentId)
 
   const focusItems = params.items.filter((item) => matchesDepartment(item) && matchesSearch(item, params.search))
   const visibleIds = new Set<string>()
@@ -90,7 +95,7 @@ export function buildOrgKpiHierarchyStructure(params: {
   const addDescendants = (itemId: string) => {
     const children = sortItems(childrenByParentId.get(itemId) ?? [])
     children.forEach((child) => {
-      if (!matchesDepartment(child) && params.selectedDepartmentId !== 'ALL') {
+      if (!matchesDepartment(child) && !allowAllDepartments) {
         return
       }
       visibleIds.add(child.id)
@@ -212,13 +217,15 @@ export function buildOrgKpiHierarchySelectionView(params: {
 
 export function buildOrgKpiHierarchyView(params: {
   items: OrgKpiViewModel[]
-  selectedDepartmentId: string
+  selectedDepartmentIds?: string[]
+  selectedDepartmentId?: string
   search: string
   selectedKpiId?: string | null
 }): OrgKpiHierarchyView {
   return {
     ...buildOrgKpiHierarchyStructure({
       items: params.items,
+      selectedDepartmentIds: params.selectedDepartmentIds,
       selectedDepartmentId: params.selectedDepartmentId,
       search: params.search,
     }),
