@@ -241,7 +241,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       throw new AppError(
         400,
         'ORG_KPI_LOCKED',
-        '초안 상태 KPI만 수정할 수 있습니다. 제출되었거나 잠금된 KPI는 먼저 재오픈해 주세요.'
+        '제출, 잠금, 보관 상태 KPI는 수정할 수 없습니다. 확정 KPI는 권한 범위 내에서 바로 수정할 수 있습니다.'
       )
     }
 

@@ -75,7 +75,7 @@ export function resolveOrgKpiOperationalStatus(params: {
 }
 
 export function canEditOrgKpiByOperationalStatus(status: OrgKpiOperationalStatus) {
-  return status === 'DRAFT'
+  return status === 'DRAFT' || status === 'CONFIRMED'
 }
 
 export function canSubmitOrgKpi(status: OrgKpiOperationalStatus) {

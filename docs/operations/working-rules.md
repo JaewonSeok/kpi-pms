@@ -1,6 +1,6 @@
 # Working Rules
 
-Last updated: 2026-04-13
+Last updated: 2026-05-12
 
 ## Read Order Before Any New Work
 
@@ -11,6 +11,7 @@ Last updated: 2026-04-13
 5. If the task touches AI features, read `docs/ai-assistant-operations.md`.
 6. If the task changes product scope or backlog priority, read `docs/product/implementation-backlog.md`, `docs/product/global-benchmark-gap-analysis.md`, and `docs/product/implementation-roadmap-world-class.md`.
 7. Before release or handoff, read `docs/operations/release-readiness.md`.
+8. When starting a new chat, treat `docs/operations/next-chat-prompt.md` as the copy/paste launch prompt.
 
 ## Core Repo Rules
 
@@ -63,3 +64,5 @@ Last updated: 2026-04-13
 - Treat temp files carefully and verify whether they are tracked before deleting them.
 - Update `docs/operations/current-handoff.md` whenever the focus or remaining work changes materially.
 - Update `docs/operations/next-chat-prompt.md` whenever the handoff context changes materially.
+- If a handoff document looks older than the latest commit history, refresh the handoff before starting feature work.
+- For current org KPI work, preserve the separate `division`, `section`, and `team` scope behavior and verify section-specific team filtering.

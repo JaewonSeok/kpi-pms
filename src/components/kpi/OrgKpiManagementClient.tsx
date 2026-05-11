@@ -283,6 +283,8 @@ const STATUS_CLASS: Record<OrgKpiViewModel['status'], string> = {
   ARCHIVED: 'bg-amber-100 text-amber-700 border-amber-200',
 }
 
+const EDITABLE_ORG_KPI_STATUSES: OrgKpiViewModel['status'][] = ['DRAFT', 'CONFIRMED']
+
 const cls = (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(' ')
 const formatPercent = (value?: number | null) => (typeof value === 'number' && !Number.isNaN(value) ? `${Math.round(value * 10) / 10}%` : '-')
 const formatDateTime = (value?: string | null) =>
@@ -2967,7 +2969,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
               label="수정"
               icon={<FilePenLine className="h-4 w-4" />}
               onClick={() => props.onEdit(kpi)}
-              disabled={!props.permissions.canManage || goalEditLocked || kpi.status !== 'DRAFT' || props.busy}
+              disabled={!props.permissions.canManage || goalEditLocked || !EDITABLE_ORG_KPI_STATUSES.includes(kpi.status) || props.busy}
             />
             <ActionButton
               label="복제"

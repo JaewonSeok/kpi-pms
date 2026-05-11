@@ -1,7 +1,9 @@
 ﻿import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import './register-path-aliases'
 import { EvalCycleSchema, UpdateEvalCycleSchema } from '../src/lib/validations'
+import { canEditOrgKpiByOperationalStatus } from '../src/server/org-kpi-workflow'
 
 function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
@@ -31,6 +33,14 @@ async function main() {
 
     assert.equal(createParsed.success, true)
     assert.equal(updateParsed.success, true)
+  })
+
+  await run('org KPI edit policy allows confirmed goals while keeping submitted, locked, and archived closed', () => {
+    assert.equal(canEditOrgKpiByOperationalStatus('DRAFT'), true)
+    assert.equal(canEditOrgKpiByOperationalStatus('CONFIRMED'), true)
+    assert.equal(canEditOrgKpiByOperationalStatus('SUBMITTED'), false)
+    assert.equal(canEditOrgKpiByOperationalStatus('LOCKED'), false)
+    assert.equal(canEditOrgKpiByOperationalStatus('ARCHIVED'), false)
   })
 
   await run('admin eval cycle surfaces and persists goal edit mode settings', () => {
@@ -115,6 +125,8 @@ async function main() {
     assert.equal(clientSource.includes('내 팀원 목표 승인 상태'), true)
     assert.equal(clientSource.includes('kpi.linkedConfirmedPersonalKpiCount'), true)
     assert.equal(clientSource.includes('kpi.linkedPersonalKpis.length'), true)
+    assert.equal(clientSource.includes("EDITABLE_ORG_KPI_STATUSES: OrgKpiViewModel['status'][] = ['DRAFT', 'CONFIRMED']"), true)
+    assert.equal(clientSource.includes('!EDITABLE_ORG_KPI_STATUSES.includes(kpi.status)'), true)
     assert.equal(clientSource.includes("!['DRAFT', 'SUBMITTED', 'LOCKED'].includes(kpi.status)"), true)
     assert.equal(clientSource.includes('data-testid="org-kpi-detail-scroll-region"'), true)
     assert.equal(clientSource.includes('data-testid="org-kpi-detail-sticky-header"'), true)
