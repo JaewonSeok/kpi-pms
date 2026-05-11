@@ -12,15 +12,24 @@ import {
   ChevronRight,
   ClipboardList,
   Clock3,
+  Copy,
   Layers3,
+  Loader2,
   MessageSquareMore,
   Plus,
   RefreshCcw,
   ShieldAlert,
+  Sparkles,
   Target,
   Users,
 } from 'lucide-react'
 import { MidReviewDetailDrawer } from '@/components/checkin/MidReviewDetailDrawer'
+import {
+  CHECKIN_AI_FEEDBACK_PRIORITY_LABELS,
+  CHECKIN_AI_FEEDBACK_STATUS_LABELS,
+  type CheckinAiFeedbackResponse,
+  type CheckinAiFeedbackResult,
+} from '@/lib/checkin-ai-feedback'
 import type {
   CheckinActionItemViewModel,
   CheckinPageData,
@@ -29,7 +38,7 @@ import type {
   CheckinRecordViewModel,
 } from '@/server/checkin-page'
 
-type CheckinTab = 'calendar' | 'list' | 'actions' | 'history' | 'prep'
+type CheckinTab = 'calendar' | 'list' | 'actions' | 'history' | 'prep' | 'aiFeedback'
 
 type NewCheckinFormState = {
   ownerId: string
@@ -63,12 +72,31 @@ type CompleteCheckinFormState = {
   }>
 }
 
+type AiFeedbackState = {
+  employeeId: string
+  loading: boolean
+  result?: CheckinAiFeedbackResult
+  source?: CheckinAiFeedbackResponse['source']
+  fallbackReason?: string | null
+  requestLogId?: string
+  error?: string
+}
+
+type ApiResponse<T> = {
+  success: boolean
+  data?: T
+  error?: {
+    message?: string
+  }
+}
+
 const TAB_LABELS: Record<CheckinTab, string> = {
   calendar: '캘린더',
   list: '목록',
   actions: '실행 항목',
   history: '지난 기록',
   prep: '준비 자료',
+  aiFeedback: 'AI 피드백',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -117,6 +145,11 @@ export function CheckinClient(props: CheckinPageData) {
     ownerId: 'ALL',
     overdueOnly: false,
     incompleteOnly: true,
+  })
+  const [aiFeedbackEmployeeId, setAiFeedbackEmployeeId] = useState('')
+  const [aiFeedbackState, setAiFeedbackState] = useState<AiFeedbackState>({
+    employeeId: '',
+    loading: false,
   })
 
   const viewModel = props.viewModel
@@ -168,6 +201,51 @@ export function CheckinClient(props: CheckinPageData) {
 
   const selectedRecord =
     viewModel?.records.find((record) => record.id === selectedRecordId) ?? viewModel?.records[0] ?? null
+  const canUseAiFeedback = Boolean(viewModel?.permissions.canManageTeam && viewModel.teamMembers.length)
+  const visibleTabs = useMemo<CheckinTab[]>(() => {
+    const tabs = Object.keys(TAB_LABELS) as CheckinTab[]
+    return canUseAiFeedback ? tabs : tabs.filter((tab) => tab !== 'aiFeedback')
+  }, [canUseAiFeedback])
+  const aiFeedbackDefaultEmployeeId = useMemo(() => {
+    if (!viewModel?.permissions.canManageTeam || !viewModel.teamMembers.length) return ''
+    if (
+      viewModel.filters.scope === 'employee' &&
+      viewModel.filters.employeeId &&
+      viewModel.teamMembers.some((member) => member.id === viewModel.filters.employeeId)
+    ) {
+      return viewModel.filters.employeeId
+    }
+    if (selectedRecord?.owner.id && viewModel.teamMembers.some((member) => member.id === selectedRecord.owner.id)) {
+      return selectedRecord.owner.id
+    }
+    return viewModel.teamMembers[0]?.id ?? ''
+  }, [selectedRecord?.owner.id, viewModel])
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab('calendar')
+    }
+  }, [activeTab, visibleTabs])
+
+  useEffect(() => {
+    if (!canUseAiFeedback) {
+      setAiFeedbackEmployeeId('')
+      setAiFeedbackState({ employeeId: '', loading: false })
+      return
+    }
+
+    if (
+      !aiFeedbackEmployeeId ||
+      !viewModel?.teamMembers.some((member) => member.id === aiFeedbackEmployeeId)
+    ) {
+      setAiFeedbackEmployeeId(aiFeedbackDefaultEmployeeId)
+      setAiFeedbackState((current) =>
+        current.employeeId === aiFeedbackDefaultEmployeeId
+          ? current
+          : { employeeId: aiFeedbackDefaultEmployeeId, loading: false }
+      )
+    }
+  }, [aiFeedbackDefaultEmployeeId, aiFeedbackEmployeeId, canUseAiFeedback, viewModel?.teamMembers])
 
   const [editForm, setEditForm] = useState<EditCheckinFormState>({
     scheduledDate: '',
@@ -416,6 +494,63 @@ export function CheckinClient(props: CheckinPageData) {
     }, action.completed ? '액션아이템을 다시 미완료로 전환했습니다.' : '액션아이템을 완료 처리했습니다.')
   }
 
+  function handleChangeAiFeedbackEmployee(employeeId: string) {
+    setAiFeedbackEmployeeId(employeeId)
+    setAiFeedbackState({ employeeId, loading: false })
+  }
+
+  async function generateAiFeedback(employeeId = aiFeedbackEmployeeId) {
+    if (!employeeId) {
+      setAiFeedbackState({
+        employeeId: '',
+        loading: false,
+        error: '피드백 대상 구성원을 선택해 주세요.',
+      })
+      return
+    }
+
+    try {
+      setAiFeedbackState({ employeeId, loading: true })
+      setErrorNotice('')
+      const response = await fetch('/api/checkin/ai-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId }),
+      })
+      const json = (await response.json()) as ApiResponse<CheckinAiFeedbackResponse>
+      if (!json.success || !json.data) {
+        throw new Error(json.error?.message ?? 'AI 피드백을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.')
+      }
+
+      setAiFeedbackState({
+        employeeId,
+        loading: false,
+        result: json.data.result,
+        source: json.data.source,
+        fallbackReason: json.data.fallbackReason ?? null,
+        requestLogId: json.data.requestLogId,
+      })
+    } catch (error) {
+      setAiFeedbackState({
+        employeeId,
+        loading: false,
+        error: error instanceof Error ? error.message : 'AI 피드백을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      })
+    }
+  }
+
+  async function copyText(text: string, label: string) {
+    try {
+      if (!navigator.clipboard) {
+        throw new Error('Clipboard unavailable')
+      }
+      await navigator.clipboard.writeText(text)
+      setNotice(`${label}를 복사했습니다.`)
+    } catch {
+      setErrorNotice('복사하지 못했습니다. 브라우저 권한을 확인해 주세요.')
+    }
+  }
+
   function openNextCheckinFromRecord(record: CheckinRecordViewModel) {
     setIsCreateOpen(true)
     setCreateForm({
@@ -531,7 +666,7 @@ export function CheckinClient(props: CheckinPageData) {
         />
       </section>
 
-      <CheckinTabs activeTab={activeTab} onChange={setActiveTab} />
+      <CheckinTabs activeTab={activeTab} onChange={setActiveTab} visibleTabs={visibleTabs} />
 
       {activeTab === 'calendar' ? (
         <CheckinCalendarSection
@@ -574,6 +709,17 @@ export function CheckinClient(props: CheckinPageData) {
           prep={focusPrep}
           selectedRecord={selectedRecord}
           focusEmployee={viewModel.focusEmployee}
+        />
+      ) : null}
+
+      {activeTab === 'aiFeedback' && canUseAiFeedback ? (
+        <CheckinAiFeedbackSection
+          viewModel={viewModel}
+          selectedEmployeeId={aiFeedbackEmployeeId}
+          state={aiFeedbackState}
+          onChangeEmployee={handleChangeAiFeedbackEmployee}
+          onGenerate={generateAiFeedback}
+          onCopy={copyText}
         />
       ) : null}
 
@@ -872,20 +1018,23 @@ function NextActionCard({
 function CheckinTabs({
   activeTab,
   onChange,
+  visibleTabs,
 }: {
   activeTab: CheckinTab
   onChange: (tab: CheckinTab) => void
+  visibleTabs: CheckinTab[]
 }) {
   return (
     <div className="overflow-x-auto">
       <div className="inline-flex min-w-full gap-2 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm">
-        {Object.entries(TAB_LABELS).map(([value, label]) => {
+        {visibleTabs.map((value) => {
+          const label = TAB_LABELS[value]
           const active = activeTab === value
           return (
             <button
               key={value}
               type="button"
-              onClick={() => onChange(value as CheckinTab)}
+              onClick={() => onChange(value)}
               className={`rounded-2xl px-4 py-2.5 text-sm font-medium transition ${
                 active ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
               }`}
@@ -1438,6 +1587,282 @@ function CheckinPreparationSection({
   )
 }
 
+function CheckinAiFeedbackSection({
+  viewModel,
+  selectedEmployeeId,
+  state,
+  onChangeEmployee,
+  onGenerate,
+  onCopy,
+}: {
+  viewModel: CheckinPageViewModel
+  selectedEmployeeId: string
+  state: AiFeedbackState
+  onChangeEmployee: (employeeId: string) => void
+  onGenerate: (employeeId?: string) => Promise<void>
+  onCopy: (text: string, label: string) => Promise<void>
+}) {
+  const selectedMember =
+    viewModel.teamMembers.find((member) => member.id === selectedEmployeeId) ?? viewModel.teamMembers[0]
+  const effectiveEmployeeId = selectedMember?.id ?? ''
+  const prep = effectiveEmployeeId ? viewModel.prepByEmployee[effectiveEmployeeId] : undefined
+  const relatedActions = viewModel.actions
+    .filter((action) => action.ownerId === effectiveEmployeeId && !action.completed)
+    .slice(0, 4)
+  const relatedHistory = viewModel.history
+    .filter((item) => item.ownerId === effectiveEmployeeId)
+    .slice(0, 3)
+  const result = state.employeeId === effectiveEmployeeId ? state.result : undefined
+  const isLoading = state.loading && state.employeeId === effectiveEmployeeId
+  const error = state.employeeId === effectiveEmployeeId ? state.error : undefined
+
+  const questionsText = result?.recommended_questions.map((question, index) => `${index + 1}. ${question}`).join('\n') ?? ''
+  const nextActionsText =
+    result?.next_actions
+      .map((action, index) => {
+        const priority = CHECKIN_AI_FEEDBACK_PRIORITY_LABELS[action.priority]
+        return `${index + 1}. ${action.title} (${priority})\n- 이유: ${action.reason}\n- 담당 힌트: ${action.owner_hint}\n- 기한 힌트: ${action.due_hint}`
+      })
+      .join('\n\n') ?? ''
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <SectionHeader
+        title="팀원별 AI 피드백"
+        description="선택한 팀원의 KPI, 월간 실적, 최근 체크인 기록을 바탕으로 체크인 피드백 초안을 생성합니다."
+      />
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="rounded-2xl border border-gray-200 bg-slate-50 p-5">
+          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <label>
+              <span className="mb-2 block text-sm font-medium text-slate-700">피드백 대상</span>
+              <select
+                value={effectiveEmployeeId}
+                onChange={(event) => onChangeEmployee(event.target.value)}
+                className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-slate-900"
+              >
+                {viewModel.teamMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name} · {member.department}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => void onGenerate(effectiveEmployeeId)}
+              disabled={!effectiveEmployeeId || isLoading}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : result ? <RefreshCcw className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+              {isLoading ? '생성 중' : result ? '다시 생성' : 'AI 피드백 생성'}
+            </button>
+          </div>
+
+          {selectedMember ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <InfoBadge label={selectedMember.department} />
+              <InfoBadge label={selectedMember.roleLabel} />
+              {prep ? <InfoBadge label={`KPI ${prep.kpis.length}건`} /> : null}
+              {prep ? <InfoBadge label={`월간 실적 ${prep.monthlyRecords.length}건`} /> : null}
+              <InfoBadge label={`미완료 액션 ${relatedActions.length}건`} />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+          <div className="flex items-center gap-2 text-sm font-semibold text-blue-900">
+            <ShieldAlert className="h-4 w-4" />
+            리더 전용
+          </div>
+          <p className="mt-2 text-sm text-blue-800">
+            생성 결과는 체크인 준비 초안이며 자동 저장되거나 팀원에게 전송되지 않습니다.
+          </p>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+          {error}
+        </div>
+      ) : null}
+
+      <div className="mt-6 grid gap-4 xl:grid-cols-2">
+        <PrepCard title="현재 KPI 요약" icon={<Target className="h-4 w-4" />}>
+          {prep?.kpis.length ? (
+            <div className="space-y-3">
+              {prep.kpis.slice(0, 4).map((item) => (
+                <div key={item.id} className="rounded-2xl border border-gray-200 bg-white p-3">
+                  <div className="font-semibold text-slate-900">{item.title}</div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    {typeof item.achievementRate === 'number' ? `최근 달성률 ${item.achievementRate.toFixed(1)}%` : '최근 달성률 데이터 없음'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyInline>선택한 팀원의 KPI 기록이 없습니다.</EmptyInline>
+          )}
+        </PrepCard>
+
+        <PrepCard title="최근 월간 실적 / 위험 신호" icon={<CalendarDays className="h-4 w-4" />}>
+          {prep?.monthlyRecords.length ? (
+            <div className="space-y-3">
+              {prep.monthlyRecords.slice(0, 4).map((item) => (
+                <div key={`${item.month}-${item.comment ?? ''}`} className="rounded-2xl border border-gray-200 bg-white p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-semibold text-slate-900">{item.month}</div>
+                    {typeof item.achievementRate === 'number' ? <InfoBadge label={`달성률 ${item.achievementRate.toFixed(1)}%`} /> : null}
+                  </div>
+                  <p className="mt-2 text-sm text-slate-600">{item.comment ?? '활동 메모가 없습니다.'}</p>
+                  {item.obstacles ? <p className="mt-1 text-xs text-amber-700">장애 요인: {item.obstacles}</p> : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyInline>최근 월간 실적 기록이 없습니다.</EmptyInline>
+          )}
+        </PrepCard>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <PrepCard title="미완료 액션" icon={<ClipboardList className="h-4 w-4" />}>
+          {relatedActions.length ? (
+            <div className="space-y-2">
+              {relatedActions.map((action) => (
+                <div key={action.id} className="rounded-2xl border border-gray-200 bg-white px-3 py-2 text-sm text-slate-700">
+                  <div className="font-semibold text-slate-900">{action.title}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {PRIORITY_LABELS[action.priority]} · {action.dueDate ? formatShortDate(action.dueDate) : 'due date 없음'}
+                    {action.overdue ? ' · 지연' : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyInline>현재 범위에서 미완료 액션이 없습니다.</EmptyInline>
+          )}
+        </PrepCard>
+
+        <PrepCard title="최근 체크인 기록" icon={<MessageSquareMore className="h-4 w-4" />}>
+          {relatedHistory.length ? (
+            <div className="space-y-3">
+              {relatedHistory.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-gray-200 bg-white p-3">
+                  <div className="text-sm font-semibold text-slate-900">{formatDateTime(item.date)}</div>
+                  <p className="mt-2 text-sm text-slate-600">{item.summary}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyInline>최근 완료된 체크인 기록이 없습니다.</EmptyInline>
+          )}
+        </PrepCard>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-5">
+        {!result ? (
+          <EmptyBlock
+            title="아직 생성된 AI 피드백이 없습니다."
+            description="피드백 대상을 선택한 뒤 AI 피드백 생성을 실행해 주세요."
+          />
+        ) : (
+          <div className="space-y-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="flex flex-wrap gap-2">
+                  <AiStatusBadge status={result.status} />
+                  {state.source && state.source !== 'ai' ? <WarningChip label={state.source === 'disabled' ? '기본 가이드' : 'Fallback'} /> : null}
+                </div>
+                <h3 className="mt-3 text-xl font-bold text-slate-900">{result.headline}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{result.summary}</p>
+                {state.fallbackReason ? <p className="mt-2 text-xs text-amber-700">{state.fallbackReason}</p> : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => void onCopy(result.feedback_draft, '피드백 문안')}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                <Copy className="h-4 w-4" />
+                피드백 문안 복사
+              </button>
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <ResultListCard title="칭찬 포인트" items={result.strengths} />
+              <ResultListCard title="보완 / 위험 신호" items={result.concerns} tone="warning" />
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <ResultListCard
+                title="체크인 질문"
+                items={result.recommended_questions}
+                actionLabel="체크인 질문 복사"
+                onAction={() => void onCopy(questionsText, '체크인 질문')}
+              />
+              <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <h4 className="text-sm font-semibold text-slate-900">다음 액션 제안</h4>
+                  <button
+                    type="button"
+                    onClick={() => void onCopy(nextActionsText, '다음 액션')}
+                    className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    다음 액션 복사
+                  </button>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {result.next_actions.map((action) => (
+                    <div key={`${action.title}-${action.due_hint}`} className="rounded-2xl border border-gray-200 bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-semibold text-slate-900">{action.title}</div>
+                        <InfoBadge label={CHECKIN_AI_FEEDBACK_PRIORITY_LABELS[action.priority]} />
+                      </div>
+                      <p className="mt-2 text-sm text-slate-600">{action.reason}</p>
+                      <div className="mt-2 text-xs text-slate-500">
+                        {action.owner_hint} · {action.due_hint}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <h4 className="text-sm font-semibold text-blue-950">리더 전달 문안 초안</h4>
+                <button
+                  type="button"
+                  onClick={() => void onCopy(result.feedback_draft, '피드백 문안')}
+                  className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  복사
+                </button>
+              </div>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-blue-950">{result.feedback_draft}</p>
+            </section>
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                <h4 className="text-sm font-semibold text-slate-900">대화 톤 팁</h4>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{result.coaching_tone_tip}</p>
+              </section>
+              <ResultListCard title="추가 근거 필요" items={result.evidence_gaps.length ? result.evidence_gaps : ['추가 근거 공백은 크게 보이지 않습니다.']} />
+            </div>
+
+            <p className="rounded-2xl border border-gray-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+              {result.disclaimer}
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function CheckinDetailDrawer({
   record,
   prep,
@@ -1910,6 +2335,59 @@ function WarningChip({ label }: { label: string }) {
 function PriorityBadge({ priority }: { priority: 'LOW' | 'MEDIUM' | 'HIGH' }) {
   const className = priority === 'HIGH' ? 'bg-rose-100 text-rose-700' : priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
   return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${className}`}>{PRIORITY_LABELS[priority]}</span>
+}
+
+function AiStatusBadge({ status }: { status: CheckinAiFeedbackResult['status'] }) {
+  const className =
+    status === 'good'
+      ? 'bg-emerald-100 text-emerald-700'
+      : status === 'watch'
+        ? 'bg-amber-100 text-amber-700'
+        : status === 'risk'
+          ? 'bg-rose-100 text-rose-700'
+          : 'bg-slate-100 text-slate-600'
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${className}`}>{CHECKIN_AI_FEEDBACK_STATUS_LABELS[status]}</span>
+}
+
+function ResultListCard({
+  title,
+  items,
+  tone = 'default',
+  actionLabel,
+  onAction,
+}: {
+  title: string
+  items: string[]
+  tone?: 'default' | 'warning'
+  actionLabel?: string
+  onAction?: () => void
+}) {
+  const boxClass = tone === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-950' : 'border-gray-200 bg-white text-slate-700'
+
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-gray-50 p-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
+        {actionLabel && onAction ? (
+          <button
+            type="button"
+            onClick={onAction}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {actionLabel}
+          </button>
+        ) : null}
+      </div>
+      <ul className="mt-4 space-y-2 text-sm">
+        {items.map((item) => (
+          <li key={item} className={`rounded-2xl border px-3 py-2 ${boxClass}`}>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 function PrepCard({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
