@@ -419,6 +419,7 @@ function Button({
   variant = 'secondary',
   icon,
   title,
+  size = 'md',
 }: {
   children: ReactNode
   onClick?: () => void
@@ -426,14 +427,19 @@ function Button({
   variant?: 'primary' | 'secondary'
   icon?: ReactNode
   title?: string
+  size?: 'sm' | 'md'
 }) {
+  const sizeClass =
+    size === 'sm'
+      ? 'min-h-8 rounded-lg px-2.5 text-xs gap-1.5'
+      : 'min-h-11 rounded-2xl px-4 text-sm gap-2'
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`inline-flex items-center justify-center font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${sizeClass} ${
         variant === 'primary'
           ? 'bg-slate-900 text-white hover:bg-slate-800'
           : 'border border-slate-200 text-slate-700 hover:bg-slate-50'
@@ -593,6 +599,7 @@ export function MonthlyKpiManagementClient({
   const [filters, setFilters] = useState({ ...DEFAULT_FILTERS })
   const [lastAiAction, setLastAiAction] = useState<AiAction>('generate-summary')
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
   const [drafts, setDrafts] = useState<Record<string, Draft>>(
     Object.fromEntries(pageData.records.map((record) => [record.id, createDraft(record)]))
   )
@@ -1172,216 +1179,226 @@ export function MonthlyKpiManagementClient({
         onChange={(event) => void handleAttachmentUpload(event.target.files)}
       />
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">
-          Monthly Performance Operations
-        </p>
-        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">{monthContext.screenTitle}</h1>
-            <p className="mt-2 text-sm text-slate-500">
-              실적을 기록하고, 리뷰와 증빙을 누적해 평가 근거로 연결합니다.
+      {loadAlerts}
+
+      {/* Compact monthly work toolbar — replaces the previous oversized header card, filter card, and right-rail 월간 작업 panel. */}
+      <section
+        aria-label="월간 작업 툴바"
+        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-5"
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-500">
+              Monthly Performance Operations
+            </p>
+            <h1 className="mt-0.5 text-xl font-bold text-slate-900 sm:text-2xl">{monthContext.screenTitle}</h1>
+            <p className="mt-1 text-xs text-slate-500">
+              {canChangeTargetScope ? (
+                <>대상: {targetContextLabel}</>
+              ) : (
+                <>내 실적 · {targetContextLabel}</>
+              )}
+              <span className="px-1.5 text-slate-300">·</span>
+              <span>현재 선택 월: {monthContext.fullLabel}</span>
             </p>
           </div>
+
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="월간 작업">
+            <Button
+              size="sm"
+              icon={<Save className="h-3.5 w-3.5" />}
+              onClick={() => void saveRecord('draft')}
+              disabled={!selected || busy !== null || Boolean(editDisabledReason)}
+              title={editDisabledReason}
+            >
+              임시저장
+            </Button>
+            <Button
+              size="sm"
+              icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+              variant="primary"
+              onClick={() => void saveRecord('submit')}
+              disabled={!selected || busy !== null || Boolean(submitDisabledReason)}
+              title={submitDisabledReason}
+            >
+              제출
+            </Button>
+            <Button
+              size="sm"
+              icon={<History className="h-3.5 w-3.5" />}
+              onClick={handleCopyPreviousMonth}
+              disabled={busy !== null || Boolean(copyPreviousReason)}
+              title={copyPreviousReason}
+            >
+              이전월 값 불러오기
+            </Button>
+            <Button
+              size="sm"
+              icon={<Paperclip className="h-3.5 w-3.5" />}
+              onClick={() => {
+                if (!canEdit) {
+                  setBanner({ tone: 'info', message: '현재 상태에서는 증빙을 추가할 수 없습니다.' })
+                  return
+                }
+                fileInputRef.current?.click()
+              }}
+              disabled={!selected || busy !== null || Boolean(uploadDisabledReason)}
+              title={uploadDisabledReason}
+            >
+              증빙 첨부
+            </Button>
+            <Button
+              size="sm"
+              icon={<History className="h-3.5 w-3.5" />}
+              onClick={() => setTab('review')}
+              disabled={busy !== null}
+            >
+              이력 보기
+            </Button>
+          </div>
         </div>
-      </section>
 
-      {loadAlerts}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,420px)] lg:items-end">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">월 선택</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">현재 선택 월: {monthContext.fullLabel}</p>
-                <div className="mt-3">
-                  <MonthQuickSwitch
-                    selectedYear={pageData.selectedYear}
-                    selectedMonth={pageData.selectedMonth}
-                    onChange={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
-                  />
-                </div>
-              </div>
+        <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="sr-only">월 선택</p>
+            <MonthQuickSwitch
+              selectedYear={pageData.selectedYear}
+              selectedMonth={pageData.selectedMonth}
+              onChange={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
+            />
+          </div>
 
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="space-y-1.5">
-                  <span className="text-xs font-medium text-slate-500">연도</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                pageData.summary.overallStatus === 'MIXED'
+                  ? 'bg-slate-100 text-slate-700'
+                  : STATUS_CLASS[pageData.summary.overallStatus]
+              }`}
+            >
+              {pageData.summary.overallStatus === 'MIXED'
+                ? '혼합 상태'
+                : STATUS_LABELS[pageData.summary.overallStatus]}
+            </span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-700">
+              제출 완료 {pageData.summary.submissionRate}%
+            </span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-700">
+              평균 {formatPercent(pageData.summary.averageAchievementRate)}
+            </span>
+            <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-medium text-rose-700">
+              위험 {formatCountWithUnit(pageData.summary.riskyCount, '개')}
+            </span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-700">
+              증빙 {formatCountWithUnit(pageData.summary.attachmentCount, '건')}
+            </span>
+            <button
+              type="button"
+              onClick={() => setAdvancedFiltersOpen((value) => !value)}
+              aria-expanded={advancedFiltersOpen}
+              className="rounded-full border border-slate-200 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
+            >
+              {advancedFiltersOpen ? '상세 필터 닫기' : '상세 필터'}
+            </button>
+          </div>
+        </div>
+
+        {advancedFiltersOpen ? (
+          <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-slate-500">연도</span>
+              <select
+                value={String(pageData.selectedYear)}
+                onChange={(event) => handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })}
+                className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+              >
+                {pageData.availableYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}년
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-[11px] font-medium text-slate-500">월</span>
+              <select
+                value={pageData.selectedMonth}
+                onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}
+                className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+              >
+                {Array.from({ length: 12 }, (_, index) => {
+                  const value = `${pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
+                  return (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  )
+                })}
+              </select>
+            </label>
+
+            {canChangeTargetScope ? (
+              <>
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">대상 범위</span>
                   <select
-                    value={String(pageData.selectedYear)}
-                    onChange={(event) => handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })}
-                    className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
+                    value={pageData.selectedScope}
+                    onChange={(event) => handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })}
+                    className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
                   >
-                    {pageData.availableYears.map((year) => (
-                      <option key={year} value={year}>
-                        {year}년
+                    <option value="self">내 실적</option>
+                    <option value="team">우리 팀</option>
+                    <option value="employee">특정 구성원</option>
+                  </select>
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-[11px] font-medium text-slate-500">대상자</span>
+                  <select
+                    value={pageData.selectedEmployeeId}
+                    onChange={(event) =>
+                      handleRouteSelection({
+                        scope: 'employee',
+                        employeeId: event.target.value,
+                        tab: 'entry',
+                        recordId: '',
+                      })
+                    }
+                    disabled={pageData.selectedScope === 'self'}
+                    className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:bg-slate-50"
+                  >
+                    {pageData.employeeOptions.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.name} / {employee.departmentName}
                       </option>
                     ))}
                   </select>
                 </label>
-
-                <label className="space-y-1.5">
-                  <span className="text-xs font-medium text-slate-500">월</span>
-                  <select
-                    value={pageData.selectedMonth}
-                    onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}
-                    className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
-                  >
-                    {Array.from({ length: 12 }, (_, index) => {
-                      const value = `${pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
-                      return (
-                        <option key={value} value={value}>
-                          {value}
-                        </option>
-                      )
-                    })}
-                  </select>
-                </label>
+              </>
+            ) : (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 sm:col-span-2">
+                내 실적 · {targetContextLabel}
               </div>
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 lg:flex-row lg:items-center lg:justify-between">
-              {canChangeTargetScope ? (
-                <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[420px]">
-                  <label className="space-y-1.5">
-                    <span className="text-xs font-medium text-slate-500">대상 범위</span>
-                    <select
-                      value={pageData.selectedScope}
-                      onChange={(event) => handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })}
-                      className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
-                    >
-                      <option value="self">내 실적</option>
-                      <option value="team">우리 팀</option>
-                      <option value="employee">특정 구성원</option>
-                    </select>
-                  </label>
-
-                  <label className="space-y-1.5">
-                    <span className="text-xs font-medium text-slate-500">대상자</span>
-                    <select
-                      value={pageData.selectedEmployeeId}
-                      onChange={(event) =>
-                        handleRouteSelection({
-                          scope: 'employee',
-                          employeeId: event.target.value,
-                          tab: 'entry',
-                          recordId: '',
-                        })
-                      }
-                      disabled={pageData.selectedScope === 'self'}
-                      className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-50"
-                    >
-                      {pageData.employeeOptions.map((employee) => (
-                        <option key={employee.id} value={employee.id}>
-                          {employee.name} / {employee.departmentName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                  내 실적 · {targetContextLabel}
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    pageData.summary.overallStatus === 'MIXED'
-                      ? 'bg-slate-100 text-slate-700'
-                      : STATUS_CLASS[pageData.summary.overallStatus]
-                  }`}
-                >
-                  {pageData.summary.overallStatus === 'MIXED'
-                    ? '혼합 상태'
-                    : STATUS_LABELS[pageData.summary.overallStatus]}
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  제출 완료 {pageData.summary.submissionRate}%
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  평균 {formatPercent(pageData.summary.averageAchievementRate)}
-                </span>
-                <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700">
-                  위험 {formatCountWithUnit(pageData.summary.riskyCount, '개')}
-                </span>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                  증빙 {formatCountWithUnit(pageData.summary.attachmentCount, '건')}
-                </span>
-              </div>
-            </div>
+            )}
           </div>
+        ) : null}
 
-          <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="text-sm font-semibold text-slate-900">월간 작업</div>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              <Button
-                icon={<Save className="h-4 w-4" />}
-                onClick={() => void saveRecord('draft')}
-                disabled={!selected || busy !== null || Boolean(editDisabledReason)}
-                title={editDisabledReason}
-              >
-                임시저장
-              </Button>
-              <Button
-                icon={<CheckCircle2 className="h-4 w-4" />}
-                variant="primary"
-                onClick={() => void saveRecord('submit')}
-                disabled={!selected || busy !== null || Boolean(submitDisabledReason)}
-                title={submitDisabledReason}
-              >
-                제출
-              </Button>
-              <Button
-                icon={<History className="h-4 w-4" />}
-                onClick={handleCopyPreviousMonth}
-                disabled={busy !== null || Boolean(copyPreviousReason)}
-                title={copyPreviousReason}
-              >
-                이전월 값 불러오기
-              </Button>
-              <Button
-                icon={<Paperclip className="h-4 w-4" />}
-                onClick={() => {
-                  if (!canEdit) {
-                    setBanner({ tone: 'info', message: '현재 상태에서는 증빙을 추가할 수 없습니다.' })
-                    return
-                  }
-                  fileInputRef.current?.click()
-                }}
-                disabled={!selected || busy !== null || Boolean(uploadDisabledReason)}
-                title={uploadDisabledReason}
-              >
-                증빙 첨부
-              </Button>
-              <Button icon={<History className="h-4 w-4" />} onClick={() => setTab('review')} disabled={busy !== null}>
-                이력 보기
-              </Button>
-            </div>
-            {submitValidation.summary ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-                {submitValidation.summary}
-              </div>
-            ) : null}
-            {submitValidation.recommendationReasons.length ? (
-              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                {submitValidation.recommendationReasons.join(' ')}
-              </div>
-            ) : null}
+        {submitValidation.summary ? (
+          <div
+            role="alert"
+            className="mt-3 flex flex-wrap items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"
+          >
+            <span className="font-semibold">제출 차단</span>
+            <span>{submitValidation.summary}</span>
           </div>
-        </div>
+        ) : null}
+        {submitValidation.recommendationReasons.length ? (
+          <p className="mt-2 text-[11px] text-slate-500">
+            {submitValidation.recommendationReasons.join(' ')}
+          </p>
+        ) : null}
       </section>
-
-      {submitValidation.summary ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          <div className="font-semibold">제출 차단 사유</div>
-          <ul className="mt-2 list-disc space-y-1 pl-5">
-            {submitValidation.blockingReasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
 
       {banner ? (
         <div
