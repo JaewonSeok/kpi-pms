@@ -1,3 +1,4 @@
+import './register-path-aliases'
 import 'dotenv/config'
 import assert from 'node:assert/strict'
 import {

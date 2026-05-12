@@ -47,6 +47,27 @@ async function main() {
     assert.equal(source.includes("onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}"), true)
   })
 
+  await run('monthly KPI client removes duplicated large month context banner', () => {
+    const source = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
+
+    assert.equal(source.includes('월간 입력 컨텍스트'), false)
+    assert.equal(source.includes('드롭다운과 빠른 월 칩 모두'), false)
+    assert.equal(source.includes('{monthContext.shortLabel} 입력 중'), false)
+    assert.equal(source.includes('월 선택'), true)
+    assert.equal(source.includes('현재 선택 월: {monthContext.fullLabel}'), true)
+    assert.equal(source.includes('월간 작업'), true)
+  })
+
+  await run('monthly KPI client compresses target filters without removing leader scope controls', () => {
+    const source = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
+
+    assert.equal(source.includes('function canManageMonthlyScope('), true)
+    assert.equal(source.includes('const canChangeTargetScope = canManageMonthlyScope(pageData.actor.role)'), true)
+    assert.equal(source.includes("handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })"), true)
+    assert.equal(source.includes("handleRouteSelection({ scope: 'employee',"), true)
+    assert.equal(source.includes('내 실적 · {targetContextLabel}'), true)
+  })
+
   await run('monthly KPI client updates empty states with selected month context', () => {
     const source = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
     assert.equal(source.includes('{monthContext.fullLabel} 기준 조건에 맞는 월간 실적이 없습니다.'), true)

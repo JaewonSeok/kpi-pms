@@ -155,6 +155,10 @@ function getQuickMonthOptions(selectedYear: number, selectedMonth: string) {
   })
 }
 
+function canManageMonthlyScope(role: MonthlyPageData['actor']['role']) {
+  return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
+}
+
 function MonthQuickSwitch({
   selectedYear,
   selectedMonth,
@@ -466,62 +470,63 @@ function RecoveryScopeControls(props: {
   const monthContext = parseYearMonth(props.pageData.selectedYear, props.pageData.selectedMonth)
 
   return (
-    <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#ffffff_45%,#f9fafb_100%)] p-6 shadow-sm lg:p-8">
-      <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-slate-900 sm:flex-row sm:items-center sm:justify-between">
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,420px)] lg:items-end">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">현재 선택 월</p>
-          <h2 className="mt-1 text-xl font-bold">{monthContext.screenTitle}</h2>
-          <p className="mt-1 text-sm text-slate-600">{monthContext.fullLabel} 기준으로 월간 실적 화면을 다시 불러옵니다.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">월 선택</p>
+          <p className="mt-1 text-sm font-semibold text-slate-900">현재 선택 월: {monthContext.fullLabel}</p>
+          <div className="mt-3">
+            <MonthQuickSwitch
+              selectedYear={props.pageData.selectedYear}
+              selectedMonth={props.pageData.selectedMonth}
+              onChange={props.onChangeMonth}
+            />
+          </div>
         </div>
-        <span className="inline-flex w-fit rounded-full bg-white px-3 py-1 text-sm font-semibold text-blue-700 shadow-sm">
-          {monthContext.shortLabel} 화면
-        </span>
-      </div>
-      <MonthQuickSwitch
-        selectedYear={props.pageData.selectedYear}
-        selectedMonth={props.pageData.selectedMonth}
-        onChange={props.onChangeMonth}
-      />
-      <div className="mt-5 grid gap-3 md:grid-cols-4">
-        <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">연도</span>
-          <select
-            value={String(props.pageData.selectedYear)}
-            onChange={(event) => props.onChangeYear(Number(event.target.value))}
-            className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
-          >
-            {props.pageData.availableYears.map((year) => (
-              <option key={year} value={year}>
-                {year}년
-              </option>
-            ))}
-          </select>
-        </label>
 
-        <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">월</span>
-          <select
-            value={props.pageData.selectedMonth}
-            onChange={(event) => props.onChangeMonth(event.target.value)}
-            className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
-          >
-            {Array.from({ length: 12 }, (_, index) => {
-              const value = `${props.pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
-              return (
-                <option key={value} value={value}>
-                  {value}
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-slate-500">연도</span>
+            <select
+              value={String(props.pageData.selectedYear)}
+              onChange={(event) => props.onChangeYear(Number(event.target.value))}
+              className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
+            >
+              {props.pageData.availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}년
                 </option>
-              )
-            })}
-          </select>
-        </label>
+              ))}
+            </select>
+          </label>
 
-        <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">대상 범위</span>
+          <label className="space-y-1.5">
+            <span className="text-xs font-medium text-slate-500">월</span>
+            <select
+              value={props.pageData.selectedMonth}
+              onChange={(event) => props.onChangeMonth(event.target.value)}
+              className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
+            >
+              {Array.from({ length: 12 }, (_, index) => {
+                const value = `${props.pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
+                return (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                )
+              })}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2">
+        <label className="space-y-1.5">
+          <span className="text-xs font-medium text-slate-500">대상 범위</span>
           <select
             value={props.pageData.selectedScope}
             onChange={(event) => props.onChangeScope(event.target.value)}
-            className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
+            className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
           >
             <option value="self">내 실적</option>
             <option value="team">팀 범위</option>
@@ -529,13 +534,13 @@ function RecoveryScopeControls(props: {
           </select>
         </label>
 
-        <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">대상자</span>
+        <label className="space-y-1.5">
+          <span className="text-xs font-medium text-slate-500">대상자</span>
           <select
             value={props.pageData.selectedEmployeeId}
             onChange={(event) => props.onChangeEmployee(event.target.value)}
             disabled={props.pageData.selectedScope === 'self'}
-            className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900 disabled:bg-slate-50"
+            className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-50"
           >
             <option value="">대상자를 선택해 주세요</option>
             {props.pageData.employeeOptions.map((employee) => (
@@ -654,6 +659,11 @@ export function MonthlyKpiManagementClient({
     if (filters.review === 'PENDING' && record.status !== 'SUBMITTED') return false
     return true
   })
+  const canChangeTargetScope = canManageMonthlyScope(pageData.actor.role)
+  const selectedEmployeeOption = pageData.employeeOptions.find((employee) => employee.id === pageData.selectedEmployeeId)
+  const targetContextLabel = selectedEmployeeOption
+    ? `${selectedEmployeeOption.name} / ${selectedEmployeeOption.departmentName}`
+    : `${pageData.actor.name} / ${pageData.actor.departmentName}`
 
   useEffect(() => {
     setDrafts(Object.fromEntries(pageData.records.map((record) => [record.id, createDraft(record)])))
@@ -1170,190 +1180,191 @@ export function MonthlyKpiManagementClient({
           <div>
             <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">{monthContext.screenTitle}</h1>
             <p className="mt-2 text-sm text-slate-500">
-              선택한 {monthContext.fullLabel}의 실적을 기록하고, 리뷰와 증빙을 누적해 평가 근거로 연결합니다.
+              실적을 기록하고, 리뷰와 증빙을 누적해 평가 근거로 연결합니다.
             </p>
           </div>
-          <span className="inline-flex w-fit rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">
-            현재 선택 월: {monthContext.fullLabel}
-          </span>
         </div>
       </section>
 
       {loadAlerts}
-      <section className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,#f8fbff_0%,#ffffff_45%,#f9fafb_100%)] p-6 shadow-sm lg:p-8">
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-5">
-            <div className="flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50/80 p-4 text-slate-900 sm:flex-row sm:items-center sm:justify-between">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,420px)] lg:items-end">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">월간 입력 컨텍스트</p>
-                <div className="mt-1 text-lg font-bold">{monthContext.fullLabel} 월간 실적</div>
-                <p className="mt-1 text-sm text-slate-600">드롭다운과 빠른 월 칩 모두 {monthContext.fullLabel}을 같은 기준으로 전환합니다.</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">월 선택</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">현재 선택 월: {monthContext.fullLabel}</p>
+                <div className="mt-3">
+                  <MonthQuickSwitch
+                    selectedYear={pageData.selectedYear}
+                    selectedMonth={pageData.selectedMonth}
+                    onChange={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
+                  />
+                </div>
               </div>
-              <span className="inline-flex w-fit rounded-full bg-white px-3 py-1 text-sm font-semibold text-blue-700 shadow-sm">
-                {monthContext.shortLabel} 입력 중
-              </span>
-            </div>
-            <div className="grid gap-3 md:grid-cols-4">
-              <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  연도
-                </span>
-                <select
-                  value={String(pageData.selectedYear)}
-                  onChange={(event) => handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })}
-                  className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
-                >
-                  {pageData.availableYears.map((year) => (
-                    <option key={year} value={year}>
-                      {year}년
-                    </option>
-                  ))}
-                </select>
-              </label>
 
-              <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  월
-                </span>
-                <select
-                  value={pageData.selectedMonth}
-                  onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}
-                  className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
-                >
-                  {Array.from({ length: 12 }, (_, index) => {
-                    const value = `${pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
-                    return (
-                      <option key={value} value={value}>
-                        {value}
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="text-xs font-medium text-slate-500">연도</span>
+                  <select
+                    value={String(pageData.selectedYear)}
+                    onChange={(event) => handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })}
+                    className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  >
+                    {pageData.availableYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}년
                       </option>
-                    )
-                  })}
-                </select>
-              </label>
+                    ))}
+                  </select>
+                </label>
 
-              <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  대상 범위
-                </span>
-                <select
-                  value={pageData.selectedScope}
-                  onChange={(event) => handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })}
-                  className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900"
-                >
-                  <option value="self">내 실적</option>
-                  <option value="team">우리 팀</option>
-                  <option value="employee">특정 구성원</option>
-                </select>
-              </label>
-
-              <label className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  대상자
-                </span>
-                <select
-                  value={pageData.selectedEmployeeId}
-                  onChange={(event) =>
-                    handleRouteSelection({
-                      scope: 'employee',
-                      employeeId: event.target.value,
-                      tab: 'entry',
-                      recordId: '',
-                    })
-                  }
-                  disabled={pageData.selectedScope === 'self'}
-                  className="mt-2 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-slate-900 disabled:bg-slate-50"
-                >
-                  {pageData.employeeOptions.map((employee) => (
-                    <option key={employee.id} value={employee.id}>
-                      {employee.name} / {employee.departmentName}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <label className="space-y-1.5">
+                  <span className="text-xs font-medium text-slate-500">월</span>
+                  <select
+                    value={pageData.selectedMonth}
+                    onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}
+                    className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  >
+                    {Array.from({ length: 12 }, (_, index) => {
+                      const value = `${pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
+                      return (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </label>
+              </div>
             </div>
-            <MonthQuickSwitch
-              selectedYear={pageData.selectedYear}
-              selectedMonth={pageData.selectedMonth}
-              onChange={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
-            />
 
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  pageData.summary.overallStatus === 'MIXED'
-                    ? 'bg-slate-100 text-slate-700'
-                    : STATUS_CLASS[pageData.summary.overallStatus]
-                }`}
-              >
-                {pageData.summary.overallStatus === 'MIXED'
-                  ? '혼합 상태'
-                  : STATUS_LABELS[pageData.summary.overallStatus]}
-              </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                제출 완료 비율 {pageData.summary.submissionRate}%
-              </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                평균 달성률 {formatPercent(pageData.summary.averageAchievementRate)}
-              </span>
-              <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700">
-                위험 신호 KPI {formatCountWithUnit(pageData.summary.riskyCount, '개')}
-              </span>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                증빙 항목 {formatCountWithUnit(pageData.summary.attachmentCount, '건')}
-              </span>
+            <div className="flex flex-col gap-3 border-t border-slate-100 pt-3 lg:flex-row lg:items-center lg:justify-between">
+              {canChangeTargetScope ? (
+                <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[420px]">
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-medium text-slate-500">대상 범위</span>
+                    <select
+                      value={pageData.selectedScope}
+                      onChange={(event) => handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })}
+                      className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900"
+                    >
+                      <option value="self">내 실적</option>
+                      <option value="team">우리 팀</option>
+                      <option value="employee">특정 구성원</option>
+                    </select>
+                  </label>
+
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-medium text-slate-500">대상자</span>
+                    <select
+                      value={pageData.selectedEmployeeId}
+                      onChange={(event) =>
+                        handleRouteSelection({
+                          scope: 'employee',
+                          employeeId: event.target.value,
+                          tab: 'entry',
+                          recordId: '',
+                        })
+                      }
+                      disabled={pageData.selectedScope === 'self'}
+                      className="min-h-10 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-50"
+                    >
+                      {pageData.employeeOptions.map((employee) => (
+                        <option key={employee.id} value={employee.id}>
+                          {employee.name} / {employee.departmentName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  내 실적 · {targetContextLabel}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    pageData.summary.overallStatus === 'MIXED'
+                      ? 'bg-slate-100 text-slate-700'
+                      : STATUS_CLASS[pageData.summary.overallStatus]
+                  }`}
+                >
+                  {pageData.summary.overallStatus === 'MIXED'
+                    ? '혼합 상태'
+                    : STATUS_LABELS[pageData.summary.overallStatus]}
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                  제출 완료 {pageData.summary.submissionRate}%
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                  평균 {formatPercent(pageData.summary.averageAchievementRate)}
+                </span>
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-medium text-rose-700">
+                  위험 {formatCountWithUnit(pageData.summary.riskyCount, '개')}
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                  증빙 {formatCountWithUnit(pageData.summary.attachmentCount, '건')}
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <Button
-              icon={<Save className="h-4 w-4" />}
-              onClick={() => void saveRecord('draft')}
-              disabled={!selected || busy !== null || Boolean(editDisabledReason)}
-              title={editDisabledReason}
-            >
-              임시저장
-            </Button>
-            <Button
-              icon={<CheckCircle2 className="h-4 w-4" />}
-              variant="primary"
-              onClick={() => void saveRecord('submit')}
-              disabled={!selected || busy !== null || Boolean(submitDisabledReason)}
-              title={submitDisabledReason}
-            >
-              제출
-            </Button>
-            <Button
-              icon={<History className="h-4 w-4" />}
-              onClick={handleCopyPreviousMonth}
-              disabled={busy !== null || Boolean(copyPreviousReason)}
-              title={copyPreviousReason}
-            >
-              이전월 값 불러오기
-            </Button>
-            <Button
-              icon={<Paperclip className="h-4 w-4" />}
-              onClick={() => {
-                if (!canEdit) {
-                  setBanner({ tone: 'info', message: '현재 상태에서는 증빙을 추가할 수 없습니다.' })
-                  return
-                }
-                fileInputRef.current?.click()
-              }}
-              disabled={!selected || busy !== null || Boolean(uploadDisabledReason)}
-              title={uploadDisabledReason}
-            >
-              증빙 첨부
-            </Button>
-            <Button icon={<History className="h-4 w-4" />} onClick={() => setTab('review')} disabled={busy !== null}>
-              이력 보기
-            </Button>
+          <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-sm font-semibold text-slate-900">월간 작업</div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              <Button
+                icon={<Save className="h-4 w-4" />}
+                onClick={() => void saveRecord('draft')}
+                disabled={!selected || busy !== null || Boolean(editDisabledReason)}
+                title={editDisabledReason}
+              >
+                임시저장
+              </Button>
+              <Button
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                variant="primary"
+                onClick={() => void saveRecord('submit')}
+                disabled={!selected || busy !== null || Boolean(submitDisabledReason)}
+                title={submitDisabledReason}
+              >
+                제출
+              </Button>
+              <Button
+                icon={<History className="h-4 w-4" />}
+                onClick={handleCopyPreviousMonth}
+                disabled={busy !== null || Boolean(copyPreviousReason)}
+                title={copyPreviousReason}
+              >
+                이전월 값 불러오기
+              </Button>
+              <Button
+                icon={<Paperclip className="h-4 w-4" />}
+                onClick={() => {
+                  if (!canEdit) {
+                    setBanner({ tone: 'info', message: '현재 상태에서는 증빙을 추가할 수 없습니다.' })
+                    return
+                  }
+                  fileInputRef.current?.click()
+                }}
+                disabled={!selected || busy !== null || Boolean(uploadDisabledReason)}
+                title={uploadDisabledReason}
+              >
+                증빙 첨부
+              </Button>
+              <Button icon={<History className="h-4 w-4" />} onClick={() => setTab('review')} disabled={busy !== null}>
+                이력 보기
+              </Button>
+            </div>
             {submitValidation.summary ? (
               <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
                 {submitValidation.summary}
               </div>
             ) : null}
             {submitValidation.recommendationReasons.length ? (
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
                 {submitValidation.recommendationReasons.join(' ')}
               </div>
             ) : null}
