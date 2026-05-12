@@ -11,6 +11,7 @@ import {
   type OrgKpiScope,
   resolveOrgKpiScopeFromDepartmentId,
 } from '../../lib/org-kpi-scope'
+import { normalizeLegacyTeamNameForDepartment } from '../../lib/org-affiliation'
 import { resolveMasterLoginAccess } from '../../lib/master-login-shared'
 import { AppError } from '../../lib/utils'
 
@@ -727,6 +728,9 @@ export function validateEmployeeUploadRows(params: {
     if (joinDateResult.invalid) addIssue(row, 'joinDate', '입사일 형식이 올바르지 않습니다.')
     if (resignationDateResult.invalid) addIssue(row, 'resignationDate', '퇴사일 형식이 올바르지 않습니다.')
     if (sortOrderResult.invalid) addIssue(row, 'sortOrder', '정렬 순서는 0 이상의 정수여야 합니다.')
+    if (team && departmentName && !normalizeLegacyTeamNameForDepartment(team, departmentName)) {
+      addIssue(row, 'team', '부서명과 같은 팀명은 중복 저장하지 않고 부서 기준으로 표시합니다.', 'warning')
+    }
 
     let normalizedEmail: string | null = null
     if (googleEmailValue) {
@@ -939,6 +943,10 @@ function looksLikeLegacySectionName(value?: string | null) {
 function normalizeLegacyTeamName(value?: string | null) {
   const normalized = value?.trim() ?? ''
   return normalized.length > 0 ? normalized : null
+}
+
+function normalizeEmployeeTeamName(value?: string | null, departmentName?: string | null) {
+  return normalizeLegacyTeamNameForDepartment(normalizeLegacyTeamName(value), departmentName)
 }
 
 function looksLikeLegacyTeamName(value?: string | null) {
@@ -1385,7 +1393,7 @@ export async function loadEmployeeDirectory(params: {
         employee.gwsEmail,
         employee.department.deptName,
         employee.department.deptCode,
-        employee.teamName ?? '',
+        normalizeEmployeeTeamName(employee.teamName, employee.department.deptName) ?? '',
         employee.jobTitle ?? '',
       ]
         .join(' ')
@@ -1404,7 +1412,7 @@ export async function loadEmployeeDirectory(params: {
         departmentId: employee.department.id,
         departmentCode: employee.department.deptCode,
         departmentName: employee.department.deptName,
-        teamName: employee.teamName,
+        teamName: normalizeEmployeeTeamName(employee.teamName, employee.department.deptName),
         jobTitle: employee.jobTitle,
         role: employee.role,
         employmentStatus: employee.status as EmployeeManagementStatus,
@@ -2022,7 +2030,7 @@ export async function upsertEmployeeRecord(params: {
     },
   })
   const departmentScope = resolveOrgKpiScopeFromDepartmentId(department.id, leadershipDepartments)
-  const normalizedTeamName = normalizeLegacyTeamName(params.teamName)
+  const normalizedTeamName = normalizeEmployeeTeamName(params.teamName, department.deptName)
   const canonicalDepartment =
     normalizedTeamName &&
     departmentScope === 'division' &&
@@ -2040,7 +2048,9 @@ export async function upsertEmployeeRecord(params: {
           })
       : department
   const canonicalTeamName =
-    canonicalDepartment.id === department.id ? normalizedTeamName : null
+    canonicalDepartment.id === department.id
+      ? normalizeEmployeeTeamName(normalizedTeamName, canonicalDepartment.deptName)
+      : null
   const normalizedEmail = assertAllowedGoogleWorkspaceEmail(params.gwsEmail)
   const existingTarget = params.employeeId
     ? await prisma.employee.findUnique({
@@ -2187,7 +2197,7 @@ export async function upsertEmployeeRecord(params: {
       departmentId: employee.department.id,
       departmentCode: employee.department.deptCode,
       departmentName: employee.department.deptName,
-      teamName: employee.teamName,
+      teamName: normalizeEmployeeTeamName(employee.teamName, employee.department.deptName),
       jobTitle: employee.jobTitle,
       role: employee.role,
       employmentStatus: employee.status as EmployeeManagementStatus,
@@ -2283,7 +2293,7 @@ export async function applyEmployeeLifecycleAction(params: {
       departmentId: updatedEmployee.department.id,
       departmentCode: updatedEmployee.department.deptCode,
       departmentName: updatedEmployee.department.deptName,
-      teamName: updatedEmployee.teamName,
+      teamName: normalizeEmployeeTeamName(updatedEmployee.teamName, updatedEmployee.department.deptName),
       jobTitle: updatedEmployee.jobTitle,
       role: updatedEmployee.role,
       employmentStatus: updatedEmployee.status as EmployeeManagementStatus,
@@ -3366,7 +3376,7 @@ export async function applyEmployeeUpload(params: {
     }
 
     const baseDepartment = departmentsForScopeValidation.find((department) => department.id === departmentId)
-    const normalizedTeamName = normalizeLegacyTeamName(row.team)
+    const normalizedTeamName = normalizeEmployeeTeamName(row.team, baseDepartment?.deptName ?? row.department)
     const baseDepartmentScope = departmentScopeMap.get(departmentId) ?? 'team'
     const canonicalDepartment =
       baseDepartment &&
@@ -3388,7 +3398,10 @@ export async function applyEmployeeUpload(params: {
             })
         : baseDepartment
     const targetDepartmentId = canonicalDepartment?.id ?? departmentId
-    const canonicalTeamName = targetDepartmentId === departmentId ? normalizedTeamName : null
+    const canonicalTeamName =
+      targetDepartmentId === departmentId
+        ? normalizeEmployeeTeamName(normalizedTeamName, canonicalDepartment?.deptName ?? baseDepartment?.deptName)
+        : null
 
     const existing = existingByEmployeeNumber.get(row.employeeNumber)
     if (existing) {
@@ -3675,7 +3688,7 @@ export async function fetchEmployeeOrgChart(params: {
         employee.gwsEmail,
         employee.department.deptName,
         employee.department.deptCode,
-        employee.teamName ?? '',
+        normalizeEmployeeTeamName(employee.teamName, employee.department.deptName) ?? '',
         employee.jobTitle ?? '',
       ]
         .join(' ')
@@ -3693,7 +3706,7 @@ export async function fetchEmployeeOrgChart(params: {
         googleEmail: employee.gwsEmail,
         departmentName: employee.department.deptName,
         departmentCode: employee.department.deptCode,
-        teamName: employee.teamName,
+        teamName: normalizeEmployeeTeamName(employee.teamName, employee.department.deptName),
         jobTitle: employee.jobTitle,
         role: employee.role,
         employmentStatus: employee.status as EmployeeManagementStatus,
