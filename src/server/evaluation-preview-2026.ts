@@ -4,6 +4,7 @@ import {
   type EvaluationPolicyItemCategoryCode,
   type EvaluationPolicyThresholdGroupCode,
 } from '../lib/evaluation-policy-2026'
+import type { EvaluationPolicy2026TeamMemberSalesThresholdDecision } from '../lib/evaluation-policy-2026-preview-metadata'
 import {
   calculateEvaluationScore2026,
   type EvaluationScore2026AchievementLevel,
@@ -64,6 +65,7 @@ export type EvaluationPreviewInput2026 = {
   thresholdGroup?: EvaluationPolicyThresholdGroupCode | null
   salesGroup?: EvaluationGrade2026SalesGroup | null
   roleGroup?: EvaluationGrade2026RoleGroup | null
+  teamMemberSalesThresholdDecision?: EvaluationPolicy2026TeamMemberSalesThresholdDecision | null
   employee?: {
     position?: AiPolicy2026Position | null
     role?: AiPolicy2026Role | null
@@ -103,6 +105,7 @@ export type EvaluationPreviewResult2026 = {
     calculatedGradeCode: string | null
     thresholdGroup: string | null
     thresholdGroupLabel: string | null
+    thresholdDecision: string | null
     requiresPolicyConfirmation: boolean
     issues: EvaluationPreview2026Issue[]
   }
@@ -191,6 +194,7 @@ export function buildEvaluationPreviewInput2026(params: {
   thresholdGroup?: EvaluationPolicyThresholdGroupCode | null
   salesGroup?: EvaluationGrade2026SalesGroup | null
   roleGroup?: EvaluationGrade2026RoleGroup | null
+  teamMemberSalesThresholdDecision?: EvaluationPolicy2026TeamMemberSalesThresholdDecision | null
   employee?: EvaluationPreviewInput2026['employee']
   ai?: EvaluationPreviewInput2026['ai']
 }): EvaluationPreviewInput2026 {
@@ -199,6 +203,7 @@ export function buildEvaluationPreviewInput2026(params: {
     thresholdGroup: params.thresholdGroup,
     salesGroup: params.salesGroup,
     roleGroup: params.roleGroup,
+    teamMemberSalesThresholdDecision: params.teamMemberSalesThresholdDecision,
     employee: params.employee,
     ai: params.ai,
     items: params.items.map((item) => ({
@@ -375,6 +380,7 @@ export function calculateEvaluationPreview2026(input: EvaluationPreviewInput2026
           thresholdGroup: input.thresholdGroup,
           salesGroup: input.salesGroup,
           roleGroup: input.roleGroup,
+          teamMemberSalesThresholdDecision: input.teamMemberSalesThresholdDecision,
         })
       : null
   const gradeIssues = gradeResult
@@ -415,6 +421,7 @@ export function calculateEvaluationPreview2026(input: EvaluationPreviewInput2026
       calculatedGradeCode: gradeResult?.ok ? gradeResult.value.calculatedGrade.code : null,
       thresholdGroup: gradeResult?.ok ? gradeResult.value.thresholdGroup : (input.thresholdGroup ?? null),
       thresholdGroupLabel: gradeResult?.ok ? gradeResult.value.thresholdGroupLabel : null,
+      thresholdDecision: input.teamMemberSalesThresholdDecision ?? null,
       requiresPolicyConfirmation:
         (gradeResult?.ok ? gradeResult.value.requiresPolicyConfirmation : false) ||
         gradeIssues.some((issue) => issue.code === 'AMBIGUOUS_THRESHOLD_MATCH' || issue.code === 'POLICY_CONFIRMATION_REQUIRED'),

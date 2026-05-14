@@ -10,6 +10,10 @@ import { prisma } from '@/lib/prisma'
 import { AppError, calcPdcaScore } from '@/lib/utils'
 import type { AiCapabilityRecognitionRouteCode } from '@/lib/evaluation-policy-2026'
 import {
+  resolvePolicy2026PreviewSalesGroup,
+  resolvePolicy2026TeamMemberSalesThresholdDecision,
+} from '@/lib/evaluation-policy-2026-preview-metadata'
+import {
   buildEvaluationPreviewInput2026,
   calculateEvaluationPreview2026,
   type EvaluationPreviewInput2026,
@@ -183,22 +187,6 @@ function resolveRoleGroup2026(params: {
   return null
 }
 
-function resolveSalesGroup2026(employee: LoadedEvaluation['target']): EvaluationGrade2026SalesGroup | null {
-  const text = [employee.department?.deptName, employee.teamName, employee.jobTitle]
-    .filter((value): value is string => Boolean(value))
-    .join(' ')
-    .toLowerCase()
-
-  if (/(^|[\s/·-])(sales|non-sales)([\s/·-]|$)/i.test(text) || text.includes('비영업')) {
-    return text.includes('non-sales') || text.includes('비영업') ? 'NON_SALES' : 'SALES'
-  }
-
-  if (text.includes('영업')) return 'SALES'
-
-  // The current schema has no explicit sales/non-sales marker. Avoid defaulting to NON_SALES.
-  return null
-}
-
 function isRecognitionRoute(value: unknown): value is AiCapabilityRecognitionRouteCode {
   return (
     value === 'AI_PROJECT_TK' ||
@@ -335,7 +323,14 @@ export async function buildEvaluationPreviewInputFromDb2026(params: {
         position: evaluation.target.position,
         role: evaluation.target.role,
       }),
-      salesGroup: resolveSalesGroup2026(evaluation.target),
+      salesGroup: resolvePolicy2026PreviewSalesGroup({
+        evalCycleConfig: evaluation.evalCycle.performanceDesignConfig,
+        employeeId: evaluation.targetId,
+        employee: evaluation.target,
+      }) as EvaluationGrade2026SalesGroup | null,
+      teamMemberSalesThresholdDecision: resolvePolicy2026TeamMemberSalesThresholdDecision(
+        evaluation.evalCycle.performanceDesignConfig
+      ),
       employee: {
         position: evaluation.target.position,
         role: evaluation.target.role,

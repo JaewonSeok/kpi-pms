@@ -51,6 +51,10 @@ import {
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 import type { EvaluationPreviewResult2026 } from '@/server/evaluation-preview-2026'
 import type { EvaluationPreviewReadinessSummary2026 } from '@/server/evaluation-preview-2026-readiness'
+import type {
+  EvaluationPolicy2026MappingCandidates,
+  EvaluationPolicy2026MetadataPatchResult,
+} from '@/server/evaluation-preview-2026-mapping'
 
 type WorkbenchTab =
   | 'workbench'
@@ -88,6 +92,11 @@ type EvaluationPreview2026ApiData = {
   preview: EvaluationPreviewResult2026
 }
 type EvaluationPreviewReadiness2026ApiData = EvaluationPreviewReadinessSummary2026
+type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
+type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
+type PolicyCategoryDraft2026 = 'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK' | 'KEEP_UNCLASSIFIED' | ''
+type SalesGroupDraft2026 = 'SALES' | 'NON_SALES' | 'UNRESOLVED' | ''
+type ThresholdDecisionDraft2026 = 'UNRESOLVED' | 'SUPER_PRIORITY' | 'OUTSTANDING_PRIORITY' | ''
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '종합',
@@ -138,6 +147,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [policyReadiness2026, setPolicyReadiness2026] = useState<EvaluationPreviewReadiness2026ApiData | null>(null)
   const [policyReadiness2026Loading, setPolicyReadiness2026Loading] = useState(false)
   const [policyReadiness2026Error, setPolicyReadiness2026Error] = useState('')
+  const [policyMapping2026, setPolicyMapping2026] = useState<EvaluationPolicyMapping2026ApiData | null>(null)
+  const [policyMapping2026Loading, setPolicyMapping2026Loading] = useState(false)
+  const [policyMapping2026Saving, setPolicyMapping2026Saving] = useState(false)
+  const [policyMapping2026Error, setPolicyMapping2026Error] = useState('')
+  const [policyMapping2026Notice, setPolicyMapping2026Notice] = useState('')
+  const [policyCategoryDrafts2026, setPolicyCategoryDrafts2026] = useState<Record<string, PolicyCategoryDraft2026>>({})
+  const [salesGroupDrafts2026, setSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
+  const [thresholdDecisionDrafts2026, setThresholdDecisionDrafts2026] = useState<Record<string, ThresholdDecisionDraft2026>>({})
   const workbenchContextKey = `${props.selectedCycleId ?? ''}:${props.selectedEvaluationId ?? ''}`
   const previousWorkbenchContextKey = useRef(workbenchContextKey)
   const previousCycleId = useRef(props.selectedCycleId ?? '')
@@ -170,6 +187,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyReadiness2026(null)
     setPolicyReadiness2026Error('')
     setPolicyReadiness2026Loading(false)
+    setPolicyMapping2026(null)
+    setPolicyMapping2026Error('')
+    setPolicyMapping2026Notice('')
+    setPolicyMapping2026Loading(false)
+    setPolicyMapping2026Saving(false)
+    setPolicyCategoryDrafts2026({})
+    setSalesGroupDrafts2026({})
+    setThresholdDecisionDrafts2026({})
     setBriefing(null)
     setAssistLoadingMode(null)
     setCopiedPreviewMode(null)
@@ -331,7 +356,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       }, 0),
     [editableItems]
   )
-  const canViewPolicyPreview2026 = Boolean(props.permissions?.canSeeAllInCycle && selected)
+  const canViewPolicyPreview2026 = Boolean(
+    props.currentUser?.role === 'ROLE_ADMIN' && props.permissions?.canSeeAllInCycle && selected
+  )
 
   const workspaceEvidence = useMemo<EvaluationAssistEvidenceView>(() => {
     if (!selected) {
@@ -517,6 +544,113 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       )
     } finally {
       setPolicyReadiness2026Loading(false)
+    }
+  }
+
+  async function loadPolicyMappingCandidates2026() {
+    if (!canViewPolicyPreview2026) return
+    setPolicyMapping2026Loading(true)
+    setPolicyMapping2026Error('')
+    setPolicyMapping2026Notice('')
+
+    try {
+      const params = new URLSearchParams()
+      if (props.selectedCycleId) {
+        params.set('cycleId', props.selectedCycleId)
+      } else {
+        params.set('year', '2026')
+      }
+      const query = params.toString()
+      const response = await fetch(`/api/evaluation/preview-2026/mapping-candidates${query ? `?${query}` : ''}`, {
+        method: 'GET',
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 정책 매핑 후보를 불러오지 못했습니다.')
+      }
+
+      const data = json.data as EvaluationPolicyMapping2026ApiData
+      setPolicyMapping2026(data)
+      setPolicyCategoryDrafts2026({})
+      setSalesGroupDrafts2026({})
+      setThresholdDecisionDrafts2026({})
+    } catch (error) {
+      setPolicyMapping2026(null)
+      setPolicyMapping2026Error(error instanceof Error ? error.message : '2026 정책 매핑 후보를 불러오지 못했습니다.')
+    } finally {
+      setPolicyMapping2026Loading(false)
+    }
+  }
+
+  async function savePolicyMetadata2026() {
+    if (!canViewPolicyPreview2026 || !policyMapping2026) return
+    const itemMappings = policyMapping2026.policyCategoryCandidates.flatMap((candidate) => {
+      const category = policyCategoryDrafts2026[candidate.evaluationItemId]
+      if (!category) return []
+      return [{
+        evaluationItemId: candidate.evaluationItemId,
+        personalKpiId: candidate.personalKpiId,
+        category,
+        note: 'HR manual mapping from 2026 preview readiness panel',
+      }]
+    })
+    const salesGroupMappings = policyMapping2026.salesGroupCandidates.flatMap((candidate) => {
+      const salesGroup = salesGroupDrafts2026[`${candidate.evalCycleId}:${candidate.employeeId}`]
+      if (!salesGroup) return []
+      return [{
+        evalCycleId: candidate.evalCycleId,
+        employeeId: candidate.employeeId,
+        salesGroup,
+        note: 'HR manual sales/non-sales mapping from 2026 preview readiness panel',
+      }]
+    })
+    const thresholdDecisions = policyMapping2026.thresholdDecisions.flatMap((candidate) => {
+      const decision = thresholdDecisionDrafts2026[candidate.evalCycleId]
+      if (!decision) return []
+      return [{
+        evalCycleId: candidate.evalCycleId,
+        decision,
+        note: 'HR decision for TEAM_MEMBER_SALES Super/Outstanding overlap from 2026 preview readiness panel',
+      }]
+    })
+
+    if (!itemMappings.length && !salesGroupMappings.length && !thresholdDecisions.length) {
+      setPolicyMapping2026Notice('저장할 2026 정책 metadata 변경 사항이 없습니다.')
+      return
+    }
+
+    setPolicyMapping2026Saving(true)
+    setPolicyMapping2026Error('')
+    setPolicyMapping2026Notice('')
+
+    try {
+      const response = await fetch('/api/evaluation/preview-2026/policy-metadata', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemMappings,
+          salesGroupMappings,
+          thresholdDecisions,
+        }),
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 정책 metadata를 저장하지 못했습니다.')
+      }
+
+      const result = json.data as EvaluationPolicyMetadataPatch2026ApiData
+      setPolicyMapping2026Notice(
+        `저장 완료: 항목 ${result.updatedItemMappings}건, 영업/비영업 ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
+      )
+      await loadPolicyMappingCandidates2026()
+      await loadPolicyReadiness2026()
+      if (policyPreview2026) {
+        await loadPolicyPreview2026()
+      }
+    } catch (error) {
+      setPolicyMapping2026Error(error instanceof Error ? error.message : '2026 정책 metadata를 저장하지 못했습니다.')
+    } finally {
+      setPolicyMapping2026Saving(false)
     }
   }
 
@@ -1312,6 +1446,27 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     loading={policyReadiness2026Loading}
                     error={policyReadiness2026Error}
                     onLoad={loadPolicyReadiness2026}
+                  />
+                  <PolicyMapping2026Panel
+                    mappingData={policyMapping2026}
+                    loading={policyMapping2026Loading}
+                    saving={policyMapping2026Saving}
+                    error={policyMapping2026Error}
+                    notice={policyMapping2026Notice}
+                    categoryDrafts={policyCategoryDrafts2026}
+                    salesGroupDrafts={salesGroupDrafts2026}
+                    thresholdDecisionDrafts={thresholdDecisionDrafts2026}
+                    onLoad={loadPolicyMappingCandidates2026}
+                    onSave={savePolicyMetadata2026}
+                    onCategoryChange={(id, value) =>
+                      setPolicyCategoryDrafts2026((current) => ({ ...current, [id]: value }))
+                    }
+                    onSalesGroupChange={(key, value) =>
+                      setSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
+                    }
+                    onThresholdDecisionChange={(cycleId, value) =>
+                      setThresholdDecisionDrafts2026((current) => ({ ...current, [cycleId]: value }))
+                    }
                   />
                   <PolicyPreview2026Panel
                     previewData={policyPreview2026}
@@ -2157,6 +2312,220 @@ function PolicyReadiness2026Panel(props: {
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           HR 관리자가 현재 평가 주기의 2026 정책 전환 준비 상태를 수동으로 확인할 수 있습니다.
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function getPolicyCategoryLabel2026(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    ORG_GOAL: '조직목표',
+    PROJECT_T: '프로젝트 T',
+    PROJECT_K: '프로젝트 K',
+    DAILY_WORK: '일상업무',
+    KEEP_UNCLASSIFIED: '제외/미분류 유지',
+    UNKNOWN: 'UNKNOWN',
+  }
+
+  return value ? labels[value] ?? value : '미분류'
+}
+
+function getSalesGroupLabel2026(value: string | null | undefined) {
+  if (value === 'SALES') return '영업'
+  if (value === 'NON_SALES') return '비영업'
+  if (value === 'UNRESOLVED') return '미해결'
+  return '미지정'
+}
+
+function getThresholdDecisionLabel2026(value: string | null | undefined) {
+  if (value === 'SUPER_PRIORITY') return '110점 이상 Super 우선'
+  if (value === 'OUTSTANDING_PRIORITY') return '110점 이상 Outstanding 우선'
+  if (value === 'UNRESOLVED') return 'HR 확인 필요 유지'
+  return '미지정'
+}
+
+function PolicyMapping2026Panel(props: {
+  mappingData: EvaluationPolicyMapping2026ApiData | null
+  loading: boolean
+  saving: boolean
+  error: string
+  notice: string
+  categoryDrafts: Record<string, PolicyCategoryDraft2026>
+  salesGroupDrafts: Record<string, SalesGroupDraft2026>
+  thresholdDecisionDrafts: Record<string, ThresholdDecisionDraft2026>
+  onLoad: () => void
+  onSave: () => void
+  onCategoryChange: (evaluationItemId: string, value: PolicyCategoryDraft2026) => void
+  onSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
+  onThresholdDecisionChange: (evalCycleId: string, value: ThresholdDecisionDraft2026) => void
+}) {
+  const data = props.mappingData
+  const policyCandidates = data?.policyCategoryCandidates.slice(0, 6) ?? []
+  const salesCandidates = data?.salesGroupCandidates.slice(0, 6) ?? []
+  const thresholdCandidates = data?.thresholdDecisions.slice(0, 3) ?? []
+  const hasChanges =
+    Object.values(props.categoryDrafts).some(Boolean) ||
+    Object.values(props.salesGroupDrafts).some(Boolean) ||
+    Object.values(props.thresholdDecisionDrafts).some(Boolean)
+
+  return (
+    <Panel
+      title="2026 정책 매핑 관리"
+      description="수동 검토 항목의 정책 카테고리와 preview 전용 영업/비영업 구분을 저장합니다. 공식 평가 결과에는 반영되지 않습니다."
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-1 rounded-2xl bg-slate-100 p-2 text-slate-600">
+            <ClipboardList className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="neutral">Metadata only</Badge>
+              <Badge tone={data ? 'warn' : 'neutral'}>
+                {data
+                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · 영업구분 ${data.salesGroupCandidates.length}건`
+                  : '미확인'}
+              </Badge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              저장 대상은 2026 preview readiness metadata입니다. 저장 점수, 저장 등급, 확정/보정 흐름은 바뀌지 않습니다.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={props.onLoad}
+            disabled={props.loading || props.saving}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+          >
+            {props.loading ? '불러오는 중...' : data ? '후보 다시 조회' : '매핑 후보 조회'}
+          </button>
+          <button
+            type="button"
+            onClick={props.onSave}
+            disabled={!data || !hasChanges || props.loading || props.saving}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {props.saving ? '저장 중...' : '선택 metadata 저장'}
+          </button>
+        </div>
+      </div>
+
+      {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+      {props.notice ? <div className="mt-4"><Banner tone="success" message={props.notice} /></div> : null}
+
+      {data ? (
+        <div className="mt-5 space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-slate-900">수동 검토 필요 항목</h4>
+                <span className="text-xs text-slate-400">{data.policyCategoryCandidates.length}건</span>
+              </div>
+              <div className="mt-3 space-y-3">
+                {policyCandidates.length ? policyCandidates.map((candidate) => (
+                  <div key={candidate.evaluationItemId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-900">{candidate.title}</span>
+                      <Badge tone="neutral">{candidate.employeeName}</Badge>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      현재 {getPolicyCategoryLabel2026(candidate.currentEffectiveCategory)} · 제안 {getPolicyCategoryLabel2026(candidate.suggestedCategory)} · {candidate.reason}
+                    </p>
+                    <select
+                      value={props.categoryDrafts[candidate.evaluationItemId] ?? ''}
+                      onChange={(event) =>
+                        props.onCategoryChange(candidate.evaluationItemId, event.target.value as PolicyCategoryDraft2026)
+                      }
+                      className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
+                    >
+                      <option value="">선택 안 함</option>
+                      <option value="ORG_GOAL">조직목표</option>
+                      <option value="PROJECT_T">프로젝트 T</option>
+                      <option value="PROJECT_K">프로젝트 K</option>
+                      <option value="DAILY_WORK">일상업무</option>
+                      <option value="KEEP_UNCLASSIFIED">제외/미분류 유지</option>
+                    </select>
+                  </div>
+                )) : <EmptyBlock message="현재 조회 범위에서 정책 카테고리 수동 매핑 후보가 없습니다." />}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-slate-900">영업/비영업 구분</h4>
+                  <span className="text-xs text-slate-400">{data.salesGroupCandidates.length}건</span>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {salesCandidates.length ? salesCandidates.map((candidate) => {
+                    const key = `${candidate.evalCycleId}:${candidate.employeeId}`
+                    return (
+                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{candidate.employeeName}</span>
+                          <Badge tone="neutral">{candidate.departmentName}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)} · {candidate.reason}
+                        </p>
+                        <select
+                          value={props.salesGroupDrafts[key] ?? ''}
+                          onChange={(event) => props.onSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
+                        >
+                          <option value="">선택 안 함</option>
+                          <option value="SALES">영업</option>
+                          <option value="NON_SALES">비영업</option>
+                          <option value="UNRESOLVED">미해결로 유지</option>
+                        </select>
+                      </div>
+                    )
+                  }) : <EmptyBlock message="현재 조회 범위에서 영업/비영업 수동 매핑 후보가 없습니다." />}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-slate-900">HR 확인 필요 기준</h4>
+                  <span className="text-xs text-slate-400">TEAM_MEMBER_SALES</span>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {thresholdCandidates.length ? thresholdCandidates.map((candidate) => (
+                    <div key={candidate.evalCycleId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-900">{candidate.evalYear} 평가 주기</span>
+                        <Badge tone={candidate.requiresDecision ? 'warn' : 'success'}>
+                          {candidate.requiresDecision ? 'HR 확인 필요' : '결정 기록됨'}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        현재 {getThresholdDecisionLabel2026(candidate.currentDecision)} · 영업 팀원 {candidate.affectedSalesMemberCount}명
+                      </p>
+                      <select
+                        value={props.thresholdDecisionDrafts[candidate.evalCycleId] ?? ''}
+                        onChange={(event) =>
+                          props.onThresholdDecisionChange(candidate.evalCycleId, event.target.value as ThresholdDecisionDraft2026)
+                        }
+                        className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
+                      >
+                        <option value="">선택 안 함</option>
+                        <option value="UNRESOLVED">HR 확인 필요 유지</option>
+                        <option value="SUPER_PRIORITY">110점 이상 Super 우선</option>
+                        <option value="OUTSTANDING_PRIORITY">110점 이상 Outstanding 우선</option>
+                      </select>
+                    </div>
+                  )) : <EmptyBlock message="현재 조회 범위에서 영업 팀원 Super/Outstanding 기준 후보가 없습니다." />}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+          HR 관리자가 preview blocker를 풀기 위한 정책 매핑 후보를 조회하고, 명시적으로 선택한 metadata만 저장할 수 있습니다.
         </div>
       )}
     </Panel>
