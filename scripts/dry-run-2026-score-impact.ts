@@ -108,7 +108,12 @@ async function main() {
           evalYear: args.year,
         },
       },
-      include: {
+      select: {
+        id: true,
+        evalCycleId: true,
+        targetId: true,
+        evalStage: true,
+        totalScore: true,
         evalCycle: {
           select: {
             id: true,
@@ -122,7 +127,15 @@ async function main() {
           },
         },
         items: {
-          include: {
+          select: {
+            id: true,
+            quantScore: true,
+            qualScore: true,
+            planScore: true,
+            doScore: true,
+            checkScore: true,
+            actScore: true,
+            weightedScore: true,
             personalKpi: {
               select: {
                 id: true,

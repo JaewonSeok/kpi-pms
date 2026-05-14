@@ -101,7 +101,15 @@ async function main() {
       where: {
         evalYear: args.year,
       },
-      include: {
+      select: {
+        id: true,
+        employeeId: true,
+        kpiName: true,
+        kpiType: true,
+        definition: true,
+        formula: true,
+        linkedOrgKpiId: true,
+        tags: true,
         employee: {
           select: {
             id: true,
@@ -138,7 +146,8 @@ async function main() {
           },
         },
       },
-      include: {
+      select: {
+        id: true,
         evaluation: {
           select: {
             id: true,
