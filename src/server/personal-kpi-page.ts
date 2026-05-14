@@ -21,10 +21,26 @@ import {
   resolvePersonalKpiAiAccess,
 } from '@/lib/personal-kpi-access'
 import {
+  EVALUATION_POLICY_2026,
+  isEvaluationPolicyItemCategory,
+  type EvaluationPolicyItemCategoryCode,
+} from '@/lib/evaluation-policy-2026'
+import {
   hasRejectedRevisionPending,
   resolvePersonalKpiOperationalStatus,
   type PersonalKpiOperationalStatus,
 } from './personal-kpi-workflow'
+import {
+  classifyOrgKpiForPersonalMbo2026,
+  detectDailyWorkDuplicateWithOrgGoal2026,
+  validatePersonalKpiMboCategory2026,
+  type KpiAlignmentOrgLevel2026,
+  type MboPolicyIssue2026,
+  type MboPolicySeverity2026,
+  type OrgKpiAlignmentInput2026,
+  type OrgKpiPersonalMboClassification2026,
+  type PersonalMboItemInput2026,
+} from './kpi-alignment-policy-2026'
 
 export type PersonalKpiPageState =
   | 'ready'
@@ -93,6 +109,51 @@ export type PersonalKpiAiLogItem = {
   summary: string
 }
 
+export type PersonalKpiMboPolicyIssueView2026 = {
+  code: MboPolicyIssue2026['code']
+  severity: MboPolicySeverity2026
+  message: string
+  targetField?: string
+  suggestedAction?: string
+}
+
+export type PersonalKpiMboPolicyGuidance2026 = {
+  itemId?: string | null
+  suggestedCategory: EvaluationPolicyItemCategoryCode | 'UNKNOWN'
+  suggestedCategoryLabel: string
+  guidanceLabel: string
+  guidanceMessage: string
+  severity: MboPolicySeverity2026
+  source:
+    | OrgKpiPersonalMboClassification2026['source']
+    | 'EXPLICIT_CATEGORY'
+    | 'PERSONAL_PROJECT'
+    | 'PERSONAL_DAILY_WORK'
+    | 'UNKNOWN'
+  issues: PersonalKpiMboPolicyIssueView2026[]
+  duplicateDailyWork: boolean
+  duplicateMatches: Array<{
+    id?: string | null
+    title: string
+    reason: string
+  }>
+  linkedOrgKpi?: {
+    orgLevel: KpiAlignmentOrgLevel2026
+    reflectionStatus: string
+    eligibleAsOrgGoal: boolean
+    requiresHrException: boolean
+  }
+  hrExceptionRequired: boolean
+  displayOnly: true
+}
+
+export type PersonalKpiMboPolicySummary2026 = {
+  orgGoalCandidateCount: number
+  dailyWorkCandidateCount: number
+  reviewNeededCount: number
+  duplicateRiskCount: number
+}
+
 export type PersonalKpiViewModel = {
   id: string
   title: string
@@ -109,6 +170,8 @@ export type PersonalKpiViewModel = {
     title: string
     departmentName: string
   }>
+  policyCategory?: EvaluationPolicyItemCategoryCode | null
+  mboPolicy: PersonalKpiMboPolicyGuidance2026
   type: KpiType
   definition?: string
   formula?: string
@@ -211,6 +274,7 @@ export type PersonalKpiPageData = {
     reviewPendingCount: number
     monthlyCoverageRate: number
     overallStatus: PersonalKpiOperationalStatus | 'MIXED'
+    mboPolicy: PersonalKpiMboPolicySummary2026
   }
   mine: PersonalKpiViewModel[]
   reviewQueue: PersonalKpiReviewQueueItem[]
@@ -244,6 +308,15 @@ type PersonalKpiWithRelations = Prisma.PersonalKpiGetPayload<{
     linkedOrgKpi: {
       include: {
         department: true
+        teamKpiReviewItems: {
+          orderBy: {
+            createdAt: 'desc'
+          }
+          take: 1
+          select: {
+            verdict: true
+          }
+        }
       }
     }
     monthlyRecords: {
@@ -807,6 +880,272 @@ function deriveOverallStatus(items: PersonalKpiViewModel[]): PersonalKpiPageData
   return statuses.length === 1 ? statuses[0] : 'MIXED'
 }
 
+function getMboPolicyCategoryLabel2026(category: EvaluationPolicyItemCategoryCode | 'UNKNOWN') {
+  if (category === 'UNKNOWN') return '검토 필요'
+  return EVALUATION_POLICY_2026.categories[category].labelKo
+}
+
+function normalizeMboPolicyIssue2026(issue: MboPolicyIssue2026): PersonalKpiMboPolicyIssueView2026 {
+  return {
+    code: issue.code,
+    severity: issue.severity,
+    message: issue.message,
+    targetField: issue.targetField,
+    suggestedAction: issue.suggestedAction,
+  }
+}
+
+function maxMboPolicySeverity2026(issues: PersonalKpiMboPolicyIssueView2026[]): MboPolicySeverity2026 {
+  if (issues.some((issue) => issue.severity === 'blocker')) return 'blocker'
+  if (issues.some((issue) => issue.severity === 'warning')) return 'warning'
+  return 'info'
+}
+
+function inferOrgKpiLevelForPersonalMbo2026(
+  orgKpi: {
+    parentOrgKpiId?: string | null
+    department?: {
+      deptName?: string | null
+    } | null
+  },
+  orgKpiById?: ReadonlyMap<string, { parentOrgKpiId?: string | null }>
+): KpiAlignmentOrgLevel2026 {
+  const deptName = orgKpi.department?.deptName ?? ''
+  if (deptName.includes('본부') || /division/i.test(deptName)) return 'DIVISION'
+  if (deptName.includes('실') || /section/i.test(deptName)) return 'SECTION'
+  if (deptName.includes('팀') || /team/i.test(deptName)) return 'TEAM'
+  if (!orgKpi.parentOrgKpiId) return 'DIVISION'
+
+  const parent = orgKpiById?.get(orgKpi.parentOrgKpiId)
+  if (parent && !parent.parentOrgKpiId) return 'TEAM'
+  return 'TEAM'
+}
+
+function toOrgKpiAlignmentInput2026(
+  orgKpi:
+    | (PersonalKpiWithRelations['linkedOrgKpi'] & {
+        teamKpiReviewItems?: Array<{ verdict: string }>
+      })
+    | null
+    | undefined,
+  orgKpiById?: Map<string, OrgKpiRecord>
+): OrgKpiAlignmentInput2026 | null {
+  if (!orgKpi) return null
+  return {
+    id: orgKpi.id,
+    title: orgKpi.kpiName,
+    kpiName: orgKpi.kpiName,
+    definition: orgKpi.definition,
+    formula: orgKpi.formula,
+    level: inferOrgKpiLevelForPersonalMbo2026(orgKpi, orgKpiById),
+    department: {
+      id: orgKpi.department?.id,
+      deptName: orgKpi.department?.deptName,
+      parentDeptId: orgKpi.department?.parentDeptId,
+    },
+    status: orgKpi.status,
+    parentOrgKpiId: orgKpi.parentOrgKpiId,
+    latestReviewVerdict: orgKpi.teamKpiReviewItems?.[0]?.verdict ?? null,
+  }
+}
+
+function getExplicitMboCategory2026(value: unknown): EvaluationPolicyItemCategoryCode | null {
+  return isEvaluationPolicyItemCategory(value) ? value : null
+}
+
+function getDefaultGuidanceMessage2026(params: {
+  explicitCategory: EvaluationPolicyItemCategoryCode | null
+  suggestedCategory: EvaluationPolicyItemCategoryCode | 'UNKNOWN'
+  classification: OrgKpiPersonalMboClassification2026 | null
+}) {
+  if (params.classification?.source === 'DIVISION_KPI') {
+    return {
+      label: '조직목표 후보',
+      message: '본부 KPI와 연결되어 2026 정책상 조직목표 후보입니다.',
+    }
+  }
+  if (params.classification?.source === 'TEAM_KPI_REFLECTED') {
+    return {
+      label: '조직목표 후보',
+      message: 'HR 반영 완료 팀 KPI로 2026 정책상 조직목표 후보입니다.',
+    }
+  }
+  if (params.classification?.source === 'HR_EXCEPTION') {
+    return {
+      label: '조직목표 후보',
+      message: 'HR 예외 승인 맥락이 있어 팀 KPI를 조직목표 후보로 볼 수 있습니다.',
+    }
+  }
+  if (params.classification?.source === 'TEAM_KPI_DEFAULT_DAILY_WORK') {
+    return {
+      label: '일상업무 후보',
+      message: '본부 KPI에 포함되지 않았거나 HR 반영 완료되지 않은 팀 KPI로, 기본적으로 일상업무로 분류됩니다.',
+    }
+  }
+  if (params.explicitCategory === 'PROJECT_T') {
+    return {
+      label: '프로젝트 T',
+      message: '개인 프로젝트 T로 분류된 항목입니다. 산출물과 성과 중심으로 작성해 주세요.',
+    }
+  }
+  if (params.explicitCategory === 'PROJECT_K') {
+    return {
+      label: '프로젝트 K',
+      message: '개인 프로젝트 K로 분류된 항목입니다. 산출물과 성과 중심으로 작성해 주세요.',
+    }
+  }
+  if (params.explicitCategory === 'ORG_GOAL') {
+    return {
+      label: '조직목표 후보',
+      message: '조직목표로 분류된 항목입니다. 연결된 본부 KPI 또는 HR 반영/예외 승인 상태를 확인해 주세요.',
+    }
+  }
+  if (params.explicitCategory === 'DAILY_WORK' || params.suggestedCategory === 'DAILY_WORK') {
+    return {
+      label: '일상업무 후보',
+      message: '일상업무 후보입니다. 조직목표에 포함된 업무와 중복되지 않는지 확인해 주세요.',
+    }
+  }
+  return {
+    label: '검토 필요',
+    message: '정책 카테고리를 확인해 주세요.',
+  }
+}
+
+export function buildPersonalKpiMboPolicyGuidance2026(params: {
+  item: PersonalMboItemInput2026
+  orgGoalItems?: PersonalMboItemInput2026[]
+}): PersonalKpiMboPolicyGuidance2026 {
+  const explicitCategory = getExplicitMboCategory2026(params.item.policyCategory ?? params.item.category)
+  const classification = params.item.linkedOrgKpi ? classifyOrgKpiForPersonalMbo2026(params.item.linkedOrgKpi) : null
+  const suggestedCategory = explicitCategory ?? classification?.category ?? 'UNKNOWN'
+  const issues: PersonalKpiMboPolicyIssueView2026[] = []
+
+  if (!explicitCategory) {
+    issues.push({
+      code: 'MISSING_MBO_CATEGORY',
+      severity: 'warning',
+      message: '정책 카테고리 미분류 항목입니다. 2026 MBO 기준에 맞는 카테고리 확인이 필요합니다.',
+      targetField: 'policyCategory',
+      suggestedAction: '조직목표, 프로젝트 T, 프로젝트 K, 일상업무 중 하나로 검토해 주세요.',
+    })
+  }
+
+  if (suggestedCategory !== 'UNKNOWN') {
+    const diagnostic = validatePersonalKpiMboCategory2026({
+      item: {
+        ...params.item,
+        policyCategory: explicitCategory ?? suggestedCategory,
+      },
+      orgGoalItems: (params.orgGoalItems ?? []).filter((orgGoal) => orgGoal.id !== params.item.id),
+    })
+    issues.push(...diagnostic.issues.map(normalizeMboPolicyIssue2026))
+  } else if (classification?.issues.length) {
+    issues.push(...classification.issues.map(normalizeMboPolicyIssue2026))
+  }
+
+  const duplicate =
+    suggestedCategory === 'DAILY_WORK'
+      ? detectDailyWorkDuplicateWithOrgGoal2026({
+          dailyWork: {
+            id: params.item.id,
+            title: params.item.title,
+            kpiName: params.item.kpiName,
+            definition: params.item.definition,
+            formula: params.item.formula,
+            linkedOrgKpiId: params.item.linkedOrgKpiId,
+          },
+          orgGoals: (params.orgGoalItems ?? []).filter((orgGoal) => orgGoal.id !== params.item.id),
+        })
+      : { duplicated: false, matches: [] }
+
+  if (duplicate.duplicated && !issues.some((issue) => issue.code === 'DAILY_WORK_DUPLICATES_ORG_GOAL')) {
+    issues.push({
+      code: 'DAILY_WORK_DUPLICATES_ORG_GOAL',
+      severity: 'warning',
+      message: `일상업무가 조직목표(${duplicate.matches[0]?.title ?? '조직목표'})와 중복될 수 있습니다.`,
+      targetField: 'kpiName',
+      suggestedAction: '조직목표에 포함된 업무는 일상업무로 중복 등록하지 않는 것이 원칙입니다.',
+    })
+  }
+
+  const guidance = getDefaultGuidanceMessage2026({
+    explicitCategory,
+    suggestedCategory,
+    classification,
+  })
+
+  return {
+    itemId: params.item.id,
+    suggestedCategory,
+    suggestedCategoryLabel: getMboPolicyCategoryLabel2026(suggestedCategory),
+    guidanceLabel: guidance.label,
+    guidanceMessage: guidance.message,
+    severity: maxMboPolicySeverity2026(issues),
+    source:
+      explicitCategory === 'PROJECT_T' || explicitCategory === 'PROJECT_K'
+        ? 'PERSONAL_PROJECT'
+        : explicitCategory === 'DAILY_WORK'
+          ? 'PERSONAL_DAILY_WORK'
+          : explicitCategory
+            ? 'EXPLICIT_CATEGORY'
+            : classification?.source ?? 'UNKNOWN',
+    issues,
+    duplicateDailyWork: duplicate.duplicated || issues.some((issue) => issue.code === 'DAILY_WORK_DUPLICATES_ORG_GOAL'),
+    duplicateMatches: duplicate.matches,
+    linkedOrgKpi: classification
+      ? {
+          orgLevel: classification.eligibility.orgLevel,
+          reflectionStatus: classification.eligibility.status,
+          eligibleAsOrgGoal: classification.eligibility.eligibleAsOrgGoal,
+          requiresHrException: classification.eligibility.requiresHrException,
+        }
+      : undefined,
+    hrExceptionRequired:
+      Boolean(classification?.eligibility.requiresHrException) ||
+      issues.some((issue) => issue.code === 'HR_EXCEPTION_REQUIRED'),
+    displayOnly: true,
+  }
+}
+
+export function buildPersonalKpiMboPolicyGuidanceList2026(
+  items: PersonalMboItemInput2026[]
+): PersonalKpiMboPolicyGuidance2026[] {
+  const preliminary = items.map((item) => {
+    const explicitCategory = getExplicitMboCategory2026(item.policyCategory ?? item.category)
+    const classification = item.linkedOrgKpi ? classifyOrgKpiForPersonalMbo2026(item.linkedOrgKpi) : null
+    return {
+      item,
+      suggestedCategory: explicitCategory ?? classification?.category ?? 'UNKNOWN',
+    }
+  })
+  const orgGoalItems = preliminary
+    .filter((entry) => entry.suggestedCategory === 'ORG_GOAL')
+    .map((entry) => entry.item)
+
+  return items.map((item) =>
+    buildPersonalKpiMboPolicyGuidance2026({
+      item,
+      orgGoalItems,
+    })
+  )
+}
+
+export function buildPersonalKpiMboPolicySummary2026(
+  guidances: PersonalKpiMboPolicyGuidance2026[]
+): PersonalKpiMboPolicySummary2026 {
+  return {
+    orgGoalCandidateCount: guidances.filter((item) => item.suggestedCategory === 'ORG_GOAL').length,
+    dailyWorkCandidateCount: guidances.filter((item) => item.suggestedCategory === 'DAILY_WORK').length,
+    reviewNeededCount: guidances.filter(
+      (item) =>
+        item.suggestedCategory === 'UNKNOWN' ||
+        item.issues.some((issue) => issue.code === 'MISSING_MBO_CATEGORY' || issue.code === 'HR_EXCEPTION_REQUIRED')
+    ).length,
+    duplicateRiskCount: guidances.filter((item) => item.duplicateDailyWork).length,
+  }
+}
+
 export async function getPersonalKpiPageData(params: PageParams): Promise<PersonalKpiPageData> {
   const selectedYear = params.year ?? new Date().getFullYear()
   const actor = {
@@ -827,6 +1166,12 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     reviewPendingCount: 0,
     monthlyCoverageRate: 0,
     overallStatus: 'DRAFT',
+    mboPolicy: {
+      orgGoalCandidateCount: 0,
+      dailyWorkCandidateCount: 0,
+      reviewNeededCount: 0,
+      duplicateRiskCount: 0,
+    },
   }
 
   let failureStage = 'bootstrap'
@@ -1067,6 +1412,15 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
             linkedOrgKpi: {
               include: {
                 department: true,
+                teamKpiReviewItems: {
+                  orderBy: {
+                    createdAt: 'desc',
+                  },
+                  take: 1,
+                  select: {
+                    verdict: true,
+                  },
+                },
               },
             },
             monthlyRecords: {
@@ -1225,6 +1579,20 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
 
       return lineage
     }
+    const mboPolicyInputs: PersonalMboItemInput2026[] = mine.map((kpi) => ({
+      id: kpi.id,
+      title: kpi.kpiName,
+      kpiName: kpi.kpiName,
+      definition: kpi.definition,
+      formula: kpi.formula,
+      policyCategory: kpi.policyCategory ?? null,
+      weight: kpi.weight,
+      linkedOrgKpiId: kpi.linkedOrgKpiId,
+      linkedOrgKpi: toOrgKpiAlignmentInput2026(kpi.linkedOrgKpi, orgKpiById),
+    }))
+    const mboPolicyGuidanceById = new Map(
+      buildPersonalKpiMboPolicyGuidanceList2026(mboPolicyInputs).map((guidance) => [guidance.itemId, guidance])
+    )
 
     failureStage = 'ai-logs'
     const aiLogRecords = await loadPersonalKpiSection({
@@ -1336,6 +1704,22 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           orgKpiCategory: kpi.linkedOrgKpi?.kpiCategory ?? null,
           orgKpiDefinition: kpi.linkedOrgKpi?.definition ?? null,
           orgLineage: buildOrgLineage(kpi.linkedOrgKpiId),
+          policyCategory: kpi.policyCategory ?? null,
+          mboPolicy:
+            mboPolicyGuidanceById.get(kpi.id) ??
+            buildPersonalKpiMboPolicyGuidance2026({
+              item: {
+                id: kpi.id,
+                title: kpi.kpiName,
+                kpiName: kpi.kpiName,
+                definition: kpi.definition,
+                formula: kpi.formula,
+                policyCategory: kpi.policyCategory ?? null,
+                weight: kpi.weight,
+                linkedOrgKpiId: kpi.linkedOrgKpiId,
+                linkedOrgKpi: toOrgKpiAlignmentInput2026(kpi.linkedOrgKpi, orgKpiById),
+              },
+            }),
           type: kpi.kpiType,
           definition: kpi.definition ?? undefined,
           formula: kpi.formula ?? undefined,
@@ -1462,6 +1846,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     const monthlyCoverageRate = mappedMine.length
       ? Math.round((mappedMine.filter((item) => item.linkedMonthlyCount > 0).length / mappedMine.length) * 100)
       : 0
+    const mboPolicySummary = buildPersonalKpiMboPolicySummary2026(mappedMine.map((item) => item.mboPolicy))
 
     const pageState: PersonalKpiPageState = mappedMine.length || mappedReviewQueue.length ? 'ready' : 'empty'
     const basePermissions = buildPersonalKpiPermissions({
@@ -1508,6 +1893,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         reviewPendingCount,
         monthlyCoverageRate,
         overallStatus: deriveOverallStatus(mappedMine),
+        mboPolicy: mboPolicySummary,
       },
       mine: mappedMine,
       reviewQueue: mappedReviewQueue,

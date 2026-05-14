@@ -28,7 +28,10 @@ moduleLoader._resolveFilename = function patchedResolveFilename(request, parent,
   return originalResolveFilename.call(this, request, parent, isMain, options)
 }
 
-const { getPersonalKpiPageData } = require('../src/server/personal-kpi-page') as typeof import('../src/server/personal-kpi-page')
+const {
+  buildPersonalKpiMboPolicyGuidanceList2026,
+  getPersonalKpiPageData,
+} = require('../src/server/personal-kpi-page') as typeof import('../src/server/personal-kpi-page')
 
 function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
@@ -1415,8 +1418,88 @@ async function main() {
         assert.equal(data.summary.totalWeight, 40)
         assert.equal(data.summary.remainingWeight, 60)
         assert.equal(data.summary.linkedOrgKpiCount, 1)
+        assert.equal(data.summary.mboPolicy.orgGoalCandidateCount, 1)
+        assert.equal(data.summary.mboPolicy.reviewNeededCount, 1)
+        assert.equal(data.mine[0]?.mboPolicy.guidanceLabel, '조직목표 후보')
       }
     )
+  })
+
+  await run('personal KPI 2026 MBO diagnostics classify org-linked, reflected-team, daily-work, and duplicate guidance', () => {
+    const guidances = buildPersonalKpiMboPolicyGuidanceList2026([
+      {
+        id: 'pk-division',
+        title: '본부 KPI 반영',
+        policyCategory: null,
+        linkedOrgKpiId: 'org-division',
+        linkedOrgKpi: {
+          id: 'org-division',
+          title: '본부 KPI 반영',
+          level: 'DIVISION',
+          status: 'CONFIRMED',
+        },
+      },
+      {
+        id: 'pk-team-reflected',
+        title: '반영 팀 KPI',
+        policyCategory: null,
+        linkedOrgKpiId: 'org-team-reflected',
+        linkedOrgKpi: {
+          id: 'org-team-reflected',
+          title: '반영 팀 KPI',
+          level: 'TEAM',
+          latestReviewVerdict: 'ADEQUATE',
+          status: 'CONFIRMED',
+        },
+      },
+      {
+        id: 'pk-team-excluded',
+        title: '미반영 팀 KPI',
+        policyCategory: null,
+        linkedOrgKpiId: 'org-team-excluded',
+        linkedOrgKpi: {
+          id: 'org-team-excluded',
+          title: '미반영 팀 KPI',
+          level: 'TEAM',
+          latestReviewVerdict: 'INSUFFICIENT',
+          status: 'CONFIRMED',
+        },
+      },
+      {
+        id: 'pk-daily-duplicate',
+        title: '본부 KPI 반영',
+        policyCategory: 'DAILY_WORK',
+        definition: '본부 KPI 반영 업무',
+      },
+    ])
+
+    const division = guidances.find((item) => item.itemId === 'pk-division')
+    const reflected = guidances.find((item) => item.itemId === 'pk-team-reflected')
+    const excluded = guidances.find((item) => item.itemId === 'pk-team-excluded')
+    const duplicate = guidances.find((item) => item.itemId === 'pk-daily-duplicate')
+
+    assert.equal(division?.suggestedCategory, 'ORG_GOAL')
+    assert.equal(division?.guidanceMessage.includes('본부 KPI와 연결'), true)
+    assert.equal(division?.issues.some((issue) => issue.code === 'MISSING_MBO_CATEGORY'), true)
+    assert.equal(reflected?.suggestedCategory, 'ORG_GOAL')
+    assert.equal(reflected?.guidanceMessage.includes('HR 반영 완료 팀 KPI'), true)
+    assert.equal(excluded?.suggestedCategory, 'DAILY_WORK')
+    assert.equal(excluded?.hrExceptionRequired, true)
+    assert.equal(duplicate?.duplicateDailyWork, true)
+    assert.equal(duplicate?.issues.some((issue) => issue.code === 'DAILY_WORK_DUPLICATES_ORG_GOAL'), true)
+  })
+
+  await run('personal KPI client surfaces compact non-blocking 2026 MBO guidance without changing save validation', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const validateStart = source.indexOf('function validateKpiForm')
+    const validateEnd = source.indexOf('function getReviewActionState', validateStart)
+    const validateSource = source.slice(validateStart, validateEnd > validateStart ? validateEnd : validateStart + 2000)
+
+    assert.equal(source.includes('2026 MBO 정책 점검'), true)
+    assert.equal(source.includes('본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다.'), true)
+    assert.equal(source.includes('공식 점수에는 반영되지 않는 비차단 안내입니다.'), true)
+    assert.equal(source.includes('저장/제출을 막지 않는 참고 정보입니다.'), true)
+    assert.equal(validateSource.includes('mboPolicy'), false)
   })
 
   await run('personal KPI client disables create and AI hero CTAs when the server says they are unavailable', () => {
