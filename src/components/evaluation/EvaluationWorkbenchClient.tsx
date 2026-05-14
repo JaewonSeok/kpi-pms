@@ -49,6 +49,7 @@ import {
   type EvaluationQualityWarning,
 } from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
+import type { Evaluation2026ActivationReadinessResult } from '@/server/evaluation-2026-activation-readiness'
 import type { EvaluationPreviewResult2026 } from '@/server/evaluation-preview-2026'
 import type { EvaluationPreviewReadinessSummary2026 } from '@/server/evaluation-preview-2026-readiness'
 import type {
@@ -92,6 +93,7 @@ type EvaluationPreview2026ApiData = {
   preview: EvaluationPreviewResult2026
 }
 type EvaluationPreviewReadiness2026ApiData = EvaluationPreviewReadinessSummary2026
+type EvaluationActivationReadiness2026ApiData = Evaluation2026ActivationReadinessResult
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
 type PolicyCategoryDraft2026 = 'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK' | 'KEEP_UNCLASSIFIED' | ''
@@ -147,6 +149,10 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [policyReadiness2026, setPolicyReadiness2026] = useState<EvaluationPreviewReadiness2026ApiData | null>(null)
   const [policyReadiness2026Loading, setPolicyReadiness2026Loading] = useState(false)
   const [policyReadiness2026Error, setPolicyReadiness2026Error] = useState('')
+  const [policyActivationReadiness2026, setPolicyActivationReadiness2026] =
+    useState<EvaluationActivationReadiness2026ApiData | null>(null)
+  const [policyActivationReadiness2026Loading, setPolicyActivationReadiness2026Loading] = useState(false)
+  const [policyActivationReadiness2026Error, setPolicyActivationReadiness2026Error] = useState('')
   const [policyMapping2026, setPolicyMapping2026] = useState<EvaluationPolicyMapping2026ApiData | null>(null)
   const [policyMapping2026Loading, setPolicyMapping2026Loading] = useState(false)
   const [policyMapping2026Saving, setPolicyMapping2026Saving] = useState(false)
@@ -187,6 +193,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyReadiness2026(null)
     setPolicyReadiness2026Error('')
     setPolicyReadiness2026Loading(false)
+    setPolicyActivationReadiness2026(null)
+    setPolicyActivationReadiness2026Error('')
+    setPolicyActivationReadiness2026Loading(false)
     setPolicyMapping2026(null)
     setPolicyMapping2026Error('')
     setPolicyMapping2026Notice('')
@@ -547,6 +556,38 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     }
   }
 
+  async function loadPolicyActivationReadiness2026() {
+    if (!canViewPolicyPreview2026) return
+    setPolicyActivationReadiness2026Loading(true)
+    setPolicyActivationReadiness2026Error('')
+
+    try {
+      const params = new URLSearchParams()
+      if (props.selectedCycleId) {
+        params.set('cycleId', props.selectedCycleId)
+      } else {
+        params.set('year', '2026')
+      }
+      const query = params.toString()
+      const response = await fetch(`/api/evaluation/preview-2026/activation-readiness${query ? `?${query}` : ''}`, {
+        method: 'GET',
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 공식 전환 준비 상태를 불러오지 못했습니다.')
+      }
+
+      setPolicyActivationReadiness2026(json.data as EvaluationActivationReadiness2026ApiData)
+    } catch (error) {
+      setPolicyActivationReadiness2026(null)
+      setPolicyActivationReadiness2026Error(
+        error instanceof Error ? error.message : '2026 공식 전환 준비 상태를 불러오지 못했습니다.'
+      )
+    } finally {
+      setPolicyActivationReadiness2026Loading(false)
+    }
+  }
+
   async function loadPolicyMappingCandidates2026() {
     if (!canViewPolicyPreview2026) return
     setPolicyMapping2026Loading(true)
@@ -644,6 +685,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       )
       await loadPolicyMappingCandidates2026()
       await loadPolicyReadiness2026()
+      if (policyActivationReadiness2026) {
+        await loadPolicyActivationReadiness2026()
+      }
       if (policyPreview2026) {
         await loadPolicyPreview2026()
       }
@@ -1446,6 +1490,12 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     loading={policyReadiness2026Loading}
                     error={policyReadiness2026Error}
                     onLoad={loadPolicyReadiness2026}
+                  />
+                  <PolicyActivationReadiness2026Panel
+                    activationData={policyActivationReadiness2026}
+                    loading={policyActivationReadiness2026Loading}
+                    error={policyActivationReadiness2026Error}
+                    onLoad={loadPolicyActivationReadiness2026}
                   />
                   <PolicyMapping2026Panel
                     mappingData={policyMapping2026}
@@ -2312,6 +2362,184 @@ function PolicyReadiness2026Panel(props: {
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           HR 관리자가 현재 평가 주기의 2026 정책 전환 준비 상태를 수동으로 확인할 수 있습니다.
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function PolicyActivationReadiness2026Panel(props: {
+  activationData: EvaluationActivationReadiness2026ApiData | null
+  loading: boolean
+  error: string
+  onLoad: () => void
+}) {
+  const activation = props.activationData
+  const blockers = activation?.blockers ?? []
+  const warnings = activation?.warnings ?? []
+
+  return (
+    <Panel
+      title="2026 공식 전환 준비 상태"
+      description="공식 점수에는 아직 반영되지 않습니다. 활성화하려면 migration, backfill, HR 확인, feature flag 승인이 필요합니다."
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-1 rounded-2xl bg-amber-50 p-2 text-amber-700">
+            <ShieldAlert className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="neutral">Status only</Badge>
+              <Badge tone={activation?.canActivate ? 'success' : activation ? 'warn' : 'neutral'}>
+                {activation?.canActivate ? '공식 전환 가능' : activation ? '공식 전환 불가' : '미확인'}
+              </Badge>
+              <Badge tone="neutral">활성화 버튼 없음</Badge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              이 패널은 official scoring/grade/AI exclusion을 켜기 전 차단 조건만 읽기 전용으로 확인합니다.
+              저장 점수, 저장 등급, 제출, 확정, 보정 흐름은 변경하지 않습니다.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={props.onLoad}
+          disabled={props.loading}
+          className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+        >
+          {props.loading ? '확인 중...' : activation ? '공식 전환 상태 다시 확인' : '공식 전환 상태 확인'}
+        </button>
+      </div>
+
+      {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+
+      {activation ? (
+        <div className="mt-5 space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <MetricCard
+              label="남은 차단 항목"
+              value={blockers.length.toLocaleString()}
+              help="0이어야 전환 가능"
+              compact
+              variant={blockers.length > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="Migration"
+              value={activation.migration.migrationApplied ? '확인' : '미확인'}
+              help={activation.migration.requiredSchemaPresent ? 'schema present' : 'schema missing'}
+              compact
+              variant={activation.migration.migrationApplied ? 'default' : 'warning'}
+            />
+            <MetricCard
+              label="Backfill"
+              value={
+                activation.flags.backfillApplied
+                  ? '적용'
+                  : activation.flags.backfillExcluded
+                    ? '제외 승인'
+                    : '미확인'
+              }
+              help="명시 flag 필요"
+              compact
+              variant={activation.flags.backfillApplied || activation.flags.backfillExcluded ? 'default' : 'warning'}
+            />
+            <MetricCard
+              label="Official flags"
+              value={
+                activation.flags.officialScoringEnabled &&
+                activation.flags.officialGradeEnabled &&
+                activation.flags.aiScoreExclusionEnabled
+                  ? '승인'
+                  : '대기'
+              }
+              help="scoring/grade/AI"
+              compact
+              variant={
+                activation.flags.officialScoringEnabled &&
+                activation.flags.officialGradeEnabled &&
+                activation.flags.aiScoreExclusionEnabled
+                  ? 'default'
+                  : 'warning'
+              }
+            />
+            <MetricCard
+              label="HR 승인"
+              value={activation.flags.hrApprovalConfirmed ? '확인' : '대기'}
+              help="명시 승인 flag"
+              compact
+              variant={activation.flags.hrApprovalConfirmed ? 'default' : 'warning'}
+            />
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-700" />
+                <h4 className="text-sm font-semibold text-amber-900">남은 차단 항목</h4>
+              </div>
+              {blockers.length ? (
+                <ul className="mt-3 space-y-2">
+                  {blockers.slice(0, 8).map((blocker, index) => (
+                    <li key={`${blocker.code}-${index}`} className="text-sm leading-6 text-amber-900">
+                      <span className="font-semibold">{blocker.code}</span> · {blocker.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm leading-6 text-emerald-800">
+                  현재 확인 범위에서는 공식 전환 차단 항목이 없습니다. 이 상태도 전환 실행이 아니라 사전 검증 결과입니다.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-slate-600" />
+                <h4 className="text-sm font-semibold text-slate-900">Feature flag 상태</h4>
+              </div>
+              <div className="mt-3 grid gap-2 text-sm text-slate-600">
+                <div className="flex justify-between gap-3">
+                  <span>Preview</span>
+                  <span className="font-semibold text-slate-900">{activation.flags.previewEnabled ? 'enabled' : 'disabled'}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>Official scoring</span>
+                  <span className="font-semibold text-slate-900">
+                    {activation.flags.officialScoringEnabled ? 'enabled' : 'disabled'}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>Official grade</span>
+                  <span className="font-semibold text-slate-900">
+                    {activation.flags.officialGradeEnabled ? 'enabled' : 'disabled'}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span>AI score exclusion</span>
+                  <span className="font-semibold text-slate-900">
+                    {activation.flags.aiScoreExclusionEnabled ? 'enabled' : 'disabled'}
+                  </span>
+                </div>
+              </div>
+              {warnings.length ? (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold text-slate-500">Warnings</p>
+                  <ul className="mt-2 space-y-1">
+                    {warnings.slice(0, 4).map((warning, index) => (
+                      <li key={`${warning.code}-${index}`} className="text-xs leading-5 text-slate-600">
+                        {warning.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+          HR 관리자가 공식 전환 전에 migration, backfill, HR 확인, feature flag 상태를 읽기 전용으로 점검할 수 있습니다.
         </div>
       )}
     </Panel>
