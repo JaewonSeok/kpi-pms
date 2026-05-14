@@ -35,6 +35,8 @@ export type ScoreBand = {
   minInclusive?: number
   maxExclusive?: number
   note?: string
+  selectionOnly?: boolean
+  requiresPolicyConfirmation?: boolean
 }
 
 export type GradeThresholdPolicy = {
@@ -150,10 +152,10 @@ export const EVALUATION_POLICY_2026 = {
       salesGroup: 'NON_SALES',
       roleGroup: 'TEAM_MEMBER',
       thresholds: {
-        OUTSTANDING: { note: 'Excellent 대상 중 일부 선발' },
+        OUTSTANDING: { note: 'Excellent 대상 중 일부 선발', selectionOnly: true },
         EXCELLENT: { minInclusive: 85 },
         GOOD: { minInclusive: 75, maxExclusive: 85 },
-        NEED_IMPROVEMENT: { note: 'Unsatisfactory 대상 중 일부 선발' },
+        NEED_IMPROVEMENT: { note: 'Unsatisfactory 대상 중 일부 선발', selectionOnly: true },
         UNSATISFACTORY: { maxExclusive: 75 },
       },
       notes: ['Super는 팀원 비영업 기준에서 별도 점수 구간으로 운영하지 않음'],
@@ -179,7 +181,11 @@ export const EVALUATION_POLICY_2026 = {
       roleGroup: 'TEAM_MEMBER',
       thresholds: {
         SUPER: { minInclusive: 110 },
-        OUTSTANDING: { minInclusive: 110, note: 'PPT 표기상 Super 구간과 중첩되어 Phase 1에서 HR 확정 필요' },
+        OUTSTANDING: {
+          minInclusive: 110,
+          note: 'PPT 표기상 Super 구간과 중첩되어 Phase 1에서 HR 확정 필요',
+          requiresPolicyConfirmation: true,
+        },
         EXCELLENT: { minInclusive: 100, maxExclusive: 110 },
         GOOD: { minInclusive: 90, maxExclusive: 100 },
         NEED_IMPROVEMENT: { minInclusive: 80, maxExclusive: 90 },
