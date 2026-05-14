@@ -48,6 +48,7 @@ import {
   type EvaluationQualityWarning,
 } from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
+import type { EvaluationPreviewResult2026 } from '@/server/evaluation-preview-2026'
 
 type WorkbenchTab =
   | 'workbench'
@@ -74,6 +75,16 @@ type EditableWorkbenchItem = NonNullable<EvaluationWorkbenchPageData['selected']
   draft: DraftItemState
 }
 type EvaluationListEntry = NonNullable<EvaluationWorkbenchPageData['evaluations']>[number]
+type EvaluationPreview2026ApiData = {
+  evaluation: {
+    id: string
+    evalYear: number
+    targetName: string
+    targetDepartment: string
+    evalStage: string
+  }
+  preview: EvaluationPreviewResult2026
+}
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '종합',
@@ -103,6 +114,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [guideBusy, setGuideBusy] = useState(false)
   const [briefingBusy, setBriefingBusy] = useState(false)
   const [briefing, setBriefing] = useState<EvaluationPerformanceBriefingSnapshot | null>(null)
+  const [policyPreview2026, setPolicyPreview2026] = useState<EvaluationPreview2026ApiData | null>(null)
+  const [policyPreview2026Loading, setPolicyPreview2026Loading] = useState(false)
+  const [policyPreview2026Error, setPolicyPreview2026Error] = useState('')
   const [guideStatus, setGuideStatus] = useState({ viewed: false, confirmed: false })
   const [adminSummaryOpen, setAdminSummaryOpen] = useState(false)
   const [draftComment, setDraftComment] = useState('')
@@ -144,6 +158,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setGuideBusy(false)
     setBriefingBusy(false)
     setPreview(null)
+    setPolicyPreview2026(null)
+    setPolicyPreview2026Error('')
+    setPolicyPreview2026Loading(false)
     setBriefing(null)
     setAssistLoadingMode(null)
     setCopiedPreviewMode(null)
@@ -173,6 +190,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setGrowthMemo('')
       setRejectReason('')
       setPreview(null)
+      setPolicyPreview2026(null)
+      setPolicyPreview2026Error('')
+      setPolicyPreview2026Loading(false)
       setAssistLoadingMode(null)
       setCopiedPreviewMode(null)
       setSelectedEvidenceSection('highlights')
@@ -195,6 +215,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setGrowthMemo('')
     setRejectReason('')
     setPreview(null)
+    setPolicyPreview2026(null)
+    setPolicyPreview2026Error('')
+    setPolicyPreview2026Loading(false)
     setAssistLoadingMode(null)
     setCopiedPreviewMode(null)
     setSelectedEvidenceSection('highlights')
@@ -299,6 +322,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       }, 0),
     [editableItems]
   )
+  const canViewPolicyPreview2026 = Boolean(props.permissions?.canSeeAllInCycle && selected)
 
   const workspaceEvidence = useMemo<EvaluationAssistEvidenceView>(() => {
     if (!selected) {
@@ -429,6 +453,31 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       guideViewRequestRef.current = null
     })
   }, [activeTab, guideStatus.viewed, persistGuideAction, selected?.id, selected?.permissions.canEdit])
+
+  async function loadPolicyPreview2026() {
+    if (!selected || !canViewPolicyPreview2026) return
+    setPolicyPreview2026Loading(true)
+    setPolicyPreview2026Error('')
+
+    try {
+      const response = await fetch(`/api/evaluation/${selected.id}/preview-2026`, {
+        method: 'GET',
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 평가 미리보기를 불러오지 못했습니다.')
+      }
+
+      setPolicyPreview2026(json.data as EvaluationPreview2026ApiData)
+    } catch (error) {
+      setPolicyPreview2026(null)
+      setPolicyPreview2026Error(
+        error instanceof Error ? error.message : '2026 평가 미리보기를 불러오지 못했습니다.'
+      )
+    } finally {
+      setPolicyPreview2026Loading(false)
+    }
+  }
 
   async function runMutation(
     action: 'createSelf' | 'saveDraft' | 'submit' | 'reject',
@@ -1215,6 +1264,15 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                 helper="최근 중간 점검에서 정리한 목표 유효성, 기대 기준, 다음 액션을 평가 전에 참고합니다."
               />
 
+              {canViewPolicyPreview2026 ? (
+                <PolicyPreview2026Panel
+                  previewData={policyPreview2026}
+                  loading={policyPreview2026Loading}
+                  error={policyPreview2026Error}
+                  onLoad={loadPolicyPreview2026}
+                />
+              ) : null}
+
               <div className="overflow-x-auto">
                 <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
                   {visibleTabs.map((tab) => (
@@ -1881,6 +1939,171 @@ function Panel(props: { title: string; description: string; children: React.Reac
   )
 }
 
+function formatPreviewScore2026(value: number | null | undefined) {
+  return typeof value === 'number' ? value.toFixed(1) : '-'
+}
+
+function getAiRequirementStatusLabel2026(status: EvaluationPreviewResult2026['ai']['levelUpRequirementStatus']) {
+  if (status === 'passed') return 'Pass'
+  if (status === 'failed') return 'Fail'
+  if (status === 'pending') return 'Pending'
+  if (status === 'insufficient_data') return '증빙 부족'
+  return '대상 아님'
+}
+
+function getPreviewIssueLabel2026(code: string) {
+  const labels: Record<string, string> = {
+    POLICY_CATEGORY_REQUIRED: '정책 카테고리 미분류',
+    POLICY_CATEGORY_MANUAL_REVIEW_REQUIRED: '수동 검토 항목',
+    MISSING_ORGANIZATION_SCORE: '조직성과 split 부족',
+    MISSING_PERSONAL_SCORE: '개인성과 split 부족',
+    GRADE_THRESHOLD_GROUP_REQUIRED: '등급 기준 그룹 부족',
+    SALES_GROUP_REQUIRED: '영업/비영업 구분 부족',
+    POLICY_CONFIRMATION_REQUIRED: '등급 threshold 정책 확인 필요',
+    AMBIGUOUS_THRESHOLD_MATCH: '등급 threshold 정책 확인 필요',
+    NO_RECOGNITION_ROUTE_PASSED: 'AI 증빙 부족',
+    AI_TARGET_ROLE_REQUIRED: 'AI 대상 직책 정보 부족',
+  }
+
+  return labels[code] ?? code
+}
+
+function PolicyPreview2026Panel(props: {
+  previewData: EvaluationPreview2026ApiData | null
+  loading: boolean
+  error: string
+  onLoad: () => void
+}) {
+  const preview = props.previewData?.preview ?? null
+  const issues = preview?.issues ?? []
+  const blockingIssues = issues.filter((issue) => issue.severity === 'error')
+
+  return (
+    <Panel
+      title="2026 평가 미리보기"
+      description="공식 평가 결과가 아닙니다. 정책 카테고리, 조직성과/개인성과 데이터가 부족하면 산출되지 않을 수 있습니다."
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-1 rounded-2xl bg-blue-50 p-2 text-blue-600">
+            <ShieldAlert className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="neutral">Preview only</Badge>
+              <Badge tone={preview?.canCalculate ? 'success' : preview ? 'warn' : 'neutral'}>
+                {preview?.canCalculate ? '산출 가능' : preview ? '검토 필요' : '미생성'}
+              </Badge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              이 값은 2026 정책 적용 전 HR 검토용 미리보기이며, 저장 점수/등급/제출/확정에는 반영되지 않습니다.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={props.onLoad}
+          disabled={props.loading}
+          className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          {props.loading ? '계산 중...' : preview ? '다시 계산' : '2026 미리보기 계산'}
+        </button>
+      </div>
+
+      {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+
+      {preview ? (
+        <div className="mt-5 space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <MetricCard
+              label="최종 점수"
+              value={formatPreviewScore2026(preview.score.finalScore)}
+              help="조직 30% + 개인 70%"
+              compact
+              emphasized
+            />
+            <MetricCard
+              label="조직성과"
+              value={formatPreviewScore2026(preview.score.organizationScore)}
+              help="30% 반영 preview"
+              compact
+            />
+            <MetricCard
+              label="개인성과"
+              value={formatPreviewScore2026(preview.score.personalScore)}
+              help="70% 반영 preview"
+              compact
+            />
+            <MetricCard
+              label="등급"
+              value={preview.grade.calculatedGrade ?? '-'}
+              help={preview.grade.requiresPolicyConfirmation ? '정책 확인 필요' : '절대등급 preview'}
+              compact
+              variant={preview.grade.requiresPolicyConfirmation ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="AI"
+              value={getAiRequirementStatusLabel2026(preview.ai.levelUpRequirementStatus)}
+              help="연간 점수 제외"
+              compact
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">AI 점수 반영</div>
+              <p className="mt-2 text-sm font-semibold text-slate-900">제외</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">AI 활용 평가는 annual performance score에서 분리됩니다.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Threshold group</div>
+              <p className="mt-2 text-sm font-semibold text-slate-900">
+                {preview.grade.thresholdGroupLabel ?? preview.grade.thresholdGroup ?? '-'}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">영업/비영업 및 직책 기준이 없으면 계산이 제한됩니다.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">AI 인정 경로</div>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{preview.ai.recognitionRoute ?? '-'}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Pass/Fail 요건은 점수와 별도로 표시됩니다.</p>
+            </div>
+          </div>
+
+          {issues.length ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-700" />
+                <h4 className="text-sm font-semibold text-amber-900">
+                  {blockingIssues.length ? '산출 전 확인할 항목' : '미리보기 참고 경고'}
+                </h4>
+              </div>
+              <ul className="mt-3 space-y-2">
+                {issues.slice(0, 8).map((issue, index) => (
+                  <li
+                    key={`${issue.source}-${issue.code}-${issue.itemId ?? index}`}
+                    className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm text-slate-700"
+                  >
+                    <span className="font-semibold text-amber-900">{getPreviewIssueLabel2026(issue.code)}</span>
+                    <span className="ml-2 text-slate-500">{issue.itemTitle ? `${issue.itemTitle} · ` : ''}{issue.message}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              현재 preview 계산에 필요한 필수 데이터가 확인되었습니다.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+          HR 관리자가 선택한 평가에 대해 2026 정책 기준 preview를 수동으로 계산할 수 있습니다.
+        </div>
+      )}
+    </Panel>
+  )
+}
+
 function QuickLink(props: { href: string; label: string }) {
   return (
     <Link href={props.href} className="inline-flex items-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
@@ -2410,4 +2633,3 @@ function formatWeighted(item: {
     Number(item.draft.actScore ?? 0) * 0.1
   return (pdca * item.weight) / 100
 }
-
