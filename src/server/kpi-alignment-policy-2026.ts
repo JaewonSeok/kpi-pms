@@ -15,6 +15,16 @@ export type KpiAlignmentReflectionStatus2026 =
   | 'EXCLUDED'
   | 'EXCEPTION_APPROVED'
 
+export type KpiAlignmentHrReflectionState2026 =
+  | 'DIVISION_KPI'
+  | 'NOT_SUBMITTED'
+  | 'SUBMITTED'
+  | 'HR_REVIEWING'
+  | 'REFLECTED'
+  | 'EXCLUDED'
+  | 'EXCEPTION_REQUIRED'
+  | 'EXCEPTION_APPROVED'
+
 export type MboPolicySeverity2026 = 'info' | 'warning' | 'blocker'
 
 export type MboPolicyIssueCode2026 =
@@ -64,12 +74,26 @@ export type OrgKpiAlignmentInput2026 = {
 
 export type OrgKpiReflectionEligibility2026 = {
   status: KpiAlignmentReflectionStatus2026
+  hrReflectionState: KpiAlignmentHrReflectionState2026
   orgLevel: KpiAlignmentOrgLevel2026
   eligibleAsOrgGoal: boolean
   defaultPersonalMboCategory: EvaluationPolicyItemCategoryCode
   requiresHrException: boolean
   reasons: string[]
   issues: MboPolicyIssue2026[]
+}
+
+export type NormalizedOrgKpiHrReflectionStatus2026 = {
+  state: KpiAlignmentHrReflectionState2026
+  reflectionStatus: KpiAlignmentReflectionStatus2026
+  orgLevel: KpiAlignmentOrgLevel2026
+  labelKo: string
+  personalMboLabelKo: string
+  guidanceKo: string
+  eligibleAsOrgGoal: boolean
+  defaultPersonalMboCategory: EvaluationPolicyItemCategoryCode
+  requiresHrException: boolean
+  sourceVerdict?: KpiAlignmentTeamReviewVerdict2026 | null
 }
 
 export type OrgKpiPersonalMboClassification2026 = {
@@ -164,6 +188,10 @@ function normalizeReviewVerdict(value: KpiAlignmentTeamReviewVerdict2026 | null 
   return value === 'ADEQUATE' || value === 'CAUTION' || value === 'INSUFFICIENT' ? value : null
 }
 
+function normalizeReflectionStatus(value: KpiAlignmentReflectionStatus2026 | null | undefined) {
+  return value && ORG_KPI_REFLECTION_STATUS_PRIORITY.includes(value) ? value : null
+}
+
 export function resolveOrgKpiLevel2026(input: OrgKpiAlignmentInput2026): KpiAlignmentOrgLevel2026 {
   if (input.level) return input.level
   if (input.department?.level) return input.department.level
@@ -175,11 +203,155 @@ export function resolveOrgKpiLevel2026(input: OrgKpiAlignmentInput2026): KpiAlig
   return 'UNKNOWN'
 }
 
+export function normalizeOrgKpiHrReflectionState2026(
+  orgKpi: OrgKpiAlignmentInput2026
+): NormalizedOrgKpiHrReflectionStatus2026 {
+  const orgLevel = resolveOrgKpiLevel2026(orgKpi)
+  const reviewVerdict = normalizeReviewVerdict(orgKpi.latestReviewVerdict)
+  const explicitStatus = normalizeReflectionStatus(orgKpi.reflectionStatus)
+
+  const fromState = (
+    state: KpiAlignmentHrReflectionState2026,
+    sourceVerdict: KpiAlignmentTeamReviewVerdict2026 | null = reviewVerdict
+  ): NormalizedOrgKpiHrReflectionStatus2026 => {
+    switch (state) {
+      case 'DIVISION_KPI':
+        return {
+          state,
+          reflectionStatus: orgKpi.status === 'DRAFT' ? 'DRAFT' : 'REFLECTED',
+          orgLevel,
+          labelKo: '본부 KPI',
+          personalMboLabelKo: '조직목표 후보',
+          guidanceKo: '본부 KPI는 개인 MBO 조직목표 우선 반영 후보입니다.',
+          eligibleAsOrgGoal: true,
+          defaultPersonalMboCategory: 'ORG_GOAL',
+          requiresHrException: false,
+          sourceVerdict,
+        }
+      case 'REFLECTED':
+        return {
+          state,
+          reflectionStatus: 'REFLECTED',
+          orgLevel,
+          labelKo: 'HR 반영',
+          personalMboLabelKo: '조직목표 후보',
+          guidanceKo: 'HR 검토에서 반영 완료되어 개인 MBO 조직목표 후보로 볼 수 있습니다.',
+          eligibleAsOrgGoal: true,
+          defaultPersonalMboCategory: 'ORG_GOAL',
+          requiresHrException: false,
+          sourceVerdict,
+        }
+      case 'EXCEPTION_APPROVED':
+        return {
+          state,
+          reflectionStatus: 'EXCEPTION_APPROVED',
+          orgLevel,
+          labelKo: '예외 승인',
+          personalMboLabelKo: '조직목표 후보',
+          guidanceKo: 'HR 예외 승인 맥락이 있어 개인 MBO 조직목표 후보로 볼 수 있습니다.',
+          eligibleAsOrgGoal: true,
+          defaultPersonalMboCategory: 'ORG_GOAL',
+          requiresHrException: false,
+          sourceVerdict,
+        }
+      case 'EXCLUDED':
+        return {
+          state,
+          reflectionStatus: 'EXCLUDED',
+          orgLevel,
+          labelKo: 'HR 제외',
+          personalMboLabelKo: '일상업무 기본',
+          guidanceKo: 'HR 검토에서 제외된 팀 KPI는 기본적으로 일상업무로 분류합니다.',
+          eligibleAsOrgGoal: false,
+          defaultPersonalMboCategory: 'DAILY_WORK',
+          requiresHrException: true,
+          sourceVerdict,
+        }
+      case 'HR_REVIEWING':
+        return {
+          state,
+          reflectionStatus: 'HR_REVIEWING',
+          orgLevel,
+          labelKo: '검토 중',
+          personalMboLabelKo: '검토 중',
+          guidanceKo: 'HR 검토가 진행 중이므로 조직목표 반영 여부를 확인해야 합니다.',
+          eligibleAsOrgGoal: false,
+          defaultPersonalMboCategory: 'DAILY_WORK',
+          requiresHrException: true,
+          sourceVerdict,
+        }
+      case 'SUBMITTED':
+        return {
+          state,
+          reflectionStatus: 'SUBMITTED_TO_HR',
+          orgLevel,
+          labelKo: 'HR 제출',
+          personalMboLabelKo: '검토 필요',
+          guidanceKo: 'HR 반영 완료 전까지는 개인 MBO 조직목표로 확정하지 않습니다.',
+          eligibleAsOrgGoal: false,
+          defaultPersonalMboCategory: 'DAILY_WORK',
+          requiresHrException: true,
+          sourceVerdict,
+        }
+      case 'EXCEPTION_REQUIRED':
+        return {
+          state,
+          reflectionStatus: 'SUBMITTED_TO_HR',
+          orgLevel,
+          labelKo: '예외 승인 필요',
+          personalMboLabelKo: '일상업무 기본',
+          guidanceKo: 'HR 반영 완료되지 않은 팀 KPI를 조직목표로 쓰려면 HR 예외 승인이 필요합니다.',
+          eligibleAsOrgGoal: false,
+          defaultPersonalMboCategory: 'DAILY_WORK',
+          requiresHrException: true,
+          sourceVerdict,
+        }
+      case 'NOT_SUBMITTED':
+      default:
+        return {
+          state: 'NOT_SUBMITTED',
+          reflectionStatus: 'DRAFT',
+          orgLevel,
+          labelKo: 'HR 미제출',
+          personalMboLabelKo: '일상업무 기본',
+          guidanceKo: 'HR 검토에 제출되지 않은 팀 KPI는 기본적으로 일상업무로 분류합니다.',
+          eligibleAsOrgGoal: false,
+          defaultPersonalMboCategory: 'DAILY_WORK',
+          requiresHrException: true,
+          sourceVerdict,
+        }
+    }
+  }
+
+  if (orgLevel === 'DIVISION') return fromState('DIVISION_KPI')
+
+  if (explicitStatus) {
+    if (explicitStatus === 'REFLECTED') return fromState('REFLECTED')
+    if (explicitStatus === 'EXCLUDED') return fromState('EXCLUDED')
+    if (explicitStatus === 'EXCEPTION_APPROVED') return fromState('EXCEPTION_APPROVED')
+    if (explicitStatus === 'HR_REVIEWING') return fromState('HR_REVIEWING')
+    if (explicitStatus === 'SUBMITTED_TO_HR') return fromState('SUBMITTED')
+    return fromState('NOT_SUBMITTED')
+  }
+
+  if (orgKpi.hrExceptionApproved && hasText(orgKpi.hrExceptionReason)) {
+    return fromState('EXCEPTION_APPROVED')
+  }
+
+  if (reviewVerdict === 'ADEQUATE') return fromState('REFLECTED')
+  if (reviewVerdict === 'INSUFFICIENT' || orgKpi.status === 'ARCHIVED') return fromState('EXCLUDED')
+  if (reviewVerdict === 'CAUTION') return fromState('HR_REVIEWING')
+  if (orgKpi.status === 'DRAFT') return fromState('NOT_SUBMITTED')
+
+  return fromState(orgLevel === 'TEAM' || orgLevel === 'SECTION' ? 'EXCEPTION_REQUIRED' : 'SUBMITTED')
+}
+
 export function determineOrgKpiReflectionEligibility2026(
   orgKpi: OrgKpiAlignmentInput2026
 ): OrgKpiReflectionEligibility2026 {
   const orgLevel = resolveOrgKpiLevel2026(orgKpi)
   const reviewVerdict = normalizeReviewVerdict(orgKpi.latestReviewVerdict)
+  const hrReflection = normalizeOrgKpiHrReflectionState2026(orgKpi)
   const reasons: string[] = []
   const issues: MboPolicyIssue2026[] = []
 
@@ -188,6 +360,7 @@ export function determineOrgKpiReflectionEligibility2026(
       orgKpi.reflectionStatus === 'REFLECTED' || orgKpi.reflectionStatus === 'EXCEPTION_APPROVED'
     return {
       status: orgKpi.reflectionStatus,
+      hrReflectionState: hrReflection.state,
       orgLevel,
       eligibleAsOrgGoal: eligible,
       defaultPersonalMboCategory: eligible ? 'ORG_GOAL' : 'DAILY_WORK',
@@ -219,6 +392,7 @@ export function determineOrgKpiReflectionEligibility2026(
     }
     return {
       status: orgKpi.status === 'DRAFT' ? 'DRAFT' : 'REFLECTED',
+      hrReflectionState: hrReflection.state,
       orgLevel,
       eligibleAsOrgGoal: true,
       defaultPersonalMboCategory: 'ORG_GOAL',
@@ -234,6 +408,7 @@ export function determineOrgKpiReflectionEligibility2026(
         reasons.push('HR 예외 승인 사유가 있어 팀 KPI를 조직목표 후보로 반영할 수 있습니다.')
         return {
           status: 'EXCEPTION_APPROVED',
+          hrReflectionState: hrReflection.state,
           orgLevel,
           eligibleAsOrgGoal: true,
           defaultPersonalMboCategory: 'ORG_GOAL',
@@ -258,6 +433,7 @@ export function determineOrgKpiReflectionEligibility2026(
       reasons.push('HR 검토 결과 ADEQUATE로 확인되어 조직목표 후보로 반영할 수 있습니다.')
       return {
         status: 'REFLECTED',
+        hrReflectionState: hrReflection.state,
         orgLevel,
         eligibleAsOrgGoal: true,
         defaultPersonalMboCategory: 'ORG_GOAL',
@@ -277,6 +453,7 @@ export function determineOrgKpiReflectionEligibility2026(
       )
       return {
         status: 'EXCLUDED',
+        hrReflectionState: hrReflection.state,
         orgLevel,
         eligibleAsOrgGoal: false,
         defaultPersonalMboCategory: 'DAILY_WORK',
@@ -293,9 +470,19 @@ export function determineOrgKpiReflectionEligibility2026(
         suggestedAction: '조직목표로 반영하려면 HR 검토 또는 예외 승인을 남겨 주세요.',
       })
     )
+    if (hrReflection.state === 'EXCEPTION_REQUIRED') {
+      issues.push(
+        issue({
+          code: 'HR_EXCEPTION_REQUIRED',
+          message: 'HR 반영 완료되지 않은 팀 KPI를 조직목표로 사용하려면 HR 예외 승인이 필요합니다.',
+          suggestedAction: 'HR 예외 승인 여부를 확인하거나 일상업무로 분류하세요.',
+        })
+      )
+    }
 
     return {
-      status: reviewVerdict === 'CAUTION' ? 'HR_REVIEWING' : orgKpi.status === 'DRAFT' ? 'DRAFT' : 'SUBMITTED_TO_HR',
+      status: hrReflection.reflectionStatus,
+      hrReflectionState: hrReflection.state,
       orgLevel,
       eligibleAsOrgGoal: false,
       defaultPersonalMboCategory: 'DAILY_WORK',
@@ -314,6 +501,7 @@ export function determineOrgKpiReflectionEligibility2026(
   )
   return {
     status: 'SUBMITTED_TO_HR',
+    hrReflectionState: hrReflection.state,
     orgLevel,
     eligibleAsOrgGoal: false,
     defaultPersonalMboCategory: 'DAILY_WORK',

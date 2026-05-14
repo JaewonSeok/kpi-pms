@@ -161,6 +161,17 @@ void (async () => {
     assert.equal(clientSource.includes('/api/kpi/org/team-ai/review'), false)
   })
 
+  await run('org KPI client surfaces compact 2026 HR reflection status without replacing team review flow', () => {
+    const pageSource = read('src/server/org-kpi-page.ts')
+
+    assert.equal(pageSource.includes('normalizeOrgKpiHrReflectionState2026'), true)
+    assert.equal(pageSource.includes('teamKpiReviewItems'), true)
+    assert.equal(clientSource.includes('formatOrgKpiHrReflectionSummary'), true)
+    assert.equal(clientSource.includes('HR 반영 상태'), true)
+    assert.equal(clientSource.includes('personalMboLabel'), true)
+    assert.equal(serverSource.includes('generateTeamKpiReviewRun'), true)
+  })
+
   await run('workspace renders separated aligned and independent recommendation sections with review area', () => {
     assert.equal(workspaceSource.includes('연계형 팀 KPI 추천'), true)
     assert.equal(workspaceSource.includes('독립형 팀 KPI 추천'), true)

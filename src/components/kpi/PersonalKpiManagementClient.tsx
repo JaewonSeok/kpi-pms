@@ -494,6 +494,19 @@ function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
     linkedOrgKpiId: kpi.orgKpiId ?? '',
   }
 }
+
+function formatPersonalOrgKpiOptionLabel(option: Props['orgKpiOptions'][number]) {
+  return joinInlineParts([option.title, option.departmentName, option.mboReflection?.personalMboLabel])
+}
+
+function getPersonalOrgKpiReflectionHelper(option?: Props['orgKpiOptions'][number]) {
+  if (!option?.mboReflection) {
+    return '본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다.'
+  }
+
+  return `${option.mboReflection.label} · ${option.mboReflection.personalMboLabel}. ${option.mboReflection.guidance}`
+}
+
 function buildAiPayload(
   props: Props,
   selectedKpi: PersonalKpiViewModel | undefined,
@@ -4182,10 +4195,13 @@ function BulkEditPersonalKpiModal(props: {
               <option value="">연결 해제</option>
               {props.orgKpiOptions.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {joinInlineParts([option.title, option.departmentName])}
+                  {formatPersonalOrgKpiOptionLabel(option)}
                 </option>
               ))}
             </select>
+            <span className="text-xs leading-5 text-slate-500">
+              {getPersonalOrgKpiReflectionHelper(props.orgKpiOptions.find((option) => option.id === props.form.linkedOrgKpiId))}
+            </span>
           </label>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -4429,10 +4445,13 @@ function EditorModal(props: {
                 <option value="">연결 안 함</option>
                 {props.orgKpiOptions.map((option) => (
                   <option key={option.id} value={option.id}>
-                    {joinInlineParts([option.title, option.departmentName])}
+                    {formatPersonalOrgKpiOptionLabel(option)}
                   </option>
                 ))}
               </select>
+              <p className="text-xs leading-5 text-slate-500">
+                {getPersonalOrgKpiReflectionHelper(props.orgKpiOptions.find((option) => option.id === props.form.linkedOrgKpiId))}
+              </p>
               <p className="text-xs leading-5 text-slate-500">
                 본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다. 본부 KPI에 포함되지 않은 팀 KPI는
                 기본적으로 일상업무로 분류되며, 조직목표에 포함된 업무는 일상업무로 중복 기재하지 않는 것이 원칙입니다.

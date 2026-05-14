@@ -18,6 +18,11 @@ import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiTargetValues } from '@/lib/org-kpi-target-values'
 import { resolveOrgKpiOperationalStatus, type OrgKpiOperationalStatus } from './org-kpi-workflow'
 import {
+  normalizeOrgKpiHrReflectionState2026,
+  type KpiAlignmentHrReflectionState2026,
+  type KpiAlignmentOrgLevel2026,
+} from './kpi-alignment-policy-2026'
+import {
   collectDepartmentAncestorIds,
   resolveEditableOrgKpiDepartmentIds,
   resolveReadableOrgKpiDepartmentIds,
@@ -103,6 +108,7 @@ export type OrgKpiViewModel = {
   difficulty?: Difficulty
   status: OrgKpiOperationalStatus
   persistedStatus: KpiStatus
+  hrReflection?: OrgKpiHrReflectionView2026
   owner?: {
     id: string
     name: string
@@ -211,6 +217,16 @@ export type OrgKpiPageData = {
     scope: OrgKpiScope
   } | null
   hasSectionScope: boolean
+}
+
+export type OrgKpiHrReflectionView2026 = {
+  state: KpiAlignmentHrReflectionState2026
+  label: string
+  personalMboLabel: string
+  guidance: string
+  eligibleAsOrgGoal: boolean
+  defaultPersonalMboCategory: 'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK'
+  requiresHrException: boolean
 }
 
 const ORG_KPI_SCOPE_TAB_META: Record<
@@ -324,6 +340,15 @@ type OrgKpiWithRelations = Prisma.OrgKpiGetPayload<{
     childOrgKpis: {
       select: {
         id: true
+      }
+    }
+    teamKpiReviewItems: {
+      orderBy: {
+        createdAt: 'desc'
+      }
+      take: 1
+      select: {
+        verdict: true
       }
     }
   }
@@ -619,6 +644,45 @@ function parseTags(value: Prisma.JsonValue | null) {
     : []
 }
 
+function toKpiAlignmentOrgLevel(scope: OrgKpiScope | undefined): KpiAlignmentOrgLevel2026 {
+  if (scope === 'division') return 'DIVISION'
+  if (scope === 'section') return 'SECTION'
+  if (scope === 'team') return 'TEAM'
+  return 'UNKNOWN'
+}
+
+function buildOrgKpiHrReflectionView2026(params: {
+  kpi: OrgKpiWithRelations
+  scope: OrgKpiScope | undefined
+}): OrgKpiHrReflectionView2026 {
+  const normalized = normalizeOrgKpiHrReflectionState2026({
+    id: params.kpi.id,
+    title: params.kpi.kpiName,
+    kpiName: params.kpi.kpiName,
+    definition: params.kpi.definition,
+    formula: params.kpi.formula,
+    level: toKpiAlignmentOrgLevel(params.scope),
+    department: {
+      id: params.kpi.department.id,
+      deptName: params.kpi.department.deptName,
+      parentDeptId: params.kpi.department.parentDeptId,
+    },
+    status: params.kpi.status,
+    parentOrgKpiId: params.kpi.parentOrgKpiId,
+    latestReviewVerdict: params.kpi.teamKpiReviewItems?.[0]?.verdict ?? null,
+  })
+
+  return {
+    state: normalized.state,
+    label: normalized.labelKo,
+    personalMboLabel: normalized.personalMboLabelKo,
+    guidance: normalized.guidanceKo,
+    eligibleAsOrgGoal: normalized.eligibleAsOrgGoal,
+    defaultPersonalMboCategory: normalized.defaultPersonalMboCategory,
+    requiresHrException: normalized.requiresHrException,
+  }
+}
+
 export async function getOrgKpiPageData(params: {
   userId: string
   role: SystemRole
@@ -853,6 +917,15 @@ export async function getOrgKpiPageData(params: {
                 id: true,
               },
             },
+            teamKpiReviewItems: {
+              orderBy: {
+                createdAt: 'desc',
+              },
+              take: 1,
+              select: {
+                verdict: true,
+              },
+            },
           },
           orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
         })
@@ -967,6 +1040,7 @@ export async function getOrgKpiPageData(params: {
     }
 
     const mappedListAll = kpis.map<OrgKpiViewModel>((kpi) => {
+      const kpiScope = departmentScopeMap.get(kpi.deptId) ?? 'team'
       const resolvedTargetValues = resolveOrgKpiTargetValues({
         targetValue: kpi.targetValue,
         targetValueT: kpi.targetValueT,
@@ -1002,7 +1076,7 @@ export async function getOrgKpiPageData(params: {
       return {
         id: kpi.id,
         title: kpi.kpiName,
-        scope: departmentScopeMap.get(kpi.deptId) ?? 'team',
+        scope: kpiScope,
         tags: parseTags(kpi.tags),
         evalYear: kpi.evalYear,
         departmentId: kpi.deptId,
@@ -1048,6 +1122,10 @@ export async function getOrgKpiPageData(params: {
           logs,
         }),
         persistedStatus: kpi.status,
+        hrReflection: buildOrgKpiHrReflectionView2026({
+          kpi,
+          scope: kpiScope,
+        }),
         owner: owner
           ? {
               id: owner.id,

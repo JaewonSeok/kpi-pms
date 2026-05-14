@@ -1466,6 +1466,19 @@ async function main() {
         },
       },
       {
+        id: 'pk-team-reviewing',
+        title: '검토 중 팀 KPI',
+        policyCategory: null,
+        linkedOrgKpiId: 'org-team-reviewing',
+        linkedOrgKpi: {
+          id: 'org-team-reviewing',
+          title: '검토 중 팀 KPI',
+          level: 'TEAM',
+          latestReviewVerdict: 'CAUTION',
+          status: 'CONFIRMED',
+        },
+      },
+      {
         id: 'pk-daily-duplicate',
         title: '본부 KPI 반영',
         policyCategory: 'DAILY_WORK',
@@ -1476,6 +1489,7 @@ async function main() {
     const division = guidances.find((item) => item.itemId === 'pk-division')
     const reflected = guidances.find((item) => item.itemId === 'pk-team-reflected')
     const excluded = guidances.find((item) => item.itemId === 'pk-team-excluded')
+    const reviewing = guidances.find((item) => item.itemId === 'pk-team-reviewing')
     const duplicate = guidances.find((item) => item.itemId === 'pk-daily-duplicate')
 
     assert.equal(division?.suggestedCategory, 'ORG_GOAL')
@@ -1484,7 +1498,11 @@ async function main() {
     assert.equal(reflected?.suggestedCategory, 'ORG_GOAL')
     assert.equal(reflected?.guidanceMessage.includes('HR 반영 완료 팀 KPI'), true)
     assert.equal(excluded?.suggestedCategory, 'DAILY_WORK')
+    assert.equal(excluded?.linkedOrgKpi?.hrReflectionState, 'EXCLUDED')
     assert.equal(excluded?.hrExceptionRequired, true)
+    assert.equal(reviewing?.suggestedCategory, 'DAILY_WORK')
+    assert.equal(reviewing?.guidanceLabel, '검토 중')
+    assert.equal(reviewing?.linkedOrgKpi?.hrReflectionLabel, '검토 중')
     assert.equal(duplicate?.duplicateDailyWork, true)
     assert.equal(duplicate?.issues.some((issue) => issue.code === 'DAILY_WORK_DUPLICATES_ORG_GOAL'), true)
   })
@@ -1497,6 +1515,9 @@ async function main() {
 
     assert.equal(source.includes('2026 MBO 정책 점검'), true)
     assert.equal(source.includes('본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다.'), true)
+    assert.equal(source.includes('formatPersonalOrgKpiOptionLabel(option)'), true)
+    assert.equal(source.includes('option.mboReflection?.personalMboLabel'), true)
+    assert.equal(source.includes('getPersonalOrgKpiReflectionHelper'), true)
     assert.equal(source.includes('공식 점수에는 반영되지 않는 비차단 안내입니다.'), true)
     assert.equal(source.includes('저장/제출을 막지 않는 참고 정보입니다.'), true)
     assert.equal(validateSource.includes('mboPolicy'), false)
@@ -1619,7 +1640,8 @@ async function main() {
     assert.equal(source.includes('{joinInlineParts([segment.departmentName, segment.title])}'), true)
     assert.equal(source.includes('{joinInlineParts([history.actor, history.note])}'), true)
     assert.equal(source.includes('{joinInlineParts([employee.name, employee.departmentName])}'), true)
-    assert.equal(source.includes('{joinInlineParts([option.title, option.departmentName])}'), true)
+    assert.equal(source.includes('formatPersonalOrgKpiOptionLabel(option)'), true)
+    assert.equal(source.includes('joinInlineParts([option.title, option.departmentName, option.mboReflection?.personalMboLabel])'), true)
   })
 
   await run('personal KPI selection preserves scroll when syncing kpiId into the URL', () => {

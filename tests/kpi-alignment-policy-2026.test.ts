@@ -5,6 +5,7 @@ import {
   classifyOrgKpiForPersonalMbo2026,
   detectDailyWorkDuplicateWithOrgGoal2026,
   determineOrgKpiReflectionEligibility2026,
+  normalizeOrgKpiHrReflectionState2026,
   summarizeMboPolicyIssues2026,
   validatePersonalKpiMboCategory2026,
 } from '../src/server/kpi-alignment-policy-2026'
@@ -65,6 +66,26 @@ run('reflected team KPI becomes organization-goal candidate', () => {
   assert.equal(result.eligibility.status, 'REFLECTED')
 })
 
+run('team KPI review verdicts map to normalized HR reflection states', () => {
+  const reflected = normalizeOrgKpiHrReflectionState2026(teamOrgKpi({ latestReviewVerdict: 'ADEQUATE' }))
+  const excluded = normalizeOrgKpiHrReflectionState2026(teamOrgKpi({ latestReviewVerdict: 'INSUFFICIENT' }))
+  const reviewing = normalizeOrgKpiHrReflectionState2026(teamOrgKpi({ latestReviewVerdict: 'CAUTION' }))
+  const exceptionRequired = normalizeOrgKpiHrReflectionState2026(teamOrgKpi())
+  const division = normalizeOrgKpiHrReflectionState2026(divisionOrgKpi())
+
+  assert.equal(reflected.state, 'REFLECTED')
+  assert.equal(reflected.labelKo, 'HR 반영')
+  assert.equal(reflected.eligibleAsOrgGoal, true)
+  assert.equal(excluded.state, 'EXCLUDED')
+  assert.equal(excluded.defaultPersonalMboCategory, 'DAILY_WORK')
+  assert.equal(reviewing.state, 'HR_REVIEWING')
+  assert.equal(reviewing.labelKo, '검토 중')
+  assert.equal(exceptionRequired.state, 'EXCEPTION_REQUIRED')
+  assert.equal(exceptionRequired.requiresHrException, true)
+  assert.equal(division.state, 'DIVISION_KPI')
+  assert.equal(division.personalMboLabelKo, '조직목표 후보')
+})
+
 run('excluded or non-reflected team KPI defaults to daily work', () => {
   const excluded = classifyOrgKpiForPersonalMbo2026(
     teamOrgKpi({
@@ -75,7 +96,9 @@ run('excluded or non-reflected team KPI defaults to daily work', () => {
 
   assert.equal(excluded.category, 'DAILY_WORK')
   assert.equal(excluded.eligibility.status, 'EXCLUDED')
+  assert.equal(excluded.eligibility.hrReflectionState, 'EXCLUDED')
   assert.equal(pending.category, 'DAILY_WORK')
+  assert.equal(pending.eligibility.hrReflectionState, 'EXCEPTION_REQUIRED')
   assert.equal(pending.issues.some((issue) => issue.code === 'TEAM_KPI_NOT_REFLECTED_DEFAULT_DAILY_WORK'), true)
 })
 

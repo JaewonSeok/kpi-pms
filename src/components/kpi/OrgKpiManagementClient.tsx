@@ -2107,6 +2107,14 @@ function formatOrgKpiOwnerSummary(owner?: OrgKpiViewModel['owner']) {
   return owner.position ? `${owner.name} · ${owner.position}` : owner.name
 }
 
+function formatOrgKpiHrReflectionSummary(kpi: OrgKpiViewModel) {
+  if (kpi.hrReflection) {
+    return `${kpi.hrReflection.label} · ${kpi.hrReflection.personalMboLabel}`
+  }
+  if (kpi.scope === 'division') return '본부 KPI · 조직목표 후보'
+  return 'HR 상태 확인 필요'
+}
+
 function getOrgKpiParentSummaryText(
   kpi: OrgKpiViewModel,
   options: {
@@ -2164,7 +2172,7 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-slate-900">{props.kpi.title}</div>
           <p className="mt-1 text-sm text-slate-500">
-            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
+            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'} · {formatOrgKpiHrReflectionSummary(props.kpi)}
           </p>
           <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
         </div>
@@ -2290,7 +2298,7 @@ const OrgKpiDisconnectedCard = memo(function OrgKpiDisconnectedCard(props: OrgKp
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-slate-900">{props.kpi.title}</div>
           <p className="mt-1 text-sm text-slate-500">
-            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
+            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'} · {formatOrgKpiHrReflectionSummary(props.kpi)}
           </p>
           <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
         </div>
@@ -2464,7 +2472,7 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
           <div className="min-w-0 flex-1 text-left">
             <span className="font-semibold text-slate-900">{node.kpi.title}</span>
             <p className="mt-1 text-sm text-slate-500">
-              {node.kpi.departmentName} · {node.kpi.category ?? '카테고리 미지정'}
+              {node.kpi.departmentName} · {node.kpi.category ?? '카테고리 미지정'} · {formatOrgKpiHrReflectionSummary(node.kpi)}
             </p>
             <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
           </div>
@@ -2738,6 +2746,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                 })}
               />
               <InfoPill label="가중치" value={formatOrgKpiWeight(kpi.weight)} />
+              <InfoPill label="HR 반영 상태" value={formatOrgKpiHrReflectionSummary(kpi)} />
               <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
               <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
             </div>

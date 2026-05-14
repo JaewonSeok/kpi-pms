@@ -33,7 +33,9 @@ import {
 import {
   classifyOrgKpiForPersonalMbo2026,
   detectDailyWorkDuplicateWithOrgGoal2026,
+  normalizeOrgKpiHrReflectionState2026,
   validatePersonalKpiMboCategory2026,
+  type KpiAlignmentHrReflectionState2026,
   type KpiAlignmentOrgLevel2026,
   type MboPolicyIssue2026,
   type MboPolicySeverity2026,
@@ -140,6 +142,8 @@ export type PersonalKpiMboPolicyGuidance2026 = {
   linkedOrgKpi?: {
     orgLevel: KpiAlignmentOrgLevel2026
     reflectionStatus: string
+    hrReflectionState: KpiAlignmentHrReflectionState2026
+    hrReflectionLabel: string
     eligibleAsOrgGoal: boolean
     requiresHrException: boolean
   }
@@ -253,6 +257,15 @@ export type OrgKpiOption = {
   category?: string
   departmentName: string
   description?: string | null
+  mboReflection?: {
+    state: KpiAlignmentHrReflectionState2026
+    label: string
+    personalMboLabel: string
+    guidance: string
+    eligibleAsOrgGoal: boolean
+    defaultPersonalMboCategory: EvaluationPolicyItemCategoryCode
+    requiresHrException: boolean
+  }
 }
 
 export type PersonalKpiPageData = {
@@ -371,6 +384,15 @@ type OrgKpiRecord = Prisma.OrgKpiGetPayload<{
             deptName: true
           }
         }
+      }
+    }
+    teamKpiReviewItems: {
+      orderBy: {
+        createdAt: 'desc'
+      }
+      take: 1
+      select: {
+        verdict: true
       }
     }
   }
@@ -921,13 +943,23 @@ function inferOrgKpiLevelForPersonalMbo2026(
   return 'TEAM'
 }
 
+type OrgKpiAlignmentSourceForPersonal2026 = {
+  id: string
+  kpiName: string
+  definition?: string | null
+  formula?: string | null
+  status?: string | null
+  parentOrgKpiId?: string | null
+  department?: {
+    id?: string | null
+    deptName?: string | null
+    parentDeptId?: string | null
+  } | null
+  teamKpiReviewItems?: Array<{ verdict: string }>
+}
+
 function toOrgKpiAlignmentInput2026(
-  orgKpi:
-    | (PersonalKpiWithRelations['linkedOrgKpi'] & {
-        teamKpiReviewItems?: Array<{ verdict: string }>
-      })
-    | null
-    | undefined,
+  orgKpi: OrgKpiAlignmentSourceForPersonal2026 | null | undefined,
   orgKpiById?: Map<string, OrgKpiRecord>
 ): OrgKpiAlignmentInput2026 | null {
   if (!orgKpi) return null
@@ -946,6 +978,24 @@ function toOrgKpiAlignmentInput2026(
     status: orgKpi.status,
     parentOrgKpiId: orgKpi.parentOrgKpiId,
     latestReviewVerdict: orgKpi.teamKpiReviewItems?.[0]?.verdict ?? null,
+  }
+}
+
+function buildPersonalOrgKpiOptionMboReflection2026(
+  orgKpi: OrgKpiRecord,
+  orgKpiById: Map<string, OrgKpiRecord>
+): NonNullable<OrgKpiOption['mboReflection']> {
+  const input = toOrgKpiAlignmentInput2026(orgKpi, orgKpiById)
+  const normalized = normalizeOrgKpiHrReflectionState2026(input ?? { id: orgKpi.id, title: orgKpi.kpiName })
+
+  return {
+    state: normalized.state,
+    label: normalized.labelKo,
+    personalMboLabel: normalized.personalMboLabelKo,
+    guidance: normalized.guidanceKo,
+    eligibleAsOrgGoal: normalized.eligibleAsOrgGoal,
+    defaultPersonalMboCategory: normalized.defaultPersonalMboCategory,
+    requiresHrException: normalized.requiresHrException,
   }
 }
 
@@ -977,6 +1027,18 @@ function getDefaultGuidanceMessage2026(params: {
     }
   }
   if (params.classification?.source === 'TEAM_KPI_DEFAULT_DAILY_WORK') {
+    if (params.classification.eligibility.hrReflectionState === 'HR_REVIEWING') {
+      return {
+        label: '검토 중',
+        message: 'HR 검토 중인 팀 KPI입니다. 반영 완료 전까지는 기본적으로 일상업무로 안내합니다.',
+      }
+    }
+    if (params.classification.eligibility.hrReflectionState === 'EXCEPTION_REQUIRED') {
+      return {
+        label: '예외 승인 필요',
+        message: 'HR 반영 완료되지 않은 팀 KPI입니다. 조직목표로 쓰려면 HR 예외 승인이 필요합니다.',
+      }
+    }
     return {
       label: '일상업무 후보',
       message: '본부 KPI에 포함되지 않았거나 HR 반영 완료되지 않은 팀 KPI로, 기본적으로 일상업무로 분류됩니다.',
@@ -1018,6 +1080,7 @@ export function buildPersonalKpiMboPolicyGuidance2026(params: {
 }): PersonalKpiMboPolicyGuidance2026 {
   const explicitCategory = getExplicitMboCategory2026(params.item.policyCategory ?? params.item.category)
   const classification = params.item.linkedOrgKpi ? classifyOrgKpiForPersonalMbo2026(params.item.linkedOrgKpi) : null
+  const hrReflection = params.item.linkedOrgKpi ? normalizeOrgKpiHrReflectionState2026(params.item.linkedOrgKpi) : null
   const suggestedCategory = explicitCategory ?? classification?.category ?? 'UNKNOWN'
   const issues: PersonalKpiMboPolicyIssueView2026[] = []
 
@@ -1097,6 +1160,8 @@ export function buildPersonalKpiMboPolicyGuidance2026(params: {
       ? {
           orgLevel: classification.eligibility.orgLevel,
           reflectionStatus: classification.eligibility.status,
+          hrReflectionState: hrReflection?.state ?? classification.eligibility.hrReflectionState,
+          hrReflectionLabel: hrReflection?.labelKo ?? classification.eligibility.status,
           eligibleAsOrgGoal: classification.eligibility.eligibleAsOrgGoal,
           requiresHrException: classification.eligibility.requiresHrException,
         }
@@ -1557,6 +1622,15 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
                 parentOrgKpiId: true,
               },
             },
+            teamKpiReviewItems: {
+              orderBy: {
+                createdAt: 'desc',
+              },
+              take: 1,
+              select: {
+                verdict: true,
+              },
+            },
           },
           orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
         }),
@@ -1883,6 +1957,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         category: item.kpiCategory,
         departmentName: resolveDepartmentLabel(item.department),
         description: item.definition,
+        mboReflection: buildPersonalOrgKpiOptionMboReflection2026(item, orgKpiById),
       })),
       summary: {
         totalCount: mappedMine.length,
