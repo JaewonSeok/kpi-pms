@@ -227,6 +227,9 @@ export type OrgKpiHrReflectionView2026 = {
   eligibleAsOrgGoal: boolean
   defaultPersonalMboCategory: 'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK'
   requiresHrException: boolean
+  exceptionReason?: string | null
+  exceptionApprovedById?: string | null
+  exceptionApprovedAt?: string | null
 }
 
 const ORG_KPI_SCOPE_TAB_META: Record<
@@ -670,6 +673,10 @@ function buildOrgKpiHrReflectionView2026(params: {
     status: params.kpi.status,
     parentOrgKpiId: params.kpi.parentOrgKpiId,
     latestReviewVerdict: params.kpi.teamKpiReviewItems?.[0]?.verdict ?? null,
+    hrExceptionApproved: params.kpi.mboExceptionApproved,
+    hrExceptionReason: params.kpi.mboExceptionReason,
+    hrExceptionApprovedById: params.kpi.mboExceptionApprovedById,
+    hrExceptionApprovedAt: params.kpi.mboExceptionApprovedAt,
   })
 
   return {
@@ -680,6 +687,9 @@ function buildOrgKpiHrReflectionView2026(params: {
     eligibleAsOrgGoal: normalized.eligibleAsOrgGoal,
     defaultPersonalMboCategory: normalized.defaultPersonalMboCategory,
     requiresHrException: normalized.requiresHrException,
+    exceptionReason: normalized.exceptionReason,
+    exceptionApprovedById: normalized.exceptionApprovedById,
+    exceptionApprovedAt: normalized.exceptionApprovedAt,
   }
 }
 

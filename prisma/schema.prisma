@@ -253,6 +253,10 @@ model OrgKpi {
   difficulty   Difficulty
   status       KpiStatus  @default(DRAFT)
   tags         Json?
+  mboExceptionApproved Boolean @default(false)
+  mboExceptionReason String?
+  mboExceptionApprovedById String?
+  mboExceptionApprovedAt DateTime?
   parentOrgKpiId String?
   parentOrgKpi   OrgKpi?    @relation("OrgKpiAlignment", fields: [parentOrgKpiId], references: [id])
   childOrgKpis   OrgKpi[]   @relation("OrgKpiAlignment")
@@ -269,6 +273,7 @@ model OrgKpi {
   midReviewGoalReviews MidReviewGoalReview[]
 
   @@index([evalYear, parentOrgKpiId])
+  @@index([evalYear, mboExceptionApproved])
   @@map("org_kpis")
 }
 

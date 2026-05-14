@@ -70,6 +70,8 @@ export type OrgKpiAlignmentInput2026 = {
   reflectionStatus?: KpiAlignmentReflectionStatus2026 | null
   hrExceptionApproved?: boolean | null
   hrExceptionReason?: string | null
+  hrExceptionApprovedById?: string | null
+  hrExceptionApprovedAt?: Date | string | null
 }
 
 export type OrgKpiReflectionEligibility2026 = {
@@ -94,6 +96,9 @@ export type NormalizedOrgKpiHrReflectionStatus2026 = {
   defaultPersonalMboCategory: EvaluationPolicyItemCategoryCode
   requiresHrException: boolean
   sourceVerdict?: KpiAlignmentTeamReviewVerdict2026 | null
+  exceptionReason?: string | null
+  exceptionApprovedById?: string | null
+  exceptionApprovedAt?: string | null
 }
 
 export type OrgKpiPersonalMboClassification2026 = {
@@ -169,6 +174,12 @@ function displayTitle(value: { title?: string | null; kpiName?: string | null })
   return value.title?.trim() || value.kpiName?.trim() || 'KPI'
 }
 
+function serializeDate(value: Date | string | null | undefined) {
+  if (!value) return null
+  if (value instanceof Date) return value.toISOString()
+  return value
+}
+
 function maxSeverity(issues: MboPolicyIssue2026[]): MboPolicySeverity2026 {
   if (issues.some((item) => item.severity === 'blocker')) return 'blocker'
   if (issues.some((item) => item.severity === 'warning')) return 'warning'
@@ -209,6 +220,15 @@ export function normalizeOrgKpiHrReflectionState2026(
   const orgLevel = resolveOrgKpiLevel2026(orgKpi)
   const reviewVerdict = normalizeReviewVerdict(orgKpi.latestReviewVerdict)
   const explicitStatus = normalizeReflectionStatus(orgKpi.reflectionStatus)
+  const exceptionReason = hasText(orgKpi.hrExceptionReason) ? orgKpi.hrExceptionReason?.trim() ?? null : null
+  const exceptionMetadata =
+    orgKpi.hrExceptionApproved && exceptionReason
+      ? {
+          exceptionReason,
+          exceptionApprovedById: orgKpi.hrExceptionApprovedById ?? null,
+          exceptionApprovedAt: serializeDate(orgKpi.hrExceptionApprovedAt),
+        }
+      : {}
 
   const fromState = (
     state: KpiAlignmentHrReflectionState2026,
@@ -253,6 +273,7 @@ export function normalizeOrgKpiHrReflectionState2026(
           defaultPersonalMboCategory: 'ORG_GOAL',
           requiresHrException: false,
           sourceVerdict,
+          ...exceptionMetadata,
         }
       case 'EXCLUDED':
         return {
@@ -405,7 +426,7 @@ export function determineOrgKpiReflectionEligibility2026(
   if (orgLevel === 'TEAM' || orgLevel === 'SECTION') {
     if (orgKpi.hrExceptionApproved) {
       if (hasText(orgKpi.hrExceptionReason)) {
-        reasons.push('HR 예외 승인 사유가 있어 팀 KPI를 조직목표 후보로 반영할 수 있습니다.')
+        reasons.push(`HR 예외 승인 사유가 있어 팀 KPI를 조직목표 후보로 반영할 수 있습니다: ${orgKpi.hrExceptionReason?.trim()}`)
         return {
           status: 'EXCEPTION_APPROVED',
           hrReflectionState: hrReflection.state,

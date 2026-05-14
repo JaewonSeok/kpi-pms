@@ -146,6 +146,9 @@ export type PersonalKpiMboPolicyGuidance2026 = {
     hrReflectionLabel: string
     eligibleAsOrgGoal: boolean
     requiresHrException: boolean
+    exceptionReason?: string | null
+    exceptionApprovedById?: string | null
+    exceptionApprovedAt?: string | null
   }
   hrExceptionRequired: boolean
   displayOnly: true
@@ -265,6 +268,9 @@ export type OrgKpiOption = {
     eligibleAsOrgGoal: boolean
     defaultPersonalMboCategory: EvaluationPolicyItemCategoryCode
     requiresHrException: boolean
+    exceptionReason?: string | null
+    exceptionApprovedById?: string | null
+    exceptionApprovedAt?: string | null
   }
 }
 
@@ -950,6 +956,10 @@ type OrgKpiAlignmentSourceForPersonal2026 = {
   formula?: string | null
   status?: string | null
   parentOrgKpiId?: string | null
+  mboExceptionApproved?: boolean | null
+  mboExceptionReason?: string | null
+  mboExceptionApprovedById?: string | null
+  mboExceptionApprovedAt?: Date | string | null
   department?: {
     id?: string | null
     deptName?: string | null
@@ -978,6 +988,10 @@ function toOrgKpiAlignmentInput2026(
     status: orgKpi.status,
     parentOrgKpiId: orgKpi.parentOrgKpiId,
     latestReviewVerdict: orgKpi.teamKpiReviewItems?.[0]?.verdict ?? null,
+    hrExceptionApproved: orgKpi.mboExceptionApproved,
+    hrExceptionReason: orgKpi.mboExceptionReason,
+    hrExceptionApprovedById: orgKpi.mboExceptionApprovedById,
+    hrExceptionApprovedAt: orgKpi.mboExceptionApprovedAt,
   }
 }
 
@@ -996,6 +1010,9 @@ function buildPersonalOrgKpiOptionMboReflection2026(
     eligibleAsOrgGoal: normalized.eligibleAsOrgGoal,
     defaultPersonalMboCategory: normalized.defaultPersonalMboCategory,
     requiresHrException: normalized.requiresHrException,
+    exceptionReason: normalized.exceptionReason,
+    exceptionApprovedById: normalized.exceptionApprovedById,
+    exceptionApprovedAt: normalized.exceptionApprovedAt,
   }
 }
 
@@ -1164,6 +1181,9 @@ export function buildPersonalKpiMboPolicyGuidance2026(params: {
           hrReflectionLabel: hrReflection?.labelKo ?? classification.eligibility.status,
           eligibleAsOrgGoal: classification.eligibility.eligibleAsOrgGoal,
           requiresHrException: classification.eligibility.requiresHrException,
+          exceptionReason: hrReflection?.exceptionReason,
+          exceptionApprovedById: hrReflection?.exceptionApprovedById,
+          exceptionApprovedAt: hrReflection?.exceptionApprovedAt,
         }
       : undefined,
     hrExceptionRequired:

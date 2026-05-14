@@ -103,6 +103,14 @@ run('excluded or non-reflected team KPI defaults to daily work', () => {
 })
 
 run('team KPI exception approved becomes organization-goal candidate', () => {
+  const normalized = normalizeOrgKpiHrReflectionState2026(
+    teamOrgKpi({
+      hrExceptionApproved: true,
+      hrExceptionReason: '본부 KPI에는 없지만 2026 핵심 전략 프로젝트로 HR 협의 완료',
+      hrExceptionApprovedById: 'hr-1',
+      hrExceptionApprovedAt: '2026-05-14T00:00:00.000Z',
+    })
+  )
   const result = determineOrgKpiReflectionEligibility2026(
     teamOrgKpi({
       hrExceptionApproved: true,
@@ -110,9 +118,33 @@ run('team KPI exception approved becomes organization-goal candidate', () => {
     })
   )
 
+  assert.equal(normalized.state, 'EXCEPTION_APPROVED')
+  assert.equal(normalized.exceptionReason, '본부 KPI에는 없지만 2026 핵심 전략 프로젝트로 HR 협의 완료')
+  assert.equal(normalized.exceptionApprovedById, 'hr-1')
+  assert.equal(normalized.exceptionApprovedAt, '2026-05-14T00:00:00.000Z')
   assert.equal(result.status, 'EXCEPTION_APPROVED')
   assert.equal(result.eligibleAsOrgGoal, true)
   assert.equal(result.defaultPersonalMboCategory, 'ORG_GOAL')
+  assert.equal(result.reasons.some((reason) => reason.includes('HR 예외 승인 사유')), true)
+})
+
+run('team KPI exception approval without reason falls back to exception-required guidance', () => {
+  const normalized = normalizeOrgKpiHrReflectionState2026(
+    teamOrgKpi({
+      hrExceptionApproved: true,
+      hrExceptionReason: '',
+    })
+  )
+  const result = determineOrgKpiReflectionEligibility2026(
+    teamOrgKpi({
+      hrExceptionApproved: true,
+      hrExceptionReason: '',
+    })
+  )
+
+  assert.equal(normalized.state, 'EXCEPTION_REQUIRED')
+  assert.equal(result.eligibleAsOrgGoal, false)
+  assert.equal(result.issues.some((issue) => issue.code === 'HR_EXCEPTION_REQUIRED'), true)
 })
 
 run('daily work duplicate with organization goal is detected', () => {

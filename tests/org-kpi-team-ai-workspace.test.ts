@@ -169,6 +169,10 @@ void (async () => {
     assert.equal(clientSource.includes('formatOrgKpiHrReflectionSummary'), true)
     assert.equal(clientSource.includes('HR 반영 상태'), true)
     assert.equal(clientSource.includes('personalMboLabel'), true)
+    assert.equal(clientSource.includes('org-kpi-hr-exception-panel'), true)
+    assert.equal(clientSource.includes('/api/kpi/org/${selectedKpi.id}/hr-exception'), true)
+    assert.equal(pageSource.includes('mboExceptionApproved'), true)
+    assert.equal(pageSource.includes('exceptionReason'), true)
     assert.equal(serverSource.includes('generateTeamKpiReviewRun'), true)
   })
 

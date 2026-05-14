@@ -504,7 +504,11 @@ function getPersonalOrgKpiReflectionHelper(option?: Props['orgKpiOptions'][numbe
     return '본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다.'
   }
 
-  return `${option.mboReflection.label} · ${option.mboReflection.personalMboLabel}. ${option.mboReflection.guidance}`
+  const exceptionReason = option.mboReflection.exceptionReason
+    ? ` 예외 승인 사유: ${option.mboReflection.exceptionReason}`
+    : ''
+
+  return `${option.mboReflection.label} · ${option.mboReflection.personalMboLabel}. ${option.mboReflection.guidance}${exceptionReason}`
 }
 
 function buildAiPayload(
@@ -2619,6 +2623,7 @@ function MboPolicySummaryPanel(props: { summary: Props['summary']['mboPolicy'] }
 
 function MboPolicyGuidanceBlock(props: { item: PersonalKpiViewModel }) {
   const visibleIssues = props.item.mboPolicy.issues.slice(0, 2)
+  const exceptionReason = props.item.mboPolicy.linkedOrgKpi?.exceptionReason
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -2629,6 +2634,9 @@ function MboPolicyGuidanceBlock(props: { item: PersonalKpiViewModel }) {
         <span className="text-sm font-semibold text-slate-900">{props.item.mboPolicy.guidanceLabel}</span>
       </div>
       <p className="mt-2 text-sm text-slate-600">{props.item.mboPolicy.guidanceMessage}</p>
+      {exceptionReason ? (
+        <p className="mt-1 text-xs font-medium text-emerald-700">예외 승인 사유: {exceptionReason}</p>
+      ) : null}
       {visibleIssues.length ? (
         <ul className="mt-2 space-y-1 text-xs text-slate-500">
           {visibleIssues.map((issue) => (

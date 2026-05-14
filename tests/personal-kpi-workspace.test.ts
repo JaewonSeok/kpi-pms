@@ -1518,6 +1518,8 @@ async function main() {
     assert.equal(source.includes('formatPersonalOrgKpiOptionLabel(option)'), true)
     assert.equal(source.includes('option.mboReflection?.personalMboLabel'), true)
     assert.equal(source.includes('getPersonalOrgKpiReflectionHelper'), true)
+    assert.equal(source.includes('예외 승인 사유: ${option.mboReflection.exceptionReason}'), true)
+    assert.equal(source.includes('예외 승인 사유: {exceptionReason}'), true)
     assert.equal(source.includes('공식 점수에는 반영되지 않는 비차단 안내입니다.'), true)
     assert.equal(source.includes('저장/제출을 막지 않는 참고 정보입니다.'), true)
     assert.equal(validateSource.includes('mboPolicy'), false)
