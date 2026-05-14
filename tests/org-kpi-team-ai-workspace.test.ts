@@ -151,14 +151,14 @@ void (async () => {
     assert.equal(serverSource.includes('independentKpiCoverage'), true)
   })
 
-  await run('management client wires workspace save, recommend, adopt, and review flows', () => {
-    assert.equal(clientSource.includes('OrgKpiTeamAiWorkspace'), true)
-    assert.equal(clientSource.includes('/api/kpi/org/job-description'), true)
-    assert.equal(clientSource.includes('/api/kpi/org/team-ai/recommend'), true)
-    assert.equal(clientSource.includes('/api/kpi/org/team-ai/review'), true)
-    assert.equal(clientSource.includes('/api/kpi/org/team-ai/recommendations/${pendingRecommendationDecision.itemId}/decision'), true)
-    assert.equal(clientSource.includes('pendingRecommendationDecision'), true)
-    assert.equal(clientSource.includes('buildFormFromTeamRecommendation'), true)
+  await run('team AI workspace logic remains available while the simplified org KPI client stays unwired', () => {
+    assert.equal(workspaceSource.includes('OrgKpiTeamAiWorkspace'), true)
+    assert.equal(serverSource.includes('generateTeamKpiRecommendationSet'), true)
+    assert.equal(serverSource.includes('generateTeamKpiReviewRun'), true)
+    assert.equal(serverSource.includes('applyTeamKpiRecommendationDecision'), true)
+    assert.equal(clientSource.includes('OrgKpiTeamAiWorkspace'), false)
+    assert.equal(clientSource.includes('/api/kpi/org/team-ai/recommend'), false)
+    assert.equal(clientSource.includes('/api/kpi/org/team-ai/review'), false)
   })
 
   await run('workspace renders separated aligned and independent recommendation sections with review area', () => {
