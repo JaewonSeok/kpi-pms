@@ -104,7 +104,6 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [briefingBusy, setBriefingBusy] = useState(false)
   const [briefing, setBriefing] = useState<EvaluationPerformanceBriefingSnapshot | null>(null)
   const [guideStatus, setGuideStatus] = useState({ viewed: false, confirmed: false })
-  const [adminSummaryOpen, setAdminSummaryOpen] = useState(false)
   const [draftComment, setDraftComment] = useState('')
   const [draftStrengthComment, setDraftStrengthComment] = useState('')
   const [draftImprovementComment, setDraftImprovementComment] = useState('')
@@ -724,13 +723,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   if (props.state !== 'ready') {
     return (
       <div className="space-y-6">
-        <section className="rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-500">성과평가 운영</p>
-          <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">성과평가</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            이번 주기 평가 진행 상황과 처리해야 할 항목을 한 화면에서 확인하세요.
-          </p>
-        </section>
+        <PageHeader />
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-500">
             <ClipboardList className="h-6 w-6" />
@@ -749,50 +742,46 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     )
   }
 
-  const actionItems = (props.evaluations ?? []).filter(
-    (evaluation) =>
-      (evaluation.isEvaluator &&
-        ['PENDING', 'IN_PROGRESS', 'REJECTED'].includes(evaluation.status)) ||
-      (evaluation.isMine &&
-        evaluation.evalStage === 'SELF' &&
-        ['PENDING', 'IN_PROGRESS', 'REJECTED'].includes(evaluation.status))
-  )
-  const actionItemPreview = actionItems.slice(0, 5)
-  const actionRequiredCount = props.summary?.actionRequiredCount ?? 0
-  const submittedCount = props.summary?.submittedCount ?? 0
-  const rejectedCount = props.summary?.rejectedCount ?? 0
-  const feedbackRoundCount = props.summary?.feedbackRoundCount ?? 0
-  const adminSummary = props.adminSummary
-  const adminQualityHasWarning = Boolean(
-    adminSummary &&
-      (adminSummary.insufficientEvidenceWarningCount > 0 ||
-        adminSummary.biasWarningCount > 0 ||
-        adminSummary.coachingGapCount > 0)
-  )
-
   return (
-    <div className="space-y-5">
-      {/* Unified header — replaces the previous duplicate PageHeader + giant summary card. */}
-      <section className="rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
+    <div className="space-y-6">
+      <PageHeader />
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0 space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-500">
-              성과평가 운영
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">성과평가</h1>
-              <Badge tone={toneFromCount(actionRequiredCount)}>
-                {labelFromCount(actionRequiredCount)}
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge tone={toneFromCount(props.summary?.actionRequiredCount ?? 0)}>
+                {labelFromCount(props.summary?.actionRequiredCount ?? 0)}
               </Badge>
-              {selected ? (
-                <Badge tone={statusTone(selected.status)}>
-                  {`${selected.stageLabel} · ${selected.statusLabel}`}
-                </Badge>
-              ) : null}
+              {selected ? <Badge tone={statusTone(selected.status)}>{`${selected.stageLabel} · ${selected.statusLabel}`}</Badge> : null}
             </div>
-            <p className="text-sm text-slate-500">
-              이번 주기 평가 진행 상황과 처리해야 할 항목을 한 화면에서 확인하세요.
-            </p>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">성과평가</h1>
+              <p className="mt-2 text-sm text-slate-500">
+                평가 대상, 근거 기록, 이전 단계 의견, AI 보조를 한 화면에서 검토하며 초안 작성과 검토를 진행합니다.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricCard label="작성/검토 필요 평가" value={`${props.summary?.actionRequiredCount ?? 0}건`} help="지금 처리해야 하는 평가 건수" />
+              <MetricCard label="제출 완료 평가" value={`${props.summary?.submittedCount ?? 0}건`} help="현재 주기 기준 제출 완료된 평가 건수" />
+              <MetricCard label="반려 평가" value={`${props.summary?.rejectedCount ?? 0}건`} help="보완이 필요한 평가 건수" />
+              <MetricCard label="다면 피드백 라운드" value={`${props.summary?.feedbackRoundCount ?? 0}개`} help={props.summary?.evidenceFreshnessLabel ?? '근거 데이터 상태'} />
+            </div>
+            {props.currentUser?.role === 'ROLE_ADMIN' && props.adminSummary ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  평가 품질 운영 요약
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                  <MetricCard label="가이드 열람 평가" value={`${props.adminSummary.guideViewedCount}건`} help="가이드를 열람한 평가 건수" compact />
+                  <MetricCard label="가이드 확인 평가" value={`${props.adminSummary.guideConfirmedCount}건`} help="확인 완료 처리된 평가 건수" compact />
+                  <MetricCard label="AI 보조 사용 평가" value={`${props.adminSummary.aiUsedCount}건`} help="AI 보조를 실행한 평가 건수" compact />
+                  <MetricCard label="근거 부족 경고" value={`${props.adminSummary.insufficientEvidenceWarningCount}건`} help="근거 보강이 필요한 평가 건수" compact />
+                  <MetricCard label="편향 주의 경고" value={`${props.adminSummary.biasWarningCount}건`} help="표현 점검이 필요한 평가 건수" compact />
+                  <MetricCard label="코칭 보완 경고" value={`${props.adminSummary.coachingGapCount}건`} help="다음 행동 제안이 약한 평가 건수" compact />
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-[440px]">
@@ -909,181 +898,6 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       {notice ? <Banner tone="success" message={notice} /> : null}
       {errorNotice ? <Banner tone="error" message={errorNotice} /> : null}
       {props.alerts?.map((alert) => <Banner key={alert} tone="warn" message={alert} />)}
-
-      {/* A. My Action Items — actionable evaluations surfaced from props.evaluations. */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">지금 처리해야 할 평가</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              평가자/피평가자 관점에서 작성 또는 검토가 필요한 항목입니다.
-            </p>
-          </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {actionItems.length}건
-          </span>
-        </div>
-        {actionItems.length ? (
-          <ul className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
-            {actionItemPreview.map((item) => (
-              <li
-                key={item.id}
-                className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-sm font-semibold text-slate-900">
-                      {item.targetName}
-                    </span>
-                    <span className="text-xs text-slate-400">·</span>
-                    <span className="text-xs text-slate-500">{item.targetDepartment}</span>
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                      {item.stageLabel}
-                    </span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        item.status === 'REJECTED'
-                          ? 'bg-rose-100 text-rose-700'
-                          : item.status === 'IN_PROGRESS'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-amber-100 text-amber-700'
-                      }`}
-                    >
-                      {item.statusLabel}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      {item.isEvaluator ? '검토 필요' : '내 작성'}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => moveToEvaluation(item.id)}
-                  className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                >
-                  이동
-                  <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                </button>
-              </li>
-            ))}
-            {actionItems.length > actionItemPreview.length ? (
-              <li className="bg-slate-50 px-3 py-2 text-center text-[11px] text-slate-500">
-                외 {actionItems.length - actionItemPreview.length}건 — 아래 평가 목록에서 확인
-              </li>
-            ) : null}
-          </ul>
-        ) : (
-          <div className="mt-3 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 px-4 py-5 text-center">
-            <div className="text-sm font-semibold text-emerald-800">✓ 모든 평가를 완료했습니다</div>
-            <p className="mt-1 text-xs text-emerald-700">
-              이번 주기 처리해야 할 평가가 없습니다.
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* B. 처리 현황 요약 — compact 4-stat strip. 0건은 muted, 반려는 amber. */}
-      <section aria-label="처리 현황 요약" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <SummaryStat
-          label="작성/검토 필요 평가"
-          value={`${actionRequiredCount}건`}
-          help="지금 처리해야 하는 평가"
-          emphasized={actionRequiredCount > 0}
-        />
-        <SummaryStat
-          label="제출 완료 평가"
-          value={`${submittedCount}건`}
-          help="현재 주기 기준 제출 완료"
-          emphasized={submittedCount > 0}
-        />
-        <SummaryStat
-          label="반려 평가"
-          value={`${rejectedCount}건`}
-          help="보완이 필요한 평가"
-          emphasized={rejectedCount > 0}
-          variant={rejectedCount > 0 ? 'warning' : 'default'}
-        />
-        <SummaryStat
-          label="다면 피드백 라운드"
-          value={`${feedbackRoundCount}개`}
-          help={props.summary?.evidenceFreshnessLabel ?? '근거 데이터 상태'}
-          emphasized={feedbackRoundCount > 0}
-        />
-      </section>
-
-      {/* C. 평가 품질 운영 요약 — admin only, collapsible. 경고성은 amber. */}
-      {props.currentUser?.role === 'ROLE_ADMIN' && props.adminSummary ? (
-        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <button
-            type="button"
-            onClick={() => setAdminSummaryOpen((value) => !value)}
-            aria-expanded={adminSummaryOpen}
-            className="flex w-full items-center justify-between px-5 py-3 text-left"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                평가 품질 운영 요약
-              </span>
-              {adminQualityHasWarning ? (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                  확인 필요
-                </span>
-              ) : null}
-            </div>
-            <ChevronRight
-              className={`h-4 w-4 text-slate-400 transition ${adminSummaryOpen ? 'rotate-90' : ''}`}
-            />
-          </button>
-          {adminSummaryOpen ? (
-            <div className="grid gap-3 border-t border-slate-100 px-5 py-4 sm:grid-cols-2 xl:grid-cols-6">
-              <MetricCard
-                label="가이드 열람 평가"
-                value={`${props.adminSummary.guideViewedCount}건`}
-                help="가이드를 열람한 평가 건수"
-                compact
-                variant={props.adminSummary.guideViewedCount === 0 ? 'muted' : 'default'}
-              />
-              <MetricCard
-                label="가이드 확인 평가"
-                value={`${props.adminSummary.guideConfirmedCount}건`}
-                help="확인 완료 처리된 평가 건수"
-                compact
-                variant={props.adminSummary.guideConfirmedCount === 0 ? 'muted' : 'default'}
-              />
-              <MetricCard
-                label="AI 보조 사용 평가"
-                value={`${props.adminSummary.aiUsedCount}건`}
-                help="AI 보조를 실행한 평가 건수"
-                compact
-                variant={props.adminSummary.aiUsedCount === 0 ? 'muted' : 'default'}
-              />
-              <MetricCard
-                label="근거 부족 경고"
-                value={`${props.adminSummary.insufficientEvidenceWarningCount}건`}
-                help="근거 보강이 필요한 평가 건수"
-                compact
-                variant={props.adminSummary.insufficientEvidenceWarningCount > 0 ? 'warning' : 'muted'}
-              />
-              <MetricCard
-                label="편향 주의 경고"
-                value={`${props.adminSummary.biasWarningCount}건`}
-                help="표현 점검이 필요한 평가 건수"
-                compact
-                variant={props.adminSummary.biasWarningCount > 0 ? 'warning' : 'muted'}
-              />
-              <MetricCard
-                label="코칭 보완 경고"
-                value={`${props.adminSummary.coachingGapCount}건`}
-                help="다음 행동 제안이 약한 평가 건수"
-                compact
-                variant={props.adminSummary.coachingGapCount > 0 ? 'warning' : 'muted'}
-              />
-            </div>
-          ) : null}
-        </section>
-      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -1869,6 +1683,18 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   )
 }
 
+function PageHeader() {
+  return (
+    <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">성과평가 운영</p>
+      <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">성과평가</h1>
+      <p className="mt-2 max-w-3xl text-sm text-slate-500">
+        평가 대상 목록, 근거 기록, 검토 이력, AI 보조를 연결해 평가 작성과 상위 검토를 한 화면에서 진행합니다.
+      </p>
+    </section>
+  )
+}
+
 function Panel(props: { title: string; description: string; children: React.ReactNode }) {
   return (
     <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -1890,80 +1716,12 @@ function QuickLink(props: { href: string; label: string }) {
   )
 }
 
-function MetricCard(props: {
-  label: string
-  value: string
-  help: string
-  compact?: boolean
-  variant?: 'default' | 'muted' | 'warning'
-  emphasized?: boolean
-}) {
-  const variant = props.variant ?? 'default'
-  const palette =
-    variant === 'warning'
-      ? 'border-amber-200 bg-amber-50'
-      : variant === 'muted'
-        ? 'border-slate-200 bg-slate-50/60'
-        : 'border-slate-200 bg-slate-50'
-  const valueTone =
-    variant === 'warning'
-      ? 'text-amber-900'
-      : variant === 'muted'
-        ? 'text-slate-400'
-        : props.emphasized
-          ? 'text-slate-900'
-          : 'text-slate-900'
-  const labelTone =
-    variant === 'warning'
-      ? 'text-amber-700'
-      : variant === 'muted'
-        ? 'text-slate-400'
-        : 'text-slate-400'
-  const helpTone =
-    variant === 'warning'
-      ? 'text-amber-700'
-      : variant === 'muted'
-        ? 'text-slate-400'
-        : 'text-slate-500'
+function MetricCard(props: { label: string; value: string; help: string; compact?: boolean }) {
   return (
-    <div className={`rounded-2xl border ${palette} ${props.compact ? 'px-4 py-3' : 'p-4'}`}>
-      <div className={`text-xs uppercase tracking-[0.16em] ${labelTone}`}>{props.label}</div>
-      <div className={`mt-2 text-xl font-semibold ${valueTone}`}>{props.value}</div>
-      <div className={`mt-1 text-xs ${helpTone}`}>{props.help}</div>
-    </div>
-  )
-}
-
-function SummaryStat(props: {
-  label: string
-  value: string
-  help: string
-  emphasized: boolean
-  variant?: 'default' | 'warning'
-}) {
-  const isWarning = props.variant === 'warning'
-  const muted = !props.emphasized
-  const containerClass = isWarning
-    ? 'border-amber-200 bg-amber-50'
-    : muted
-      ? 'border-slate-200 bg-white'
-      : 'border-slate-200 bg-white'
-  const valueClass = isWarning
-    ? 'text-amber-900'
-    : muted
-      ? 'text-slate-400'
-      : 'text-slate-900'
-  const labelClass = isWarning ? 'text-amber-700' : muted ? 'text-slate-400' : 'text-slate-500'
-  const helpClass = isWarning ? 'text-amber-700/80' : muted ? 'text-slate-400' : 'text-slate-500'
-  return (
-    <div
-      className={`flex flex-col gap-0.5 rounded-xl border px-3 py-2 ${containerClass}`}
-    >
-      <span className={`text-[10px] font-semibold uppercase tracking-[0.16em] ${labelClass}`}>
-        {props.label}
-      </span>
-      <span className={`text-lg font-semibold leading-tight ${valueClass}`}>{props.value}</span>
-      <span className={`text-[11px] leading-tight ${helpClass}`}>{props.help}</span>
+    <div className={`rounded-2xl border border-slate-200 bg-slate-50 ${props.compact ? 'px-4 py-3' : 'p-4'}`}>
+      <div className="text-xs uppercase tracking-[0.16em] text-slate-400">{props.label}</div>
+      <div className="mt-2 text-xl font-semibold text-slate-900">{props.value}</div>
+      <div className="mt-1 text-xs text-slate-500">{props.help}</div>
     </div>
   )
 }
