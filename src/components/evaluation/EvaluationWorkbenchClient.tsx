@@ -12,6 +12,7 @@ import {
   MessageSquareMore,
   Send,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Undo2,
 } from 'lucide-react'
@@ -49,6 +50,7 @@ import {
 } from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 import type { EvaluationPreviewResult2026 } from '@/server/evaluation-preview-2026'
+import type { EvaluationPreviewReadinessSummary2026 } from '@/server/evaluation-preview-2026-readiness'
 
 type WorkbenchTab =
   | 'workbench'
@@ -85,6 +87,7 @@ type EvaluationPreview2026ApiData = {
   }
   preview: EvaluationPreviewResult2026
 }
+type EvaluationPreviewReadiness2026ApiData = EvaluationPreviewReadinessSummary2026
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '종합',
@@ -132,6 +135,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [statusFilter, setStatusFilter] = useState<'ALL' | EvaluationListEntry['status']>('ALL')
   const [scopeFilter, setScopeFilter] = useState<'ALL' | 'MY_SELF' | 'MY_REVIEWS' | 'PENDING_REVIEW'>('ALL')
   const [departmentFilter, setDepartmentFilter] = useState<'ALL' | string>('ALL')
+  const [policyReadiness2026, setPolicyReadiness2026] = useState<EvaluationPreviewReadiness2026ApiData | null>(null)
+  const [policyReadiness2026Loading, setPolicyReadiness2026Loading] = useState(false)
+  const [policyReadiness2026Error, setPolicyReadiness2026Error] = useState('')
   const workbenchContextKey = `${props.selectedCycleId ?? ''}:${props.selectedEvaluationId ?? ''}`
   const previousWorkbenchContextKey = useRef(workbenchContextKey)
   const previousCycleId = useRef(props.selectedCycleId ?? '')
@@ -161,6 +167,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyPreview2026(null)
     setPolicyPreview2026Error('')
     setPolicyPreview2026Loading(false)
+    setPolicyReadiness2026(null)
+    setPolicyReadiness2026Error('')
+    setPolicyReadiness2026Loading(false)
     setBriefing(null)
     setAssistLoadingMode(null)
     setCopiedPreviewMode(null)
@@ -476,6 +485,38 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       )
     } finally {
       setPolicyPreview2026Loading(false)
+    }
+  }
+
+  async function loadPolicyReadiness2026() {
+    if (!canViewPolicyPreview2026) return
+    setPolicyReadiness2026Loading(true)
+    setPolicyReadiness2026Error('')
+
+    try {
+      const params = new URLSearchParams()
+      if (props.selectedCycleId) {
+        params.set('cycleId', props.selectedCycleId)
+      } else {
+        params.set('year', '2026')
+      }
+      const query = params.toString()
+      const response = await fetch(`/api/evaluation/preview-2026/readiness${query ? `?${query}` : ''}`, {
+        method: 'GET',
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 평가 전환 준비 상태를 불러오지 못했습니다.')
+      }
+
+      setPolicyReadiness2026(json.data as EvaluationPreviewReadiness2026ApiData)
+    } catch (error) {
+      setPolicyReadiness2026(null)
+      setPolicyReadiness2026Error(
+        error instanceof Error ? error.message : '2026 평가 전환 준비 상태를 불러오지 못했습니다.'
+      )
+    } finally {
+      setPolicyReadiness2026Loading(false)
     }
   }
 
@@ -1265,12 +1306,20 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
               />
 
               {canViewPolicyPreview2026 ? (
-                <PolicyPreview2026Panel
-                  previewData={policyPreview2026}
-                  loading={policyPreview2026Loading}
-                  error={policyPreview2026Error}
-                  onLoad={loadPolicyPreview2026}
-                />
+                <>
+                  <PolicyReadiness2026Panel
+                    readinessData={policyReadiness2026}
+                    loading={policyReadiness2026Loading}
+                    error={policyReadiness2026Error}
+                    onLoad={loadPolicyReadiness2026}
+                  />
+                  <PolicyPreview2026Panel
+                    previewData={policyPreview2026}
+                    loading={policyPreview2026Loading}
+                    error={policyPreview2026Error}
+                    onLoad={loadPolicyPreview2026}
+                  />
+                </>
               ) : null}
 
               <div className="overflow-x-auto">
@@ -1966,6 +2015,152 @@ function getPreviewIssueLabel2026(code: string) {
   }
 
   return labels[code] ?? code
+}
+
+function PolicyReadiness2026Panel(props: {
+  readinessData: EvaluationPreviewReadiness2026ApiData | null
+  loading: boolean
+  error: string
+  onLoad: () => void
+}) {
+  const readiness = props.readinessData
+  const blockers = readiness?.activationBlockers ?? []
+  const samples = readiness?.samples ?? []
+
+  return (
+    <Panel
+      title="2026 평가 전환 준비 상태"
+      description="공식 결과에는 반영되지 않습니다. HR/admin이 2026 정책 활성화 전에 보완할 메타데이터와 정책 확인 항목을 점검합니다."
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-1 rounded-2xl bg-indigo-50 p-2 text-indigo-600">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="neutral">Readiness only</Badge>
+              <Badge tone={readiness && readiness.blockedCount === 0 ? 'success' : readiness ? 'warn' : 'neutral'}>
+                {readiness
+                  ? readiness.blockedCount === 0
+                    ? '전환 준비 양호'
+                    : `${readiness.blockedCount}건 검토 필요`
+                  : '미확인'}
+              </Badge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              정책 카테고리, 영업/비영업 구분, 등급 기준 HR 확인, AI 증빙 부족 여부를 cycle 단위로 읽기 전용 집계합니다.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={props.onLoad}
+          disabled={props.loading}
+          className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+        >
+          {props.loading ? '확인 중...' : readiness ? '다시 확인' : '준비 상태 확인'}
+        </button>
+      </div>
+
+      {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+
+      {readiness ? (
+        <div className="mt-5 space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <MetricCard
+              label="평가 확인"
+              value={readiness.totalEvaluationsChecked.toLocaleString()}
+              help="read-only scan"
+              compact
+            />
+            <MetricCard
+              label="산출 가능"
+              value={readiness.canCalculateCount.toLocaleString()}
+              help="preview 가능"
+              compact
+              variant={readiness.canCalculateCount > 0 ? 'default' : 'muted'}
+            />
+            <MetricCard
+              label="정책 카테고리 미분류"
+              value={(readiness.missingPolicyCategoryCount + readiness.manualReviewCount).toLocaleString()}
+              help="UNKNOWN/manual-review 포함"
+              compact
+              variant={readiness.missingPolicyCategoryCount + readiness.manualReviewCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="영업/비영업 구분 필요"
+              value={readiness.missingSalesClassificationCount.toLocaleString()}
+              help="자동 기본값 없음"
+              compact
+              variant={readiness.missingSalesClassificationCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="등급 기준 HR 확인 필요"
+              value={readiness.ambiguousThresholdCount.toLocaleString()}
+              help="threshold ambiguity"
+              compact
+              variant={readiness.ambiguousThresholdCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="AI 증빙 부족"
+              value={readiness.aiInsufficientDataCount.toLocaleString()}
+              help="점수와 별도"
+              compact
+              variant={readiness.aiInsufficientDataCount > 0 ? 'warning' : 'default'}
+            />
+          </div>
+
+          {blockers.length ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-700" />
+                <h4 className="text-sm font-semibold text-amber-900">Phase 1-G 전 확인할 항목</h4>
+              </div>
+              <ul className="mt-3 space-y-2">
+                {blockers.map((blocker) => (
+                  <li key={blocker} className="text-sm leading-6 text-amber-900">
+                    {blocker}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              현재 확인 범위에서는 전환 차단 항목이 집계되지 않았습니다.
+            </div>
+          )}
+
+          {samples.length ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h4 className="text-sm font-semibold text-slate-900">검토 샘플</h4>
+                <span className="text-xs text-slate-400">최대 30건 중 상위 {samples.slice(0, 6).length}건 표시</span>
+              </div>
+              <ul className="mt-3 divide-y divide-slate-100">
+                {samples.slice(0, 6).map((sample, index) => (
+                  <li key={`${sample.evaluationId}-${sample.issueCode}-${sample.itemId ?? index}`} className="py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={sample.severity === 'error' ? 'warn' : 'neutral'}>{sample.issueLabel}</Badge>
+                      <span className="text-sm font-semibold text-slate-900">{sample.targetName}</span>
+                      <span className="text-xs text-slate-400">{sample.targetDepartment}</span>
+                    </div>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      {sample.itemTitle ? `${sample.itemTitle} · ` : ''}{sample.message}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+          HR 관리자가 현재 평가 주기의 2026 정책 전환 준비 상태를 수동으로 확인할 수 있습니다.
+        </div>
+      )}
+    </Panel>
+  )
 }
 
 function PolicyPreview2026Panel(props: {
