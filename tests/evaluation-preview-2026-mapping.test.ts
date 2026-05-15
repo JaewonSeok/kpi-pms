@@ -32,14 +32,6 @@ moduleLoader._resolveFilename = function resolveFilename(request, parent, isMain
   return previousResolveFilename.call(this, request, parent, isMain, options)
 }
 
-const {
-  getEvaluationPolicy2026MappingCandidatesForSession,
-  updateEvaluationPolicy2026MetadataForSession,
-} = require('../src/server/evaluation-preview-2026-mapping') as typeof import('../src/server/evaluation-preview-2026-mapping')
-const {
-  getEvaluationPreviewReadinessSummary2026,
-} = require('../src/server/evaluation-preview-2026-readiness') as typeof import('../src/server/evaluation-preview-2026-readiness')
-
 async function run(name: string, fn: () => Promise<void> | void) {
   try {
     await fn()
@@ -272,6 +264,14 @@ function makeDb(evaluations: any[]) {
 }
 
 async function main() {
+  const {
+    getEvaluationPolicy2026MappingCandidatesForSession,
+    updateEvaluationPolicy2026MetadataForSession,
+  } = await import('../src/server/evaluation-preview-2026-mapping')
+  const {
+    getEvaluationPreviewReadinessSummary2026,
+  } = await import('../src/server/evaluation-preview-2026-readiness')
+
   await run('admin can list 2026 policy mapping candidates', async () => {
     const fake = makeDb([makeEvaluation()])
     const payload = await getEvaluationPolicy2026MappingCandidatesForSession(

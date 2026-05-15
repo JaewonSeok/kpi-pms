@@ -32,11 +32,6 @@ moduleLoader._resolveFilename = function resolveFilename(request, parent, isMain
   return previousResolveFilename.call(this, request, parent, isMain, options)
 }
 
-const {
-  canAccessEvaluationPreview2026,
-  getEvaluationPreview2026ForSession,
-} = require('../src/server/evaluation-preview-2026-loader') as typeof import('../src/server/evaluation-preview-2026-loader')
-
 async function run(name: string, fn: () => Promise<void> | void) {
   try {
     await fn()
@@ -223,6 +218,11 @@ function makeDb(params: {
 }
 
 async function main() {
+  const {
+    canAccessEvaluationPreview2026,
+    getEvaluationPreview2026ForSession,
+  } = await import('../src/server/evaluation-preview-2026-loader')
+
   await run('HR admin can access the 2026 preview API core', async () => {
     const fake = makeDb()
     const payload = await getEvaluationPreview2026ForSession(

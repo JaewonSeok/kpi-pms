@@ -4,6 +4,12 @@ import { readFileSync } from 'node:fs'
 import Module from 'node:module'
 import path from 'node:path'
 import { AppError } from '../src/lib/utils'
+import {
+  assert2026OfficialScoringEnabled,
+  get2026EvaluationFeatureFlags,
+  is2026OfficialActivationAllowed,
+  is2026PreviewOnlyMode,
+} from '../src/lib/feature-flags'
 
 process.env.DATABASE_URL ||= 'postgresql://postgres:password@localhost:5432/kpi_pms'
 
@@ -31,17 +37,6 @@ moduleLoader._resolveFilename = function resolveFilename(request, parent, isMain
 
   return previousResolveFilename.call(this, request, parent, isMain, options)
 }
-
-const {
-  assert2026OfficialScoringEnabled,
-  get2026EvaluationFeatureFlags,
-  is2026OfficialActivationAllowed,
-  is2026PreviewOnlyMode,
-} = require('../src/lib/feature-flags') as typeof import('../src/lib/feature-flags')
-const {
-  getEvaluation2026ActivationReadiness,
-  getEvaluation2026ActivationReadinessForSession,
-} = require('../src/server/evaluation-2026-activation-readiness') as typeof import('../src/server/evaluation-2026-activation-readiness')
 
 async function run(name: string, fn: () => Promise<void> | void) {
   try {
@@ -115,6 +110,11 @@ function readySummary(overrides: Partial<any> = {}) {
 }
 
 async function main() {
+  const {
+    getEvaluation2026ActivationReadiness,
+    getEvaluation2026ActivationReadinessForSession,
+  } = await import('../src/server/evaluation-2026-activation-readiness')
+
   await run('default official 2026 flags are false while preview can be enabled', () => {
     const flags = get2026EvaluationFeatureFlags({} as NodeJS.ProcessEnv)
 

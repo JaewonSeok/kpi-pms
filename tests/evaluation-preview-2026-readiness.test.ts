@@ -32,11 +32,6 @@ moduleLoader._resolveFilename = function resolveFilename(request, parent, isMain
   return previousResolveFilename.call(this, request, parent, isMain, options)
 }
 
-const {
-  getEvaluationPreviewReadinessForSession2026,
-  getEvaluationPreviewReadinessSummary2026,
-} = require('../src/server/evaluation-preview-2026-readiness') as typeof import('../src/server/evaluation-preview-2026-readiness')
-
 async function run(name: string, fn: () => Promise<void> | void) {
   try {
     await fn()
@@ -251,6 +246,11 @@ function makeDb(params: {
 }
 
 async function main() {
+  const {
+    getEvaluationPreviewReadinessForSession2026,
+    getEvaluationPreviewReadinessSummary2026,
+  } = await import('../src/server/evaluation-preview-2026-readiness')
+
   await run('readiness helper counts missing policy category and manual-review records', async () => {
     const missingCategory = makeEvaluation({
       id: 'eval-missing-category',
