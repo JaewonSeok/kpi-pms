@@ -185,5 +185,7 @@ export function getAccessibleMenus(role: string) {
 }
 
 export function resolveMenuFromPath(pathname: string) {
-  return PATH_MENU_ENTRIES.find((entry) => pathname.startsWith(entry.prefix))?.menuKey ?? null
+  return [...PATH_MENU_ENTRIES]
+    .sort((left, right) => right.prefix.length - left.prefix.length)
+    .find((entry) => pathname.startsWith(entry.prefix))?.menuKey ?? null
 }

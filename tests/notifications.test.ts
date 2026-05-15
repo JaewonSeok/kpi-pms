@@ -1,3 +1,4 @@
+import './register-path-aliases'
 import assert from 'node:assert/strict'
 import { NotificationDeliveryChannel, NotificationType } from '@prisma/client'
 
