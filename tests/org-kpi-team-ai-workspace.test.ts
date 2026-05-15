@@ -151,14 +151,29 @@ void (async () => {
     assert.equal(serverSource.includes('independentKpiCoverage'), true)
   })
 
-  await run('management client wires workspace save, recommend, adopt, and review flows', () => {
-    assert.equal(clientSource.includes('OrgKpiTeamAiWorkspace'), true)
-    assert.equal(clientSource.includes('/api/kpi/org/job-description'), true)
-    assert.equal(clientSource.includes('/api/kpi/org/team-ai/recommend'), true)
-    assert.equal(clientSource.includes('/api/kpi/org/team-ai/review'), true)
-    assert.equal(clientSource.includes('/api/kpi/org/team-ai/recommendations/${pendingRecommendationDecision.itemId}/decision'), true)
-    assert.equal(clientSource.includes('pendingRecommendationDecision'), true)
-    assert.equal(clientSource.includes('buildFormFromTeamRecommendation'), true)
+  await run('team AI workspace logic remains available while the simplified org KPI client stays unwired', () => {
+    assert.equal(workspaceSource.includes('OrgKpiTeamAiWorkspace'), true)
+    assert.equal(serverSource.includes('generateTeamKpiRecommendationSet'), true)
+    assert.equal(serverSource.includes('generateTeamKpiReviewRun'), true)
+    assert.equal(serverSource.includes('applyTeamKpiRecommendationDecision'), true)
+    assert.equal(clientSource.includes('OrgKpiTeamAiWorkspace'), false)
+    assert.equal(clientSource.includes('/api/kpi/org/team-ai/recommend'), false)
+    assert.equal(clientSource.includes('/api/kpi/org/team-ai/review'), false)
+  })
+
+  await run('org KPI client surfaces compact 2026 HR reflection status without replacing team review flow', () => {
+    const pageSource = read('src/server/org-kpi-page.ts')
+
+    assert.equal(pageSource.includes('normalizeOrgKpiHrReflectionState2026'), true)
+    assert.equal(pageSource.includes('teamKpiReviewItems'), true)
+    assert.equal(clientSource.includes('formatOrgKpiHrReflectionSummary'), true)
+    assert.equal(clientSource.includes('HR 반영 상태'), true)
+    assert.equal(clientSource.includes('personalMboLabel'), true)
+    assert.equal(clientSource.includes('org-kpi-hr-exception-panel'), true)
+    assert.equal(clientSource.includes('/api/kpi/org/${selectedKpi.id}/hr-exception'), true)
+    assert.equal(pageSource.includes('mboExceptionApproved'), true)
+    assert.equal(pageSource.includes('exceptionReason'), true)
+    assert.equal(serverSource.includes('generateTeamKpiReviewRun'), true)
   })
 
   await run('workspace renders separated aligned and independent recommendation sections with review area', () => {

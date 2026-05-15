@@ -494,6 +494,23 @@ function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
     linkedOrgKpiId: kpi.orgKpiId ?? '',
   }
 }
+
+function formatPersonalOrgKpiOptionLabel(option: Props['orgKpiOptions'][number]) {
+  return joinInlineParts([option.title, option.departmentName, option.mboReflection?.personalMboLabel])
+}
+
+function getPersonalOrgKpiReflectionHelper(option?: Props['orgKpiOptions'][number]) {
+  if (!option?.mboReflection) {
+    return '본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다.'
+  }
+
+  const exceptionReason = option.mboReflection.exceptionReason
+    ? ` 예외 승인 사유: ${option.mboReflection.exceptionReason}`
+    : ''
+
+  return `${option.mboReflection.label} · ${option.mboReflection.personalMboLabel}. ${option.mboReflection.guidance}${exceptionReason}`
+}
+
 function buildAiPayload(
   props: Props,
   selectedKpi: PersonalKpiViewModel | undefined,
@@ -722,6 +739,18 @@ function derivePersonalSummary(items: PersonalKpiViewModel[], reviewPendingCount
     reviewPendingCount,
     monthlyCoverageRate,
     overallStatus,
+    mboPolicy: {
+      orgGoalCandidateCount: items.filter((item) => item.mboPolicy.suggestedCategory === 'ORG_GOAL').length,
+      dailyWorkCandidateCount: items.filter((item) => item.mboPolicy.suggestedCategory === 'DAILY_WORK').length,
+      reviewNeededCount: items.filter(
+        (item) =>
+          item.mboPolicy.suggestedCategory === 'UNKNOWN' ||
+          item.mboPolicy.issues.some(
+            (issue) => issue.code === 'MISSING_MBO_CATEGORY' || issue.code === 'HR_EXCEPTION_REQUIRED'
+          )
+      ).length,
+      duplicateRiskCount: items.filter((item) => item.mboPolicy.duplicateDailyWork).length,
+    },
   }
 }
 
@@ -2137,6 +2166,7 @@ export function PersonalKpiManagementClient(props: Props) {
 
       {props.state === 'ready' ? (
         <>
+          <MboPolicySummaryPanel summary={derivedSummary.mboPolicy} />
           <Tabs activeTab={activeTab} onChange={setActiveTab} />
           {activeTab === 'mine' ? (
             <MineSection
@@ -2525,6 +2555,9 @@ function MineSection(props: {
                   <p className={`text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
                     {item.orgKpiTitle ? `상위 목표: ${item.orgKpiTitle}` : '연결된 조직 KPI 없음'}
                   </p>
+                  <p className={`text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
+                    {item.mboPolicy.guidanceLabel} · {item.mboPolicy.guidanceMessage}
+                  </p>
                 </div>
                 <div className={`text-right text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
                   <div>가중치 {item.weight}%</div>
@@ -2550,6 +2583,68 @@ function MineSection(props: {
         />
         {props.detailChildren}
       </div>
+    </div>
+  )
+}
+
+function MboPolicySummaryPanel(props: { summary: Props['summary']['mboPolicy'] }) {
+  const cells = [
+    { label: '조직목표 후보', value: props.summary.orgGoalCandidateCount },
+    { label: '일상업무 후보', value: props.summary.dailyWorkCandidateCount },
+    { label: '검토 필요', value: props.summary.reviewNeededCount },
+    { label: '중복 가능성', value: props.summary.duplicateRiskCount },
+  ]
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="rounded-xl bg-slate-100 p-2 text-slate-700">
+            <ClipboardList className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">2026 MBO 정책 점검</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              본부 KPI와 HR 반영 완료 팀 KPI 정렬 기준을 안내합니다. 저장/제출을 막지 않는 참고 정보입니다.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {cells.map((cell) => (
+            <span key={cell.label} className="rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+              {cell.label} {cell.value}
+            </span>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function MboPolicyGuidanceBlock(props: { item: PersonalKpiViewModel }) {
+  const visibleIssues = props.item.mboPolicy.issues.slice(0, 2)
+  const exceptionReason = props.item.mboPolicy.linkedOrgKpi?.exceptionReason
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
+          {props.item.mboPolicy.suggestedCategoryLabel}
+        </span>
+        <span className="text-sm font-semibold text-slate-900">{props.item.mboPolicy.guidanceLabel}</span>
+      </div>
+      <p className="mt-2 text-sm text-slate-600">{props.item.mboPolicy.guidanceMessage}</p>
+      {exceptionReason ? (
+        <p className="mt-1 text-xs font-medium text-emerald-700">예외 승인 사유: {exceptionReason}</p>
+      ) : null}
+      {visibleIssues.length ? (
+        <ul className="mt-2 space-y-1 text-xs text-slate-500">
+          {visibleIssues.map((issue) => (
+            <li key={`${props.item.id}-${issue.code}-${issue.message}`}>{issue.message}</li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="mt-2 text-xs text-slate-400">공식 점수에는 반영되지 않는 비차단 안내입니다.</p>
     </div>
   )
 }
@@ -2608,6 +2703,8 @@ function DetailPanel(props: {
           <Field label="목표값" value={formatTargetValuesForDisplay(item)} />
           <Field label="조직 KPI 연결" value={item.orgKpiTitle ?? '미연결'} />
         </div>
+
+        <MboPolicyGuidanceBlock item={item} />
 
         {item.tags.length ? (
           <Block title="목표 태그">
@@ -3723,6 +3820,8 @@ function GoalDetailPanel(props: {
           <Field label="조직 KPI 연결" value={item.orgKpiTitle ?? '미연결'} />
         </div>
 
+        <MboPolicyGuidanceBlock item={item} />
+
         {item.tags.length ? (
           <Block title="목표 태그">
             <div className="flex flex-wrap gap-2">
@@ -4104,10 +4203,13 @@ function BulkEditPersonalKpiModal(props: {
               <option value="">연결 해제</option>
               {props.orgKpiOptions.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {joinInlineParts([option.title, option.departmentName])}
+                  {formatPersonalOrgKpiOptionLabel(option)}
                 </option>
               ))}
             </select>
+            <span className="text-xs leading-5 text-slate-500">
+              {getPersonalOrgKpiReflectionHelper(props.orgKpiOptions.find((option) => option.id === props.form.linkedOrgKpiId))}
+            </span>
           </label>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -4351,10 +4453,17 @@ function EditorModal(props: {
                 <option value="">연결 안 함</option>
                 {props.orgKpiOptions.map((option) => (
                   <option key={option.id} value={option.id}>
-                    {joinInlineParts([option.title, option.departmentName])}
+                    {formatPersonalOrgKpiOptionLabel(option)}
                   </option>
                 ))}
               </select>
+              <p className="text-xs leading-5 text-slate-500">
+                {getPersonalOrgKpiReflectionHelper(props.orgKpiOptions.find((option) => option.id === props.form.linkedOrgKpiId))}
+              </p>
+              <p className="text-xs leading-5 text-slate-500">
+                본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다. 본부 KPI에 포함되지 않은 팀 KPI는
+                기본적으로 일상업무로 분류되며, 조직목표에 포함된 업무는 일상업무로 중복 기재하지 않는 것이 원칙입니다.
+              </p>
             </label>
           </div>
         </div>

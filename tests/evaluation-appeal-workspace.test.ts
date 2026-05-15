@@ -118,7 +118,7 @@ function makeCycle(overrides?: Partial<any>) {
     cycleName: '2026 상반기 평가',
     status: 'RESULT_OPEN',
     resultOpenStart: new Date('2026-03-01T09:00:00.000Z'),
-    appealDeadline: new Date('2026-04-15T18:00:00.000Z'),
+    appealDeadline: new Date('2099-04-15T18:00:00.000Z'),
     ...overrides,
   }
 }

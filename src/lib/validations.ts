@@ -205,6 +205,21 @@ export const UpdateOrgKpiSchema = z.object({
     }
   )
 
+export const OrgKpiHrExceptionSchema = z
+  .object({
+    exceptionApproved: z.boolean(),
+    reason: z.string().trim().max(1000, '예외 승인 사유는 1,000자 이내로 입력해 주세요.').optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.exceptionApproved && (!value.reason || value.reason.trim().length < 5)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['reason'],
+        message: '예외 승인 시 사유를 5자 이상 입력해 주세요.',
+      })
+    }
+  })
+
 export const DeleteOrgKpiSchema = z
   .object({
     confirmDelete: z.boolean(),
@@ -3119,7 +3134,7 @@ export const WordCloud360CycleSchema = z
   })
 
 export const ExportReasonSchema = z.object({
-  reason: z.string().trim().min(5, '?ㅼ슫濡쒕뱶 ?ъ쑀瑜?5???댁긽 ?낅젰??二쇱꽭??').max(200, '?ㅼ슫濡쒕뱶 ?ъ쑀??200???댄븯濡??낅젰??二쇱꽭??'),
+  reason: z.string().trim().min(5, '다운로드 사유를 5자 이상 입력해 주세요.').max(200, '다운로드 사유는 200자 이하로 입력해 주세요.'),
 })
 
 export const WordCloud360KeywordSchema = z.object({
