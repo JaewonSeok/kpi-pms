@@ -1,11 +1,9 @@
 /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
-import 'dotenv/config'
+import './setup-test-env'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import Module from 'node:module'
 import path from 'node:path'
-
-process.env.DATABASE_URL ||= 'postgresql://postgres:postgres@localhost:5432/kpi_pms_test'
 
 const moduleLoader = Module as unknown as {
   _resolveFilename: (

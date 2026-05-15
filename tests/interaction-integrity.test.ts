@@ -59,7 +59,7 @@ run('org KPI client opens real bulk upload modal', () => {
 
   assert.equal(file.includes('OrgKpiBulkUploadModal'), true)
   assert.equal(file.includes('setShowBulkUpload(true)'), true)
-  assert.equal(file.includes('/api/kpi/org/ai'), true)
+  assert.equal(file.includes('onUploaded={(message'), true)
 })
 
 run('org KPI client exposes clone flow with carry-over options and clone metadata detail', () => {
@@ -72,19 +72,22 @@ run('org KPI client exposes clone flow with carry-over options and clone metadat
   assert.equal(file.includes('cloneInfo'), true)
 })
 
-run('org KPI client resets stale selection and AI state when year or department context changes', () => {
+run('org KPI client resets stale selection and transient state when year or department context changes', () => {
   const file = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
   assert.equal(file.includes('const serverContextKey ='), true)
   assert.equal(file.includes('const viewContextKey ='), true)
   assert.equal(file.includes('buildOrgKpiServerListSignature(pageData.list)'), true)
-  assert.equal(file.includes('setSelectedDepartmentId(nextDepartmentSelection)'), true)
-  assert.equal(file.includes("setTab('map')"), true)
-  assert.equal(file.includes('setAiPreview(null)'), true)
-  assert.equal(file.includes('const saved = pendingRecommendationDecision'), true)
-  assert.equal(file.includes('/api/kpi/org/team-ai/recommendations/${pendingRecommendationDecision.itemId}/decision'), true)
-  assert.equal(file.includes('applySavedOrgKpiToList'), true)
-  assert.equal(file.includes("nextParams.set('dept', saved.deptId)"), true)
+  assert.equal(file.includes('setTab(defaultTab)'), true)
+  assert.equal(file.includes('setSelectedDivisionId(initialDivisionId)'), true)
+  assert.equal(file.includes('setSelectedSectionId(initialSectionId)'), true)
+  assert.equal(file.includes('setSelectedTeamId(initialTeamId)'), true)
+  assert.equal(file.includes('setShowBulkUpload(false)'), true)
+  assert.equal(file.includes('setShowClone(false)'), true)
+  assert.equal(file.includes('setShowBulkEdit(false)'), true)
+  assert.equal(file.includes('setShowExport(false)'), true)
+  assert.equal(file.includes('setBanner(null)'), true)
+  assert.equal(file.includes('setExpandedMapNodeIds([])'), true)
   assert.equal(file.includes('commitSelectedKpi(saved.id)'), true)
 })
 
@@ -178,7 +181,7 @@ run('personal KPI create CTA transition opens editor even outside ready state', 
   const file = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
   assert.deepEqual(transition, { nextTab: 'mine', openEditor: true })
-  assert.equal(file.includes("setForm(buildEmptyForm(props.selectedYear, props.selectedEmployeeId))"), true)
+  assert.equal(file.includes("openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId))"), true)
   assert.equal(file.includes('setAiPreview(null)'), true)
   assert.equal(file.includes('setEditorOpen(true)'), true)
 })

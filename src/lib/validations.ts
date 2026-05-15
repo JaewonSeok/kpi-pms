@@ -3134,7 +3134,7 @@ export const WordCloud360CycleSchema = z
   })
 
 export const ExportReasonSchema = z.object({
-  reason: z.string().trim().min(5, '?ㅼ슫濡쒕뱶 ?ъ쑀瑜?5???댁긽 ?낅젰??二쇱꽭??').max(200, '?ㅼ슫濡쒕뱶 ?ъ쑀??200???댄븯濡??낅젰??二쇱꽭??'),
+  reason: z.string().trim().min(5, '다운로드 사유를 5자 이상 입력해 주세요.').max(200, '다운로드 사유는 200자 이하로 입력해 주세요.'),
 })
 
 export const WordCloud360KeywordSchema = z.object({
