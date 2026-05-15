@@ -19,7 +19,6 @@ model Organization {
   departments   Department[]
   evalCycles    EvalCycle[]
   gradeSettings GradeSetting[]
-  evaluationGradePolicies EvaluationGradePolicy[]
   compensationRuleSets CompensationRuleSet[]
   feedbackFolders FeedbackFolder[]
   feedbackAdminGroups FeedbackAdminGroup[]
@@ -189,47 +188,6 @@ model GradeSetting {
   @@map("grade_settings")
 }
 
-enum EvaluationPolicyGrade {
-  SUPER
-  OUTSTANDING
-  EXCELLENT
-  GOOD
-  NEED_IMPROVEMENT
-  UNSATISFACTORY
-}
-
-enum EvaluationGradeThresholdGroup {
-  TEAM_MEMBER_NON_SALES
-  TEAM_SECTION_LEADER_NON_SALES
-  TEAM_MEMBER_SALES
-  TEAM_SECTION_LEADER_SALES
-  DIVISION_HEAD
-}
-
-model EvaluationGradePolicy {
-  id                  String                        @id @default(cuid())
-  orgId               String
-  organization        Organization                  @relation(fields: [orgId], references: [id])
-  evalYear            Int
-  policyVersion       String
-  thresholdGroup      EvaluationGradeThresholdGroup
-  gradeLabel          EvaluationPolicyGrade
-  displayName         String
-  minScore            Float?
-  maxScore            Float?
-  lowerBoundInclusive Boolean                       @default(true)
-  upperBoundInclusive Boolean                       @default(false)
-  selectionRule       String?
-  notes               String?
-  isActive            Boolean                       @default(true)
-  createdAt           DateTime                      @default(now())
-  updatedAt           DateTime                      @updatedAt
-
-  @@unique([orgId, evalYear, policyVersion, thresholdGroup, gradeLabel])
-  @@index([orgId, evalYear, thresholdGroup, isActive])
-  @@map("evaluation_grade_policies")
-}
-
 // ============================================
 // 3. KPI 도메인
 // ============================================
@@ -253,10 +211,6 @@ model OrgKpi {
   difficulty   Difficulty
   status       KpiStatus  @default(DRAFT)
   tags         Json?
-  mboExceptionApproved Boolean @default(false)
-  mboExceptionReason String?
-  mboExceptionApprovedById String?
-  mboExceptionApprovedAt DateTime?
   parentOrgKpiId String?
   parentOrgKpi   OrgKpi?    @relation("OrgKpiAlignment", fields: [parentOrgKpiId], references: [id])
   childOrgKpis   OrgKpi[]   @relation("OrgKpiAlignment")
@@ -273,7 +227,6 @@ model OrgKpi {
   midReviewGoalReviews MidReviewGoalReview[]
 
   @@index([evalYear, parentOrgKpiId])
-  @@index([evalYear, mboExceptionApproved])
   @@map("org_kpis")
 }
 
@@ -456,18 +409,10 @@ model PersonalKpi {
   employee       Employee    @relation(fields: [employeeId], references: [id])
   evalYear       Int
   kpiType        KpiType
-  policyCategory EvaluationPolicyItemCategory?
-  policyCategoryConfidence Float?
-  policyCategorySource String?
-  policyCategoryReviewedAt DateTime?
-  policyCategoryReviewNote String?
   kpiName        String
   definition     String?
   formula        String?
   targetValue    Float?
-  targetValueT   Float?
-  targetValueE   Float?
-  targetValueS   Float?
   unit           String?
   weight         Float
   difficulty     Difficulty
@@ -487,20 +432,7 @@ model PersonalKpi {
   midReviewGoalReviews MidReviewGoalReview[]
 
   @@unique([employeeId, evalYear, kpiName])
-  @@index([evalYear, policyCategory])
   @@map("personal_kpis")
-}
-
-enum EvaluationPolicyItemCategory {
-  ORG_GOAL
-  PROJECT_T
-  PROJECT_K
-  DAILY_WORK
-}
-
-enum EvaluationScoreContributionType {
-  ORGANIZATION
-  PERSONAL
 }
 
 enum KpiType {
@@ -788,11 +720,6 @@ model Evaluation {
   evaluator       Employee   @relation("Evaluator", fields: [evaluatorId], references: [id])
   evalStage       EvalStage
   totalScore      Float?
-  policyFormulaVersion String?
-  organizationPerformanceScore Float?
-  personalPerformanceScore Float?
-  aiScoreIncludedInTotal Boolean?
-  scorePolicySnapshot Json?
   gradeId         String?
   comment         String?
   strengthComment String?
@@ -865,15 +792,6 @@ model EvaluationItem {
   evaluation    Evaluation  @relation(fields: [evaluationId], references: [id])
   personalKpiId String
   personalKpi   PersonalKpi @relation(fields: [personalKpiId], references: [id])
-  policyCategory EvaluationPolicyItemCategory?
-  scoreContributionType EvaluationScoreContributionType?
-  policyFormulaVersion String?
-  basePolicyScore Float?
-  adjustmentScore Float?
-  adjustmentGroupKey String?
-  adjustmentReason String?
-  targetAchievementLevel String?
-  policyScoreSnapshot Json?
   quantScore    Float?
   planScore     Float?
   doScore       Float?
@@ -886,8 +804,6 @@ model EvaluationItem {
   updatedAt     DateTime    @updatedAt
 
   @@map("evaluation_items")
-  @@index([policyCategory])
-  @@index([adjustmentGroupKey])
 }
 
 // ============================================
@@ -2400,8 +2316,6 @@ model AiCompetencyGateCase {
   assignmentId                      String                @unique
   assignment                        AiCompetencyGateAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   track                             AiCompetencyGateTrack?
-  policyVersion                     String?
-  policyRecognitionRoute            String?
   title                             String?
   problemStatement                  String?
   importanceReason                  String?

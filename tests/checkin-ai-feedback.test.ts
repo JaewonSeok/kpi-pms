@@ -35,6 +35,11 @@ moduleLoader._resolveFilename = function resolveFilename(request, parent, isMain
   return previousResolveFilename.call(this, request, parent, isMain, options)
 }
 
+const {
+  generateCheckinAiFeedback,
+  requestCheckinAiFeedbackFromOpenAI,
+} = require('../src/server/ai/checkin-feedback') as typeof import('../src/server/ai/checkin-feedback')
+
 function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
 }
@@ -265,11 +270,6 @@ const validAiResult = {
 }
 
 async function main() {
-  const {
-    generateCheckinAiFeedback,
-    requestCheckinAiFeedbackFromOpenAI,
-  } = await import('../src/server/ai/checkin-feedback')
-
   await run('check-in AI schema validates strict structured output', () => {
     assert.equal(CheckinAiFeedbackResultSchema.safeParse(validAiResult).success, true)
     assert.equal(

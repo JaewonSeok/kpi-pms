@@ -452,7 +452,7 @@ async function main() {
     assert.equal(adminPanel.includes('reportAnalysisSettings'), true)
     assert.equal(adminPanel.includes('FEEDBACK_REPORT_ANALYSIS_SECTIONS'), true)
     assert.equal(adminPanel.includes('FEEDBACK_ANALYSIS_STRENGTH_LABELS'), true)
-    assert.equal(adminPanel.includes('개인별 리포트 / 분석 설정'), true)
+    assert.equal(adminPanel.includes('媛쒖씤蹂?由ы룷??/ 遺꾩꽍 ?ㅼ젙'), true)
     assert.equal(workspace.includes('FeedbackReportAnalysisView'), true)
     assert.equal(reportView.includes('selectedInsight'), true)
     assert.equal(reportView.includes('questionInsights'), true)

@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any */
-import './setup-test-env'
+import 'dotenv/config'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import Module from 'node:module'
 import path from 'node:path'
+import { prisma } from '../src/lib/prisma'
 
 const moduleLoader = Module as unknown as {
   _resolveFilename: (
@@ -22,7 +23,6 @@ moduleLoader._resolveFilename = function patchedResolveFilename(request, parent,
 }
 
 const { getAiCompetencyGatePageData } = require('../src/server/ai-competency-gate') as typeof import('../src/server/ai-competency-gate')
-const { prisma } = require('../src/lib/prisma') as typeof import('../src/lib/prisma')
 
 function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')

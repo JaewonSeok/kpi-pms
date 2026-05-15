@@ -1,7 +1,7 @@
-import './setup-test-env'
-import './register-path-aliases'
 import assert from 'node:assert/strict'
 import { NotificationDeliveryChannel, NotificationType } from '@prisma/client'
+
+process.env.DATABASE_URL ||= 'postgresql://postgres:password@localhost:5432/kpi_pms'
 
 function run(name: string, fn: () => void) {
   try {

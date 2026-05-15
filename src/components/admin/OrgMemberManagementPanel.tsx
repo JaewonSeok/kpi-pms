@@ -784,7 +784,7 @@ export function OrgMemberManagementPanel(props: Props) {
               <ul className="mt-2 space-y-1 text-sm text-slate-600">
                 <li>조직 유형과 상위 조직 조합은 서버에서 다시 검증합니다.</li>
                 <li>본부는 최상위만 허용됩니다.</li>
-                <li>실은 본부 아래만 허용되며, 조직명은 &quot;실&quot;로 끝나야 합니다.</li>
+                <li>실은 본부 아래만 허용되며, 조직명은 "실"로 끝나야 합니다.</li>
                 <li>팀은 본부 또는 실 아래로만 이동할 수 있습니다.</li>
                 {selectedParentLabel ? <li>현재 선택한 상위 조직: {selectedParentLabel}</li> : null}
               </ul>

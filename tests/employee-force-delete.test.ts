@@ -213,10 +213,6 @@ function createEmployeeForceDeletePrismaMock(options?: {
     aiCompetencyAssignment: {
       deleteMany: createDeleteManyDelegate(calls, 'aiCompetencyAssignment', 2),
     },
-    aiCompetencyGateAssignment: {
-      updateMany: createUpdateManyDelegate(calls, 'aiCompetencyGateAssignment', () => 1),
-      deleteMany: createDeleteManyDelegate(calls, 'aiCompetencyGateAssignment', 2),
-    },
     aiCompetencyAttempt: {
       deleteMany: createDeleteManyDelegate(calls, 'aiCompetencyAttempt', 2),
     },
