@@ -10,6 +10,14 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      AUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://localhost:3000
+      AUTH_SECRET: ci-only-auth-secret-at-least-32-characters-long-2026
+      NEXTAUTH_SECRET: ci-only-auth-secret-at-least-32-characters-long-2026
+      GOOGLE_CLIENT_ID: ci-google-client-id
+      GOOGLE_CLIENT_SECRET: ci-google-client-secret
+      ALLOWED_DOMAIN: example.com
     steps:
       - name: Checkout
         uses: actions/checkout@v5
