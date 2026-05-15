@@ -1,21 +1,40 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { Pool } from 'pg'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
   const connectionString = process.env.DATABASE_URL
   if (!connectionString) {
-    // 빌드 타임: 어댑터 없이 기본 클라이언트 (DB 연결 미발생)
-    return new PrismaClient() as any
+    throw new Error(
+      'DATABASE_URL is required before PrismaClient can be initialized.'
+    )
   }
-  const adapter = new PrismaPg({ connectionString })
+  const adapter = new PrismaPg(new Pool({ connectionString }))
   return new PrismaClient({ adapter })
 }
 
-export const prisma: PrismaClient =
-  globalForPrisma.prisma ?? createPrismaClient()
+export function getPrismaClient(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient()
+  }
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+  return globalForPrisma.prisma
+}
+
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, property) {
+    const client = getPrismaClient()
+    const value = client[property as keyof PrismaClient]
+
+    return typeof value === 'function' ? value.bind(client) : value
+  },
+  set(_target, property, value) {
+    const client = getPrismaClient() as unknown as Record<PropertyKey, unknown>
+    client[property] = value
+    return true
+  },
+}) as PrismaClient
