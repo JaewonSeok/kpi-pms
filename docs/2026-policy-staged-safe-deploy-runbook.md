@@ -79,6 +79,241 @@ Runtime P2022 risk if missing:
 - `/api/evaluation/preview-2026/*` readiness/mapping endpoints read the new metadata and schema status.
 - Any Prisma query that defaults to all scalar fields on `OrgKpi`, `PersonalKpi`, `Evaluation`, `EvaluationItem`, or `AiCompetencyGateCase` can fail with P2022 if the generated Prisma client expects a column that production DB lacks.
 
+## Strict Model-vs-Database Compatibility Precheck
+
+The basic precheck below covers the staged 2026 additions. Before PR #5 can merge, also run this stricter read-only check.
+It verifies every scalar column expected by the staged Prisma models that are touched by the preview/KPI/MBO pages.
+
+```sql
+WITH required_tables(table_name) AS (
+  VALUES
+    ('org_kpis'),
+    ('personal_kpis'),
+    ('evaluations'),
+    ('evaluation_items'),
+    ('ai_competency_gate_assignments'),
+    ('ai_competency_gate_cases'),
+    ('evaluation_grade_policies')
+),
+required_columns(table_name, column_name) AS (
+  VALUES
+    ('org_kpis', 'id'),
+    ('org_kpis', 'deptId'),
+    ('org_kpis', 'evalYear'),
+    ('org_kpis', 'kpiType'),
+    ('org_kpis', 'kpiCategory'),
+    ('org_kpis', 'kpiName'),
+    ('org_kpis', 'definition'),
+    ('org_kpis', 'formula'),
+    ('org_kpis', 'targetValue'),
+    ('org_kpis', 'targetValueT'),
+    ('org_kpis', 'targetValueE'),
+    ('org_kpis', 'targetValueS'),
+    ('org_kpis', 'unit'),
+    ('org_kpis', 'weight'),
+    ('org_kpis', 'difficulty'),
+    ('org_kpis', 'status'),
+    ('org_kpis', 'tags'),
+    ('org_kpis', 'mboExceptionApproved'),
+    ('org_kpis', 'mboExceptionReason'),
+    ('org_kpis', 'mboExceptionApprovedById'),
+    ('org_kpis', 'mboExceptionApprovedAt'),
+    ('org_kpis', 'parentOrgKpiId'),
+    ('org_kpis', 'copiedFromOrgKpiId'),
+    ('org_kpis', 'copyMetadata'),
+    ('org_kpis', 'createdAt'),
+    ('org_kpis', 'updatedAt'),
+    ('personal_kpis', 'id'),
+    ('personal_kpis', 'employeeId'),
+    ('personal_kpis', 'evalYear'),
+    ('personal_kpis', 'kpiType'),
+    ('personal_kpis', 'policyCategory'),
+    ('personal_kpis', 'policyCategoryConfidence'),
+    ('personal_kpis', 'policyCategorySource'),
+    ('personal_kpis', 'policyCategoryReviewedAt'),
+    ('personal_kpis', 'policyCategoryReviewNote'),
+    ('personal_kpis', 'kpiName'),
+    ('personal_kpis', 'definition'),
+    ('personal_kpis', 'formula'),
+    ('personal_kpis', 'targetValue'),
+    ('personal_kpis', 'targetValueT'),
+    ('personal_kpis', 'targetValueE'),
+    ('personal_kpis', 'targetValueS'),
+    ('personal_kpis', 'unit'),
+    ('personal_kpis', 'weight'),
+    ('personal_kpis', 'difficulty'),
+    ('personal_kpis', 'linkedOrgKpiId'),
+    ('personal_kpis', 'status'),
+    ('personal_kpis', 'tags'),
+    ('personal_kpis', 'copiedFromPersonalKpiId'),
+    ('personal_kpis', 'copyMetadata'),
+    ('personal_kpis', 'createdAt'),
+    ('personal_kpis', 'updatedAt'),
+    ('evaluations', 'id'),
+    ('evaluations', 'evalCycleId'),
+    ('evaluations', 'targetId'),
+    ('evaluations', 'evaluatorId'),
+    ('evaluations', 'evalStage'),
+    ('evaluations', 'totalScore'),
+    ('evaluations', 'policyFormulaVersion'),
+    ('evaluations', 'organizationPerformanceScore'),
+    ('evaluations', 'personalPerformanceScore'),
+    ('evaluations', 'aiScoreIncludedInTotal'),
+    ('evaluations', 'scorePolicySnapshot'),
+    ('evaluations', 'gradeId'),
+    ('evaluations', 'comment'),
+    ('evaluations', 'strengthComment'),
+    ('evaluations', 'improvementComment'),
+    ('evaluations', 'nextStepGuidance'),
+    ('evaluations', 'status'),
+    ('evaluations', 'isDraft'),
+    ('evaluations', 'submittedAt'),
+    ('evaluations', 'isRejected'),
+    ('evaluations', 'rejectionReason'),
+    ('evaluations', 'rejectedAt'),
+    ('evaluations', 'createdAt'),
+    ('evaluations', 'updatedAt'),
+    ('evaluation_items', 'id'),
+    ('evaluation_items', 'evaluationId'),
+    ('evaluation_items', 'personalKpiId'),
+    ('evaluation_items', 'policyCategory'),
+    ('evaluation_items', 'scoreContributionType'),
+    ('evaluation_items', 'policyFormulaVersion'),
+    ('evaluation_items', 'basePolicyScore'),
+    ('evaluation_items', 'adjustmentScore'),
+    ('evaluation_items', 'adjustmentGroupKey'),
+    ('evaluation_items', 'adjustmentReason'),
+    ('evaluation_items', 'targetAchievementLevel'),
+    ('evaluation_items', 'policyScoreSnapshot'),
+    ('evaluation_items', 'quantScore'),
+    ('evaluation_items', 'planScore'),
+    ('evaluation_items', 'doScore'),
+    ('evaluation_items', 'checkScore'),
+    ('evaluation_items', 'actScore'),
+    ('evaluation_items', 'qualScore'),
+    ('evaluation_items', 'itemComment'),
+    ('evaluation_items', 'weightedScore'),
+    ('evaluation_items', 'createdAt'),
+    ('evaluation_items', 'updatedAt'),
+    ('ai_competency_gate_assignments', 'id'),
+    ('ai_competency_gate_assignments', 'cycleId'),
+    ('ai_competency_gate_assignments', 'employeeId'),
+    ('ai_competency_gate_assignments', 'reviewerId'),
+    ('ai_competency_gate_assignments', 'status'),
+    ('ai_competency_gate_assignments', 'employeeNameSnapshot'),
+    ('ai_competency_gate_assignments', 'departmentNameSnapshot'),
+    ('ai_competency_gate_assignments', 'positionSnapshot'),
+    ('ai_competency_gate_assignments', 'reviewerNameSnapshot'),
+    ('ai_competency_gate_assignments', 'assignedAt'),
+    ('ai_competency_gate_assignments', 'submittedAt'),
+    ('ai_competency_gate_assignments', 'reviewStartedAt'),
+    ('ai_competency_gate_assignments', 'decisionAt'),
+    ('ai_competency_gate_assignments', 'closedAt'),
+    ('ai_competency_gate_assignments', 'currentRevisionRound'),
+    ('ai_competency_gate_assignments', 'adminNote'),
+    ('ai_competency_gate_assignments', 'createdAt'),
+    ('ai_competency_gate_assignments', 'updatedAt'),
+    ('ai_competency_gate_cases', 'id'),
+    ('ai_competency_gate_cases', 'assignmentId'),
+    ('ai_competency_gate_cases', 'track'),
+    ('ai_competency_gate_cases', 'policyVersion'),
+    ('ai_competency_gate_cases', 'policyRecognitionRoute'),
+    ('ai_competency_gate_cases', 'title'),
+    ('ai_competency_gate_cases', 'problemStatement'),
+    ('ai_competency_gate_cases', 'importanceReason'),
+    ('ai_competency_gate_cases', 'goalStatement'),
+    ('ai_competency_gate_cases', 'scopeDescription'),
+    ('ai_competency_gate_cases', 'ownerRoleDescription'),
+    ('ai_competency_gate_cases', 'beforeWorkflow'),
+    ('ai_competency_gate_cases', 'afterWorkflow'),
+    ('ai_competency_gate_cases', 'impactSummary'),
+    ('ai_competency_gate_cases', 'teamOrganizationAdoption'),
+    ('ai_competency_gate_cases', 'reusableOutputSummary'),
+    ('ai_competency_gate_cases', 'humanReviewControl'),
+    ('ai_competency_gate_cases', 'factCheckMethod'),
+    ('ai_competency_gate_cases', 'securityEthicsPrivacyHandling'),
+    ('ai_competency_gate_cases', 'sharingExpansionActivity'),
+    ('ai_competency_gate_cases', 'toolList'),
+    ('ai_competency_gate_cases', 'approvedToolBasis'),
+    ('ai_competency_gate_cases', 'sensitiveDataHandling'),
+    ('ai_competency_gate_cases', 'maskingAnonymizationHandling'),
+    ('ai_competency_gate_cases', 'prohibitedAutomationAcknowledged'),
+    ('ai_competency_gate_cases', 'finalDeclarationAccepted'),
+    ('ai_competency_gate_cases', 'lastSavedAt'),
+    ('ai_competency_gate_cases', 'createdAt'),
+    ('ai_competency_gate_cases', 'updatedAt'),
+    ('evaluation_grade_policies', 'id'),
+    ('evaluation_grade_policies', 'orgId'),
+    ('evaluation_grade_policies', 'evalYear'),
+    ('evaluation_grade_policies', 'policyVersion'),
+    ('evaluation_grade_policies', 'thresholdGroup'),
+    ('evaluation_grade_policies', 'gradeLabel'),
+    ('evaluation_grade_policies', 'displayName'),
+    ('evaluation_grade_policies', 'minScore'),
+    ('evaluation_grade_policies', 'maxScore'),
+    ('evaluation_grade_policies', 'lowerBoundInclusive'),
+    ('evaluation_grade_policies', 'upperBoundInclusive'),
+    ('evaluation_grade_policies', 'selectionRule'),
+    ('evaluation_grade_policies', 'notes'),
+    ('evaluation_grade_policies', 'isActive'),
+    ('evaluation_grade_policies', 'createdAt'),
+    ('evaluation_grade_policies', 'updatedAt')
+),
+required_indexes(index_name) AS (
+  VALUES
+    ('org_kpis_evalYear_parentOrgKpiId_idx'),
+    ('org_kpis_evalYear_mboExceptionApproved_idx'),
+    ('personal_kpis_employeeId_evalYear_kpiName_key'),
+    ('personal_kpis_evalYear_policyCategory_idx'),
+    ('evaluations_evalCycleId_targetId_evalStage_key'),
+    ('evaluation_items_policyCategory_idx'),
+    ('evaluation_items_adjustmentGroupKey_idx'),
+    ('ai_competency_gate_assignments_cycleId_employeeId_key'),
+    ('ai_competency_gate_assignments_cycleId_status_idx'),
+    ('ai_competency_gate_assignments_reviewerId_status_idx'),
+    ('ai_competency_gate_cases_assignmentId_key'),
+    ('evaluation_grade_policies_orgId_evalYear_policyVersion_thresholdGroup_gradeLabel_key'),
+    ('evaluation_grade_policies_orgId_evalYear_thresholdGroup_isActive_idx')
+)
+SELECT 'TABLE' AS object_kind,
+       table_name AS table_name,
+       NULL::text AS column_name,
+       table_name AS object_name,
+       EXISTS (
+         SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'public'
+           AND table_name = required_tables.table_name
+       ) AS exists
+FROM required_tables
+UNION ALL
+SELECT 'COLUMN',
+       table_name,
+       column_name,
+       table_name || '.' || column_name,
+       EXISTS (
+         SELECT 1
+         FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = required_columns.table_name
+           AND column_name = required_columns.column_name
+       )
+FROM required_columns
+UNION ALL
+SELECT 'INDEX',
+       NULL::text,
+       NULL::text,
+       index_name,
+       EXISTS (
+         SELECT 1
+         FROM pg_indexes
+         WHERE schemaname = 'public'
+           AND indexname = required_indexes.index_name
+       )
+FROM required_indexes
+ORDER BY object_kind, object_name;
+```
+
 ## Precheck SQL
 
 Run this first. It performs no writes.
