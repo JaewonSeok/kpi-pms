@@ -314,6 +314,192 @@ FROM required_indexes
 ORDER BY object_kind, object_name;
 ```
 
+## Org KPI Loader Relation Compatibility Precheck
+
+Run this read-only check when `/kpi/org` or the Personal KPI org-goal selector fails with P2022 from `prisma.orgKpi.findMany()`.
+The Org KPI page loader includes related department, organization, personal KPI, monthly record, employee, audit log, eval cycle, and team KPI review data; a missing column in any included relation can surface as a P2022 error on `orgKpi.findMany()`.
+
+```sql
+WITH required_tables(table_name) AS (
+  SELECT 'org_kpis'
+  UNION ALL SELECT 'departments'
+  UNION ALL SELECT 'organizations'
+  UNION ALL SELECT 'employees'
+  UNION ALL SELECT 'personal_kpis'
+  UNION ALL SELECT 'monthly_records'
+  UNION ALL SELECT 'team_kpi_review_items'
+  UNION ALL SELECT 'team_kpi_review_runs'
+  UNION ALL SELECT 'audit_logs'
+  UNION ALL SELECT 'eval_cycles'
+),
+required_columns(table_name, column_name) AS (
+  SELECT 'org_kpis', 'id'
+  UNION ALL SELECT 'org_kpis', 'deptId'
+  UNION ALL SELECT 'org_kpis', 'evalYear'
+  UNION ALL SELECT 'org_kpis', 'kpiType'
+  UNION ALL SELECT 'org_kpis', 'kpiCategory'
+  UNION ALL SELECT 'org_kpis', 'kpiName'
+  UNION ALL SELECT 'org_kpis', 'definition'
+  UNION ALL SELECT 'org_kpis', 'formula'
+  UNION ALL SELECT 'org_kpis', 'targetValue'
+  UNION ALL SELECT 'org_kpis', 'targetValueT'
+  UNION ALL SELECT 'org_kpis', 'targetValueE'
+  UNION ALL SELECT 'org_kpis', 'targetValueS'
+  UNION ALL SELECT 'org_kpis', 'unit'
+  UNION ALL SELECT 'org_kpis', 'weight'
+  UNION ALL SELECT 'org_kpis', 'difficulty'
+  UNION ALL SELECT 'org_kpis', 'status'
+  UNION ALL SELECT 'org_kpis', 'tags'
+  UNION ALL SELECT 'org_kpis', 'mboExceptionApproved'
+  UNION ALL SELECT 'org_kpis', 'mboExceptionReason'
+  UNION ALL SELECT 'org_kpis', 'mboExceptionApprovedById'
+  UNION ALL SELECT 'org_kpis', 'mboExceptionApprovedAt'
+  UNION ALL SELECT 'org_kpis', 'parentOrgKpiId'
+  UNION ALL SELECT 'org_kpis', 'copiedFromOrgKpiId'
+  UNION ALL SELECT 'org_kpis', 'copyMetadata'
+  UNION ALL SELECT 'org_kpis', 'createdAt'
+  UNION ALL SELECT 'org_kpis', 'updatedAt'
+  UNION ALL SELECT 'departments', 'id'
+  UNION ALL SELECT 'departments', 'deptCode'
+  UNION ALL SELECT 'departments', 'deptName'
+  UNION ALL SELECT 'departments', 'parentDeptId'
+  UNION ALL SELECT 'departments', 'leaderEmployeeId'
+  UNION ALL SELECT 'departments', 'excludeLeaderFromEvaluatorAutoAssign'
+  UNION ALL SELECT 'departments', 'orgId'
+  UNION ALL SELECT 'departments', 'createdAt'
+  UNION ALL SELECT 'departments', 'updatedAt'
+  UNION ALL SELECT 'organizations', 'id'
+  UNION ALL SELECT 'organizations', 'name'
+  UNION ALL SELECT 'organizations', 'fiscalYear'
+  UNION ALL SELECT 'organizations', 'createdAt'
+  UNION ALL SELECT 'organizations', 'updatedAt'
+  UNION ALL SELECT 'employees', 'id'
+  UNION ALL SELECT 'employees', 'empId'
+  UNION ALL SELECT 'employees', 'empName'
+  UNION ALL SELECT 'employees', 'deptId'
+  UNION ALL SELECT 'employees', 'position'
+  UNION ALL SELECT 'employees', 'role'
+  UNION ALL SELECT 'employees', 'status'
+  UNION ALL SELECT 'personal_kpis', 'id'
+  UNION ALL SELECT 'personal_kpis', 'employeeId'
+  UNION ALL SELECT 'personal_kpis', 'evalYear'
+  UNION ALL SELECT 'personal_kpis', 'kpiType'
+  UNION ALL SELECT 'personal_kpis', 'policyCategory'
+  UNION ALL SELECT 'personal_kpis', 'policyCategoryConfidence'
+  UNION ALL SELECT 'personal_kpis', 'policyCategorySource'
+  UNION ALL SELECT 'personal_kpis', 'policyCategoryReviewedAt'
+  UNION ALL SELECT 'personal_kpis', 'policyCategoryReviewNote'
+  UNION ALL SELECT 'personal_kpis', 'kpiName'
+  UNION ALL SELECT 'personal_kpis', 'definition'
+  UNION ALL SELECT 'personal_kpis', 'formula'
+  UNION ALL SELECT 'personal_kpis', 'targetValue'
+  UNION ALL SELECT 'personal_kpis', 'targetValueT'
+  UNION ALL SELECT 'personal_kpis', 'targetValueE'
+  UNION ALL SELECT 'personal_kpis', 'targetValueS'
+  UNION ALL SELECT 'personal_kpis', 'unit'
+  UNION ALL SELECT 'personal_kpis', 'weight'
+  UNION ALL SELECT 'personal_kpis', 'difficulty'
+  UNION ALL SELECT 'personal_kpis', 'linkedOrgKpiId'
+  UNION ALL SELECT 'personal_kpis', 'status'
+  UNION ALL SELECT 'personal_kpis', 'tags'
+  UNION ALL SELECT 'personal_kpis', 'copiedFromPersonalKpiId'
+  UNION ALL SELECT 'personal_kpis', 'copyMetadata'
+  UNION ALL SELECT 'personal_kpis', 'createdAt'
+  UNION ALL SELECT 'personal_kpis', 'updatedAt'
+  UNION ALL SELECT 'monthly_records', 'id'
+  UNION ALL SELECT 'monthly_records', 'personalKpiId'
+  UNION ALL SELECT 'monthly_records', 'employeeId'
+  UNION ALL SELECT 'monthly_records', 'yearMonth'
+  UNION ALL SELECT 'monthly_records', 'actualValue'
+  UNION ALL SELECT 'monthly_records', 'achievementRate'
+  UNION ALL SELECT 'monthly_records', 'activities'
+  UNION ALL SELECT 'monthly_records', 'obstacles'
+  UNION ALL SELECT 'monthly_records', 'efforts'
+  UNION ALL SELECT 'monthly_records', 'evidenceComment'
+  UNION ALL SELECT 'monthly_records', 'attachments'
+  UNION ALL SELECT 'monthly_records', 'isDraft'
+  UNION ALL SELECT 'monthly_records', 'submittedAt'
+  UNION ALL SELECT 'monthly_records', 'createdAt'
+  UNION ALL SELECT 'monthly_records', 'updatedAt'
+  UNION ALL SELECT 'team_kpi_review_items', 'id'
+  UNION ALL SELECT 'team_kpi_review_items', 'runId'
+  UNION ALL SELECT 'team_kpi_review_items', 'orgKpiId'
+  UNION ALL SELECT 'team_kpi_review_items', 'recommendationType'
+  UNION ALL SELECT 'team_kpi_review_items', 'reviewType'
+  UNION ALL SELECT 'team_kpi_review_items', 'kpiTitleSnapshot'
+  UNION ALL SELECT 'team_kpi_review_items', 'verdict'
+  UNION ALL SELECT 'team_kpi_review_items', 'rationale'
+  UNION ALL SELECT 'team_kpi_review_items', 'linkageComment'
+  UNION ALL SELECT 'team_kpi_review_items', 'roleFitComment'
+  UNION ALL SELECT 'team_kpi_review_items', 'measurabilityComment'
+  UNION ALL SELECT 'team_kpi_review_items', 'controllabilityComment'
+  UNION ALL SELECT 'team_kpi_review_items', 'challengeComment'
+  UNION ALL SELECT 'team_kpi_review_items', 'externalRiskComment'
+  UNION ALL SELECT 'team_kpi_review_items', 'clarityComment'
+  UNION ALL SELECT 'team_kpi_review_items', 'duplicationComment'
+  UNION ALL SELECT 'team_kpi_review_items', 'strongPoint'
+  UNION ALL SELECT 'team_kpi_review_items', 'weakPoint'
+  UNION ALL SELECT 'team_kpi_review_items', 'improvementSuggestions'
+  UNION ALL SELECT 'team_kpi_review_items', 'recommendationText'
+  UNION ALL SELECT 'team_kpi_review_items', 'createdAt'
+  UNION ALL SELECT 'team_kpi_review_items', 'updatedAt'
+  UNION ALL SELECT 'team_kpi_review_runs', 'id'
+  UNION ALL SELECT 'team_kpi_review_runs', 'businessPlanId'
+  UNION ALL SELECT 'team_kpi_review_runs', 'sourceDepartmentId'
+  UNION ALL SELECT 'team_kpi_review_runs', 'targetDepartmentId'
+  UNION ALL SELECT 'team_kpi_review_runs', 'evalYear'
+  UNION ALL SELECT 'team_kpi_review_runs', 'evalCycleId'
+  UNION ALL SELECT 'team_kpi_review_runs', 'requesterId'
+  UNION ALL SELECT 'team_kpi_review_runs', 'aiRequestLogId'
+  UNION ALL SELECT 'team_kpi_review_runs', 'reviewType'
+  UNION ALL SELECT 'team_kpi_review_runs', 'overallVerdict'
+  UNION ALL SELECT 'team_kpi_review_runs', 'overallSummary'
+  UNION ALL SELECT 'team_kpi_review_runs', 'linkedParentCoverage'
+  UNION ALL SELECT 'team_kpi_review_runs', 'independentKpiCoverage'
+  UNION ALL SELECT 'team_kpi_review_runs', 'createdAt'
+  UNION ALL SELECT 'team_kpi_review_runs', 'updatedAt'
+  UNION ALL SELECT 'audit_logs', 'id'
+  UNION ALL SELECT 'audit_logs', 'userId'
+  UNION ALL SELECT 'audit_logs', 'action'
+  UNION ALL SELECT 'audit_logs', 'entityType'
+  UNION ALL SELECT 'audit_logs', 'entityId'
+  UNION ALL SELECT 'audit_logs', 'oldValue'
+  UNION ALL SELECT 'audit_logs', 'newValue'
+  UNION ALL SELECT 'audit_logs', 'ipAddress'
+  UNION ALL SELECT 'audit_logs', 'userAgent'
+  UNION ALL SELECT 'audit_logs', 'timestamp'
+  UNION ALL SELECT 'eval_cycles', 'id'
+  UNION ALL SELECT 'eval_cycles', 'orgId'
+  UNION ALL SELECT 'eval_cycles', 'evalYear'
+  UNION ALL SELECT 'eval_cycles', 'goalEditMode'
+)
+SELECT 'TABLE' AS object_kind,
+       table_name,
+       NULL::text AS column_name,
+       table_name AS object_name,
+       EXISTS (
+         SELECT 1
+         FROM information_schema.tables
+         WHERE table_schema = 'public'
+           AND table_name = required_tables.table_name
+       ) AS exists
+FROM required_tables
+UNION ALL
+SELECT 'COLUMN' AS object_kind,
+       table_name,
+       column_name,
+       table_name || '.' || column_name AS object_name,
+       EXISTS (
+         SELECT 1
+         FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = required_columns.table_name
+           AND column_name = required_columns.column_name
+       ) AS exists
+FROM required_columns
+ORDER BY object_kind, object_name;
+```
+
 ## Precheck SQL
 
 Run this first. It performs no writes.
