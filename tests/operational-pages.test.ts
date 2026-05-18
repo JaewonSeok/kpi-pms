@@ -64,6 +64,8 @@ type OperationalSnapshot = {
   evaluationFindMany: PrismaDelegateMethod
   evaluationFindFirst: PrismaDelegateMethod
   aiCompetencyResultFindMany: PrismaDelegateMethod
+  aiCompetencyGateCycleFindUnique: PrismaDelegateMethod
+  aiCompetencyGateAssignmentFindMany: PrismaDelegateMethod
 }
 
 function captureSnapshot(): OperationalSnapshot {
@@ -85,6 +87,8 @@ function captureSnapshot(): OperationalSnapshot {
     evaluationFindMany: prismaAny.evaluation.findMany,
     evaluationFindFirst: prismaAny.evaluation.findFirst,
     aiCompetencyResultFindMany: prismaAny.aiCompetencyResult.findMany,
+    aiCompetencyGateCycleFindUnique: prismaAny.aiCompetencyGateCycle.findUnique,
+    aiCompetencyGateAssignmentFindMany: prismaAny.aiCompetencyGateAssignment.findMany,
   }
 }
 
@@ -106,6 +110,8 @@ function restoreSnapshot(snapshot: OperationalSnapshot) {
   prismaAny.evaluation.findMany = snapshot.evaluationFindMany
   prismaAny.evaluation.findFirst = snapshot.evaluationFindFirst
   prismaAny.aiCompetencyResult.findMany = snapshot.aiCompetencyResultFindMany
+  prismaAny.aiCompetencyGateCycle.findUnique = snapshot.aiCompetencyGateCycleFindUnique
+  prismaAny.aiCompetencyGateAssignment.findMany = snapshot.aiCompetencyGateAssignmentFindMany
 }
 
 function makeSession(overrides?: Partial<any>) {
@@ -292,6 +298,8 @@ async function withStubbedOperationalData(
     }))
 
   prismaAny.aiCompetencyResult.findMany = overrides.aiCompetencyResultFindMany ?? (async () => [])
+  prismaAny.aiCompetencyGateCycle.findUnique = overrides.aiCompetencyGateCycleFindUnique ?? (async () => null)
+  prismaAny.aiCompetencyGateAssignment.findMany = overrides.aiCompetencyGateAssignmentFindMany ?? (async () => [])
 
   try {
     await fn()
@@ -446,7 +454,11 @@ async function main() {
         gradeSettingFindMany: async () => [
           { id: 'grade-a', gradeName: 'A', minScore: 85, maxScore: 94 },
         ],
-        aiCompetencyResultFindMany: async () => {
+        aiCompetencyGateCycleFindUnique: async () => ({
+          id: 'gate-cycle-1',
+          evalCycleId: 'cycle-2026',
+        }),
+        aiCompetencyGateAssignmentFindMany: async () => {
           throw new Error('ai competency sync unavailable')
         },
       },
@@ -463,7 +475,7 @@ async function main() {
           assert.equal(data.state, 'ready')
           assert.equal(Boolean(data.viewModel), true)
           assert.equal(
-            data.alerts?.some((item) => item.title === 'AI 활용능력 연동 점수를 불러오지 못했습니다.'),
+            data.alerts?.some((item) => item.title === 'AI 역량평가 상태를 불러오지 못했습니다.'),
             true
           )
         } finally {

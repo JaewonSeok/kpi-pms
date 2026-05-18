@@ -626,6 +626,7 @@ export function OrgKpiManagementClient({
   )
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busy, setBusy] = useState(false)
+  const [hrExceptionReason, setHrExceptionReason] = useState('')
   const [expandedMapNodeIds, setExpandedMapNodeIds] = useState<string[]>([])
   const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
   const serverListSignature = useMemo(() => buildOrgKpiServerListSignature(pageData.list), [pageData.list])
@@ -936,6 +937,11 @@ export function OrgKpiManagementClient({
   const selectedChildReferences = selectedKpi?.childReferences ?? []
   const goalEditLocked =
     pageData.alerts?.some((alert) => alert.title.includes('읽기 전용 모드')) ?? false
+  const canManageHrException = pageData.actor.role === 'ROLE_ADMIN'
+
+  useEffect(() => {
+    setHrExceptionReason(selectedKpi?.hrReflection?.exceptionReason ?? '')
+  }, [selectedKpi?.id, selectedKpi?.hrReflection?.exceptionReason])
 
   useEffect(() => {
     if (!selectedKpiId) return
@@ -1181,6 +1187,36 @@ export function OrgKpiManagementClient({
       setBusy(false)
     }
   }, [router, selectedKpi])
+
+  const saveHrException = useCallback(async (exceptionApproved: boolean) => {
+    if (!selectedKpi) return
+    setBusy(true)
+    try {
+      await fetchJson(`/api/kpi/org/${selectedKpi.id}/hr-exception`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exceptionApproved,
+          reason: exceptionApproved ? hrExceptionReason : undefined,
+        }),
+      })
+      setBanner({
+        tone: 'success',
+        message: exceptionApproved ? '팀 KPI 예외 승인을 저장했습니다.' : '팀 KPI 예외 승인을 취소했습니다.',
+      })
+      if (!exceptionApproved) {
+        setHrExceptionReason('')
+      }
+      router.refresh()
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '팀 KPI 예외 승인 저장에 실패했습니다.',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }, [hrExceptionReason, router, selectedKpi])
 
   const handleOpenClone = useCallback(() => {
     if (cloneDisabledReason || !selectedKpi) {
@@ -1715,6 +1751,8 @@ export function OrgKpiManagementClient({
               readOnly={isReadOnlyScopeView}
               goalEditLocked={goalEditLocked}
               busy={busy}
+              canManageHrException={canManageHrException}
+              hrExceptionReason={hrExceptionReason}
               cloneDisabledReason={cloneDisabledReason}
               deleteActionState={deleteActionState}
               onEdit={handleEditKpi}
@@ -1722,6 +1760,8 @@ export function OrgKpiManagementClient({
               onDelete={handleOpenDeleteConfirm}
               onWorkflow={handleWorkflowAction}
               onStatus={handleStatusChange}
+              onHrExceptionReasonChange={setHrExceptionReason}
+              onSaveHrException={saveHrException}
               onSelectRelatedKpi={handleOpenRelatedReference}
               onCreateChildGoal={handleCreateChildGoal}
               onViewLinkage={handleViewLinkage}
@@ -1766,6 +1806,8 @@ export function OrgKpiManagementClient({
               readOnly={isReadOnlyScopeView}
               goalEditLocked={goalEditLocked}
               busy={busy}
+              canManageHrException={canManageHrException}
+              hrExceptionReason={hrExceptionReason}
               cloneDisabledReason={cloneDisabledReason}
               deleteActionState={deleteActionState}
               onEdit={handleEditKpi}
@@ -1773,6 +1815,8 @@ export function OrgKpiManagementClient({
               onDelete={handleOpenDeleteConfirm}
               onWorkflow={handleWorkflowAction}
               onStatus={handleStatusChange}
+              onHrExceptionReasonChange={setHrExceptionReason}
+              onSaveHrException={saveHrException}
               onSelectRelatedKpi={handleOpenRelatedReference}
               onCreateChildGoal={handleCreateChildGoal}
               onViewLinkage={handleViewLinkage}
@@ -2107,6 +2151,14 @@ function formatOrgKpiOwnerSummary(owner?: OrgKpiViewModel['owner']) {
   return owner.position ? `${owner.name} · ${owner.position}` : owner.name
 }
 
+function formatOrgKpiHrReflectionSummary(kpi: OrgKpiViewModel) {
+  if (kpi.hrReflection) {
+    return `${kpi.hrReflection.label} · ${kpi.hrReflection.personalMboLabel}`
+  }
+  if (kpi.scope === 'division') return '본부 KPI · 조직목표 후보'
+  return 'HR 상태 확인 필요'
+}
+
 function getOrgKpiParentSummaryText(
   kpi: OrgKpiViewModel,
   options: {
@@ -2164,7 +2216,7 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-slate-900">{props.kpi.title}</div>
           <p className="mt-1 text-sm text-slate-500">
-            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
+            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'} · {formatOrgKpiHrReflectionSummary(props.kpi)}
           </p>
           <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
         </div>
@@ -2290,7 +2342,7 @@ const OrgKpiDisconnectedCard = memo(function OrgKpiDisconnectedCard(props: OrgKp
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-slate-900">{props.kpi.title}</div>
           <p className="mt-1 text-sm text-slate-500">
-            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'}
+            {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'} · {formatOrgKpiHrReflectionSummary(props.kpi)}
           </p>
           <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
         </div>
@@ -2464,7 +2516,7 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
           <div className="min-w-0 flex-1 text-left">
             <span className="font-semibold text-slate-900">{node.kpi.title}</span>
             <p className="mt-1 text-sm text-slate-500">
-              {node.kpi.departmentName} · {node.kpi.category ?? '카테고리 미지정'}
+              {node.kpi.departmentName} · {node.kpi.category ?? '카테고리 미지정'} · {formatOrgKpiHrReflectionSummary(node.kpi)}
             </p>
             <p className="mt-2 text-sm text-slate-600">{structureSummary.helper}</p>
           </div>
@@ -2640,6 +2692,8 @@ type KpiDetailCardProps = {
   readOnly?: boolean
   goalEditLocked?: boolean
   busy: boolean
+  canManageHrException?: boolean
+  hrExceptionReason: string
   cloneDisabledReason?: string
   deleteActionState: ReturnType<typeof getOrgKpiDeleteActionState>
   onEdit: (kpi: OrgKpiViewModel) => void
@@ -2647,6 +2701,8 @@ type KpiDetailCardProps = {
   onDelete: () => void
   onWorkflow: (action: 'SUBMIT' | 'REOPEN') => void
   onStatus: (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => void
+  onHrExceptionReasonChange: (value: string) => void
+  onSaveHrException: (exceptionApproved: boolean) => void
   onSelectRelatedKpi?: (reference: OrgKpiRelationReference) => void
   onCreateChildGoal?: (parentKpi: OrgKpiViewModel) => void
   onViewLinkage?: (kpiId: string) => void
@@ -2738,9 +2794,67 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                 })}
               />
               <InfoPill label="가중치" value={formatOrgKpiWeight(kpi.weight)} />
+              <InfoPill label="HR 반영 상태" value={formatOrgKpiHrReflectionSummary(kpi)} />
               <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
               <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
             </div>
+            {kpi.hrReflection?.exceptionReason ? (
+              <p className="text-xs font-medium text-emerald-700">
+                예외 승인 사유: {kpi.hrReflection.exceptionReason}
+              </p>
+            ) : null}
+
+            {props.canManageHrException && kpi.scope === 'team' ? (
+              <div
+                data-testid="org-kpi-hr-exception-panel"
+                className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-emerald-900">예외 승인</div>
+                    <p className="mt-1 text-xs leading-5 text-emerald-800">
+                      HR 반영되지 않은 팀 KPI를 개인 MBO 조직목표 후보로 다룰 때만 사유를 남깁니다.
+                      공식 점수에는 아직 반영되지 않습니다.
+                    </p>
+                  </div>
+                  {kpi.hrReflection?.state === 'EXCEPTION_APPROVED' ? (
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700">
+                      예외 승인 완료
+                    </span>
+                  ) : null}
+                </div>
+                <label className="mt-3 block text-xs font-semibold text-emerald-900" htmlFor="org-kpi-hr-exception-reason">
+                  예외 승인 사유
+                </label>
+                <textarea
+                  id="org-kpi-hr-exception-reason"
+                  value={props.hrExceptionReason}
+                  onChange={(event) => props.onHrExceptionReasonChange(event.target.value)}
+                  rows={3}
+                  maxLength={1000}
+                  className="mt-2 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  placeholder="예외 승인 사유를 입력해 주세요."
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => props.onSaveHrException(true)}
+                    disabled={props.busy || props.hrExceptionReason.trim().length < 5}
+                    className="inline-flex min-h-9 items-center rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    예외 승인 저장
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => props.onSaveHrException(false)}
+                    disabled={props.busy || kpi.hrReflection?.state !== 'EXCEPTION_APPROVED'}
+                    className="inline-flex min-h-9 items-center rounded-xl border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    예외 승인 취소
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -3049,6 +3163,8 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
     (prevProps.readOnly ?? false) === (nextProps.readOnly ?? false) &&
     (prevProps.goalEditLocked ?? false) === (nextProps.goalEditLocked ?? false) &&
     prevProps.busy === nextProps.busy &&
+    (prevProps.canManageHrException ?? false) === (nextProps.canManageHrException ?? false) &&
+    prevProps.hrExceptionReason === nextProps.hrExceptionReason &&
     prevProps.cloneDisabledReason === nextProps.cloneDisabledReason &&
     prevProps.deleteActionState.disabled === nextProps.deleteActionState.disabled &&
     prevProps.deleteActionState.reason === nextProps.deleteActionState.reason &&
@@ -3057,6 +3173,8 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
     prevProps.onDelete === nextProps.onDelete &&
     prevProps.onWorkflow === nextProps.onWorkflow &&
     prevProps.onStatus === nextProps.onStatus &&
+    prevProps.onHrExceptionReasonChange === nextProps.onHrExceptionReasonChange &&
+    prevProps.onSaveHrException === nextProps.onSaveHrException &&
     prevProps.onSelectRelatedKpi === nextProps.onSelectRelatedKpi
   )
 })
