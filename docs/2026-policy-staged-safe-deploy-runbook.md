@@ -500,6 +500,150 @@ FROM expected_columns
 ORDER BY table_name, expected_db_column_name;
 ```
 
+## Evaluation Performance Loader Compatibility Precheck
+
+Use this read-only diagnostic when `/evaluation/performance` shows the fallback card:
+`데이터를 불러오지 못했습니다` / `평가 워크벤치 데이터를 불러오지 못했습니다.`
+
+The route `/evaluation/workbench` intentionally redirects to `/evaluation/performance`, so the performance route is the smoke-test target.
+This check covers the Prisma models touched by `src/server/evaluation-workbench.ts` and the stage-chain helper used by that loader.
+
+```sql
+WITH expected_model_columns AS (
+  SELECT *
+  FROM (
+    VALUES
+      ('Evaluation', 'evaluations', ARRAY[
+        'id', 'evalCycleId', 'targetId', 'evaluatorId', 'evalStage', 'totalScore',
+        'policyFormulaVersion', 'organizationPerformanceScore', 'personalPerformanceScore',
+        'aiScoreIncludedInTotal', 'scorePolicySnapshot', 'gradeId', 'comment',
+        'strengthComment', 'improvementComment', 'nextStepGuidance', 'status',
+        'isDraft', 'submittedAt', 'isRejected', 'rejectionReason', 'rejectedAt',
+        'createdAt', 'updatedAt'
+      ]),
+      ('EvaluationItem', 'evaluation_items', ARRAY[
+        'id', 'evaluationId', 'personalKpiId', 'policyCategory', 'scoreContributionType',
+        'policyFormulaVersion', 'basePolicyScore', 'adjustmentScore', 'adjustmentGroupKey',
+        'adjustmentReason', 'targetAchievementLevel', 'policyScoreSnapshot',
+        'quantScore', 'planScore', 'doScore', 'checkScore', 'actScore', 'qualScore',
+        'itemComment', 'weightedScore', 'createdAt', 'updatedAt'
+      ]),
+      ('EvalCycle', 'eval_cycles', ARRAY[
+        'id', 'orgId', 'evalYear', 'cycleName', 'status', 'showQuestionWeight',
+        'showScoreSummary', 'goalEditMode', 'calibrationSessionConfig',
+        'performanceDesignConfig', 'kpiSetupStart', 'kpiSetupEnd', 'selfEvalStart',
+        'selfEvalEnd', 'firstEvalStart', 'firstEvalEnd', 'secondEvalStart',
+        'secondEvalEnd', 'finalEvalStart', 'finalEvalEnd', 'ceoAdjustStart',
+        'ceoAdjustEnd', 'resultOpenStart', 'resultOpenEnd', 'appealDeadline',
+        'createdAt', 'updatedAt'
+      ]),
+      ('Employee', 'employees', ARRAY[
+        'id', 'empId', 'empName', 'gwsEmail', 'position', 'role', 'deptId',
+        'jobTitle', 'teamName', 'managerId', 'teamLeaderId', 'sectionChiefId',
+        'divisionHeadId', 'joinDate', 'resignationDate', 'sortOrder', 'notes',
+        'masterLoginPermissionGranted', 'currentSalary', 'status', 'profileImageUrl',
+        'createdAt', 'updatedAt'
+      ]),
+      ('Department', 'departments', ARRAY[
+        'id', 'deptCode', 'deptName', 'parentDeptId', 'leaderEmployeeId',
+        'excludeLeaderFromEvaluatorAutoAssign', 'orgId', 'createdAt', 'updatedAt'
+      ]),
+      ('Organization', 'organizations', ARRAY[
+        'id', 'name', 'fiscalYear', 'createdAt', 'updatedAt'
+      ]),
+      ('PersonalKpi', 'personal_kpis', ARRAY[
+        'id', 'employeeId', 'evalYear', 'kpiType', 'policyCategory',
+        'policyCategoryConfidence', 'policyCategorySource', 'policyCategoryReviewedAt',
+        'policyCategoryReviewNote', 'kpiName', 'definition', 'formula', 'targetValue',
+        'targetValueT', 'targetValueE', 'targetValueS', 'unit', 'weight', 'difficulty',
+        'linkedOrgKpiId', 'status', 'tags', 'copiedFromPersonalKpiId', 'copyMetadata',
+        'createdAt', 'updatedAt'
+      ]),
+      ('OrgKpi', 'org_kpis', ARRAY[
+        'id', 'deptId', 'evalYear', 'kpiType', 'kpiCategory', 'kpiName', 'definition',
+        'formula', 'targetValue', 'targetValueT', 'targetValueE', 'targetValueS',
+        'unit', 'weight', 'difficulty', 'status', 'tags', 'mboExceptionApproved',
+        'mboExceptionReason', 'mboExceptionApprovedById', 'mboExceptionApprovedAt',
+        'parentOrgKpiId', 'copiedFromOrgKpiId', 'copyMetadata', 'createdAt', 'updatedAt'
+      ]),
+      ('MonthlyRecord', 'monthly_records', ARRAY[
+        'id', 'personalKpiId', 'employeeId', 'yearMonth', 'actualValue',
+        'achievementRate', 'activities', 'obstacles', 'efforts', 'evidenceComment',
+        'attachments', 'isDraft', 'submittedAt', 'createdAt', 'updatedAt'
+      ]),
+      ('CheckIn', 'check_ins', ARRAY[
+        'id', 'ownerId', 'managerId', 'checkInType', 'scheduledDate', 'actualDate',
+        'duration', 'status', 'agendaItems', 'ownerNotes', 'managerNotes',
+        'keyTakeaways', 'actionItems', 'nextCheckInDate', 'kpiDiscussed',
+        'energyLevel', 'satisfactionLevel', 'blockerCount', 'createdAt', 'updatedAt'
+      ]),
+      ('GradeSetting', 'grade_settings', ARRAY[
+        'id', 'orgId', 'evalYear', 'gradeOrder', 'gradeName', 'baseScore',
+        'minScore', 'maxScore', 'levelName', 'description', 'targetDistRate',
+        'isActive', 'createdAt', 'updatedAt'
+      ]),
+      ('MultiFeedbackRound', 'multi_feedback_rounds', ARRAY[
+        'id', 'evalCycleId', 'folderId', 'roundName', 'roundType', 'documentKind',
+        'startDate', 'endDate', 'status', 'isAnonymous', 'minRaters', 'maxRaters',
+        'weightInFinal', 'createdById', 'selectionSettings', 'visibilitySettings',
+        'resultPresentationSettings', 'reportAnalysisSettings', 'ratingGuideSettings',
+        'documentSettings', 'createdAt', 'updatedAt'
+      ]),
+      ('MultiFeedback', 'multi_feedbacks', ARRAY[
+        'id', 'roundId', 'giverId', 'receiverId', 'relationship', 'overallComment',
+        'status', 'submittedAt', 'createdAt', 'updatedAt'
+      ]),
+      ('FeedbackResponse', 'feedback_responses', ARRAY[
+        'id', 'feedbackId', 'questionId', 'ratingValue', 'textValue', 'createdAt', 'updatedAt'
+      ]),
+      ('FeedbackQuestion', 'feedback_questions', ARRAY[
+        'id', 'roundId', 'category', 'questionText', 'description', 'questionType',
+        'scaleMin', 'scaleMax', 'isRequired', 'isActive', 'choiceOptions',
+        'sortOrder', 'createdAt', 'updatedAt'
+      ]),
+      ('AiRequestLog', 'ai_request_logs', ARRAY[
+        'id', 'requesterId', 'requestType', 'requestStatus', 'approvalStatus',
+        'sourceType', 'sourceId', 'provider', 'model', 'requestPayload',
+        'responsePayload', 'approvedPayload', 'piiMinimized', 'inputTokens',
+        'outputTokens', 'estimatedCostUsd', 'errorCode', 'errorMessage',
+        'approvedById', 'approvedAt', 'rejectedAt', 'rejectionReason',
+        'createdAt', 'updatedAt'
+      ]),
+      ('AuditLog', 'audit_logs', ARRAY[
+        'id', 'userId', 'action', 'entityType', 'entityId', 'oldValue', 'newValue',
+        'ipAddress', 'userAgent', 'timestamp'
+      ]),
+      ('EvaluationAssignment', 'evaluation_assignments', ARRAY[
+        'id', 'evalCycleId', 'targetId', 'evalStage', 'evaluatorId',
+        'assignmentSource', 'note', 'createdById', 'updatedById', 'createdAt', 'updatedAt'
+      ])
+  ) AS model_columns(object_kind, table_name, column_names)
+),
+expected_columns AS (
+  SELECT
+    object_kind,
+    table_name,
+    column_name,
+    object_kind || '.' || column_name AS object_name
+  FROM expected_model_columns
+  CROSS JOIN LATERAL unnest(column_names) AS column_name
+)
+SELECT
+  object_kind,
+  table_name,
+  column_name,
+  object_name,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = expected_columns.table_name
+      AND column_name = expected_columns.column_name
+  ) AS exists
+FROM expected_columns
+ORDER BY table_name, column_name;
+```
+
 ## Org KPI Loader Relation Compatibility Precheck
 
 Run this read-only check when `/kpi/org` or the Personal KPI org-goal selector fails with P2022 from `prisma.orgKpi.findMany()`.
