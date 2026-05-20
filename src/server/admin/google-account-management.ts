@@ -17,7 +17,7 @@ import { AppError } from '../../lib/utils'
 
 export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
   {
-    key: 'employeeNumber',
+    key: 'employeeNo',
     required: true,
     description: '사번입니다. 일괄 업로드와 수정 시 기본 식별자로 사용됩니다.',
     example: 'E-1001',
@@ -35,46 +35,45 @@ export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
     example: 'hong.gildong@company.example.com',
   },
   {
-    key: 'department',
+    key: 'division',
     required: true,
-    description: '부서명입니다.',
-    example: '인사운영팀',
-  },
-  {
-    key: 'parentDepartment',
-    required: false,
-    description: '상위 조직명입니다. 입력하면 본부/실/팀 계층을 함께 구성합니다.',
+    description: '본부명입니다. 조직 경로의 최상위 기준입니다.',
     example: '경영지원본부',
   },
   {
-    key: 'team',
+    key: 'section',
     required: false,
-    description: '팀명입니다. 조직도와 목록 표시용입니다.',
-    example: '채용파트',
+    description: '실명입니다. 실이 없는 조직은 비워둘 수 있습니다.',
+    example: '인사기획실',
+  },
+  {
+    key: 'team',
+    required: true,
+    description: '팀명입니다. 직원이 소속될 최종 팀입니다.',
+    example: '인사운영팀',
   },
   {
     key: 'title',
-    required: false,
+    required: true,
     description: '직책 또는 직위를 입력합니다.',
     example: '매니저',
   },
   {
     key: 'role',
     required: true,
-    description:
-      'ROLE_MEMBER, ROLE_TEAM_LEADER, ROLE_SECTION_CHIEF, ROLE_DIV_HEAD, ROLE_CEO, ROLE_ADMIN 중 하나를 사용합니다.',
+    description: 'ROLE_MEMBER, ROLE_LEADER, ROLE_ADMIN 중 하나를 사용합니다.',
     example: 'ROLE_MEMBER',
   },
   {
     key: 'employmentStatus',
     required: true,
-    description: 'ACTIVE, INACTIVE, ON_LEAVE, RESIGNED 중 하나를 사용합니다.',
+    description: 'ACTIVE, INACTIVE, ON_LEAVE 중 하나를 사용합니다.',
     example: 'ACTIVE',
   },
   {
-    key: 'managerEmployeeNumber',
+    key: 'managerEmployeeNo',
     required: false,
-    description: '직속 상사의 사번입니다. 같은 파일 안 또는 기존 등록 직원이면 참조할 수 있습니다.',
+    description: '직속 상사의 사번입니다. 없으면 상급자 미지정 warning으로 처리합니다.',
     example: 'E-1000',
   },
   {
@@ -86,7 +85,7 @@ export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
   {
     key: 'resignationDate',
     required: false,
-    description: '퇴사일입니다. RESIGNED 상태에서만 사용합니다.',
+    description: '퇴사일입니다. ACTIVE 상태에서는 비워둘 수 있습니다.',
     example: '2025-12-31',
   },
   {
@@ -101,12 +100,25 @@ export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
     description: '비고입니다. 운영 메모 용도입니다.',
     example: '겸직 중',
   },
+  {
+    key: 'parentDepartment',
+    required: false,
+    description: '레거시 호환용 상위 조직명입니다. 보통은 division/section/team만 입력합니다.',
+    example: '',
+  },
+  {
+    key: 'department',
+    required: false,
+    description: '레거시 호환용 부서명입니다. 보통은 division/section/team만 입력합니다.',
+    example: '',
+  },
 ] as const
 
 export const EMPLOYEE_UPLOAD_TEMPLATE_HEADERS = EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS.map(
   (column) => column.key
 )
 export const EMPLOYEE_STATUS_VALUES = ['ACTIVE', 'INACTIVE', 'ON_LEAVE', 'RESIGNED'] as const
+export const EMPLOYEE_UPLOAD_STATUS_VALUES = ['ACTIVE', 'INACTIVE', 'ON_LEAVE'] as const
 
 export type EmployeeManagementStatus = (typeof EMPLOYEE_STATUS_VALUES)[number]
 export type EmployeeUploadTemplateKey = (typeof EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS)[number]['key']
@@ -134,6 +146,8 @@ export type EmployeeUploadNormalizedRow = {
   employeeNumber: string
   name: string
   googleEmail: string
+  division: string
+  section: string | null
   department: string
   departmentCode: string | null
   parentDepartment: string | null
@@ -283,35 +297,13 @@ export type EmployeeOrgChartMember = EmployeeOrgChartNode['employee'] & {
   managerExists?: boolean
 }
 
-const LEGACY_HEADER_ALIASES: Partial<Record<EmployeeUploadTemplateKey, string[]>> = {
-  employeeNumber: ['employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
-  name: ['name', 'employeeName', 'empName', '직원명', '이름'],
-  googleEmail: ['googleEmail', 'google_email', 'gwsEmail', 'gws_email', '구글이메일', 'google'],
-  department: ['department', 'departmentName', 'deptName', 'dept_name', '부서명', '부서'],
-  parentDepartment: ['parentDepartment', 'parent_department', 'parentDeptName', '상위조직명'],
-  team: ['team', 'teamName', 'team_name', '팀', '팀명'],
-  title: ['title', 'jobTitle', 'job_title', 'positionTitle', '직책', '직위'],
-  role: ['role', 'systemRole', '권한', '직급'],
-  employmentStatus: ['employmentStatus', 'employment_status', 'status', '재직상태', '상태'],
-  managerEmployeeNumber: [
-    'managerEmployeeNumber',
-    'manager_employee_number',
-    'managerEmpId',
-    'managerId',
-    '상위사번',
-    '관리자사번',
-    'manager',
-  ],
-  joinDate: ['joinDate', 'join_date', '입사일', 'startDate'],
-  resignationDate: ['resignationDate', 'resignation_date', '퇴사일', 'endDate'],
-  sortOrder: ['sortOrder', 'sort_order', '정렬순서', 'displayOrder'],
-  notes: ['notes', 'note', 'memo', '비고'],
-}
-
 const HEADER_ALIASES: Record<EmployeeUploadTemplateKey, string[]> = {
-  employeeNumber: ['employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
+  employeeNo: ['employeeNo', 'employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
   name: ['name', 'employeeName', 'empName', '직원명', '이름'],
   googleEmail: ['googleEmail', 'google_email', 'gwsEmail', 'gws_email', '구글이메일', 'google'],
+  division: ['division', 'divisionName', 'division_name', '본부', '본부명'],
+  section: ['section', 'sectionName', 'section_name', '실', '실명'],
+  team: ['team', 'teamName', 'team_name', '팀', '팀명'],
   department: ['department', 'departmentName', 'deptName', 'dept_name', '부서명', '부서'],
   parentDepartment: [
     'parentDepartment',
@@ -322,11 +314,11 @@ const HEADER_ALIASES: Record<EmployeeUploadTemplateKey, string[]> = {
     '상위조직',
     '상위부서명',
   ],
-  team: ['team', 'teamName', 'team_name', '팀', '팀명'],
   title: ['title', 'jobTitle', 'job_title', 'positionTitle', '직책', '직위'],
   role: ['role', 'systemRole', '권한', '직급'],
   employmentStatus: ['employmentStatus', 'employment_status', 'status', '재직상태', '상태'],
-  managerEmployeeNumber: [
+  managerEmployeeNo: [
+    'managerEmployeeNo',
     'managerEmployeeNumber',
     'manager_employee_number',
     'managerEmpId',
@@ -343,43 +335,14 @@ const HEADER_ALIASES: Record<EmployeeUploadTemplateKey, string[]> = {
 
 const ROLE_INPUT_MAP: Record<string, SystemRole> = {
   ROLE_MEMBER: 'ROLE_MEMBER',
-  MEMBER: 'ROLE_MEMBER',
-  구성원: 'ROLE_MEMBER',
-  ROLE_TEAM_LEADER: 'ROLE_TEAM_LEADER',
-  TEAM_LEADER: 'ROLE_TEAM_LEADER',
-  팀장: 'ROLE_TEAM_LEADER',
-  ROLE_SECTION_CHIEF: 'ROLE_SECTION_CHIEF',
-  SECTION_CHIEF: 'ROLE_SECTION_CHIEF',
-  SECTIONCHIEF: 'ROLE_SECTION_CHIEF',
-  실장: 'ROLE_SECTION_CHIEF',
-  부문장: 'ROLE_SECTION_CHIEF',
-  ROLE_DIV_HEAD: 'ROLE_DIV_HEAD',
-  DIV_HEAD: 'ROLE_DIV_HEAD',
-  DIVHEAD: 'ROLE_DIV_HEAD',
-  본부장: 'ROLE_DIV_HEAD',
-  ROLE_CEO: 'ROLE_CEO',
-  CEO: 'ROLE_CEO',
+  ROLE_LEADER: 'ROLE_TEAM_LEADER',
   ROLE_ADMIN: 'ROLE_ADMIN',
-  ADMIN: 'ROLE_ADMIN',
-  HR: 'ROLE_ADMIN',
-  관리자: 'ROLE_ADMIN',
-  HR관리자: 'ROLE_ADMIN',
 }
 
 const STATUS_INPUT_MAP: Record<string, EmployeeManagementStatus> = {
   ACTIVE: 'ACTIVE',
-  재직: 'ACTIVE',
-  근무중: 'ACTIVE',
   INACTIVE: 'INACTIVE',
-  비활성: 'INACTIVE',
-  비활성화: 'INACTIVE',
-  휴면: 'INACTIVE',
   ON_LEAVE: 'ON_LEAVE',
-  ONLEAVE: 'ON_LEAVE',
-  휴직: 'ON_LEAVE',
-  RESIGNED: 'RESIGNED',
-  퇴사: 'RESIGNED',
-  퇴직: 'RESIGNED',
 }
 
 function normalizeHeaderKey(value: string) {
@@ -603,15 +566,16 @@ export function buildEmployeeTemplateWorkbook() {
     ]),
     [],
     ['rules', '', '', ''],
-    ['employmentStatus', '', 'ACTIVE / INACTIVE / ON_LEAVE / RESIGNED', ''],
-    ['role', '', 'ROLE_MEMBER / ROLE_TEAM_LEADER / ROLE_SECTION_CHIEF / ROLE_DIV_HEAD / ROLE_CEO / ROLE_ADMIN', ''],
+    ['employmentStatus', '', 'ACTIVE / INACTIVE / ON_LEAVE', ''],
+    ['role', '', 'ROLE_MEMBER / ROLE_LEADER / ROLE_ADMIN', ''],
     [
-      'managerEmployeeNumber',
+      'managerEmployeeNo',
       '',
-      '같은 파일 또는 기존 등록 직원의 사번이어야 하며 본인을 지정할 수 없습니다.',
+      '없으면 상급자 미지정 warning으로 처리합니다. 입력 시 같은 파일 또는 기존 등록 직원의 사번이어야 합니다.',
       '',
     ],
-    ['resignationDate', '', 'ACTIVE 상태에서는 입력할 수 없습니다.', ''],
+    ['division/section/team', '', 'parentDepartment/department 없이도 이 3개 컬럼으로 조직 경로를 구성합니다. section은 비워도 됩니다.', ''],
+    ['resignationDate', '', '선택 입력입니다. ACTIVE 상태에서는 비워도 됩니다.', ''],
     ['googleEmail', '', `허용 도메인: ${getAllowedGoogleWorkspaceDomain()}`, ''],
   ]
 
@@ -666,7 +630,7 @@ export function validateEmployeeUploadRows(params: {
   const rawEmailCounts = new Map<string, number>()
 
   for (const rawRow of params.rows) {
-    const employeeNumber = normalizeTextValue(getUploadValue(rawRow, 'employeeNumber'))
+    const employeeNumber = normalizeTextValue(getUploadValue(rawRow, 'employeeNo'))
     const email = normalizeTextValue(getUploadValue(rawRow, 'googleEmail'))
     if (employeeNumber) {
       rawEmployeeNumberCounts.set(employeeNumber, (rawEmployeeNumberCounts.get(employeeNumber) ?? 0) + 1)
@@ -679,10 +643,13 @@ export function validateEmployeeUploadRows(params: {
 
   const rows: EmployeeUploadValidationRow[] = params.rows.map((rawRow, index) => {
     const rowNumber = index + 2
-    const employeeNumber = normalizeTextValue(getUploadValue(rawRow, 'employeeNumber'))
+    const employeeNumber = normalizeTextValue(getUploadValue(rawRow, 'employeeNo'))
     const name = normalizeTextValue(getUploadValue(rawRow, 'name'))
     const googleEmailValue = normalizeTextValue(getUploadValue(rawRow, 'googleEmail'))
-    const departmentName = normalizeTextValue(getUploadValue(rawRow, 'department'))
+    const division = normalizeTextValue(getUploadValue(rawRow, 'division'))
+    const section = normalizeTextValue(getUploadValue(rawRow, 'section')) || null
+    const team = normalizeTextValue(getUploadValue(rawRow, 'team'))
+    const legacyDepartmentName = normalizeTextValue(getUploadValue(rawRow, 'department'))
     const legacyDepartmentCode = normalizeTextValue((rawRow as Record<string, unknown>).departmentCode ?? '')
     const departmentCode =
       legacyDepartmentCode ||
@@ -690,17 +657,18 @@ export function validateEmployeeUploadRows(params: {
       normalizeTextValue((rawRow as Record<string, unknown>).deptCode ?? '') ||
       normalizeTextValue((rawRow as Record<string, unknown>).dept_code ?? '') ||
       null
-    const parentDepartment =
+    const legacyParentDepartment =
       normalizeTextValue(getUploadValue(rawRow, 'parentDepartment')) ||
       normalizeTextValue((rawRow as Record<string, unknown>).parentDepartmentCode ?? '') ||
       normalizeTextValue((rawRow as Record<string, unknown>).parent_department_code ?? '') ||
       normalizeTextValue((rawRow as Record<string, unknown>).parentDeptCode ?? '') ||
       normalizeTextValue((rawRow as Record<string, unknown>).상위조직코드 ?? '') ||
       null
-    const team = normalizeTextValue(getUploadValue(rawRow, 'team')) || null
+    const departmentName = section || division || legacyDepartmentName
+    const parentDepartment = section ? division : legacyParentDepartment
     const title = normalizeTextValue(getUploadValue(rawRow, 'title')) || null
     const managerEmployeeNumber =
-      normalizeTextValue(getUploadValue(rawRow, 'managerEmployeeNumber')) || null
+      normalizeTextValue(getUploadValue(rawRow, 'managerEmployeeNo')) || null
     const joinDateResult = parseOptionalDate(getUploadValue(rawRow, 'joinDate'))
     const resignationDateResult = parseOptionalDate(getUploadValue(rawRow, 'resignationDate'))
     const sortOrderResult = parseOptionalSortOrder(getUploadValue(rawRow, 'sortOrder'))
@@ -719,17 +687,22 @@ export function validateEmployeeUploadRows(params: {
       normalizedRow: null,
     }
 
-    if (!employeeNumber) addIssue(row, 'employeeNumber', '사번은 필수입니다.')
+    if (!employeeNumber) addIssue(row, 'employeeNo', '사번은 필수입니다.')
     if (!name) addIssue(row, 'name', '직원명은 필수입니다.')
     if (!googleEmailValue) addIssue(row, 'googleEmail', 'Google 이메일은 필수입니다.')
-    if (!departmentName) addIssue(row, 'department', '부서명은 필수입니다.')
-    if (!role) addIssue(row, 'role', '권한 값이 올바르지 않습니다.')
-    if (!employmentStatus) addIssue(row, 'employmentStatus', '재직 상태 값이 올바르지 않습니다.')
+    if (!division) addIssue(row, 'division', '본부명은 필수입니다.')
+    if (!team) addIssue(row, 'team', '팀명은 필수입니다.')
+    if (!title) addIssue(row, 'title', '직책 또는 직위는 필수입니다.')
+    if (!role) addIssue(row, 'role', '권한 값은 ROLE_MEMBER, ROLE_LEADER, ROLE_ADMIN 중 하나여야 합니다.')
+    if (!employmentStatus) addIssue(row, 'employmentStatus', '재직 상태 값은 ACTIVE, INACTIVE, ON_LEAVE 중 하나여야 합니다.')
     if (joinDateResult.invalid) addIssue(row, 'joinDate', '입사일 형식이 올바르지 않습니다.')
     if (resignationDateResult.invalid) addIssue(row, 'resignationDate', '퇴사일 형식이 올바르지 않습니다.')
     if (sortOrderResult.invalid) addIssue(row, 'sortOrder', '정렬 순서는 0 이상의 정수여야 합니다.')
     if (team && departmentName && !normalizeLegacyTeamNameForDepartment(team, departmentName)) {
       addIssue(row, 'team', '부서명과 같은 팀명은 중복 저장하지 않고 부서 기준으로 표시합니다.', 'warning')
+    }
+    if (!managerEmployeeNumber) {
+      addIssue(row, 'managerEmployeeNo', '상급자 사번이 없어 상급자 미지정으로 처리합니다.', 'warning')
     }
 
     let normalizedEmail: string | null = null
@@ -745,14 +718,11 @@ export function validateEmployeeUploadRows(params: {
       }
     }
 
-    if (employmentStatus === 'ACTIVE' && resignationDateResult.value) {
-      addIssue(row, 'resignationDate', '재직 상태가 ACTIVE이면 퇴사일을 입력할 수 없습니다.')
-    }
-    if (employmentStatus === 'RESIGNED' && !resignationDateResult.value) {
-      addIssue(row, 'resignationDate', '퇴사 상태에는 퇴사일 입력을 권장합니다.', 'warning')
+    if (resignationDateResult.value && employmentStatus === 'ACTIVE') {
+      addIssue(row, 'resignationDate', 'ACTIVE 상태에서는 퇴사일을 비워도 되며, 업로드 적용 시 저장하지 않습니다.', 'warning')
     }
     if (managerEmployeeNumber && employeeNumber && managerEmployeeNumber === employeeNumber) {
-      addIssue(row, 'managerEmployeeNumber', '본인을 관리자로 지정할 수 없습니다.')
+      addIssue(row, 'managerEmployeeNo', '본인을 관리자로 지정할 수 없습니다.')
     }
     if (employeeNumber && (rawEmployeeNumberCounts.get(employeeNumber) ?? 0) > 1) {
       addIssue(row, 'employeeNumber', '파일 내에 동일한 사번이 중복되어 있습니다.')
@@ -777,6 +747,8 @@ export function validateEmployeeUploadRows(params: {
         employeeNumber,
         name,
         googleEmail: normalizedEmail,
+        division,
+        section,
         departmentCode,
         department: departmentName,
         parentDepartment,
@@ -807,7 +779,7 @@ export function validateEmployeeUploadRows(params: {
       continue
     }
     if (!knownEmployeeNumbers.has(row.normalizedRow.managerEmployeeNumber)) {
-      addIssue(row, 'managerEmployeeNumber', '지정한 관리자의 사번을 찾을 수 없습니다.')
+      addIssue(row, 'managerEmployeeNo', '지정한 관리자의 사번을 찾을 수 없습니다.')
       row.normalizedRow = null
     }
   }
@@ -850,7 +822,7 @@ export function validateEmployeeUploadRows(params: {
 
   for (const row of rows) {
     if (row.normalizedRow && cycleIds.has(row.normalizedRow.employeeNumber)) {
-      addIssue(row, 'managerEmployeeNumber', '관리자 연결에 순환 참조가 있습니다.')
+      addIssue(row, 'managerEmployeeNo', '관리자 연결에 순환 참조가 있습니다.')
       row.normalizedRow = null
     }
     row.valid = !hasError(row)
@@ -3209,20 +3181,63 @@ export async function applyEmployeeUpload(params: {
       department.id,
     ] as const)
   )
+  const resolveDepartmentIdByPath = (departmentName: string, parentDepartmentName: string | null) => {
+    const normalizedName = departmentName.trim().toUpperCase()
+    const parentDeptId = parentDepartmentName
+      ? Array.from(departmentIdByHierarchy.entries()).find(
+          ([key]) => key.endsWith(`::${parentDepartmentName.trim().toUpperCase()}`)
+        )?.[1] ?? null
+      : null
+
+    return (
+      departmentIdByHierarchy.get(`${parentDeptId ?? 'ROOT'}::${normalizedName}`) ??
+      Array.from(departmentIdByHierarchy.entries()).find(([key]) => key.endsWith(`::${normalizedName}`))?.[1] ??
+      null
+    )
+  }
 
   let createdDepartmentCount = 0
-  const departmentRows = Array.from(
-    new Map(
-      params.rows.map((row) => [
-        (row.departmentCode?.toUpperCase() ?? `${row.parentDepartment ?? 'ROOT'}::${row.department}`),
-        {
-          departmentCode: row.departmentCode,
-          departmentName: row.department,
-          parentDepartment: row.parentDepartment?.trim() ?? null,
-        },
-      ]),
-    ).values(),
-  )
+  const departmentRowsByPath = new Map<
+    string,
+    {
+      departmentCode: string | null
+      departmentName: string
+      parentDepartment: string | null
+    }
+  >()
+  const addDepartmentRow = (params: {
+    departmentCode?: string | null
+    departmentName: string
+    parentDepartment?: string | null
+  }) => {
+    const departmentName = params.departmentName.trim()
+    if (!departmentName) return
+    const parentDepartment = params.parentDepartment?.trim() || null
+    const key = `${parentDepartment ?? 'ROOT'}::${departmentName.toUpperCase()}`
+    if (departmentRowsByPath.has(key)) return
+    departmentRowsByPath.set(key, {
+      departmentCode: params.departmentCode ?? null,
+      departmentName,
+      parentDepartment,
+    })
+  }
+
+  for (const row of params.rows) {
+    addDepartmentRow({
+      departmentCode: row.section ? null : row.departmentCode,
+      departmentName: row.division,
+      parentDepartment: null,
+    })
+    if (row.section) {
+      addDepartmentRow({
+        departmentCode: row.departmentCode,
+        departmentName: row.section,
+        parentDepartment: row.division,
+      })
+    }
+  }
+
+  const departmentRows = Array.from(departmentRowsByPath.values())
   const pendingDepartmentRows = [...departmentRows]
 
   while (pendingDepartmentRows.length > 0) {
@@ -3231,9 +3246,7 @@ export async function applyEmployeeUpload(params: {
     for (let index = pendingDepartmentRows.length - 1; index >= 0; index -= 1) {
       const department = pendingDepartmentRows[index]
       const parentDeptId = department.parentDepartment
-        ? Array.from(departmentIdByHierarchy.entries()).find(
-            ([key]) => key.endsWith(`::${department.parentDepartment!.trim().toUpperCase()}`)
-          )?.[1] ?? null
+        ? resolveDepartmentIdByPath(department.parentDepartment, null)
         : null
 
       if (department.parentDepartment && !parentDeptId) {
@@ -3330,13 +3343,7 @@ export async function applyEmployeeUpload(params: {
 
     const departmentId =
       (row.departmentCode ? departmentIdByCode.get(row.departmentCode.toUpperCase()) : null) ??
-      departmentIdByHierarchy.get(
-        `${(row.parentDepartment
-          ? Array.from(departmentIdByHierarchy.entries()).find(([key]) =>
-              key.endsWith(`::${row.parentDepartment!.trim().toUpperCase()}`)
-            )?.[1] ?? 'ROOT'
-          : 'ROOT')}::${row.department.trim().toUpperCase()}`
-      )
+      resolveDepartmentIdByPath(row.department, row.parentDepartment)
     if (!departmentId) {
       continue
     }
@@ -3368,9 +3375,7 @@ export async function applyEmployeeUpload(params: {
   for (const row of params.rows) {
     const departmentId =
       (row.departmentCode ? departmentIdByCode.get(row.departmentCode.toUpperCase()) : null) ??
-      Array.from(departmentIdByHierarchy.entries()).find(
-        ([key]) => key.endsWith(`::${row.department.trim().toUpperCase()}`)
-      )?.[1]
+      resolveDepartmentIdByPath(row.department, row.parentDepartment)
     if (!departmentId) {
       throw new AppError(500, 'DEPARTMENT_RESOLVE_FAILED', '부서 정보를 반영하는 중 오류가 발생했습니다.')
     }
@@ -3514,9 +3519,7 @@ export async function applyEmployeeUpload(params: {
       const employeeId = employeeIdByEmployeeNumber.get(row.employeeNumber)
       const departmentId =
         (row.departmentCode ? departmentIdByCode.get(row.departmentCode.toUpperCase()) : null) ??
-        Array.from(departmentIdByHierarchy.entries()).find(
-          ([key]) => key.endsWith(`::${row.department.trim().toUpperCase()}`)
-        )?.[1]
+        resolveDepartmentIdByPath(row.department, row.parentDepartment)
       if (!employeeId || !departmentId) {
         continue
       }

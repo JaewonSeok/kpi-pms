@@ -72,8 +72,30 @@ function buildWorkbookBuffer(rows: Array<Record<string, unknown>>) {
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer
 }
 
+function toEmployeeUploadRow(row: Record<string, unknown>) {
+  const employeeNo = row.employeeNo ?? row.employeeNumber
+  const managerEmployeeNo = row.managerEmployeeNo ?? row.managerEmployeeNumber
+  const rest = { ...row }
+  delete rest.employeeNumber
+  delete rest.managerEmployeeNumber
+
+  return {
+    name: 'Upload User',
+    googleEmail: 'upload.user@rsupport.com',
+    division: '경영지원본부',
+    section: '',
+    team: '인사팀',
+    title: '매니저',
+    role: 'ROLE_MEMBER',
+    employmentStatus: 'ACTIVE',
+    ...rest,
+    employeeNo,
+    managerEmployeeNo,
+  }
+}
+
 function validateRows(rows: Array<Record<string, unknown>>) {
-  const workbook = parseEmployeeUploadWorkbook('employees.xlsx', buildWorkbookBuffer(rows))
+  const workbook = parseEmployeeUploadWorkbook('employees.xlsx', buildWorkbookBuffer(rows.map(toEmployeeUploadRow)))
   return validateEmployeeUploadRows({
     fileName: workbook.fileName,
     rows: workbook.rows,
@@ -107,6 +129,152 @@ run('valid upload row passes preview validation', () => {
 
   assert.equal(result.summary.validRows, 1)
   assert.equal(result.rows[0]?.valid, true)
+})
+
+run('minimal employee upload columns pass without optional legacy organization fields', () => {
+  const result = validateRows([
+    {
+      employeeNo: 'E-2002',
+      name: 'Minimal Upload',
+      googleEmail: 'minimal.upload@rsupport.com',
+      division: '경영지원본부',
+      section: '',
+      team: '인사팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+      employmentStatus: 'ACTIVE',
+      managerEmployeeNo: 'E-1000',
+    },
+  ])
+
+  assert.equal(result.summary.validRows, 1)
+  assert.equal(result.rows[0]?.valid, true)
+  assert.equal(result.validRows[0]?.division, '경영지원본부')
+  assert.equal(result.validRows[0]?.section, null)
+  assert.equal(result.validRows[0]?.department, '경영지원본부')
+  assert.equal(result.validRows[0]?.team, '인사팀')
+})
+
+run('optional upload columns can be omitted while manager absence is warning-only', () => {
+  const workbook = parseEmployeeUploadWorkbook(
+    'employees.xlsx',
+    buildWorkbookBuffer([
+      {
+        employeeNo: 'E-2003',
+        name: 'Optional Omitted',
+        googleEmail: 'optional.omitted@rsupport.com',
+        division: '경영지원본부',
+        section: '',
+        team: '인사팀',
+        title: '매니저',
+        role: 'ROLE_MEMBER',
+        employmentStatus: 'ACTIVE',
+      },
+    ])
+  )
+  const result = validateEmployeeUploadRows({
+    fileName: workbook.fileName,
+    rows: workbook.rows,
+    existingEmployees,
+    existingDepartments,
+    allowedDomain: 'rsupport.com',
+  })
+
+  assert.equal(result.summary.validRows, 1)
+  assert.equal(result.summary.warningCount, 1)
+  assert.equal(result.rows[0]?.issues.some((issue) => issue.field === 'managerEmployeeNo'), true)
+})
+
+run('googleEmail, division, and team are required for employee upload', () => {
+  const missingGoogleEmail = validateRows([
+    {
+      employeeNo: 'E-2004',
+      googleEmail: '',
+      division: '경영지원본부',
+      team: '인사팀',
+    },
+  ])
+  const missingDivision = validateRows([
+    {
+      employeeNo: 'E-2005',
+      googleEmail: 'missing.division@rsupport.com',
+      division: '',
+      team: '인사팀',
+    },
+  ])
+  const missingTeam = validateRows([
+    {
+      employeeNo: 'E-2006',
+      googleEmail: 'missing.team@rsupport.com',
+      division: '경영지원본부',
+      team: '',
+    },
+  ])
+
+  assert.equal(missingGoogleEmail.summary.validRows, 0)
+  assert.ok(missingGoogleEmail.errors.some((error) => error.field === 'googleEmail'))
+  assert.equal(missingDivision.summary.validRows, 0)
+  assert.ok(missingDivision.errors.some((error) => error.field === 'division'))
+  assert.equal(missingTeam.summary.validRows, 0)
+  assert.ok(missingTeam.errors.some((error) => error.field === 'team'))
+})
+
+run('title is required for employee upload', () => {
+  const result = validateRows([
+    {
+      employeeNo: 'E-2007',
+      googleEmail: 'missing.title@rsupport.com',
+      division: '경영지원본부',
+      team: '인사팀',
+      title: '',
+    },
+  ])
+
+  assert.equal(result.summary.validRows, 0)
+  assert.ok(result.errors.some((error) => error.field === 'title'))
+})
+
+run('section can be blank and ROLE_LEADER maps to team leader role internally', () => {
+  const result = validateRows([
+    {
+      employeeNo: 'E-2008',
+      name: 'Leader Upload',
+      googleEmail: 'leader.upload@rsupport.com',
+      division: '영업본부',
+      section: '',
+      team: '영업팀',
+      title: '팀장',
+      role: 'ROLE_LEADER',
+      employmentStatus: 'ACTIVE',
+      managerEmployeeNo: 'E-1000',
+    },
+  ])
+
+  assert.equal(result.summary.validRows, 1)
+  assert.equal(result.validRows[0]?.section, null)
+  assert.equal(result.validRows[0]?.role, 'ROLE_TEAM_LEADER')
+})
+
+run('invalid upload role and employmentStatus fail validation', () => {
+  const invalidRole = validateRows([
+    {
+      employeeNo: 'E-2009',
+      googleEmail: 'invalid.role@rsupport.com',
+      role: 'ROLE_TEAM_LEADER',
+    },
+  ])
+  const invalidStatus = validateRows([
+    {
+      employeeNo: 'E-2010',
+      googleEmail: 'invalid.status@rsupport.com',
+      employmentStatus: 'RESIGNED',
+    },
+  ])
+
+  assert.equal(invalidRole.summary.validRows, 0)
+  assert.ok(invalidRole.errors.some((error) => error.field === 'role'))
+  assert.equal(invalidStatus.summary.validRows, 0)
+  assert.ok(invalidStatus.errors.some((error) => error.field === 'employmentStatus'))
 })
 
 run('invalid rows keep row-level errors', () => {
@@ -195,7 +363,7 @@ run('existing employee number becomes update instead of create', () => {
   assert.equal(result.summary.updateCount, 1)
 })
 
-run('inactive and resigned statuses are accepted while active with resignation date fails', () => {
+run('inactive status is accepted and RESIGNED is rejected by the simplified upload template', () => {
   const inactive = validateRows([
     {
       employeeNumber: 'E-3100',
@@ -207,21 +375,22 @@ run('inactive and resigned statuses are accepted while active with resignation d
       employmentStatus: 'INACTIVE',
     },
   ])
-  const activeWithResignation = validateRows([
+  const resigned = validateRows([
     {
       employeeNumber: 'E-3101',
-      name: '?ㅻ쪟吏곸썝',
-      googleEmail: 'active-with-end@rsupport.com',
+      name: 'Resigned Employee',
+      googleEmail: 'resigned-upload@rsupport.com',
       departmentCode: 'HR',
       department: '?몄궗?',
       role: 'ROLE_MEMBER',
-      employmentStatus: 'ACTIVE',
+      employmentStatus: 'RESIGNED',
       resignationDate: '2025-12-31',
     },
   ])
 
   assert.equal(inactive.summary.validRows, 1)
-  assert.equal(activeWithResignation.summary.validRows, 0)
+  assert.equal(resigned.summary.validRows, 0)
+  assert.ok(resigned.errors.some((error) => error.field === 'employmentStatus'))
 })
 
 run('missing manager references are rejected', () => {
@@ -239,7 +408,7 @@ run('missing manager references are rejected', () => {
   ])
 
   assert.equal(result.summary.validRows, 0)
-  assert.ok(result.errors.some((error) => error.field === 'managerEmployeeNumber'))
+  assert.ok(result.errors.some((error) => error.field === 'managerEmployeeNo'))
 })
 
 run('non-company email domains are rejected', () => {
