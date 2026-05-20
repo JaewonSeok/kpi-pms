@@ -13,7 +13,7 @@ import {
   type EvaluationPreviewReadinessSummary2026,
 } from '@/server/evaluation-preview-2026-readiness'
 
-type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & {
+type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department'>> & {
   $queryRawUnsafe?: typeof prisma.$queryRawUnsafe
 }
 
@@ -226,6 +226,13 @@ function collectPreviewReadiness(
   blockers: Evaluation2026ActivationReadinessItem[],
   warnings: Evaluation2026ActivationReadinessItem[]
 ) {
+  if (!readiness.cycleScope.isOfficialReadinessTarget) {
+    addItem(
+      blockers,
+      'OFFICIAL_READINESS_CYCLE_NOT_CONFIRMED',
+      readiness.cycleScope.warning ?? '공식 2026 readiness 대상 평가 주기가 확정되지 않았습니다.'
+    )
+  }
   if (readiness.totalEvaluationsChecked <= 0) {
     addItem(warnings, 'NO_EVALUATIONS_CHECKED', '현재 필터 범위에서 검증한 평가가 없습니다.', 'warning')
   }

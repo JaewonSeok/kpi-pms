@@ -24,6 +24,7 @@ import type { EvaluationGrade2026RoleGroup, EvaluationGrade2026SalesGroup } from
 import type { AiPolicy2026GateStatus, AiPolicy2026RecognitionEvidence } from '@/server/evaluation-ai-policy-2026'
 
 type EvaluationPreviewDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'>
+  & Partial<Pick<typeof prisma, 'department'>>
 
 export type EvaluationPreview2026Payload = {
   evaluation: {
@@ -45,6 +46,11 @@ type EvaluationPreviewSessionUser = NonNullable<Session['user']> & {
 
 type LoadedEvaluation = NonNullable<Awaited<ReturnType<typeof loadEvaluationForPreview2026>>>
 type LoadedAiGateAssignment = Awaited<ReturnType<typeof loadAiGateAssignmentForPreview2026>>
+type DepartmentNode2026 = {
+  id: string
+  deptName: string
+  parentDeptId: string | null
+}
 
 function getSessionUser(session: Session): EvaluationPreviewSessionUser | null {
   const user = session.user as Partial<EvaluationPreviewSessionUser> | undefined
@@ -120,6 +126,37 @@ async function loadAiGateAssignmentForPreview2026(
       updatedAt: 'desc',
     },
   })
+}
+
+async function loadDepartmentHierarchyForPreview2026(db: EvaluationPreviewDb): Promise<DepartmentNode2026[]> {
+  if (!db.department?.findMany) return []
+  return db.department.findMany({
+    select: {
+      id: true,
+      deptName: true,
+      parentDeptId: true,
+    },
+  })
+}
+
+function resolveDivisionDepartmentId2026(params: {
+  departmentId?: string | null
+  departments: DepartmentNode2026[]
+}) {
+  if (!params.departmentId) return null
+  const byId = new Map(params.departments.map((department) => [department.id, department]))
+  let current = byId.get(params.departmentId)
+  if (!current) return params.departmentId
+
+  const visited = new Set<string>()
+  while (current.parentDeptId && !visited.has(current.id)) {
+    visited.add(current.id)
+    const parent = byId.get(current.parentDeptId)
+    if (!parent) break
+    current = parent
+  }
+
+  return current.id
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -309,6 +346,11 @@ export async function buildEvaluationPreviewInputFromDb2026(params: {
   }
 
   const rawItems = buildRawItemsForPreview2026(evaluation)
+  const departments = await loadDepartmentHierarchyForPreview2026(db)
+  const divisionId = resolveDivisionDepartmentId2026({
+    departmentId: evaluation.target.department?.id ?? evaluation.target.deptId,
+    departments,
+  })
   const aiAssignment = await loadAiGateAssignmentForPreview2026(db, {
     evalCycleId: evaluation.evalCycleId,
     employeeId: evaluation.targetId,
@@ -326,6 +368,7 @@ export async function buildEvaluationPreviewInputFromDb2026(params: {
       salesGroup: resolvePolicy2026PreviewSalesGroup({
         evalCycleConfig: evaluation.evalCycle.performanceDesignConfig,
         employeeId: evaluation.targetId,
+        divisionId,
         employee: evaluation.target,
       }) as EvaluationGrade2026SalesGroup | null,
       teamMemberSalesThresholdDecision: resolvePolicy2026TeamMemberSalesThresholdDecision(

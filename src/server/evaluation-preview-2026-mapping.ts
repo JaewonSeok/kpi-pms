@@ -22,7 +22,13 @@ import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026
 type EvaluationPreviewMappingDb = Pick<
   typeof prisma,
   'evaluation' | 'evaluationItem' | 'personalKpi' | 'evalCycle'
->
+> & Partial<Pick<typeof prisma, 'department'>>
+
+type DepartmentNode2026 = {
+  id: string
+  deptName: string
+  parentDeptId: string | null
+}
 
 type AuditWriter = typeof createAuditLog
 
@@ -59,6 +65,16 @@ export const EvaluationPolicy2026MetadataPatchSchema = z.object({
       z.object({
         evalCycleId: z.string().trim().min(1),
         employeeId: z.string().trim().min(1),
+        salesGroup: SalesGroupMappingSchema,
+        note: z.string().trim().max(500).optional(),
+      })
+    )
+    .default([]),
+  divisionSalesGroupMappings: z
+    .array(
+      z.object({
+        evalCycleId: z.string().trim().min(1),
+        divisionId: z.string().trim().min(1),
         salesGroup: SalesGroupMappingSchema,
         note: z.string().trim().max(500).optional(),
       })
@@ -115,6 +131,18 @@ export type EvaluationPolicy2026SalesGroupCandidate = {
   reason: string
 }
 
+export type EvaluationPolicy2026DivisionSalesGroupCandidate = {
+  evalCycleId: string
+  evalYear: number
+  divisionId: string
+  divisionName: string
+  currentSalesGroup: EvaluationPolicy2026SalesGroup | null
+  suggestedSalesGroup: EvaluationPolicy2026SalesGroup | null
+  affectedEmployeeCount: number
+  sampleEmployees: string[]
+  reason: string
+}
+
 export type EvaluationPolicy2026ThresholdDecisionCandidate = {
   evalCycleId: string
   evalYear: number
@@ -133,10 +161,12 @@ export type EvaluationPolicy2026MappingCandidates = {
     limit: number
   }
   policyCategoryCandidates: EvaluationPolicy2026MappingCandidate[]
+  divisionSalesGroupCandidates: EvaluationPolicy2026DivisionSalesGroupCandidate[]
   salesGroupCandidates: EvaluationPolicy2026SalesGroupCandidate[]
   thresholdDecisions: EvaluationPolicy2026ThresholdDecisionCandidate[]
   persistence: {
     itemPolicyCategory: 'PersonalKpi.policyCategory + EvaluationItem.policyCategory'
+    divisionSalesGroup: 'EvalCycle.performanceDesignConfig.policy2026PreviewMappings.salesGroupsByDivisionId'
     salesGroup: 'EvalCycle.performanceDesignConfig.policy2026PreviewMappings.salesGroupsByEmployeeId'
     thresholdDecision: 'EvalCycle.performanceDesignConfig.policy2026PreviewMappings.teamMemberSalesThresholdDecision'
   }
@@ -145,6 +175,7 @@ export type EvaluationPolicy2026MappingCandidates = {
 export type EvaluationPolicy2026MetadataPatchResult = {
   policyVersion: string
   updatedItemMappings: number
+  updatedDivisionSalesGroupMappings: number
   updatedSalesGroupMappings: number
   updatedThresholdDecisions: number
   officialScoresChanged: false
@@ -195,6 +226,36 @@ function isTeamMember(target: { position?: string | null; role?: string | null }
   return target.position === 'MEMBER' || target.role === 'ROLE_MEMBER'
 }
 
+async function loadDepartmentHierarchyForMapping2026(db: EvaluationPreviewMappingDb): Promise<DepartmentNode2026[]> {
+  if (!db.department?.findMany) return []
+  return db.department.findMany({
+    select: {
+      id: true,
+      deptName: true,
+      parentDeptId: true,
+    },
+  })
+}
+
+function resolveDivisionDepartment2026(params: {
+  departmentId?: string | null
+  departmentsById: Map<string, DepartmentNode2026>
+}) {
+  if (!params.departmentId) return null
+  let current = params.departmentsById.get(params.departmentId)
+  if (!current) return null
+
+  const visited = new Set<string>()
+  while (current.parentDeptId && !visited.has(current.id)) {
+    visited.add(current.id)
+    const parent = params.departmentsById.get(current.parentDeptId)
+    if (!parent) break
+    current = parent
+  }
+
+  return current
+}
+
 export async function getEvaluationPolicy2026MappingCandidates(params: {
   db?: EvaluationPreviewMappingDb
   year?: number
@@ -240,19 +301,51 @@ export async function getEvaluationPolicy2026MappingCandidates(params: {
     orderBy: [{ evalCycleId: 'asc' }, { targetId: 'asc' }, { evalStage: 'asc' }],
     take: limit,
   })
+  const departments = await loadDepartmentHierarchyForMapping2026(db)
+  const departmentsById = new Map(departments.map((department) => [department.id, department]))
 
   const policyCategoryCandidates: EvaluationPolicy2026MappingCandidate[] = []
+  const divisionSalesGroupCandidatesByKey = new Map<string, EvaluationPolicy2026DivisionSalesGroupCandidate>()
   const salesGroupCandidates: EvaluationPolicy2026SalesGroupCandidate[] = []
   const thresholdDecisionByCycle = new Map<string, EvaluationPolicy2026ThresholdDecisionCandidate>()
   const seenSalesCandidates = new Set<string>()
 
   for (const evaluation of evaluations) {
     const mappings = readPolicy2026PreviewMappings(evaluation.evalCycle.performanceDesignConfig)
-    const mappedSalesGroup = mappings.salesGroupsByEmployeeId[evaluation.targetId]?.salesGroup ?? null
-    const inferredSalesGroup = inferPolicy2026SalesGroupFromEmployeeText(evaluation.target)
-    const currentSalesGroup = mappedSalesGroup ?? inferredSalesGroup
+    const employeeMappedSalesGroup = mappings.salesGroupsByEmployeeId[evaluation.targetId]?.salesGroup ?? null
+    const division = resolveDivisionDepartment2026({
+      departmentId: evaluation.target.deptId ?? evaluation.target.department?.id,
+      departmentsById,
+    })
+    const divisionMappedSalesGroup = division ? mappings.salesGroupsByDivisionId[division.id]?.salesGroup ?? null : null
+    const suggestedSalesGroup = inferPolicy2026SalesGroupFromEmployeeText(evaluation.target)
+    const currentSalesGroup = employeeMappedSalesGroup ?? divisionMappedSalesGroup
 
-    if (!currentSalesGroup && !seenSalesCandidates.has(`${evaluation.evalCycleId}:${evaluation.targetId}`)) {
+    if (!currentSalesGroup && division) {
+      const key = `${evaluation.evalCycleId}:${division.id}`
+      const existing = divisionSalesGroupCandidatesByKey.get(key)
+      if (existing) {
+        existing.affectedEmployeeCount += 1
+        if (!existing.sampleEmployees.includes(evaluation.target.empName) && existing.sampleEmployees.length < 5) {
+          existing.sampleEmployees.push(evaluation.target.empName)
+        }
+        existing.suggestedSalesGroup = existing.suggestedSalesGroup ?? suggestedSalesGroup
+      } else {
+        divisionSalesGroupCandidatesByKey.set(key, {
+          evalCycleId: evaluation.evalCycleId,
+          evalYear: evaluation.evalCycle.evalYear,
+          divisionId: division.id,
+          divisionName: division.deptName,
+          currentSalesGroup: null,
+          suggestedSalesGroup,
+          affectedEmployeeCount: 1,
+          sampleEmployees: [evaluation.target.empName],
+          reason: 'division 기준 영업/비영업 preview 매핑이 없어 HR 확인이 필요합니다. 텍스트 추론은 참고 제안으로만 표시됩니다.',
+        })
+      }
+    }
+
+    if (!currentSalesGroup && !division && !seenSalesCandidates.has(`${evaluation.evalCycleId}:${evaluation.targetId}`)) {
       seenSalesCandidates.add(`${evaluation.evalCycleId}:${evaluation.targetId}`)
       salesGroupCandidates.push({
         evalCycleId: evaluation.evalCycleId,
@@ -262,7 +355,7 @@ export async function getEvaluationPolicy2026MappingCandidates(params: {
         departmentName: evaluation.target.department.deptName,
         currentSalesGroup: null,
         source: 'missing',
-        reason: '명시적인 영업/비영업 구분 또는 안전한 텍스트 신호가 없어 HR 매핑이 필요합니다.',
+        reason: 'division 기준 매핑 대상을 찾지 못해 직원 override 매핑이 필요합니다. 텍스트 추론은 공식 readiness 기준으로 사용하지 않습니다.',
       })
     }
 
@@ -333,12 +426,14 @@ export async function getEvaluationPolicy2026MappingCandidates(params: {
       limit,
     },
     policyCategoryCandidates,
+    divisionSalesGroupCandidates: Array.from(divisionSalesGroupCandidatesByKey.values()),
     salesGroupCandidates,
     thresholdDecisions: Array.from(thresholdDecisionByCycle.values()).filter(
       (decision) => decision.affectedSalesMemberCount > 0 || decision.currentDecision !== 'UNRESOLVED'
     ),
     persistence: {
       itemPolicyCategory: 'PersonalKpi.policyCategory + EvaluationItem.policyCategory',
+      divisionSalesGroup: 'EvalCycle.performanceDesignConfig.policy2026PreviewMappings.salesGroupsByDivisionId',
       salesGroup: 'EvalCycle.performanceDesignConfig.policy2026PreviewMappings.salesGroupsByEmployeeId',
       thresholdDecision: 'EvalCycle.performanceDesignConfig.policy2026PreviewMappings.teamMemberSalesThresholdDecision',
     },
@@ -411,6 +506,7 @@ export async function updateEvaluationPolicy2026MetadataForSession(
   const reviewedAt = now.toISOString()
 
   let updatedItemMappings = 0
+  let updatedDivisionSalesGroupMappings = 0
   let updatedSalesGroupMappings = 0
   let updatedThresholdDecisions = 0
 
@@ -525,6 +621,53 @@ export async function updateEvaluationPolicy2026MetadataForSession(
     })
   }
 
+  for (const mapping of params.input.divisionSalesGroupMappings) {
+    if (db.department?.findUnique) {
+      const department = await db.department.findUnique({
+        where: { id: mapping.divisionId },
+        select: {
+          id: true,
+        },
+      })
+      if (!department) {
+        throw new AppError(404, 'DIVISION_MAPPING_TARGET_NOT_FOUND', 'division 매핑 대상 부서를 찾을 수 없습니다.')
+      }
+    }
+
+    await updateCyclePreviewMappings(db, mapping.evalCycleId, (current) => {
+      const next = {
+        ...current,
+        salesGroupsByDivisionId: {
+          ...current.salesGroupsByDivisionId,
+        },
+      }
+      if (mapping.salesGroup === 'UNRESOLVED') {
+        delete next.salesGroupsByDivisionId[mapping.divisionId]
+      } else {
+        next.salesGroupsByDivisionId[mapping.divisionId] = {
+          salesGroup: mapping.salesGroup,
+          note: mapping.note,
+          updatedAt: reviewedAt,
+          updatedById: actor.id,
+        }
+      }
+      return next
+    })
+
+    updatedDivisionSalesGroupMappings += 1
+    await audit({
+      userId: actor.id,
+      action: 'UPDATE_2026_POLICY_PREVIEW_DIVISION_SALES_GROUP',
+      entityType: 'EvalCycle',
+      entityId: mapping.evalCycleId,
+      newValue: {
+        divisionId: mapping.divisionId,
+        salesGroup: mapping.salesGroup,
+        policyVersion: EVALUATION_POLICY_2026.version,
+      },
+    })
+  }
+
   for (const mapping of params.input.salesGroupMappings) {
     const evaluationCount = await db.evaluation.count({
       where: {
@@ -597,6 +740,7 @@ export async function updateEvaluationPolicy2026MetadataForSession(
   return {
     policyVersion: EVALUATION_POLICY_2026.version,
     updatedItemMappings,
+    updatedDivisionSalesGroupMappings,
     updatedSalesGroupMappings,
     updatedThresholdDecisions,
     officialScoresChanged: false,

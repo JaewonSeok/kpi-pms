@@ -21,11 +21,13 @@ export type EvaluationPolicy2026ThresholdDecisionMapping = {
 }
 
 export type EvaluationPolicy2026PreviewMappings = {
+  salesGroupsByDivisionId: Record<string, EvaluationPolicy2026SalesGroupMapping>
   salesGroupsByEmployeeId: Record<string, EvaluationPolicy2026SalesGroupMapping>
   teamMemberSalesThresholdDecision?: EvaluationPolicy2026ThresholdDecisionMapping
 }
 
 const EMPTY_MAPPINGS: EvaluationPolicy2026PreviewMappings = {
+  salesGroupsByDivisionId: {},
   salesGroupsByEmployeeId: {},
 }
 
@@ -51,6 +53,25 @@ export function contributionTypeForPolicyCategory2026(
   return category === 'ORG_GOAL' ? 'ORGANIZATION' : 'PERSONAL'
 }
 
+function readSalesGroupMappings(rawValue: unknown) {
+  const mappings: Record<string, EvaluationPolicy2026SalesGroupMapping> = {}
+  if (!isRecord(rawValue)) return mappings
+
+  for (const [targetId, rawMapping] of Object.entries(rawValue)) {
+    if (!isRecord(rawMapping)) continue
+    const salesGroup = asSalesGroup(rawMapping.salesGroup)
+    if (!salesGroup) continue
+    mappings[targetId] = {
+      salesGroup,
+      note: typeof rawMapping.note === 'string' ? rawMapping.note : undefined,
+      updatedAt: typeof rawMapping.updatedAt === 'string' ? rawMapping.updatedAt : undefined,
+      updatedById: typeof rawMapping.updatedById === 'string' ? rawMapping.updatedById : undefined,
+    }
+  }
+
+  return mappings
+}
+
 export function readPolicy2026PreviewMappings(value: unknown): EvaluationPolicy2026PreviewMappings {
   if (!isRecord(value)) return { ...EMPTY_MAPPINGS }
 
@@ -62,21 +83,8 @@ export function readPolicy2026PreviewMappings(value: unknown): EvaluationPolicy2
 
   if (!rawMappings) return { ...EMPTY_MAPPINGS }
 
-  const salesGroupsByEmployeeId: EvaluationPolicy2026PreviewMappings['salesGroupsByEmployeeId'] = {}
-  const rawSalesGroups = rawMappings.salesGroupsByEmployeeId
-  if (isRecord(rawSalesGroups)) {
-    for (const [employeeId, rawMapping] of Object.entries(rawSalesGroups)) {
-      if (!isRecord(rawMapping)) continue
-      const salesGroup = asSalesGroup(rawMapping.salesGroup)
-      if (!salesGroup) continue
-      salesGroupsByEmployeeId[employeeId] = {
-        salesGroup,
-        note: typeof rawMapping.note === 'string' ? rawMapping.note : undefined,
-        updatedAt: typeof rawMapping.updatedAt === 'string' ? rawMapping.updatedAt : undefined,
-        updatedById: typeof rawMapping.updatedById === 'string' ? rawMapping.updatedById : undefined,
-      }
-    }
-  }
+  const salesGroupsByDivisionId = readSalesGroupMappings(rawMappings.salesGroupsByDivisionId)
+  const salesGroupsByEmployeeId = readSalesGroupMappings(rawMappings.salesGroupsByEmployeeId)
 
   let teamMemberSalesThresholdDecision: EvaluationPolicy2026ThresholdDecisionMapping | undefined
   if (isRecord(rawMappings.teamMemberSalesThresholdDecision)) {
@@ -101,6 +109,7 @@ export function readPolicy2026PreviewMappings(value: unknown): EvaluationPolicy2
   }
 
   return {
+    salesGroupsByDivisionId,
     salesGroupsByEmployeeId,
     teamMemberSalesThresholdDecision,
   }
@@ -114,6 +123,18 @@ export function writePolicy2026PreviewMappingsToConfig(
   return {
     ...config,
     policy2026PreviewMappings: mappings,
+  }
+}
+
+export function readPolicy2026OfficialReadinessEnabled(value: unknown): boolean {
+  return isRecord(value) && value.policy2026OfficialReadinessEnabled === true
+}
+
+export function writePolicy2026OfficialReadinessEnabledToConfig(currentConfig: unknown, enabled: boolean) {
+  const config = isRecord(currentConfig) ? { ...currentConfig } : {}
+  return {
+    ...config,
+    policy2026OfficialReadinessEnabled: enabled,
   }
 }
 
@@ -138,6 +159,7 @@ export function inferPolicy2026SalesGroupFromEmployeeText(employee: {
 export function resolvePolicy2026PreviewSalesGroup(params: {
   evalCycleConfig?: unknown
   employeeId: string
+  divisionId?: string | null
   employee: {
     department?: { deptName?: string | null } | null
     teamName?: string | null
@@ -146,7 +168,8 @@ export function resolvePolicy2026PreviewSalesGroup(params: {
 }): EvaluationPolicy2026SalesGroup | null {
   const mappings = readPolicy2026PreviewMappings(params.evalCycleConfig)
   return mappings.salesGroupsByEmployeeId[params.employeeId]?.salesGroup
-    ?? inferPolicy2026SalesGroupFromEmployeeText(params.employee)
+    ?? (params.divisionId ? mappings.salesGroupsByDivisionId[params.divisionId]?.salesGroup : undefined)
+    ?? null
 }
 
 export function resolvePolicy2026TeamMemberSalesThresholdDecision(

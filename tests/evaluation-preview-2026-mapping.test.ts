@@ -113,10 +113,13 @@ function makeEvaluation(overrides: Partial<any> = {}) {
     empName: 'Target Employee',
     position: 'MEMBER',
     role: 'ROLE_MEMBER',
+    deptId: 'dept-team',
     jobTitle: '백오피스',
     teamName: '인사팀',
     department: {
+      id: 'dept-team',
       deptName: '인사팀',
+      parentDeptId: 'dept-division',
     },
     ...(overrides.target ?? {}),
   }
@@ -167,6 +170,12 @@ function makeDb(evaluations: any[]) {
   const evaluationsById = new Map<string, any>()
   const itemsById = new Map<string, any>()
   const personalKpisById = new Map<string, any>()
+  const departmentsById = new Map<string, any>([
+    ['dept-division', { id: 'dept-division', deptName: '경영지원본부', parentDeptId: null }],
+    ['dept-team', { id: 'dept-team', deptName: '인사팀', parentDeptId: 'dept-division' }],
+    ['dept-sales-division', { id: 'dept-sales-division', deptName: '영업본부', parentDeptId: null }],
+    ['dept-sales-team', { id: 'dept-sales-team', deptName: '영업팀', parentDeptId: 'dept-sales-division' }],
+  ])
   const writes = {
     evaluation: 0,
     evaluationItem: 0,
@@ -178,6 +187,9 @@ function makeDb(evaluations: any[]) {
   for (const evaluation of evaluations) {
     evaluationsById.set(evaluation.id, evaluation)
     cycles.set(evaluation.evalCycleId, evaluation.evalCycle)
+    if (evaluation.target?.department?.id) {
+      departmentsById.set(evaluation.target.department.id, evaluation.target.department)
+    }
     for (const item of evaluation.items) {
       item.evaluationId = evaluation.id
       item.personalKpiId = item.personalKpi.id
@@ -248,6 +260,10 @@ function makeDb(evaluations: any[]) {
         return cycle
       },
     },
+    department: {
+      findMany: async () => Array.from(departmentsById.values()),
+      findUnique: async (args: any) => departmentsById.get(args?.where?.id) ?? null,
+    },
     aiCompetencyGateAssignment: {
       findFirst: async () => null,
     },
@@ -265,12 +281,87 @@ function makeDb(evaluations: any[]) {
 
 async function main() {
   const {
+    resolvePolicy2026PreviewSalesGroup,
+  } = await import('../src/lib/evaluation-policy-2026-preview-metadata')
+  const {
     getEvaluationPolicy2026MappingCandidatesForSession,
     updateEvaluationPolicy2026MetadataForSession,
   } = await import('../src/server/evaluation-preview-2026-mapping')
   const {
     getEvaluationPreviewReadinessSummary2026,
   } = await import('../src/server/evaluation-preview-2026-readiness')
+
+  await run('division-level SALES mapping resolves employee sales group', () => {
+    const salesGroup = resolvePolicy2026PreviewSalesGroup({
+      evalCycleConfig: {
+        policy2026PreviewMappings: {
+          salesGroupsByDivisionId: {
+            'dept-sales-division': { salesGroup: 'SALES' },
+          },
+          salesGroupsByEmployeeId: {},
+        },
+      },
+      employeeId: 'emp-target',
+      divisionId: 'dept-sales-division',
+      employee: { department: { deptName: '인사팀' }, teamName: '인사팀', jobTitle: '백오피스' },
+    })
+
+    assert.equal(salesGroup, 'SALES')
+  })
+
+  await run('division-level NON_SALES mapping resolves employee sales group', () => {
+    const salesGroup = resolvePolicy2026PreviewSalesGroup({
+      evalCycleConfig: {
+        policy2026PreviewMappings: {
+          salesGroupsByDivisionId: {
+            'dept-division': { salesGroup: 'NON_SALES' },
+          },
+          salesGroupsByEmployeeId: {},
+        },
+      },
+      employeeId: 'emp-target',
+      divisionId: 'dept-division',
+      employee: { department: { deptName: '영업팀' }, teamName: '영업팀', jobTitle: '영업 담당' },
+    })
+
+    assert.equal(salesGroup, 'NON_SALES')
+  })
+
+  await run('employee override wins over division sales group mapping', () => {
+    const salesGroup = resolvePolicy2026PreviewSalesGroup({
+      evalCycleConfig: {
+        policy2026PreviewMappings: {
+          salesGroupsByDivisionId: {
+            'dept-sales-division': { salesGroup: 'SALES' },
+          },
+          salesGroupsByEmployeeId: {
+            'emp-target': { salesGroup: 'NON_SALES' },
+          },
+        },
+      },
+      employeeId: 'emp-target',
+      divisionId: 'dept-sales-division',
+      employee: { department: { deptName: '영업팀' }, teamName: '영업팀', jobTitle: '영업 담당' },
+    })
+
+    assert.equal(salesGroup, 'NON_SALES')
+  })
+
+  await run('missing division mapping remains unresolved despite text suggestion', () => {
+    const salesGroup = resolvePolicy2026PreviewSalesGroup({
+      evalCycleConfig: {
+        policy2026PreviewMappings: {
+          salesGroupsByDivisionId: {},
+          salesGroupsByEmployeeId: {},
+        },
+      },
+      employeeId: 'emp-target',
+      divisionId: 'dept-sales-division',
+      employee: { department: { deptName: '영업팀' }, teamName: '영업팀', jobTitle: '영업 담당' },
+    })
+
+    assert.equal(salesGroup, null)
+  })
 
   await run('admin can list 2026 policy mapping candidates', async () => {
     const fake = makeDb([makeEvaluation()])
@@ -284,8 +375,10 @@ async function main() {
 
     assert.equal(payload.policyCategoryCandidates.length, 1)
     assert.equal(payload.policyCategoryCandidates[0].evaluationItemId, 'missing-policy-category')
-    assert.equal(payload.salesGroupCandidates.length, 1)
-    assert.equal(payload.persistence.salesGroup.includes('performanceDesignConfig'), true)
+    assert.equal(payload.divisionSalesGroupCandidates.length, 1)
+    assert.equal(payload.divisionSalesGroupCandidates[0].divisionId, 'dept-division')
+    assert.equal(payload.salesGroupCandidates.length, 0)
+    assert.equal(payload.persistence.divisionSalesGroup.includes('salesGroupsByDivisionId'), true)
   })
 
   await run('ordinary member cannot list mapping candidates', async () => {
@@ -318,6 +411,14 @@ async function main() {
               note: 'HR confirmed as organization goal',
             },
           ],
+          divisionSalesGroupMappings: [
+            {
+              evalCycleId: 'cycle-2026',
+              divisionId: 'dept-division',
+              salesGroup: 'NON_SALES',
+              note: 'HR confirmed non-sales division',
+            },
+          ],
           salesGroupMappings: [
             {
               evalCycleId: 'cycle-2026',
@@ -344,8 +445,8 @@ async function main() {
     assert.equal(fake.writes.evaluation, 0)
     assert.equal(fake.writes.evaluationItem, 1)
     assert.equal(fake.writes.personalKpi, 1)
-    assert.equal(fake.writes.evalCycle, 1)
-    assert.equal(fake.writes.audit, 2)
+    assert.equal(fake.writes.evalCycle, 2)
+    assert.equal(fake.writes.audit, 3)
   })
 
   await run('ordinary member cannot update metadata', async () => {
@@ -362,6 +463,7 @@ async function main() {
                   category: 'ORG_GOAL',
                 },
               ],
+              divisionSalesGroupMappings: [],
               salesGroupMappings: [],
               thresholdDecisions: [],
             },
@@ -387,6 +489,7 @@ async function main() {
               category: 'KEEP_UNCLASSIFIED',
             },
           ],
+          divisionSalesGroupMappings: [],
           salesGroupMappings: [],
           thresholdDecisions: [],
         },
@@ -420,13 +523,14 @@ async function main() {
               category: 'ORG_GOAL',
             },
           ],
-          salesGroupMappings: [
+          divisionSalesGroupMappings: [
             {
               evalCycleId: 'cycle-2026',
-              employeeId: 'emp-target',
+              divisionId: 'dept-division',
               salesGroup: 'NON_SALES',
             },
           ],
+          salesGroupMappings: [],
           thresholdDecisions: [],
         },
       },
@@ -447,9 +551,20 @@ async function main() {
       target: {
         id: 'emp-sales',
         empName: 'Sales Member',
+        deptId: 'dept-sales-team',
         jobTitle: '영업 담당',
         teamName: '영업팀',
-        department: { deptName: '영업팀' },
+        department: { id: 'dept-sales-team', deptName: '영업팀', parentDeptId: 'dept-sales-division' },
+      },
+      evalCycle: {
+        performanceDesignConfig: {
+          policy2026PreviewMappings: {
+            salesGroupsByDivisionId: {
+              'dept-sales-division': { salesGroup: 'SALES' },
+            },
+            salesGroupsByEmployeeId: {},
+          },
+        },
       },
       items: [
         makeItem(),
@@ -497,6 +612,7 @@ async function main() {
         session: makeSession('ROLE_ADMIN'),
         input: {
           itemMappings: [],
+          divisionSalesGroupMappings: [],
           salesGroupMappings: [],
           thresholdDecisions: [
             {
