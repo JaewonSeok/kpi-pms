@@ -96,6 +96,19 @@ type EvaluationPreviewReadiness2026ApiData = EvaluationPreviewReadinessSummary20
 type EvaluationActivationReadiness2026ApiData = Evaluation2026ActivationReadinessResult
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
+type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
+  policyVersion: string
+  evalCycleId: string
+  evalYear: number
+  cycleName: string
+  enabled: boolean
+  disabledOtherCycleIds: string[]
+  officialScoresChanged: false
+  officialGradesChanged: false
+  aiScoreExclusionChanged: false
+  backfillApplied: false
+  notes: string[]
+}
 type PolicyCategoryDraft2026 = 'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK' | 'KEEP_UNCLASSIFIED' | ''
 type SalesGroupDraft2026 = 'SALES' | 'NON_SALES' | 'UNRESOLVED' | ''
 type ThresholdDecisionDraft2026 = 'UNRESOLVED' | 'SUPER_PRIORITY' | 'OUTSTANDING_PRIORITY' | ''
@@ -158,7 +171,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [policyMapping2026Saving, setPolicyMapping2026Saving] = useState(false)
   const [policyMapping2026Error, setPolicyMapping2026Error] = useState('')
   const [policyMapping2026Notice, setPolicyMapping2026Notice] = useState('')
+  const [policyOfficialCycle2026Saving, setPolicyOfficialCycle2026Saving] = useState(false)
+  const [policyOfficialCycle2026Error, setPolicyOfficialCycle2026Error] = useState('')
+  const [policyOfficialCycle2026Notice, setPolicyOfficialCycle2026Notice] = useState('')
   const [policyCategoryDrafts2026, setPolicyCategoryDrafts2026] = useState<Record<string, PolicyCategoryDraft2026>>({})
+  const [divisionSalesGroupDrafts2026, setDivisionSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
   const [salesGroupDrafts2026, setSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
   const [thresholdDecisionDrafts2026, setThresholdDecisionDrafts2026] = useState<Record<string, ThresholdDecisionDraft2026>>({})
   const workbenchContextKey = `${props.selectedCycleId ?? ''}:${props.selectedEvaluationId ?? ''}`
@@ -201,7 +218,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyMapping2026Notice('')
     setPolicyMapping2026Loading(false)
     setPolicyMapping2026Saving(false)
+    setPolicyOfficialCycle2026Error('')
+    setPolicyOfficialCycle2026Notice('')
+    setPolicyOfficialCycle2026Saving(false)
     setPolicyCategoryDrafts2026({})
+    setDivisionSalesGroupDrafts2026({})
     setSalesGroupDrafts2026({})
     setThresholdDecisionDrafts2026({})
     setBriefing(null)
@@ -588,6 +609,53 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     }
   }
 
+  async function setPolicyOfficialReadinessCycle2026(enabled: boolean) {
+    if (!canViewPolicyPreview2026) return
+    if (!props.selectedCycleId) {
+      setPolicyOfficialCycle2026Error('먼저 평가 주기를 선택해 주세요.')
+      return
+    }
+
+    setPolicyOfficialCycle2026Saving(true)
+    setPolicyOfficialCycle2026Error('')
+    setPolicyOfficialCycle2026Notice('')
+
+    try {
+      const response = await fetch('/api/evaluation/preview-2026/official-readiness-cycle', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          evalCycleId: props.selectedCycleId,
+          enabled,
+        }),
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 readiness 대상 주기를 저장하지 못했습니다.')
+      }
+
+      const result = json.data as EvaluationPolicyOfficialReadinessCycle2026ApiData
+      setPolicyOfficialCycle2026Notice(
+        result.enabled
+          ? `${result.cycleName}을(를) 공식 readiness 대상 주기로 지정했습니다. 공식 점수 전환은 활성화되지 않았습니다.`
+          : `${result.cycleName}의 공식 readiness 대상 지정을 해제했습니다.`
+      )
+      await loadPolicyReadiness2026()
+      if (policyActivationReadiness2026) {
+        await loadPolicyActivationReadiness2026()
+      }
+      if (policyMapping2026) {
+        await loadPolicyMappingCandidates2026()
+      }
+    } catch (error) {
+      setPolicyOfficialCycle2026Error(
+        error instanceof Error ? error.message : '2026 readiness 대상 주기를 저장하지 못했습니다.'
+      )
+    } finally {
+      setPolicyOfficialCycle2026Saving(false)
+    }
+  }
+
   async function loadPolicyMappingCandidates2026() {
     if (!canViewPolicyPreview2026) return
     setPolicyMapping2026Loading(true)
@@ -613,6 +681,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       const data = json.data as EvaluationPolicyMapping2026ApiData
       setPolicyMapping2026(data)
       setPolicyCategoryDrafts2026({})
+      setDivisionSalesGroupDrafts2026({})
       setSalesGroupDrafts2026({})
       setThresholdDecisionDrafts2026({})
     } catch (error) {
@@ -645,6 +714,16 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         note: 'HR manual sales/non-sales mapping from 2026 preview readiness panel',
       }]
     })
+    const divisionSalesGroupMappings = policyMapping2026.divisionSalesGroupCandidates.flatMap((candidate) => {
+      const salesGroup = divisionSalesGroupDrafts2026[`${candidate.evalCycleId}:${candidate.divisionId}`]
+      if (!salesGroup) return []
+      return [{
+        evalCycleId: candidate.evalCycleId,
+        divisionId: candidate.divisionId,
+        salesGroup,
+        note: 'HR division-level sales/non-sales mapping from 2026 preview readiness panel',
+      }]
+    })
     const thresholdDecisions = policyMapping2026.thresholdDecisions.flatMap((candidate) => {
       const decision = thresholdDecisionDrafts2026[candidate.evalCycleId]
       if (!decision) return []
@@ -655,7 +734,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       }]
     })
 
-    if (!itemMappings.length && !salesGroupMappings.length && !thresholdDecisions.length) {
+    if (!itemMappings.length && !divisionSalesGroupMappings.length && !salesGroupMappings.length && !thresholdDecisions.length) {
       setPolicyMapping2026Notice('저장할 2026 정책 metadata 변경 사항이 없습니다.')
       return
     }
@@ -670,6 +749,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemMappings,
+          divisionSalesGroupMappings,
           salesGroupMappings,
           thresholdDecisions,
         }),
@@ -681,7 +761,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       const result = json.data as EvaluationPolicyMetadataPatch2026ApiData
       setPolicyMapping2026Notice(
-        `저장 완료: 항목 ${result.updatedItemMappings}건, 영업/비영업 ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
+        `저장 완료: 항목 ${result.updatedItemMappings}건, division 영업/비영업 ${result.updatedDivisionSalesGroupMappings}건, 직원 override ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
       )
       await loadPolicyMappingCandidates2026()
       await loadPolicyReadiness2026()
@@ -1486,10 +1566,15 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
               {canViewPolicyPreview2026 ? (
                 <>
                   <PolicyReadiness2026Panel
+                    selectedCycleId={props.selectedCycleId ?? null}
                     readinessData={policyReadiness2026}
                     loading={policyReadiness2026Loading}
                     error={policyReadiness2026Error}
+                    officialCycleSaving={policyOfficialCycle2026Saving}
+                    officialCycleError={policyOfficialCycle2026Error}
+                    officialCycleNotice={policyOfficialCycle2026Notice}
                     onLoad={loadPolicyReadiness2026}
+                    onSetOfficialCycle={setPolicyOfficialReadinessCycle2026}
                   />
                   <PolicyActivationReadiness2026Panel
                     activationData={policyActivationReadiness2026}
@@ -1504,12 +1589,16 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     error={policyMapping2026Error}
                     notice={policyMapping2026Notice}
                     categoryDrafts={policyCategoryDrafts2026}
+                    divisionSalesGroupDrafts={divisionSalesGroupDrafts2026}
                     salesGroupDrafts={salesGroupDrafts2026}
                     thresholdDecisionDrafts={thresholdDecisionDrafts2026}
                     onLoad={loadPolicyMappingCandidates2026}
                     onSave={savePolicyMetadata2026}
                     onCategoryChange={(id, value) =>
                       setPolicyCategoryDrafts2026((current) => ({ ...current, [id]: value }))
+                    }
+                    onDivisionSalesGroupChange={(key, value) =>
+                      setDivisionSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
                     }
                     onSalesGroupChange={(key, value) =>
                       setSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
@@ -2223,14 +2312,23 @@ function getPreviewIssueLabel2026(code: string) {
 }
 
 function PolicyReadiness2026Panel(props: {
+  selectedCycleId: string | null
   readinessData: EvaluationPreviewReadiness2026ApiData | null
   loading: boolean
   error: string
+  officialCycleSaving: boolean
+  officialCycleError: string
+  officialCycleNotice: string
   onLoad: () => void
+  onSetOfficialCycle: (enabled: boolean) => void
 }) {
   const readiness = props.readinessData
   const blockers = readiness?.activationBlockers ?? []
   const samples = readiness?.samples ?? []
+  const selectedCycleIsOfficial =
+    Boolean(props.selectedCycleId) &&
+    readiness?.cycleScope.selectedCycleId === props.selectedCycleId &&
+    readiness.cycleScope.isOfficialReadinessTarget
 
   return (
     <Panel
@@ -2269,9 +2367,69 @@ function PolicyReadiness2026Panel(props: {
       </div>
 
       {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+      {props.officialCycleError ? (
+        <div className="mt-4"><Banner tone="error" message={props.officialCycleError} /></div>
+      ) : null}
+      {props.officialCycleNotice ? (
+        <div className="mt-4"><Banner tone="success" message={props.officialCycleNotice} /></div>
+      ) : null}
+
+      <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">공식 readiness 대상 주기 지정</div>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              공식 점수 전환이 아니라 readiness 대상 주기 지정입니다. 이 설정은 EvalCycle.performanceDesignConfig metadata만 변경하며,
+              공식 scoring/grade/AI 제외 flag와 저장 점수는 변경하지 않습니다.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => props.onSetOfficialCycle(true)}
+              disabled={!props.selectedCycleId || props.officialCycleSaving || selectedCycleIsOfficial}
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {props.officialCycleSaving ? '저장 중...' : selectedCycleIsOfficial ? '지정됨' : '이 주기를 readiness 대상으로 지정'}
+            </button>
+            <button
+              type="button"
+              onClick={() => props.onSetOfficialCycle(false)}
+              disabled={!props.selectedCycleId || props.officialCycleSaving || !selectedCycleIsOfficial}
+              className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+            >
+              readiness 대상 해제
+            </button>
+          </div>
+        </div>
+        {!props.selectedCycleId ? (
+          <p className="mt-3 text-xs text-amber-700">평가 주기를 선택한 뒤 readiness 대상 여부를 지정할 수 있습니다.</p>
+        ) : null}
+      </div>
 
       {readiness ? (
         <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={readiness.cycleScope.isOfficialReadinessTarget ? 'success' : 'warn'}>
+                {readiness.cycleScope.isOfficialReadinessTarget ? '공식 readiness cycle' : '공식 cycle 미확정'}
+              </Badge>
+              <span className="text-sm font-semibold text-slate-900">
+                {readiness.cycleScope.selectedCycleName ?? '선택된 공식 평가 주기 없음'}
+              </span>
+              {readiness.cycleScope.selectedCycleYear ? (
+                <span className="text-xs text-slate-400">{readiness.cycleScope.selectedCycleYear}</span>
+              ) : null}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              cycleId {readiness.cycleScope.selectedCycleId ?? '미지정'} · mode {readiness.cycleScope.selectionMode}
+            </p>
+            {readiness.cycleScope.warning ? (
+              <div className="mt-3">
+                <Banner tone="warn" message={readiness.cycleScope.warning} />
+              </div>
+            ) : null}
+          </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <MetricCard
               label="평가 확인"
@@ -2416,6 +2574,27 @@ function PolicyActivationReadiness2026Panel(props: {
 
       {activation ? (
         <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={activation.readiness.cycleScope.isOfficialReadinessTarget ? 'success' : 'warn'}>
+                {activation.readiness.cycleScope.isOfficialReadinessTarget ? '공식 readiness cycle' : '공식 cycle 미확정'}
+              </Badge>
+              <span className="text-sm font-semibold text-slate-900">
+                {activation.readiness.cycleScope.selectedCycleName ?? '선택된 공식 평가 주기 없음'}
+              </span>
+              {activation.readiness.cycleScope.selectedCycleYear ? (
+                <span className="text-xs text-slate-400">{activation.readiness.cycleScope.selectedCycleYear}</span>
+              ) : null}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              cycleId {activation.readiness.cycleScope.selectedCycleId ?? '미지정'} · mode {activation.readiness.cycleScope.selectionMode}
+            </p>
+            {activation.readiness.cycleScope.warning ? (
+              <div className="mt-3">
+                <Banner tone="warn" message={activation.readiness.cycleScope.warning} />
+              </div>
+            ) : null}
+          </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard
               label="남은 차단 항목"
@@ -2580,27 +2759,31 @@ function PolicyMapping2026Panel(props: {
   error: string
   notice: string
   categoryDrafts: Record<string, PolicyCategoryDraft2026>
+  divisionSalesGroupDrafts: Record<string, SalesGroupDraft2026>
   salesGroupDrafts: Record<string, SalesGroupDraft2026>
   thresholdDecisionDrafts: Record<string, ThresholdDecisionDraft2026>
   onLoad: () => void
   onSave: () => void
   onCategoryChange: (evaluationItemId: string, value: PolicyCategoryDraft2026) => void
+  onDivisionSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onThresholdDecisionChange: (evalCycleId: string, value: ThresholdDecisionDraft2026) => void
 }) {
   const data = props.mappingData
   const policyCandidates = data?.policyCategoryCandidates.slice(0, 6) ?? []
+  const divisionSalesCandidates = data?.divisionSalesGroupCandidates.slice(0, 6) ?? []
   const salesCandidates = data?.salesGroupCandidates.slice(0, 6) ?? []
   const thresholdCandidates = data?.thresholdDecisions.slice(0, 3) ?? []
   const hasChanges =
     Object.values(props.categoryDrafts).some(Boolean) ||
+    Object.values(props.divisionSalesGroupDrafts).some(Boolean) ||
     Object.values(props.salesGroupDrafts).some(Boolean) ||
     Object.values(props.thresholdDecisionDrafts).some(Boolean)
 
   return (
     <Panel
       title="2026 정책 매핑 관리"
-      description="수동 검토 항목의 정책 카테고리와 preview 전용 영업/비영업 구분을 저장합니다. 공식 평가 결과에는 반영되지 않습니다."
+      description="수동 검토 항목의 정책 카테고리와 preview 전용 division 기준 영업/비영업 구분을 저장합니다. 공식 평가 결과에는 반영되지 않습니다."
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
@@ -2612,7 +2795,7 @@ function PolicyMapping2026Panel(props: {
               <Badge tone="neutral">Metadata only</Badge>
               <Badge tone={data ? 'warn' : 'neutral'}>
                 {data
-                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · 영업구분 ${data.salesGroupCandidates.length}건`
+                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · division 구분 ${data.divisionSalesGroupCandidates.length}건`
                   : '미확인'}
               </Badge>
             </div>
@@ -2684,9 +2867,52 @@ function PolicyMapping2026Panel(props: {
             <div className="space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">영업/비영업 구분</h4>
+                  <h4 className="text-sm font-semibold text-slate-900">Division 영업/비영업 구분</h4>
+                  <span className="text-xs text-slate-400">{data.divisionSalesGroupCandidates.length}건</span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  직원별 기본값이 아니라 division 부서 ID 기준으로 preview readiness를 해소합니다. 텍스트 추론은 참고 제안입니다.
+                </p>
+                <div className="mt-3 space-y-3">
+                  {divisionSalesCandidates.length ? divisionSalesCandidates.map((candidate) => {
+                    const key = `${candidate.evalCycleId}:${candidate.divisionId}`
+                    return (
+                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{candidate.divisionName}</span>
+                          <Badge tone="neutral">대상 {candidate.affectedEmployeeCount}명</Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
+                          {candidate.suggestedSalesGroup ? ` · 참고 제안 ${getSalesGroupLabel2026(candidate.suggestedSalesGroup)}` : ''}
+                          {candidate.sampleEmployees.length ? ` · 샘플 ${candidate.sampleEmployees.join(', ')}` : ''}
+                          {' · '}
+                          {candidate.reason}
+                        </p>
+                        <select
+                          value={props.divisionSalesGroupDrafts[key] ?? ''}
+                          onChange={(event) => props.onDivisionSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
+                        >
+                          <option value="">선택 안 함</option>
+                          <option value="SALES">영업</option>
+                          <option value="NON_SALES">비영업</option>
+                          <option value="UNRESOLVED">미해결로 유지</option>
+                        </select>
+                      </div>
+                    )
+                  }) : <EmptyBlock message="현재 조회 범위에서 division 영업/비영업 매핑 후보가 없습니다." />}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-slate-900">직원별 override</h4>
                   <span className="text-xs text-slate-400">{data.salesGroupCandidates.length}건</span>
                 </div>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  division 매핑으로 해결할 수 없는 대상만 직원별 override로 보완합니다.
+                </p>
                 <div className="mt-3 space-y-3">
                   {salesCandidates.length ? salesCandidates.map((candidate) => {
                     const key = `${candidate.evalCycleId}:${candidate.employeeId}`
@@ -2711,7 +2937,7 @@ function PolicyMapping2026Panel(props: {
                         </select>
                       </div>
                     )
-                  }) : <EmptyBlock message="현재 조회 범위에서 영업/비영업 수동 매핑 후보가 없습니다." />}
+                  }) : <EmptyBlock message="현재 조회 범위에서 직원별 override 후보가 없습니다." />}
                 </div>
               </div>
 

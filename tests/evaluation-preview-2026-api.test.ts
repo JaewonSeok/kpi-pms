@@ -69,16 +69,27 @@ function makeEvaluation(overrides: Partial<any> = {}) {
       id: 'cycle-1',
       cycleName: '2026 상반기',
       evalYear: 2026,
+      performanceDesignConfig: {
+        policy2026PreviewMappings: {
+          salesGroupsByDivisionId: {
+            'dept-sales-division': { salesGroup: 'SALES' },
+          },
+          salesGroupsByEmployeeId: {},
+        },
+      },
     },
     target: {
       id: 'emp-target',
       empName: 'Target Employee',
       position: 'TEAM_LEADER',
       role: 'ROLE_TEAM_LEADER',
+      deptId: 'dept-sales-team',
       jobTitle: '영업 리더',
       teamName: '영업팀',
       department: {
+        id: 'dept-sales-team',
         deptName: '영업팀',
+        parentDeptId: 'dept-sales-division',
       },
     },
     evaluator: {
@@ -87,7 +98,9 @@ function makeEvaluation(overrides: Partial<any> = {}) {
       position: 'TEAM_LEADER',
       role: 'ROLE_TEAM_LEADER',
       department: {
+        id: 'dept-sales-team',
         deptName: '영업팀',
+        parentDeptId: 'dept-sales-division',
       },
     },
     items: [
@@ -212,6 +225,12 @@ function makeDb(params: {
           params.onWrite?.()
           throw new Error('preview must not write ai gate')
         },
+      },
+      department: {
+        findMany: async () => [
+          { id: 'dept-sales-division', deptName: '영업본부', parentDeptId: null },
+          { id: 'dept-sales-team', deptName: '영업팀', parentDeptId: 'dept-sales-division' },
+        ],
       },
     } as any,
   }

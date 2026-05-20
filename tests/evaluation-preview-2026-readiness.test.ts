@@ -100,18 +100,30 @@ function makeEvaluation(overrides: Partial<any> = {}) {
     gradeId: null,
     evalCycle: {
       id: 'cycle-2026',
+      orgId: 'org-1',
       cycleName: '2026 상반기',
       evalYear: 2026,
+      performanceDesignConfig: {
+        policy2026PreviewMappings: {
+          salesGroupsByDivisionId: {
+            'dept-sales-division': { salesGroup: 'SALES' },
+          },
+          salesGroupsByEmployeeId: {},
+        },
+      },
     },
     target: {
       id: 'emp-ready',
       empName: 'Ready Employee',
       position: 'MEMBER',
       role: 'ROLE_MEMBER',
+      deptId: 'dept-sales-team',
       jobTitle: '영업 담당',
       teamName: '영업팀',
       department: {
+        id: 'dept-sales-team',
         deptName: '영업팀',
+        parentDeptId: 'dept-sales-division',
       },
     },
     evaluator: {
@@ -185,6 +197,13 @@ function makeDb(params: {
   onWrite?: () => void
 }) {
   const evaluationsById = new Map(params.evaluations.map((evaluation) => [evaluation.id, evaluation]))
+  const cyclesById = new Map(params.evaluations.map((evaluation) => [evaluation.evalCycle.id, evaluation.evalCycle]))
+  const departmentsById = new Map<string, any>([
+    ['dept-division', { id: 'dept-division', deptName: '경영지원본부', parentDeptId: null }],
+    ['dept-team', { id: 'dept-team', deptName: '인사팀', parentDeptId: 'dept-division' }],
+    ['dept-sales-division', { id: 'dept-sales-division', deptName: '영업본부', parentDeptId: null }],
+    ['dept-sales-team', { id: 'dept-sales-team', deptName: '영업팀', parentDeptId: 'dept-sales-division' }],
+  ])
   let findManyCount = 0
   let findUniqueCount = 0
   let gateFindFirstCount = 0
@@ -216,6 +235,7 @@ function makeDb(params: {
         findMany: async (args: any) => {
           findManyCount += 1
           const rows = params.evaluations.filter((evaluation) => {
+            if (args?.where?.id) return evaluation.id === args.where.id
             if (args?.where?.evalCycleId) return evaluation.evalCycleId === args.where.evalCycleId
             if (args?.where?.evalCycle?.evalYear) return evaluation.evalCycle.evalYear === args.where.evalCycle.evalYear
             return true
@@ -241,6 +261,32 @@ function makeDb(params: {
         upsert: writeTrap,
         delete: writeTrap,
       },
+      department: {
+        findMany: async () => Array.from(departmentsById.values()),
+        findUnique: async (args: any) => departmentsById.get(args?.where?.id) ?? null,
+      },
+      evalCycle: {
+        findMany: async (args: any) => {
+          const rows = Array.from(cyclesById.values()).filter((cycle) => {
+            if (args?.where?.orgId && cycle.orgId !== args.where.orgId) return false
+            if (args?.where?.evalYear && cycle.evalYear !== args.where.evalYear) return false
+            return true
+          })
+          return rows
+        },
+        findUnique: async (args: any) => cyclesById.get(args?.where?.id) ?? null,
+        update: async (args: any) => {
+          writeCount += 1
+          const existing = cyclesById.get(args?.where?.id)
+          if (!existing) return null
+          const updated = {
+            ...existing,
+            ...args.data,
+          }
+          cyclesById.set(args.where.id, updated)
+          return updated
+        },
+      },
     } as any,
   }
 }
@@ -250,6 +296,187 @@ async function main() {
     getEvaluationPreviewReadinessForSession2026,
     getEvaluationPreviewReadinessSummary2026,
   } = await import('../src/server/evaluation-preview-2026-readiness')
+  const {
+    updatePolicy2026OfficialReadinessCycleForSession,
+  } = await import('../src/server/evaluation-preview-2026-official-cycle')
+
+  await run('readiness uses explicit cycleId and marks unconfirmed test cycle', async () => {
+    const fake = makeDb({ evaluations: [makeEvaluation()] })
+
+    const summary = await getEvaluationPreviewReadinessSummary2026({
+      db: fake.db,
+      cycleId: 'cycle-2026',
+    })
+
+    assert.equal(summary.totalEvaluationsChecked, 1)
+    assert.equal(summary.cycleScope.selectedCycleId, 'cycle-2026')
+    assert.equal(summary.cycleScope.selectionMode, 'explicit_cycle')
+    assert.equal(summary.cycleScope.isOfficialReadinessTarget, false)
+    assert.equal(Boolean(summary.cycleScope.warning), true)
+  })
+
+  await run('readiness warns and does not year-scan when no official cycle is selected', async () => {
+    const fake = makeDb({ evaluations: [makeEvaluation()] })
+
+    const summary = await getEvaluationPreviewReadinessSummary2026({
+      db: fake.db,
+      year: 2026,
+    })
+
+    assert.equal(summary.totalEvaluationsChecked, 0)
+    assert.equal(summary.cycleScope.selectionMode, 'no_official_cycle')
+    assert.equal(summary.cycleScope.isOfficialReadinessTarget, false)
+    assert.equal(summary.activationBlockers.some((blocker) => blocker.includes('공식 readiness 대상')), true)
+  })
+
+  await run('official readiness marker scopes year lookup to the confirmed cycle only', async () => {
+    const official = makeEvaluation({
+      id: 'eval-official-cycle',
+      evalCycle: {
+        id: 'cycle-official',
+        cycleName: '2026 공식 평가',
+        performanceDesignConfig: {
+          policy2026OfficialReadinessEnabled: true,
+          policy2026PreviewMappings: {
+            salesGroupsByDivisionId: {
+              'dept-sales-division': { salesGroup: 'SALES' },
+            },
+            salesGroupsByEmployeeId: {},
+          },
+        },
+      },
+      evalCycleId: 'cycle-official',
+    })
+    const testCycle = makeEvaluation({
+      id: 'eval-test-cycle',
+      evalCycle: {
+        id: 'cycle-test',
+        cycleName: '2026 테스트 평가',
+      },
+      evalCycleId: 'cycle-test',
+    })
+    const fake = makeDb({ evaluations: [official, testCycle] })
+
+    const summary = await getEvaluationPreviewReadinessSummary2026({
+      db: fake.db,
+      year: 2026,
+    })
+
+    assert.equal(summary.totalEvaluationsChecked, 1)
+    assert.equal(summary.cycleScope.selectedCycleId, 'cycle-official')
+    assert.equal(summary.cycleScope.selectedCycleName, '2026 공식 평가')
+    assert.equal(summary.cycleScope.isOfficialReadinessTarget, true)
+  })
+
+  await run('admin can mark exactly one official readiness cycle for an org/year', async () => {
+    const existingOfficial = makeEvaluation({
+      id: 'eval-existing-official-cycle',
+      evalCycleId: 'cycle-existing-official',
+      evalCycle: {
+        id: 'cycle-existing-official',
+        cycleName: '2026 기존 공식 후보',
+        performanceDesignConfig: {
+          policy2026OfficialReadinessEnabled: true,
+        },
+      },
+    })
+    const nextOfficial = makeEvaluation({
+      id: 'eval-next-official-cycle',
+      evalCycleId: 'cycle-next-official',
+      evalCycle: {
+        id: 'cycle-next-official',
+        cycleName: '2026 최종 공식 평가',
+        performanceDesignConfig: null,
+      },
+    })
+    const fake = makeDb({ evaluations: [existingOfficial, nextOfficial] })
+
+    const result = await updatePolicy2026OfficialReadinessCycleForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          evalCycleId: 'cycle-next-official',
+          enabled: true,
+        },
+      },
+      {
+        db: fake.db,
+      }
+    )
+
+    assert.equal(result.enabled, true)
+    assert.deepEqual(result.disabledOtherCycleIds, ['cycle-existing-official'])
+    assert.equal(result.officialScoresChanged, false)
+    assert.equal(result.officialGradesChanged, false)
+    assert.equal(result.aiScoreExclusionChanged, false)
+    assert.equal(result.backfillApplied, false)
+    assert.equal(fake.counts.writes, 2)
+
+    const summary = await getEvaluationPreviewReadinessSummary2026({
+      db: fake.db,
+      year: 2026,
+    })
+    assert.equal(summary.cycleScope.selectionMode, 'official_cycle')
+    assert.equal(summary.cycleScope.selectedCycleId, 'cycle-next-official')
+    assert.equal(summary.cycleScope.officialCycleCandidates.length, 1)
+  })
+
+  await run('ordinary member cannot mark official readiness cycle', async () => {
+    const fake = makeDb({ evaluations: [makeEvaluation()] })
+
+    await assert.rejects(
+      () =>
+        updatePolicy2026OfficialReadinessCycleForSession(
+          {
+            session: makeSession('ROLE_MEMBER', 'member-1'),
+            input: {
+              evalCycleId: 'cycle-2026',
+              enabled: true,
+            },
+          },
+          {
+            db: fake.db,
+          }
+        ),
+      (error) => error instanceof AppError && error.statusCode === 403
+    )
+    assert.equal(fake.counts.writes, 0)
+  })
+
+  await run('admin can clear official readiness marker without touching scores', async () => {
+    const official = makeEvaluation({
+      evalCycle: {
+        performanceDesignConfig: {
+          policy2026OfficialReadinessEnabled: true,
+        },
+      },
+    })
+    const fake = makeDb({ evaluations: [official] })
+
+    const result = await updatePolicy2026OfficialReadinessCycleForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          evalCycleId: 'cycle-2026',
+          enabled: false,
+        },
+      },
+      {
+        db: fake.db,
+      }
+    )
+
+    assert.equal(result.enabled, false)
+    assert.equal(result.officialScoresChanged, false)
+    assert.equal(result.officialGradesChanged, false)
+    assert.equal(fake.counts.writes, 1)
+
+    const summary = await getEvaluationPreviewReadinessSummary2026({
+      db: fake.db,
+      year: 2026,
+    })
+    assert.equal(summary.cycleScope.selectionMode, 'no_official_cycle')
+  })
 
   await run('readiness helper counts missing policy category and manual-review records', async () => {
     const missingCategory = makeEvaluation({
@@ -321,11 +548,20 @@ async function main() {
   await run('readiness helper counts missing sales/non-sales classification', async () => {
     const evaluation = makeEvaluation({
       id: 'eval-missing-sales-group',
+      evalCycle: {
+        performanceDesignConfig: {
+          policy2026PreviewMappings: {
+            salesGroupsByDivisionId: {},
+            salesGroupsByEmployeeId: {},
+          },
+        },
+      },
       target: {
         empName: 'No Sales Group',
+        deptId: 'dept-team',
         jobTitle: '백오피스',
         teamName: '인사팀',
-        department: { deptName: '인사팀' },
+        department: { id: 'dept-team', deptName: '인사팀', parentDeptId: 'dept-division' },
       },
     })
     const fake = makeDb({ evaluations: [evaluation] })
@@ -368,7 +604,7 @@ async function main() {
 
     const summary = await getEvaluationPreviewReadinessSummary2026({
       db: fake.db,
-      year: 2028,
+      cycleId: 'cycle-2028',
     })
 
     assert.equal(summary.aiInsufficientDataCount, 1)
@@ -418,6 +654,25 @@ async function main() {
     assert.equal(routeSource.includes('prisma.'), false)
   })
 
+  await run('official readiness cycle API is PATCH-only and metadata-only', () => {
+    const routeSource = read('src/app/api/evaluation/preview-2026/official-readiness-cycle/route.ts')
+    const helperSource = read('src/server/evaluation-preview-2026-official-cycle.ts')
+
+    assert.equal(routeSource.includes('export async function PATCH'), true)
+    assert.equal(routeSource.includes('getServerSession(authOptions)'), true)
+    assert.equal(routeSource.includes('updatePolicy2026OfficialReadinessCycleForSession'), true)
+    assert.equal(routeSource.includes('export async function GET'), false)
+    assert.equal(routeSource.includes('export async function POST'), false)
+    assert.equal(helperSource.includes('writePolicy2026OfficialReadinessEnabledToConfig'), true)
+    assert.equal(helperSource.includes('performanceDesignConfig'), true)
+    assert.equal(helperSource.includes('totalScore'), true)
+    assert.equal(helperSource.includes('gradeId'), true)
+    assert.equal(helperSource.includes('officialScoresChanged: false'), true)
+    assert.equal(helperSource.includes('officialGradesChanged: false'), true)
+    assert.equal(helperSource.includes('backfillApplied: false'), true)
+    assert.equal(helperSource.includes('createAuditLog'), false)
+  })
+
   await run('HR/admin readiness UI is preview-only and lists actionable blocker categories', () => {
     const clientSource = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
     const liveRouteSource = read('src/app/api/evaluation/[id]/route.ts')
@@ -430,6 +685,9 @@ async function main() {
     assert.equal(clientSource.includes('영업/비영업 구분 필요'), true)
     assert.equal(clientSource.includes('등급 기준 HR 확인 필요'), true)
     assert.equal(clientSource.includes('AI 증빙 부족'), true)
+    assert.equal(clientSource.includes('공식 점수 전환이 아니라 readiness 대상 주기 지정입니다.'), true)
+    assert.equal(clientSource.includes('/api/evaluation/preview-2026/official-readiness-cycle'), true)
+    assert.equal(clientSource.includes('이 주기를 readiness 대상으로 지정'), true)
     assert.equal(clientSource.includes('props.permissions?.canSeeAllInCycle'), true)
     assert.equal(liveRouteSource.includes('preview-2026/readiness'), false)
     assert.equal(submitRouteSource.includes('preview-2026/readiness'), false)

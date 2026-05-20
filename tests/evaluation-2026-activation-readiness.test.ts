@@ -92,8 +92,26 @@ function readySummary(overrides: Partial<any> = {}) {
     policyVersion: '2026-PPT',
     generatedAt: '2026-05-14T00:00:00.000Z',
     filters: {
-      year: 2026,
+      cycleId: 'cycle-official',
       limit: 200,
+    },
+    cycleScope: {
+      requestedYear: 2026,
+      requestedCycleId: 'cycle-official',
+      selectedCycleId: 'cycle-official',
+      selectedCycleName: '2026 공식 평가',
+      selectedCycleYear: 2026,
+      selectionMode: 'explicit_cycle' as const,
+      isOfficialReadinessTarget: true,
+      officialCycleCandidates: [
+        {
+          id: 'cycle-official',
+          cycleName: '2026 공식 평가',
+          evalYear: 2026,
+          isOfficialReadinessTarget: true,
+        },
+      ],
+      warning: null,
     },
     totalEvaluationsChecked: 2,
     canCalculateCount: 2,
@@ -198,6 +216,28 @@ async function main() {
 
     assert.equal(result.canActivate, false)
     assert.equal(result.blockers.some((item) => item.code === 'BACKFILL_NOT_CONFIRMED'), true)
+  })
+
+  await run('activation readiness fails when official readiness cycle is not confirmed', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags(),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary({
+        cycleScope: {
+          requestedYear: 2026,
+          selectedCycleId: null,
+          selectedCycleName: null,
+          selectedCycleYear: null,
+          selectionMode: 'no_official_cycle' as const,
+          isOfficialReadinessTarget: false,
+          officialCycleCandidates: [],
+          warning: '공식 2026 readiness 대상 평가 주기가 설정되지 않았습니다.',
+        },
+      }),
+    })
+
+    assert.equal(result.canActivate, false)
+    assert.equal(result.blockers.some((item) => item.code === 'OFFICIAL_READINESS_CYCLE_NOT_CONFIRMED'), true)
   })
 
   await run('activation readiness can pass in a fully mocked ready state', async () => {

@@ -1,6 +1,7 @@
 import type { Session } from 'next-auth'
 import { prisma } from '@/lib/prisma'
 import { EVALUATION_POLICY_2026 } from '@/lib/evaluation-policy-2026'
+import { readPolicy2026OfficialReadinessEnabled } from '@/lib/evaluation-policy-2026-preview-metadata'
 import { AppError } from '@/lib/utils'
 import { calculateEvaluationPreview2026, type EvaluationPreview2026Issue } from '@/server/evaluation-preview-2026'
 import {
@@ -9,6 +10,27 @@ import {
 } from '@/server/evaluation-preview-2026-loader'
 
 type EvaluationPreviewReadinessDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'>
+  & Partial<Pick<typeof prisma, 'department'>>
+  & Partial<Pick<typeof prisma, 'evalCycle'>>
+
+export type EvaluationPreviewReadinessCycleCandidate2026 = {
+  id: string
+  cycleName: string
+  evalYear: number
+  isOfficialReadinessTarget: boolean
+}
+
+export type EvaluationPreviewReadinessCycleScope2026 = {
+  requestedYear?: number
+  requestedCycleId?: string
+  selectedCycleId: string | null
+  selectedCycleName: string | null
+  selectedCycleYear: number | null
+  selectionMode: 'explicit_cycle' | 'official_cycle' | 'no_official_cycle' | 'multiple_official_cycles' | 'year_fallback_unverified'
+  isOfficialReadinessTarget: boolean
+  officialCycleCandidates: EvaluationPreviewReadinessCycleCandidate2026[]
+  warning: string | null
+}
 
 export type EvaluationPreviewReadinessSample = {
   evaluationId: string
@@ -34,6 +56,7 @@ export type EvaluationPreviewReadinessSummary2026 = {
     cycleId?: string
     limit: number
   }
+  cycleScope: EvaluationPreviewReadinessCycleScope2026
   totalEvaluationsChecked: number
   canCalculateCount: number
   blockedCount: number
@@ -116,6 +139,7 @@ function addSample(params: {
 
 function buildActivationBlockers(summary: Pick<
   EvaluationPreviewReadinessSummary2026,
+  | 'cycleScope'
   | 'missingPolicyCategoryCount'
   | 'manualReviewCount'
   | 'missingSalesClassificationCount'
@@ -123,12 +147,131 @@ function buildActivationBlockers(summary: Pick<
   | 'aiInsufficientDataCount'
 >) {
   const blockers: string[] = []
+  if (!summary.cycleScope.isOfficialReadinessTarget) {
+    blockers.push('공식 readiness 대상 평가 주기가 확정되지 않았습니다. test cycle이 공식 전환 판단에 섞이지 않도록 cycle을 먼저 지정해야 합니다.')
+  }
   if (summary.missingPolicyCategoryCount > 0) blockers.push('정책 카테고리 미분류 항목을 HR이 확정해야 합니다.')
   if (summary.manualReviewCount > 0) blockers.push('UNKNOWN/manual-review 항목은 자동 backfill 대상에서 제외해야 합니다.')
   if (summary.missingSalesClassificationCount > 0) blockers.push('영업/비영업 구분 정보가 없는 대상자를 정리해야 합니다.')
   if (summary.ambiguousThresholdCount > 0) blockers.push('영업 팀원 Super/Outstanding 등급 기준 중첩은 HR 정책 확인이 필요합니다.')
   if (summary.aiInsufficientDataCount > 0) blockers.push('AI 레벨업 요건 증빙 부족 건은 점수와 별도로 정리해야 합니다.')
   return blockers
+}
+
+function toCycleCandidate(cycle: {
+  id: string
+  cycleName: string
+  evalYear: number
+  performanceDesignConfig: unknown
+}): EvaluationPreviewReadinessCycleCandidate2026 {
+  return {
+    id: cycle.id,
+    cycleName: cycle.cycleName,
+    evalYear: cycle.evalYear,
+    isOfficialReadinessTarget: readPolicy2026OfficialReadinessEnabled(cycle.performanceDesignConfig),
+  }
+}
+
+async function resolveReadinessCycleScope2026(params: {
+  db: EvaluationPreviewReadinessDb
+  year?: number
+  cycleId?: string
+}): Promise<EvaluationPreviewReadinessCycleScope2026> {
+  const requestedYear = params.year ?? EVALUATION_POLICY_2026.year
+
+  if (!params.db.evalCycle?.findMany && !params.db.evalCycle?.findUnique) {
+    return {
+      requestedYear,
+      requestedCycleId: params.cycleId,
+      selectedCycleId: params.cycleId ?? null,
+      selectedCycleName: null,
+      selectedCycleYear: params.cycleId ? null : requestedYear,
+      selectionMode: 'year_fallback_unverified',
+      isOfficialReadinessTarget: false,
+      officialCycleCandidates: [],
+      warning: '평가 주기 metadata를 조회할 수 없어 공식 readiness 대상 여부를 확인하지 못했습니다.',
+    }
+  }
+
+  if (params.cycleId) {
+    const cycle = params.db.evalCycle?.findUnique
+      ? await params.db.evalCycle.findUnique({
+          where: { id: params.cycleId },
+          select: {
+            id: true,
+            cycleName: true,
+            evalYear: true,
+            performanceDesignConfig: true,
+          },
+        })
+      : null
+    const candidate = cycle ? toCycleCandidate(cycle) : null
+    return {
+      requestedYear: cycle?.evalYear ?? requestedYear,
+      requestedCycleId: params.cycleId,
+      selectedCycleId: params.cycleId,
+      selectedCycleName: cycle?.cycleName ?? null,
+      selectedCycleYear: cycle?.evalYear ?? null,
+      selectionMode: 'explicit_cycle',
+      isOfficialReadinessTarget: candidate?.isOfficialReadinessTarget ?? false,
+      officialCycleCandidates: candidate?.isOfficialReadinessTarget ? [candidate] : [],
+      warning: candidate?.isOfficialReadinessTarget
+        ? null
+        : '선택한 평가 주기가 공식 2026 readiness 대상로 표시되어 있지 않습니다. 공식 전환 판단에는 사용할 수 없습니다.',
+    }
+  }
+
+  const cycles = params.db.evalCycle?.findMany
+    ? await params.db.evalCycle.findMany({
+        where: { evalYear: requestedYear },
+        select: {
+          id: true,
+          cycleName: true,
+          evalYear: true,
+          performanceDesignConfig: true,
+        },
+        orderBy: [{ createdAt: 'desc' }],
+      })
+    : []
+  const officialCycles = cycles.map(toCycleCandidate).filter((cycle) => cycle.isOfficialReadinessTarget)
+
+  if (officialCycles.length === 1) {
+    const selected = officialCycles[0]
+    return {
+      requestedYear,
+      selectedCycleId: selected.id,
+      selectedCycleName: selected.cycleName,
+      selectedCycleYear: selected.evalYear,
+      selectionMode: 'official_cycle',
+      isOfficialReadinessTarget: true,
+      officialCycleCandidates: officialCycles,
+      warning: null,
+    }
+  }
+
+  if (officialCycles.length > 1) {
+    return {
+      requestedYear,
+      selectedCycleId: null,
+      selectedCycleName: null,
+      selectedCycleYear: null,
+      selectionMode: 'multiple_official_cycles',
+      isOfficialReadinessTarget: false,
+      officialCycleCandidates: officialCycles,
+      warning: '공식 2026 readiness 대상 평가 주기가 2개 이상입니다. HR/admin이 하나의 cycleId를 명시해야 합니다.',
+    }
+  }
+
+  return {
+    requestedYear,
+    selectedCycleId: null,
+    selectedCycleName: null,
+    selectedCycleYear: null,
+    selectionMode: 'no_official_cycle',
+    isOfficialReadinessTarget: false,
+    officialCycleCandidates: [],
+    warning: '공식 2026 readiness 대상 평가 주기가 설정되지 않았습니다. test data를 제외하기 위해 year 전체 scan을 수행하지 않습니다.',
+  }
 }
 
 export async function getEvaluationPreviewReadinessSummary2026(params: {
@@ -139,22 +282,24 @@ export async function getEvaluationPreviewReadinessSummary2026(params: {
 }): Promise<EvaluationPreviewReadinessSummary2026> {
   const db = params.db ?? prisma
   const limit = Math.max(1, Math.min(params.limit ?? 200, 500))
-  const where = params.cycleId
-    ? { evalCycleId: params.cycleId }
-    : {
-        evalCycle: {
-          evalYear: params.year ?? EVALUATION_POLICY_2026.year,
-        },
-      }
-
-  const evaluationRows = await db.evaluation.findMany({
-    where,
-    select: {
-      id: true,
-    },
-    orderBy: [{ evalCycleId: 'asc' }, { targetId: 'asc' }, { evalStage: 'asc' }],
-    take: limit,
+  const cycleScope = await resolveReadinessCycleScope2026({
+    db,
+    year: params.year,
+    cycleId: params.cycleId,
   })
+
+  const evaluationRows = cycleScope.selectedCycleId
+    ? await db.evaluation.findMany({
+        where: {
+          evalCycleId: cycleScope.selectedCycleId,
+        },
+        select: {
+          id: true,
+        },
+        orderBy: [{ evalCycleId: 'asc' }, { targetId: 'asc' }, { evalStage: 'asc' }],
+        take: limit,
+      })
+    : []
 
   let canCalculateCount = 0
   let blockedCount = 0
@@ -217,16 +362,20 @@ export async function getEvaluationPreviewReadinessSummary2026(params: {
     policyVersion: EVALUATION_POLICY_2026.version,
     generatedAt: new Date().toISOString(),
     filters: {
-      year: params.cycleId ? undefined : params.year ?? EVALUATION_POLICY_2026.year,
+      year: cycleScope.selectedCycleId ? undefined : params.year ?? EVALUATION_POLICY_2026.year,
       cycleId: params.cycleId,
       limit,
     },
+    cycleScope,
     totalEvaluationsChecked: evaluationRows.length,
     canCalculateCount,
     blockedCount,
     ...counts,
     samples,
-    activationBlockers: buildActivationBlockers(counts),
+    activationBlockers: buildActivationBlockers({
+      cycleScope,
+      ...counts,
+    }),
   }
 }
 
