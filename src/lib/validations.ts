@@ -2265,21 +2265,23 @@ export const AdminMasterLoginPermissionSchema = z.object({
 })
 
 export const AdminEmployeeUploadRowSchema = z.object({
-  employeeNumber: z.string().trim().min(1).max(50),
+  employeeNo: z.string().trim().min(1).max(50),
   name: z.string().trim().min(1).max(100),
   googleEmail: z.string().email().max(255),
-  department: z.string().trim().min(1).max(100),
-  departmentCode: EmptyStringToUndefined(z.string().trim().max(50)),
-  parentDepartment: EmptyStringToUndefined(z.string().trim().max(100)),
-  team: EmptyStringToUndefined(z.string().max(100)),
-  title: EmptyStringToUndefined(z.string().max(100)),
-  role: AdminEmployeeRoleSchema,
-  employmentStatus: AdminEmployeeStatusSchema.default('ACTIVE'),
-  managerEmployeeNumber: EmptyStringToUndefined(z.string().max(50)),
+  division: z.string().trim().min(1).max(100),
+  section: EmptyStringToUndefined(z.string().trim().max(100)),
+  team: z.string().trim().min(1).max(100),
+  title: z.string().trim().min(1).max(100),
+  role: z.enum(['ROLE_MEMBER', 'ROLE_LEADER', 'ROLE_ADMIN']),
+  employmentStatus: z.enum(['ACTIVE', 'INACTIVE', 'ON_LEAVE']).default('ACTIVE'),
+  managerEmployeeNo: EmptyStringToUndefined(z.string().max(50)),
   joinDate: EmptyStringToUndefined(EmployeeDateSchema),
   resignationDate: EmptyStringToUndefined(EmployeeDateSchema),
   sortOrder: SortOrderSchema,
   notes: EmptyStringToUndefined(z.string().max(500)),
+  parentDepartment: EmptyStringToUndefined(z.string().trim().max(100)),
+  department: EmptyStringToUndefined(z.string().trim().max(100)),
+  departmentCode: EmptyStringToUndefined(z.string().trim().max(50)),
 })
 
 export const BulkAdminEmployeeUploadSchema = z.object({
