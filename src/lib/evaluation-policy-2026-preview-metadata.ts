@@ -22,12 +22,14 @@ export type EvaluationPolicy2026ThresholdDecisionMapping = {
 
 export type EvaluationPolicy2026PreviewMappings = {
   salesGroupsByDivisionId: Record<string, EvaluationPolicy2026SalesGroupMapping>
+  salesGroupsByDepartmentId: Record<string, EvaluationPolicy2026SalesGroupMapping>
   salesGroupsByEmployeeId: Record<string, EvaluationPolicy2026SalesGroupMapping>
   teamMemberSalesThresholdDecision?: EvaluationPolicy2026ThresholdDecisionMapping
 }
 
 const EMPTY_MAPPINGS: EvaluationPolicy2026PreviewMappings = {
   salesGroupsByDivisionId: {},
+  salesGroupsByDepartmentId: {},
   salesGroupsByEmployeeId: {},
 }
 
@@ -84,6 +86,7 @@ export function readPolicy2026PreviewMappings(value: unknown): EvaluationPolicy2
   if (!rawMappings) return { ...EMPTY_MAPPINGS }
 
   const salesGroupsByDivisionId = readSalesGroupMappings(rawMappings.salesGroupsByDivisionId)
+  const salesGroupsByDepartmentId = readSalesGroupMappings(rawMappings.salesGroupsByDepartmentId)
   const salesGroupsByEmployeeId = readSalesGroupMappings(rawMappings.salesGroupsByEmployeeId)
 
   let teamMemberSalesThresholdDecision: EvaluationPolicy2026ThresholdDecisionMapping | undefined
@@ -110,6 +113,7 @@ export function readPolicy2026PreviewMappings(value: unknown): EvaluationPolicy2
 
   return {
     salesGroupsByDivisionId,
+    salesGroupsByDepartmentId,
     salesGroupsByEmployeeId,
     teamMemberSalesThresholdDecision,
   }
@@ -159,6 +163,8 @@ export function inferPolicy2026SalesGroupFromEmployeeText(employee: {
 export function resolvePolicy2026PreviewSalesGroup(params: {
   evalCycleConfig?: unknown
   employeeId: string
+  departmentId?: string | null
+  departmentAncestorIds?: Array<string | null | undefined>
   divisionId?: string | null
   employee: {
     department?: { deptName?: string | null } | null
@@ -167,9 +173,18 @@ export function resolvePolicy2026PreviewSalesGroup(params: {
   }
 }): EvaluationPolicy2026SalesGroup | null {
   const mappings = readPolicy2026PreviewMappings(params.evalCycleConfig)
-  return mappings.salesGroupsByEmployeeId[params.employeeId]?.salesGroup
-    ?? (params.divisionId ? mappings.salesGroupsByDivisionId[params.divisionId]?.salesGroup : undefined)
-    ?? null
+  const employeeMapping = mappings.salesGroupsByEmployeeId[params.employeeId]?.salesGroup
+  if (employeeMapping) return employeeMapping
+
+  const departmentIds = [params.departmentId, ...(params.departmentAncestorIds ?? [])].filter(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0
+  )
+  for (const departmentId of Array.from(new Set(departmentIds))) {
+    const departmentMapping = mappings.salesGroupsByDepartmentId[departmentId]?.salesGroup
+    if (departmentMapping) return departmentMapping
+  }
+
+  return (params.divisionId ? mappings.salesGroupsByDivisionId[params.divisionId]?.salesGroup : undefined) ?? null
 }
 
 export function resolvePolicy2026TeamMemberSalesThresholdDecision(
