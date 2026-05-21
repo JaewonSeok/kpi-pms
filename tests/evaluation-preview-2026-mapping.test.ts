@@ -330,6 +330,7 @@ async function main() {
           salesGroupsByDivisionId: {
             'dept-sales-division': { salesGroup: 'SALES' },
           },
+          salesGroupsByDepartmentId: {},
           salesGroupsByEmployeeId: {},
         },
       },
@@ -348,12 +349,36 @@ async function main() {
           salesGroupsByDivisionId: {
             'dept-division': { salesGroup: 'NON_SALES' },
           },
+          salesGroupsByDepartmentId: {},
           salesGroupsByEmployeeId: {},
         },
       },
       employeeId: 'emp-target',
       divisionId: 'dept-division',
       employee: { department: { deptName: '영업팀' }, teamName: '영업팀', jobTitle: '영업 담당' },
+    })
+
+    assert.equal(salesGroup, 'NON_SALES')
+  })
+
+  await run('department NON_SALES override inside SALES division resolves employee to NON_SALES', () => {
+    const salesGroup = resolvePolicy2026PreviewSalesGroup({
+      evalCycleConfig: {
+        policy2026PreviewMappings: {
+          salesGroupsByDivisionId: {
+            'dept-sales-division': { salesGroup: 'SALES' },
+          },
+          salesGroupsByDepartmentId: {
+            'dept-sales-marketing-team': { salesGroup: 'NON_SALES' },
+          },
+          salesGroupsByEmployeeId: {},
+        },
+      },
+      employeeId: 'emp-target',
+      departmentId: 'dept-sales-marketing-team',
+      departmentAncestorIds: ['dept-sales-marketing-team'],
+      divisionId: 'dept-sales-division',
+      employee: { department: { deptName: '세일즈마케팅팀' }, teamName: '세일즈마케팅팀', jobTitle: '마케팅 담당' },
     })
 
     assert.equal(salesGroup, 'NON_SALES')
@@ -366,17 +391,91 @@ async function main() {
           salesGroupsByDivisionId: {
             'dept-sales-division': { salesGroup: 'SALES' },
           },
+          salesGroupsByDepartmentId: {
+            'dept-sales-marketing-team': { salesGroup: 'NON_SALES' },
+          },
           salesGroupsByEmployeeId: {
-            'emp-target': { salesGroup: 'NON_SALES' },
+            'emp-target': { salesGroup: 'SALES' },
           },
         },
       },
       employeeId: 'emp-target',
+      departmentId: 'dept-sales-marketing-team',
+      departmentAncestorIds: ['dept-sales-marketing-team'],
       divisionId: 'dept-sales-division',
       employee: { department: { deptName: '영업팀' }, teamName: '영업팀', jobTitle: '영업 담당' },
     })
 
+    assert.equal(salesGroup, 'SALES')
+  })
+
+  await run('department override wins over division sales group mapping', () => {
+    const salesGroup = resolvePolicy2026PreviewSalesGroup({
+      evalCycleConfig: {
+        policy2026PreviewMappings: {
+          salesGroupsByDivisionId: {
+            'dept-sales-division': { salesGroup: 'SALES' },
+          },
+          salesGroupsByDepartmentId: {
+            'dept-sales-marketing-team': { salesGroup: 'NON_SALES' },
+          },
+          salesGroupsByEmployeeId: {},
+        },
+      },
+      employeeId: 'emp-target',
+      departmentId: 'dept-sales-marketing-team',
+      departmentAncestorIds: ['dept-sales-marketing-team'],
+      divisionId: 'dept-sales-division',
+      employee: { department: { deptName: '세일즈마케팅팀' }, teamName: '세일즈마케팅팀', jobTitle: '마케팅 담당' },
+    })
+
     assert.equal(salesGroup, 'NON_SALES')
+  })
+
+  await run('department override wins over division mapping in readiness preview', async () => {
+    const evaluation = makeEvaluation({
+      evalCycle: {
+        performanceDesignConfig: {
+          policy2026PreviewMappings: {
+            salesGroupsByDivisionId: {
+              'dept-sales-division': { salesGroup: 'SALES' },
+            },
+            salesGroupsByDepartmentId: {
+              'dept-sales-marketing-team': { salesGroup: 'NON_SALES' },
+            },
+            salesGroupsByEmployeeId: {},
+          },
+        },
+      },
+      target: {
+        id: 'emp-sales-marketing',
+        empName: 'Sales Marketing',
+        deptId: 'dept-sales-marketing-team',
+        jobTitle: '마케팅 담당',
+        teamName: '세일즈마케팅팀',
+        department: {
+          id: 'dept-sales-marketing-team',
+          deptName: '세일즈마케팅팀',
+          parentDeptId: 'dept-sales-division',
+        },
+      },
+    })
+    const fake = makeDb(
+      [evaluation],
+      {
+        departments: [
+          { id: 'dept-sales-marketing-team', deptName: '세일즈마케팅팀', parentDeptId: 'dept-sales-division' },
+        ],
+      }
+    )
+
+    const summary = await getEvaluationPreviewReadinessSummary2026({
+      db: fake.db,
+      cycleId: 'cycle-2026',
+    })
+
+    assert.equal(summary.missingSalesClassificationCount, 0)
+    assert.equal(summary.ambiguousThresholdCount, 0)
   })
 
   await run('missing division mapping remains unresolved despite text suggestion', () => {
@@ -384,6 +483,7 @@ async function main() {
       evalCycleConfig: {
         policy2026PreviewMappings: {
           salesGroupsByDivisionId: {},
+          salesGroupsByDepartmentId: {},
           salesGroupsByEmployeeId: {},
         },
       },
@@ -410,8 +510,10 @@ async function main() {
     assert.equal(payload.divisionSalesGroupCandidates.length, 2)
     assert.equal(payload.divisionSalesGroupCandidates.some((candidate) => candidate.divisionId === 'dept-division'), true)
     assert.equal(payload.divisionSalesGroupCandidates.some((candidate) => candidate.divisionId === 'dept-sales-division'), true)
+    assert.equal(payload.departmentSalesGroupCandidates.some((candidate) => candidate.departmentId === 'dept-team'), true)
     assert.equal(payload.salesGroupCandidates.length, 0)
     assert.equal(payload.persistence.divisionSalesGroup.includes('salesGroupsByDivisionId'), true)
+    assert.equal(payload.persistence.departmentSalesGroup.includes('salesGroupsByDepartmentId'), true)
   })
 
   await run('all active divisions appear in mapping candidates even when current cycle targets one division', async () => {
@@ -453,6 +555,35 @@ async function main() {
     assert.equal(Boolean(payload.divisionMappingSummary.warning), true)
   })
 
+  await run('full path labels are used for duplicate department names', async () => {
+    const fake = makeDb(
+      [makeEvaluation()],
+      {
+        departments: [
+          { id: 'dept-global-division', deptName: '글로벌기술지원본부', parentDeptId: null },
+          { id: 'dept-sales-marketing-team', deptName: '세일즈마케팅팀', parentDeptId: 'dept-sales-division' },
+          { id: 'dept-global-sales-marketing-team', deptName: '세일즈마케팅팀', parentDeptId: 'dept-global-division' },
+        ],
+        employees: [
+          { id: 'emp-sales-marketing-1', empName: 'Sales Marketing', deptId: 'dept-sales-marketing-team', status: 'ACTIVE' },
+          { id: 'emp-global-marketing-1', empName: 'Global Marketing', deptId: 'dept-global-sales-marketing-team', status: 'ACTIVE' },
+        ],
+      }
+    )
+
+    const payload = await getEvaluationPolicy2026MappingCandidatesForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        cycleId: 'cycle-2026',
+      },
+      { db: fake.db }
+    )
+
+    const paths = payload.departmentSalesGroupCandidates.map((candidate) => candidate.departmentPath)
+    assert.equal(paths.includes('영업본부 > 세일즈마케팅팀'), true)
+    assert.equal(paths.includes('글로벌기술지원본부 > 세일즈마케팅팀'), true)
+  })
+
   await run('division with zero current eval targets can still be mapped as metadata', async () => {
     const fake = makeDb(
       [makeEvaluation()],
@@ -479,6 +610,7 @@ async function main() {
               salesGroup: 'NON_SALES',
             },
           ],
+          departmentSalesGroupMappings: [],
           salesGroupMappings: [],
           thresholdDecisions: [],
         },
@@ -500,6 +632,58 @@ async function main() {
     assert.ok(rndCandidate)
     assert.equal(rndCandidate.currentSalesGroup, 'NON_SALES')
     assert.equal(rndCandidate.currentCycleTargetCount, 0)
+    assert.equal(fake.writes.evalCycle, 1)
+    assert.equal(fake.writes.evaluation, 0)
+  })
+
+  await run('department override can be saved for team with zero current eval targets', async () => {
+    const fake = makeDb(
+      [makeEvaluation()],
+      {
+        departments: [
+          { id: 'dept-sales-marketing-team', deptName: '세일즈마케팅팀', parentDeptId: 'dept-sales-division' },
+        ],
+        employees: [
+          { id: 'emp-sales-marketing-1', empName: 'Sales Marketing', deptId: 'dept-sales-marketing-team', status: 'ACTIVE' },
+        ],
+      }
+    )
+
+    await updateEvaluationPolicy2026MetadataForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          itemMappings: [],
+          divisionSalesGroupMappings: [],
+          departmentSalesGroupMappings: [
+            {
+              evalCycleId: 'cycle-2026',
+              departmentId: 'dept-sales-marketing-team',
+              salesGroup: 'NON_SALES',
+            },
+          ],
+          salesGroupMappings: [],
+          thresholdDecisions: [],
+        },
+      },
+      { db: fake.db, audit: fake.audit }
+    )
+
+    const payload = await getEvaluationPolicy2026MappingCandidatesForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        cycleId: 'cycle-2026',
+      },
+      { db: fake.db }
+    )
+    const candidate = payload.departmentSalesGroupCandidates.find(
+      (entry) => entry.departmentId === 'dept-sales-marketing-team'
+    )
+
+    assert.ok(candidate)
+    assert.equal(candidate.departmentPath, '영업본부 > 세일즈마케팅팀')
+    assert.equal(candidate.currentSalesGroup, 'NON_SALES')
+    assert.equal(candidate.currentCycleTargetCount, 0)
     assert.equal(fake.writes.evalCycle, 1)
     assert.equal(fake.writes.evaluation, 0)
   })
@@ -561,6 +745,14 @@ async function main() {
               note: 'HR confirmed non-sales division',
             },
           ],
+          departmentSalesGroupMappings: [
+            {
+              evalCycleId: 'cycle-2026',
+              departmentId: 'dept-team',
+              salesGroup: 'NON_SALES',
+              note: 'HR confirmed non-sales team override',
+            },
+          ],
           salesGroupMappings: [
             {
               evalCycleId: 'cycle-2026',
@@ -587,8 +779,8 @@ async function main() {
     assert.equal(fake.writes.evaluation, 0)
     assert.equal(fake.writes.evaluationItem, 1)
     assert.equal(fake.writes.personalKpi, 1)
-    assert.equal(fake.writes.evalCycle, 2)
-    assert.equal(fake.writes.audit, 3)
+    assert.equal(fake.writes.evalCycle, 3)
+    assert.equal(fake.writes.audit, 4)
   })
 
   await run('ordinary member cannot update metadata', async () => {
@@ -606,6 +798,7 @@ async function main() {
                 },
               ],
               divisionSalesGroupMappings: [],
+              departmentSalesGroupMappings: [],
               salesGroupMappings: [],
               thresholdDecisions: [],
             },
@@ -632,6 +825,7 @@ async function main() {
             },
           ],
           divisionSalesGroupMappings: [],
+          departmentSalesGroupMappings: [],
           salesGroupMappings: [],
           thresholdDecisions: [],
         },
@@ -672,6 +866,7 @@ async function main() {
               salesGroup: 'NON_SALES',
             },
           ],
+          departmentSalesGroupMappings: [],
           salesGroupMappings: [],
           thresholdDecisions: [],
         },
@@ -755,6 +950,7 @@ async function main() {
         input: {
           itemMappings: [],
           divisionSalesGroupMappings: [],
+          departmentSalesGroupMappings: [],
           salesGroupMappings: [],
           thresholdDecisions: [
             {
@@ -788,6 +984,9 @@ async function main() {
     assert.equal(metadataRoute.includes('EvaluationPolicy2026MetadataPatchSchema'), true)
     assert.equal(clientSource.includes('2026 정책 매핑 관리'), true)
     assert.equal(clientSource.includes('공식 평가 결과에는 반영되지 않습니다.'), true)
+    assert.equal(clientSource.includes('부서/팀 override'), true)
+    assert.equal(clientSource.includes('본부 기본값과 다른 팀만 예외로 지정합니다.'), true)
+    assert.equal(clientSource.includes('departmentSalesGroupMappings'), true)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/mapping-candidates'), true)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/policy-metadata'), true)
     assert.equal(liveRouteSource.includes('policy-metadata'), false)

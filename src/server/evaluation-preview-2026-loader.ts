@@ -159,6 +159,28 @@ function resolveDivisionDepartmentId2026(params: {
   return current.id
 }
 
+function resolveDepartmentOverridePath2026(params: {
+  departmentId?: string | null
+  departments: DepartmentNode2026[]
+}) {
+  if (!params.departmentId) return []
+  const byId = new Map(params.departments.map((department) => [department.id, department]))
+  let current = byId.get(params.departmentId)
+  if (!current) return [params.departmentId]
+
+  const departmentIds: string[] = []
+  const visited = new Set<string>()
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    if (current.parentDeptId) {
+      departmentIds.push(current.id)
+    }
+    current = current.parentDeptId ? byId.get(current.parentDeptId) : undefined
+  }
+
+  return departmentIds
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
@@ -351,6 +373,10 @@ export async function buildEvaluationPreviewInputFromDb2026(params: {
     departmentId: evaluation.target.department?.id ?? evaluation.target.deptId,
     departments,
   })
+  const departmentOverridePath = resolveDepartmentOverridePath2026({
+    departmentId: evaluation.target.department?.id ?? evaluation.target.deptId,
+    departments,
+  })
   const aiAssignment = await loadAiGateAssignmentForPreview2026(db, {
     evalCycleId: evaluation.evalCycleId,
     employeeId: evaluation.targetId,
@@ -368,6 +394,8 @@ export async function buildEvaluationPreviewInputFromDb2026(params: {
       salesGroup: resolvePolicy2026PreviewSalesGroup({
         evalCycleConfig: evaluation.evalCycle.performanceDesignConfig,
         employeeId: evaluation.targetId,
+        departmentId: evaluation.target.department?.id ?? evaluation.target.deptId,
+        departmentAncestorIds: departmentOverridePath,
         divisionId,
         employee: evaluation.target,
       }) as EvaluationGrade2026SalesGroup | null,

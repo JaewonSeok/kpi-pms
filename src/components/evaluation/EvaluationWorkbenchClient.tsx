@@ -176,6 +176,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [policyOfficialCycle2026Notice, setPolicyOfficialCycle2026Notice] = useState('')
   const [policyCategoryDrafts2026, setPolicyCategoryDrafts2026] = useState<Record<string, PolicyCategoryDraft2026>>({})
   const [divisionSalesGroupDrafts2026, setDivisionSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
+  const [departmentSalesGroupDrafts2026, setDepartmentSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
   const [salesGroupDrafts2026, setSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
   const [thresholdDecisionDrafts2026, setThresholdDecisionDrafts2026] = useState<Record<string, ThresholdDecisionDraft2026>>({})
   const workbenchContextKey = `${props.selectedCycleId ?? ''}:${props.selectedEvaluationId ?? ''}`
@@ -223,6 +224,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyOfficialCycle2026Saving(false)
     setPolicyCategoryDrafts2026({})
     setDivisionSalesGroupDrafts2026({})
+    setDepartmentSalesGroupDrafts2026({})
     setSalesGroupDrafts2026({})
     setThresholdDecisionDrafts2026({})
     setBriefing(null)
@@ -682,6 +684,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setPolicyMapping2026(data)
       setPolicyCategoryDrafts2026({})
       setDivisionSalesGroupDrafts2026({})
+      setDepartmentSalesGroupDrafts2026({})
       setSalesGroupDrafts2026({})
       setThresholdDecisionDrafts2026({})
     } catch (error) {
@@ -724,6 +727,16 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         note: 'HR division-level sales/non-sales mapping from 2026 preview readiness panel',
       }]
     })
+    const departmentSalesGroupMappings = policyMapping2026.departmentSalesGroupCandidates.flatMap((candidate) => {
+      const salesGroup = departmentSalesGroupDrafts2026[`${candidate.evalCycleId}:${candidate.departmentId}`]
+      if (!salesGroup) return []
+      return [{
+        evalCycleId: candidate.evalCycleId,
+        departmentId: candidate.departmentId,
+        salesGroup,
+        note: 'HR department/team-level sales/non-sales override from 2026 preview readiness panel',
+      }]
+    })
     const thresholdDecisions = policyMapping2026.thresholdDecisions.flatMap((candidate) => {
       const decision = thresholdDecisionDrafts2026[candidate.evalCycleId]
       if (!decision) return []
@@ -734,7 +747,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       }]
     })
 
-    if (!itemMappings.length && !divisionSalesGroupMappings.length && !salesGroupMappings.length && !thresholdDecisions.length) {
+    if (
+      !itemMappings.length &&
+      !divisionSalesGroupMappings.length &&
+      !departmentSalesGroupMappings.length &&
+      !salesGroupMappings.length &&
+      !thresholdDecisions.length
+    ) {
       setPolicyMapping2026Notice('저장할 2026 정책 metadata 변경 사항이 없습니다.')
       return
     }
@@ -750,6 +769,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         body: JSON.stringify({
           itemMappings,
           divisionSalesGroupMappings,
+          departmentSalesGroupMappings,
           salesGroupMappings,
           thresholdDecisions,
         }),
@@ -761,7 +781,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       const result = json.data as EvaluationPolicyMetadataPatch2026ApiData
       setPolicyMapping2026Notice(
-        `저장 완료: 항목 ${result.updatedItemMappings}건, division 영업/비영업 ${result.updatedDivisionSalesGroupMappings}건, 직원 override ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
+        `저장 완료: 항목 ${result.updatedItemMappings}건, division 영업/비영업 ${result.updatedDivisionSalesGroupMappings}건, 부서/팀 override ${result.updatedDepartmentSalesGroupMappings}건, 직원 override ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
       )
       await loadPolicyMappingCandidates2026()
       await loadPolicyReadiness2026()
@@ -1590,6 +1610,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     notice={policyMapping2026Notice}
                     categoryDrafts={policyCategoryDrafts2026}
                     divisionSalesGroupDrafts={divisionSalesGroupDrafts2026}
+                    departmentSalesGroupDrafts={departmentSalesGroupDrafts2026}
                     salesGroupDrafts={salesGroupDrafts2026}
                     thresholdDecisionDrafts={thresholdDecisionDrafts2026}
                     onLoad={loadPolicyMappingCandidates2026}
@@ -1599,6 +1620,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     }
                     onDivisionSalesGroupChange={(key, value) =>
                       setDivisionSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
+                    }
+                    onDepartmentSalesGroupChange={(key, value) =>
+                      setDepartmentSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
                     }
                     onSalesGroupChange={(key, value) =>
                       setSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
@@ -2767,23 +2791,27 @@ function PolicyMapping2026Panel(props: {
   notice: string
   categoryDrafts: Record<string, PolicyCategoryDraft2026>
   divisionSalesGroupDrafts: Record<string, SalesGroupDraft2026>
+  departmentSalesGroupDrafts: Record<string, SalesGroupDraft2026>
   salesGroupDrafts: Record<string, SalesGroupDraft2026>
   thresholdDecisionDrafts: Record<string, ThresholdDecisionDraft2026>
   onLoad: () => void
   onSave: () => void
   onCategoryChange: (evaluationItemId: string, value: PolicyCategoryDraft2026) => void
   onDivisionSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
+  onDepartmentSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onThresholdDecisionChange: (evalCycleId: string, value: ThresholdDecisionDraft2026) => void
 }) {
   const data = props.mappingData
   const policyCandidates = data?.policyCategoryCandidates.slice(0, 6) ?? []
   const divisionSalesCandidates = data?.divisionSalesGroupCandidates ?? []
+  const departmentSalesCandidates = data?.departmentSalesGroupCandidates ?? []
   const salesCandidates = data?.salesGroupCandidates.slice(0, 6) ?? []
   const thresholdCandidates = data?.thresholdDecisions.slice(0, 3) ?? []
   const hasChanges =
     Object.values(props.categoryDrafts).some(Boolean) ||
     Object.values(props.divisionSalesGroupDrafts).some(Boolean) ||
+    Object.values(props.departmentSalesGroupDrafts).some(Boolean) ||
     Object.values(props.salesGroupDrafts).some(Boolean) ||
     Object.values(props.thresholdDecisionDrafts).some(Boolean)
 
@@ -2919,6 +2947,49 @@ function PolicyMapping2026Panel(props: {
                       </div>
                     )
                   }) : <EmptyBlock message="현재 조회 범위에서 division 영업/비영업 매핑 후보가 없습니다." />}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-semibold text-slate-900">부서/팀 override</h4>
+                  <span className="text-xs text-slate-400">{departmentSalesCandidates.length}건</span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  본부 기본값과 다른 팀만 예외로 지정합니다. 예: 국내영업총괄본부 &gt; 세일즈마케팅팀은 비영업으로 지정할 수 있습니다.
+                </p>
+                <div className="mt-3 space-y-3">
+                  {departmentSalesCandidates.length ? departmentSalesCandidates.map((candidate) => {
+                    const key = `${candidate.evalCycleId}:${candidate.departmentId}`
+                    return (
+                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{candidate.departmentPath}</span>
+                          <Badge tone="neutral">영향 {candidate.activeEmployeeCount}명</Badge>
+                          <Badge tone={candidate.currentCycleTargetCount > 0 ? 'neutral' : 'warn'}>
+                            현재 주기 대상 {candidate.currentCycleTargetCount}명
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
+                          {candidate.suggestedSalesGroup ? ` · 참고 제안 ${getSalesGroupLabel2026(candidate.suggestedSalesGroup)}` : ''}
+                          {candidate.sampleEmployees.length ? ` · 현재 주기 샘플 ${candidate.sampleEmployees.join(', ')}` : ''}
+                          {' · '}
+                          {candidate.reason}
+                        </p>
+                        <select
+                          value={props.departmentSalesGroupDrafts[key] ?? ''}
+                          onChange={(event) => props.onDepartmentSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
+                        >
+                          <option value="">선택 안 함</option>
+                          <option value="SALES">영업</option>
+                          <option value="NON_SALES">비영업</option>
+                          <option value="UNRESOLVED">미해결로 유지</option>
+                        </select>
+                      </div>
+                    )
+                  }) : <EmptyBlock message="본부 기본값과 다른 부서/팀 override 후보가 없습니다." />}
                 </div>
               </div>
 
