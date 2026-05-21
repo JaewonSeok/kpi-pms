@@ -141,6 +141,21 @@ type Props = {
   initialOrgChartData: OrgChartResponse
 }
 
+const EMPTY_ORG_CHART_RESPONSE: OrgChartResponse = {
+  roots: [],
+  orphanedEmployees: [],
+  cycleEmployees: [],
+  summary: {
+    totalEmployees: 0,
+    activeEmployees: 0,
+    inactiveEmployees: 0,
+    resignedEmployees: 0,
+    roots: 0,
+    orphanedEmployees: 0,
+    cycleEmployees: 0,
+  },
+}
+
 const ROLE_LABELS: Record<EmployeeRole, string> = {
   ROLE_MEMBER: '구성원',
   ROLE_TEAM_LEADER: '팀장',
@@ -166,11 +181,17 @@ function parseResponse<T>(json: unknown): T {
   return payload.data as T
 }
 
-function buildQuery(search?: string | null, status?: string | null, departmentId?: string | null) {
+function buildQuery(
+  search?: string | null,
+  status?: string | null,
+  departmentId?: string | null,
+  includeDescendants?: boolean
+) {
   const params = new URLSearchParams()
   if (search?.trim()) params.set('q', search.trim())
   if (status?.trim()) params.set('status', status.trim())
   if (departmentId?.trim()) params.set('departmentId', departmentId.trim())
+  if (departmentId?.trim() && includeDescendants) params.set('includeDescendants', 'true')
   const query = params.toString()
   return query ? `?${query}` : ''
 }
@@ -229,13 +250,18 @@ function OrgChartTree({
 export function AdminOrgChartManagementClient(props: Props) {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const initialSelectedDepartment = props.initialDirectoryData.departments.find(
+    (department) => department.id === props.initialDepartmentId
+  )
   const [departmentFilter, setDepartmentFilter] = useState(props.initialDepartmentId ?? '')
-  const [includeChildDepartments, setIncludeChildDepartments] = useState(false)
+  const [includeChildDepartments, setIncludeChildDepartments] = useState(
+    initialSelectedDepartment ? initialSelectedDepartment.scope !== 'team' : false
+  )
   const [feedback, setFeedback] = useState<FeedbackState>(null)
 
   const querySuffix = useMemo(
-    () => buildQuery(props.initialSearch, props.initialStatus, departmentFilter),
-    [departmentFilter, props.initialSearch, props.initialStatus]
+    () => buildQuery(props.initialSearch, props.initialStatus, departmentFilter, includeChildDepartments),
+    [departmentFilter, includeChildDepartments, props.initialSearch, props.initialStatus]
   )
   const orgMemberQuerySuffix = useMemo(
     () => buildQuery(props.initialSearch, props.initialStatus, null),
@@ -253,12 +279,13 @@ export function AdminOrgChartManagementClient(props: Props) {
 
   const orgChartQuery = useQuery({
     queryKey: ['admin-google-account-org-chart', querySuffix],
-    initialData: props.initialOrgChartData,
+    initialData: includeChildDepartments ? undefined : props.initialOrgChartData,
     queryFn: async () => {
       const response = await fetch(`/api/admin/employees/google-account/org-chart${querySuffix}`)
       return parseResponse<OrgChartResponse>(await response.json())
     },
   })
+  const orgChartData = orgChartQuery.data ?? EMPTY_ORG_CHART_RESPONSE
 
   const refreshQueries = async () => {
     await queryClient.invalidateQueries({ queryKey: ['admin-google-account-directory'] })
@@ -343,19 +370,19 @@ export function AdminOrgChartManagementClient(props: Props) {
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-sm text-slate-500">현재 직원 수</div>
           <div className="mt-2 text-2xl font-semibold text-slate-900">
-            {orgChartQuery.data.summary.totalEmployees}
+            {orgChartData.summary.totalEmployees}
           </div>
         </div>
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
           <div className="text-sm text-amber-700">관리자 연결 필요</div>
           <div className="mt-2 text-2xl font-semibold text-amber-800">
-            {orgChartQuery.data.summary.orphanedEmployees}
+            {orgChartData.summary.orphanedEmployees}
           </div>
         </div>
         <div className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
           <div className="text-sm text-rose-700">순환 보고 관계</div>
           <div className="mt-2 text-2xl font-semibold text-rose-800">
-            {orgChartQuery.data.summary.cycleEmployees}
+            {orgChartData.summary.cycleEmployees}
           </div>
         </div>
       </section>
@@ -374,7 +401,9 @@ export function AdminOrgChartManagementClient(props: Props) {
         selectedDepartmentId={departmentFilter}
         includeChildDepartments={includeChildDepartments}
         onSelectDepartment={(departmentId) => {
+          const nextDepartment = directoryQuery.data.departments.find((department) => department.id === departmentId)
           setDepartmentFilter(departmentId)
+          setIncludeChildDepartments(nextDepartment ? nextDepartment.scope !== 'team' : false)
           router.replace(
             buildAdminGoogleAccessHref('org-chart', {
               search: props.initialSearch,
@@ -399,11 +428,11 @@ export function AdminOrgChartManagementClient(props: Props) {
         onFeedback={setFeedback}
       />
 
-      {orgChartQuery.data.orphanedEmployees.length ? (
+      {orgChartData.orphanedEmployees.length ? (
         <section className="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
           <h3 className="text-base font-semibold text-amber-900">관리자 연결이 필요한 직원</h3>
           <div className="mt-3 flex flex-wrap gap-2">
-            {orgChartQuery.data.orphanedEmployees.map((employee) => (
+            {orgChartData.orphanedEmployees.map((employee) => (
               <button
                 key={`orphan-${employee.id}`}
                 type="button"
@@ -417,11 +446,11 @@ export function AdminOrgChartManagementClient(props: Props) {
         </section>
       ) : null}
 
-      {orgChartQuery.data.cycleEmployees.length ? (
+      {orgChartData.cycleEmployees.length ? (
         <section className="rounded-3xl border border-rose-200 bg-rose-50 p-6 shadow-sm">
           <h3 className="text-base font-semibold text-rose-900">순환 보고 관계가 있는 직원</h3>
           <div className="mt-3 flex flex-wrap gap-2">
-            {orgChartQuery.data.cycleEmployees.map((employee) => (
+            {orgChartData.cycleEmployees.map((employee) => (
               <button
                 key={`cycle-${employee.id}`}
                 type="button"
@@ -437,16 +466,21 @@ export function AdminOrgChartManagementClient(props: Props) {
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">보고 조직도</h2>
-          <div className="text-sm text-slate-500">
-            관리자 보고 관계 기준으로 직원 트리를 함께 확인합니다.
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">보고 조직도</h2>
+            <div className="mt-1 text-sm text-slate-500">
+              관리자 보고 관계 기준으로 직원 트리를 함께 확인합니다.
+            </div>
+          </div>
+          <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+            {departmentFilter ? (includeChildDepartments ? '하위 조직 포함' : '직접 소속만') : '전체 구성원'}
           </div>
         </div>
 
         {orgChartQuery.isLoading ? (
           <div className="text-sm text-slate-500">조직도를 불러오는 중입니다...</div>
-        ) : orgChartQuery.data.roots.length ? (
-          <OrgChartTree nodes={orgChartQuery.data.roots} onEdit={moveToEmployeeManage} />
+        ) : orgChartData.roots.length ? (
+          <OrgChartTree nodes={orgChartData.roots} onEdit={moveToEmployeeManage} />
         ) : (
           <div className="text-sm text-slate-500">표시할 조직도 데이터가 없습니다.</div>
         )}
