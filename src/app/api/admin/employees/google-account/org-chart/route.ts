@@ -12,6 +12,7 @@ export async function GET(request: Request) {
         query: searchParams.get('q') ?? undefined,
         status: searchParams.get('status') ?? undefined,
         departmentId: searchParams.get('departmentId') ?? undefined,
+        includeDescendants: searchParams.get('includeDescendants') === 'true',
       })
     )
   } catch (error) {

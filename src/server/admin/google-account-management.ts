@@ -929,6 +929,34 @@ export function summarizeDepartmentScopes<TDepartment extends { scope: OrgKpiSco
   }
 }
 
+export function collectDepartmentAndDescendantIds(
+  departments: Array<{ id: string; parentDeptId: string | null }>,
+  departmentId: string
+) {
+  const childrenByParentId = new Map<string, string[]>()
+
+  for (const department of departments) {
+    if (!department.parentDeptId) continue
+
+    const children = childrenByParentId.get(department.parentDeptId) ?? []
+    children.push(department.id)
+    childrenByParentId.set(department.parentDeptId, children)
+  }
+
+  const departmentIds = new Set([departmentId])
+  const queue = [...(childrenByParentId.get(departmentId) ?? [])]
+
+  while (queue.length > 0) {
+    const currentDepartmentId = queue.shift()!
+    if (departmentIds.has(currentDepartmentId)) continue
+
+    departmentIds.add(currentDepartmentId)
+    queue.push(...(childrenByParentId.get(currentDepartmentId) ?? []))
+  }
+
+  return departmentIds
+}
+
 export async function loadEmployeeValidationContext() {
   const [employees, departments] = await Promise.all([
     prisma.employee.findMany({
@@ -3695,23 +3723,41 @@ export async function fetchEmployeeOrgChart(params: {
   query?: string
   status?: string
   departmentId?: string
+  includeDescendants?: boolean
 }) {
-  const employees = await prisma.employee.findMany({
-    include: {
-      department: {
-        select: {
-          id: true,
-          deptCode: true,
-          deptName: true,
+  const requestedDepartmentId = params.departmentId?.trim() || null
+  const shouldIncludeDescendants = Boolean(requestedDepartmentId && params.includeDescendants)
+  const [employees, departments] = await Promise.all([
+    prisma.employee.findMany({
+      include: {
+        department: {
+          select: {
+            id: true,
+            deptCode: true,
+            deptName: true,
+          },
         },
       },
-    },
-    orderBy: [{ empName: 'asc' }],
-  })
+      orderBy: [{ empName: 'asc' }],
+    }),
+    shouldIncludeDescendants
+      ? prisma.department.findMany({
+          select: {
+            id: true,
+            parentDeptId: true,
+          },
+        })
+      : Promise.resolve([]),
+  ])
 
   const normalizedQuery = params.query?.trim().toLowerCase() ?? ''
   const requestedStatus = params.status && params.status !== 'ALL' ? params.status : null
-  const requestedDepartmentId = params.departmentId?.trim() || null
+  const requestedDepartmentIds =
+    requestedDepartmentId && shouldIncludeDescendants
+      ? collectDepartmentAndDescendantIds(departments, requestedDepartmentId)
+      : requestedDepartmentId
+        ? new Set([requestedDepartmentId])
+        : null
   const directReportCountByManagerId = new Map<string, number>()
   const employeeById = new Map(employees.map((employee) => [employee.id, employee] as const))
 
@@ -3727,7 +3773,7 @@ export async function fetchEmployeeOrgChart(params: {
   const visibleMembers: EmployeeOrgChartMember[] = employees
     .filter((employee) => {
       if (requestedStatus && employee.status !== requestedStatus) return false
-      if (requestedDepartmentId && employee.deptId !== requestedDepartmentId) return false
+      if (requestedDepartmentIds && !requestedDepartmentIds.has(employee.deptId)) return false
       if (!normalizedQuery) return true
 
       const target = [

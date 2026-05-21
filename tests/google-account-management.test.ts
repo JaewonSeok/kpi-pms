@@ -25,6 +25,7 @@ process.env.DATABASE_URL =
 const {
   EMPLOYEE_UPLOAD_TEMPLATE_HEADERS,
   buildEmployeeOrgChart,
+  collectDepartmentAndDescendantIds,
   buildEmployeeUploadDepartmentPlan,
   buildEmployeeTemplateWorkbook,
   parseEmployeeUploadWorkbook,
@@ -336,6 +337,24 @@ run('department scope summary keeps zero-member and leaderless departments count
     sectionCount: 1,
     teamCount: 2,
   })
+})
+
+run('department descendant collection includes selected department and descendants only', () => {
+  const departmentIds = collectDepartmentAndDescendantIds(
+    [
+      { id: 'division-rnd', parentDeptId: null },
+      { id: 'team-ai', parentDeptId: 'division-rnd' },
+      { id: 'team-web', parentDeptId: 'division-rnd' },
+      { id: 'division-sales', parentDeptId: null },
+      { id: 'team-sales', parentDeptId: 'division-sales' },
+    ],
+    'division-rnd'
+  )
+
+  assert.equal(departmentIds.has('division-rnd'), true)
+  assert.equal(departmentIds.has('team-ai'), true)
+  assert.equal(departmentIds.has('team-web'), true)
+  assert.equal(departmentIds.has('team-sales'), false)
 })
 
 run('googleEmail, division, and team are required for employee upload', () => {
@@ -1182,6 +1201,47 @@ run('org member management shows returned departments without employee or leader
   assert.match(orgChartClientSource, /sectionCount/)
   assert.match(orgChartClientSource, /teamCount/)
   assert.match(orgChartClientSource, /오류 \{latestUpload\.failedCount\}행은 적용되지 않았습니다/)
+})
+
+run('org member management explains descendant member scope for selected divisions', () => {
+  const orgMemberPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/OrgMemberManagementPanel.tsx'),
+    'utf8'
+  )
+  const orgChartClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/AdminOrgChartManagementClient.tsx'),
+    'utf8'
+  )
+  const orgChartRouteSource = readFileSync(
+    path.resolve(process.cwd(), 'src/app/api/admin/employees/google-account/org-chart/route.ts'),
+    'utf8'
+  )
+  const serverSource = readFileSync(
+    path.resolve(process.cwd(), 'src/server/admin/google-account-management.ts'),
+    'utf8'
+  )
+
+  assert.match(orgMemberPanelSource, /직접 소속 구성원은 없고, 하위 팀에 구성원이 있습니다/)
+  assert.match(orgMemberPanelSource, /직접 소속만 표시 중/)
+  assert.match(orgMemberPanelSource, /하위 구성원까지 표시 중/)
+  assert.match(orgMemberPanelSource, /selectedDescendantMemberCount/)
+  assert.match(orgMemberPanelSource, /selectedDescendantTeamCount/)
+  assert.match(orgChartClientSource, /includeChildDepartments/)
+  assert.match(orgChartClientSource, /includeDescendants/)
+  assert.match(orgChartRouteSource, /includeDescendants/)
+  assert.match(serverSource, /collectDepartmentAndDescendantIds/)
+  assert.match(serverSource, /requestedDepartmentIds/)
+})
+
+run('org member management renders duplicate department names with full paths', () => {
+  const orgMemberPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/OrgMemberManagementPanel.tsx'),
+    'utf8'
+  )
+
+  assert.match(orgMemberPanelSource, /hasDuplicateName/)
+  assert.match(orgMemberPanelSource, /경로: \{props\.node\.path\.join\(' > '\)\}/)
+  assert.match(orgMemberPanelSource, /상위 조직과 같은 이름/)
 })
 
 run('org-chart entry points resolve to the org-chart tab instead of falling back to manage', () => {

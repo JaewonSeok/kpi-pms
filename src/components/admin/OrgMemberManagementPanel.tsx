@@ -90,6 +90,8 @@ type DepartmentFormState = {
 }
 
 type DepartmentNode = DepartmentOption & {
+  path: string[]
+  hasDuplicateName: boolean
   children: DepartmentNode[]
 }
 
@@ -134,24 +136,33 @@ function parseResponse<T>(json: unknown): T {
 
 function buildDepartmentTree(departments: DepartmentOption[]) {
   const childrenByParentId = new Map<string | null, DepartmentOption[]>()
+  const departmentNameCounts = new Map<string, number>()
   for (const department of departments) {
     const bucket = childrenByParentId.get(department.parentDeptId) ?? []
     bucket.push(department)
     childrenByParentId.set(department.parentDeptId, bucket)
+    const normalizedName = department.deptName.trim()
+    departmentNameCounts.set(normalizedName, (departmentNameCounts.get(normalizedName) ?? 0) + 1)
   }
 
-  const buildNode = (department: DepartmentOption): DepartmentNode => ({
-    ...department,
-    children: (childrenByParentId.get(department.id) ?? [])
-      .slice()
-      .sort((left, right) => left.deptName.localeCompare(right.deptName, 'ko'))
-      .map(buildNode),
-  })
+  const buildNode = (department: DepartmentOption, parentPath: string[] = []): DepartmentNode => {
+    const path = [...parentPath, department.deptName]
+
+    return {
+      ...department,
+      path,
+      hasDuplicateName: (departmentNameCounts.get(department.deptName.trim()) ?? 0) > 1,
+      children: (childrenByParentId.get(department.id) ?? [])
+        .slice()
+        .sort((left, right) => left.deptName.localeCompare(right.deptName, 'ko'))
+        .map((child) => buildNode(child, path)),
+    }
+  }
 
   return (childrenByParentId.get(null) ?? [])
     .slice()
     .sort((left, right) => left.deptName.localeCompare(right.deptName, 'ko'))
-    .map(buildNode)
+    .map((department) => buildNode(department))
 }
 
 function collectChildDepartmentIds(node: DepartmentNode): string[] {
@@ -175,6 +186,8 @@ function DepartmentTreeNode(props: {
 }) {
   const level = props.level ?? 0
   const isSelected = props.selectedDepartmentId === props.node.id
+  const hasSameNameAncestor = props.node.path.slice(0, -1).includes(props.node.deptName)
+  const shouldShowFullPath = props.node.hasDuplicateName || hasSameNameAncestor
 
   return (
     <li className="space-y-2">
@@ -195,6 +208,16 @@ function DepartmentTreeNode(props: {
               <div className="min-w-0 break-keep text-sm font-semibold leading-snug text-slate-900 sm:text-[15px]">
                 {props.node.deptName}
               </div>
+              {shouldShowFullPath ? (
+                <div className="mt-1 break-keep text-[11px] leading-snug text-slate-500">
+                  경로: {props.node.path.join(' > ')}
+                </div>
+              ) : null}
+              {hasSameNameAncestor ? (
+                <div className="mt-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium leading-none text-amber-700">
+                  상위 조직과 같은 이름
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -204,6 +227,11 @@ function DepartmentTreeNode(props: {
               <span className="shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium leading-none text-slate-600">
                 {props.node.memberCount}명
               </span>
+              {props.node.children.length ? (
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[11px] font-medium leading-none text-slate-600 ring-1 ring-slate-200">
+                  하위 {props.node.children.length}개
+                </span>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap gap-x-3 gap-y-1 break-keep text-[11px] leading-snug text-slate-500 sm:text-xs">
@@ -274,6 +302,39 @@ export function OrgMemberManagementPanel(props: Props) {
     return map
   }, [departmentTree])
 
+  const departmentScopeSummary = useMemo(
+    () => ({
+      totalDepartments: props.departments.length,
+      divisionCount: props.departments.filter((department) => department.scope === 'division').length,
+      sectionCount: props.departments.filter((department) => department.scope === 'section').length,
+      teamCount: props.departments.filter((department) => department.scope === 'team').length,
+    }),
+    [props.departments]
+  )
+  const selectedDepartment = props.departments.find(
+    (department) => department.id === props.selectedDepartmentId
+  )
+  const selectedDepartmentNode = selectedDepartment
+    ? departmentNodeById.get(selectedDepartment.id) ?? null
+    : null
+  const selectedDescendantDepartmentIds = useMemo(() => {
+    if (!selectedDepartmentNode) return new Set<string>()
+
+    return new Set(collectChildDepartmentIds(selectedDepartmentNode).filter((id) => id !== selectedDepartmentNode.id))
+  }, [selectedDepartmentNode])
+  const selectedDirectMemberCount = selectedDepartment
+    ? props.employees.filter((employee) => employee.departmentId === selectedDepartment.id).length
+    : props.employees.length
+  const selectedDescendantMemberCount = selectedDepartment
+    ? props.employees.filter((employee) => selectedDescendantDepartmentIds.has(employee.departmentId)).length
+    : 0
+  const selectedDescendantTeamCount = selectedDepartment
+    ? props.departments.filter(
+        (department) => department.scope === 'team' && selectedDescendantDepartmentIds.has(department.id)
+      ).length
+    : departmentScopeSummary.teamCount
+  const selectedTotalMemberCount = selectedDirectMemberCount + selectedDescendantMemberCount
+
   const visibleDepartmentIds = useMemo(() => {
     if (!props.selectedDepartmentId) {
       return new Set(props.departments.map((department) => department.id))
@@ -307,9 +368,6 @@ export function OrgMemberManagementPanel(props: Props) {
     [props.employees, props.selectedDepartmentId, visibleDepartmentIds]
   )
 
-  const selectedDepartment = props.departments.find(
-    (department) => department.id === props.selectedDepartmentId
-  )
   const editingDepartment = props.departments.find(
     (department) => department.id === departmentForm.departmentId
   )
@@ -581,6 +639,53 @@ export function OrgMemberManagementPanel(props: Props) {
           </div>
         </div>
 
+        <div className="mb-4 grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div className="text-xs font-medium text-slate-500">전체 조직 단위</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">
+              {departmentScopeSummary.totalDepartments}
+            </div>
+            <div className="mt-1 text-xs leading-5 text-slate-500">
+              본부 {departmentScopeSummary.divisionCount} · 실 {departmentScopeSummary.sectionCount} · 팀{' '}
+              {departmentScopeSummary.teamCount}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs font-medium text-slate-500">선택 조직 직접 소속</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">{selectedDirectMemberCount}명</div>
+            <div className="mt-1 text-xs leading-5 text-slate-500">
+              {selectedDepartment ? '직접 소속만' : '전체 조직 기준'}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs font-medium text-slate-500">하위 조직 소속</div>
+            <div className="mt-1 text-lg font-semibold text-slate-900">{selectedDescendantMemberCount}명</div>
+            <div className="mt-1 text-xs leading-5 text-slate-500">하위 팀 {selectedDescendantTeamCount}개</div>
+          </div>
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+            <div className="text-xs font-medium text-blue-700">현재 표시 범위</div>
+            <div className="mt-1 text-lg font-semibold text-blue-900">
+              {selectedDepartment
+                ? props.includeChildDepartments
+                  ? '하위 조직 포함'
+                  : '직접 소속만'
+                : '전체 구성원'}
+            </div>
+            <div className="mt-1 text-xs leading-5 text-blue-700">
+              표시 가능 {selectedDepartment ? selectedTotalMemberCount : props.employees.length}명
+            </div>
+          </div>
+        </div>
+
+        {selectedDepartment && selectedDirectMemberCount === 0 && selectedDescendantMemberCount > 0 ? (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+            이 {DEPARTMENT_TYPE_LABELS[selectedDepartment.scope]}의 직접 소속 구성원은 없고, 하위 팀에 구성원이 있습니다.{' '}
+            {props.includeChildDepartments
+              ? '현재 하위 조직 포함이 켜져 있어 전체 하위 구성원을 함께 보고 있습니다.'
+              : '하위 조직 포함을 켜면 전체 구성원을 볼 수 있습니다.'}
+          </div>
+        ) : null}
+
         <div className="grid gap-6 lg:grid-cols-[minmax(420px,0.95fr)_minmax(0,1.05fr)]">
           <section className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="mb-4 flex items-center justify-between gap-3">
@@ -615,16 +720,35 @@ export function OrgMemberManagementPanel(props: Props) {
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
                   현재 표시 {visibleEmployees.length}명 / 전체 {props.employees.length}명
+                  {selectedDepartment
+                    ? props.includeChildDepartments
+                      ? ' · 하위 조직 포함'
+                      : ' · 직접 소속만'
+                    : ''}
                 </p>
               </div>
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={props.includeChildDepartments}
-                  onChange={(event) => props.onToggleIncludeChildDepartments(event.target.checked)}
-                />
-                하위 조직 포함
-              </label>
+              {selectedDepartment ? (
+                <label
+                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium ${
+                    props.includeChildDepartments
+                      ? 'border-blue-200 bg-blue-50 text-blue-800'
+                      : 'border-amber-200 bg-amber-50 text-amber-800'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={props.includeChildDepartments}
+                    onChange={(event) => props.onToggleIncludeChildDepartments(event.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  <span>
+                    하위 조직 포함
+                    <span className="ml-2 text-xs font-normal">
+                      {props.includeChildDepartments ? '하위 구성원까지 표시 중' : '직접 소속만 표시 중'}
+                    </span>
+                  </span>
+                </label>
+              ) : null}
             </div>
 
             <div className="overflow-x-auto">
