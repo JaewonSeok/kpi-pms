@@ -65,52 +65,10 @@ export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
     example: 'ROLE_MEMBER',
   },
   {
-    key: 'employmentStatus',
-    required: true,
-    description: 'ACTIVE, INACTIVE, ON_LEAVE 중 하나를 사용합니다.',
-    example: 'ACTIVE',
-  },
-  {
     key: 'managerEmployeeNo',
     required: false,
     description: '직속 상사의 사번입니다. 없으면 상급자 미지정 warning으로 처리합니다.',
     example: 'E-1000',
-  },
-  {
-    key: 'joinDate',
-    required: false,
-    description: '입사일입니다. YYYY-MM-DD 형식을 권장합니다.',
-    example: '2024-01-15',
-  },
-  {
-    key: 'resignationDate',
-    required: false,
-    description: '퇴사일입니다. ACTIVE 상태에서는 비워둘 수 있습니다.',
-    example: '2025-12-31',
-  },
-  {
-    key: 'sortOrder',
-    required: false,
-    description: '조직도 표시 순서입니다. 숫자가 작을수록 먼저 표시됩니다.',
-    example: '10',
-  },
-  {
-    key: 'notes',
-    required: false,
-    description: '비고입니다. 운영 메모 용도입니다.',
-    example: '겸직 중',
-  },
-  {
-    key: 'parentDepartment',
-    required: false,
-    description: '레거시 호환용 상위 조직명입니다. 보통은 division/section/team만 입력합니다.',
-    example: '',
-  },
-  {
-    key: 'department',
-    required: false,
-    description: '레거시 호환용 부서명입니다. 보통은 division/section/team만 입력합니다.',
-    example: '',
   },
 ] as const
 
@@ -122,6 +80,15 @@ export const EMPLOYEE_UPLOAD_STATUS_VALUES = ['ACTIVE', 'INACTIVE', 'ON_LEAVE'] 
 
 export type EmployeeManagementStatus = (typeof EMPLOYEE_STATUS_VALUES)[number]
 export type EmployeeUploadTemplateKey = (typeof EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS)[number]['key']
+type EmployeeUploadFieldKey =
+  | EmployeeUploadTemplateKey
+  | 'employmentStatus'
+  | 'joinDate'
+  | 'resignationDate'
+  | 'sortOrder'
+  | 'notes'
+  | 'parentDepartment'
+  | 'department'
 type MasterLoginAccessSource = ReturnType<typeof resolveMasterLoginAccess>['source']
 
 type ExistingEmployeeSnapshot = {
@@ -165,7 +132,7 @@ export type EmployeeUploadNormalizedRow = {
 export type EmployeeUploadIssue = {
   field: string
   message: string
-  severity: 'error' | 'warning'
+  severity: 'error' | 'warning' | 'info'
 }
 
 export type EmployeeUploadValidationRow = {
@@ -188,6 +155,7 @@ export type EmployeeUploadValidationResult = {
     updateCount: number
     errorCount: number
     warningCount: number
+    infoCount: number
   }
   rows: EmployeeUploadValidationRow[]
   validRows: EmployeeUploadNormalizedRow[]
@@ -237,6 +205,22 @@ export type DepartmentDirectoryItem = {
   excludeLeaderFromEvaluatorAutoAssign: boolean
   memberCount: number
   orgKpiCount: number
+}
+
+export type EmployeeUploadDepartmentPlanItem = {
+  key: string
+  path: string[]
+  departmentName: string
+  parentPath: string[]
+  departmentCode: string | null
+  scope: OrgKpiScope
+}
+
+export type DepartmentScopeSummary = {
+  totalDepartments: number
+  divisionCount: number
+  sectionCount: number
+  teamCount: number
 }
 
 export type EvaluatorAssignmentPreviewRow = {
@@ -297,7 +281,7 @@ export type EmployeeOrgChartMember = EmployeeOrgChartNode['employee'] & {
   managerExists?: boolean
 }
 
-const HEADER_ALIASES: Record<EmployeeUploadTemplateKey, string[]> = {
+const HEADER_ALIASES: Record<EmployeeUploadFieldKey, string[]> = {
   employeeNo: ['employeeNo', 'employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
   name: ['name', 'employeeName', 'empName', '직원명', '이름'],
   googleEmail: ['googleEmail', 'google_email', 'gwsEmail', 'gws_email', '구글이메일', 'google'],
@@ -412,7 +396,7 @@ function mapRoleToPosition(role: SystemRole): Position {
   }
 }
 
-function getUploadValue(row: Record<string, unknown>, key: EmployeeUploadTemplateKey) {
+function getUploadValue(row: Record<string, unknown>, key: EmployeeUploadFieldKey) {
   const aliasSet = new Set(HEADER_ALIASES[key].map(normalizeHeaderKey))
 
   for (const [header, value] of Object.entries(row)) {
@@ -428,7 +412,7 @@ function addIssue(
   row: EmployeeUploadValidationRow,
   field: string,
   message: string,
-  severity: 'error' | 'warning' = 'error'
+  severity: EmployeeUploadIssue['severity'] = 'error'
 ) {
   row.issues.push({ field, message, severity })
 }
@@ -566,7 +550,8 @@ export function buildEmployeeTemplateWorkbook() {
     ]),
     [],
     ['rules', '', '', ''],
-    ['employmentStatus', '', 'ACTIVE / INACTIVE / ON_LEAVE', ''],
+    ['employmentStatus', '', '기존 파일에 있으면 ACTIVE / INACTIVE / ON_LEAVE를 검증합니다. 없으면 ACTIVE로 처리합니다.', ''],
+    ['legacy optional columns', '', '기존 파일의 joinDate, resignationDate, sortOrder, notes, parentDepartment, department 컬럼은 계속 읽습니다.', ''],
     ['role', '', 'ROLE_MEMBER / ROLE_LEADER / ROLE_ADMIN', ''],
     [
       'managerEmployeeNo',
@@ -575,7 +560,6 @@ export function buildEmployeeTemplateWorkbook() {
       '',
     ],
     ['division/section/team', '', 'parentDepartment/department 없이도 이 3개 컬럼으로 조직 경로를 구성합니다. section은 비워도 됩니다.', ''],
-    ['resignationDate', '', '선택 입력입니다. ACTIVE 상태에서는 비워도 됩니다.', ''],
     ['googleEmail', '', `허용 도메인: ${getAllowedGoogleWorkspaceDomain()}`, ''],
   ]
 
@@ -675,7 +659,8 @@ export function validateEmployeeUploadRows(params: {
     const notes = normalizeTextValue(getUploadValue(rawRow, 'notes')) || null
     const existing = employeeNumber ? existingByEmployeeNumber.get(employeeNumber) : undefined
     const role = normalizeRoleValue(getUploadValue(rawRow, 'role'))
-    const employmentStatus = normalizeStatusValue(getUploadValue(rawRow, 'employmentStatus'))
+    const employmentStatusInput = normalizeTextValue(getUploadValue(rawRow, 'employmentStatus'))
+    const employmentStatus = employmentStatusInput ? normalizeStatusValue(employmentStatusInput) : 'ACTIVE'
 
     const row: EmployeeUploadValidationRow = {
       rowNumber,
@@ -694,7 +679,12 @@ export function validateEmployeeUploadRows(params: {
     if (!team) addIssue(row, 'team', '팀명은 필수입니다.')
     if (!title) addIssue(row, 'title', '직책 또는 직위는 필수입니다.')
     if (!role) addIssue(row, 'role', '권한 값은 ROLE_MEMBER, ROLE_LEADER, ROLE_ADMIN 중 하나여야 합니다.')
-    if (!employmentStatus) addIssue(row, 'employmentStatus', '재직 상태 값은 ACTIVE, INACTIVE, ON_LEAVE 중 하나여야 합니다.')
+    if (employmentStatusInput && !employmentStatus) {
+      addIssue(row, 'employmentStatus', '재직 상태 값은 ACTIVE, INACTIVE, ON_LEAVE 중 하나여야 합니다.')
+    }
+    if (!employmentStatusInput) {
+      addIssue(row, 'employmentStatus', 'employmentStatus 미입력: ACTIVE로 처리됩니다.', 'info')
+    }
     if (joinDateResult.invalid) addIssue(row, 'joinDate', '입사일 형식이 올바르지 않습니다.')
     if (resignationDateResult.invalid) addIssue(row, 'resignationDate', '퇴사일 형식이 올바르지 않습니다.')
     if (sortOrderResult.invalid) addIssue(row, 'sortOrder', '정렬 순서는 0 이상의 정수여야 합니다.')
@@ -843,6 +833,10 @@ export function validateEmployeeUploadRows(params: {
     (count, row) => count + row.issues.filter((issue) => issue.severity === 'warning').length,
     0
   )
+  const infoCount = rows.reduce(
+    (count, row) => count + row.issues.filter((issue) => issue.severity === 'info').length,
+    0
+  )
 
   return {
     fileName: params.fileName,
@@ -854,11 +848,85 @@ export function validateEmployeeUploadRows(params: {
       updateCount: rows.filter((row) => row.valid && row.action === 'update').length,
       errorCount: errors.length,
       warningCount,
+      infoCount,
     },
     rows,
     validRows,
     errors,
   } satisfies EmployeeUploadValidationResult
+}
+
+function buildUploadDepartmentPlanKey(path: string[]) {
+  return path.map((part) => part.trim().toUpperCase()).join('>')
+}
+
+export function buildEmployeeUploadDepartmentPlan(rows: EmployeeUploadNormalizedRow[]) {
+  const planByKey = new Map<string, EmployeeUploadDepartmentPlanItem>()
+
+  const addPath = (params: {
+    path: string[]
+    departmentCode?: string | null
+    scope: OrgKpiScope
+  }) => {
+    const path = params.path.map((part) => part.trim()).filter(Boolean)
+    const departmentName = path.at(-1)
+    if (!departmentName) return
+
+    const key = buildUploadDepartmentPlanKey(path)
+    if (planByKey.has(key)) return
+
+    planByKey.set(key, {
+      key,
+      path,
+      departmentName,
+      parentPath: path.slice(0, -1),
+      departmentCode: params.departmentCode?.trim() || null,
+      scope: params.scope,
+    })
+  }
+
+  for (const row of rows) {
+    addPath({
+      path: [row.division],
+      scope: 'division',
+    })
+
+    if (row.section) {
+      addPath({
+        path: [row.division, row.section],
+        scope: 'section',
+      })
+      addPath({
+        path: [row.division, row.section, row.team ?? ''],
+        departmentCode: row.departmentCode,
+        scope: 'team',
+      })
+      continue
+    }
+
+    addPath({
+      path: [row.division, row.team ?? ''],
+      departmentCode: row.departmentCode,
+      scope: 'team',
+    })
+  }
+
+  return Array.from(planByKey.values()).sort(
+    (left, right) =>
+      left.path.length - right.path.length ||
+      left.path.join('/').localeCompare(right.path.join('/'), 'ko')
+  )
+}
+
+export function summarizeDepartmentScopes<TDepartment extends { scope: OrgKpiScope }>(
+  departments: TDepartment[]
+): DepartmentScopeSummary {
+  return {
+    totalDepartments: departments.length,
+    divisionCount: departments.filter((department) => department.scope === 'division').length,
+    sectionCount: departments.filter((department) => department.scope === 'section').length,
+    teamCount: departments.filter((department) => department.scope === 'team').length,
+  }
 }
 
 export async function loadEmployeeValidationContext() {
@@ -1405,25 +1473,28 @@ export async function loadEmployeeDirectory(params: {
       }
     })
 
+  const directoryDepartments = departments.map((department) => ({
+    id: department.id,
+    deptCode: department.deptCode,
+    deptName: department.deptName,
+    parentDeptId: department.parentDeptId,
+    scope: departmentScopeMap.get(department.id) ?? 'team',
+    leaderEmployeeId: department.leaderEmployeeId,
+    leaderEmployeeNumber: department.leaderEmployeeId
+      ? employeeNumberById.get(department.leaderEmployeeId) ?? null
+      : null,
+    leaderEmployeeName: department.leaderEmployeeId
+      ? employeeNameById.get(department.leaderEmployeeId) ?? null
+      : null,
+    excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
+    memberCount: memberCountByDepartmentId.get(department.id) ?? 0,
+    orgKpiCount: department._count.orgKpis,
+  }))
+  const departmentSummary = summarizeDepartmentScopes(directoryDepartments)
+
   return {
     allowedDomain: getAllowedGoogleWorkspaceDomain(),
-    departments: departments.map((department) => ({
-      id: department.id,
-      deptCode: department.deptCode,
-      deptName: department.deptName,
-      parentDeptId: department.parentDeptId,
-      scope: departmentScopeMap.get(department.id) ?? 'team',
-      leaderEmployeeId: department.leaderEmployeeId,
-      leaderEmployeeNumber: department.leaderEmployeeId
-        ? employeeNumberById.get(department.leaderEmployeeId) ?? null
-        : null,
-      leaderEmployeeName: department.leaderEmployeeId
-        ? employeeNameById.get(department.leaderEmployeeId) ?? null
-        : null,
-      excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
-      memberCount: memberCountByDepartmentId.get(department.id) ?? 0,
-      orgKpiCount: department._count.orgKpis,
-    })),
+    departments: directoryDepartments,
     managerOptions: employees.map((employee) => ({
       id: employee.id,
       employeeNumber: employee.empId,
@@ -1432,6 +1503,7 @@ export async function loadEmployeeDirectory(params: {
       departmentName: employee.department.deptName,
     })),
     summary: {
+      ...departmentSummary,
       totalEmployees: employees.length,
       activeEmployees: employees.filter((employee) => employee.status === 'ACTIVE').length,
       inactiveEmployees: employees.filter((employee) => employee.status === 'INACTIVE').length,
@@ -3181,63 +3253,33 @@ export async function applyEmployeeUpload(params: {
       department.id,
     ] as const)
   )
-  const resolveDepartmentIdByPath = (departmentName: string, parentDepartmentName: string | null) => {
-    const normalizedName = departmentName.trim().toUpperCase()
-    const parentDeptId = parentDepartmentName
-      ? Array.from(departmentIdByHierarchy.entries()).find(
-          ([key]) => key.endsWith(`::${parentDepartmentName.trim().toUpperCase()}`)
-        )?.[1] ?? null
-      : null
+  const resolveDepartmentIdByPathParts = (path: string[]) => {
+    let parentDeptId: string | null = null
 
-    return (
-      departmentIdByHierarchy.get(`${parentDeptId ?? 'ROOT'}::${normalizedName}`) ??
-      Array.from(departmentIdByHierarchy.entries()).find(([key]) => key.endsWith(`::${normalizedName}`))?.[1] ??
-      null
-    )
+    for (const part of path) {
+      const normalizedName = part.trim().toUpperCase()
+      if (!normalizedName) return null
+
+      const departmentId = departmentIdByHierarchy.get(`${parentDeptId ?? 'ROOT'}::${normalizedName}`)
+      if (!departmentId) return null
+      parentDeptId = departmentId
+    }
+
+    return parentDeptId
+  }
+  const resolveDepartmentIdByPath = (departmentName: string, parentDepartmentName: string | null) => {
+    if (parentDepartmentName) {
+      return resolveDepartmentIdByPathParts([parentDepartmentName, departmentName])
+    }
+
+    return resolveDepartmentIdByPathParts([departmentName])
+  }
+  const resolveUploadRowTeamDepartmentId = (row: EmployeeUploadNormalizedRow) => {
+    return resolveDepartmentIdByPathParts(row.section ? [row.division, row.section, row.team ?? ''] : [row.division, row.team ?? ''])
   }
 
   let createdDepartmentCount = 0
-  const departmentRowsByPath = new Map<
-    string,
-    {
-      departmentCode: string | null
-      departmentName: string
-      parentDepartment: string | null
-    }
-  >()
-  const addDepartmentRow = (params: {
-    departmentCode?: string | null
-    departmentName: string
-    parentDepartment?: string | null
-  }) => {
-    const departmentName = params.departmentName.trim()
-    if (!departmentName) return
-    const parentDepartment = params.parentDepartment?.trim() || null
-    const key = `${parentDepartment ?? 'ROOT'}::${departmentName.toUpperCase()}`
-    if (departmentRowsByPath.has(key)) return
-    departmentRowsByPath.set(key, {
-      departmentCode: params.departmentCode ?? null,
-      departmentName,
-      parentDepartment,
-    })
-  }
-
-  for (const row of params.rows) {
-    addDepartmentRow({
-      departmentCode: row.section ? null : row.departmentCode,
-      departmentName: row.division,
-      parentDepartment: null,
-    })
-    if (row.section) {
-      addDepartmentRow({
-        departmentCode: row.departmentCode,
-        departmentName: row.section,
-        parentDepartment: row.division,
-      })
-    }
-  }
-
-  const departmentRows = Array.from(departmentRowsByPath.values())
+  const departmentRows = buildEmployeeUploadDepartmentPlan(params.rows)
   const pendingDepartmentRows = [...departmentRows]
 
   while (pendingDepartmentRows.length > 0) {
@@ -3245,19 +3287,22 @@ export async function applyEmployeeUpload(params: {
 
     for (let index = pendingDepartmentRows.length - 1; index >= 0; index -= 1) {
       const department = pendingDepartmentRows[index]
-      const parentDeptId = department.parentDepartment
-        ? resolveDepartmentIdByPath(department.parentDepartment, null)
+      const parentDeptId = department.parentPath.length
+        ? resolveDepartmentIdByPathParts(department.parentPath)
         : null
 
-      if (department.parentDepartment && !parentDeptId) {
+      if (department.parentPath.length && !parentDeptId) {
         continue
       }
 
+      const explicitDepartmentCode = department.parentPath.length === 0 ? department.departmentCode : null
       const existingDepartmentId =
-        (department.departmentCode ? departmentIdByCode.get(department.departmentCode.toUpperCase()) : null) ??
         departmentIdByHierarchy.get(
           `${parentDeptId ?? 'ROOT'}::${department.departmentName.trim().toUpperCase()}`
         ) ??
+        (explicitDepartmentCode
+          ? departmentIdByCode.get(explicitDepartmentCode.toUpperCase())
+          : null) ??
         null
 
       if (existingDepartmentId) {
@@ -3268,16 +3313,15 @@ export async function applyEmployeeUpload(params: {
             parentDeptId,
           },
         })
+        departmentIdByHierarchy.set(
+          `${parentDeptId ?? 'ROOT'}::${department.departmentName.trim().toUpperCase()}`,
+          existingDepartmentId
+        )
       } else {
-        const inferredScope: OrgKpiScope = !parentDeptId
-          ? 'division'
-          : looksLikeLegacySectionName(department.departmentName)
-            ? 'section'
-            : 'team'
         const generatedCode =
-          inferredScope === 'division'
+          department.scope === 'division'
             ? buildGeneratedDivisionDepartmentCode(new Set(departmentIdByCode.keys()))
-            : inferredScope === 'section'
+            : department.scope === 'section'
               ? buildGeneratedSectionDepartmentCode(
                   existingDepartments.find((item) => item.id === parentDeptId)?.deptCode ?? 'DIV',
                   new Set(departmentIdByCode.keys()),
@@ -3288,7 +3332,7 @@ export async function applyEmployeeUpload(params: {
                 )
         const createdDepartment = await prisma.department.create({
           data: {
-            deptCode: department.departmentCode ?? generatedCode,
+            deptCode: explicitDepartmentCode ?? generatedCode,
             deptName: department.departmentName,
             parentDeptId,
             orgId: organization.id,
@@ -3298,7 +3342,7 @@ export async function applyEmployeeUpload(params: {
             deptCode: true,
           },
         })
-        departmentIdByCode.set((department.departmentCode ?? createdDepartment.deptCode).toUpperCase(), createdDepartment.id)
+        departmentIdByCode.set((explicitDepartmentCode ?? createdDepartment.deptCode).toUpperCase(), createdDepartment.id)
         departmentIdByHierarchy.set(
           `${parentDeptId ?? 'ROOT'}::${department.departmentName.trim().toUpperCase()}`,
           createdDepartment.id
@@ -3374,6 +3418,7 @@ export async function applyEmployeeUpload(params: {
 
   for (const row of params.rows) {
     const departmentId =
+      resolveUploadRowTeamDepartmentId(row) ??
       (row.departmentCode ? departmentIdByCode.get(row.departmentCode.toUpperCase()) : null) ??
       resolveDepartmentIdByPath(row.department, row.parentDepartment)
     if (!departmentId) {

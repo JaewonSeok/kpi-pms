@@ -25,8 +25,10 @@ process.env.DATABASE_URL =
 const {
   EMPLOYEE_UPLOAD_TEMPLATE_HEADERS,
   buildEmployeeOrgChart,
+  buildEmployeeUploadDepartmentPlan,
   buildEmployeeTemplateWorkbook,
   parseEmployeeUploadWorkbook,
+  summarizeDepartmentScopes,
   validateEmployeeUploadRows,
 } = require('../src/server/admin/google-account-management') as typeof import('../src/server/admin/google-account-management')
 
@@ -87,7 +89,6 @@ function toEmployeeUploadRow(row: Record<string, unknown>) {
     team: '인사팀',
     title: '매니저',
     role: 'ROLE_MEMBER',
-    employmentStatus: 'ACTIVE',
     ...rest,
     employeeNo,
     managerEmployeeNo,
@@ -109,7 +110,21 @@ run('template workbook exposes the expected headers', () => {
   const workbook = XLSX.read(buildEmployeeTemplateWorkbook(), { type: 'buffer' })
   const templateSheet = workbook.Sheets[workbook.SheetNames[0]]
   const rows = XLSX.utils.sheet_to_json<Array<string>>(templateSheet, { header: 1 })
-  assert.deepEqual(rows[0], EMPLOYEE_UPLOAD_TEMPLATE_HEADERS)
+  const headerRow: string[] = Array.from(rows[0] ?? []).map((cell) => String(cell))
+  assert.equal(headerRow.some((header) => header === 'employmentStatus'), false)
+  assert.equal(headerRow.some((header) => header === 'resignationDate'), false)
+  assert.deepEqual(headerRow, EMPLOYEE_UPLOAD_TEMPLATE_HEADERS)
+  assert.deepEqual(headerRow, [
+    'employeeNo',
+    'name',
+    'googleEmail',
+    'division',
+    'section',
+    'team',
+    'title',
+    'role',
+    'managerEmployeeNo',
+  ])
 })
 
 run('valid upload row passes preview validation', () => {
@@ -142,13 +157,14 @@ run('minimal employee upload columns pass without optional legacy organization f
       team: '인사팀',
       title: '매니저',
       role: 'ROLE_MEMBER',
-      employmentStatus: 'ACTIVE',
       managerEmployeeNo: 'E-1000',
     },
   ])
 
   assert.equal(result.summary.validRows, 1)
   assert.equal(result.rows[0]?.valid, true)
+  assert.equal(result.summary.infoCount, 1)
+  assert.equal(result.validRows[0]?.employmentStatus, 'ACTIVE')
   assert.equal(result.validRows[0]?.division, '경영지원본부')
   assert.equal(result.validRows[0]?.section, null)
   assert.equal(result.validRows[0]?.department, '경영지원본부')
@@ -168,7 +184,6 @@ run('optional upload columns can be omitted while manager absence is warning-onl
         team: '인사팀',
         title: '매니저',
         role: 'ROLE_MEMBER',
-        employmentStatus: 'ACTIVE',
       },
     ])
   )
@@ -182,7 +197,145 @@ run('optional upload columns can be omitted while manager absence is warning-onl
 
   assert.equal(result.summary.validRows, 1)
   assert.equal(result.summary.warningCount, 1)
+  assert.equal(result.summary.infoCount, 1)
+  assert.equal(result.validRows[0]?.employmentStatus, 'ACTIVE')
   assert.equal(result.rows[0]?.issues.some((issue) => issue.field === 'managerEmployeeNo'), true)
+  assert.equal(
+    result.rows[0]?.issues.some((issue) => issue.field === 'employmentStatus' && issue.severity === 'info'),
+    true
+  )
+})
+
+run('valid upload rows produce full division section team department paths', () => {
+  const result = validateRows([
+    {
+      employeeNo: 'E-2101',
+      name: 'Finance Upload',
+      googleEmail: 'finance.upload@rsupport.com',
+      division: '경영지원본부',
+      section: '재무관리실',
+      team: '회계팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+      managerEmployeeNo: 'E-1000',
+    },
+  ])
+  const plan = buildEmployeeUploadDepartmentPlan(result.validRows)
+  const keys = new Set(plan.map((item) => item.key))
+
+  assert.equal(result.summary.validRows, 1)
+  assert.equal(keys.has('경영지원본부'), true)
+  assert.equal(keys.has('경영지원본부>재무관리실'), true)
+  assert.equal(keys.has('경영지원본부>재무관리실>회계팀'), true)
+  assert.equal(plan.find((item) => item.key === '경영지원본부>재무관리실>회계팀')?.scope, 'team')
+})
+
+run('empty section upload rows produce division team department paths', () => {
+  const result = validateRows([
+    {
+      employeeNo: 'E-2102',
+      name: 'No Section Upload',
+      googleEmail: 'no.section.upload@rsupport.com',
+      division: '영업본부',
+      section: '',
+      team: '파트너영업팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+      managerEmployeeNo: 'E-1000',
+    },
+  ])
+  const plan = buildEmployeeUploadDepartmentPlan(result.validRows)
+  const keys = new Set(plan.map((item) => item.key))
+
+  assert.equal(result.summary.validRows, 1)
+  assert.equal(keys.has('영업본부'), true)
+  assert.equal(keys.has('영업본부>파트너영업팀'), true)
+  assert.equal(plan.some((item) => item.key === '영업본부>>파트너영업팀'), false)
+})
+
+run('same team name under different divisions is not merged in upload department plan', () => {
+  const result = validateRows([
+    {
+      employeeNo: 'E-2103',
+      name: 'Support Ops',
+      googleEmail: 'support.ops@rsupport.com',
+      division: '고객지원본부',
+      section: '',
+      team: '운영팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+      managerEmployeeNo: 'E-1000',
+    },
+    {
+      employeeNo: 'E-2104',
+      name: 'Platform Ops',
+      googleEmail: 'platform.ops@rsupport.com',
+      division: '플랫폼본부',
+      section: '',
+      team: '운영팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+      managerEmployeeNo: 'E-1000',
+    },
+  ])
+  const plan = buildEmployeeUploadDepartmentPlan(result.validRows)
+  const teamPaths = plan.filter((item) => item.departmentName === '운영팀')
+
+  assert.equal(result.summary.validRows, 2)
+  assert.equal(teamPaths.length, 2)
+  assert.equal(teamPaths.some((item) => item.key === '고객지원본부>운영팀'), true)
+  assert.equal(teamPaths.some((item) => item.key === '플랫폼본부>운영팀'), true)
+})
+
+run('invalid upload rows are excluded from department path creation', () => {
+  const result = validateRows([
+    {
+      employeeNo: 'E-2105',
+      name: 'Valid Org Path',
+      googleEmail: 'valid.path@rsupport.com',
+      division: '전략본부',
+      section: '',
+      team: '기획팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+      managerEmployeeNo: 'E-1000',
+    },
+    {
+      employeeNo: 'E-2106',
+      name: 'Invalid Org Path',
+      googleEmail: '',
+      division: '오류본부',
+      section: '',
+      team: '오류팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+      managerEmployeeNo: 'E-1000',
+    },
+  ])
+  const plan = buildEmployeeUploadDepartmentPlan(result.validRows)
+  const keys = new Set(plan.map((item) => item.key))
+
+  assert.equal(result.summary.validRows, 1)
+  assert.equal(result.summary.invalidRows, 1)
+  assert.equal(keys.has('전략본부>기획팀'), true)
+  assert.equal(keys.has('오류본부'), false)
+  assert.equal(keys.has('오류본부>오류팀'), false)
+})
+
+run('department scope summary keeps zero-member and leaderless departments countable', () => {
+  const summary = summarizeDepartmentScopes([
+    { scope: 'division' as const },
+    { scope: 'section' as const },
+    { scope: 'team' as const },
+    { scope: 'team' as const },
+  ])
+
+  assert.deepEqual(summary, {
+    totalDepartments: 4,
+    divisionCount: 1,
+    sectionCount: 1,
+    teamCount: 2,
+  })
 })
 
 run('googleEmail, division, and team are required for employee upload', () => {
@@ -275,6 +428,50 @@ run('invalid upload role and employmentStatus fail validation', () => {
   assert.ok(invalidRole.errors.some((error) => error.field === 'role'))
   assert.equal(invalidStatus.summary.validRows, 0)
   assert.ok(invalidStatus.errors.some((error) => error.field === 'employmentStatus'))
+})
+
+run('legacy employmentStatus values are optional and validated when present', () => {
+  const missingStatus = validateRows([
+    {
+      employeeNo: 'E-2011',
+      googleEmail: 'missing.status.default@rsupport.com',
+      division: '경영지원본부',
+      team: '인사팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+    },
+  ])
+  const active = validateRows([
+    {
+      employeeNo: 'E-2012',
+      googleEmail: 'active.status@rsupport.com',
+      employmentStatus: 'ACTIVE',
+    },
+  ])
+  const inactive = validateRows([
+    {
+      employeeNo: 'E-2013',
+      googleEmail: 'inactive.status@rsupport.com',
+      employmentStatus: 'INACTIVE',
+    },
+  ])
+  const onLeave = validateRows([
+    {
+      employeeNo: 'E-2014',
+      googleEmail: 'onleave.status@rsupport.com',
+      employmentStatus: 'ON_LEAVE',
+    },
+  ])
+
+  assert.equal(missingStatus.summary.validRows, 1)
+  assert.equal(missingStatus.validRows[0]?.employmentStatus, 'ACTIVE')
+  assert.equal(missingStatus.rows[0]?.issues.some((issue) => issue.severity === 'info'), true)
+  assert.equal(active.summary.validRows, 1)
+  assert.equal(active.validRows[0]?.employmentStatus, 'ACTIVE')
+  assert.equal(inactive.summary.validRows, 1)
+  assert.equal(inactive.validRows[0]?.employmentStatus, 'INACTIVE')
+  assert.equal(onLeave.summary.validRows, 1)
+  assert.equal(onLeave.validRows[0]?.employmentStatus, 'ON_LEAVE')
 })
 
 run('invalid rows keep row-level errors', () => {
@@ -966,6 +1163,25 @@ run('admin google access page renders a dedicated org-chart screen for tab=org-c
   assert.match(orgChartClientSource, /buildAdminGoogleAccessHref\('upload'\)/)
   assert.match(orgChartClientSource, /queryKey: \['admin-google-account-org-chart'/)
   assert.match(orgChartClientSource, /invalidateQueries/)
+})
+
+run('org member management shows returned departments without employee or leader filtering', () => {
+  const orgMemberPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/OrgMemberManagementPanel.tsx'),
+    'utf8'
+  )
+  const orgChartClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/AdminOrgChartManagementClient.tsx'),
+    'utf8'
+  )
+
+  assert.match(orgMemberPanelSource, /childrenByParentId\.get\(null\)/)
+  assert.doesNotMatch(orgMemberPanelSource, /departments\.filter\([^)]*memberCount\s*>\s*0/)
+  assert.match(orgMemberPanelSource, /리더 미지정/)
+  assert.match(orgChartClientSource, /divisionCount/)
+  assert.match(orgChartClientSource, /sectionCount/)
+  assert.match(orgChartClientSource, /teamCount/)
+  assert.match(orgChartClientSource, /오류 \{latestUpload\.failedCount\}행은 적용되지 않았습니다/)
 })
 
 run('org-chart entry points resolve to the org-chart tab instead of falling back to manage', () => {

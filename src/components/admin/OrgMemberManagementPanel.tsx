@@ -209,7 +209,9 @@ function DepartmentTreeNode(props: {
             <div className="flex flex-wrap gap-x-3 gap-y-1 break-keep text-[11px] leading-snug text-slate-500 sm:text-xs">
               {props.node.leaderEmployeeName ? (
                 <span className="break-keep">리더 {props.node.leaderEmployeeName}</span>
-              ) : null}
+              ) : (
+                <span className="break-keep text-amber-600">리더 미지정</span>
+              )}
             </div>
           </div>
         </button>

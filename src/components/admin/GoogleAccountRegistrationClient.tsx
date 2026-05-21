@@ -135,7 +135,7 @@ type UploadPreviewRow = {
   issues: Array<{
     field: string
     message: string
-    severity: 'error' | 'warning'
+    severity: 'error' | 'warning' | 'info'
   }>
 }
 
@@ -150,6 +150,7 @@ type UploadResponse = {
     updateCount: number
     errorCount: number
     warningCount: number
+    infoCount: number
   }
   rows: UploadPreviewRow[]
   errors: Array<{
@@ -1285,7 +1286,7 @@ export function GoogleAccountRegistrationClient() {
 
           {uploadResult && (
             <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="grid gap-4 md:grid-cols-4">
+              <div className="grid gap-4 md:grid-cols-5">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-sm text-slate-500">전체 행</div>
                   <div className="mt-2 text-2xl font-semibold text-slate-900">{uploadResult.summary.totalRows}</div>
@@ -1301,6 +1302,10 @@ export function GoogleAccountRegistrationClient() {
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-sm text-slate-500">경고</div>
                   <div className="mt-2 text-2xl font-semibold text-slate-900">{uploadResult.summary.warningCount}</div>
+                </div>
+                <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                  <div className="text-sm text-sky-700">안내</div>
+                  <div className="mt-2 text-2xl font-semibold text-sky-800">{uploadResult.summary.infoCount}</div>
                 </div>
               </div>
 
@@ -1337,7 +1342,13 @@ export function GoogleAccountRegistrationClient() {
                             {row.issues.map((issue, index) => (
                               <div
                                 key={`${row.rowNumber}-${index}`}
-                                className={issue.severity === 'warning' ? 'text-amber-700' : 'text-rose-700'}
+                                className={
+                                  issue.severity === 'info'
+                                    ? 'text-sky-700'
+                                    : issue.severity === 'warning'
+                                      ? 'text-amber-700'
+                                      : 'text-rose-700'
+                                }
                               >
                                 [{issue.field}] {issue.message}
                               </div>
