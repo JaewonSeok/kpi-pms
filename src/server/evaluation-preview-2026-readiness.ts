@@ -1,7 +1,10 @@
 import type { Session } from 'next-auth'
 import { prisma } from '@/lib/prisma'
 import { EVALUATION_POLICY_2026 } from '@/lib/evaluation-policy-2026'
-import { readPolicy2026OfficialReadinessEnabled } from '@/lib/evaluation-policy-2026-preview-metadata'
+import {
+  readPolicy2026OfficialReadinessEnabled,
+  readPolicy2026PreviewMappings,
+} from '@/lib/evaluation-policy-2026-preview-metadata'
 import { AppError } from '@/lib/utils'
 import { calculateEvaluationPreview2026, type EvaluationPreview2026Issue } from '@/server/evaluation-preview-2026'
 import {
@@ -11,6 +14,7 @@ import {
 
 type EvaluationPreviewReadinessDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'>
   & Partial<Pick<typeof prisma, 'department'>>
+  & Partial<Pick<typeof prisma, 'employee'>>
   & Partial<Pick<typeof prisma, 'evalCycle'>>
 
 export type EvaluationPreviewReadinessCycleCandidate2026 = {
@@ -63,10 +67,17 @@ export type EvaluationPreviewReadinessSummary2026 = {
   missingPolicyCategoryCount: number
   manualReviewCount: number
   missingSalesClassificationCount: number
+  missingOrgMasterDivisionSalesMappingCount: number
   ambiguousThresholdCount: number
   aiInsufficientDataCount: number
   samples: EvaluationPreviewReadinessSample[]
   activationBlockers: string[]
+}
+
+type DepartmentNodeForReadiness2026 = {
+  id: string
+  deptName: string
+  parentDeptId: string | null
 }
 
 const SAMPLE_LIMIT = 30
@@ -114,6 +125,79 @@ function isAiInsufficientData(issue: EvaluationPreview2026Issue) {
   )
 }
 
+function resolveDivisionDepartmentIdForReadiness2026(params: {
+  departmentId?: string | null
+  departmentsById: Map<string, DepartmentNodeForReadiness2026>
+}) {
+  if (!params.departmentId) return null
+  let current = params.departmentsById.get(params.departmentId)
+  if (!current) return null
+
+  const visited = new Set<string>()
+  while (current.parentDeptId && !visited.has(current.id)) {
+    visited.add(current.id)
+    const parent = params.departmentsById.get(current.parentDeptId)
+    if (!parent) break
+    current = parent
+  }
+
+  return current.id
+}
+
+async function countMissingOrgMasterDivisionSalesMappings2026(params: {
+  db: EvaluationPreviewReadinessDb
+  cycleId: string | null
+}) {
+  if (!params.cycleId || !params.db.department?.findMany || !params.db.employee?.findMany || !params.db.evalCycle?.findUnique) {
+    return 0
+  }
+
+  const [cycle, departments, employees] = await Promise.all([
+    params.db.evalCycle.findUnique({
+      where: { id: params.cycleId },
+      select: {
+        performanceDesignConfig: true,
+      },
+    }),
+    params.db.department.findMany({
+      select: {
+        id: true,
+        deptName: true,
+        parentDeptId: true,
+      },
+    }),
+    params.db.employee.findMany({
+      where: {
+        status: 'ACTIVE',
+      },
+      select: {
+        id: true,
+        deptId: true,
+      },
+    }),
+  ])
+
+  if (!cycle) return 0
+
+  const departmentsById = new Map(departments.map((department) => [department.id, department]))
+  const activeDivisionIds = new Set<string>()
+  for (const employee of employees) {
+    const divisionId = resolveDivisionDepartmentIdForReadiness2026({
+      departmentId: employee.deptId,
+      departmentsById,
+    })
+    if (divisionId) activeDivisionIds.add(divisionId)
+  }
+
+  const mappings = readPolicy2026PreviewMappings(cycle.performanceDesignConfig)
+  let missing = 0
+  for (const divisionId of activeDivisionIds) {
+    const mapped = mappings.salesGroupsByDivisionId[divisionId]?.salesGroup
+    if (mapped !== 'SALES' && mapped !== 'NON_SALES') missing += 1
+  }
+  return missing
+}
+
 function addSample(params: {
   samples: EvaluationPreviewReadinessSample[]
   evaluation: Awaited<ReturnType<typeof buildEvaluationPreviewInputFromDb2026>>['evaluation']
@@ -143,6 +227,7 @@ function buildActivationBlockers(summary: Pick<
   | 'missingPolicyCategoryCount'
   | 'manualReviewCount'
   | 'missingSalesClassificationCount'
+  | 'missingOrgMasterDivisionSalesMappingCount'
   | 'ambiguousThresholdCount'
   | 'aiInsufficientDataCount'
 >) {
@@ -153,6 +238,7 @@ function buildActivationBlockers(summary: Pick<
   if (summary.missingPolicyCategoryCount > 0) blockers.push('정책 카테고리 미분류 항목을 HR이 확정해야 합니다.')
   if (summary.manualReviewCount > 0) blockers.push('UNKNOWN/manual-review 항목은 자동 backfill 대상에서 제외해야 합니다.')
   if (summary.missingSalesClassificationCount > 0) blockers.push('영업/비영업 구분 정보가 없는 대상자를 정리해야 합니다.')
+  if (summary.missingOrgMasterDivisionSalesMappingCount > 0) blockers.push('전체 조직 master 기준 division 영업/비영업 매핑을 HR이 확정해야 합니다.')
   if (summary.ambiguousThresholdCount > 0) blockers.push('영업 팀원 Super/Outstanding 등급 기준 중첩은 HR 정책 확인이 필요합니다.')
   if (summary.aiInsufficientDataCount > 0) blockers.push('AI 레벨업 요건 증빙 부족 건은 점수와 별도로 정리해야 합니다.')
   return blockers
@@ -354,6 +440,10 @@ export async function getEvaluationPreviewReadinessSummary2026(params: {
     missingPolicyCategoryCount,
     manualReviewCount,
     missingSalesClassificationCount,
+    missingOrgMasterDivisionSalesMappingCount: await countMissingOrgMasterDivisionSalesMappings2026({
+      db,
+      cycleId: cycleScope.selectedCycleId,
+    }),
     ambiguousThresholdCount,
     aiInsufficientDataCount,
   }
