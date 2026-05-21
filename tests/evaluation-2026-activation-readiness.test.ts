@@ -119,6 +119,7 @@ function readySummary(overrides: Partial<any> = {}) {
     missingPolicyCategoryCount: 0,
     manualReviewCount: 0,
     missingSalesClassificationCount: 0,
+    missingOrgMasterDivisionSalesMappingCount: 0,
     ambiguousThresholdCount: 0,
     aiInsufficientDataCount: 0,
     samples: [],

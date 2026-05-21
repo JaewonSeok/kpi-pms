@@ -2430,7 +2430,7 @@ function PolicyReadiness2026Panel(props: {
               </div>
             ) : null}
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
             <MetricCard
               label="평가 확인"
               value={readiness.totalEvaluationsChecked.toLocaleString()}
@@ -2457,6 +2457,13 @@ function PolicyReadiness2026Panel(props: {
               help="자동 기본값 없음"
               compact
               variant={readiness.missingSalesClassificationCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="Division 매핑 필요"
+              value={readiness.missingOrgMasterDivisionSalesMappingCount.toLocaleString()}
+              help="조직 master 기준"
+              compact
+              variant={readiness.missingOrgMasterDivisionSalesMappingCount > 0 ? 'warning' : 'default'}
             />
             <MetricCard
               label="등급 기준 HR 확인 필요"
@@ -2771,7 +2778,7 @@ function PolicyMapping2026Panel(props: {
 }) {
   const data = props.mappingData
   const policyCandidates = data?.policyCategoryCandidates.slice(0, 6) ?? []
-  const divisionSalesCandidates = data?.divisionSalesGroupCandidates.slice(0, 6) ?? []
+  const divisionSalesCandidates = data?.divisionSalesGroupCandidates ?? []
   const salesCandidates = data?.salesGroupCandidates.slice(0, 6) ?? []
   const thresholdCandidates = data?.thresholdDecisions.slice(0, 3) ?? []
   const hasChanges =
@@ -2795,7 +2802,7 @@ function PolicyMapping2026Panel(props: {
               <Badge tone="neutral">Metadata only</Badge>
               <Badge tone={data ? 'warn' : 'neutral'}>
                 {data
-                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · division 구분 ${data.divisionSalesGroupCandidates.length}건`
+                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · division 미지정 ${data.divisionMappingSummary.unmappedDivisions}건`
                   : '미확인'}
               </Badge>
             </div>
@@ -2868,11 +2875,18 @@ function PolicyMapping2026Panel(props: {
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-sm font-semibold text-slate-900">Division 영업/비영업 구분</h4>
-                  <span className="text-xs text-slate-400">{data.divisionSalesGroupCandidates.length}건</span>
+                  <span className="text-xs text-slate-400">
+                    전체 {data.divisionMappingSummary.totalDivisions}개 · 미지정 {data.divisionMappingSummary.unmappedDivisions}개
+                  </span>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-slate-500">
-                  직원별 기본값이 아니라 division 부서 ID 기준으로 preview readiness를 해소합니다. 텍스트 추론은 참고 제안입니다.
+                  전체 조직 master의 division 부서 ID 기준으로 preview readiness metadata를 저장합니다. 평가 대상이 아직 없는 본부도 미리 매핑할 수 있으며, 공식 점수와 등급은 바뀌지 않습니다.
                 </p>
+                {data.divisionMappingSummary.warning ? (
+                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                    {data.divisionMappingSummary.warning}
+                  </div>
+                ) : null}
                 <div className="mt-3 space-y-3">
                   {divisionSalesCandidates.length ? divisionSalesCandidates.map((candidate) => {
                     const key = `${candidate.evalCycleId}:${candidate.divisionId}`
@@ -2880,12 +2894,15 @@ function PolicyMapping2026Panel(props: {
                       <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-semibold text-slate-900">{candidate.divisionName}</span>
-                          <Badge tone="neutral">대상 {candidate.affectedEmployeeCount}명</Badge>
+                          <Badge tone="neutral">재직 {candidate.activeEmployeeCount}명</Badge>
+                          <Badge tone={candidate.currentCycleTargetCount > 0 ? 'neutral' : 'warn'}>
+                            현재 주기 대상 {candidate.currentCycleTargetCount}명
+                          </Badge>
                         </div>
                         <p className="mt-1 text-xs leading-5 text-slate-500">
                           현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
                           {candidate.suggestedSalesGroup ? ` · 참고 제안 ${getSalesGroupLabel2026(candidate.suggestedSalesGroup)}` : ''}
-                          {candidate.sampleEmployees.length ? ` · 샘플 ${candidate.sampleEmployees.join(', ')}` : ''}
+                          {candidate.sampleEmployees.length ? ` · 현재 주기 샘플 ${candidate.sampleEmployees.join(', ')}` : ''}
                           {' · '}
                           {candidate.reason}
                         </p>

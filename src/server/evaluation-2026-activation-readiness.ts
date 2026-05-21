@@ -245,6 +245,9 @@ function collectPreviewReadiness(
   if (readiness.missingSalesClassificationCount > 0) {
     addItem(blockers, 'SALES_GROUP_UNRESOLVED', '영업/비영업 구분이 누락된 대상자가 남아 있습니다.')
   }
+  if (readiness.missingOrgMasterDivisionSalesMappingCount > 0) {
+    addItem(blockers, 'DIVISION_SALES_GROUP_UNRESOLVED', '조직 master 기준 division 영업/비영업 매핑이 남아 있습니다.')
+  }
   if (readiness.ambiguousThresholdCount > 0) {
     addItem(blockers, 'THRESHOLD_AMBIGUITY_UNRESOLVED', '영업 팀원 Super/Outstanding 기준 HR 확인이 남아 있습니다.')
   }

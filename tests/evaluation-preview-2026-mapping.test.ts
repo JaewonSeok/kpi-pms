@@ -165,7 +165,13 @@ function makeEvaluation(overrides: Partial<any> = {}) {
   }
 }
 
-function makeDb(evaluations: any[]) {
+function makeDb(
+  evaluations: any[],
+  options: {
+    departments?: any[]
+    employees?: any[]
+  } = {}
+) {
   const cycles = new Map<string, any>()
   const evaluationsById = new Map<string, any>()
   const itemsById = new Map<string, any>()
@@ -176,6 +182,10 @@ function makeDb(evaluations: any[]) {
     ['dept-sales-division', { id: 'dept-sales-division', deptName: '영업본부', parentDeptId: null }],
     ['dept-sales-team', { id: 'dept-sales-team', deptName: '영업팀', parentDeptId: 'dept-sales-division' }],
   ])
+  for (const department of options.departments ?? []) {
+    departmentsById.set(department.id, department)
+  }
+  const employeesById = new Map<string, any>()
   const writes = {
     evaluation: 0,
     evaluationItem: 0,
@@ -190,12 +200,22 @@ function makeDb(evaluations: any[]) {
     if (evaluation.target?.department?.id) {
       departmentsById.set(evaluation.target.department.id, evaluation.target.department)
     }
+    employeesById.set(evaluation.target.id, {
+      id: evaluation.target.id,
+      empName: evaluation.target.empName,
+      deptId: evaluation.target.deptId,
+      status: 'ACTIVE',
+      ...evaluation.target,
+    })
     for (const item of evaluation.items) {
       item.evaluationId = evaluation.id
       item.personalKpiId = item.personalKpi.id
       itemsById.set(item.id, item)
       personalKpisById.set(item.personalKpi.id, item.personalKpi)
     }
+  }
+  for (const employee of options.employees ?? []) {
+    employeesById.set(employee.id, employee)
   }
 
   const db = {
@@ -253,6 +273,11 @@ function makeDb(evaluations: any[]) {
     },
     evalCycle: {
       findUnique: async (args: any) => cycles.get(args?.where?.id) ?? null,
+      findMany: async (args: any) =>
+        Array.from(cycles.values()).filter((cycle) => {
+          if (args?.where?.evalYear && cycle.evalYear !== args.where.evalYear) return false
+          return true
+        }),
       update: async (args: any) => {
         writes.evalCycle += 1
         const cycle = cycles.get(args.where.id)
@@ -263,6 +288,13 @@ function makeDb(evaluations: any[]) {
     department: {
       findMany: async () => Array.from(departmentsById.values()),
       findUnique: async (args: any) => departmentsById.get(args?.where?.id) ?? null,
+    },
+    employee: {
+      findMany: async (args: any) =>
+        Array.from(employeesById.values()).filter((employee) => {
+          if (args?.where?.status && employee.status !== args.where.status) return false
+          return true
+        }),
     },
     aiCompetencyGateAssignment: {
       findFirst: async () => null,
@@ -375,10 +407,120 @@ async function main() {
 
     assert.equal(payload.policyCategoryCandidates.length, 1)
     assert.equal(payload.policyCategoryCandidates[0].evaluationItemId, 'missing-policy-category')
-    assert.equal(payload.divisionSalesGroupCandidates.length, 1)
-    assert.equal(payload.divisionSalesGroupCandidates[0].divisionId, 'dept-division')
+    assert.equal(payload.divisionSalesGroupCandidates.length, 2)
+    assert.equal(payload.divisionSalesGroupCandidates.some((candidate) => candidate.divisionId === 'dept-division'), true)
+    assert.equal(payload.divisionSalesGroupCandidates.some((candidate) => candidate.divisionId === 'dept-sales-division'), true)
     assert.equal(payload.salesGroupCandidates.length, 0)
     assert.equal(payload.persistence.divisionSalesGroup.includes('salesGroupsByDivisionId'), true)
+  })
+
+  await run('all active divisions appear in mapping candidates even when current cycle targets one division', async () => {
+    const evaluation = makeEvaluation()
+    const fake = makeDb(
+      [evaluation],
+      {
+        departments: [
+          { id: 'dept-rnd-division', deptName: '연구개발본부', parentDeptId: null },
+          { id: 'dept-rnd-team', deptName: 'AI팀', parentDeptId: 'dept-rnd-division' },
+        ],
+        employees: [
+          { id: 'emp-rnd-1', empName: 'R&D Member', deptId: 'dept-rnd-team', status: 'ACTIVE' },
+        ],
+      }
+    )
+
+    const payload = await getEvaluationPolicy2026MappingCandidatesForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        cycleId: 'cycle-2026',
+      },
+      { db: fake.db }
+    )
+
+    const rndCandidate = payload.divisionSalesGroupCandidates.find(
+      (candidate) => candidate.divisionId === 'dept-rnd-division'
+    )
+    const supportCandidate = payload.divisionSalesGroupCandidates.find(
+      (candidate) => candidate.divisionId === 'dept-division'
+    )
+
+    assert.ok(rndCandidate)
+    assert.equal(rndCandidate.activeEmployeeCount, 1)
+    assert.equal(rndCandidate.currentCycleTargetCount, 0)
+    assert.ok(supportCandidate)
+    assert.equal(supportCandidate.currentCycleTargetCount, 1)
+    assert.equal(payload.divisionMappingSummary.hasPartialCurrentCycleTargets, true)
+    assert.equal(Boolean(payload.divisionMappingSummary.warning), true)
+  })
+
+  await run('division with zero current eval targets can still be mapped as metadata', async () => {
+    const fake = makeDb(
+      [makeEvaluation()],
+      {
+        departments: [
+          { id: 'dept-rnd-division', deptName: '연구개발본부', parentDeptId: null },
+          { id: 'dept-rnd-team', deptName: 'AI팀', parentDeptId: 'dept-rnd-division' },
+        ],
+        employees: [
+          { id: 'emp-rnd-1', empName: 'R&D Member', deptId: 'dept-rnd-team', status: 'ACTIVE' },
+        ],
+      }
+    )
+
+    await updateEvaluationPolicy2026MetadataForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          itemMappings: [],
+          divisionSalesGroupMappings: [
+            {
+              evalCycleId: 'cycle-2026',
+              divisionId: 'dept-rnd-division',
+              salesGroup: 'NON_SALES',
+            },
+          ],
+          salesGroupMappings: [],
+          thresholdDecisions: [],
+        },
+      },
+      { db: fake.db, audit: fake.audit }
+    )
+
+    const payload = await getEvaluationPolicy2026MappingCandidatesForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        cycleId: 'cycle-2026',
+      },
+      { db: fake.db }
+    )
+    const rndCandidate = payload.divisionSalesGroupCandidates.find(
+      (candidate) => candidate.divisionId === 'dept-rnd-division'
+    )
+
+    assert.ok(rndCandidate)
+    assert.equal(rndCandidate.currentSalesGroup, 'NON_SALES')
+    assert.equal(rndCandidate.currentCycleTargetCount, 0)
+    assert.equal(fake.writes.evalCycle, 1)
+    assert.equal(fake.writes.evaluation, 0)
+  })
+
+  await run('suggestion-only division value does not count as saved mapping', async () => {
+    const fake = makeDb([makeEvaluation()])
+    const payload = await getEvaluationPolicy2026MappingCandidatesForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        cycleId: 'cycle-2026',
+      },
+      { db: fake.db }
+    )
+    const salesDivision = payload.divisionSalesGroupCandidates.find(
+      (candidate) => candidate.divisionId === 'dept-sales-division'
+    )
+
+    assert.ok(salesDivision)
+    assert.equal(salesDivision.suggestedSalesGroup, 'SALES')
+    assert.equal(salesDivision.currentSalesGroup, null)
+    assert.equal(payload.divisionMappingSummary.unmappedDivisions, payload.divisionSalesGroupCandidates.length)
   })
 
   await run('ordinary member cannot list mapping candidates', async () => {
