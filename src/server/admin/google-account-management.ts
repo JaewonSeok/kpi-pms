@@ -207,6 +207,22 @@ export type DepartmentDirectoryItem = {
   orgKpiCount: number
 }
 
+export type EmployeeUploadDepartmentPlanItem = {
+  key: string
+  path: string[]
+  departmentName: string
+  parentPath: string[]
+  departmentCode: string | null
+  scope: OrgKpiScope
+}
+
+export type DepartmentScopeSummary = {
+  totalDepartments: number
+  divisionCount: number
+  sectionCount: number
+  teamCount: number
+}
+
 export type EvaluatorAssignmentPreviewRow = {
   employeeId: string
   employeeNumber: string
@@ -840,6 +856,79 @@ export function validateEmployeeUploadRows(params: {
   } satisfies EmployeeUploadValidationResult
 }
 
+function buildUploadDepartmentPlanKey(path: string[]) {
+  return path.map((part) => part.trim().toUpperCase()).join('>')
+}
+
+export function buildEmployeeUploadDepartmentPlan(rows: EmployeeUploadNormalizedRow[]) {
+  const planByKey = new Map<string, EmployeeUploadDepartmentPlanItem>()
+
+  const addPath = (params: {
+    path: string[]
+    departmentCode?: string | null
+    scope: OrgKpiScope
+  }) => {
+    const path = params.path.map((part) => part.trim()).filter(Boolean)
+    const departmentName = path.at(-1)
+    if (!departmentName) return
+
+    const key = buildUploadDepartmentPlanKey(path)
+    if (planByKey.has(key)) return
+
+    planByKey.set(key, {
+      key,
+      path,
+      departmentName,
+      parentPath: path.slice(0, -1),
+      departmentCode: params.departmentCode?.trim() || null,
+      scope: params.scope,
+    })
+  }
+
+  for (const row of rows) {
+    addPath({
+      path: [row.division],
+      scope: 'division',
+    })
+
+    if (row.section) {
+      addPath({
+        path: [row.division, row.section],
+        scope: 'section',
+      })
+      addPath({
+        path: [row.division, row.section, row.team ?? ''],
+        departmentCode: row.departmentCode,
+        scope: 'team',
+      })
+      continue
+    }
+
+    addPath({
+      path: [row.division, row.team ?? ''],
+      departmentCode: row.departmentCode,
+      scope: 'team',
+    })
+  }
+
+  return Array.from(planByKey.values()).sort(
+    (left, right) =>
+      left.path.length - right.path.length ||
+      left.path.join('/').localeCompare(right.path.join('/'), 'ko')
+  )
+}
+
+export function summarizeDepartmentScopes<TDepartment extends { scope: OrgKpiScope }>(
+  departments: TDepartment[]
+): DepartmentScopeSummary {
+  return {
+    totalDepartments: departments.length,
+    divisionCount: departments.filter((department) => department.scope === 'division').length,
+    sectionCount: departments.filter((department) => department.scope === 'section').length,
+    teamCount: departments.filter((department) => department.scope === 'team').length,
+  }
+}
+
 export async function loadEmployeeValidationContext() {
   const [employees, departments] = await Promise.all([
     prisma.employee.findMany({
@@ -1384,25 +1473,28 @@ export async function loadEmployeeDirectory(params: {
       }
     })
 
+  const directoryDepartments = departments.map((department) => ({
+    id: department.id,
+    deptCode: department.deptCode,
+    deptName: department.deptName,
+    parentDeptId: department.parentDeptId,
+    scope: departmentScopeMap.get(department.id) ?? 'team',
+    leaderEmployeeId: department.leaderEmployeeId,
+    leaderEmployeeNumber: department.leaderEmployeeId
+      ? employeeNumberById.get(department.leaderEmployeeId) ?? null
+      : null,
+    leaderEmployeeName: department.leaderEmployeeId
+      ? employeeNameById.get(department.leaderEmployeeId) ?? null
+      : null,
+    excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
+    memberCount: memberCountByDepartmentId.get(department.id) ?? 0,
+    orgKpiCount: department._count.orgKpis,
+  }))
+  const departmentSummary = summarizeDepartmentScopes(directoryDepartments)
+
   return {
     allowedDomain: getAllowedGoogleWorkspaceDomain(),
-    departments: departments.map((department) => ({
-      id: department.id,
-      deptCode: department.deptCode,
-      deptName: department.deptName,
-      parentDeptId: department.parentDeptId,
-      scope: departmentScopeMap.get(department.id) ?? 'team',
-      leaderEmployeeId: department.leaderEmployeeId,
-      leaderEmployeeNumber: department.leaderEmployeeId
-        ? employeeNumberById.get(department.leaderEmployeeId) ?? null
-        : null,
-      leaderEmployeeName: department.leaderEmployeeId
-        ? employeeNameById.get(department.leaderEmployeeId) ?? null
-        : null,
-      excludeLeaderFromEvaluatorAutoAssign: department.excludeLeaderFromEvaluatorAutoAssign,
-      memberCount: memberCountByDepartmentId.get(department.id) ?? 0,
-      orgKpiCount: department._count.orgKpis,
-    })),
+    departments: directoryDepartments,
     managerOptions: employees.map((employee) => ({
       id: employee.id,
       employeeNumber: employee.empId,
@@ -1411,6 +1503,7 @@ export async function loadEmployeeDirectory(params: {
       departmentName: employee.department.deptName,
     })),
     summary: {
+      ...departmentSummary,
       totalEmployees: employees.length,
       activeEmployees: employees.filter((employee) => employee.status === 'ACTIVE').length,
       inactiveEmployees: employees.filter((employee) => employee.status === 'INACTIVE').length,
@@ -3160,63 +3253,33 @@ export async function applyEmployeeUpload(params: {
       department.id,
     ] as const)
   )
-  const resolveDepartmentIdByPath = (departmentName: string, parentDepartmentName: string | null) => {
-    const normalizedName = departmentName.trim().toUpperCase()
-    const parentDeptId = parentDepartmentName
-      ? Array.from(departmentIdByHierarchy.entries()).find(
-          ([key]) => key.endsWith(`::${parentDepartmentName.trim().toUpperCase()}`)
-        )?.[1] ?? null
-      : null
+  const resolveDepartmentIdByPathParts = (path: string[]) => {
+    let parentDeptId: string | null = null
 
-    return (
-      departmentIdByHierarchy.get(`${parentDeptId ?? 'ROOT'}::${normalizedName}`) ??
-      Array.from(departmentIdByHierarchy.entries()).find(([key]) => key.endsWith(`::${normalizedName}`))?.[1] ??
-      null
-    )
+    for (const part of path) {
+      const normalizedName = part.trim().toUpperCase()
+      if (!normalizedName) return null
+
+      const departmentId = departmentIdByHierarchy.get(`${parentDeptId ?? 'ROOT'}::${normalizedName}`)
+      if (!departmentId) return null
+      parentDeptId = departmentId
+    }
+
+    return parentDeptId
+  }
+  const resolveDepartmentIdByPath = (departmentName: string, parentDepartmentName: string | null) => {
+    if (parentDepartmentName) {
+      return resolveDepartmentIdByPathParts([parentDepartmentName, departmentName])
+    }
+
+    return resolveDepartmentIdByPathParts([departmentName])
+  }
+  const resolveUploadRowTeamDepartmentId = (row: EmployeeUploadNormalizedRow) => {
+    return resolveDepartmentIdByPathParts(row.section ? [row.division, row.section, row.team ?? ''] : [row.division, row.team ?? ''])
   }
 
   let createdDepartmentCount = 0
-  const departmentRowsByPath = new Map<
-    string,
-    {
-      departmentCode: string | null
-      departmentName: string
-      parentDepartment: string | null
-    }
-  >()
-  const addDepartmentRow = (params: {
-    departmentCode?: string | null
-    departmentName: string
-    parentDepartment?: string | null
-  }) => {
-    const departmentName = params.departmentName.trim()
-    if (!departmentName) return
-    const parentDepartment = params.parentDepartment?.trim() || null
-    const key = `${parentDepartment ?? 'ROOT'}::${departmentName.toUpperCase()}`
-    if (departmentRowsByPath.has(key)) return
-    departmentRowsByPath.set(key, {
-      departmentCode: params.departmentCode ?? null,
-      departmentName,
-      parentDepartment,
-    })
-  }
-
-  for (const row of params.rows) {
-    addDepartmentRow({
-      departmentCode: row.section ? null : row.departmentCode,
-      departmentName: row.division,
-      parentDepartment: null,
-    })
-    if (row.section) {
-      addDepartmentRow({
-        departmentCode: row.departmentCode,
-        departmentName: row.section,
-        parentDepartment: row.division,
-      })
-    }
-  }
-
-  const departmentRows = Array.from(departmentRowsByPath.values())
+  const departmentRows = buildEmployeeUploadDepartmentPlan(params.rows)
   const pendingDepartmentRows = [...departmentRows]
 
   while (pendingDepartmentRows.length > 0) {
@@ -3224,19 +3287,22 @@ export async function applyEmployeeUpload(params: {
 
     for (let index = pendingDepartmentRows.length - 1; index >= 0; index -= 1) {
       const department = pendingDepartmentRows[index]
-      const parentDeptId = department.parentDepartment
-        ? resolveDepartmentIdByPath(department.parentDepartment, null)
+      const parentDeptId = department.parentPath.length
+        ? resolveDepartmentIdByPathParts(department.parentPath)
         : null
 
-      if (department.parentDepartment && !parentDeptId) {
+      if (department.parentPath.length && !parentDeptId) {
         continue
       }
 
+      const explicitDepartmentCode = department.parentPath.length === 0 ? department.departmentCode : null
       const existingDepartmentId =
-        (department.departmentCode ? departmentIdByCode.get(department.departmentCode.toUpperCase()) : null) ??
         departmentIdByHierarchy.get(
           `${parentDeptId ?? 'ROOT'}::${department.departmentName.trim().toUpperCase()}`
         ) ??
+        (explicitDepartmentCode
+          ? departmentIdByCode.get(explicitDepartmentCode.toUpperCase())
+          : null) ??
         null
 
       if (existingDepartmentId) {
@@ -3247,16 +3313,15 @@ export async function applyEmployeeUpload(params: {
             parentDeptId,
           },
         })
+        departmentIdByHierarchy.set(
+          `${parentDeptId ?? 'ROOT'}::${department.departmentName.trim().toUpperCase()}`,
+          existingDepartmentId
+        )
       } else {
-        const inferredScope: OrgKpiScope = !parentDeptId
-          ? 'division'
-          : looksLikeLegacySectionName(department.departmentName)
-            ? 'section'
-            : 'team'
         const generatedCode =
-          inferredScope === 'division'
+          department.scope === 'division'
             ? buildGeneratedDivisionDepartmentCode(new Set(departmentIdByCode.keys()))
-            : inferredScope === 'section'
+            : department.scope === 'section'
               ? buildGeneratedSectionDepartmentCode(
                   existingDepartments.find((item) => item.id === parentDeptId)?.deptCode ?? 'DIV',
                   new Set(departmentIdByCode.keys()),
@@ -3267,7 +3332,7 @@ export async function applyEmployeeUpload(params: {
                 )
         const createdDepartment = await prisma.department.create({
           data: {
-            deptCode: department.departmentCode ?? generatedCode,
+            deptCode: explicitDepartmentCode ?? generatedCode,
             deptName: department.departmentName,
             parentDeptId,
             orgId: organization.id,
@@ -3277,7 +3342,7 @@ export async function applyEmployeeUpload(params: {
             deptCode: true,
           },
         })
-        departmentIdByCode.set((department.departmentCode ?? createdDepartment.deptCode).toUpperCase(), createdDepartment.id)
+        departmentIdByCode.set((explicitDepartmentCode ?? createdDepartment.deptCode).toUpperCase(), createdDepartment.id)
         departmentIdByHierarchy.set(
           `${parentDeptId ?? 'ROOT'}::${department.departmentName.trim().toUpperCase()}`,
           createdDepartment.id
@@ -3353,6 +3418,7 @@ export async function applyEmployeeUpload(params: {
 
   for (const row of params.rows) {
     const departmentId =
+      resolveUploadRowTeamDepartmentId(row) ??
       (row.departmentCode ? departmentIdByCode.get(row.departmentCode.toUpperCase()) : null) ??
       resolveDepartmentIdByPath(row.department, row.parentDepartment)
     if (!departmentId) {

@@ -66,6 +66,10 @@ type EmployeeDirectoryResponse = {
   departments: DepartmentOption[]
   managerOptions: ManagerOption[]
   summary: {
+    totalDepartments: number
+    divisionCount: number
+    sectionCount: number
+    teamCount: number
     totalEmployees: number
     activeEmployees: number
     inactiveEmployees: number
@@ -265,6 +269,7 @@ export function AdminOrgChartManagementClient(props: Props) {
   const selectedDepartment = directoryQuery.data.departments.find(
     (department) => department.id === departmentFilter
   )
+  const latestUpload = directoryQuery.data.uploadHistory[0] ?? null
 
   function moveToEmployeeManage(employeeId: string) {
     const employee = directoryQuery.data.employees.find((item) => item.id === employeeId)
@@ -326,9 +331,13 @@ export function AdminOrgChartManagementClient(props: Props) {
 
       <section className="grid gap-4 md:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-sm text-slate-500">현재 조직 수</div>
+          <div className="text-sm text-slate-500">조직 단위</div>
           <div className="mt-2 text-2xl font-semibold text-slate-900">
-            {directoryQuery.data.departments.length}
+            {directoryQuery.data.summary.totalDepartments}
+          </div>
+          <div className="mt-2 text-xs leading-5 text-slate-500">
+            본부 {directoryQuery.data.summary.divisionCount} · 실 {directoryQuery.data.summary.sectionCount} · 팀{' '}
+            {directoryQuery.data.summary.teamCount}
           </div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -350,6 +359,13 @@ export function AdminOrgChartManagementClient(props: Props) {
           </div>
         </div>
       </section>
+
+      {latestUpload && latestUpload.failedCount > 0 ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+          최근 직원 마스터 업로드에서 오류 {latestUpload.failedCount}행은 적용되지 않았습니다. 해당 행에만 있는 조직 경로는
+          조직 트리에 생성되지 않습니다.
+        </section>
+      ) : null}
 
       <OrgMemberManagementPanel
         departments={directoryQuery.data.departments}
