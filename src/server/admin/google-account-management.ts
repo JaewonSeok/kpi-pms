@@ -65,52 +65,10 @@ export const EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS = [
     example: 'ROLE_MEMBER',
   },
   {
-    key: 'employmentStatus',
-    required: true,
-    description: 'ACTIVE, INACTIVE, ON_LEAVE 중 하나를 사용합니다.',
-    example: 'ACTIVE',
-  },
-  {
     key: 'managerEmployeeNo',
     required: false,
     description: '직속 상사의 사번입니다. 없으면 상급자 미지정 warning으로 처리합니다.',
     example: 'E-1000',
-  },
-  {
-    key: 'joinDate',
-    required: false,
-    description: '입사일입니다. YYYY-MM-DD 형식을 권장합니다.',
-    example: '2024-01-15',
-  },
-  {
-    key: 'resignationDate',
-    required: false,
-    description: '퇴사일입니다. ACTIVE 상태에서는 비워둘 수 있습니다.',
-    example: '2025-12-31',
-  },
-  {
-    key: 'sortOrder',
-    required: false,
-    description: '조직도 표시 순서입니다. 숫자가 작을수록 먼저 표시됩니다.',
-    example: '10',
-  },
-  {
-    key: 'notes',
-    required: false,
-    description: '비고입니다. 운영 메모 용도입니다.',
-    example: '겸직 중',
-  },
-  {
-    key: 'parentDepartment',
-    required: false,
-    description: '레거시 호환용 상위 조직명입니다. 보통은 division/section/team만 입력합니다.',
-    example: '',
-  },
-  {
-    key: 'department',
-    required: false,
-    description: '레거시 호환용 부서명입니다. 보통은 division/section/team만 입력합니다.',
-    example: '',
   },
 ] as const
 
@@ -122,6 +80,15 @@ export const EMPLOYEE_UPLOAD_STATUS_VALUES = ['ACTIVE', 'INACTIVE', 'ON_LEAVE'] 
 
 export type EmployeeManagementStatus = (typeof EMPLOYEE_STATUS_VALUES)[number]
 export type EmployeeUploadTemplateKey = (typeof EMPLOYEE_UPLOAD_TEMPLATE_COLUMNS)[number]['key']
+type EmployeeUploadFieldKey =
+  | EmployeeUploadTemplateKey
+  | 'employmentStatus'
+  | 'joinDate'
+  | 'resignationDate'
+  | 'sortOrder'
+  | 'notes'
+  | 'parentDepartment'
+  | 'department'
 type MasterLoginAccessSource = ReturnType<typeof resolveMasterLoginAccess>['source']
 
 type ExistingEmployeeSnapshot = {
@@ -165,7 +132,7 @@ export type EmployeeUploadNormalizedRow = {
 export type EmployeeUploadIssue = {
   field: string
   message: string
-  severity: 'error' | 'warning'
+  severity: 'error' | 'warning' | 'info'
 }
 
 export type EmployeeUploadValidationRow = {
@@ -188,6 +155,7 @@ export type EmployeeUploadValidationResult = {
     updateCount: number
     errorCount: number
     warningCount: number
+    infoCount: number
   }
   rows: EmployeeUploadValidationRow[]
   validRows: EmployeeUploadNormalizedRow[]
@@ -297,7 +265,7 @@ export type EmployeeOrgChartMember = EmployeeOrgChartNode['employee'] & {
   managerExists?: boolean
 }
 
-const HEADER_ALIASES: Record<EmployeeUploadTemplateKey, string[]> = {
+const HEADER_ALIASES: Record<EmployeeUploadFieldKey, string[]> = {
   employeeNo: ['employeeNo', 'employeeNumber', 'employee_number', 'empId', 'emp_id', '사번'],
   name: ['name', 'employeeName', 'empName', '직원명', '이름'],
   googleEmail: ['googleEmail', 'google_email', 'gwsEmail', 'gws_email', '구글이메일', 'google'],
@@ -412,7 +380,7 @@ function mapRoleToPosition(role: SystemRole): Position {
   }
 }
 
-function getUploadValue(row: Record<string, unknown>, key: EmployeeUploadTemplateKey) {
+function getUploadValue(row: Record<string, unknown>, key: EmployeeUploadFieldKey) {
   const aliasSet = new Set(HEADER_ALIASES[key].map(normalizeHeaderKey))
 
   for (const [header, value] of Object.entries(row)) {
@@ -428,7 +396,7 @@ function addIssue(
   row: EmployeeUploadValidationRow,
   field: string,
   message: string,
-  severity: 'error' | 'warning' = 'error'
+  severity: EmployeeUploadIssue['severity'] = 'error'
 ) {
   row.issues.push({ field, message, severity })
 }
@@ -566,7 +534,8 @@ export function buildEmployeeTemplateWorkbook() {
     ]),
     [],
     ['rules', '', '', ''],
-    ['employmentStatus', '', 'ACTIVE / INACTIVE / ON_LEAVE', ''],
+    ['employmentStatus', '', '기존 파일에 있으면 ACTIVE / INACTIVE / ON_LEAVE를 검증합니다. 없으면 ACTIVE로 처리합니다.', ''],
+    ['legacy optional columns', '', '기존 파일의 joinDate, resignationDate, sortOrder, notes, parentDepartment, department 컬럼은 계속 읽습니다.', ''],
     ['role', '', 'ROLE_MEMBER / ROLE_LEADER / ROLE_ADMIN', ''],
     [
       'managerEmployeeNo',
@@ -575,7 +544,6 @@ export function buildEmployeeTemplateWorkbook() {
       '',
     ],
     ['division/section/team', '', 'parentDepartment/department 없이도 이 3개 컬럼으로 조직 경로를 구성합니다. section은 비워도 됩니다.', ''],
-    ['resignationDate', '', '선택 입력입니다. ACTIVE 상태에서는 비워도 됩니다.', ''],
     ['googleEmail', '', `허용 도메인: ${getAllowedGoogleWorkspaceDomain()}`, ''],
   ]
 
@@ -675,7 +643,8 @@ export function validateEmployeeUploadRows(params: {
     const notes = normalizeTextValue(getUploadValue(rawRow, 'notes')) || null
     const existing = employeeNumber ? existingByEmployeeNumber.get(employeeNumber) : undefined
     const role = normalizeRoleValue(getUploadValue(rawRow, 'role'))
-    const employmentStatus = normalizeStatusValue(getUploadValue(rawRow, 'employmentStatus'))
+    const employmentStatusInput = normalizeTextValue(getUploadValue(rawRow, 'employmentStatus'))
+    const employmentStatus = employmentStatusInput ? normalizeStatusValue(employmentStatusInput) : 'ACTIVE'
 
     const row: EmployeeUploadValidationRow = {
       rowNumber,
@@ -694,7 +663,12 @@ export function validateEmployeeUploadRows(params: {
     if (!team) addIssue(row, 'team', '팀명은 필수입니다.')
     if (!title) addIssue(row, 'title', '직책 또는 직위는 필수입니다.')
     if (!role) addIssue(row, 'role', '권한 값은 ROLE_MEMBER, ROLE_LEADER, ROLE_ADMIN 중 하나여야 합니다.')
-    if (!employmentStatus) addIssue(row, 'employmentStatus', '재직 상태 값은 ACTIVE, INACTIVE, ON_LEAVE 중 하나여야 합니다.')
+    if (employmentStatusInput && !employmentStatus) {
+      addIssue(row, 'employmentStatus', '재직 상태 값은 ACTIVE, INACTIVE, ON_LEAVE 중 하나여야 합니다.')
+    }
+    if (!employmentStatusInput) {
+      addIssue(row, 'employmentStatus', 'employmentStatus 미입력: ACTIVE로 처리됩니다.', 'info')
+    }
     if (joinDateResult.invalid) addIssue(row, 'joinDate', '입사일 형식이 올바르지 않습니다.')
     if (resignationDateResult.invalid) addIssue(row, 'resignationDate', '퇴사일 형식이 올바르지 않습니다.')
     if (sortOrderResult.invalid) addIssue(row, 'sortOrder', '정렬 순서는 0 이상의 정수여야 합니다.')
@@ -843,6 +817,10 @@ export function validateEmployeeUploadRows(params: {
     (count, row) => count + row.issues.filter((issue) => issue.severity === 'warning').length,
     0
   )
+  const infoCount = rows.reduce(
+    (count, row) => count + row.issues.filter((issue) => issue.severity === 'info').length,
+    0
+  )
 
   return {
     fileName: params.fileName,
@@ -854,6 +832,7 @@ export function validateEmployeeUploadRows(params: {
       updateCount: rows.filter((row) => row.valid && row.action === 'update').length,
       errorCount: errors.length,
       warningCount,
+      infoCount,
     },
     rows,
     validRows,

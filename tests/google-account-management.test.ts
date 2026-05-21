@@ -87,7 +87,6 @@ function toEmployeeUploadRow(row: Record<string, unknown>) {
     team: '인사팀',
     title: '매니저',
     role: 'ROLE_MEMBER',
-    employmentStatus: 'ACTIVE',
     ...rest,
     employeeNo,
     managerEmployeeNo,
@@ -109,7 +108,21 @@ run('template workbook exposes the expected headers', () => {
   const workbook = XLSX.read(buildEmployeeTemplateWorkbook(), { type: 'buffer' })
   const templateSheet = workbook.Sheets[workbook.SheetNames[0]]
   const rows = XLSX.utils.sheet_to_json<Array<string>>(templateSheet, { header: 1 })
-  assert.deepEqual(rows[0], EMPLOYEE_UPLOAD_TEMPLATE_HEADERS)
+  const headerRow: string[] = Array.from(rows[0] ?? []).map((cell) => String(cell))
+  assert.equal(headerRow.some((header) => header === 'employmentStatus'), false)
+  assert.equal(headerRow.some((header) => header === 'resignationDate'), false)
+  assert.deepEqual(headerRow, EMPLOYEE_UPLOAD_TEMPLATE_HEADERS)
+  assert.deepEqual(headerRow, [
+    'employeeNo',
+    'name',
+    'googleEmail',
+    'division',
+    'section',
+    'team',
+    'title',
+    'role',
+    'managerEmployeeNo',
+  ])
 })
 
 run('valid upload row passes preview validation', () => {
@@ -142,13 +155,14 @@ run('minimal employee upload columns pass without optional legacy organization f
       team: '인사팀',
       title: '매니저',
       role: 'ROLE_MEMBER',
-      employmentStatus: 'ACTIVE',
       managerEmployeeNo: 'E-1000',
     },
   ])
 
   assert.equal(result.summary.validRows, 1)
   assert.equal(result.rows[0]?.valid, true)
+  assert.equal(result.summary.infoCount, 1)
+  assert.equal(result.validRows[0]?.employmentStatus, 'ACTIVE')
   assert.equal(result.validRows[0]?.division, '경영지원본부')
   assert.equal(result.validRows[0]?.section, null)
   assert.equal(result.validRows[0]?.department, '경영지원본부')
@@ -168,7 +182,6 @@ run('optional upload columns can be omitted while manager absence is warning-onl
         team: '인사팀',
         title: '매니저',
         role: 'ROLE_MEMBER',
-        employmentStatus: 'ACTIVE',
       },
     ])
   )
@@ -182,7 +195,13 @@ run('optional upload columns can be omitted while manager absence is warning-onl
 
   assert.equal(result.summary.validRows, 1)
   assert.equal(result.summary.warningCount, 1)
+  assert.equal(result.summary.infoCount, 1)
+  assert.equal(result.validRows[0]?.employmentStatus, 'ACTIVE')
   assert.equal(result.rows[0]?.issues.some((issue) => issue.field === 'managerEmployeeNo'), true)
+  assert.equal(
+    result.rows[0]?.issues.some((issue) => issue.field === 'employmentStatus' && issue.severity === 'info'),
+    true
+  )
 })
 
 run('googleEmail, division, and team are required for employee upload', () => {
@@ -275,6 +294,50 @@ run('invalid upload role and employmentStatus fail validation', () => {
   assert.ok(invalidRole.errors.some((error) => error.field === 'role'))
   assert.equal(invalidStatus.summary.validRows, 0)
   assert.ok(invalidStatus.errors.some((error) => error.field === 'employmentStatus'))
+})
+
+run('legacy employmentStatus values are optional and validated when present', () => {
+  const missingStatus = validateRows([
+    {
+      employeeNo: 'E-2011',
+      googleEmail: 'missing.status.default@rsupport.com',
+      division: '경영지원본부',
+      team: '인사팀',
+      title: '매니저',
+      role: 'ROLE_MEMBER',
+    },
+  ])
+  const active = validateRows([
+    {
+      employeeNo: 'E-2012',
+      googleEmail: 'active.status@rsupport.com',
+      employmentStatus: 'ACTIVE',
+    },
+  ])
+  const inactive = validateRows([
+    {
+      employeeNo: 'E-2013',
+      googleEmail: 'inactive.status@rsupport.com',
+      employmentStatus: 'INACTIVE',
+    },
+  ])
+  const onLeave = validateRows([
+    {
+      employeeNo: 'E-2014',
+      googleEmail: 'onleave.status@rsupport.com',
+      employmentStatus: 'ON_LEAVE',
+    },
+  ])
+
+  assert.equal(missingStatus.summary.validRows, 1)
+  assert.equal(missingStatus.validRows[0]?.employmentStatus, 'ACTIVE')
+  assert.equal(missingStatus.rows[0]?.issues.some((issue) => issue.severity === 'info'), true)
+  assert.equal(active.summary.validRows, 1)
+  assert.equal(active.validRows[0]?.employmentStatus, 'ACTIVE')
+  assert.equal(inactive.summary.validRows, 1)
+  assert.equal(inactive.validRows[0]?.employmentStatus, 'INACTIVE')
+  assert.equal(onLeave.summary.validRows, 1)
+  assert.equal(onLeave.validRows[0]?.employmentStatus, 'ON_LEAVE')
 })
 
 run('invalid rows keep row-level errors', () => {
