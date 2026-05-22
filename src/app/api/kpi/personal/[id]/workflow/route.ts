@@ -102,6 +102,10 @@ export async function POST(request: Request, context: RouteContext) {
       )
     }
 
+    if (validated.data.action === 'REOPEN' && (validated.data.note?.trim().length ?? 0) < 5) {
+      throw new AppError(400, 'REOPEN_REASON_REQUIRED', '초안으로 되돌리는 사유를 5자 이상 입력해 주세요.')
+    }
+
     const logs = await prisma.auditLog.findMany({
       where: {
         entityType: 'PersonalKpi',
