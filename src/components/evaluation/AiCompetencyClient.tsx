@@ -2,12 +2,20 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import type { AiCompetencyGateEvidenceType, AiCompetencyGateTrack } from '@prisma/client'
+import type { AiCompetencyGateEvidenceType } from '@prisma/client'
 import type { AiCompetencyGateEmployeePageData } from '@/server/ai-competency-gate'
 import {
   buildAiCompetencyAdminHref,
   buildAiCompetencyEmployeeReturnTarget,
 } from '@/lib/ai-competency-gate-navigation'
+import {
+  AI_COMPETENCY_GATE_RECOGNITION_ROUTES,
+  deriveGateTrackFromRecognitionRoute,
+  getGateRecognitionRouteConfig,
+  getGateRecognitionRouteLabel,
+  resolveGateRecognitionRouteFromCase,
+  type AiCompetencyGateRecognitionRoute,
+} from '@/lib/ai-competency-gate-config'
 import {
   EmptyBox,
   Field,
@@ -46,7 +54,7 @@ type EvidenceFormState = {
 const COPY = {
   pageTitle: 'AI 역량평가',
   pageDescription:
-    '승진 요건으로 운영되는 AI 역량평가입니다. 연간 평가 점수와 별도로 실제 업무 문제 해결과 조직 확산 성과를 Pass / 보완 요청 / Fail 방식으로 검토합니다.',
+    '승진 요건으로 운영되는 AI 역량평가입니다. 2026 업적평가 점수와 별도로 실제 업무 개선 증빙을 Pass / 보완 요청 / Fail 방식으로 검토합니다.',
   adminCta: '관리자/검토자 화면',
   noPermissionTitle: '접근 권한이 없습니다.',
   loadErrorTitle: 'AI 역량평가 화면을 불러오지 못했습니다.',
@@ -64,19 +72,6 @@ const COPY = {
   historyEmptyTitle: '아직 기록이 없습니다.',
   historyEmptyDescription: '초안을 저장하거나 제출하면 이력과 결정 내역이 여기에 표시됩니다.',
 }
-
-const TRACK_OPTIONS: Array<{ value: AiCompetencyGateTrack; label: string; description: string }> = [
-  {
-    value: 'AI_PROJECT_EXECUTION',
-    label: 'AI 기반 프로젝트 수행',
-    description: '실제 업무 문제를 해결하기 위해 AI 기반 개선 프로젝트를 주도한 사례를 제출합니다.',
-  },
-  {
-    value: 'AI_USE_CASE_EXPANSION',
-    label: 'AI 활용 사례 확산',
-    description: '개인 활용을 넘어 팀이나 조직에 확산된 재사용 가능한 AI 활용 사례를 제출합니다.',
-  },
-]
 
 const EVIDENCE_TYPE_OPTIONS: Array<{ value: AiCompetencyGateEvidenceType; label: string }> = [
   { value: 'BEFORE', label: 'Before 근거' },
@@ -152,6 +147,39 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
   const isEditable = Boolean(props.statusCard?.canEdit && props.assignmentId)
   const hasAssignment = Boolean(props.assignmentId)
   const metricCountLabel = useMemo(() => `${form.metrics.length}개`, [form.metrics.length])
+  const recognitionRoute = useMemo(
+    () => resolveGateRecognitionRouteFromCase(form.track, form.policyRecognitionRoute),
+    [form.policyRecognitionRoute, form.track]
+  )
+  const recognitionRouteConfig = useMemo(
+    () => getGateRecognitionRouteConfig(recognitionRoute),
+    [recognitionRoute]
+  )
+  const readinessWarnings = useMemo(() => {
+    const warnings: string[] = []
+    if (recognitionRoute === 'ORG_CONTRIBUTION_CASE') {
+      const hasBeforeAfterMetric = form.metrics.some(
+        (metric) =>
+          metric.metricName.trim() &&
+          metric.beforeValue.trim() &&
+          metric.afterValue.trim() &&
+          metric.verificationMethod.trim()
+      )
+      if (!hasBeforeAfterMetric) {
+        warnings.push('조직 기여 AI 사례는 시간 단축, 비용 절감, 생산성 향상, 품질/오류 개선 등 적용 전/후 정량 개선 지표가 필요합니다.')
+      }
+      if (!form.adoptionDetail.seminarSharingEvidence.trim() && !form.teamOrganizationAdoption.trim()) {
+        warnings.push('조직 내 확산, 공유, 세미나, 교육 근거를 함께 남겨 주세요.')
+      }
+    }
+    if (recognitionRoute === 'PRACTICAL_AI_CERTIFICATION') {
+      warnings.push('단순 교육 이수나 도구 사용 경험만으로는 인정되지 않습니다. 실무 과제 결과, 완료 증빙, 직무 관련성을 함께 제출해 주세요.')
+    }
+    if (!props.evidenceItems.length) {
+      warnings.push('제출 전 증빙 링크, 파일, 또는 설명 메모를 최소 1건 이상 등록해야 합니다.')
+    }
+    return warnings
+  }, [form.adoptionDetail.seminarSharingEvidence, form.metrics, form.teamOrganizationAdoption, props.evidenceItems.length, recognitionRoute])
   const employeeReturnTarget = useMemo(
     () =>
       buildAiCompetencyEmployeeReturnTarget({
@@ -184,6 +212,14 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
 
   const updateField = (key: keyof typeof form, value: string | boolean | typeof form.metrics) => {
     setForm((current) => ({ ...current, [key]: value }))
+  }
+
+  const updateRecognitionRoute = (value: AiCompetencyGateRecognitionRoute) => {
+    setForm((current) => ({
+      ...current,
+      policyRecognitionRoute: value,
+      track: deriveGateTrackFromRecognitionRoute(value) ?? undefined,
+    }))
   }
 
   if (props.state === 'permission-denied') {
@@ -250,6 +286,12 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
         </div>
       </SectionCard>
 
+      <NoticeBanner
+        tone="info"
+        title="AI 활용평가는 2026 업적평가 점수에 반영되지 않습니다."
+        description="레벨업/승진 Pass/Fail 요건으로 별도 관리되며, 단순 교육 이수나 도구 사용 경험만으로는 인정되지 않습니다. 실제 업무 개선과 증빙이 필요합니다."
+      />
+
       {!hasAssignment ? (
         <EmptyBox title={COPY.assignedEmptyTitle} description={props.message ?? COPY.assignedEmptyDescription} />
       ) : (
@@ -299,20 +341,45 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
           }
         >
           <div className="space-y-6">
-            <div className="grid gap-4 md:grid-cols-2">
-              {TRACK_OPTIONS.map((option) => (
+            <div className="grid gap-4 md:grid-cols-3">
+              {AI_COMPETENCY_GATE_RECOGNITION_ROUTES.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   disabled={!isEditable}
-                  className={`rounded-3xl border p-5 text-left transition ${form.track === option.value ? 'border-slate-900 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} ${!isEditable ? 'cursor-default opacity-80' : ''}`}
-                  onClick={() => updateField('track', option.value)}
+                  className={`rounded-3xl border p-5 text-left transition ${recognitionRoute === option.value ? 'border-slate-900 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} ${!isEditable ? 'cursor-default opacity-80' : ''}`}
+                  onClick={() => updateRecognitionRoute(option.value)}
                 >
                   <p className="text-sm font-semibold">{option.label}</p>
-                  <p className={`mt-2 text-sm leading-6 ${form.track === option.value ? 'text-slate-200' : 'text-slate-600'}`}>{option.description}</p>
+                  <p className={`mt-2 text-sm leading-6 ${recognitionRoute === option.value ? 'text-slate-200' : 'text-slate-600'}`}>{option.description}</p>
                 </button>
               ))}
             </div>
+
+            <SectionCard
+              title="인정 경로별 증빙 요건"
+              description="선택한 경로의 요구사항을 확인하고, 저장은 자유롭게 하되 제출 전 필수 증빙을 채워 주세요."
+            >
+              <div className="space-y-3">
+                <StatusPill value={recognitionRouteConfig?.label ?? '인정 경로 미선택'} />
+                <ul className="grid gap-2 text-sm leading-6 text-slate-700 md:grid-cols-2">
+                  {(recognitionRouteConfig?.requirements ?? [
+                    'AI 활용평가 인정 경로를 먼저 선택해 주세요.',
+                  ]).map((item) => (
+                    <li key={item} className="rounded-2xl bg-slate-50 px-4 py-3">
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+                {readinessWarnings.length ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                    {readinessWarnings.map((warning) => (
+                      <p key={warning}>{warning}</p>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </SectionCard>
 
             <div className="grid gap-5 md:grid-cols-2">
               {COMMON_FIELDS.map(([key, label, required]) => (
@@ -327,7 +394,7 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
               ))}
             </div>
 
-            {form.track === 'AI_PROJECT_EXECUTION' ? (
+            {recognitionRoute === 'AI_PROJECT_TK' ? (
               <TrackSection
                 title="프로젝트 수행 상세"
                 fields={[
@@ -346,7 +413,7 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
               />
             ) : null}
 
-            {form.track === 'AI_USE_CASE_EXPANSION' ? (
+            {recognitionRoute === 'ORG_CONTRIBUTION_CASE' ? (
               <TrackSection
                 title="활용 사례 확산 상세"
                 fields={[
@@ -363,6 +430,17 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
                   setForm((current) => ({ ...current, adoptionDetail: { ...current.adoptionDetail, [key]: value } }))
                 }
               />
+            ) : null}
+
+            {recognitionRoute === 'PRACTICAL_AI_CERTIFICATION' ? (
+              <SectionCard
+                title="실무 인증 작성 가이드"
+                description="인증/플랫폼명은 과제명에, 실무 과제 결과는 목표와 효과 요약에, 직무 관련성은 본인 역할에 구체적으로 작성해 주세요."
+              >
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                  단순 과정 수료증만으로는 Pass 판단이 어렵습니다. 실무 과제 결과물, 완료 증빙, 업무 적용 설명을 증빙 자료와 함께 제출해 주세요.
+                </div>
+              </SectionCard>
             ) : null}
 
             <SectionCard
@@ -503,8 +581,12 @@ function TrackSection(props: { title: string; fields: ReadonlyArray<readonly [st
 }
 
 function PreviewDialog(props: { form: AiCompetencyGateEmployeePageData['caseForm']; onClose: () => void }) {
+  const recognitionRoute = resolveGateRecognitionRouteFromCase(
+    props.form.track,
+    props.form.policyRecognitionRoute
+  )
   const previewRows = [
-    ['트랙', TRACK_OPTIONS.find((item) => item.value === props.form.track)?.label ?? '미선택'],
+    ['인정 경로', getGateRecognitionRouteLabel(recognitionRoute)],
     ['과제명', props.form.title || '미입력'],
     ['업무 문제', props.form.problemStatement || '미입력'],
     ['목표', props.form.goalStatement || '미입력'],
