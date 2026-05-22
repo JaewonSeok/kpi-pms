@@ -165,6 +165,109 @@ const existingSelfEvaluations = [
   },
 ]
 
+const teamOrgKpis = [
+  {
+    id: 'team-kpi-approved',
+    deptId: 'team-sales',
+    evalYear: 2026,
+    kpiName: '세일즈 핵심 매출 KPI',
+    status: 'CONFIRMED',
+    parentOrgKpiId: 'division-kpi-sales',
+    mboExceptionApproved: false,
+    mboExceptionReason: null,
+    mboExceptionApprovedById: null,
+    mboExceptionApprovedAt: null,
+    department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
+    parentOrgKpi: {
+      id: 'division-kpi-sales',
+      kpiName: '국내영업총괄 매출 성장',
+      department: { deptName: '국내영업총괄본부' },
+    },
+    teamKpiReviewItems: [
+      {
+        id: 'review-approved',
+        verdict: 'ADEQUATE',
+        rationale: '본부 KPI에 직접 연결된 핵심 과제입니다.',
+        linkageComment: '본부 KPI 직접 포함',
+        duplicationComment: null,
+        recommendationText: '조직목표 반영 가능',
+        improvementSuggestions: null,
+        createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        run: {
+          id: 'run-approved',
+          reviewType: 'FULL_SET',
+          overallVerdict: 'ADEQUATE',
+          overallSummary: '반영 가능',
+          createdAt: new Date('2026-03-01T00:00:00.000Z'),
+        },
+      },
+    ],
+  },
+  {
+    id: 'team-kpi-excluded',
+    deptId: 'team-support',
+    evalYear: 2026,
+    kpiName: '인사 운영 유지 KPI',
+    status: 'CONFIRMED',
+    parentOrgKpiId: null,
+    mboExceptionApproved: false,
+    mboExceptionReason: null,
+    mboExceptionApprovedById: null,
+    mboExceptionApprovedAt: null,
+    department: { id: 'team-support', deptName: '인사팀', parentDeptId: 'division-support' },
+    parentOrgKpi: null,
+    teamKpiReviewItems: [
+      {
+        id: 'review-excluded',
+        verdict: 'INSUFFICIENT',
+        rationale: '단순 운영 업무로 조직목표 반영 대상이 아닙니다.',
+        linkageComment: null,
+        duplicationComment: null,
+        recommendationText: '일상업무 처리',
+        improvementSuggestions: '개인 MBO에서는 DAILY_WORK로 검토하세요.',
+        createdAt: new Date('2026-03-02T00:00:00.000Z'),
+        run: {
+          id: 'run-excluded',
+          reviewType: 'FULL_SET',
+          overallVerdict: 'INSUFFICIENT',
+          overallSummary: '제외',
+          createdAt: new Date('2026-03-02T00:00:00.000Z'),
+        },
+      },
+    ],
+  },
+  {
+    id: 'team-kpi-exception',
+    deptId: 'team-support',
+    evalYear: 2026,
+    kpiName: '인사 제도 전환 프로젝트',
+    status: 'CONFIRMED',
+    parentOrgKpiId: null,
+    mboExceptionApproved: true,
+    mboExceptionReason: '본부 KPI에는 없지만 2026 핵심 전략 프로젝트로 HR 협의 완료',
+    mboExceptionApprovedById: 'admin-1',
+    mboExceptionApprovedAt: new Date('2026-03-03T00:00:00.000Z'),
+    department: { id: 'team-support', deptName: '인사팀', parentDeptId: 'division-support' },
+    parentOrgKpi: null,
+    teamKpiReviewItems: [],
+  },
+  {
+    id: 'team-kpi-pending',
+    deptId: 'team-support',
+    evalYear: 2026,
+    kpiName: '인사 데이터 정비 KPI',
+    status: 'CONFIRMED',
+    parentOrgKpiId: null,
+    mboExceptionApproved: false,
+    mboExceptionReason: null,
+    mboExceptionApprovedById: null,
+    mboExceptionApprovedAt: null,
+    department: { id: 'team-support', deptName: '인사팀', parentDeptId: 'division-support' },
+    parentOrgKpi: null,
+    teamKpiReviewItems: [],
+  },
+]
+
 function makeCycle(overrides: Record<string, unknown> = {}) {
   return {
     id: 'cycle-2026',
@@ -194,6 +297,7 @@ function makeDb(overrides: {
   evaluations?: Array<Record<string, unknown>>
   employees?: Array<Record<string, unknown>>
   departments?: Array<Record<string, unknown>>
+  orgKpis?: Array<Record<string, unknown>>
 } = {}) {
   const counts = {
     evalCycleFindUnique: 0,
@@ -201,6 +305,7 @@ function makeDb(overrides: {
     personalKpiFindMany: 0,
     evaluationFindMany: 0,
     departmentFindMany: 0,
+    orgKpiFindMany: 0,
     writes: 0,
   }
   const cycle = overrides.cycle === null ? null : makeCycle(overrides.cycle)
@@ -253,6 +358,12 @@ function makeDb(overrides: {
       findMany: async () => {
         counts.departmentFindMany += 1
         return overrides.departments ?? departments
+      },
+    },
+    orgKpi: {
+      findMany: async () => {
+        counts.orgKpiFindMany += 1
+        return overrides.orgKpis ?? teamOrgKpis
       },
     },
     auditLog: {
@@ -359,6 +470,49 @@ async function main() {
     assert.equal(dryRun.departmentOverrideCoverage.affectedActiveEmployeeCount, 2)
     assert.equal(dryRun.departmentOverrideCoverage.overrides[0]?.departmentPath, '국내영업총괄본부 > 세일즈팀')
     assert.equal(dryRun.departmentOverrideCoverage.overrides[0]?.currentSalesGroup, 'NON_SALES')
+  })
+
+  await run('team KPI HR review coverage derives ORG_GOAL and DAILY_WORK suggestions without writes', async () => {
+    const fake = makeDb()
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    assert.equal(dryRun.teamKpiHrReviewCoverage.totalCandidates, 4)
+    assert.equal(dryRun.teamKpiHrReviewCoverage.approvedForOrgGoalCount, 1)
+    assert.equal(dryRun.teamKpiHrReviewCoverage.excludedDailyWorkCount, 1)
+    assert.equal(dryRun.teamKpiHrReviewCoverage.exceptionApprovedCount, 1)
+    assert.equal(dryRun.teamKpiHrReviewCoverage.pendingReviewCount, 1)
+
+    const approved = dryRun.teamKpiHrReviewCoverage.candidates.find((candidate) => candidate.orgKpiId === 'team-kpi-approved')
+    const excluded = dryRun.teamKpiHrReviewCoverage.candidates.find((candidate) => candidate.orgKpiId === 'team-kpi-excluded')
+    const exception = dryRun.teamKpiHrReviewCoverage.candidates.find((candidate) => candidate.orgKpiId === 'team-kpi-exception')
+    const pending = dryRun.teamKpiHrReviewCoverage.candidates.find((candidate) => candidate.orgKpiId === 'team-kpi-pending')
+
+    assert.equal(approved?.reviewStatus, 'APPROVED_FOR_ORG_GOAL')
+    assert.equal(approved?.suggestedMboCategory, 'ORG_GOAL')
+    assert.equal(approved?.canSuggestAsOrgGoal, true)
+    assert.equal(approved?.reason, '본부 KPI 직접 포함')
+    assert.equal(approved?.linkedDivisionKpiName, '국내영업총괄 매출 성장')
+
+    assert.equal(excluded?.reviewStatus, 'EXCLUDED_DAILY_WORK')
+    assert.equal(excluded?.suggestedMboCategory, 'DAILY_WORK')
+    assert.equal(excluded?.canSuggestAsOrgGoal, false)
+    assert.equal(excluded?.reason, '단순 운영/유지 업무')
+
+    assert.equal(exception?.reviewStatus, 'EXCEPTION_APPROVED')
+    assert.equal(exception?.suggestedMboCategory, 'ORG_GOAL')
+    assert.equal(exception?.canSuggestAsOrgGoal, true)
+
+    assert.equal(pending?.reviewStatus, 'PENDING_REVIEW')
+    assert.equal(pending?.suggestedMboCategory, 'DAILY_WORK')
+    assert.equal(pending?.canSuggestAsOrgGoal, false)
+    assert.equal(dryRun.teamKpiHrReviewCoverage.personalKpiOrgGoalWithoutApprovedSourceCount, 1)
+    assert.equal(fake.counts.orgKpiFindMany, 1)
+    assert.equal(fake.counts.writes, 0)
   })
 
   await run('MBO setup coverage reports draft/submitted/confirmed/missing and category distribution without writes', async () => {
@@ -505,6 +659,14 @@ async function main() {
     assert.equal(serverSource.includes('카테고리 확정 필요'), true)
     assert.equal(clientSource.includes('policyCategory missing items'), true)
     assert.equal(clientSource.includes('navigator.clipboard.writeText'), true)
+    assert.equal(clientSource.includes('2026 팀 KPI 검토'), true)
+    assert.equal(clientSource.includes('본부 KPI에 포함되거나 HR이 승인한 팀 KPI만 개인 MBO의 조직목표 후보가 됩니다.'), true)
+    assert.equal(clientSource.includes('팀 KPI 검토 복사'), true)
+    assert.equal(serverSource.includes('APPROVED_FOR_ORG_GOAL'), true)
+    assert.equal(serverSource.includes('EXCLUDED_DAILY_WORK'), true)
+    assert.equal(serverSource.includes('EXCEPTION_APPROVED'), true)
+    assert.equal(serverSource.includes('PENDING_REVIEW'), true)
+    assert.equal(serverSource.includes('personalKpiOrgGoalWithoutApprovedSourceCount'), true)
     assert.equal(clientSource.includes("limit: '300'"), true)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/readiness-population'), true)
     assert.equal(liveRouteSource.includes('readiness-population'), false)
