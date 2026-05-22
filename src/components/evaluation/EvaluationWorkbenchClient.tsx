@@ -50,6 +50,10 @@ import {
 } from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 import type { Evaluation2026ActivationReadinessResult } from '@/server/evaluation-2026-activation-readiness'
+import type {
+  Evaluation2026GradePolicyMetadataSaveResult,
+  Evaluation2026GradePolicyReadinessResult,
+} from '@/server/evaluation-2026-grade-policy-readiness'
 import type { Evaluation2026ReadinessPopulationDryRun } from '@/server/evaluation-2026-readiness-population'
 import type { EvaluationPreviewResult2026 } from '@/server/evaluation-preview-2026'
 import type { EvaluationPreviewReadinessSummary2026 } from '@/server/evaluation-preview-2026-readiness'
@@ -95,6 +99,8 @@ type EvaluationPreview2026ApiData = {
 }
 type EvaluationPreviewReadiness2026ApiData = EvaluationPreviewReadinessSummary2026
 type EvaluationActivationReadiness2026ApiData = Evaluation2026ActivationReadinessResult
+type EvaluationGradePolicyReadiness2026ApiData = Evaluation2026GradePolicyReadinessResult
+type EvaluationGradePolicySave2026ApiData = Evaluation2026GradePolicyMetadataSaveResult
 type EvaluationReadinessPopulation2026ApiData = Evaluation2026ReadinessPopulationDryRun
 type MboSetupMonitoringStatus2026 =
   EvaluationReadinessPopulation2026ApiData['mboSetupCoverage']['monitoring']['employeeRows'][number]['status']
@@ -182,6 +188,12 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     useState<EvaluationActivationReadiness2026ApiData | null>(null)
   const [policyActivationReadiness2026Loading, setPolicyActivationReadiness2026Loading] = useState(false)
   const [policyActivationReadiness2026Error, setPolicyActivationReadiness2026Error] = useState('')
+  const [policyGradeReadiness2026, setPolicyGradeReadiness2026] =
+    useState<EvaluationGradePolicyReadiness2026ApiData | null>(null)
+  const [policyGradeReadiness2026Loading, setPolicyGradeReadiness2026Loading] = useState(false)
+  const [policyGradeReadiness2026Saving, setPolicyGradeReadiness2026Saving] = useState(false)
+  const [policyGradeReadiness2026Error, setPolicyGradeReadiness2026Error] = useState('')
+  const [policyGradeReadiness2026Notice, setPolicyGradeReadiness2026Notice] = useState('')
   const [policyPopulationDryRun2026, setPolicyPopulationDryRun2026] =
     useState<EvaluationReadinessPopulation2026ApiData | null>(null)
   const [policyPopulationDryRun2026Loading, setPolicyPopulationDryRun2026Loading] = useState(false)
@@ -234,6 +246,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyActivationReadiness2026(null)
     setPolicyActivationReadiness2026Error('')
     setPolicyActivationReadiness2026Loading(false)
+    setPolicyGradeReadiness2026(null)
+    setPolicyGradeReadiness2026Error('')
+    setPolicyGradeReadiness2026Notice('')
+    setPolicyGradeReadiness2026Loading(false)
+    setPolicyGradeReadiness2026Saving(false)
     setPolicyPopulationDryRun2026(null)
     setPolicyPopulationDryRun2026Error('')
     setPolicyPopulationDryRun2026Loading(false)
@@ -282,6 +299,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setPolicyPreview2026(null)
       setPolicyPreview2026Error('')
       setPolicyPreview2026Loading(false)
+      setPolicyGradeReadiness2026(null)
+      setPolicyGradeReadiness2026Error('')
+      setPolicyGradeReadiness2026Notice('')
+      setPolicyGradeReadiness2026Loading(false)
+      setPolicyGradeReadiness2026Saving(false)
       setPolicyPopulationDryRun2026(null)
       setPolicyPopulationDryRun2026Error('')
       setPolicyPopulationDryRun2026Loading(false)
@@ -634,6 +656,78 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       )
     } finally {
       setPolicyActivationReadiness2026Loading(false)
+    }
+  }
+
+  async function loadPolicyGradeReadiness2026() {
+    if (!canViewPolicyPreview2026) return
+    setPolicyGradeReadiness2026Loading(true)
+    setPolicyGradeReadiness2026Error('')
+
+    try {
+      const params = new URLSearchParams()
+      if (props.selectedCycleId) {
+        params.set('evalCycleId', props.selectedCycleId)
+      } else {
+        params.set('year', '2026')
+      }
+      const query = params.toString()
+      const response = await fetch(`/api/evaluation/preview-2026/grade-policy${query ? `?${query}` : ''}`, {
+        method: 'GET',
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 등급 기준 readiness를 불러오지 못했습니다.')
+      }
+
+      setPolicyGradeReadiness2026(json.data as EvaluationGradePolicyReadiness2026ApiData)
+    } catch (error) {
+      setPolicyGradeReadiness2026(null)
+      setPolicyGradeReadiness2026Error(
+        error instanceof Error ? error.message : '2026 등급 기준 readiness를 불러오지 못했습니다.'
+      )
+    } finally {
+      setPolicyGradeReadiness2026Loading(false)
+    }
+  }
+
+  async function savePolicyGradeReadiness2026() {
+    if (!canViewPolicyPreview2026 || !props.selectedCycleId) return
+    setPolicyGradeReadiness2026Saving(true)
+    setPolicyGradeReadiness2026Error('')
+    setPolicyGradeReadiness2026Notice('')
+
+    try {
+      const response = await fetch('/api/evaluation/preview-2026/grade-policy', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          evalCycleId: props.selectedCycleId,
+          source: 'PPT_BASELINE',
+        }),
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 등급 기준 metadata를 저장하지 못했습니다.')
+      }
+
+      const result = json.data as EvaluationGradePolicySave2026ApiData
+      setPolicyGradeReadiness2026Notice(
+        `PPT 기준 등급 metadata ${result.upsertedRows}건을 저장했습니다. 공식 점수/등급은 변경되지 않았습니다.`
+      )
+      await loadPolicyGradeReadiness2026()
+      if (policyActivationReadiness2026) {
+        await loadPolicyActivationReadiness2026()
+      }
+      if (policyPopulationDryRun2026) {
+        await loadPolicyPopulationDryRun2026()
+      }
+    } catch (error) {
+      setPolicyGradeReadiness2026Error(
+        error instanceof Error ? error.message : '2026 등급 기준 metadata를 저장하지 못했습니다.'
+      )
+    } finally {
+      setPolicyGradeReadiness2026Saving(false)
     }
   }
 
@@ -1661,6 +1755,17 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     loading={policyActivationReadiness2026Loading}
                     error={policyActivationReadiness2026Error}
                     onLoad={loadPolicyActivationReadiness2026}
+                  />
+                  <PolicyGradeReadiness2026Panel
+                    gradePolicyData={policyGradeReadiness2026}
+                    loading={policyGradeReadiness2026Loading}
+                    saving={policyGradeReadiness2026Saving}
+                    error={policyGradeReadiness2026Error}
+                    notice={policyGradeReadiness2026Notice}
+                    selectedCycleId={props.selectedCycleId ?? null}
+                    canSave={props.currentUser?.role === 'ROLE_ADMIN'}
+                    onLoad={loadPolicyGradeReadiness2026}
+                    onSave={savePolicyGradeReadiness2026}
                   />
                   <PolicyReadinessPopulation2026Panel
                     dryRunData={policyPopulationDryRun2026}
@@ -2818,6 +2923,239 @@ function PolicyActivationReadiness2026Panel(props: {
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           HR 관리자가 공식 전환 전에 migration, backfill, HR 확인, feature flag 상태를 읽기 전용으로 점검할 수 있습니다.
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function getGradePolicyRowTone2026(status: EvaluationGradePolicyReadiness2026ApiData['groups'][number]['rows'][number]['status']) {
+  if (status === 'MATCHES_PPT') return 'success'
+  if (status === 'DIFFERS_FROM_PPT') return 'warn'
+  return 'error'
+}
+
+function getGradePolicyRowLabel2026(status: EvaluationGradePolicyReadiness2026ApiData['groups'][number]['rows'][number]['status']) {
+  if (status === 'MATCHES_PPT') return '저장 정책 일치'
+  if (status === 'DIFFERS_FROM_PPT') return '차이 있음'
+  return 'HR 확인 필요'
+}
+
+function getGradePolicyGroupDisplayCode2026(group: EvaluationGradePolicyReadiness2026ApiData['groups'][number]['group']) {
+  if (group === 'TEAM_SECTION_LEADER_NON_SALES') return 'LEADER_NON_SALES'
+  if (group === 'TEAM_SECTION_LEADER_SALES') return 'LEADER_SALES'
+  return group
+}
+
+function PolicyGradeReadiness2026Panel(props: {
+  gradePolicyData: EvaluationGradePolicyReadiness2026ApiData | null
+  loading: boolean
+  saving: boolean
+  error: string
+  notice: string
+  selectedCycleId: string | null
+  canSave: boolean
+  onLoad: () => void
+  onSave: () => void
+}) {
+  const data = props.gradePolicyData
+  const topBlockers = data?.blockers.slice(0, 5) ?? []
+
+  return (
+    <Panel
+      title="2026 등급 기준 readiness"
+      description="PPT 기준 등급 threshold와 현재 저장 정책을 비교합니다. 저장해도 공식 점수/등급은 변경되지 않습니다."
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-1 rounded-2xl bg-violet-50 p-2 text-violet-700">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="neutral">Grade metadata only</Badge>
+              <Badge tone={data && data.blockers.length === 0 ? 'success' : data ? 'warn' : 'neutral'}>
+                {data
+                  ? data.blockers.length === 0
+                    ? 'HR 확인 완료'
+                    : `${data.blockers.length}개 확인 필요`
+                  : '미확인'}
+              </Badge>
+              <Badge tone="neutral">공식 등급 미적용</Badge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              이 화면은 2026 등급 기준 readiness 확인용입니다. 저장해도 공식 점수/등급은 변경되지 않습니다.
+              TEAM_MEMBER_SALES Super/Outstanding 중첩은 HR 결정 전까지 blocker로 남습니다.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={props.onLoad}
+            disabled={props.loading || props.saving}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+          >
+            {props.loading ? '확인 중...' : data ? '등급 기준 다시 확인' : '등급 기준 확인'}
+          </button>
+          <button
+            type="button"
+            onClick={props.onSave}
+            disabled={!props.selectedCycleId || !props.canSave || props.loading || props.saving}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-violet-600 px-4 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {props.saving ? '저장 중...' : 'PPT 기준 metadata 저장'}
+          </button>
+        </div>
+      </div>
+
+      {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+      {props.notice ? <div className="mt-4"><Banner tone="success" message={props.notice} /></div> : null}
+      {!props.selectedCycleId ? (
+        <div className="mt-4">
+          <Banner tone="warn" message="평가 주기를 선택해야 등급 기준 metadata 저장을 할 수 있습니다." />
+        </div>
+      ) : null}
+      {data?.persistence.compatibilityIssue ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="flex flex-wrap items-center gap-2 font-semibold">
+            <AlertTriangle className="h-4 w-4" />
+            DB compatibility 확인 필요
+          </div>
+          <p className="mt-2 leading-6">{data.persistence.compatibilityIssue.message}</p>
+          <p className="mt-1 text-xs text-amber-800">
+            code: {data.persistence.compatibilityIssue.code}
+            {data.persistence.compatibilityIssue.prismaCode ? ` / prisma: ${data.persistence.compatibilityIssue.prismaCode}` : ''}
+            {data.persistence.compatibilityIssue.objectName ? ` / object: ${data.persistence.compatibilityIssue.objectName}` : ''}
+          </p>
+        </div>
+      ) : null}
+
+      {data ? (
+        <div className="mt-5 space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <MetricCard
+              label="저장 정책"
+              value={data.gradePolicyExists ? '있음' : '없음'}
+              help="evaluation_grade_policies"
+              compact
+              variant={data.gradePolicyExists ? 'default' : 'warning'}
+            />
+            <MetricCard
+              label="완료 그룹"
+              value={`${data.completeGroupCount}/${data.requiredGroupCount}`}
+              help="직군별 기준"
+              compact
+              variant={data.gradePolicyGroupsComplete ? 'default' : 'warning'}
+            />
+            <MetricCard
+              label="누락 행"
+              value={data.missingRowsCount.toLocaleString()}
+              help={`${data.expectedRowsCount}개 필요`}
+              compact
+              variant={data.missingRowsCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="PPT 차이"
+              value={data.differsFromPptCount.toLocaleString()}
+              help="HR 확인 필요"
+              compact
+              variant={data.differsFromPptCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="중첩/공백"
+              value={`${data.overlapCount}/${data.gapCount}`}
+              help="overlap/gap"
+              compact
+              variant={data.overlapCount + data.gapCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="TEAM_MEMBER_SALES"
+              value={data.teamMemberSalesAmbiguity.requiresDecision ? 'HR 확인 필요' : '결정됨'}
+              help={data.teamMemberSalesAmbiguity.currentDecision}
+              compact
+              variant={data.teamMemberSalesAmbiguity.requiresDecision ? 'warning' : 'default'}
+            />
+          </div>
+
+          {topBlockers.length ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-700" />
+                <h4 className="text-sm font-semibold text-amber-900">등급 기준 blocker</h4>
+              </div>
+              <ul className="mt-3 space-y-1">
+                {topBlockers.map((blocker, index) => (
+                  <li key={`${blocker.code}-${index}`} className="text-xs leading-5 text-amber-900">
+                    <span className="font-semibold">{blocker.code}</span> · {blocker.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="space-y-4">
+            {data.groups.map((group) => (
+              <div key={group.group} className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="text-sm font-semibold text-slate-900">{group.label}</h4>
+                      <Badge tone="neutral">{getGradePolicyGroupDisplayCode2026(group.group)}</Badge>
+                      {getGradePolicyGroupDisplayCode2026(group.group) !== group.group ? (
+                        <span className="text-xs text-slate-400">저장 enum: {group.group}</span>
+                      ) : null}
+                      <Badge tone={group.complete && !group.requiresHrConfirmation ? 'success' : 'warn'}>
+                        {group.complete && !group.requiresHrConfirmation ? '완료' : 'HR 확인 필요'}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      {group.roleGroup} · {group.salesGroup} · 누락 {group.missingRowsCount} · 차이 {group.differsFromPptCount}
+                    </p>
+                  </div>
+                  {group.requiresHrConfirmation ? (
+                    <Badge tone="warn">TEAM_MEMBER_SALES 기준 확인 필요</Badge>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                    <thead className="bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">등급</th>
+                        <th className="px-3 py-2 font-semibold">PPT 기준</th>
+                        <th className="px-3 py-2 font-semibold">현재 저장 정책</th>
+                        <th className="px-3 py-2 font-semibold">상태</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {group.rows.map((row) => (
+                        <tr key={`${group.group}:${row.gradeLabel}`}>
+                          <td className="px-3 py-2 font-semibold text-slate-900">{row.gradeDisplayName}</td>
+                          <td className="px-3 py-2 text-slate-600">
+                            <span className="font-semibold text-slate-700">PPT 기준</span> · {row.pptLabel}
+                            {row.pptNotes ? <span className="block text-slate-400">{row.pptNotes}</span> : null}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            <span className="font-semibold text-slate-700">현재 저장 정책</span> · {row.storedLabel}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge tone={getGradePolicyRowTone2026(row.status)}>
+                              {getGradePolicyRowLabel2026(row.status)}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+          HR 관리자가 PPT 기준 등급 threshold와 현재 저장 정책의 차이를 확인하고, 명시적으로 metadata를 저장할 수 있습니다.
         </div>
       )}
     </Panel>

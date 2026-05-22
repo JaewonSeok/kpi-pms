@@ -10,6 +10,10 @@ import { get2026EvaluationFeatureFlags } from '@/lib/feature-flags'
 import { AppError } from '@/lib/utils'
 import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026-loader'
 import {
+  getEvaluation2026GradePolicyReadiness,
+  type Evaluation2026GradePolicyReadinessResult,
+} from '@/server/evaluation-2026-grade-policy-readiness'
+import {
   detectDailyWorkDuplicateWithOrgGoal2026,
   determineOrgKpiReflectionEligibility2026,
   type KpiAlignmentOrgLevel2026,
@@ -34,6 +38,9 @@ type Evaluation2026ReadinessPopulationDb = {
     findMany: (args: unknown) => Promise<unknown[]>
   }
   orgKpi?: {
+    findMany: (args: unknown) => Promise<unknown[]>
+  }
+  evaluationGradePolicy?: {
     findMany: (args: unknown) => Promise<unknown[]>
   }
   department: {
@@ -417,6 +424,7 @@ export type Evaluation2026ReadinessPopulationDryRun = {
     affectedActiveEmployeeCount: number
     overrides: Evaluation2026ReadinessPopulationDepartmentOverrideCoverage[]
   }
+  gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult
   teamKpiHrReviewCoverage: Evaluation2026TeamKpiHrReviewCoverage
   blockers: Evaluation2026ReadinessPopulationBlocker[]
   warnings: Evaluation2026ReadinessPopulationBlocker[]
@@ -1470,6 +1478,11 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     departmentsById,
     personalKpiOrgGoalWithoutApprovedSourceCount: mboSetupCoverage.warningCounts.orgGoalWithoutEligibleOrgKpi,
   })
+  const gradePolicyReadiness = await getEvaluation2026GradePolicyReadiness({
+    db: db as never,
+    evalCycleId: cycle.id,
+    env: params.env,
+  })
   const divisionCoverageById = new Map(
     mboSetupCoverage.divisionCoverage.map((division) => [division.divisionId, division])
   )
@@ -1507,6 +1520,48 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     code: 'NO_CONFIRMED_PERSONAL_KPI',
     message: '현재 주기 연도에 확정된 Personal KPI가 없어 생성할 평가 항목이 없습니다.',
     count: employeesWithConfirmedPersonalKpi.length === 0 ? 1 : 0,
+  })
+  addBlocker({
+    target: blockers,
+    code: 'GRADE_POLICY_REQUIRED',
+    message: '2026 등급 기준 저장 정책이 없어 official grade readiness를 진행할 수 없습니다.',
+    count: gradePolicyReadiness.gradePolicyExists ? 0 : 1,
+  })
+  addBlocker({
+    target: blockers,
+    code: 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED',
+    message: '2026 등급 기준 정책을 불러오지 못했습니다. DB compatibility 확인이 필요합니다.',
+    count: gradePolicyReadiness.persistence.compatibilityIssue ? 1 : 0,
+  })
+  addBlocker({
+    target: blockers,
+    code: 'GRADE_POLICY_GROUPS_INCOMPLETE',
+    message: '2026 등급 기준 그룹 또는 등급 행이 누락되어 있습니다.',
+    count: gradePolicyReadiness.missingRowsCount,
+  })
+  addBlocker({
+    target: blockers,
+    code: 'GRADE_POLICY_DIFFERS_FROM_PPT',
+    message: '저장된 2026 등급 기준이 PPT 기준과 달라 HR 확인이 필요합니다.',
+    count: gradePolicyReadiness.differsFromPptCount,
+  })
+  addBlocker({
+    target: blockers,
+    code: 'GRADE_POLICY_THRESHOLD_OVERLAP',
+    message: '저장된 2026 등급 기준에 중첩 구간이 있습니다.',
+    count: gradePolicyReadiness.overlapCount,
+  })
+  addBlocker({
+    target: blockers,
+    code: 'GRADE_POLICY_THRESHOLD_GAP',
+    message: '저장된 2026 등급 기준에 공백 구간이 있습니다.',
+    count: gradePolicyReadiness.gapCount,
+  })
+  addBlocker({
+    target: blockers,
+    code: 'TEAM_MEMBER_SALES_GRADE_POLICY_CONFIRMATION_REQUIRED',
+    message: 'TEAM_MEMBER_SALES Super/Outstanding 등급 기준에 HR 확인이 필요합니다.',
+    count: gradePolicyReadiness.teamMemberSalesAmbiguity.requiresDecision ? 1 : 0,
   })
 
   if (selfEvaluationByTargetId.size > 0 && selfEvaluationByTargetId.size < Math.max(3, activeEmployees.length * 0.1)) {
@@ -1585,6 +1640,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
       affectedActiveEmployeeCount: overrides.reduce((sum, override) => sum + override.affectedActiveEmployeeCount, 0),
       overrides,
     },
+    gradePolicyReadiness,
     teamKpiHrReviewCoverage,
     blockers,
     warnings,

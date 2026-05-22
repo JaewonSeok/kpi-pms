@@ -12,6 +12,10 @@ import {
   getEvaluationPreviewReadinessSummary2026,
   type EvaluationPreviewReadinessSummary2026,
 } from '@/server/evaluation-preview-2026-readiness'
+import {
+  getEvaluation2026GradePolicyReadiness,
+  type Evaluation2026GradePolicyReadinessResult,
+} from '@/server/evaluation-2026-grade-policy-readiness'
 
 type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department'>> & {
   $queryRawUnsafe?: typeof prisma.$queryRawUnsafe
@@ -45,6 +49,7 @@ export type Evaluation2026ActivationReadinessResult = {
   flags: Evaluation2026FeatureFlags
   migration: Evaluation2026MigrationReadiness
   readiness: EvaluationPreviewReadinessSummary2026
+  gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult | null
   blockers: Evaluation2026ActivationReadinessItem[]
   warnings: Evaluation2026ActivationReadinessItem[]
 }
@@ -259,6 +264,44 @@ function collectPreviewReadiness(
   }
 }
 
+function collectGradePolicyReadiness(
+  gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult | null,
+  blockers: Evaluation2026ActivationReadinessItem[],
+  warnings: Evaluation2026ActivationReadinessItem[]
+) {
+  if (!gradePolicyReadiness) {
+    addItem(warnings, 'GRADE_POLICY_NOT_CHECKED', '2026 등급 기준 readiness를 현재 실행 컨텍스트에서 확인하지 못했습니다.', 'warning')
+    return
+  }
+
+  if (gradePolicyReadiness.persistence.compatibilityIssue) {
+    addItem(blockers, 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED', '2026 등급 기준 정책을 불러오지 못했습니다. DB compatibility 확인이 필요합니다.')
+    return
+  }
+  if (!gradePolicyReadiness.persistence.available) {
+    addItem(warnings, 'GRADE_POLICY_PERSISTENCE_UNAVAILABLE', 'evaluation_grade_policies 조회가 불가능해 저장 정책을 확인하지 못했습니다.', 'warning')
+    return
+  }
+  if (!gradePolicyReadiness.gradePolicyExists) {
+    addItem(blockers, 'GRADE_POLICY_MISSING', '2026 등급 기준 저장 정책이 없습니다.')
+  }
+  if (!gradePolicyReadiness.gradePolicyGroupsComplete) {
+    addItem(blockers, 'GRADE_POLICY_INCOMPLETE', '2026 등급 기준 그룹 또는 등급 행이 누락되어 있습니다.')
+  }
+  if (gradePolicyReadiness.differsFromPptCount > 0) {
+    addItem(blockers, 'GRADE_POLICY_DIFFERS_FROM_PPT', '저장된 2026 등급 기준이 PPT 기준과 달라 HR 확인이 필요합니다.')
+  }
+  if (gradePolicyReadiness.overlapCount > 0) {
+    addItem(blockers, 'GRADE_POLICY_THRESHOLD_OVERLAP', '저장된 2026 등급 기준에 중첩 구간이 있습니다.')
+  }
+  if (gradePolicyReadiness.gapCount > 0) {
+    addItem(blockers, 'GRADE_POLICY_THRESHOLD_GAP', '저장된 2026 등급 기준에 공백 구간이 있습니다.')
+  }
+  if (gradePolicyReadiness.teamMemberSalesAmbiguity.requiresDecision) {
+    addItem(blockers, 'TEAM_MEMBER_SALES_GRADE_POLICY_CONFIRMATION_REQUIRED', 'TEAM_MEMBER_SALES 등급 기준에 HR 확인이 필요합니다.')
+  }
+}
+
 export async function getEvaluation2026ActivationReadiness(params: {
   db?: Evaluation2026ActivationDb
   year?: number
@@ -268,6 +311,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
   flags?: Evaluation2026FeatureFlags
   migrationStatus?: Evaluation2026MigrationReadiness
   readinessSummary?: EvaluationPreviewReadinessSummary2026
+  gradePolicyReadiness?: Evaluation2026GradePolicyReadinessResult | null
 }): Promise<Evaluation2026ActivationReadinessResult> {
   const db = params.db ?? prisma
   const flags = params.flags ?? get2026EvaluationFeatureFlags(params.env)
@@ -281,12 +325,26 @@ export async function getEvaluation2026ActivationReadiness(params: {
       cycleId: params.cycleId,
       limit: params.limit,
     })
+  const canCheckGradePolicy =
+    params.gradePolicyReadiness !== undefined ||
+    Boolean((db as Evaluation2026ActivationDb & { evaluationGradePolicy?: unknown }).evaluationGradePolicy)
+  const gradePolicyReadiness =
+    params.gradePolicyReadiness ??
+    (canCheckGradePolicy
+      ? await getEvaluation2026GradePolicyReadiness({
+          db: db as never,
+          evalCycleId: params.cycleId,
+          year: params.year,
+          env: params.env,
+        })
+      : null)
 
   const blockers: Evaluation2026ActivationReadinessItem[] = []
   const warnings: Evaluation2026ActivationReadinessItem[] = []
   collectFlagReadiness(flags, blockers, warnings)
   collectMigrationReadiness(migration, blockers, warnings)
   collectPreviewReadiness(readiness, blockers, warnings)
+  collectGradePolicyReadiness(gradePolicyReadiness, blockers, warnings)
 
   return {
     policyVersion: EVALUATION_POLICY_2026.version,
@@ -295,6 +353,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     flags,
     migration,
     readiness,
+    gradePolicyReadiness,
     blockers,
     warnings,
   }
@@ -313,6 +372,7 @@ export async function getEvaluation2026ActivationReadinessForSession(
     flags?: Evaluation2026FeatureFlags
     migrationStatus?: Evaluation2026MigrationReadiness
     readinessSummary?: EvaluationPreviewReadinessSummary2026
+    gradePolicyReadiness?: Evaluation2026GradePolicyReadinessResult | null
   } = {}
 ) {
   const user = params.session.user as { id?: string } | undefined
@@ -330,6 +390,7 @@ export async function getEvaluation2026ActivationReadinessForSession(
     flags: options.flags,
     migrationStatus: options.migrationStatus,
     readinessSummary: options.readinessSummary,
+    gradePolicyReadiness: options.gradePolicyReadiness,
     year: params.year,
     cycleId: params.cycleId,
     limit: params.limit,
