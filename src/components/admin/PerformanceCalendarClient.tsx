@@ -7,6 +7,8 @@ import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, ExternalLink, F
 import type {
   PerformanceCalendarEvent,
   PerformanceCalendarEventType,
+  PerformanceOperationsMilestoneStatus,
+  PerformanceOperationsOwnerRole,
   PerformanceCalendarPageData,
 } from '@/server/admin/performance-calendar'
 
@@ -24,6 +26,32 @@ const TYPE_STYLES: Record<PerformanceCalendarEventType, string> = {
   calibration: 'border-amber-200 bg-amber-50 text-amber-700',
   anniversary: 'border-rose-200 bg-rose-50 text-rose-700',
   milestone: 'border-slate-300 bg-slate-100 text-slate-700',
+}
+
+const OPERATIONS_STATUS_STYLES: Record<PerformanceOperationsMilestoneStatus, string> = {
+  NOT_STARTED: 'border-slate-200 bg-slate-50 text-slate-600',
+  IN_PROGRESS: 'border-blue-200 bg-blue-50 text-blue-700',
+  DONE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  BLOCKED: 'border-rose-200 bg-rose-50 text-rose-700',
+  NEEDS_REVIEW: 'border-amber-200 bg-amber-50 text-amber-700',
+}
+
+const OWNER_FILTER_LABELS: Record<PerformanceOperationsOwnerRole | 'ALL', string> = {
+  ALL: '전체 owner',
+  HR: 'HR',
+  TEAM_LEADER: '팀장',
+  DIVISION_HEAD: '본부장',
+  EMPLOYEE: '직원',
+  SYSTEM: '시스템',
+}
+
+const STATUS_FILTER_LABELS: Record<PerformanceOperationsMilestoneStatus | 'ALL', string> = {
+  ALL: '전체 상태',
+  NOT_STARTED: '시작 전',
+  IN_PROGRESS: '진행 중',
+  DONE: '완료',
+  BLOCKED: 'blocker 있음',
+  NEEDS_REVIEW: '검토 필요',
 }
 
 const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토']
@@ -59,6 +87,8 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [selectedEventId, setSelectedEventId] = useState<string>(data.events[0]?.id ?? '')
+  const [operationsStatusFilter, setOperationsStatusFilter] = useState<PerformanceOperationsMilestoneStatus | 'ALL'>('ALL')
+  const [operationsOwnerFilter, setOperationsOwnerFilter] = useState<PerformanceOperationsOwnerRole | 'ALL'>('ALL')
   const calendarContextKey = `${data.month}:${data.selectedTypes.join(',')}`
   const previousContextKey = useRef(calendarContextKey)
 
@@ -80,6 +110,11 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
   }, [data.events])
 
   const selectedEvent = data.events.find((item) => item.id === selectedEventId) ?? data.events[0] ?? null
+  const filteredOperationsMilestones = data.operationsChecklist.milestones.filter((milestone) => {
+    const statusMatches = operationsStatusFilter === 'ALL' || milestone.status === operationsStatusFilter
+    const ownerMatches = operationsOwnerFilter === 'ALL' || milestone.ownerRole === operationsOwnerFilter
+    return statusMatches && ownerMatches
+  })
 
   function pushQuery(nextMonth: string, nextTypes: PerformanceCalendarEventType[]) {
     const params = new URLSearchParams()
@@ -144,6 +179,158 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
             detail={selectedEvent ? selectedEvent.title : '오른쪽 패널에서 일정 상세를 확인하세요.'}
           />
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">
+              2026 PPT operations readiness
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900">2026 운영 체크리스트</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">
+              팀원 MBO, 팀 KPI 검토, 등급 기준, AI Pass/Fail, 평가자 배정을 한 흐름으로 확인하는 읽기 전용 운영 가이드입니다.
+            </p>
+            <p className="mt-3 inline-flex rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+              PPT 기준 운영 가이드 · 아직 공식 점수/등급 미적용
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="font-semibold text-slate-900">
+              {data.operationsChecklist.selectedCycleName ?? '2026 readiness 주기 미선택'}
+            </div>
+            <div className="mt-1">
+              공식 readiness 대상: {data.operationsChecklist.selectedCycleIsOfficialReadinessTarget ? '예' : '아니오'}
+            </div>
+            <div className="mt-2 text-xs text-slate-500">
+              저장 방식: {data.operationsChecklist.persistence.saveImplemented ? 'metadata 저장' : 'read-only'}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-5">
+          <MetricCard label="운영 milestone" value={`${data.operationsChecklist.summary.totalMilestones}건`} />
+          <MetricCard label="blocker" value={`${data.operationsChecklist.summary.blockerCount}건`} />
+          <MetricCard label="진행 중" value={`${data.operationsChecklist.summary.statusCounts.IN_PROGRESS}건`} />
+          <MetricCard label="검토 필요" value={`${data.operationsChecklist.summary.statusCounts.NEEDS_REVIEW}건`} />
+          <MetricCard label="완료" value={`${data.operationsChecklist.summary.statusCounts.DONE}건`} />
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">지금 해야 할 일</div>
+          {data.operationsChecklist.nowActions.length ? (
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {data.operationsChecklist.nowActions.map((action) => (
+                <Link
+                  key={action.id}
+                  href={action.href}
+                  className="rounded-2xl border border-amber-200 bg-white/80 px-3 py-3 transition hover:bg-white"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-slate-900">{action.label}</span>
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                      {action.blockerCount}건
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-600">{action.description}</p>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-amber-800">현재 즉시 처리할 blocker가 없습니다. 다음 milestone 일정을 확인해 주세요.</p>
+          )}
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            {Object.entries(STATUS_FILTER_LABELS).map(([status, label]) => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setOperationsStatusFilter(status as PerformanceOperationsMilestoneStatus | 'ALL')}
+                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                  operationsStatusFilter === status
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <select
+            value={operationsOwnerFilter}
+            onChange={(event) => setOperationsOwnerFilter(event.target.value as PerformanceOperationsOwnerRole | 'ALL')}
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-400"
+          >
+            {Object.entries(OWNER_FILTER_LABELS).map(([owner, label]) => (
+              <option key={owner} value={owner}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <tr>
+                <th className="px-4 py-3">milestone</th>
+                <th className="px-4 py-3">owner</th>
+                <th className="px-4 py-3">상태</th>
+                <th className="px-4 py-3">readiness</th>
+                <th className="px-4 py-3">blocker</th>
+                <th className="px-4 py-3">HR action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {filteredOperationsMilestones.map((milestone) => (
+                <tr key={milestone.id}>
+                  <td className="px-4 py-4 align-top">
+                    <div className="font-semibold text-slate-900">{milestone.name}</div>
+                    <div className="mt-1 text-xs text-slate-500">{milestone.plannedRangeLabel}</div>
+                    <div className="mt-2 text-xs leading-5 text-slate-500">{milestone.note}</div>
+                  </td>
+                  <td className="px-4 py-4 align-top text-slate-700">{milestone.ownerRoleLabel}</td>
+                  <td className="px-4 py-4 align-top">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${OPERATIONS_STATUS_STYLES[milestone.status]}`}>
+                      {milestone.statusLabel}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 align-top">
+                    <Link href={milestone.href} className="text-sm font-semibold text-blue-600 hover:text-blue-700">
+                      {milestone.readinessLinkLabel}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-4 align-top font-semibold text-slate-900">{milestone.blockerCount}건</td>
+                  <td className="px-4 py-4 align-top">
+                    <div className="flex flex-wrap gap-1.5">
+                      {milestone.actionGuidance.map((item) => (
+                        <span key={item} className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          {data.operationsChecklist.milestones.map((milestone) => (
+            <Link
+              key={`timeline-${milestone.id}`}
+              href={milestone.href}
+              className={`rounded-2xl border px-4 py-3 transition hover:bg-slate-50 ${OPERATIONS_STATUS_STYLES[milestone.status]}`}
+            >
+              <div className="text-xs font-semibold">{milestone.statusLabel}</div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">{milestone.name}</div>
+              <div className="mt-1 text-xs text-slate-500">{milestone.plannedRangeLabel}</div>
+            </Link>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs leading-5 text-slate-500">{data.operationsChecklist.persistence.note}</p>
       </section>
 
       {data.alerts.length ? (
