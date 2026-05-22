@@ -33,6 +33,9 @@ type Evaluation2026ReadinessPopulationDb = {
   evaluation: {
     findMany: (args: unknown) => Promise<unknown[]>
   }
+  orgKpi?: {
+    findMany: (args: unknown) => Promise<unknown[]>
+  }
   department: {
     findMany: (args: unknown) => Promise<unknown[]>
   }
@@ -125,6 +128,50 @@ type ExistingSelfEvaluation2026 = {
       policyCategory: EvaluationPolicyItemCategoryCode | null
     } | null
   }>
+}
+
+type TeamKpiReviewItemSnapshot2026 = {
+  id?: string | null
+  verdict?: string | null
+  rationale?: string | null
+  linkageComment?: string | null
+  duplicationComment?: string | null
+  recommendationText?: string | null
+  improvementSuggestions?: string | null
+  createdAt?: Date | string | null
+  run?: {
+    id?: string | null
+    reviewType?: string | null
+    overallVerdict?: string | null
+    overallSummary?: string | null
+    createdAt?: Date | string | null
+  } | null
+}
+
+type TeamOrgKpiForHrReview2026 = {
+  id: string
+  deptId: string
+  evalYear: number
+  kpiName: string
+  status?: string | null
+  parentOrgKpiId?: string | null
+  mboExceptionApproved?: boolean | null
+  mboExceptionReason?: string | null
+  mboExceptionApprovedById?: string | null
+  mboExceptionApprovedAt?: Date | string | null
+  department?: {
+    id?: string | null
+    deptName?: string | null
+    parentDeptId?: string | null
+  } | null
+  parentOrgKpi?: {
+    id: string
+    kpiName: string
+    department?: {
+      deptName?: string | null
+    } | null
+  } | null
+  teamKpiReviewItems?: TeamKpiReviewItemSnapshot2026[]
 }
 
 export type Evaluation2026ReadinessPopulationEmployeeSummary = {
@@ -231,6 +278,61 @@ export type Evaluation2026MboPolicyCategoryMissingItemRow = {
   actionLabel: '카테고리 확정 필요'
 }
 
+export type Evaluation2026TeamKpiHrReviewStatus =
+  | 'PENDING_REVIEW'
+  | 'APPROVED_FOR_ORG_GOAL'
+  | 'EXCLUDED_DAILY_WORK'
+  | 'EXCEPTION_APPROVED'
+  | 'NEEDS_DISCUSSION'
+
+export type Evaluation2026TeamKpiHrReason =
+  | '전년 대비 상향 KPI'
+  | '핵심 과제'
+  | '매출/수익/고객 확보 직접 연계'
+  | '본부 KPI 직접 포함'
+  | '단순 운영/유지 업무'
+  | '중복 목표'
+  | '기타 HR 사유'
+
+export type Evaluation2026TeamKpiHrReviewCandidate = {
+  orgKpiId: string
+  teamKpiName: string
+  evalYear: number
+  divisionId: string | null
+  divisionName: string
+  departmentId: string
+  departmentName: string
+  departmentPath: string
+  ownerName: string
+  ownerId: string | null
+  linkedDivisionKpiId: string | null
+  linkedDivisionKpiName: string | null
+  linkedDivisionKpiDepartmentName: string | null
+  reviewStatus: Evaluation2026TeamKpiHrReviewStatus
+  reviewStatusLabel: string
+  hrDecisionLabel: string
+  reason: Evaluation2026TeamKpiHrReason | null
+  notes: string | null
+  latestReviewVerdict: string | null
+  latestReviewAt: string | null
+  affectedActiveEmployeeCount: number
+  linkedPersonalKpiCount: number
+  suggestedMboCategory: EvaluationPolicyItemCategoryCode
+  canSuggestAsOrgGoal: boolean
+  guidance: string
+}
+
+export type Evaluation2026TeamKpiHrReviewCoverage = {
+  totalCandidates: number
+  pendingReviewCount: number
+  approvedForOrgGoalCount: number
+  excludedDailyWorkCount: number
+  exceptionApprovedCount: number
+  needsDiscussionCount: number
+  personalKpiOrgGoalWithoutApprovedSourceCount: number
+  candidates: Evaluation2026TeamKpiHrReviewCandidate[]
+}
+
 export type Evaluation2026ReadinessPopulationBlocker = {
   code: string
   message: string
@@ -301,6 +403,7 @@ export type Evaluation2026ReadinessPopulationDryRun = {
     affectedActiveEmployeeCount: number
     overrides: Evaluation2026ReadinessPopulationDepartmentOverrideCoverage[]
   }
+  teamKpiHrReviewCoverage: Evaluation2026TeamKpiHrReviewCoverage
   blockers: Evaluation2026ReadinessPopulationBlocker[]
   warnings: Evaluation2026ReadinessPopulationBlocker[]
   safety: {
@@ -318,6 +421,12 @@ export type Evaluation2026ReadinessPopulationDryRun = {
 
 function hasText(value: string | null | undefined) {
   return typeof value === 'string' && value.trim().length > 0
+}
+
+function serializeDate(value: Date | string | null | undefined) {
+  if (!value) return null
+  if (value instanceof Date) return value.toISOString()
+  return value
 }
 
 function formatDepartmentPath(params: {
@@ -383,6 +492,23 @@ function resolveDepartmentLevel2026(params: {
   const current = params.departmentsById.get(params.departmentId)
   if (!current) return 'UNKNOWN'
   return current.parentDeptId ? 'TEAM' : 'DIVISION'
+}
+
+function isDepartmentInScope2026(params: {
+  employeeDepartmentId?: string | null
+  scopeDepartmentId: string
+  departmentsById: Map<string, DepartmentNode2026>
+}) {
+  let currentId = params.employeeDepartmentId ?? null
+  const visited = new Set<string>()
+
+  while (currentId && !visited.has(currentId)) {
+    if (currentId === params.scopeDepartmentId) return true
+    visited.add(currentId)
+    currentId = params.departmentsById.get(currentId)?.parentDeptId ?? null
+  }
+
+  return false
 }
 
 function makeEmployeeSummary(params: {
@@ -476,6 +602,31 @@ function toOrgKpiAlignmentInput2026(
   }
 }
 
+function toTeamOrgKpiAlignmentInput2026(
+  orgKpi: TeamOrgKpiForHrReview2026,
+  departmentsById: Map<string, DepartmentNode2026>
+): OrgKpiAlignmentInput2026 {
+  const departmentId = orgKpi.department?.id ?? orgKpi.deptId
+  return {
+    id: orgKpi.id,
+    title: orgKpi.kpiName,
+    kpiName: orgKpi.kpiName,
+    level: resolveDepartmentLevel2026({ departmentId, departmentsById }),
+    status: orgKpi.status ?? null,
+    parentOrgKpiId: orgKpi.parentOrgKpiId ?? null,
+    latestReviewVerdict: orgKpi.teamKpiReviewItems?.[0]?.verdict ?? null,
+    hrExceptionApproved: orgKpi.mboExceptionApproved ?? null,
+    hrExceptionReason: orgKpi.mboExceptionReason ?? null,
+    hrExceptionApprovedById: orgKpi.mboExceptionApprovedById ?? null,
+    hrExceptionApprovedAt: orgKpi.mboExceptionApprovedAt ?? null,
+    department: {
+      id: departmentId,
+      deptName: orgKpi.department?.deptName ?? null,
+      parentDeptId: orgKpi.department?.parentDeptId ?? null,
+    },
+  }
+}
+
 function hasMeaningfulText(value: string | null | undefined, minLength = 8) {
   return typeof value === 'string' && value.trim().length >= minLength
 }
@@ -497,6 +648,141 @@ function resolveMboSetupMonitoringStatus2026(params: {
   }
   if (params.statuses.some((status) => status === 'DRAFT')) return 'DRAFT'
   return 'CONFIRMED'
+}
+
+function resolveTeamKpiHrReviewStatus2026(params: {
+  orgKpi: TeamOrgKpiForHrReview2026
+  eligibility: ReturnType<typeof determineOrgKpiReflectionEligibility2026>
+}): Evaluation2026TeamKpiHrReviewStatus {
+  if (params.orgKpi.mboExceptionApproved && hasText(params.orgKpi.mboExceptionReason)) return 'EXCEPTION_APPROVED'
+  if (params.eligibility.eligibleAsOrgGoal) return 'APPROVED_FOR_ORG_GOAL'
+
+  const latestVerdict = params.orgKpi.teamKpiReviewItems?.[0]?.verdict ?? null
+  if (latestVerdict === 'INSUFFICIENT' || params.orgKpi.status === 'ARCHIVED') return 'EXCLUDED_DAILY_WORK'
+  if (latestVerdict === 'CAUTION') return 'NEEDS_DISCUSSION'
+  return 'PENDING_REVIEW'
+}
+
+function getTeamKpiHrReviewStatusLabel2026(status: Evaluation2026TeamKpiHrReviewStatus) {
+  if (status === 'APPROVED_FOR_ORG_GOAL') return '조직목표 반영 가능'
+  if (status === 'EXCLUDED_DAILY_WORK') return '일상업무 처리'
+  if (status === 'EXCEPTION_APPROVED') return '예외 승인'
+  if (status === 'NEEDS_DISCUSSION') return '검토 필요'
+  return '검토 대기'
+}
+
+function getTeamKpiHrDecisionLabel2026(status: Evaluation2026TeamKpiHrReviewStatus) {
+  if (status === 'APPROVED_FOR_ORG_GOAL') return 'APPROVED_FOR_ORG_GOAL'
+  if (status === 'EXCLUDED_DAILY_WORK') return 'EXCLUDED_DAILY_WORK'
+  if (status === 'EXCEPTION_APPROVED') return 'EXCEPTION_APPROVED'
+  if (status === 'NEEDS_DISCUSSION') return 'NEEDS_DISCUSSION'
+  return 'PENDING_REVIEW'
+}
+
+function resolveTeamKpiHrReason2026(params: {
+  status: Evaluation2026TeamKpiHrReviewStatus
+  orgKpi: TeamOrgKpiForHrReview2026
+  latestReview: TeamKpiReviewItemSnapshot2026 | null
+}): Evaluation2026TeamKpiHrReason | null {
+  if (params.status === 'PENDING_REVIEW') return null
+  if (params.status === 'EXCEPTION_APPROVED') return '기타 HR 사유'
+  if (params.status === 'APPROVED_FOR_ORG_GOAL') {
+    if (params.orgKpi.parentOrgKpiId) return '본부 KPI 직접 포함'
+    return '핵심 과제'
+  }
+  if (params.status === 'EXCLUDED_DAILY_WORK') {
+    if (hasText(params.latestReview?.duplicationComment)) return '중복 목표'
+    return '단순 운영/유지 업무'
+  }
+  return '기타 HR 사유'
+}
+
+function buildTeamKpiHrReviewCoverage2026(params: {
+  orgKpis: TeamOrgKpiForHrReview2026[]
+  activeEmployees: ActiveEmployee2026[]
+  personalKpis: PersonalKpi2026[]
+  departmentsById: Map<string, DepartmentNode2026>
+  personalKpiOrgGoalWithoutApprovedSourceCount: number
+}): Evaluation2026TeamKpiHrReviewCoverage {
+  const ownerByDepartmentId = new Map<string, ActiveEmployee2026>()
+  for (const employee of params.activeEmployees) {
+    if (employee.position === 'TEAM_LEADER' || employee.position === 'SECTION_CHIEF' || employee.position === 'DIV_HEAD') {
+      if (!ownerByDepartmentId.has(employee.deptId)) ownerByDepartmentId.set(employee.deptId, employee)
+    }
+  }
+
+  const candidates = params.orgKpis
+    .filter((orgKpi) => Boolean(orgKpi.department?.parentDeptId))
+    .map((orgKpi) => {
+      const latestReview = orgKpi.teamKpiReviewItems?.[0] ?? null
+      const departmentId = orgKpi.department?.id ?? orgKpi.deptId
+      const divisionId = resolveDivisionId({ departmentId, departmentsById: params.departmentsById })
+      const eligibility = determineOrgKpiReflectionEligibility2026(
+        toTeamOrgKpiAlignmentInput2026(orgKpi, params.departmentsById)
+      )
+      const reviewStatus = resolveTeamKpiHrReviewStatus2026({ orgKpi, eligibility })
+      const reason = resolveTeamKpiHrReason2026({ status: reviewStatus, orgKpi, latestReview })
+      const owner = ownerByDepartmentId.get(departmentId)
+      const affectedActiveEmployeeCount = params.activeEmployees.filter((employee) =>
+        isDepartmentInScope2026({
+          employeeDepartmentId: employee.deptId,
+          scopeDepartmentId: departmentId,
+          departmentsById: params.departmentsById,
+        })
+      ).length
+      const notes =
+        orgKpi.mboExceptionReason?.trim() ||
+        latestReview?.rationale?.trim() ||
+        latestReview?.recommendationText?.trim() ||
+        latestReview?.improvementSuggestions?.trim() ||
+        null
+
+      return {
+        orgKpiId: orgKpi.id,
+        teamKpiName: orgKpi.kpiName,
+        evalYear: orgKpi.evalYear,
+        divisionId,
+        divisionName: divisionId ? params.departmentsById.get(divisionId)?.deptName ?? divisionId : '본부 미지정',
+        departmentId,
+        departmentName: orgKpi.department?.deptName ?? params.departmentsById.get(departmentId)?.deptName ?? '팀 미지정',
+        departmentPath: formatDepartmentPath({ departmentId, departmentsById: params.departmentsById }),
+        ownerName: owner?.empName ?? '리더 미지정',
+        ownerId: owner?.id ?? null,
+        linkedDivisionKpiId: orgKpi.parentOrgKpi?.id ?? orgKpi.parentOrgKpiId ?? null,
+        linkedDivisionKpiName: orgKpi.parentOrgKpi?.kpiName ?? null,
+        linkedDivisionKpiDepartmentName: orgKpi.parentOrgKpi?.department?.deptName ?? null,
+        reviewStatus,
+        reviewStatusLabel: getTeamKpiHrReviewStatusLabel2026(reviewStatus),
+        hrDecisionLabel: getTeamKpiHrDecisionLabel2026(reviewStatus),
+        reason,
+        notes,
+        latestReviewVerdict: latestReview?.verdict ?? null,
+        latestReviewAt: latestReview?.createdAt ? serializeDate(latestReview.createdAt) : null,
+        affectedActiveEmployeeCount,
+        linkedPersonalKpiCount: params.personalKpis.filter((personalKpi) => personalKpi.linkedOrgKpiId === orgKpi.id).length,
+        suggestedMboCategory: eligibility.eligibleAsOrgGoal ? 'ORG_GOAL' : 'DAILY_WORK',
+        canSuggestAsOrgGoal: eligibility.eligibleAsOrgGoal,
+        guidance: eligibility.eligibleAsOrgGoal
+          ? '본부 KPI에 포함되거나 HR이 승인한 팀 KPI로 개인 MBO 조직목표 후보가 될 수 있습니다.'
+          : 'HR 반영 완료 또는 예외 승인 전까지는 개인 MBO 조직목표가 아니라 일상업무/개인 과업으로 검토합니다.',
+      } satisfies Evaluation2026TeamKpiHrReviewCandidate
+    })
+    .sort((left, right) =>
+      left.divisionName.localeCompare(right.divisionName, 'ko') ||
+      left.departmentPath.localeCompare(right.departmentPath, 'ko') ||
+      left.teamKpiName.localeCompare(right.teamKpiName, 'ko')
+    )
+
+  return {
+    totalCandidates: candidates.length,
+    pendingReviewCount: candidates.filter((candidate) => candidate.reviewStatus === 'PENDING_REVIEW').length,
+    approvedForOrgGoalCount: candidates.filter((candidate) => candidate.reviewStatus === 'APPROVED_FOR_ORG_GOAL').length,
+    excludedDailyWorkCount: candidates.filter((candidate) => candidate.reviewStatus === 'EXCLUDED_DAILY_WORK').length,
+    exceptionApprovedCount: candidates.filter((candidate) => candidate.reviewStatus === 'EXCEPTION_APPROVED').length,
+    needsDiscussionCount: candidates.filter((candidate) => candidate.reviewStatus === 'NEEDS_DISCUSSION').length,
+    personalKpiOrgGoalWithoutApprovedSourceCount: params.personalKpiOrgGoalWithoutApprovedSourceCount,
+    candidates,
+  }
 }
 
 function buildMboSetupCoverage2026(params: {
@@ -796,7 +1082,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     throw new AppError(404, 'EVAL_CYCLE_NOT_FOUND', '평가 주기를 찾을 수 없습니다.')
   }
 
-  const [departments, activeEmployees, personalKpis, selfEvaluations] = await Promise.all([
+  const [departments, activeEmployees, personalKpis, selfEvaluations, teamOrgKpis] = await Promise.all([
     db.department.findMany({
       where: { orgId: cycle.orgId },
       select: {
@@ -907,6 +1193,75 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
       },
       orderBy: [{ targetId: 'asc' }],
     }),
+    db.orgKpi
+      ? db.orgKpi.findMany({
+          where: {
+            evalYear: cycle.evalYear,
+            department: {
+              orgId: cycle.orgId,
+              parentDeptId: {
+                not: null,
+              },
+            },
+          },
+          select: {
+            id: true,
+            deptId: true,
+            evalYear: true,
+            kpiName: true,
+            status: true,
+            parentOrgKpiId: true,
+            mboExceptionApproved: true,
+            mboExceptionReason: true,
+            mboExceptionApprovedById: true,
+            mboExceptionApprovedAt: true,
+            department: {
+              select: {
+                id: true,
+                deptName: true,
+                parentDeptId: true,
+              },
+            },
+            parentOrgKpi: {
+              select: {
+                id: true,
+                kpiName: true,
+                department: {
+                  select: {
+                    deptName: true,
+                  },
+                },
+              },
+            },
+            teamKpiReviewItems: {
+              orderBy: {
+                createdAt: 'desc',
+              },
+              take: 1,
+              select: {
+                id: true,
+                verdict: true,
+                rationale: true,
+                linkageComment: true,
+                duplicationComment: true,
+                recommendationText: true,
+                improvementSuggestions: true,
+                createdAt: true,
+                run: {
+                  select: {
+                    id: true,
+                    reviewType: true,
+                    overallVerdict: true,
+                    overallSummary: true,
+                    createdAt: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
+        })
+      : Promise.resolve([]),
   ])
 
   const departmentsById = new Map(
@@ -1075,6 +1430,13 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     departmentsById,
     operationalStatusByKpiId,
   })
+  const teamKpiHrReviewCoverage = buildTeamKpiHrReviewCoverage2026({
+    orgKpis: teamOrgKpis as TeamOrgKpiForHrReview2026[],
+    activeEmployees: activeEmployees as ActiveEmployee2026[],
+    personalKpis: typedPersonalKpis,
+    departmentsById,
+    personalKpiOrgGoalWithoutApprovedSourceCount: mboSetupCoverage.warningCounts.orgGoalWithoutEligibleOrgKpi,
+  })
   const divisionCoverageById = new Map(
     mboSetupCoverage.divisionCoverage.map((division) => [division.divisionId, division])
   )
@@ -1190,6 +1552,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
       affectedActiveEmployeeCount: overrides.reduce((sum, override) => sum + override.affectedActiveEmployeeCount, 0),
       overrides,
     },
+    teamKpiHrReviewCoverage,
     blockers,
     warnings,
     safety: {

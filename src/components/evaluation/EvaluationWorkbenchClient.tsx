@@ -98,6 +98,10 @@ type EvaluationActivationReadiness2026ApiData = Evaluation2026ActivationReadines
 type EvaluationReadinessPopulation2026ApiData = Evaluation2026ReadinessPopulationDryRun
 type MboSetupMonitoringStatus2026 =
   EvaluationReadinessPopulation2026ApiData['mboSetupCoverage']['monitoring']['employeeRows'][number]['status']
+type TeamKpiHrReviewStatus2026 =
+  EvaluationReadinessPopulation2026ApiData['teamKpiHrReviewCoverage']['candidates'][number]['reviewStatus']
+type TeamKpiHrReviewReason2026 =
+  NonNullable<EvaluationReadinessPopulation2026ApiData['teamKpiHrReviewCoverage']['candidates'][number]['reason']>
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
 type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
@@ -2853,6 +2857,22 @@ function getMboSetupStatusTone2026(value: MboSetupMonitoringStatus2026): 'succes
   return 'neutral'
 }
 
+function getTeamKpiHrReviewStatusLabel2026(value: TeamKpiHrReviewStatus2026 | 'ALL') {
+  if (value === 'APPROVED_FOR_ORG_GOAL') return '조직목표 반영 가능'
+  if (value === 'EXCLUDED_DAILY_WORK') return '일상업무 처리'
+  if (value === 'EXCEPTION_APPROVED') return '예외 승인'
+  if (value === 'NEEDS_DISCUSSION') return '검토 필요'
+  if (value === 'PENDING_REVIEW') return '검토 대기'
+  return '전체'
+}
+
+function getTeamKpiHrReviewStatusTone2026(value: TeamKpiHrReviewStatus2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'APPROVED_FOR_ORG_GOAL' || value === 'EXCEPTION_APPROVED') return 'success'
+  if (value === 'EXCLUDED_DAILY_WORK') return 'neutral'
+  if (value === 'NEEDS_DISCUSSION') return 'warn'
+  return 'error'
+}
+
 function getCompletionRateLabel2026(confirmed: number, total: number) {
   if (!total) return '0%'
   return `${Math.round((confirmed / total) * 100)}%`
@@ -2880,13 +2900,19 @@ function PolicyReadinessPopulation2026Panel(props: {
   const wouldCreate = dryRun?.wouldCreateSelfEvaluations.slice(0, 6) ?? []
   const mboCoverage = dryRun?.mboSetupCoverage
   const monitoring = mboCoverage?.monitoring
+  const teamKpiHrReviewCoverage = dryRun?.teamKpiHrReviewCoverage
   const [monitorDivisionFilter, setMonitorDivisionFilter] = useState('ALL')
   const [monitorTeamFilter, setMonitorTeamFilter] = useState('ALL')
   const [monitorStatusFilter, setMonitorStatusFilter] = useState<MboSetupMonitoringStatus2026 | 'ALL'>('ALL')
   const [monitorManagerFilter, setMonitorManagerFilter] = useState('ALL')
+  const [teamReviewDivisionFilter, setTeamReviewDivisionFilter] = useState('ALL')
+  const [teamReviewTeamFilter, setTeamReviewTeamFilter] = useState('ALL')
+  const [teamReviewStatusFilter, setTeamReviewStatusFilter] = useState<TeamKpiHrReviewStatus2026 | 'ALL'>('ALL')
+  const [teamReviewReasonFilter, setTeamReviewReasonFilter] = useState<TeamKpiHrReviewReason2026 | 'ALL'>('ALL')
   const [copiedMonitoringTable, setCopiedMonitoringTable] = useState<string | null>(null)
   const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
   const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
+  const teamReviewRows = useMemo(() => teamKpiHrReviewCoverage?.candidates ?? [], [teamKpiHrReviewCoverage])
   const topDivisionCoverage = mboCoverage?.divisionCoverage ?? []
   const topTeamCoverage = mboCoverage?.teamCoverage ?? []
   const divisionOptions = useMemo(
@@ -2943,6 +2969,44 @@ function PolicyReadinessPopulation2026Panel(props: {
       }),
     [monitorDivisionFilter, monitorManagerFilter, monitorTeamFilter, policyCategoryMissingRows]
   )
+  const teamReviewDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          teamReviewRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [teamReviewRows]
+  )
+  const teamReviewTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          teamReviewRows
+            .filter((row) => teamReviewDivisionFilter === 'ALL' || row.divisionId === teamReviewDivisionFilter)
+            .map((row) => [row.departmentId, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [teamReviewDivisionFilter, teamReviewRows]
+  )
+  const teamReviewReasonOptions = useMemo(
+    () =>
+      Array.from(new Set(teamReviewRows.map((row) => row.reason).filter(Boolean))) as TeamKpiHrReviewReason2026[],
+    [teamReviewRows]
+  )
+  const filteredTeamReviewRows = useMemo(
+    () =>
+      teamReviewRows.filter((row) => {
+        const matchesDivision = teamReviewDivisionFilter === 'ALL' || row.divisionId === teamReviewDivisionFilter
+        const matchesTeam = teamReviewTeamFilter === 'ALL' || row.departmentId === teamReviewTeamFilter
+        const matchesStatus = teamReviewStatusFilter === 'ALL' || row.reviewStatus === teamReviewStatusFilter
+        const matchesReason = teamReviewReasonFilter === 'ALL' || row.reason === teamReviewReasonFilter
+        return matchesDivision && matchesTeam && matchesStatus && matchesReason
+      }),
+    [teamReviewDivisionFilter, teamReviewReasonFilter, teamReviewRows, teamReviewStatusFilter, teamReviewTeamFilter]
+  )
   const copyMonitoringTable = useCallback(async (key: string, text: string) => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return
     await navigator.clipboard.writeText(text)
@@ -2997,6 +3061,26 @@ function PolicyReadinessPopulation2026Panel(props: {
         ])
       ),
     [policyCategoryMissingRows]
+  )
+  const teamKpiReviewTsv = useMemo(
+    () =>
+      buildTsv2026(
+        ['teamKpiName', 'division', 'departmentPath', 'owner', 'status', 'decision', 'reason', 'linkedDivisionKpi', 'affectedEmployees', 'suggestedMboCategory', 'notes'],
+        filteredTeamReviewRows.map((row) => [
+          row.teamKpiName,
+          row.divisionName,
+          row.departmentPath,
+          row.ownerName,
+          row.reviewStatusLabel,
+          row.hrDecisionLabel,
+          row.reason ?? '',
+          row.linkedDivisionKpiName ?? '',
+          row.affectedActiveEmployeeCount,
+          row.suggestedMboCategory,
+          row.notes ?? '',
+        ])
+      ),
+    [filteredTeamReviewRows]
   )
 
   return (
@@ -3430,6 +3514,200 @@ function PolicyReadinessPopulation2026Panel(props: {
                   </div>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {teamKpiHrReviewCoverage ? (
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 팀 KPI 검토</h4>
+                    <Badge tone="neutral">Read-only</Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                    본부 KPI에 포함되거나 HR이 승인한 팀 KPI만 개인 MBO의 조직목표 후보가 됩니다. 이 목록은 기존 Team KPI review와 예외 승인 메타데이터를 읽어 readiness 판단을 돕습니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void copyMonitoringTable('team-kpi-review', teamKpiReviewTsv)}
+                  className="rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50"
+                >
+                  {copiedMonitoringTable === 'team-kpi-review' ? '팀 KPI 검토 복사됨' : '팀 KPI 검토 복사'}
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard
+                  label="검토 대상"
+                  value={teamKpiHrReviewCoverage.totalCandidates.toLocaleString()}
+                  help="팀/실 KPI"
+                  compact
+                />
+                <MetricCard
+                  label="조직목표 반영"
+                  value={teamKpiHrReviewCoverage.approvedForOrgGoalCount.toLocaleString()}
+                  help="APPROVED"
+                  compact
+                />
+                <MetricCard
+                  label="일상업무 처리"
+                  value={teamKpiHrReviewCoverage.excludedDailyWorkCount.toLocaleString()}
+                  help="EXCLUDED"
+                  compact
+                />
+                <MetricCard
+                  label="예외 승인"
+                  value={teamKpiHrReviewCoverage.exceptionApprovedCount.toLocaleString()}
+                  help="HR 승인"
+                  compact
+                />
+                <MetricCard
+                  label="검토 필요"
+                  value={(teamKpiHrReviewCoverage.pendingReviewCount + teamKpiHrReviewCoverage.needsDiscussionCount).toLocaleString()}
+                  help="대기/논의"
+                  compact
+                  variant={teamKpiHrReviewCoverage.pendingReviewCount + teamKpiHrReviewCoverage.needsDiscussionCount > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="ORG_GOAL 소스 경고"
+                  value={teamKpiHrReviewCoverage.personalKpiOrgGoalWithoutApprovedSourceCount.toLocaleString()}
+                  help="개인 MBO"
+                  compact
+                  variant={teamKpiHrReviewCoverage.personalKpiOrgGoalWithoutApprovedSourceCount > 0 ? 'warning' : 'default'}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <label className="text-xs font-semibold text-slate-600">
+                  본부
+                  <select
+                    value={teamReviewDivisionFilter}
+                    onChange={(event) => {
+                      setTeamReviewDivisionFilter(event.target.value)
+                      setTeamReviewTeamFilter('ALL')
+                    }}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 본부</option>
+                    {teamReviewDivisionOptions.map(([divisionId, divisionName]) => (
+                      <option key={divisionId} value={divisionId}>{divisionName}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  팀
+                  <select
+                    value={teamReviewTeamFilter}
+                    onChange={(event) => setTeamReviewTeamFilter(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 팀</option>
+                    {teamReviewTeamOptions.map(([departmentId, departmentPath]) => (
+                      <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  검토 상태
+                  <select
+                    value={teamReviewStatusFilter}
+                    onChange={(event) => setTeamReviewStatusFilter(event.target.value as TeamKpiHrReviewStatus2026 | 'ALL')}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    {(['ALL', 'PENDING_REVIEW', 'APPROVED_FOR_ORG_GOAL', 'EXCLUDED_DAILY_WORK', 'EXCEPTION_APPROVED', 'NEEDS_DISCUSSION'] as const).map((status) => (
+                      <option key={status} value={status}>{getTeamKpiHrReviewStatusLabel2026(status)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  HR 사유
+                  <select
+                    value={teamReviewReasonFilter}
+                    onChange={(event) => setTeamReviewReasonFilter(event.target.value as TeamKpiHrReviewReason2026 | 'ALL')}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 사유</option>
+                    {teamReviewReasonOptions.map((reason) => (
+                      <option key={reason} value={reason}>{reason}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                  <h5 className="text-sm font-semibold text-slate-900">팀 KPI 검토 후보</h5>
+                  <span className="text-xs text-slate-500">
+                    {filteredTeamReviewRows.length.toLocaleString()}건 표시 · 전체 {teamReviewRows.length.toLocaleString()}건
+                  </span>
+                </div>
+                <div className="max-h-96 overflow-auto">
+                  <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="px-4 py-2 font-semibold">팀 KPI</th>
+                        <th className="px-4 py-2 font-semibold">조직/리더</th>
+                        <th className="px-4 py-2 font-semibold">연결 본부 KPI</th>
+                        <th className="px-4 py-2 font-semibold">검토 상태</th>
+                        <th className="px-4 py-2 font-semibold">HR 사유</th>
+                        <th className="px-4 py-2 font-semibold">MBO 제안</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {filteredTeamReviewRows.slice(0, 120).map((row) => (
+                        <tr key={row.orgKpiId}>
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-slate-900">{row.teamKpiName}</div>
+                            <div className="mt-1 text-slate-400">
+                              영향 {row.affectedActiveEmployeeCount.toLocaleString()}명 · 개인 연결 {row.linkedPersonalKpiCount.toLocaleString()}건 · {row.hrDecisionLabel}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-slate-600">{row.departmentPath}</div>
+                            <div className="mt-1 text-slate-400">{row.ownerName}</div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            {row.linkedDivisionKpiName ?? '연결 없음'}
+                            {row.linkedDivisionKpiDepartmentName ? (
+                              <span className="block text-slate-400">{row.linkedDivisionKpiDepartmentName}</span>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge tone={getTeamKpiHrReviewStatusTone2026(row.reviewStatus)}>
+                              {row.reviewStatusLabel}
+                            </Badge>
+                            {row.latestReviewVerdict ? (
+                              <div className="mt-1 text-slate-400">verdict {row.latestReviewVerdict}</div>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">
+                            <div className="font-semibold text-slate-700">{row.reason ?? '미지정'}</div>
+                            {row.notes ? <div className="mt-1 max-w-xs truncate text-slate-400">{row.notes}</div> : null}
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge tone={row.canSuggestAsOrgGoal ? 'success' : 'neutral'}>
+                              {row.suggestedMboCategory === 'ORG_GOAL' ? 'ORG_GOAL 후보' : 'DAILY_WORK 기본'}
+                            </Badge>
+                            <div className="mt-1 max-w-xs text-slate-500">{row.guidance}</div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredTeamReviewRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 팀 KPI가 없습니다.</td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+                {filteredTeamReviewRows.length > 120 ? (
+                  <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                    화면에는 120건까지만 표시합니다. 전체 목록은 복사 버튼으로 추출해 주세요.
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
