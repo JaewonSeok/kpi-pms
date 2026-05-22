@@ -42,6 +42,53 @@ function makeSession(role: string = 'ROLE_ADMIN') {
   }
 }
 
+function makeCycle(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'cycle-2026',
+    cycleName: '2026 상반기',
+    evalYear: 2026,
+    kpiSetupStart: new Date('2026-03-03T00:00:00.000Z'),
+    kpiSetupEnd: new Date('2026-03-12T00:00:00.000Z'),
+    selfEvalStart: new Date('2026-11-01T00:00:00.000Z'),
+    selfEvalEnd: new Date('2026-11-15T00:00:00.000Z'),
+    firstEvalStart: null,
+    firstEvalEnd: null,
+    secondEvalStart: null,
+    secondEvalEnd: null,
+    finalEvalStart: new Date('2026-12-01T00:00:00.000Z'),
+    finalEvalEnd: new Date('2026-12-15T00:00:00.000Z'),
+    ceoAdjustStart: null,
+    ceoAdjustEnd: null,
+    resultOpenStart: null,
+    resultOpenEnd: null,
+    appealDeadline: null,
+    performanceDesignConfig: {
+      policy2026OfficialReadinessEnabled: true,
+      milestones: [],
+    },
+    organization: { name: 'RSUPPORT' },
+    ...overrides,
+  }
+}
+
+function makeReadiness(overrides: Record<string, unknown> = {}) {
+  return {
+    mboSetupCoverage: {
+      employeesMissingAnyPersonalKpiCount: 0,
+    },
+    employeesMissingConfirmedPersonalKpiCount: 0,
+    policyCategoryMissingCount: 0,
+    teamKpiHrReviewCoverage: {
+      pendingReviewCount: 0,
+      needsDiscussionCount: 0,
+    },
+    gradePolicyReadiness: {
+      blockers: [],
+    },
+    ...overrides,
+  } as any
+}
+
 async function run(name: string, fn: () => Promise<void> | void) {
   try {
     await fn()
@@ -201,12 +248,111 @@ async function main() {
     }
   })
 
+  await run('2026 operations checklist renders PPT milestones and current actions from readiness blockers', async () => {
+    const data = await getPerformanceCalendarPageData(
+      makeSession(),
+      { month: '2026-03' },
+      {
+        loadEvalCycles: async () => [makeCycle()],
+        loadFeedbackRounds: async () => [],
+        loadAiCompetencyCycles: async () => [],
+        loadEmployees: async () => [],
+        loadReadinessPopulationDryRun: async () =>
+          makeReadiness({
+            mboSetupCoverage: {
+              employeesMissingAnyPersonalKpiCount: 12,
+            },
+            employeesMissingConfirmedPersonalKpiCount: 8,
+          }),
+        loadAssignmentCoverage: async () => ({
+          assignmentCount: 0,
+          targetCount: 0,
+          evaluatorCount: 0,
+        }),
+        loadAiCompetencyReadiness: async () => ({
+          cycleExists: true,
+          targetCount: 3,
+          missingSubmissionCount: 2,
+          needsRevisionCount: 0,
+          pendingReviewCount: 1,
+          passedCount: 0,
+          failedCount: 0,
+        }),
+      }
+    )
+
+    assert.equal(data.operationsChecklist.mode, 'read_only')
+    assert.equal(data.operationsChecklist.milestones.length, 13)
+    assert.equal(data.operationsChecklist.selectedCycleIsOfficialReadinessTarget, true)
+    assert.equal(data.operationsChecklist.milestones.some((item) => item.name === '팀원 업적목표 수립 및 확정'), true)
+    assert.equal(data.operationsChecklist.milestones.some((item) => item.name === 'AI 사례 준비 및 축적'), true)
+    assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === 'MBO 미작성자 확인'), true)
+    assert.equal(data.operationsChecklist.safety.officialScoringEnabled, false)
+    assert.equal(data.operationsChecklist.safety.officialGradeEnabled, false)
+    assert.equal(data.operationsChecklist.safety.totalScoreChanged, false)
+    assert.equal(data.operationsChecklist.safety.gradeIdChanged, false)
+  })
+
+  await run('2026 operations checklist surfaces team KPI, grade policy, AI, and assignment blockers', async () => {
+    const data = await getPerformanceCalendarPageData(
+      makeSession(),
+      { month: '2026-03' },
+      {
+        loadEvalCycles: async () => [makeCycle()],
+        loadFeedbackRounds: async () => [],
+        loadAiCompetencyCycles: async () => [],
+        loadEmployees: async () => [],
+        loadReadinessPopulationDryRun: async () =>
+          makeReadiness({
+            policyCategoryMissingCount: 5,
+            teamKpiHrReviewCoverage: {
+              pendingReviewCount: 2,
+              needsDiscussionCount: 1,
+            },
+            gradePolicyReadiness: {
+              blockers: [
+                {
+                  code: 'TEAM_MEMBER_SALES_THRESHOLD_AMBIGUITY',
+                  message: 'HR 확인 필요',
+                },
+              ],
+            },
+          }),
+        loadAssignmentCoverage: async () => ({
+          assignmentCount: 0,
+          targetCount: 0,
+          evaluatorCount: 0,
+        }),
+        loadAiCompetencyReadiness: async () => ({
+          cycleExists: false,
+          targetCount: 0,
+          missingSubmissionCount: 0,
+          needsRevisionCount: 0,
+          pendingReviewCount: 0,
+          passedCount: 0,
+          failedCount: 0,
+        }),
+      }
+    )
+
+    const byId = new Map(data.operationsChecklist.milestones.map((item) => [item.id, item]))
+    assert.equal(byId.get('team-kpi-finalization')?.status, 'BLOCKED')
+    assert.equal(byId.get('org-evaluation-close')?.status, 'BLOCKED')
+    assert.equal(byId.get('ai-competency-submission')?.status, 'BLOCKED')
+    assert.equal(byId.get('performance-result-writing')?.status, 'BLOCKED')
+    assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === '팀 KPI 검토 완료'), true)
+    assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === '등급 기준 HR 확인'), true)
+    assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === 'AI 활용평가 대상자 배정'), true)
+    assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === '평가자 배정 확인'), true)
+  })
+
   await run('performance calendar denies non-admin access without crashing', async () => {
     const data = await getPerformanceCalendarPageData(makeSession('ROLE_MEMBER'), { month: '2026-03' })
 
     assert.equal(data.state, 'permission-denied')
     assert.equal(data.events.length, 0)
     assert.equal(data.filters.length, 0)
+    assert.equal(data.operationsChecklist.milestones.length, 0)
   })
 
   await run('performance calendar route and client are wired into the admin IA', () => {
@@ -218,6 +364,11 @@ async function main() {
     assert.equal(existsSync(path.resolve(process.cwd(), 'src/app/(main)/admin/performance-calendar/page.tsx')), true)
     assert.equal(clientSource.includes('/admin/performance-calendar?'), true)
     assert.equal(clientSource.includes("milestone: 'border-slate-300"), true)
+    assert.equal(clientSource.includes('2026 운영 체크리스트'), true)
+    assert.equal(clientSource.includes('지금 해야 할 일'), true)
+    assert.equal(clientSource.includes('아직 공식 점수/등급 미적용'), true)
+    assert.equal(clientSource.includes('OWNER_FILTER_LABELS'), true)
+    assert.equal(clientSource.includes('STATUS_FILTER_LABELS'), true)
     assert.equal(dashboardSource.includes('/admin/performance-calendar'), true)
     assert.equal(navigationSource.includes('/admin/performance-calendar'), true)
     assert.equal(pageSource.includes("item === 'milestone'"), true)
