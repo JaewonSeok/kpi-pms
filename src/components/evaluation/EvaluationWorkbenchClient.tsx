@@ -102,6 +102,23 @@ type EvaluationActivationReadiness2026ApiData = Evaluation2026ActivationReadines
 type EvaluationGradePolicyReadiness2026ApiData = Evaluation2026GradePolicyReadinessResult
 type EvaluationGradePolicySave2026ApiData = Evaluation2026GradePolicyMetadataSaveResult
 type EvaluationReadinessPopulation2026ApiData = Evaluation2026ReadinessPopulationDryRun
+type GradePolicyTeamMemberSalesResolutionPayload2026 =
+  | {
+      decision: 'APPLY_PPT_BASELINE'
+      note?: string
+    }
+  | {
+      decision: 'CUSTOM_THRESHOLDS'
+      superMinScore?: number | null
+      superMaxScore?: number | null
+      outstandingMinScore?: number | null
+      outstandingMaxScore?: number | null
+      note?: string
+    }
+  | {
+      decision: 'DEFER'
+      note?: string
+    }
 type MboSetupMonitoringStatus2026 =
   EvaluationReadinessPopulation2026ApiData['mboSetupCoverage']['monitoring']['employeeRows'][number]['status']
 type TeamKpiHrReviewStatus2026 =
@@ -725,6 +742,55 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     } catch (error) {
       setPolicyGradeReadiness2026Error(
         error instanceof Error ? error.message : '2026 등급 기준 metadata를 저장하지 못했습니다.'
+      )
+    } finally {
+      setPolicyGradeReadiness2026Saving(false)
+    }
+  }
+
+  async function savePolicyGradeTeamMemberSalesResolution2026(
+    ambiguityResolution: GradePolicyTeamMemberSalesResolutionPayload2026
+  ) {
+    if (!canViewPolicyPreview2026 || !props.selectedCycleId) return
+    setPolicyGradeReadiness2026Saving(true)
+    setPolicyGradeReadiness2026Error('')
+    setPolicyGradeReadiness2026Notice('')
+
+    try {
+      const response = await fetch('/api/evaluation/preview-2026/grade-policy', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          evalCycleId: props.selectedCycleId,
+          source: 'PPT_BASELINE',
+          ambiguityResolution,
+        }),
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? 'TEAM_MEMBER_SALES 기준 확인 metadata를 저장하지 못했습니다.')
+      }
+
+      const result = json.data as EvaluationGradePolicySave2026ApiData
+      const savedMessage =
+        ambiguityResolution.decision === 'APPLY_PPT_BASELINE'
+          ? 'TEAM_MEMBER_SALES 기준을 PPT 해석으로 저장했습니다. Super는 미운영, Outstanding은 110점 이상입니다.'
+          : ambiguityResolution.decision === 'CUSTOM_THRESHOLDS'
+            ? 'TEAM_MEMBER_SALES HR 별도 기준을 저장했습니다.'
+            : 'TEAM_MEMBER_SALES 기준 확인을 보류했습니다. blocker는 유지됩니다.'
+      setPolicyGradeReadiness2026Notice(
+        `${savedMessage} 저장 ${result.upsertedRows}건. 공식 점수/등급은 변경되지 않았습니다.`
+      )
+      await loadPolicyGradeReadiness2026()
+      if (policyActivationReadiness2026) {
+        await loadPolicyActivationReadiness2026()
+      }
+      if (policyPopulationDryRun2026) {
+        await loadPolicyPopulationDryRun2026()
+      }
+    } catch (error) {
+      setPolicyGradeReadiness2026Error(
+        error instanceof Error ? error.message : 'TEAM_MEMBER_SALES 기준 확인 metadata를 저장하지 못했습니다.'
       )
     } finally {
       setPolicyGradeReadiness2026Saving(false)
@@ -1766,6 +1832,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     canSave={props.currentUser?.role === 'ROLE_ADMIN'}
                     onLoad={loadPolicyGradeReadiness2026}
                     onSave={savePolicyGradeReadiness2026}
+                    onResolveTeamMemberSalesAmbiguity={savePolicyGradeTeamMemberSalesResolution2026}
                   />
                   <PolicyReadinessPopulation2026Panel
                     dryRunData={policyPopulationDryRun2026}
@@ -2957,9 +3024,69 @@ function PolicyGradeReadiness2026Panel(props: {
   canSave: boolean
   onLoad: () => void
   onSave: () => void
+  onResolveTeamMemberSalesAmbiguity: (payload: GradePolicyTeamMemberSalesResolutionPayload2026) => void
 }) {
   const data = props.gradePolicyData
   const topBlockers = data?.blockers.slice(0, 5) ?? []
+  const [ambiguityMode, setAmbiguityMode] =
+    useState<GradePolicyTeamMemberSalesResolutionPayload2026['decision']>('APPLY_PPT_BASELINE')
+  const [customSuperMinScore, setCustomSuperMinScore] = useState('')
+  const [customSuperMaxScore, setCustomSuperMaxScore] = useState('')
+  const [customOutstandingMinScore, setCustomOutstandingMinScore] = useState('110')
+  const [customOutstandingMaxScore, setCustomOutstandingMaxScore] = useState('')
+  const [ambiguityNote, setAmbiguityNote] = useState('')
+  const [ambiguityLocalError, setAmbiguityLocalError] = useState('')
+
+  function readOptionalScore(value: string) {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    const parsed = Number(trimmed)
+    return Number.isFinite(parsed) ? parsed : Number.NaN
+  }
+
+  function saveTeamMemberSalesAmbiguity() {
+    setAmbiguityLocalError('')
+    const note = ambiguityNote.trim() || undefined
+    if (ambiguityMode === 'APPLY_PPT_BASELINE') {
+      props.onResolveTeamMemberSalesAmbiguity({
+        decision: 'APPLY_PPT_BASELINE',
+        note,
+      })
+      return
+    }
+    if (ambiguityMode === 'DEFER') {
+      props.onResolveTeamMemberSalesAmbiguity({
+        decision: 'DEFER',
+        note,
+      })
+      return
+    }
+
+    const superMinScore = readOptionalScore(customSuperMinScore)
+    const superMaxScore = readOptionalScore(customSuperMaxScore)
+    const outstandingMinScore = readOptionalScore(customOutstandingMinScore)
+    const outstandingMaxScore = readOptionalScore(customOutstandingMaxScore)
+    const hasInvalidScore = [superMinScore, superMaxScore, outstandingMinScore, outstandingMaxScore].some(
+      (value) => typeof value === 'number' && Number.isNaN(value)
+    )
+    if (hasInvalidScore) {
+      setAmbiguityLocalError('HR 별도 기준은 숫자 또는 빈 값만 입력할 수 있습니다.')
+      return
+    }
+    if (outstandingMinScore === null && outstandingMaxScore === null) {
+      setAmbiguityLocalError('Outstanding 별도 기준에는 minScore 또는 maxScore가 필요합니다.')
+      return
+    }
+
+    props.onResolveTeamMemberSalesAmbiguity({
+      decision: 'CUSTOM_THRESHOLDS',
+      superMinScore,
+      superMaxScore,
+      outstandingMinScore,
+      outstandingMaxScore,
+      note,
+    })
+  }
 
   return (
     <Panel
@@ -3091,6 +3218,138 @@ function PolicyGradeReadiness2026Panel(props: {
                   </li>
                 ))}
               </ul>
+            </div>
+          ) : null}
+
+          {data.teamMemberSalesAmbiguity.requiresDecision ? (
+            <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-violet-700" />
+                    <h4 className="text-sm font-semibold text-violet-950">TEAM_MEMBER_SALES 기준 HR 확인</h4>
+                    <Badge tone="warn">blocker 해소 필요</Badge>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-violet-900">
+                    PPT 해석상 팀원 영업 Super는 별도 구간을 운영하지 않고, Outstanding은 110점 이상으로 둡니다.
+                    이 저장은 등급 기준 readiness metadata만 변경하며 공식 점수/등급은 변경하지 않습니다.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                <label className="rounded-2xl border border-white bg-white/80 p-3 text-xs text-slate-700 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="team-member-sales-grade-resolution"
+                      checked={ambiguityMode === 'APPLY_PPT_BASELINE'}
+                      onChange={() => setAmbiguityMode('APPLY_PPT_BASELINE')}
+                    />
+                    <span className="font-semibold text-slate-900">PPT 기준 적용</span>
+                  </div>
+                  <p className="mt-2 leading-5">Super 미운영 / Outstanding 110점 이상</p>
+                </label>
+                <label className="rounded-2xl border border-white bg-white/80 p-3 text-xs text-slate-700 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="team-member-sales-grade-resolution"
+                      checked={ambiguityMode === 'CUSTOM_THRESHOLDS'}
+                      onChange={() => setAmbiguityMode('CUSTOM_THRESHOLDS')}
+                    />
+                    <span className="font-semibold text-slate-900">HR 별도 기준 입력</span>
+                  </div>
+                  <p className="mt-2 leading-5">Super / Outstanding 점수 구간을 HR이 직접 확정합니다.</p>
+                </label>
+                <label className="rounded-2xl border border-white bg-white/80 p-3 text-xs text-slate-700 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="team-member-sales-grade-resolution"
+                      checked={ambiguityMode === 'DEFER'}
+                      onChange={() => setAmbiguityMode('DEFER')}
+                    />
+                    <span className="font-semibold text-slate-900">보류</span>
+                  </div>
+                  <p className="mt-2 leading-5">blocker를 유지하고 추후 HR 결정으로 남깁니다.</p>
+                </label>
+              </div>
+
+              {ambiguityMode === 'CUSTOM_THRESHOLDS' ? (
+                <div className="mt-3 grid gap-3 rounded-2xl border border-violet-100 bg-white/80 p-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="space-y-1 text-xs font-semibold text-slate-600">
+                    Super minScore
+                    <input
+                      type="number"
+                      value={customSuperMinScore}
+                      onChange={(event) => setCustomSuperMinScore(event.target.value)}
+                      className="h-9 w-full rounded-xl border border-slate-200 px-3 text-sm font-normal text-slate-900 outline-none focus:border-violet-400"
+                      placeholder="예: 120"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-semibold text-slate-600">
+                    Super maxScore
+                    <input
+                      type="number"
+                      value={customSuperMaxScore}
+                      onChange={(event) => setCustomSuperMaxScore(event.target.value)}
+                      className="h-9 w-full rounded-xl border border-slate-200 px-3 text-sm font-normal text-slate-900 outline-none focus:border-violet-400"
+                      placeholder="미입력 가능"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-semibold text-slate-600">
+                    Outstanding minScore
+                    <input
+                      type="number"
+                      value={customOutstandingMinScore}
+                      onChange={(event) => setCustomOutstandingMinScore(event.target.value)}
+                      className="h-9 w-full rounded-xl border border-slate-200 px-3 text-sm font-normal text-slate-900 outline-none focus:border-violet-400"
+                      placeholder="예: 110"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs font-semibold text-slate-600">
+                    Outstanding maxScore
+                    <input
+                      type="number"
+                      value={customOutstandingMaxScore}
+                      onChange={(event) => setCustomOutstandingMaxScore(event.target.value)}
+                      className="h-9 w-full rounded-xl border border-slate-200 px-3 text-sm font-normal text-slate-900 outline-none focus:border-violet-400"
+                      placeholder="미입력 가능"
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+                <label className="space-y-1 text-xs font-semibold text-slate-600">
+                  HR 확인 메모
+                  <textarea
+                    value={ambiguityNote}
+                    onChange={(event) => setAmbiguityNote(event.target.value)}
+                    className="min-h-[72px] w-full rounded-2xl border border-violet-100 bg-white px-3 py-2 text-sm font-normal text-slate-900 outline-none focus:border-violet-400"
+                    placeholder="예: 2026 PPT 기준 해석 확정"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={saveTeamMemberSalesAmbiguity}
+                  disabled={!props.selectedCycleId || !props.canSave || props.loading || props.saving}
+                  className="inline-flex min-h-10 items-center justify-center rounded-2xl bg-violet-600 px-4 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {props.saving ? '저장 중...' : 'TEAM_MEMBER_SALES 기준 저장'}
+                </button>
+              </div>
+              {ambiguityLocalError ? (
+                <p className="mt-2 text-xs font-semibold text-rose-700">{ambiguityLocalError}</p>
+              ) : null}
+              {!props.canSave ? (
+                <p className="mt-2 text-xs text-violet-800">ROLE_ADMIN만 HR 확인 metadata를 저장할 수 있습니다.</p>
+              ) : null}
+            </div>
+          ) : data.teamMemberSalesAmbiguity.currentDecision === 'PPT_SUPER_NOT_APPLICABLE' ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              TEAM_MEMBER_SALES 기준이 HR 확인되었습니다. Super는 미운영, Outstanding은 110점 이상으로 저장되어 있습니다.
             </div>
           ) : null}
 
