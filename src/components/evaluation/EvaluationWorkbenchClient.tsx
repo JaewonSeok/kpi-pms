@@ -50,6 +50,7 @@ import {
 } from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 import type { Evaluation2026ActivationReadinessResult } from '@/server/evaluation-2026-activation-readiness'
+import type { Evaluation2026ReadinessPopulationDryRun } from '@/server/evaluation-2026-readiness-population'
 import type { EvaluationPreviewResult2026 } from '@/server/evaluation-preview-2026'
 import type { EvaluationPreviewReadinessSummary2026 } from '@/server/evaluation-preview-2026-readiness'
 import type {
@@ -94,6 +95,7 @@ type EvaluationPreview2026ApiData = {
 }
 type EvaluationPreviewReadiness2026ApiData = EvaluationPreviewReadinessSummary2026
 type EvaluationActivationReadiness2026ApiData = Evaluation2026ActivationReadinessResult
+type EvaluationReadinessPopulation2026ApiData = Evaluation2026ReadinessPopulationDryRun
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
 type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
@@ -166,6 +168,10 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     useState<EvaluationActivationReadiness2026ApiData | null>(null)
   const [policyActivationReadiness2026Loading, setPolicyActivationReadiness2026Loading] = useState(false)
   const [policyActivationReadiness2026Error, setPolicyActivationReadiness2026Error] = useState('')
+  const [policyPopulationDryRun2026, setPolicyPopulationDryRun2026] =
+    useState<EvaluationReadinessPopulation2026ApiData | null>(null)
+  const [policyPopulationDryRun2026Loading, setPolicyPopulationDryRun2026Loading] = useState(false)
+  const [policyPopulationDryRun2026Error, setPolicyPopulationDryRun2026Error] = useState('')
   const [policyMapping2026, setPolicyMapping2026] = useState<EvaluationPolicyMapping2026ApiData | null>(null)
   const [policyMapping2026Loading, setPolicyMapping2026Loading] = useState(false)
   const [policyMapping2026Saving, setPolicyMapping2026Saving] = useState(false)
@@ -214,6 +220,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyActivationReadiness2026(null)
     setPolicyActivationReadiness2026Error('')
     setPolicyActivationReadiness2026Loading(false)
+    setPolicyPopulationDryRun2026(null)
+    setPolicyPopulationDryRun2026Error('')
+    setPolicyPopulationDryRun2026Loading(false)
     setPolicyMapping2026(null)
     setPolicyMapping2026Error('')
     setPolicyMapping2026Notice('')
@@ -259,6 +268,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       setPolicyPreview2026(null)
       setPolicyPreview2026Error('')
       setPolicyPreview2026Loading(false)
+      setPolicyPopulationDryRun2026(null)
+      setPolicyPopulationDryRun2026Error('')
+      setPolicyPopulationDryRun2026Loading(false)
       setAssistLoadingMode(null)
       setCopiedPreviewMode(null)
       setSelectedEvidenceSection('highlights')
@@ -608,6 +620,39 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       )
     } finally {
       setPolicyActivationReadiness2026Loading(false)
+    }
+  }
+
+  async function loadPolicyPopulationDryRun2026() {
+    if (!canViewPolicyPreview2026) return
+    if (!props.selectedCycleId) {
+      setPolicyPopulationDryRun2026Error('먼저 평가 주기를 선택해 주세요.')
+      return
+    }
+
+    setPolicyPopulationDryRun2026Loading(true)
+    setPolicyPopulationDryRun2026Error('')
+
+    try {
+      const params = new URLSearchParams({
+        evalCycleId: props.selectedCycleId,
+      })
+      const response = await fetch(`/api/evaluation/preview-2026/readiness-population?${params.toString()}`, {
+        method: 'GET',
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '2026 readiness population dry-run을 불러오지 못했습니다.')
+      }
+
+      setPolicyPopulationDryRun2026(json.data as EvaluationReadinessPopulation2026ApiData)
+    } catch (error) {
+      setPolicyPopulationDryRun2026(null)
+      setPolicyPopulationDryRun2026Error(
+        error instanceof Error ? error.message : '2026 readiness population dry-run을 불러오지 못했습니다.'
+      )
+    } finally {
+      setPolicyPopulationDryRun2026Loading(false)
     }
   }
 
@@ -1601,6 +1646,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     loading={policyActivationReadiness2026Loading}
                     error={policyActivationReadiness2026Error}
                     onLoad={loadPolicyActivationReadiness2026}
+                  />
+                  <PolicyReadinessPopulation2026Panel
+                    dryRunData={policyPopulationDryRun2026}
+                    loading={policyPopulationDryRun2026Loading}
+                    error={policyPopulationDryRun2026Error}
+                    selectedCycleId={props.selectedCycleId ?? null}
+                    onLoad={loadPolicyPopulationDryRun2026}
                   />
                   <PolicyMapping2026Panel
                     mappingData={policyMapping2026}
@@ -2781,6 +2833,244 @@ function getThresholdDecisionLabel2026(value: string | null | undefined) {
   if (value === 'OUTSTANDING_PRIORITY') return '110점 이상 Outstanding 우선'
   if (value === 'UNRESOLVED') return 'HR 확인 필요 유지'
   return '미지정'
+}
+
+function PolicyReadinessPopulation2026Panel(props: {
+  dryRunData: EvaluationReadinessPopulation2026ApiData | null
+  loading: boolean
+  error: string
+  selectedCycleId: string | null
+  onLoad: () => void
+}) {
+  const dryRun = props.dryRunData
+  const blockers = dryRun?.blockers ?? []
+  const warnings = dryRun?.warnings ?? []
+  const missingEmployees = dryRun?.employeesMissingConfirmedPersonalKpi.slice(0, 8) ?? []
+  const wouldCreate = dryRun?.wouldCreateSelfEvaluations.slice(0, 6) ?? []
+
+  return (
+    <Panel
+      title="2026 readiness population dry-run"
+      description="선택한 평가 주기에 대해 SELF 평가와 평가항목을 만들 경우의 범위를 읽기 전용으로 점검합니다."
+    >
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-1 rounded-2xl bg-cyan-50 p-2 text-cyan-700">
+            <ClipboardList className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="neutral">Dry-run only</Badge>
+              <Badge tone={dryRun && blockers.length === 0 ? 'success' : dryRun ? 'warn' : 'neutral'}>
+                {dryRun
+                  ? blockers.length === 0
+                    ? '적용 전 점검 양호'
+                    : `${blockers.length}개 차단 조건`
+                  : '미확인'}
+              </Badge>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              이 기능은 dry-run이며 공식 점수/등급을 변경하지 않습니다. Evaluation, EvaluationItem, Assignment는 생성하거나 수정하지 않습니다.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={props.onLoad}
+          disabled={!props.selectedCycleId || props.loading}
+          className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+        >
+          {props.loading ? '점검 중...' : dryRun ? 'dry-run 다시 실행' : '2026 readiness population dry-run'}
+        </button>
+      </div>
+
+      {!props.selectedCycleId ? (
+        <div className="mt-4">
+          <Banner tone="warn" message="평가 주기를 선택한 뒤 population dry-run을 실행할 수 있습니다." />
+        </div>
+      ) : null}
+      {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+
+      {dryRun ? (
+        <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone={dryRun.selectedEvalCycle.isOfficialReadinessTarget ? 'success' : 'warn'}>
+                {dryRun.selectedEvalCycle.isOfficialReadinessTarget ? '공식 readiness cycle' : '공식 cycle 미확정'}
+              </Badge>
+              <span className="text-sm font-semibold text-slate-900">
+                {dryRun.selectedEvalCycle.name}
+              </span>
+              <span className="text-xs text-slate-500">
+                {dryRun.selectedEvalCycle.year} · {dryRun.selectedEvalCycle.status}
+              </span>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              cycleId {dryRun.selectedEvalCycle.id} · writesPerformed {String(dryRun.safety.writesPerformed)}
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <MetricCard
+              label="재직자"
+              value={dryRun.activeEmployeeCount.toLocaleString()}
+              help="조직 master 기준"
+              compact
+            />
+            <MetricCard
+              label="확정 KPI 보유"
+              value={dryRun.employeesWithConfirmedPersonalKpiCount.toLocaleString()}
+              help="2026 Personal KPI"
+              compact
+            />
+            <MetricCard
+              label="확정 KPI 없음"
+              value={dryRun.employeesMissingConfirmedPersonalKpiCount.toLocaleString()}
+              help="보완 필요"
+              compact
+              variant={dryRun.employeesMissingConfirmedPersonalKpiCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="기존 SELF"
+              value={dryRun.existingSelfEvaluationCount.toLocaleString()}
+              help="skip 대상"
+              compact
+            />
+            <MetricCard
+              label="생성 예상 SELF"
+              value={dryRun.wouldCreateSelfEvaluationCount.toLocaleString()}
+              help="dry-run preview"
+              compact
+              emphasized
+            />
+            <MetricCard
+              label="생성 예상 항목"
+              value={dryRun.wouldCreateEvaluationItemCount.toLocaleString()}
+              help="confirmed KPI 기준"
+              compact
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              label="기존 항목 skip"
+              value={dryRun.existingEvaluationItemsSkippedCount.toLocaleString()}
+              help="기존 SELF 보존"
+              compact
+            />
+            <MetricCard
+              label="policyCategory 누락"
+              value={dryRun.policyCategoryMissingCount.toLocaleString()}
+              help="mapping 필요"
+              compact
+              variant={dryRun.policyCategoryMissingCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="Division 매핑"
+              value={`${dryRun.divisionSalesMappingCoverage.mappedDivisions}/${dryRun.divisionSalesMappingCoverage.totalDivisions}`}
+              help="SALES/NON_SALES"
+              compact
+              variant={dryRun.divisionSalesMappingCoverage.unmappedDivisions > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="팀 override"
+              value={dryRun.departmentOverrideCoverage.savedOverrideCount.toLocaleString()}
+              help={`${dryRun.departmentOverrideCoverage.affectedActiveEmployeeCount}명 영향`}
+              compact
+            />
+          </div>
+
+          {blockers.length || warnings.length ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-amber-700" />
+                  <h4 className="text-sm font-semibold text-amber-900">safe apply 차단 조건</h4>
+                </div>
+                <ul className="mt-3 space-y-2">
+                  {blockers.length ? blockers.map((blocker) => (
+                    <li key={blocker.code} className="text-sm leading-6 text-amber-900">
+                      {blocker.message}{blocker.count != null ? ` (${blocker.count.toLocaleString()}건)` : ''}
+                    </li>
+                  )) : (
+                    <li className="text-sm text-amber-800">현재 dry-run 기준 차단 조건은 없습니다.</li>
+                  )}
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 text-slate-600" />
+                  <h4 className="text-sm font-semibold text-slate-900">범위 확인 경고</h4>
+                </div>
+                <ul className="mt-3 space-y-2">
+                  {warnings.length ? warnings.map((warning) => (
+                    <li key={warning.code} className="text-sm leading-6 text-slate-600">
+                      {warning.message}{warning.count != null ? ` (${warning.count.toLocaleString()}건)` : ''}
+                    </li>
+                  )) : (
+                    <li className="text-sm text-slate-500">추가 경고가 없습니다.</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-slate-900">확정 Personal KPI 누락 직원</h4>
+                <span className="text-xs text-slate-400">
+                  {dryRun.employeesMissingConfirmedPersonalKpiCount.toLocaleString()}명 중 {missingEmployees.length}명 표시
+                </span>
+              </div>
+              <ul className="mt-3 divide-y divide-slate-100">
+                {missingEmployees.length ? missingEmployees.map((employee) => (
+                  <li key={employee.employeeId} className="py-3">
+                    <div className="text-sm font-semibold text-slate-900">{employee.employeeName}</div>
+                    <div className="mt-1 text-xs text-slate-500">{employee.departmentPath}</div>
+                  </li>
+                )) : (
+                  <li className="py-3 text-sm text-slate-500">누락 직원이 없습니다.</li>
+                )}
+              </ul>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-slate-900">생성 예상 SELF 평가</h4>
+                <span className="text-xs text-slate-400">
+                  {dryRun.wouldCreateSelfEvaluationCount.toLocaleString()}건 중 {wouldCreate.length}건 표시
+                </span>
+              </div>
+              <ul className="mt-3 divide-y divide-slate-100">
+                {wouldCreate.length ? wouldCreate.map((item) => (
+                  <li key={item.employeeId} className="py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-900">{item.employeeName}</span>
+                      <Badge tone="neutral">{item.departmentName}</Badge>
+                      <Badge tone={item.missingPolicyCategoryCount > 0 ? 'warn' : 'success'}>
+                        policy 누락 {item.missingPolicyCategoryCount}건
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      생성 예상 항목 {item.wouldCreateItemCount}건
+                      {item.itemTitles.length ? ` · ${item.itemTitles.join(', ')}` : ''}
+                    </p>
+                  </li>
+                )) : (
+                  <li className="py-3 text-sm text-slate-500">새로 생성될 SELF 평가가 없습니다.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+          HR 관리자가 선택한 평가 주기에 대해 population dry-run을 실행할 수 있습니다. 이 단계는 읽기 전용입니다.
+        </div>
+      )}
+    </Panel>
+  )
 }
 
 function PolicyMapping2026Panel(props: {
