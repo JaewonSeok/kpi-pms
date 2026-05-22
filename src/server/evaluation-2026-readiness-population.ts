@@ -141,9 +141,11 @@ type TeamKpiReviewItemSnapshot2026 = {
   createdAt?: Date | string | null
   run?: {
     id?: string | null
+    requesterId?: string | null
     reviewType?: string | null
     overallVerdict?: string | null
     overallSummary?: string | null
+    aiRequestLogId?: string | null
     createdAt?: Date | string | null
   } | null
 }
@@ -294,6 +296,16 @@ export type Evaluation2026TeamKpiHrReason =
   | '중복 목표'
   | '기타 HR 사유'
 
+const EVALUATION_2026_TEAM_KPI_HR_REASON_VALUES = [
+  '전년 대비 상향 KPI',
+  '핵심 과제',
+  '매출/수익/고객 확보 직접 연계',
+  '본부 KPI 직접 포함',
+  '단순 운영/유지 업무',
+  '중복 목표',
+  '기타 HR 사유',
+] as const satisfies readonly Evaluation2026TeamKpiHrReason[]
+
 export type Evaluation2026TeamKpiHrReviewCandidate = {
   orgKpiId: string
   teamKpiName: string
@@ -315,6 +327,8 @@ export type Evaluation2026TeamKpiHrReviewCandidate = {
   notes: string | null
   latestReviewVerdict: string | null
   latestReviewAt: string | null
+  reviewedById: string | null
+  reviewedAt: string | null
   affectedActiveEmployeeCount: number
   linkedPersonalKpiCount: number
   suggestedMboCategory: EvaluationPolicyItemCategoryCode
@@ -685,6 +699,14 @@ function resolveTeamKpiHrReason2026(params: {
   latestReview: TeamKpiReviewItemSnapshot2026 | null
 }): Evaluation2026TeamKpiHrReason | null {
   if (params.status === 'PENDING_REVIEW') return null
+  const manualReason = params.latestReview?.rationale?.trim()
+  if (
+    EVALUATION_2026_TEAM_KPI_HR_REASON_VALUES.includes(
+      manualReason as Evaluation2026TeamKpiHrReason
+    )
+  ) {
+    return manualReason as Evaluation2026TeamKpiHrReason
+  }
   if (params.status === 'EXCEPTION_APPROVED') return '기타 HR 사유'
   if (params.status === 'APPROVED_FOR_ORG_GOAL') {
     if (params.orgKpi.parentOrgKpiId) return '본부 KPI 직접 포함'
@@ -732,10 +754,17 @@ function buildTeamKpiHrReviewCoverage2026(params: {
       ).length
       const notes =
         orgKpi.mboExceptionReason?.trim() ||
-        latestReview?.rationale?.trim() ||
         latestReview?.recommendationText?.trim() ||
+        latestReview?.rationale?.trim() ||
         latestReview?.improvementSuggestions?.trim() ||
         null
+      const reviewedAt = latestReview?.createdAt
+        ? serializeDate(latestReview.createdAt)
+        : latestReview?.run?.createdAt
+          ? serializeDate(latestReview.run.createdAt)
+          : orgKpi.mboExceptionApprovedAt
+            ? serializeDate(orgKpi.mboExceptionApprovedAt)
+            : null
 
       return {
         orgKpiId: orgKpi.id,
@@ -757,7 +786,9 @@ function buildTeamKpiHrReviewCoverage2026(params: {
         reason,
         notes,
         latestReviewVerdict: latestReview?.verdict ?? null,
-        latestReviewAt: latestReview?.createdAt ? serializeDate(latestReview.createdAt) : null,
+        latestReviewAt: reviewedAt,
+        reviewedById: latestReview?.run?.requesterId ?? orgKpi.mboExceptionApprovedById ?? null,
+        reviewedAt,
         affectedActiveEmployeeCount,
         linkedPersonalKpiCount: params.personalKpis.filter((personalKpi) => personalKpi.linkedOrgKpiId === orgKpi.id).length,
         suggestedMboCategory: eligibility.eligibleAsOrgGoal ? 'ORG_GOAL' : 'DAILY_WORK',
@@ -1250,9 +1281,11 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
                 run: {
                   select: {
                     id: true,
+                    requesterId: true,
                     reviewType: true,
                     overallVerdict: true,
                     overallSummary: true,
+                    aiRequestLogId: true,
                     createdAt: true,
                   },
                 },
