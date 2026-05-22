@@ -17,6 +17,11 @@ import {
 import { AppError } from '@/lib/utils'
 import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026-loader'
 
+type Evaluation2026TeamMemberSalesGradePolicyDecision =
+  | EvaluationPolicy2026TeamMemberSalesThresholdDecision
+  | 'PPT_SUPER_NOT_APPLICABLE'
+  | 'CUSTOM_CONFIRMED'
+
 type Evaluation2026GradePolicyDb = {
   evalCycle?: {
     findUnique?: (args: unknown) => Promise<unknown>
@@ -127,7 +132,7 @@ export type Evaluation2026GradePolicyReadinessResult = {
   gapCount: number
   missingHrDecisionCount: number
   teamMemberSalesAmbiguity: {
-    currentDecision: EvaluationPolicy2026TeamMemberSalesThresholdDecision
+    currentDecision: Evaluation2026TeamMemberSalesGradePolicyDecision
     requiresDecision: boolean
     message: string
   }
@@ -171,6 +176,24 @@ export const Evaluation2026GradePolicyReadinessQuerySchema = z.object({
 export const Evaluation2026GradePolicyMetadataSaveSchema = z.object({
   evalCycleId: z.string().trim().min(1),
   source: z.literal('PPT_BASELINE').default('PPT_BASELINE'),
+  ambiguityResolution: z.discriminatedUnion('decision', [
+    z.object({
+      decision: z.literal('APPLY_PPT_BASELINE'),
+      note: z.string().trim().max(1000).optional(),
+    }),
+    z.object({
+      decision: z.literal('CUSTOM_THRESHOLDS'),
+      superMinScore: z.number().finite().nullable().optional(),
+      superMaxScore: z.number().finite().nullable().optional(),
+      outstandingMinScore: z.number().finite().nullable().optional(),
+      outstandingMaxScore: z.number().finite().nullable().optional(),
+      note: z.string().trim().max(1000).optional(),
+    }),
+    z.object({
+      decision: z.literal('DEFER'),
+      note: z.string().trim().max(1000).optional(),
+    }),
+  ]).optional(),
 })
 
 function getSessionUser(session: Session) {
@@ -208,6 +231,11 @@ function scoreLabel(minScore: number | null, maxScore: number | null, rule?: str
 
 function valuesMatch(left: number | null, right: number | null) {
   return left === right || (typeof left === 'number' && typeof right === 'number' && Math.abs(left - right) < 0.000001)
+}
+
+function selectionRulesMatch(left: string | null, right: string | null) {
+  if (left === right) return true
+  return right === null && left === 'SCORE_THRESHOLD'
 }
 
 function makeStoredKey(group: EvaluationPolicyThresholdGroupCode, grade: EvaluationPolicyGradeCode) {
@@ -290,9 +318,92 @@ function asStoredPolicy(row: unknown): StoredEvaluationGradePolicy2026 | null {
   }
 }
 
-function makePptRows(policy: GradeThresholdPolicy, storedByKey: Map<string, StoredEvaluationGradePolicy2026>) {
+function getEffectivePptBandForReadiness(
+  policy: GradeThresholdPolicy,
+  grade: EvaluationPolicyGradeCode,
+  teamMemberSalesDecision: Evaluation2026TeamMemberSalesGradePolicyDecision
+): { band: ScoreBand | undefined; note: string | null } {
+  if (policy.group === 'TEAM_MEMBER_SALES' && teamMemberSalesDecision === 'PPT_SUPER_NOT_APPLICABLE') {
+    if (grade === 'SUPER') {
+      return {
+        band: undefined,
+        note: '팀원 영업 Super 별도 구간 미운영',
+      }
+    }
+    if (grade === 'OUTSTANDING') {
+      return {
+        band: { minInclusive: 110, note: 'Outstanding 110점 이상' },
+        note: 'Outstanding 110점 이상',
+      }
+    }
+  }
+
+  const band = policy.thresholds[grade] as ScoreBand | undefined
+  return {
+    band,
+    note: band?.note ?? null,
+  }
+}
+
+function isPptTeamMemberSalesResolution(storedByKey: Map<string, StoredEvaluationGradePolicy2026>) {
+  const superRow = storedByKey.get(makeStoredKey('TEAM_MEMBER_SALES', 'SUPER'))
+  const outstandingRow = storedByKey.get(makeStoredKey('TEAM_MEMBER_SALES', 'OUTSTANDING'))
+  if (!superRow || !outstandingRow) return false
+
+  const superIsNotApplicable =
+    superRow.selectionRule === 'NOT_APPLICABLE' &&
+    superRow.minScore === null &&
+    superRow.maxScore === null
+  const outstandingIs110Plus =
+    valuesMatch(outstandingRow.minScore, 110) &&
+    outstandingRow.maxScore === null &&
+    (outstandingRow.selectionRule === null || outstandingRow.selectionRule === 'SCORE_THRESHOLD')
+
+  return superIsNotApplicable && outstandingIs110Plus
+}
+
+function rangesOverlap(left: StoredEvaluationGradePolicy2026, right: StoredEvaluationGradePolicy2026) {
+  if (!isComparable({
+    storedMinScore: left.minScore,
+    storedMaxScore: left.maxScore,
+    storedRule: left.selectionRule,
+  })) return false
+  if (!isComparable({
+    storedMinScore: right.minScore,
+    storedMaxScore: right.maxScore,
+    storedRule: right.selectionRule,
+  })) return false
+
+  const leftMin = left.minScore ?? Number.NEGATIVE_INFINITY
+  const leftMax = left.maxScore ?? Number.POSITIVE_INFINITY
+  const rightMin = right.minScore ?? Number.NEGATIVE_INFINITY
+  const rightMax = right.maxScore ?? Number.POSITIVE_INFINITY
+  return leftMin < rightMax && rightMin < leftMax
+}
+
+function inferStoredTeamMemberSalesDecision(
+  storedByKey: Map<string, StoredEvaluationGradePolicy2026>
+): Evaluation2026TeamMemberSalesGradePolicyDecision | null {
+  if (isPptTeamMemberSalesResolution(storedByKey)) return 'PPT_SUPER_NOT_APPLICABLE'
+
+  const superRow = storedByKey.get(makeStoredKey('TEAM_MEMBER_SALES', 'SUPER'))
+  const outstandingRow = storedByKey.get(makeStoredKey('TEAM_MEMBER_SALES', 'OUTSTANDING'))
+  if (!superRow || !outstandingRow) return null
+  if (superRow.selectionRule === 'HR_CONFIRMATION_REQUIRED' || outstandingRow.selectionRule === 'HR_CONFIRMATION_REQUIRED') {
+    return null
+  }
+  if (rangesOverlap(superRow, outstandingRow)) return null
+  return 'CUSTOM_CONFIRMED'
+}
+
+function makePptRows(
+  policy: GradeThresholdPolicy,
+  storedByKey: Map<string, StoredEvaluationGradePolicy2026>,
+  teamMemberSalesDecision: Evaluation2026TeamMemberSalesGradePolicyDecision
+) {
   return EVALUATION_POLICY_2026.grades.map((grade) => {
-    const band = policy.thresholds[grade.code] as ScoreBand | undefined
+    const effective = getEffectivePptBandForReadiness(policy, grade.code, teamMemberSalesDecision)
+    const band = effective.band
     const pptMinScore = typeof band?.minInclusive === 'number' ? band.minInclusive : null
     const pptMaxScore = typeof band?.maxExclusive === 'number' ? band.maxExclusive : null
     const pptRule = expectedSelectionRule(band)
@@ -302,7 +413,7 @@ function makePptRows(policy: GradeThresholdPolicy, storedByKey: Map<string, Stor
       ? 'MISSING'
       : valuesMatch(stored.minScore, pptMinScore) &&
           valuesMatch(stored.maxScore, pptMaxScore) &&
-          storedRule === pptRule
+          selectionRulesMatch(storedRule, pptRule)
         ? 'MATCHES_PPT'
         : 'DIFFERS_FROM_PPT'
 
@@ -313,7 +424,7 @@ function makePptRows(policy: GradeThresholdPolicy, storedByKey: Map<string, Stor
       pptMaxScore,
       pptRule,
       pptLabel: scoreLabel(pptMinScore, pptMaxScore, pptRule),
-      pptNotes: band?.note ?? null,
+      pptNotes: effective.note,
       storedPolicyId: stored?.id ?? null,
       storedMinScore: stored?.minScore ?? null,
       storedMaxScore: stored?.maxScore ?? null,
@@ -332,7 +443,7 @@ function isComparable(row: Pick<Evaluation2026GradePolicyThresholdRow, 'storedMi
 function detectRangeIssues(params: {
   group: EvaluationPolicyThresholdGroupCode
   rows: Evaluation2026GradePolicyThresholdRow[]
-  teamMemberSalesDecision: EvaluationPolicy2026TeamMemberSalesThresholdDecision
+  teamMemberSalesDecision: Evaluation2026TeamMemberSalesGradePolicyDecision
 }) {
   const issues: Evaluation2026GradePolicyThresholdIssue[] = []
   const comparable = params.rows.filter((row) => row.storedPolicyId && isComparable(row))
@@ -400,6 +511,90 @@ function buildPolicyRowsForSave(scope: { orgId: string; evalYear: number }) {
       }
     })
   )
+}
+
+function validateCustomRange(label: string, minScore: number | null, maxScore: number | null) {
+  if (typeof minScore === 'number' && typeof maxScore === 'number' && maxScore <= minScore) {
+    throw new AppError(400, 'INVALID_GRADE_POLICY_THRESHOLD', `${label} 기준의 maxScore는 minScore보다 커야 합니다.`)
+  }
+}
+
+function buildTeamMemberSalesAmbiguityResolutionRows(
+  scope: { orgId: string; evalYear: number },
+  resolution: NonNullable<z.infer<typeof Evaluation2026GradePolicyMetadataSaveSchema>['ambiguityResolution']>
+) {
+  if (resolution.decision === 'DEFER') return []
+
+  const group = EVALUATION_POLICY_2026.gradeThresholdGroups.find((item) => item.group === 'TEAM_MEMBER_SALES')
+  if (!group) {
+    throw new AppError(500, 'GRADE_POLICY_GROUP_NOT_FOUND', 'TEAM_MEMBER_SALES 등급 기준 그룹을 찾을 수 없습니다.')
+  }
+
+  const base = {
+    orgId: scope.orgId,
+    evalYear: scope.evalYear,
+    policyVersion: EVALUATION_POLICY_2026.version,
+    thresholdGroup: 'TEAM_MEMBER_SALES' as EvaluationPolicyThresholdGroupCode,
+    lowerBoundInclusive: true,
+    upperBoundInclusive: false,
+    isActive: true,
+  }
+
+  if (resolution.decision === 'APPLY_PPT_BASELINE') {
+    const extraNote = resolution.note ? ` / ${resolution.note}` : ''
+    return [
+      {
+        ...base,
+        gradeLabel: 'SUPER' as EvaluationPolicyGradeCode,
+        displayName: `${group.label} - ${gradeDisplayName('SUPER')}`,
+        minScore: null,
+        maxScore: null,
+        selectionRule: 'NOT_APPLICABLE',
+        notes: `팀원 영업 Super 별도 구간 미운영 / PPT 기준 HR 확정 metadata. 공식 점수/등급에는 미반영.${extraNote}`,
+      },
+      {
+        ...base,
+        gradeLabel: 'OUTSTANDING' as EvaluationPolicyGradeCode,
+        displayName: `${group.label} - ${gradeDisplayName('OUTSTANDING')}`,
+        minScore: 110,
+        maxScore: null,
+        selectionRule: 'SCORE_THRESHOLD',
+        notes: `Outstanding 110점 이상 / PPT 기준 HR 확정 metadata. 공식 점수/등급에는 미반영.${extraNote}`,
+      },
+    ]
+  }
+
+  const superMinScore = resolution.superMinScore ?? null
+  const superMaxScore = resolution.superMaxScore ?? null
+  const outstandingMinScore = resolution.outstandingMinScore ?? null
+  const outstandingMaxScore = resolution.outstandingMaxScore ?? null
+  validateCustomRange('Super', superMinScore, superMaxScore)
+  validateCustomRange('Outstanding', outstandingMinScore, outstandingMaxScore)
+  if (outstandingMinScore === null && outstandingMaxScore === null) {
+    throw new AppError(400, 'INVALID_GRADE_POLICY_THRESHOLD', 'Outstanding 별도 기준에는 minScore 또는 maxScore가 필요합니다.')
+  }
+
+  const note = resolution.note ? ` / ${resolution.note}` : ''
+  return [
+    {
+      ...base,
+      gradeLabel: 'SUPER' as EvaluationPolicyGradeCode,
+      displayName: `${group.label} - ${gradeDisplayName('SUPER')}`,
+      minScore: superMinScore,
+      maxScore: superMaxScore,
+      selectionRule: superMinScore === null && superMaxScore === null ? 'NOT_APPLICABLE' : 'SCORE_THRESHOLD',
+      notes: `HR 별도 기준 입력 metadata. 공식 점수/등급에는 미반영.${note}`,
+    },
+    {
+      ...base,
+      gradeLabel: 'OUTSTANDING' as EvaluationPolicyGradeCode,
+      displayName: `${group.label} - ${gradeDisplayName('OUTSTANDING')}`,
+      minScore: outstandingMinScore,
+      maxScore: outstandingMaxScore,
+      selectionRule: 'SCORE_THRESHOLD',
+      notes: `HR 별도 기준 입력 metadata. 공식 점수/등급에는 미반영.${note}`,
+    },
+  ]
 }
 
 async function resolveGradePolicyScope(params: {
@@ -489,9 +684,12 @@ export async function getEvaluation2026GradePolicyReadiness(params: {
     storedRows.map((row) => [makeStoredKey(row.thresholdGroup, row.gradeLabel), row])
   )
   const mappings = readPolicy2026PreviewMappings(scope.performanceDesignConfig)
-  const currentDecision = mappings.teamMemberSalesThresholdDecision?.decision ?? 'UNRESOLVED'
+  const currentDecision =
+    inferStoredTeamMemberSalesDecision(storedByKey) ??
+    mappings.teamMemberSalesThresholdDecision?.decision ??
+    'UNRESOLVED'
   const groups = EVALUATION_POLICY_2026.gradeThresholdGroups.map((policy) => {
-    const rows = makePptRows(policy, storedByKey)
+    const rows = makePptRows(policy, storedByKey, currentDecision)
     const rangeIssues = detectRangeIssues({
       group: policy.group,
       rows,
@@ -684,10 +882,18 @@ export async function saveEvaluation2026GradePolicyMetadataForSession(
     throw new AppError(400, 'GRADE_POLICY_SCOPE_REQUIRED', '등급 정책 저장에는 평가 주기 orgId가 필요합니다.')
   }
 
-  const rows = buildPolicyRowsForSave({
-    orgId: scope.orgId,
-    evalYear: scope.evalYear,
-  })
+  const rows = parsed.ambiguityResolution
+    ? buildTeamMemberSalesAmbiguityResolutionRows(
+        {
+          orgId: scope.orgId,
+          evalYear: scope.evalYear,
+        },
+        parsed.ambiguityResolution
+      )
+    : buildPolicyRowsForSave({
+        orgId: scope.orgId,
+        evalYear: scope.evalYear,
+      })
   try {
     for (const row of rows) {
       await db.evaluationGradePolicy.upsert({
@@ -725,12 +931,15 @@ export async function saveEvaluation2026GradePolicyMetadataForSession(
 
   await audit({
     userId: actor.id,
-    action: 'UPDATE_2026_GRADE_POLICY_READINESS_METADATA',
+    action: parsed.ambiguityResolution
+      ? 'UPDATE_2026_GRADE_POLICY_TEAM_MEMBER_SALES_DECISION'
+      : 'UPDATE_2026_GRADE_POLICY_READINESS_METADATA',
     entityType: 'EvalCycle',
     entityId: parsed.evalCycleId,
     newValue: {
       policyVersion: EVALUATION_POLICY_2026.version,
       source: parsed.source,
+      ambiguityResolution: parsed.ambiguityResolution ?? null,
       upsertedRows: rows.length,
       officialScoresChanged: false,
       officialGradesChanged: false,
@@ -755,8 +964,17 @@ export async function saveEvaluation2026GradePolicyMetadataForSession(
     evaluationItemsCreated: 0,
     notes: [
       '2026 grade policy readiness metadata only.',
+      parsed.ambiguityResolution?.decision === 'APPLY_PPT_BASELINE'
+        ? 'TEAM_MEMBER_SALES Super is marked not applicable and Outstanding remains 110+.'
+        : null,
+      parsed.ambiguityResolution?.decision === 'CUSTOM_THRESHOLDS'
+        ? 'TEAM_MEMBER_SALES Super/Outstanding custom readiness thresholds were saved.'
+        : null,
+      parsed.ambiguityResolution?.decision === 'DEFER'
+        ? 'TEAM_MEMBER_SALES ambiguity remains unresolved by HR choice.'
+        : null,
       'Evaluation.totalScore and Evaluation.gradeId are not updated.',
       'Official scoring/grade activation remains disabled.',
-    ],
+    ].filter((note): note is string => Boolean(note)),
   }
 }

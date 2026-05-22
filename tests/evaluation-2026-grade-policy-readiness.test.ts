@@ -299,6 +299,62 @@ async function main() {
     )
   })
 
+  await run('TEAM_MEMBER_SALES PPT interpretation resolves overlap and ambiguity blockers', async () => {
+    const storedRows = makeStoredRows({
+      overrides: [
+        {
+          thresholdGroup: 'TEAM_MEMBER_SALES',
+          gradeLabel: 'SUPER',
+          minScore: null,
+          maxScore: null,
+          selectionRule: 'NOT_APPLICABLE',
+          notes: '팀원 영업 Super 별도 구간 미운영',
+        },
+        {
+          thresholdGroup: 'TEAM_MEMBER_SALES',
+          gradeLabel: 'OUTSTANDING',
+          minScore: 110,
+          maxScore: null,
+          selectionRule: 'SCORE_THRESHOLD',
+          notes: 'Outstanding 110점 이상',
+        },
+      ],
+    })
+    const fake = makeDb({ storedRows })
+
+    const readiness = await getEvaluation2026GradePolicyReadiness({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const teamMemberSales = readiness.groups.find((group) => group.group === 'TEAM_MEMBER_SALES')
+    assert.equal(readiness.teamMemberSalesAmbiguity.currentDecision, 'PPT_SUPER_NOT_APPLICABLE')
+    assert.equal(readiness.teamMemberSalesAmbiguity.requiresDecision, false)
+    assert.equal(readiness.overlapCount, 0)
+    assert.equal(readiness.differsFromPptCount, 0)
+    assert.equal(teamMemberSales?.overlapCount, 0)
+    assert.equal(teamMemberSales?.differsFromPptCount, 0)
+    assert.equal(
+      teamMemberSales?.rows.find((row) => row.gradeLabel === 'SUPER')?.storedRule,
+      'NOT_APPLICABLE'
+    )
+    assert.equal(
+      teamMemberSales?.rows.find((row) => row.gradeLabel === 'OUTSTANDING')?.storedMinScore,
+      110
+    )
+    assert.equal(
+      readiness.blockers.some((blocker) => blocker.code === 'TEAM_MEMBER_SALES_THRESHOLD_AMBIGUITY'),
+      false
+    )
+    assert.equal(
+      readiness.blockers.some((blocker) => blocker.code === 'GRADE_POLICY_THRESHOLD_OVERLAP'),
+      false
+    )
+    assert.equal(readiness.safety.officialScoringEnabled, false)
+    assert.equal(readiness.safety.officialGradeEnabled, false)
+  })
+
   await run('HR decision resolves TEAM_MEMBER_SALES ambiguity while preserving metadata-only safety', async () => {
     const fake = makeDb({
       cycle: {
@@ -444,6 +500,55 @@ async function main() {
     assert.equal(fake.counts.forbiddenWrites, 0)
   })
 
+  await run('ROLE_ADMIN can save TEAM_MEMBER_SALES PPT interpretation without touching score or grade fields', async () => {
+    const fake = makeDb()
+    let auditCount = 0
+
+    const result = await saveEvaluation2026GradePolicyMetadataForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          evalCycleId: 'cycle-2026',
+          source: 'PPT_BASELINE',
+          ambiguityResolution: {
+            decision: 'APPLY_PPT_BASELINE',
+            note: 'HR confirmed PPT interpretation',
+          },
+        },
+      },
+      {
+        db: fake.db as never,
+        audit: async () => {
+          auditCount += 1
+        },
+      }
+    )
+
+    const superRow = fake.upsertedRows.find(
+      (row) => row.thresholdGroup === 'TEAM_MEMBER_SALES' && row.gradeLabel === 'SUPER'
+    )
+    const outstandingRow = fake.upsertedRows.find(
+      (row) => row.thresholdGroup === 'TEAM_MEMBER_SALES' && row.gradeLabel === 'OUTSTANDING'
+    )
+
+    assert.equal(result.upsertedRows, 2)
+    assert.equal(fake.counts.gradePolicyUpsert, 2)
+    assert.equal(auditCount, 1)
+    assert.equal(superRow?.minScore, null)
+    assert.equal(superRow?.maxScore, null)
+    assert.equal(superRow?.selectionRule, 'NOT_APPLICABLE')
+    assert.equal(String(superRow?.notes).includes('팀원 영업 Super 별도 구간 미운영'), true)
+    assert.equal(outstandingRow?.minScore, 110)
+    assert.equal(outstandingRow?.maxScore, null)
+    assert.equal(outstandingRow?.selectionRule, 'SCORE_THRESHOLD')
+    assert.equal(String(outstandingRow?.notes).includes('Outstanding 110점 이상'), true)
+    assert.equal(result.officialScoresChanged, false)
+    assert.equal(result.officialGradesChanged, false)
+    assert.equal(result.totalScoreChanged, false)
+    assert.equal(result.gradeIdChanged, false)
+    assert.equal(fake.counts.forbiddenWrites, 0)
+  })
+
   await run('ROLE_MEMBER cannot save grade policy readiness metadata', async () => {
     const fake = makeDb()
 
@@ -455,6 +560,32 @@ async function main() {
             input: {
               evalCycleId: 'cycle-2026',
               source: 'PPT_BASELINE',
+            },
+          },
+          {
+            db: fake.db as never,
+            audit: async () => undefined,
+          }
+        ),
+      (error) => error instanceof AppError && error.statusCode === 403
+    )
+    assert.equal(fake.counts.gradePolicyUpsert, 0)
+  })
+
+  await run('ROLE_MEMBER cannot save TEAM_MEMBER_SALES ambiguity resolution', async () => {
+    const fake = makeDb()
+
+    await assert.rejects(
+      () =>
+        saveEvaluation2026GradePolicyMetadataForSession(
+          {
+            session: makeSession('ROLE_MEMBER', 'member-1'),
+            input: {
+              evalCycleId: 'cycle-2026',
+              source: 'PPT_BASELINE',
+              ambiguityResolution: {
+                decision: 'APPLY_PPT_BASELINE',
+              },
             },
           },
           {
@@ -484,10 +615,16 @@ async function main() {
     assert.equal(clientSource.includes('현재 저장 정책'), true)
     assert.equal(clientSource.includes('차이 있음'), true)
     assert.equal(clientSource.includes('TEAM_MEMBER_SALES 기준 확인 필요'), true)
+    assert.equal(clientSource.includes('PPT 기준 적용'), true)
+    assert.equal(clientSource.includes('Super 미운영 / Outstanding 110점 이상'), true)
+    assert.equal(clientSource.includes('HR 별도 기준 입력'), true)
+    assert.equal(clientSource.includes('보류'), true)
     assert.equal(clientSource.includes('DB compatibility 확인 필요'), true)
     assert.equal(clientSource.includes('LEADER_NON_SALES'), true)
     assert.equal(clientSource.includes('LEADER_SALES'), true)
     assert.equal(helperSource.includes('evaluationGradePolicy.upsert'), true)
+    assert.equal(helperSource.includes('NOT_APPLICABLE'), true)
+    assert.equal(helperSource.includes('SCORE_THRESHOLD'), true)
     assert.equal(helperSource.includes('officialScoresChanged: false'), true)
     assert.equal(helperSource.includes('officialGradesChanged: false'), true)
     assert.equal(helperSource.includes('totalScoreChanged: false'), true)
