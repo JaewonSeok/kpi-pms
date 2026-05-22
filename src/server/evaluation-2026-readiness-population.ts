@@ -1529,6 +1529,12 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
   })
   addBlocker({
     target: blockers,
+    code: 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED',
+    message: '2026 등급 기준 정책을 불러오지 못했습니다. DB compatibility 확인이 필요합니다.',
+    count: gradePolicyReadiness.persistence.compatibilityIssue ? 1 : 0,
+  })
+  addBlocker({
+    target: blockers,
     code: 'GRADE_POLICY_GROUPS_INCOMPLETE',
     message: '2026 등급 기준 그룹 또는 등급 행이 누락되어 있습니다.',
     count: gradePolicyReadiness.missingRowsCount,

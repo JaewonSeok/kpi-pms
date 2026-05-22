@@ -75,6 +75,8 @@ export type Evaluation2026GradePolicyThresholdIssue = {
   message: string
   group?: EvaluationPolicyThresholdGroupCode
   gradeLabel?: EvaluationPolicyGradeCode
+  prismaCode?: string
+  objectName?: string
 }
 
 export type Evaluation2026GradePolicyGroupReadiness = {
@@ -106,6 +108,12 @@ export type Evaluation2026GradePolicyReadinessResult = {
     available: boolean
     tableName: 'evaluation_grade_policies'
     mode: 'metadata_only'
+    compatibilityIssue?: {
+      code: string
+      prismaCode?: string
+      message: string
+      objectName?: string
+    } | null
   }
   gradePolicyExists: boolean
   gradePolicyGroupsComplete: boolean
@@ -204,6 +212,60 @@ function valuesMatch(left: number | null, right: number | null) {
 
 function makeStoredKey(group: EvaluationPolicyThresholdGroupCode, grade: EvaluationPolicyGradeCode) {
   return `${group}:${grade}`
+}
+
+function getRecordValue(record: unknown, key: string) {
+  return record && typeof record === 'object'
+    ? (record as Record<string, unknown>)[key]
+    : undefined
+}
+
+function getSafeErrorMessage(error: unknown) {
+  const message = getRecordValue(error, 'message')
+  return typeof message === 'string' ? message : ''
+}
+
+function getSafePrismaCode(error: unknown) {
+  const code = getRecordValue(error, 'code')
+  return typeof code === 'string' ? code : undefined
+}
+
+function getSafeObjectName(error: unknown) {
+  const meta = getRecordValue(error, 'meta')
+  const directValues = [
+    getRecordValue(meta, 'table'),
+    getRecordValue(meta, 'tableName'),
+    getRecordValue(meta, 'column'),
+    getRecordValue(meta, 'target'),
+    getRecordValue(meta, 'modelName'),
+  ]
+  const direct = directValues.find((value): value is string => typeof value === 'string')
+  if (direct) return direct
+
+  const driverAdapterError = getRecordValue(meta, 'driverAdapterError')
+  const cause = getRecordValue(driverAdapterError, 'cause')
+  const originalMessage = getRecordValue(cause, 'originalMessage')
+  if (typeof originalMessage === 'string') return originalMessage.slice(0, 180)
+
+  return undefined
+}
+
+function isGradePolicyDbCompatibilityError(error: unknown) {
+  const code = getSafePrismaCode(error)
+  if (code === 'P2021' || code === 'P2022') return true
+
+  const message = getSafeErrorMessage(error)
+  return /evaluation_grade_policies|EvaluationGradePolicy|column .*does not exist|relation .*does not exist|table .*does not exist/i.test(message)
+}
+
+function toGradePolicyCompatibilityIssue(error: unknown) {
+  const prismaCode = getSafePrismaCode(error)
+  return {
+    code: 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED',
+    prismaCode,
+    message: '2026 등급 기준 정책을 불러오지 못했습니다. DB compatibility 확인이 필요합니다.',
+    objectName: getSafeObjectName(error) ?? 'evaluation_grade_policies',
+  }
 }
 
 function asStoredPolicy(row: unknown): StoredEvaluationGradePolicy2026 | null {
@@ -394,9 +456,13 @@ export async function getEvaluation2026GradePolicyReadiness(params: {
     orgId: params.orgId,
     year: params.year,
   })
-  const persistenceAvailable = typeof db.evaluationGradePolicy?.findMany === 'function'
-  const storedRows = persistenceAvailable && scope.orgId
-    ? (await db.evaluationGradePolicy!.findMany!({
+  let persistenceAvailable = typeof db.evaluationGradePolicy?.findMany === 'function'
+  let compatibilityIssue: ReturnType<typeof toGradePolicyCompatibilityIssue> | null = null
+  let rawStoredRows: unknown[] = []
+
+  if (persistenceAvailable && scope.orgId) {
+    try {
+      rawStoredRows = await db.evaluationGradePolicy!.findMany!({
         where: {
           orgId: scope.orgId,
           evalYear: scope.evalYear,
@@ -404,10 +470,20 @@ export async function getEvaluation2026GradePolicyReadiness(params: {
           isActive: true,
         },
         orderBy: [{ thresholdGroup: 'asc' }, { gradeLabel: 'asc' }],
-      }))
-        .map(asStoredPolicy)
-        .filter((row): row is StoredEvaluationGradePolicy2026 => Boolean(row))
-    : []
+      })
+    } catch (error) {
+      if (!isGradePolicyDbCompatibilityError(error)) {
+        throw error
+      }
+      compatibilityIssue = toGradePolicyCompatibilityIssue(error)
+      persistenceAvailable = false
+      rawStoredRows = []
+    }
+  }
+
+  const storedRows = rawStoredRows
+    .map(asStoredPolicy)
+    .filter((row): row is StoredEvaluationGradePolicy2026 => Boolean(row))
 
   const storedByKey = new Map(
     storedRows.map((row) => [makeStoredKey(row.thresholdGroup, row.gradeLabel), row])
@@ -456,10 +532,18 @@ export async function getEvaluation2026GradePolicyReadiness(params: {
 
   const blockers: Evaluation2026GradePolicyThresholdIssue[] = []
   const warnings: Evaluation2026GradePolicyThresholdIssue[] = []
-  if (!persistenceAvailable) {
+  if (!persistenceAvailable && !compatibilityIssue) {
     warnings.push({
       code: 'GRADE_POLICY_PERSISTENCE_UNAVAILABLE',
       message: 'evaluation_grade_policies 조회 delegate가 없어 저장 정책 존재 여부를 확인하지 못했습니다.',
+    })
+  }
+  if (compatibilityIssue) {
+    blockers.push({
+      code: compatibilityIssue.code,
+      message: compatibilityIssue.message,
+      prismaCode: compatibilityIssue.prismaCode,
+      objectName: compatibilityIssue.objectName,
     })
   }
   if (persistenceAvailable && !scope.orgId) {
@@ -512,6 +596,7 @@ export async function getEvaluation2026GradePolicyReadiness(params: {
       available: persistenceAvailable,
       tableName: 'evaluation_grade_policies',
       mode: 'metadata_only',
+      compatibilityIssue,
     },
     gradePolicyExists: storedRowsCount > 0,
     gradePolicyGroupsComplete: groups.every((group) => group.complete),
@@ -603,28 +688,38 @@ export async function saveEvaluation2026GradePolicyMetadataForSession(
     orgId: scope.orgId,
     evalYear: scope.evalYear,
   })
-  for (const row of rows) {
-    await db.evaluationGradePolicy.upsert({
-      where: {
-        orgId_evalYear_policyVersion_thresholdGroup_gradeLabel: {
-          orgId: row.orgId,
-          evalYear: row.evalYear,
-          policyVersion: row.policyVersion,
-          thresholdGroup: row.thresholdGroup,
-          gradeLabel: row.gradeLabel,
+  try {
+    for (const row of rows) {
+      await db.evaluationGradePolicy.upsert({
+        where: {
+          orgId_evalYear_policyVersion_thresholdGroup_gradeLabel: {
+            orgId: row.orgId,
+            evalYear: row.evalYear,
+            policyVersion: row.policyVersion,
+            thresholdGroup: row.thresholdGroup,
+            gradeLabel: row.gradeLabel,
+          },
         },
-      },
-      create: row,
-      update: {
-        displayName: row.displayName,
-        minScore: row.minScore,
-        maxScore: row.maxScore,
-        lowerBoundInclusive: row.lowerBoundInclusive,
-        upperBoundInclusive: row.upperBoundInclusive,
-        selectionRule: row.selectionRule,
-        notes: row.notes,
-        isActive: true,
-      },
+        create: row,
+        update: {
+          displayName: row.displayName,
+          minScore: row.minScore,
+          maxScore: row.maxScore,
+          lowerBoundInclusive: row.lowerBoundInclusive,
+          upperBoundInclusive: row.upperBoundInclusive,
+          selectionRule: row.selectionRule,
+          notes: row.notes,
+          isActive: true,
+        },
+      })
+    }
+  } catch (error) {
+    if (!isGradePolicyDbCompatibilityError(error)) {
+      throw error
+    }
+    const issue = toGradePolicyCompatibilityIssue(error)
+    throw new AppError(409, issue.code, issue.message, {
+      prismaCode: issue.prismaCode,
     })
   }
 

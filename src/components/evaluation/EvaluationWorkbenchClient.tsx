@@ -3016,6 +3016,20 @@ function PolicyGradeReadiness2026Panel(props: {
           <Banner tone="warn" message="평가 주기를 선택해야 등급 기준 metadata 저장을 할 수 있습니다." />
         </div>
       ) : null}
+      {data?.persistence.compatibilityIssue ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="flex flex-wrap items-center gap-2 font-semibold">
+            <AlertTriangle className="h-4 w-4" />
+            DB compatibility 확인 필요
+          </div>
+          <p className="mt-2 leading-6">{data.persistence.compatibilityIssue.message}</p>
+          <p className="mt-1 text-xs text-amber-800">
+            code: {data.persistence.compatibilityIssue.code}
+            {data.persistence.compatibilityIssue.prismaCode ? ` / prisma: ${data.persistence.compatibilityIssue.prismaCode}` : ''}
+            {data.persistence.compatibilityIssue.objectName ? ` / object: ${data.persistence.compatibilityIssue.objectName}` : ''}
+          </p>
+        </div>
+      ) : null}
 
       {data ? (
         <div className="mt-5 space-y-4">

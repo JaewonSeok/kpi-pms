@@ -139,6 +139,7 @@ function makeCycle(performanceDesignConfig: unknown = {
 function makeDb(params: {
   cycle?: Record<string, unknown> | null
   storedRows?: Array<Record<string, unknown>>
+  gradePolicyError?: unknown
 } = {}) {
   const counts = {
     evalCycleFindUnique: 0,
@@ -158,6 +159,9 @@ function makeDb(params: {
     evaluationGradePolicy: {
       findMany: async () => {
         counts.gradePolicyFindMany += 1
+        if (params.gradePolicyError) {
+          throw params.gradePolicyError
+        }
         return params.storedRows ?? []
       },
       upsert: async (args: { create: Record<string, unknown> }) => {
@@ -353,6 +357,37 @@ async function main() {
     assert.equal(readiness.blockers.some((blocker) => blocker.code === 'GRADE_POLICY_THRESHOLD_OVERLAP'), true)
   })
 
+  await run('Prisma schema compatibility error returns blocker instead of throwing', async () => {
+    const fake = makeDb({
+      gradePolicyError: {
+        code: 'P2022',
+        message: 'The column `evaluation_grade_policies.selectionRule` does not exist in the current database.',
+        meta: {
+          column: 'evaluation_grade_policies.selectionRule',
+        },
+      },
+    })
+
+    const readiness = await getEvaluation2026GradePolicyReadiness({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    assert.equal(readiness.persistence.available, false)
+    assert.equal(readiness.persistence.compatibilityIssue?.code, 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED')
+    assert.equal(readiness.persistence.compatibilityIssue?.prismaCode, 'P2022')
+    assert.equal(
+      readiness.blockers.some((blocker) => blocker.code === 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED'),
+      true
+    )
+    assert.equal(readiness.gradePolicyExists, false)
+    assert.equal(readiness.safety.totalScoreChanged, false)
+    assert.equal(readiness.safety.gradeIdChanged, false)
+    assert.equal(fake.counts.gradePolicyFindMany, 1)
+    assert.equal(fake.counts.forbiddenWrites, 0)
+  })
+
   await run('activation readiness reports grade policy blockers without enabling official grade', async () => {
     const fake = makeDb()
     const gradePolicyReadiness = await getEvaluation2026GradePolicyReadiness({
@@ -449,6 +484,7 @@ async function main() {
     assert.equal(clientSource.includes('현재 저장 정책'), true)
     assert.equal(clientSource.includes('차이 있음'), true)
     assert.equal(clientSource.includes('TEAM_MEMBER_SALES 기준 확인 필요'), true)
+    assert.equal(clientSource.includes('DB compatibility 확인 필요'), true)
     assert.equal(clientSource.includes('LEADER_NON_SALES'), true)
     assert.equal(clientSource.includes('LEADER_SALES'), true)
     assert.equal(helperSource.includes('evaluationGradePolicy.upsert'), true)

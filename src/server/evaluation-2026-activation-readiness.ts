@@ -274,6 +274,10 @@ function collectGradePolicyReadiness(
     return
   }
 
+  if (gradePolicyReadiness.persistence.compatibilityIssue) {
+    addItem(blockers, 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED', '2026 등급 기준 정책을 불러오지 못했습니다. DB compatibility 확인이 필요합니다.')
+    return
+  }
   if (!gradePolicyReadiness.persistence.available) {
     addItem(warnings, 'GRADE_POLICY_PERSISTENCE_UNAVAILABLE', 'evaluation_grade_policies 조회가 불가능해 저장 정책을 확인하지 못했습니다.', 'warning')
     return

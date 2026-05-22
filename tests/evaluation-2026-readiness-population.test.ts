@@ -298,6 +298,7 @@ function makeDb(overrides: {
   employees?: Array<Record<string, unknown>>
   departments?: Array<Record<string, unknown>>
   orgKpis?: Array<Record<string, unknown>>
+  gradePolicyError?: unknown
 } = {}) {
   const counts = {
     evalCycleFindUnique: 0,
@@ -364,6 +365,14 @@ function makeDb(overrides: {
       findMany: async () => {
         counts.orgKpiFindMany += 1
         return overrides.orgKpis ?? teamOrgKpis
+      },
+    },
+    evaluationGradePolicy: {
+      findMany: async () => {
+        if (overrides.gradePolicyError) {
+          throw overrides.gradePolicyError
+        }
+        return []
       },
     },
     auditLog: {
@@ -557,6 +566,44 @@ async function main() {
       dryRun.blockers.some((blocker) => blocker.code === 'DIVISION_SALES_GROUP_REQUIRED' && blocker.count === 1),
       true
     )
+  })
+
+  await run('grade policy DB compatibility blocker does not fail full population dry-run', async () => {
+    const fake = makeDb({
+      gradePolicyError: {
+        code: 'P2021',
+        message: 'The table `evaluation_grade_policies` does not exist in the current database.',
+        meta: {
+          table: 'evaluation_grade_policies',
+        },
+      },
+    })
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    assert.equal(dryRun.isDryRun, true)
+    assert.equal(dryRun.activeEmployeeCount, 3)
+    assert.equal(dryRun.gradePolicyReadiness.persistence.compatibilityIssue?.code, 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED')
+    assert.equal(dryRun.gradePolicyReadiness.persistence.compatibilityIssue?.prismaCode, 'P2021')
+    assert.equal(
+      dryRun.blockers.some((blocker) => blocker.code === 'GRADE_POLICY_REQUIRED'),
+      true
+    )
+    assert.equal(
+      dryRun.blockers.some((blocker) => blocker.code === 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED'),
+      true
+    )
+    assert.equal(
+      dryRun.gradePolicyReadiness.blockers.some((blocker) => blocker.code === 'GRADE_POLICY_DB_COMPATIBILITY_REQUIRED'),
+      true
+    )
+    assert.equal(fake.counts.writes, 0)
+    assert.equal(dryRun.safety.evaluationsCreated, 0)
+    assert.equal(dryRun.safety.evaluationItemsCreated, 0)
   })
 
   await run('department override coverage is reported without counting suggestions as saved mappings', async () => {
