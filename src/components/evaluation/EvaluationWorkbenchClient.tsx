@@ -96,6 +96,8 @@ type EvaluationPreview2026ApiData = {
 type EvaluationPreviewReadiness2026ApiData = EvaluationPreviewReadinessSummary2026
 type EvaluationActivationReadiness2026ApiData = Evaluation2026ActivationReadinessResult
 type EvaluationReadinessPopulation2026ApiData = Evaluation2026ReadinessPopulationDryRun
+type MboSetupMonitoringStatus2026 =
+  EvaluationReadinessPopulation2026ApiData['mboSetupCoverage']['monitoring']['employeeRows'][number]['status']
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
 type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
@@ -636,6 +638,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     try {
       const params = new URLSearchParams({
         evalCycleId: props.selectedCycleId,
+        limit: '300',
       })
       const response = await fetch(`/api/evaluation/preview-2026/readiness-population?${params.toString()}`, {
         method: 'GET',
@@ -2835,6 +2838,34 @@ function getThresholdDecisionLabel2026(value: string | null | undefined) {
   return '미지정'
 }
 
+function getMboSetupStatusLabel2026(value: MboSetupMonitoringStatus2026 | 'ALL') {
+  if (value === 'MISSING') return 'MBO 없음'
+  if (value === 'DRAFT') return '초안'
+  if (value === 'SUBMITTED_REVIEWING') return '제출/검토 중'
+  if (value === 'CONFIRMED') return '확정'
+  return '전체'
+}
+
+function getMboSetupStatusTone2026(value: MboSetupMonitoringStatus2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'CONFIRMED') return 'success'
+  if (value === 'SUBMITTED_REVIEWING') return 'warn'
+  if (value === 'MISSING') return 'error'
+  return 'neutral'
+}
+
+function getCompletionRateLabel2026(confirmed: number, total: number) {
+  if (!total) return '0%'
+  return `${Math.round((confirmed / total) * 100)}%`
+}
+
+function sanitizeTsvCell(value: unknown) {
+  return String(value ?? '').replace(/\t|\r?\n/g, ' ').trim()
+}
+
+function buildTsv2026(headers: string[], rows: Array<Array<unknown>>) {
+  return [headers, ...rows].map((row) => row.map(sanitizeTsvCell).join('\t')).join('\n')
+}
+
 function PolicyReadinessPopulation2026Panel(props: {
   dryRunData: EvaluationReadinessPopulation2026ApiData | null
   loading: boolean
@@ -2848,8 +2879,125 @@ function PolicyReadinessPopulation2026Panel(props: {
   const missingEmployees = dryRun?.employeesMissingConfirmedPersonalKpi.slice(0, 8) ?? []
   const wouldCreate = dryRun?.wouldCreateSelfEvaluations.slice(0, 6) ?? []
   const mboCoverage = dryRun?.mboSetupCoverage
-  const topDivisionCoverage = mboCoverage?.divisionCoverage.slice(0, 8) ?? []
-  const topTeamCoverage = mboCoverage?.teamCoverage.slice(0, 8) ?? []
+  const monitoring = mboCoverage?.monitoring
+  const [monitorDivisionFilter, setMonitorDivisionFilter] = useState('ALL')
+  const [monitorTeamFilter, setMonitorTeamFilter] = useState('ALL')
+  const [monitorStatusFilter, setMonitorStatusFilter] = useState<MboSetupMonitoringStatus2026 | 'ALL'>('ALL')
+  const [monitorManagerFilter, setMonitorManagerFilter] = useState('ALL')
+  const [copiedMonitoringTable, setCopiedMonitoringTable] = useState<string | null>(null)
+  const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
+  const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
+  const topDivisionCoverage = mboCoverage?.divisionCoverage ?? []
+  const topTeamCoverage = mboCoverage?.teamCoverage ?? []
+  const divisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          employeeRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [employeeRows]
+  )
+  const teamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          employeeRows
+            .filter((row) => row.departmentId && (monitorDivisionFilter === 'ALL' || row.divisionId === monitorDivisionFilter))
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [employeeRows, monitorDivisionFilter]
+  )
+  const managerOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          employeeRows
+            .filter((row) => row.managerId)
+            .map((row) => [row.managerId as string, row.managerName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [employeeRows]
+  )
+  const filteredEmployeeRows = useMemo(
+    () =>
+      employeeRows.filter((row) => {
+        const matchesDivision = monitorDivisionFilter === 'ALL' || row.divisionId === monitorDivisionFilter
+        const matchesTeam = monitorTeamFilter === 'ALL' || row.departmentId === monitorTeamFilter
+        const matchesStatus = monitorStatusFilter === 'ALL' || row.status === monitorStatusFilter
+        const matchesManager = monitorManagerFilter === 'ALL' || row.managerId === monitorManagerFilter
+        return matchesDivision && matchesTeam && matchesStatus && matchesManager
+      }),
+    [employeeRows, monitorDivisionFilter, monitorManagerFilter, monitorStatusFilter, monitorTeamFilter]
+  )
+  const filteredPolicyCategoryMissingRows = useMemo(
+    () =>
+      policyCategoryMissingRows.filter((row) => {
+        const matchesDivision = monitorDivisionFilter === 'ALL' || row.divisionId === monitorDivisionFilter
+        const matchesTeam = monitorTeamFilter === 'ALL' || row.departmentId === monitorTeamFilter
+        const matchesManager = monitorManagerFilter === 'ALL' || row.managerId === monitorManagerFilter
+        return matchesDivision && matchesTeam && matchesManager
+      }),
+    [monitorDivisionFilter, monitorManagerFilter, monitorTeamFilter, policyCategoryMissingRows]
+  )
+  const copyMonitoringTable = useCallback(async (key: string, text: string) => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    await navigator.clipboard.writeText(text)
+    setCopiedMonitoringTable(key)
+    window.setTimeout(() => setCopiedMonitoringTable((current) => (current === key ? null : current)), 1800)
+  }, [])
+  const missingMboTsv = useMemo(
+    () =>
+      buildTsv2026(
+        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'action'],
+        (monitoring?.missingMboEmployees ?? []).map((row) => [
+          row.employeeNo,
+          row.employeeName,
+          row.divisionName,
+          row.departmentPath,
+          row.managerName,
+          row.actionLabel,
+        ])
+      ),
+    [monitoring?.missingMboEmployees]
+  )
+  const submittedReviewingTsv = useMemo(
+    () =>
+      buildTsv2026(
+        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'submittedKpi', 'managerReviewKpi', 'action'],
+        (monitoring?.submittedReviewingMboEmployees ?? []).map((row) => [
+          row.employeeNo,
+          row.employeeName,
+          row.divisionName,
+          row.departmentPath,
+          row.managerName,
+          row.submittedPersonalKpiCount,
+          row.managerReviewPersonalKpiCount,
+          row.actionLabel,
+        ])
+      ),
+    [monitoring?.submittedReviewingMboEmployees]
+  )
+  const policyCategoryMissingTsv = useMemo(
+    () =>
+      buildTsv2026(
+        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'personalKpiName', 'linkedOrgKpi', 'action'],
+        policyCategoryMissingRows.map((row) => [
+          row.employeeNo,
+          row.employeeName,
+          row.divisionName,
+          row.departmentPath,
+          row.managerName,
+          row.personalKpiName,
+          row.linkedOrgKpiTitle ?? '',
+          row.actionLabel,
+        ])
+      ),
+    [policyCategoryMissingRows]
+  )
 
   return (
     <Panel
@@ -3069,13 +3217,13 @@ function PolicyReadinessPopulation2026Panel(props: {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">부서별 coverage sample</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">본부별 coverage summary</h5>
                   <ul className="mt-3 divide-y divide-slate-200">
                     {topDivisionCoverage.length ? topDivisionCoverage.map((division) => (
                       <li key={division.divisionId} className="py-2 text-xs">
                         <div className="font-semibold text-slate-800">{division.divisionName}</div>
                         <div className="mt-1 text-slate-500">
-                          재직 {division.activeEmployeeCount}명 · 초안 {division.draftPersonalKpiEmployeeCount}명 · 제출 {division.submittedPersonalKpiEmployeeCount}명 · 확정 {division.confirmedPersonalKpiEmployeeCount}명 · 미작성 {division.missingAnyPersonalKpiEmployeeCount}명
+                          재직 {division.activeEmployeeCount}명 · 미작성 {division.missingAnyPersonalKpiEmployeeCount}명 · 초안 {division.draftPersonalKpiEmployeeCount}명 · 제출 {division.submittedPersonalKpiEmployeeCount}명 · 확정 {division.confirmedPersonalKpiEmployeeCount}명 · 완료율 {getCompletionRateLabel2026(division.confirmedPersonalKpiEmployeeCount, division.activeEmployeeCount)}
                         </div>
                       </li>
                     )) : <li className="py-2 text-xs text-slate-500">division coverage가 없습니다.</li>}
@@ -3084,18 +3232,204 @@ function PolicyReadinessPopulation2026Panel(props: {
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <h5 className="text-sm font-semibold text-slate-900">팀별 미작성/확정 현황 sample</h5>
+                <h5 className="text-sm font-semibold text-slate-900">팀별 미작성/확정 현황</h5>
                 <ul className="mt-3 grid gap-2 md:grid-cols-2">
                   {topTeamCoverage.length ? topTeamCoverage.map((team) => (
                     <li key={team.departmentId} className="rounded-xl bg-white px-3 py-2 text-xs">
                       <div className="font-semibold text-slate-800">{team.departmentPath}</div>
                       <div className="mt-1 text-slate-500">
-                        재직 {team.activeEmployeeCount}명 · 제출 {team.submittedPersonalKpiEmployeeCount}명 · 확정 {team.confirmedPersonalKpiEmployeeCount}명 · 미작성 {team.missingAnyPersonalKpiEmployeeCount}명
+                        재직 {team.activeEmployeeCount}명 · 미작성 {team.missingAnyPersonalKpiEmployeeCount}명 · 초안 {team.draftPersonalKpiEmployeeCount}명 · 제출 {team.submittedPersonalKpiEmployeeCount}명 · 확정 {team.confirmedPersonalKpiEmployeeCount}명 · 완료율 {getCompletionRateLabel2026(team.confirmedPersonalKpiEmployeeCount, team.activeEmployeeCount)}
                       </div>
                     </li>
                   )) : <li className="rounded-xl bg-white px-3 py-2 text-xs text-slate-500">팀 coverage가 없습니다.</li>}
                 </ul>
               </div>
+
+              {monitoring ? (
+                <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h5 className="text-sm font-semibold text-slate-900">HR MBO setup monitoring</h5>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        누가 작성 요청, 제출 요청, 리더 검토, 카테고리 확정이 필요한지 확인하는 read-only 목록입니다. 알림 발송이나 데이터 수정은 하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('missing', missingMboTsv)}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50"
+                      >
+                        {copiedMonitoringTable === 'missing' ? 'MBO 없음 복사됨' : 'MBO 없음 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('submitted', submittedReviewingTsv)}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50"
+                      >
+                        {copiedMonitoringTable === 'submitted' ? '제출/검토 복사됨' : '제출/검토 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('policy-category', policyCategoryMissingTsv)}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50"
+                      >
+                        {copiedMonitoringTable === 'policy-category' ? '카테고리 누락 복사됨' : '카테고리 누락 복사'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="text-xs font-semibold text-slate-600">
+                      본부
+                      <select
+                        value={monitorDivisionFilter}
+                        onChange={(event) => {
+                          setMonitorDivisionFilter(event.target.value)
+                          setMonitorTeamFilter('ALL')
+                        }}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 본부</option>
+                        {divisionOptions.map(([divisionId, divisionName]) => (
+                          <option key={divisionId} value={divisionId}>{divisionName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      팀
+                      <select
+                        value={monitorTeamFilter}
+                        onChange={(event) => setMonitorTeamFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 팀</option>
+                        {teamOptions.map(([departmentId, departmentPath]) => (
+                          <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      상태
+                      <select
+                        value={monitorStatusFilter}
+                        onChange={(event) => setMonitorStatusFilter(event.target.value as MboSetupMonitoringStatus2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {(['ALL', 'MISSING', 'DRAFT', 'SUBMITTED_REVIEWING', 'CONFIRMED'] as const).map((status) => (
+                          <option key={status} value={status}>{getMboSetupStatusLabel2026(status)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      리더/관리자
+                      <select
+                        value={monitorManagerFilter}
+                        onChange={(event) => setMonitorManagerFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 리더</option>
+                        {managerOptions.map(([managerId, managerName]) => (
+                          <option key={managerId} value={managerId}>{managerName}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">직원별 MBO 작성 상태</h6>
+                      <span className="text-xs text-slate-500">
+                        {filteredEmployeeRows.length.toLocaleString()}명 표시 · 전체 {employeeRows.length.toLocaleString()}명
+                      </span>
+                    </div>
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">직원</th>
+                            <th className="px-4 py-2 font-semibold">조직</th>
+                            <th className="px-4 py-2 font-semibold">리더</th>
+                            <th className="px-4 py-2 font-semibold">상태</th>
+                            <th className="px-4 py-2 font-semibold">KPI</th>
+                            <th className="px-4 py-2 font-semibold">HR action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredEmployeeRows.slice(0, 120).map((row) => (
+                            <tr key={row.employeeId}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.departmentPath}</td>
+                              <td className="px-4 py-3 text-slate-600">{row.managerName}</td>
+                              <td className="px-4 py-3">
+                                <Badge tone={getMboSetupStatusTone2026(row.status)}>{getMboSetupStatusLabel2026(row.status)}</Badge>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                전체 {row.totalPersonalKpiCount} · 초안 {row.draftPersonalKpiCount} · 제출 {row.submittedPersonalKpiCount + row.managerReviewPersonalKpiCount} · 확정 {row.confirmedPersonalKpiCount}
+                              </td>
+                              <td className="px-4 py-3 font-semibold text-slate-700">{row.actionLabel}</td>
+                            </tr>
+                          ))}
+                          {filteredEmployeeRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 직원이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredEmployeeRows.length > 120 ? (
+                      <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                        화면에는 120명까지만 표시합니다. 전체 목록은 복사 버튼으로 추출해 주세요.
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-amber-900">policyCategory missing items</h6>
+                      <span className="text-xs text-amber-700">
+                        {filteredPolicyCategoryMissingRows.length.toLocaleString()}건 표시 · 전체 {policyCategoryMissingRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+                    <div className="max-h-72 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-amber-50 text-amber-700">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">직원</th>
+                            <th className="px-4 py-2 font-semibold">조직</th>
+                            <th className="px-4 py-2 font-semibold">KPI</th>
+                            <th className="px-4 py-2 font-semibold">연결 조직 KPI</th>
+                            <th className="px-4 py-2 font-semibold">HR action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredPolicyCategoryMissingRows.slice(0, 120).map((row) => (
+                            <tr key={row.personalKpiId}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'} · {row.managerName}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.departmentPath}</td>
+                              <td className="px-4 py-3 font-semibold text-slate-800">{row.personalKpiName}</td>
+                              <td className="px-4 py-3 text-slate-600">{row.linkedOrgKpiTitle ?? '연결 없음'}</td>
+                              <td className="px-4 py-3 font-semibold text-amber-800">{row.actionLabel}</td>
+                            </tr>
+                          ))}
+                          {filteredPolicyCategoryMissingRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-4 py-6 text-center text-slate-500">카테고리 누락 항목이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

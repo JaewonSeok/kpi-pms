@@ -63,6 +63,8 @@ type ActiveEmployee2026 = {
   deptId: string
   role?: string | null
   position?: string | null
+  managerId?: string | null
+  teamLeaderId?: string | null
   department?: {
     id?: string
     deptName?: string | null
@@ -185,6 +187,50 @@ export type Evaluation2026ReadinessPopulationDepartmentOverrideCoverage = {
   affectedActiveEmployeeCount: number
 }
 
+export type Evaluation2026MboSetupMonitoringStatus = 'MISSING' | 'DRAFT' | 'SUBMITTED_REVIEWING' | 'CONFIRMED'
+
+export type Evaluation2026MboSetupEmployeeMonitoringRow = {
+  employeeId: string
+  employeeNo: string | null
+  employeeName: string
+  divisionId: string | null
+  divisionName: string
+  departmentId: string | null
+  departmentName: string
+  departmentPath: string
+  managerId: string | null
+  managerName: string
+  status: Evaluation2026MboSetupMonitoringStatus
+  actionLabel: string
+  totalPersonalKpiCount: number
+  draftPersonalKpiCount: number
+  submittedPersonalKpiCount: number
+  managerReviewPersonalKpiCount: number
+  confirmedPersonalKpiCount: number
+  missingPolicyCategoryCount: number
+  linkedOrgKpiPersonalKpiCount: number
+}
+
+export type Evaluation2026MboPolicyCategoryMissingItemRow = {
+  personalKpiId: string
+  personalKpiName: string
+  employeeId: string
+  employeeNo: string | null
+  employeeName: string
+  divisionId: string | null
+  divisionName: string
+  departmentId: string | null
+  departmentName: string
+  departmentPath: string
+  managerId: string | null
+  managerName: string
+  operationalStatus: PersonalKpiOperationalStatus
+  currentCategory: null
+  linkedOrgKpiId: string | null
+  linkedOrgKpiTitle: string | null
+  actionLabel: '카테고리 확정 필요'
+}
+
 export type Evaluation2026ReadinessPopulationBlocker = {
   code: string
   message: string
@@ -233,6 +279,14 @@ export type Evaluation2026ReadinessPopulationDryRun = {
     }
     divisionCoverage: Evaluation2026ReadinessPopulationDivisionCoverage[]
     teamCoverage: Evaluation2026ReadinessPopulationTeamCoverage[]
+    monitoring: {
+      employeeRows: Evaluation2026MboSetupEmployeeMonitoringRow[]
+      missingMboEmployees: Evaluation2026MboSetupEmployeeMonitoringRow[]
+      draftMboEmployees: Evaluation2026MboSetupEmployeeMonitoringRow[]
+      submittedReviewingMboEmployees: Evaluation2026MboSetupEmployeeMonitoringRow[]
+      confirmedMboEmployees: Evaluation2026MboSetupEmployeeMonitoringRow[]
+      policyCategoryMissingItems: Evaluation2026MboPolicyCategoryMissingItemRow[]
+    }
   }
   divisionSalesMappingCoverage: {
     totalDivisions: number
@@ -426,6 +480,25 @@ function hasMeaningfulText(value: string | null | undefined, minLength = 8) {
   return typeof value === 'string' && value.trim().length >= minLength
 }
 
+function getMboSetupStatusActionLabel2026(status: Evaluation2026MboSetupMonitoringStatus) {
+  if (status === 'MISSING') return '작성 요청 필요'
+  if (status === 'DRAFT') return '제출 요청 필요'
+  if (status === 'SUBMITTED_REVIEWING') return '리더 검토 필요'
+  return '완료'
+}
+
+function resolveMboSetupMonitoringStatus2026(params: {
+  kpis: PersonalKpi2026[]
+  statuses: PersonalKpiOperationalStatus[]
+}): Evaluation2026MboSetupMonitoringStatus {
+  if (!params.kpis.length) return 'MISSING'
+  if (params.statuses.some((status) => status === 'SUBMITTED' || status === 'MANAGER_REVIEW')) {
+    return 'SUBMITTED_REVIEWING'
+  }
+  if (params.statuses.some((status) => status === 'DRAFT')) return 'DRAFT'
+  return 'CONFIRMED'
+}
+
 function buildMboSetupCoverage2026(params: {
   activeEmployees: ActiveEmployee2026[]
   personalKpis: PersonalKpi2026[]
@@ -435,6 +508,7 @@ function buildMboSetupCoverage2026(params: {
   const kpisByEmployeeId = new Map<string, PersonalKpi2026[]>()
   const employeeStatusSets = new Map<string, Set<PersonalKpiOperationalStatus>>()
   const activeEmployeeIds = new Set(params.activeEmployees.map((employee) => employee.id))
+  const activeEmployeesById = new Map(params.activeEmployees.map((employee) => [employee.id, employee]))
 
   const categoryDistribution = {
     ORG_GOAL: 0,
@@ -596,6 +670,84 @@ function buildMboSetupCoverage2026(params: {
     }))
     .sort((left, right) => right.missingAnyPersonalKpiEmployeeCount - left.missingAnyPersonalKpiEmployeeCount)
 
+  const employeeRows = params.activeEmployees
+    .map((employee) => {
+      const employeeKpis = kpisByEmployeeId.get(employee.id) ?? []
+      const statuses = employeeKpis.map((kpi) => params.operationalStatusByKpiId.get(kpi.id) ?? 'DRAFT')
+      const status = resolveMboSetupMonitoringStatus2026({ kpis: employeeKpis, statuses })
+      const divisionId = resolveDivisionId({ departmentId: employee.deptId, departmentsById: params.departmentsById })
+      const divisionName = divisionId ? params.departmentsById.get(divisionId)?.deptName ?? divisionId : '본부 미지정'
+      const managerId = employee.managerId ?? employee.teamLeaderId ?? null
+      const manager = managerId ? activeEmployeesById.get(managerId) : null
+      return {
+        employeeId: employee.id,
+        employeeNo: employee.empId ?? null,
+        employeeName: employee.empName,
+        divisionId,
+        divisionName,
+        departmentId: employee.deptId ?? null,
+        departmentName:
+          employee.department?.deptName ??
+          params.departmentsById.get(employee.deptId)?.deptName ??
+          '소속 조직 미지정',
+        departmentPath: formatDepartmentPath({ departmentId: employee.deptId, departmentsById: params.departmentsById }),
+        managerId,
+        managerName: manager?.empName ?? '리더 미지정',
+        status,
+        actionLabel: getMboSetupStatusActionLabel2026(status),
+        totalPersonalKpiCount: employeeKpis.length,
+        draftPersonalKpiCount: statuses.filter((item) => item === 'DRAFT').length,
+        submittedPersonalKpiCount: statuses.filter((item) => item === 'SUBMITTED').length,
+        managerReviewPersonalKpiCount: statuses.filter((item) => item === 'MANAGER_REVIEW').length,
+        confirmedPersonalKpiCount: statuses.filter((item) => item === 'CONFIRMED').length,
+        missingPolicyCategoryCount: employeeKpis.filter((kpi) => !kpi.policyCategory).length,
+        linkedOrgKpiPersonalKpiCount: employeeKpis.filter((kpi) => Boolean(kpi.linkedOrgKpiId)).length,
+      } satisfies Evaluation2026MboSetupEmployeeMonitoringRow
+    })
+    .sort((left, right) =>
+      left.divisionName.localeCompare(right.divisionName, 'ko') ||
+      left.departmentPath.localeCompare(right.departmentPath, 'ko') ||
+      left.employeeName.localeCompare(right.employeeName, 'ko')
+    )
+
+  const policyCategoryMissingItems = params.personalKpis
+    .filter((kpi) => activeEmployeeIds.has(kpi.employeeId) && !kpi.policyCategory)
+    .map((kpi) => {
+      const employee = activeEmployeesById.get(kpi.employeeId)
+      const divisionId = resolveDivisionId({ departmentId: employee?.deptId, departmentsById: params.departmentsById })
+      const divisionName = divisionId ? params.departmentsById.get(divisionId)?.deptName ?? divisionId : '본부 미지정'
+      const managerId = employee?.managerId ?? employee?.teamLeaderId ?? null
+      const manager = managerId ? activeEmployeesById.get(managerId) : null
+      return {
+        personalKpiId: kpi.id,
+        personalKpiName: kpi.kpiName,
+        employeeId: kpi.employeeId,
+        employeeNo: employee?.empId ?? null,
+        employeeName: employee?.empName ?? '대상자 미확인',
+        divisionId,
+        divisionName,
+        departmentId: employee?.deptId ?? null,
+        departmentName:
+          employee?.department?.deptName ??
+          (employee?.deptId ? params.departmentsById.get(employee.deptId)?.deptName : null) ??
+          '소속 조직 미지정',
+        departmentPath: formatDepartmentPath({ departmentId: employee?.deptId, departmentsById: params.departmentsById }),
+        managerId,
+        managerName: manager?.empName ?? '리더 미지정',
+        operationalStatus: params.operationalStatusByKpiId.get(kpi.id) ?? 'DRAFT',
+        currentCategory: null,
+        linkedOrgKpiId: kpi.linkedOrgKpiId ?? null,
+        linkedOrgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
+        actionLabel: '카테고리 확정 필요',
+      } satisfies Evaluation2026MboPolicyCategoryMissingItemRow
+    })
+    .sort((left, right) =>
+      left.divisionName.localeCompare(right.divisionName, 'ko') ||
+      left.departmentPath.localeCompare(right.departmentPath, 'ko') ||
+      left.employeeName.localeCompare(right.employeeName, 'ko') ||
+      left.personalKpiName.localeCompare(right.personalKpiName, 'ko')
+    )
+
   return {
     employeesWithDraftPersonalKpiCount: countEmployeesWithStatus((statuses) => statuses.has('DRAFT')),
     employeesWithSubmittedPersonalKpiCount: countEmployeesWithStatus(
@@ -609,6 +761,14 @@ function buildMboSetupCoverage2026(params: {
     warningCounts,
     divisionCoverage,
     teamCoverage,
+    monitoring: {
+      employeeRows,
+      missingMboEmployees: employeeRows.filter((employee) => employee.status === 'MISSING'),
+      draftMboEmployees: employeeRows.filter((employee) => employee.status === 'DRAFT'),
+      submittedReviewingMboEmployees: employeeRows.filter((employee) => employee.status === 'SUBMITTED_REVIEWING'),
+      confirmedMboEmployees: employeeRows.filter((employee) => employee.status === 'CONFIRMED'),
+      policyCategoryMissingItems,
+    },
   }
 }
 
@@ -660,6 +820,8 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
         deptId: true,
         role: true,
         position: true,
+        managerId: true,
+        teamLeaderId: true,
         department: {
           select: {
             id: true,
