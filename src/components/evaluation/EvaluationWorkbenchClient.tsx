@@ -127,6 +127,8 @@ type TeamKpiHrReviewReason2026 =
   NonNullable<EvaluationReadinessPopulation2026ApiData['teamKpiHrReviewCoverage']['candidates'][number]['reason']>
 type TeamKpiHrReviewRow2026 =
   EvaluationReadinessPopulation2026ApiData['teamKpiHrReviewCoverage']['candidates'][number]
+type ScorePolicyCategory2026 =
+  EvaluationReadinessPopulation2026ApiData['scorePolicyReadiness']['categoryRules'][number]['category']
 type TeamKpiHrReviewDecision2026 = Exclude<TeamKpiHrReviewStatus2026, 'PENDING_REVIEW'>
 type TeamKpiHrReviewDecisionDraft2026 = {
   decision: TeamKpiHrReviewDecision2026 | ''
@@ -3525,10 +3527,23 @@ function PolicyReadinessPopulation2026Panel(props: {
   const mboCoverage = dryRun?.mboSetupCoverage
   const monitoring = mboCoverage?.monitoring
   const teamKpiHrReviewCoverage = dryRun?.teamKpiHrReviewCoverage
+  const scorePolicyReadiness = dryRun?.scorePolicyReadiness
   const [monitorDivisionFilter, setMonitorDivisionFilter] = useState('ALL')
   const [monitorTeamFilter, setMonitorTeamFilter] = useState('ALL')
   const [monitorStatusFilter, setMonitorStatusFilter] = useState<MboSetupMonitoringStatus2026 | 'ALL'>('ALL')
   const [monitorManagerFilter, setMonitorManagerFilter] = useState('ALL')
+  const [scorePolicyDivisionFilter, setScorePolicyDivisionFilter] = useState('ALL')
+  const [scorePolicyTeamFilter, setScorePolicyTeamFilter] = useState('ALL')
+  const [scorePolicyEmployeeFilter, setScorePolicyEmployeeFilter] = useState('ALL')
+  const [scorePolicyCategoryFilter, setScorePolicyCategoryFilter] =
+    useState<ScorePolicyCategory2026 | 'UNMAPPED' | 'ALL'>('ALL')
+  const [scorePolicyViolationFilter, setScorePolicyViolationFilter] = useState('ALL')
+  const [simulatorCategory, setSimulatorCategory] = useState<ScorePolicyCategory2026>('ORG_GOAL')
+  const [simulatorWeight, setSimulatorWeight] = useState('10')
+  const [simulatorAchievement, setSimulatorAchievement] = useState<'BELOW_TARGET' | 'TARGET' | 'EXCELLENT'>('TARGET')
+  const [simulatorBaseScore, setSimulatorBaseScore] = useState('')
+  const [simulatorAdjustment, setSimulatorAdjustment] = useState('0')
+  const [simulatorAdjustmentReason, setSimulatorAdjustmentReason] = useState('')
   const [teamReviewDivisionFilter, setTeamReviewDivisionFilter] = useState('ALL')
   const [teamReviewTeamFilter, setTeamReviewTeamFilter] = useState('ALL')
   const [teamReviewStatusFilter, setTeamReviewStatusFilter] = useState<TeamKpiHrReviewStatus2026 | 'ALL'>('ALL')
@@ -3541,6 +3556,10 @@ function PolicyReadinessPopulation2026Panel(props: {
   const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
   const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
   const teamReviewRows = useMemo(() => teamKpiHrReviewCoverage?.candidates ?? [], [teamKpiHrReviewCoverage])
+  const scorePolicyViolationRows = useMemo(
+    () => scorePolicyReadiness?.violations ?? [],
+    [scorePolicyReadiness?.violations]
+  )
   const topDivisionCoverage = mboCoverage?.divisionCoverage ?? []
   const topTeamCoverage = mboCoverage?.teamCoverage ?? []
   const divisionOptions = useMemo(
@@ -3575,6 +3594,62 @@ function PolicyReadinessPopulation2026Panel(props: {
         ).entries()
       ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
     [employeeRows]
+  )
+  const scorePolicyDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          scorePolicyViolationRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [scorePolicyViolationRows]
+  )
+  const scorePolicyTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          scorePolicyViolationRows
+            .filter((row) => row.departmentId && (scorePolicyDivisionFilter === 'ALL' || row.divisionId === scorePolicyDivisionFilter))
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [scorePolicyDivisionFilter, scorePolicyViolationRows]
+  )
+  const scorePolicyEmployeeOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          scorePolicyViolationRows
+            .filter((row) => row.employeeId)
+            .map((row) => [row.employeeId as string, row.employeeName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [scorePolicyViolationRows]
+  )
+  const scorePolicyViolationOptions = useMemo(
+    () => Array.from(new Set(scorePolicyViolationRows.map((row) => row.code))).sort(),
+    [scorePolicyViolationRows]
+  )
+  const filteredScorePolicyViolationRows = useMemo(
+    () =>
+      scorePolicyViolationRows.filter((row) => {
+        const matchesDivision = scorePolicyDivisionFilter === 'ALL' || row.divisionId === scorePolicyDivisionFilter
+        const matchesTeam = scorePolicyTeamFilter === 'ALL' || row.departmentId === scorePolicyTeamFilter
+        const matchesEmployee = scorePolicyEmployeeFilter === 'ALL' || row.employeeId === scorePolicyEmployeeFilter
+        const matchesCategory = scorePolicyCategoryFilter === 'ALL' || row.category === scorePolicyCategoryFilter
+        const matchesViolation = scorePolicyViolationFilter === 'ALL' || row.code === scorePolicyViolationFilter
+        return matchesDivision && matchesTeam && matchesEmployee && matchesCategory && matchesViolation
+      }),
+    [
+      scorePolicyCategoryFilter,
+      scorePolicyDivisionFilter,
+      scorePolicyEmployeeFilter,
+      scorePolicyTeamFilter,
+      scorePolicyViolationFilter,
+      scorePolicyViolationRows,
+    ]
   )
   const filteredEmployeeRows = useMemo(
     () =>
@@ -3690,6 +3765,25 @@ function PolicyReadinessPopulation2026Panel(props: {
       ),
     [policyCategoryMissingRows]
   )
+  const scorePolicyViolationTsv = useMemo(
+    () =>
+      buildTsv2026(
+        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'personalKpiName', 'category', 'violationCode', 'current', 'limit', 'action'],
+        filteredScorePolicyViolationRows.map((row) => [
+          row.employeeNo,
+          row.employeeName,
+          row.divisionName,
+          row.departmentPath,
+          row.personalKpiName ?? '',
+          row.category ?? '',
+          row.code,
+          row.currentValue ?? '',
+          row.limitValue ?? '',
+          row.actionLabel,
+        ])
+      ),
+    [filteredScorePolicyViolationRows]
+  )
   const teamKpiReviewTsv = useMemo(
     () =>
       buildTsv2026(
@@ -3710,6 +3804,63 @@ function PolicyReadinessPopulation2026Panel(props: {
       ),
     [filteredTeamReviewRows]
   )
+  const simulatorRule = useMemo(
+    () => scorePolicyReadiness?.categoryRules.find((rule) => rule.category === simulatorCategory) ?? null,
+    [scorePolicyReadiness?.categoryRules, simulatorCategory]
+  )
+  const simulatorBaseScoreValue = useMemo(() => {
+    const explicit = Number(simulatorBaseScore)
+    if (simulatorBaseScore.trim() && !Number.isNaN(explicit)) return explicit
+    if (simulatorAchievement === 'EXCELLENT') {
+      return simulatorRule?.excellentScore ?? simulatorRule?.maxScore ?? simulatorRule?.targetScore ?? 0
+    }
+    if (simulatorAchievement === 'TARGET') {
+      return simulatorRule?.targetScore ?? simulatorRule?.maxScore ?? 0
+    }
+    return Math.max(0, (simulatorRule?.targetScore ?? simulatorRule?.maxScore ?? 80) - 10)
+  }, [simulatorAchievement, simulatorBaseScore, simulatorRule])
+  const simulatorWeightValue = Number(simulatorWeight)
+  const simulatorAdjustmentValue = Number(simulatorAdjustment)
+  const simulatorAdjustedScore = Math.max(
+    0,
+    Math.min(120, simulatorBaseScoreValue + (Number.isNaN(simulatorAdjustmentValue) ? 0 : simulatorAdjustmentValue))
+  )
+  const simulatorWeightedContribution =
+    Number.isNaN(simulatorWeightValue) ? 0 : Math.round(((simulatorAdjustedScore * simulatorWeightValue) / 100) * 10) / 10
+  const simulatorWarnings = useMemo(() => {
+    const warnings: string[] = []
+    const adjustment = Number(simulatorAdjustment)
+    const weight = Number(simulatorWeight)
+    if (Number.isNaN(weight) || weight < 0 || weight > 100) warnings.push('가중치는 0~100 사이 숫자로 입력해야 합니다.')
+    if (Number.isNaN(adjustment)) warnings.push('조정점은 숫자로 입력해야 합니다.')
+    if (!Number.isNaN(adjustment) && Math.abs(adjustment) > 5) warnings.push('조정점은 ±5 범위를 벗어날 수 없습니다.')
+    if (!Number.isNaN(adjustment) && adjustment !== 0 && !simulatorAdjustmentReason.trim()) {
+      warnings.push('조정점을 사용하려면 개인 기여 차이 근거를 입력해야 합니다.')
+    }
+    if (!Number.isNaN(adjustment) && adjustment !== 0 && simulatorAchievement === 'BELOW_TARGET') {
+      warnings.push('Target 미만 달성 시 조정점을 적용하지 않습니다.')
+    }
+    if (!simulatorRule?.adjustmentAllowed && !Number.isNaN(adjustment) && adjustment !== 0) {
+      warnings.push('이 category는 PPT 기준 조정점 적용 대상이 아닙니다.')
+    }
+    if (simulatorRule?.itemWeightCap != null && !Number.isNaN(weight) && weight > simulatorRule.itemWeightCap) {
+      warnings.push(`${simulatorRule.label} 개별 항목 가중치 cap(${simulatorRule.itemWeightCap}%)을 초과했습니다.`)
+    }
+    if (simulatorCategory === 'ORG_GOAL' && !Number.isNaN(weight) && weight > 50) {
+      warnings.push('ORG_GOAL 총 가중치 cap 50%를 초과할 수 없습니다.')
+    }
+    warnings.push('AI 활용평가는 연간 업적평가 점수에서 제외됩니다.')
+    return warnings
+  }, [
+    simulatorAchievement,
+    simulatorAdjustment,
+    simulatorAdjustmentReason,
+    simulatorCategory,
+    simulatorRule?.adjustmentAllowed,
+    simulatorRule?.itemWeightCap,
+    simulatorRule?.label,
+    simulatorWeight,
+  ])
   const getTeamReviewDraft = useCallback(
     (row: TeamKpiHrReviewRow2026): TeamKpiHrReviewDecisionDraft2026 => {
       const existing = teamReviewDrafts[row.orgKpiId]
@@ -4217,6 +4368,331 @@ function PolicyReadinessPopulation2026Panel(props: {
                   </div>
                 </div>
               ) : null}
+            </div>
+          ) : null}
+
+          {scorePolicyReadiness ? (
+            <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 성과점수 정책 readiness</h4>
+                    <Badge tone="neutral">PPT 기준</Badge>
+                    <Badge tone="neutral">Read-only simulator</Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                    조직성과 30% + 개인성과 70%, MBO category별 기준점·가중치 cap·±5 조정 원칙을 읽기 전용으로 점검합니다.
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-sky-700">
+                    이 계산은 preview/simulation이며 공식 점수 또는 등급에 반영되지 않습니다. AI 활용평가는 연간 업적평가 점수에서 제외됩니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void copyMonitoringTable('score-policy-violations', scorePolicyViolationTsv)}
+                  className="rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-50"
+                >
+                  {copiedMonitoringTable === 'score-policy-violations' ? '위반사항 복사됨' : '위반사항 복사'}
+                </button>
+              </div>
+
+              {scorePolicyReadiness.emptyStateMessage ? (
+                <div className="mt-3">
+                  <Banner tone="warn" message={scorePolicyReadiness.emptyStateMessage} />
+                </div>
+              ) : null}
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard
+                  label="조직성과"
+                  value={`${scorePolicyReadiness.scoreSplit.organizationPerformanceWeight}%`}
+                  help="본부/실/팀 combined"
+                  compact
+                />
+                <MetricCard
+                  label="개인성과"
+                  value={`${scorePolicyReadiness.scoreSplit.personalPerformanceWeight}%`}
+                  help="MBO personal"
+                  compact
+                />
+                <MetricCard
+                  label="MBO 점검"
+                  value={scorePolicyReadiness.summary.checkedPersonalKpiCount.toLocaleString()}
+                  help="작성 중 포함"
+                  compact
+                />
+                <MetricCard
+                  label="위반사항"
+                  value={scorePolicyReadiness.summary.violationsCount.toLocaleString()}
+                  help="현재 MBO 점검"
+                  compact
+                  variant={scorePolicyReadiness.summary.violationsCount > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="가중치 cap"
+                  value={scorePolicyReadiness.summary.weightCapViolationCount.toLocaleString()}
+                  help="초과/합계"
+                  compact
+                  variant={scorePolicyReadiness.summary.weightCapViolationCount > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="AI 점수"
+                  value={scorePolicyReadiness.aiExcludedFromAnnualScore ? '제외' : '확인 필요'}
+                  help="연간 업적평가"
+                  compact
+                />
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded-2xl border border-slate-200 bg-white">
+                  <div className="border-b border-slate-100 px-4 py-3">
+                    <h5 className="text-sm font-semibold text-slate-900">category score table</h5>
+                    <p className="mt-1 text-xs text-slate-500">Target / Excellent 점수와 category·item 가중치 cap입니다.</p>
+                  </div>
+                  <div className="overflow-auto">
+                    <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-4 py-2 font-semibold">category</th>
+                          <th className="px-4 py-2 font-semibold">Target</th>
+                          <th className="px-4 py-2 font-semibold">Excellent</th>
+                          <th className="px-4 py-2 font-semibold">가중치 cap</th>
+                          <th className="px-4 py-2 font-semibold">조정</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {scorePolicyReadiness.categoryRules.map((rule) => (
+                          <tr key={rule.category}>
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-slate-900">{rule.label}</div>
+                              <div className="text-slate-400">{rule.category}</div>
+                            </td>
+                            <td className="px-4 py-3 text-slate-600">{rule.targetScore ?? '-'}</td>
+                            <td className="px-4 py-3 text-slate-600">{rule.excellentScore ?? (rule.maxScore ? `max ${rule.maxScore}` : '-')}</td>
+                            <td className="px-4 py-3 text-slate-600">
+                              {rule.categoryWeightCap ? `category ${rule.categoryWeightCap}% · ` : ''}
+                              {rule.itemWeightCap ? `item ${rule.itemWeightCap}%` : 'remaining weight'}
+                            </td>
+                            <td className="px-4 py-3 text-slate-600">
+                              {rule.adjustmentAllowed ? `${rule.adjustmentRange?.min}~+${rule.adjustmentRange?.max}` : '미적용'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">score simulator</h5>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    저장하지 않는 로컬 preview입니다. 가중 기여도는 adjusted score × weight로만 계산합니다.
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-semibold text-slate-600">
+                      category
+                      <select
+                        value={simulatorCategory}
+                        onChange={(event) => setSimulatorCategory(event.target.value as ScorePolicyCategory2026)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {scorePolicyReadiness.categoryRules.map((rule) => (
+                          <option key={rule.category} value={rule.category}>{rule.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      achievement
+                      <select
+                        value={simulatorAchievement}
+                        onChange={(event) => setSimulatorAchievement(event.target.value as 'BELOW_TARGET' | 'TARGET' | 'EXCELLENT')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="BELOW_TARGET">below target</option>
+                        <option value="TARGET">target</option>
+                        <option value="EXCELLENT">excellent</option>
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      weight %
+                      <input
+                        type="number"
+                        value={simulatorWeight}
+                        onChange={(event) => setSimulatorWeight(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      base score
+                      <input
+                        type="number"
+                        value={simulatorBaseScore}
+                        onChange={(event) => setSimulatorBaseScore(event.target.value)}
+                        placeholder="정책 기준 자동"
+                        className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      adjustment
+                      <input
+                        type="number"
+                        value={simulatorAdjustment}
+                        onChange={(event) => setSimulatorAdjustment(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
+                      />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      adjustment reason
+                      <input
+                        value={simulatorAdjustmentReason}
+                        onChange={(event) => setSimulatorAdjustmentReason(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
+                        placeholder="개인 기여 차이 근거"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <MetricCard label="base" value={simulatorBaseScoreValue.toFixed(1)} help="preview" compact />
+                    <MetricCard label="adjusted" value={simulatorAdjustedScore.toFixed(1)} help="±5 check" compact />
+                    <MetricCard label="weighted" value={simulatorWeightedContribution.toFixed(1)} help="기여도" compact />
+                  </div>
+                  <ul className="mt-3 space-y-1 text-xs text-amber-800">
+                    {simulatorWarnings.map((warning) => (
+                      <li key={warning}>- {warning}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h5 className="text-sm font-semibold text-slate-900">현재 MBO 점검 위반사항</h5>
+                    <p className="mt-1 text-xs text-slate-500">
+                      category missing, 가중치 cap, ORG_GOAL 승인 소스, Target/Excellent 기준, DAILY_WORK 중복 신호를 확인합니다.
+                    </p>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    {filteredScorePolicyViolationRows.length.toLocaleString()}건 표시 · 전체 {scorePolicyViolationRows.length.toLocaleString()}건
+                  </span>
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <label className="text-xs font-semibold text-slate-600">
+                    본부
+                    <select
+                      value={scorePolicyDivisionFilter}
+                      onChange={(event) => {
+                        setScorePolicyDivisionFilter(event.target.value)
+                        setScorePolicyTeamFilter('ALL')
+                      }}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                    >
+                      <option value="ALL">전체 본부</option>
+                      {scorePolicyDivisionOptions.map(([divisionId, divisionName]) => (
+                        <option key={divisionId} value={divisionId}>{divisionName}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600">
+                    팀
+                    <select
+                      value={scorePolicyTeamFilter}
+                      onChange={(event) => setScorePolicyTeamFilter(event.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                    >
+                      <option value="ALL">전체 팀</option>
+                      {scorePolicyTeamOptions.map(([departmentId, departmentPath]) => (
+                        <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600">
+                    직원
+                    <select
+                      value={scorePolicyEmployeeFilter}
+                      onChange={(event) => setScorePolicyEmployeeFilter(event.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                    >
+                      <option value="ALL">전체 직원</option>
+                      {scorePolicyEmployeeOptions.map(([employeeId, employeeName]) => (
+                        <option key={employeeId} value={employeeId}>{employeeName}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600">
+                    category
+                    <select
+                      value={scorePolicyCategoryFilter}
+                      onChange={(event) => setScorePolicyCategoryFilter(event.target.value as ScorePolicyCategory2026 | 'UNMAPPED' | 'ALL')}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                    >
+                      <option value="ALL">전체 category</option>
+                      <option value="UNMAPPED">미분류</option>
+                      {scorePolicyReadiness.categoryRules.map((rule) => (
+                        <option key={rule.category} value={rule.category}>{rule.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold text-slate-600">
+                    violation type
+                    <select
+                      value={scorePolicyViolationFilter}
+                      onChange={(event) => setScorePolicyViolationFilter(event.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                    >
+                      <option value="ALL">전체 위반</option>
+                      {scorePolicyViolationOptions.map((code) => (
+                        <option key={code} value={code}>{code}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="mt-4 max-h-96 overflow-auto rounded-xl border border-slate-100">
+                  <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                      <tr>
+                        <th className="px-4 py-2 font-semibold">직원</th>
+                        <th className="px-4 py-2 font-semibold">조직</th>
+                        <th className="px-4 py-2 font-semibold">MBO</th>
+                        <th className="px-4 py-2 font-semibold">위반사항</th>
+                        <th className="px-4 py-2 font-semibold">현재/기준</th>
+                        <th className="px-4 py-2 font-semibold">HR action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {filteredScorePolicyViolationRows.slice(0, 120).map((row, index) => (
+                        <tr key={`${row.code}-${row.personalKpiId ?? row.employeeId ?? index}-${index}`}>
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                            <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}</div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{row.departmentPath}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-slate-800">{row.personalKpiName ?? '-'}</div>
+                            <div className="text-slate-400">{row.category ?? 'UNMAPPED'} · weight {row.weight ?? '-'}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge tone={row.severity === 'BLOCKER' ? 'warn' : 'neutral'}>{row.code}</Badge>
+                            <div className="mt-1 text-slate-500">{row.message}</div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{row.currentValue ?? '-'} / {row.limitValue ?? '-'}</td>
+                          <td className="px-4 py-3 font-semibold text-sky-800">{row.actionLabel}</td>
+                        </tr>
+                      ))}
+                      {filteredScorePolicyViolationRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 위반사항이 없습니다.</td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                  {scorePolicyReadiness.adjustmentReadinessWarnings.join(' · ')}
+                </div>
+              </div>
             </div>
           ) : null}
 

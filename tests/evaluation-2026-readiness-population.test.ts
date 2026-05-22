@@ -946,6 +946,173 @@ async function main() {
     assert.equal(fake.counts.writes, 0)
   })
 
+  await run('score policy readiness detects PPT weight caps, missing category, and source warnings', async () => {
+    const fake = makeDb({
+      personalKpis: [
+        {
+          id: 'kpi-org-heavy',
+          employeeId: 'emp-with-kpi',
+          kpiName: '조직목표 과다 가중치',
+          definition: '본부 KPI와 연결되어야 하는 조직목표입니다.',
+          formula: '실적 / 목표',
+          policyCategory: 'ORG_GOAL',
+          status: 'CONFIRMED',
+          weight: 55,
+          targetValueT: 90,
+          targetValueE: 100,
+          linkedOrgKpiId: null,
+          linkedOrgKpi: null,
+        },
+        {
+          id: 'kpi-project-t-heavy',
+          employeeId: 'emp-with-kpi',
+          kpiName: '프로젝트 T 과다 가중치',
+          definition: '개인 프로젝트 T 과업입니다.',
+          formula: '완료율',
+          policyCategory: 'PROJECT_T',
+          status: 'CONFIRMED',
+          weight: 20,
+          targetValueT: 90,
+          targetValueE: 100,
+          linkedOrgKpiId: null,
+          linkedOrgKpi: null,
+        },
+        {
+          id: 'kpi-project-k-heavy',
+          employeeId: 'emp-with-kpi',
+          kpiName: '프로젝트 K 과다 가중치',
+          definition: '개인 프로젝트 K 과업입니다.',
+          formula: '완료율',
+          policyCategory: 'PROJECT_K',
+          status: 'CONFIRMED',
+          weight: 10,
+          targetValueT: 80,
+          targetValueE: 90,
+          linkedOrgKpiId: null,
+          linkedOrgKpi: null,
+        },
+        {
+          id: 'kpi-missing-category',
+          employeeId: 'emp-with-kpi',
+          kpiName: '카테고리 미분류',
+          definition: '카테고리 확인이 필요한 항목입니다.',
+          formula: '완료율',
+          policyCategory: null,
+          status: 'CONFIRMED',
+          weight: 15,
+          targetValueT: 80,
+          targetValueE: 90,
+          linkedOrgKpiId: null,
+          linkedOrgKpi: null,
+        },
+      ],
+    })
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const codes = new Set(dryRun.scorePolicyReadiness.violations.map((violation) => violation.code))
+    assert.equal(dryRun.scorePolicyReadiness.visible, true)
+    assert.equal(dryRun.scorePolicyReadiness.scoreSplit.organizationPerformanceWeight, 30)
+    assert.equal(dryRun.scorePolicyReadiness.scoreSplit.personalPerformanceWeight, 70)
+    assert.equal(dryRun.scorePolicyReadiness.aiExcludedFromAnnualScore, true)
+    assert.equal(codes.has('ORG_GOAL_TOTAL_WEIGHT_CAP_EXCEEDED'), true)
+    assert.equal(codes.has('ORG_GOAL_ITEM_WEIGHT_CAP_EXCEEDED'), true)
+    assert.equal(codes.has('PROJECT_T_ITEM_WEIGHT_CAP_EXCEEDED'), true)
+    assert.equal(codes.has('PROJECT_K_ITEM_WEIGHT_CAP_EXCEEDED'), true)
+    assert.equal(codes.has('POLICY_CATEGORY_MISSING'), true)
+    assert.equal(codes.has('ORG_GOAL_APPROVED_SOURCE_REQUIRED'), true)
+    assert.equal(dryRun.scorePolicyReadiness.summary.weightCapViolationCount >= 4, true)
+    assert.equal(dryRun.scorePolicyReadiness.summary.categoryMissingCount, 1)
+    assert.equal(dryRun.scorePolicyReadiness.summary.orgGoalSourceWarningCount, 1)
+    assert.equal(
+      dryRun.blockers.some((blocker) => blocker.code === 'SCORE_POLICY_READINESS_VIOLATIONS'),
+      true
+    )
+    assert.equal(fake.counts.writes, 0)
+  })
+
+  await run('score policy readiness reports project criteria and daily work duplicate warnings', async () => {
+    const fake = makeDb({
+      personalKpis: [
+        {
+          id: 'kpi-org',
+          employeeId: 'emp-with-kpi',
+          kpiName: '고객 확보 프로젝트',
+          definition: '고객 확보 조직목표를 수행합니다.',
+          formula: '실적 / 목표',
+          policyCategory: 'ORG_GOAL',
+          status: 'DRAFT',
+          weight: 10,
+          targetValueT: 90,
+          targetValueE: 100,
+          linkedOrgKpiId: 'org-shared',
+          linkedOrgKpi: {
+            id: 'org-shared',
+            kpiName: '고객 확보',
+            status: 'CONFIRMED',
+            parentOrgKpiId: null,
+            mboExceptionApproved: false,
+            mboExceptionReason: null,
+            mboExceptionApprovedById: null,
+            mboExceptionApprovedAt: null,
+            department: { id: 'division-sales', deptName: '국내영업총괄본부', parentDeptId: null },
+            teamKpiReviewItems: [],
+          },
+        },
+        {
+          id: 'kpi-project-missing',
+          employeeId: 'emp-with-kpi',
+          kpiName: '측정 기준 누락 프로젝트',
+          definition: '계획과 측정 기준을 보완해야 합니다.',
+          formula: '',
+          policyCategory: 'PROJECT_T',
+          status: 'DRAFT',
+          weight: 10,
+          targetValueT: null,
+          targetValueE: null,
+          linkedOrgKpiId: null,
+          linkedOrgKpi: null,
+        },
+        {
+          id: 'kpi-daily-duplicate',
+          employeeId: 'emp-with-kpi',
+          kpiName: '고객 확보 프로젝트 운영',
+          definition: '고객 확보 조직목표와 유사한 반복 운영입니다.',
+          formula: '고객 확보 실적 확인',
+          policyCategory: 'DAILY_WORK',
+          status: 'DRAFT',
+          weight: 80,
+          targetValueT: null,
+          targetValueE: null,
+          linkedOrgKpiId: 'org-shared',
+          linkedOrgKpi: null,
+        },
+      ],
+    })
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const codes = new Set(dryRun.scorePolicyReadiness.violations.map((violation) => violation.code))
+    assert.equal(codes.has('PROJECT_MEASURABLE_TARGET_REQUIRED'), true)
+    assert.equal(codes.has('PROJECT_PLAN_REQUIRED'), true)
+    assert.equal(codes.has('EXCELLENT_CRITERIA_REQUIRED'), true)
+    assert.equal(codes.has('DAILY_WORK_DUPLICATED_WITH_ORG_OR_PROJECT'), true)
+    assert.equal(dryRun.scorePolicyReadiness.simulator.isReadOnly, true)
+    assert.equal(dryRun.safety.officialScoringEnabled, false)
+    assert.equal(dryRun.safety.officialGradeEnabled, false)
+    assert.equal(dryRun.safety.totalScoreChanged, false)
+    assert.equal(dryRun.safety.gradeIdChanged, false)
+    assert.equal(fake.counts.writes, 0)
+  })
+
   await run('official scoring and grade flags remain disabled in dry-run safety output', async () => {
     const fake = makeDb()
 
@@ -1026,6 +1193,17 @@ async function main() {
     assert.equal(clientSource.includes('팀 KPI 검토 복사'), true)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/team-kpi-review-decision'), true)
     assert.equal(clientSource.includes('HR 결정 저장'), true)
+    assert.equal(clientSource.includes('2026 성과점수 정책 readiness'), true)
+    assert.equal(clientSource.includes('조직성과 30% + 개인성과 70%'), true)
+    assert.equal(clientSource.includes('score simulator'), true)
+    assert.equal(clientSource.includes('위반사항 복사'), true)
+    assert.equal(clientSource.includes('조정점은 ±5 범위를 벗어날 수 없습니다.'), true)
+    assert.equal(clientSource.includes('Target 미만 달성 시 조정점을 적용하지 않습니다.'), true)
+    assert.equal(clientSource.includes('AI 활용평가는 연간 업적평가 점수에서 제외됩니다.'), true)
+    assert.equal(serverSource.includes('SCORE_POLICY_READINESS_VIOLATIONS'), true)
+    assert.equal(serverSource.includes('ORG_GOAL_ITEM_WEIGHT_CAP_EXCEEDED'), true)
+    assert.equal(serverSource.includes('PROJECT_K_ITEM_WEIGHT_CAP_EXCEEDED'), true)
+    assert.equal(serverSource.includes('TOTAL_WEIGHT_NOT_100'), true)
     assert.equal(serverSource.includes('APPROVED_FOR_ORG_GOAL'), true)
     assert.equal(serverSource.includes('EXCLUDED_DAILY_WORK'), true)
     assert.equal(serverSource.includes('EXCEPTION_APPROVED'), true)
