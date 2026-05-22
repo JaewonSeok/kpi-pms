@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  AlertTriangle,
   Bot,
   CheckCircle2,
   ClipboardList,
@@ -255,6 +256,29 @@ const MIDCHECK_PRIORITY_LABELS: Record<MidcheckCoachResult['next_actions'][numbe
   medium: '중간',
   low: '낮음',
 }
+
+const MBO_CATEGORY_GUIDE_2026 = [
+  {
+    code: 'ORG_GOAL',
+    label: '조직목표',
+    description: '본부 KPI 또는 HR 승인 팀 KPI와 연결된 목표',
+  },
+  {
+    code: 'PROJECT_T',
+    label: '프로젝트 T',
+    description: '개인 또는 프로젝트성 과업 중 T 기준 성과로 관리할 업무',
+  },
+  {
+    code: 'PROJECT_K',
+    label: '프로젝트 K',
+    description: '개인 또는 프로젝트성 과업 중 K 기준 성과로 관리할 업무',
+  },
+  {
+    code: 'DAILY_WORK',
+    label: '일상업무',
+    description: '반복·운영 업무이며 조직목표/프로젝트와 중복 기재하지 않습니다.',
+  },
+] as const
 
 function createEvidenceDraft(kpi?: PersonalKpiViewModel): EvidenceDraft {
   return {
@@ -754,13 +778,25 @@ function derivePersonalSummary(items: PersonalKpiViewModel[], reviewPendingCount
   }
 }
 
-function getReviewActionState(status: PersonalKpiReviewQueueItem['status'], action: 'START_REVIEW' | 'APPROVE' | 'REJECT') {
+function getReviewActionState(
+  status: PersonalKpiReviewQueueItem['status'],
+  action: 'START_REVIEW' | 'APPROVE' | 'REJECT' | 'REOPEN'
+) {
   if (action === 'START_REVIEW') {
     return status === 'SUBMITTED'
       ? { disabled: false }
       : {
           disabled: true,
           reason: '제출 상태 KPI에서만 검토를 시작할 수 있습니다.',
+        }
+  }
+
+  if (action === 'REOPEN') {
+    return status === 'SUBMITTED' || status === 'MANAGER_REVIEW'
+      ? { disabled: false }
+      : {
+          disabled: true,
+          reason: '제출 또는 검토 중 KPI만 초안으로 되돌릴 수 있습니다.',
         }
   }
 
@@ -1566,6 +1602,11 @@ export function PersonalKpiManagementClient(props: Props) {
     kpiId: string,
     action: 'START_REVIEW' | 'APPROVE' | 'REJECT' | 'LOCK' | 'REOPEN'
   ) {
+    if (action === 'REOPEN' && reviewNote.trim().length < 5) {
+      setBanner({ tone: 'error', message: '초안으로 되돌리는 사유를 5자 이상 입력해 주세요.' })
+      return
+    }
+
     setBusyAction('workflow')
     setBanner(null)
 
@@ -1604,10 +1645,10 @@ export function PersonalKpiManagementClient(props: Props) {
       } else if (action === 'REOPEN') {
         const confirmed = await requestRiskConfirmation({
           actionName: 'REOPEN_RECORD',
-          actionLabel: '개인 KPI 재개',
+          actionLabel: '개인 KPI 초안으로 되돌리기',
           targetLabel: selectedKpi?.title,
-          detail: '현재 마스터 로그인 상태에서 개인 KPI를 다시 편집 가능한 상태로 되돌립니다.',
-          confirmationText: '재개',
+          detail: '현재 마스터 로그인 상태에서 제출된 개인 KPI를 다시 편집 가능한 초안 상태로 되돌립니다.',
+          confirmationText: '되돌리기',
         })
         if (confirmed === null) return
         riskHeaders = confirmed
@@ -1630,7 +1671,7 @@ export function PersonalKpiManagementClient(props: Props) {
                 ? 'KPI를 반려했습니다.'
                 : action === 'LOCK'
                   ? 'KPI를 잠금 처리했습니다.'
-                  : 'KPI를 다시 열었습니다.',
+                  : 'KPI를 초안으로 되돌렸습니다.',
       })
       setReviewNote('')
       router.refresh()
@@ -2166,6 +2207,7 @@ export function PersonalKpiManagementClient(props: Props) {
 
       {props.state === 'ready' ? (
         <>
+          <MboSetupGuidePanel />
           <MboPolicySummaryPanel summary={derivedSummary.mboPolicy} />
           <Tabs activeTab={activeTab} onChange={setActiveTab} />
           {activeTab === 'mine' ? (
@@ -2258,6 +2300,7 @@ export function PersonalKpiManagementClient(props: Props) {
         </>
       ) : (
         <>
+          <MboSetupGuidePanel />
           <StatePanel state={props.state} message={props.message} />
           <Tabs activeTab={activeTab} onChange={setActiveTab} />
           {activeTab === 'review' ? (
@@ -2621,6 +2664,90 @@ function MboPolicySummaryPanel(props: { summary: Props['summary']['mboPolicy'] }
   )
 }
 
+function MboSetupGuidePanel() {
+  return (
+    <section className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-4 py-3 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="rounded-xl bg-white p-2 text-cyan-700">
+            <ClipboardList className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">2026 MBO 설정 안내</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              현재 화면은 2026 MBO 작성/정렬 준비 단계입니다. 공식 평가 점수나 등급을 계산하지 않으며, 작성 품질과 정책 카테고리 검토를 돕는 안내만 표시합니다.
+            </p>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 lg:max-w-3xl xl:grid-cols-4">
+          {MBO_CATEGORY_GUIDE_2026.map((item) => (
+            <div key={item.code} className="rounded-2xl border border-cyan-100 bg-white px-3 py-2">
+              <div className="text-xs font-semibold text-cyan-800">{item.label}</div>
+              <div className="mt-1 text-[11px] leading-4 text-slate-500">{item.description}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function buildMboQualityChecklist(item: PersonalKpiViewModel) {
+  const category = item.policyCategory ?? item.mboPolicy.suggestedCategory
+  const hasMeasurableTarget = item.targetValueT != null || item.targetValue != null
+  const hasConcretePlan = Boolean(item.formula?.trim())
+  const hasOwnerContribution = Boolean(item.definition?.trim() && item.definition.trim().length >= 8)
+  const hasWeight = item.weight > 0
+  const hasCategory = Boolean(item.policyCategory)
+  const hasLinkedOrgKpiWhenOrgGoal = category !== 'ORG_GOAL' || Boolean(item.orgKpiId)
+  const dailyWorkNotDuplicated = category !== 'DAILY_WORK' || (!item.orgKpiId && !item.mboPolicy.duplicateDailyWork)
+
+  return [
+    {
+      key: 'measurable-target',
+      label: '측정 가능한 목표값',
+      done: hasMeasurableTarget,
+      help: 'T 목표값 또는 명확한 목표 기준이 필요합니다.',
+    },
+    {
+      key: 'concrete-plan',
+      label: '구체적인 산식/실행 기준',
+      done: hasConcretePlan,
+      help: '어떻게 측정하고 실행할지 산식 또는 평가 기준에 남겨 주세요.',
+    },
+    {
+      key: 'owner-contribution',
+      label: '본인 기여 설명',
+      done: hasOwnerContribution,
+      help: '담당자가 통제 가능한 역할과 산출물을 정의에 적어 주세요.',
+    },
+    {
+      key: 'weight',
+      label: '가중치',
+      done: hasWeight,
+      help: '가중치를 0% 초과로 설정해 주세요.',
+    },
+    {
+      key: 'category',
+      label: '2026 정책 카테고리',
+      done: hasCategory,
+      help: '조직목표/프로젝트 T/프로젝트 K/일상업무 중 하나로 HR 확인이 필요합니다.',
+    },
+    {
+      key: 'org-goal-link',
+      label: '조직목표 연결',
+      done: hasLinkedOrgKpiWhenOrgGoal,
+      help: '조직목표는 본부 KPI 또는 HR 승인 팀 KPI 연결이 필요합니다.',
+    },
+    {
+      key: 'daily-work-duplicate',
+      label: '일상업무 중복 없음',
+      done: dailyWorkNotDuplicated,
+      help: '조직목표/프로젝트에 포함된 업무는 일상업무로 중복 기재하지 않습니다.',
+    },
+  ]
+}
+
 function MboPolicyGuidanceBlock(props: { item: PersonalKpiViewModel }) {
   const visibleIssues = props.item.mboPolicy.issues.slice(0, 2)
   const exceptionReason = props.item.mboPolicy.linkedOrgKpi?.exceptionReason
@@ -2645,6 +2772,38 @@ function MboPolicyGuidanceBlock(props: { item: PersonalKpiViewModel }) {
         </ul>
       ) : null}
       <p className="mt-2 text-xs text-slate-400">공식 점수에는 반영되지 않는 비차단 안내입니다.</p>
+    </div>
+  )
+}
+
+function MboQualityChecklistBlock(props: { item: PersonalKpiViewModel }) {
+  const checklist = buildMboQualityChecklist(props.item)
+  const openItems = checklist.filter((item) => !item.done)
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-900">작성 품질 체크</h4>
+          <p className="mt-1 text-xs text-slate-500">저장/수정 차단이 아니라 제출 전 점검을 돕는 안내입니다.</p>
+        </div>
+        <InfoPill>{checklist.length - openItems.length}/{checklist.length} 확인</InfoPill>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {checklist.map((item) => (
+          <div key={item.key} className="flex items-start gap-2 rounded-2xl bg-slate-50 px-3 py-2">
+            {item.done ? (
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            ) : (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            )}
+            <div>
+              <div className="text-xs font-semibold text-slate-800">{item.label}</div>
+              {!item.done ? <div className="mt-1 text-[11px] leading-4 text-slate-500">{item.help}</div> : null}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -2705,6 +2864,7 @@ function DetailPanel(props: {
         </div>
 
         <MboPolicyGuidanceBlock item={item} />
+        <MboQualityChecklistBlock item={item} />
 
         {item.tags.length ? (
           <Block title="목표 태그">
@@ -2778,6 +2938,8 @@ function ReviewQueueSection(props: {
   const startReviewState = selectedItem ? getReviewActionState(selectedItem.status, 'START_REVIEW') : { disabled: true }
   const approveState = selectedItem ? getReviewActionState(selectedItem.status, 'APPROVE') : { disabled: true }
   const rejectState = selectedItem ? getReviewActionState(selectedItem.status, 'REJECT') : { disabled: true }
+  const reopenState = selectedItem ? getReviewActionState(selectedItem.status, 'REOPEN') : { disabled: true }
+  const reopenReasonMissing = props.reviewNote.trim().length < 5
 
   if (!props.items.length) {
     return (
@@ -3821,6 +3983,7 @@ function GoalDetailPanel(props: {
         </div>
 
         <MboPolicyGuidanceBlock item={item} />
+        <MboQualityChecklistBlock item={item} />
 
         {item.tags.length ? (
           <Block title="목표 태그">
@@ -4035,6 +4198,8 @@ function GoalReviewQueueSection(props: {
   const startReviewState = selectedItem ? getReviewActionState(selectedItem.status, 'START_REVIEW') : { disabled: true }
   const approveState = selectedItem ? getReviewActionState(selectedItem.status, 'APPROVE') : { disabled: true }
   const rejectState = selectedItem ? getReviewActionState(selectedItem.status, 'REJECT') : { disabled: true }
+  const reopenState = selectedItem ? getReviewActionState(selectedItem.status, 'REOPEN') : { disabled: true }
+  const reopenReasonMissing = props.reviewNote.trim().length < 5
 
   if (!props.items.length) {
     return (
@@ -4107,10 +4272,10 @@ function GoalReviewQueueSection(props: {
                 onChange={(event) => props.onReviewNoteChange(event.target.value)}
                 rows={4}
                 className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-                placeholder="승인 또는 반려 이유를 남기면 구성원이 바로 확인할 수 있습니다."
+                placeholder="승인, 반려, 초안으로 되돌리기 사유를 남기면 구성원이 바로 확인할 수 있습니다."
               />
             </label>
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-4">
               <ActionButton variant="secondary" disabled={!props.canReview || props.busy || startReviewState.disabled} title={startReviewState.reason} onClick={() => props.onAction(selectedItem.id, 'START_REVIEW')}>
                 검토 시작
               </ActionButton>
@@ -4120,7 +4285,18 @@ function GoalReviewQueueSection(props: {
               <ActionButton variant="secondary" disabled={!props.canReview || props.busy || rejectState.disabled} title={rejectState.reason} onClick={() => props.onAction(selectedItem.id, 'REJECT')}>
                 반려
               </ActionButton>
+              <ActionButton
+                variant="secondary"
+                disabled={!props.canReview || props.busy || reopenState.disabled || reopenReasonMissing}
+                title={reopenState.reason ?? (reopenReasonMissing ? '초안으로 되돌리는 사유를 5자 이상 입력해 주세요.' : undefined)}
+                onClick={() => props.onAction(selectedItem.id, 'REOPEN')}
+              >
+                초안으로 되돌리기
+              </ActionButton>
             </div>
+            <p className="text-xs leading-5 text-slate-500">
+              초안으로 되돌리기는 삭제가 아니며, 구성원이 내용을 수정한 뒤 다시 제출할 수 있게 하는 안전한 재작성 경로입니다.
+            </p>
           </div>
         ) : (
           <EmptyInline text="검토 대상을 선택하면 상세와 승인 메모 영역이 표시됩니다." />
@@ -4304,6 +4480,13 @@ function EditorModal(props: {
         </div>
 
         <div className="space-y-6 px-6 py-5">
+          <div className="rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-3">
+            <div className="text-sm font-semibold text-slate-900">2026 MBO 작성 기준</div>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              산출물/성과 중심으로 작성하고, 조직목표·프로젝트 T·프로젝트 K·일상업무 구분을 염두에 두세요. 이 입력은 MBO 설정 단계이며 공식 평가 점수에는 반영되지 않습니다.
+            </p>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-900">KPI명</span>

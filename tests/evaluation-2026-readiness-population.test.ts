@@ -108,24 +108,39 @@ const confirmedPersonalKpis = [
     id: 'kpi-1',
     employeeId: 'emp-with-kpi',
     kpiName: '매출 성장',
+    definition: '본인 담당 고객군 매출 성장을 책임지고 실행합니다.',
+    formula: '실적 / 목표 x 100',
     policyCategory: 'ORG_GOAL',
+    status: 'CONFIRMED',
     weight: 50,
+    targetValueT: 90,
+    linkedOrgKpiId: 'org-1',
     linkedOrgKpi: null,
   },
   {
     id: 'kpi-2',
     employeeId: 'emp-with-kpi',
     kpiName: '정책 미분류 프로젝트',
+    definition: '정책 미분류 프로젝트의 실행 산출물을 관리합니다.',
+    formula: '완료율',
     policyCategory: null,
+    status: 'CONFIRMED',
     weight: 50,
+    targetValueT: 80,
+    linkedOrgKpiId: null,
     linkedOrgKpi: null,
   },
   {
     id: 'kpi-3',
     employeeId: 'emp-existing-eval',
     kpiName: '기존 평가 보존 KPI',
+    definition: '기존 평가 항목과 연결된 KPI를 보존합니다.',
+    formula: '완료율',
     policyCategory: 'PROJECT_T',
+    status: 'CONFIRMED',
     weight: 100,
+    targetValueT: 100,
+    linkedOrgKpiId: null,
     linkedOrgKpi: null,
   },
 ]
@@ -240,6 +255,9 @@ function makeDb(overrides: {
         return overrides.departments ?? departments
       },
     },
+    auditLog: {
+      findMany: async () => [],
+    },
     evaluationItem: {
       create: async () => {
         counts.writes += 1
@@ -340,6 +358,70 @@ async function main() {
     assert.equal(dryRun.departmentOverrideCoverage.overrides[0]?.currentSalesGroup, 'NON_SALES')
   })
 
+  await run('MBO setup coverage reports draft/submitted/confirmed/missing and category distribution without writes', async () => {
+    const fake = makeDb({
+      personalKpis: [
+        ...confirmedPersonalKpis,
+        {
+          id: 'kpi-draft',
+          employeeId: 'emp-missing-kpi',
+          kpiName: '초안 KPI',
+          definition: '',
+          formula: '',
+          policyCategory: 'DAILY_WORK',
+          status: 'DRAFT',
+          weight: 0,
+          targetValueT: null,
+          linkedOrgKpiId: null,
+          linkedOrgKpi: null,
+        },
+        {
+          id: 'kpi-submitted',
+          employeeId: 'emp-missing-kpi',
+          kpiName: '제출 KPI',
+          definition: '제출된 KPI입니다.',
+          formula: '완료율',
+          policyCategory: 'PROJECT_K',
+          status: 'DRAFT',
+          weight: 20,
+          targetValueT: 70,
+          linkedOrgKpiId: null,
+          linkedOrgKpi: null,
+        },
+      ],
+    })
+    const fakeDb = fake.db as {
+      auditLog: {
+        findMany: () => Promise<Array<{ action: string; entityId: string; timestamp: Date }>>
+      }
+    }
+    fakeDb.auditLog.findMany = async () => [
+      {
+        action: 'PERSONAL_KPI_SUBMITTED',
+        entityId: 'kpi-submitted',
+        timestamp: new Date('2026-04-01T00:00:00.000Z'),
+      },
+    ]
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    assert.equal(dryRun.mboSetupCoverage.employeesWithDraftPersonalKpiCount, 1)
+    assert.equal(dryRun.mboSetupCoverage.employeesWithSubmittedPersonalKpiCount, 1)
+    assert.equal(dryRun.mboSetupCoverage.employeesWithConfirmedPersonalKpiCount, 2)
+    assert.equal(dryRun.mboSetupCoverage.employeesMissingAnyPersonalKpiCount, 0)
+    assert.equal(dryRun.mboSetupCoverage.categoryDistribution.ORG_GOAL, 1)
+    assert.equal(dryRun.mboSetupCoverage.categoryDistribution.PROJECT_T, 1)
+    assert.equal(dryRun.mboSetupCoverage.categoryDistribution.PROJECT_K, 1)
+    assert.equal(dryRun.mboSetupCoverage.categoryDistribution.DAILY_WORK, 1)
+    assert.equal(dryRun.mboSetupCoverage.categoryDistribution.UNMAPPED, 1)
+    assert.equal(dryRun.mboSetupCoverage.warningCounts.missingWeight, 1)
+    assert.equal(fake.counts.writes, 0)
+  })
+
   await run('official scoring and grade flags remain disabled in dry-run safety output', async () => {
     const fake = makeDb()
 
@@ -403,6 +485,8 @@ async function main() {
     assert.equal(routeSource.includes('prisma.'), false)
     assert.equal(clientSource.includes('2026 readiness population dry-run'), true)
     assert.equal(clientSource.includes('이 기능은 dry-run이며 공식 점수/등급을 변경하지 않습니다.'), true)
+    assert.equal(clientSource.includes('2026 MBO setup coverage'), true)
+    assert.equal(clientSource.includes('직원들이 2026 Personal KPI를 작성·제출·확정하는 준비 현황입니다.'), true)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/readiness-population'), true)
     assert.equal(liveRouteSource.includes('readiness-population'), false)
     assert.equal(submitRouteSource.includes('readiness-population'), false)

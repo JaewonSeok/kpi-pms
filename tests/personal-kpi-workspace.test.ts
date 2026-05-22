@@ -1514,6 +1514,10 @@ async function main() {
     const validateSource = source.slice(validateStart, validateEnd > validateStart ? validateEnd : validateStart + 2000)
 
     assert.equal(source.includes('2026 MBO 정책 점검'), true)
+    assert.equal(source.includes('2026 MBO 설정 안내'), true)
+    assert.equal(source.includes('현재 화면은 2026 MBO 작성/정렬 준비 단계입니다.'), true)
+    assert.equal(source.includes('작성 품질 체크'), true)
+    assert.equal(source.includes('조직목표/프로젝트 T/프로젝트 K/일상업무 중 하나로 HR 확인이 필요합니다.'), true)
     assert.equal(source.includes('본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다.'), true)
     assert.equal(source.includes('formatPersonalOrgKpiOptionLabel(option)'), true)
     assert.equal(source.includes('option.mboReflection?.personalMboLabel'), true)
@@ -1523,6 +1527,26 @@ async function main() {
     assert.equal(source.includes('공식 점수에는 반영되지 않는 비차단 안내입니다.'), true)
     assert.equal(source.includes('저장/제출을 막지 않는 참고 정보입니다.'), true)
     assert.equal(validateSource.includes('mboPolicy'), false)
+  })
+
+  await run('personal KPI review queue exposes safe return-to-draft action with reason requirement', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const workflowRouteSource = read('src/app/api/kpi/personal/[id]/workflow/route.ts')
+    const reviewQueueStart = source.indexOf('function GoalReviewQueueSection(props: {')
+    const reviewQueueEnd = source.indexOf('function BulkEditPersonalKpiModal(', reviewQueueStart)
+    const reviewQueueBlock = source.slice(reviewQueueStart, reviewQueueEnd)
+
+    assert.notEqual(reviewQueueStart, -1)
+    assert.notEqual(reviewQueueEnd, -1)
+    assert.equal(source.includes("action: 'START_REVIEW' | 'APPROVE' | 'REJECT' | 'REOPEN'"), true)
+    assert.equal(source.includes("action === 'REOPEN' && reviewNote.trim().length < 5"), true)
+    assert.equal(source.includes('개인 KPI 초안으로 되돌리기'), true)
+    assert.equal(reviewQueueBlock.includes('초안으로 되돌리기'), true)
+    assert.equal(reviewQueueBlock.includes('reopenReasonMissing'), true)
+    assert.equal(reviewQueueBlock.includes("props.onAction(selectedItem.id, 'REOPEN')"), true)
+    assert.equal(reviewQueueBlock.includes('삭제가 아니며'), true)
+    assert.equal(workflowRouteSource.includes("validated.data.action === 'REOPEN'"), true)
+    assert.equal(workflowRouteSource.includes('REOPEN_REASON_REQUIRED'), true)
   })
 
   await run('personal KPI client disables create and AI hero CTAs when the server says they are unavailable', () => {
@@ -1718,6 +1742,8 @@ async function main() {
     assert.equal(serverSource.includes('teamGoal:'), true)
     assert.equal(serverSource.includes('teamRecommendationContext:'), true)
     assert.equal(serverSource.includes('businessContext:'), true)
+    assert.equal(serverSource.includes('2026 MBO 카테고리 구조(조직목표, 프로젝트 T, 프로젝트 K, 일상업무)를 기준으로 초안 성격을 설명합니다.'), true)
+    assert.equal(serverSource.includes('조직목표는 본부 KPI 또는 HR 승인 팀 KPI와 연결된 목표로만 제안'), true)
     assert.equal(serverSource.includes("sourceType: 'PersonalKpiDraft'"), true)
   })
 

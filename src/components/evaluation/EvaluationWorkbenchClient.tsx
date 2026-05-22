@@ -2847,6 +2847,9 @@ function PolicyReadinessPopulation2026Panel(props: {
   const warnings = dryRun?.warnings ?? []
   const missingEmployees = dryRun?.employeesMissingConfirmedPersonalKpi.slice(0, 8) ?? []
   const wouldCreate = dryRun?.wouldCreateSelfEvaluations.slice(0, 6) ?? []
+  const mboCoverage = dryRun?.mboSetupCoverage
+  const topDivisionCoverage = mboCoverage?.divisionCoverage.slice(0, 8) ?? []
+  const topTeamCoverage = mboCoverage?.teamCoverage.slice(0, 8) ?? []
 
   return (
     <Panel
@@ -2979,6 +2982,122 @@ function PolicyReadinessPopulation2026Panel(props: {
               compact
             />
           </div>
+
+          {mboCoverage ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900">2026 MBO setup coverage</h4>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    직원들이 2026 Personal KPI를 작성·제출·확정하는 준비 현황입니다. 이 요약은 read-only이며 Evaluation/EvaluationItem을 만들지 않습니다.
+                  </p>
+                </div>
+                <Badge tone="neutral">MBO setup only</Badge>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard
+                  label="초안 보유"
+                  value={mboCoverage.employeesWithDraftPersonalKpiCount.toLocaleString()}
+                  help="작성 중 직원"
+                  compact
+                />
+                <MetricCard
+                  label="제출/검토 중"
+                  value={mboCoverage.employeesWithSubmittedPersonalKpiCount.toLocaleString()}
+                  help="리더 확인 필요"
+                  compact
+                />
+                <MetricCard
+                  label="확정 보유"
+                  value={mboCoverage.employeesWithConfirmedPersonalKpiCount.toLocaleString()}
+                  help="population 후보"
+                  compact
+                />
+                <MetricCard
+                  label="MBO 없음"
+                  value={mboCoverage.employeesMissingAnyPersonalKpiCount.toLocaleString()}
+                  help="작성 시작 필요"
+                  compact
+                  variant={mboCoverage.employeesMissingAnyPersonalKpiCount > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="카테고리 미분류"
+                  value={mboCoverage.categoryDistribution.UNMAPPED.toLocaleString()}
+                  help="HR mapping 필요"
+                  compact
+                  variant={mboCoverage.categoryDistribution.UNMAPPED > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="조직 KPI 연결"
+                  value={mboCoverage.linkedOrgKpiPersonalKpiCount.toLocaleString()}
+                  help="alignment coverage"
+                  compact
+                />
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {(['ORG_GOAL', 'PROJECT_T', 'PROJECT_K', 'DAILY_WORK'] as const).map((category) => (
+                  <MetricCard
+                    key={category}
+                    label={category}
+                    value={mboCoverage.categoryDistribution[category].toLocaleString()}
+                    help="2026 policyCategory"
+                    compact
+                  />
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">작성 품질 경고</h5>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {[
+                      ['ORG_GOAL without eligible KPI', mboCoverage.warningCounts.orgGoalWithoutEligibleOrgKpi],
+                      ['DAILY_WORK duplicate risk', mboCoverage.warningCounts.dailyWorkDuplicateRisk],
+                      ['missing weight', mboCoverage.warningCounts.missingWeight],
+                      ['missing plan/how', mboCoverage.warningCounts.missingPlan],
+                      ['missing measurable target', mboCoverage.warningCounts.missingMeasurableTarget],
+                      ['missing owner contribution', mboCoverage.warningCounts.missingOwnerContribution],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs">
+                        <span className="text-slate-600">{label}</span>
+                        <span className={Number(value) > 0 ? 'font-semibold text-amber-700' : 'font-semibold text-emerald-700'}>
+                          {Number(value).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">부서별 coverage sample</h5>
+                  <ul className="mt-3 divide-y divide-slate-200">
+                    {topDivisionCoverage.length ? topDivisionCoverage.map((division) => (
+                      <li key={division.divisionId} className="py-2 text-xs">
+                        <div className="font-semibold text-slate-800">{division.divisionName}</div>
+                        <div className="mt-1 text-slate-500">
+                          재직 {division.activeEmployeeCount}명 · 초안 {division.draftPersonalKpiEmployeeCount}명 · 제출 {division.submittedPersonalKpiEmployeeCount}명 · 확정 {division.confirmedPersonalKpiEmployeeCount}명 · 미작성 {division.missingAnyPersonalKpiEmployeeCount}명
+                        </div>
+                      </li>
+                    )) : <li className="py-2 text-xs text-slate-500">division coverage가 없습니다.</li>}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <h5 className="text-sm font-semibold text-slate-900">팀별 미작성/확정 현황 sample</h5>
+                <ul className="mt-3 grid gap-2 md:grid-cols-2">
+                  {topTeamCoverage.length ? topTeamCoverage.map((team) => (
+                    <li key={team.departmentId} className="rounded-xl bg-white px-3 py-2 text-xs">
+                      <div className="font-semibold text-slate-800">{team.departmentPath}</div>
+                      <div className="mt-1 text-slate-500">
+                        재직 {team.activeEmployeeCount}명 · 제출 {team.submittedPersonalKpiEmployeeCount}명 · 확정 {team.confirmedPersonalKpiEmployeeCount}명 · 미작성 {team.missingAnyPersonalKpiEmployeeCount}명
+                      </div>
+                    </li>
+                  )) : <li className="rounded-xl bg-white px-3 py-2 text-xs text-slate-500">팀 coverage가 없습니다.</li>}
+                </ul>
+              </div>
+            </div>
+          ) : null}
 
           {blockers.length || warnings.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
