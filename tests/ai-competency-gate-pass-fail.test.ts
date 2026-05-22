@@ -26,6 +26,8 @@ run('review decision flow maps pass and fail actions to terminal gate statuses',
   assert.match(adminServerSource, /nextStatus === 'FAILED'/)
   assert.match(adminServerSource, /const snapshotType =/)
   assert.match(adminServerSource, /'FINAL_DECISION'/)
+  assert.equal(adminServerSource.includes('totalScore'), false)
+  assert.equal(adminServerSource.includes('gradeId'), false)
 })
 
 run('review page keeps explicit pass and fail decision actions visible', () => {

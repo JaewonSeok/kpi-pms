@@ -5,11 +5,14 @@ import { queueNotification } from '@/lib/notification-service'
 import { AppError } from '@/lib/utils'
 import {
   canGateStatusTransition,
+  getGateRecognitionRouteLabel,
   getGateDecisionLabel,
   getGateStatusLabel,
   getGateTrackLabel,
+  resolveGateRecognitionRouteFromCase,
 } from '@/lib/ai-competency-gate-config'
 import {
+  buildAiCompetencyEvidenceReadiness,
   buildCaseSnapshotPayload,
   buildCurrentUser,
   buildCycleOption,
@@ -33,10 +36,6 @@ import {
   validateReviewDecision,
   writeGateDecisionHistory,
 } from '@/server/ai-competency-gate-shared'
-import type {
-  AiCompetencyGateDecisionSubmitSchema,
-  AiCompetencyGateReviewDraftSchema,
-} from '@/lib/validations'
 import type { z } from 'zod'
 
 type ReviewDraftInput = z.infer<typeof import('@/lib/validations').AiCompetencyGateReviewDraftSchema>
@@ -77,6 +76,22 @@ export type AiCompetencyGateAdminPageData = {
     revisionRequestedCount: number
     passedCount: number
     failedCount: number
+    unsubmittedCount: number
+    evidencePathDistribution: Array<{ route: string; label: string; count: number }>
+    readinessBlockers: {
+      missingEvidence: number
+      missingQuantitativeImpact: number
+      missingBeforeAfter: number
+      missingContributionClarity: number
+      missingAdoptionSharing: number
+    }
+    departmentCoverage: Array<{
+      departmentName: string
+      totalCount: number
+      submittedCount: number
+      passedCount: number
+      missingCount: number
+    }>
   }
   assignments: Array<{
     id: string
@@ -87,6 +102,8 @@ export type AiCompetencyGateAdminPageData = {
     reviewerName?: string
     status: string
     statusLabel: string
+    recognitionRoute?: string
+    recognitionRouteLabel?: string
     trackLabel?: string
     title?: string
     submittedAt?: string
@@ -152,6 +169,109 @@ function assertReviewTransition(from: AiCompetencyGateStatus, to: AiCompetencyGa
       'AI_COMPETENCY_GATE_ILLEGAL_STATUS_TRANSITION',
       `허용되지 않는 상태 전이입니다. (${from} -> ${to})`
     )
+  }
+}
+
+function buildEmptyAdminSummary(): AiCompetencyGateAdminPageData['summary'] {
+  return {
+    totalCount: 0,
+    notStartedCount: 0,
+    draftCount: 0,
+    submittedCount: 0,
+    reviewCount: 0,
+    revisionRequestedCount: 0,
+    passedCount: 0,
+    failedCount: 0,
+    unsubmittedCount: 0,
+    evidencePathDistribution: [],
+    readinessBlockers: {
+      missingEvidence: 0,
+      missingQuantitativeImpact: 0,
+      missingBeforeAfter: 0,
+      missingContributionClarity: 0,
+      missingAdoptionSharing: 0,
+    },
+    departmentCoverage: [],
+  }
+}
+
+function buildAdminSummary(
+  assignments: Array<
+    Prisma.AiCompetencyGateAssignmentGetPayload<{
+      include: {
+        submissionCase: {
+          include: typeof gateCaseInclude
+        }
+      }
+    }>
+  >
+): AiCompetencyGateAdminPageData['summary'] {
+  const routeCounts = new Map<string, number>()
+  const departmentCoverage = new Map<
+    string,
+    { departmentName: string; totalCount: number; submittedCount: number; passedCount: number; missingCount: number }
+  >()
+  const readinessBlockers = {
+    missingEvidence: 0,
+    missingQuantitativeImpact: 0,
+    missingBeforeAfter: 0,
+    missingContributionClarity: 0,
+    missingAdoptionSharing: 0,
+  }
+
+  for (const assignment of assignments) {
+    const readiness = buildAiCompetencyEvidenceReadiness(assignment.submissionCase)
+    const routeKey = readiness.recognitionRoute ?? 'UNSELECTED'
+    routeCounts.set(routeKey, (routeCounts.get(routeKey) ?? 0) + 1)
+
+    if (readiness.blockers.missingEvidence) readinessBlockers.missingEvidence += 1
+    if (readiness.blockers.missingQuantitativeImpact) readinessBlockers.missingQuantitativeImpact += 1
+    if (readiness.blockers.missingBeforeAfter) readinessBlockers.missingBeforeAfter += 1
+    if (readiness.blockers.missingContributionClarity) readinessBlockers.missingContributionClarity += 1
+    if (readiness.blockers.missingAdoptionSharing) readinessBlockers.missingAdoptionSharing += 1
+
+    const departmentName = assignment.departmentNameSnapshot || '미지정'
+    const coverage =
+      departmentCoverage.get(departmentName) ??
+      {
+        departmentName,
+        totalCount: 0,
+        submittedCount: 0,
+        passedCount: 0,
+        missingCount: 0,
+      }
+    coverage.totalCount += 1
+    if (assignment.status === 'SUBMITTED' || assignment.status === 'RESUBMITTED' || assignment.status === 'UNDER_REVIEW') {
+      coverage.submittedCount += 1
+    }
+    if (assignment.status === 'PASSED') {
+      coverage.passedCount += 1
+    }
+    if (assignment.status === 'NOT_STARTED' || assignment.status === 'DRAFT') {
+      coverage.missingCount += 1
+    }
+    departmentCoverage.set(departmentName, coverage)
+  }
+
+  return {
+    totalCount: assignments.length,
+    notStartedCount: assignments.filter((item) => item.status === 'NOT_STARTED').length,
+    draftCount: assignments.filter((item) => item.status === 'DRAFT').length,
+    submittedCount: assignments.filter((item) => item.status === 'SUBMITTED' || item.status === 'RESUBMITTED').length,
+    reviewCount: assignments.filter((item) => item.status === 'UNDER_REVIEW').length,
+    revisionRequestedCount: assignments.filter((item) => item.status === 'REVISION_REQUESTED').length,
+    passedCount: assignments.filter((item) => item.status === 'PASSED').length,
+    failedCount: assignments.filter((item) => item.status === 'FAILED').length,
+    unsubmittedCount: assignments.filter((item) => item.status === 'NOT_STARTED' || item.status === 'DRAFT').length,
+    evidencePathDistribution: Array.from(routeCounts.entries()).map(([route, count]) => ({
+      route,
+      label: route === 'UNSELECTED' ? '인정 경로 미선택' : getGateRecognitionRouteLabel(route),
+      count,
+    })),
+    readinessBlockers,
+    departmentCoverage: Array.from(departmentCoverage.values()).sort((a, b) =>
+      a.departmentName.localeCompare(b.departmentName, 'ko-KR')
+    ),
   }
 }
 
@@ -289,7 +409,10 @@ export async function getAiCompetencyGateAdminPageData(params: {
     const [employeeOptions, reviewerOptions, evalCycleOptions] = await Promise.all([
       canManage
         ? prisma.employee.findMany({
-            where: { status: 'ACTIVE' },
+            where: {
+              status: 'ACTIVE',
+              role: { in: ['ROLE_MEMBER', 'ROLE_TEAM_LEADER'] },
+            },
             include: { department: true },
             orderBy: [{ empName: 'asc' }],
           })
@@ -329,16 +452,7 @@ export async function getAiCompetencyGateAdminPageData(params: {
           organizationName: cycle.organization.name,
           linkedGateCycleId: cycle.aiCompetencyGateCycle?.id,
         })),
-        summary: {
-          totalCount: 0,
-          notStartedCount: 0,
-          draftCount: 0,
-          submittedCount: 0,
-          reviewCount: 0,
-          revisionRequestedCount: 0,
-          passedCount: 0,
-          failedCount: 0,
-        },
+        summary: buildEmptyAdminSummary(),
         assignments: [],
         employeeOptions: employeeOptions.map((item) => ({
           id: item.id,
@@ -396,16 +510,7 @@ export async function getAiCompetencyGateAdminPageData(params: {
         promotionGateEnabled: selectedCycle.promotionGateEnabled,
         policyAcknowledgementText: selectedCycle.policyAcknowledgementText ?? undefined,
       },
-      summary: {
-        totalCount: assignments.length,
-        notStartedCount: assignments.filter((item) => item.status === 'NOT_STARTED').length,
-        draftCount: assignments.filter((item) => item.status === 'DRAFT').length,
-        submittedCount: assignments.filter((item) => item.status === 'SUBMITTED' || item.status === 'RESUBMITTED').length,
-        reviewCount: assignments.filter((item) => item.status === 'UNDER_REVIEW').length,
-        revisionRequestedCount: assignments.filter((item) => item.status === 'REVISION_REQUESTED').length,
-        passedCount: assignments.filter((item) => item.status === 'PASSED').length,
-        failedCount: assignments.filter((item) => item.status === 'FAILED').length,
-      },
+      summary: buildAdminSummary(assignments),
       assignments: assignments.map((assignment) => ({
         id: assignment.id,
         caseId: assignment.submissionCase?.id,
@@ -415,6 +520,16 @@ export async function getAiCompetencyGateAdminPageData(params: {
         reviewerName: assignment.reviewerNameSnapshot ?? undefined,
         status: assignment.status,
         statusLabel: getGateStatusLabel(assignment.status),
+        recognitionRoute: resolveGateRecognitionRouteFromCase(
+          assignment.submissionCase?.track,
+          assignment.submissionCase?.policyRecognitionRoute
+        ),
+        recognitionRouteLabel: getGateRecognitionRouteLabel(
+          resolveGateRecognitionRouteFromCase(
+            assignment.submissionCase?.track,
+            assignment.submissionCase?.policyRecognitionRoute
+          )
+        ),
         trackLabel: assignment.submissionCase?.track ? getGateTrackLabel(assignment.submissionCase.track) : undefined,
         title: assignment.submissionCase?.title ?? undefined,
         submittedAt: assignment.submittedAt?.toISOString(),
@@ -442,16 +557,7 @@ export async function getAiCompetencyGateAdminPageData(params: {
       state: error instanceof AppError && error.statusCode === 403 ? 'permission-denied' : 'error',
       cycleOptions: [],
       evalCycleOptions: [],
-      summary: {
-        totalCount: 0,
-        notStartedCount: 0,
-        draftCount: 0,
-        submittedCount: 0,
-        reviewCount: 0,
-        revisionRequestedCount: 0,
-        passedCount: 0,
-        failedCount: 0,
-      },
+      summary: buildEmptyAdminSummary(),
       assignments: [],
       employeeOptions: [],
       reviewerOptions: [],

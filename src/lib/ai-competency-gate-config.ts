@@ -10,6 +10,105 @@ export const AI_COMPETENCY_GATE_TRACK_LABELS: Record<AiCompetencyGateTrack, stri
   AI_USE_CASE_EXPANSION: 'AI 활용 사례 확산',
 }
 
+export const AI_COMPETENCY_GATE_RECOGNITION_ROUTE_VALUES = [
+  'AI_PROJECT_TK',
+  'ORG_CONTRIBUTION_CASE',
+  'PRACTICAL_AI_CERTIFICATION',
+] as const
+
+export type AiCompetencyGateRecognitionRoute =
+  (typeof AI_COMPETENCY_GATE_RECOGNITION_ROUTE_VALUES)[number]
+
+export type AiCompetencyGateRecognitionRouteConfig = {
+  value: AiCompetencyGateRecognitionRoute
+  label: string
+  shortLabel: string
+  track: AiCompetencyGateTrack | null
+  description: string
+  requirements: string[]
+}
+
+export const AI_COMPETENCY_GATE_RECOGNITION_ROUTES: AiCompetencyGateRecognitionRouteConfig[] = [
+  {
+    value: 'AI_PROJECT_TK',
+    label: 'AI 기반 프로젝트 수행 T/K',
+    shortLabel: '프로젝트 T/K',
+    track: 'AI_PROJECT_EXECUTION',
+    description:
+      'AI 기반 프로젝트를 T/K 성과로 수행했고 본인의 PM, 핵심 기여, 참여 역할과 목표 달성 근거가 있는 경우입니다.',
+    requirements: [
+      '프로젝트명과 T/K 유형',
+      'PM / 핵심 기여 / 참여 역할',
+      '기여 내용과 목표 달성 상태',
+      '증빙 링크, 파일, 또는 설명',
+      'Target 이상 달성 시 인정 기준 충족 가능',
+    ],
+  },
+  {
+    value: 'ORG_CONTRIBUTION_CASE',
+    label: '조직 기여 AI 활용 사례',
+    shortLabel: '조직 기여 사례',
+    track: 'AI_USE_CASE_EXPANSION',
+    description:
+      '개인 사용을 넘어 팀 또는 본부 업무에 적용되고 정량 개선과 적용 전/후 비교가 있는 AI 활용 사례입니다.',
+    requirements: [
+      '문제/배경과 AI 해결 방식',
+      '적용 전/후 비교',
+      '시간 단축, 비용 절감, 생산성 향상, 품질/오류 개선 중 1개 이상 정량 개선',
+      '팀/본부 적용 근거',
+      '공유, 세미나, 교육, 확산 근거',
+    ],
+  },
+  {
+    value: 'PRACTICAL_AI_CERTIFICATION',
+    label: 'AI 실무 역량 인증',
+    shortLabel: '실무 인증',
+    track: null,
+    description:
+      '교육 이수 자체가 아니라 실무 과제 수행 결과, 완료 증빙, 직무 관련성이 확인되는 AI 실무 인증입니다.',
+    requirements: [
+      '인증 또는 플랫폼명',
+      '실무 과제/프로젝트 결과',
+      '완료 증빙',
+      '직무 관련성',
+      '단순 교육 이수나 도구 사용 경험만으로는 부족',
+    ],
+  },
+]
+
+export function isAiCompetencyGateRecognitionRoute(
+  value?: string | null
+): value is AiCompetencyGateRecognitionRoute {
+  return AI_COMPETENCY_GATE_RECOGNITION_ROUTE_VALUES.includes(
+    value as AiCompetencyGateRecognitionRoute
+  )
+}
+
+export function getGateRecognitionRouteConfig(value?: string | null) {
+  if (!isAiCompetencyGateRecognitionRoute(value)) return undefined
+  return AI_COMPETENCY_GATE_RECOGNITION_ROUTES.find((item) => item.value === value)
+}
+
+export function getGateRecognitionRouteLabel(value?: string | null) {
+  return getGateRecognitionRouteConfig(value)?.label ?? '인정 경로 미선택'
+}
+
+export function deriveGateTrackFromRecognitionRoute(value?: string | null) {
+  return getGateRecognitionRouteConfig(value)?.track ?? null
+}
+
+export function resolveGateRecognitionRouteFromCase(
+  track?: AiCompetencyGateTrack | null,
+  policyRecognitionRoute?: string | null
+): AiCompetencyGateRecognitionRoute | undefined {
+  if (isAiCompetencyGateRecognitionRoute(policyRecognitionRoute)) {
+    return policyRecognitionRoute
+  }
+  if (track === 'AI_PROJECT_EXECUTION') return 'AI_PROJECT_TK'
+  if (track === 'AI_USE_CASE_EXPANSION') return 'ORG_CONTRIBUTION_CASE'
+  return undefined
+}
+
 export const AI_COMPETENCY_GATE_STATUS_LABELS: Record<AiCompetencyGateStatus, string> = {
   NOT_STARTED: '미시작',
   DRAFT: '작성중',
@@ -231,7 +330,7 @@ export const AI_COMPETENCY_GATE_DEFAULT_GUIDE_ENTRIES: GateGuideSeed[] = [
     trackApplicability: 'COMMON',
     title: 'AI 역량평가 안내',
     summary: 'AI를 활용해 실제 업무를 개선하고, 그 효과를 입증했는지 확인하는 승진 필수 요건입니다.',
-    body: 'AI 역량평가는 연간 점수를 더하는 항목이 아니라 승진 심사 시 통과 여부를 확인하는 별도 요건입니다.\n\n신청자는 실제 업무 문제를 해결하기 위해 AI를 사용했고, 본인이 Owner/PM 역할을 수행했으며, Before/After 근거와 측정 가능한 효과를 제시해야 합니다. 또한 사람의 최종 검토가 유지되었고, 보안/윤리/개인정보 대응이 적절했으며, 개인 실험을 넘어 팀 또는 조직에 공유되거나 확산된 흔적이 있어야 합니다.',
+    body: 'AI 역량평가는 2026 업적평가 점수에 반영되지 않으며, 레벨업/승진 Pass/Fail 요건으로 별도 관리됩니다.\n\n인정 경로는 AI 기반 프로젝트 수행 T/K, 조직 기여 AI 활용 사례, AI 실무 역량 인증입니다. 신청자는 실제 업무 문제를 해결하기 위해 AI를 사용했고, 본인이 Owner/PM 또는 핵심 기여 역할을 수행했으며, Before/After 근거와 측정 가능한 효과를 제시해야 합니다. 단순 교육 이수나 도구 사용 경험만으로는 인정되지 않습니다.',
     displayOrder: 10,
   },
   {
@@ -251,6 +350,15 @@ export const AI_COMPETENCY_GATE_DEFAULT_GUIDE_ENTRIES: GateGuideSeed[] = [
     summary: '개인 활용을 넘어 팀 또는 조직에 재사용 가능한 AI 활용 사례를 확산한 경우 선택합니다.',
     body: '트랙 B는 재사용 가능한 활용 사례를 만들고 실제로 팀/본부 또는 조직에 확산했는지 확인합니다.\n\n반복 사용 사례, 적용 범위, 측정 가능한 효과, 세미나/공유 근거, 조직 확산 내용을 중심으로 작성해 주세요.',
     displayOrder: 30,
+  },
+  {
+    key: 'route-certification-guide',
+    entryType: 'GUIDE',
+    trackApplicability: 'COMMON',
+    title: 'AI 실무 역량 인증 인정 기준',
+    summary: '단순 수료가 아니라 실무 과제 결과와 직무 관련성이 있는 인증만 Pass/Fail 검토 대상입니다.',
+    body: 'AI 실무 역량 인증은 인증명, 플랫폼, 실무 과제 또는 프로젝트 결과, 완료 증빙, 직무 관련성을 함께 제출해야 합니다.\n\n단순 교육 이수나 도구 사용 경험만으로는 충분하지 않습니다. 실제 업무 개선에 연결된 산출물, 결과물, 적용 근거를 증빙으로 남겨 주세요.',
+    displayOrder: 35,
   },
   {
     key: 'submission-checklist',

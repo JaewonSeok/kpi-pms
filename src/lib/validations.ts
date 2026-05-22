@@ -2926,6 +2926,11 @@ export const AiCompetencyResultOverrideSchema = z.object({
 
 export const AiCompetencyGateCycleStatusSchema = z.enum(['DRAFT', 'OPEN', 'CLOSED'])
 export const AiCompetencyGateTrackSchema = z.enum(['AI_PROJECT_EXECUTION', 'AI_USE_CASE_EXPANSION'])
+export const AiCompetencyGateRecognitionRouteSchema = z.enum([
+  'AI_PROJECT_TK',
+  'ORG_CONTRIBUTION_CASE',
+  'PRACTICAL_AI_CERTIFICATION',
+])
 export const AiCompetencyGateStatusSchema = z.enum([
   'NOT_STARTED',
   'DRAFT',
@@ -2988,7 +2993,8 @@ export const AiCompetencyGateMetricSchema = z.object({
 
 export const AiCompetencyGateDraftSchema = z.object({
   assignmentId: z.string().min(1),
-  track: AiCompetencyGateTrackSchema,
+  track: AiCompetencyGateTrackSchema.optional().nullable(),
+  policyRecognitionRoute: AiCompetencyGateRecognitionRouteSchema.optional().nullable(),
   title: AiCompetencyGateShortTextSchema,
   problemStatement: AiCompetencyGateLongTextSchema,
   importanceReason: AiCompetencyGateLongTextSchema,

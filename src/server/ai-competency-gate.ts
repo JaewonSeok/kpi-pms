@@ -1,8 +1,6 @@
 import type {
-  AiCompetencyGateDecision,
   AiCompetencyGateEvidenceType,
   AiCompetencyGateStatus,
-  AiCompetencyGateTrack,
   Prisma,
   SystemRole,
 } from '@prisma/client'
@@ -12,17 +10,15 @@ import { prisma } from '@/lib/prisma'
 import { createAuditLog } from '@/lib/audit'
 import { queueNotification } from '@/lib/notification-service'
 import { AppError } from '@/lib/utils'
-import type {
-  AiCompetencyGateAssignmentUpsertSchema,
-  AiCompetencyGateCycleUpsertSchema,
-  AiCompetencyGateDraftSchema,
-} from '@/lib/validations'
 import {
   AI_COMPETENCY_GATE_VISIBLE_STATUS_LABELS,
   canGateStatusTransition,
   canEmployeeEditGateCase,
+  deriveGateTrackFromRecognitionRoute,
+  getGateRecognitionRouteLabel,
   getGateTrackLabel,
   getGateStatusLabel,
+  resolveGateRecognitionRouteFromCase,
 } from '@/lib/ai-competency-gate-config'
 import {
   assertHasEmployeeContext,
@@ -51,7 +47,6 @@ import {
   type AuthenticatedSession,
   type GateAssignmentRecord,
   type GateCaseRecord,
-  type ReviewTemplateRecord,
   updateAssignmentStatus,
   validateCaseReadiness,
   writeGateDecisionHistory,
@@ -195,10 +190,15 @@ async function syncCaseDraft(params: {
   input: DraftInput
 }) {
   const payload = params.input
+  const recognitionRoute =
+    payload.policyRecognitionRoute ?? resolveGateRecognitionRouteFromCase(payload.track, null)
+  const track = deriveGateTrackFromRecognitionRoute(recognitionRoute) ?? payload.track ?? null
   const caseRecord = await params.db.aiCompetencyGateCase.upsert({
     where: { assignmentId: params.assignmentId },
     update: {
-      track: payload.track,
+      track,
+      policyVersion: recognitionRoute ? '2026-PPT-AI-PASS-FAIL' : undefined,
+      policyRecognitionRoute: recognitionRoute ?? null,
       title: payload.title,
       problemStatement: payload.problemStatement,
       importanceReason: payload.importanceReason,
@@ -224,7 +224,9 @@ async function syncCaseDraft(params: {
     },
     create: {
       assignmentId: params.assignmentId,
-      track: payload.track,
+      track,
+      policyVersion: recognitionRoute ? '2026-PPT-AI-PASS-FAIL' : undefined,
+      policyRecognitionRoute: recognitionRoute ?? null,
       title: payload.title,
       problemStatement: payload.problemStatement,
       importanceReason: payload.importanceReason,
@@ -923,7 +925,11 @@ export async function exportAiCompetencyGateReport(params: {
       departmentName: assignment.departmentNameSnapshot,
       position: assignment.positionSnapshot,
       status: AI_COMPETENCY_GATE_VISIBLE_STATUS_LABELS[resolveVisibleStatus(assignment.status)],
-      track: assignment.submissionCase?.track ? getGateTrackLabel(assignment.submissionCase.track) : '',
+      track: assignment.submissionCase?.policyRecognitionRoute
+        ? getGateRecognitionRouteLabel(assignment.submissionCase.policyRecognitionRoute)
+        : assignment.submissionCase?.track
+          ? getGateTrackLabel(assignment.submissionCase.track)
+          : '',
       title: assignment.submissionCase?.title ?? '',
       reviewer: assignment.reviewerNameSnapshot ?? '',
       submittedAt: assignment.submittedAt ? assignment.submittedAt.toISOString() : '',

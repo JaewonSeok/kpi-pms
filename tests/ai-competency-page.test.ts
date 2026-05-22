@@ -428,6 +428,7 @@ async function main() {
         assert.equal(data.statusCard?.canEdit, true)
         assert.equal(data.statusCard?.canResubmit, true)
         assert.equal(data.evidenceItems.length, 1)
+        assert.equal(data.caseForm?.policyRecognitionRoute, 'AI_PROJECT_TK')
         assert.equal(data.reviewerComment, '효과 측정 근거를 조금 더 보완해 주세요.')
       }
     )
@@ -441,6 +442,8 @@ async function main() {
     assert.equal(clientSource.includes('AI 역량평가'), true)
     assert.equal(clientSource.includes('보완 요청'), true)
     assert.equal(clientSource.includes('증빙 자료'), true)
+    assert.equal(clientSource.includes('PRACTICAL_AI_CERTIFICATION'), true)
+    assert.equal(clientSource.includes('정량 개선 지표'), true)
   })
 
   console.log('AI competency gate page tests completed')

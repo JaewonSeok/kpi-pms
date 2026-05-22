@@ -11,12 +11,12 @@ import { AppError } from '@/lib/utils'
 import {
   AI_COMPETENCY_GATE_DEFAULT_CRITERIA,
   AI_COMPETENCY_GATE_DEFAULT_GUIDE_ENTRIES,
-  AI_COMPETENCY_GATE_VISIBLE_STATUS_LABELS,
   canEmployeeEditGateCase,
-  canReviewerWriteGateReview,
   getGateDecisionLabel,
+  getGateRecognitionRouteLabel,
   getGateStatusLabel,
-  getGateTrackLabel,
+  resolveGateRecognitionRouteFromCase,
+  type AiCompetencyGateRecognitionRoute,
   type GateVisibleStatus,
 } from '@/lib/ai-competency-gate-config'
 
@@ -136,6 +136,7 @@ export type AiCompetencyGateMetricForm = {
 export type AiCompetencyGateCaseFormData = {
   caseId?: string
   track?: AiCompetencyGateTrack
+  policyRecognitionRoute?: AiCompetencyGateRecognitionRoute
   title: string
   problemStatement: string
   importanceReason: string
@@ -392,9 +393,14 @@ export function buildGuideLibrary(entries: GuideEntryRecord[]) {
   }
 }
 
-export function emptyCaseFormData(track?: AiCompetencyGateTrack | null): AiCompetencyGateCaseFormData {
+export function emptyCaseFormData(
+  track?: AiCompetencyGateTrack | null,
+  policyRecognitionRoute?: string | null
+): AiCompetencyGateCaseFormData {
+  const resolvedRoute = resolveGateRecognitionRouteFromCase(track, policyRecognitionRoute)
   return {
     track: track ?? undefined,
+    policyRecognitionRoute: resolvedRoute,
     title: '',
     problemStatement: '',
     importanceReason: '',
@@ -443,6 +449,7 @@ export function serializeCaseFormData(record?: GateCaseRecord | null): AiCompete
   return {
     caseId: record.id,
     track: record.track ?? undefined,
+    policyRecognitionRoute: resolveGateRecognitionRouteFromCase(record.track, record.policyRecognitionRoute),
     title: record.title ?? '',
     problemStatement: record.problemStatement ?? '',
     importanceReason: record.importanceReason ?? '',
@@ -600,17 +607,49 @@ export function validateCaseReadiness(record: GateCaseRecord | null | undefined)
     throw new AppError(400, 'AI_COMPETENCY_GATE_CASE_MISSING', '제출서를 먼저 작성해 주세요.')
   }
 
+  const recognitionRoute = resolveGateRecognitionRouteFromCase(record.track, record.policyRecognitionRoute)
+
+  if (!recognitionRoute) {
+    throw new AppError(400, 'AI_COMPETENCY_GATE_RECOGNITION_ROUTE_REQUIRED', 'AI 활용평가 인정 경로를 선택해 주세요.')
+  }
+
   const requiredCommon: Array<{ key: keyof GateCaseRecord; label: string }> = [
     { key: 'title', label: '과제명' },
-    { key: 'problemStatement', label: '해결하려는 업무 문제' },
+    {
+      key: 'problemStatement',
+      label:
+        recognitionRoute === 'PRACTICAL_AI_CERTIFICATION'
+          ? '직무 관련성 또는 인증 활용 배경'
+          : '해결하려는 업무 문제',
+    },
     { key: 'goalStatement', label: '목표' },
-    { key: 'ownerRoleDescription', label: '본인 역할' },
-    { key: 'beforeWorkflow', label: '기존 방식(Before)' },
-    { key: 'afterWorkflow', label: 'AI 적용 후 방식(After)' },
-    { key: 'impactSummary', label: '측정 지표 / 효과 요약' },
+    {
+      key: 'ownerRoleDescription',
+      label:
+        recognitionRoute === 'PRACTICAL_AI_CERTIFICATION'
+          ? '실무 과제 기여 또는 직무 적용 설명'
+          : '본인 역할',
+    },
+    ...(recognitionRoute === 'PRACTICAL_AI_CERTIFICATION'
+      ? []
+      : ([
+          { key: 'beforeWorkflow', label: '기존 방식(Before)' },
+          { key: 'afterWorkflow', label: 'AI 적용 후 방식(After)' },
+        ] satisfies Array<{ key: keyof GateCaseRecord; label: string }>)),
+    {
+      key: 'impactSummary',
+      label:
+        recognitionRoute === 'PRACTICAL_AI_CERTIFICATION'
+          ? '실무 과제 결과 또는 업무 적용 효과'
+          : '측정 지표 / 효과 요약',
+    },
     { key: 'humanReviewControl', label: '사람의 최종 검토/판단 방식' },
     { key: 'securityEthicsPrivacyHandling', label: '보안/윤리/개인정보 대응' },
-    { key: 'teamOrganizationAdoption', label: '팀/조직 적용 또는 공유/확산 근거' },
+    ...(recognitionRoute === 'PRACTICAL_AI_CERTIFICATION'
+      ? []
+      : ([
+          { key: 'teamOrganizationAdoption', label: '팀/조직 적용 또는 공유/확산 근거' },
+        ] satisfies Array<{ key: keyof GateCaseRecord; label: string }>)),
   ]
 
   for (const item of requiredCommon) {
@@ -620,9 +659,6 @@ export function validateCaseReadiness(record: GateCaseRecord | null | undefined)
     }
   }
 
-  if (!record.track) {
-    throw new AppError(400, 'AI_COMPETENCY_GATE_TRACK_REQUIRED', '트랙을 선택해 주세요.')
-  }
   if (!record.prohibitedAutomationAcknowledged) {
     throw new AppError(400, 'AI_COMPETENCY_GATE_PROHIBITED_AUTOMATION_REQUIRED', 'AI의 최종 자동 판단 금지 확인이 필요합니다.')
   }
@@ -638,11 +674,25 @@ export function validateCaseReadiness(record: GateCaseRecord | null | undefined)
       (metric.metricName?.trim().length ?? 0) > 0 &&
       (metric.verificationMethod?.trim().length ?? 0) > 0
   )
-  if (!meaningfulMetrics.length) {
+  if (recognitionRoute !== 'PRACTICAL_AI_CERTIFICATION' && !meaningfulMetrics.length) {
     throw new AppError(400, 'AI_COMPETENCY_GATE_METRIC_REQUIRED', '측정 지표를 1개 이상 입력해 주세요.')
   }
 
-  if (record.track === 'AI_PROJECT_EXECUTION') {
+  const beforeAfterMetrics = meaningfulMetrics.filter(
+    (metric) =>
+      (metric.beforeValue?.trim().length ?? 0) > 0 &&
+      (metric.afterValue?.trim().length ?? 0) > 0
+  )
+
+  if (recognitionRoute === 'ORG_CONTRIBUTION_CASE' && !beforeAfterMetrics.length) {
+    throw new AppError(
+      400,
+      'AI_COMPETENCY_GATE_QUANTITATIVE_BEFORE_AFTER_REQUIRED',
+      '조직 기여 AI 활용 사례는 적용 전/후 정량 개선 지표를 1개 이상 입력해 주세요.'
+    )
+  }
+
+  if (recognitionRoute === 'AI_PROJECT_TK') {
     if (!record.projectDetail?.projectBackground?.trim()) {
       throw new AppError(400, 'AI_COMPETENCY_GATE_PROJECT_BACKGROUND_REQUIRED', '프로젝트 배경을 입력해 주세요.')
     }
@@ -657,7 +707,7 @@ export function validateCaseReadiness(record: GateCaseRecord | null | undefined)
     }
   }
 
-  if (record.track === 'AI_USE_CASE_EXPANSION') {
+  if (recognitionRoute === 'ORG_CONTRIBUTION_CASE') {
     if (!record.adoptionDetail?.useCaseDescription?.trim()) {
       throw new AppError(400, 'AI_COMPETENCY_GATE_USE_CASE_REQUIRED', '실제 활용 사례 설명을 입력해 주세요.')
     }
@@ -670,6 +720,59 @@ export function validateCaseReadiness(record: GateCaseRecord | null | undefined)
     if (!record.adoptionDetail.seminarSharingEvidence?.trim()) {
       throw new AppError(400, 'AI_COMPETENCY_GATE_SHARING_EVIDENCE_REQUIRED', '세미나/공유 근거를 입력해 주세요.')
     }
+  }
+}
+
+export function buildAiCompetencyEvidenceReadiness(record?: GateCaseRecord | null) {
+  const recognitionRoute = resolveGateRecognitionRouteFromCase(
+    record?.track,
+    record?.policyRecognitionRoute
+  )
+  const metrics = record?.metrics ?? []
+  const evidenceItems = record?.evidenceItems ?? []
+  const hasQuantitativeMetric = metrics.some(
+    (metric) =>
+      Boolean(metric.metricName?.trim()) &&
+      Boolean(metric.beforeValue?.trim()) &&
+      Boolean(metric.afterValue?.trim()) &&
+      Boolean(metric.verificationMethod?.trim())
+  )
+  const hasAnyMetric = metrics.some(
+    (metric) => Boolean(metric.metricName?.trim()) && Boolean(metric.verificationMethod?.trim())
+  )
+  const hasBeforeAfter = Boolean(record?.beforeWorkflow?.trim()) && Boolean(record?.afterWorkflow?.trim())
+  const hasContributionClarity =
+    Boolean(record?.ownerRoleDescription?.trim()) ||
+    Boolean(record?.projectDetail?.contributionSummary?.trim()) ||
+    Boolean(record?.projectDetail?.ownerPmRoleDetail?.trim())
+  const hasAdoptionSharing =
+    Boolean(record?.teamOrganizationAdoption?.trim()) ||
+    Boolean(record?.adoptionDetail?.seminarSharingEvidence?.trim()) ||
+    evidenceItems.some(
+      (item) => item.evidenceType === 'ADOPTION_PROOF' || item.evidenceType === 'SHARING_PROOF'
+    )
+
+  const blockers = {
+    missingEvidence: !evidenceItems.length,
+    missingQuantitativeImpact:
+      recognitionRoute === 'ORG_CONTRIBUTION_CASE'
+        ? !hasQuantitativeMetric
+        : recognitionRoute === 'AI_PROJECT_TK'
+          ? !hasAnyMetric
+          : false,
+    missingBeforeAfter:
+      recognitionRoute === 'ORG_CONTRIBUTION_CASE' || recognitionRoute === 'AI_PROJECT_TK'
+        ? !hasBeforeAfter
+        : false,
+    missingContributionClarity: !hasContributionClarity,
+    missingAdoptionSharing:
+      recognitionRoute === 'ORG_CONTRIBUTION_CASE' ? !hasAdoptionSharing : false,
+  }
+
+  return {
+    recognitionRoute,
+    recognitionRouteLabel: getGateRecognitionRouteLabel(recognitionRoute),
+    blockers,
   }
 }
 
