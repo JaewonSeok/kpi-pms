@@ -386,11 +386,113 @@ function makeDb(overrides: {
   return { db: db as unknown, counts }
 }
 
+function makeTeamKpiDecisionDb(overrides: {
+  orgKpi?: Record<string, unknown> | null
+  cycle?: Record<string, unknown> | null
+} = {}) {
+  const counts = {
+    reviewRunCreate: 0,
+    orgKpiUpdate: 0,
+    audit: 0,
+  }
+  let orgKpi = overrides.orgKpi === null
+    ? null
+    : {
+        id: 'team-kpi-pending',
+        deptId: 'team-sales',
+        evalYear: 2026,
+        kpiName: '신규 고객 확보',
+        status: 'CONFIRMED',
+        parentOrgKpiId: null,
+        mboExceptionApproved: false,
+        mboExceptionReason: null,
+        mboExceptionApprovedById: null,
+        mboExceptionApprovedAt: null,
+        department: {
+          id: 'team-sales',
+          orgId: 'org-1',
+          deptName: '세일즈팀',
+          parentDeptId: 'division-sales',
+        },
+        ...overrides.orgKpi,
+      }
+  const cycle = overrides.cycle === null
+    ? null
+    : {
+        id: 'cycle-2026',
+        orgId: 'org-1',
+        evalYear: 2026,
+        ...overrides.cycle,
+      }
+  const createdRuns: Array<Record<string, unknown>> = []
+  const db = {
+    department: {
+      findMany: async () => departments,
+    },
+    evalCycle: {
+      findUnique: async () => cycle,
+    },
+    orgKpi: {
+      findUnique: async () => orgKpi,
+      update: async ({ data }: { data: Record<string, unknown> }) => {
+        counts.orgKpiUpdate += 1
+        if (!orgKpi) throw new Error('missing orgKpi')
+        orgKpi = {
+          ...orgKpi,
+          ...data,
+        }
+        return {
+          id: orgKpi.id,
+          mboExceptionApproved: orgKpi.mboExceptionApproved,
+          mboExceptionReason: orgKpi.mboExceptionReason,
+          mboExceptionApprovedById: orgKpi.mboExceptionApprovedById,
+          mboExceptionApprovedAt: orgKpi.mboExceptionApprovedAt,
+        }
+      },
+    },
+    teamKpiReviewRun: {
+      create: async ({ data }: { data: Record<string, any> }) => {
+        counts.reviewRunCreate += 1
+        const item = {
+          id: `review-item-${counts.reviewRunCreate}`,
+          ...data.items.create,
+          createdAt: new Date('2026-05-20T01:02:03.000Z'),
+          run: {
+            id: `review-run-${counts.reviewRunCreate}`,
+            requesterId: data.requesterId,
+            reviewType: data.reviewType,
+            overallVerdict: data.overallVerdict,
+            overallSummary: data.overallSummary,
+            aiRequestLogId: data.aiRequestLogId,
+            createdAt: new Date('2026-05-20T01:02:03.000Z'),
+          },
+        }
+        const runRecord = {
+          id: `review-run-${counts.reviewRunCreate}`,
+          ...data,
+          items: [item],
+        }
+        createdRuns.push(runRecord)
+        return runRecord
+      },
+    },
+  }
+  const audit = async () => {
+    counts.audit += 1
+  }
+
+  return { db: db as unknown, counts, audit, createdRuns, getOrgKpi: () => orgKpi }
+}
+
 async function main() {
   const {
     getEvaluation2026ReadinessPopulationDryRun,
     getEvaluation2026ReadinessPopulationDryRunForSession,
   } = await import('../src/server/evaluation-2026-readiness-population')
+  const {
+    Evaluation2026TeamKpiHrReviewDecisionSchema,
+    saveEvaluation2026TeamKpiHrReviewDecisionForSession,
+  } = await import('../src/server/evaluation-2026-team-kpi-review-decision')
 
   await run('population dry-run reports missing confirmed PersonalKpi and performs no writes', async () => {
     const fake = makeDb()
@@ -515,6 +617,217 @@ async function main() {
     assert.equal(fake.counts.writes, 0)
   })
 
+  await run('admin can save APPROVED_FOR_ORG_GOAL team KPI HR decision without touching scores', async () => {
+    const fake = makeTeamKpiDecisionDb()
+
+    const result = await saveEvaluation2026TeamKpiHrReviewDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiId: 'team-kpi-pending',
+          evalCycleId: 'cycle-2026',
+          decision: 'APPROVED_FOR_ORG_GOAL',
+          reason: '핵심 과제',
+          note: 'HR 검토 완료',
+        },
+      },
+      {
+        db: fake.db as never,
+        audit: fake.audit as never,
+        now: new Date('2026-05-20T01:02:03.000Z'),
+      }
+    )
+
+    assert.equal(result.verdict, 'ADEQUATE')
+    assert.equal(result.hrException.approved, false)
+    assert.equal(result.safety.totalScoreChanged, false)
+    assert.equal(result.safety.gradeIdChanged, false)
+    assert.equal(result.safety.evaluationsCreated, 0)
+    assert.equal(result.safety.evaluationItemsCreated, 0)
+    assert.equal(fake.counts.reviewRunCreate, 1)
+    assert.equal(fake.counts.orgKpiUpdate, 1)
+    assert.equal(fake.counts.audit, 1)
+  })
+
+  await run('admin can save EXCLUDED_DAILY_WORK team KPI HR decision', async () => {
+    const fake = makeTeamKpiDecisionDb()
+
+    const result = await saveEvaluation2026TeamKpiHrReviewDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiId: 'team-kpi-pending',
+          evalCycleId: 'cycle-2026',
+          decision: 'EXCLUDED_DAILY_WORK',
+          reason: '단순 운영/유지 업무',
+          note: '조직목표 반영 제외',
+        },
+      },
+      {
+        db: fake.db as never,
+        audit: fake.audit as never,
+      }
+    )
+
+    assert.equal(result.verdict, 'INSUFFICIENT')
+    assert.equal(result.hrException.approved, false)
+    assert.equal(fake.counts.reviewRunCreate, 1)
+    assert.equal(fake.counts.audit, 1)
+  })
+
+  await run('admin can save EXCEPTION_APPROVED with reason metadata', async () => {
+    const fake = makeTeamKpiDecisionDb()
+
+    const result = await saveEvaluation2026TeamKpiHrReviewDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiId: 'team-kpi-pending',
+          evalCycleId: 'cycle-2026',
+          decision: 'EXCEPTION_APPROVED',
+          reason: '매출/수익/고객 확보 직접 연계',
+          note: '본부 KPI에는 없지만 예외 승인',
+        },
+      },
+      {
+        db: fake.db as never,
+        audit: fake.audit as never,
+        now: new Date('2026-05-20T01:02:03.000Z'),
+      }
+    )
+
+    assert.equal(result.verdict, 'ADEQUATE')
+    assert.equal(result.hrException.approved, true)
+    assert.equal(result.hrException.reason, '매출/수익/고객 확보 직접 연계')
+    assert.equal(result.hrException.approvedById, 'admin-1')
+    assert.equal(result.hrException.approvedAt, '2026-05-20T01:02:03.000Z')
+  })
+
+  await run('member cannot save team KPI HR decision', async () => {
+    const fake = makeTeamKpiDecisionDb()
+
+    await assert.rejects(
+      () =>
+        saveEvaluation2026TeamKpiHrReviewDecisionForSession(
+          {
+            session: makeSession('ROLE_MEMBER', 'member-1'),
+            input: {
+              orgKpiId: 'team-kpi-pending',
+              evalCycleId: 'cycle-2026',
+              decision: 'APPROVED_FOR_ORG_GOAL',
+              reason: '핵심 과제',
+              note: '권한 없음',
+            },
+          },
+          {
+            db: fake.db as never,
+            audit: fake.audit as never,
+          }
+        ),
+      (error) => error instanceof AppError && error.statusCode === 403
+    )
+    assert.equal(fake.counts.reviewRunCreate, 0)
+    assert.equal(fake.counts.orgKpiUpdate, 0)
+  })
+
+  await run('invalid or missing team KPI HR decision fields fail validation', () => {
+    assert.equal(
+      Evaluation2026TeamKpiHrReviewDecisionSchema.safeParse({
+        orgKpiId: 'team-kpi-pending',
+        decision: 'INVALID_DECISION',
+        reason: '핵심 과제',
+      }).success,
+      false
+    )
+    assert.equal(
+      Evaluation2026TeamKpiHrReviewDecisionSchema.safeParse({
+        orgKpiId: 'team-kpi-pending',
+        decision: 'APPROVED_FOR_ORG_GOAL',
+      }).success,
+      false
+    )
+  })
+
+  await run('saved team KPI HR decisions are reflected in readiness suggestions', async () => {
+    const fake = makeTeamKpiDecisionDb()
+    const result = await saveEvaluation2026TeamKpiHrReviewDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiId: 'team-kpi-pending',
+          evalCycleId: 'cycle-2026',
+          decision: 'APPROVED_FOR_ORG_GOAL',
+          reason: '핵심 과제',
+          note: '조직목표 후보 승인',
+        },
+      },
+      {
+        db: fake.db as never,
+        audit: fake.audit as never,
+      }
+    )
+    const savedItem = (fake.createdRuns[0]?.items as Array<Record<string, unknown>> | undefined)?.[0]
+    const dryRunDb = makeDb({
+      orgKpis: [
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-pending'),
+          teamKpiReviewItems: [
+            {
+              ...savedItem,
+              id: result.teamKpiReviewItemId,
+              verdict: 'ADEQUATE',
+              rationale: '핵심 과제',
+              recommendationText: '조직목표 후보 승인',
+              run: {
+                requesterId: 'admin-1',
+                createdAt: new Date('2026-05-20T01:02:03.000Z'),
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: dryRunDb.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    assert.equal(dryRun.teamKpiHrReviewCoverage.candidates[0]?.reviewStatus, 'APPROVED_FOR_ORG_GOAL')
+    assert.equal(dryRun.teamKpiHrReviewCoverage.candidates[0]?.suggestedMboCategory, 'ORG_GOAL')
+    assert.equal(dryRun.teamKpiHrReviewCoverage.candidates[0]?.reason, '핵심 과제')
+
+    const excludedDryRunDb = makeDb({
+      orgKpis: [
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-pending'),
+          teamKpiReviewItems: [
+            {
+              id: 'manual-excluded',
+              verdict: 'INSUFFICIENT',
+              rationale: '단순 운영/유지 업무',
+              recommendationText: '일상업무 처리',
+              createdAt: new Date('2026-05-20T01:02:03.000Z'),
+              run: {
+                requesterId: 'admin-1',
+                createdAt: new Date('2026-05-20T01:02:03.000Z'),
+              },
+            },
+          ],
+        },
+      ],
+    })
+    const excludedDryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: excludedDryRunDb.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+    assert.equal(excludedDryRun.teamKpiHrReviewCoverage.candidates[0]?.reviewStatus, 'EXCLUDED_DAILY_WORK')
+    assert.equal(excludedDryRun.teamKpiHrReviewCoverage.candidates[0]?.suggestedMboCategory, 'DAILY_WORK')
+    assert.equal(excludedDryRun.teamKpiHrReviewCoverage.candidates[0]?.canSuggestAsOrgGoal, false)
+  })
+
   await run('MBO setup coverage reports draft/submitted/confirmed/missing and category distribution without writes', async () => {
     const fake = makeDb({
       personalKpis: [
@@ -636,8 +949,10 @@ async function main() {
 
   await run('population dry-run API is GET-only, admin-gated, and not wired into live routes', () => {
     const routeSource = read('src/app/api/evaluation/preview-2026/readiness-population/route.ts')
+    const reviewDecisionRouteSource = read('src/app/api/evaluation/preview-2026/team-kpi-review-decision/route.ts')
     const clientSource = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
     const serverSource = read('src/server/evaluation-2026-readiness-population.ts')
+    const decisionServerSource = read('src/server/evaluation-2026-team-kpi-review-decision.ts')
     const liveRouteSource = read('src/app/api/evaluation/route.ts')
     const submitRouteSource = read('src/app/api/evaluation/[id]/submit/route.ts')
 
@@ -662,15 +977,26 @@ async function main() {
     assert.equal(clientSource.includes('2026 팀 KPI 검토'), true)
     assert.equal(clientSource.includes('본부 KPI에 포함되거나 HR이 승인한 팀 KPI만 개인 MBO의 조직목표 후보가 됩니다.'), true)
     assert.equal(clientSource.includes('팀 KPI 검토 복사'), true)
+    assert.equal(clientSource.includes('/api/evaluation/preview-2026/team-kpi-review-decision'), true)
+    assert.equal(clientSource.includes('HR 결정 저장'), true)
     assert.equal(serverSource.includes('APPROVED_FOR_ORG_GOAL'), true)
     assert.equal(serverSource.includes('EXCLUDED_DAILY_WORK'), true)
     assert.equal(serverSource.includes('EXCEPTION_APPROVED'), true)
     assert.equal(serverSource.includes('PENDING_REVIEW'), true)
     assert.equal(serverSource.includes('personalKpiOrgGoalWithoutApprovedSourceCount'), true)
+    assert.equal(reviewDecisionRouteSource.includes('export async function PATCH'), true)
+    assert.equal(reviewDecisionRouteSource.includes('getServerSession(authOptions)'), true)
+    assert.equal(reviewDecisionRouteSource.includes('saveEvaluation2026TeamKpiHrReviewDecisionForSession'), true)
+    assert.equal(decisionServerSource.includes('teamKpiReviewRun.create'), true)
+    assert.equal(decisionServerSource.includes('officialScoresChanged: false'), true)
+    assert.equal(decisionServerSource.includes('evaluationsCreated: 0'), true)
+    assert.equal(decisionServerSource.includes('evaluationItemsCreated: 0'), true)
     assert.equal(clientSource.includes("limit: '300'"), true)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/readiness-population'), true)
     assert.equal(liveRouteSource.includes('readiness-population'), false)
+    assert.equal(liveRouteSource.includes('team-kpi-review-decision'), false)
     assert.equal(submitRouteSource.includes('readiness-population'), false)
+    assert.equal(submitRouteSource.includes('team-kpi-review-decision'), false)
   })
 
   console.log('2026 readiness population dry-run tests completed')

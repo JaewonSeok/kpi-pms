@@ -102,6 +102,14 @@ type TeamKpiHrReviewStatus2026 =
   EvaluationReadinessPopulation2026ApiData['teamKpiHrReviewCoverage']['candidates'][number]['reviewStatus']
 type TeamKpiHrReviewReason2026 =
   NonNullable<EvaluationReadinessPopulation2026ApiData['teamKpiHrReviewCoverage']['candidates'][number]['reason']>
+type TeamKpiHrReviewRow2026 =
+  EvaluationReadinessPopulation2026ApiData['teamKpiHrReviewCoverage']['candidates'][number]
+type TeamKpiHrReviewDecision2026 = Exclude<TeamKpiHrReviewStatus2026, 'PENDING_REVIEW'>
+type TeamKpiHrReviewDecisionDraft2026 = {
+  decision: TeamKpiHrReviewDecision2026 | ''
+  reason: TeamKpiHrReviewReason2026 | ''
+  note: string
+}
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
 type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
@@ -1659,6 +1667,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     loading={policyPopulationDryRun2026Loading}
                     error={policyPopulationDryRun2026Error}
                     selectedCycleId={props.selectedCycleId ?? null}
+                    canManageTeamKpiReview={props.currentUser?.role === 'ROLE_ADMIN'}
                     onLoad={loadPolicyPopulationDryRun2026}
                   />
                   <PolicyMapping2026Panel
@@ -2842,6 +2851,23 @@ function getThresholdDecisionLabel2026(value: string | null | undefined) {
   return '미지정'
 }
 
+const TEAM_KPI_HR_REVIEW_DECISIONS_2026: TeamKpiHrReviewDecision2026[] = [
+  'APPROVED_FOR_ORG_GOAL',
+  'EXCLUDED_DAILY_WORK',
+  'EXCEPTION_APPROVED',
+  'NEEDS_DISCUSSION',
+]
+
+const TEAM_KPI_HR_REVIEW_REASONS_2026: TeamKpiHrReviewReason2026[] = [
+  '전년 대비 상향 KPI',
+  '핵심 과제',
+  '매출/수익/고객 확보 직접 연계',
+  '본부 KPI 직접 포함',
+  '단순 운영/유지 업무',
+  '중복 목표',
+  '기타 HR 사유',
+]
+
 function getMboSetupStatusLabel2026(value: MboSetupMonitoringStatus2026 | 'ALL') {
   if (value === 'MISSING') return 'MBO 없음'
   if (value === 'DRAFT') return '초안'
@@ -2891,6 +2917,7 @@ function PolicyReadinessPopulation2026Panel(props: {
   loading: boolean
   error: string
   selectedCycleId: string | null
+  canManageTeamKpiReview: boolean
   onLoad: () => void
 }) {
   const dryRun = props.dryRunData
@@ -2909,6 +2936,10 @@ function PolicyReadinessPopulation2026Panel(props: {
   const [teamReviewTeamFilter, setTeamReviewTeamFilter] = useState('ALL')
   const [teamReviewStatusFilter, setTeamReviewStatusFilter] = useState<TeamKpiHrReviewStatus2026 | 'ALL'>('ALL')
   const [teamReviewReasonFilter, setTeamReviewReasonFilter] = useState<TeamKpiHrReviewReason2026 | 'ALL'>('ALL')
+  const [teamReviewDrafts, setTeamReviewDrafts] = useState<Record<string, TeamKpiHrReviewDecisionDraft2026>>({})
+  const [teamReviewSavingId, setTeamReviewSavingId] = useState<string | null>(null)
+  const [teamReviewSaveNotice, setTeamReviewSaveNotice] = useState('')
+  const [teamReviewSaveError, setTeamReviewSaveError] = useState('')
   const [copiedMonitoringTable, setCopiedMonitoringTable] = useState<string | null>(null)
   const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
   const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
@@ -3081,6 +3112,81 @@ function PolicyReadinessPopulation2026Panel(props: {
         ])
       ),
     [filteredTeamReviewRows]
+  )
+  const getTeamReviewDraft = useCallback(
+    (row: TeamKpiHrReviewRow2026): TeamKpiHrReviewDecisionDraft2026 => {
+      const existing = teamReviewDrafts[row.orgKpiId]
+      if (existing) return existing
+      return {
+        decision: row.reviewStatus === 'PENDING_REVIEW' ? '' : row.reviewStatus,
+        reason: row.reason ?? '',
+        note: row.notes ?? '',
+      }
+    },
+    [teamReviewDrafts]
+  )
+  const updateTeamReviewDraft = useCallback(
+    (orgKpiId: string, patch: Partial<TeamKpiHrReviewDecisionDraft2026>) => {
+      setTeamReviewDrafts((current) => ({
+        ...current,
+        [orgKpiId]: {
+          decision: current[orgKpiId]?.decision ?? '',
+          reason: current[orgKpiId]?.reason ?? '',
+          note: current[orgKpiId]?.note ?? '',
+          ...patch,
+        },
+      }))
+    },
+    []
+  )
+  const saveTeamKpiReviewDecision = useCallback(
+    async (row: TeamKpiHrReviewRow2026) => {
+      if (!props.canManageTeamKpiReview) return
+      if (!props.selectedCycleId) {
+        setTeamReviewSaveError('먼저 평가 주기를 선택해 주세요.')
+        return
+      }
+
+      const draft = getTeamReviewDraft(row)
+      if (!draft.decision) {
+        setTeamReviewSaveError('HR 결정을 선택해 주세요.')
+        return
+      }
+      if (!draft.reason) {
+        setTeamReviewSaveError('HR 사유를 선택해 주세요.')
+        return
+      }
+
+      setTeamReviewSavingId(row.orgKpiId)
+      setTeamReviewSaveError('')
+      setTeamReviewSaveNotice('')
+
+      try {
+        const response = await fetch('/api/evaluation/preview-2026/team-kpi-review-decision', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orgKpiId: row.orgKpiId,
+            evalCycleId: props.selectedCycleId,
+            decision: draft.decision,
+            reason: draft.reason,
+            note: draft.note,
+          }),
+        })
+        const json = await response.json().catch(() => null)
+        if (!response.ok || !json?.success) {
+          throw new Error(json?.error?.message ?? '팀 KPI HR 검토 결정을 저장하지 못했습니다.')
+        }
+
+        setTeamReviewSaveNotice(`${row.teamKpiName} 검토 결정을 저장했습니다. 공식 점수/등급은 변경되지 않았습니다.`)
+        await props.onLoad()
+      } catch (error) {
+        setTeamReviewSaveError(error instanceof Error ? error.message : '팀 KPI HR 검토 결정을 저장하지 못했습니다.')
+      } finally {
+        setTeamReviewSavingId(null)
+      }
+    },
+    [getTeamReviewDraft, props]
   )
 
   return (
@@ -3523,10 +3629,13 @@ function PolicyReadinessPopulation2026Panel(props: {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-sm font-semibold text-slate-900">2026 팀 KPI 검토</h4>
-                    <Badge tone="neutral">Read-only</Badge>
+                    <Badge tone="neutral">{props.canManageTeamKpiReview ? 'HR metadata' : 'Read-only'}</Badge>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-slate-600">
                     본부 KPI에 포함되거나 HR이 승인한 팀 KPI만 개인 MBO의 조직목표 후보가 됩니다. 이 목록은 기존 Team KPI review와 예외 승인 메타데이터를 읽어 readiness 판단을 돕습니다.
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-indigo-700">
+                    HR 결정 저장은 readiness 메타데이터만 변경하며 공식 점수/등급, 평가 항목, 최종화/조정에는 반영되지 않습니다.
                   </p>
                 </div>
                 <button
@@ -3537,6 +3646,17 @@ function PolicyReadinessPopulation2026Panel(props: {
                   {copiedMonitoringTable === 'team-kpi-review' ? '팀 KPI 검토 복사됨' : '팀 KPI 검토 복사'}
                 </button>
               </div>
+
+              {teamReviewSaveNotice ? (
+                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  {teamReviewSaveNotice}
+                </div>
+              ) : null}
+              {teamReviewSaveError ? (
+                <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                  {teamReviewSaveError}
+                </div>
+              ) : null}
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 <MetricCard
@@ -3653,50 +3773,108 @@ function PolicyReadinessPopulation2026Panel(props: {
                         <th className="px-4 py-2 font-semibold">검토 상태</th>
                         <th className="px-4 py-2 font-semibold">HR 사유</th>
                         <th className="px-4 py-2 font-semibold">MBO 제안</th>
+                        {props.canManageTeamKpiReview ? (
+                          <th className="px-4 py-2 font-semibold">HR 결정 저장</th>
+                        ) : null}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {filteredTeamReviewRows.slice(0, 120).map((row) => (
-                        <tr key={row.orgKpiId}>
-                          <td className="px-4 py-3">
-                            <div className="font-semibold text-slate-900">{row.teamKpiName}</div>
-                            <div className="mt-1 text-slate-400">
-                              영향 {row.affectedActiveEmployeeCount.toLocaleString()}명 · 개인 연결 {row.linkedPersonalKpiCount.toLocaleString()}건 · {row.hrDecisionLabel}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-slate-600">{row.departmentPath}</div>
-                            <div className="mt-1 text-slate-400">{row.ownerName}</div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">
-                            {row.linkedDivisionKpiName ?? '연결 없음'}
-                            {row.linkedDivisionKpiDepartmentName ? (
-                              <span className="block text-slate-400">{row.linkedDivisionKpiDepartmentName}</span>
+                      {filteredTeamReviewRows.slice(0, 120).map((row) => {
+                        const draft = getTeamReviewDraft(row)
+                        return (
+                          <tr key={row.orgKpiId}>
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-slate-900">{row.teamKpiName}</div>
+                              <div className="mt-1 text-slate-400">
+                                영향 {row.affectedActiveEmployeeCount.toLocaleString()}명 · 개인 연결 {row.linkedPersonalKpiCount.toLocaleString()}건 · {row.hrDecisionLabel}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="text-slate-600">{row.departmentPath}</div>
+                              <div className="mt-1 text-slate-400">{row.ownerName}</div>
+                            </td>
+                            <td className="px-4 py-3 text-slate-600">
+                              {row.linkedDivisionKpiName ?? '연결 없음'}
+                              {row.linkedDivisionKpiDepartmentName ? (
+                                <span className="block text-slate-400">{row.linkedDivisionKpiDepartmentName}</span>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge tone={getTeamKpiHrReviewStatusTone2026(row.reviewStatus)}>
+                                {row.reviewStatusLabel}
+                              </Badge>
+                              {row.latestReviewVerdict ? (
+                                <div className="mt-1 text-slate-400">verdict {row.latestReviewVerdict}</div>
+                              ) : null}
+                              {row.reviewedAt ? (
+                                <div className="mt-1 text-slate-400">저장 {new Date(row.reviewedAt).toLocaleDateString('ko-KR')}</div>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-3 text-slate-600">
+                              <div className="font-semibold text-slate-700">{row.reason ?? '미지정'}</div>
+                              {row.notes ? <div className="mt-1 max-w-xs truncate text-slate-400">{row.notes}</div> : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge tone={row.canSuggestAsOrgGoal ? 'success' : 'neutral'}>
+                                {row.suggestedMboCategory === 'ORG_GOAL' ? 'ORG_GOAL 후보' : 'DAILY_WORK 기본'}
+                              </Badge>
+                              <div className="mt-1 max-w-xs text-slate-500">{row.guidance}</div>
+                            </td>
+                            {props.canManageTeamKpiReview ? (
+                              <td className="min-w-72 px-4 py-3">
+                                <div className="grid gap-2">
+                                  <select
+                                    value={draft.decision}
+                                    onChange={(event) =>
+                                      updateTeamReviewDraft(row.orgKpiId, {
+                                        decision: event.target.value as TeamKpiHrReviewDecision2026 | '',
+                                      })
+                                    }
+                                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700"
+                                  >
+                                    <option value="">결정 선택</option>
+                                    {TEAM_KPI_HR_REVIEW_DECISIONS_2026.map((decision) => (
+                                      <option key={decision} value={decision}>{getTeamKpiHrReviewStatusLabel2026(decision)}</option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    value={draft.reason}
+                                    onChange={(event) =>
+                                      updateTeamReviewDraft(row.orgKpiId, {
+                                        reason: event.target.value as TeamKpiHrReviewReason2026 | '',
+                                      })
+                                    }
+                                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700"
+                                  >
+                                    <option value="">사유 선택</option>
+                                    {TEAM_KPI_HR_REVIEW_REASONS_2026.map((reason) => (
+                                      <option key={reason} value={reason}>{reason}</option>
+                                    ))}
+                                  </select>
+                                  <textarea
+                                    value={draft.note}
+                                    onChange={(event) => updateTeamReviewDraft(row.orgKpiId, { note: event.target.value })}
+                                    rows={2}
+                                    placeholder="검토 메모"
+                                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={teamReviewSavingId === row.orgKpiId}
+                                    onClick={() => void saveTeamKpiReviewDecision(row)}
+                                    className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                                  >
+                                    {teamReviewSavingId === row.orgKpiId ? '저장 중...' : 'HR 결정 저장'}
+                                  </button>
+                                </div>
+                              </td>
                             ) : null}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge tone={getTeamKpiHrReviewStatusTone2026(row.reviewStatus)}>
-                              {row.reviewStatusLabel}
-                            </Badge>
-                            {row.latestReviewVerdict ? (
-                              <div className="mt-1 text-slate-400">verdict {row.latestReviewVerdict}</div>
-                            ) : null}
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">
-                            <div className="font-semibold text-slate-700">{row.reason ?? '미지정'}</div>
-                            {row.notes ? <div className="mt-1 max-w-xs truncate text-slate-400">{row.notes}</div> : null}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge tone={row.canSuggestAsOrgGoal ? 'success' : 'neutral'}>
-                              {row.suggestedMboCategory === 'ORG_GOAL' ? 'ORG_GOAL 후보' : 'DAILY_WORK 기본'}
-                            </Badge>
-                            <div className="mt-1 max-w-xs text-slate-500">{row.guidance}</div>
-                          </td>
-                        </tr>
-                      ))}
+                          </tr>
+                        )
+                      })}
                       {filteredTeamReviewRows.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 팀 KPI가 없습니다.</td>
+                          <td colSpan={props.canManageTeamKpiReview ? 7 : 6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 팀 KPI가 없습니다.</td>
                         </tr>
                       ) : null}
                     </tbody>
