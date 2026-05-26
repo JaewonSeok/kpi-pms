@@ -20,8 +20,12 @@ import {
   getEvaluation2026ReadinessPopulationDryRun,
   type Evaluation2026ReadinessPopulationDryRun,
 } from '@/server/evaluation-2026-readiness-population'
+import {
+  getEvaluation2026EvaluatorRoutingReadiness,
+  type Evaluation2026EvaluatorRoutingReadinessResult,
+} from '@/server/evaluation-2026-evaluator-routing-readiness'
 
-type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department'>> & {
+type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department' | 'employee' | 'evaluationAssignment'>> & {
   $queryRawUnsafe?: typeof prisma.$queryRawUnsafe
 }
 
@@ -88,6 +92,7 @@ export type Evaluation2026ActivationReadinessResult = {
   migration: Evaluation2026MigrationReadiness
   readiness: EvaluationPreviewReadinessSummary2026
   gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult | null
+  evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null
   officialActivationGates: Evaluation2026OfficialActivationGate[]
   populationDryRunAvailable: boolean
   populationDryRunError: string | null
@@ -343,6 +348,25 @@ function collectGradePolicyReadiness(
   }
 }
 
+function collectEvaluatorRoutingReadiness(
+  evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null,
+  blockers: Evaluation2026ActivationReadinessItem[],
+  warnings: Evaluation2026ActivationReadinessItem[]
+) {
+  if (!evaluatorRoutingReadiness) {
+    addItem(warnings, 'EVALUATOR_ROUTING_NOT_CHECKED', '2026 평가자 배정 readiness를 현재 실행 컨텍스트에서 확인하지 못했습니다.', 'warning')
+    return
+  }
+
+  if (evaluatorRoutingReadiness.summary.blockerCount > 0) {
+    addItem(
+      blockers,
+      'EVALUATOR_ROUTING_UNRESOLVED',
+      `평가자 배정 chain blocker가 ${evaluatorRoutingReadiness.summary.blockerCount}건 남아 있습니다.`
+    )
+  }
+}
+
 function canRunPopulationDryRun(db: Evaluation2026ActivationDb): db is Evaluation2026ActivationPopulationDb {
   const candidate = db as Evaluation2026ActivationPopulationDb
   return Boolean(
@@ -351,6 +375,15 @@ function canRunPopulationDryRun(db: Evaluation2026ActivationDb): db is Evaluatio
     typeof candidate.personalKpi?.findMany === 'function' &&
     typeof candidate.evaluation?.findMany === 'function' &&
     typeof candidate.department?.findMany === 'function'
+  )
+}
+
+function canRunEvaluatorRoutingReadiness(db: Evaluation2026ActivationDb) {
+  const candidate = db as Evaluation2026ActivationDb
+  return Boolean(
+    typeof candidate.employee?.findMany === 'function' &&
+    typeof candidate.department?.findMany === 'function' &&
+    typeof candidate.evaluationAssignment?.findMany === 'function'
   )
 }
 
@@ -468,6 +501,7 @@ function buildEvaluation2026OfficialActivationGates(params: {
   flags: Evaluation2026FeatureFlags
   readiness: EvaluationPreviewReadinessSummary2026
   gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult | null
+  evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null
   populationDryRun: Evaluation2026ReadinessPopulationDryRun | null
   populationDryRunError: string | null
 }): Evaluation2026OfficialActivationGate[] {
@@ -475,6 +509,7 @@ function buildEvaluation2026OfficialActivationGates(params: {
     flags,
     readiness,
     gradePolicyReadiness,
+    evaluatorRoutingReadiness,
     populationDryRun,
     populationDryRunError,
   } = params
@@ -532,6 +567,20 @@ function buildEvaluation2026OfficialActivationGates(params: {
   const salesMissingCount = salesClassificationMissingCount({ readiness, populationDryRun })
   const policyCategoryMissingCount = populationDryRun?.policyCategoryMissingCount ?? readiness.missingPolicyCategoryCount
   const confirmedCoverageMissingCount = populationDryRun?.employeesMissingConfirmedPersonalKpiCount ?? null
+  const evaluatorRoutingBlockerCount = evaluatorRoutingReadiness?.summary.blockerCount ?? null
+  const evaluatorRoutingCondition = condition({
+    code: 'EVALUATOR_ASSIGNMENT_CHAIN_READY',
+    label: 'evaluator assignment chain complete',
+    ok: evaluatorRoutingBlockerCount === 0,
+    currentValue: evaluatorRoutingReadiness
+      ? `${evaluatorRoutingReadiness.summary.completeEvaluatorChainCount}/${evaluatorRoutingReadiness.summary.activeEmployeeCount} ready · blocker ${evaluatorRoutingBlockerCount}건`
+      : 'not checked',
+    blockerCount: evaluatorRoutingBlockerCount ?? 1,
+    reason: evaluatorRoutingReadiness
+      ? 'FIRST/SECOND/FINAL 평가자 chain blocker가 남아 있습니다.'
+      : '평가자 배정 readiness를 확인하지 못했습니다.',
+    nextHrAction: '/admin/performance-assignments에서 missing FIRST/SECOND/FINAL 및 manual review 항목을 해소하세요.',
+  })
   const sampleWarningCount = populationDryRun?.warnings.filter((warning) =>
     warning.code === 'SAMPLE_DATA_SIGNAL' || warning.code === 'CURRENT_CYCLE_SCOPE_LOOKS_PARTIAL'
   ).reduce((sum, warning) => sum + (warning.count ?? 1), 0) ?? null
@@ -564,6 +613,7 @@ function buildEvaluation2026OfficialActivationGates(params: {
       reason: confirmedCoverageMissingCount == null ? populationUnavailableReason : '확정된 2026 PersonalKpi가 없는 대상자가 남아 있습니다.',
       nextHrAction: 'MBO 작성/제출/리더 검토를 완료하거나 명시적 제외 대상을 정리하세요.',
     }),
+    evaluatorRoutingCondition,
     condition({
       code: 'POLICY_CATEGORY_MISSING_ZERO',
       label: 'policyCategory missing 0건',
@@ -862,6 +912,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
   migrationStatus?: Evaluation2026MigrationReadiness
   readinessSummary?: EvaluationPreviewReadinessSummary2026
   gradePolicyReadiness?: Evaluation2026GradePolicyReadinessResult | null
+  evaluatorRoutingReadiness?: Evaluation2026EvaluatorRoutingReadinessResult | null
   populationDryRun?: Evaluation2026ReadinessPopulationDryRun | null
 }): Promise<Evaluation2026ActivationReadinessResult> {
   const db = params.db ?? prisma
@@ -905,6 +956,18 @@ export async function getEvaluation2026ActivationReadiness(params: {
       populationDryRunError = toSafePopulationDryRunError(error)
     }
   }
+  let evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null =
+    params.evaluatorRoutingReadiness ?? null
+  if (params.evaluatorRoutingReadiness === undefined && populationCycleId && canRunEvaluatorRoutingReadiness(db)) {
+    try {
+      evaluatorRoutingReadiness = await getEvaluation2026EvaluatorRoutingReadiness({
+        db: db as never,
+        evalCycleId: populationCycleId,
+      })
+    } catch {
+      evaluatorRoutingReadiness = null
+    }
+  }
 
   const blockers: Evaluation2026ActivationReadinessItem[] = []
   const warnings: Evaluation2026ActivationReadinessItem[] = []
@@ -912,10 +975,12 @@ export async function getEvaluation2026ActivationReadiness(params: {
   collectMigrationReadiness(migration, blockers, warnings)
   collectPreviewReadiness(readiness, blockers, warnings)
   collectGradePolicyReadiness(gradePolicyReadiness, blockers, warnings)
+  collectEvaluatorRoutingReadiness(evaluatorRoutingReadiness, blockers, warnings)
   const officialActivationGates = buildEvaluation2026OfficialActivationGates({
     flags,
     readiness,
     gradePolicyReadiness,
+    evaluatorRoutingReadiness,
     populationDryRun,
     populationDryRunError,
   })
@@ -928,6 +993,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     migration,
     readiness,
     gradePolicyReadiness,
+    evaluatorRoutingReadiness,
     officialActivationGates,
     populationDryRunAvailable: Boolean(populationDryRun),
     populationDryRunError,
@@ -950,6 +1016,7 @@ export async function getEvaluation2026ActivationReadinessForSession(
     migrationStatus?: Evaluation2026MigrationReadiness
     readinessSummary?: EvaluationPreviewReadinessSummary2026
     gradePolicyReadiness?: Evaluation2026GradePolicyReadinessResult | null
+    evaluatorRoutingReadiness?: Evaluation2026EvaluatorRoutingReadinessResult | null
     populationDryRun?: Evaluation2026ReadinessPopulationDryRun | null
   } = {}
 ) {
@@ -969,6 +1036,7 @@ export async function getEvaluation2026ActivationReadinessForSession(
     migrationStatus: options.migrationStatus,
     readinessSummary: options.readinessSummary,
     gradePolicyReadiness: options.gradePolicyReadiness,
+    evaluatorRoutingReadiness: options.evaluatorRoutingReadiness,
     populationDryRun: options.populationDryRun,
     year: params.year,
     cycleId: params.cycleId,

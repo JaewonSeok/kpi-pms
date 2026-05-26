@@ -10,6 +10,10 @@ import {
 import { EVAL_STAGE_LABELS, POSITION_LABELS, AppError } from '@/lib/utils'
 import { prisma } from '@/lib/prisma'
 import { buildAssignments } from '@/server/admin/employeeHierarchy'
+import {
+  getEvaluation2026EvaluatorRoutingReadiness,
+  type Evaluation2026EvaluatorRoutingReadinessResult,
+} from '@/server/evaluation-2026-evaluator-routing-readiness'
 
 const PERFORMANCE_ASSIGNABLE_STAGES: EvalStage[] = ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']
 const EVALUATION_STAGE_ORDER: EvalStage[] = ['SELF', 'FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']
@@ -135,6 +139,7 @@ export type PerformanceAssignmentPageData = {
     role: SystemRole
     allowedStages: EvalStage[]
   }>
+  routingReadiness?: Evaluation2026EvaluatorRoutingReadinessResult
 }
 
 type DefaultAssignmentRecord = {
@@ -1060,6 +1065,10 @@ export async function getPerformanceAssignmentPageData(
     }
 
     const defaults = await buildDefaultAssignmentRecords(db)
+    const routingReadiness = await getEvaluation2026EvaluatorRoutingReadiness({
+      db: db as never,
+      evalCycleId: selectedCycle.id,
+    })
 
     const [persistedAssignments, evaluations, employees] = await Promise.all([
       db.evaluationAssignment.findMany({
@@ -1235,6 +1244,7 @@ export async function getPerformanceAssignmentPageData(
         role: employee.role,
         allowedStages: mapAllowedStages(employee.role),
       })),
+      routingReadiness,
     }
   } catch (error) {
     console.error('[performance-assignments]', error)
