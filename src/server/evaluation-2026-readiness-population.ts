@@ -92,7 +92,9 @@ type PersonalKpi2026 = {
   policyCategory: EvaluationPolicyItemCategoryCode | null
   status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED' | string
   weight?: number | null
+  targetValue?: number | null
   targetValueT?: number | null
+  targetValueE?: number | null
   linkedOrgKpiId?: string | null
   linkedOrgKpi?: {
     id: string
@@ -112,6 +114,19 @@ type PersonalKpi2026 = {
       verdict: string
     }>
   } | null
+  monthlyRecords?: Array<{
+    id?: string | null
+    yearMonth: string
+    actualValue?: number | null
+    achievementRate?: number | null
+    activities?: string | null
+    obstacles?: string | null
+    efforts?: string | null
+    evidenceComment?: string | null
+    attachments?: unknown
+    submittedAt?: Date | string | null
+    isDraft?: boolean | null
+  }>
 }
 
 type PersonalKpiAuditLog2026 = {
@@ -130,6 +145,8 @@ type ExistingSelfEvaluation2026 = {
     id: string
     personalKpiId: string
     policyCategory: EvaluationPolicyItemCategoryCode | null
+    itemComment?: string | null
+    targetAchievementLevel?: string | null
     personalKpi?: {
       id: string
       kpiName: string
@@ -290,6 +307,107 @@ export type Evaluation2026MboPolicyCategoryMissingItemRow = {
   actionLabel: '카테고리 확정 필요'
 }
 
+export type Evaluation2026ResultWritingWarningCode =
+  | 'MISSING_ACTUAL_RESULT'
+  | 'MISSING_MEASURABLE_RESULT'
+  | 'MISSING_EVIDENCE'
+  | 'MISSING_PERSONAL_CONTRIBUTION'
+  | 'MISSING_TARGET_ACTUAL_COMPARISON'
+  | 'MISSING_OUTPUT_IMPACT'
+  | 'MISSING_CATEGORY'
+  | 'ORG_GOAL_WITHOUT_APPROVED_SOURCE'
+  | 'DAILY_WORK_DUPLICATE_RISK'
+  | 'PROJECT_TK_MISSING_DELIVERABLE'
+  | 'AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE'
+
+export type Evaluation2026ResultWritingStatus =
+  | 'READY_FOR_REVIEW'
+  | 'NEEDS_RESULT'
+  | 'NEEDS_EVIDENCE'
+  | 'NEEDS_CONTRIBUTION'
+  | 'NEEDS_CATEGORY'
+  | 'MANUAL_REVIEW'
+
+export type Evaluation2026ResultWritingReadinessRow = {
+  personalKpiId: string
+  evaluationItemId: string | null
+  employeeId: string
+  employeeNo: string | null
+  employeeName: string
+  email: string | null
+  divisionId: string | null
+  divisionName: string
+  departmentId: string | null
+  departmentName: string
+  departmentPath: string
+  leaderId: string | null
+  leaderName: string
+  kpiName: string
+  category: EvaluationPolicyItemCategoryCode | null
+  categoryLabel: string
+  mboStatus: PersonalKpiOperationalStatus
+  resultWritingStatus: Evaluation2026ResultWritingStatus
+  resultDraftPresent: boolean
+  evidencePresent: boolean
+  personalContributionPresent: boolean
+  measurableResultPresent: boolean
+  targetActualComparisonPresent: boolean
+  outputImpactPresent: boolean
+  linkedOrgKpiId: string | null
+  linkedOrgKpiTitle: string | null
+  approvedOrgGoalSource: boolean
+  latestMonthlyRecordLabel: string | null
+  evidenceSourceCount: number
+  warnings: Array<{
+    code: Evaluation2026ResultWritingWarningCode
+    label: string
+    message: string
+  }>
+  nextAction: string
+}
+
+export type Evaluation2026ResultWritingReadiness = {
+  mode: 'READ_ONLY'
+  guidance: Array<{
+    category: EvaluationPolicyItemCategoryCode
+    label: string
+    expectations: string[]
+  }>
+  evidenceGuidance: string[]
+  leaderReviewChecklist: string[]
+  exportColumns: string[]
+  summary: {
+    totalItemCount: number
+    resultDraftPresentCount: number
+    missingResultCount: number
+    missingEvidenceCount: number
+    missingContributionCount: number
+    missingMeasurableResultCount: number
+    missingCategoryCount: number
+    orgGoalSourceWarningCount: number
+    dailyWorkDuplicateRiskCount: number
+    projectTkMissingDeliverableCount: number
+    aiEvidenceMixedCount: number
+    leaderReviewWarningCount: number
+    readyForReviewCount: number
+    warningItemCount: number
+    categoryWarningCounts: Record<'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK' | 'UNMAPPED', number>
+    officialScoringEnabled: false
+    officialGradeEnabled: false
+  }
+  rows: Evaluation2026ResultWritingReadinessRow[]
+  safety: {
+    writesPerformed: false
+    evaluationsCreated: 0
+    evaluationItemsCreated: 0
+    totalScoreChanged: false
+    gradeIdChanged: false
+    officialScoringEnabled: false
+    officialGradeEnabled: false
+    officialAiScoreExclusionEnabled: false
+  }
+}
+
 export type Evaluation2026TeamKpiHrReviewStatus =
   | 'PENDING_REVIEW'
   | 'APPROVED_FOR_ORG_GOAL'
@@ -438,6 +556,7 @@ export type Evaluation2026ReadinessPopulationDryRun = {
     projectTkMissingTargetOrPlanCount: number
     bulkMappingSavedCount: number
   }
+  resultWritingReadiness: Evaluation2026ResultWritingReadiness
   blockers: Evaluation2026ReadinessPopulationBlocker[]
   warnings: Evaluation2026ReadinessPopulationBlocker[]
   safety: {
@@ -667,6 +786,374 @@ function toTeamOrgKpiAlignmentInput2026(
 
 function hasMeaningfulText(value: string | null | undefined, minLength = 8) {
   return typeof value === 'string' && value.trim().length >= minLength
+}
+
+const RESULT_WRITING_GUIDANCE_2026: Evaluation2026ResultWritingReadiness['guidance'] = [
+  {
+    category: 'ORG_GOAL',
+    label: 'ORG_GOAL 조직목표',
+    expectations: [
+      '본부 KPI 또는 HR 승인 팀 KPI와의 연결을 먼저 확인합니다.',
+      '목표 결과와 실제 결과를 분리해서 작성합니다.',
+      '조직 KPI에 대한 본인 기여와 산출물/영향을 증빙 중심으로 남깁니다.',
+      '조직목표 증빙을 DAILY_WORK로 중복 작성하지 않았는지 확인합니다.',
+    ],
+  },
+  {
+    category: 'PROJECT_T',
+    label: 'PROJECT_T 프로젝트 T',
+    expectations: [
+      '프로젝트 목적, 담당 역할, 목표 산출물을 명확히 적습니다.',
+      '실제 산출물과 완료 상태를 목표 대비로 비교합니다.',
+      '정량 영향과 증빙 링크/코멘트를 함께 남깁니다.',
+    ],
+  },
+  {
+    category: 'PROJECT_K',
+    label: 'PROJECT_K 프로젝트 K',
+    expectations: [
+      '핵심 과제 산출물과 구체 deliverable을 중심으로 작성합니다.',
+      '본인 기여와 목표/실제 비교를 분리합니다.',
+      'PROJECT_T와 다른 비중/항목 cap이 적용될 수 있음을 확인합니다.',
+    ],
+  },
+  {
+    category: 'DAILY_WORK',
+    label: 'DAILY_WORK 일상업무',
+    expectations: [
+      '운영 책임, 품질/안정성, 프로세스 개선 근거를 중심으로 작성합니다.',
+      '관리자 검토 기준이 되는 반복 업무 품질과 리스크 대응을 남깁니다.',
+      'ORG_GOAL 또는 PROJECT 업무를 DAILY_WORK로 중복 기재하지 않습니다.',
+      'DAILY_WORK는 별도 score ceiling/guidance가 있음을 확인합니다.',
+    ],
+  },
+]
+
+const RESULT_WRITING_EVIDENCE_GUIDANCE_2026 = [
+  'Google Drive 링크, 월간 실적 evidenceComment, 첨부 JSON, 또는 짧은 증빙 메모 중 하나 이상을 근거로 남깁니다.',
+  '새 파일 저장소를 만들거나 자동 업로드하지 않습니다. 기존 링크/코멘트/월간 실적 근거만 readiness에 사용합니다.',
+  '초안 저장 단계에서 모든 증빙을 강제하지 않으며, 제출/리더 검토 전 보완 warning으로 먼저 표시합니다.',
+  'AI 활용평가 증빙은 연간 업적점수와 별도로 관리됩니다.',
+]
+
+const RESULT_WRITING_LEADER_REVIEW_CHECKLIST_2026 = [
+  '수행결과가 측정 가능하게 작성되었는지 확인합니다.',
+  '증빙 링크/파일/코멘트가 최소 1개 이상 있는지 확인합니다.',
+  '본인 기여와 산출물/영향이 분리되어 있는지 확인합니다.',
+  'policyCategory와 실제 업무 성격이 맞는지 확인합니다.',
+  '비중/cap warning을 확인합니다.',
+  '향후 ±5 adjustment를 사용할 경우 기여 차이 증빙과 zero-sum 근거가 필요한지 확인합니다.',
+  'AI Pass/Fail 증빙은 연간 업적점수 결과와 분리되어 있는지 확인합니다.',
+]
+
+function getPolicyCategoryLabel2026(category: EvaluationPolicyItemCategoryCode | null) {
+  if (category === 'ORG_GOAL') return '조직목표'
+  if (category === 'PROJECT_T') return '프로젝트 T'
+  if (category === 'PROJECT_K') return '프로젝트 K'
+  if (category === 'DAILY_WORK') return '일상업무'
+  return '미분류'
+}
+
+function getResultWritingWarningLabel2026(code: Evaluation2026ResultWritingWarningCode) {
+  const labels: Record<Evaluation2026ResultWritingWarningCode, string> = {
+    MISSING_ACTUAL_RESULT: '수행결과 누락',
+    MISSING_MEASURABLE_RESULT: '정량 결과 부족',
+    MISSING_EVIDENCE: '증빙 부족',
+    MISSING_PERSONAL_CONTRIBUTION: '본인 기여 부족',
+    MISSING_TARGET_ACTUAL_COMPARISON: '목표/실제 비교 부족',
+    MISSING_OUTPUT_IMPACT: '산출물/영향 부족',
+    MISSING_CATEGORY: 'policyCategory 미분류',
+    ORG_GOAL_WITHOUT_APPROVED_SOURCE: 'ORG_GOAL 승인 소스 없음',
+    DAILY_WORK_DUPLICATE_RISK: 'DAILY_WORK 중복 위험',
+    PROJECT_TK_MISSING_DELIVERABLE: '프로젝트 deliverable 부족',
+    AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE: 'AI 증빙 혼재 위험',
+  }
+  return labels[code]
+}
+
+function getResultWritingWarningMessage2026(code: Evaluation2026ResultWritingWarningCode) {
+  const messages: Record<Evaluation2026ResultWritingWarningCode, string> = {
+    MISSING_ACTUAL_RESULT: 'actual result 또는 EvaluationItem itemComment 초안이 없습니다.',
+    MISSING_MEASURABLE_RESULT: '달성률, 실적값, 정량 개선 등 측정 가능한 결과 근거가 부족합니다.',
+    MISSING_EVIDENCE: 'Google Drive 링크, 월간 evidenceComment, 첨부, 증빙 메모가 부족합니다.',
+    MISSING_PERSONAL_CONTRIBUTION: '본인 역할/기여가 결과 문장이나 KPI 정의에 충분히 드러나지 않습니다.',
+    MISSING_TARGET_ACTUAL_COMPARISON: 'Target 대비 실제 결과 비교가 부족합니다.',
+    MISSING_OUTPUT_IMPACT: '산출물, 품질/효율 개선, 고객/조직 영향이 부족합니다.',
+    MISSING_CATEGORY: 'ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 하나로 확정되어야 합니다.',
+    ORG_GOAL_WITHOUT_APPROVED_SOURCE: 'ORG_GOAL은 본부 KPI 또는 HR 승인 팀 KPI와 연결되어야 합니다.',
+    DAILY_WORK_DUPLICATE_RISK: '조직목표/프로젝트 업무가 DAILY_WORK로 중복 작성될 가능성이 있습니다.',
+    PROJECT_TK_MISSING_DELIVERABLE: 'PROJECT_T/K는 목표 산출물과 실제 deliverable이 필요합니다.',
+    AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE: 'AI 활용평가 증빙은 연간 업적점수 결과와 별도로 관리되어야 합니다.',
+  }
+  return messages[code]
+}
+
+function buildResultWritingWarning(code: Evaluation2026ResultWritingWarningCode) {
+  return {
+    code,
+    label: getResultWritingWarningLabel2026(code),
+    message: getResultWritingWarningMessage2026(code),
+  }
+}
+
+function hasAttachmentValue2026(value: unknown) {
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'string') return value.trim().length > 0 && value.trim() !== '[]'
+  if (typeof value === 'object' && value !== null) return Object.keys(value).length > 0
+  return false
+}
+
+function textContainsMeasurableResult2026(value: string | null | undefined) {
+  if (!value) return false
+  return /(\d+(\.\d+)?\s*(%|건|원|시간|일|명|개|회|점)|증가|감소|절감|단축|향상|개선|완료율|달성률)/i.test(value)
+}
+
+function textContainsAiScoreEvidence2026(value: string | null | undefined) {
+  if (!value) return false
+  return /(AI\s*활용평가|AI\s*역량|AI\s*인증|AI\s*Pass\/?Fail|레벨업|승진\s*요건|실무\s*역량\s*인증)/i.test(value)
+}
+
+function resolveResultWritingStatus2026(
+  warnings: Array<{ code: Evaluation2026ResultWritingWarningCode }>
+): Evaluation2026ResultWritingStatus {
+  if (warnings.some((warning) => warning.code === 'MISSING_CATEGORY')) return 'NEEDS_CATEGORY'
+  if (warnings.some((warning) => warning.code === 'MISSING_ACTUAL_RESULT')) return 'NEEDS_RESULT'
+  if (warnings.some((warning) => warning.code === 'MISSING_EVIDENCE')) return 'NEEDS_EVIDENCE'
+  if (warnings.some((warning) => warning.code === 'MISSING_PERSONAL_CONTRIBUTION')) return 'NEEDS_CONTRIBUTION'
+  if (warnings.length) return 'MANUAL_REVIEW'
+  return 'READY_FOR_REVIEW'
+}
+
+function getResultWritingNextAction2026(status: Evaluation2026ResultWritingStatus) {
+  if (status === 'READY_FOR_REVIEW') return '리더 검토 준비 가능'
+  if (status === 'NEEDS_CATEGORY') return 'policyCategory 확정'
+  if (status === 'NEEDS_RESULT') return '수행결과 초안 작성'
+  if (status === 'NEEDS_EVIDENCE') return '증빙 링크/코멘트 보완'
+  if (status === 'NEEDS_CONTRIBUTION') return '본인 기여 보완'
+  return 'HR/리더 수동 검토'
+}
+
+function buildResultWritingReadiness2026(params: {
+  activeEmployees: ActiveEmployee2026[]
+  personalKpis: PersonalKpi2026[]
+  selfEvaluations: ExistingSelfEvaluation2026[]
+  departmentsById: Map<string, DepartmentNode2026>
+  operationalStatusByKpiId: Map<string, PersonalKpiOperationalStatus>
+  limit: number
+}): Evaluation2026ResultWritingReadiness {
+  const activeEmployeesById = new Map(params.activeEmployees.map((employee) => [employee.id, employee]))
+  const activeEmployeeIds = new Set(params.activeEmployees.map((employee) => employee.id))
+  const itemByPersonalKpiId = new Map<string, ExistingSelfEvaluation2026['items'][number]>()
+  for (const evaluation of params.selfEvaluations) {
+    if (!activeEmployeeIds.has(evaluation.targetId)) continue
+    for (const item of evaluation.items) {
+      if (!itemByPersonalKpiId.has(item.personalKpiId)) {
+        itemByPersonalKpiId.set(item.personalKpiId, item)
+      }
+    }
+  }
+
+  const orgGoalReferences = params.personalKpis
+    .filter((kpi) => kpi.policyCategory === 'ORG_GOAL')
+    .map((kpi) => ({
+      id: kpi.id,
+      title: kpi.kpiName,
+      kpiName: kpi.kpiName,
+      definition: kpi.definition,
+      formula: kpi.formula,
+      linkedOrgKpiId: kpi.linkedOrgKpiId,
+    }))
+
+  const rows = params.personalKpis
+    .filter((kpi) => activeEmployeeIds.has(kpi.employeeId))
+    .map((kpi) => {
+      const employee = activeEmployeesById.get(kpi.employeeId)
+      const divisionId = resolveDivisionId({ departmentId: employee?.deptId, departmentsById: params.departmentsById })
+      const divisionName = divisionId ? params.departmentsById.get(divisionId)?.deptName ?? divisionId : '본부 미지정'
+      const managerId = employee?.managerId ?? employee?.teamLeaderId ?? null
+      const manager = managerId ? activeEmployeesById.get(managerId) : null
+      const monthlyRecords = kpi.monthlyRecords ?? []
+      const latestMonthly = monthlyRecords[0] ?? null
+      const item = itemByPersonalKpiId.get(kpi.id) ?? null
+      const itemComment = item?.itemComment ?? null
+      const textBundle = [kpi.kpiName, kpi.definition, kpi.formula, itemComment, latestMonthly?.activities, latestMonthly?.efforts]
+        .filter((value): value is string => typeof value === 'string')
+        .join(' ')
+      const evidenceSourceCount = monthlyRecords.filter((record) =>
+        hasMeaningfulText(record.evidenceComment, 4) ||
+        hasAttachmentValue2026(record.attachments) ||
+        /https?:\/\//i.test([record.activities, record.efforts, record.evidenceComment].filter(Boolean).join(' '))
+      ).length + (/https?:\/\//i.test(itemComment ?? '') ? 1 : 0)
+      const resultDraftPresent = hasMeaningfulText(itemComment, 10)
+      const measurableResultPresent =
+        monthlyRecords.some((record) => typeof record.actualValue === 'number' || typeof record.achievementRate === 'number') ||
+        textContainsMeasurableResult2026(itemComment)
+      const evidencePresent = evidenceSourceCount > 0
+      const personalContributionPresent =
+        hasMeaningfulText(kpi.definition, 12) || /(본인|기여|주도|담당|개선|실행|협업|역할)/.test(textBundle)
+      const targetActualComparisonPresent =
+        (kpi.targetValueT != null || kpi.targetValue != null || kpi.targetValueE != null) && measurableResultPresent
+      const outputImpactPresent =
+        hasMeaningfulText(kpi.formula, 8) ||
+        hasMeaningfulText(latestMonthly?.activities, 8) ||
+        hasMeaningfulText(latestMonthly?.efforts, 8) ||
+        /(산출|결과|영향|효과|품질|안정|생산성|절감|단축|개선|완료)/.test(textBundle)
+      const orgKpiAlignment = toOrgKpiAlignmentInput2026(kpi.linkedOrgKpi, params.departmentsById)
+      const approvedOrgGoalSource =
+        kpi.policyCategory === 'ORG_GOAL'
+          ? Boolean(orgKpiAlignment && determineOrgKpiReflectionEligibility2026(orgKpiAlignment).eligibleAsOrgGoal)
+          : false
+      const duplicate =
+        kpi.policyCategory === 'DAILY_WORK'
+          ? detectDailyWorkDuplicateWithOrgGoal2026({
+              dailyWork: {
+                id: kpi.id,
+                title: kpi.kpiName,
+                kpiName: kpi.kpiName,
+                definition: kpi.definition,
+                formula: kpi.formula,
+                linkedOrgKpiId: kpi.linkedOrgKpiId,
+              },
+              orgGoals: orgGoalReferences.filter((orgGoal) => orgGoal.id !== kpi.id),
+            }).duplicated
+          : false
+      const warnings: Evaluation2026ResultWritingReadinessRow['warnings'] = []
+
+      if (!resultDraftPresent) warnings.push(buildResultWritingWarning('MISSING_ACTUAL_RESULT'))
+      if (!measurableResultPresent) warnings.push(buildResultWritingWarning('MISSING_MEASURABLE_RESULT'))
+      if (!evidencePresent) warnings.push(buildResultWritingWarning('MISSING_EVIDENCE'))
+      if (!personalContributionPresent) warnings.push(buildResultWritingWarning('MISSING_PERSONAL_CONTRIBUTION'))
+      if (!targetActualComparisonPresent) warnings.push(buildResultWritingWarning('MISSING_TARGET_ACTUAL_COMPARISON'))
+      if (!outputImpactPresent) warnings.push(buildResultWritingWarning('MISSING_OUTPUT_IMPACT'))
+      if (!kpi.policyCategory) warnings.push(buildResultWritingWarning('MISSING_CATEGORY'))
+      if (kpi.policyCategory === 'ORG_GOAL' && !approvedOrgGoalSource) {
+        warnings.push(buildResultWritingWarning('ORG_GOAL_WITHOUT_APPROVED_SOURCE'))
+      }
+      if (duplicate) warnings.push(buildResultWritingWarning('DAILY_WORK_DUPLICATE_RISK'))
+      if (
+        (kpi.policyCategory === 'PROJECT_T' || kpi.policyCategory === 'PROJECT_K') &&
+        !hasMeaningfulText(kpi.formula, 8) &&
+        !/(산출|deliverable|완료|결과물|출시|구축)/i.test(textBundle)
+      ) {
+        warnings.push(buildResultWritingWarning('PROJECT_TK_MISSING_DELIVERABLE'))
+      }
+      if (textContainsAiScoreEvidence2026(textBundle)) {
+        warnings.push(buildResultWritingWarning('AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE'))
+      }
+
+      const status = resolveResultWritingStatus2026(warnings)
+
+      return {
+        personalKpiId: kpi.id,
+        evaluationItemId: item?.id ?? null,
+        employeeId: kpi.employeeId,
+        employeeNo: employee?.empId ?? null,
+        employeeName: employee?.empName ?? '대상자 미확인',
+        email: employee?.gwsEmail ?? null,
+        divisionId,
+        divisionName,
+        departmentId: employee?.deptId ?? null,
+        departmentName:
+          employee?.department?.deptName ??
+          (employee?.deptId ? params.departmentsById.get(employee.deptId)?.deptName : null) ??
+          '소속 조직 미지정',
+        departmentPath: formatDepartmentPath({ departmentId: employee?.deptId, departmentsById: params.departmentsById }),
+        leaderId: managerId,
+        leaderName: manager?.empName ?? '리더 미지정',
+        kpiName: kpi.kpiName,
+        category: kpi.policyCategory,
+        categoryLabel: getPolicyCategoryLabel2026(kpi.policyCategory),
+        mboStatus: params.operationalStatusByKpiId.get(kpi.id) ?? 'DRAFT',
+        resultWritingStatus: status,
+        resultDraftPresent,
+        evidencePresent,
+        personalContributionPresent,
+        measurableResultPresent,
+        targetActualComparisonPresent,
+        outputImpactPresent,
+        linkedOrgKpiId: kpi.linkedOrgKpiId ?? null,
+        linkedOrgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
+        approvedOrgGoalSource,
+        latestMonthlyRecordLabel: latestMonthly
+          ? `${latestMonthly.yearMonth}${typeof latestMonthly.achievementRate === 'number' ? ` · 달성률 ${latestMonthly.achievementRate}%` : ''}`
+          : null,
+        evidenceSourceCount,
+        warnings,
+        nextAction: getResultWritingNextAction2026(status),
+      } satisfies Evaluation2026ResultWritingReadinessRow
+    })
+    .sort((left, right) =>
+      left.divisionName.localeCompare(right.divisionName, 'ko') ||
+      left.departmentPath.localeCompare(right.departmentPath, 'ko') ||
+      left.employeeName.localeCompare(right.employeeName, 'ko') ||
+      left.kpiName.localeCompare(right.kpiName, 'ko')
+    )
+
+  const categoryWarningCounts = {
+    ORG_GOAL: 0,
+    PROJECT_T: 0,
+    PROJECT_K: 0,
+    DAILY_WORK: 0,
+    UNMAPPED: 0,
+  }
+  for (const row of rows) {
+    if (!row.warnings.length) continue
+    categoryWarningCounts[row.category ?? 'UNMAPPED'] += 1
+  }
+
+  const countWarning = (code: Evaluation2026ResultWritingWarningCode) =>
+    rows.filter((row) => row.warnings.some((warning) => warning.code === code)).length
+
+  return {
+    mode: 'READ_ONLY',
+    guidance: RESULT_WRITING_GUIDANCE_2026,
+    evidenceGuidance: RESULT_WRITING_EVIDENCE_GUIDANCE_2026,
+    leaderReviewChecklist: RESULT_WRITING_LEADER_REVIEW_CHECKLIST_2026,
+    exportColumns: [
+      'employeeNo',
+      'employeeName',
+      'email',
+      'division',
+      'departmentPath',
+      'leader',
+      'category',
+      'mboStatus',
+      'resultWritingStatus',
+      'kpiName',
+      'warnings',
+      'nextAction',
+    ],
+    summary: {
+      totalItemCount: rows.length,
+      resultDraftPresentCount: rows.filter((row) => row.resultDraftPresent).length,
+      missingResultCount: countWarning('MISSING_ACTUAL_RESULT'),
+      missingEvidenceCount: countWarning('MISSING_EVIDENCE'),
+      missingContributionCount: countWarning('MISSING_PERSONAL_CONTRIBUTION'),
+      missingMeasurableResultCount: countWarning('MISSING_MEASURABLE_RESULT'),
+      missingCategoryCount: countWarning('MISSING_CATEGORY'),
+      orgGoalSourceWarningCount: countWarning('ORG_GOAL_WITHOUT_APPROVED_SOURCE'),
+      dailyWorkDuplicateRiskCount: countWarning('DAILY_WORK_DUPLICATE_RISK'),
+      projectTkMissingDeliverableCount: countWarning('PROJECT_TK_MISSING_DELIVERABLE'),
+      aiEvidenceMixedCount: countWarning('AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE'),
+      leaderReviewWarningCount: rows.filter((row) => row.warnings.length > 0).length,
+      readyForReviewCount: rows.filter((row) => row.resultWritingStatus === 'READY_FOR_REVIEW').length,
+      warningItemCount: rows.filter((row) => row.warnings.length > 0).length,
+      categoryWarningCounts,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+    },
+    rows: rows.slice(0, params.limit),
+    safety: {
+      writesPerformed: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+      officialAiScoreExclusionEnabled: false,
+    },
+  }
 }
 
 function getMboSetupStatusActionLabel2026(status: Evaluation2026MboSetupMonitoringStatus) {
@@ -1192,7 +1679,9 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
         policyCategory: true,
         status: true,
         weight: true,
+        targetValue: true,
         targetValueT: true,
+        targetValueE: true,
         linkedOrgKpiId: true,
         linkedOrgKpi: {
           select: {
@@ -1222,6 +1711,25 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
             },
           },
         },
+        monthlyRecords: {
+          orderBy: {
+            yearMonth: 'desc',
+          },
+          take: 12,
+          select: {
+            id: true,
+            yearMonth: true,
+            actualValue: true,
+            achievementRate: true,
+            activities: true,
+            obstacles: true,
+            efforts: true,
+            evidenceComment: true,
+            attachments: true,
+            submittedAt: true,
+            isDraft: true,
+          },
+        },
       },
       orderBy: [{ employeeId: 'asc' }, { createdAt: 'asc' }],
     }),
@@ -1239,6 +1747,8 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
             id: true,
             personalKpiId: true,
             policyCategory: true,
+            itemComment: true,
+            targetAchievementLevel: true,
             personalKpi: {
               select: {
                 id: true,
@@ -1509,6 +2019,14 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     ).length,
     bulkMappingSavedCount: countPolicyCategoryMetadataSaves2026(auditLogs),
   }
+  const resultWritingReadiness = buildResultWritingReadiness2026({
+    activeEmployees: activeEmployees as ActiveEmployee2026[],
+    personalKpis: typedPersonalKpis,
+    selfEvaluations: selfEvaluations as ExistingSelfEvaluation2026[],
+    departmentsById,
+    operationalStatusByKpiId,
+    limit,
+  })
   const gradePolicyReadiness = await getEvaluation2026GradePolicyReadiness({
     db: db as never,
     evalCycleId: cycle.id,
@@ -1594,6 +2112,12 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     message: 'TEAM_MEMBER_SALES Super/Outstanding 등급 기준에 HR 확인이 필요합니다.',
     count: gradePolicyReadiness.teamMemberSalesAmbiguity.requiresDecision ? 1 : 0,
   })
+  addBlocker({
+    target: warnings,
+    code: 'RESULT_WRITING_READINESS_WARNINGS',
+    message: '2026 수행결과 작성 readiness warning이 남아 있습니다. 공식 점수/등급은 변경하지 않고 작성 품질만 점검합니다.',
+    count: resultWritingReadiness.summary.warningItemCount,
+  })
 
   if (selfEvaluationByTargetId.size > 0 && selfEvaluationByTargetId.size < Math.max(3, activeEmployees.length * 0.1)) {
     addBlocker({
@@ -1674,6 +2198,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     gradePolicyReadiness,
     teamKpiHrReviewCoverage,
     policyCategoryMappingReadiness,
+    resultWritingReadiness,
     blockers,
     warnings,
     safety: {
