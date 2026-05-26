@@ -128,6 +128,79 @@ function readySummary(overrides: Partial<any> = {}) {
   }
 }
 
+function readyGradePolicy(overrides: Partial<any> = {}) {
+  return {
+    persistence: {
+      available: true,
+      compatibilityIssue: null,
+    },
+    gradePolicyExists: true,
+    gradePolicyGroupsComplete: true,
+    missingRowsCount: 0,
+    differsFromPptCount: 0,
+    overlapCount: 0,
+    gapCount: 0,
+    teamMemberSalesAmbiguity: {
+      requiresDecision: false,
+    },
+    blockers: [],
+    ...overrides,
+  }
+}
+
+function readyPopulationDryRun(overrides: Partial<any> = {}) {
+  return {
+    selectedEvalCycle: {
+      id: 'cycle-official',
+      name: '2026 공식 평가',
+      year: 2026,
+      status: 'SELF_EVAL',
+      isOfficialReadinessTarget: true,
+    },
+    activeEmployeeCount: 10,
+    employeesMissingConfirmedPersonalKpiCount: 0,
+    policyCategoryMissingCount: 0,
+    divisionSalesMappingCoverage: {
+      unmappedDivisions: 0,
+    },
+    teamKpiHrReviewCoverage: {
+      pendingReviewCount: 0,
+      needsDiscussionCount: 0,
+      personalKpiOrgGoalWithoutApprovedSourceCount: 0,
+    },
+    scorePolicyReadiness: {
+      summary: {
+        violationsCount: 0,
+        aiExcludedConfirmation: true,
+      },
+    },
+    warnings: [],
+    safety: {
+      writesPerformed: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+      officialAiScoreExclusionEnabled: false,
+    },
+    ...overrides,
+  }
+}
+
+function findGate(result: any, id: string) {
+  const gate = result.officialActivationGates.find((item: any) => item.id === id)
+  assert.ok(gate, `missing gate ${id}`)
+  return gate
+}
+
+function findCondition(gate: any, code: string) {
+  const condition = gate.requiredConditions.find((item: any) => item.code === code)
+  assert.ok(condition, `missing condition ${code}`)
+  return condition
+}
+
 async function main() {
   const {
     getEvaluation2026ActivationReadiness,
@@ -241,6 +314,134 @@ async function main() {
     assert.equal(result.blockers.some((item) => item.code === 'OFFICIAL_READINESS_CYCLE_NOT_CONFIRMED'), true)
   })
 
+  await run('official activation gate remains blocked when confirmed KPI coverage is low', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        hrApprovalConfirmed: false,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun({
+        employeesMissingConfirmedPersonalKpiCount: 7,
+      }) as any,
+    })
+
+    const gate = findGate(result, 'BACKFILL_APPLY')
+    const condition = findCondition(gate, 'CONFIRMED_PERSONAL_KPI_COVERAGE')
+
+    assert.equal(gate.status, 'BLOCKED')
+    assert.equal(condition.status, 'BLOCKED')
+    assert.equal(condition.blockerCount, 7)
+  })
+
+  await run('backfill apply gate is blocked when policyCategory missing exists', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        hrApprovalConfirmed: false,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary({
+        missingPolicyCategoryCount: 2,
+      }),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun({
+        policyCategoryMissingCount: 2,
+      }) as any,
+    })
+
+    const gate = findGate(result, 'BACKFILL_APPLY')
+    const condition = findCondition(gate, 'POLICY_CATEGORY_MISSING_ZERO')
+
+    assert.equal(gate.status, 'BLOCKED')
+    assert.equal(condition.status, 'BLOCKED')
+    assert.equal(condition.blockerCount, 2)
+  })
+
+  await run('official scoring gate is blocked before backfill and HR approval', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        backfillExcluded: false,
+        hrApprovalConfirmed: false,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun() as any,
+    })
+
+    const gate = findGate(result, 'OFFICIAL_SCORING')
+
+    assert.equal(gate.status, 'BLOCKED')
+    assert.equal(findCondition(gate, 'BACKFILL_APPLIED_OR_NOT_REQUIRED').status, 'BLOCKED')
+    assert.equal(findCondition(gate, 'HR_APPROVAL_CONFIRMED').status, 'BLOCKED')
+    assert.equal(findCondition(gate, 'OFFICIAL_SCORING_FLAG_STILL_FALSE').status, 'READY')
+  })
+
+  await run('official grade gate is blocked when grade policy blockers remain', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: true,
+        hrApprovalConfirmed: true,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy({
+        overlapCount: 1,
+        blockers: [{ code: 'GRADE_POLICY_THRESHOLD_OVERLAP' }],
+      }) as any,
+      populationDryRun: readyPopulationDryRun() as any,
+    })
+
+    const gate = findGate(result, 'OFFICIAL_GRADE')
+
+    assert.equal(gate.status, 'BLOCKED')
+    assert.equal(findCondition(gate, 'GRADE_POLICY_BLOCKERS_RESOLVED').status, 'BLOCKED')
+    assert.equal(findCondition(gate, 'TEAM_MEMBER_SALES_AMBIGUITY_RESOLVED').status, 'READY')
+  })
+
+  await run('totalScore and gradeId write gates remain blocked before official finalization', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: true,
+        hrApprovalConfirmed: true,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun() as any,
+    })
+
+    const totalScoreGate = findGate(result, 'EVALUATION_TOTAL_SCORE_WRITE')
+    const gradeIdGate = findGate(result, 'EVALUATION_GRADE_ID_WRITE')
+
+    assert.equal(totalScoreGate.status, 'BLOCKED')
+    assert.equal(findCondition(totalScoreGate, 'OFFICIAL_SCORING_ACTIVE').status, 'BLOCKED')
+    assert.equal(gradeIdGate.status, 'BLOCKED')
+    assert.equal(findCondition(gradeIdGate, 'TOTAL_SCORE_FINALIZED').status, 'BLOCKED')
+    assert.equal(result.flags.officialScoringEnabled, false)
+    assert.equal(result.flags.officialGradeEnabled, false)
+    assert.equal(result.flags.aiScoreExclusionEnabled, false)
+  })
+
   await run('activation readiness can pass in a fully mocked ready state', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags(),
@@ -294,9 +495,16 @@ async function main() {
     assert.equal(routeSource.includes('export async function PATCH'), false)
     assert.equal(routeSource.includes('prisma.'), false)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/activation-readiness'), true)
-    assert.equal(clientSource.includes('2026 공식 전환 준비 상태'), true)
-    assert.equal(clientSource.includes('공식 점수에는 아직 반영되지 않습니다.'), true)
+    assert.equal(clientSource.includes('2026 공식 전환 Gate'), true)
+    assert.equal(clientSource.includes('이 화면은 공식 전환 가능 여부를 읽기 전용으로 점검합니다.'), true)
+    assert.equal(clientSource.includes('여기서는 backfill, 점수, 등급, feature flag를 실행하지 않습니다.'), true)
     assert.equal(clientSource.includes('활성화 버튼 없음'), true)
+    assert.equal(clientSource.includes('Backfill apply gate'), true)
+    assert.equal(clientSource.includes('Official scoring gate'), true)
+    assert.equal(clientSource.includes('AI score exclusion gate'), true)
+    assert.equal(clientSource.includes('Official grade gate'), true)
+    assert.equal(clientSource.includes('Evaluation.totalScore write gate'), true)
+    assert.equal(clientSource.includes('Evaluation.gradeId write gate'), true)
     assert.equal(clientSource.includes('공식 전환 실행'), false)
   })
 

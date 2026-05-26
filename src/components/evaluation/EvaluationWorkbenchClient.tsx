@@ -2884,11 +2884,13 @@ function PolicyActivationReadiness2026Panel(props: {
   const activation = props.activationData
   const blockers = activation?.blockers ?? []
   const warnings = activation?.warnings ?? []
+  const gates = activation?.officialActivationGates ?? []
+  const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
 
   return (
     <Panel
-      title="2026 공식 전환 준비 상태"
-      description="공식 점수에는 아직 반영되지 않습니다. 활성화하려면 migration, backfill, HR 확인, feature flag 승인이 필요합니다."
+      title="2026 공식 전환 Gate"
+      description="이 화면은 공식 전환 가능 여부를 읽기 전용으로 점검합니다. 여기서는 backfill, 점수, 등급, feature flag를 실행하지 않습니다."
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
@@ -2898,13 +2900,14 @@ function PolicyActivationReadiness2026Panel(props: {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="neutral">Status only</Badge>
-              <Badge tone={activation?.canActivate ? 'success' : activation ? 'warn' : 'neutral'}>
-                {activation?.canActivate ? '공식 전환 가능' : activation ? '공식 전환 불가' : '미확인'}
+              <Badge tone={gatesReady ? 'success' : activation ? 'warn' : 'neutral'}>
+                {gatesReady ? 'Gate ready' : activation ? 'Gate blocked' : '미확인'}
               </Badge>
               <Badge tone="neutral">활성화 버튼 없음</Badge>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              이 패널은 official scoring/grade/AI exclusion을 켜기 전 차단 조건만 읽기 전용으로 확인합니다.
+              backfill --apply, official scoring, official grade, AI score exclusion,
+              Evaluation.totalScore, Evaluation.gradeId write를 켜기 전 차단 조건만 확인합니다.
               저장 점수, 저장 등급, 제출, 확정, 보정 흐름은 변경하지 않습니다.
             </p>
           </div>
@@ -2946,11 +2949,11 @@ function PolicyActivationReadiness2026Panel(props: {
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard
-              label="남은 차단 항목"
-              value={blockers.length.toLocaleString()}
-              help="0이어야 전환 가능"
+              label="Gate blocked"
+              value={gates.filter((gate) => gate.status === 'BLOCKED').length.toLocaleString()}
+              help="공식 실행 전 해소"
               compact
-              variant={blockers.length > 0 ? 'warning' : 'default'}
+              variant={gates.some((gate) => gate.status === 'BLOCKED') ? 'warning' : 'default'}
             />
             <MetricCard
               label="Migration"
@@ -3000,11 +3003,101 @@ function PolicyActivationReadiness2026Panel(props: {
             />
           </div>
 
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">2026 공식 전환 Gate checklist</h4>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  각 gate는 필요한 조건, 현재 blocker 수, 차단 이유, 다음 HR action을 표시합니다. 실행 버튼은 제공하지 않습니다.
+                </p>
+              </div>
+              <Badge tone="neutral">read-only checklist</Badge>
+            </div>
+
+            {activation.populationDryRunError ? (
+              <div className="mt-3">
+                <Banner tone="warn" message={activation.populationDryRunError} />
+              </div>
+            ) : null}
+
+            <div className="mt-4 space-y-3">
+              {gates.map((gate) => (
+                <details
+                  key={gate.id}
+                  open={gate.status === 'BLOCKED'}
+                  className={`rounded-2xl border ${
+                    gate.status === 'READY'
+                      ? 'border-emerald-200 bg-emerald-50/40'
+                      : gate.status === 'NOT_APPLICABLE'
+                        ? 'border-slate-200 bg-slate-50'
+                        : 'border-amber-200 bg-amber-50/50'
+                  }`}
+                >
+                  <summary className="cursor-pointer list-none px-4 py-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone={gate.status === 'READY' ? 'success' : gate.status === 'BLOCKED' ? 'warn' : 'neutral'}>
+                            {gate.status}
+                          </Badge>
+                          <span className="text-sm font-semibold text-slate-900">{gate.title}</span>
+                          <span className="text-xs text-slate-500">blocker {gate.currentBlockerCount.toLocaleString()}건</span>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{gate.nextHrAction}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/70 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-600">
+                        {gate.safetyWarning}
+                      </div>
+                    </div>
+                  </summary>
+                  <div className="border-t border-white/70 px-4 pb-4 pt-3">
+                    {gate.blockedReasons.length ? (
+                      <div className="mb-3 rounded-xl border border-amber-200 bg-white px-3 py-2">
+                        <p className="text-xs font-semibold text-amber-800">차단 이유</p>
+                        <ul className="mt-2 space-y-1">
+                          {gate.blockedReasons.slice(0, 6).map((reason) => (
+                            <li key={reason} className="text-xs leading-5 text-amber-900">{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-xs">
+                        <thead className="text-slate-400">
+                          <tr>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">조건</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">상태</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">현재값</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">다음 HR action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white/80 text-slate-700">
+                          {gate.requiredConditions.map((item) => (
+                            <tr key={`${gate.id}-${item.code}`}>
+                              <td className="min-w-48 px-2 py-2 align-top font-semibold text-slate-900">{item.label}</td>
+                              <td className="px-2 py-2 align-top">
+                                <Badge tone={item.status === 'READY' ? 'success' : item.status === 'BLOCKED' ? 'warn' : 'neutral'}>
+                                  {item.status}
+                                </Badge>
+                              </td>
+                              <td className="min-w-36 px-2 py-2 align-top">{item.currentValue}</td>
+                              <td className="min-w-72 px-2 py-2 align-top">{item.nextHrAction}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-700" />
-                <h4 className="text-sm font-semibold text-amber-900">남은 차단 항목</h4>
+                <h4 className="text-sm font-semibold text-amber-900">Legacy activation blockers</h4>
               </div>
               {blockers.length ? (
                 <ul className="mt-3 space-y-2">
@@ -3067,7 +3160,9 @@ function PolicyActivationReadiness2026Panel(props: {
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-          HR 관리자가 공식 전환 전에 migration, backfill, HR 확인, feature flag 상태를 읽기 전용으로 점검할 수 있습니다.
+          HR 관리자가 공식 전환 전에 backfill, scoring, AI exclusion, grade, totalScore/gradeId write gate를 읽기 전용으로 점검할 수 있습니다.
+          확인 대상: Backfill apply gate, Official scoring gate, AI score exclusion gate, Official grade gate,
+          Evaluation.totalScore write gate, Evaluation.gradeId write gate.
         </div>
       )}
     </Panel>
