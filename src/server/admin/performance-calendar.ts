@@ -1,6 +1,14 @@
 import type { FeedbackRoundStatus, FeedbackRoundType, Prisma, SystemRole } from '@prisma/client'
 import { buildAdminGoogleAccessHref } from '@/lib/admin-google-access-tabs'
 import { readPolicy2026OfficialReadinessEnabled } from '@/lib/evaluation-policy-2026-preview-metadata'
+import {
+  EVALUATION_2026_SCHEDULE_STATUS_LABELS,
+  getEvaluation2026KoreaDateKey,
+  getEvaluation2026ScheduleWindowMap,
+  type Evaluation2026ScheduleWindow,
+  type Evaluation2026ScheduleWindowKey,
+  type Evaluation2026ScheduleWindowStatus,
+} from '@/lib/evaluation-2026-schedule-readiness'
 import { prisma } from '@/lib/prisma'
 import { parsePerformanceDesignConfig } from '@/lib/performance-design'
 import {
@@ -51,6 +59,8 @@ export type PerformanceOperationsMilestoneStatus =
   | 'BLOCKED'
   | 'NEEDS_REVIEW'
 
+export type PerformanceOperationsScheduleStatus = Evaluation2026ScheduleWindowStatus
+
 export type PerformanceOperationsOwnerRole =
   | 'HR'
   | 'TEAM_LEADER'
@@ -70,6 +80,10 @@ export type PerformanceOperationsChecklistItem = {
   id: string
   name: string
   plannedRangeLabel: string
+  scheduleWindowKey: Evaluation2026ScheduleWindowKey | null
+  scheduleStatus: PerformanceOperationsScheduleStatus
+  scheduleStatusLabel: string
+  relativeTimingLabel: string
   ownerRole: PerformanceOperationsOwnerRole
   ownerRoleLabel: string
   status: PerformanceOperationsMilestoneStatus
@@ -117,6 +131,16 @@ export type PerformanceOperationsChecklist = {
     totalMilestones: number
     blockerCount: number
     statusCounts: Record<PerformanceOperationsMilestoneStatus, number>
+    scheduleStatusCounts: Record<PerformanceOperationsScheduleStatus, number>
+  }
+  schedule: {
+    referenceDate: string
+    activeWindows: Array<{
+      key: Evaluation2026ScheduleWindowKey
+      label: string
+      recommendedAction: string
+      href: string
+    }>
   }
   nowActions: PerformanceOperationsChecklistAction[]
   milestones: PerformanceOperationsChecklistItem[]
@@ -152,6 +176,7 @@ export type PerformanceCalendarPageData = {
 type CalendarParams = {
   month?: string
   types?: PerformanceCalendarEventType[]
+  today?: string
 }
 
 type EvalCycleLite = {
@@ -315,6 +340,16 @@ const EMPTY_OPERATIONS_CHECKLIST: PerformanceOperationsChecklist = {
       BLOCKED: 0,
       NEEDS_REVIEW: 0,
     },
+    scheduleStatusCounts: {
+      UPCOMING: 0,
+      ACTIVE: 0,
+      CLOSED: 0,
+      NEEDS_SETUP: 0,
+    },
+  },
+  schedule: {
+    referenceDate: getEvaluation2026KoreaDateKey(),
+    activeWindows: [],
   },
   nowActions: [],
   milestones: [],
@@ -334,6 +369,13 @@ function parseMonthKey(input?: string) {
     month: now.getMonth() + 1,
     key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
   }
+}
+
+function parseReferenceDate(input?: string) {
+  if (input && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    return new Date(`${input}T12:00:00+09:00`)
+  }
+  return new Date()
 }
 
 function buildMonthRange(monthKey: string) {
@@ -826,6 +868,7 @@ function makeOperationsMilestone(params: {
   id: string
   name: string
   plannedRangeLabel: string
+  scheduleWindow?: Evaluation2026ScheduleWindow | null
   ownerRole: PerformanceOperationsOwnerRole
   status: PerformanceOperationsMilestoneStatus
   readinessLink: PerformanceOperationsReadinessLink
@@ -838,6 +881,11 @@ function makeOperationsMilestone(params: {
     id: params.id,
     name: params.name,
     plannedRangeLabel: params.plannedRangeLabel,
+    scheduleWindowKey: params.scheduleWindow?.key ?? null,
+    scheduleStatus: params.scheduleWindow?.status ?? 'NEEDS_SETUP',
+    scheduleStatusLabel:
+      params.scheduleWindow?.statusLabel ?? EVALUATION_2026_SCHEDULE_STATUS_LABELS.NEEDS_SETUP,
+    relativeTimingLabel: params.scheduleWindow?.relativeTimingLabel ?? 'HR 일정 metadata 확정 필요',
     ownerRole: params.ownerRole,
     ownerRoleLabel: OPERATIONS_OWNER_LABELS[params.ownerRole],
     status: params.status,
@@ -866,6 +914,19 @@ function buildStatusCounts(milestones: PerformanceOperationsChecklistItem[]) {
   return counts
 }
 
+function buildScheduleStatusCounts(milestones: PerformanceOperationsChecklistItem[]) {
+  const counts: Record<PerformanceOperationsScheduleStatus, number> = {
+    UPCOMING: 0,
+    ACTIVE: 0,
+    CLOSED: 0,
+    NEEDS_SETUP: 0,
+  }
+  for (const milestone of milestones) {
+    counts[milestone.scheduleStatus] += 1
+  }
+  return counts
+}
+
 function buildNowActions(milestones: PerformanceOperationsChecklistItem[]) {
   return milestones
     .filter((milestone) => milestone.status === 'BLOCKED' || milestone.status === 'NEEDS_REVIEW')
@@ -885,6 +946,7 @@ function buildOperationsChecklist(params: {
   readiness: Evaluation2026ReadinessPopulationDryRun | null
   assignmentCoverage: PerformanceOperationsAssignmentCoverage | null
   aiReadiness: PerformanceOperationsAiReadiness | null
+  referenceDate: Date
 }): PerformanceOperationsChecklist {
   const cycle = selectOperationsCycle({
     evalCycles: params.evalCycles,
@@ -906,12 +968,14 @@ function buildOperationsChecklist(params: {
         (params.aiReadiness?.needsRevisionCount ?? 0) +
         (params.aiReadiness?.pendingReviewCount ?? 0)
   const feedbackRoundCount = params.feedbackRounds.filter((round) => round.evalCycle.id === cycle?.id).length
+  const scheduleWindows = getEvaluation2026ScheduleWindowMap(params.referenceDate)
 
   const milestones: PerformanceOperationsChecklistItem[] = [
     makeOperationsMilestone({
       id: 'member-goal-setup-confirm',
       name: '팀원 업적목표 수립 및 확정',
       plannedRangeLabel: dateRangeLabel(cycle?.kpiSetupStart, cycle?.kpiSetupEnd),
+      scheduleWindow: scheduleWindows.MBO_SETUP,
       ownerRole: 'EMPLOYEE',
       status: statusForBlockers(mboMissing + confirmedMissing, confirmedMissing === 0 && mboMissing === 0 ? 'DONE' : 'IN_PROGRESS'),
       readinessLink: 'MBO_COVERAGE',
@@ -924,6 +988,7 @@ function buildOperationsChecklist(params: {
       id: 'org-goal-kpi-adjustment',
       name: '2026 조직목표 KPI 조정',
       plannedRangeLabel: dateRangeLabel(cycle?.kpiSetupStart, cycle?.kpiSetupEnd),
+      scheduleWindow: scheduleWindows.ORG_KPI_ADJUSTMENT,
       ownerRole: 'DIVISION_HEAD',
       status: teamKpiPending > 0 ? 'NEEDS_REVIEW' : 'IN_PROGRESS',
       readinessLink: 'TEAM_KPI_REVIEW',
@@ -936,6 +1001,7 @@ function buildOperationsChecklist(params: {
       id: 'policy-briefing',
       name: '조직장/팀원 설명회',
       plannedRangeLabel: 'PPT 운영 일정 기준',
+      scheduleWindow: null,
       ownerRole: 'HR',
       status: 'NEEDS_REVIEW',
       readinessLink: 'PERFORMANCE_CALENDAR',
@@ -948,6 +1014,7 @@ function buildOperationsChecklist(params: {
       id: 'team-kpi-finalization',
       name: '본부 KPI 외 팀 KPI 확정',
       plannedRangeLabel: 'MBO 확정 전',
+      scheduleWindow: scheduleWindows.TEAM_KPI_CONFIRMATION,
       ownerRole: 'HR',
       status: teamKpiPending > 0 ? 'BLOCKED' : 'DONE',
       readinessLink: 'TEAM_KPI_REVIEW',
@@ -960,6 +1027,7 @@ function buildOperationsChecklist(params: {
       id: 'personal-goal-card-update',
       name: '팀원 개인업적목표관리카드 수정',
       plannedRangeLabel: '팀 KPI HR 결정 후',
+      scheduleWindow: scheduleWindows.MBO_REVISION,
       ownerRole: 'EMPLOYEE',
       status: statusForBlockers(policyCategoryMissing, policyCategoryMissing === 0 ? 'DONE' : 'IN_PROGRESS'),
       readinessLink: 'MBO_COVERAGE',
@@ -971,7 +1039,8 @@ function buildOperationsChecklist(params: {
     makeOperationsMilestone({
       id: 'mid-review-feedback',
       name: '업무목표 중간 점검/피드백',
-      plannedRangeLabel: '상반기/하반기 중간 점검 기간',
+      plannedRangeLabel: scheduleWindows.MID_CHECK.plannedRangeLabel,
+      scheduleWindow: scheduleWindows.MID_CHECK,
       ownerRole: 'TEAM_LEADER',
       status: 'NOT_STARTED',
       readinessLink: 'PERFORMANCE_CALENDAR',
@@ -983,7 +1052,8 @@ function buildOperationsChecklist(params: {
     makeOperationsMilestone({
       id: 'goal-change-request',
       name: '업무목표 변경 신청 기간',
-      plannedRangeLabel: '중간 점검 후 HR 지정 기간',
+      plannedRangeLabel: scheduleWindows.GOAL_CHANGE_REQUEST.plannedRangeLabel,
+      scheduleWindow: scheduleWindows.GOAL_CHANGE_REQUEST,
       ownerRole: 'EMPLOYEE',
       status: 'NOT_STARTED',
       readinessLink: 'PERFORMANCE_CALENDAR',
@@ -995,7 +1065,8 @@ function buildOperationsChecklist(params: {
     makeOperationsMilestone({
       id: 'performance-result-writing',
       name: '2026 업적목표 수행결과 작성',
-      plannedRangeLabel: dateRangeLabel(cycle?.selfEvalStart, cycle?.selfEvalEnd, '평가 시작 전 HR 일정 입력 필요'),
+      plannedRangeLabel: scheduleWindows.RESULT_WRITING.plannedRangeLabel,
+      scheduleWindow: scheduleWindows.RESULT_WRITING,
       ownerRole: 'EMPLOYEE',
       status: assignmentTargets > 0 ? 'NOT_STARTED' : 'BLOCKED',
       readinessLink: 'ASSIGNMENT_SYNC',
@@ -1007,7 +1078,8 @@ function buildOperationsChecklist(params: {
     makeOperationsMilestone({
       id: 'org-evaluation-close',
       name: '2026 조직평가 종료',
-      plannedRangeLabel: dateRangeLabel(cycle?.finalEvalStart, cycle?.finalEvalEnd, '최종 평가 종료 전'),
+      plannedRangeLabel: scheduleWindows.ORG_EVALUATION_CLOSE.plannedRangeLabel,
+      scheduleWindow: scheduleWindows.ORG_EVALUATION_CLOSE,
       ownerRole: 'HR',
       status: gradeBlockers > 0 ? 'BLOCKED' : 'NEEDS_REVIEW',
       readinessLink: 'GRADE_POLICY_READINESS',
@@ -1020,6 +1092,7 @@ function buildOperationsChecklist(params: {
       id: 'ai-competency-submission',
       name: 'AI 활용 평가 제출',
       plannedRangeLabel: '레벨업/승진 Pass/Fail 별도 운영',
+      scheduleWindow: scheduleWindows.AI_EVIDENCE_SUBMISSION,
       ownerRole: 'EMPLOYEE',
       status: statusForBlockers(aiMissing, params.aiReadiness?.targetCount ? 'IN_PROGRESS' : 'BLOCKED'),
       readinessLink: 'AI_PASS_FAIL_READINESS',
@@ -1032,6 +1105,7 @@ function buildOperationsChecklist(params: {
       id: 'second-360-review',
       name: '2차 다면평가',
       plannedRangeLabel: 'PPT 운영 일정 기준',
+      scheduleWindow: scheduleWindows.SECOND_360_REVIEW,
       ownerRole: 'HR',
       status: feedbackRoundCount > 0 ? 'IN_PROGRESS' : 'NEEDS_REVIEW',
       readinessLink: 'PERFORMANCE_CALENDAR',
@@ -1044,6 +1118,7 @@ function buildOperationsChecklist(params: {
       id: 'leadership-diagnosis',
       name: '리더십 진단',
       plannedRangeLabel: '다면평가/조직평가 일정과 연계',
+      scheduleWindow: scheduleWindows.LEADERSHIP_DIAGNOSIS,
       ownerRole: 'HR',
       status: 'NEEDS_REVIEW',
       readinessLink: 'PERFORMANCE_CALENDAR',
@@ -1056,6 +1131,7 @@ function buildOperationsChecklist(params: {
       id: 'ai-case-accumulation',
       name: 'AI 사례 준비 및 축적',
       plannedRangeLabel: '2026~2027 상시 축적',
+      scheduleWindow: null,
       ownerRole: 'EMPLOYEE',
       status: aiMissing > 0 ? 'IN_PROGRESS' : 'DONE',
       readinessLink: 'AI_PASS_FAIL_READINESS',
@@ -1067,6 +1143,16 @@ function buildOperationsChecklist(params: {
   ]
 
   const statusCounts = buildStatusCounts(milestones)
+  const scheduleStatusCounts = buildScheduleStatusCounts(milestones)
+  const activeWindows = Object.values(scheduleWindows)
+    .filter((window) => window.status === 'ACTIVE')
+    .map((window) => ({
+      key: window.key,
+      label: window.label,
+      recommendedAction: window.recommendedAction,
+      href: window.href,
+    }))
+
   return {
     ...EMPTY_OPERATIONS_CHECKLIST,
     selectedCycleId: cycle?.id ?? null,
@@ -1078,6 +1164,11 @@ function buildOperationsChecklist(params: {
       totalMilestones: milestones.length,
       blockerCount: milestones.reduce((sum, milestone) => sum + milestone.blockerCount, 0),
       statusCounts,
+      scheduleStatusCounts,
+    },
+    schedule: {
+      referenceDate: getEvaluation2026KoreaDateKey(params.referenceDate),
+      activeWindows,
     },
     nowActions: buildNowActions(milestones),
     milestones,
@@ -1089,6 +1180,8 @@ export async function getPerformanceCalendarPageData(
   params: CalendarParams = {},
   deps: CalendarDeps = buildDefaultDeps()
 ): Promise<PerformanceCalendarPageData> {
+  const referenceDate = parseReferenceDate(params.today)
+
   if (session.user?.role !== 'ROLE_ADMIN') {
     return {
       state: 'permission-denied',
@@ -1201,6 +1294,7 @@ export async function getPerformanceCalendarPageData(
       readiness,
       assignmentCoverage,
       aiReadiness,
+      referenceDate,
     })
 
     return {

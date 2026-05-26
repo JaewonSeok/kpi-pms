@@ -487,6 +487,15 @@ async function main() {
     assert.equal(source.includes('title={generateSummaryActionState.reason}'), true)
   })
 
+  await run('monthly KPI client shows non-blocking 2026 mid-check schedule guidance', () => {
+    const source = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
+    const scheduleSource = read('src/lib/evaluation-2026-schedule-readiness.ts')
+
+    assert.equal(source.includes('2026 중간 점검 schedule guidance'), true)
+    assert.equal(scheduleSource.includes('중간 점검/피드백 기간입니다. 목표 유효성, 기대 기준, 다음 액션을 정리해 주세요.'), true)
+    assert.equal(source.includes('저장/제출을 강제하지 않는 안내입니다.'), true)
+  })
+
   await run('monthly KPI client exposes mixed evidence controls and labels in the existing attachment section', () => {
     const source = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
     assert.equal(source.includes('구글 드라이브 링크'), true)

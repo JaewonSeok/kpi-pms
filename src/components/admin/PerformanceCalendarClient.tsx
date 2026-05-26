@@ -9,6 +9,7 @@ import type {
   PerformanceCalendarEventType,
   PerformanceOperationsMilestoneStatus,
   PerformanceOperationsOwnerRole,
+  PerformanceOperationsScheduleStatus,
   PerformanceCalendarPageData,
 } from '@/server/admin/performance-calendar'
 
@@ -36,6 +37,13 @@ const OPERATIONS_STATUS_STYLES: Record<PerformanceOperationsMilestoneStatus, str
   NEEDS_REVIEW: 'border-amber-200 bg-amber-50 text-amber-700',
 }
 
+const SCHEDULE_STATUS_STYLES: Record<PerformanceOperationsScheduleStatus, string> = {
+  UPCOMING: 'border-slate-200 bg-slate-50 text-slate-600',
+  ACTIVE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  CLOSED: 'border-slate-200 bg-white text-slate-500',
+  NEEDS_SETUP: 'border-amber-200 bg-amber-50 text-amber-700',
+}
+
 const OWNER_FILTER_LABELS: Record<PerformanceOperationsOwnerRole | 'ALL', string> = {
   ALL: '전체 owner',
   HR: 'HR',
@@ -52,6 +60,14 @@ const STATUS_FILTER_LABELS: Record<PerformanceOperationsMilestoneStatus | 'ALL',
   DONE: '완료',
   BLOCKED: 'blocker 있음',
   NEEDS_REVIEW: '검토 필요',
+}
+
+const SCHEDULE_STATUS_FILTER_LABELS: Record<PerformanceOperationsScheduleStatus | 'ALL', string> = {
+  ALL: '전체 일정',
+  UPCOMING: '예정',
+  ACTIVE: '진행 중',
+  CLOSED: '종료',
+  NEEDS_SETUP: '일정 확정 필요',
 }
 
 const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토']
@@ -88,6 +104,7 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
   const [isPending, startTransition] = useTransition()
   const [selectedEventId, setSelectedEventId] = useState<string>(data.events[0]?.id ?? '')
   const [operationsStatusFilter, setOperationsStatusFilter] = useState<PerformanceOperationsMilestoneStatus | 'ALL'>('ALL')
+  const [operationsScheduleFilter, setOperationsScheduleFilter] = useState<PerformanceOperationsScheduleStatus | 'ALL'>('ALL')
   const [operationsOwnerFilter, setOperationsOwnerFilter] = useState<PerformanceOperationsOwnerRole | 'ALL'>('ALL')
   const calendarContextKey = `${data.month}:${data.selectedTypes.join(',')}`
   const previousContextKey = useRef(calendarContextKey)
@@ -112,8 +129,9 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
   const selectedEvent = data.events.find((item) => item.id === selectedEventId) ?? data.events[0] ?? null
   const filteredOperationsMilestones = data.operationsChecklist.milestones.filter((milestone) => {
     const statusMatches = operationsStatusFilter === 'ALL' || milestone.status === operationsStatusFilter
+    const scheduleMatches = operationsScheduleFilter === 'ALL' || milestone.scheduleStatus === operationsScheduleFilter
     const ownerMatches = operationsOwnerFilter === 'ALL' || milestone.ownerRole === operationsOwnerFilter
-    return statusMatches && ownerMatches
+    return statusMatches && scheduleMatches && ownerMatches
   })
 
   function pushQuery(nextMonth: string, nextTypes: PerformanceCalendarEventType[]) {
@@ -202,18 +220,42 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
             <div className="mt-1">
               공식 readiness 대상: {data.operationsChecklist.selectedCycleIsOfficialReadinessTarget ? '예' : '아니오'}
             </div>
+            <div className="mt-1">
+              현재 기준: {data.operationsChecklist.schedule.referenceDate}
+            </div>
             <div className="mt-2 text-xs text-slate-500">
               저장 방식: {data.operationsChecklist.persistence.saveImplemented ? 'metadata 저장' : 'read-only'}
             </div>
           </div>
         </div>
 
+        <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <div className="font-semibold">2026 schedule gate readiness</div>
+          {data.operationsChecklist.schedule.activeWindows.length ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {data.operationsChecklist.schedule.activeWindows.map((window) => (
+                <Link
+                  key={window.key}
+                  href={window.href}
+                  className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-50"
+                >
+                  {window.label} · {window.recommendedAction}
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-blue-800">
+              현재 ACTIVE 일정 창은 없습니다. 일정 미확정 항목은 NEEDS_SETUP으로 표시합니다.
+            </p>
+          )}
+        </div>
+
         <div className="mt-5 grid gap-3 md:grid-cols-5">
           <MetricCard label="운영 milestone" value={`${data.operationsChecklist.summary.totalMilestones}건`} />
           <MetricCard label="blocker" value={`${data.operationsChecklist.summary.blockerCount}건`} />
-          <MetricCard label="진행 중" value={`${data.operationsChecklist.summary.statusCounts.IN_PROGRESS}건`} />
+          <MetricCard label="ACTIVE window" value={`${data.operationsChecklist.summary.scheduleStatusCounts.ACTIVE}건`} />
+          <MetricCard label="NEEDS_SETUP" value={`${data.operationsChecklist.summary.scheduleStatusCounts.NEEDS_SETUP}건`} />
           <MetricCard label="검토 필요" value={`${data.operationsChecklist.summary.statusCounts.NEEDS_REVIEW}건`} />
-          <MetricCard label="완료" value={`${data.operationsChecklist.summary.statusCounts.DONE}건`} />
         </div>
 
         <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -242,21 +284,39 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
         </div>
 
         <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            {Object.entries(STATUS_FILTER_LABELS).map(([status, label]) => (
-              <button
-                key={status}
-                type="button"
-                onClick={() => setOperationsStatusFilter(status as PerformanceOperationsMilestoneStatus | 'ALL')}
-                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
-                  operationsStatusFilter === status
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {Object.entries(STATUS_FILTER_LABELS).map(([status, label]) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setOperationsStatusFilter(status as PerformanceOperationsMilestoneStatus | 'ALL')}
+                  className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                    operationsStatusFilter === status
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {Object.entries(SCHEDULE_STATUS_FILTER_LABELS).map(([status, label]) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setOperationsScheduleFilter(status as PerformanceOperationsScheduleStatus | 'ALL')}
+                  className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                    operationsScheduleFilter === status
+                      ? 'border-blue-700 bg-blue-700 text-white'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           <select
             value={operationsOwnerFilter}
@@ -275,6 +335,7 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
               <tr>
                 <th className="px-4 py-3">milestone</th>
                 <th className="px-4 py-3">owner</th>
+                <th className="px-4 py-3">schedule</th>
                 <th className="px-4 py-3">상태</th>
                 <th className="px-4 py-3">readiness</th>
                 <th className="px-4 py-3">blocker</th>
@@ -290,6 +351,12 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
                     <div className="mt-2 text-xs leading-5 text-slate-500">{milestone.note}</div>
                   </td>
                   <td className="px-4 py-4 align-top text-slate-700">{milestone.ownerRoleLabel}</td>
+                  <td className="px-4 py-4 align-top">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${SCHEDULE_STATUS_STYLES[milestone.scheduleStatus]}`}>
+                      {milestone.scheduleStatusLabel}
+                    </span>
+                    <div className="mt-1 text-xs text-slate-500">{milestone.relativeTimingLabel}</div>
+                  </td>
                   <td className="px-4 py-4 align-top">
                     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${OPERATIONS_STATUS_STYLES[milestone.status]}`}>
                       {milestone.statusLabel}
@@ -323,9 +390,15 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
               href={milestone.href}
               className={`rounded-2xl border px-4 py-3 transition hover:bg-slate-50 ${OPERATIONS_STATUS_STYLES[milestone.status]}`}
             >
-              <div className="text-xs font-semibold">{milestone.statusLabel}</div>
+              <div className="flex flex-wrap gap-1.5 text-xs font-semibold">
+                <span>{milestone.statusLabel}</span>
+                <span className={`rounded-full border px-2 py-0.5 ${SCHEDULE_STATUS_STYLES[milestone.scheduleStatus]}`}>
+                  {milestone.scheduleStatusLabel}
+                </span>
+              </div>
               <div className="mt-2 text-sm font-semibold text-slate-900">{milestone.name}</div>
               <div className="mt-1 text-xs text-slate-500">{milestone.plannedRangeLabel}</div>
+              <div className="mt-1 text-xs text-slate-500">{milestone.relativeTimingLabel}</div>
             </Link>
           ))}
         </div>

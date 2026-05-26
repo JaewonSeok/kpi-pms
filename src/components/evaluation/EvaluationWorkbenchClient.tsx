@@ -37,6 +37,7 @@ import {
   normalizeEvaluationPerformanceBriefingSnapshot,
   type EvaluationPerformanceBriefingSnapshot,
 } from '@/lib/evaluation-performance-briefing'
+import { getResultWritingScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 import { EvaluationPerformanceBriefingPanel } from '@/components/evaluation/EvaluationPerformanceBriefingPanel'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
@@ -1408,6 +1409,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         adminSummary.biasWarningCount > 0 ||
         adminSummary.coachingGapCount > 0)
   )
+  const resultWritingScheduleGuidance2026 = getResultWritingScheduleGuidance()
 
   return (
     <div className="space-y-5">
@@ -1548,6 +1550,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       {notice ? <Banner tone="success" message={notice} /> : null}
       {errorNotice ? <Banner tone="error" message={errorNotice} /> : null}
       {props.alerts?.map((alert) => <Banner key={alert} tone="warn" message={alert} />)}
+      {resultWritingScheduleGuidance2026.isActive ? (
+        <Banner tone="warn" message={`${resultWritingScheduleGuidance2026.message} 이 안내는 preview guidance이며 Evaluation/EvaluationItem을 생성하지 않습니다.`} />
+      ) : null}
 
       {/* A. My Action Items — actionable evaluations surfaced from props.evaluations. */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
