@@ -170,6 +170,8 @@ function makeDb(
   options: {
     departments?: any[]
     employees?: any[]
+    personalKpis?: any[]
+    auditLogs?: any[]
   } = {}
 ) {
   const cycles = new Map<string, any>()
@@ -210,12 +212,17 @@ function makeDb(
     for (const item of evaluation.items) {
       item.evaluationId = evaluation.id
       item.personalKpiId = item.personalKpi.id
+      item.personalKpi.employeeId = item.personalKpi.employeeId ?? evaluation.targetId
+      item.personalKpi.evalYear = item.personalKpi.evalYear ?? evaluation.evalCycle.evalYear
       itemsById.set(item.id, item)
       personalKpisById.set(item.personalKpi.id, item.personalKpi)
     }
   }
   for (const employee of options.employees ?? []) {
     employeesById.set(employee.id, employee)
+  }
+  for (const personalKpi of options.personalKpis ?? []) {
+    personalKpisById.set(personalKpi.id, personalKpi)
   }
 
   const db = {
@@ -264,6 +271,50 @@ function makeDb(
       },
     },
     personalKpi: {
+      findMany: async (args: any) =>
+        Array.from(personalKpisById.values())
+          .filter((personalKpi) => {
+            if (args?.where?.evalYear && personalKpi.evalYear !== args.where.evalYear) return false
+            const employeeIds = args?.where?.employeeId?.in
+            if (Array.isArray(employeeIds) && !employeeIds.includes(personalKpi.employeeId)) return false
+            return true
+          })
+          .map((personalKpi) => ({
+            ...personalKpi,
+            employee: employeesById.get(personalKpi.employeeId),
+            evaluationItems: Array.from(itemsById.values())
+              .filter((item) => item.personalKpiId === personalKpi.id)
+              .map((item) => {
+                const evaluation = evaluationsById.get(item.evaluationId)
+                return {
+                  id: item.id,
+                  evaluationId: item.evaluationId,
+                  policyCategory: item.policyCategory,
+                  scoreContributionType: item.scoreContributionType ?? null,
+                  policyFormulaVersion: item.policyFormulaVersion ?? null,
+                  evaluation: evaluation
+                    ? {
+                        id: evaluation.id,
+                        evalCycleId: evaluation.evalCycleId,
+                        evalStage: evaluation.evalStage,
+                        targetId: evaluation.targetId,
+                      }
+                    : null,
+                }
+              }),
+          })),
+      findUnique: async (args: any) => {
+        const personalKpi = personalKpisById.get(args?.where?.id)
+        return personalKpi
+          ? {
+              id: personalKpi.id,
+              policyCategory: personalKpi.policyCategory ?? null,
+              policyCategoryConfidence: personalKpi.policyCategoryConfidence ?? null,
+              policyCategorySource: personalKpi.policyCategorySource ?? null,
+              policyCategoryReviewNote: personalKpi.policyCategoryReviewNote ?? null,
+            }
+          : null
+      },
       update: async (args: any) => {
         writes.personalKpi += 1
         const personalKpi = personalKpisById.get(args.where.id)
@@ -299,6 +350,9 @@ function makeDb(
     aiCompetencyGateAssignment: {
       findFirst: async () => null,
     },
+    auditLog: {
+      findMany: async () => options.auditLogs ?? [],
+    },
   } as any
 
   return {
@@ -308,6 +362,7 @@ function makeDb(
       writes.audit += 1
     },
     getEvaluation: (id: string) => evaluationsById.get(id),
+    getPersonalKpi: (id: string) => personalKpisById.get(id),
   }
 }
 
@@ -512,8 +567,119 @@ async function main() {
     assert.equal(payload.divisionSalesGroupCandidates.some((candidate) => candidate.divisionId === 'dept-sales-division'), true)
     assert.equal(payload.departmentSalesGroupCandidates.some((candidate) => candidate.departmentId === 'dept-team'), true)
     assert.equal(payload.salesGroupCandidates.length, 0)
+    assert.equal(payload.policyCategoryWorkbenchItems.length >= 1, true)
+    assert.equal(payload.policyCategoryWorkbenchItems[0]?.personalKpiId, 'kpi-missing')
+    assert.equal(payload.policyCategoryWorkbenchItems[0]?.itemSource, 'EvaluationItem')
     assert.equal(payload.persistence.divisionSalesGroup.includes('salesGroupsByDivisionId'), true)
     assert.equal(payload.persistence.departmentSalesGroup.includes('salesGroupsByDepartmentId'), true)
+  })
+
+  await run('policyCategory workbench suggests ORG_GOAL for linked division KPI', async () => {
+    const evaluation = makeEvaluation({
+      items: [
+        makeItem({
+          id: 'division-linked-item',
+          policyCategory: null,
+          personalKpi: {
+            id: 'kpi-division-linked',
+            kpiName: '본부 성장 연계 목표',
+            policyCategory: null,
+            linkedOrgKpiId: 'org-division',
+            linkedOrgKpi: {
+              id: 'org-division',
+              kpiName: '본부 성장',
+              department: { id: 'dept-division', deptName: '경영지원본부', parentDeptId: null },
+            },
+          },
+        }),
+      ],
+    })
+    const fake = makeDb([evaluation])
+    const payload = await getEvaluationPolicy2026MappingCandidatesForSession(
+      { session: makeSession('ROLE_ADMIN'), cycleId: 'cycle-2026' },
+      { db: fake.db }
+    )
+    const row = payload.policyCategoryWorkbenchItems.find((item) => item.personalKpiId === 'kpi-division-linked')
+    assert.equal(row?.suggestedPolicyCategory, 'ORG_GOAL')
+    assert.equal(row?.sourceConfidence, 'HIGH')
+    assert.equal(row?.hasHrApprovedSource, true)
+  })
+
+  await run('policyCategory workbench reflects team KPI HR decisions', async () => {
+    const evaluation = makeEvaluation({
+      items: [
+        makeItem({
+          id: 'team-approved',
+          policyCategory: null,
+          personalKpi: {
+            id: 'kpi-team-approved',
+            kpiName: '팀 승인 KPI 연계',
+            policyCategory: null,
+            linkedOrgKpiId: 'team-approved-org',
+            linkedOrgKpi: {
+              id: 'team-approved-org',
+              kpiName: '승인 팀 KPI',
+              department: { id: 'dept-team', deptName: '인사팀', parentDeptId: 'dept-division' },
+              teamKpiReviewItems: [{ verdict: 'ADEQUATE' }],
+            },
+          },
+        }),
+        makeItem({
+          id: 'team-excluded',
+          policyCategory: null,
+          personalKpi: {
+            id: 'kpi-team-excluded',
+            kpiName: '제외 팀 KPI 연계',
+            policyCategory: null,
+            linkedOrgKpiId: 'team-excluded-org',
+            linkedOrgKpi: {
+              id: 'team-excluded-org',
+              kpiName: '제외 팀 KPI',
+              department: { id: 'dept-team', deptName: '인사팀', parentDeptId: 'dept-division' },
+              teamKpiReviewItems: [{ verdict: 'INSUFFICIENT' }],
+            },
+          },
+        }),
+        makeItem({
+          id: 'team-discussion',
+          policyCategory: null,
+          personalKpi: {
+            id: 'kpi-team-discussion',
+            kpiName: '논의 팀 KPI 연계',
+            policyCategory: null,
+            linkedOrgKpiId: 'team-discussion-org',
+            linkedOrgKpi: {
+              id: 'team-discussion-org',
+              kpiName: '논의 팀 KPI',
+              department: { id: 'dept-team', deptName: '인사팀', parentDeptId: 'dept-division' },
+              teamKpiReviewItems: [{ verdict: 'CAUTION' }],
+            },
+          },
+        }),
+        makeItem({
+          id: 'no-signal',
+          policyCategory: null,
+          personalKpi: {
+            id: 'kpi-no-signal',
+            kpiName: '새로운 목표',
+            policyCategory: null,
+            linkedOrgKpiId: null,
+            linkedOrgKpi: null,
+          },
+        }),
+      ],
+    })
+    const fake = makeDb([evaluation])
+    const payload = await getEvaluationPolicy2026MappingCandidatesForSession(
+      { session: makeSession('ROLE_ADMIN'), cycleId: 'cycle-2026' },
+      { db: fake.db }
+    )
+    const byKpi = new Map(payload.policyCategoryWorkbenchItems.map((item) => [item.personalKpiId, item]))
+    assert.equal(byKpi.get('kpi-team-approved')?.suggestedPolicyCategory, 'ORG_GOAL')
+    assert.equal(byKpi.get('kpi-team-approved')?.hasHrApprovedSource, true)
+    assert.equal(byKpi.get('kpi-team-excluded')?.suggestedPolicyCategory, 'DAILY_WORK')
+    assert.equal(byKpi.get('kpi-team-discussion')?.suggestedPolicyCategory, 'MANUAL_REVIEW')
+    assert.equal(byKpi.get('kpi-no-signal')?.suggestedPolicyCategory, 'MANUAL_REVIEW')
   })
 
   await run('all active divisions appear in mapping candidates even when current cycle targets one division', async () => {
@@ -603,6 +769,7 @@ async function main() {
         session: makeSession('ROLE_ADMIN'),
         input: {
           itemMappings: [],
+          policyCategoryMappings: [],
           divisionSalesGroupMappings: [
             {
               evalCycleId: 'cycle-2026',
@@ -654,6 +821,7 @@ async function main() {
         session: makeSession('ROLE_ADMIN'),
         input: {
           itemMappings: [],
+          policyCategoryMappings: [],
           divisionSalesGroupMappings: [],
           departmentSalesGroupMappings: [
             {
@@ -737,6 +905,7 @@ async function main() {
               note: 'HR confirmed as organization goal',
             },
           ],
+          policyCategoryMappings: [],
           divisionSalesGroupMappings: [
             {
               evalCycleId: 'cycle-2026',
@@ -797,6 +966,7 @@ async function main() {
                   category: 'ORG_GOAL',
                 },
               ],
+              policyCategoryMappings: [],
               divisionSalesGroupMappings: [],
               departmentSalesGroupMappings: [],
               salesGroupMappings: [],
@@ -809,6 +979,98 @@ async function main() {
     )
     assert.equal(fake.writes.evaluationItem, 0)
     assert.equal(fake.writes.personalKpi, 0)
+  })
+
+  await run('admin can bulk-save policyCategory metadata for PersonalKpi and EvaluationItem without creating evaluations', async () => {
+    const evaluation = makeEvaluation({
+      items: [
+        makeItem({
+          id: 'bulk-eval-item',
+          policyCategory: null,
+          personalKpi: {
+            id: 'kpi-bulk-eval',
+            kpiName: '프로젝트 T 전환',
+            policyCategory: null,
+            linkedOrgKpiId: null,
+            linkedOrgKpi: null,
+          },
+        }),
+      ],
+    })
+    const personalOnly = {
+      id: 'kpi-personal-only',
+      employeeId: 'emp-target',
+      evalYear: 2026,
+      kpiName: '운영 업무',
+      definition: '정기 운영 업무',
+      formula: null,
+      tags: null,
+      policyCategory: null,
+      kpiType: 'QUALITATIVE',
+      weight: 20,
+      linkedOrgKpiId: null,
+      linkedOrgKpi: null,
+    }
+    const fake = makeDb([evaluation], { personalKpis: [personalOnly] })
+    assert.equal(fake.getPersonalKpi('kpi-bulk-eval').policyCategory, null)
+
+    await updateEvaluationPolicy2026MetadataForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          itemMappings: [],
+          policyCategoryMappings: [
+            {
+              personalKpiId: 'kpi-bulk-eval',
+              evaluationItemId: 'bulk-eval-item',
+              category: 'PROJECT_T',
+              scoreContributionType: 'PERSONAL',
+              note: 'bulk HR mapping',
+            },
+            {
+              personalKpiId: 'kpi-personal-only',
+              category: 'DAILY_WORK',
+              note: 'personal KPI only mapping',
+            },
+          ],
+          divisionSalesGroupMappings: [],
+          departmentSalesGroupMappings: [],
+          salesGroupMappings: [],
+          thresholdDecisions: [],
+        },
+      },
+      { db: fake.db, audit: fake.audit }
+    )
+
+    const updated = fake.getEvaluation('eval-1')
+    assert.equal(updated.totalScore, 88)
+    assert.equal(updated.gradeId, 'grade-official')
+    assert.equal(updated.items[0].policyCategory, 'PROJECT_T')
+    assert.equal(updated.items[0].scoreContributionType, 'PERSONAL')
+    assert.equal(fake.getPersonalKpi('kpi-bulk-eval').policyCategory, 'PROJECT_T')
+    assert.equal(personalOnly.policyCategory, 'DAILY_WORK')
+    assert.equal(fake.writes.evaluation, 0)
+    assert.equal(fake.writes.evaluationItem, 1)
+    assert.equal(fake.writes.personalKpi, 2)
+    assert.equal(fake.writes.audit, 2)
+  })
+
+  await run('invalid bulk policyCategory fails validation', async () => {
+    const { EvaluationPolicy2026MetadataPatchSchema } = await import('../src/server/evaluation-preview-2026-mapping')
+    const parsed = EvaluationPolicy2026MetadataPatchSchema.safeParse({
+      itemMappings: [],
+      policyCategoryMappings: [
+        {
+          personalKpiId: 'kpi-1',
+          category: 'INVALID_CATEGORY',
+        },
+      ],
+      divisionSalesGroupMappings: [],
+      departmentSalesGroupMappings: [],
+      salesGroupMappings: [],
+      thresholdDecisions: [],
+    })
+    assert.equal(parsed.success, false)
   })
 
   await run('UNKNOWN remains unresolved unless HR explicitly maps it', async () => {
@@ -824,6 +1086,7 @@ async function main() {
               category: 'KEEP_UNCLASSIFIED',
             },
           ],
+          policyCategoryMappings: [],
           divisionSalesGroupMappings: [],
           departmentSalesGroupMappings: [],
           salesGroupMappings: [],
@@ -859,6 +1122,7 @@ async function main() {
               category: 'ORG_GOAL',
             },
           ],
+          policyCategoryMappings: [],
           divisionSalesGroupMappings: [
             {
               evalCycleId: 'cycle-2026',
@@ -949,6 +1213,7 @@ async function main() {
         session: makeSession('ROLE_ADMIN'),
         input: {
           itemMappings: [],
+          policyCategoryMappings: [],
           divisionSalesGroupMappings: [],
           departmentSalesGroupMappings: [],
           salesGroupMappings: [],

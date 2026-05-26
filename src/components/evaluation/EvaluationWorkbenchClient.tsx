@@ -185,6 +185,13 @@ type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
   notes: string[]
 }
 type PolicyCategoryDraft2026 = 'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK' | 'KEEP_UNCLASSIFIED' | ''
+type PolicyCategoryConfidenceFilter2026 = 'HIGH' | 'MEDIUM' | 'LOW' | 'MANUAL_REVIEW' | 'ALL'
+type ScoreContributionDraft2026 = 'ORGANIZATION' | 'PERSONAL' | ''
+type PolicyCategoryWorkbenchDraft2026 = {
+  category: PolicyCategoryDraft2026
+  scoreContributionType: ScoreContributionDraft2026
+  note: string
+}
 type SalesGroupDraft2026 = 'SALES' | 'NON_SALES' | 'UNRESOLVED' | ''
 type ThresholdDecisionDraft2026 = 'UNRESOLVED' | 'SUPER_PRIORITY' | 'OUTSTANDING_PRIORITY' | ''
 
@@ -259,7 +266,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [policyOfficialCycle2026Saving, setPolicyOfficialCycle2026Saving] = useState(false)
   const [policyOfficialCycle2026Error, setPolicyOfficialCycle2026Error] = useState('')
   const [policyOfficialCycle2026Notice, setPolicyOfficialCycle2026Notice] = useState('')
-  const [policyCategoryDrafts2026, setPolicyCategoryDrafts2026] = useState<Record<string, PolicyCategoryDraft2026>>({})
+  const [policyCategoryWorkbenchDrafts2026, setPolicyCategoryWorkbenchDrafts2026] =
+    useState<Record<string, PolicyCategoryWorkbenchDraft2026>>({})
   const [divisionSalesGroupDrafts2026, setDivisionSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
   const [departmentSalesGroupDrafts2026, setDepartmentSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
   const [salesGroupDrafts2026, setSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
@@ -315,7 +323,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyOfficialCycle2026Error('')
     setPolicyOfficialCycle2026Notice('')
     setPolicyOfficialCycle2026Saving(false)
-    setPolicyCategoryDrafts2026({})
+    setPolicyCategoryWorkbenchDrafts2026({})
     setDivisionSalesGroupDrafts2026({})
     setDepartmentSalesGroupDrafts2026({})
     setSalesGroupDrafts2026({})
@@ -938,7 +946,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       const data = json.data as EvaluationPolicyMapping2026ApiData
       setPolicyMapping2026(data)
-      setPolicyCategoryDrafts2026({})
+      setPolicyCategoryWorkbenchDrafts2026({})
       setDivisionSalesGroupDrafts2026({})
       setDepartmentSalesGroupDrafts2026({})
       setSalesGroupDrafts2026({})
@@ -953,14 +961,17 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
   async function savePolicyMetadata2026() {
     if (!canViewPolicyPreview2026 || !policyMapping2026) return
-    const itemMappings = policyMapping2026.policyCategoryCandidates.flatMap((candidate) => {
-      const category = policyCategoryDrafts2026[candidate.evaluationItemId]
+    const itemMappings: Array<never> = []
+    const policyCategoryMappings = policyMapping2026.policyCategoryWorkbenchItems.flatMap((candidate) => {
+      const draft = policyCategoryWorkbenchDrafts2026[candidate.mappingId]
+      const category = draft?.category
       if (!category) return []
       return [{
-        evaluationItemId: candidate.evaluationItemId,
         personalKpiId: candidate.personalKpiId,
+        ...(candidate.evaluationItemId ? { evaluationItemId: candidate.evaluationItemId } : {}),
         category,
-        note: 'HR manual mapping from 2026 preview readiness panel',
+        ...(draft.scoreContributionType ? { scoreContributionType: draft.scoreContributionType } : {}),
+        note: draft.note || 'HR manual policyCategory mapping from 2026 policyCategory workbench',
       }]
     })
     const salesGroupMappings = policyMapping2026.salesGroupCandidates.flatMap((candidate) => {
@@ -1005,6 +1016,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
     if (
       !itemMappings.length &&
+      !policyCategoryMappings.length &&
       !divisionSalesGroupMappings.length &&
       !departmentSalesGroupMappings.length &&
       !salesGroupMappings.length &&
@@ -1024,6 +1036,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemMappings,
+          policyCategoryMappings,
           divisionSalesGroupMappings,
           departmentSalesGroupMappings,
           salesGroupMappings,
@@ -1037,7 +1050,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       const result = json.data as EvaluationPolicyMetadataPatch2026ApiData
       setPolicyMapping2026Notice(
-        `저장 완료: 항목 ${result.updatedItemMappings}건, division 영업/비영업 ${result.updatedDivisionSalesGroupMappings}건, 부서/팀 override ${result.updatedDepartmentSalesGroupMappings}건, 직원 override ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
+        `저장 완료: policyCategory ${result.updatedPolicyCategoryMappings ?? result.updatedItemMappings}건, division 영업/비영업 ${result.updatedDivisionSalesGroupMappings}건, 부서/팀 override ${result.updatedDepartmentSalesGroupMappings}건, 직원 override ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
       )
       await loadPolicyMappingCandidates2026()
       await loadPolicyReadiness2026()
@@ -1884,15 +1897,37 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     saving={policyMapping2026Saving}
                     error={policyMapping2026Error}
                     notice={policyMapping2026Notice}
-                    categoryDrafts={policyCategoryDrafts2026}
+                    categoryDrafts={policyCategoryWorkbenchDrafts2026}
                     divisionSalesGroupDrafts={divisionSalesGroupDrafts2026}
                     departmentSalesGroupDrafts={departmentSalesGroupDrafts2026}
                     salesGroupDrafts={salesGroupDrafts2026}
                     thresholdDecisionDrafts={thresholdDecisionDrafts2026}
                     onLoad={loadPolicyMappingCandidates2026}
                     onSave={savePolicyMetadata2026}
-                    onCategoryChange={(id, value) =>
-                      setPolicyCategoryDrafts2026((current) => ({ ...current, [id]: value }))
+                    onCategoryDraftChange={(id, patch) =>
+                      setPolicyCategoryWorkbenchDrafts2026((current) => ({
+                        ...current,
+                        [id]: {
+                          category: current[id]?.category ?? '',
+                          scoreContributionType: current[id]?.scoreContributionType ?? '',
+                          note: current[id]?.note ?? '',
+                          ...patch,
+                        },
+                      }))
+                    }
+                    onCategoryBulkDraftChange={(ids, patch) =>
+                      setPolicyCategoryWorkbenchDrafts2026((current) => {
+                        const next = { ...current }
+                        for (const id of ids) {
+                          next[id] = {
+                            category: current[id]?.category ?? '',
+                            scoreContributionType: current[id]?.scoreContributionType ?? '',
+                            note: current[id]?.note ?? '',
+                            ...patch,
+                          }
+                        }
+                        return next
+                      })
                     }
                     onDivisionSalesGroupChange={(key, value) =>
                       setDivisionSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
@@ -3465,9 +3500,39 @@ function getPolicyCategoryLabel2026(value: string | null | undefined) {
     DAILY_WORK: '일상업무',
     KEEP_UNCLASSIFIED: '제외/미분류 유지',
     UNKNOWN: 'UNKNOWN',
+    MANUAL_REVIEW: '수동 검토',
   }
 
   return value ? labels[value] ?? value : '미분류'
+}
+
+function getPolicyCategoryConfidenceLabel2026(value: string | null | undefined) {
+  if (value === 'HIGH') return 'HIGH'
+  if (value === 'MEDIUM') return 'MEDIUM'
+  if (value === 'LOW') return 'LOW'
+  if (value === 'MANUAL_REVIEW') return 'MANUAL_REVIEW'
+  return '전체'
+}
+
+function getPolicyCategoryConfidenceTone2026(value: string | null | undefined): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'HIGH') return 'success'
+  if (value === 'MEDIUM' || value === 'LOW') return 'warn'
+  if (value === 'MANUAL_REVIEW') return 'error'
+  return 'neutral'
+}
+
+function getScoreContributionLabel2026(value: string | null | undefined) {
+  if (value === 'ORGANIZATION') return '조직성과'
+  if (value === 'PERSONAL') return '개인성과'
+  return '미지정'
+}
+
+function getMboOperationalStatusLabel2026(value: string | null | undefined) {
+  if (value === 'SUBMITTED') return '제출'
+  if (value === 'MANAGER_REVIEW') return '리더 검토'
+  if (value === 'CONFIRMED') return '확정'
+  if (value === 'ARCHIVED') return '보관'
+  return '초안'
 }
 
 function getSalesGroupLabel2026(value: string | null | undefined) {
@@ -4364,6 +4429,26 @@ function PolicyReadinessPopulation2026Panel(props: {
               label="팀 override"
               value={dryRun.departmentOverrideCoverage.savedOverrideCount.toLocaleString()}
               help={`${dryRun.departmentOverrideCoverage.affectedActiveEmployeeCount}명 영향`}
+              compact
+            />
+            <MetricCard
+              label="policyCategory mapped"
+              value={dryRun.policyCategoryMappingReadiness.mappedPolicyCategoryCount.toLocaleString()}
+              help={`manual-review ${dryRun.policyCategoryMappingReadiness.manualReviewCount.toLocaleString()}건`}
+              compact
+              variant={dryRun.policyCategoryMappingReadiness.manualReviewCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="ORG_GOAL source warning"
+              value={dryRun.policyCategoryMappingReadiness.orgGoalWithoutApprovedSourceCount.toLocaleString()}
+              help="본부/HR 승인 팀 KPI 필요"
+              compact
+              variant={dryRun.policyCategoryMappingReadiness.orgGoalWithoutApprovedSourceCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="bulk mapping saved"
+              value={dryRun.policyCategoryMappingReadiness.bulkMappingSavedCount.toLocaleString()}
+              help="HR metadata audit"
               compact
             />
           </div>
@@ -5403,31 +5488,170 @@ function PolicyMapping2026Panel(props: {
   saving: boolean
   error: string
   notice: string
-  categoryDrafts: Record<string, PolicyCategoryDraft2026>
+  categoryDrafts: Record<string, PolicyCategoryWorkbenchDraft2026>
   divisionSalesGroupDrafts: Record<string, SalesGroupDraft2026>
   departmentSalesGroupDrafts: Record<string, SalesGroupDraft2026>
   salesGroupDrafts: Record<string, SalesGroupDraft2026>
   thresholdDecisionDrafts: Record<string, ThresholdDecisionDraft2026>
   onLoad: () => void
   onSave: () => void
-  onCategoryChange: (evaluationItemId: string, value: PolicyCategoryDraft2026) => void
+  onCategoryDraftChange: (mappingId: string, patch: Partial<PolicyCategoryWorkbenchDraft2026>) => void
+  onCategoryBulkDraftChange: (mappingIds: string[], patch: Partial<PolicyCategoryWorkbenchDraft2026>) => void
   onDivisionSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onDepartmentSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onThresholdDecisionChange: (evalCycleId: string, value: ThresholdDecisionDraft2026) => void
 }) {
   const data = props.mappingData
+  const [categoryDivisionFilter, setCategoryDivisionFilter] = useState('ALL')
+  const [categoryTeamFilter, setCategoryTeamFilter] = useState('ALL')
+  const [categoryLeaderFilter, setCategoryLeaderFilter] = useState('ALL')
+  const [categoryCurrentFilter, setCategoryCurrentFilter] = useState<PolicyCategoryDraft2026 | 'ALL'>('ALL')
+  const [categorySuggestedFilter, setCategorySuggestedFilter] = useState<PolicyCategoryDraft2026 | 'MANUAL_REVIEW' | 'ALL'>('ALL')
+  const [categoryConfidenceFilter, setCategoryConfidenceFilter] = useState<PolicyCategoryConfidenceFilter2026>('ALL')
+  const [categoryOrgLinkFilter, setCategoryOrgLinkFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL')
+  const [categoryTeamLinkFilter, setCategoryTeamLinkFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL')
+  const [categoryHrSourceFilter, setCategoryHrSourceFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL')
+  const [categoryMboStatusFilter, setCategoryMboStatusFilter] = useState<'ALL' | string>('ALL')
+  const [categorySourceFilter, setCategorySourceFilter] = useState<'ALL' | 'PersonalKpi' | 'EvaluationItem'>('ALL')
+  const [selectedCategoryMappingIds, setSelectedCategoryMappingIds] = useState<Set<string>>(new Set())
+  const [bulkPolicyCategory, setBulkPolicyCategory] = useState<PolicyCategoryDraft2026>('')
+  const [bulkScoreContributionType, setBulkScoreContributionType] = useState<ScoreContributionDraft2026>('')
+  const [bulkPolicyCategoryNote, setBulkPolicyCategoryNote] = useState('')
+  const policyWorkbenchItems = useMemo(
+    () => data?.policyCategoryWorkbenchItems ?? [],
+    [data?.policyCategoryWorkbenchItems]
+  )
   const policyCandidates = data?.policyCategoryCandidates.slice(0, 6) ?? []
   const divisionSalesCandidates = data?.divisionSalesGroupCandidates ?? []
   const departmentSalesCandidates = data?.departmentSalesGroupCandidates ?? []
   const salesCandidates = data?.salesGroupCandidates.slice(0, 6) ?? []
   const thresholdCandidates = data?.thresholdDecisions.slice(0, 3) ?? []
+  const categoryDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          policyWorkbenchItems
+            .filter((item) => item.divisionId)
+            .map((item) => [item.divisionId as string, item.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [policyWorkbenchItems]
+  )
+  const categoryTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          policyWorkbenchItems
+            .filter((item) => item.departmentId && (categoryDivisionFilter === 'ALL' || item.divisionId === categoryDivisionFilter))
+            .map((item) => [item.departmentId as string, item.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [categoryDivisionFilter, policyWorkbenchItems]
+  )
+  const categoryLeaderOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          policyWorkbenchItems
+            .filter((item) => item.managerId)
+            .map((item) => [item.managerId as string, item.managerName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [policyWorkbenchItems]
+  )
+  const filteredPolicyWorkbenchItems = useMemo(
+    () =>
+      policyWorkbenchItems.filter((item) => {
+        const matchesDivision = categoryDivisionFilter === 'ALL' || item.divisionId === categoryDivisionFilter
+        const matchesTeam = categoryTeamFilter === 'ALL' || item.departmentId === categoryTeamFilter
+        const matchesLeader = categoryLeaderFilter === 'ALL' || item.managerId === categoryLeaderFilter
+        const matchesCurrent =
+          categoryCurrentFilter === 'ALL' ||
+          (categoryCurrentFilter === '' ? !item.currentPolicyCategory : item.currentPolicyCategory === categoryCurrentFilter)
+        const matchesSuggested =
+          categorySuggestedFilter === 'ALL' ||
+          (categorySuggestedFilter === '' ? item.suggestedPolicyCategory === 'MANUAL_REVIEW' : item.suggestedPolicyCategory === categorySuggestedFilter)
+        const matchesConfidence =
+          categoryConfidenceFilter === 'ALL' || item.sourceConfidence === categoryConfidenceFilter
+        const matchesOrgLink =
+          categoryOrgLinkFilter === 'ALL' ||
+          (categoryOrgLinkFilter === 'PRESENT' ? Boolean(item.linkedOrgKpi) : !item.linkedOrgKpi)
+        const matchesTeamLink =
+          categoryTeamLinkFilter === 'ALL' ||
+          (categoryTeamLinkFilter === 'PRESENT' ? Boolean(item.linkedTeamKpi) : !item.linkedTeamKpi)
+        const matchesHrSource =
+          categoryHrSourceFilter === 'ALL' ||
+          (categoryHrSourceFilter === 'PRESENT' ? item.hasHrApprovedSource : !item.hasHrApprovedSource)
+        const matchesMboStatus = categoryMboStatusFilter === 'ALL' || item.mboStatus === categoryMboStatusFilter
+        const matchesSource = categorySourceFilter === 'ALL' || item.itemSource === categorySourceFilter
+        return (
+          matchesDivision &&
+          matchesTeam &&
+          matchesLeader &&
+          matchesCurrent &&
+          matchesSuggested &&
+          matchesConfidence &&
+          matchesOrgLink &&
+          matchesTeamLink &&
+          matchesHrSource &&
+          matchesMboStatus &&
+          matchesSource
+        )
+      }),
+    [
+      categoryConfidenceFilter,
+      categoryCurrentFilter,
+      categoryDivisionFilter,
+      categoryHrSourceFilter,
+      categoryLeaderFilter,
+      categoryMboStatusFilter,
+      categoryOrgLinkFilter,
+      categorySourceFilter,
+      categorySuggestedFilter,
+      categoryTeamFilter,
+      categoryTeamLinkFilter,
+      policyWorkbenchItems,
+    ]
+  )
+  const visiblePolicyWorkbenchItems = filteredPolicyWorkbenchItems.slice(0, 100)
+  const selectedVisibleCategoryCount = visiblePolicyWorkbenchItems.filter((item) =>
+    selectedCategoryMappingIds.has(item.mappingId)
+  ).length
+  const allVisibleCategorySelected =
+    visiblePolicyWorkbenchItems.length > 0 && selectedVisibleCategoryCount === visiblePolicyWorkbenchItems.length
   const hasChanges =
-    Object.values(props.categoryDrafts).some(Boolean) ||
+    Object.values(props.categoryDrafts).some((draft) => Boolean(draft.category)) ||
     Object.values(props.divisionSalesGroupDrafts).some(Boolean) ||
     Object.values(props.departmentSalesGroupDrafts).some(Boolean) ||
     Object.values(props.salesGroupDrafts).some(Boolean) ||
     Object.values(props.thresholdDecisionDrafts).some(Boolean)
+  const selectedPolicyWorkbenchIds = useMemo(
+    () =>
+      filteredPolicyWorkbenchItems
+        .filter((item) => selectedCategoryMappingIds.has(item.mappingId))
+        .map((item) => item.mappingId),
+    [filteredPolicyWorkbenchItems, selectedCategoryMappingIds]
+  )
+  const applyBulkPolicyCategoryDraft = () => {
+    if (!selectedPolicyWorkbenchIds.length || !bulkPolicyCategory) return
+    props.onCategoryBulkDraftChange(selectedPolicyWorkbenchIds, {
+      category: bulkPolicyCategory,
+      scoreContributionType: bulkScoreContributionType,
+      note: bulkPolicyCategoryNote,
+    })
+  }
+  const toggleVisiblePolicyWorkbenchSelection = () => {
+    setSelectedCategoryMappingIds((current) => {
+      const next = new Set(current)
+      if (allVisibleCategorySelected) {
+        for (const item of visiblePolicyWorkbenchItems) next.delete(item.mappingId)
+      } else {
+        for (const item of visiblePolicyWorkbenchItems) next.add(item.mappingId)
+      }
+      return next
+    })
+  }
 
   return (
     <Panel
@@ -5495,9 +5719,11 @@ function PolicyMapping2026Panel(props: {
                       현재 {getPolicyCategoryLabel2026(candidate.currentEffectiveCategory)} · 제안 {getPolicyCategoryLabel2026(candidate.suggestedCategory)} · {candidate.reason}
                     </p>
                     <select
-                      value={props.categoryDrafts[candidate.evaluationItemId] ?? ''}
+                      value={props.categoryDrafts[`EvaluationItem:${candidate.evaluationItemId}`]?.category ?? ''}
                       onChange={(event) =>
-                        props.onCategoryChange(candidate.evaluationItemId, event.target.value as PolicyCategoryDraft2026)
+                        props.onCategoryDraftChange(`EvaluationItem:${candidate.evaluationItemId}`, {
+                          category: event.target.value as PolicyCategoryDraft2026,
+                        })
                       }
                       className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
                     >
@@ -5510,6 +5736,287 @@ function PolicyMapping2026Panel(props: {
                     </select>
                   </div>
                 )) : <EmptyBlock message="현재 조회 범위에서 정책 카테고리 수동 매핑 후보가 없습니다." />}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 lg:col-span-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 policyCategory bulk mapping workbench</h4>
+                    <Badge tone="neutral">Metadata only</Badge>
+                    <Badge tone="warn">{filteredPolicyWorkbenchItems.length.toLocaleString()}건 표시</Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-blue-900">
+                    이 저장은 2026 readiness metadata만 변경합니다. 공식 점수/등급은 변경되지 않습니다. 추천값은 자동 확정이 아니며 HR이 저장해야 반영됩니다.
+                  </p>
+                </div>
+                <div className="text-xs text-slate-500">
+                  전체 후보 {policyWorkbenchItems.length.toLocaleString()}건 · 표시 {visiblePolicyWorkbenchItems.length.toLocaleString()}건
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <label className="text-xs font-semibold text-slate-600">
+                  본부
+                  <select
+                    value={categoryDivisionFilter}
+                    onChange={(event) => {
+                      setCategoryDivisionFilter(event.target.value)
+                      setCategoryTeamFilter('ALL')
+                    }}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 본부</option>
+                    {categoryDivisionOptions.map(([divisionId, divisionName]) => (
+                      <option key={divisionId} value={divisionId}>{divisionName}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  팀
+                  <select
+                    value={categoryTeamFilter}
+                    onChange={(event) => setCategoryTeamFilter(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 팀</option>
+                    {categoryTeamOptions.map(([departmentId, departmentPath]) => (
+                      <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  리더
+                  <select
+                    value={categoryLeaderFilter}
+                    onChange={(event) => setCategoryLeaderFilter(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 리더</option>
+                    {categoryLeaderOptions.map(([leaderId, leaderName]) => (
+                      <option key={leaderId} value={leaderId}>{leaderName}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  현재 category
+                  <select
+                    value={categoryCurrentFilter}
+                    onChange={(event) => setCategoryCurrentFilter(event.target.value as PolicyCategoryDraft2026 | 'ALL')}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체</option>
+                    <option value="">미분류</option>
+                    <option value="ORG_GOAL">조직목표</option>
+                    <option value="PROJECT_T">프로젝트 T</option>
+                    <option value="PROJECT_K">프로젝트 K</option>
+                    <option value="DAILY_WORK">일상업무</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  제안 category
+                  <select
+                    value={categorySuggestedFilter}
+                    onChange={(event) => setCategorySuggestedFilter(event.target.value as PolicyCategoryDraft2026 | 'MANUAL_REVIEW' | 'ALL')}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체</option>
+                    <option value="ORG_GOAL">조직목표</option>
+                    <option value="PROJECT_T">프로젝트 T</option>
+                    <option value="PROJECT_K">프로젝트 K</option>
+                    <option value="DAILY_WORK">일상업무</option>
+                    <option value="MANUAL_REVIEW">수동 검토</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  confidence
+                  <select
+                    value={categoryConfidenceFilter}
+                    onChange={(event) => setCategoryConfidenceFilter(event.target.value as PolicyCategoryConfidenceFilter2026)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="LOW">LOW</option>
+                    <option value="MANUAL_REVIEW">MANUAL_REVIEW</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  조직 KPI
+                  <select value={categoryOrgLinkFilter} onChange={(event) => setCategoryOrgLinkFilter(event.target.value as 'ALL' | 'PRESENT' | 'ABSENT')} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="PRESENT">연결 있음</option>
+                    <option value="ABSENT">연결 없음</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  팀 KPI
+                  <select value={categoryTeamLinkFilter} onChange={(event) => setCategoryTeamLinkFilter(event.target.value as 'ALL' | 'PRESENT' | 'ABSENT')} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="PRESENT">연결 있음</option>
+                    <option value="ABSENT">연결 없음</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  HR 승인 source
+                  <select value={categoryHrSourceFilter} onChange={(event) => setCategoryHrSourceFilter(event.target.value as 'ALL' | 'PRESENT' | 'ABSENT')} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="PRESENT">있음</option>
+                    <option value="ABSENT">없음</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  MBO status
+                  <select value={categoryMboStatusFilter} onChange={(event) => setCategoryMboStatusFilter(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="DRAFT">초안</option>
+                    <option value="SUBMITTED">제출</option>
+                    <option value="MANAGER_REVIEW">리더 검토</option>
+                    <option value="CONFIRMED">확정</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  source
+                  <select value={categorySourceFilter} onChange={(event) => setCategorySourceFilter(event.target.value as 'ALL' | 'PersonalKpi' | 'EvaluationItem')} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="PersonalKpi">PersonalKpi</option>
+                    <option value="EvaluationItem">EvaluationItem</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-blue-100 bg-white p-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <button type="button" onClick={toggleVisiblePolicyWorkbenchSelection} disabled={!visiblePolicyWorkbenchItems.length} className="rounded-full border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-50">
+                    {allVisibleCategorySelected ? '표시 항목 선택 해제' : '표시 항목 전체 선택'}
+                  </button>
+                  <label className="min-w-40 flex-1 text-xs font-semibold text-slate-600">
+                    bulk category
+                    <select value={bulkPolicyCategory} onChange={(event) => setBulkPolicyCategory(event.target.value as PolicyCategoryDraft2026)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                      <option value="">선택 안 함</option>
+                      <option value="ORG_GOAL">조직목표</option>
+                      <option value="PROJECT_T">프로젝트 T</option>
+                      <option value="PROJECT_K">프로젝트 K</option>
+                      <option value="DAILY_WORK">일상업무</option>
+                      <option value="KEEP_UNCLASSIFIED">제외/미분류 유지</option>
+                    </select>
+                  </label>
+                  <label className="min-w-40 flex-1 text-xs font-semibold text-slate-600">
+                    bulk scoreContributionType
+                    <select value={bulkScoreContributionType} onChange={(event) => setBulkScoreContributionType(event.target.value as ScoreContributionDraft2026)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                      <option value="">category 기준 자동</option>
+                      <option value="ORGANIZATION">조직성과</option>
+                      <option value="PERSONAL">개인성과</option>
+                    </select>
+                  </label>
+                  <label className="min-w-64 flex-[2] text-xs font-semibold text-slate-600">
+                    bulk review note
+                    <input value={bulkPolicyCategoryNote} onChange={(event) => setBulkPolicyCategoryNote(event.target.value)} maxLength={1000} placeholder="예: HR 일괄 검토 기준으로 확정" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                  </label>
+                  <button type="button" onClick={applyBulkPolicyCategoryDraft} disabled={!selectedPolicyWorkbenchIds.length || !bulkPolicyCategory} className="rounded-full bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-800 disabled:bg-slate-300">
+                    {selectedPolicyWorkbenchIds.length.toLocaleString()}건 bulk 적용
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">bulk 적용은 화면 draft만 바꿉니다. 실제 저장은 상단의 선택 metadata 저장 버튼을 눌러야 수행됩니다.</p>
+              </div>
+
+              <div className="mt-4 overflow-auto rounded-2xl border border-blue-100 bg-white">
+                <table className="min-w-[1500px] divide-y divide-slate-100 text-left text-xs">
+                  <thead className="bg-blue-50 text-blue-800">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">선택</th>
+                      <th className="px-3 py-2 font-semibold">대상/KPI</th>
+                      <th className="px-3 py-2 font-semibold">조직/리더</th>
+                      <th className="px-3 py-2 font-semibold">연결 KPI</th>
+                      <th className="px-3 py-2 font-semibold">현재/제안</th>
+                      <th className="px-3 py-2 font-semibold">저장 draft</th>
+                      <th className="px-3 py-2 font-semibold">사유/메모</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {visiblePolicyWorkbenchItems.length ? visiblePolicyWorkbenchItems.map((candidate) => {
+                      const draft = props.categoryDrafts[candidate.mappingId] ?? { category: '', scoreContributionType: '', note: '' }
+                      return (
+                        <tr key={candidate.mappingId}>
+                          <td className="px-3 py-3 align-top">
+                            <input
+                              type="checkbox"
+                              checked={selectedCategoryMappingIds.has(candidate.mappingId)}
+                              onChange={(event) => {
+                                setSelectedCategoryMappingIds((current) => {
+                                  const next = new Set(current)
+                                  if (event.target.checked) next.add(candidate.mappingId)
+                                  else next.delete(candidate.mappingId)
+                                  return next
+                                })
+                              }}
+                              className="h-4 w-4 rounded border-slate-300"
+                            />
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <div className="font-semibold text-slate-900">{candidate.kpiTitle}</div>
+                            <div className="mt-1 text-slate-500">{candidate.employeeName} · {candidate.employeeNo ?? '사번 없음'}</div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <Badge tone="neutral">{candidate.itemSource}</Badge>
+                              <Badge tone="neutral">{getMboOperationalStatusLabel2026(candidate.mboStatus)}</Badge>
+                              {candidate.evalStage ? <Badge tone="neutral">{candidate.evalStage}</Badge> : null}
+                            </div>
+                            {candidate.kpiDescription ? <p className="mt-2 line-clamp-2 text-slate-500">{candidate.kpiDescription}</p> : null}
+                          </td>
+                          <td className="px-3 py-3 align-top text-slate-600">
+                            <div>{candidate.departmentPath}</div>
+                            <div className="mt-1 text-slate-400">리더 {candidate.managerName}</div>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            {candidate.linkedOrgKpi ? (
+                              <div>
+                                <div className="font-semibold text-slate-800">{candidate.linkedOrgKpi.title}</div>
+                                <div className="mt-1 text-slate-500">{candidate.linkedOrgKpi.departmentPath ?? candidate.linkedOrgKpi.departmentName ?? '조직 미지정'}</div>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {candidate.linkedOrgKpi.isDivisionKpi ? <Badge tone="success">본부 KPI</Badge> : null}
+                                  {candidate.linkedTeamKpi ? <Badge tone={candidate.hasHrApprovedSource ? 'success' : 'warn'}>{candidate.linkedTeamKpi.reviewStatus}</Badge> : null}
+                                </div>
+                              </div>
+                            ) : <span className="text-slate-400">연결 없음</span>}
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <div className="flex flex-wrap gap-1">
+                              <Badge tone={candidate.currentPolicyCategory ? 'neutral' : 'warn'}>현재 {getPolicyCategoryLabel2026(candidate.currentPolicyCategory)}</Badge>
+                              <Badge tone={getPolicyCategoryConfidenceTone2026(candidate.sourceConfidence)}>제안 {getPolicyCategoryLabel2026(candidate.suggestedPolicyCategory)}</Badge>
+                            </div>
+                            <div className="mt-2 text-slate-500">confidence {getPolicyCategoryConfidenceLabel2026(candidate.sourceConfidence)}</div>
+                            <div className="mt-1 text-slate-500">score {getScoreContributionLabel2026(candidate.currentScoreContributionType)} → {getScoreContributionLabel2026(candidate.suggestedScoreContributionType)}</div>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <select value={draft.category} onChange={(event) => props.onCategoryDraftChange(candidate.mappingId, { category: event.target.value as PolicyCategoryDraft2026 })} className="w-full min-w-40 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
+                              <option value="">선택 안 함</option>
+                              <option value="ORG_GOAL">조직목표</option>
+                              <option value="PROJECT_T">프로젝트 T</option>
+                              <option value="PROJECT_K">프로젝트 K</option>
+                              <option value="DAILY_WORK">일상업무</option>
+                              <option value="KEEP_UNCLASSIFIED">제외/미분류 유지</option>
+                            </select>
+                            <select value={draft.scoreContributionType} onChange={(event) => props.onCategoryDraftChange(candidate.mappingId, { scoreContributionType: event.target.value as ScoreContributionDraft2026 })} className="mt-2 w-full min-w-40 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
+                              <option value="">category 기준 자동</option>
+                              <option value="ORGANIZATION">조직성과</option>
+                              <option value="PERSONAL">개인성과</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <div className="max-w-sm text-slate-600">{candidate.suggestionReason}</div>
+                            <textarea value={draft.note} onChange={(event) => props.onCategoryDraftChange(candidate.mappingId, { note: event.target.value })} rows={2} maxLength={1000} placeholder={candidate.reviewNote ?? 'HR 검토 메모'} className="mt-2 w-full min-w-56 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700" />
+                          </td>
+                        </tr>
+                      )
+                    }) : (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">현재 필터 조건에서 policyCategory 매핑 후보가 없습니다.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
