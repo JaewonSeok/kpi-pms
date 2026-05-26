@@ -397,6 +397,7 @@ function makeDb(overrides: {
 
 function makeTeamKpiDecisionDb(overrides: {
   orgKpi?: Record<string, unknown> | null
+  orgKpis?: Array<Record<string, unknown>>
   cycle?: Record<string, unknown> | null
 } = {}) {
   const counts = {
@@ -404,27 +405,41 @@ function makeTeamKpiDecisionDb(overrides: {
     orgKpiUpdate: 0,
     audit: 0,
   }
+  const defaultOrgKpi = {
+    id: 'team-kpi-pending',
+    deptId: 'team-sales',
+    evalYear: 2026,
+    kpiName: '신규 고객 확보',
+    status: 'CONFIRMED',
+    parentOrgKpiId: null,
+    mboExceptionApproved: false,
+    mboExceptionReason: null,
+    mboExceptionApprovedById: null,
+    mboExceptionApprovedAt: null,
+    department: {
+      id: 'team-sales',
+      orgId: 'org-1',
+      deptName: '세일즈팀',
+      parentDeptId: 'division-sales',
+    },
+  }
   let orgKpi = overrides.orgKpi === null
     ? null
     : {
-        id: 'team-kpi-pending',
-        deptId: 'team-sales',
-        evalYear: 2026,
-        kpiName: '신규 고객 확보',
-        status: 'CONFIRMED',
-        parentOrgKpiId: null,
-        mboExceptionApproved: false,
-        mboExceptionReason: null,
-        mboExceptionApprovedById: null,
-        mboExceptionApprovedAt: null,
-        department: {
-          id: 'team-sales',
-          orgId: 'org-1',
-          deptName: '세일즈팀',
-          parentDeptId: 'division-sales',
-        },
+        ...defaultOrgKpi,
         ...overrides.orgKpi,
       }
+  const orgKpisById = overrides.orgKpis
+    ? new Map(
+        overrides.orgKpis.map((record) => [
+          String(record.id),
+          {
+            ...defaultOrgKpi,
+            ...record,
+          },
+        ])
+      )
+    : null
   const cycle = overrides.cycle === null
     ? null
     : {
@@ -442,9 +457,28 @@ function makeTeamKpiDecisionDb(overrides: {
       findUnique: async () => cycle,
     },
     orgKpi: {
-      findUnique: async () => orgKpi,
-      update: async ({ data }: { data: Record<string, unknown> }) => {
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        if (orgKpisById) return orgKpisById.get(where.id) ?? null
+        return orgKpi
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         counts.orgKpiUpdate += 1
+        if (orgKpisById) {
+          const current = orgKpisById.get(where.id)
+          if (!current) throw new Error('missing orgKpi')
+          const updated = {
+            ...current,
+            ...data,
+          }
+          orgKpisById.set(where.id, updated)
+          return {
+            id: updated.id,
+            mboExceptionApproved: updated.mboExceptionApproved,
+            mboExceptionReason: updated.mboExceptionReason,
+            mboExceptionApprovedById: updated.mboExceptionApprovedById,
+            mboExceptionApprovedAt: updated.mboExceptionApprovedAt,
+          }
+        }
         if (!orgKpi) throw new Error('missing orgKpi')
         orgKpi = {
           ...orgKpi,
@@ -499,7 +533,9 @@ async function main() {
     getEvaluation2026ReadinessPopulationDryRunForSession,
   } = await import('../src/server/evaluation-2026-readiness-population')
   const {
+    Evaluation2026TeamKpiHrReviewBulkDecisionSchema,
     Evaluation2026TeamKpiHrReviewDecisionSchema,
+    saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession,
     saveEvaluation2026TeamKpiHrReviewDecisionForSession,
   } = await import('../src/server/evaluation-2026-team-kpi-review-decision')
 
@@ -795,6 +831,270 @@ async function main() {
     )
   })
 
+  await run('admin can bulk save multiple Team KPI HR decisions without touching scores', async () => {
+    const fake = makeTeamKpiDecisionDb({
+      orgKpis: [
+        {
+          id: 'team-kpi-bulk-1',
+          deptId: 'team-sales',
+          kpiName: '영업 전환율 개선',
+          department: {
+            id: 'team-sales',
+            orgId: 'org-1',
+            deptName: '세일즈팀',
+            parentDeptId: 'division-sales',
+          },
+        },
+        {
+          id: 'team-kpi-bulk-2',
+          deptId: 'team-support',
+          kpiName: '지원 프로세스 개선',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+      ],
+    })
+
+    const result = await saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiIds: ['team-kpi-bulk-1', 'team-kpi-bulk-2'],
+          evalCycleId: 'cycle-2026',
+          decision: 'APPROVED_FOR_ORG_GOAL',
+          reason: '핵심 과제',
+          note: '일괄 조직목표 반영 승인',
+        },
+      },
+      {
+        db: fake.db as never,
+        audit: fake.audit as never,
+        now: new Date('2026-05-20T01:02:03.000Z'),
+      }
+    )
+
+    assert.equal(result.count, 2)
+    assert.deepEqual(result.results.map((item) => item.orgKpiId), ['team-kpi-bulk-1', 'team-kpi-bulk-2'])
+    assert.equal(result.safety.officialScoresChanged, false)
+    assert.equal(result.safety.officialGradesChanged, false)
+    assert.equal(result.safety.totalScoreChanged, false)
+    assert.equal(result.safety.gradeIdChanged, false)
+    assert.equal(result.safety.evaluationsCreated, 0)
+    assert.equal(result.safety.evaluationItemsCreated, 0)
+    assert.equal(result.safety.personalKpiPolicyCategoryChanged, false)
+    assert.equal(result.safety.evaluationItemPolicyCategoryChanged, false)
+    assert.equal(fake.counts.reviewRunCreate, 2)
+    assert.equal(fake.counts.orgKpiUpdate, 2)
+    assert.equal(fake.counts.audit, 2)
+  })
+
+  await run('member cannot bulk save Team KPI HR decisions', async () => {
+    const fake = makeTeamKpiDecisionDb({
+      orgKpis: [
+        {
+          id: 'team-kpi-bulk-1',
+          deptId: 'team-sales',
+          department: {
+            id: 'team-sales',
+            orgId: 'org-1',
+            deptName: '세일즈팀',
+            parentDeptId: 'division-sales',
+          },
+        },
+      ],
+    })
+
+    await assert.rejects(
+      () =>
+        saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+          {
+            session: makeSession('ROLE_MEMBER', 'member-1'),
+            input: {
+              orgKpiIds: ['team-kpi-bulk-1'],
+              evalCycleId: 'cycle-2026',
+              decision: 'APPROVED_FOR_ORG_GOAL',
+              reason: '핵심 과제',
+              note: '권한 없음',
+            },
+          },
+          {
+            db: fake.db as never,
+            audit: fake.audit as never,
+          }
+        ),
+      (error) => error instanceof AppError && error.statusCode === 403
+    )
+    assert.equal(fake.counts.reviewRunCreate, 0)
+    assert.equal(fake.counts.orgKpiUpdate, 0)
+    assert.equal(fake.counts.audit, 0)
+  })
+
+  await run('invalid or missing bulk Team KPI HR decision fields fail validation', () => {
+    assert.equal(
+      Evaluation2026TeamKpiHrReviewBulkDecisionSchema.safeParse({
+        orgKpiIds: ['team-kpi-bulk-1'],
+        decision: 'INVALID_DECISION',
+        reason: '핵심 과제',
+      }).success,
+      false
+    )
+    assert.equal(
+      Evaluation2026TeamKpiHrReviewBulkDecisionSchema.safeParse({
+        orgKpiIds: ['team-kpi-bulk-1'],
+        decision: 'APPROVED_FOR_ORG_GOAL',
+      }).success,
+      false
+    )
+    assert.equal(
+      Evaluation2026TeamKpiHrReviewBulkDecisionSchema.safeParse({
+        orgKpiIds: [],
+        decision: 'APPROVED_FOR_ORG_GOAL',
+        reason: '핵심 과제',
+      }).success,
+      false
+    )
+  })
+
+  await run('bulk Team KPI HR decisions update ORG_GOAL and DAILY_WORK suggestions', async () => {
+    const approvedFake = makeTeamKpiDecisionDb({
+      orgKpis: [
+        {
+          id: 'team-kpi-pending',
+          deptId: 'team-support',
+          kpiName: '인사 데이터 정비 KPI',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+        {
+          id: 'team-kpi-excluded',
+          deptId: 'team-support',
+          kpiName: '인사 운영 유지 KPI',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+      ],
+    })
+    await saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiIds: ['team-kpi-pending', 'team-kpi-excluded'],
+          evalCycleId: 'cycle-2026',
+          decision: 'APPROVED_FOR_ORG_GOAL',
+          reason: '핵심 과제',
+          note: '일괄 승인',
+        },
+      },
+      {
+        db: approvedFake.db as never,
+        audit: approvedFake.audit as never,
+      }
+    )
+    const approvedItems = approvedFake.createdRuns.map((run) => (run.items as Array<Record<string, unknown>>)[0])
+    const approvedDryRunDb = makeDb({
+      orgKpis: [
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-pending'),
+          teamKpiReviewItems: [approvedItems[0]],
+        },
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-excluded'),
+          teamKpiReviewItems: [approvedItems[1]],
+        },
+      ],
+    })
+    const approvedDryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: approvedDryRunDb.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+    assert.equal(
+      approvedDryRun.teamKpiHrReviewCoverage.candidates.every((candidate) => candidate.suggestedMboCategory === 'ORG_GOAL'),
+      true
+    )
+
+    const excludedFake = makeTeamKpiDecisionDb({
+      orgKpis: [
+        {
+          id: 'team-kpi-pending',
+          deptId: 'team-support',
+          kpiName: '인사 데이터 정비 KPI',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+        {
+          id: 'team-kpi-excluded',
+          deptId: 'team-support',
+          kpiName: '인사 운영 유지 KPI',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+      ],
+    })
+    await saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiIds: ['team-kpi-pending', 'team-kpi-excluded'],
+          evalCycleId: 'cycle-2026',
+          decision: 'EXCLUDED_DAILY_WORK',
+          reason: '단순 운영/유지 업무',
+          note: '일괄 제외',
+        },
+      },
+      {
+        db: excludedFake.db as never,
+        audit: excludedFake.audit as never,
+      }
+    )
+    const excludedItems = excludedFake.createdRuns.map((run) => (run.items as Array<Record<string, unknown>>)[0])
+    const excludedDryRunDb = makeDb({
+      orgKpis: [
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-pending'),
+          teamKpiReviewItems: [excludedItems[0]],
+        },
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-excluded'),
+          teamKpiReviewItems: [excludedItems[1]],
+        },
+      ],
+    })
+    const excludedDryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: excludedDryRunDb.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+    assert.equal(
+      excludedDryRun.teamKpiHrReviewCoverage.candidates.every((candidate) => candidate.suggestedMboCategory === 'DAILY_WORK'),
+      true
+    )
+    assert.equal(
+      excludedDryRun.teamKpiHrReviewCoverage.candidates.every((candidate) => candidate.canSuggestAsOrgGoal === false),
+      true
+    )
+  })
+
   await run('saved team KPI HR decisions are reflected in readiness suggestions', async () => {
     const fake = makeTeamKpiDecisionDb()
     const result = await saveEvaluation2026TeamKpiHrReviewDecisionForSession(
@@ -1026,6 +1326,10 @@ async function main() {
     assert.equal(clientSource.includes('팀 KPI 검토 복사'), true)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/team-kpi-review-decision'), true)
     assert.equal(clientSource.includes('HR 결정 저장'), true)
+    assert.equal(clientSource.includes('미지정/PENDING only'), true)
+    assert.equal(clientSource.includes('선택 항목 일괄 HR 결정'), true)
+    assert.equal(clientSource.includes('보이는 항목 전체 선택'), true)
+    assert.equal(clientSource.includes('선택 항목 일괄 저장'), true)
     assert.equal(serverSource.includes('APPROVED_FOR_ORG_GOAL'), true)
     assert.equal(serverSource.includes('EXCLUDED_DAILY_WORK'), true)
     assert.equal(serverSource.includes('EXCEPTION_APPROVED'), true)
@@ -1034,8 +1338,12 @@ async function main() {
     assert.equal(reviewDecisionRouteSource.includes('export async function PATCH'), true)
     assert.equal(reviewDecisionRouteSource.includes('getServerSession(authOptions)'), true)
     assert.equal(reviewDecisionRouteSource.includes('saveEvaluation2026TeamKpiHrReviewDecisionForSession'), true)
+    assert.equal(reviewDecisionRouteSource.includes('saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession'), true)
+    assert.equal(decisionServerSource.includes('Evaluation2026TeamKpiHrReviewBulkDecisionSchema'), true)
     assert.equal(decisionServerSource.includes('teamKpiReviewRun.create'), true)
     assert.equal(decisionServerSource.includes('officialScoresChanged: false'), true)
+    assert.equal(decisionServerSource.includes('personalKpiPolicyCategoryChanged: false'), true)
+    assert.equal(decisionServerSource.includes('evaluationItemPolicyCategoryChanged: false'), true)
     assert.equal(decisionServerSource.includes('evaluationsCreated: 0'), true)
     assert.equal(decisionServerSource.includes('evaluationItemsCreated: 0'), true)
     assert.equal(clientSource.includes("limit: '300'"), true)
