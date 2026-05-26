@@ -15,6 +15,11 @@ import {
   getEvaluation2026ReadinessPopulationDryRun,
   type Evaluation2026ReadinessPopulationDryRun,
 } from '@/server/evaluation-2026-readiness-population'
+import {
+  EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS,
+  getEvaluation2026FeedbackLeadershipReadiness,
+  type Evaluation2026FeedbackLeadershipReadinessResult,
+} from '@/server/evaluation-2026-feedback-leadership-readiness'
 
 type CalendarSession = {
   user?: {
@@ -171,6 +176,7 @@ export type PerformanceCalendarPageData = {
   events: PerformanceCalendarEvent[]
   alerts: PerformanceCalendarAlert[]
   operationsChecklist: PerformanceOperationsChecklist
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult
 }
 
 type CalendarParams = {
@@ -270,6 +276,7 @@ type CalendarDeps = {
   loadReadinessPopulationDryRun?: (evalCycleId: string) => Promise<Evaluation2026ReadinessPopulationDryRun | null>
   loadAssignmentCoverage?: (evalCycleId: string) => Promise<PerformanceOperationsAssignmentCoverage>
   loadAiCompetencyReadiness?: (evalCycleId: string) => Promise<PerformanceOperationsAiReadiness>
+  loadFeedbackLeadershipReadiness?: (evalCycleId: string) => Promise<Evaluation2026FeedbackLeadershipReadinessResult>
 }
 
 const TIMEZONE = 'Asia/Seoul'
@@ -636,6 +643,8 @@ function buildDefaultDeps(): CalendarDeps {
           failedCount: assignments.filter((assignment) => assignment.status === 'FAILED').length,
         }
       }),
+    loadFeedbackLeadershipReadiness: async (evalCycleId) =>
+      getEvaluation2026FeedbackLeadershipReadiness({ evalCycleId }),
   }
 }
 
@@ -946,6 +955,7 @@ function buildOperationsChecklist(params: {
   readiness: Evaluation2026ReadinessPopulationDryRun | null
   assignmentCoverage: PerformanceOperationsAssignmentCoverage | null
   aiReadiness: PerformanceOperationsAiReadiness | null
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null
   referenceDate: Date
 }): PerformanceOperationsChecklist {
   const cycle = selectOperationsCycle({
@@ -968,6 +978,17 @@ function buildOperationsChecklist(params: {
         (params.aiReadiness?.needsRevisionCount ?? 0) +
         (params.aiReadiness?.pendingReviewCount ?? 0)
   const feedbackRoundCount = params.feedbackRounds.filter((round) => round.evalCycle.id === cycle?.id).length
+  const feedbackLeadership = params.feedbackLeadershipReadiness
+  const second360Blockers =
+    feedbackLeadership
+      ? feedbackLeadership.second360Feedback.blockedCount + feedbackLeadership.second360Feedback.needsSetupCount
+      : feedbackRoundCount > 0
+        ? 0
+        : 1
+  const leadershipBlockers =
+    feedbackLeadership
+      ? feedbackLeadership.leadershipDiagnosis.blockedCount + feedbackLeadership.leadershipDiagnosis.needsSetupCount
+      : 1
   const scheduleWindows = getEvaluation2026ScheduleWindowMap(params.referenceDate)
 
   const milestones: PerformanceOperationsChecklistItem[] = [
@@ -1107,11 +1128,13 @@ function buildOperationsChecklist(params: {
       plannedRangeLabel: 'PPT 운영 일정 기준',
       scheduleWindow: scheduleWindows.SECOND_360_REVIEW,
       ownerRole: 'HR',
-      status: feedbackRoundCount > 0 ? 'IN_PROGRESS' : 'NEEDS_REVIEW',
+      status: second360Blockers > 0 ? 'NEEDS_REVIEW' : 'DONE',
       readinessLink: 'PERFORMANCE_CALENDAR',
       href: '/evaluation/360/admin',
-      blockerCount: feedbackRoundCount > 0 ? 0 : 1,
-      note: `현재 연결된 다면평가 라운드 ${feedbackRoundCount}건입니다.`,
+      blockerCount: second360Blockers,
+      note: feedbackLeadership
+        ? `2차 다면평가 ${feedbackLeadership.second360Feedback.status}, reviewer 누락 ${feedbackLeadership.second360Feedback.missingReviewerAssignmentCount}건, 미응답 ${feedbackLeadership.second360Feedback.responseMissingCount}건입니다.`
+        : `현재 연결된 다면평가 라운드 ${feedbackRoundCount}건입니다.`,
       actionGuidance: ['2차 다면평가 일정/대상 확인'],
     }),
     makeOperationsMilestone({
@@ -1120,11 +1143,13 @@ function buildOperationsChecklist(params: {
       plannedRangeLabel: '다면평가/조직평가 일정과 연계',
       scheduleWindow: scheduleWindows.LEADERSHIP_DIAGNOSIS,
       ownerRole: 'HR',
-      status: 'NEEDS_REVIEW',
+      status: leadershipBlockers > 0 ? 'NEEDS_REVIEW' : 'DONE',
       readinessLink: 'PERFORMANCE_CALENDAR',
       href: '/solutions/leadership-diagnosis',
-      blockerCount: 0,
-      note: '리더십 진단은 별도 운영 일정과 대상자 확정이 필요합니다.',
+      blockerCount: leadershipBlockers,
+      note: feedbackLeadership
+        ? `리더십 진단 ${feedbackLeadership.leadershipDiagnosis.status}, 대상 리더 ${feedbackLeadership.leadershipDiagnosis.targetLeaderCount}명, reviewer 누락 ${feedbackLeadership.leadershipDiagnosis.missingReviewerAssignmentCount}건입니다.`
+        : '리더십 진단은 별도 운영 일정과 대상자 확정이 필요합니다.',
       actionGuidance: ['리더십 진단 운영 일정 확정'],
     }),
     makeOperationsMilestone({
@@ -1199,6 +1224,7 @@ export async function getPerformanceCalendarPageData(
       events: [],
       alerts: [],
       operationsChecklist: EMPTY_OPERATIONS_CHECKLIST,
+      feedbackLeadershipReadiness: EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS,
     }
   }
 
@@ -1256,7 +1282,7 @@ export async function getPerformanceCalendarPageData(
       evalCycles,
       selectedYear: selectedMonth.year,
     })
-    const [readiness, assignmentCoverage, aiReadiness] = operationsCycle
+    const [readiness, assignmentCoverage, aiReadiness, feedbackLeadershipReadiness] = operationsCycle
       ? await Promise.all([
           deps.loadReadinessPopulationDryRun
             ? loadSection({
@@ -1285,8 +1311,19 @@ export async function getPerformanceCalendarPageData(
                 loader: () => deps.loadAiCompetencyReadiness?.(operationsCycle.id) ?? Promise.resolve(null),
               })
             : Promise.resolve(null),
+          deps.loadFeedbackLeadershipReadiness
+            ? loadSection({
+                title: '360/리더십 진단 readiness',
+                description: '2차 다면평가/리더십 진단 readiness를 불러오지 못해 관련 milestone이 부분 데이터로 표시됩니다.',
+                alerts,
+                fallback: EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS,
+                loader: () =>
+                  deps.loadFeedbackLeadershipReadiness?.(operationsCycle.id) ??
+                  Promise.resolve(EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS),
+              })
+            : Promise.resolve(EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS),
         ])
-      : [null, null, null]
+      : [null, null, null, EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS]
     const operationsChecklist = buildOperationsChecklist({
       selectedYear: selectedMonth.year,
       evalCycles,
@@ -1294,6 +1331,7 @@ export async function getPerformanceCalendarPageData(
       readiness,
       assignmentCoverage,
       aiReadiness,
+      feedbackLeadershipReadiness,
       referenceDate,
     })
 
@@ -1328,6 +1366,7 @@ export async function getPerformanceCalendarPageData(
       events: filteredEvents,
       alerts,
       operationsChecklist,
+      feedbackLeadershipReadiness,
     }
   } catch (error) {
     console.error('[performance-calendar] fatal loader error', error)
@@ -1347,6 +1386,7 @@ export async function getPerformanceCalendarPageData(
       events: [],
       alerts,
       operationsChecklist: EMPTY_OPERATIONS_CHECKLIST,
+      feedbackLeadershipReadiness: EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS,
     }
   }
 }

@@ -24,8 +24,12 @@ import {
   getEvaluation2026EvaluatorRoutingReadiness,
   type Evaluation2026EvaluatorRoutingReadinessResult,
 } from '@/server/evaluation-2026-evaluator-routing-readiness'
+import {
+  getEvaluation2026FeedbackLeadershipReadiness,
+  type Evaluation2026FeedbackLeadershipReadinessResult,
+} from '@/server/evaluation-2026-feedback-leadership-readiness'
 
-type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department' | 'employee' | 'evaluationAssignment'>> & {
+type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department' | 'employee' | 'evaluationAssignment' | 'multiFeedbackRound' | 'wordCloud360Cycle'>> & {
   $queryRawUnsafe?: typeof prisma.$queryRawUnsafe
 }
 
@@ -93,6 +97,7 @@ export type Evaluation2026ActivationReadinessResult = {
   readiness: EvaluationPreviewReadinessSummary2026
   gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult | null
   evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null
   officialActivationGates: Evaluation2026OfficialActivationGate[]
   populationDryRunAvailable: boolean
   populationDryRunError: string | null
@@ -367,6 +372,25 @@ function collectEvaluatorRoutingReadiness(
   }
 }
 
+function collectFeedbackLeadershipReadiness(
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null,
+  blockers: Evaluation2026ActivationReadinessItem[],
+  warnings: Evaluation2026ActivationReadinessItem[]
+) {
+  if (!feedbackLeadershipReadiness) {
+    addItem(warnings, 'FEEDBACK_LEADERSHIP_NOT_CHECKED', '2026 360/리더십 진단 readiness를 현재 실행 컨텍스트에서 확인하지 못했습니다.', 'warning')
+    return
+  }
+
+  if (feedbackLeadershipReadiness.summary.blockedOrNeedsSetupCount > 0) {
+    addItem(
+      blockers,
+      'FEEDBACK_LEADERSHIP_READINESS_UNRESOLVED',
+      `2차 다면평가/리더십 진단 readiness blocker가 ${feedbackLeadershipReadiness.summary.blockedOrNeedsSetupCount}건 남아 있습니다.`
+    )
+  }
+}
+
 function canRunPopulationDryRun(db: Evaluation2026ActivationDb): db is Evaluation2026ActivationPopulationDb {
   const candidate = db as Evaluation2026ActivationPopulationDb
   return Boolean(
@@ -384,6 +408,16 @@ function canRunEvaluatorRoutingReadiness(db: Evaluation2026ActivationDb) {
     typeof candidate.employee?.findMany === 'function' &&
     typeof candidate.department?.findMany === 'function' &&
     typeof candidate.evaluationAssignment?.findMany === 'function'
+  )
+}
+
+function canRunFeedbackLeadershipReadiness(db: Evaluation2026ActivationDb) {
+  const candidate = db as Evaluation2026ActivationDb
+  return Boolean(
+    typeof candidate.employee?.findMany === 'function' &&
+    typeof candidate.department?.findMany === 'function' &&
+    typeof candidate.multiFeedbackRound?.findMany === 'function' &&
+    typeof candidate.wordCloud360Cycle?.findMany === 'function'
   )
 }
 
@@ -486,6 +520,12 @@ function teamKpiBlockerCount(populationDryRun: Evaluation2026ReadinessPopulation
   )
 }
 
+function feedbackLeadershipBlockerCount(
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null
+) {
+  return feedbackLeadershipReadiness?.summary.blockedOrNeedsSetupCount ?? null
+}
+
 function salesClassificationMissingCount(params: {
   readiness: EvaluationPreviewReadinessSummary2026
   populationDryRun: Evaluation2026ReadinessPopulationDryRun | null
@@ -502,6 +542,7 @@ function buildEvaluation2026OfficialActivationGates(params: {
   readiness: EvaluationPreviewReadinessSummary2026
   gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult | null
   evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null
   populationDryRun: Evaluation2026ReadinessPopulationDryRun | null
   populationDryRunError: string | null
 }): Evaluation2026OfficialActivationGate[] {
@@ -510,6 +551,7 @@ function buildEvaluation2026OfficialActivationGates(params: {
     readiness,
     gradePolicyReadiness,
     evaluatorRoutingReadiness,
+    feedbackLeadershipReadiness,
     populationDryRun,
     populationDryRunError,
   } = params
@@ -580,6 +622,20 @@ function buildEvaluation2026OfficialActivationGates(params: {
       ? 'FIRST/SECOND/FINAL 평가자 chain blocker가 남아 있습니다.'
       : '평가자 배정 readiness를 확인하지 못했습니다.',
     nextHrAction: '/admin/performance-assignments에서 missing FIRST/SECOND/FINAL 및 manual review 항목을 해소하세요.',
+  })
+  const feedbackLeadershipCount = feedbackLeadershipBlockerCount(feedbackLeadershipReadiness)
+  const feedbackLeadershipCondition = condition({
+    code: 'FEEDBACK_360_LEADERSHIP_READINESS_READY',
+    label: '360 feedback / leadership diagnosis readiness',
+    ok: feedbackLeadershipCount === 0,
+    currentValue: feedbackLeadershipReadiness
+      ? `360 ${feedbackLeadershipReadiness.second360Feedback.status} · leadership ${feedbackLeadershipReadiness.leadershipDiagnosis.status} · blocker ${feedbackLeadershipCount}건`
+      : 'not checked',
+    blockerCount: feedbackLeadershipCount ?? 1,
+    reason: feedbackLeadershipReadiness
+      ? '2차 다면평가 또는 리더십 진단의 setup/reviewer/response blocker가 남아 있습니다.'
+      : '2차 다면평가/리더십 진단 readiness를 확인하지 못했습니다.',
+    nextHrAction: '/admin/performance-calendar에서 360/리더십 readiness의 missing reviewer, missing response, setup blocker를 확인하세요.',
   })
   const sampleWarningCount = populationDryRun?.warnings.filter((warning) =>
     warning.code === 'SAMPLE_DATA_SIGNAL' || warning.code === 'CURRENT_CYCLE_SCOPE_LOOKS_PARTIAL'
@@ -767,6 +823,7 @@ function buildEvaluation2026OfficialActivationGates(params: {
       reason: '등급 threshold 누락/차이/중첩/공백이 남아 있습니다.',
       nextHrAction: '저장 정책과 PPT 기준 차이를 확인하고 HR 확정 metadata를 저장하세요.',
     }),
+    feedbackLeadershipCondition,
     condition({
       code: 'CALIBRATION_FINALIZATION_READY',
       label: 'calibration/finalization process ready',
@@ -913,6 +970,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
   readinessSummary?: EvaluationPreviewReadinessSummary2026
   gradePolicyReadiness?: Evaluation2026GradePolicyReadinessResult | null
   evaluatorRoutingReadiness?: Evaluation2026EvaluatorRoutingReadinessResult | null
+  feedbackLeadershipReadiness?: Evaluation2026FeedbackLeadershipReadinessResult | null
   populationDryRun?: Evaluation2026ReadinessPopulationDryRun | null
 }): Promise<Evaluation2026ActivationReadinessResult> {
   const db = params.db ?? prisma
@@ -968,6 +1026,18 @@ export async function getEvaluation2026ActivationReadiness(params: {
       evaluatorRoutingReadiness = null
     }
   }
+  let feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null =
+    params.feedbackLeadershipReadiness ?? null
+  if (params.feedbackLeadershipReadiness === undefined && populationCycleId && canRunFeedbackLeadershipReadiness(db)) {
+    try {
+      feedbackLeadershipReadiness = await getEvaluation2026FeedbackLeadershipReadiness({
+        db: db as never,
+        evalCycleId: populationCycleId,
+      })
+    } catch {
+      feedbackLeadershipReadiness = null
+    }
+  }
 
   const blockers: Evaluation2026ActivationReadinessItem[] = []
   const warnings: Evaluation2026ActivationReadinessItem[] = []
@@ -976,11 +1046,13 @@ export async function getEvaluation2026ActivationReadiness(params: {
   collectPreviewReadiness(readiness, blockers, warnings)
   collectGradePolicyReadiness(gradePolicyReadiness, blockers, warnings)
   collectEvaluatorRoutingReadiness(evaluatorRoutingReadiness, blockers, warnings)
+  collectFeedbackLeadershipReadiness(feedbackLeadershipReadiness, blockers, warnings)
   const officialActivationGates = buildEvaluation2026OfficialActivationGates({
     flags,
     readiness,
     gradePolicyReadiness,
     evaluatorRoutingReadiness,
+    feedbackLeadershipReadiness,
     populationDryRun,
     populationDryRunError,
   })
@@ -994,6 +1066,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     readiness,
     gradePolicyReadiness,
     evaluatorRoutingReadiness,
+    feedbackLeadershipReadiness,
     officialActivationGates,
     populationDryRunAvailable: Boolean(populationDryRun),
     populationDryRunError,
@@ -1017,6 +1090,7 @@ export async function getEvaluation2026ActivationReadinessForSession(
     readinessSummary?: EvaluationPreviewReadinessSummary2026
     gradePolicyReadiness?: Evaluation2026GradePolicyReadinessResult | null
     evaluatorRoutingReadiness?: Evaluation2026EvaluatorRoutingReadinessResult | null
+    feedbackLeadershipReadiness?: Evaluation2026FeedbackLeadershipReadinessResult | null
     populationDryRun?: Evaluation2026ReadinessPopulationDryRun | null
   } = {}
 ) {
@@ -1037,6 +1111,7 @@ export async function getEvaluation2026ActivationReadinessForSession(
     readinessSummary: options.readinessSummary,
     gradePolicyReadiness: options.gradePolicyReadiness,
     evaluatorRoutingReadiness: options.evaluatorRoutingReadiness,
+    feedbackLeadershipReadiness: options.feedbackLeadershipReadiness,
     populationDryRun: options.populationDryRun,
     year: params.year,
     cycleId: params.cycleId,
