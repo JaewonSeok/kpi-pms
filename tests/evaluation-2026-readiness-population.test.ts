@@ -1285,6 +1285,130 @@ async function main() {
     assert.equal(fake.counts.writes, 0)
   })
 
+  await run('result-writing readiness reports guidance, warnings, exports, and performs no writes', async () => {
+    const resultWritingPersonalKpis = [
+      ...confirmedPersonalKpis,
+      {
+        id: 'kpi-daily-duplicate',
+        employeeId: 'emp-with-kpi',
+        kpiName: '매출 성장',
+        definition: '매출 성장 조직목표와 중복될 수 있는 일상 운영 업무입니다.',
+        formula: '',
+        policyCategory: 'DAILY_WORK',
+        status: 'CONFIRMED',
+        weight: 10,
+        targetValueT: 80,
+        linkedOrgKpiId: 'org-1',
+        linkedOrgKpi: null,
+        monthlyRecords: [],
+      },
+      {
+        id: 'kpi-project-k-missing-deliverable',
+        employeeId: 'emp-existing-eval',
+        kpiName: '프로젝트 K 과제 미정',
+        definition: '간단한 과제',
+        formula: '',
+        policyCategory: 'PROJECT_K',
+        status: 'CONFIRMED',
+        weight: 10,
+        targetValueT: null,
+        linkedOrgKpiId: null,
+        linkedOrgKpi: null,
+        monthlyRecords: [],
+      },
+      {
+        id: 'kpi-ai-mixed',
+        employeeId: 'emp-existing-eval',
+        kpiName: 'AI 활용평가 증빙 혼재',
+        definition: 'AI 활용평가 Pass/Fail 증빙을 연간 업적점수 결과에 섞어 쓰는 초안입니다.',
+        formula: '완료율',
+        policyCategory: 'PROJECT_T',
+        status: 'CONFIRMED',
+        weight: 10,
+        targetValueT: 100,
+        linkedOrgKpiId: null,
+        linkedOrgKpi: null,
+        monthlyRecords: [],
+      },
+    ]
+    const fake = makeDb({
+      personalKpis: resultWritingPersonalKpis,
+      evaluations: [
+        {
+          id: 'eval-existing-self',
+          targetId: 'emp-existing-eval',
+          evalStage: 'SELF',
+          items: [
+            {
+              id: 'item-existing',
+              personalKpiId: 'kpi-3',
+              policyCategory: 'PROJECT_T',
+              itemComment: 'Target 100 대비 실제 120건 완료. 본인 주도로 산출물 품질을 개선했고 https://drive.example.com/evidence 를 증빙으로 남겼습니다.',
+              targetAchievementLevel: 'EXCELLENT',
+              personalKpi: {
+                id: 'kpi-3',
+                kpiName: '기존 평가 보존 KPI',
+                policyCategory: 'PROJECT_T',
+              },
+            },
+            {
+              id: 'item-ai-mixed',
+              personalKpiId: 'kpi-ai-mixed',
+              policyCategory: 'PROJECT_T',
+              itemComment: 'AI 활용평가 Pass/Fail 증빙을 연간 업적점수 결과에 포함하려는 초안입니다. https://drive.example.com/ai',
+              targetAchievementLevel: 'TARGET',
+              personalKpi: {
+                id: 'kpi-ai-mixed',
+                kpiName: 'AI 활용평가 증빙 혼재',
+                policyCategory: 'PROJECT_T',
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const readiness = dryRun.resultWritingReadiness
+    const findRow = (id: string) => readiness.rows.find((row) => row.personalKpiId === id)
+
+    assert.equal(readiness.mode, 'READ_ONLY')
+    assert.equal(readiness.guidance.some((guide) => guide.category === 'ORG_GOAL'), true)
+    assert.equal(readiness.guidance.some((guide) => guide.category === 'DAILY_WORK'), true)
+    assert.equal(readiness.evidenceGuidance.some((item) => item.includes('Google Drive')), true)
+    assert.equal(readiness.leaderReviewChecklist.some((item) => item.includes('AI Pass/Fail')), true)
+    assert.equal(readiness.exportColumns.includes('employeeNo'), true)
+    assert.equal(readiness.summary.totalItemCount, resultWritingPersonalKpis.length)
+    assert.equal(readiness.summary.missingResultCount > 0, true)
+    assert.equal(readiness.summary.missingEvidenceCount > 0, true)
+    assert.equal(readiness.summary.missingContributionCount > 0, true)
+    assert.equal(readiness.summary.missingMeasurableResultCount > 0, true)
+    assert.equal(readiness.summary.orgGoalSourceWarningCount, 1)
+    assert.equal(readiness.summary.dailyWorkDuplicateRiskCount, 1)
+    assert.equal(readiness.summary.projectTkMissingDeliverableCount, 1)
+    assert.equal(readiness.summary.aiEvidenceMixedCount, 1)
+    assert.equal(findRow('kpi-1')?.warnings.some((warning) => warning.code === 'ORG_GOAL_WITHOUT_APPROVED_SOURCE'), true)
+    assert.equal(findRow('kpi-daily-duplicate')?.warnings.some((warning) => warning.code === 'DAILY_WORK_DUPLICATE_RISK'), true)
+    assert.equal(findRow('kpi-project-k-missing-deliverable')?.warnings.some((warning) => warning.code === 'PROJECT_TK_MISSING_DELIVERABLE'), true)
+    assert.equal(findRow('kpi-ai-mixed')?.warnings.some((warning) => warning.code === 'AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE'), true)
+    assert.equal(findRow('kpi-3')?.resultWritingStatus, 'READY_FOR_REVIEW')
+    assert.equal(
+      dryRun.warnings.some((warning) => warning.code === 'RESULT_WRITING_READINESS_WARNINGS'),
+      true
+    )
+    assert.equal(readiness.safety.writesPerformed, false)
+    assert.equal(readiness.safety.officialScoringEnabled, false)
+    assert.equal(readiness.safety.officialGradeEnabled, false)
+    assert.equal(dryRun.safety.totalScoreChanged, false)
+    assert.equal(dryRun.safety.gradeIdChanged, false)
+    assert.equal(fake.counts.writes, 0)
+  })
+
   await run('official scoring and grade flags remain disabled in dry-run safety output', async () => {
     const fake = makeDb()
 
@@ -1368,6 +1492,24 @@ async function main() {
     assert.equal(clientSource.includes('선택 조건 대상 목록 복사'), true)
     assert.equal(clientSource.includes('후속조치 테이블 복사'), true)
     assert.equal(clientSource.includes("['employeeNo', 'name', 'email', 'division', 'team', 'leader', 'action', 'followUpType', 'detail']"), true)
+    assert.equal(clientSource.includes('2026 수행결과 작성 readiness'), true)
+    assert.equal(clientSource.includes('이 화면은 2026 수행결과 작성 readiness를 점검합니다. 공식 점수/등급은 변경되지 않습니다.'), true)
+    assert.equal(clientSource.includes('수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다.'), true)
+    assert.equal(clientSource.includes('AI 활용평가 증빙은 연간 업적점수와 별도로 관리됩니다.'), true)
+    assert.equal(clientSource.includes('ORG_GOAL 조직목표'), true)
+    assert.equal(clientSource.includes('PROJECT_T 프로젝트 T'), true)
+    assert.equal(clientSource.includes('PROJECT_K 프로젝트 K'), true)
+    assert.equal(clientSource.includes('DAILY_WORK 일상업무'), true)
+    assert.equal(clientSource.includes('Leader review checklist'), true)
+    assert.equal(clientSource.includes('missing result 복사'), true)
+    assert.equal(clientSource.includes('missing evidence 복사'), true)
+    assert.equal(clientSource.includes('missing contribution 복사'), true)
+    assert.equal(clientSource.includes('ORG_GOAL source warning 복사'), true)
+    assert.equal(clientSource.includes('DAILY_WORK duplicate risk 복사'), true)
+    assert.equal(clientSource.includes('filtered TSV 복사'), true)
+    assert.equal(serverSource.includes('RESULT_WRITING_READINESS_WARNINGS'), true)
+    assert.equal(serverSource.includes('officialScoringEnabled: false'), true)
+    assert.equal(serverSource.includes('officialGradeEnabled: false'), true)
     assert.equal(clientSource.includes('/admin/performance-calendar'), true)
     assert.equal(serverSource.includes('작성 요청 필요'), true)
     assert.equal(serverSource.includes('제출 요청 필요'), true)

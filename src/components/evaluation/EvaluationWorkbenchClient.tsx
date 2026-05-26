@@ -170,6 +170,11 @@ type MboFollowUpGroup2026 = {
   href: string
   rows: MboFollowUpRecipientRow2026[]
 }
+type ResultWritingReadiness2026 = EvaluationReadinessPopulation2026ApiData['resultWritingReadiness']
+type ResultWritingReadinessRow2026 = ResultWritingReadiness2026['rows'][number]
+type ResultWritingWarningCode2026 = ResultWritingReadinessRow2026['warnings'][number]['code']
+type ResultWritingStatus2026 = ResultWritingReadinessRow2026['resultWritingStatus']
+type ResultWritingCategoryFilter2026 = NonNullable<ResultWritingReadinessRow2026['category']> | 'UNMAPPED'
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
 type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
@@ -3707,6 +3712,40 @@ const MBO_FOLLOW_UP_STATUS_FILTERS_2026: Array<MboFollowUpStatusFilter2026 | 'AL
   'TEAM_KPI_REVIEW',
 ]
 
+const RESULT_WRITING_STATUS_FILTERS_2026: Array<ResultWritingStatus2026 | 'ALL'> = [
+  'ALL',
+  'READY_FOR_REVIEW',
+  'NEEDS_RESULT',
+  'NEEDS_EVIDENCE',
+  'NEEDS_CONTRIBUTION',
+  'NEEDS_CATEGORY',
+  'MANUAL_REVIEW',
+]
+
+const RESULT_WRITING_CATEGORY_FILTERS_2026: Array<ResultWritingCategoryFilter2026 | 'ALL'> = [
+  'ALL',
+  'ORG_GOAL',
+  'PROJECT_T',
+  'PROJECT_K',
+  'DAILY_WORK',
+  'UNMAPPED',
+]
+
+const RESULT_WRITING_WARNING_FILTERS_2026: Array<ResultWritingWarningCode2026 | 'ALL'> = [
+  'ALL',
+  'MISSING_ACTUAL_RESULT',
+  'MISSING_MEASURABLE_RESULT',
+  'MISSING_EVIDENCE',
+  'MISSING_PERSONAL_CONTRIBUTION',
+  'MISSING_TARGET_ACTUAL_COMPARISON',
+  'MISSING_OUTPUT_IMPACT',
+  'MISSING_CATEGORY',
+  'ORG_GOAL_WITHOUT_APPROVED_SOURCE',
+  'DAILY_WORK_DUPLICATE_RISK',
+  'PROJECT_TK_MISSING_DELIVERABLE',
+  'AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE',
+]
+
 const MBO_FOLLOW_UP_TEMPLATES_2026: Record<MboFollowUpType2026, string> = {
   MISSING_MBO: [
     '2026 MBO 수립을 위해 /kpi/personal에서 개인 KPI를 작성해 주세요.',
@@ -3765,6 +3804,50 @@ function getMboFollowUpStatusLabel2026(value: MboFollowUpStatusFilter2026 | 'ALL
   if (value === 'POLICY_CATEGORY') return 'policyCategory 미분류'
   if (value === 'TEAM_KPI_REVIEW') return '팀 KPI 검토 필요'
   return getMboSetupStatusLabel2026(value)
+}
+
+function getResultWritingStatusLabel2026(value: ResultWritingStatus2026 | 'ALL') {
+  if (value === 'READY_FOR_REVIEW') return '리더 검토 준비'
+  if (value === 'NEEDS_RESULT') return '수행결과 필요'
+  if (value === 'NEEDS_EVIDENCE') return '증빙 필요'
+  if (value === 'NEEDS_CONTRIBUTION') return '기여 보완'
+  if (value === 'NEEDS_CATEGORY') return '카테고리 확정'
+  if (value === 'MANUAL_REVIEW') return '수동 검토'
+  return '전체'
+}
+
+function getResultWritingStatusTone2026(value: ResultWritingStatus2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'READY_FOR_REVIEW') return 'success'
+  if (value === 'NEEDS_RESULT' || value === 'NEEDS_CATEGORY') return 'error'
+  if (value === 'NEEDS_EVIDENCE' || value === 'NEEDS_CONTRIBUTION') return 'warn'
+  return 'neutral'
+}
+
+function getResultWritingCategoryLabel2026(value: ResultWritingCategoryFilter2026 | 'ALL') {
+  if (value === 'ORG_GOAL') return 'ORG_GOAL 조직목표'
+  if (value === 'PROJECT_T') return 'PROJECT_T 프로젝트 T'
+  if (value === 'PROJECT_K') return 'PROJECT_K 프로젝트 K'
+  if (value === 'DAILY_WORK') return 'DAILY_WORK 일상업무'
+  if (value === 'UNMAPPED') return '미분류'
+  return '전체'
+}
+
+function getResultWritingWarningLabel2026(value: ResultWritingWarningCode2026 | 'ALL') {
+  const labels: Record<ResultWritingWarningCode2026, string> = {
+    MISSING_ACTUAL_RESULT: '수행결과 누락',
+    MISSING_MEASURABLE_RESULT: '정량 결과 부족',
+    MISSING_EVIDENCE: '증빙 부족',
+    MISSING_PERSONAL_CONTRIBUTION: '본인 기여 부족',
+    MISSING_TARGET_ACTUAL_COMPARISON: '목표/실제 비교 부족',
+    MISSING_OUTPUT_IMPACT: '산출물/영향 부족',
+    MISSING_CATEGORY: 'policyCategory 미분류',
+    ORG_GOAL_WITHOUT_APPROVED_SOURCE: 'ORG_GOAL 승인 소스 없음',
+    DAILY_WORK_DUPLICATE_RISK: 'DAILY_WORK 중복 위험',
+    PROJECT_TK_MISSING_DELIVERABLE: '프로젝트 deliverable 부족',
+    AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE: 'AI 증빙 혼재 위험',
+  }
+  if (value === 'ALL') return '전체'
+  return labels[value]
 }
 
 function getMboFollowUpTypeTone2026(value: MboFollowUpType2026): 'success' | 'warn' | 'error' | 'neutral' {
@@ -3832,6 +3915,39 @@ function buildMboFollowUpRecipientList2026(rows: MboFollowUpRecipientRow2026[]) 
     .join('\n')
 }
 
+function buildResultWritingTsv2026(rows: ResultWritingReadinessRow2026[], headers?: string[]) {
+  return buildTsv2026(
+    headers ?? [
+      'employeeNo',
+      'employeeName',
+      'email',
+      'division',
+      'departmentPath',
+      'leader',
+      'category',
+      'mboStatus',
+      'resultWritingStatus',
+      'kpiName',
+      'warnings',
+      'nextAction',
+    ],
+    rows.map((row) => [
+      row.employeeNo,
+      row.employeeName,
+      row.email ?? '',
+      row.divisionName,
+      row.departmentPath,
+      row.leaderName,
+      row.categoryLabel,
+      row.mboStatus,
+      getResultWritingStatusLabel2026(row.resultWritingStatus),
+      row.kpiName,
+      row.warnings.map((warning) => warning.label).join(', '),
+      row.nextAction,
+    ])
+  )
+}
+
 function PolicyReadinessPopulation2026Panel(props: {
   dryRunData: EvaluationReadinessPopulation2026ApiData | null
   loading: boolean
@@ -3872,10 +3988,21 @@ function PolicyReadinessPopulation2026Panel(props: {
   const [followUpLeaderFilter, setFollowUpLeaderFilter] = useState('ALL')
   const [followUpTypeFilter, setFollowUpTypeFilter] = useState<MboFollowUpType2026 | 'ALL'>('ALL')
   const [followUpStatusFilter, setFollowUpStatusFilter] = useState<MboFollowUpStatusFilter2026 | 'ALL'>('ALL')
+  const [resultWritingDivisionFilter, setResultWritingDivisionFilter] = useState('ALL')
+  const [resultWritingTeamFilter, setResultWritingTeamFilter] = useState('ALL')
+  const [resultWritingLeaderFilter, setResultWritingLeaderFilter] = useState('ALL')
+  const [resultWritingEmployeeFilter, setResultWritingEmployeeFilter] = useState('ALL')
+  const [resultWritingCategoryFilter, setResultWritingCategoryFilter] =
+    useState<ResultWritingCategoryFilter2026 | 'ALL'>('ALL')
+  const [resultWritingStatusFilter, setResultWritingStatusFilter] = useState<ResultWritingStatus2026 | 'ALL'>('ALL')
+  const [resultWritingWarningFilter, setResultWritingWarningFilter] =
+    useState<ResultWritingWarningCode2026 | 'ALL'>('ALL')
   const [copiedMonitoringTable, setCopiedMonitoringTable] = useState<string | null>(null)
   const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
   const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
   const teamReviewRows = useMemo(() => teamKpiHrReviewCoverage?.candidates ?? [], [teamKpiHrReviewCoverage])
+  const resultWritingReadiness = dryRun?.resultWritingReadiness
+  const resultWritingRows = useMemo(() => resultWritingReadiness?.rows ?? [], [resultWritingReadiness])
   const topDivisionCoverage = mboCoverage?.divisionCoverage ?? []
   const topTeamCoverage = mboCoverage?.teamCoverage ?? []
   const divisionOptions = useMemo(
@@ -4250,6 +4377,116 @@ function PolicyReadinessPopulation2026Panel(props: {
         ])
       ),
     [filteredFollowUpRows]
+  )
+  const resultWritingDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          resultWritingRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [resultWritingRows]
+  )
+  const resultWritingTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          resultWritingRows
+            .filter((row) => row.departmentId && (resultWritingDivisionFilter === 'ALL' || row.divisionId === resultWritingDivisionFilter))
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [resultWritingDivisionFilter, resultWritingRows]
+  )
+  const resultWritingLeaderOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          resultWritingRows
+            .filter((row) => row.leaderId)
+            .map((row) => [row.leaderId as string, row.leaderName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [resultWritingRows]
+  )
+  const resultWritingEmployeeOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          resultWritingRows.map((row) => [row.employeeId, `${row.employeeName}${row.employeeNo ? ` (${row.employeeNo})` : ''}`])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [resultWritingRows]
+  )
+  const filteredResultWritingRows = useMemo(
+    () =>
+      resultWritingRows.filter((row) => {
+        const matchesDivision = resultWritingDivisionFilter === 'ALL' || row.divisionId === resultWritingDivisionFilter
+        const matchesTeam = resultWritingTeamFilter === 'ALL' || row.departmentId === resultWritingTeamFilter
+        const matchesLeader = resultWritingLeaderFilter === 'ALL' || row.leaderId === resultWritingLeaderFilter
+        const matchesEmployee = resultWritingEmployeeFilter === 'ALL' || row.employeeId === resultWritingEmployeeFilter
+        const matchesCategory =
+          resultWritingCategoryFilter === 'ALL' ||
+          (row.category ?? 'UNMAPPED') === resultWritingCategoryFilter
+        const matchesStatus = resultWritingStatusFilter === 'ALL' || row.resultWritingStatus === resultWritingStatusFilter
+        const matchesWarning =
+          resultWritingWarningFilter === 'ALL' ||
+          row.warnings.some((warning) => warning.code === resultWritingWarningFilter)
+        return (
+          matchesDivision &&
+          matchesTeam &&
+          matchesLeader &&
+          matchesEmployee &&
+          matchesCategory &&
+          matchesStatus &&
+          matchesWarning
+        )
+      }),
+    [
+      resultWritingCategoryFilter,
+      resultWritingDivisionFilter,
+      resultWritingEmployeeFilter,
+      resultWritingLeaderFilter,
+      resultWritingRows,
+      resultWritingStatusFilter,
+      resultWritingTeamFilter,
+      resultWritingWarningFilter,
+    ]
+  )
+  const resultWritingCombinedTsv = useMemo(
+    () => buildResultWritingTsv2026(filteredResultWritingRows, resultWritingReadiness?.exportColumns),
+    [filteredResultWritingRows, resultWritingReadiness?.exportColumns]
+  )
+  const resultWritingMissingResultTsv = useMemo(
+    () => buildResultWritingTsv2026(resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'MISSING_ACTUAL_RESULT'))),
+    [resultWritingRows]
+  )
+  const resultWritingMissingEvidenceTsv = useMemo(
+    () => buildResultWritingTsv2026(resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'MISSING_EVIDENCE'))),
+    [resultWritingRows]
+  )
+  const resultWritingMissingContributionTsv = useMemo(
+    () =>
+      buildResultWritingTsv2026(
+        resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'MISSING_PERSONAL_CONTRIBUTION'))
+      ),
+    [resultWritingRows]
+  )
+  const resultWritingOrgGoalSourceTsv = useMemo(
+    () =>
+      buildResultWritingTsv2026(
+        resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'ORG_GOAL_WITHOUT_APPROVED_SOURCE'))
+      ),
+    [resultWritingRows]
+  )
+  const resultWritingDailyWorkDuplicateTsv = useMemo(
+    () =>
+      buildResultWritingTsv2026(
+        resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'DAILY_WORK_DUPLICATE_RISK'))
+      ),
+    [resultWritingRows]
   )
   const teamKpiReviewTsv = useMemo(
     () =>
@@ -5074,6 +5311,333 @@ function PolicyReadinessPopulation2026Panel(props: {
                     <Link href="/kpi/personal" className="font-semibold underline-offset-2 hover:underline">/kpi/personal</Link>
                     <Link href="/evaluation/performance" className="font-semibold underline-offset-2 hover:underline">/evaluation/performance</Link>
                     <Link href="/admin/performance-calendar" className="font-semibold underline-offset-2 hover:underline">/admin/performance-calendar</Link>
+                  </div>
+                </div>
+              ) : null}
+
+              {resultWritingReadiness ? (
+                <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 readiness</h5>
+                        <Badge tone="neutral">Read-only</Badge>
+                        <Badge tone="neutral">저장 없음</Badge>
+                        <Badge tone="neutral">공식 점수 미적용</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        이 화면은 2026 수행결과 작성 readiness를 점검합니다. 공식 점수/등급은 변경되지 않습니다.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-emerald-700">
+                        수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다. AI 활용평가 증빙은 연간 업적점수와 별도로 관리됩니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('result-writing-missing-result', resultWritingMissingResultTsv)}
+                        disabled={resultWritingReadiness.summary.missingResultCount === 0}
+                        className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'result-writing-missing-result' ? '결과 누락 복사됨' : 'missing result 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('result-writing-missing-evidence', resultWritingMissingEvidenceTsv)}
+                        disabled={resultWritingReadiness.summary.missingEvidenceCount === 0}
+                        className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'result-writing-missing-evidence' ? '증빙 누락 복사됨' : 'missing evidence 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('result-writing-missing-contribution', resultWritingMissingContributionTsv)}
+                        disabled={resultWritingReadiness.summary.missingContributionCount === 0}
+                        className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'result-writing-missing-contribution' ? '기여 누락 복사됨' : 'missing contribution 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('result-writing-combined', resultWritingCombinedTsv)}
+                        disabled={!filteredResultWritingRows.length}
+                        className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'result-writing-combined' ? 'readiness TSV 복사됨' : 'filtered TSV 복사'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard
+                      label="점검 항목"
+                      value={resultWritingReadiness.summary.totalItemCount.toLocaleString()}
+                      help="Personal KPI / 기존 item"
+                      compact
+                    />
+                    <MetricCard
+                      label="결과 초안"
+                      value={resultWritingReadiness.summary.resultDraftPresentCount.toLocaleString()}
+                      help="itemComment 기준"
+                      compact
+                    />
+                    <MetricCard
+                      label="수행결과 누락"
+                      value={resultWritingReadiness.summary.missingResultCount.toLocaleString()}
+                      help="작성 필요"
+                      compact
+                      variant={resultWritingReadiness.summary.missingResultCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="증빙 부족"
+                      value={resultWritingReadiness.summary.missingEvidenceCount.toLocaleString()}
+                      help="링크/첨부/코멘트"
+                      compact
+                      variant={resultWritingReadiness.summary.missingEvidenceCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="본인 기여 부족"
+                      value={resultWritingReadiness.summary.missingContributionCount.toLocaleString()}
+                      help="역할/기여"
+                      compact
+                      variant={resultWritingReadiness.summary.missingContributionCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="리더 검토 warning"
+                      value={resultWritingReadiness.summary.leaderReviewWarningCount.toLocaleString()}
+                      help="non-blocking"
+                      compact
+                      variant={resultWritingReadiness.summary.leaderReviewWarningCount > 0 ? 'warning' : 'default'}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-emerald-100 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">카테고리별 작성 기준</h6>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {resultWritingReadiness.guidance.map((guide) => (
+                          <div key={guide.category} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-semibold text-slate-900">{guide.label}</div>
+                            <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                              {guide.expectations.map((item) => (
+                                <li key={item}>- {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-100 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">증빙/리더 검토 checklist</h6>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-xs font-semibold text-slate-900">Evidence guidance</div>
+                          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                            {resultWritingReadiness.evidenceGuidance.map((item) => (
+                              <li key={item}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-xs font-semibold text-slate-900">Leader review checklist</div>
+                          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                            {resultWritingReadiness.leaderReviewChecklist.map((item) => (
+                              <li key={item}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+                    <label className="text-xs font-semibold text-slate-600">
+                      본부
+                      <select
+                        value={resultWritingDivisionFilter}
+                        onChange={(event) => {
+                          setResultWritingDivisionFilter(event.target.value)
+                          setResultWritingTeamFilter('ALL')
+                        }}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 본부</option>
+                        {resultWritingDivisionOptions.map(([divisionId, divisionName]) => (
+                          <option key={divisionId} value={divisionId}>{divisionName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      팀
+                      <select
+                        value={resultWritingTeamFilter}
+                        onChange={(event) => setResultWritingTeamFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 팀</option>
+                        {resultWritingTeamOptions.map(([departmentId, departmentPath]) => (
+                          <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      직원
+                      <select
+                        value={resultWritingEmployeeFilter}
+                        onChange={(event) => setResultWritingEmployeeFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 직원</option>
+                        {resultWritingEmployeeOptions.map(([employeeId, employeeLabel]) => (
+                          <option key={employeeId} value={employeeId}>{employeeLabel}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      리더
+                      <select
+                        value={resultWritingLeaderFilter}
+                        onChange={(event) => setResultWritingLeaderFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 리더</option>
+                        {resultWritingLeaderOptions.map(([leaderId, leaderName]) => (
+                          <option key={leaderId} value={leaderId}>{leaderName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      category
+                      <select
+                        value={resultWritingCategoryFilter}
+                        onChange={(event) => setResultWritingCategoryFilter(event.target.value as ResultWritingCategoryFilter2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {RESULT_WRITING_CATEGORY_FILTERS_2026.map((category) => (
+                          <option key={category} value={category}>{getResultWritingCategoryLabel2026(category)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      result status
+                      <select
+                        value={resultWritingStatusFilter}
+                        onChange={(event) => setResultWritingStatusFilter(event.target.value as ResultWritingStatus2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {RESULT_WRITING_STATUS_FILTERS_2026.map((status) => (
+                          <option key={status} value={status}>{getResultWritingStatusLabel2026(status)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      warning
+                      <select
+                        value={resultWritingWarningFilter}
+                        onChange={(event) => setResultWritingWarningFilter(event.target.value as ResultWritingWarningCode2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {RESULT_WRITING_WARNING_FILTERS_2026.map((warning) => (
+                          <option key={warning} value={warning}>{getResultWritingWarningLabel2026(warning)}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyMonitoringTable('result-writing-org-goal-source', resultWritingOrgGoalSourceTsv)}
+                      disabled={resultWritingReadiness.summary.orgGoalSourceWarningCount === 0}
+                      className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      {copiedMonitoringTable === 'result-writing-org-goal-source' ? 'ORG_GOAL 경고 복사됨' : 'ORG_GOAL source warning 복사'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void copyMonitoringTable('result-writing-daily-work-duplicate', resultWritingDailyWorkDuplicateTsv)}
+                      disabled={resultWritingReadiness.summary.dailyWorkDuplicateRiskCount === 0}
+                      className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      {copiedMonitoringTable === 'result-writing-daily-work-duplicate' ? 'DAILY_WORK 위험 복사됨' : 'DAILY_WORK duplicate risk 복사'}
+                    </button>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">수행결과 readiness 대상</h6>
+                      <span className="text-xs text-slate-500">
+                        {filteredResultWritingRows.length.toLocaleString()}건 표시 · 전체 {resultWritingRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-emerald-50 text-emerald-700">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">직원</th>
+                            <th className="px-4 py-2 font-semibold">조직/리더</th>
+                            <th className="px-4 py-2 font-semibold">KPI/category</th>
+                            <th className="px-4 py-2 font-semibold">readiness</th>
+                            <th className="px-4 py-2 font-semibold">결과/증빙</th>
+                            <th className="px-4 py-2 font-semibold">warning / next action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredResultWritingRows.slice(0, 120).map((row) => (
+                            <tr key={`${row.employeeId}:${row.personalKpiId}`}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}{row.email ? ` · ${row.email}` : ''}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="text-slate-600">{row.departmentPath}</div>
+                                <div className="mt-1 text-slate-400">{row.leaderName}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.kpiName}</div>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  <Badge tone={row.category ? 'neutral' : 'error'}>{row.categoryLabel}</Badge>
+                                  <Badge tone="neutral">{row.mboStatus}</Badge>
+                                  {row.linkedOrgKpiTitle ? <Badge tone={row.approvedOrgGoalSource ? 'success' : 'warn'}>{row.linkedOrgKpiTitle}</Badge> : null}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge tone={getResultWritingStatusTone2026(row.resultWritingStatus)}>
+                                  {getResultWritingStatusLabel2026(row.resultWritingStatus)}
+                                </Badge>
+                                <div className="mt-1 text-slate-400">{row.latestMonthlyRecordLabel ?? '월간 근거 없음'}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                결과 {row.resultDraftPresent ? '있음' : '없음'} · 증빙 {row.evidencePresent ? `${row.evidenceSourceCount}건` : '없음'} · 기여 {row.personalContributionPresent ? '있음' : '부족'}
+                                <div className="mt-1 text-slate-400">
+                                  정량 {row.measurableResultPresent ? '있음' : '부족'} · 목표/실제 {row.targetActualComparisonPresent ? '있음' : '부족'} · 산출/영향 {row.outputImpactPresent ? '있음' : '부족'}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex max-w-lg flex-wrap gap-1">
+                                  {row.warnings.slice(0, 4).map((warning) => (
+                                    <Badge key={`${row.personalKpiId}:${warning.code}`} tone="warn">{warning.label}</Badge>
+                                  ))}
+                                  {row.warnings.length > 4 ? <Badge tone="neutral">+{row.warnings.length - 4}</Badge> : null}
+                                  {!row.warnings.length ? <Badge tone="success">warning 없음</Badge> : null}
+                                </div>
+                                <div className="mt-2 text-slate-600">{row.nextAction}</div>
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredResultWritingRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">수행결과 readiness 필터 조건에 맞는 항목이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredResultWritingRows.length > 120 ? (
+                      <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                        화면에는 120건까지만 표시합니다. 전체 목록은 filtered TSV 복사로 추출해 주세요.
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
