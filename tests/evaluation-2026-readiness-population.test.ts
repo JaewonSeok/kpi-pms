@@ -78,6 +78,7 @@ const employees = [
     id: 'emp-with-kpi',
     empId: 'E001',
     empName: 'KPI 보유자',
+    gwsEmail: 'kpi.owner@rsupport.com',
     deptId: 'team-sales',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
@@ -87,6 +88,7 @@ const employees = [
     id: 'emp-missing-kpi',
     empId: 'E002',
     empName: 'KPI 누락자',
+    gwsEmail: 'kpi.missing@rsupport.com',
     deptId: 'team-support',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
@@ -96,6 +98,7 @@ const employees = [
     id: 'emp-existing-eval',
     empId: 'E003',
     empName: '기존 평가자',
+    gwsEmail: 'kpi.existing@rsupport.com',
     deptId: 'team-sales',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
@@ -555,6 +558,7 @@ async function main() {
     assert.equal(dryRun.employeesMissingConfirmedPersonalKpi[0]?.employeeName, 'KPI 누락자')
     assert.equal(dryRun.mboSetupCoverage.monitoring.missingMboEmployees.length, 1)
     assert.equal(dryRun.mboSetupCoverage.monitoring.missingMboEmployees[0]?.actionLabel, '작성 요청 필요')
+    assert.equal(dryRun.mboSetupCoverage.monitoring.missingMboEmployees[0]?.email, 'kpi.missing@rsupport.com')
     assert.equal(dryRun.mboSetupCoverage.monitoring.employeeRows.length, 3)
     assert.equal(fake.counts.writes, 0)
     assert.equal(dryRun.safety.writesPerformed, false)
@@ -1246,6 +1250,35 @@ async function main() {
     assert.equal(fake.counts.writes, 0)
   })
 
+  await run('follow-up communication readiness has recipient source data and performs no writes', async () => {
+    const fake = makeDb()
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const missing = dryRun.mboSetupCoverage.monitoring.missingMboEmployees
+    const policyCategory = dryRun.mboSetupCoverage.monitoring.policyCategoryMissingItems
+    const teamKpiNeedsHr = dryRun.teamKpiHrReviewCoverage.candidates.filter((candidate) =>
+      candidate.reviewStatus === 'PENDING_REVIEW' || candidate.reviewStatus === 'NEEDS_DISCUSSION'
+    )
+
+    assert.equal(missing[0]?.actionLabel, '작성 요청 필요')
+    assert.equal(missing[0]?.email, 'kpi.missing@rsupport.com')
+    assert.equal(policyCategory[0]?.actionLabel, '카테고리 확정 필요')
+    assert.equal(policyCategory[0]?.email, 'kpi.owner@rsupport.com')
+    assert.equal(teamKpiNeedsHr.length > 0, true)
+    assert.equal(teamKpiNeedsHr[0]?.reviewStatus, 'PENDING_REVIEW')
+    assert.equal(dryRun.safety.writesPerformed, false)
+    assert.equal(dryRun.safety.officialScoringEnabled, false)
+    assert.equal(dryRun.safety.officialGradeEnabled, false)
+    assert.equal(dryRun.safety.totalScoreChanged, false)
+    assert.equal(dryRun.safety.gradeIdChanged, false)
+    assert.equal(fake.counts.writes, 0)
+  })
+
   await run('official scoring and grade flags remain disabled in dry-run safety output', async () => {
     const fake = makeDb()
 
@@ -1315,6 +1348,17 @@ async function main() {
     assert.equal(clientSource.includes('2026 MBO setup coverage'), true)
     assert.equal(clientSource.includes('직원들이 2026 Personal KPI를 작성·제출·확정하는 준비 현황입니다.'), true)
     assert.equal(clientSource.includes('HR MBO setup monitoring'), true)
+    assert.equal(clientSource.includes('2026 MBO 후속조치 안내'), true)
+    assert.equal(clientSource.includes('이 화면은 HR 후속조치용 안내/복사 도구입니다. 알림 발송, 평가 생성, 점수/등급 변경은 수행하지 않습니다.'), true)
+    assert.equal(clientSource.includes('2026 MBO 수립을 위해 /kpi/personal에서 개인 KPI를 작성해 주세요.'), true)
+    assert.equal(clientSource.includes('작성 중인 2026 MBO 초안을 보완 후 제출해 주세요.'), true)
+    assert.equal(clientSource.includes('제출된 팀원 MBO를 검토해 주세요.'), true)
+    assert.equal(clientSource.includes('policyCategory 미분류 항목을 ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 하나로 확정해 주세요.'), true)
+    assert.equal(clientSource.includes('팀 KPI별로 조직목표 반영 / 일상업무 처리 / 예외 승인 / 논의 필요를 결정해 주세요.'), true)
+    assert.equal(clientSource.includes('선택 조건 대상 목록 복사'), true)
+    assert.equal(clientSource.includes('후속조치 테이블 복사'), true)
+    assert.equal(clientSource.includes("['employeeNo', 'name', 'email', 'division', 'team', 'leader', 'action', 'followUpType', 'detail']"), true)
+    assert.equal(clientSource.includes('/admin/performance-calendar'), true)
     assert.equal(serverSource.includes('작성 요청 필요'), true)
     assert.equal(serverSource.includes('제출 요청 필요'), true)
     assert.equal(serverSource.includes('리더 검토 필요'), true)

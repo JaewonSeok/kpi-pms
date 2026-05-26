@@ -70,6 +70,7 @@ type ActiveEmployee2026 = {
   id: string
   empId?: string | null
   empName: string
+  gwsEmail?: string | null
   deptId: string
   role?: string | null
   position?: string | null
@@ -249,6 +250,7 @@ export type Evaluation2026MboSetupEmployeeMonitoringRow = {
   employeeId: string
   employeeNo: string | null
   employeeName: string
+  email: string | null
   divisionId: string | null
   divisionName: string
   departmentId: string | null
@@ -273,6 +275,7 @@ export type Evaluation2026MboPolicyCategoryMissingItemRow = {
   employeeId: string
   employeeNo: string | null
   employeeName: string
+  email: string | null
   divisionId: string | null
   divisionName: string
   departmentId: string | null
@@ -1008,6 +1011,7 @@ function buildMboSetupCoverage2026(params: {
         employeeId: employee.id,
         employeeNo: employee.empId ?? null,
         employeeName: employee.empName,
+        email: employee.gwsEmail ?? null,
         divisionId,
         divisionName,
         departmentId: employee.deptId ?? null,
@@ -1049,6 +1053,7 @@ function buildMboSetupCoverage2026(params: {
         employeeId: kpi.employeeId,
         employeeNo: employee?.empId ?? null,
         employeeName: employee?.empName ?? '대상자 미확인',
+        email: employee?.gwsEmail ?? null,
         divisionId,
         divisionName,
         departmentId: employee?.deptId ?? null,
@@ -1142,6 +1147,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
         id: true,
         empId: true,
         empName: true,
+        gwsEmail: true,
         deptId: true,
         role: true,
         position: true,

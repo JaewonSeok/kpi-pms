@@ -133,6 +133,42 @@ type TeamKpiHrReviewDecisionDraft2026 = {
   reason: TeamKpiHrReviewReason2026 | ''
   note: string
 }
+type MboFollowUpType2026 =
+  | 'MISSING_MBO'
+  | 'DRAFT_MBO'
+  | 'LEADER_REVIEW'
+  | 'POLICY_CATEGORY'
+  | 'TEAM_KPI_REVIEW'
+type MboFollowUpStatusFilter2026 =
+  | MboSetupMonitoringStatus2026
+  | 'POLICY_CATEGORY'
+  | 'TEAM_KPI_REVIEW'
+type MboFollowUpRecipientRow2026 = {
+  id: string
+  type: MboFollowUpType2026
+  typeLabel: string
+  status: MboFollowUpStatusFilter2026
+  employeeNo: string | null
+  name: string
+  email: string | null
+  divisionId: string | null
+  divisionName: string
+  departmentId: string | null
+  departmentPath: string
+  leaderId: string | null
+  leaderName: string
+  actionLabel: string
+  detail: string
+}
+type MboFollowUpGroup2026 = {
+  type: MboFollowUpType2026
+  label: string
+  actionLabel: string
+  description: string
+  template: string
+  href: string
+  rows: MboFollowUpRecipientRow2026[]
+}
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
 type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
@@ -3474,6 +3510,55 @@ const TEAM_KPI_HR_REVIEW_REASONS_2026: TeamKpiHrReviewReason2026[] = [
   '기타 HR 사유',
 ]
 
+const MBO_FOLLOW_UP_TYPES_2026: Array<MboFollowUpType2026 | 'ALL'> = [
+  'ALL',
+  'MISSING_MBO',
+  'DRAFT_MBO',
+  'LEADER_REVIEW',
+  'POLICY_CATEGORY',
+  'TEAM_KPI_REVIEW',
+]
+
+const MBO_FOLLOW_UP_STATUS_FILTERS_2026: Array<MboFollowUpStatusFilter2026 | 'ALL'> = [
+  'ALL',
+  'MISSING',
+  'DRAFT',
+  'SUBMITTED_REVIEWING',
+  'CONFIRMED',
+  'POLICY_CATEGORY',
+  'TEAM_KPI_REVIEW',
+]
+
+const MBO_FOLLOW_UP_TEMPLATES_2026: Record<MboFollowUpType2026, string> = {
+  MISSING_MBO: [
+    '2026 MBO 수립을 위해 /kpi/personal에서 개인 KPI를 작성해 주세요.',
+    '조직목표 / 프로젝트 T / 프로젝트 K / 일상업무를 구분해 주세요.',
+    '수행계획, 측정 가능한 목표, 본인 기여 내용을 작성해 주세요.',
+    '제출 기한은 HR 안내 기준을 따릅니다.',
+  ].join('\n'),
+  DRAFT_MBO: [
+    '작성 중인 2026 MBO 초안을 보완 후 제출해 주세요.',
+    '작성 품질 체크 항목을 확인해 주세요.',
+    '제출 후 리더 검토가 진행됩니다.',
+  ].join('\n'),
+  LEADER_REVIEW: [
+    '제출된 팀원 MBO를 검토해 주세요.',
+    '조직목표 / 프로젝트 / 일상업무 분류가 적절한지 확인해 주세요.',
+    '보완 필요 시 초안으로 되돌리기를 사용해 주세요.',
+    '승인 전 비중, 수행계획, 측정 기준을 확인해 주세요.',
+  ].join('\n'),
+  POLICY_CATEGORY: [
+    'policyCategory 미분류 항목을 ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 하나로 확정해 주세요.',
+    'ORG_GOAL은 본부 KPI 또는 HR 승인 팀 KPI와 연결되어야 합니다.',
+    '조직목표/프로젝트에 포함된 업무는 DAILY_WORK로 중복 기재하지 않도록 확인해 주세요.',
+  ].join('\n'),
+  TEAM_KPI_REVIEW: [
+    '팀 KPI별로 조직목표 반영 / 일상업무 처리 / 예외 승인 / 논의 필요를 결정해 주세요.',
+    '결정 사유를 남겨 주세요.',
+    '이 결정은 공식 점수/등급이 아니라 MBO readiness metadata입니다.',
+  ].join('\n'),
+}
+
 function getMboSetupStatusLabel2026(value: MboSetupMonitoringStatus2026 | 'ALL') {
   if (value === 'MISSING') return 'MBO 없음'
   if (value === 'DRAFT') return '초안'
@@ -3486,6 +3571,27 @@ function getMboSetupStatusTone2026(value: MboSetupMonitoringStatus2026): 'succes
   if (value === 'CONFIRMED') return 'success'
   if (value === 'SUBMITTED_REVIEWING') return 'warn'
   if (value === 'MISSING') return 'error'
+  return 'neutral'
+}
+
+function getMboFollowUpTypeLabel2026(value: MboFollowUpType2026 | 'ALL') {
+  if (value === 'MISSING_MBO') return 'MBO 없음'
+  if (value === 'DRAFT_MBO') return '초안 보유'
+  if (value === 'LEADER_REVIEW') return '제출/검토 중'
+  if (value === 'POLICY_CATEGORY') return 'policyCategory 미분류'
+  if (value === 'TEAM_KPI_REVIEW') return '팀 KPI 검토'
+  return '전체'
+}
+
+function getMboFollowUpStatusLabel2026(value: MboFollowUpStatusFilter2026 | 'ALL') {
+  if (value === 'POLICY_CATEGORY') return 'policyCategory 미분류'
+  if (value === 'TEAM_KPI_REVIEW') return '팀 KPI 검토 필요'
+  return getMboSetupStatusLabel2026(value)
+}
+
+function getMboFollowUpTypeTone2026(value: MboFollowUpType2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'MISSING_MBO') return 'error'
+  if (value === 'DRAFT_MBO' || value === 'LEADER_REVIEW' || value === 'TEAM_KPI_REVIEW') return 'warn'
   return 'neutral'
 }
 
@@ -3516,6 +3622,36 @@ function sanitizeTsvCell(value: unknown) {
 
 function buildTsv2026(headers: string[], rows: Array<Array<unknown>>) {
   return [headers, ...rows].map((row) => row.map(sanitizeTsvCell).join('\t')).join('\n')
+}
+
+function formatTopFollowUpValues2026(values: Array<string | null | undefined>, emptyLabel = '대상 없음') {
+  const counts = new Map<string, number>()
+  for (const value of values) {
+    const label = value?.trim()
+    if (!label) continue
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  const top = Array.from(counts.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'ko'))
+    .slice(0, 3)
+  if (!top.length) return emptyLabel
+  return top.map(([label, count]) => `${label} ${count.toLocaleString()}건`).join(' · ')
+}
+
+function buildMboFollowUpRecipientList2026(rows: MboFollowUpRecipientRow2026[]) {
+  return rows
+    .map((row) =>
+      [
+        row.employeeNo,
+        row.name,
+        row.email,
+        row.divisionName,
+        row.departmentPath,
+        row.leaderName,
+        row.actionLabel,
+      ].filter(Boolean).join(' / ')
+    )
+    .join('\n')
 }
 
 function PolicyReadinessPopulation2026Panel(props: {
@@ -3553,6 +3689,11 @@ function PolicyReadinessPopulation2026Panel(props: {
   const [teamReviewBulkSaving, setTeamReviewBulkSaving] = useState(false)
   const [teamReviewSaveNotice, setTeamReviewSaveNotice] = useState('')
   const [teamReviewSaveError, setTeamReviewSaveError] = useState('')
+  const [followUpDivisionFilter, setFollowUpDivisionFilter] = useState('ALL')
+  const [followUpTeamFilter, setFollowUpTeamFilter] = useState('ALL')
+  const [followUpLeaderFilter, setFollowUpLeaderFilter] = useState('ALL')
+  const [followUpTypeFilter, setFollowUpTypeFilter] = useState<MboFollowUpType2026 | 'ALL'>('ALL')
+  const [followUpStatusFilter, setFollowUpStatusFilter] = useState<MboFollowUpStatusFilter2026 | 'ALL'>('ALL')
   const [copiedMonitoringTable, setCopiedMonitoringTable] = useState<string | null>(null)
   const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
   const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
@@ -3663,6 +3804,195 @@ function PolicyReadinessPopulation2026Panel(props: {
   )
   const allVisibleTeamReviewSelected =
     visibleTeamReviewRows.length > 0 && selectedVisibleTeamReviewCount === visibleTeamReviewRows.length
+  const followUpGroups = useMemo<MboFollowUpGroup2026[]>(() => {
+    const toEmployeeFollowUpRow = (
+      row: NonNullable<typeof monitoring>['employeeRows'][number],
+      type: MboFollowUpType2026,
+      actionLabel: string
+    ): MboFollowUpRecipientRow2026 => ({
+      id: `${type}:${row.employeeId}`,
+      type,
+      typeLabel: getMboFollowUpTypeLabel2026(type),
+      status: row.status,
+      employeeNo: row.employeeNo,
+      name: row.employeeName,
+      email: row.email ?? null,
+      divisionId: row.divisionId,
+      divisionName: row.divisionName,
+      departmentId: row.departmentId,
+      departmentPath: row.departmentPath,
+      leaderId: row.managerId,
+      leaderName: row.managerName,
+      actionLabel,
+      detail: `KPI 전체 ${row.totalPersonalKpiCount} · 초안 ${row.draftPersonalKpiCount} · 제출/검토 ${
+        row.submittedPersonalKpiCount + row.managerReviewPersonalKpiCount
+      } · 확정 ${row.confirmedPersonalKpiCount}`,
+    })
+
+    const missingRows = (monitoring?.missingMboEmployees ?? []).map((row) =>
+      toEmployeeFollowUpRow(row, 'MISSING_MBO', '작성 요청 필요')
+    )
+    const draftRows = (monitoring?.draftMboEmployees ?? []).map((row) =>
+      toEmployeeFollowUpRow(row, 'DRAFT_MBO', '제출 요청 필요')
+    )
+    const submittedRows = (monitoring?.submittedReviewingMboEmployees ?? []).map((row) =>
+      toEmployeeFollowUpRow(row, 'LEADER_REVIEW', '리더 검토 필요')
+    )
+    const policyRows = (monitoring?.policyCategoryMissingItems ?? []).map((row): MboFollowUpRecipientRow2026 => ({
+      id: `POLICY_CATEGORY:${row.personalKpiId}`,
+      type: 'POLICY_CATEGORY',
+      typeLabel: getMboFollowUpTypeLabel2026('POLICY_CATEGORY'),
+      status: 'POLICY_CATEGORY',
+      employeeNo: row.employeeNo,
+      name: row.employeeName,
+      email: row.email ?? null,
+      divisionId: row.divisionId,
+      divisionName: row.divisionName,
+      departmentId: row.departmentId,
+      departmentPath: row.departmentPath,
+      leaderId: row.managerId,
+      leaderName: row.managerName,
+      actionLabel: '카테고리 확정 필요',
+      detail: `${row.personalKpiName}${row.linkedOrgKpiTitle ? ` · 연결 KPI ${row.linkedOrgKpiTitle}` : ''}`,
+    }))
+    const teamKpiRows = teamReviewRows
+      .filter((row) => row.reviewStatus === 'PENDING_REVIEW' || row.reviewStatus === 'NEEDS_DISCUSSION')
+      .map((row): MboFollowUpRecipientRow2026 => ({
+        id: `TEAM_KPI_REVIEW:${row.orgKpiId}`,
+        type: 'TEAM_KPI_REVIEW',
+        typeLabel: getMboFollowUpTypeLabel2026('TEAM_KPI_REVIEW'),
+        status: 'TEAM_KPI_REVIEW',
+        employeeNo: null,
+        name: row.teamKpiName,
+        email: null,
+        divisionId: row.divisionId,
+        divisionName: row.divisionName,
+        departmentId: row.departmentId,
+        departmentPath: row.departmentPath,
+        leaderId: row.ownerId,
+        leaderName: row.ownerName,
+        actionLabel: 'HR 팀 KPI 검토 필요',
+        detail: `${row.reviewStatusLabel} · 영향 ${row.affectedActiveEmployeeCount.toLocaleString()}명 · ${row.guidance}`,
+      }))
+
+    return [
+      {
+        type: 'MISSING_MBO',
+        label: 'MBO 없음',
+        actionLabel: '작성 요청 필요',
+        description: '2026 Personal KPI를 아직 시작하지 않은 직원에게 작성을 요청합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.MISSING_MBO,
+        href: '/kpi/personal',
+        rows: missingRows,
+      },
+      {
+        type: 'DRAFT_MBO',
+        label: '초안 보유',
+        actionLabel: '제출 요청 필요',
+        description: '작성 중인 초안을 보완한 뒤 리더 검토로 제출하도록 안내합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.DRAFT_MBO,
+        href: '/kpi/personal',
+        rows: draftRows,
+      },
+      {
+        type: 'LEADER_REVIEW',
+        label: '제출/검토 중',
+        actionLabel: '리더 검토 필요',
+        description: '팀원이 제출한 MBO를 리더가 검토하고 보완 요청 또는 확정하도록 안내합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.LEADER_REVIEW,
+        href: '/kpi/personal',
+        rows: submittedRows,
+      },
+      {
+        type: 'POLICY_CATEGORY',
+        label: 'policyCategory 미분류',
+        actionLabel: '카테고리 확정 필요',
+        description: 'HR이 MBO 항목을 ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 하나로 확정해야 합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.POLICY_CATEGORY,
+        href: '/evaluation/performance',
+        rows: policyRows,
+      },
+      {
+        type: 'TEAM_KPI_REVIEW',
+        label: '팀 KPI 검토',
+        actionLabel: 'HR 팀 KPI 검토 필요',
+        description: 'PENDING_REVIEW 또는 NEEDS_DISCUSSION 팀 KPI에 대해 HR 결정을 남겨야 합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.TEAM_KPI_REVIEW,
+        href: '/evaluation/performance',
+        rows: teamKpiRows,
+      },
+    ]
+  }, [monitoring, teamReviewRows])
+  const followUpRows = useMemo(() => followUpGroups.flatMap((group) => group.rows), [followUpGroups])
+  const followUpDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          followUpRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [followUpRows]
+  )
+  const followUpTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          followUpRows
+            .filter((row) => row.departmentId && (followUpDivisionFilter === 'ALL' || row.divisionId === followUpDivisionFilter))
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [followUpDivisionFilter, followUpRows]
+  )
+  const followUpLeaderOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          followUpRows
+            .filter((row) => row.leaderId)
+            .map((row) => [row.leaderId as string, row.leaderName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [followUpRows]
+  )
+  const filteredFollowUpGroups = useMemo(
+    () =>
+      followUpGroups
+        .filter((group) => followUpTypeFilter === 'ALL' || group.type === followUpTypeFilter)
+        .map((group) => ({
+          ...group,
+          rows: group.rows.filter((row) => {
+            const matchesDivision = followUpDivisionFilter === 'ALL' || row.divisionId === followUpDivisionFilter
+            const matchesTeam = followUpTeamFilter === 'ALL' || row.departmentId === followUpTeamFilter
+            const matchesLeader = followUpLeaderFilter === 'ALL' || row.leaderId === followUpLeaderFilter
+            const matchesStatus = followUpStatusFilter === 'ALL' || row.status === followUpStatusFilter
+            return matchesDivision && matchesTeam && matchesLeader && matchesStatus
+          }),
+        })),
+    [
+      followUpDivisionFilter,
+      followUpGroups,
+      followUpLeaderFilter,
+      followUpStatusFilter,
+      followUpTeamFilter,
+      followUpTypeFilter,
+    ]
+  )
+  const filteredFollowUpRows = useMemo(
+    () => filteredFollowUpGroups.flatMap((group) => group.rows),
+    [filteredFollowUpGroups]
+  )
+  const selectedFollowUpTemplate = useMemo(() => {
+    if (followUpTypeFilter === 'ALL') {
+      return filteredFollowUpGroups
+        .filter((group) => group.rows.length > 0)
+        .map((group) => `[${group.label}]\n${group.template}`)
+        .join('\n\n')
+    }
+    return MBO_FOLLOW_UP_TEMPLATES_2026[followUpTypeFilter]
+  }, [filteredFollowUpGroups, followUpTypeFilter])
   const copyMonitoringTable = useCallback(async (key: string, text: string) => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return
     await navigator.clipboard.writeText(text)
@@ -3672,10 +4002,11 @@ function PolicyReadinessPopulation2026Panel(props: {
   const missingMboTsv = useMemo(
     () =>
       buildTsv2026(
-        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'action'],
+        ['employeeNo', 'employeeName', 'email', 'division', 'departmentPath', 'manager', 'action'],
         (monitoring?.missingMboEmployees ?? []).map((row) => [
           row.employeeNo,
           row.employeeName,
+          row.email ?? '',
           row.divisionName,
           row.departmentPath,
           row.managerName,
@@ -3687,10 +4018,11 @@ function PolicyReadinessPopulation2026Panel(props: {
   const submittedReviewingTsv = useMemo(
     () =>
       buildTsv2026(
-        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'submittedKpi', 'managerReviewKpi', 'action'],
+        ['employeeNo', 'employeeName', 'email', 'division', 'departmentPath', 'manager', 'submittedKpi', 'managerReviewKpi', 'action'],
         (monitoring?.submittedReviewingMboEmployees ?? []).map((row) => [
           row.employeeNo,
           row.employeeName,
+          row.email ?? '',
           row.divisionName,
           row.departmentPath,
           row.managerName,
@@ -3704,10 +4036,11 @@ function PolicyReadinessPopulation2026Panel(props: {
   const policyCategoryMissingTsv = useMemo(
     () =>
       buildTsv2026(
-        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'personalKpiName', 'linkedOrgKpi', 'action'],
+        ['employeeNo', 'employeeName', 'email', 'division', 'departmentPath', 'manager', 'personalKpiName', 'linkedOrgKpi', 'action'],
         policyCategoryMissingRows.map((row) => [
           row.employeeNo,
           row.employeeName,
+          row.email ?? '',
           row.divisionName,
           row.departmentPath,
           row.managerName,
@@ -3717,6 +4050,28 @@ function PolicyReadinessPopulation2026Panel(props: {
         ])
       ),
     [policyCategoryMissingRows]
+  )
+  const followUpRecipientList = useMemo(
+    () => buildMboFollowUpRecipientList2026(filteredFollowUpRows),
+    [filteredFollowUpRows]
+  )
+  const followUpCombinedTsv = useMemo(
+    () =>
+      buildTsv2026(
+        ['employeeNo', 'name', 'email', 'division', 'team', 'leader', 'action', 'followUpType', 'detail'],
+        filteredFollowUpRows.map((row) => [
+          row.employeeNo,
+          row.name,
+          row.email ?? '',
+          row.divisionName,
+          row.departmentPath,
+          row.leaderName,
+          row.actionLabel,
+          row.typeLabel,
+          row.detail,
+        ])
+      ),
+    [filteredFollowUpRows]
   )
   const teamKpiReviewTsv = useMemo(
     () =>
@@ -4309,6 +4664,218 @@ function PolicyReadinessPopulation2026Panel(props: {
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {followUpGroups.length ? (
+                <div className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 MBO 후속조치 안내</h5>
+                        <Badge tone="neutral">Copy-only</Badge>
+                        <Badge tone="neutral">알림 발송 없음</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        HR이 MBO 미작성자, 초안 보유자, 리더 검토 대상, policyCategory 미분류, 팀 KPI 검토 대상을 나누어 안내문과 수신자 목록을 복사하는 read-only 도구입니다.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-violet-700">
+                        이 화면은 HR 후속조치용 안내/복사 도구입니다. 알림 발송, 평가 생성, 점수/등급 변경은 수행하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('follow-up-recipients', followUpRecipientList)}
+                        disabled={!filteredFollowUpRows.length}
+                        className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'follow-up-recipients' ? '대상 목록 복사됨' : '선택 조건 대상 목록 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('follow-up-template', selectedFollowUpTemplate)}
+                        disabled={!selectedFollowUpTemplate}
+                        className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'follow-up-template' ? '메시지 복사됨' : '선택 조건 메시지 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('follow-up-table', followUpCombinedTsv)}
+                        disabled={!filteredFollowUpRows.length}
+                        className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'follow-up-table' ? '후속조치 테이블 복사됨' : '후속조치 테이블 복사'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <label className="text-xs font-semibold text-slate-600">
+                      본부
+                      <select
+                        value={followUpDivisionFilter}
+                        onChange={(event) => {
+                          setFollowUpDivisionFilter(event.target.value)
+                          setFollowUpTeamFilter('ALL')
+                        }}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 본부</option>
+                        {followUpDivisionOptions.map(([divisionId, divisionName]) => (
+                          <option key={divisionId} value={divisionId}>{divisionName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      팀
+                      <select
+                        value={followUpTeamFilter}
+                        onChange={(event) => setFollowUpTeamFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 팀</option>
+                        {followUpTeamOptions.map(([departmentId, departmentPath]) => (
+                          <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      리더
+                      <select
+                        value={followUpLeaderFilter}
+                        onChange={(event) => setFollowUpLeaderFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 리더</option>
+                        {followUpLeaderOptions.map(([leaderId, leaderName]) => (
+                          <option key={leaderId} value={leaderId}>{leaderName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      후속조치 유형
+                      <select
+                        value={followUpTypeFilter}
+                        onChange={(event) => setFollowUpTypeFilter(event.target.value as MboFollowUpType2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {MBO_FOLLOW_UP_TYPES_2026.map((type) => (
+                          <option key={type} value={type}>{getMboFollowUpTypeLabel2026(type)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      MBO status
+                      <select
+                        value={followUpStatusFilter}
+                        onChange={(event) => setFollowUpStatusFilter(event.target.value as MboFollowUpStatusFilter2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {MBO_FOLLOW_UP_STATUS_FILTERS_2026.map((status) => (
+                          <option key={status} value={status}>{getMboFollowUpStatusLabel2026(status)}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-5">
+                    {filteredFollowUpGroups.map((group) => (
+                      <div key={group.type} className="rounded-2xl border border-violet-100 bg-white p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h6 className="text-sm font-semibold text-slate-900">{group.label}</h6>
+                              <Badge tone={getMboFollowUpTypeTone2026(group.type)}>{group.actionLabel}</Badge>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">{group.description}</p>
+                          </div>
+                          <div className="text-right text-lg font-bold text-violet-800">{group.rows.length.toLocaleString()}</div>
+                        </div>
+                        <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                          <div>상위 본부: {formatTopFollowUpValues2026(group.rows.map((row) => row.divisionName))}</div>
+                          <div>상위 팀: {formatTopFollowUpValues2026(group.rows.map((row) => row.departmentPath))}</div>
+                          <div>담당 리더: {formatTopFollowUpValues2026(group.rows.map((row) => row.leaderName), '리더 미지정')}</div>
+                          <div>후속 기한: HR 안내 기준 (저장된 기한 없음)</div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void copyMonitoringTable(`follow-up-recipients-${group.type}`, buildMboFollowUpRecipientList2026(group.rows))}
+                            disabled={!group.rows.length}
+                            className="rounded-full border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                          >
+                            {copiedMonitoringTable === `follow-up-recipients-${group.type}` ? '수신자 복사됨' : '수신자 목록 복사'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void copyMonitoringTable(`follow-up-template-${group.type}`, group.template)}
+                            className="rounded-full border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50"
+                          >
+                            {copiedMonitoringTable === `follow-up-template-${group.type}` ? '템플릿 복사됨' : '메시지 템플릿 복사'}
+                          </button>
+                          <Link href={group.href} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">
+                            관련 화면
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">후속조치 대상 preview</h6>
+                      <span className="text-xs text-slate-500">
+                        {filteredFollowUpRows.length.toLocaleString()}건 표시 · 전체 {followUpRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+                    <div className="max-h-72 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-violet-50 text-violet-700">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">대상</th>
+                            <th className="px-4 py-2 font-semibold">조직</th>
+                            <th className="px-4 py-2 font-semibold">리더</th>
+                            <th className="px-4 py-2 font-semibold">후속조치</th>
+                            <th className="px-4 py-2 font-semibold">상세</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredFollowUpRows.slice(0, 100).map((row) => (
+                            <tr key={row.id}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.name}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}{row.email ? ` · ${row.email}` : ''}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.departmentPath}</td>
+                              <td className="px-4 py-3 text-slate-600">{row.leaderName}</td>
+                              <td className="px-4 py-3">
+                                <Badge tone={getMboFollowUpTypeTone2026(row.type)}>{row.actionLabel}</Badge>
+                                <div className="mt-1 text-slate-400">{row.typeLabel}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.detail}</td>
+                            </tr>
+                          ))}
+                          {filteredFollowUpRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-4 py-6 text-center text-slate-500">후속조치 필터 조건에 맞는 대상이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredFollowUpRows.length > 100 ? (
+                      <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                        화면에는 100건까지만 표시합니다. 전체 대상은 후속조치 테이블 복사로 추출해 주세요.
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-violet-700">
+                    <Link href="/kpi/personal" className="font-semibold underline-offset-2 hover:underline">/kpi/personal</Link>
+                    <Link href="/evaluation/performance" className="font-semibold underline-offset-2 hover:underline">/evaluation/performance</Link>
+                    <Link href="/admin/performance-calendar" className="font-semibold underline-offset-2 hover:underline">/admin/performance-calendar</Link>
                   </div>
                 </div>
               ) : null}
