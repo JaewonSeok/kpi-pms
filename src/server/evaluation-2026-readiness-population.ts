@@ -429,6 +429,15 @@ export type Evaluation2026ReadinessPopulationDryRun = {
   }
   gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult
   teamKpiHrReviewCoverage: Evaluation2026TeamKpiHrReviewCoverage
+  policyCategoryMappingReadiness: {
+    missingPolicyCategoryCount: number
+    mappedPolicyCategoryCount: number
+    manualReviewCount: number
+    orgGoalWithoutApprovedSourceCount: number
+    dailyWorkDuplicateRiskCount: number
+    projectTkMissingTargetOrPlanCount: number
+    bulkMappingSavedCount: number
+  }
   blockers: Evaluation2026ReadinessPopulationBlocker[]
   warnings: Evaluation2026ReadinessPopulationBlocker[]
   safety: {
@@ -589,6 +598,10 @@ function buildLogsByKpiId(logs: PersonalKpiAuditLog2026[]) {
     logsByKpiId.set(log.entityId, current)
   }
   return logsByKpiId
+}
+
+function countPolicyCategoryMetadataSaves2026(logs: PersonalKpiAuditLog2026[]) {
+  return logs.filter((log) => log.action === 'UPDATE_2026_POLICY_PREVIEW_METADATA').length
 }
 
 function toOperationalStatus2026(kpi: PersonalKpi2026, logsByKpiId: Map<string, PersonalKpiAuditLog2026[]>) {
@@ -1484,6 +1497,18 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     departmentsById,
     personalKpiOrgGoalWithoutApprovedSourceCount: mboSetupCoverage.warningCounts.orgGoalWithoutEligibleOrgKpi,
   })
+  const policyCategoryMappingReadiness = {
+    missingPolicyCategoryCount: typedPersonalKpis.filter((kpi) => !kpi.policyCategory).length,
+    mappedPolicyCategoryCount: typedPersonalKpis.filter((kpi) => Boolean(kpi.policyCategory)).length,
+    manualReviewCount: mboSetupCoverage.monitoring.policyCategoryMissingItems.length,
+    orgGoalWithoutApprovedSourceCount: mboSetupCoverage.warningCounts.orgGoalWithoutEligibleOrgKpi,
+    dailyWorkDuplicateRiskCount: mboSetupCoverage.warningCounts.dailyWorkDuplicateRisk,
+    projectTkMissingTargetOrPlanCount: typedPersonalKpis.filter((kpi) =>
+      (kpi.policyCategory === 'PROJECT_T' || kpi.policyCategory === 'PROJECT_K') &&
+      (!hasMeaningfulText(kpi.definition, 8) || kpi.targetValueT == null)
+    ).length,
+    bulkMappingSavedCount: countPolicyCategoryMetadataSaves2026(auditLogs),
+  }
   const gradePolicyReadiness = await getEvaluation2026GradePolicyReadiness({
     db: db as never,
     evalCycleId: cycle.id,
@@ -1648,6 +1673,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     },
     gradePolicyReadiness,
     teamKpiHrReviewCoverage,
+    policyCategoryMappingReadiness,
     blockers,
     warnings,
     safety: {

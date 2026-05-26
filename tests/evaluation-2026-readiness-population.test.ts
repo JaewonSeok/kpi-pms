@@ -595,6 +595,12 @@ async function main() {
     })
 
     assert.equal(dryRun.policyCategoryMissingCount, 1)
+    assert.equal(dryRun.policyCategoryMappingReadiness.missingPolicyCategoryCount, 1)
+    assert.equal(dryRun.policyCategoryMappingReadiness.mappedPolicyCategoryCount, 2)
+    assert.equal(dryRun.policyCategoryMappingReadiness.manualReviewCount, 1)
+    assert.equal(dryRun.policyCategoryMappingReadiness.orgGoalWithoutApprovedSourceCount, 1)
+    assert.equal(dryRun.policyCategoryMappingReadiness.dailyWorkDuplicateRiskCount, 0)
+    assert.equal(dryRun.policyCategoryMappingReadiness.bulkMappingSavedCount, 0)
     assert.equal(
       dryRun.blockers.some((blocker) => blocker.code === 'POLICY_CATEGORY_REQUIRED' && blocker.count === 1),
       true
