@@ -32,8 +32,22 @@ export const Evaluation2026TeamKpiHrReviewDecisionSchema = z.object({
   note: z.string().trim().max(1000, '검토 메모는 1,000자 이내로 입력해 주세요.').default(''),
 })
 
+export const Evaluation2026TeamKpiHrReviewBulkDecisionSchema = z.object({
+  orgKpiIds: z
+    .array(z.string().trim().min(1))
+    .min(1, '일괄 저장할 팀 KPI를 선택해 주세요.')
+    .max(100, '한 번에 최대 100건까지 저장할 수 있습니다.'),
+  evalCycleId: z.string().trim().min(1).optional(),
+  decision: z.enum(EVALUATION_2026_TEAM_KPI_HR_REVIEW_DECISIONS),
+  reason: z.enum(EVALUATION_2026_TEAM_KPI_HR_REASONS),
+  note: z.string().trim().max(1000, '검토 메모는 1,000자 이내로 입력해 주세요.').default(''),
+})
+
 export type Evaluation2026TeamKpiHrReviewDecisionInput = z.infer<
   typeof Evaluation2026TeamKpiHrReviewDecisionSchema
+>
+export type Evaluation2026TeamKpiHrReviewBulkDecisionInput = z.infer<
+  typeof Evaluation2026TeamKpiHrReviewBulkDecisionSchema
 >
 
 type Evaluation2026TeamKpiHrReviewDecisionDb = Pick<
@@ -286,6 +300,65 @@ export async function saveEvaluation2026TeamKpiHrReviewDecisionForSession(
       gradeIdChanged: false,
       evaluationsCreated: 0,
       evaluationItemsCreated: 0,
+      backfillApplied: false,
+    },
+  }
+}
+
+export async function saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+  params: {
+    session: Session
+    input: Evaluation2026TeamKpiHrReviewBulkDecisionInput
+  },
+  options: {
+    db?: Evaluation2026TeamKpiHrReviewDecisionDb
+    audit?: AuditWriter
+    now?: Date
+  } = {}
+) {
+  assertCanManageTeamKpiReview(params.session)
+
+  const uniqueOrgKpiIds = Array.from(new Set(params.input.orgKpiIds.map((id) => id.trim()).filter(Boolean)))
+  if (!uniqueOrgKpiIds.length) {
+    throw new AppError(400, 'TEAM_KPI_REVIEW_SELECTION_REQUIRED', '일괄 저장할 팀 KPI를 선택해 주세요.')
+  }
+
+  const results = []
+  for (const orgKpiId of uniqueOrgKpiIds) {
+    const parsed = Evaluation2026TeamKpiHrReviewDecisionSchema.parse({
+      orgKpiId,
+      evalCycleId: params.input.evalCycleId,
+      decision: params.input.decision,
+      reason: params.input.reason,
+      note: params.input.note,
+    })
+    const result = await saveEvaluation2026TeamKpiHrReviewDecisionForSession(
+      {
+        session: params.session,
+        input: parsed,
+      },
+      options
+    )
+    results.push(result)
+  }
+
+  return {
+    count: results.length,
+    decision: params.input.decision,
+    decisionLabel: decisionToLabel(params.input.decision),
+    reason: params.input.reason,
+    note: params.input.note.trim(),
+    results,
+    safety: {
+      officialScoresChanged: false,
+      officialGradesChanged: false,
+      aiScoreExclusionChanged: false,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      personalKpiPolicyCategoryChanged: false,
+      evaluationItemPolicyCategoryChanged: false,
       backfillApplied: false,
     },
   }
