@@ -192,6 +192,8 @@ type PolicyCategoryWorkbenchDraft2026 = {
   scoreContributionType: ScoreContributionDraft2026
   note: string
 }
+type PolicyMappingTab2026 = 'CATEGORY' | 'DIVISION' | 'DEPARTMENT' | 'EMPLOYEE' | 'HR_CONFIRM'
+type DepartmentOverrideFilter2026 = 'IMPORTANT' | 'MAPPED' | 'DRAFT_CHANGED' | 'SALES_DIVISION' | 'ALL'
 type SalesGroupDraft2026 = 'SALES' | 'NON_SALES' | 'UNRESOLVED' | ''
 type ThresholdDecisionDraft2026 = 'UNRESOLVED' | 'SUPER_PRIORITY' | 'OUTSTANDING_PRIORITY' | ''
 
@@ -5503,6 +5505,7 @@ function PolicyMapping2026Panel(props: {
   onThresholdDecisionChange: (evalCycleId: string, value: ThresholdDecisionDraft2026) => void
 }) {
   const data = props.mappingData
+  const [activeTab, setActiveTab] = useState<PolicyMappingTab2026>('CATEGORY')
   const [categoryDivisionFilter, setCategoryDivisionFilter] = useState('ALL')
   const [categoryTeamFilter, setCategoryTeamFilter] = useState('ALL')
   const [categoryLeaderFilter, setCategoryLeaderFilter] = useState('ALL')
@@ -5518,15 +5521,37 @@ function PolicyMapping2026Panel(props: {
   const [bulkPolicyCategory, setBulkPolicyCategory] = useState<PolicyCategoryDraft2026>('')
   const [bulkScoreContributionType, setBulkScoreContributionType] = useState<ScoreContributionDraft2026>('')
   const [bulkPolicyCategoryNote, setBulkPolicyCategoryNote] = useState('')
+  const [departmentOverrideFilter, setDepartmentOverrideFilter] = useState<DepartmentOverrideFilter2026>('IMPORTANT')
+  const [departmentOverrideSearch, setDepartmentOverrideSearch] = useState('')
   const policyWorkbenchItems = useMemo(
     () => data?.policyCategoryWorkbenchItems ?? [],
     [data?.policyCategoryWorkbenchItems]
   )
   const policyCandidates = data?.policyCategoryCandidates.slice(0, 6) ?? []
   const divisionSalesCandidates = data?.divisionSalesGroupCandidates ?? []
-  const departmentSalesCandidates = data?.departmentSalesGroupCandidates ?? []
+  const departmentSalesCandidates = useMemo(
+    () => data?.departmentSalesGroupCandidates ?? [],
+    [data?.departmentSalesGroupCandidates]
+  )
   const salesCandidates = data?.salesGroupCandidates.slice(0, 6) ?? []
   const thresholdCandidates = data?.thresholdDecisions.slice(0, 3) ?? []
+  const configuredDepartmentOverrideCount = departmentSalesCandidates.filter((candidate) => Boolean(candidate.currentSalesGroup)).length
+  const changedDepartmentOverrideCount = departmentSalesCandidates.filter((candidate) =>
+    Boolean(props.departmentSalesGroupDrafts[`${candidate.evalCycleId}:${candidate.departmentId}`])
+  ).length
+  const departmentOverrideImportantCount = departmentSalesCandidates.filter((candidate) =>
+    Boolean(candidate.currentSalesGroup) ||
+    Boolean(props.departmentSalesGroupDrafts[`${candidate.evalCycleId}:${candidate.departmentId}`]) ||
+    Boolean(candidate.divisionName?.includes('영업')) ||
+    candidate.departmentPath.includes('세일즈마케팅팀')
+  ).length
+  const hrBlockerCount = thresholdCandidates.filter((candidate) => candidate.requiresDecision).length
+  const unsavedDraftCount =
+    Object.values(props.categoryDrafts).filter((draft) => Boolean(draft.category)).length +
+    Object.values(props.divisionSalesGroupDrafts).filter(Boolean).length +
+    Object.values(props.departmentSalesGroupDrafts).filter(Boolean).length +
+    Object.values(props.salesGroupDrafts).filter(Boolean).length +
+    Object.values(props.thresholdDecisionDrafts).filter(Boolean).length
   const categoryDivisionOptions = useMemo(
     () =>
       Array.from(
@@ -5615,6 +5640,31 @@ function PolicyMapping2026Panel(props: {
     ]
   )
   const visiblePolicyWorkbenchItems = filteredPolicyWorkbenchItems.slice(0, 100)
+  const filteredDepartmentSalesCandidates = useMemo(
+    () =>
+      departmentSalesCandidates.filter((candidate) => {
+        const key = `${candidate.evalCycleId}:${candidate.departmentId}`
+        const draftChanged = Boolean(props.departmentSalesGroupDrafts[key])
+        const mapped = Boolean(candidate.currentSalesGroup)
+        const salesDivision = Boolean(candidate.divisionName?.includes('영업'))
+        const highlighted = candidate.departmentPath.includes('세일즈마케팅팀')
+        const matchesFilter =
+          departmentOverrideFilter === 'ALL' ||
+          (departmentOverrideFilter === 'MAPPED' && mapped) ||
+          (departmentOverrideFilter === 'DRAFT_CHANGED' && draftChanged) ||
+          (departmentOverrideFilter === 'SALES_DIVISION' && salesDivision) ||
+          (departmentOverrideFilter === 'IMPORTANT' && (mapped || draftChanged || salesDivision || highlighted))
+        const search = departmentOverrideSearch.trim().toLocaleLowerCase('ko')
+        const matchesSearch =
+          !search ||
+          candidate.departmentPath.toLocaleLowerCase('ko').includes(search) ||
+          candidate.departmentName.toLocaleLowerCase('ko').includes(search) ||
+          (candidate.divisionName ?? '').toLocaleLowerCase('ko').includes(search)
+        return matchesFilter && matchesSearch
+      }),
+    [departmentOverrideFilter, departmentOverrideSearch, departmentSalesCandidates, props.departmentSalesGroupDrafts]
+  )
+  const visibleDepartmentSalesCandidates = filteredDepartmentSalesCandidates.slice(0, departmentOverrideFilter === 'ALL' ? 120 : 30)
   const selectedVisibleCategoryCount = visiblePolicyWorkbenchItems.filter((item) =>
     selectedCategoryMappingIds.has(item.mappingId)
   ).length
@@ -5652,15 +5702,22 @@ function PolicyMapping2026Panel(props: {
       return next
     })
   }
+  const tabs: Array<{ id: PolicyMappingTab2026; label: string; count: number; tone?: 'warn' | 'success' | 'neutral' }> = [
+    { id: 'CATEGORY', label: '카테고리 매핑', count: data?.policyCategoryCandidates.length ?? 0, tone: (data?.policyCategoryCandidates.length ?? 0) > 0 ? 'warn' : 'neutral' },
+    { id: 'DIVISION', label: '본부 영업/비영업', count: data?.divisionMappingSummary.unmappedDivisions ?? 0, tone: (data?.divisionMappingSummary.unmappedDivisions ?? 0) > 0 ? 'warn' : 'success' },
+    { id: 'DEPARTMENT', label: '부서/팀 예외', count: configuredDepartmentOverrideCount + changedDepartmentOverrideCount, tone: configuredDepartmentOverrideCount + changedDepartmentOverrideCount > 0 ? 'warn' : 'neutral' },
+    { id: 'EMPLOYEE', label: '직원별 예외', count: data?.salesGroupCandidates.length ?? 0, tone: (data?.salesGroupCandidates.length ?? 0) > 0 ? 'warn' : 'neutral' },
+    { id: 'HR_CONFIRM', label: 'HR 확인 필요', count: hrBlockerCount, tone: hrBlockerCount > 0 ? 'warn' : 'success' },
+  ]
 
   return (
     <Panel
       title="2026 정책 매핑 관리"
-      description="수동 검토 항목의 정책 카테고리와 preview 전용 division 기준 영업/비영업 구분을 저장합니다. 공식 평가 결과에는 반영되지 않습니다."
+      description="정책 카테고리, 본부/팀/직원 영업 구분, HR 확인 기준을 탭별로 관리합니다. 공식 평가 결과에는 반영되지 않습니다."
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
-          <div className="mt-1 rounded-2xl bg-slate-100 p-2 text-slate-600">
+          <div className="rounded-xl bg-slate-100 p-2 text-slate-600">
             <ClipboardList className="h-5 w-5" />
           </div>
           <div>
@@ -5668,11 +5725,12 @@ function PolicyMapping2026Panel(props: {
               <Badge tone="neutral">Metadata only</Badge>
               <Badge tone={data ? 'warn' : 'neutral'}>
                 {data
-                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · division 미지정 ${data.divisionMappingSummary.unmappedDivisions}건`
+                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · division 미지정 ${data.divisionMappingSummary.unmappedDivisions}건 · 팀 override ${configuredDepartmentOverrideCount}건 · HR 확인 ${hrBlockerCount}건`
                   : '미확인'}
               </Badge>
+              {unsavedDraftCount > 0 ? <Badge tone="warn">미저장 draft {unsavedDraftCount}건</Badge> : null}
             </div>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+            <p className="mt-1 text-xs leading-5 text-slate-600">
               저장 대상은 2026 preview readiness metadata입니다. 저장 점수, 저장 등급, 확정/보정 흐름은 바뀌지 않습니다.
             </p>
           </div>
@@ -5701,43 +5759,69 @@ function PolicyMapping2026Panel(props: {
       {props.notice ? <div className="mt-4"><Banner tone="success" message={props.notice} /></div> : null}
 
       {data ? (
-        <div className="mt-5 space-y-4">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <>
+          <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition ${
+                  activeTab === tab.id
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+                aria-pressed={activeTab === tab.id}
+              >
+                <span>{tab.label}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] ${
+                  activeTab === tab.id
+                    ? 'bg-white/15 text-white'
+                    : tab.tone === 'warn'
+                      ? 'bg-amber-50 text-amber-700'
+                      : tab.tone === 'success'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {tab.count.toLocaleString()}
+                </span>
+              </button>
+            ))}
+          </div>
+          {unsavedDraftCount > 0 ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+              미저장 draft {unsavedDraftCount.toLocaleString()}건이 있습니다. 탭을 이동해도 draft는 유지되며, 상단의 선택 metadata 저장을 눌러야 저장됩니다.
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-4">
+            <div className="grid gap-4">
+              {activeTab === 'CATEGORY' ? (
+                <>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold text-slate-900">수동 검토 필요 항목</h4>
                 <span className="text-xs text-slate-400">{data.policyCategoryCandidates.length}건</span>
               </div>
-              <div className="mt-3 space-y-3">
-                {policyCandidates.length ? policyCandidates.map((candidate) => (
-                  <div key={candidate.evaluationItemId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-900">{candidate.title}</span>
-                      <Badge tone="neutral">{candidate.employeeName}</Badge>
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                      현재 {getPolicyCategoryLabel2026(candidate.currentEffectiveCategory)} · 제안 {getPolicyCategoryLabel2026(candidate.suggestedCategory)} · {candidate.reason}
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      중복 입력을 줄이기 위해 실제 매핑은 아래 bulk workbench에서 처리합니다.
                     </p>
-                    <select
-                      value={props.categoryDrafts[`EvaluationItem:${candidate.evaluationItemId}`]?.category ?? ''}
-                      onChange={(event) =>
-                        props.onCategoryDraftChange(`EvaluationItem:${candidate.evaluationItemId}`, {
-                          category: event.target.value as PolicyCategoryDraft2026,
-                        })
-                      }
-                      className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                    >
-                      <option value="">선택 안 함</option>
-                      <option value="ORG_GOAL">조직목표</option>
-                      <option value="PROJECT_T">프로젝트 T</option>
-                      <option value="PROJECT_K">프로젝트 K</option>
-                      <option value="DAILY_WORK">일상업무</option>
-                      <option value="KEEP_UNCLASSIFIED">제외/미분류 유지</option>
-                    </select>
+                    {policyCandidates.length ? (
+                      <details className="mt-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        <summary className="cursor-pointer font-semibold text-slate-700">상위 {policyCandidates.length}건 간단히 보기</summary>
+                        <div className="mt-2 grid gap-2 md:grid-cols-2">
+                          {policyCandidates.map((candidate) => (
+                            <div key={candidate.evaluationItemId} className="rounded-lg bg-white p-2">
+                              <div className="font-semibold text-slate-800">{candidate.title}</div>
+                              <div className="mt-1 text-slate-500">
+                                {candidate.employeeName} · 현재 {getPolicyCategoryLabel2026(candidate.currentEffectiveCategory)} · 제안 {getPolicyCategoryLabel2026(candidate.suggestedCategory)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    ) : <EmptyBlock message="현재 조회 범위에서 정책 카테고리 수동 매핑 후보가 없습니다." />}
                   </div>
-                )) : <EmptyBlock message="현재 조회 범위에서 정책 카테고리 수동 매핑 후보가 없습니다." />}
-              </div>
-            </div>
 
             <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 lg:col-span-2">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -6020,172 +6104,288 @@ function PolicyMapping2026Panel(props: {
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">Division 영업/비영업 구분</h4>
-                  <span className="text-xs text-slate-400">
-                    전체 {data.divisionMappingSummary.totalDivisions}개 · 미지정 {data.divisionMappingSummary.unmappedDivisions}개
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  전체 조직 master의 division 부서 ID 기준으로 preview readiness metadata를 저장합니다. 평가 대상이 아직 없는 본부도 미리 매핑할 수 있으며, 공식 점수와 등급은 바뀌지 않습니다.
-                </p>
-                {data.divisionMappingSummary.warning ? (
-                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-                    {data.divisionMappingSummary.warning}
+                </>
+              ) : null}
+
+              {activeTab === 'DIVISION' ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">Division 영업/비영업 구분</h4>
+                    <span className="text-xs text-slate-400">
+                      전체 {data.divisionMappingSummary.totalDivisions}개 · 미지정 {data.divisionMappingSummary.unmappedDivisions}개
+                    </span>
                   </div>
-                ) : null}
-                <div className="mt-3 space-y-3">
-                  {divisionSalesCandidates.length ? divisionSalesCandidates.map((candidate) => {
-                    const key = `${candidate.evalCycleId}:${candidate.divisionId}`
-                    return (
-                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900">{candidate.divisionName}</span>
-                          <Badge tone="neutral">재직 {candidate.activeEmployeeCount}명</Badge>
-                          <Badge tone={candidate.currentCycleTargetCount > 0 ? 'neutral' : 'warn'}>
-                            현재 주기 대상 {candidate.currentCycleTargetCount}명
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
-                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
-                          {candidate.suggestedSalesGroup ? ` · 참고 제안 ${getSalesGroupLabel2026(candidate.suggestedSalesGroup)}` : ''}
-                          {candidate.sampleEmployees.length ? ` · 현재 주기 샘플 ${candidate.sampleEmployees.join(', ')}` : ''}
-                          {' · '}
-                          {candidate.reason}
-                        </p>
-                        <select
-                          value={props.divisionSalesGroupDrafts[key] ?? ''}
-                          onChange={(event) => props.onDivisionSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
-                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                        >
-                          <option value="">선택 안 함</option>
-                          <option value="SALES">영업</option>
-                          <option value="NON_SALES">비영업</option>
-                          <option value="UNRESOLVED">미해결로 유지</option>
-                        </select>
-                      </div>
-                    )
-                  }) : <EmptyBlock message="현재 조회 범위에서 division 영업/비영업 매핑 후보가 없습니다." />}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">부서/팀 override</h4>
-                  <span className="text-xs text-slate-400">{departmentSalesCandidates.length}건</span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  본부 기본값과 다른 팀만 예외로 지정합니다. 예: 국내영업총괄본부 &gt; 세일즈마케팅팀은 비영업으로 지정할 수 있습니다.
-                </p>
-                <div className="mt-3 space-y-3">
-                  {departmentSalesCandidates.length ? departmentSalesCandidates.map((candidate) => {
-                    const key = `${candidate.evalCycleId}:${candidate.departmentId}`
-                    return (
-                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900">{candidate.departmentPath}</span>
-                          <Badge tone="neutral">영향 {candidate.activeEmployeeCount}명</Badge>
-                          <Badge tone={candidate.currentCycleTargetCount > 0 ? 'neutral' : 'warn'}>
-                            현재 주기 대상 {candidate.currentCycleTargetCount}명
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
-                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
-                          {candidate.suggestedSalesGroup ? ` · 참고 제안 ${getSalesGroupLabel2026(candidate.suggestedSalesGroup)}` : ''}
-                          {candidate.sampleEmployees.length ? ` · 현재 주기 샘플 ${candidate.sampleEmployees.join(', ')}` : ''}
-                          {' · '}
-                          {candidate.reason}
-                        </p>
-                        <select
-                          value={props.departmentSalesGroupDrafts[key] ?? ''}
-                          onChange={(event) => props.onDepartmentSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
-                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                        >
-                          <option value="">선택 안 함</option>
-                          <option value="SALES">영업</option>
-                          <option value="NON_SALES">비영업</option>
-                          <option value="UNRESOLVED">미해결로 유지</option>
-                        </select>
-                      </div>
-                    )
-                  }) : <EmptyBlock message="본부 기본값과 다른 부서/팀 override 후보가 없습니다." />}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">직원별 override</h4>
-                  <span className="text-xs text-slate-400">{data.salesGroupCandidates.length}건</span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  division 매핑으로 해결할 수 없는 대상만 직원별 override로 보완합니다.
-                </p>
-                <div className="mt-3 space-y-3">
-                  {salesCandidates.length ? salesCandidates.map((candidate) => {
-                    const key = `${candidate.evalCycleId}:${candidate.employeeId}`
-                    return (
-                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900">{candidate.employeeName}</span>
-                          <Badge tone="neutral">{candidate.departmentName}</Badge>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
-                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)} · {candidate.reason}
-                        </p>
-                        <select
-                          value={props.salesGroupDrafts[key] ?? ''}
-                          onChange={(event) => props.onSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
-                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                        >
-                          <option value="">선택 안 함</option>
-                          <option value="SALES">영업</option>
-                          <option value="NON_SALES">비영업</option>
-                          <option value="UNRESOLVED">미해결로 유지</option>
-                        </select>
-                      </div>
-                    )
-                  }) : <EmptyBlock message="현재 조회 범위에서 직원별 override 후보가 없습니다." />}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">HR 확인 필요 기준</h4>
-                  <span className="text-xs text-slate-400">TEAM_MEMBER_SALES</span>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {thresholdCandidates.length ? thresholdCandidates.map((candidate) => (
-                    <div key={candidate.evalCycleId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900">{candidate.evalYear} 평가 주기</span>
-                        <Badge tone={candidate.requiresDecision ? 'warn' : 'success'}>
-                          {candidate.requiresDecision ? 'HR 확인 필요' : '결정 기록됨'}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">
-                        현재 {getThresholdDecisionLabel2026(candidate.currentDecision)} · 영업 팀원 {candidate.affectedSalesMemberCount}명
-                      </p>
-                      <select
-                        value={props.thresholdDecisionDrafts[candidate.evalCycleId] ?? ''}
-                        onChange={(event) =>
-                          props.onThresholdDecisionChange(candidate.evalCycleId, event.target.value as ThresholdDecisionDraft2026)
-                        }
-                        className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                      >
-                        <option value="">선택 안 함</option>
-                        <option value="UNRESOLVED">HR 확인 필요 유지</option>
-                        <option value="SUPER_PRIORITY">110점 이상 Super 우선</option>
-                        <option value="OUTSTANDING_PRIORITY">110점 이상 Outstanding 우선</option>
-                      </select>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    조직 master의 division 기준으로 preview readiness metadata만 저장합니다.
+                  </p>
+                  {data.divisionMappingSummary.warning ? (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                      {data.divisionMappingSummary.warning}
                     </div>
-                  )) : <EmptyBlock message="현재 조회 범위에서 영업 팀원 Super/Outstanding 기준 후보가 없습니다." />}
+                  ) : null}
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Division</th>
+                          <th className="px-3 py-2 font-semibold">인원</th>
+                          <th className="px-3 py-2 font-semibold">현재/제안</th>
+                          <th className="px-3 py-2 font-semibold">근거</th>
+                          <th className="px-3 py-2 font-semibold">Draft</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {divisionSalesCandidates.length ? divisionSalesCandidates.map((candidate) => {
+                          const key = `${candidate.evalCycleId}:${candidate.divisionId}`
+                          return (
+                            <tr key={key} className="align-top">
+                              <td className="px-3 py-3 font-semibold text-slate-900">{candidate.divisionName}</td>
+                              <td className="px-3 py-3 text-slate-600">
+                                재직 {candidate.activeEmployeeCount}명
+                                <div className="mt-1 text-slate-400">현재 주기 {candidate.currentCycleTargetCount}명</div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">
+                                현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
+                                <div className="mt-1">
+                                  {candidate.suggestedSalesGroup ? (
+                                    <Badge tone="neutral">제안 {getSalesGroupLabel2026(candidate.suggestedSalesGroup)}</Badge>
+                                  ) : (
+                                    <span className="text-slate-400">제안 없음</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-500">
+                                <div className="max-w-sm">{candidate.reason}</div>
+                                {candidate.sampleEmployees.length ? (
+                                  <div className="mt-1 text-slate-400">샘플 {candidate.sampleEmployees.join(', ')}</div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3">
+                                <select
+                                  value={props.divisionSalesGroupDrafts[key] ?? ''}
+                                  onChange={(event) => props.onDivisionSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                                  className="h-9 min-w-36 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-blue-400"
+                                >
+                                  <option value="">선택 안 함</option>
+                                  <option value="SALES">영업</option>
+                                  <option value="NON_SALES">비영업</option>
+                                  <option value="UNRESOLVED">미해결로 유지</option>
+                                </select>
+                              </td>
+                            </tr>
+                          )
+                        }) : (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">현재 조회 범위에서 division 영업/비영업 매핑 후보가 없습니다.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              ) : null}
+
+              {activeTab === 'DEPARTMENT' ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">부서/팀 예외</h4>
+                    <span className="text-xs text-slate-400">
+                      표시 {visibleDepartmentSalesCandidates.length}건 · 전체 {departmentSalesCandidates.length}건 · 중요 {departmentOverrideImportantCount}건
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    본부 기본값과 다른 팀만 예외로 지정합니다. 기본 필터는 설정됨, 변경 draft, 영업 본부, 세일즈마케팅팀을 우선 보여줍니다.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-end gap-2">
+                    <label className="min-w-60 flex-1 text-xs font-semibold text-slate-600">
+                      경로 검색
+                      <input
+                        value={departmentOverrideSearch}
+                        onChange={(event) => setDepartmentOverrideSearch(event.target.value)}
+                        placeholder="부서/팀 경로 검색"
+                        className="mt-1 h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-800 outline-none focus:border-blue-400"
+                      />
+                    </label>
+                    {([
+                      ['IMPORTANT', '기본 표시'],
+                      ['MAPPED', '설정됨'],
+                      ['DRAFT_CHANGED', 'draft 변경'],
+                      ['SALES_DIVISION', '영업 본부'],
+                      ['ALL', '전체'],
+                    ] as Array<[DepartmentOverrideFilter2026, string]>).map(([filter, label]) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setDepartmentOverrideFilter(filter)}
+                        className={`h-9 rounded-full px-3 text-xs font-semibold ${
+                          departmentOverrideFilter === filter
+                            ? 'bg-slate-900 text-white'
+                            : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">부서/팀 경로</th>
+                          <th className="px-3 py-2 font-semibold">인원</th>
+                          <th className="px-3 py-2 font-semibold">현재/제안</th>
+                          <th className="px-3 py-2 font-semibold">근거</th>
+                          <th className="px-3 py-2 font-semibold">Draft</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {visibleDepartmentSalesCandidates.length ? visibleDepartmentSalesCandidates.map((candidate) => {
+                          const key = `${candidate.evalCycleId}:${candidate.departmentId}`
+                          return (
+                            <tr key={key} className="align-top">
+                              <td className="px-3 py-3 font-semibold text-slate-900">
+                                {candidate.departmentPath}
+                                {candidate.departmentPath.includes('세일즈마케팅팀') ? (
+                                  <div className="mt-1"><Badge tone="warn">세일즈마케팅팀</Badge></div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">
+                                영향 {candidate.activeEmployeeCount}명
+                                <div className="mt-1 text-slate-400">현재 주기 {candidate.currentCycleTargetCount}명</div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">
+                                현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
+                                <div className="mt-1">
+                                  {candidate.suggestedSalesGroup ? (
+                                    <Badge tone="neutral">제안 {getSalesGroupLabel2026(candidate.suggestedSalesGroup)}</Badge>
+                                  ) : (
+                                    <span className="text-slate-400">제안 없음</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-500">
+                                <div className="max-w-sm">{candidate.reason}</div>
+                                {candidate.sampleEmployees.length ? (
+                                  <div className="mt-1 text-slate-400">샘플 {candidate.sampleEmployees.join(', ')}</div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3">
+                                <select
+                                  value={props.departmentSalesGroupDrafts[key] ?? ''}
+                                  onChange={(event) => props.onDepartmentSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                                  className="h-9 min-w-36 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-blue-400"
+                                >
+                                  <option value="">선택 안 함</option>
+                                  <option value="SALES">영업</option>
+                                  <option value="NON_SALES">비영업</option>
+                                  <option value="UNRESOLVED">미해결로 유지</option>
+                                </select>
+                              </td>
+                            </tr>
+                          )
+                        }) : (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">현재 필터 조건에서 부서/팀 override 후보가 없습니다.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeTab === 'EMPLOYEE' ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">직원별 예외</h4>
+                    <span className="text-xs text-slate-400">{data.salesGroupCandidates.length}건</span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    division/부서 매핑으로 해결할 수 없는 대상만 직원별 override로 보완합니다.
+                  </p>
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">직원</th>
+                          <th className="px-3 py-2 font-semibold">부서</th>
+                          <th className="px-3 py-2 font-semibold">현재/근거</th>
+                          <th className="px-3 py-2 font-semibold">Draft</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {salesCandidates.length ? salesCandidates.map((candidate) => {
+                          const key = `${candidate.evalCycleId}:${candidate.employeeId}`
+                          return (
+                            <tr key={key} className="align-top">
+                              <td className="px-3 py-3 font-semibold text-slate-900">{candidate.employeeName}</td>
+                              <td className="px-3 py-3 text-slate-600">{candidate.departmentName}</td>
+                              <td className="px-3 py-3 text-slate-500">
+                                현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)} · {candidate.reason}
+                              </td>
+                              <td className="px-3 py-3">
+                                <select
+                                  value={props.salesGroupDrafts[key] ?? ''}
+                                  onChange={(event) => props.onSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                                  className="h-9 min-w-36 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-blue-400"
+                                >
+                                  <option value="">선택 안 함</option>
+                                  <option value="SALES">영업</option>
+                                  <option value="NON_SALES">비영업</option>
+                                  <option value="UNRESOLVED">미해결로 유지</option>
+                                </select>
+                              </td>
+                            </tr>
+                          )
+                        }) : (
+                          <tr>
+                            <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">현재 조회 범위에서 직원별 override 후보가 없습니다.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeTab === 'HR_CONFIRM' ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">HR 확인 필요 기준</h4>
+                    <span className="text-xs text-slate-400">TEAM_MEMBER_SALES</span>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {thresholdCandidates.length ? thresholdCandidates.map((candidate) => (
+                      <div key={candidate.evalCycleId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{candidate.evalYear} 평가 주기</span>
+                          <Badge tone={candidate.requiresDecision ? 'warn' : 'success'}>
+                            {candidate.requiresDecision ? 'HR 확인 필요' : '결정 기록됨'}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          현재 {getThresholdDecisionLabel2026(candidate.currentDecision)} · 영업 팀원 {candidate.affectedSalesMemberCount}명
+                        </p>
+                        <select
+                          value={props.thresholdDecisionDrafts[candidate.evalCycleId] ?? ''}
+                          onChange={(event) =>
+                            props.onThresholdDecisionChange(candidate.evalCycleId, event.target.value as ThresholdDecisionDraft2026)
+                          }
+                          className="mt-3 h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
+                        >
+                          <option value="">선택 안 함</option>
+                          <option value="UNRESOLVED">HR 확인 필요 유지</option>
+                          <option value="SUPER_PRIORITY">110점 이상 Super 우선</option>
+                          <option value="OUTSTANDING_PRIORITY">110점 이상 Outstanding 우선</option>
+                        </select>
+                      </div>
+                    )) : <EmptyBlock message="현재 조회 범위에서 영업 팀원 Super/Outstanding 기준 후보가 없습니다." />}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
-        </div>
+        </>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           HR 관리자가 preview blocker를 풀기 위한 정책 매핑 후보를 조회하고, 명시적으로 선택한 metadata만 저장할 수 있습니다.
