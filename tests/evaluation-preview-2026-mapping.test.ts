@@ -574,6 +574,40 @@ async function main() {
     assert.equal(payload.persistence.departmentSalesGroup.includes('salesGroupsByDepartmentId'), true)
   })
 
+  await run('policyCategory workbench includes current evaluation candidates even when PersonalKpi scan is empty', async () => {
+    const evaluation = makeEvaluation({
+      target: {
+        status: 'INACTIVE',
+      },
+    })
+    const fake = makeDb([evaluation], {
+      employees: [
+        {
+          id: 'emp-target',
+          empName: 'Target Employee',
+          empId: 'E-001',
+          deptId: 'dept-team',
+          managerId: 'leader-1',
+          status: 'INACTIVE',
+        },
+      ],
+    })
+
+    const payload = await getEvaluationPolicy2026MappingCandidatesForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        cycleId: 'cycle-2026',
+      },
+      { db: fake.db }
+    )
+
+    assert.equal(payload.policyCategoryCandidates.length, 1)
+    const row = payload.policyCategoryWorkbenchItems.find((item) => item.evaluationItemId === 'missing-policy-category')
+    assert.equal(row?.itemSource, 'EvaluationItem')
+    assert.equal(row?.personalKpiId, 'kpi-missing')
+    assert.equal(row?.employeeName, 'Target Employee')
+  })
+
   await run('policyCategory workbench suggests ORG_GOAL for linked division KPI', async () => {
     const evaluation = makeEvaluation({
       items: [
