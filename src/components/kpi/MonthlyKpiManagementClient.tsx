@@ -28,6 +28,7 @@ import {
 } from '@/lib/monthly-submit-validation'
 import { isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
 import { formatCountWithUnit } from '@/lib/metric-copy'
+import { getMonthlyMidCheckScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 import type {
   MonthlyAttachmentViewModel,
   MonthlyPageData,
@@ -627,6 +628,7 @@ export function MonthlyKpiManagementClient({
     () => parseYearMonth(pageData.selectedYear, pageData.selectedMonth),
     [pageData.selectedMonth, pageData.selectedYear]
   )
+  const midCheckScheduleGuidance2026 = useMemo(() => getMonthlyMidCheckScheduleGuidance(), [])
   const editDisabledReason = getEditBlockedReason(selected, canEdit)
   const submitValidation = getSubmitValidationResult(selected, canSubmit, selectedDraft)
   const submitDisabledReason = submitValidation.summary
@@ -1398,6 +1400,25 @@ export function MonthlyKpiManagementClient({
             {submitValidation.recommendationReasons.join(' ')}
           </p>
         ) : null}
+      </section>
+
+      <section
+        className={`rounded-2xl border px-4 py-3 text-sm ${
+          midCheckScheduleGuidance2026.isActive
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            : 'border-slate-200 bg-slate-50 text-slate-700'
+        }`}
+      >
+        <div className="flex items-start gap-2">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-semibold">2026 중간 점검 schedule guidance</p>
+            <p className="mt-1 leading-6">{midCheckScheduleGuidance2026.message}</p>
+            <p className="mt-1 text-xs opacity-80">
+              {midCheckScheduleGuidance2026.window.plannedRangeLabel} · 저장/제출을 강제하지 않는 안내입니다.
+            </p>
+          </div>
+        </div>
       </section>
 
       {banner ? (

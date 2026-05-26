@@ -251,7 +251,7 @@ async function main() {
   await run('2026 operations checklist renders PPT milestones and current actions from readiness blockers', async () => {
     const data = await getPerformanceCalendarPageData(
       makeSession(),
-      { month: '2026-03' },
+      { month: '2026-07', today: '2026-07-28' },
       {
         loadEvalCycles: async () => [makeCycle()],
         loadFeedbackRounds: async () => [],
@@ -284,8 +284,14 @@ async function main() {
     assert.equal(data.operationsChecklist.mode, 'read_only')
     assert.equal(data.operationsChecklist.milestones.length, 13)
     assert.equal(data.operationsChecklist.selectedCycleIsOfficialReadinessTarget, true)
+    assert.equal(data.operationsChecklist.schedule.referenceDate, '2026-07-28')
     assert.equal(data.operationsChecklist.milestones.some((item) => item.name === '팀원 업적목표 수립 및 확정'), true)
     assert.equal(data.operationsChecklist.milestones.some((item) => item.name === 'AI 사례 준비 및 축적'), true)
+    assert.equal(data.operationsChecklist.milestones.find((item) => item.id === 'mid-review-feedback')?.scheduleStatus, 'ACTIVE')
+    assert.equal(data.operationsChecklist.milestones.find((item) => item.id === 'goal-change-request')?.scheduleStatus, 'ACTIVE')
+    assert.equal(data.operationsChecklist.milestones.find((item) => item.id === 'performance-result-writing')?.plannedRangeLabel, '2027.01.04 ~ 2027.01.08')
+    assert.equal(data.operationsChecklist.milestones.find((item) => item.id === 'org-evaluation-close')?.plannedRangeLabel, '2027.01.11 ~ 2027.01.30')
+    assert.equal(data.operationsChecklist.summary.scheduleStatusCounts.ACTIVE >= 2, true)
     assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === 'MBO 미작성자 확인'), true)
     assert.equal(data.operationsChecklist.safety.officialScoringEnabled, false)
     assert.equal(data.operationsChecklist.safety.officialGradeEnabled, false)
@@ -366,6 +372,9 @@ async function main() {
     assert.equal(clientSource.includes("milestone: 'border-slate-300"), true)
     assert.equal(clientSource.includes('2026 운영 체크리스트'), true)
     assert.equal(clientSource.includes('지금 해야 할 일'), true)
+    assert.equal(clientSource.includes('2026 schedule gate readiness'), true)
+    assert.equal(clientSource.includes('SCHEDULE_STATUS_FILTER_LABELS'), true)
+    assert.equal(clientSource.includes('NEEDS_SETUP'), true)
     assert.equal(clientSource.includes('아직 공식 점수/등급 미적용'), true)
     assert.equal(clientSource.includes('OWNER_FILTER_LABELS'), true)
     assert.equal(clientSource.includes('STATUS_FILTER_LABELS'), true)

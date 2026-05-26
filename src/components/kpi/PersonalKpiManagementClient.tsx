@@ -57,6 +57,7 @@ import {
   resolvePersonalKpiTargetValues,
 } from '@/lib/personal-kpi-target-values'
 import { joinInlineParts } from '@/lib/metric-copy'
+import { getPersonalKpiScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 
 type Props = PersonalKpiPageData & {
   initialTab?: string
@@ -2182,6 +2183,8 @@ export function PersonalKpiManagementClient(props: Props) {
     }
   }
 
+  const scheduleGateGuidance2026 = useMemo(() => getPersonalKpiScheduleGuidance(), [])
+
   return (
     <div className="space-y-6">
       <PageHeader />
@@ -2204,6 +2207,20 @@ export function PersonalKpiManagementClient(props: Props) {
 
       {props.alerts?.length ? <LoadAlerts alerts={props.alerts} /> : null}
       {banner ? <BannerMessage tone={banner.tone} message={banner.message} /> : null}
+      {scheduleGateGuidance2026.warningMessage ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">2026 목표 수정 일정 안내</p>
+              <p className="mt-1 leading-6">{scheduleGateGuidance2026.warningMessage}</p>
+              <p className="mt-1 text-xs text-amber-800">
+                이 안내는 비차단 readiness guidance이며 기존 저장/제출 동작을 변경하지 않습니다.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {props.state === 'ready' ? (
         <>
