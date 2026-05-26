@@ -2947,7 +2947,7 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
             ) : null}
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <MetricCard
               label="Gate blocked"
               value={gates.filter((gate) => gate.status === 'BLOCKED').length.toLocaleString()}
@@ -3000,6 +3000,17 @@ function PolicyActivationReadiness2026Panel(props: {
               help="명시 승인 flag"
               compact
               variant={activation.flags.hrApprovalConfirmed ? 'default' : 'warning'}
+            />
+            <MetricCard
+              label="360/리더십"
+              value={activation.feedbackLeadershipReadiness?.summary.blockedOrNeedsSetupCount.toLocaleString() ?? '미확인'}
+              help="readiness blocker"
+              compact
+              variant={
+                (activation.feedbackLeadershipReadiness?.summary.blockedOrNeedsSetupCount ?? 1) > 0
+                  ? 'warning'
+                  : 'default'
+              }
             />
           </div>
 

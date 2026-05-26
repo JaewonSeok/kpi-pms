@@ -89,6 +89,87 @@ function makeReadiness(overrides: Record<string, unknown> = {}) {
   } as any
 }
 
+function makeFeedbackLeadershipReadiness(overrides: Record<string, unknown> = {}) {
+  return {
+    readOnly: true,
+    summary: {
+      targetEmployeeCount: 3,
+      targetLeaderCount: 2,
+      reviewerAssignmentCount: 4,
+      missingReviewerAssignmentCount: 1,
+      responseSubmittedCount: 2,
+      responseMissingCount: 2,
+      completionRate: 50,
+      blockedOrNeedsSetupCount: 2,
+      second360Status: 'ASSIGNMENT_INCOMPLETE',
+      leadershipDiagnosisStatus: 'IN_PROGRESS',
+    },
+    second360Feedback: {
+      status: 'ASSIGNMENT_INCOMPLETE',
+      blockedCount: 1,
+      needsSetupCount: 0,
+      targetEmployeeCount: 3,
+      targetLeaderCount: 2,
+      reviewerAssignmentCount: 2,
+      missingReviewerAssignmentCount: 1,
+      responseSubmittedCount: 1,
+      responseMissingCount: 1,
+    },
+    leadershipDiagnosis: {
+      status: 'IN_PROGRESS',
+      blockedCount: 0,
+      needsSetupCount: 1,
+      targetEmployeeCount: 2,
+      targetLeaderCount: 2,
+      reviewerAssignmentCount: 2,
+      missingReviewerAssignmentCount: 0,
+      responseSubmittedCount: 1,
+      responseMissingCount: 1,
+    },
+    rows: [
+      {
+        id: 'SECOND_360_FEEDBACK:emp-1',
+        employeeId: 'emp-1',
+        employeeNo: 'E001',
+        name: '홍길동',
+        email: 'hong@example.com',
+        role: 'ROLE_MEMBER',
+        roleLabel: '팀원',
+        departmentPath: '영업본부 > 영업1실 > 세일즈마케팅팀',
+        division: '영업본부',
+        section: '영업1실',
+        team: '세일즈마케팅팀',
+        targetType: 'SECOND_360_FEEDBACK',
+        targetTypeLabel: '2차 다면평가',
+        readinessStatus: 'ASSIGNMENT_INCOMPLETE',
+        reviewerAssignmentStatus: '2명 배정 · 누락 1명',
+        responseStatus: '1건 제출 · 미응답 1건',
+        reviewerAssignmentCount: 2,
+        submittedResponseCount: 1,
+        missingReviewerAssignmentCount: 1,
+        missingResponseCount: 1,
+        missingReason: '최소 reviewer 부족',
+        nextHrAction: 'missing reviewer assignment를 보완하세요.',
+      },
+    ],
+    setupGuidance: [],
+    exportRows: [],
+    safety: {
+      writesPerformed: false,
+      notificationsSent: false,
+      emailsSent: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+      officialAiScoreExclusionEnabled: false,
+    },
+    ...overrides,
+  } as any
+}
+
 async function run(name: string, fn: () => Promise<void> | void) {
   try {
     await fn()
@@ -338,6 +419,7 @@ async function main() {
           passedCount: 0,
           failedCount: 0,
         }),
+        loadFeedbackLeadershipReadiness: async () => makeFeedbackLeadershipReadiness(),
       }
     )
 
@@ -350,6 +432,10 @@ async function main() {
     assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === '등급 기준 HR 확인'), true)
     assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === 'AI 활용평가 대상자 배정'), true)
     assert.equal(data.operationsChecklist.nowActions.some((item) => item.label === '평가자 배정 확인'), true)
+    assert.equal(byId.get('second-360-review')?.status, 'NEEDS_REVIEW')
+    assert.equal(byId.get('leadership-diagnosis')?.status, 'NEEDS_REVIEW')
+    assert.equal(data.feedbackLeadershipReadiness.summary.blockedOrNeedsSetupCount, 2)
+    assert.equal(data.feedbackLeadershipReadiness.rows[0]?.targetTypeLabel, '2차 다면평가')
   })
 
   await run('performance calendar denies non-admin access without crashing', async () => {
@@ -376,6 +462,13 @@ async function main() {
     assert.equal(clientSource.includes('SCHEDULE_STATUS_FILTER_LABELS'), true)
     assert.equal(clientSource.includes('NEEDS_SETUP'), true)
     assert.equal(clientSource.includes('아직 공식 점수/등급 미적용'), true)
+    assert.equal(clientSource.includes('2026 360/리더십 readiness'), true)
+    assert.equal(clientSource.includes('filtered TSV 복사'), true)
+    assert.equal(clientSource.includes('응답 요청,'), true)
+    assert.equal(clientSource.includes('점수/등급 반영은 수행하지 않습니다.'), true)
+    assert.equal(clientSource.includes('leader only'), true)
+    assert.equal(clientSource.includes('MISSING_REVIEWER'), true)
+    assert.equal(read('src/server/admin/performance-calendar.ts').includes('loadFeedbackLeadershipReadiness'), true)
     assert.equal(clientSource.includes('OWNER_FILTER_LABELS'), true)
     assert.equal(clientSource.includes('STATUS_FILTER_LABELS'), true)
     assert.equal(dashboardSource.includes('/admin/performance-calendar'), true)

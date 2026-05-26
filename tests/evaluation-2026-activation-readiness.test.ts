@@ -228,6 +228,52 @@ function readyEvaluatorRouting(overrides: Partial<any> = {}) {
   }
 }
 
+function readyFeedbackLeadership(overrides: Partial<any> = {}) {
+  return {
+    policyYear: 2026,
+    checkedAt: '2026-05-14T00:00:00.000Z',
+    evalCycleId: 'cycle-official',
+    readOnly: true,
+    summary: {
+      targetEmployeeCount: 10,
+      targetLeaderCount: 3,
+      reviewerAssignmentCount: 20,
+      missingReviewerAssignmentCount: 0,
+      responseSubmittedCount: 20,
+      responseMissingCount: 0,
+      completionRate: 100,
+      blockedOrNeedsSetupCount: 0,
+      second360Status: 'COMPLETE',
+      leadershipDiagnosisStatus: 'COMPLETE',
+      ...(overrides.summary ?? {}),
+    },
+    second360Feedback: {
+      status: 'COMPLETE',
+      blockedCount: 0,
+      needsSetupCount: 0,
+    },
+    leadershipDiagnosis: {
+      status: 'COMPLETE',
+      blockedCount: 0,
+      needsSetupCount: 0,
+    },
+    rows: [],
+    safety: {
+      writesPerformed: false,
+      notificationsSent: false,
+      emailsSent: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+      officialAiScoreExclusionEnabled: false,
+    },
+    ...overrides,
+  }
+}
+
 function findGate(result: any, id: string) {
   const gate = result.officialActivationGates.find((item: any) => item.id === id)
   assert.ok(gate, `missing gate ${id}`)
@@ -440,6 +486,47 @@ async function main() {
     assert.equal(result.blockers.some((item: any) => item.code === 'EVALUATOR_ROUTING_UNRESOLVED'), true)
   })
 
+  await run('activation gate includes 360 and leadership readiness blockers', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: true,
+        hrApprovalConfirmed: true,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun() as any,
+      feedbackLeadershipReadiness: readyFeedbackLeadership({
+        summary: {
+          blockedOrNeedsSetupCount: 4,
+          second360Status: 'ASSIGNMENT_INCOMPLETE',
+          leadershipDiagnosisStatus: 'NOT_CONFIGURED',
+        },
+        second360Feedback: {
+          status: 'ASSIGNMENT_INCOMPLETE',
+          blockedCount: 2,
+          needsSetupCount: 0,
+        },
+        leadershipDiagnosis: {
+          status: 'NOT_CONFIGURED',
+          blockedCount: 0,
+          needsSetupCount: 2,
+        },
+      }) as any,
+    })
+
+    const gate = findGate(result, 'OFFICIAL_GRADE')
+    const condition = findCondition(gate, 'FEEDBACK_360_LEADERSHIP_READINESS_READY')
+
+    assert.equal(gate.status, 'BLOCKED')
+    assert.equal(condition.status, 'BLOCKED')
+    assert.equal(condition.blockerCount, 4)
+    assert.equal(result.blockers.some((item: any) => item.code === 'FEEDBACK_LEADERSHIP_READINESS_UNRESOLVED'), true)
+  })
+
   await run('official scoring gate is blocked before backfill and HR approval', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags({
@@ -581,6 +668,9 @@ async function main() {
     assert.equal(clientSource.includes('Evaluation.totalScore write gate'), true)
     assert.equal(clientSource.includes('Evaluation.gradeId write gate'), true)
     assert.equal(activationSource.includes('evaluator assignment chain complete'), true)
+    assert.equal(activationSource.includes('FEEDBACK_360_LEADERSHIP_READINESS_READY'), true)
+    assert.equal(activationSource.includes('FEEDBACK_LEADERSHIP_READINESS_UNRESOLVED'), true)
+    assert.equal(clientSource.includes('360/리더십'), true)
     assert.equal(clientSource.includes('공식 전환 실행'), false)
   })
 
