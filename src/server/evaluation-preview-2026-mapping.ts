@@ -965,6 +965,17 @@ export async function getEvaluationPolicy2026MappingCandidates(params: {
               linkedOrgKpi: {
                 include: {
                   department: true,
+                  parentOrgKpi: {
+                    include: {
+                      department: true,
+                    },
+                  },
+                  teamKpiReviewItems: {
+                    orderBy: {
+                      createdAt: 'desc',
+                    },
+                    take: 1,
+                  },
                 },
               },
             },
@@ -1054,6 +1065,7 @@ export async function getEvaluationPolicy2026MappingCandidates(params: {
   }
 
   const policyCategoryCandidates: EvaluationPolicy2026MappingCandidate[] = []
+  const legacyPolicyCategoryWorkbenchItems: EvaluationPolicy2026PolicyCategoryWorkbenchItem[] = []
   const divisionSalesGroupCandidatesByKey = new Map<string, EvaluationPolicy2026DivisionSalesGroupCandidate>()
   const departmentSalesGroupCandidatesByKey = new Map<string, EvaluationPolicy2026DepartmentSalesGroupCandidate>()
   const salesGroupCandidates: EvaluationPolicy2026SalesGroupCandidate[] = []
@@ -1238,6 +1250,115 @@ export async function getEvaluationPolicy2026MappingCandidates(params: {
       const currentCategory = item.policyCategory ?? personalKpi.policyCategory ?? null
       if (!shouldListPolicyCandidate({ currentCategory, classification })) continue
 
+      const workbenchKpi = {
+        ...personalKpi,
+        employee: {
+          id: evaluation.targetId,
+          empId: evaluation.target.empId,
+          empName: evaluation.target.empName,
+          deptId: evaluation.target.deptId ?? evaluation.target.department?.id ?? '',
+          managerId: evaluation.target.managerId,
+          department: evaluation.target.department,
+        },
+        evaluationItems: [item],
+      } as MappingPersonalKpi2026
+      const workbenchSuggestion = suggestPolicyCategoryForWorkbench2026({
+        kpi: workbenchKpi,
+        departmentsById,
+        classification,
+      })
+      const targetDepartmentId = evaluation.target.deptId ?? evaluation.target.department?.id ?? null
+      const targetDivision = resolveDivisionDepartment2026({
+        departmentId: targetDepartmentId,
+        departmentsById,
+      })
+      const linkedOrgKpi = personalKpi.linkedOrgKpi ?? null
+      const linkedOrgKpiDepartmentId = linkedOrgKpi?.department?.id ?? null
+      const linkedOrgKpiDepartmentPath = linkedOrgKpiDepartmentId
+        ? formatNullableDepartmentPath2026({
+            departmentId: linkedOrgKpiDepartmentId,
+            departmentsById,
+          })
+        : null
+      const linkedIsDivisionKpi = isDivisionDepartment2026({
+        departmentId: linkedOrgKpiDepartmentId,
+        departmentsById,
+      })
+      const linkedIsTeamKpi = Boolean(linkedOrgKpi && !linkedIsDivisionKpi)
+      const teamReviewStatus = linkedIsTeamKpi
+        ? resolveTeamKpiReviewStatusForPolicyCategory2026(linkedOrgKpi)
+        : null
+      const targetManagerId = evaluation.target.managerId ?? null
+      const targetManager = targetManagerId ? activeEmployeesById.get(targetManagerId) : null
+      const currentContribution = item.scoreContributionType ?? (
+        currentCategory ? contributionTypeForPolicyCategory2026(currentCategory) : null
+      )
+      const suggestedContribution =
+        workbenchSuggestion.category === 'MANUAL_REVIEW'
+          ? null
+          : contributionTypeForPolicyCategory2026(workbenchSuggestion.category)
+
+      legacyPolicyCategoryWorkbenchItems.push({
+        mappingId: `EvaluationItem:${item.id}`,
+        itemSource: 'EvaluationItem',
+        personalKpiId: personalKpi.id,
+        evaluationItemId: item.id,
+        evaluationId: evaluation.id,
+        evalCycleId: evaluation.evalCycleId,
+        evalYear: evaluation.evalCycle.evalYear,
+        evalStage: evaluation.evalStage,
+        employeeId: evaluation.targetId,
+        employeeNo: evaluation.target.empId ?? null,
+        employeeName: evaluation.target.empName,
+        divisionId: targetDivision?.id ?? null,
+        divisionName: targetDivision?.deptName ?? '본부 미지정',
+        departmentId: targetDepartmentId,
+        departmentName: evaluation.target.department?.deptName ?? '소속 조직 미지정',
+        departmentPath: formatNullableDepartmentPath2026({
+          departmentId: targetDepartmentId,
+          departmentsById,
+        }),
+        managerId: targetManagerId,
+        managerName: targetManager?.empName ?? '리더 미지정',
+        mboStatus: toOperationalStatus2026(workbenchKpi, new Map()),
+        kpiTitle: personalKpi.kpiName,
+        kpiDescription: personalKpi.definition ?? personalKpi.formula ?? null,
+        linkedOrgKpi: linkedOrgKpi
+          ? {
+              id: linkedOrgKpi.id,
+              title: linkedOrgKpi.kpiName,
+              departmentName: linkedOrgKpi.department?.deptName ?? null,
+              departmentPath: linkedOrgKpiDepartmentPath,
+              isDivisionKpi: linkedIsDivisionKpi,
+              isTeamKpi: linkedIsTeamKpi,
+              latestTeamReviewVerdict: latestTeamKpiReviewVerdict2026(linkedOrgKpi),
+              hrApprovedForOrgGoal: workbenchSuggestion.hasHrApprovedSource,
+              excludedDailyWork: teamReviewStatus === 'EXCLUDED_DAILY_WORK',
+              needsDiscussion: teamReviewStatus === 'NEEDS_DISCUSSION',
+            }
+          : null,
+        linkedTeamKpi: linkedOrgKpi && linkedIsTeamKpi && teamReviewStatus
+          ? {
+              id: linkedOrgKpi.id,
+              title: linkedOrgKpi.kpiName,
+              reviewStatus: teamReviewStatus,
+            }
+          : null,
+        currentPolicyCategory: currentCategory,
+        currentEvaluationItemCategory: item.policyCategory,
+        currentPersonalKpiCategory: personalKpi.policyCategory,
+        suggestedPolicyCategory: workbenchSuggestion.category,
+        suggestionReason: workbenchSuggestion.reason,
+        sourceConfidence: workbenchSuggestion.confidence,
+        currentScoreContributionType: currentContribution,
+        suggestedScoreContributionType: suggestedContribution,
+        currentPolicyFormulaVersion: item.policyFormulaVersion ?? null,
+        reviewNote: personalKpi.policyCategoryReviewNote ?? null,
+        sourceSignals: Array.from(new Set([...workbenchSuggestion.signals, ...classification.signals])),
+        requiresHrApprovedSource: workbenchSuggestion.requiresHrApprovedSource,
+        hasHrApprovedSource: workbenchSuggestion.hasHrApprovedSource,
+      })
+
       policyCategoryCandidates.push({
         evaluationItemId: item.id,
         personalKpiId: personalKpi.id,
@@ -1282,13 +1403,29 @@ export async function getEvaluationPolicy2026MappingCandidates(params: {
     db,
     personalKpiIds: policyCategoryWorkbenchKpis.map((kpi) => kpi.id),
   })
-  const policyCategoryWorkbenchItems = buildPolicyCategoryWorkbenchItems2026({
+  const policyCategoryWorkbenchItemsById = new Map<string, EvaluationPolicy2026PolicyCategoryWorkbenchItem>()
+  for (const row of buildPolicyCategoryWorkbenchItems2026({
     personalKpis: policyCategoryWorkbenchKpis,
     employeesById: activeEmployeesById,
     departmentsById,
     logsByKpiId: buildLogsByKpiId2026(policyCategoryAuditLogs),
     cycleIds: workbenchCycleIds,
-  }).slice(0, limit)
+  })) {
+    policyCategoryWorkbenchItemsById.set(row.mappingId, row)
+  }
+  for (const row of legacyPolicyCategoryWorkbenchItems) {
+    if (!policyCategoryWorkbenchItemsById.has(row.mappingId)) {
+      policyCategoryWorkbenchItemsById.set(row.mappingId, row)
+    }
+  }
+  const policyCategoryWorkbenchItems = Array.from(policyCategoryWorkbenchItemsById.values())
+    .sort((left, right) =>
+      left.divisionName.localeCompare(right.divisionName, 'ko') ||
+      left.departmentPath.localeCompare(right.departmentPath, 'ko') ||
+      left.employeeName.localeCompare(right.employeeName, 'ko') ||
+      left.kpiTitle.localeCompare(right.kpiTitle, 'ko')
+    )
+    .slice(0, limit)
 
   return {
     policyVersion: EVALUATION_POLICY_2026.version,
