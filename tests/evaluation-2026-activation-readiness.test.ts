@@ -189,6 +189,45 @@ function readyPopulationDryRun(overrides: Partial<any> = {}) {
   }
 }
 
+function readyEvaluatorRouting(overrides: Partial<any> = {}) {
+  return {
+    policyYear: 2026,
+    checkedAt: '2026-05-14T00:00:00.000Z',
+    evalCycleId: 'cycle-official',
+    readOnly: true,
+    summary: {
+      activeEmployeeCount: 10,
+      completeEvaluatorChainCount: 10,
+      missingFirstEvaluatorCount: 0,
+      missingSecondEvaluatorCount: 0,
+      missingFinalApproverCount: 0,
+      managerEmployeeNoMissingCount: 0,
+      orgAmbiguousCount: 0,
+      teamsWithoutLeaderCount: 0,
+      leadersWithoutEvaluatableTeamMembersCount: 0,
+      duplicateEvaluatorWarningCount: 0,
+      selfEvaluatorWarningCount: 0,
+      inactiveEvaluatorWarningCount: 0,
+      orgPathMissingInvalidCount: 0,
+      manualReviewCount: 0,
+      blockerCount: 0,
+      ...(overrides.summary ?? {}),
+    },
+    rows: [],
+    safety: {
+      writesPerformed: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+      officialAiScoreExclusionEnabled: false,
+    },
+    ...overrides,
+  }
+}
+
 function findGate(result: any, id: string) {
   const gate = result.officialActivationGates.find((item: any) => item.id === id)
   assert.ok(gate, `missing gate ${id}`)
@@ -366,6 +405,41 @@ async function main() {
     assert.equal(condition.blockerCount, 2)
   })
 
+  await run('activation gate includes evaluator assignment blockers', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        hrApprovalConfirmed: false,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun() as any,
+      evaluatorRoutingReadiness: readyEvaluatorRouting({
+        summary: {
+          activeEmployeeCount: 10,
+          completeEvaluatorChainCount: 7,
+          missingFirstEvaluatorCount: 1,
+          missingSecondEvaluatorCount: 1,
+          missingFinalApproverCount: 1,
+          blockerCount: 3,
+          manualReviewCount: 3,
+        },
+      }) as any,
+    })
+
+    const gate = findGate(result, 'BACKFILL_APPLY')
+    const condition = findCondition(gate, 'EVALUATOR_ASSIGNMENT_CHAIN_READY')
+
+    assert.equal(gate.status, 'BLOCKED')
+    assert.equal(condition.status, 'BLOCKED')
+    assert.equal(condition.blockerCount, 3)
+    assert.equal(result.blockers.some((item: any) => item.code === 'EVALUATOR_ROUTING_UNRESOLVED'), true)
+  })
+
   await run('official scoring gate is blocked before backfill and HR approval', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags({
@@ -487,6 +561,7 @@ async function main() {
   await run('activation readiness API and UI are read-only and admin-gated', () => {
     const routeSource = read('src/app/api/evaluation/preview-2026/activation-readiness/route.ts')
     const clientSource = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
+    const activationSource = read('src/server/evaluation-2026-activation-readiness.ts')
 
     assert.equal(routeSource.includes('export async function GET'), true)
     assert.equal(routeSource.includes('getServerSession(authOptions)'), true)
@@ -505,6 +580,7 @@ async function main() {
     assert.equal(clientSource.includes('Official grade gate'), true)
     assert.equal(clientSource.includes('Evaluation.totalScore write gate'), true)
     assert.equal(clientSource.includes('Evaluation.gradeId write gate'), true)
+    assert.equal(activationSource.includes('evaluator assignment chain complete'), true)
     assert.equal(clientSource.includes('공식 전환 실행'), false)
   })
 
