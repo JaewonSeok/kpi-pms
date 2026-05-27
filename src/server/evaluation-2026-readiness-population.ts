@@ -599,6 +599,82 @@ export type Evaluation2026TeamKpiHrReviewCoverage = {
   candidates: Evaluation2026TeamKpiHrReviewCandidate[]
 }
 
+export type Evaluation2026ScorePolicyCategoryRule = {
+  category: EvaluationPolicyItemCategoryCode
+  label: string
+  contributionType: 'ORGANIZATION' | 'PERSONAL'
+  targetScore: number | null
+  excellentScore: number | null
+  maxScore: number | null
+  categoryWeightCap: number | null
+  itemWeightCap: number | null
+  adjustmentAllowed: boolean
+  adjustmentRange: {
+    min: number
+    max: number
+  } | null
+  notes: string[]
+}
+
+export type Evaluation2026ScorePolicyViolation = {
+  code: string
+  severity: 'WARNING' | 'BLOCKER'
+  message: string
+  actionLabel: string
+  employeeId: string | null
+  employeeNo: string | null
+  employeeName: string
+  divisionId: string | null
+  divisionName: string
+  departmentId: string | null
+  departmentName: string
+  departmentPath: string
+  personalKpiId: string | null
+  personalKpiName: string | null
+  category: EvaluationPolicyItemCategoryCode | 'UNMAPPED' | null
+  weight: number | null
+  currentValue: number | string | null
+  limitValue: number | string | null
+}
+
+export type Evaluation2026ScorePolicyReadiness = {
+  visible: true
+  source: string
+  scoreSplit: {
+    organizationPerformanceWeight: number
+    personalPerformanceWeight: number
+    officialFormulaActive: false
+  }
+  aiExcludedFromAnnualScore: true
+  categoryRules: Evaluation2026ScorePolicyCategoryRule[]
+  adjustmentRule: {
+    min: number
+    max: number
+    zeroSumRequired: true
+    notApplicableBelowTarget: true
+    applicableCategories: EvaluationPolicyItemCategoryCode[]
+  }
+  summary: {
+    checkedPersonalKpiCount: number
+    employeesWithAnyPersonalKpiCount: number
+    employeesWithConfirmedPersonalKpiCount: number
+    violationsCount: number
+    weightCapViolationCount: number
+    categoryMissingCount: number
+    orgGoalSourceWarningCount: number
+    adjustmentReadinessWarningCount: number
+    aiExcludedConfirmation: true
+  }
+  violations: Evaluation2026ScorePolicyViolation[]
+  adjustmentReadinessWarnings: string[]
+  simulator: {
+    isReadOnly: true
+    defaultCategory: EvaluationPolicyItemCategoryCode
+    previewOnlyMessage: string
+  }
+  emptyStateMessage: string | null
+}
+
 export type Evaluation2026ReadinessPopulationBlocker = {
   code: string
   message: string
@@ -671,6 +747,7 @@ export type Evaluation2026ReadinessPopulationDryRun = {
   }
   gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult
   teamKpiHrReviewCoverage: Evaluation2026TeamKpiHrReviewCoverage
+  scorePolicyReadiness: Evaluation2026ScorePolicyReadiness
   policyCategoryMappingReadiness: {
     missingPolicyCategoryCount: number
     mappedPolicyCategoryCount: number
@@ -911,6 +988,364 @@ function toTeamOrgKpiAlignmentInput2026(
 
 function hasMeaningfulText(value: string | null | undefined, minLength = 8) {
   return typeof value === 'string' && value.trim().length >= minLength
+}
+
+function buildScorePolicyCategoryRules2026(): Evaluation2026ScorePolicyCategoryRule[] {
+  const adjustmentCategories = new Set<EvaluationPolicyItemCategoryCode>(
+    Array.from(EVALUATION_POLICY_2026.adjustmentRule.applicableCategories) as EvaluationPolicyItemCategoryCode[]
+  )
+  return (Object.values(EVALUATION_POLICY_2026.categories) as Array<{
+    code: EvaluationPolicyItemCategoryCode
+    labelKo: string
+    contributionType: 'ORGANIZATION' | 'PERSONAL'
+    baselineScores?: { target: number; excellent: number }
+    maxScore?: number
+  }>).map((category) => {
+    const itemWeightCap =
+      category.code === 'ORG_GOAL' ? 10 :
+      category.code === 'PROJECT_T' ? 10 :
+      category.code === 'PROJECT_K' ? 5 :
+      null
+    return {
+      category: category.code,
+      label: category.labelKo,
+      contributionType: category.contributionType,
+      targetScore: category.baselineScores?.target ?? null,
+      excellentScore: category.baselineScores?.excellent ?? null,
+      maxScore: category.maxScore ?? null,
+      categoryWeightCap: category.code === 'ORG_GOAL' ? 50 : null,
+      itemWeightCap,
+      adjustmentAllowed: adjustmentCategories.has(category.code),
+      adjustmentRange: adjustmentCategories.has(category.code)
+        ? {
+            min: EVALUATION_POLICY_2026.adjustmentRule.min,
+            max: EVALUATION_POLICY_2026.adjustmentRule.max,
+          }
+        : null,
+      notes: [
+        category.code === 'ORG_GOAL' ? '본부 KPI 또는 HR 승인 팀 KPI와 연결된 조직목표만 반영합니다.' : null,
+        category.code === 'PROJECT_T' ? 'Target 90 / Excellent 100 기준을 preview합니다.' : null,
+        category.code === 'PROJECT_K' ? 'Target 80 / Excellent 90 기준을 preview합니다.' : null,
+        category.code === 'DAILY_WORK' ? '일상업무는 최대 80점이며 관리자 재량 검토가 필요합니다.' : null,
+      ].filter((note): note is string => Boolean(note)),
+    }
+  })
+}
+
+function buildScorePolicyViolation2026(params: {
+  code: string
+  severity?: 'WARNING' | 'BLOCKER'
+  message: string
+  actionLabel: string
+  employee?: ActiveEmployee2026 | null
+  kpi?: PersonalKpi2026 | null
+  departmentsById: Map<string, DepartmentNode2026>
+  currentValue?: number | string | null
+  limitValue?: number | string | null
+}): Evaluation2026ScorePolicyViolation {
+  const employee = params.employee ?? null
+  const divisionId = resolveDivisionId({
+    departmentId: employee?.deptId,
+    departmentsById: params.departmentsById,
+  })
+  const departmentId = employee?.deptId ?? null
+  const departmentName =
+    employee?.department?.deptName ??
+    (departmentId ? params.departmentsById.get(departmentId)?.deptName : null) ??
+    '소속 조직 미지정'
+  return {
+    code: params.code,
+    severity: params.severity ?? 'WARNING',
+    message: params.message,
+    actionLabel: params.actionLabel,
+    employeeId: employee?.id ?? null,
+    employeeNo: employee?.empId ?? null,
+    employeeName: employee?.empName ?? '대상자 미확인',
+    divisionId,
+    divisionName: divisionId ? params.departmentsById.get(divisionId)?.deptName ?? divisionId : '본부 미지정',
+    departmentId,
+    departmentName,
+    departmentPath: formatDepartmentPath({ departmentId, departmentsById: params.departmentsById }),
+    personalKpiId: params.kpi?.id ?? null,
+    personalKpiName: params.kpi?.kpiName ?? null,
+    category: params.kpi?.policyCategory ?? (params.kpi ? 'UNMAPPED' : null),
+    weight: params.kpi?.weight ?? null,
+    currentValue: params.currentValue ?? null,
+    limitValue: params.limitValue ?? null,
+  }
+}
+
+function buildScorePolicyReadiness2026(params: {
+  activeEmployees: ActiveEmployee2026[]
+  personalKpis: PersonalKpi2026[]
+  departmentsById: Map<string, DepartmentNode2026>
+  operationalStatusByKpiId: Map<string, PersonalKpiOperationalStatus>
+}): Evaluation2026ScorePolicyReadiness {
+  const employeesById = new Map(params.activeEmployees.map((employee) => [employee.id, employee]))
+  const activeEmployeeIds = new Set(employeesById.keys())
+  const activeKpis = params.personalKpis.filter((kpi) => activeEmployeeIds.has(kpi.employeeId))
+  const confirmedKpis = activeKpis.filter((kpi) => params.operationalStatusByKpiId.get(kpi.id) === 'CONFIRMED')
+  const kpisByEmployeeId = new Map<string, PersonalKpi2026[]>()
+  const violations: Evaluation2026ScorePolicyViolation[] = []
+
+  for (const kpi of activeKpis) {
+    const current = kpisByEmployeeId.get(kpi.employeeId) ?? []
+    current.push(kpi)
+    kpisByEmployeeId.set(kpi.employeeId, current)
+  }
+
+  for (const [employeeId, employeeKpis] of kpisByEmployeeId.entries()) {
+    const employee = employeesById.get(employeeId) ?? null
+    const totalWeight = employeeKpis.reduce((sum, kpi) => sum + (kpi.weight ?? 0), 0)
+    if (Math.abs(totalWeight - 100) > 0.01) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'TOTAL_WEIGHT_NOT_100',
+        message: '개인 MBO 전체 가중치 합계가 100%가 아닙니다.',
+        actionLabel: '가중치 합계 100% 확인',
+        employee,
+        departmentsById: params.departmentsById,
+        currentValue: `${Math.round(totalWeight * 10) / 10}%`,
+        limitValue: '100%',
+      }))
+    }
+
+    const orgGoalWeight = employeeKpis
+      .filter((kpi) => kpi.policyCategory === 'ORG_GOAL')
+      .reduce((sum, kpi) => sum + (kpi.weight ?? 0), 0)
+    if (orgGoalWeight > 50) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'ORG_GOAL_TOTAL_WEIGHT_CAP_EXCEEDED',
+        message: 'ORG_GOAL 총 가중치가 50%를 초과합니다.',
+        actionLabel: '조직목표 총 가중치 조정',
+        employee,
+        departmentsById: params.departmentsById,
+        currentValue: `${Math.round(orgGoalWeight * 10) / 10}%`,
+        limitValue: '50%',
+      }))
+    }
+  }
+
+  const orgGoalReferences = activeKpis
+    .filter((kpi) => kpi.policyCategory === 'ORG_GOAL')
+    .map((kpi) => ({
+      id: kpi.id,
+      title: kpi.kpiName,
+      kpiName: kpi.kpiName,
+      definition: kpi.definition,
+      formula: kpi.formula,
+      linkedOrgKpiId: kpi.linkedOrgKpiId,
+    }))
+  const adjustmentGroupCounts = new Map<string, number>()
+
+  for (const kpi of activeKpis) {
+    const employee = employeesById.get(kpi.employeeId) ?? null
+    const category = kpi.policyCategory
+    const weight = kpi.weight ?? 0
+
+    if (!category) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'POLICY_CATEGORY_MISSING',
+        severity: 'BLOCKER',
+        message: 'MBO 항목의 2026 category가 비어 있습니다.',
+        actionLabel: '카테고리 확정 필요',
+        employee,
+        kpi,
+        departmentsById: params.departmentsById,
+      }))
+      continue
+    }
+
+    if (category === 'ORG_GOAL' && weight > 10) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'ORG_GOAL_ITEM_WEIGHT_CAP_EXCEEDED',
+        message: 'ORG_GOAL 개별 항목 가중치가 10%를 초과합니다.',
+        actionLabel: '조직목표 항목 가중치 조정',
+        employee,
+        kpi,
+        departmentsById: params.departmentsById,
+        currentValue: `${Math.round(weight * 10) / 10}%`,
+        limitValue: '10%',
+      }))
+    }
+    if (category === 'PROJECT_T' && weight > 10) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'PROJECT_T_ITEM_WEIGHT_CAP_EXCEEDED',
+        message: 'PROJECT_T 개별 항목 가중치가 10%를 초과합니다.',
+        actionLabel: '프로젝트 T 항목 가중치 조정',
+        employee,
+        kpi,
+        departmentsById: params.departmentsById,
+        currentValue: `${Math.round(weight * 10) / 10}%`,
+        limitValue: '10%',
+      }))
+    }
+    if (category === 'PROJECT_K' && weight > 5) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'PROJECT_K_ITEM_WEIGHT_CAP_EXCEEDED',
+        message: 'PROJECT_K 개별 항목 가중치가 5%를 초과합니다.',
+        actionLabel: '프로젝트 K 항목 가중치 조정',
+        employee,
+        kpi,
+        departmentsById: params.departmentsById,
+        currentValue: `${Math.round(weight * 10) / 10}%`,
+        limitValue: '5%',
+      }))
+    }
+
+    if (category === 'ORG_GOAL') {
+      const orgKpi = toOrgKpiAlignmentInput2026(kpi.linkedOrgKpi, params.departmentsById)
+      if (!orgKpi || !determineOrgKpiReflectionEligibility2026(orgKpi).eligibleAsOrgGoal) {
+        violations.push(buildScorePolicyViolation2026({
+          code: 'ORG_GOAL_APPROVED_SOURCE_REQUIRED',
+          severity: 'BLOCKER',
+          message: 'ORG_GOAL은 본부 KPI 또는 HR 승인 팀 KPI와 연결되어야 합니다.',
+          actionLabel: '조직목표 소스 확인',
+          employee,
+          kpi,
+          departmentsById: params.departmentsById,
+          currentValue: kpi.linkedOrgKpi?.kpiName ?? '연결 없음/미승인',
+          limitValue: '본부 KPI 또는 HR 승인 팀 KPI',
+        }))
+      }
+    }
+
+    if ((category === 'PROJECT_T' || category === 'PROJECT_K') && kpi.targetValueT == null) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'PROJECT_MEASURABLE_TARGET_REQUIRED',
+        message: 'PROJECT_T/K 항목에 측정 가능한 Target 기준이 없습니다.',
+        actionLabel: 'Target 기준 보완',
+        employee,
+        kpi,
+        departmentsById: params.departmentsById,
+      }))
+    }
+
+    if ((category === 'PROJECT_T' || category === 'PROJECT_K') && !hasMeaningfulText(kpi.formula)) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'PROJECT_PLAN_REQUIRED',
+        message: 'PROJECT_T/K 항목에 구체적인 산식 또는 실행 계획이 부족합니다.',
+        actionLabel: '계획/산식 보완',
+        employee,
+        kpi,
+        departmentsById: params.departmentsById,
+      }))
+    }
+
+    if ((category === 'ORG_GOAL' || category === 'PROJECT_T' || category === 'PROJECT_K') && kpi.targetValueE == null) {
+      violations.push(buildScorePolicyViolation2026({
+        code: 'EXCELLENT_CRITERIA_REQUIRED',
+        message: 'Target/Excellent 산정 기준 중 Excellent 기준이 비어 있습니다.',
+        actionLabel: 'Excellent 기준 보완',
+        employee,
+        kpi,
+        departmentsById: params.departmentsById,
+      }))
+    }
+
+    if (category === 'DAILY_WORK') {
+      const duplicate = detectDailyWorkDuplicateWithOrgGoal2026({
+        dailyWork: {
+          id: kpi.id,
+          title: kpi.kpiName,
+          kpiName: kpi.kpiName,
+          definition: kpi.definition,
+          formula: kpi.formula,
+          linkedOrgKpiId: kpi.linkedOrgKpiId,
+        },
+        orgGoals: orgGoalReferences.filter((orgGoal) => orgGoal.id !== kpi.id),
+      })
+      if (duplicate.duplicated) {
+        violations.push(buildScorePolicyViolation2026({
+          code: 'DAILY_WORK_DUPLICATED_WITH_ORG_OR_PROJECT',
+          message: '일상업무 항목이 조직목표/프로젝트 신호와 중복될 수 있습니다.',
+          actionLabel: '일상업무 중복 검토',
+          employee,
+          kpi,
+          departmentsById: params.departmentsById,
+        }))
+      }
+      if (!hasMeaningfulText(kpi.formula) && !hasMeaningfulText(kpi.definition)) {
+        violations.push(buildScorePolicyViolation2026({
+          code: 'DAILY_WORK_MANAGER_REVIEW_GUIDANCE_REQUIRED',
+          message: 'DAILY_WORK 항목에 관리자 재량 검토 기준으로 볼 설명/산식이 부족합니다.',
+          actionLabel: '관리자 검토 기준 보완',
+          employee,
+          kpi,
+          departmentsById: params.departmentsById,
+        }))
+      }
+    }
+
+    if (category === 'ORG_GOAL' || category === 'PROJECT_T' || category === 'PROJECT_K') {
+      const groupKey = kpi.linkedOrgKpiId
+        ? `${category}:org:${kpi.linkedOrgKpiId}`
+        : `${category}:title:${kpi.kpiName.trim().toLowerCase()}`
+      adjustmentGroupCounts.set(groupKey, (adjustmentGroupCounts.get(groupKey) ?? 0) + 1)
+    }
+  }
+
+  const adjustmentReadinessWarningCount = Array.from(adjustmentGroupCounts.values()).filter((count) => count > 1).length
+  const weightViolationCodes = new Set([
+    'TOTAL_WEIGHT_NOT_100',
+    'ORG_GOAL_TOTAL_WEIGHT_CAP_EXCEEDED',
+    'ORG_GOAL_ITEM_WEIGHT_CAP_EXCEEDED',
+    'PROJECT_T_ITEM_WEIGHT_CAP_EXCEEDED',
+    'PROJECT_K_ITEM_WEIGHT_CAP_EXCEEDED',
+  ])
+
+  return {
+    visible: true,
+    source: EVALUATION_POLICY_2026.source,
+    scoreSplit: {
+      organizationPerformanceWeight: EVALUATION_POLICY_2026.finalScoreFormula.organizationPerformanceWeight,
+      personalPerformanceWeight: EVALUATION_POLICY_2026.finalScoreFormula.personalPerformanceWeight,
+      officialFormulaActive: false,
+    },
+    aiExcludedFromAnnualScore: true,
+    categoryRules: buildScorePolicyCategoryRules2026(),
+    adjustmentRule: {
+      min: EVALUATION_POLICY_2026.adjustmentRule.min,
+      max: EVALUATION_POLICY_2026.adjustmentRule.max,
+      zeroSumRequired: true,
+      notApplicableBelowTarget: true,
+      applicableCategories: Array.from(EVALUATION_POLICY_2026.adjustmentRule.applicableCategories) as EvaluationPolicyItemCategoryCode[],
+    },
+    summary: {
+      checkedPersonalKpiCount: activeKpis.length,
+      employeesWithAnyPersonalKpiCount: kpisByEmployeeId.size,
+      employeesWithConfirmedPersonalKpiCount: new Set(confirmedKpis.map((kpi) => kpi.employeeId)).size,
+      violationsCount: violations.length,
+      weightCapViolationCount: violations.filter((violation) => weightViolationCodes.has(violation.code)).length,
+      categoryMissingCount: violations.filter((violation) => violation.code === 'POLICY_CATEGORY_MISSING').length,
+      orgGoalSourceWarningCount: violations.filter((violation) => violation.code === 'ORG_GOAL_APPROVED_SOURCE_REQUIRED').length,
+      adjustmentReadinessWarningCount,
+      aiExcludedConfirmation: true,
+    },
+    violations: violations
+      .sort((left, right) =>
+        left.divisionName.localeCompare(right.divisionName, 'ko') ||
+        left.departmentPath.localeCompare(right.departmentPath, 'ko') ||
+        left.employeeName.localeCompare(right.employeeName, 'ko') ||
+        String(left.personalKpiName ?? '').localeCompare(String(right.personalKpiName ?? ''), 'ko')
+      )
+      .slice(0, 300),
+    adjustmentReadinessWarnings: [
+      '동일 목표/프로젝트 내 ±5 조정은 zero-sum 원칙으로 관리해야 합니다.',
+      '가점 조정에는 대응 감점과 개인 기여 차이 근거가 필요합니다.',
+      '목표 달성이 Target 미만이면 조정점을 적용하지 않습니다.',
+      adjustmentReadinessWarningCount > 0
+        ? `동일 목표/프로젝트 후보 ${adjustmentReadinessWarningCount}개는 참여자 간 조정 근거 준비가 필요합니다.`
+        : null,
+    ].filter((warning): warning is string => Boolean(warning)),
+    simulator: {
+      isReadOnly: true,
+      defaultCategory: 'ORG_GOAL',
+      previewOnlyMessage: '이 계산은 preview/simulation이며 공식 점수 또는 등급에 반영되지 않습니다.',
+    },
+    emptyStateMessage: confirmedKpis.length
+      ? null
+      : '아직 확정된 2026 MBO가 부족하여 공식 산정 점검은 제한적입니다. 현재 화면은 정책 기준과 작성 중 데이터의 readiness를 점검합니다.',
+  }
 }
 
 const RESULT_WRITING_GUIDANCE_2026: Evaluation2026ResultWritingReadiness['guidance'] = [
@@ -2504,6 +2939,12 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     departmentsById,
     personalKpiOrgGoalWithoutApprovedSourceCount: mboSetupCoverage.warningCounts.orgGoalWithoutEligibleOrgKpi,
   })
+  const scorePolicyReadiness = buildScorePolicyReadiness2026({
+    activeEmployees: activeEmployees as ActiveEmployee2026[],
+    personalKpis: typedPersonalKpis,
+    departmentsById,
+    operationalStatusByKpiId,
+  })
   const policyCategoryMappingReadiness = {
     missingPolicyCategoryCount: typedPersonalKpis.filter((kpi) => !kpi.policyCategory).length,
     mappedPolicyCategoryCount: typedPersonalKpis.filter((kpi) => Boolean(kpi.policyCategory)).length,
@@ -2574,6 +3015,12 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     code: 'NO_CONFIRMED_PERSONAL_KPI',
     message: '현재 주기 연도에 확정된 Personal KPI가 없어 생성할 평가 항목이 없습니다.',
     count: employeesWithConfirmedPersonalKpi.length === 0 ? 1 : 0,
+  })
+  addBlocker({
+    target: blockers,
+    code: 'SCORE_POLICY_READINESS_VIOLATIONS',
+    message: '2026 성과점수 정책 기준에 맞지 않는 MBO 항목이 있어 HR/리더 점검이 필요합니다.',
+    count: scorePolicyReadiness.summary.violationsCount,
   })
   addBlocker({
     target: blockers,
@@ -2708,6 +3155,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     },
     gradePolicyReadiness,
     teamKpiHrReviewCoverage,
+    scorePolicyReadiness,
     policyCategoryMappingReadiness,
     resultWritingReadiness,
     leaderEvaluationReadiness,
