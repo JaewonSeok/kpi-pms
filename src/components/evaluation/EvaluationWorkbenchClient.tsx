@@ -1891,6 +1891,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     activationData={policyActivationReadiness2026}
                     loading={policyActivationReadiness2026Loading}
                     error={policyActivationReadiness2026Error}
+                    autoLoadKey={`${props.selectedCycleId ?? '2026'}:${props.selectedEvaluationId ?? 'none'}`}
                     onLoad={loadPolicyActivationReadiness2026}
                   />
                   <PolicyGradeReadiness2026Panel
@@ -2919,9 +2920,10 @@ function PolicyActivationReadiness2026Panel(props: {
   activationData: EvaluationActivationReadiness2026ApiData | null
   loading: boolean
   error: string
+  autoLoadKey: string
   onLoad: () => void
 }) {
-  const activation = props.activationData
+  const { activationData: activation, loading, error, autoLoadKey, onLoad } = props
   const blockers = activation?.blockers ?? []
   const warnings = activation?.warnings ?? []
   const gates = activation?.officialActivationGates ?? []
@@ -2936,6 +2938,15 @@ function PolicyActivationReadiness2026Panel(props: {
     setCopiedRunbookKey(key)
     window.setTimeout(() => setCopiedRunbookKey((current) => (current === key ? null : current)), 1800)
   }, [])
+  const autoLoadRequestedKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (activation || loading || error) return
+    if (autoLoadRequestedKeyRef.current === autoLoadKey) return
+
+    autoLoadRequestedKeyRef.current = autoLoadKey
+    void onLoad()
+  }, [activation, autoLoadKey, error, loading, onLoad])
 
   return (
     <Panel
@@ -2964,15 +2975,15 @@ function PolicyActivationReadiness2026Panel(props: {
         </div>
         <button
           type="button"
-          onClick={props.onLoad}
-          disabled={props.loading}
+          onClick={onLoad}
+          disabled={loading}
           className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
         >
-          {props.loading ? '확인 중...' : activation ? '공식 전환 상태 다시 확인' : '공식 전환 상태 확인'}
+          {loading ? '확인 중...' : activation ? '공식 전환 상태 다시 확인' : '공식 전환 상태 확인'}
         </button>
       </div>
 
-      {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+      {error ? <div className="mt-4"><Banner tone="error" message={error} /></div> : null}
 
       {activation ? (
         <div className="mt-5 space-y-4">
@@ -3260,7 +3271,37 @@ function PolicyActivationReadiness2026Panel(props: {
                 <p className="mt-2 text-sm leading-6 text-rose-900">{snapshot.prohibitedActions.join(', ')}</p>
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 통합 readiness snapshot</h4>
+                    <Badge tone="neutral">{loading ? 'loading' : '미확인'}</Badge>
+                    <Badge tone="neutral">read-only report</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    공식 전환 Gate 데이터를 불러오면 현재 단계, overall readiness status, top blockers,
+                    official activation state, decision readiness, prohibited actions와 copy/export 버튼이 표시됩니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onLoad}
+                  disabled={loading}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+                >
+                  {loading ? 'snapshot 불러오는 중...' : 'snapshot 다시 불러오기'}
+                </button>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label="현재 단계" value="미확인" help="activation readiness load 필요" compact variant="muted" />
+                <MetricCard label="overall readiness status" value="미확인" help="activation readiness load 필요" compact variant="muted" />
+                <MetricCard label="top blockers" value="미확인" help="blocker summary 대기" compact variant="muted" />
+                <MetricCard label="official activation state" value="미확인" help="read-only gate 대기" compact variant="muted" />
+              </div>
+            </div>
+          )}
 
           {actionPlan ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
