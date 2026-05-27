@@ -532,6 +532,110 @@ export type Evaluation2026LeaderEvaluationReadiness = {
   }
 }
 
+export type Evaluation2026FinalizationCeoReadinessStatus =
+  | 'BLOCKED_SELF_NOT_READY'
+  | 'BLOCKED_FIRST_NOT_READY'
+  | 'BLOCKED_SECOND_NOT_READY'
+  | 'BLOCKED_RESULT_MISSING'
+  | 'BLOCKED_POLICY_CATEGORY_MISSING'
+  | 'BLOCKED_EVALUATOR_CHAIN'
+  | 'BLOCKED_SCORE_POLICY'
+  | 'BLOCKED_GRADE_POLICY'
+  | 'BLOCKED_FEEDBACK_LEADERSHIP'
+  | 'BLOCKED_AI_READINESS'
+  | 'READY_FOR_FINAL_REVIEW'
+  | 'READY_FOR_CEO_CONFIRMATION_LATER'
+  | 'MANUAL_REVIEW'
+
+export type Evaluation2026FinalizationCeoBlockerType =
+  | 'SELF_NOT_READY'
+  | 'FIRST_NOT_READY'
+  | 'SECOND_NOT_READY'
+  | 'RESULT_MISSING'
+  | 'EVIDENCE_MISSING'
+  | 'POLICY_CATEGORY_MISSING'
+  | 'EVALUATOR_CHAIN'
+  | 'SCORE_POLICY'
+  | 'GRADE_POLICY'
+  | 'FEEDBACK_LEADERSHIP'
+  | 'AI_READINESS'
+  | 'MANUAL_REVIEW'
+
+export type Evaluation2026FinalizationCeoReadinessRow = {
+  employeeId: string
+  employeeNo: string | null
+  employeeName: string
+  email: string | null
+  divisionId: string | null
+  divisionName: string
+  sectionId: string | null
+  sectionName: string
+  departmentId: string | null
+  departmentName: string
+  departmentPath: string
+  currentEvaluationStage: string
+  firstReadiness: 'READY' | 'BLOCKED' | 'NOT_STARTED'
+  secondReadiness: 'READY' | 'BLOCKED' | 'NOT_STARTED'
+  finalReadiness: 'READY' | 'BLOCKED' | 'NOT_STARTED'
+  ceoConfirmationReadiness: 'READY_LATER' | 'BLOCKED' | 'NOT_STARTED'
+  firstEvaluatorId: string | null
+  firstEvaluatorName: string
+  secondEvaluatorId: string | null
+  secondEvaluatorName: string
+  finalEvaluatorId: string | null
+  finalEvaluatorName: string
+  evaluatorChainSummary: string
+  policyCategoryStatus: 'READY' | 'MISSING'
+  resultEvidenceStatus: 'READY' | 'MISSING' | 'NO_ITEMS'
+  scorePolicyStatus: 'READY' | 'BLOCKED'
+  gradePolicyStatus: 'READY' | 'BLOCKED'
+  feedbackLeadershipStatus: 'READY' | 'BLOCKED' | 'NOT_CHECKED'
+  aiReadinessStatus: 'SEPARATE_PASS_FAIL' | 'BLOCKED' | 'NOT_CHECKED'
+  finalizationReadinessStatus: Evaluation2026FinalizationCeoReadinessStatus
+  blockerTypes: Evaluation2026FinalizationCeoBlockerType[]
+  blockerReasons: string[]
+  nextHrAction: string
+  manualReviewRequired: boolean
+}
+
+export type Evaluation2026FinalizationCeoReadiness = {
+  mode: 'READ_ONLY'
+  finalCeoChecklist: string[]
+  exportColumns: string[]
+  summary: {
+    finalReviewCandidateCount: number
+    readyLaterCount: number
+    blockedBeforeFirstCount: number
+    blockedBeforeSecondCount: number
+    blockedBeforeFinalCount: number
+    missingEvidenceCount: number
+    missingPolicyCategoryCount: number
+    missingEvaluatorChainCount: number
+    scorePolicyBlockerCount: number
+    gradePolicyBlockerCount: number
+    feedbackLeadershipBlockerCount: number
+    aiReadinessBlockerCount: number
+    calibrationReadinessBlockerCount: number
+    ceoConfirmationBlockerCount: number
+    manualReviewCount: number
+    finalizationBlockerCount: number
+    testSampleCycleWarningCount: number
+    officialScoringEnabled: false
+    officialGradeEnabled: false
+  }
+  rows: Evaluation2026FinalizationCeoReadinessRow[]
+  safety: {
+    writesPerformed: false
+    evaluationsCreated: 0
+    evaluationItemsCreated: 0
+    totalScoreChanged: false
+    gradeIdChanged: false
+    officialScoringEnabled: false
+    officialGradeEnabled: false
+    officialAiScoreExclusionEnabled: false
+  }
+}
+
 export type Evaluation2026TeamKpiHrReviewStatus =
   | 'PENDING_REVIEW'
   | 'APPROVED_FOR_ORG_GOAL'
@@ -759,6 +863,7 @@ export type Evaluation2026ReadinessPopulationDryRun = {
   }
   resultWritingReadiness: Evaluation2026ResultWritingReadiness
   leaderEvaluationReadiness: Evaluation2026LeaderEvaluationReadiness
+  finalizationCeoReadiness: Evaluation2026FinalizationCeoReadiness
   blockers: Evaluation2026ReadinessPopulationBlocker[]
   warnings: Evaluation2026ReadinessPopulationBlocker[]
   safety: {
@@ -800,6 +905,32 @@ function formatDepartmentPath(params: {
   }
 
   return path.length ? path.reverse().map((department) => department.deptName).join(' > ') : params.departmentId
+}
+
+function getDepartmentPathNodes(params: {
+  departmentId?: string | null
+  departmentsById: Map<string, DepartmentNode2026>
+}) {
+  if (!params.departmentId) return []
+  const path: DepartmentNode2026[] = []
+  const visited = new Set<string>()
+  let current = params.departmentsById.get(params.departmentId)
+
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    path.push(current)
+    current = current.parentDeptId ? params.departmentsById.get(current.parentDeptId) : undefined
+  }
+
+  return path.reverse()
+}
+
+function resolveSectionId(params: {
+  departmentId?: string | null
+  departmentsById: Map<string, DepartmentNode2026>
+}) {
+  const path = getDepartmentPathNodes(params)
+  return path.length >= 3 ? path[1]?.id ?? null : null
 }
 
 function resolveDivisionId(params: {
@@ -1426,6 +1557,21 @@ const LEADER_EVALUATION_SECOND_CHECKLIST_2026 = [
   'calibration/final grade는 이 단계에서 처리하지 않습니다.',
 ]
 
+const FINALIZATION_CEO_CHECKLIST_2026 = [
+  'SELF 제출이 완료되었는지 확인합니다.',
+  'FIRST review가 완료되었거나 최종 검토에 넘길 준비가 되었는지 확인합니다.',
+  'SECOND review가 완료되었거나 최종 검토에 넘길 준비가 되었는지 확인합니다.',
+  '수행결과 증빙이 있는지 확인합니다.',
+  'policyCategory가 확정되었는지 확인합니다.',
+  'FIRST / SECOND / FINAL 평가자 chain이 유효한지 확인합니다.',
+  'score policy blocker가 해소되었는지 확인합니다.',
+  'grade policy blocker가 해소되었는지 확인합니다.',
+  '2차 다면평가/리더십 readiness를 확인합니다.',
+  'AI Pass/Fail readiness는 annual score와 별도로 확인합니다.',
+  '최종 등급 조정이 필요한 경우 조정 사유가 필수임을 확인합니다.',
+  'calibration/finalization은 이 readiness 화면에서 수행하지 않습니다.',
+]
+
 function getPolicyCategoryLabel2026(category: EvaluationPolicyItemCategoryCode | null) {
   if (category === 'ORG_GOAL') return '조직목표'
   if (category === 'PROJECT_T') return '프로젝트 T'
@@ -2038,6 +2184,239 @@ function buildLeaderEvaluationReadiness2026(params: {
         row.readinessStatus === 'READY_FOR_SECOND_REVIEW' ||
         row.readinessStatus === 'READY_FOR_FINAL_REVIEW'
       ).length,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+    },
+    rows: rows.slice(0, params.limit),
+    safety: {
+      writesPerformed: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+      officialAiScoreExclusionEnabled: false,
+    },
+  }
+}
+
+function getGradePolicyReadinessBlockerCount2026(
+  gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult
+) {
+  if (gradePolicyReadiness.persistence.compatibilityIssue) return 1
+  if (!gradePolicyReadiness.persistence.available) return 1
+  let count = 0
+  if (!gradePolicyReadiness.gradePolicyExists) count += 1
+  if (!gradePolicyReadiness.gradePolicyGroupsComplete) count += Math.max(1, gradePolicyReadiness.missingRowsCount)
+  count += gradePolicyReadiness.differsFromPptCount
+  count += gradePolicyReadiness.overlapCount
+  count += gradePolicyReadiness.gapCount
+  if (gradePolicyReadiness.teamMemberSalesAmbiguity.requiresDecision) count += 1
+  return count
+}
+
+function getFinalizationCeoNextAction2026(status: Evaluation2026FinalizationCeoReadinessStatus) {
+  if (status === 'BLOCKED_SELF_NOT_READY') return 'SELF/수행결과 제출 완료 여부 확인'
+  if (status === 'BLOCKED_FIRST_NOT_READY') return 'FIRST review 완료 또는 준비 상태 확인'
+  if (status === 'BLOCKED_SECOND_NOT_READY') return 'SECOND review 완료 또는 준비 상태 확인'
+  if (status === 'BLOCKED_RESULT_MISSING') return '수행결과/증빙 보완 요청'
+  if (status === 'BLOCKED_POLICY_CATEGORY_MISSING') return 'policyCategory 확정'
+  if (status === 'BLOCKED_EVALUATOR_CHAIN') return '평가자 배정 chain 확인'
+  if (status === 'BLOCKED_SCORE_POLICY') return '성과점수 정책 readiness blocker 해소'
+  if (status === 'BLOCKED_GRADE_POLICY') return '등급 기준 readiness blocker 해소'
+  if (status === 'BLOCKED_FEEDBACK_LEADERSHIP') return '360/리더십 readiness 확인'
+  if (status === 'BLOCKED_AI_READINESS') return 'AI Pass/Fail readiness 별도 확인'
+  if (status === 'READY_FOR_FINAL_REVIEW') return '최종 확정 전 checklist와 보정 runbook 확인'
+  if (status === 'READY_FOR_CEO_CONFIRMATION_LATER') return '대표이사 확정 전 공식 점수/등급/조정 사유 확인'
+  return 'HR 수동 검토'
+}
+
+function buildFinalizationCeoReadiness2026(params: {
+  activeEmployees: ActiveEmployee2026[]
+  leaderEvaluationReadiness: Evaluation2026LeaderEvaluationReadiness
+  scorePolicyReadiness: Evaluation2026ScorePolicyReadiness
+  gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult
+  departmentsById: Map<string, DepartmentNode2026>
+  limit: number
+}): Evaluation2026FinalizationCeoReadiness {
+  const activeEmployeesById = new Map(params.activeEmployees.map((employee) => [employee.id, employee]))
+  const gradePolicyBlockerCount = getGradePolicyReadinessBlockerCount2026(params.gradePolicyReadiness)
+  const scorePolicyBlockerCount = params.scorePolicyReadiness.summary.violationsCount
+  const feedbackLeadershipBlockerCount = 0
+  const aiReadinessBlockerCount = 0
+  const testSampleCycleWarningCount = params.leaderEvaluationReadiness.rows.filter((row) =>
+    row.employeeName.includes('석재원')
+  ).length
+
+  const rows = params.leaderEvaluationReadiness.rows.map((leaderRow) => {
+    const employee = activeEmployeesById.get(leaderRow.employeeId)
+    const sectionId = resolveSectionId({
+      departmentId: employee?.deptId ?? leaderRow.departmentId,
+      departmentsById: params.departmentsById,
+    })
+    const sectionName = sectionId ? params.departmentsById.get(sectionId)?.deptName ?? sectionId : '섹션 없음'
+    const selfReady = leaderRow.selfStatus === 'SUBMITTED' || leaderRow.selfStatus === 'CONFIRMED'
+    const firstReady = leaderRow.firstStatus === 'SUBMITTED' || leaderRow.firstStatus === 'CONFIRMED'
+    const secondReady = leaderRow.secondStatus === 'SUBMITTED' || leaderRow.secondStatus === 'CONFIRMED'
+    const finalReady = leaderRow.finalStatus === 'SUBMITTED' || leaderRow.finalStatus === 'CONFIRMED'
+    const resultMissing = leaderRow.missingResultCount > 0 || leaderRow.resultWritingStatus === 'NO_ITEMS'
+    const evidenceMissing = leaderRow.missingEvidenceCount > 0 || leaderRow.evidenceStatus === 'NO_ITEMS'
+    const policyMissing = leaderRow.missingPolicyCategoryCount > 0
+    const evaluatorMissing = leaderRow.missingPrerequisites.includes('EVALUATOR_MISSING')
+    const rowScorePolicyBlocked = leaderRow.scorePolicyWarningCount > 0
+    const blockerTypes: Evaluation2026FinalizationCeoBlockerType[] = []
+    const blockerReasons: string[] = []
+
+    if (!selfReady) {
+      blockerTypes.push('SELF_NOT_READY')
+      blockerReasons.push('SELF evaluation 또는 수행결과 제출이 완료되지 않았습니다.')
+    }
+    if (evaluatorMissing) {
+      blockerTypes.push('EVALUATOR_CHAIN')
+      blockerReasons.push('FIRST / SECOND / FINAL 평가자 chain이 완전하지 않습니다.')
+    }
+    if (resultMissing) {
+      blockerTypes.push('RESULT_MISSING')
+      blockerReasons.push('수행결과 초안 또는 EvaluationItem itemComment가 부족합니다.')
+    }
+    if (evidenceMissing) {
+      blockerTypes.push('EVIDENCE_MISSING')
+      blockerReasons.push('수행결과 증빙 링크/파일/코멘트가 부족합니다.')
+    }
+    if (policyMissing) {
+      blockerTypes.push('POLICY_CATEGORY_MISSING')
+      blockerReasons.push('policyCategory 미분류 항목이 남아 있습니다.')
+    }
+    if (rowScorePolicyBlocked) {
+      blockerTypes.push('SCORE_POLICY')
+      blockerReasons.push('개인 MBO 항목에 score policy warning이 남아 있습니다.')
+    }
+    if (gradePolicyBlockerCount > 0) {
+      blockerTypes.push('GRADE_POLICY')
+      blockerReasons.push('등급 기준 readiness blocker가 남아 있습니다.')
+    }
+    if (feedbackLeadershipBlockerCount > 0) {
+      blockerTypes.push('FEEDBACK_LEADERSHIP')
+      blockerReasons.push('2차 다면평가/리더십 readiness blocker가 남아 있습니다.')
+    }
+    if (aiReadinessBlockerCount > 0) {
+      blockerTypes.push('AI_READINESS')
+      blockerReasons.push('AI Pass/Fail readiness blocker가 남아 있습니다.')
+    }
+    if (selfReady && !firstReady) {
+      blockerTypes.push('FIRST_NOT_READY')
+      blockerReasons.push('FIRST review가 완료되지 않았습니다.')
+    }
+    if (firstReady && !secondReady) {
+      blockerTypes.push('SECOND_NOT_READY')
+      blockerReasons.push('SECOND review가 완료되지 않았습니다.')
+    }
+
+    let finalizationReadinessStatus: Evaluation2026FinalizationCeoReadinessStatus = 'READY_FOR_FINAL_REVIEW'
+    if (!selfReady) finalizationReadinessStatus = 'BLOCKED_SELF_NOT_READY'
+    else if (evaluatorMissing) finalizationReadinessStatus = 'BLOCKED_EVALUATOR_CHAIN'
+    else if (resultMissing || evidenceMissing) finalizationReadinessStatus = 'BLOCKED_RESULT_MISSING'
+    else if (policyMissing) finalizationReadinessStatus = 'BLOCKED_POLICY_CATEGORY_MISSING'
+    else if (!firstReady) finalizationReadinessStatus = 'BLOCKED_FIRST_NOT_READY'
+    else if (!secondReady) finalizationReadinessStatus = 'BLOCKED_SECOND_NOT_READY'
+    else if (rowScorePolicyBlocked) finalizationReadinessStatus = 'BLOCKED_SCORE_POLICY'
+    else if (gradePolicyBlockerCount > 0) finalizationReadinessStatus = 'BLOCKED_GRADE_POLICY'
+    else if (feedbackLeadershipBlockerCount > 0) finalizationReadinessStatus = 'BLOCKED_FEEDBACK_LEADERSHIP'
+    else if (aiReadinessBlockerCount > 0) finalizationReadinessStatus = 'BLOCKED_AI_READINESS'
+    else if (finalReady) finalizationReadinessStatus = 'READY_FOR_CEO_CONFIRMATION_LATER'
+
+    const dedupedBlockerTypes = Array.from(new Set(blockerTypes))
+    const dedupedBlockerReasons = Array.from(new Set(blockerReasons))
+
+    return {
+      employeeId: leaderRow.employeeId,
+      employeeNo: leaderRow.employeeNo,
+      employeeName: leaderRow.employeeName,
+      email: leaderRow.email,
+      divisionId: leaderRow.divisionId,
+      divisionName: leaderRow.divisionName,
+      sectionId,
+      sectionName,
+      departmentId: leaderRow.departmentId,
+      departmentName: leaderRow.departmentName,
+      departmentPath: leaderRow.departmentPath,
+      currentEvaluationStage: leaderRow.currentStage,
+      firstReadiness: firstReady ? 'READY' : selfReady ? 'BLOCKED' : 'NOT_STARTED',
+      secondReadiness: secondReady ? 'READY' : firstReady ? 'BLOCKED' : 'NOT_STARTED',
+      finalReadiness: finalReady ? 'READY' : secondReady ? 'BLOCKED' : 'NOT_STARTED',
+      ceoConfirmationReadiness: finalReady ? 'READY_LATER' : 'BLOCKED',
+      firstEvaluatorId: leaderRow.firstEvaluatorId,
+      firstEvaluatorName: leaderRow.firstEvaluatorName,
+      secondEvaluatorId: leaderRow.secondEvaluatorId,
+      secondEvaluatorName: leaderRow.secondEvaluatorName,
+      finalEvaluatorId: leaderRow.finalEvaluatorId,
+      finalEvaluatorName: leaderRow.finalEvaluatorName,
+      evaluatorChainSummary: `FIRST ${leaderRow.firstEvaluatorName} · SECOND ${leaderRow.secondEvaluatorName} · FINAL ${leaderRow.finalEvaluatorName}`,
+      policyCategoryStatus: leaderRow.policyCategoryStatus,
+      resultEvidenceStatus: leaderRow.evidenceStatus,
+      scorePolicyStatus: rowScorePolicyBlocked ? 'BLOCKED' : 'READY',
+      gradePolicyStatus: gradePolicyBlockerCount > 0 ? 'BLOCKED' : 'READY',
+      feedbackLeadershipStatus: 'NOT_CHECKED',
+      aiReadinessStatus: 'SEPARATE_PASS_FAIL',
+      finalizationReadinessStatus,
+      blockerTypes: dedupedBlockerTypes,
+      blockerReasons: dedupedBlockerReasons,
+      nextHrAction: getFinalizationCeoNextAction2026(finalizationReadinessStatus),
+      manualReviewRequired:
+        dedupedBlockerTypes.includes('GRADE_POLICY') ||
+        dedupedBlockerTypes.includes('SCORE_POLICY'),
+    } satisfies Evaluation2026FinalizationCeoReadinessRow
+  })
+
+  const blockedBeforeFirstStatuses: Evaluation2026FinalizationCeoReadinessStatus[] = [
+    'BLOCKED_SELF_NOT_READY',
+    'BLOCKED_RESULT_MISSING',
+    'BLOCKED_POLICY_CATEGORY_MISSING',
+    'BLOCKED_EVALUATOR_CHAIN',
+    'BLOCKED_SCORE_POLICY',
+    'BLOCKED_GRADE_POLICY',
+    'BLOCKED_FEEDBACK_LEADERSHIP',
+    'BLOCKED_AI_READINESS',
+  ]
+  const finalizationBlockerRows = rows.filter((row) => row.finalizationReadinessStatus.startsWith('BLOCKED_'))
+
+  return {
+    mode: 'READ_ONLY',
+    finalCeoChecklist: FINALIZATION_CEO_CHECKLIST_2026,
+    exportColumns: [
+      'employeeNo',
+      'employeeName',
+      'email',
+      'division',
+      'section',
+      'departmentPath',
+      'currentStage',
+      'finalizationStatus',
+      'blockerReason',
+      'nextHrAction',
+    ],
+    summary: {
+      finalReviewCandidateCount: rows.length,
+      readyLaterCount: rows.filter((row) =>
+        row.finalizationReadinessStatus === 'READY_FOR_FINAL_REVIEW' ||
+        row.finalizationReadinessStatus === 'READY_FOR_CEO_CONFIRMATION_LATER'
+      ).length,
+      blockedBeforeFirstCount: rows.filter((row) => blockedBeforeFirstStatuses.includes(row.finalizationReadinessStatus)).length,
+      blockedBeforeSecondCount: rows.filter((row) => row.finalizationReadinessStatus === 'BLOCKED_FIRST_NOT_READY').length,
+      blockedBeforeFinalCount: rows.filter((row) => row.finalizationReadinessStatus === 'BLOCKED_SECOND_NOT_READY').length,
+      missingEvidenceCount: rows.filter((row) => row.blockerTypes.includes('EVIDENCE_MISSING')).length,
+      missingPolicyCategoryCount: rows.filter((row) => row.blockerTypes.includes('POLICY_CATEGORY_MISSING')).length,
+      missingEvaluatorChainCount: rows.filter((row) => row.blockerTypes.includes('EVALUATOR_CHAIN')).length,
+      scorePolicyBlockerCount,
+      gradePolicyBlockerCount,
+      feedbackLeadershipBlockerCount,
+      aiReadinessBlockerCount,
+      calibrationReadinessBlockerCount: gradePolicyBlockerCount + scorePolicyBlockerCount,
+      ceoConfirmationBlockerCount: rows.filter((row) => row.ceoConfirmationReadiness !== 'READY_LATER').length,
+      manualReviewCount: rows.filter((row) => row.manualReviewRequired).length,
+      finalizationBlockerCount: finalizationBlockerRows.length,
+      testSampleCycleWarningCount,
       officialScoringEnabled: false,
       officialGradeEnabled: false,
     },
@@ -2978,6 +3357,14 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     evalCycleId: cycle.id,
     env: params.env,
   })
+  const finalizationCeoReadiness = buildFinalizationCeoReadiness2026({
+    activeEmployees: activeEmployees as ActiveEmployee2026[],
+    leaderEvaluationReadiness,
+    scorePolicyReadiness,
+    gradePolicyReadiness,
+    departmentsById,
+    limit,
+  })
   const divisionCoverageById = new Map(
     mboSetupCoverage.divisionCoverage.map((division) => [division.divisionId, division])
   )
@@ -3076,6 +3463,12 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     message: '2026 리더 평가 readiness blocker가 남아 있습니다. 공식 점수/등급/제출 상태는 변경하지 않고 평가 전 checklist만 점검합니다.',
     count: leaderEvaluationReadiness.summary.blockerCount,
   })
+  addBlocker({
+    target: warnings,
+    code: 'FINALIZATION_CEO_READINESS_WARNINGS',
+    message: '2026 최종 확정 readiness blocker가 남아 있습니다. 공식 점수/등급/보정/대표이사 확정은 수행하지 않고 final readiness만 점검합니다.',
+    count: finalizationCeoReadiness.summary.finalizationBlockerCount,
+  })
 
   if (selfEvaluationByTargetId.size > 0 && selfEvaluationByTargetId.size < Math.max(3, activeEmployees.length * 0.1)) {
     addBlocker({
@@ -3159,6 +3552,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     policyCategoryMappingReadiness,
     resultWritingReadiness,
     leaderEvaluationReadiness,
+    finalizationCeoReadiness,
     blockers,
     warnings,
     safety: {
