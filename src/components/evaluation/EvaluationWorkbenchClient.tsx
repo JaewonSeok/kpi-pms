@@ -2901,6 +2901,20 @@ function getIntegratedReadinessStatusTone2026(status: string): 'success' | 'warn
   return 'neutral'
 }
 
+function getReadinessActionPriorityTone2026(priority: string): 'success' | 'warn' | 'error' | 'neutral' {
+  if (priority === 'P0') return 'error'
+  if (priority === 'P1') return 'warn'
+  return 'neutral'
+}
+
+function getReadinessActionStatusTone2026(status: string): 'success' | 'warn' | 'error' | 'neutral' {
+  if (status === 'READY_TO_START') return 'success'
+  if (status === 'WATCH_ONLY') return 'neutral'
+  if (status === 'WAITING_FOR_DATA') return 'warn'
+  if (status === 'BLOCKED') return 'error'
+  return 'neutral'
+}
+
 function PolicyActivationReadiness2026Panel(props: {
   activationData: EvaluationActivationReadiness2026ApiData | null
   loading: boolean
@@ -2913,6 +2927,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const gates = activation?.officialActivationGates ?? []
   const runbook = activation?.officialActivationRunbook ?? null
   const snapshot = activation?.integratedReadinessSnapshot ?? null
+  const actionPlan = activation?.readinessActionPlan ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const copyActivationRunbookPayload = useCallback(async (key: string, text: string) => {
@@ -3243,6 +3258,103 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
                 <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
                 <p className="mt-2 text-sm leading-6 text-rose-900">{snapshot.prohibitedActions.join(', ')}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {actionPlan ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 Readiness Action Plan</h4>
+                    <Badge tone="neutral">{actionPlan.currentStage}</Badge>
+                    <Badge tone={getIntegratedReadinessStatusTone2026(actionPlan.overallStatus)}>
+                      {actionPlan.overallStatus}
+                    </Badge>
+                    <Badge tone="neutral">read-only board</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 readiness blocker를 실행 항목으로 정리하는 읽기 전용 보드입니다.
+                    알림 발송, 저장, backfill, 공식 점수/등급 변경은 수행하지 않습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['action-hr', 'HR plan', actionPlan.copyPayloads.hrActionPlan],
+                    ['action-leader', 'Leader plan', actionPlan.copyPayloads.leaderActionPlan],
+                    ['action-employee', 'Employee plan', actionPlan.copyPayloads.employeeActionPlan],
+                    ['action-dev', 'Dev watch', actionPlan.copyPayloads.developerWatchPlan],
+                    ['action-full', 'Full board', actionPlan.copyPayloads.fullActionBoard],
+                    ['action-markdown', 'Markdown', actionPlan.copyPayloads.markdown],
+                    ['action-tsv', 'TSV', actionPlan.copyPayloads.tsv],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <h5 className="text-sm font-semibold text-blue-950">This week focus</h5>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                  {actionPlan.thisWeekFocus.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-blue-100 bg-white px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone={getReadinessActionPriorityTone2026(item.priority)}>{item.priority}</Badge>
+                        <Badge tone="neutral">{item.ownerGroup}</Badge>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold leading-5 text-slate-900">{item.title}</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {item.relatedBlockerCount == null ? 'blocker 미확인' : `${item.relatedBlockerCount.toLocaleString()}건`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-4">
+                {[
+                  ['HR', actionPlan.actionGroups.hr],
+                  ['Leaders', actionPlan.actionGroups.leader],
+                  ['Employees', actionPlan.actionGroups.employee],
+                  ['Developers / ops', actionPlan.actionGroups.developer],
+                ].map(([label, items]) => (
+                  <div key={label as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h5 className="text-sm font-semibold text-slate-900">{label as string}</h5>
+                    <div className="mt-3 space-y-2">
+                      {(items as typeof actionPlan.actionGroups.hr).slice(0, 5).map((item) => (
+                        <div key={item.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge tone={getReadinessActionPriorityTone2026(item.priority)}>{item.priority}</Badge>
+                            <Badge tone={getReadinessActionStatusTone2026(item.status)}>{item.status}</Badge>
+                          </div>
+                          <p className="mt-2 text-sm font-semibold leading-5 text-slate-900">{item.title}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            {item.relatedBlockerCount == null ? 'blocker 미확인' : `${item.relatedBlockerCount.toLocaleString()}건`} · {item.relatedRoute}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Action report</h5>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{actionPlan.reportText}</p>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                  <p className="mt-2 text-sm leading-6 text-rose-900">{actionPlan.prohibitedActions.join(', ')}</p>
+                </div>
               </div>
             </div>
           ) : null}
