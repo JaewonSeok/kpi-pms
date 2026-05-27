@@ -28,6 +28,10 @@ import {
   getEvaluation2026FeedbackLeadershipReadiness,
   type Evaluation2026FeedbackLeadershipReadinessResult,
 } from '@/server/evaluation-2026-feedback-leadership-readiness'
+import {
+  buildEvaluation2026IntegratedReadinessSnapshot,
+  type Evaluation2026IntegratedReadinessSnapshot,
+} from '@/server/evaluation-2026-integrated-readiness-snapshot'
 
 type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department' | 'employee' | 'evaluationAssignment' | 'multiFeedbackRound' | 'wordCloud360Cycle'>> & {
   $queryRawUnsafe?: typeof prisma.$queryRawUnsafe
@@ -173,6 +177,7 @@ export type Evaluation2026ActivationReadinessResult = {
   finalizationCeoReadiness: Evaluation2026ReadinessPopulationDryRun['finalizationCeoReadiness'] | null
   officialActivationGates: Evaluation2026OfficialActivationGate[]
   officialActivationRunbook: Evaluation2026OfficialActivationRunbook
+  integratedReadinessSnapshot: Evaluation2026IntegratedReadinessSnapshot
   populationDryRunAvailable: boolean
   populationDryRunError: string | null
   blockers: Evaluation2026ActivationReadinessItem[]
@@ -1567,6 +1572,17 @@ export async function getEvaluation2026ActivationReadiness(params: {
     flags,
     officialActivationGates,
   })
+  const integratedReadinessSnapshot = buildEvaluation2026IntegratedReadinessSnapshot({
+    flags,
+    readiness,
+    gradePolicyReadiness,
+    evaluatorRoutingReadiness,
+    feedbackLeadershipReadiness,
+    populationDryRun,
+    populationDryRunError,
+    officialActivationGates,
+    officialActivationRunbook,
+  })
 
   return {
     policyVersion: EVALUATION_POLICY_2026.version,
@@ -1582,6 +1598,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     finalizationCeoReadiness: populationDryRun?.finalizationCeoReadiness ?? null,
     officialActivationGates,
     officialActivationRunbook,
+    integratedReadinessSnapshot,
     populationDryRunAvailable: Boolean(populationDryRun),
     populationDryRunError,
     blockers,

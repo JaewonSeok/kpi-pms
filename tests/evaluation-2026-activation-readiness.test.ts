@@ -797,6 +797,62 @@ async function main() {
     assert.equal(result.flags.aiScoreExclusionEnabled, false)
   })
 
+  await run('integrated readiness snapshot summarizes major blockers and stays read-only', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        backfillExcluded: false,
+        hrApprovalConfirmed: false,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary({
+        missingPolicyCategoryCount: 3,
+        aiInsufficientDataCount: 2,
+      }),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun({
+        activeEmployeeCount: 10,
+        employeesWithConfirmedPersonalKpiCount: 3,
+        employeesMissingConfirmedPersonalKpiCount: 7,
+        policyCategoryMissingCount: 3,
+        mboSetupCoverage: {
+          employeesMissingAnyPersonalKpiCount: 4,
+        },
+        teamKpiHrReviewCoverage: {
+          pendingReviewCount: 2,
+          needsDiscussionCount: 1,
+          personalKpiOrgGoalWithoutApprovedSourceCount: 0,
+        },
+      }) as any,
+    })
+
+    const snapshot = result.integratedReadinessSnapshot
+    assert.equal(snapshot.mode, 'READ_ONLY')
+    assert.equal(snapshot.currentStage, 'MBO_SETUP_IN_PROGRESS')
+    assert.equal(snapshot.overallStatus, 'NEEDS_HR_ACTION')
+    assert.equal(snapshot.summary.activeEmployeeCount, 10)
+    assert.equal(snapshot.summary.confirmedPersonalKpiCount, 3)
+    assert.equal(snapshot.summary.missingMboCount, 4)
+    assert.equal(snapshot.summary.policyCategoryMissingCount, 3)
+    assert.equal(snapshot.summary.teamKpiPendingCount, 3)
+    assert.equal(snapshot.summary.aiReadinessBlockerCount, 2)
+    assert.equal(snapshot.topBlockers.some((item: any) => item.code === 'MISSING_MBO'), true)
+    assert.equal(snapshot.topBlockers.some((item: any) => item.code === 'POLICY_CATEGORY_MISSING'), true)
+    assert.equal(snapshot.activationState.some((item: any) => item.id === 'OFFICIAL_SCORING' && item.status === 'BLOCKED'), true)
+    assert.equal(snapshot.decisionReadiness.some((item: any) => item.id === 'BACKFILL_APPLY_APPROVAL' && item.status === 'BLOCKED'), true)
+    assert.equal(snapshot.copyPayloads.hrActionList.includes('/kpi/personal'), true)
+    assert.equal(snapshot.copyPayloads.developerActionList.includes('feature flag'), true)
+    assert.equal(snapshot.copyPayloads.prohibitedActions.includes('Evaluation.totalScore write'), true)
+    assert.equal(snapshot.safety.writesPerformed, false)
+    assert.equal(snapshot.safety.backfillExecuted, false)
+    assert.equal(snapshot.safety.totalScoreChanged, false)
+    assert.equal(snapshot.safety.gradeIdChanged, false)
+    assert.equal(snapshot.safety.noActivationButtons, true)
+  })
+
   await run('official activation runbook renders all sections and blocks current position while MBO coverage is low', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags({
@@ -926,6 +982,14 @@ async function main() {
     assert.equal(clientSource.includes('Official grade gate'), true)
     assert.equal(clientSource.includes('Evaluation.totalScore write gate'), true)
     assert.equal(clientSource.includes('Evaluation.gradeId write gate'), true)
+    assert.equal(clientSource.includes('2026 통합 readiness snapshot'), true)
+    assert.equal(clientSource.includes('이 화면은 2026 공식 전환 준비 상태를 읽기 전용으로 요약합니다.'), true)
+    assert.equal(clientSource.includes('backfill, 공식 점수, 공식 등급, feature flag는 실행하지 않습니다.'), true)
+    assert.equal(clientSource.includes('Decision readiness'), true)
+    assert.equal(clientSource.includes('Official activation state'), true)
+    assert.equal(clientSource.includes('Prohibited actions'), true)
+    assert.equal(activationSource.includes('integratedReadinessSnapshot'), true)
+    assert.equal(activationSource.includes('buildEvaluation2026IntegratedReadinessSnapshot'), true)
     assert.equal(clientSource.includes('2026 공식 전환 Runbook'), true)
     assert.equal(clientSource.includes('이 화면은 공식 전환 실행 순서를 읽기 전용으로 안내합니다.'), true)
     assert.equal(clientSource.includes('No execution buttons in UI'), true)
