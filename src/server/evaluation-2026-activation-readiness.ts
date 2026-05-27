@@ -88,6 +88,77 @@ export type Evaluation2026OfficialActivationGate = {
   safetyWarning: string
 }
 
+export type Evaluation2026OfficialActivationRunbookStatus =
+  | 'BLOCKED'
+  | 'READY_FOR_REVIEW'
+  | 'READY_LATER'
+  | 'NOT_APPLICABLE'
+
+export type Evaluation2026OfficialActivationRunbookSection = {
+  id:
+    | 'PRECONDITIONS'
+    | 'BACKFILL_DRY_RUN'
+    | 'BACKFILL_APPLY'
+    | 'OFFICIAL_SCORING_ACTIVATION'
+    | 'EVALUATION_TOTAL_SCORE_WRITE'
+    | 'OFFICIAL_GRADE_ACTIVATION'
+    | 'EVALUATION_GRADE_ID_WRITE'
+  title: string
+  status: Evaluation2026OfficialActivationRunbookStatus
+  requiredChecks: string[]
+  currentBlockerCount: number
+  sourceReadinessPanels: string[]
+  nextHrAction: string
+  nextDeveloperAction: string
+  prohibitedActions: string[]
+}
+
+export type Evaluation2026OfficialActivationRunbook = {
+  mode: 'READ_ONLY'
+  currentPosition: {
+    currentStage: string
+    nextRequiredStep: string
+    nextExecutableStep: string
+    blockerCount: number
+    prohibitedActions: string[]
+    noExecutionButtonsInUi: true
+  }
+  sections: Evaluation2026OfficialActivationRunbookSection[]
+  hrApprovalChecklist: string[]
+  developerExecutionChecklist: string[]
+  copyPayloads: {
+    markdown: string
+    blockerSummary: string
+    hrApprovalChecklist: string
+    developerExecutionChecklist: string
+    prohibitedActions: string
+    tsv: string
+  }
+  summary: {
+    sectionCount: number
+    blockedSectionCount: number
+    readyForReviewSectionCount: number
+    readyLaterSectionCount: number
+    notApplicableSectionCount: number
+    totalBlockerCount: number
+    nextExecutableStep: string
+    noExecutionButtonsInUi: true
+    officialScoringEnabled: boolean
+    officialGradeEnabled: boolean
+    officialAiScoreExclusionEnabled: boolean
+  }
+  safety: {
+    writesPerformed: false
+    backfillExecuted: false
+    migrationsRun: false
+    featureFlagsChanged: false
+    totalScoreChanged: false
+    gradeIdChanged: false
+    evaluationsCreated: 0
+    evaluationItemsCreated: 0
+  }
+}
+
 export type Evaluation2026ActivationReadinessResult = {
   policyVersion: string
   checkedAt: string
@@ -101,6 +172,7 @@ export type Evaluation2026ActivationReadinessResult = {
   leaderEvaluationReadiness: Evaluation2026ReadinessPopulationDryRun['leaderEvaluationReadiness'] | null
   finalizationCeoReadiness: Evaluation2026ReadinessPopulationDryRun['finalizationCeoReadiness'] | null
   officialActivationGates: Evaluation2026OfficialActivationGate[]
+  officialActivationRunbook: Evaluation2026OfficialActivationRunbook
   populationDryRunAvailable: boolean
   populationDryRunError: string | null
   blockers: Evaluation2026ActivationReadinessItem[]
@@ -108,6 +180,48 @@ export type Evaluation2026ActivationReadinessResult = {
 }
 
 const PHASE0_MIGRATION_NAME = '20260514_phase0_2026_policy_prep'
+
+const OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026 = [
+  'backfill --apply',
+  'prisma migrate deploy',
+  'official 2026 scoring activation',
+  'official grade calculation activation',
+  'AI score exclusion activation',
+  'Evaluation.totalScore write',
+  'Evaluation.gradeId write',
+  'Evaluation/EvaluationItem creation',
+  'production feature flag change',
+]
+
+const HR_APPROVAL_CHECKLIST_2026 = [
+  'HR confirms official readiness cycle',
+  'HR confirms target population',
+  'HR confirms MBO category readiness',
+  'HR confirms Team KPI decisions',
+  'HR confirms score policy',
+  'HR confirms grade policy',
+  'HR confirms AI exclusion policy',
+  'HR confirms evaluator routing',
+  'HR confirms 360/leadership readiness',
+  'HR confirms finalization/CEO readiness',
+  'HR confirms DB backup before apply',
+]
+
+const DEVELOPER_EXECUTION_CHECKLIST_2026 = [
+  'verify production branch/commit',
+  'verify environment flags',
+  'verify DB backup',
+  'run dry-run',
+  'archive dry-run output',
+  'obtain HR approval',
+  'run apply only from controlled CLI/runbook',
+  'verify postcheck',
+  'keep feature flags off until approved',
+  'activate scoring separately',
+  'activate grade separately',
+  'write totalScore separately',
+  'write gradeId last',
+]
 
 const REQUIRED_SCHEMA_FIELDS: Evaluation2026PolicySchemaField[] = [
   { tableName: 'evaluation_grade_policies', columnName: 'policyVersion' },
@@ -1038,6 +1152,318 @@ function buildEvaluation2026OfficialActivationGates(params: {
   ]
 }
 
+function gateById(
+  gates: Evaluation2026OfficialActivationGate[],
+  id: Evaluation2026OfficialActivationGate['id']
+) {
+  return gates.find((gate) => gate.id === id)
+}
+
+function blockedConditionCount(
+  gate: Evaluation2026OfficialActivationGate | undefined,
+  codes?: string[]
+) {
+  if (!gate) return 1
+  const codeSet = codes ? new Set(codes) : null
+  const blockedConditions = gate.requiredConditions.filter((conditionItem) =>
+    conditionItem.status === 'BLOCKED' && (!codeSet || codeSet.has(conditionItem.code))
+  )
+  return blockedConditions.reduce((sum, conditionItem) => sum + conditionItem.blockerCount, 0)
+}
+
+function statusFromGate(
+  gate: Evaluation2026OfficialActivationGate | undefined,
+  readyStatus: Exclude<Evaluation2026OfficialActivationRunbookStatus, 'BLOCKED' | 'NOT_APPLICABLE'>
+): Evaluation2026OfficialActivationRunbookStatus {
+  if (!gate) return 'BLOCKED'
+  if (gate.status === 'NOT_APPLICABLE') return 'NOT_APPLICABLE'
+  if (gate.status === 'BLOCKED') return 'BLOCKED'
+  return readyStatus
+}
+
+function buildRunbookSection(params: Evaluation2026OfficialActivationRunbookSection) {
+  return params
+}
+
+function buildRunbookMarkdown(
+  sections: Evaluation2026OfficialActivationRunbookSection[],
+  currentPosition: Evaluation2026OfficialActivationRunbook['currentPosition']
+) {
+  const sectionMarkdown = sections.map((section) => [
+    `### ${section.title}`,
+    `- Status: ${section.status}`,
+    `- Blockers: ${section.currentBlockerCount}`,
+    `- Source panels: ${section.sourceReadinessPanels.join(', ')}`,
+    `- Next HR action: ${section.nextHrAction}`,
+    `- Next developer action: ${section.nextDeveloperAction}`,
+    `- Required checks: ${section.requiredChecks.join('; ')}`,
+    `- Prohibited actions: ${section.prohibitedActions.join('; ')}`,
+  ].join('\n'))
+
+  return [
+    '# 2026 공식 전환 Runbook',
+    '',
+    '이 화면은 공식 전환 실행 순서를 읽기 전용으로 안내합니다. backfill, feature flag, 공식 점수, 공식 등급은 실행하지 않습니다.',
+    '',
+    `현재 단계: ${currentPosition.currentStage}`,
+    `다음 필요 단계: ${currentPosition.nextRequiredStep}`,
+    `다음 실행 검토 단계: ${currentPosition.nextExecutableStep}`,
+    `아직 금지: ${currentPosition.prohibitedActions.join(', ')}`,
+    '',
+    ...sectionMarkdown,
+  ].join('\n')
+}
+
+function buildRunbookTsv(sections: Evaluation2026OfficialActivationRunbookSection[]) {
+  const header = [
+    'section',
+    'status',
+    'blockerCount',
+    'sourceReadinessPanels',
+    'nextHrAction',
+    'nextDeveloperAction',
+    'prohibitedActions',
+  ].join('\t')
+  const rows = sections.map((section) => [
+    section.title,
+    section.status,
+    String(section.currentBlockerCount),
+    section.sourceReadinessPanels.join('; '),
+    section.nextHrAction,
+    section.nextDeveloperAction,
+    section.prohibitedActions.join('; '),
+  ].join('\t'))
+  return [header, ...rows].join('\n')
+}
+
+function buildEvaluation2026OfficialActivationRunbook(params: {
+  flags: Evaluation2026FeatureFlags
+  officialActivationGates: Evaluation2026OfficialActivationGate[]
+}): Evaluation2026OfficialActivationRunbook {
+  const { flags, officialActivationGates } = params
+  const backfillGate = gateById(officialActivationGates, 'BACKFILL_APPLY')
+  const scoringGate = gateById(officialActivationGates, 'OFFICIAL_SCORING')
+  const aiGate = gateById(officialActivationGates, 'AI_SCORE_EXCLUSION')
+  const gradeGate = gateById(officialActivationGates, 'OFFICIAL_GRADE')
+  const totalScoreGate = gateById(officialActivationGates, 'EVALUATION_TOTAL_SCORE_WRITE')
+  const gradeIdGate = gateById(officialActivationGates, 'EVALUATION_GRADE_ID_WRITE')
+
+  const dryRunBlockerCodes = [
+    'OFFICIAL_READINESS_CYCLE_CONFIRMED',
+    'NO_TEST_SAMPLE_CYCLE_SIGNAL',
+    'READINESS_POPULATION_DRY_RUN_AVAILABLE',
+  ]
+  const dryRunBlockerCount = blockedConditionCount(backfillGate, dryRunBlockerCodes)
+  const dryRunStatus: Evaluation2026OfficialActivationRunbookStatus =
+    dryRunBlockerCount > 0 ? 'BLOCKED' : 'READY_FOR_REVIEW'
+  const scoringAndAiBlockerCount =
+    (scoringGate?.currentBlockerCount ?? 1) + (aiGate?.currentBlockerCount ?? 1)
+  const gradeAndTotalScoreBlockerCount =
+    (gradeGate?.currentBlockerCount ?? 1) + (totalScoreGate?.currentBlockerCount ?? 1)
+
+  const sections = [
+    buildRunbookSection({
+      id: 'PRECONDITIONS',
+      title: 'A. Preconditions',
+      status: statusFromGate(backfillGate, 'READY_FOR_REVIEW'),
+      requiredChecks: [
+        'production DB backup required',
+        'official readiness cycle confirmed',
+        'no test/sample cycle signal',
+        'active employee target scope confirmed',
+        'MBO coverage sufficient',
+        'policyCategory missing count = 0',
+        'Team KPI HR review blockers = 0',
+        'evaluator routing blockers = 0',
+        'result-writing blockers resolved',
+        'leader evaluation readiness blockers resolved',
+        'finalization/CEO readiness blockers resolved',
+        'grade policy blockers = 0',
+        'score policy blockers = 0',
+        'AI exclusion policy confirmed',
+        '360/leadership readiness checked',
+      ],
+      currentBlockerCount: backfillGate?.currentBlockerCount ?? 1,
+      sourceReadinessPanels: [
+        '2026 readiness population dry-run',
+        '2026 정책 매핑 관리',
+        '2026 팀 KPI 검토',
+        '2026 평가자 배정 readiness QA',
+        '2026 수행결과 작성 readiness',
+        '2026 리더 평가 readiness',
+        '2026 최종 확정 readiness',
+        '2026 grade/score/AI/360 readiness',
+      ],
+      nextHrAction: backfillGate?.nextHrAction ?? '공식 readiness cycle과 dry-run 결과를 먼저 확인하세요.',
+      nextDeveloperAction: 'Do not run migrations/backfill/apply. Verify the production branch and collect read-only blocker evidence only.',
+      prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026,
+    }),
+    buildRunbookSection({
+      id: 'BACKFILL_DRY_RUN',
+      title: 'B. Backfill dry-run',
+      status: dryRunStatus,
+      requiredChecks: [
+        'run dry-run first',
+        'review Evaluation/EvaluationItem expected changes',
+        'confirm no unexpected totalScore/gradeId writes',
+        'confirm no unexpected official scoring activation',
+        'HR approval required',
+      ],
+      currentBlockerCount: dryRunBlockerCount,
+      sourceReadinessPanels: ['2026 readiness population dry-run', '2026 공식 전환 Gate'],
+      nextHrAction: dryRunStatus === 'BLOCKED'
+        ? '공식 cycle과 dry-run 결과가 확인될 때까지 HR 검토를 완료하지 마세요.'
+        : 'dry-run 출력과 예상 Evaluation/EvaluationItem 변경 범위를 HR이 검토하세요.',
+      nextDeveloperAction: 'Run only preview/dry-run commands when explicitly approved; archive output and do not apply.',
+      prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026,
+    }),
+    buildRunbookSection({
+      id: 'BACKFILL_APPLY',
+      title: 'C. Backfill apply',
+      status: statusFromGate(backfillGate, 'READY_LATER'),
+      requiredChecks: [
+        'only after dry-run approval',
+        'only after backup confirmation',
+        'only explicit developer/HR approval',
+        'no automatic apply from UI',
+      ],
+      currentBlockerCount: backfillGate?.currentBlockerCount ?? 1,
+      sourceReadinessPanels: ['Backfill apply gate', 'DB backup confirmation', 'HR approval checklist'],
+      nextHrAction: backfillGate?.nextHrAction ?? 'dry-run 승인과 DB backup 확인 전에는 apply를 승인하지 마세요.',
+      nextDeveloperAction: 'Keep apply outside the UI and only use a controlled CLI/runbook after explicit approval.',
+      prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026,
+    }),
+    buildRunbookSection({
+      id: 'OFFICIAL_SCORING_ACTIVATION',
+      title: 'D. Official scoring activation',
+      status: statusFromGate(scoringGate, 'READY_LATER'),
+      requiredChecks: [
+        'only after backfill apply or explicit no-backfill decision',
+        'AI score exclusion must be confirmed before scoring',
+        'sample calculation must be verified',
+        'feature flag should remain false until final activation',
+      ],
+      currentBlockerCount: scoringAndAiBlockerCount,
+      sourceReadinessPanels: ['Official scoring gate', 'AI score exclusion gate', 'Score policy readiness simulator'],
+      nextHrAction: scoringGate?.nextHrAction ?? 'backfill/AI/score policy/HR approval blocker를 해소하세요.',
+      nextDeveloperAction: 'Do not change feature flags. Prepare scoring activation steps as a separate reviewed operation only.',
+      prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026,
+    }),
+    buildRunbookSection({
+      id: 'EVALUATION_TOTAL_SCORE_WRITE',
+      title: 'E. Evaluation.totalScore write',
+      status: statusFromGate(totalScoreGate, 'READY_LATER'),
+      requiredChecks: [
+        'only after evaluation inputs and leader reviews are finalized',
+        'requires calculation verification and HR approval',
+        'grade write must remain separate',
+      ],
+      currentBlockerCount: totalScoreGate?.currentBlockerCount ?? 1,
+      sourceReadinessPanels: ['Evaluation.totalScore write gate', 'Leader evaluation readiness', 'Finalization/CEO readiness'],
+      nextHrAction: totalScoreGate?.nextHrAction ?? 'official scoring 활성화와 계산 샘플 검증 전에는 totalScore write를 승인하지 마세요.',
+      nextDeveloperAction: 'Do not write Evaluation.totalScore in this readiness flow; keep grade writes separated.',
+      prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026,
+    }),
+    buildRunbookSection({
+      id: 'OFFICIAL_GRADE_ACTIVATION',
+      title: 'F. Official grade activation',
+      status: statusFromGate(gradeGate, 'READY_LATER'),
+      requiredChecks: [
+        'only after totalScore is stable',
+        'grade policy verified',
+        'calibration/finalization process ready',
+        'CEO confirmation process ready',
+      ],
+      currentBlockerCount: gradeAndTotalScoreBlockerCount,
+      sourceReadinessPanels: ['Official grade gate', 'Grade policy readiness', 'Finalization/CEO readiness'],
+      nextHrAction: gradeGate?.nextHrAction ?? 'totalScore 안정화, 등급 정책, 보정/CEO 절차를 확인하세요.',
+      nextDeveloperAction: 'Do not enable official grade calculation or grade write flags in this runbook screen.',
+      prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026,
+    }),
+    buildRunbookSection({
+      id: 'EVALUATION_GRADE_ID_WRITE',
+      title: 'G. Evaluation.gradeId write',
+      status: statusFromGate(gradeIdGate, 'READY_LATER'),
+      requiredChecks: [
+        'last step only',
+        'after calibration and CEO/final confirmation',
+        'adjustment reason required for changes',
+        'final approval required',
+      ],
+      currentBlockerCount: gradeIdGate?.currentBlockerCount ?? 1,
+      sourceReadinessPanels: ['Evaluation.gradeId write gate', 'Finalization/CEO readiness', 'Calibration approval'],
+      nextHrAction: gradeIdGate?.nextHrAction ?? 'totalScore, grade calculation, calibration, CEO confirmation 완료 전에는 gradeId write를 승인하지 마세요.',
+      nextDeveloperAction: 'Keep gradeId writes last and separate from scoring/totalScore operations.',
+      prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026,
+    }),
+  ]
+
+  const blockedSectionCount = sections.filter((section) => section.status === 'BLOCKED').length
+  const readyForReviewSectionCount = sections.filter((section) => section.status === 'READY_FOR_REVIEW').length
+  const readyLaterSectionCount = sections.filter((section) => section.status === 'READY_LATER').length
+  const notApplicableSectionCount = sections.filter((section) => section.status === 'NOT_APPLICABLE').length
+  const totalBlockerCount = sections.reduce((sum, section) => sum + section.currentBlockerCount, 0)
+  const firstBlockedSection = sections.find((section) => section.status === 'BLOCKED')
+  const firstReviewSection = sections.find((section) => section.status === 'READY_FOR_REVIEW')
+  const nextExecutableStep = firstReviewSection
+    ? firstReviewSection.title
+    : '공식 실행 가능 단계 없음 - blocker 해소 후 다시 확인'
+  const currentPosition: Evaluation2026OfficialActivationRunbook['currentPosition'] = {
+    currentStage: blockedSectionCount > 0 ? 'Readiness preparation' : 'Runbook review ready',
+    nextRequiredStep: firstBlockedSection?.nextHrAction ?? 'HR approval checklist와 developer execution checklist를 대조하세요.',
+    nextExecutableStep,
+    blockerCount: totalBlockerCount,
+    prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026,
+    noExecutionButtonsInUi: true,
+  }
+  const markdown = buildRunbookMarkdown(sections, currentPosition)
+  const tsv = buildRunbookTsv(sections)
+
+  return {
+    mode: 'READ_ONLY',
+    currentPosition,
+    sections,
+    hrApprovalChecklist: HR_APPROVAL_CHECKLIST_2026,
+    developerExecutionChecklist: DEVELOPER_EXECUTION_CHECKLIST_2026,
+    copyPayloads: {
+      markdown,
+      blockerSummary: [
+        `현재 단계: ${currentPosition.currentStage}`,
+        `blocker count: ${totalBlockerCount}`,
+        `다음 필요 단계: ${currentPosition.nextRequiredStep}`,
+        `아직 금지: ${OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026.join(', ')}`,
+      ].join('\n'),
+      hrApprovalChecklist: HR_APPROVAL_CHECKLIST_2026.map((item) => `- [ ] ${item}`).join('\n'),
+      developerExecutionChecklist: DEVELOPER_EXECUTION_CHECKLIST_2026.map((item) => `- [ ] ${item}`).join('\n'),
+      prohibitedActions: OFFICIAL_ACTIVATION_PROHIBITED_ACTIONS_2026.map((item) => `- ${item}`).join('\n'),
+      tsv,
+    },
+    summary: {
+      sectionCount: sections.length,
+      blockedSectionCount,
+      readyForReviewSectionCount,
+      readyLaterSectionCount,
+      notApplicableSectionCount,
+      totalBlockerCount,
+      nextExecutableStep,
+      noExecutionButtonsInUi: true,
+      officialScoringEnabled: flags.officialScoringEnabled,
+      officialGradeEnabled: flags.officialGradeEnabled,
+      officialAiScoreExclusionEnabled: flags.aiScoreExclusionEnabled,
+    },
+    safety: {
+      writesPerformed: false,
+      backfillExecuted: false,
+      migrationsRun: false,
+      featureFlagsChanged: false,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+    },
+  }
+}
+
 export async function getEvaluation2026ActivationReadiness(params: {
   db?: Evaluation2026ActivationDb
   year?: number
@@ -1137,6 +1563,10 @@ export async function getEvaluation2026ActivationReadiness(params: {
     populationDryRun,
     populationDryRunError,
   })
+  const officialActivationRunbook = buildEvaluation2026OfficialActivationRunbook({
+    flags,
+    officialActivationGates,
+  })
 
   return {
     policyVersion: EVALUATION_POLICY_2026.version,
@@ -1151,6 +1581,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     leaderEvaluationReadiness: populationDryRun?.leaderEvaluationReadiness ?? null,
     finalizationCeoReadiness: populationDryRun?.finalizationCeoReadiness ?? null,
     officialActivationGates,
+    officialActivationRunbook,
     populationDryRunAvailable: Boolean(populationDryRun),
     populationDryRunError,
     blockers,
