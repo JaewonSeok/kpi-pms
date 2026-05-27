@@ -174,6 +174,10 @@ type ResultWritingReadiness2026 = EvaluationReadinessPopulation2026ApiData['resu
 type ResultWritingReadinessRow2026 = ResultWritingReadiness2026['rows'][number]
 type ResultWritingWarningCode2026 = ResultWritingReadinessRow2026['warnings'][number]['code']
 type ResultWritingStatus2026 = ResultWritingReadinessRow2026['resultWritingStatus']
+type LeaderEvaluationReadiness2026 = EvaluationReadinessPopulation2026ApiData['leaderEvaluationReadiness']
+type LeaderEvaluationReadinessRow2026 = LeaderEvaluationReadiness2026['rows'][number]
+type LeaderEvaluationReadinessStatus2026 = LeaderEvaluationReadinessRow2026['readinessStatus']
+type LeaderEvaluationMissingPrerequisite2026 = LeaderEvaluationReadinessRow2026['missingPrerequisites'][number]
 type ResultWritingCategoryFilter2026 = NonNullable<ResultWritingReadinessRow2026['category']> | 'UNMAPPED'
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
@@ -3017,6 +3021,13 @@ function PolicyActivationReadiness2026Panel(props: {
                   : 'default'
               }
             />
+            <MetricCard
+              label="리더 평가"
+              value={activation.leaderEvaluationReadiness?.summary.blockerCount.toLocaleString() ?? '미확인'}
+              help="readiness blocker"
+              compact
+              variant={(activation.leaderEvaluationReadiness?.summary.blockerCount ?? 1) > 0 ? 'warning' : 'default'}
+            />
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -3850,6 +3861,49 @@ function getResultWritingWarningLabel2026(value: ResultWritingWarningCode2026 | 
   return labels[value]
 }
 
+function getLeaderEvaluationReadinessStatusLabel2026(value: LeaderEvaluationReadinessStatus2026 | 'ALL') {
+  const labels: Record<LeaderEvaluationReadinessStatus2026, string> = {
+    READY_FOR_FIRST_REVIEW: 'FIRST review 준비',
+    BLOCKED_SELF_NOT_SUBMITTED: 'SELF 미제출',
+    BLOCKED_RESULT_MISSING: '수행결과 누락',
+    BLOCKED_EVIDENCE_MISSING: '증빙 부족',
+    BLOCKED_POLICY_CATEGORY_MISSING: 'policyCategory 미분류',
+    BLOCKED_EVALUATOR_MISSING: '평가자 누락',
+    READY_FOR_SECOND_REVIEW: 'SECOND review 준비',
+    BLOCKED_FIRST_NOT_COMPLETE: 'FIRST 미완료',
+    READY_FOR_FINAL_REVIEW: 'FINAL/CEO 준비',
+    MANUAL_REVIEW: '수동 검토',
+  }
+  if (value === 'ALL') return '전체'
+  return labels[value]
+}
+
+function getLeaderEvaluationReadinessTone2026(value: LeaderEvaluationReadinessStatus2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'READY_FOR_FIRST_REVIEW' || value === 'READY_FOR_SECOND_REVIEW' || value === 'READY_FOR_FINAL_REVIEW') {
+    return 'success'
+  }
+  if (value === 'MANUAL_REVIEW' || value === 'BLOCKED_FIRST_NOT_COMPLETE') return 'warn'
+  return 'error'
+}
+
+function getLeaderEvaluationPrerequisiteLabel2026(value: LeaderEvaluationMissingPrerequisite2026 | 'ALL') {
+  const labels: Record<LeaderEvaluationMissingPrerequisite2026, string> = {
+    SELF_NOT_SUBMITTED: 'SELF 미제출',
+    RESULT_MISSING: '수행결과 누락',
+    EVIDENCE_MISSING: '증빙 부족',
+    POLICY_CATEGORY_MISSING: 'policyCategory 미분류',
+    EVALUATOR_MISSING: '평가자 누락',
+    FIRST_NOT_COMPLETE: 'FIRST 미완료',
+    ORG_GOAL_SOURCE_MISSING: 'ORG_GOAL source 없음',
+    MEASURABLE_RESULT_MISSING: '정량 결과 부족',
+    PERSONAL_CONTRIBUTION_MISSING: '본인 기여 부족',
+    SCORE_POLICY_WARNING: 'score policy warning',
+    ADJUSTMENT_READINESS_WARNING: 'adjustment readiness',
+  }
+  if (value === 'ALL') return '전체'
+  return labels[value]
+}
+
 function getMboFollowUpTypeTone2026(value: MboFollowUpType2026): 'success' | 'warn' | 'error' | 'neutral' {
   if (value === 'MISSING_MBO') return 'error'
   if (value === 'DRAFT_MBO' || value === 'LEADER_REVIEW' || value === 'TEAM_KPI_REVIEW') return 'warn'
@@ -3948,6 +4002,39 @@ function buildResultWritingTsv2026(rows: ResultWritingReadinessRow2026[], header
   )
 }
 
+function buildLeaderEvaluationTsv2026(rows: LeaderEvaluationReadinessRow2026[], headers?: string[]) {
+  return buildTsv2026(
+    headers ?? [
+      'employeeNo',
+      'employeeName',
+      'email',
+      'division',
+      'departmentPath',
+      'firstEvaluator',
+      'secondEvaluator',
+      'finalEvaluator',
+      'currentStage',
+      'readinessStatus',
+      'blockerReason',
+      'nextAction',
+    ],
+    rows.map((row) => [
+      row.employeeNo,
+      row.employeeName,
+      row.email ?? '',
+      row.divisionName,
+      row.departmentPath,
+      row.firstEvaluatorName,
+      row.secondEvaluatorName,
+      row.finalEvaluatorName,
+      row.currentStage,
+      getLeaderEvaluationReadinessStatusLabel2026(row.readinessStatus),
+      row.blockerReasons.join(', '),
+      row.suggestedNextAction,
+    ])
+  )
+}
+
 function PolicyReadinessPopulation2026Panel(props: {
   dryRunData: EvaluationReadinessPopulation2026ApiData | null
   loading: boolean
@@ -3997,12 +4084,24 @@ function PolicyReadinessPopulation2026Panel(props: {
   const [resultWritingStatusFilter, setResultWritingStatusFilter] = useState<ResultWritingStatus2026 | 'ALL'>('ALL')
   const [resultWritingWarningFilter, setResultWritingWarningFilter] =
     useState<ResultWritingWarningCode2026 | 'ALL'>('ALL')
+  const [leaderEvalDivisionFilter, setLeaderEvalDivisionFilter] = useState('ALL')
+  const [leaderEvalTeamFilter, setLeaderEvalTeamFilter] = useState('ALL')
+  const [leaderEvalEvaluatorFilter, setLeaderEvalEvaluatorFilter] = useState('ALL')
+  const [leaderEvalStageFilter, setLeaderEvalStageFilter] = useState('ALL')
+  const [leaderEvalStatusFilter, setLeaderEvalStatusFilter] =
+    useState<LeaderEvaluationReadinessStatus2026 | 'ALL'>('ALL')
+  const [leaderEvalPrerequisiteFilter, setLeaderEvalPrerequisiteFilter] =
+    useState<LeaderEvaluationMissingPrerequisite2026 | 'ALL'>('ALL')
+  const [leaderEvalPolicyCategoryFilter, setLeaderEvalPolicyCategoryFilter] = useState<'ALL' | 'READY' | 'MISSING'>('ALL')
+  const [leaderEvalEvidenceFilter, setLeaderEvalEvidenceFilter] = useState<'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS'>('ALL')
   const [copiedMonitoringTable, setCopiedMonitoringTable] = useState<string | null>(null)
   const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
   const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
   const teamReviewRows = useMemo(() => teamKpiHrReviewCoverage?.candidates ?? [], [teamKpiHrReviewCoverage])
   const resultWritingReadiness = dryRun?.resultWritingReadiness
   const resultWritingRows = useMemo(() => resultWritingReadiness?.rows ?? [], [resultWritingReadiness])
+  const leaderEvaluationReadiness = dryRun?.leaderEvaluationReadiness
+  const leaderEvaluationRows = useMemo(() => leaderEvaluationReadiness?.rows ?? [], [leaderEvaluationReadiness])
   const topDivisionCoverage = mboCoverage?.divisionCoverage ?? []
   const topTeamCoverage = mboCoverage?.teamCoverage ?? []
   const divisionOptions = useMemo(
@@ -4487,6 +4586,120 @@ function PolicyReadinessPopulation2026Panel(props: {
         resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'DAILY_WORK_DUPLICATE_RISK'))
       ),
     [resultWritingRows]
+  )
+  const leaderEvalDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leaderEvaluationRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [leaderEvaluationRows]
+  )
+  const leaderEvalTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leaderEvaluationRows
+            .filter((row) => row.departmentId && (leaderEvalDivisionFilter === 'ALL' || row.divisionId === leaderEvalDivisionFilter))
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [leaderEvalDivisionFilter, leaderEvaluationRows]
+  )
+  const leaderEvalEvaluatorOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leaderEvaluationRows
+            .flatMap((row) => [
+              row.firstEvaluatorId ? [row.firstEvaluatorId, row.firstEvaluatorName] as const : null,
+              row.secondEvaluatorId ? [row.secondEvaluatorId, row.secondEvaluatorName] as const : null,
+              row.finalEvaluatorId ? [row.finalEvaluatorId, row.finalEvaluatorName] as const : null,
+            ])
+            .filter((entry): entry is readonly [string, string] => Boolean(entry))
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [leaderEvaluationRows]
+  )
+  const leaderEvalStageOptions = useMemo(
+    () => Array.from(new Set(leaderEvaluationRows.map((row) => row.currentStage))).sort(),
+    [leaderEvaluationRows]
+  )
+  const filteredLeaderEvaluationRows = useMemo(
+    () =>
+      leaderEvaluationRows.filter((row) => {
+        const matchesDivision = leaderEvalDivisionFilter === 'ALL' || row.divisionId === leaderEvalDivisionFilter
+        const matchesTeam = leaderEvalTeamFilter === 'ALL' || row.departmentId === leaderEvalTeamFilter
+        const matchesEvaluator =
+          leaderEvalEvaluatorFilter === 'ALL' ||
+          row.firstEvaluatorId === leaderEvalEvaluatorFilter ||
+          row.secondEvaluatorId === leaderEvalEvaluatorFilter ||
+          row.finalEvaluatorId === leaderEvalEvaluatorFilter
+        const matchesStage = leaderEvalStageFilter === 'ALL' || row.currentStage === leaderEvalStageFilter
+        const matchesStatus = leaderEvalStatusFilter === 'ALL' || row.readinessStatus === leaderEvalStatusFilter
+        const matchesPrerequisite =
+          leaderEvalPrerequisiteFilter === 'ALL' || row.missingPrerequisites.includes(leaderEvalPrerequisiteFilter)
+        const matchesPolicy =
+          leaderEvalPolicyCategoryFilter === 'ALL' || row.policyCategoryStatus === leaderEvalPolicyCategoryFilter
+        const matchesEvidence = leaderEvalEvidenceFilter === 'ALL' || row.evidenceStatus === leaderEvalEvidenceFilter
+        return (
+          matchesDivision &&
+          matchesTeam &&
+          matchesEvaluator &&
+          matchesStage &&
+          matchesStatus &&
+          matchesPrerequisite &&
+          matchesPolicy &&
+          matchesEvidence
+        )
+      }),
+    [
+      leaderEvalDivisionFilter,
+      leaderEvalEvaluatorFilter,
+      leaderEvalEvidenceFilter,
+      leaderEvalPolicyCategoryFilter,
+      leaderEvalPrerequisiteFilter,
+      leaderEvalStageFilter,
+      leaderEvalStatusFilter,
+      leaderEvalTeamFilter,
+      leaderEvaluationRows,
+    ]
+  )
+  const leaderEvaluationCombinedTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(filteredLeaderEvaluationRows, leaderEvaluationReadiness?.exportColumns),
+    [filteredLeaderEvaluationRows, leaderEvaluationReadiness?.exportColumns]
+  )
+  const leaderEvaluationFirstBlockedTsv = useMemo(
+    () =>
+      buildLeaderEvaluationTsv2026(
+        leaderEvaluationRows.filter((row) =>
+          ['BLOCKED_SELF_NOT_SUBMITTED', 'BLOCKED_RESULT_MISSING', 'BLOCKED_EVIDENCE_MISSING', 'BLOCKED_POLICY_CATEGORY_MISSING', 'BLOCKED_EVALUATOR_MISSING'].includes(row.readinessStatus)
+        )
+      ),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationSecondBlockedTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.readinessStatus === 'BLOCKED_FIRST_NOT_COMPLETE')),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationMissingEvidenceTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.missingEvidenceCount > 0)),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationMissingPolicyTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.missingPolicyCategoryCount > 0)),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationMissingEvaluatorTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.missingPrerequisites.includes('EVALUATOR_MISSING'))),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationReadyTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.readinessStatus.startsWith('READY_'))),
+    [leaderEvaluationRows]
   )
   const teamKpiReviewTsv = useMemo(
     () =>
@@ -5636,6 +5849,248 @@ function PolicyReadinessPopulation2026Panel(props: {
                     {filteredResultWritingRows.length > 120 ? (
                       <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
                         화면에는 120건까지만 표시합니다. 전체 목록은 filtered TSV 복사로 추출해 주세요.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {leaderEvaluationReadiness ? (
+                <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 리더 평가 readiness</h5>
+                        <Badge tone="neutral">Read-only</Badge>
+                        <Badge tone="neutral">제출/확정 없음</Badge>
+                        <Badge tone="neutral">공식 점수 미적용</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        이 화면은 2026 리더 평가 readiness를 읽기 전용으로 점검합니다. 공식 점수, 등급, 제출, 확정 상태는 변경하지 않습니다.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-cyan-700">
+                        리더 평가 입력 전 결과 작성, 증빙, 정책 카테고리, 평가자 배정 상태를 확인합니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-first-blocked', leaderEvaluationFirstBlockedTsv)}
+                        disabled={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-first-blocked' ? 'FIRST blocked 복사됨' : 'FIRST blocked 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-second-blocked', leaderEvaluationSecondBlockedTsv)}
+                        disabled={leaderEvaluationReadiness.summary.secondReviewMissingPrerequisitesCount === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-second-blocked' ? 'SECOND blocked 복사됨' : 'SECOND blocked 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-missing-evidence', leaderEvaluationMissingEvidenceTsv)}
+                        disabled={leaderEvaluationReadiness.summary.itemsMissingResultWritingEvidence === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-missing-evidence' ? '증빙 누락 복사됨' : 'missing evidence 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-missing-policy', leaderEvaluationMissingPolicyTsv)}
+                        disabled={leaderEvaluationReadiness.summary.itemsMissingPolicyCategory === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-missing-policy' ? '카테고리 누락 복사됨' : 'missing policyCategory 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-missing-evaluator', leaderEvaluationMissingEvaluatorTsv)}
+                        disabled={leaderEvaluationReadiness.summary.missingEvaluatorCount === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-missing-evaluator' ? '평가자 누락 복사됨' : 'missing evaluator 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-ready', leaderEvaluationReadyTsv)}
+                        disabled={leaderEvaluationReadiness.summary.readyForLeaderReviewCount === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-ready' ? 'ready list 복사됨' : 'ready list 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-combined', leaderEvaluationCombinedTsv)}
+                        disabled={!filteredLeaderEvaluationRows.length}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-combined' ? 'combined TSV 복사됨' : 'combined TSV 복사'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard label="SELF 제출" value={leaderEvaluationReadiness.summary.selfSubmittedCount.toLocaleString()} help="submitted/confirmed" compact />
+                    <MetricCard label="FIRST 준비" value={leaderEvaluationReadiness.summary.firstReviewReadyCount.toLocaleString()} help="리더 평가 입력 전" compact />
+                    <MetricCard
+                      label="FIRST blocker"
+                      value={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount.toLocaleString()}
+                      help="선행 조건 누락"
+                      compact
+                      variant={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard label="SECOND 준비" value={leaderEvaluationReadiness.summary.secondReviewReadyCount.toLocaleString()} help="FIRST 완료 후" compact />
+                    <MetricCard
+                      label="평가자 누락"
+                      value={leaderEvaluationReadiness.summary.missingEvaluatorCount.toLocaleString()}
+                      help="FIRST/SECOND/FINAL"
+                      compact
+                      variant={leaderEvaluationReadiness.summary.missingEvaluatorCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="전체 blocker"
+                      value={leaderEvaluationReadiness.summary.blockerCount.toLocaleString()}
+                      help="read-only"
+                      compact
+                      variant={leaderEvaluationReadiness.summary.blockerCount > 0 ? 'warning' : 'default'}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-cyan-100 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">FIRST evaluator checklist</h6>
+                      <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                        {leaderEvaluationReadiness.firstEvaluatorChecklist.map((item) => (
+                          <li key={item}>- {item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="rounded-2xl border border-cyan-100 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">SECOND evaluator checklist</h6>
+                      <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                        {leaderEvaluationReadiness.secondEvaluatorChecklist.map((item) => (
+                          <li key={item}>- {item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                    <select value={leaderEvalDivisionFilter} onChange={(event) => setLeaderEvalDivisionFilter(event.target.value)} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">division 전체</option>
+                      {leaderEvalDivisionOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={leaderEvalTeamFilter} onChange={(event) => setLeaderEvalTeamFilter(event.target.value)} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">team 전체</option>
+                      {leaderEvalTeamOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={leaderEvalEvaluatorFilter} onChange={(event) => setLeaderEvalEvaluatorFilter(event.target.value)} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">evaluator 전체</option>
+                      {leaderEvalEvaluatorOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={leaderEvalStageFilter} onChange={(event) => setLeaderEvalStageFilter(event.target.value)} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">stage 전체</option>
+                      {leaderEvalStageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                    </select>
+                    <select value={leaderEvalStatusFilter} onChange={(event) => setLeaderEvalStatusFilter(event.target.value as LeaderEvaluationReadinessStatus2026 | 'ALL')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      {(['ALL', 'READY_FOR_FIRST_REVIEW', 'BLOCKED_SELF_NOT_SUBMITTED', 'BLOCKED_RESULT_MISSING', 'BLOCKED_EVIDENCE_MISSING', 'BLOCKED_POLICY_CATEGORY_MISSING', 'BLOCKED_EVALUATOR_MISSING', 'READY_FOR_SECOND_REVIEW', 'BLOCKED_FIRST_NOT_COMPLETE', 'READY_FOR_FINAL_REVIEW', 'MANUAL_REVIEW'] as const).map((status) => (
+                        <option key={status} value={status}>{getLeaderEvaluationReadinessStatusLabel2026(status)}</option>
+                      ))}
+                    </select>
+                    <select value={leaderEvalPrerequisiteFilter} onChange={(event) => setLeaderEvalPrerequisiteFilter(event.target.value as LeaderEvaluationMissingPrerequisite2026 | 'ALL')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      {(['ALL', 'SELF_NOT_SUBMITTED', 'RESULT_MISSING', 'EVIDENCE_MISSING', 'POLICY_CATEGORY_MISSING', 'EVALUATOR_MISSING', 'FIRST_NOT_COMPLETE', 'ORG_GOAL_SOURCE_MISSING', 'MEASURABLE_RESULT_MISSING', 'PERSONAL_CONTRIBUTION_MISSING', 'SCORE_POLICY_WARNING', 'ADJUSTMENT_READINESS_WARNING'] as const).map((item) => (
+                        <option key={item} value={item}>{getLeaderEvaluationPrerequisiteLabel2026(item)}</option>
+                      ))}
+                    </select>
+                    <select value={leaderEvalPolicyCategoryFilter} onChange={(event) => setLeaderEvalPolicyCategoryFilter(event.target.value as 'ALL' | 'READY' | 'MISSING')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">policyCategory 전체</option>
+                      <option value="READY">policyCategory ready</option>
+                      <option value="MISSING">policyCategory missing</option>
+                    </select>
+                    <select value={leaderEvalEvidenceFilter} onChange={(event) => setLeaderEvalEvidenceFilter(event.target.value as 'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">evidence 전체</option>
+                      <option value="READY">evidence ready</option>
+                      <option value="MISSING">evidence missing</option>
+                      <option value="NO_ITEMS">result item 없음</option>
+                    </select>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">리더 평가 readiness 대상</h6>
+                      <span className="text-xs text-slate-500">
+                        {filteredLeaderEvaluationRows.length.toLocaleString()}건 표시 · 전체 {leaderEvaluationRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-cyan-50 text-cyan-700">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">직원</th>
+                            <th className="px-4 py-2 font-semibold">평가자 chain</th>
+                            <th className="px-4 py-2 font-semibold">stage/status</th>
+                            <th className="px-4 py-2 font-semibold">result/category/evidence</th>
+                            <th className="px-4 py-2 font-semibold">warning</th>
+                            <th className="px-4 py-2 font-semibold">next action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredLeaderEvaluationRows.slice(0, 120).map((row) => (
+                            <tr key={row.employeeId}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}{row.email ? ` · ${row.email}` : ''}</div>
+                                <div className="mt-1 text-slate-500">{row.departmentPath}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <div>FIRST: {row.firstEvaluatorName}</div>
+                                <div>SECOND: {row.secondEvaluatorName}</div>
+                                <div>FINAL: {row.finalEvaluatorName}</div>
+                                <div className="mt-1 text-slate-400">{row.currentAssignmentRows.length ? row.currentAssignmentRows.join(' · ') : 'assignment row 없음'}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge tone={getLeaderEvaluationReadinessTone2026(row.readinessStatus)}>
+                                  {getLeaderEvaluationReadinessStatusLabel2026(row.readinessStatus)}
+                                </Badge>
+                                <div className="mt-1 text-slate-500">{row.currentStage}</div>
+                                <div className="mt-1 text-slate-400">SELF {row.selfStatus} · FIRST {row.firstStatus} · SECOND {row.secondStatus}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <div>결과 {row.resultWritingStatus} · category {row.policyCategoryStatus} · evidence {row.evidenceStatus}</div>
+                                <div className="mt-1 text-slate-400">
+                                  item {row.resultItemCount} · result missing {row.missingResultCount} · evidence missing {row.missingEvidenceCount}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex max-w-md flex-wrap gap-1">
+                                  {row.missingPrerequisites.slice(0, 4).map((item) => (
+                                    <Badge key={`${row.employeeId}:${item}`} tone="warn">{getLeaderEvaluationPrerequisiteLabel2026(item)}</Badge>
+                                  ))}
+                                  {row.missingPrerequisites.length > 4 ? <Badge tone="neutral">+{row.missingPrerequisites.length - 4}</Badge> : null}
+                                  {!row.missingPrerequisites.length ? <Badge tone="success">warning 없음</Badge> : null}
+                                </div>
+                                <div className="mt-1 text-slate-400">score warning {row.scorePolicyWarningCount} · adjustment reminder {row.adjustmentReadinessWarningCount}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <div>{row.suggestedNextAction}</div>
+                                {row.blockerReasons.length ? <div className="mt-1 text-slate-400">{row.blockerReasons.slice(0, 2).join(' · ')}</div> : null}
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredLeaderEvaluationRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">리더 평가 readiness 필터 조건에 맞는 대상이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredLeaderEvaluationRows.length > 120 ? (
+                      <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                        화면에는 120건까지만 표시합니다. 전체 목록은 combined TSV 복사로 추출해 주세요.
                       </div>
                     ) : null}
                   </div>

@@ -43,6 +43,9 @@ type Evaluation2026ReadinessPopulationDb = {
   evaluationGradePolicy?: {
     findMany: (args: unknown) => Promise<unknown[]>
   }
+  evaluationAssignment?: {
+    findMany?: (args: unknown) => Promise<unknown[]>
+  }
   department: {
     findMany: (args: unknown) => Promise<unknown[]>
   }
@@ -140,7 +143,9 @@ type PersonalKpiAuditLog2026 = {
 type ExistingSelfEvaluation2026 = {
   id: string
   targetId: string
+  evaluatorId?: string | null
   evalStage: string
+  status?: string | null
   items: Array<{
     id: string
     personalKpiId: string
@@ -153,6 +158,20 @@ type ExistingSelfEvaluation2026 = {
       policyCategory: EvaluationPolicyItemCategoryCode | null
     } | null
   }>
+}
+
+type EvaluationAssignment2026 = {
+  id?: string | null
+  targetId: string
+  evaluatorId: string
+  evalStage: string
+  assignmentSource?: string | null
+  evaluator?: {
+    id?: string | null
+    empName?: string | null
+    empId?: string | null
+    status?: string | null
+  } | null
 }
 
 type TeamKpiReviewItemSnapshot2026 = {
@@ -408,6 +427,111 @@ export type Evaluation2026ResultWritingReadiness = {
   }
 }
 
+export type Evaluation2026LeaderEvaluationReadinessStatus =
+  | 'READY_FOR_FIRST_REVIEW'
+  | 'BLOCKED_SELF_NOT_SUBMITTED'
+  | 'BLOCKED_RESULT_MISSING'
+  | 'BLOCKED_EVIDENCE_MISSING'
+  | 'BLOCKED_POLICY_CATEGORY_MISSING'
+  | 'BLOCKED_EVALUATOR_MISSING'
+  | 'READY_FOR_SECOND_REVIEW'
+  | 'BLOCKED_FIRST_NOT_COMPLETE'
+  | 'READY_FOR_FINAL_REVIEW'
+  | 'MANUAL_REVIEW'
+
+export type Evaluation2026LeaderEvaluationMissingPrerequisite =
+  | 'SELF_NOT_SUBMITTED'
+  | 'RESULT_MISSING'
+  | 'EVIDENCE_MISSING'
+  | 'POLICY_CATEGORY_MISSING'
+  | 'EVALUATOR_MISSING'
+  | 'FIRST_NOT_COMPLETE'
+  | 'ORG_GOAL_SOURCE_MISSING'
+  | 'MEASURABLE_RESULT_MISSING'
+  | 'PERSONAL_CONTRIBUTION_MISSING'
+  | 'SCORE_POLICY_WARNING'
+  | 'ADJUSTMENT_READINESS_WARNING'
+
+export type Evaluation2026LeaderEvaluationReadinessRow = {
+  employeeId: string
+  employeeNo: string | null
+  employeeName: string
+  email: string | null
+  divisionId: string | null
+  divisionName: string
+  departmentId: string | null
+  departmentName: string
+  departmentPath: string
+  role: string | null
+  firstEvaluatorId: string | null
+  firstEvaluatorName: string
+  secondEvaluatorId: string | null
+  secondEvaluatorName: string
+  finalEvaluatorId: string | null
+  finalEvaluatorName: string
+  currentStage: string
+  selfStatus: string
+  firstStatus: string
+  secondStatus: string
+  finalStatus: string
+  readinessStatus: Evaluation2026LeaderEvaluationReadinessStatus
+  resultWritingStatus: 'READY' | 'BLOCKED' | 'NO_ITEMS'
+  policyCategoryStatus: 'READY' | 'MISSING'
+  evidenceStatus: 'READY' | 'MISSING' | 'NO_ITEMS'
+  resultItemCount: number
+  missingResultCount: number
+  missingEvidenceCount: number
+  missingPolicyCategoryCount: number
+  missingApprovedOrgGoalSourceCount: number
+  missingMeasurableResultCount: number
+  missingPersonalContributionCount: number
+  scorePolicyWarningCount: number
+  adjustmentReadinessWarningCount: number
+  missingPrerequisites: Evaluation2026LeaderEvaluationMissingPrerequisite[]
+  blockerReasons: string[]
+  currentAssignmentRows: string[]
+  suggestedNextAction: string
+}
+
+export type Evaluation2026LeaderEvaluationReadiness = {
+  mode: 'READ_ONLY'
+  firstEvaluatorChecklist: string[]
+  secondEvaluatorChecklist: string[]
+  exportColumns: string[]
+  summary: {
+    targetEmployeeCount: number
+    selfSubmittedCount: number
+    firstReviewReadyCount: number
+    firstReviewMissingPrerequisitesCount: number
+    secondReviewReadyCount: number
+    secondReviewMissingPrerequisitesCount: number
+    finalCeoNotReadyCount: number
+    itemsMissingResultWritingEvidence: number
+    itemsMissingPolicyCategory: number
+    itemsMissingApprovedOrgGoalSource: number
+    itemsMissingMeasurableResult: number
+    itemsMissingPersonalContribution: number
+    itemsWithScorePolicyWarnings: number
+    itemsWithAdjustmentReadinessWarnings: number
+    missingEvaluatorCount: number
+    blockerCount: number
+    readyForLeaderReviewCount: number
+    officialScoringEnabled: false
+    officialGradeEnabled: false
+  }
+  rows: Evaluation2026LeaderEvaluationReadinessRow[]
+  safety: {
+    writesPerformed: false
+    evaluationsCreated: 0
+    evaluationItemsCreated: 0
+    totalScoreChanged: false
+    gradeIdChanged: false
+    officialScoringEnabled: false
+    officialGradeEnabled: false
+    officialAiScoreExclusionEnabled: false
+  }
+}
+
 export type Evaluation2026TeamKpiHrReviewStatus =
   | 'PENDING_REVIEW'
   | 'APPROVED_FOR_ORG_GOAL'
@@ -557,6 +681,7 @@ export type Evaluation2026ReadinessPopulationDryRun = {
     bulkMappingSavedCount: number
   }
   resultWritingReadiness: Evaluation2026ResultWritingReadiness
+  leaderEvaluationReadiness: Evaluation2026LeaderEvaluationReadiness
   blockers: Evaluation2026ReadinessPopulationBlocker[]
   warnings: Evaluation2026ReadinessPopulationBlocker[]
   safety: {
@@ -844,6 +969,26 @@ const RESULT_WRITING_LEADER_REVIEW_CHECKLIST_2026 = [
   '비중/cap warning을 확인합니다.',
   '향후 ±5 adjustment를 사용할 경우 기여 차이 증빙과 zero-sum 근거가 필요한지 확인합니다.',
   'AI Pass/Fail 증빙은 연간 업적점수 결과와 분리되어 있는지 확인합니다.',
+]
+
+const LEADER_EVALUATION_FIRST_CHECKLIST_2026 = [
+  'employee submitted self/result writing 상태인지 확인합니다.',
+  'KPI category가 ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 하나로 확정되었는지 확인합니다.',
+  'target vs actual이 명확하고 측정 가능한지 확인합니다.',
+  'evidence 링크/파일/코멘트가 있는지 확인합니다.',
+  'personal contribution이 분리되어 있는지 확인합니다.',
+  'ORG_GOAL source가 본부 KPI 또는 HR 승인 팀 KPI인지 확인합니다.',
+  'PROJECT_T/K deliverable이 명확한지 확인합니다.',
+  'DAILY_WORK가 ORG_GOAL/project와 중복되지 않는지 확인합니다.',
+  '향후 adjustment 사용 시 사유와 기여 차이 증빙이 필요함을 확인합니다.',
+]
+
+const LEADER_EVALUATION_SECOND_CHECKLIST_2026 = [
+  'FIRST review가 완료되었거나 SECOND review로 넘길 준비가 되었는지 확인합니다.',
+  'high-risk item과 score policy warning이 검토되었는지 확인합니다.',
+  'evidence sufficiency를 다시 확인합니다.',
+  'adjustment와 zero-sum readiness를 확인합니다.',
+  'calibration/final grade는 이 단계에서 처리하지 않습니다.',
 ]
 
 function getPolicyCategoryLabel2026(category: EvaluationPolicyItemCategoryCode | null) {
@@ -1139,6 +1284,325 @@ function buildResultWritingReadiness2026(params: {
       readyForReviewCount: rows.filter((row) => row.resultWritingStatus === 'READY_FOR_REVIEW').length,
       warningItemCount: rows.filter((row) => row.warnings.length > 0).length,
       categoryWarningCounts,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+    },
+    rows: rows.slice(0, params.limit),
+    safety: {
+      writesPerformed: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      officialScoringEnabled: false,
+      officialGradeEnabled: false,
+      officialAiScoreExclusionEnabled: false,
+    },
+  }
+}
+
+function isEvaluationSubmittedForLeaderReadiness2026(evaluation: ExistingSelfEvaluation2026 | null | undefined) {
+  return evaluation?.status === 'SUBMITTED' || evaluation?.status === 'CONFIRMED'
+}
+
+function getEvaluationStageStatus2026(
+  evaluationsByTargetAndStage: Map<string, ExistingSelfEvaluation2026>,
+  employeeId: string,
+  stage: string
+) {
+  return evaluationsByTargetAndStage.get(`${employeeId}:${stage}`)?.status ?? 'NOT_CREATED'
+}
+
+function getLeaderEvaluationNextAction2026(status: Evaluation2026LeaderEvaluationReadinessStatus) {
+  if (status === 'READY_FOR_FIRST_REVIEW') return '1차 리더 평가 입력 전 checklist 확인'
+  if (status === 'BLOCKED_SELF_NOT_SUBMITTED') return '직원 SELF/수행결과 제출 요청'
+  if (status === 'BLOCKED_RESULT_MISSING') return '수행결과 작성 보완 요청'
+  if (status === 'BLOCKED_EVIDENCE_MISSING') return '증빙 링크/코멘트 보완 요청'
+  if (status === 'BLOCKED_POLICY_CATEGORY_MISSING') return 'policyCategory 확정'
+  if (status === 'BLOCKED_EVALUATOR_MISSING') return '평가자 배정 readiness QA 또는 sync 확인'
+  if (status === 'READY_FOR_SECOND_REVIEW') return '2차 평가자 검토 준비'
+  if (status === 'BLOCKED_FIRST_NOT_COMPLETE') return 'FIRST review 완료 여부 확인'
+  if (status === 'READY_FOR_FINAL_REVIEW') return '최종/CEO 확인 전 blocker 재점검'
+  return 'HR 수동 검토'
+}
+
+function buildLeaderEvaluationReadiness2026(params: {
+  activeEmployees: ActiveEmployee2026[]
+  evaluations: ExistingSelfEvaluation2026[]
+  evaluationAssignments: EvaluationAssignment2026[]
+  resultWritingReadiness: Evaluation2026ResultWritingReadiness
+  departmentsById: Map<string, DepartmentNode2026>
+  limit: number
+}): Evaluation2026LeaderEvaluationReadiness {
+  const activeEmployeesById = new Map(params.activeEmployees.map((employee) => [employee.id, employee]))
+  const activeEmployeeIds = new Set(params.activeEmployees.map((employee) => employee.id))
+  const resultRowsByEmployeeId = new Map<string, Evaluation2026ResultWritingReadinessRow[]>()
+  for (const row of params.resultWritingReadiness.rows) {
+    if (!activeEmployeeIds.has(row.employeeId)) continue
+    const rows = resultRowsByEmployeeId.get(row.employeeId) ?? []
+    rows.push(row)
+    resultRowsByEmployeeId.set(row.employeeId, rows)
+  }
+
+  const evaluationsByTargetAndStage = new Map<string, ExistingSelfEvaluation2026>()
+  for (const evaluation of params.evaluations) {
+    if (!activeEmployeeIds.has(evaluation.targetId)) continue
+    evaluationsByTargetAndStage.set(`${evaluation.targetId}:${evaluation.evalStage}`, evaluation)
+  }
+
+  const assignmentsByTargetAndStage = new Map<string, EvaluationAssignment2026>()
+  for (const assignment of params.evaluationAssignments) {
+    if (!activeEmployeeIds.has(assignment.targetId)) continue
+    assignmentsByTargetAndStage.set(`${assignment.targetId}:${assignment.evalStage}`, assignment)
+  }
+
+  const resolveEvaluator = (employee: ActiveEmployee2026, stage: 'FIRST' | 'SECOND' | 'FINAL') => {
+    const assignment = assignmentsByTargetAndStage.get(`${employee.id}:${stage}`)
+    if (assignment) {
+      const evaluator = activeEmployeesById.get(assignment.evaluatorId)
+      return {
+        id: assignment.evaluatorId,
+        name: assignment.evaluator?.empName ?? evaluator?.empName ?? '평가자 미확인',
+        assignment,
+      }
+    }
+    if (stage === 'FIRST') {
+      const fallbackId = employee.managerId ?? employee.teamLeaderId ?? null
+      const fallback = fallbackId ? activeEmployeesById.get(fallbackId) : null
+      return {
+        id: fallbackId,
+        name: fallback?.empName ?? (fallbackId ? '리더 미확인' : '미배정'),
+        assignment: null,
+      }
+    }
+    return {
+      id: null,
+      name: '미배정',
+      assignment: null,
+    }
+  }
+
+  const rows = params.activeEmployees
+    .map((employee) => {
+      const divisionId = resolveDivisionId({ departmentId: employee.deptId, departmentsById: params.departmentsById })
+      const divisionName = divisionId ? params.departmentsById.get(divisionId)?.deptName ?? divisionId : '본부 미지정'
+      const departmentName =
+        employee.department?.deptName ?? params.departmentsById.get(employee.deptId)?.deptName ?? '소속 조직 미지정'
+      const resultRows = resultRowsByEmployeeId.get(employee.id) ?? []
+      const selfEvaluation = evaluationsByTargetAndStage.get(`${employee.id}:SELF`)
+      const firstEvaluation = evaluationsByTargetAndStage.get(`${employee.id}:FIRST`)
+      const secondEvaluation = evaluationsByTargetAndStage.get(`${employee.id}:SECOND`)
+      const finalEvaluation =
+        evaluationsByTargetAndStage.get(`${employee.id}:FINAL`) ??
+        evaluationsByTargetAndStage.get(`${employee.id}:CEO_ADJUST`)
+      const firstEvaluator = resolveEvaluator(employee, 'FIRST')
+      const secondEvaluator = resolveEvaluator(employee, 'SECOND')
+      const finalEvaluator = resolveEvaluator(employee, 'FINAL')
+      const missingPrerequisites: Evaluation2026LeaderEvaluationMissingPrerequisite[] = []
+      const blockerReasons: string[] = []
+      const missingResultCount = resultRows.filter((row) =>
+        row.warnings.some((warning) => warning.code === 'MISSING_ACTUAL_RESULT')
+      ).length
+      const missingEvidenceCount = resultRows.filter((row) =>
+        row.warnings.some((warning) => warning.code === 'MISSING_EVIDENCE')
+      ).length
+      const missingPolicyCategoryCount = resultRows.filter((row) =>
+        row.warnings.some((warning) => warning.code === 'MISSING_CATEGORY')
+      ).length
+      const missingApprovedOrgGoalSourceCount = resultRows.filter((row) =>
+        row.warnings.some((warning) => warning.code === 'ORG_GOAL_WITHOUT_APPROVED_SOURCE')
+      ).length
+      const missingMeasurableResultCount = resultRows.filter((row) =>
+        row.warnings.some((warning) => warning.code === 'MISSING_MEASURABLE_RESULT')
+      ).length
+      const missingPersonalContributionCount = resultRows.filter((row) =>
+        row.warnings.some((warning) => warning.code === 'MISSING_PERSONAL_CONTRIBUTION')
+      ).length
+      const scorePolicyWarningCount = resultRows.filter((row) =>
+        row.warnings.some((warning) =>
+          [
+            'MISSING_CATEGORY',
+            'ORG_GOAL_WITHOUT_APPROVED_SOURCE',
+            'DAILY_WORK_DUPLICATE_RISK',
+            'PROJECT_TK_MISSING_DELIVERABLE',
+            'MISSING_MEASURABLE_RESULT',
+          ].includes(warning.code)
+        )
+      ).length
+      const adjustmentReadinessWarningCount = resultRows.filter((row) =>
+        row.category === 'ORG_GOAL' || row.category === 'PROJECT_T' || row.category === 'PROJECT_K'
+      ).length
+      const evaluatorMissing = !firstEvaluator.id || !secondEvaluator.id || !finalEvaluator.id
+      const selfSubmitted = isEvaluationSubmittedForLeaderReadiness2026(selfEvaluation)
+      const firstComplete = isEvaluationSubmittedForLeaderReadiness2026(firstEvaluation)
+      const secondComplete = isEvaluationSubmittedForLeaderReadiness2026(secondEvaluation)
+
+      if (evaluatorMissing) {
+        missingPrerequisites.push('EVALUATOR_MISSING')
+        blockerReasons.push('FIRST / SECOND / FINAL 평가자 배정 확인 필요')
+      }
+      if (!selfSubmitted) {
+        missingPrerequisites.push('SELF_NOT_SUBMITTED')
+        blockerReasons.push('SELF evaluation 또는 수행결과 제출이 완료되지 않았습니다.')
+      }
+      if (missingResultCount > 0 || resultRows.length === 0) {
+        missingPrerequisites.push('RESULT_MISSING')
+        blockerReasons.push('수행결과 초안 또는 EvaluationItem itemComment가 부족합니다.')
+      }
+      if (missingEvidenceCount > 0 || resultRows.length === 0) {
+        missingPrerequisites.push('EVIDENCE_MISSING')
+        blockerReasons.push('증빙 링크/파일/코멘트가 부족합니다.')
+      }
+      if (missingPolicyCategoryCount > 0) {
+        missingPrerequisites.push('POLICY_CATEGORY_MISSING')
+        blockerReasons.push('policyCategory 미분류 항목이 남아 있습니다.')
+      }
+      if (missingApprovedOrgGoalSourceCount > 0) {
+        missingPrerequisites.push('ORG_GOAL_SOURCE_MISSING')
+        blockerReasons.push('ORG_GOAL 승인 소스가 확인되지 않은 항목이 있습니다.')
+      }
+      if (missingMeasurableResultCount > 0) {
+        missingPrerequisites.push('MEASURABLE_RESULT_MISSING')
+      }
+      if (missingPersonalContributionCount > 0) {
+        missingPrerequisites.push('PERSONAL_CONTRIBUTION_MISSING')
+      }
+      if (scorePolicyWarningCount > 0) {
+        missingPrerequisites.push('SCORE_POLICY_WARNING')
+      }
+      if (adjustmentReadinessWarningCount > 0) {
+        missingPrerequisites.push('ADJUSTMENT_READINESS_WARNING')
+      }
+
+      let readinessStatus: Evaluation2026LeaderEvaluationReadinessStatus = 'READY_FOR_FIRST_REVIEW'
+      if (evaluatorMissing) readinessStatus = 'BLOCKED_EVALUATOR_MISSING'
+      else if (!selfSubmitted) readinessStatus = 'BLOCKED_SELF_NOT_SUBMITTED'
+      else if (missingResultCount > 0 || resultRows.length === 0) readinessStatus = 'BLOCKED_RESULT_MISSING'
+      else if (missingPolicyCategoryCount > 0) readinessStatus = 'BLOCKED_POLICY_CATEGORY_MISSING'
+      else if (missingEvidenceCount > 0) readinessStatus = 'BLOCKED_EVIDENCE_MISSING'
+      else if (firstComplete && secondComplete) readinessStatus = 'READY_FOR_FINAL_REVIEW'
+      else if (firstComplete) readinessStatus = 'READY_FOR_SECOND_REVIEW'
+      else if (firstEvaluation && !firstComplete) readinessStatus = 'BLOCKED_FIRST_NOT_COMPLETE'
+
+      if (readinessStatus === 'BLOCKED_FIRST_NOT_COMPLETE') {
+        missingPrerequisites.push('FIRST_NOT_COMPLETE')
+        blockerReasons.push('FIRST review가 아직 완료되지 않았습니다.')
+      }
+
+      const currentAssignmentRows = ['FIRST', 'SECOND', 'FINAL']
+        .map((stage) => assignmentsByTargetAndStage.get(`${employee.id}:${stage}`))
+        .filter((assignment): assignment is EvaluationAssignment2026 => Boolean(assignment))
+        .map((assignment) => {
+          const evaluator = activeEmployeesById.get(assignment.evaluatorId)
+          return `${assignment.evalStage}: ${assignment.evaluator?.empName ?? evaluator?.empName ?? assignment.evaluatorId}`
+        })
+
+      const currentStage = secondComplete
+        ? 'SECOND_COMPLETE'
+        : firstComplete
+          ? 'FIRST_COMPLETE'
+          : firstEvaluation
+            ? 'FIRST_IN_PROGRESS'
+            : selfSubmitted
+              ? 'SELF_SUBMITTED'
+              : 'SELF_PENDING'
+
+      return {
+        employeeId: employee.id,
+        employeeNo: employee.empId ?? null,
+        employeeName: employee.empName,
+        email: employee.gwsEmail ?? null,
+        divisionId,
+        divisionName,
+        departmentId: employee.deptId ?? null,
+        departmentName,
+        departmentPath: formatDepartmentPath({ departmentId: employee.deptId, departmentsById: params.departmentsById }),
+        role: employee.role ?? employee.position ?? null,
+        firstEvaluatorId: firstEvaluator.id,
+        firstEvaluatorName: firstEvaluator.name,
+        secondEvaluatorId: secondEvaluator.id,
+        secondEvaluatorName: secondEvaluator.name,
+        finalEvaluatorId: finalEvaluator.id,
+        finalEvaluatorName: finalEvaluator.name,
+        currentStage,
+        selfStatus: selfEvaluation?.status ?? 'NOT_CREATED',
+        firstStatus: getEvaluationStageStatus2026(evaluationsByTargetAndStage, employee.id, 'FIRST'),
+        secondStatus: getEvaluationStageStatus2026(evaluationsByTargetAndStage, employee.id, 'SECOND'),
+        finalStatus: finalEvaluation?.status ?? 'NOT_CREATED',
+        readinessStatus,
+        resultWritingStatus: resultRows.length === 0 ? 'NO_ITEMS' : missingResultCount > 0 ? 'BLOCKED' : 'READY',
+        policyCategoryStatus: missingPolicyCategoryCount > 0 ? 'MISSING' : 'READY',
+        evidenceStatus: resultRows.length === 0 ? 'NO_ITEMS' : missingEvidenceCount > 0 ? 'MISSING' : 'READY',
+        resultItemCount: resultRows.length,
+        missingResultCount,
+        missingEvidenceCount,
+        missingPolicyCategoryCount,
+        missingApprovedOrgGoalSourceCount,
+        missingMeasurableResultCount,
+        missingPersonalContributionCount,
+        scorePolicyWarningCount,
+        adjustmentReadinessWarningCount,
+        missingPrerequisites: Array.from(new Set(missingPrerequisites)),
+        blockerReasons,
+        currentAssignmentRows,
+        suggestedNextAction: getLeaderEvaluationNextAction2026(readinessStatus),
+      } satisfies Evaluation2026LeaderEvaluationReadinessRow
+    })
+    .sort((left, right) =>
+      left.divisionName.localeCompare(right.divisionName, 'ko') ||
+      left.departmentPath.localeCompare(right.departmentPath, 'ko') ||
+      left.employeeName.localeCompare(right.employeeName, 'ko')
+    )
+
+  const firstBlockedStatuses: Evaluation2026LeaderEvaluationReadinessStatus[] = [
+    'BLOCKED_SELF_NOT_SUBMITTED',
+    'BLOCKED_RESULT_MISSING',
+    'BLOCKED_EVIDENCE_MISSING',
+    'BLOCKED_POLICY_CATEGORY_MISSING',
+    'BLOCKED_EVALUATOR_MISSING',
+  ]
+  const blockerRows = rows.filter((row) => row.readinessStatus.startsWith('BLOCKED_'))
+
+  return {
+    mode: 'READ_ONLY',
+    firstEvaluatorChecklist: LEADER_EVALUATION_FIRST_CHECKLIST_2026,
+    secondEvaluatorChecklist: LEADER_EVALUATION_SECOND_CHECKLIST_2026,
+    exportColumns: [
+      'employeeNo',
+      'employeeName',
+      'email',
+      'division',
+      'departmentPath',
+      'firstEvaluator',
+      'secondEvaluator',
+      'finalEvaluator',
+      'currentStage',
+      'readinessStatus',
+      'blockerReason',
+      'nextAction',
+    ],
+    summary: {
+      targetEmployeeCount: rows.length,
+      selfSubmittedCount: rows.filter((row) => row.selfStatus === 'SUBMITTED' || row.selfStatus === 'CONFIRMED').length,
+      firstReviewReadyCount: rows.filter((row) => row.readinessStatus === 'READY_FOR_FIRST_REVIEW').length,
+      firstReviewMissingPrerequisitesCount: rows.filter((row) => firstBlockedStatuses.includes(row.readinessStatus)).length,
+      secondReviewReadyCount: rows.filter((row) => row.readinessStatus === 'READY_FOR_SECOND_REVIEW').length,
+      secondReviewMissingPrerequisitesCount: rows.filter((row) => row.readinessStatus === 'BLOCKED_FIRST_NOT_COMPLETE').length,
+      finalCeoNotReadyCount: rows.filter((row) => row.readinessStatus !== 'READY_FOR_FINAL_REVIEW').length,
+      itemsMissingResultWritingEvidence: rows.reduce((sum, row) => sum + row.missingEvidenceCount, 0),
+      itemsMissingPolicyCategory: rows.reduce((sum, row) => sum + row.missingPolicyCategoryCount, 0),
+      itemsMissingApprovedOrgGoalSource: rows.reduce((sum, row) => sum + row.missingApprovedOrgGoalSourceCount, 0),
+      itemsMissingMeasurableResult: rows.reduce((sum, row) => sum + row.missingMeasurableResultCount, 0),
+      itemsMissingPersonalContribution: rows.reduce((sum, row) => sum + row.missingPersonalContributionCount, 0),
+      itemsWithScorePolicyWarnings: rows.reduce((sum, row) => sum + row.scorePolicyWarningCount, 0),
+      itemsWithAdjustmentReadinessWarnings: rows.reduce((sum, row) => sum + row.adjustmentReadinessWarningCount, 0),
+      missingEvaluatorCount: rows.filter((row) => row.missingPrerequisites.includes('EVALUATOR_MISSING')).length,
+      blockerCount: blockerRows.length,
+      readyForLeaderReviewCount: rows.filter((row) =>
+        row.readinessStatus === 'READY_FOR_FIRST_REVIEW' ||
+        row.readinessStatus === 'READY_FOR_SECOND_REVIEW' ||
+        row.readinessStatus === 'READY_FOR_FINAL_REVIEW'
+      ).length,
       officialScoringEnabled: false,
       officialGradeEnabled: false,
     },
@@ -1626,7 +2090,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     throw new AppError(404, 'EVAL_CYCLE_NOT_FOUND', '평가 주기를 찾을 수 없습니다.')
   }
 
-  const [departments, activeEmployees, personalKpis, selfEvaluations, teamOrgKpis] = await Promise.all([
+  const [departments, activeEmployees, personalKpis, evaluationRecords, teamOrgKpis, evaluationAssignments] = await Promise.all([
     db.department.findMany({
       where: { orgId: cycle.orgId },
       select: {
@@ -1736,12 +2200,16 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     db.evaluation.findMany({
       where: {
         evalCycleId: cycle.id,
-        evalStage: 'SELF',
+        evalStage: {
+          in: ['SELF', 'FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'],
+        },
       },
       select: {
         id: true,
         targetId: true,
+        evaluatorId: true,
         evalStage: true,
+        status: true,
         items: {
           select: {
             id: true,
@@ -1832,6 +2300,32 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
           orderBy: [{ deptId: 'asc' }, { kpiName: 'asc' }],
         })
       : Promise.resolve([]),
+    typeof db.evaluationAssignment?.findMany === 'function'
+      ? db.evaluationAssignment.findMany({
+          where: {
+            evalCycleId: cycle.id,
+            evalStage: {
+              in: ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'],
+            },
+          },
+          select: {
+            id: true,
+            targetId: true,
+            evaluatorId: true,
+            evalStage: true,
+            assignmentSource: true,
+            evaluator: {
+              select: {
+                id: true,
+                empName: true,
+                empId: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: [{ targetId: 'asc' }, { evalStage: 'asc' }],
+        })
+      : Promise.resolve([]),
   ])
 
   const departmentsById = new Map(
@@ -1840,6 +2334,9 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
   const activeEmployeesById = new Map((activeEmployees as ActiveEmployee2026[]).map((employee) => [employee.id, employee]))
   const activeEmployeeIds = new Set(activeEmployeesById.keys())
   const typedPersonalKpis = (personalKpis as PersonalKpi2026[]).filter((kpi) => activeEmployeeIds.has(kpi.employeeId))
+  const allEvaluations = evaluationRecords as ExistingSelfEvaluation2026[]
+  const selfEvaluations = allEvaluations.filter((evaluation) => evaluation.evalStage === 'SELF')
+  const typedEvaluationAssignments = evaluationAssignments as EvaluationAssignment2026[]
   const auditLogs = typedPersonalKpis.length && db.auditLog
     ? await db.auditLog.findMany({
         where: {
@@ -2027,6 +2524,14 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     operationalStatusByKpiId,
     limit,
   })
+  const leaderEvaluationReadiness = buildLeaderEvaluationReadiness2026({
+    activeEmployees: activeEmployees as ActiveEmployee2026[],
+    evaluations: allEvaluations,
+    evaluationAssignments: typedEvaluationAssignments,
+    resultWritingReadiness,
+    departmentsById,
+    limit,
+  })
   const gradePolicyReadiness = await getEvaluation2026GradePolicyReadiness({
     db: db as never,
     evalCycleId: cycle.id,
@@ -2118,6 +2623,12 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     message: '2026 수행결과 작성 readiness warning이 남아 있습니다. 공식 점수/등급은 변경하지 않고 작성 품질만 점검합니다.',
     count: resultWritingReadiness.summary.warningItemCount,
   })
+  addBlocker({
+    target: warnings,
+    code: 'LEADER_EVALUATION_READINESS_WARNINGS',
+    message: '2026 리더 평가 readiness blocker가 남아 있습니다. 공식 점수/등급/제출 상태는 변경하지 않고 평가 전 checklist만 점검합니다.',
+    count: leaderEvaluationReadiness.summary.blockerCount,
+  })
 
   if (selfEvaluationByTargetId.size > 0 && selfEvaluationByTargetId.size < Math.max(3, activeEmployees.length * 0.1)) {
     addBlocker({
@@ -2199,6 +2710,7 @@ export async function getEvaluation2026ReadinessPopulationDryRun(params: {
     teamKpiHrReviewCoverage,
     policyCategoryMappingReadiness,
     resultWritingReadiness,
+    leaderEvaluationReadiness,
     blockers,
     warnings,
     safety: {
