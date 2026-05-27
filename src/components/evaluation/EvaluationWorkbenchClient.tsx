@@ -2890,6 +2890,17 @@ function PolicyReadiness2026Panel(props: {
   )
 }
 
+function formatIntegratedSnapshotCount2026(value: number | null | undefined) {
+  return typeof value === 'number' ? value.toLocaleString() : '미확인'
+}
+
+function getIntegratedReadinessStatusTone2026(status: string): 'success' | 'warn' | 'error' | 'neutral' {
+  if (status === 'READY_FOR_REVIEW' || status === 'READY_LATER') return 'success'
+  if (status === 'NEEDS_DATA' || status === 'NEEDS_HR_ACTION') return 'warn'
+  if (status === 'BLOCKED') return 'error'
+  return 'neutral'
+}
+
 function PolicyActivationReadiness2026Panel(props: {
   activationData: EvaluationActivationReadiness2026ApiData | null
   loading: boolean
@@ -2901,6 +2912,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const warnings = activation?.warnings ?? []
   const gates = activation?.officialActivationGates ?? []
   const runbook = activation?.officialActivationRunbook ?? null
+  const snapshot = activation?.integratedReadinessSnapshot ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const copyActivationRunbookPayload = useCallback(async (key: string, text: string) => {
@@ -3057,6 +3069,183 @@ function PolicyActivationReadiness2026Panel(props: {
               variant={(activation.finalizationCeoReadiness?.summary.finalizationBlockerCount ?? 1) > 0 ? 'warning' : 'default'}
             />
           </div>
+
+          {snapshot ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 통합 readiness snapshot</h4>
+                    <Badge tone={getIntegratedReadinessStatusTone2026(snapshot.overallStatus)}>
+                      {snapshot.overallStatus}
+                    </Badge>
+                    <Badge tone="neutral">{snapshot.currentStage}</Badge>
+                    <Badge tone="neutral">read-only report</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 2026 공식 전환 준비 상태를 읽기 전용으로 요약합니다. backfill, 공식 점수, 공식 등급, feature flag는 실행하지 않습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['snapshot-executive', '경영요약', snapshot.copyPayloads.executiveSummary],
+                    ['snapshot-hr', 'HR action', snapshot.copyPayloads.hrActionList],
+                    ['snapshot-dev', 'Dev action', snapshot.copyPayloads.developerActionList],
+                    ['snapshot-blockers', 'blocker 요약', snapshot.copyPayloads.blockerSummary],
+                    ['snapshot-prohibited', '금지 목록', snapshot.copyPayloads.prohibitedActions],
+                    ['snapshot-markdown', 'Markdown', snapshot.copyPayloads.markdown],
+                    ['snapshot-tsv', 'TSV', snapshot.copyPayloads.tsv],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard
+                  label="active employees"
+                  value={formatIntegratedSnapshotCount2026(snapshot.summary.activeEmployeeCount)}
+                  help="target scope"
+                  compact
+                />
+                <MetricCard
+                  label="confirmed KPI"
+                  value={formatIntegratedSnapshotCount2026(snapshot.summary.confirmedPersonalKpiCount)}
+                  help={snapshot.completionRates.mboConfirmedRate == null ? 'rate 미확인' : `${snapshot.completionRates.mboConfirmedRate}%`}
+                  compact
+                />
+                <MetricCard
+                  label="missing MBO"
+                  value={formatIntegratedSnapshotCount2026(snapshot.summary.missingMboCount)}
+                  help="작성 필요"
+                  compact
+                  variant={(snapshot.summary.missingMboCount ?? 1) > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="policyCategory"
+                  value={formatIntegratedSnapshotCount2026(snapshot.summary.policyCategoryMissingCount)}
+                  help="missing"
+                  compact
+                  variant={(snapshot.summary.policyCategoryMissingCount ?? 1) > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="routing blocker"
+                  value={formatIntegratedSnapshotCount2026(snapshot.summary.evaluatorRoutingBlockerCount)}
+                  help="평가자 배정"
+                  compact
+                  variant={(snapshot.summary.evaluatorRoutingBlockerCount ?? 1) > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="official gate"
+                  value={formatIntegratedSnapshotCount2026(snapshot.summary.officialActivationGateBlockerCount)}
+                  help="공식 전환"
+                  compact
+                  variant={(snapshot.summary.officialActivationGateBlockerCount ?? 1) > 0 ? 'warning' : 'default'}
+                />
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <h5 className="text-sm font-semibold text-amber-950">Top blockers</h5>
+                  {snapshot.topBlockers.length ? (
+                    <ul className="mt-3 space-y-2">
+                      {snapshot.topBlockers.slice(0, 8).map((blocker) => (
+                        <li key={blocker.code} className="text-sm leading-6 text-amber-950">
+                          <span className="font-semibold">{blocker.name}</span> · {blocker.count.toLocaleString()}건
+                          <div className="text-xs text-amber-800">{blocker.sourcePanel} · {blocker.relatedRoute}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-sm leading-6 text-emerald-800">현재 통합 snapshot 기준 주요 blocker가 없습니다.</p>
+                  )}
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Next actions</h5>
+                  <div className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500">HR</p>
+                      <ul className="mt-1 space-y-1">
+                        {snapshot.nextActions.hr.slice(0, 4).map((action) => (
+                          <li key={`${action.label}-${action.route}`}>- {action.label}: {action.detail}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500">Developer</p>
+                      <ul className="mt-1 space-y-1">
+                        {snapshot.nextActions.developer.map((action) => (
+                          <li key={`${action.label}-${action.route}`}>- {action.label}: {action.detail}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Executive report</h5>
+                  <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">{snapshot.executiveReportText}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Decision readiness</h5>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full text-left text-xs">
+                      <thead className="text-slate-400">
+                        <tr>
+                          <th className="whitespace-nowrap px-2 py-2 font-semibold">decision</th>
+                          <th className="whitespace-nowrap px-2 py-2 font-semibold">status</th>
+                          <th className="whitespace-nowrap px-2 py-2 font-semibold">blocker</th>
+                          <th className="whitespace-nowrap px-2 py-2 font-semibold">next action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {snapshot.decisionReadiness.map((decision) => (
+                          <tr key={decision.id}>
+                            <td className="min-w-44 px-2 py-2 font-semibold text-slate-900">{decision.label}</td>
+                            <td className="px-2 py-2">
+                              <Badge tone={getIntegratedReadinessStatusTone2026(decision.status)}>{decision.status}</Badge>
+                            </td>
+                            <td className="px-2 py-2">{decision.blockerCount.toLocaleString()}건</td>
+                            <td className="min-w-72 px-2 py-2">{decision.nextAction}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Official activation state</h5>
+                  <div className="mt-3 grid gap-2">
+                    {snapshot.activationState.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                          <Badge tone={getIntegratedReadinessStatusTone2026(item.status)}>{item.status}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          blocker {item.blockerCount.toLocaleString()}건 · {item.nextAction}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                <p className="mt-2 text-sm leading-6 text-rose-900">{snapshot.prohibitedActions.join(', ')}</p>
+              </div>
+            </div>
+          ) : null}
 
           {runbook ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
