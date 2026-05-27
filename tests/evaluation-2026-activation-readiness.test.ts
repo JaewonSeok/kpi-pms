@@ -208,6 +208,40 @@ function readyPopulationDryRun(overrides: Partial<any> = {}) {
         officialAiScoreExclusionEnabled: false,
       },
     },
+    finalizationCeoReadiness: {
+      summary: {
+        finalReviewCandidateCount: 10,
+        readyLaterCount: 10,
+        blockedBeforeFirstCount: 0,
+        blockedBeforeSecondCount: 0,
+        blockedBeforeFinalCount: 0,
+        missingEvidenceCount: 0,
+        missingPolicyCategoryCount: 0,
+        missingEvaluatorChainCount: 0,
+        scorePolicyBlockerCount: 0,
+        gradePolicyBlockerCount: 0,
+        feedbackLeadershipBlockerCount: 0,
+        aiReadinessBlockerCount: 0,
+        calibrationReadinessBlockerCount: 0,
+        ceoConfirmationBlockerCount: 0,
+        manualReviewCount: 0,
+        finalizationBlockerCount: 0,
+        testSampleCycleWarningCount: 0,
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+      },
+      rows: [],
+      safety: {
+        writesPerformed: false,
+        evaluationsCreated: 0,
+        evaluationItemsCreated: 0,
+        totalScoreChanged: false,
+        gradeIdChanged: false,
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        officialAiScoreExclusionEnabled: false,
+      },
+    },
     warnings: [],
     safety: {
       writesPerformed: false,
@@ -621,6 +655,66 @@ async function main() {
     assert.equal(result.leaderEvaluationReadiness?.summary.blockerCount, 4)
   })
 
+  await run('activation gate includes finalization CEO readiness blocker', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: true,
+        hrApprovalConfirmed: true,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun({
+        finalizationCeoReadiness: {
+          summary: {
+            finalReviewCandidateCount: 10,
+            readyLaterCount: 4,
+            blockedBeforeFirstCount: 2,
+            blockedBeforeSecondCount: 1,
+            blockedBeforeFinalCount: 1,
+            missingEvidenceCount: 2,
+            missingPolicyCategoryCount: 1,
+            missingEvaluatorChainCount: 1,
+            scorePolicyBlockerCount: 1,
+            gradePolicyBlockerCount: 0,
+            feedbackLeadershipBlockerCount: 0,
+            aiReadinessBlockerCount: 0,
+            calibrationReadinessBlockerCount: 1,
+            ceoConfirmationBlockerCount: 6,
+            manualReviewCount: 2,
+            finalizationBlockerCount: 6,
+            testSampleCycleWarningCount: 0,
+            officialScoringEnabled: false,
+            officialGradeEnabled: false,
+          },
+          rows: [],
+          safety: {
+            writesPerformed: false,
+            evaluationsCreated: 0,
+            evaluationItemsCreated: 0,
+            totalScoreChanged: false,
+            gradeIdChanged: false,
+            officialScoringEnabled: false,
+            officialGradeEnabled: false,
+            officialAiScoreExclusionEnabled: false,
+          },
+        },
+      }) as any,
+    })
+
+    const gate = findGate(result, 'OFFICIAL_GRADE')
+    const condition = findCondition(gate, 'FINALIZATION_CEO_READINESS_READY')
+
+    assert.equal(gate.status, 'BLOCKED')
+    assert.equal(condition.status, 'BLOCKED')
+    assert.equal(condition.blockerCount, 6)
+    assert.equal(result.warnings.some((item: any) => item.code === 'FINALIZATION_CEO_READINESS_UNRESOLVED'), true)
+    assert.equal(result.finalizationCeoReadiness?.summary.ceoConfirmationBlockerCount, 6)
+  })
+
   await run('official scoring gate is blocked before backfill and HR approval', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags({
@@ -766,8 +860,13 @@ async function main() {
     assert.equal(activationSource.includes('FEEDBACK_LEADERSHIP_READINESS_UNRESOLVED'), true)
     assert.equal(activationSource.includes('LEADER_EVALUATION_READINESS_READY'), true)
     assert.equal(activationSource.includes('LEADER_EVALUATION_READINESS_UNRESOLVED'), true)
+    assert.equal(activationSource.includes('FINALIZATION_CEO_READINESS_READY'), true)
+    assert.equal(activationSource.includes('FINALIZATION_CEO_READINESS_UNRESOLVED'), true)
     assert.equal(clientSource.includes('360/리더십'), true)
     assert.equal(clientSource.includes('리더 평가'), true)
+    assert.equal(clientSource.includes('최종/CEO'), true)
+    assert.equal(clientSource.includes('2026 최종 확정 readiness'), true)
+    assert.equal(clientSource.includes('공식 점수, 등급, 보정, 대표이사 확정은 수행하지 않습니다.'), true)
     assert.equal(clientSource.includes('공식 전환 실행'), false)
   })
 

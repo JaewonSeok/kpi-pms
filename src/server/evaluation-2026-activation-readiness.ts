@@ -99,6 +99,7 @@ export type Evaluation2026ActivationReadinessResult = {
   evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null
   feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null
   leaderEvaluationReadiness: Evaluation2026ReadinessPopulationDryRun['leaderEvaluationReadiness'] | null
+  finalizationCeoReadiness: Evaluation2026ReadinessPopulationDryRun['finalizationCeoReadiness'] | null
   officialActivationGates: Evaluation2026OfficialActivationGate[]
   populationDryRunAvailable: boolean
   populationDryRunError: string | null
@@ -411,6 +412,25 @@ function collectLeaderEvaluationReadiness(
   }
 }
 
+function collectFinalizationCeoReadiness(
+  populationDryRun: Evaluation2026ReadinessPopulationDryRun | null,
+  warnings: Evaluation2026ActivationReadinessItem[]
+) {
+  const finalizationReadiness = populationDryRun?.finalizationCeoReadiness
+  if (!finalizationReadiness) {
+    addItem(warnings, 'FINALIZATION_CEO_READINESS_NOT_CHECKED', '2026 최종 확정 readiness를 현재 실행 컨텍스트에서 확인하지 못했습니다.', 'warning')
+    return
+  }
+  if (finalizationReadiness.summary.finalizationBlockerCount > 0) {
+    addItem(
+      warnings,
+      'FINALIZATION_CEO_READINESS_UNRESOLVED',
+      `최종 확정 readiness blocker가 ${finalizationReadiness.summary.finalizationBlockerCount}건 남아 있습니다.`,
+      'warning'
+    )
+  }
+}
+
 function canRunPopulationDryRun(db: Evaluation2026ActivationDb): db is Evaluation2026ActivationPopulationDb {
   const candidate = db as Evaluation2026ActivationPopulationDb
   return Boolean(
@@ -550,6 +570,10 @@ function leaderEvaluationBlockerCount(populationDryRun: Evaluation2026ReadinessP
   return populationDryRun?.leaderEvaluationReadiness?.summary.blockerCount ?? null
 }
 
+function finalizationCeoBlockerCount(populationDryRun: Evaluation2026ReadinessPopulationDryRun | null) {
+  return populationDryRun?.finalizationCeoReadiness?.summary.finalizationBlockerCount ?? null
+}
+
 function salesClassificationMissingCount(params: {
   readiness: EvaluationPreviewReadinessSummary2026
   populationDryRun: Evaluation2026ReadinessPopulationDryRun | null
@@ -674,6 +698,21 @@ function buildEvaluation2026OfficialActivationGates(params: {
       ? 'SELF 제출, 수행결과/증빙, policyCategory, 평가자 배정 blocker가 남아 있습니다.'
       : '리더 평가 readiness 결과가 없어 현재 상태를 확인하지 못했습니다.',
     nextHrAction: '/evaluation/performance의 2026 리더 평가 readiness에서 blocked row와 missing prerequisite을 확인하세요.',
+  })
+  const finalizationCeoCount = finalizationCeoBlockerCount(populationDryRun)
+  const finalizationSummary = populationDryRun?.finalizationCeoReadiness?.summary
+  const finalizationCeoCondition = condition({
+    code: 'FINALIZATION_CEO_READINESS_READY',
+    label: 'finalization / CEO confirmation readiness',
+    ok: finalizationCeoCount === 0,
+    currentValue: finalizationSummary
+      ? `ready later ${finalizationSummary.readyLaterCount}/${finalizationSummary.finalReviewCandidateCount} · final ${finalizationSummary.finalizationBlockerCount}건 · CEO ${finalizationSummary.ceoConfirmationBlockerCount}건 · calibration ${finalizationSummary.calibrationReadinessBlockerCount}건`
+      : 'not checked',
+    blockerCount: finalizationCeoCount ?? 1,
+    reason: finalizationSummary
+      ? '최종 확정, CEO confirmation, calibration readiness blocker가 남아 있습니다.'
+      : '최종 확정 readiness 결과가 없어 현재 상태를 확인하지 못했습니다.',
+    nextHrAction: '/evaluation/performance의 2026 최종 확정 readiness에서 blocked row와 CEO/calibration blocker를 확인하세요.',
   })
   const sampleWarningCount = populationDryRun?.warnings.filter((warning) =>
     warning.code === 'SAMPLE_DATA_SIGNAL' || warning.code === 'CURRENT_CYCLE_SCOPE_LOOKS_PARTIAL'
@@ -863,6 +902,7 @@ function buildEvaluation2026OfficialActivationGates(params: {
       nextHrAction: '저장 정책과 PPT 기준 차이를 확인하고 HR 확정 metadata를 저장하세요.',
     }),
     feedbackLeadershipCondition,
+    finalizationCeoCondition,
     condition({
       code: 'CALIBRATION_FINALIZATION_READY',
       label: 'calibration/finalization process ready',
@@ -1087,6 +1127,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
   collectEvaluatorRoutingReadiness(evaluatorRoutingReadiness, blockers, warnings)
   collectFeedbackLeadershipReadiness(feedbackLeadershipReadiness, blockers, warnings)
   collectLeaderEvaluationReadiness(populationDryRun, warnings)
+  collectFinalizationCeoReadiness(populationDryRun, warnings)
   const officialActivationGates = buildEvaluation2026OfficialActivationGates({
     flags,
     readiness,
@@ -1108,6 +1149,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     evaluatorRoutingReadiness,
     feedbackLeadershipReadiness,
     leaderEvaluationReadiness: populationDryRun?.leaderEvaluationReadiness ?? null,
+    finalizationCeoReadiness: populationDryRun?.finalizationCeoReadiness ?? null,
     officialActivationGates,
     populationDryRunAvailable: Boolean(populationDryRun),
     populationDryRunError,

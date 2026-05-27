@@ -180,6 +180,10 @@ type LeaderEvaluationReadiness2026 = EvaluationReadinessPopulation2026ApiData['l
 type LeaderEvaluationReadinessRow2026 = LeaderEvaluationReadiness2026['rows'][number]
 type LeaderEvaluationReadinessStatus2026 = LeaderEvaluationReadinessRow2026['readinessStatus']
 type LeaderEvaluationMissingPrerequisite2026 = LeaderEvaluationReadinessRow2026['missingPrerequisites'][number]
+type FinalizationCeoReadiness2026 = EvaluationReadinessPopulation2026ApiData['finalizationCeoReadiness']
+type FinalizationCeoReadinessRow2026 = FinalizationCeoReadiness2026['rows'][number]
+type FinalizationCeoReadinessStatus2026 = FinalizationCeoReadinessRow2026['finalizationReadinessStatus']
+type FinalizationCeoBlockerType2026 = FinalizationCeoReadinessRow2026['blockerTypes'][number]
 type ResultWritingCategoryFilter2026 = NonNullable<ResultWritingReadinessRow2026['category']> | 'UNMAPPED'
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
@@ -3030,6 +3034,13 @@ function PolicyActivationReadiness2026Panel(props: {
               compact
               variant={(activation.leaderEvaluationReadiness?.summary.blockerCount ?? 1) > 0 ? 'warning' : 'default'}
             />
+            <MetricCard
+              label="최종/CEO"
+              value={activation.finalizationCeoReadiness?.summary.finalizationBlockerCount.toLocaleString() ?? '미확인'}
+              help={`CEO ${activation.finalizationCeoReadiness?.summary.ceoConfirmationBlockerCount.toLocaleString() ?? '미확인'} · calibration ${activation.finalizationCeoReadiness?.summary.calibrationReadinessBlockerCount.toLocaleString() ?? '미확인'}`}
+              compact
+              variant={(activation.finalizationCeoReadiness?.summary.finalizationBlockerCount ?? 1) > 0 ? 'warning' : 'default'}
+            />
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -3906,6 +3917,51 @@ function getLeaderEvaluationPrerequisiteLabel2026(value: LeaderEvaluationMissing
   return labels[value]
 }
 
+function getFinalizationCeoStatusLabel2026(value: FinalizationCeoReadinessStatus2026 | 'ALL') {
+  const labels: Record<FinalizationCeoReadinessStatus2026, string> = {
+    BLOCKED_SELF_NOT_READY: 'SELF 미준비',
+    BLOCKED_FIRST_NOT_READY: 'FIRST 미준비',
+    BLOCKED_SECOND_NOT_READY: 'SECOND 미준비',
+    BLOCKED_RESULT_MISSING: '수행결과/증빙 부족',
+    BLOCKED_POLICY_CATEGORY_MISSING: 'policyCategory 미분류',
+    BLOCKED_EVALUATOR_CHAIN: '평가자 chain blocker',
+    BLOCKED_SCORE_POLICY: 'score policy blocker',
+    BLOCKED_GRADE_POLICY: 'grade policy blocker',
+    BLOCKED_FEEDBACK_LEADERSHIP: '360/리더십 blocker',
+    BLOCKED_AI_READINESS: 'AI readiness blocker',
+    READY_FOR_FINAL_REVIEW: 'FINAL review 준비',
+    READY_FOR_CEO_CONFIRMATION_LATER: 'CEO 확인 later-ready',
+    MANUAL_REVIEW: '수동 검토',
+  }
+  if (value === 'ALL') return '전체'
+  return labels[value]
+}
+
+function getFinalizationCeoStatusTone2026(value: FinalizationCeoReadinessStatus2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'READY_FOR_FINAL_REVIEW' || value === 'READY_FOR_CEO_CONFIRMATION_LATER') return 'success'
+  if (value === 'MANUAL_REVIEW') return 'warn'
+  return 'error'
+}
+
+function getFinalizationCeoBlockerLabel2026(value: FinalizationCeoBlockerType2026 | 'ALL') {
+  const labels: Record<FinalizationCeoBlockerType2026, string> = {
+    SELF_NOT_READY: 'SELF 미준비',
+    FIRST_NOT_READY: 'FIRST 미완료',
+    SECOND_NOT_READY: 'SECOND 미완료',
+    RESULT_MISSING: '수행결과 누락',
+    EVIDENCE_MISSING: '증빙 부족',
+    POLICY_CATEGORY_MISSING: 'policyCategory 미분류',
+    EVALUATOR_CHAIN: '평가자 chain',
+    SCORE_POLICY: 'score policy',
+    GRADE_POLICY: 'grade policy',
+    FEEDBACK_LEADERSHIP: '360/리더십',
+    AI_READINESS: 'AI readiness',
+    MANUAL_REVIEW: '수동 검토',
+  }
+  if (value === 'ALL') return '전체'
+  return labels[value]
+}
+
 function getMboFollowUpTypeTone2026(value: MboFollowUpType2026): 'success' | 'warn' | 'error' | 'neutral' {
   if (value === 'MISSING_MBO') return 'error'
   if (value === 'DRAFT_MBO' || value === 'LEADER_REVIEW' || value === 'TEAM_KPI_REVIEW') return 'warn'
@@ -4037,6 +4093,35 @@ function buildLeaderEvaluationTsv2026(rows: LeaderEvaluationReadinessRow2026[], 
   )
 }
 
+function buildFinalizationCeoTsv2026(rows: FinalizationCeoReadinessRow2026[], headers?: string[]) {
+  return buildTsv2026(
+    headers ?? [
+      'employeeNo',
+      'employeeName',
+      'email',
+      'division',
+      'section',
+      'departmentPath',
+      'currentStage',
+      'finalizationStatus',
+      'blockerReason',
+      'nextHrAction',
+    ],
+    rows.map((row) => [
+      row.employeeNo,
+      row.employeeName,
+      row.email ?? '',
+      row.divisionName,
+      row.sectionName,
+      row.departmentPath,
+      row.currentEvaluationStage,
+      getFinalizationCeoStatusLabel2026(row.finalizationReadinessStatus),
+      row.blockerReasons.join(', '),
+      row.nextHrAction,
+    ])
+  )
+}
+
 function PolicyReadinessPopulation2026Panel(props: {
   dryRunData: EvaluationReadinessPopulation2026ApiData | null
   loading: boolean
@@ -4109,6 +4194,23 @@ function PolicyReadinessPopulation2026Panel(props: {
     useState<LeaderEvaluationMissingPrerequisite2026 | 'ALL'>('ALL')
   const [leaderEvalPolicyCategoryFilter, setLeaderEvalPolicyCategoryFilter] = useState<'ALL' | 'READY' | 'MISSING'>('ALL')
   const [leaderEvalEvidenceFilter, setLeaderEvalEvidenceFilter] = useState<'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS'>('ALL')
+  const [finalizationDivisionFilter, setFinalizationDivisionFilter] = useState('ALL')
+  const [finalizationSectionFilter, setFinalizationSectionFilter] = useState('ALL')
+  const [finalizationTeamFilter, setFinalizationTeamFilter] = useState('ALL')
+  const [finalizationStageFilter, setFinalizationStageFilter] = useState('ALL')
+  const [finalizationStatusFilter, setFinalizationStatusFilter] =
+    useState<FinalizationCeoReadinessStatus2026 | 'ALL'>('ALL')
+  const [finalizationBlockerFilter, setFinalizationBlockerFilter] =
+    useState<FinalizationCeoBlockerType2026 | 'ALL'>('ALL')
+  const [finalizationEvaluatorFilter, setFinalizationEvaluatorFilter] = useState('ALL')
+  const [finalizationPolicyFilter, setFinalizationPolicyFilter] = useState<'ALL' | 'READY' | 'MISSING'>('ALL')
+  const [finalizationEvidenceFilter, setFinalizationEvidenceFilter] =
+    useState<'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS'>('ALL')
+  const [finalizationGradePolicyFilter, setFinalizationGradePolicyFilter] =
+    useState<'ALL' | 'READY' | 'BLOCKED'>('ALL')
+  const [finalizationFeedbackFilter, setFinalizationFeedbackFilter] =
+    useState<'ALL' | 'READY' | 'BLOCKED' | 'NOT_CHECKED'>('ALL')
+  const [finalizationManualOnly, setFinalizationManualOnly] = useState(false)
   const [copiedMonitoringTable, setCopiedMonitoringTable] = useState<string | null>(null)
   const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
   const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
@@ -4121,6 +4223,8 @@ function PolicyReadinessPopulation2026Panel(props: {
   const resultWritingRows = useMemo(() => resultWritingReadiness?.rows ?? [], [resultWritingReadiness])
   const leaderEvaluationReadiness = dryRun?.leaderEvaluationReadiness
   const leaderEvaluationRows = useMemo(() => leaderEvaluationReadiness?.rows ?? [], [leaderEvaluationReadiness])
+  const finalizationCeoReadiness = dryRun?.finalizationCeoReadiness
+  const finalizationCeoRows = useMemo(() => finalizationCeoReadiness?.rows ?? [], [finalizationCeoReadiness])
   const topDivisionCoverage = mboCoverage?.divisionCoverage ?? []
   const topTeamCoverage = mboCoverage?.teamCoverage ?? []
   const divisionOptions = useMemo(
@@ -4851,6 +4955,159 @@ function PolicyReadinessPopulation2026Panel(props: {
   const leaderEvaluationReadyTsv = useMemo(
     () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.readinessStatus.startsWith('READY_'))),
     [leaderEvaluationRows]
+  )
+  const finalizationDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          finalizationCeoRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [finalizationCeoRows]
+  )
+  const finalizationSectionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          finalizationCeoRows
+            .filter((row) =>
+              row.sectionId &&
+              (finalizationDivisionFilter === 'ALL' || row.divisionId === finalizationDivisionFilter)
+            )
+            .map((row) => [row.sectionId as string, row.sectionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [finalizationCeoRows, finalizationDivisionFilter]
+  )
+  const finalizationTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          finalizationCeoRows
+            .filter((row) =>
+              row.departmentId &&
+              (finalizationDivisionFilter === 'ALL' || row.divisionId === finalizationDivisionFilter) &&
+              (finalizationSectionFilter === 'ALL' || row.sectionId === finalizationSectionFilter)
+            )
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [finalizationCeoRows, finalizationDivisionFilter, finalizationSectionFilter]
+  )
+  const finalizationEvaluatorOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          finalizationCeoRows
+            .flatMap((row) => [
+              row.firstEvaluatorId ? [row.firstEvaluatorId, row.firstEvaluatorName] as const : null,
+              row.secondEvaluatorId ? [row.secondEvaluatorId, row.secondEvaluatorName] as const : null,
+              row.finalEvaluatorId ? [row.finalEvaluatorId, row.finalEvaluatorName] as const : null,
+            ])
+            .filter((entry): entry is readonly [string, string] => Boolean(entry))
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [finalizationCeoRows]
+  )
+  const finalizationStageOptions = useMemo(
+    () => Array.from(new Set(finalizationCeoRows.map((row) => row.currentEvaluationStage))).sort(),
+    [finalizationCeoRows]
+  )
+  const filteredFinalizationCeoRows = useMemo(
+    () =>
+      finalizationCeoRows.filter((row) => {
+        const matchesDivision = finalizationDivisionFilter === 'ALL' || row.divisionId === finalizationDivisionFilter
+        const matchesSection = finalizationSectionFilter === 'ALL' || row.sectionId === finalizationSectionFilter
+        const matchesTeam = finalizationTeamFilter === 'ALL' || row.departmentId === finalizationTeamFilter
+        const matchesStage = finalizationStageFilter === 'ALL' || row.currentEvaluationStage === finalizationStageFilter
+        const matchesStatus =
+          finalizationStatusFilter === 'ALL' || row.finalizationReadinessStatus === finalizationStatusFilter
+        const matchesBlocker =
+          finalizationBlockerFilter === 'ALL' || row.blockerTypes.includes(finalizationBlockerFilter)
+        const matchesEvaluator =
+          finalizationEvaluatorFilter === 'ALL' ||
+          row.firstEvaluatorId === finalizationEvaluatorFilter ||
+          row.secondEvaluatorId === finalizationEvaluatorFilter ||
+          row.finalEvaluatorId === finalizationEvaluatorFilter
+        const matchesPolicy = finalizationPolicyFilter === 'ALL' || row.policyCategoryStatus === finalizationPolicyFilter
+        const matchesEvidence = finalizationEvidenceFilter === 'ALL' || row.resultEvidenceStatus === finalizationEvidenceFilter
+        const matchesGradePolicy = finalizationGradePolicyFilter === 'ALL' || row.gradePolicyStatus === finalizationGradePolicyFilter
+        const matchesFeedback = finalizationFeedbackFilter === 'ALL' || row.feedbackLeadershipStatus === finalizationFeedbackFilter
+        const matchesManual = !finalizationManualOnly || row.manualReviewRequired
+        return (
+          matchesDivision &&
+          matchesSection &&
+          matchesTeam &&
+          matchesStage &&
+          matchesStatus &&
+          matchesBlocker &&
+          matchesEvaluator &&
+          matchesPolicy &&
+          matchesEvidence &&
+          matchesGradePolicy &&
+          matchesFeedback &&
+          matchesManual
+        )
+      }),
+    [
+      finalizationBlockerFilter,
+      finalizationCeoRows,
+      finalizationDivisionFilter,
+      finalizationEvaluatorFilter,
+      finalizationEvidenceFilter,
+      finalizationFeedbackFilter,
+      finalizationGradePolicyFilter,
+      finalizationManualOnly,
+      finalizationPolicyFilter,
+      finalizationSectionFilter,
+      finalizationStageFilter,
+      finalizationStatusFilter,
+      finalizationTeamFilter,
+    ]
+  )
+  const finalizationCombinedTsv = useMemo(
+    () => buildFinalizationCeoTsv2026(filteredFinalizationCeoRows, finalizationCeoReadiness?.exportColumns),
+    [filteredFinalizationCeoRows, finalizationCeoReadiness?.exportColumns]
+  )
+  const finalizationBlockedBeforeFirstTsv = useMemo(
+    () =>
+      buildFinalizationCeoTsv2026(
+        finalizationCeoRows.filter((row) =>
+          [
+            'BLOCKED_SELF_NOT_READY',
+            'BLOCKED_RESULT_MISSING',
+            'BLOCKED_POLICY_CATEGORY_MISSING',
+            'BLOCKED_EVALUATOR_CHAIN',
+            'BLOCKED_SCORE_POLICY',
+            'BLOCKED_GRADE_POLICY',
+            'BLOCKED_FEEDBACK_LEADERSHIP',
+            'BLOCKED_AI_READINESS',
+          ].includes(row.finalizationReadinessStatus)
+        )
+      ),
+    [finalizationCeoRows]
+  )
+  const finalizationBlockedBeforeSecondTsv = useMemo(
+    () => buildFinalizationCeoTsv2026(finalizationCeoRows.filter((row) => row.finalizationReadinessStatus === 'BLOCKED_FIRST_NOT_READY')),
+    [finalizationCeoRows]
+  )
+  const finalizationBlockedBeforeFinalTsv = useMemo(
+    () => buildFinalizationCeoTsv2026(finalizationCeoRows.filter((row) => row.finalizationReadinessStatus === 'BLOCKED_SECOND_NOT_READY')),
+    [finalizationCeoRows]
+  )
+  const finalizationReadyTsv = useMemo(
+    () => buildFinalizationCeoTsv2026(finalizationCeoRows.filter((row) => row.finalizationReadinessStatus === 'READY_FOR_FINAL_REVIEW')),
+    [finalizationCeoRows]
+  )
+  const finalizationCeoLaterReadyTsv = useMemo(
+    () => buildFinalizationCeoTsv2026(finalizationCeoRows.filter((row) => row.finalizationReadinessStatus === 'READY_FOR_CEO_CONFIRMATION_LATER')),
+    [finalizationCeoRows]
+  )
+  const finalizationManualReviewTsv = useMemo(
+    () => buildFinalizationCeoTsv2026(finalizationCeoRows.filter((row) => row.manualReviewRequired)),
+    [finalizationCeoRows]
   )
   const teamKpiReviewTsv = useMemo(
     () =>
@@ -6569,6 +6826,301 @@ function PolicyReadinessPopulation2026Panel(props: {
                       </table>
                     </div>
                     {filteredLeaderEvaluationRows.length > 120 ? (
+                      <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                        화면에는 120건까지만 표시합니다. 전체 목록은 combined TSV 복사로 추출해 주세요.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {finalizationCeoReadiness ? (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 최종 확정 readiness</h5>
+                        <Badge tone="neutral">Read-only</Badge>
+                        <Badge tone="neutral">보정/CEO 확정 없음</Badge>
+                        <Badge tone="neutral">gradeId 미변경</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        이 화면은 최종 확정 가능 여부를 읽기 전용으로 점검합니다. 공식 점수, 등급, 보정, 대표이사 확정은 수행하지 않습니다.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        대표이사 확정은 공식 점수와 등급 산정, 보정 기준 확인 이후 별도 단계에서 진행합니다. 최종 등급 조정이 필요한 경우 조정 사유는 필수입니다. 이 화면에서는 Evaluation.totalScore 또는 Evaluation.gradeId를 변경하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('finalization-first-blocked', finalizationBlockedBeforeFirstTsv)}
+                        disabled={finalizationCeoReadiness.summary.blockedBeforeFirstCount === 0}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'finalization-first-blocked' ? 'FIRST 전 blocker 복사됨' : 'FIRST 전 blocker 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('finalization-second-blocked', finalizationBlockedBeforeSecondTsv)}
+                        disabled={finalizationCeoReadiness.summary.blockedBeforeSecondCount === 0}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'finalization-second-blocked' ? 'SECOND 전 blocker 복사됨' : 'SECOND 전 blocker 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('finalization-final-blocked', finalizationBlockedBeforeFinalTsv)}
+                        disabled={finalizationCeoReadiness.summary.blockedBeforeFinalCount === 0}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'finalization-final-blocked' ? 'FINAL 전 blocker 복사됨' : 'FINAL 전 blocker 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('finalization-ready', finalizationReadyTsv)}
+                        disabled={finalizationCeoReadiness.summary.readyLaterCount === 0}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'finalization-ready' ? 'final ready 복사됨' : 'final ready 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('finalization-ceo-ready', finalizationCeoLaterReadyTsv)}
+                        disabled={finalizationCeoRows.every((row) => row.finalizationReadinessStatus !== 'READY_FOR_CEO_CONFIRMATION_LATER')}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'finalization-ceo-ready' ? 'CEO later-ready 복사됨' : 'CEO later-ready 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('finalization-manual', finalizationManualReviewTsv)}
+                        disabled={finalizationCeoReadiness.summary.manualReviewCount === 0}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'finalization-manual' ? 'manual review 복사됨' : 'manual review 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('finalization-combined', finalizationCombinedTsv)}
+                        disabled={!filteredFinalizationCeoRows.length}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'finalization-combined' ? 'combined TSV 복사됨' : 'combined TSV 복사'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard label="최종 후보" value={finalizationCeoReadiness.summary.finalReviewCandidateCount.toLocaleString()} help="대상자" compact />
+                    <MetricCard label="ready later" value={finalizationCeoReadiness.summary.readyLaterCount.toLocaleString()} help="final/CEO 후보" compact />
+                    <MetricCard
+                      label="FIRST 전 blocker"
+                      value={finalizationCeoReadiness.summary.blockedBeforeFirstCount.toLocaleString()}
+                      help="SELF/result/category/evaluator"
+                      compact
+                      variant={finalizationCeoReadiness.summary.blockedBeforeFirstCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="FINAL 전 blocker"
+                      value={finalizationCeoReadiness.summary.blockedBeforeFinalCount.toLocaleString()}
+                      help="SECOND 미완료"
+                      compact
+                      variant={finalizationCeoReadiness.summary.blockedBeforeFinalCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="CEO blocker"
+                      value={finalizationCeoReadiness.summary.ceoConfirmationBlockerCount.toLocaleString()}
+                      help="CEO later-ready 전"
+                      compact
+                      variant={finalizationCeoReadiness.summary.ceoConfirmationBlockerCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="calibration blocker"
+                      value={finalizationCeoReadiness.summary.calibrationReadinessBlockerCount.toLocaleString()}
+                      help="score/grade policy"
+                      compact
+                      variant={finalizationCeoReadiness.summary.calibrationReadinessBlockerCount > 0 ? 'warning' : 'default'}
+                    />
+                  </div>
+
+                  <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <MetricCard
+                      label="증빙 누락"
+                      value={finalizationCeoReadiness.summary.missingEvidenceCount.toLocaleString()}
+                      help="result evidence"
+                      compact
+                      variant={finalizationCeoReadiness.summary.missingEvidenceCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="policyCategory 누락"
+                      value={finalizationCeoReadiness.summary.missingPolicyCategoryCount.toLocaleString()}
+                      help="category missing"
+                      compact
+                      variant={finalizationCeoReadiness.summary.missingPolicyCategoryCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="평가자 chain"
+                      value={finalizationCeoReadiness.summary.missingEvaluatorChainCount.toLocaleString()}
+                      help="FIRST/SECOND/FINAL"
+                      compact
+                      variant={finalizationCeoReadiness.summary.missingEvaluatorChainCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="grade policy"
+                      value={finalizationCeoReadiness.summary.gradePolicyBlockerCount.toLocaleString()}
+                      help="grade blocker"
+                      compact
+                      variant={finalizationCeoReadiness.summary.gradePolicyBlockerCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="manual review"
+                      value={finalizationCeoReadiness.summary.manualReviewCount.toLocaleString()}
+                      help="HR 확인"
+                      compact
+                      variant={finalizationCeoReadiness.summary.manualReviewCount > 0 ? 'warning' : 'default'}
+                    />
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h6 className="text-sm font-semibold text-slate-900">Final/CEO review checklist</h6>
+                    <ul className="mt-2 grid gap-1 text-xs leading-5 text-slate-600 md:grid-cols-2">
+                      {finalizationCeoReadiness.finalCeoChecklist.map((item) => (
+                        <li key={item}>- {item}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                    <select value={finalizationDivisionFilter} onChange={(event) => setFinalizationDivisionFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">division 전체</option>
+                      {finalizationDivisionOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={finalizationSectionFilter} onChange={(event) => setFinalizationSectionFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">section 전체</option>
+                      {finalizationSectionOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={finalizationTeamFilter} onChange={(event) => setFinalizationTeamFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">team 전체</option>
+                      {finalizationTeamOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={finalizationEvaluatorFilter} onChange={(event) => setFinalizationEvaluatorFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">evaluator 전체</option>
+                      {finalizationEvaluatorOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={finalizationStageFilter} onChange={(event) => setFinalizationStageFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">stage 전체</option>
+                      {finalizationStageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                    </select>
+                    <select value={finalizationStatusFilter} onChange={(event) => setFinalizationStatusFilter(event.target.value as FinalizationCeoReadinessStatus2026 | 'ALL')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      {(['ALL', 'BLOCKED_SELF_NOT_READY', 'BLOCKED_FIRST_NOT_READY', 'BLOCKED_SECOND_NOT_READY', 'BLOCKED_RESULT_MISSING', 'BLOCKED_POLICY_CATEGORY_MISSING', 'BLOCKED_EVALUATOR_CHAIN', 'BLOCKED_SCORE_POLICY', 'BLOCKED_GRADE_POLICY', 'BLOCKED_FEEDBACK_LEADERSHIP', 'BLOCKED_AI_READINESS', 'READY_FOR_FINAL_REVIEW', 'READY_FOR_CEO_CONFIRMATION_LATER', 'MANUAL_REVIEW'] as const).map((status) => (
+                        <option key={status} value={status}>{getFinalizationCeoStatusLabel2026(status)}</option>
+                      ))}
+                    </select>
+                    <select value={finalizationBlockerFilter} onChange={(event) => setFinalizationBlockerFilter(event.target.value as FinalizationCeoBlockerType2026 | 'ALL')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      {(['ALL', 'SELF_NOT_READY', 'FIRST_NOT_READY', 'SECOND_NOT_READY', 'RESULT_MISSING', 'EVIDENCE_MISSING', 'POLICY_CATEGORY_MISSING', 'EVALUATOR_CHAIN', 'SCORE_POLICY', 'GRADE_POLICY', 'FEEDBACK_LEADERSHIP', 'AI_READINESS', 'MANUAL_REVIEW'] as const).map((blocker) => (
+                        <option key={blocker} value={blocker}>{getFinalizationCeoBlockerLabel2026(blocker)}</option>
+                      ))}
+                    </select>
+                    <select value={finalizationPolicyFilter} onChange={(event) => setFinalizationPolicyFilter(event.target.value as 'ALL' | 'READY' | 'MISSING')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">policyCategory 전체</option>
+                      <option value="READY">policyCategory ready</option>
+                      <option value="MISSING">policyCategory missing</option>
+                    </select>
+                    <select value={finalizationEvidenceFilter} onChange={(event) => setFinalizationEvidenceFilter(event.target.value as 'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">evidence 전체</option>
+                      <option value="READY">evidence ready</option>
+                      <option value="MISSING">evidence missing</option>
+                      <option value="NO_ITEMS">result item 없음</option>
+                    </select>
+                    <select value={finalizationGradePolicyFilter} onChange={(event) => setFinalizationGradePolicyFilter(event.target.value as 'ALL' | 'READY' | 'BLOCKED')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">grade policy 전체</option>
+                      <option value="READY">grade policy ready</option>
+                      <option value="BLOCKED">grade policy blocked</option>
+                    </select>
+                    <select value={finalizationFeedbackFilter} onChange={(event) => setFinalizationFeedbackFilter(event.target.value as 'ALL' | 'READY' | 'BLOCKED' | 'NOT_CHECKED')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">360/리더십 전체</option>
+                      <option value="READY">ready</option>
+                      <option value="BLOCKED">blocked</option>
+                      <option value="NOT_CHECKED">not checked</option>
+                    </select>
+                    <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={finalizationManualOnly}
+                        onChange={(event) => setFinalizationManualOnly(event.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300"
+                      />
+                      manual review only
+                    </label>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">최종 확정 readiness 대상</h6>
+                      <span className="text-xs text-slate-500">
+                        {filteredFinalizationCeoRows.length.toLocaleString()}건 표시 · 전체 {finalizationCeoRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-slate-50 text-slate-700">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">직원</th>
+                            <th className="px-4 py-2 font-semibold">평가 stage</th>
+                            <th className="px-4 py-2 font-semibold">final/CEO readiness</th>
+                            <th className="px-4 py-2 font-semibold">chain/status</th>
+                            <th className="px-4 py-2 font-semibold">blocker</th>
+                            <th className="px-4 py-2 font-semibold">next HR action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredFinalizationCeoRows.slice(0, 120).map((row) => (
+                            <tr key={row.employeeId}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}{row.email ? ` · ${row.email}` : ''}</div>
+                                <div className="mt-1 text-slate-500">{row.departmentPath}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <div>{row.currentEvaluationStage}</div>
+                                <div className="mt-1 text-slate-400">FIRST {row.firstReadiness} · SECOND {row.secondReadiness} · FINAL {row.finalReadiness}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge tone={getFinalizationCeoStatusTone2026(row.finalizationReadinessStatus)}>
+                                  {getFinalizationCeoStatusLabel2026(row.finalizationReadinessStatus)}
+                                </Badge>
+                                <div className="mt-1 text-slate-500">CEO {row.ceoConfirmationReadiness}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <div>{row.evaluatorChainSummary}</div>
+                                <div className="mt-1 text-slate-400">
+                                  category {row.policyCategoryStatus} · evidence {row.resultEvidenceStatus} · score {row.scorePolicyStatus} · grade {row.gradePolicyStatus}
+                                </div>
+                                <div className="mt-1 text-slate-400">360/리더십 {row.feedbackLeadershipStatus} · AI {row.aiReadinessStatus}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex max-w-md flex-wrap gap-1">
+                                  {row.blockerTypes.slice(0, 4).map((blocker) => (
+                                    <Badge key={`${row.employeeId}:${blocker}`} tone="warn">{getFinalizationCeoBlockerLabel2026(blocker)}</Badge>
+                                  ))}
+                                  {row.blockerTypes.length > 4 ? <Badge tone="neutral">+{row.blockerTypes.length - 4}</Badge> : null}
+                                  {!row.blockerTypes.length ? <Badge tone="success">blocker 없음</Badge> : null}
+                                </div>
+                                {row.blockerReasons.length ? <div className="mt-1 text-slate-400">{row.blockerReasons.slice(0, 2).join(' · ')}</div> : null}
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.nextHrAction}</td>
+                            </tr>
+                          ))}
+                          {filteredFinalizationCeoRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">최종 확정 readiness 필터 조건에 맞는 대상이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredFinalizationCeoRows.length > 120 ? (
                       <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
                         화면에는 120건까지만 표시합니다. 전체 목록은 combined TSV 복사로 추출해 주세요.
                       </div>
