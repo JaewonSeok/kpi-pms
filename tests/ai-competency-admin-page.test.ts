@@ -213,6 +213,10 @@ async function main() {
     assert.equal(source.includes('hasCycleOptions'), true)
     assert.equal(source.includes('선택할 회차가 아직 없습니다.'), true)
     assert.equal(source.includes('먼저 회차를 생성하거나 선택해 주세요.'), true)
+    assert.equal(source.includes('2026 AI 활용평가 readiness'), true)
+    assert.equal(source.includes('정량 개선 누락'), true)
+    assert.equal(source.includes('전체 인정 경로'), true)
+    assert.equal(source.includes('본부장/실장은 대상에서 제외됩니다.'), true)
   })
 
   console.log('AI competency admin page tests completed')

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowRight, RefreshCcw, RotateCcw, Save } from 'lucide-react'
+import { ArrowRight, Clipboard, RefreshCcw, RotateCcw, Save } from 'lucide-react'
 import type { PerformanceAssignmentPageData } from '@/server/evaluation-performance-assignments'
 
 type PerformanceAssignmentAdminClientProps = {
@@ -11,6 +11,8 @@ type PerformanceAssignmentAdminClientProps = {
 }
 
 type AssignmentRow = NonNullable<PerformanceAssignmentPageData['rows']>[number]
+type RoutingReadiness = NonNullable<PerformanceAssignmentPageData['routingReadiness']>
+type RoutingRow = RoutingReadiness['rows'][number]
 
 function buildDraftEvaluatorMap(data: PerformanceAssignmentPageData) {
   return Object.fromEntries(
@@ -41,6 +43,12 @@ function summaryTone(value: number) {
   if (value <= 0) return 'border-slate-200 bg-slate-50 text-slate-700'
   if (value >= 5) return 'border-amber-200 bg-amber-50 text-amber-800'
   return 'border-blue-200 bg-blue-50 text-blue-800'
+}
+
+function uniqueRoutingValues(values: Array<string | null>) {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((left, right) =>
+    left.localeCompare(right, 'ko')
+  )
 }
 
 export function PerformanceAssignmentAdminClient({
@@ -237,6 +245,10 @@ export function PerformanceAssignmentAdminClient({
           </div>
         </div>
       </section>
+
+      {data.routingReadiness ? (
+        <EvaluatorRoutingReadinessPanel readiness={data.routingReadiness} />
+      ) : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -475,5 +487,377 @@ function MetricCard(props: { label: string; value: string }) {
       </div>
       <div className="mt-2 text-xl font-semibold text-slate-900">{props.value}</div>
     </div>
+  )
+}
+
+function EvaluatorRoutingReadinessPanel(props: { readiness: RoutingReadiness }) {
+  const { readiness } = props
+  const [divisionFilter, setDivisionFilter] = useState('ALL')
+  const [sectionFilter, setSectionFilter] = useState('ALL')
+  const [teamFilter, setTeamFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | RoutingRow['status']>('ALL')
+  const [roleFilter, setRoleFilter] = useState<'ALL' | RoutingRow['role']>('ALL')
+  const [missingFilter, setMissingFilter] = useState<'ALL' | 'FIRST' | 'SECOND' | 'FINAL'>('ALL')
+  const [managerFilter, setManagerFilter] = useState('ALL')
+  const [assignmentFilter, setAssignmentFilter] = useState<'ALL' | 'EXISTS' | 'MISSING'>('ALL')
+  const [copyNotice, setCopyNotice] = useState('')
+
+  const divisions = useMemo(() => uniqueRoutingValues(readiness.rows.map((row) => row.division)), [readiness.rows])
+  const sections = useMemo(() => uniqueRoutingValues(readiness.rows.map((row) => row.section)), [readiness.rows])
+  const teams = useMemo(() => uniqueRoutingValues(readiness.rows.map((row) => row.team)), [readiness.rows])
+  const managers = useMemo(() => uniqueRoutingValues(readiness.rows.map((row) => row.managerName)), [readiness.rows])
+
+  const filteredRows = useMemo(() => {
+    return readiness.rows.filter((row) => {
+      const matchesDivision = divisionFilter === 'ALL' || row.division === divisionFilter
+      const matchesSection = sectionFilter === 'ALL' || row.section === sectionFilter
+      const matchesTeam = teamFilter === 'ALL' || row.team === teamFilter
+      const matchesStatus = statusFilter === 'ALL' || row.status === statusFilter
+      const matchesRole = roleFilter === 'ALL' || row.role === roleFilter
+      const matchesMissing = missingFilter === 'ALL' || row.missingEvaluatorTypes.includes(missingFilter)
+      const matchesManager = managerFilter === 'ALL' || row.managerName === managerFilter
+      const matchesAssignment =
+        assignmentFilter === 'ALL' ||
+        (assignmentFilter === 'EXISTS' ? row.currentAssignmentExists : !row.currentAssignmentExists)
+
+      return (
+        matchesDivision &&
+        matchesSection &&
+        matchesTeam &&
+        matchesStatus &&
+        matchesRole &&
+        matchesMissing &&
+        matchesManager &&
+        matchesAssignment
+      )
+    })
+  }, [
+    assignmentFilter,
+    divisionFilter,
+    managerFilter,
+    missingFilter,
+    readiness.rows,
+    roleFilter,
+    sectionFilter,
+    statusFilter,
+    teamFilter,
+  ])
+
+  function buildTsv(rows: RoutingRow[]) {
+    return [
+      [
+        'employeeNo',
+        'name',
+        'email',
+        'departmentPath',
+        'role',
+        'manager',
+        'missingReason',
+        'suggestedEvaluator',
+        'expectedFirst',
+        'expectedSecond',
+        'expectedFinal',
+        'expectedCeo',
+        'currentAssignments',
+        'status',
+      ].join('\t'),
+      ...rows.map((row) =>
+        [
+          row.employeeNo,
+          row.name,
+          row.email,
+          row.departmentPath,
+          row.roleLabel,
+          row.managerName ?? '',
+          row.missingEvaluatorTypes.join(',') || row.warnings.join(','),
+          row.suggestedEvaluator ?? '',
+          row.expectedFirstEvaluator ?? '',
+          row.expectedSecondEvaluator ?? '',
+          row.expectedFinalApprover ?? '',
+          row.expectedCeoApprover ?? '',
+          row.currentAssignments
+            .map((assignment) => `${assignment.stage}:${assignment.evaluatorName}:${assignment.assignmentSource}`)
+            .join('|'),
+          row.status,
+        ].join('\t')
+      ),
+    ].join('\n')
+  }
+
+  async function copyRows(label: string, rows: RoutingRow[]) {
+    await navigator.clipboard.writeText(buildTsv(rows))
+    setCopyNotice(`${label} ${rows.length.toLocaleString()}건을 클립보드에 복사했습니다.`)
+  }
+
+  const rowsByMissing = (stage: 'FIRST' | 'SECOND' | 'FINAL') =>
+    readiness.rows.filter((row) => row.missingEvaluatorTypes.includes(stage))
+  const managerMissingRows = readiness.rows.filter((row) => row.status === 'MANAGER_MISSING')
+  const manualReviewRows = readiness.rows.filter((row) => row.status !== 'READY')
+
+  return (
+    <section className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">
+            2026 evaluator routing readiness
+          </p>
+          <h2 className="mt-2 text-xl font-bold text-slate-900">2026 평가자 배정 readiness QA</h2>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">
+            이 화면은 2026 평가자 배정 readiness를 읽기 전용으로 점검합니다. 공식 평가 생성,
+            점수, 등급은 변경하지 않습니다. 누락 항목을 해소한 뒤 평가자 배정 동기화를 실행해야
+            공식 평가 준비가 가능합니다.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <div className="font-semibold text-slate-900">동기화 안내</div>
+          <div className="mt-1 max-w-md leading-6">
+            기존 자동 동기화는 EvaluationAssignment를 생성/갱신하고, 이미 생성된 editable 평가 단계의
+            evaluatorId만 맞춥니다. 공식 점수/등급은 변경하지 않습니다.
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <MetricCard label="active targets" value={`${readiness.summary.activeEmployeeCount.toLocaleString()}명`} />
+        <MetricCard label="complete chain" value={`${readiness.summary.completeEvaluatorChainCount.toLocaleString()}명`} />
+        <MetricCard label="missing FIRST" value={`${readiness.summary.missingFirstEvaluatorCount.toLocaleString()}명`} />
+        <MetricCard label="missing SECOND" value={`${readiness.summary.missingSecondEvaluatorCount.toLocaleString()}명`} />
+        <MetricCard label="missing FINAL" value={`${readiness.summary.missingFinalApproverCount.toLocaleString()}명`} />
+        <MetricCard label="blockers" value={`${readiness.summary.blockerCount.toLocaleString()}건`} />
+      </div>
+
+      <div className="mt-4 grid gap-2 text-xs text-slate-600 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryPill label="manager missing" value={readiness.summary.managerEmployeeNoMissingCount} />
+        <SummaryPill label="org ambiguous" value={readiness.summary.orgAmbiguousCount} />
+        <SummaryPill label="inactive evaluator" value={readiness.summary.inactiveEvaluatorWarningCount} />
+        <SummaryPill label="self/duplicate/manual review" value={readiness.summary.manualReviewCount} />
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-4 xl:grid-cols-8">
+        <RoutingSelect label="본부" value={divisionFilter} onChange={setDivisionFilter} options={divisions} allLabel="전체 본부" />
+        <RoutingSelect label="실/섹션" value={sectionFilter} onChange={setSectionFilter} options={sections} allLabel="전체 실/섹션" />
+        <RoutingSelect label="팀" value={teamFilter} onChange={setTeamFilter} options={teams} allLabel="전체 팀" />
+        <label className="space-y-2">
+          <span className="text-xs font-semibold text-slate-600">상태</span>
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+            className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-400"
+          >
+            <option value="ALL">전체 상태</option>
+            {[
+              'READY',
+              'MISSING_FIRST',
+              'MISSING_SECOND',
+              'MISSING_FINAL',
+              'ORG_AMBIGUOUS',
+              'MANAGER_MISSING',
+              'EVALUATOR_INACTIVE',
+              'MANUAL_REVIEW',
+            ].map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-2">
+          <span className="text-xs font-semibold text-slate-600">역할</span>
+          <select
+            value={roleFilter}
+            onChange={(event) => setRoleFilter(event.target.value as typeof roleFilter)}
+            className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-400"
+          >
+            <option value="ALL">전체 역할</option>
+            {['ROLE_MEMBER', 'ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_ADMIN'].map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="space-y-2">
+          <span className="text-xs font-semibold text-slate-600">누락 유형</span>
+          <select
+            value={missingFilter}
+            onChange={(event) => setMissingFilter(event.target.value as typeof missingFilter)}
+            className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-400"
+          >
+            <option value="ALL">전체 유형</option>
+            <option value="FIRST">FIRST 누락</option>
+            <option value="SECOND">SECOND 누락</option>
+            <option value="FINAL">FINAL 누락</option>
+          </select>
+        </label>
+        <RoutingSelect label="manager" value={managerFilter} onChange={setManagerFilter} options={managers} allLabel="전체 manager" />
+        <label className="space-y-2">
+          <span className="text-xs font-semibold text-slate-600">현재 배정</span>
+          <select
+            value={assignmentFilter}
+            onChange={(event) => setAssignmentFilter(event.target.value as typeof assignmentFilter)}
+            className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-400"
+          >
+            <option value="ALL">전체</option>
+            <option value="EXISTS">배정 row 있음</option>
+            <option value="MISSING">배정 row 없음</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <CopyButton label="missing FIRST" onClick={() => void copyRows('missing FIRST', rowsByMissing('FIRST'))} />
+        <CopyButton label="missing SECOND" onClick={() => void copyRows('missing SECOND', rowsByMissing('SECOND'))} />
+        <CopyButton label="missing FINAL" onClick={() => void copyRows('missing FINAL', rowsByMissing('FINAL'))} />
+        <CopyButton label="manager missing" onClick={() => void copyRows('manager missing', managerMissingRows)} />
+        <CopyButton label="manual review" onClick={() => void copyRows('manual review', manualReviewRows)} />
+        <CopyButton label="filtered TSV" onClick={() => void copyRows('filtered TSV', filteredRows)} />
+      </div>
+      {copyNotice ? (
+        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {copyNotice}
+        </div>
+      ) : null}
+
+      <div className="mt-5 overflow-x-auto">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50 text-slate-500">
+            <tr>
+              <th className="px-4 py-3 text-left font-semibold">대상자</th>
+              <th className="px-4 py-3 text-left font-semibold">조직/manager</th>
+              <th className="px-4 py-3 text-left font-semibold">예상 평가자 chain</th>
+              <th className="px-4 py-3 text-left font-semibold">현재 배정 row</th>
+              <th className="px-4 py-3 text-left font-semibold">상태</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filteredRows.length ? (
+              filteredRows.slice(0, 120).map((row) => (
+                <tr key={row.employeeId} className="align-top">
+                  <td className="px-4 py-4">
+                    <div className="font-semibold text-slate-900">{row.name}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {row.employeeNo} · {row.email}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {row.roleLabel} · {row.positionLabel}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="font-medium text-slate-900">{row.departmentPath}</div>
+                    <div className="mt-1 text-xs text-slate-500">manager: {row.managerName ?? '미지정'}</div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="space-y-1 text-xs text-slate-600">
+                      <div>FIRST: {row.expectedFirstEvaluator ?? '-'}</div>
+                      <div>SECOND: {row.expectedSecondEvaluator ?? '-'}</div>
+                      <div>FINAL: {row.expectedFinalApprover ?? '-'}</div>
+                      <div>CEO: {row.expectedCeoApprover ?? '-'}</div>
+                    </div>
+                    {row.suggestedEvaluator ? (
+                      <div className="mt-2 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                        {row.suggestedEvaluator}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-4">
+                    {row.currentAssignments.length ? (
+                      <div className="space-y-1 text-xs text-slate-600">
+                        {row.currentAssignments.map((assignment) => (
+                          <div key={`${row.employeeId}-${assignment.stage}`}>
+                            {assignment.stageLabel}: {assignment.evaluatorName} · {assignment.assignmentSource}
+                            {assignment.evaluatorStatus !== 'ACTIVE' ? ` · ${assignment.evaluatorStatus}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-500">현재 배정 row 없음</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4">
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                        row.status === 'READY'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : row.status === 'EVALUATOR_INACTIVE' || row.status === 'MANUAL_REVIEW'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
+                      {row.status}
+                    </span>
+                    {row.warnings.length ? (
+                      <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                        {row.warnings.slice(0, 3).map((warning) => (
+                          <li key={warning}>{warning}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
+                  조건에 맞는 평가자 routing QA 항목이 없습니다.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        {filteredRows.length > 120 ? (
+          <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+            화면에는 120건까지만 표시합니다. 전체 내역은 filtered TSV 복사를 사용하세요.
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function SummaryPill(props: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+      <span className="font-semibold text-slate-900">{props.label}</span>
+      <span className="ml-2 text-slate-600">{props.value.toLocaleString()}건</span>
+    </div>
+  )
+}
+
+function RoutingSelect(props: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: string[]
+  allLabel: string
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="text-xs font-semibold text-slate-600">{props.label}</span>
+      <select
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+        className="h-10 w-full rounded-2xl border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-400"
+      >
+        <option value="ALL">{props.allLabel}</option>
+        {props.options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+function CopyButton(props: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      className="inline-flex min-h-10 items-center justify-center rounded-2xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+    >
+      <Clipboard className="mr-1.5 h-3.5 w-3.5" />
+      {props.label}
+    </button>
   )
 }

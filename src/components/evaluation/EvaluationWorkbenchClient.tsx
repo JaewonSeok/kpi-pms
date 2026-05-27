@@ -37,6 +37,7 @@ import {
   normalizeEvaluationPerformanceBriefingSnapshot,
   type EvaluationPerformanceBriefingSnapshot,
 } from '@/lib/evaluation-performance-briefing'
+import { getResultWritingScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 import { EvaluationPerformanceBriefingPanel } from '@/components/evaluation/EvaluationPerformanceBriefingPanel'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
@@ -135,6 +136,51 @@ type TeamKpiHrReviewDecisionDraft2026 = {
   reason: TeamKpiHrReviewReason2026 | ''
   note: string
 }
+type MboFollowUpType2026 =
+  | 'MISSING_MBO'
+  | 'DRAFT_MBO'
+  | 'LEADER_REVIEW'
+  | 'POLICY_CATEGORY'
+  | 'TEAM_KPI_REVIEW'
+type MboFollowUpStatusFilter2026 =
+  | MboSetupMonitoringStatus2026
+  | 'POLICY_CATEGORY'
+  | 'TEAM_KPI_REVIEW'
+type MboFollowUpRecipientRow2026 = {
+  id: string
+  type: MboFollowUpType2026
+  typeLabel: string
+  status: MboFollowUpStatusFilter2026
+  employeeNo: string | null
+  name: string
+  email: string | null
+  divisionId: string | null
+  divisionName: string
+  departmentId: string | null
+  departmentPath: string
+  leaderId: string | null
+  leaderName: string
+  actionLabel: string
+  detail: string
+}
+type MboFollowUpGroup2026 = {
+  type: MboFollowUpType2026
+  label: string
+  actionLabel: string
+  description: string
+  template: string
+  href: string
+  rows: MboFollowUpRecipientRow2026[]
+}
+type ResultWritingReadiness2026 = EvaluationReadinessPopulation2026ApiData['resultWritingReadiness']
+type ResultWritingReadinessRow2026 = ResultWritingReadiness2026['rows'][number]
+type ResultWritingWarningCode2026 = ResultWritingReadinessRow2026['warnings'][number]['code']
+type ResultWritingStatus2026 = ResultWritingReadinessRow2026['resultWritingStatus']
+type LeaderEvaluationReadiness2026 = EvaluationReadinessPopulation2026ApiData['leaderEvaluationReadiness']
+type LeaderEvaluationReadinessRow2026 = LeaderEvaluationReadiness2026['rows'][number]
+type LeaderEvaluationReadinessStatus2026 = LeaderEvaluationReadinessRow2026['readinessStatus']
+type LeaderEvaluationMissingPrerequisite2026 = LeaderEvaluationReadinessRow2026['missingPrerequisites'][number]
+type ResultWritingCategoryFilter2026 = NonNullable<ResultWritingReadinessRow2026['category']> | 'UNMAPPED'
 type EvaluationPolicyMapping2026ApiData = EvaluationPolicy2026MappingCandidates
 type EvaluationPolicyMetadataPatch2026ApiData = EvaluationPolicy2026MetadataPatchResult
 type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
@@ -151,6 +197,15 @@ type EvaluationPolicyOfficialReadinessCycle2026ApiData = {
   notes: string[]
 }
 type PolicyCategoryDraft2026 = 'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK' | 'KEEP_UNCLASSIFIED' | ''
+type PolicyCategoryConfidenceFilter2026 = 'HIGH' | 'MEDIUM' | 'LOW' | 'MANUAL_REVIEW' | 'ALL'
+type ScoreContributionDraft2026 = 'ORGANIZATION' | 'PERSONAL' | ''
+type PolicyCategoryWorkbenchDraft2026 = {
+  category: PolicyCategoryDraft2026
+  scoreContributionType: ScoreContributionDraft2026
+  note: string
+}
+type PolicyMappingTab2026 = 'CATEGORY' | 'DIVISION' | 'DEPARTMENT' | 'EMPLOYEE' | 'HR_CONFIRM'
+type DepartmentOverrideFilter2026 = 'IMPORTANT' | 'MAPPED' | 'DRAFT_CHANGED' | 'SALES_DIVISION' | 'ALL'
 type SalesGroupDraft2026 = 'SALES' | 'NON_SALES' | 'UNRESOLVED' | ''
 type ThresholdDecisionDraft2026 = 'UNRESOLVED' | 'SUPER_PRIORITY' | 'OUTSTANDING_PRIORITY' | ''
 
@@ -225,7 +280,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
   const [policyOfficialCycle2026Saving, setPolicyOfficialCycle2026Saving] = useState(false)
   const [policyOfficialCycle2026Error, setPolicyOfficialCycle2026Error] = useState('')
   const [policyOfficialCycle2026Notice, setPolicyOfficialCycle2026Notice] = useState('')
-  const [policyCategoryDrafts2026, setPolicyCategoryDrafts2026] = useState<Record<string, PolicyCategoryDraft2026>>({})
+  const [policyCategoryWorkbenchDrafts2026, setPolicyCategoryWorkbenchDrafts2026] =
+    useState<Record<string, PolicyCategoryWorkbenchDraft2026>>({})
   const [divisionSalesGroupDrafts2026, setDivisionSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
   const [departmentSalesGroupDrafts2026, setDepartmentSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
   const [salesGroupDrafts2026, setSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
@@ -281,7 +337,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
     setPolicyOfficialCycle2026Error('')
     setPolicyOfficialCycle2026Notice('')
     setPolicyOfficialCycle2026Saving(false)
-    setPolicyCategoryDrafts2026({})
+    setPolicyCategoryWorkbenchDrafts2026({})
     setDivisionSalesGroupDrafts2026({})
     setDepartmentSalesGroupDrafts2026({})
     setSalesGroupDrafts2026({})
@@ -904,7 +960,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       const data = json.data as EvaluationPolicyMapping2026ApiData
       setPolicyMapping2026(data)
-      setPolicyCategoryDrafts2026({})
+      setPolicyCategoryWorkbenchDrafts2026({})
       setDivisionSalesGroupDrafts2026({})
       setDepartmentSalesGroupDrafts2026({})
       setSalesGroupDrafts2026({})
@@ -919,14 +975,17 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
   async function savePolicyMetadata2026() {
     if (!canViewPolicyPreview2026 || !policyMapping2026) return
-    const itemMappings = policyMapping2026.policyCategoryCandidates.flatMap((candidate) => {
-      const category = policyCategoryDrafts2026[candidate.evaluationItemId]
+    const itemMappings: Array<never> = []
+    const policyCategoryMappings = policyMapping2026.policyCategoryWorkbenchItems.flatMap((candidate) => {
+      const draft = policyCategoryWorkbenchDrafts2026[candidate.mappingId]
+      const category = draft?.category
       if (!category) return []
       return [{
-        evaluationItemId: candidate.evaluationItemId,
         personalKpiId: candidate.personalKpiId,
+        ...(candidate.evaluationItemId ? { evaluationItemId: candidate.evaluationItemId } : {}),
         category,
-        note: 'HR manual mapping from 2026 preview readiness panel',
+        ...(draft.scoreContributionType ? { scoreContributionType: draft.scoreContributionType } : {}),
+        note: draft.note || 'HR manual policyCategory mapping from 2026 policyCategory workbench',
       }]
     })
     const salesGroupMappings = policyMapping2026.salesGroupCandidates.flatMap((candidate) => {
@@ -971,6 +1030,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
     if (
       !itemMappings.length &&
+      !policyCategoryMappings.length &&
       !divisionSalesGroupMappings.length &&
       !departmentSalesGroupMappings.length &&
       !salesGroupMappings.length &&
@@ -990,6 +1050,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemMappings,
+          policyCategoryMappings,
           divisionSalesGroupMappings,
           departmentSalesGroupMappings,
           salesGroupMappings,
@@ -1003,7 +1064,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
 
       const result = json.data as EvaluationPolicyMetadataPatch2026ApiData
       setPolicyMapping2026Notice(
-        `저장 완료: 항목 ${result.updatedItemMappings}건, division 영업/비영업 ${result.updatedDivisionSalesGroupMappings}건, 부서/팀 override ${result.updatedDepartmentSalesGroupMappings}건, 직원 override ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
+        `저장 완료: policyCategory ${result.updatedPolicyCategoryMappings ?? result.updatedItemMappings}건, division 영업/비영업 ${result.updatedDivisionSalesGroupMappings}건, 부서/팀 override ${result.updatedDepartmentSalesGroupMappings}건, 직원 override ${result.updatedSalesGroupMappings}건, 기준 결정 ${result.updatedThresholdDecisions}건`
       )
       await loadPolicyMappingCandidates2026()
       await loadPolicyReadiness2026()
@@ -1359,6 +1420,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
         adminSummary.biasWarningCount > 0 ||
         adminSummary.coachingGapCount > 0)
   )
+  const resultWritingScheduleGuidance2026 = getResultWritingScheduleGuidance()
 
   return (
     <div className="space-y-5">
@@ -1499,6 +1561,9 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       {notice ? <Banner tone="success" message={notice} /> : null}
       {errorNotice ? <Banner tone="error" message={errorNotice} /> : null}
       {props.alerts?.map((alert) => <Banner key={alert} tone="warn" message={alert} />)}
+      {resultWritingScheduleGuidance2026.isActive ? (
+        <Banner tone="warn" message={`${resultWritingScheduleGuidance2026.message} 이 안내는 preview guidance이며 Evaluation/EvaluationItem을 생성하지 않습니다.`} />
+      ) : null}
 
       {/* A. My Action Items — actionable evaluations surfaced from props.evaluations. */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -1850,15 +1915,37 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
                     saving={policyMapping2026Saving}
                     error={policyMapping2026Error}
                     notice={policyMapping2026Notice}
-                    categoryDrafts={policyCategoryDrafts2026}
+                    categoryDrafts={policyCategoryWorkbenchDrafts2026}
                     divisionSalesGroupDrafts={divisionSalesGroupDrafts2026}
                     departmentSalesGroupDrafts={departmentSalesGroupDrafts2026}
                     salesGroupDrafts={salesGroupDrafts2026}
                     thresholdDecisionDrafts={thresholdDecisionDrafts2026}
                     onLoad={loadPolicyMappingCandidates2026}
                     onSave={savePolicyMetadata2026}
-                    onCategoryChange={(id, value) =>
-                      setPolicyCategoryDrafts2026((current) => ({ ...current, [id]: value }))
+                    onCategoryDraftChange={(id, patch) =>
+                      setPolicyCategoryWorkbenchDrafts2026((current) => ({
+                        ...current,
+                        [id]: {
+                          category: current[id]?.category ?? '',
+                          scoreContributionType: current[id]?.scoreContributionType ?? '',
+                          note: current[id]?.note ?? '',
+                          ...patch,
+                        },
+                      }))
+                    }
+                    onCategoryBulkDraftChange={(ids, patch) =>
+                      setPolicyCategoryWorkbenchDrafts2026((current) => {
+                        const next = { ...current }
+                        for (const id of ids) {
+                          next[id] = {
+                            category: current[id]?.category ?? '',
+                            scoreContributionType: current[id]?.scoreContributionType ?? '',
+                            note: current[id]?.note ?? '',
+                            ...patch,
+                          }
+                        }
+                        return next
+                      })
                     }
                     onDivisionSalesGroupChange={(key, value) =>
                       setDivisionSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
@@ -2808,11 +2895,13 @@ function PolicyActivationReadiness2026Panel(props: {
   const activation = props.activationData
   const blockers = activation?.blockers ?? []
   const warnings = activation?.warnings ?? []
+  const gates = activation?.officialActivationGates ?? []
+  const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
 
   return (
     <Panel
-      title="2026 공식 전환 준비 상태"
-      description="공식 점수에는 아직 반영되지 않습니다. 활성화하려면 migration, backfill, HR 확인, feature flag 승인이 필요합니다."
+      title="2026 공식 전환 Gate"
+      description="이 화면은 공식 전환 가능 여부를 읽기 전용으로 점검합니다. 여기서는 backfill, 점수, 등급, feature flag를 실행하지 않습니다."
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
@@ -2822,13 +2911,14 @@ function PolicyActivationReadiness2026Panel(props: {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="neutral">Status only</Badge>
-              <Badge tone={activation?.canActivate ? 'success' : activation ? 'warn' : 'neutral'}>
-                {activation?.canActivate ? '공식 전환 가능' : activation ? '공식 전환 불가' : '미확인'}
+              <Badge tone={gatesReady ? 'success' : activation ? 'warn' : 'neutral'}>
+                {gatesReady ? 'Gate ready' : activation ? 'Gate blocked' : '미확인'}
               </Badge>
               <Badge tone="neutral">활성화 버튼 없음</Badge>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              이 패널은 official scoring/grade/AI exclusion을 켜기 전 차단 조건만 읽기 전용으로 확인합니다.
+              backfill --apply, official scoring, official grade, AI score exclusion,
+              Evaluation.totalScore, Evaluation.gradeId write를 켜기 전 차단 조건만 확인합니다.
               저장 점수, 저장 등급, 제출, 확정, 보정 흐름은 변경하지 않습니다.
             </p>
           </div>
@@ -2868,13 +2958,13 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
             ) : null}
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <MetricCard
-              label="남은 차단 항목"
-              value={blockers.length.toLocaleString()}
-              help="0이어야 전환 가능"
+              label="Gate blocked"
+              value={gates.filter((gate) => gate.status === 'BLOCKED').length.toLocaleString()}
+              help="공식 실행 전 해소"
               compact
-              variant={blockers.length > 0 ? 'warning' : 'default'}
+              variant={gates.some((gate) => gate.status === 'BLOCKED') ? 'warning' : 'default'}
             />
             <MetricCard
               label="Migration"
@@ -2922,13 +3012,121 @@ function PolicyActivationReadiness2026Panel(props: {
               compact
               variant={activation.flags.hrApprovalConfirmed ? 'default' : 'warning'}
             />
+            <MetricCard
+              label="360/리더십"
+              value={activation.feedbackLeadershipReadiness?.summary.blockedOrNeedsSetupCount.toLocaleString() ?? '미확인'}
+              help="readiness blocker"
+              compact
+              variant={
+                (activation.feedbackLeadershipReadiness?.summary.blockedOrNeedsSetupCount ?? 1) > 0
+                  ? 'warning'
+                  : 'default'
+              }
+            />
+            <MetricCard
+              label="리더 평가"
+              value={activation.leaderEvaluationReadiness?.summary.blockerCount.toLocaleString() ?? '미확인'}
+              help="readiness blocker"
+              compact
+              variant={(activation.leaderEvaluationReadiness?.summary.blockerCount ?? 1) > 0 ? 'warning' : 'default'}
+            />
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">2026 공식 전환 Gate checklist</h4>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  각 gate는 필요한 조건, 현재 blocker 수, 차단 이유, 다음 HR action을 표시합니다. 실행 버튼은 제공하지 않습니다.
+                </p>
+              </div>
+              <Badge tone="neutral">read-only checklist</Badge>
+            </div>
+
+            {activation.populationDryRunError ? (
+              <div className="mt-3">
+                <Banner tone="warn" message={activation.populationDryRunError} />
+              </div>
+            ) : null}
+
+            <div className="mt-4 space-y-3">
+              {gates.map((gate) => (
+                <details
+                  key={gate.id}
+                  open={gate.status === 'BLOCKED'}
+                  className={`rounded-2xl border ${
+                    gate.status === 'READY'
+                      ? 'border-emerald-200 bg-emerald-50/40'
+                      : gate.status === 'NOT_APPLICABLE'
+                        ? 'border-slate-200 bg-slate-50'
+                        : 'border-amber-200 bg-amber-50/50'
+                  }`}
+                >
+                  <summary className="cursor-pointer list-none px-4 py-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone={gate.status === 'READY' ? 'success' : gate.status === 'BLOCKED' ? 'warn' : 'neutral'}>
+                            {gate.status}
+                          </Badge>
+                          <span className="text-sm font-semibold text-slate-900">{gate.title}</span>
+                          <span className="text-xs text-slate-500">blocker {gate.currentBlockerCount.toLocaleString()}건</span>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{gate.nextHrAction}</p>
+                      </div>
+                      <div className="rounded-xl border border-white/70 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-600">
+                        {gate.safetyWarning}
+                      </div>
+                    </div>
+                  </summary>
+                  <div className="border-t border-white/70 px-4 pb-4 pt-3">
+                    {gate.blockedReasons.length ? (
+                      <div className="mb-3 rounded-xl border border-amber-200 bg-white px-3 py-2">
+                        <p className="text-xs font-semibold text-amber-800">차단 이유</p>
+                        <ul className="mt-2 space-y-1">
+                          {gate.blockedReasons.slice(0, 6).map((reason) => (
+                            <li key={reason} className="text-xs leading-5 text-amber-900">{reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-xs">
+                        <thead className="text-slate-400">
+                          <tr>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">조건</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">상태</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">현재값</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">다음 HR action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white/80 text-slate-700">
+                          {gate.requiredConditions.map((item) => (
+                            <tr key={`${gate.id}-${item.code}`}>
+                              <td className="min-w-48 px-2 py-2 align-top font-semibold text-slate-900">{item.label}</td>
+                              <td className="px-2 py-2 align-top">
+                                <Badge tone={item.status === 'READY' ? 'success' : item.status === 'BLOCKED' ? 'warn' : 'neutral'}>
+                                  {item.status}
+                                </Badge>
+                              </td>
+                              <td className="min-w-36 px-2 py-2 align-top">{item.currentValue}</td>
+                              <td className="min-w-72 px-2 py-2 align-top">{item.nextHrAction}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
               <div className="flex flex-wrap items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-700" />
-                <h4 className="text-sm font-semibold text-amber-900">남은 차단 항목</h4>
+                <h4 className="text-sm font-semibold text-amber-900">Legacy activation blockers</h4>
               </div>
               {blockers.length ? (
                 <ul className="mt-3 space-y-2">
@@ -2991,7 +3189,9 @@ function PolicyActivationReadiness2026Panel(props: {
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-          HR 관리자가 공식 전환 전에 migration, backfill, HR 확인, feature flag 상태를 읽기 전용으로 점검할 수 있습니다.
+          HR 관리자가 공식 전환 전에 backfill, scoring, AI exclusion, grade, totalScore/gradeId write gate를 읽기 전용으로 점검할 수 있습니다.
+          확인 대상: Backfill apply gate, Official scoring gate, AI score exclusion gate, Official grade gate,
+          Evaluation.totalScore write gate, Evaluation.gradeId write gate.
         </div>
       )}
     </Panel>
@@ -3431,9 +3631,39 @@ function getPolicyCategoryLabel2026(value: string | null | undefined) {
     DAILY_WORK: '일상업무',
     KEEP_UNCLASSIFIED: '제외/미분류 유지',
     UNKNOWN: 'UNKNOWN',
+    MANUAL_REVIEW: '수동 검토',
   }
 
   return value ? labels[value] ?? value : '미분류'
+}
+
+function getPolicyCategoryConfidenceLabel2026(value: string | null | undefined) {
+  if (value === 'HIGH') return 'HIGH'
+  if (value === 'MEDIUM') return 'MEDIUM'
+  if (value === 'LOW') return 'LOW'
+  if (value === 'MANUAL_REVIEW') return 'MANUAL_REVIEW'
+  return '전체'
+}
+
+function getPolicyCategoryConfidenceTone2026(value: string | null | undefined): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'HIGH') return 'success'
+  if (value === 'MEDIUM' || value === 'LOW') return 'warn'
+  if (value === 'MANUAL_REVIEW') return 'error'
+  return 'neutral'
+}
+
+function getScoreContributionLabel2026(value: string | null | undefined) {
+  if (value === 'ORGANIZATION') return '조직성과'
+  if (value === 'PERSONAL') return '개인성과'
+  return '미지정'
+}
+
+function getMboOperationalStatusLabel2026(value: string | null | undefined) {
+  if (value === 'SUBMITTED') return '제출'
+  if (value === 'MANAGER_REVIEW') return '리더 검토'
+  if (value === 'CONFIRMED') return '확정'
+  if (value === 'ARCHIVED') return '보관'
+  return '초안'
 }
 
 function getSalesGroupLabel2026(value: string | null | undefined) {
@@ -3457,6 +3687,15 @@ const TEAM_KPI_HR_REVIEW_DECISIONS_2026: TeamKpiHrReviewDecision2026[] = [
   'NEEDS_DISCUSSION',
 ]
 
+const TEAM_KPI_HR_REVIEW_STATUS_FILTERS_2026: Array<TeamKpiHrReviewStatus2026 | 'ALL'> = [
+  'ALL',
+  'PENDING_REVIEW',
+  'APPROVED_FOR_ORG_GOAL',
+  'EXCLUDED_DAILY_WORK',
+  'EXCEPTION_APPROVED',
+  'NEEDS_DISCUSSION',
+]
+
 const TEAM_KPI_HR_REVIEW_REASONS_2026: TeamKpiHrReviewReason2026[] = [
   '전년 대비 상향 KPI',
   '핵심 과제',
@@ -3466,6 +3705,89 @@ const TEAM_KPI_HR_REVIEW_REASONS_2026: TeamKpiHrReviewReason2026[] = [
   '중복 목표',
   '기타 HR 사유',
 ]
+
+const MBO_FOLLOW_UP_TYPES_2026: Array<MboFollowUpType2026 | 'ALL'> = [
+  'ALL',
+  'MISSING_MBO',
+  'DRAFT_MBO',
+  'LEADER_REVIEW',
+  'POLICY_CATEGORY',
+  'TEAM_KPI_REVIEW',
+]
+
+const MBO_FOLLOW_UP_STATUS_FILTERS_2026: Array<MboFollowUpStatusFilter2026 | 'ALL'> = [
+  'ALL',
+  'MISSING',
+  'DRAFT',
+  'SUBMITTED_REVIEWING',
+  'CONFIRMED',
+  'POLICY_CATEGORY',
+  'TEAM_KPI_REVIEW',
+]
+
+const RESULT_WRITING_STATUS_FILTERS_2026: Array<ResultWritingStatus2026 | 'ALL'> = [
+  'ALL',
+  'READY_FOR_REVIEW',
+  'NEEDS_RESULT',
+  'NEEDS_EVIDENCE',
+  'NEEDS_CONTRIBUTION',
+  'NEEDS_CATEGORY',
+  'MANUAL_REVIEW',
+]
+
+const RESULT_WRITING_CATEGORY_FILTERS_2026: Array<ResultWritingCategoryFilter2026 | 'ALL'> = [
+  'ALL',
+  'ORG_GOAL',
+  'PROJECT_T',
+  'PROJECT_K',
+  'DAILY_WORK',
+  'UNMAPPED',
+]
+
+const RESULT_WRITING_WARNING_FILTERS_2026: Array<ResultWritingWarningCode2026 | 'ALL'> = [
+  'ALL',
+  'MISSING_ACTUAL_RESULT',
+  'MISSING_MEASURABLE_RESULT',
+  'MISSING_EVIDENCE',
+  'MISSING_PERSONAL_CONTRIBUTION',
+  'MISSING_TARGET_ACTUAL_COMPARISON',
+  'MISSING_OUTPUT_IMPACT',
+  'MISSING_CATEGORY',
+  'ORG_GOAL_WITHOUT_APPROVED_SOURCE',
+  'DAILY_WORK_DUPLICATE_RISK',
+  'PROJECT_TK_MISSING_DELIVERABLE',
+  'AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE',
+]
+
+const MBO_FOLLOW_UP_TEMPLATES_2026: Record<MboFollowUpType2026, string> = {
+  MISSING_MBO: [
+    '2026 MBO 수립을 위해 /kpi/personal에서 개인 KPI를 작성해 주세요.',
+    '조직목표 / 프로젝트 T / 프로젝트 K / 일상업무를 구분해 주세요.',
+    '수행계획, 측정 가능한 목표, 본인 기여 내용을 작성해 주세요.',
+    '제출 기한은 HR 안내 기준을 따릅니다.',
+  ].join('\n'),
+  DRAFT_MBO: [
+    '작성 중인 2026 MBO 초안을 보완 후 제출해 주세요.',
+    '작성 품질 체크 항목을 확인해 주세요.',
+    '제출 후 리더 검토가 진행됩니다.',
+  ].join('\n'),
+  LEADER_REVIEW: [
+    '제출된 팀원 MBO를 검토해 주세요.',
+    '조직목표 / 프로젝트 / 일상업무 분류가 적절한지 확인해 주세요.',
+    '보완 필요 시 초안으로 되돌리기를 사용해 주세요.',
+    '승인 전 비중, 수행계획, 측정 기준을 확인해 주세요.',
+  ].join('\n'),
+  POLICY_CATEGORY: [
+    'policyCategory 미분류 항목을 ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 하나로 확정해 주세요.',
+    'ORG_GOAL은 본부 KPI 또는 HR 승인 팀 KPI와 연결되어야 합니다.',
+    '조직목표/프로젝트에 포함된 업무는 DAILY_WORK로 중복 기재하지 않도록 확인해 주세요.',
+  ].join('\n'),
+  TEAM_KPI_REVIEW: [
+    '팀 KPI별로 조직목표 반영 / 일상업무 처리 / 예외 승인 / 논의 필요를 결정해 주세요.',
+    '결정 사유를 남겨 주세요.',
+    '이 결정은 공식 점수/등급이 아니라 MBO readiness metadata입니다.',
+  ].join('\n'),
+}
 
 function getMboSetupStatusLabel2026(value: MboSetupMonitoringStatus2026 | 'ALL') {
   if (value === 'MISSING') return 'MBO 없음'
@@ -3479,6 +3801,114 @@ function getMboSetupStatusTone2026(value: MboSetupMonitoringStatus2026): 'succes
   if (value === 'CONFIRMED') return 'success'
   if (value === 'SUBMITTED_REVIEWING') return 'warn'
   if (value === 'MISSING') return 'error'
+  return 'neutral'
+}
+
+function getMboFollowUpTypeLabel2026(value: MboFollowUpType2026 | 'ALL') {
+  if (value === 'MISSING_MBO') return 'MBO 없음'
+  if (value === 'DRAFT_MBO') return '초안 보유'
+  if (value === 'LEADER_REVIEW') return '제출/검토 중'
+  if (value === 'POLICY_CATEGORY') return 'policyCategory 미분류'
+  if (value === 'TEAM_KPI_REVIEW') return '팀 KPI 검토'
+  return '전체'
+}
+
+function getMboFollowUpStatusLabel2026(value: MboFollowUpStatusFilter2026 | 'ALL') {
+  if (value === 'POLICY_CATEGORY') return 'policyCategory 미분류'
+  if (value === 'TEAM_KPI_REVIEW') return '팀 KPI 검토 필요'
+  return getMboSetupStatusLabel2026(value)
+}
+
+function getResultWritingStatusLabel2026(value: ResultWritingStatus2026 | 'ALL') {
+  if (value === 'READY_FOR_REVIEW') return '리더 검토 준비'
+  if (value === 'NEEDS_RESULT') return '수행결과 필요'
+  if (value === 'NEEDS_EVIDENCE') return '증빙 필요'
+  if (value === 'NEEDS_CONTRIBUTION') return '기여 보완'
+  if (value === 'NEEDS_CATEGORY') return '카테고리 확정'
+  if (value === 'MANUAL_REVIEW') return '수동 검토'
+  return '전체'
+}
+
+function getResultWritingStatusTone2026(value: ResultWritingStatus2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'READY_FOR_REVIEW') return 'success'
+  if (value === 'NEEDS_RESULT' || value === 'NEEDS_CATEGORY') return 'error'
+  if (value === 'NEEDS_EVIDENCE' || value === 'NEEDS_CONTRIBUTION') return 'warn'
+  return 'neutral'
+}
+
+function getResultWritingCategoryLabel2026(value: ResultWritingCategoryFilter2026 | 'ALL') {
+  if (value === 'ORG_GOAL') return 'ORG_GOAL 조직목표'
+  if (value === 'PROJECT_T') return 'PROJECT_T 프로젝트 T'
+  if (value === 'PROJECT_K') return 'PROJECT_K 프로젝트 K'
+  if (value === 'DAILY_WORK') return 'DAILY_WORK 일상업무'
+  if (value === 'UNMAPPED') return '미분류'
+  return '전체'
+}
+
+function getResultWritingWarningLabel2026(value: ResultWritingWarningCode2026 | 'ALL') {
+  const labels: Record<ResultWritingWarningCode2026, string> = {
+    MISSING_ACTUAL_RESULT: '수행결과 누락',
+    MISSING_MEASURABLE_RESULT: '정량 결과 부족',
+    MISSING_EVIDENCE: '증빙 부족',
+    MISSING_PERSONAL_CONTRIBUTION: '본인 기여 부족',
+    MISSING_TARGET_ACTUAL_COMPARISON: '목표/실제 비교 부족',
+    MISSING_OUTPUT_IMPACT: '산출물/영향 부족',
+    MISSING_CATEGORY: 'policyCategory 미분류',
+    ORG_GOAL_WITHOUT_APPROVED_SOURCE: 'ORG_GOAL 승인 소스 없음',
+    DAILY_WORK_DUPLICATE_RISK: 'DAILY_WORK 중복 위험',
+    PROJECT_TK_MISSING_DELIVERABLE: '프로젝트 deliverable 부족',
+    AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE: 'AI 증빙 혼재 위험',
+  }
+  if (value === 'ALL') return '전체'
+  return labels[value]
+}
+
+function getLeaderEvaluationReadinessStatusLabel2026(value: LeaderEvaluationReadinessStatus2026 | 'ALL') {
+  const labels: Record<LeaderEvaluationReadinessStatus2026, string> = {
+    READY_FOR_FIRST_REVIEW: 'FIRST review 준비',
+    BLOCKED_SELF_NOT_SUBMITTED: 'SELF 미제출',
+    BLOCKED_RESULT_MISSING: '수행결과 누락',
+    BLOCKED_EVIDENCE_MISSING: '증빙 부족',
+    BLOCKED_POLICY_CATEGORY_MISSING: 'policyCategory 미분류',
+    BLOCKED_EVALUATOR_MISSING: '평가자 누락',
+    READY_FOR_SECOND_REVIEW: 'SECOND review 준비',
+    BLOCKED_FIRST_NOT_COMPLETE: 'FIRST 미완료',
+    READY_FOR_FINAL_REVIEW: 'FINAL/CEO 준비',
+    MANUAL_REVIEW: '수동 검토',
+  }
+  if (value === 'ALL') return '전체'
+  return labels[value]
+}
+
+function getLeaderEvaluationReadinessTone2026(value: LeaderEvaluationReadinessStatus2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'READY_FOR_FIRST_REVIEW' || value === 'READY_FOR_SECOND_REVIEW' || value === 'READY_FOR_FINAL_REVIEW') {
+    return 'success'
+  }
+  if (value === 'MANUAL_REVIEW' || value === 'BLOCKED_FIRST_NOT_COMPLETE') return 'warn'
+  return 'error'
+}
+
+function getLeaderEvaluationPrerequisiteLabel2026(value: LeaderEvaluationMissingPrerequisite2026 | 'ALL') {
+  const labels: Record<LeaderEvaluationMissingPrerequisite2026, string> = {
+    SELF_NOT_SUBMITTED: 'SELF 미제출',
+    RESULT_MISSING: '수행결과 누락',
+    EVIDENCE_MISSING: '증빙 부족',
+    POLICY_CATEGORY_MISSING: 'policyCategory 미분류',
+    EVALUATOR_MISSING: '평가자 누락',
+    FIRST_NOT_COMPLETE: 'FIRST 미완료',
+    ORG_GOAL_SOURCE_MISSING: 'ORG_GOAL source 없음',
+    MEASURABLE_RESULT_MISSING: '정량 결과 부족',
+    PERSONAL_CONTRIBUTION_MISSING: '본인 기여 부족',
+    SCORE_POLICY_WARNING: 'score policy warning',
+    ADJUSTMENT_READINESS_WARNING: 'adjustment readiness',
+  }
+  if (value === 'ALL') return '전체'
+  return labels[value]
+}
+
+function getMboFollowUpTypeTone2026(value: MboFollowUpType2026): 'success' | 'warn' | 'error' | 'neutral' {
+  if (value === 'MISSING_MBO') return 'error'
+  if (value === 'DRAFT_MBO' || value === 'LEADER_REVIEW' || value === 'TEAM_KPI_REVIEW') return 'warn'
   return 'neutral'
 }
 
@@ -3509,6 +3939,102 @@ function sanitizeTsvCell(value: unknown) {
 
 function buildTsv2026(headers: string[], rows: Array<Array<unknown>>) {
   return [headers, ...rows].map((row) => row.map(sanitizeTsvCell).join('\t')).join('\n')
+}
+
+function formatTopFollowUpValues2026(values: Array<string | null | undefined>, emptyLabel = '대상 없음') {
+  const counts = new Map<string, number>()
+  for (const value of values) {
+    const label = value?.trim()
+    if (!label) continue
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  const top = Array.from(counts.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'ko'))
+    .slice(0, 3)
+  if (!top.length) return emptyLabel
+  return top.map(([label, count]) => `${label} ${count.toLocaleString()}건`).join(' · ')
+}
+
+function buildMboFollowUpRecipientList2026(rows: MboFollowUpRecipientRow2026[]) {
+  return rows
+    .map((row) =>
+      [
+        row.employeeNo,
+        row.name,
+        row.email,
+        row.divisionName,
+        row.departmentPath,
+        row.leaderName,
+        row.actionLabel,
+      ].filter(Boolean).join(' / ')
+    )
+    .join('\n')
+}
+
+function buildResultWritingTsv2026(rows: ResultWritingReadinessRow2026[], headers?: string[]) {
+  return buildTsv2026(
+    headers ?? [
+      'employeeNo',
+      'employeeName',
+      'email',
+      'division',
+      'departmentPath',
+      'leader',
+      'category',
+      'mboStatus',
+      'resultWritingStatus',
+      'kpiName',
+      'warnings',
+      'nextAction',
+    ],
+    rows.map((row) => [
+      row.employeeNo,
+      row.employeeName,
+      row.email ?? '',
+      row.divisionName,
+      row.departmentPath,
+      row.leaderName,
+      row.categoryLabel,
+      row.mboStatus,
+      getResultWritingStatusLabel2026(row.resultWritingStatus),
+      row.kpiName,
+      row.warnings.map((warning) => warning.label).join(', '),
+      row.nextAction,
+    ])
+  )
+}
+
+function buildLeaderEvaluationTsv2026(rows: LeaderEvaluationReadinessRow2026[], headers?: string[]) {
+  return buildTsv2026(
+    headers ?? [
+      'employeeNo',
+      'employeeName',
+      'email',
+      'division',
+      'departmentPath',
+      'firstEvaluator',
+      'secondEvaluator',
+      'finalEvaluator',
+      'currentStage',
+      'readinessStatus',
+      'blockerReason',
+      'nextAction',
+    ],
+    rows.map((row) => [
+      row.employeeNo,
+      row.employeeName,
+      row.email ?? '',
+      row.divisionName,
+      row.departmentPath,
+      row.firstEvaluatorName,
+      row.secondEvaluatorName,
+      row.finalEvaluatorName,
+      row.currentStage,
+      getLeaderEvaluationReadinessStatusLabel2026(row.readinessStatus),
+      row.blockerReasons.join(', '),
+      row.suggestedNextAction,
+    ])
+  )
 }
 
 function PolicyReadinessPopulation2026Panel(props: {
@@ -3549,9 +4075,40 @@ function PolicyReadinessPopulation2026Panel(props: {
   const [teamReviewStatusFilter, setTeamReviewStatusFilter] = useState<TeamKpiHrReviewStatus2026 | 'ALL'>('ALL')
   const [teamReviewReasonFilter, setTeamReviewReasonFilter] = useState<TeamKpiHrReviewReason2026 | 'ALL'>('ALL')
   const [teamReviewDrafts, setTeamReviewDrafts] = useState<Record<string, TeamKpiHrReviewDecisionDraft2026>>({})
+  const [selectedTeamReviewIds, setSelectedTeamReviewIds] = useState<string[]>([])
+  const [teamReviewBulkDraft, setTeamReviewBulkDraft] = useState<TeamKpiHrReviewDecisionDraft2026>({
+    decision: '',
+    reason: '',
+    note: '',
+  })
   const [teamReviewSavingId, setTeamReviewSavingId] = useState<string | null>(null)
+  const [teamReviewBulkSaving, setTeamReviewBulkSaving] = useState(false)
   const [teamReviewSaveNotice, setTeamReviewSaveNotice] = useState('')
   const [teamReviewSaveError, setTeamReviewSaveError] = useState('')
+  const [followUpDivisionFilter, setFollowUpDivisionFilter] = useState('ALL')
+  const [followUpTeamFilter, setFollowUpTeamFilter] = useState('ALL')
+  const [followUpLeaderFilter, setFollowUpLeaderFilter] = useState('ALL')
+  const [followUpTypeFilter, setFollowUpTypeFilter] = useState<MboFollowUpType2026 | 'ALL'>('ALL')
+  const [followUpStatusFilter, setFollowUpStatusFilter] = useState<MboFollowUpStatusFilter2026 | 'ALL'>('ALL')
+  const [resultWritingDivisionFilter, setResultWritingDivisionFilter] = useState('ALL')
+  const [resultWritingTeamFilter, setResultWritingTeamFilter] = useState('ALL')
+  const [resultWritingLeaderFilter, setResultWritingLeaderFilter] = useState('ALL')
+  const [resultWritingEmployeeFilter, setResultWritingEmployeeFilter] = useState('ALL')
+  const [resultWritingCategoryFilter, setResultWritingCategoryFilter] =
+    useState<ResultWritingCategoryFilter2026 | 'ALL'>('ALL')
+  const [resultWritingStatusFilter, setResultWritingStatusFilter] = useState<ResultWritingStatus2026 | 'ALL'>('ALL')
+  const [resultWritingWarningFilter, setResultWritingWarningFilter] =
+    useState<ResultWritingWarningCode2026 | 'ALL'>('ALL')
+  const [leaderEvalDivisionFilter, setLeaderEvalDivisionFilter] = useState('ALL')
+  const [leaderEvalTeamFilter, setLeaderEvalTeamFilter] = useState('ALL')
+  const [leaderEvalEvaluatorFilter, setLeaderEvalEvaluatorFilter] = useState('ALL')
+  const [leaderEvalStageFilter, setLeaderEvalStageFilter] = useState('ALL')
+  const [leaderEvalStatusFilter, setLeaderEvalStatusFilter] =
+    useState<LeaderEvaluationReadinessStatus2026 | 'ALL'>('ALL')
+  const [leaderEvalPrerequisiteFilter, setLeaderEvalPrerequisiteFilter] =
+    useState<LeaderEvaluationMissingPrerequisite2026 | 'ALL'>('ALL')
+  const [leaderEvalPolicyCategoryFilter, setLeaderEvalPolicyCategoryFilter] = useState<'ALL' | 'READY' | 'MISSING'>('ALL')
+  const [leaderEvalEvidenceFilter, setLeaderEvalEvidenceFilter] = useState<'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS'>('ALL')
   const [copiedMonitoringTable, setCopiedMonitoringTable] = useState<string | null>(null)
   const employeeRows = useMemo(() => monitoring?.employeeRows ?? [], [monitoring])
   const policyCategoryMissingRows = useMemo(() => monitoring?.policyCategoryMissingItems ?? [], [monitoring])
@@ -3560,6 +4117,10 @@ function PolicyReadinessPopulation2026Panel(props: {
     () => scorePolicyReadiness?.violations ?? [],
     [scorePolicyReadiness?.violations]
   )
+  const resultWritingReadiness = dryRun?.resultWritingReadiness
+  const resultWritingRows = useMemo(() => resultWritingReadiness?.rows ?? [], [resultWritingReadiness])
+  const leaderEvaluationReadiness = dryRun?.leaderEvaluationReadiness
+  const leaderEvaluationRows = useMemo(() => leaderEvaluationReadiness?.rows ?? [], [leaderEvaluationReadiness])
   const topDivisionCoverage = mboCoverage?.divisionCoverage ?? []
   const topTeamCoverage = mboCoverage?.teamCoverage ?? []
   const divisionOptions = useMemo(
@@ -3710,6 +4271,207 @@ function PolicyReadinessPopulation2026Panel(props: {
       }),
     [teamReviewDivisionFilter, teamReviewReasonFilter, teamReviewRows, teamReviewStatusFilter, teamReviewTeamFilter]
   )
+  const visibleTeamReviewRows = useMemo(() => filteredTeamReviewRows.slice(0, 120), [filteredTeamReviewRows])
+  const selectedTeamReviewIdSet = useMemo(() => new Set(selectedTeamReviewIds), [selectedTeamReviewIds])
+  const selectedTeamReviewRows = useMemo(
+    () => teamReviewRows.filter((row) => selectedTeamReviewIdSet.has(row.orgKpiId)),
+    [selectedTeamReviewIdSet, teamReviewRows]
+  )
+  const selectedVisibleTeamReviewCount = useMemo(
+    () => visibleTeamReviewRows.filter((row) => selectedTeamReviewIdSet.has(row.orgKpiId)).length,
+    [selectedTeamReviewIdSet, visibleTeamReviewRows]
+  )
+  const allVisibleTeamReviewSelected =
+    visibleTeamReviewRows.length > 0 && selectedVisibleTeamReviewCount === visibleTeamReviewRows.length
+  const followUpGroups = useMemo<MboFollowUpGroup2026[]>(() => {
+    const toEmployeeFollowUpRow = (
+      row: NonNullable<typeof monitoring>['employeeRows'][number],
+      type: MboFollowUpType2026,
+      actionLabel: string
+    ): MboFollowUpRecipientRow2026 => ({
+      id: `${type}:${row.employeeId}`,
+      type,
+      typeLabel: getMboFollowUpTypeLabel2026(type),
+      status: row.status,
+      employeeNo: row.employeeNo,
+      name: row.employeeName,
+      email: row.email ?? null,
+      divisionId: row.divisionId,
+      divisionName: row.divisionName,
+      departmentId: row.departmentId,
+      departmentPath: row.departmentPath,
+      leaderId: row.managerId,
+      leaderName: row.managerName,
+      actionLabel,
+      detail: `KPI 전체 ${row.totalPersonalKpiCount} · 초안 ${row.draftPersonalKpiCount} · 제출/검토 ${
+        row.submittedPersonalKpiCount + row.managerReviewPersonalKpiCount
+      } · 확정 ${row.confirmedPersonalKpiCount}`,
+    })
+
+    const missingRows = (monitoring?.missingMboEmployees ?? []).map((row) =>
+      toEmployeeFollowUpRow(row, 'MISSING_MBO', '작성 요청 필요')
+    )
+    const draftRows = (monitoring?.draftMboEmployees ?? []).map((row) =>
+      toEmployeeFollowUpRow(row, 'DRAFT_MBO', '제출 요청 필요')
+    )
+    const submittedRows = (monitoring?.submittedReviewingMboEmployees ?? []).map((row) =>
+      toEmployeeFollowUpRow(row, 'LEADER_REVIEW', '리더 검토 필요')
+    )
+    const policyRows = (monitoring?.policyCategoryMissingItems ?? []).map((row): MboFollowUpRecipientRow2026 => ({
+      id: `POLICY_CATEGORY:${row.personalKpiId}`,
+      type: 'POLICY_CATEGORY',
+      typeLabel: getMboFollowUpTypeLabel2026('POLICY_CATEGORY'),
+      status: 'POLICY_CATEGORY',
+      employeeNo: row.employeeNo,
+      name: row.employeeName,
+      email: row.email ?? null,
+      divisionId: row.divisionId,
+      divisionName: row.divisionName,
+      departmentId: row.departmentId,
+      departmentPath: row.departmentPath,
+      leaderId: row.managerId,
+      leaderName: row.managerName,
+      actionLabel: '카테고리 확정 필요',
+      detail: `${row.personalKpiName}${row.linkedOrgKpiTitle ? ` · 연결 KPI ${row.linkedOrgKpiTitle}` : ''}`,
+    }))
+    const teamKpiRows = teamReviewRows
+      .filter((row) => row.reviewStatus === 'PENDING_REVIEW' || row.reviewStatus === 'NEEDS_DISCUSSION')
+      .map((row): MboFollowUpRecipientRow2026 => ({
+        id: `TEAM_KPI_REVIEW:${row.orgKpiId}`,
+        type: 'TEAM_KPI_REVIEW',
+        typeLabel: getMboFollowUpTypeLabel2026('TEAM_KPI_REVIEW'),
+        status: 'TEAM_KPI_REVIEW',
+        employeeNo: null,
+        name: row.teamKpiName,
+        email: null,
+        divisionId: row.divisionId,
+        divisionName: row.divisionName,
+        departmentId: row.departmentId,
+        departmentPath: row.departmentPath,
+        leaderId: row.ownerId,
+        leaderName: row.ownerName,
+        actionLabel: 'HR 팀 KPI 검토 필요',
+        detail: `${row.reviewStatusLabel} · 영향 ${row.affectedActiveEmployeeCount.toLocaleString()}명 · ${row.guidance}`,
+      }))
+
+    return [
+      {
+        type: 'MISSING_MBO',
+        label: 'MBO 없음',
+        actionLabel: '작성 요청 필요',
+        description: '2026 Personal KPI를 아직 시작하지 않은 직원에게 작성을 요청합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.MISSING_MBO,
+        href: '/kpi/personal',
+        rows: missingRows,
+      },
+      {
+        type: 'DRAFT_MBO',
+        label: '초안 보유',
+        actionLabel: '제출 요청 필요',
+        description: '작성 중인 초안을 보완한 뒤 리더 검토로 제출하도록 안내합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.DRAFT_MBO,
+        href: '/kpi/personal',
+        rows: draftRows,
+      },
+      {
+        type: 'LEADER_REVIEW',
+        label: '제출/검토 중',
+        actionLabel: '리더 검토 필요',
+        description: '팀원이 제출한 MBO를 리더가 검토하고 보완 요청 또는 확정하도록 안내합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.LEADER_REVIEW,
+        href: '/kpi/personal',
+        rows: submittedRows,
+      },
+      {
+        type: 'POLICY_CATEGORY',
+        label: 'policyCategory 미분류',
+        actionLabel: '카테고리 확정 필요',
+        description: 'HR이 MBO 항목을 ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 하나로 확정해야 합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.POLICY_CATEGORY,
+        href: '/evaluation/performance',
+        rows: policyRows,
+      },
+      {
+        type: 'TEAM_KPI_REVIEW',
+        label: '팀 KPI 검토',
+        actionLabel: 'HR 팀 KPI 검토 필요',
+        description: 'PENDING_REVIEW 또는 NEEDS_DISCUSSION 팀 KPI에 대해 HR 결정을 남겨야 합니다.',
+        template: MBO_FOLLOW_UP_TEMPLATES_2026.TEAM_KPI_REVIEW,
+        href: '/evaluation/performance',
+        rows: teamKpiRows,
+      },
+    ]
+  }, [monitoring, teamReviewRows])
+  const followUpRows = useMemo(() => followUpGroups.flatMap((group) => group.rows), [followUpGroups])
+  const followUpDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          followUpRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [followUpRows]
+  )
+  const followUpTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          followUpRows
+            .filter((row) => row.departmentId && (followUpDivisionFilter === 'ALL' || row.divisionId === followUpDivisionFilter))
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [followUpDivisionFilter, followUpRows]
+  )
+  const followUpLeaderOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          followUpRows
+            .filter((row) => row.leaderId)
+            .map((row) => [row.leaderId as string, row.leaderName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [followUpRows]
+  )
+  const filteredFollowUpGroups = useMemo(
+    () =>
+      followUpGroups
+        .filter((group) => followUpTypeFilter === 'ALL' || group.type === followUpTypeFilter)
+        .map((group) => ({
+          ...group,
+          rows: group.rows.filter((row) => {
+            const matchesDivision = followUpDivisionFilter === 'ALL' || row.divisionId === followUpDivisionFilter
+            const matchesTeam = followUpTeamFilter === 'ALL' || row.departmentId === followUpTeamFilter
+            const matchesLeader = followUpLeaderFilter === 'ALL' || row.leaderId === followUpLeaderFilter
+            const matchesStatus = followUpStatusFilter === 'ALL' || row.status === followUpStatusFilter
+            return matchesDivision && matchesTeam && matchesLeader && matchesStatus
+          }),
+        })),
+    [
+      followUpDivisionFilter,
+      followUpGroups,
+      followUpLeaderFilter,
+      followUpStatusFilter,
+      followUpTeamFilter,
+      followUpTypeFilter,
+    ]
+  )
+  const filteredFollowUpRows = useMemo(
+    () => filteredFollowUpGroups.flatMap((group) => group.rows),
+    [filteredFollowUpGroups]
+  )
+  const selectedFollowUpTemplate = useMemo(() => {
+    if (followUpTypeFilter === 'ALL') {
+      return filteredFollowUpGroups
+        .filter((group) => group.rows.length > 0)
+        .map((group) => `[${group.label}]\n${group.template}`)
+        .join('\n\n')
+    }
+    return MBO_FOLLOW_UP_TEMPLATES_2026[followUpTypeFilter]
+  }, [filteredFollowUpGroups, followUpTypeFilter])
   const copyMonitoringTable = useCallback(async (key: string, text: string) => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return
     await navigator.clipboard.writeText(text)
@@ -3719,10 +4481,11 @@ function PolicyReadinessPopulation2026Panel(props: {
   const missingMboTsv = useMemo(
     () =>
       buildTsv2026(
-        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'action'],
+        ['employeeNo', 'employeeName', 'email', 'division', 'departmentPath', 'manager', 'action'],
         (monitoring?.missingMboEmployees ?? []).map((row) => [
           row.employeeNo,
           row.employeeName,
+          row.email ?? '',
           row.divisionName,
           row.departmentPath,
           row.managerName,
@@ -3734,10 +4497,11 @@ function PolicyReadinessPopulation2026Panel(props: {
   const submittedReviewingTsv = useMemo(
     () =>
       buildTsv2026(
-        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'submittedKpi', 'managerReviewKpi', 'action'],
+        ['employeeNo', 'employeeName', 'email', 'division', 'departmentPath', 'manager', 'submittedKpi', 'managerReviewKpi', 'action'],
         (monitoring?.submittedReviewingMboEmployees ?? []).map((row) => [
           row.employeeNo,
           row.employeeName,
+          row.email ?? '',
           row.divisionName,
           row.departmentPath,
           row.managerName,
@@ -3751,10 +4515,11 @@ function PolicyReadinessPopulation2026Panel(props: {
   const policyCategoryMissingTsv = useMemo(
     () =>
       buildTsv2026(
-        ['employeeNo', 'employeeName', 'division', 'departmentPath', 'manager', 'personalKpiName', 'linkedOrgKpi', 'action'],
+        ['employeeNo', 'employeeName', 'email', 'division', 'departmentPath', 'manager', 'personalKpiName', 'linkedOrgKpi', 'action'],
         policyCategoryMissingRows.map((row) => [
           row.employeeNo,
           row.employeeName,
+          row.email ?? '',
           row.divisionName,
           row.departmentPath,
           row.managerName,
@@ -3784,25 +4549,27 @@ function PolicyReadinessPopulation2026Panel(props: {
       ),
     [filteredScorePolicyViolationRows]
   )
-  const teamKpiReviewTsv = useMemo(
+  const followUpRecipientList = useMemo(
+    () => buildMboFollowUpRecipientList2026(filteredFollowUpRows),
+    [filteredFollowUpRows]
+  )
+  const followUpCombinedTsv = useMemo(
     () =>
       buildTsv2026(
-        ['teamKpiName', 'division', 'departmentPath', 'owner', 'status', 'decision', 'reason', 'linkedDivisionKpi', 'affectedEmployees', 'suggestedMboCategory', 'notes'],
-        filteredTeamReviewRows.map((row) => [
-          row.teamKpiName,
+        ['employeeNo', 'name', 'email', 'division', 'team', 'leader', 'action', 'followUpType', 'detail'],
+        filteredFollowUpRows.map((row) => [
+          row.employeeNo,
+          row.name,
+          row.email ?? '',
           row.divisionName,
           row.departmentPath,
-          row.ownerName,
-          row.reviewStatusLabel,
-          row.hrDecisionLabel,
-          row.reason ?? '',
-          row.linkedDivisionKpiName ?? '',
-          row.affectedActiveEmployeeCount,
-          row.suggestedMboCategory,
-          row.notes ?? '',
+          row.leaderName,
+          row.actionLabel,
+          row.typeLabel,
+          row.detail,
         ])
       ),
-    [filteredTeamReviewRows]
+    [filteredFollowUpRows]
   )
   const simulatorRule = useMemo(
     () => scorePolicyReadiness?.categoryRules.find((rule) => rule.category === simulatorCategory) ?? null,
@@ -3861,6 +4628,250 @@ function PolicyReadinessPopulation2026Panel(props: {
     simulatorRule?.label,
     simulatorWeight,
   ])
+  const resultWritingDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          resultWritingRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [resultWritingRows]
+  )
+  const resultWritingTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          resultWritingRows
+            .filter((row) => row.departmentId && (resultWritingDivisionFilter === 'ALL' || row.divisionId === resultWritingDivisionFilter))
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [resultWritingDivisionFilter, resultWritingRows]
+  )
+  const resultWritingLeaderOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          resultWritingRows
+            .filter((row) => row.leaderId)
+            .map((row) => [row.leaderId as string, row.leaderName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [resultWritingRows]
+  )
+  const resultWritingEmployeeOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          resultWritingRows.map((row) => [row.employeeId, `${row.employeeName}${row.employeeNo ? ` (${row.employeeNo})` : ''}`])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [resultWritingRows]
+  )
+  const filteredResultWritingRows = useMemo(
+    () =>
+      resultWritingRows.filter((row) => {
+        const matchesDivision = resultWritingDivisionFilter === 'ALL' || row.divisionId === resultWritingDivisionFilter
+        const matchesTeam = resultWritingTeamFilter === 'ALL' || row.departmentId === resultWritingTeamFilter
+        const matchesLeader = resultWritingLeaderFilter === 'ALL' || row.leaderId === resultWritingLeaderFilter
+        const matchesEmployee = resultWritingEmployeeFilter === 'ALL' || row.employeeId === resultWritingEmployeeFilter
+        const matchesCategory =
+          resultWritingCategoryFilter === 'ALL' ||
+          (row.category ?? 'UNMAPPED') === resultWritingCategoryFilter
+        const matchesStatus = resultWritingStatusFilter === 'ALL' || row.resultWritingStatus === resultWritingStatusFilter
+        const matchesWarning =
+          resultWritingWarningFilter === 'ALL' ||
+          row.warnings.some((warning) => warning.code === resultWritingWarningFilter)
+        return (
+          matchesDivision &&
+          matchesTeam &&
+          matchesLeader &&
+          matchesEmployee &&
+          matchesCategory &&
+          matchesStatus &&
+          matchesWarning
+        )
+      }),
+    [
+      resultWritingCategoryFilter,
+      resultWritingDivisionFilter,
+      resultWritingEmployeeFilter,
+      resultWritingLeaderFilter,
+      resultWritingRows,
+      resultWritingStatusFilter,
+      resultWritingTeamFilter,
+      resultWritingWarningFilter,
+    ]
+  )
+  const resultWritingCombinedTsv = useMemo(
+    () => buildResultWritingTsv2026(filteredResultWritingRows, resultWritingReadiness?.exportColumns),
+    [filteredResultWritingRows, resultWritingReadiness?.exportColumns]
+  )
+  const resultWritingMissingResultTsv = useMemo(
+    () => buildResultWritingTsv2026(resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'MISSING_ACTUAL_RESULT'))),
+    [resultWritingRows]
+  )
+  const resultWritingMissingEvidenceTsv = useMemo(
+    () => buildResultWritingTsv2026(resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'MISSING_EVIDENCE'))),
+    [resultWritingRows]
+  )
+  const resultWritingMissingContributionTsv = useMemo(
+    () =>
+      buildResultWritingTsv2026(
+        resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'MISSING_PERSONAL_CONTRIBUTION'))
+      ),
+    [resultWritingRows]
+  )
+  const resultWritingOrgGoalSourceTsv = useMemo(
+    () =>
+      buildResultWritingTsv2026(
+        resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'ORG_GOAL_WITHOUT_APPROVED_SOURCE'))
+      ),
+    [resultWritingRows]
+  )
+  const resultWritingDailyWorkDuplicateTsv = useMemo(
+    () =>
+      buildResultWritingTsv2026(
+        resultWritingRows.filter((row) => row.warnings.some((warning) => warning.code === 'DAILY_WORK_DUPLICATE_RISK'))
+      ),
+    [resultWritingRows]
+  )
+  const leaderEvalDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leaderEvaluationRows
+            .filter((row) => row.divisionId)
+            .map((row) => [row.divisionId as string, row.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [leaderEvaluationRows]
+  )
+  const leaderEvalTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leaderEvaluationRows
+            .filter((row) => row.departmentId && (leaderEvalDivisionFilter === 'ALL' || row.divisionId === leaderEvalDivisionFilter))
+            .map((row) => [row.departmentId as string, row.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [leaderEvalDivisionFilter, leaderEvaluationRows]
+  )
+  const leaderEvalEvaluatorOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          leaderEvaluationRows
+            .flatMap((row) => [
+              row.firstEvaluatorId ? [row.firstEvaluatorId, row.firstEvaluatorName] as const : null,
+              row.secondEvaluatorId ? [row.secondEvaluatorId, row.secondEvaluatorName] as const : null,
+              row.finalEvaluatorId ? [row.finalEvaluatorId, row.finalEvaluatorName] as const : null,
+            ])
+            .filter((entry): entry is readonly [string, string] => Boolean(entry))
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [leaderEvaluationRows]
+  )
+  const leaderEvalStageOptions = useMemo(
+    () => Array.from(new Set(leaderEvaluationRows.map((row) => row.currentStage))).sort(),
+    [leaderEvaluationRows]
+  )
+  const filteredLeaderEvaluationRows = useMemo(
+    () =>
+      leaderEvaluationRows.filter((row) => {
+        const matchesDivision = leaderEvalDivisionFilter === 'ALL' || row.divisionId === leaderEvalDivisionFilter
+        const matchesTeam = leaderEvalTeamFilter === 'ALL' || row.departmentId === leaderEvalTeamFilter
+        const matchesEvaluator =
+          leaderEvalEvaluatorFilter === 'ALL' ||
+          row.firstEvaluatorId === leaderEvalEvaluatorFilter ||
+          row.secondEvaluatorId === leaderEvalEvaluatorFilter ||
+          row.finalEvaluatorId === leaderEvalEvaluatorFilter
+        const matchesStage = leaderEvalStageFilter === 'ALL' || row.currentStage === leaderEvalStageFilter
+        const matchesStatus = leaderEvalStatusFilter === 'ALL' || row.readinessStatus === leaderEvalStatusFilter
+        const matchesPrerequisite =
+          leaderEvalPrerequisiteFilter === 'ALL' || row.missingPrerequisites.includes(leaderEvalPrerequisiteFilter)
+        const matchesPolicy =
+          leaderEvalPolicyCategoryFilter === 'ALL' || row.policyCategoryStatus === leaderEvalPolicyCategoryFilter
+        const matchesEvidence = leaderEvalEvidenceFilter === 'ALL' || row.evidenceStatus === leaderEvalEvidenceFilter
+        return (
+          matchesDivision &&
+          matchesTeam &&
+          matchesEvaluator &&
+          matchesStage &&
+          matchesStatus &&
+          matchesPrerequisite &&
+          matchesPolicy &&
+          matchesEvidence
+        )
+      }),
+    [
+      leaderEvalDivisionFilter,
+      leaderEvalEvaluatorFilter,
+      leaderEvalEvidenceFilter,
+      leaderEvalPolicyCategoryFilter,
+      leaderEvalPrerequisiteFilter,
+      leaderEvalStageFilter,
+      leaderEvalStatusFilter,
+      leaderEvalTeamFilter,
+      leaderEvaluationRows,
+    ]
+  )
+  const leaderEvaluationCombinedTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(filteredLeaderEvaluationRows, leaderEvaluationReadiness?.exportColumns),
+    [filteredLeaderEvaluationRows, leaderEvaluationReadiness?.exportColumns]
+  )
+  const leaderEvaluationFirstBlockedTsv = useMemo(
+    () =>
+      buildLeaderEvaluationTsv2026(
+        leaderEvaluationRows.filter((row) =>
+          ['BLOCKED_SELF_NOT_SUBMITTED', 'BLOCKED_RESULT_MISSING', 'BLOCKED_EVIDENCE_MISSING', 'BLOCKED_POLICY_CATEGORY_MISSING', 'BLOCKED_EVALUATOR_MISSING'].includes(row.readinessStatus)
+        )
+      ),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationSecondBlockedTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.readinessStatus === 'BLOCKED_FIRST_NOT_COMPLETE')),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationMissingEvidenceTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.missingEvidenceCount > 0)),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationMissingPolicyTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.missingPolicyCategoryCount > 0)),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationMissingEvaluatorTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.missingPrerequisites.includes('EVALUATOR_MISSING'))),
+    [leaderEvaluationRows]
+  )
+  const leaderEvaluationReadyTsv = useMemo(
+    () => buildLeaderEvaluationTsv2026(leaderEvaluationRows.filter((row) => row.readinessStatus.startsWith('READY_'))),
+    [leaderEvaluationRows]
+  )
+  const teamKpiReviewTsv = useMemo(
+    () =>
+      buildTsv2026(
+        ['teamKpiName', 'division', 'departmentPath', 'owner', 'status', 'decision', 'reason', 'linkedDivisionKpi', 'affectedEmployees', 'suggestedMboCategory', 'notes'],
+        filteredTeamReviewRows.map((row) => [
+          row.teamKpiName,
+          row.divisionName,
+          row.departmentPath,
+          row.ownerName,
+          row.reviewStatusLabel,
+          row.hrDecisionLabel,
+          row.reason ?? '',
+          row.linkedDivisionKpiName ?? '',
+          row.affectedActiveEmployeeCount,
+          row.suggestedMboCategory,
+          row.notes ?? '',
+        ])
+      ),
+    [filteredTeamReviewRows]
+  )
   const getTeamReviewDraft = useCallback(
     (row: TeamKpiHrReviewRow2026): TeamKpiHrReviewDecisionDraft2026 => {
       const existing = teamReviewDrafts[row.orgKpiId]
@@ -3887,6 +4898,23 @@ function PolicyReadinessPopulation2026Panel(props: {
     },
     []
   )
+  const toggleTeamReviewSelection = useCallback((orgKpiId: string, checked: boolean) => {
+    setSelectedTeamReviewIds((current) => {
+      if (checked) return current.includes(orgKpiId) ? current : [...current, orgKpiId]
+      return current.filter((id) => id !== orgKpiId)
+    })
+  }, [])
+  const toggleAllVisibleTeamReviews = useCallback(() => {
+    const visibleIds = visibleTeamReviewRows.map((row) => row.orgKpiId)
+    if (!visibleIds.length) return
+    setSelectedTeamReviewIds((current) => {
+      const currentSet = new Set(current)
+      const allSelected = visibleIds.every((id) => currentSet.has(id))
+      if (allSelected) return current.filter((id) => !visibleIds.includes(id))
+      for (const id of visibleIds) currentSet.add(id)
+      return Array.from(currentSet)
+    })
+  }, [visibleTeamReviewRows])
   const saveTeamKpiReviewDecision = useCallback(
     async (row: TeamKpiHrReviewRow2026) => {
       if (!props.canManageTeamKpiReview) return
@@ -3936,6 +4964,56 @@ function PolicyReadinessPopulation2026Panel(props: {
     },
     [getTeamReviewDraft, props]
   )
+  const saveBulkTeamKpiReviewDecision = useCallback(async () => {
+    if (!props.canManageTeamKpiReview) return
+    if (!props.selectedCycleId) {
+      setTeamReviewSaveError('먼저 평가 주기를 선택해 주세요.')
+      return
+    }
+    if (!selectedTeamReviewIds.length) {
+      setTeamReviewSaveError('일괄 저장할 팀 KPI를 선택해 주세요.')
+      return
+    }
+    if (!teamReviewBulkDraft.decision) {
+      setTeamReviewSaveError('일괄 적용할 HR 결정을 선택해 주세요.')
+      return
+    }
+    if (!teamReviewBulkDraft.reason) {
+      setTeamReviewSaveError('일괄 적용할 HR 사유를 선택해 주세요.')
+      return
+    }
+
+    setTeamReviewBulkSaving(true)
+    setTeamReviewSaveError('')
+    setTeamReviewSaveNotice('')
+
+    try {
+      const response = await fetch('/api/evaluation/preview-2026/team-kpi-review-decision', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orgKpiIds: selectedTeamReviewIds,
+          evalCycleId: props.selectedCycleId,
+          decision: teamReviewBulkDraft.decision,
+          reason: teamReviewBulkDraft.reason,
+          note: teamReviewBulkDraft.note,
+        }),
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '팀 KPI HR 검토 결정을 일괄 저장하지 못했습니다.')
+      }
+
+      const savedCount = Number(json?.data?.count ?? selectedTeamReviewIds.length)
+      setTeamReviewSaveNotice(`${savedCount.toLocaleString()}건의 팀 KPI 검토 결정을 일괄 저장했습니다. 공식 점수/등급은 변경되지 않았습니다.`)
+      setSelectedTeamReviewIds([])
+      await props.onLoad()
+    } catch (error) {
+      setTeamReviewSaveError(error instanceof Error ? error.message : '팀 KPI HR 검토 결정을 일괄 저장하지 못했습니다.')
+    } finally {
+      setTeamReviewBulkSaving(false)
+    }
+  }, [props, selectedTeamReviewIds, teamReviewBulkDraft])
 
   return (
     <Panel
@@ -4065,6 +5143,26 @@ function PolicyReadinessPopulation2026Panel(props: {
               label="팀 override"
               value={dryRun.departmentOverrideCoverage.savedOverrideCount.toLocaleString()}
               help={`${dryRun.departmentOverrideCoverage.affectedActiveEmployeeCount}명 영향`}
+              compact
+            />
+            <MetricCard
+              label="policyCategory mapped"
+              value={dryRun.policyCategoryMappingReadiness.mappedPolicyCategoryCount.toLocaleString()}
+              help={`manual-review ${dryRun.policyCategoryMappingReadiness.manualReviewCount.toLocaleString()}건`}
+              compact
+              variant={dryRun.policyCategoryMappingReadiness.manualReviewCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="ORG_GOAL source warning"
+              value={dryRun.policyCategoryMappingReadiness.orgGoalWithoutApprovedSourceCount.toLocaleString()}
+              help="본부/HR 승인 팀 KPI 필요"
+              compact
+              variant={dryRun.policyCategoryMappingReadiness.orgGoalWithoutApprovedSourceCount > 0 ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="bulk mapping saved"
+              value={dryRun.policyCategoryMappingReadiness.bulkMappingSavedCount.toLocaleString()}
+              help="HR metadata audit"
               compact
             />
           </div>
@@ -4368,331 +5466,1116 @@ function PolicyReadinessPopulation2026Panel(props: {
                   </div>
                 </div>
               ) : null}
-            </div>
-          ) : null}
 
-          {scorePolicyReadiness ? (
-            <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 성과점수 정책 readiness</h4>
-                    <Badge tone="neutral">PPT 기준</Badge>
-                    <Badge tone="neutral">Read-only simulator</Badge>
+              {followUpGroups.length ? (
+                <div className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 MBO 후속조치 안내</h5>
+                        <Badge tone="neutral">Copy-only</Badge>
+                        <Badge tone="neutral">알림 발송 없음</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        HR이 MBO 미작성자, 초안 보유자, 리더 검토 대상, policyCategory 미분류, 팀 KPI 검토 대상을 나누어 안내문과 수신자 목록을 복사하는 read-only 도구입니다.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-violet-700">
+                        이 화면은 HR 후속조치용 안내/복사 도구입니다. 알림 발송, 평가 생성, 점수/등급 변경은 수행하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('follow-up-recipients', followUpRecipientList)}
+                        disabled={!filteredFollowUpRows.length}
+                        className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'follow-up-recipients' ? '대상 목록 복사됨' : '선택 조건 대상 목록 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('follow-up-template', selectedFollowUpTemplate)}
+                        disabled={!selectedFollowUpTemplate}
+                        className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'follow-up-template' ? '메시지 복사됨' : '선택 조건 메시지 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('follow-up-table', followUpCombinedTsv)}
+                        disabled={!filteredFollowUpRows.length}
+                        className="rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'follow-up-table' ? '후속조치 테이블 복사됨' : '후속조치 테이블 복사'}
+                      </button>
+                    </div>
                   </div>
-                  <p className="mt-1 text-xs leading-5 text-slate-600">
-                    조직성과 30% + 개인성과 70%, MBO category별 기준점·가중치 cap·±5 조정 원칙을 읽기 전용으로 점검합니다.
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-sky-700">
-                    이 계산은 preview/simulation이며 공식 점수 또는 등급에 반영되지 않습니다. AI 활용평가는 연간 업적평가 점수에서 제외됩니다.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void copyMonitoringTable('score-policy-violations', scorePolicyViolationTsv)}
-                  className="rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-50"
-                >
-                  {copiedMonitoringTable === 'score-policy-violations' ? '위반사항 복사됨' : '위반사항 복사'}
-                </button>
-              </div>
 
-              {scorePolicyReadiness.emptyStateMessage ? (
-                <div className="mt-3">
-                  <Banner tone="warn" message={scorePolicyReadiness.emptyStateMessage} />
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                    <label className="text-xs font-semibold text-slate-600">
+                      본부
+                      <select
+                        value={followUpDivisionFilter}
+                        onChange={(event) => {
+                          setFollowUpDivisionFilter(event.target.value)
+                          setFollowUpTeamFilter('ALL')
+                        }}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 본부</option>
+                        {followUpDivisionOptions.map(([divisionId, divisionName]) => (
+                          <option key={divisionId} value={divisionId}>{divisionName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      팀
+                      <select
+                        value={followUpTeamFilter}
+                        onChange={(event) => setFollowUpTeamFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 팀</option>
+                        {followUpTeamOptions.map(([departmentId, departmentPath]) => (
+                          <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      리더
+                      <select
+                        value={followUpLeaderFilter}
+                        onChange={(event) => setFollowUpLeaderFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 리더</option>
+                        {followUpLeaderOptions.map(([leaderId, leaderName]) => (
+                          <option key={leaderId} value={leaderId}>{leaderName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      후속조치 유형
+                      <select
+                        value={followUpTypeFilter}
+                        onChange={(event) => setFollowUpTypeFilter(event.target.value as MboFollowUpType2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {MBO_FOLLOW_UP_TYPES_2026.map((type) => (
+                          <option key={type} value={type}>{getMboFollowUpTypeLabel2026(type)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      MBO status
+                      <select
+                        value={followUpStatusFilter}
+                        onChange={(event) => setFollowUpStatusFilter(event.target.value as MboFollowUpStatusFilter2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {MBO_FOLLOW_UP_STATUS_FILTERS_2026.map((status) => (
+                          <option key={status} value={status}>{getMboFollowUpStatusLabel2026(status)}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-5">
+                    {filteredFollowUpGroups.map((group) => (
+                      <div key={group.type} className="rounded-2xl border border-violet-100 bg-white p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h6 className="text-sm font-semibold text-slate-900">{group.label}</h6>
+                              <Badge tone={getMboFollowUpTypeTone2026(group.type)}>{group.actionLabel}</Badge>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">{group.description}</p>
+                          </div>
+                          <div className="text-right text-lg font-bold text-violet-800">{group.rows.length.toLocaleString()}</div>
+                        </div>
+                        <div className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
+                          <div>상위 본부: {formatTopFollowUpValues2026(group.rows.map((row) => row.divisionName))}</div>
+                          <div>상위 팀: {formatTopFollowUpValues2026(group.rows.map((row) => row.departmentPath))}</div>
+                          <div>담당 리더: {formatTopFollowUpValues2026(group.rows.map((row) => row.leaderName), '리더 미지정')}</div>
+                          <div>후속 기한: HR 안내 기준 (저장된 기한 없음)</div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void copyMonitoringTable(`follow-up-recipients-${group.type}`, buildMboFollowUpRecipientList2026(group.rows))}
+                            disabled={!group.rows.length}
+                            className="rounded-full border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:opacity-50"
+                          >
+                            {copiedMonitoringTable === `follow-up-recipients-${group.type}` ? '수신자 복사됨' : '수신자 목록 복사'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void copyMonitoringTable(`follow-up-template-${group.type}`, group.template)}
+                            className="rounded-full border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50"
+                          >
+                            {copiedMonitoringTable === `follow-up-template-${group.type}` ? '템플릿 복사됨' : '메시지 템플릿 복사'}
+                          </button>
+                          <Link href={group.href} className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">
+                            관련 화면
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">후속조치 대상 preview</h6>
+                      <span className="text-xs text-slate-500">
+                        {filteredFollowUpRows.length.toLocaleString()}건 표시 · 전체 {followUpRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+                    <div className="max-h-72 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-violet-50 text-violet-700">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">대상</th>
+                            <th className="px-4 py-2 font-semibold">조직</th>
+                            <th className="px-4 py-2 font-semibold">리더</th>
+                            <th className="px-4 py-2 font-semibold">후속조치</th>
+                            <th className="px-4 py-2 font-semibold">상세</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredFollowUpRows.slice(0, 100).map((row) => (
+                            <tr key={row.id}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.name}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}{row.email ? ` · ${row.email}` : ''}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.departmentPath}</td>
+                              <td className="px-4 py-3 text-slate-600">{row.leaderName}</td>
+                              <td className="px-4 py-3">
+                                <Badge tone={getMboFollowUpTypeTone2026(row.type)}>{row.actionLabel}</Badge>
+                                <div className="mt-1 text-slate-400">{row.typeLabel}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.detail}</td>
+                            </tr>
+                          ))}
+                          {filteredFollowUpRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="px-4 py-6 text-center text-slate-500">후속조치 필터 조건에 맞는 대상이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredFollowUpRows.length > 100 ? (
+                      <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                        화면에는 100건까지만 표시합니다. 전체 대상은 후속조치 테이블 복사로 추출해 주세요.
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-violet-700">
+                    <Link href="/kpi/personal" className="font-semibold underline-offset-2 hover:underline">/kpi/personal</Link>
+                    <Link href="/evaluation/performance" className="font-semibold underline-offset-2 hover:underline">/evaluation/performance</Link>
+                    <Link href="/admin/performance-calendar" className="font-semibold underline-offset-2 hover:underline">/admin/performance-calendar</Link>
+                  </div>
                 </div>
               ) : null}
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <MetricCard
-                  label="조직성과"
-                  value={`${scorePolicyReadiness.scoreSplit.organizationPerformanceWeight}%`}
-                  help="본부/실/팀 combined"
-                  compact
-                />
-                <MetricCard
-                  label="개인성과"
-                  value={`${scorePolicyReadiness.scoreSplit.personalPerformanceWeight}%`}
-                  help="MBO personal"
-                  compact
-                />
-                <MetricCard
-                  label="MBO 점검"
-                  value={scorePolicyReadiness.summary.checkedPersonalKpiCount.toLocaleString()}
-                  help="작성 중 포함"
-                  compact
-                />
-                <MetricCard
-                  label="위반사항"
-                  value={scorePolicyReadiness.summary.violationsCount.toLocaleString()}
-                  help="현재 MBO 점검"
-                  compact
-                  variant={scorePolicyReadiness.summary.violationsCount > 0 ? 'warning' : 'default'}
-                />
-                <MetricCard
-                  label="가중치 cap"
-                  value={scorePolicyReadiness.summary.weightCapViolationCount.toLocaleString()}
-                  help="초과/합계"
-                  compact
-                  variant={scorePolicyReadiness.summary.weightCapViolationCount > 0 ? 'warning' : 'default'}
-                />
-                <MetricCard
-                  label="AI 점수"
-                  value={scorePolicyReadiness.aiExcludedFromAnnualScore ? '제외' : '확인 필요'}
-                  help="연간 업적평가"
-                  compact
-                />
-              </div>
-
-              <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-                <div className="rounded-2xl border border-slate-200 bg-white">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <h5 className="text-sm font-semibold text-slate-900">category score table</h5>
-                    <p className="mt-1 text-xs text-slate-500">Target / Excellent 점수와 category·item 가중치 cap입니다.</p>
+              {scorePolicyReadiness ? (
+                <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 성과점수 정책 readiness</h5>
+                        <Badge tone="neutral">PPT 기준</Badge>
+                        <Badge tone="neutral">Read-only simulator</Badge>
+                        <Badge tone="neutral">공식 점수 미적용</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        조직성과 30% + 개인성과 70%, MBO category별 기준점·가중치 cap·±5 조정 원칙을 읽기 전용으로 점검합니다.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-sky-700">
+                        이 계산은 preview/simulation이며 공식 점수 또는 등급에 반영되지 않습니다. AI 활용평가는 연간 업적평가 점수에서 제외됩니다.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void copyMonitoringTable('score-policy-violations', scorePolicyViolationTsv)}
+                      disabled={!filteredScorePolicyViolationRows.length}
+                      className="rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-50 disabled:opacity-50"
+                    >
+                      {copiedMonitoringTable === 'score-policy-violations' ? '위반사항 복사됨' : '위반사항 복사'}
+                    </button>
                   </div>
-                  <div className="overflow-auto">
-                    <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
-                      <thead className="bg-slate-50 text-slate-500">
-                        <tr>
-                          <th className="px-4 py-2 font-semibold">category</th>
-                          <th className="px-4 py-2 font-semibold">Target</th>
-                          <th className="px-4 py-2 font-semibold">Excellent</th>
-                          <th className="px-4 py-2 font-semibold">가중치 cap</th>
-                          <th className="px-4 py-2 font-semibold">조정</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {scorePolicyReadiness.categoryRules.map((rule) => (
-                          <tr key={rule.category}>
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-slate-900">{rule.label}</div>
-                              <div className="text-slate-400">{rule.category}</div>
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">{rule.targetScore ?? '-'}</td>
-                            <td className="px-4 py-3 text-slate-600">{rule.excellentScore ?? (rule.maxScore ? `max ${rule.maxScore}` : '-')}</td>
-                            <td className="px-4 py-3 text-slate-600">
-                              {rule.categoryWeightCap ? `category ${rule.categoryWeightCap}% · ` : ''}
-                              {rule.itemWeightCap ? `item ${rule.itemWeightCap}%` : 'remaining weight'}
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">
-                              {rule.adjustmentAllowed ? `${rule.adjustmentRange?.min}~+${rule.adjustmentRange?.max}` : '미적용'}
-                            </td>
-                          </tr>
+
+                  {scorePolicyReadiness.emptyStateMessage ? (
+                    <div className="mt-3">
+                      <Banner tone="warn" message={scorePolicyReadiness.emptyStateMessage} />
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard
+                      label="조직성과"
+                      value={`${scorePolicyReadiness.scoreSplit.organizationPerformanceWeight}%`}
+                      help="본부/실/팀 combined"
+                      compact
+                    />
+                    <MetricCard
+                      label="개인성과"
+                      value={`${scorePolicyReadiness.scoreSplit.personalPerformanceWeight}%`}
+                      help="MBO personal"
+                      compact
+                    />
+                    <MetricCard
+                      label="MBO 점검"
+                      value={scorePolicyReadiness.summary.checkedPersonalKpiCount.toLocaleString()}
+                      help="작성 중 포함"
+                      compact
+                    />
+                    <MetricCard
+                      label="위반사항"
+                      value={scorePolicyReadiness.summary.violationsCount.toLocaleString()}
+                      help="현재 MBO 점검"
+                      compact
+                      variant={scorePolicyReadiness.summary.violationsCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="가중치 cap"
+                      value={scorePolicyReadiness.summary.weightCapViolationCount.toLocaleString()}
+                      help="초과/합계"
+                      compact
+                      variant={scorePolicyReadiness.summary.weightCapViolationCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="AI 점수"
+                      value={scorePolicyReadiness.aiExcludedFromAnnualScore ? '제외' : '확인 필요'}
+                      help="연간 업적평가"
+                      compact
+                    />
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                    <div className="rounded-2xl border border-slate-200 bg-white">
+                      <div className="border-b border-slate-100 px-4 py-3">
+                        <h6 className="text-sm font-semibold text-slate-900">category score table</h6>
+                        <p className="mt-1 text-xs text-slate-500">Target / Excellent 점수와 category·item 가중치 cap입니다.</p>
+                      </div>
+                      <div className="overflow-auto">
+                        <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                          <thead className="bg-slate-50 text-slate-500">
+                            <tr>
+                              <th className="px-4 py-2 font-semibold">category</th>
+                              <th className="px-4 py-2 font-semibold">Target</th>
+                              <th className="px-4 py-2 font-semibold">Excellent</th>
+                              <th className="px-4 py-2 font-semibold">가중치 cap</th>
+                              <th className="px-4 py-2 font-semibold">조정</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {scorePolicyReadiness.categoryRules.map((rule) => (
+                              <tr key={rule.category}>
+                                <td className="px-4 py-3">
+                                  <div className="font-semibold text-slate-900">{rule.label}</div>
+                                  <div className="text-slate-400">{rule.category}</div>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">{rule.targetScore ?? '-'}</td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  {rule.excellentScore ?? (rule.maxScore ? `max ${rule.maxScore}` : '-')}
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  {rule.categoryWeightCap ? `category ${rule.categoryWeightCap}% · ` : ''}
+                                  {rule.itemWeightCap ? `item ${rule.itemWeightCap}%` : 'remaining weight'}
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">
+                                  {rule.adjustmentAllowed ? `${rule.adjustmentRange?.min}~+${rule.adjustmentRange?.max}` : '미적용'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">score simulator</h6>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        저장하지 않는 로컬 preview입니다. 가중 기여도는 adjusted score × weight로만 계산합니다.
+                      </p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label className="text-xs font-semibold text-slate-600">
+                          category
+                          <select
+                            value={simulatorCategory}
+                            onChange={(event) => setSimulatorCategory(event.target.value as ScorePolicyCategory2026)}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                          >
+                            {scorePolicyReadiness.categoryRules.map((rule) => (
+                              <option key={rule.category} value={rule.category}>{rule.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="text-xs font-semibold text-slate-600">
+                          achievement
+                          <select
+                            value={simulatorAchievement}
+                            onChange={(event) => setSimulatorAchievement(event.target.value as 'BELOW_TARGET' | 'TARGET' | 'EXCELLENT')}
+                            className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                          >
+                            <option value="BELOW_TARGET">below target</option>
+                            <option value="TARGET">target</option>
+                            <option value="EXCELLENT">excellent</option>
+                          </select>
+                        </label>
+                        <label className="text-xs font-semibold text-slate-600">
+                          weight %
+                          <input
+                            type="number"
+                            value={simulatorWeight}
+                            onChange={(event) => setSimulatorWeight(event.target.value)}
+                            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
+                          />
+                        </label>
+                        <label className="text-xs font-semibold text-slate-600">
+                          base score
+                          <input
+                            type="number"
+                            value={simulatorBaseScore}
+                            onChange={(event) => setSimulatorBaseScore(event.target.value)}
+                            placeholder="정책 기준 자동"
+                            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
+                          />
+                        </label>
+                        <label className="text-xs font-semibold text-slate-600">
+                          adjustment
+                          <input
+                            type="number"
+                            value={simulatorAdjustment}
+                            onChange={(event) => setSimulatorAdjustment(event.target.value)}
+                            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
+                          />
+                        </label>
+                        <label className="text-xs font-semibold text-slate-600">
+                          adjustment reason
+                          <input
+                            value={simulatorAdjustmentReason}
+                            onChange={(event) => setSimulatorAdjustmentReason(event.target.value)}
+                            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
+                            placeholder="개인 기여 차이 근거"
+                          />
+                        </label>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        <MetricCard label="base" value={simulatorBaseScoreValue.toFixed(1)} help="preview" compact />
+                        <MetricCard label="adjusted" value={simulatorAdjustedScore.toFixed(1)} help="±5 check" compact />
+                        <MetricCard label="weighted" value={simulatorWeightedContribution.toFixed(1)} help="기여도" compact />
+                      </div>
+                      <ul className="mt-3 space-y-1 text-xs text-amber-800">
+                        {simulatorWarnings.map((warning) => (
+                          <li key={warning}>- {warning}</li>
                         ))}
-                      </tbody>
-                    </table>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h6 className="text-sm font-semibold text-slate-900">현재 MBO 점검 위반사항</h6>
+                        <p className="mt-1 text-xs text-slate-500">
+                          category missing, 가중치 cap, ORG_GOAL 승인 소스, Target/Excellent 기준, DAILY_WORK 중복 신호를 확인합니다.
+                        </p>
+                      </div>
+                      <span className="text-xs text-slate-500">
+                        {filteredScorePolicyViolationRows.length.toLocaleString()}건 표시 · 전체 {scorePolicyViolationRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                      <label className="text-xs font-semibold text-slate-600">
+                        본부
+                        <select
+                          value={scorePolicyDivisionFilter}
+                          onChange={(event) => {
+                            setScorePolicyDivisionFilter(event.target.value)
+                            setScorePolicyTeamFilter('ALL')
+                          }}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                        >
+                          <option value="ALL">전체 본부</option>
+                          {scorePolicyDivisionOptions.map(([divisionId, divisionName]) => (
+                            <option key={divisionId} value={divisionId}>{divisionName}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-semibold text-slate-600">
+                        팀
+                        <select
+                          value={scorePolicyTeamFilter}
+                          onChange={(event) => setScorePolicyTeamFilter(event.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                        >
+                          <option value="ALL">전체 팀</option>
+                          {scorePolicyTeamOptions.map(([departmentId, departmentPath]) => (
+                            <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-semibold text-slate-600">
+                        직원
+                        <select
+                          value={scorePolicyEmployeeFilter}
+                          onChange={(event) => setScorePolicyEmployeeFilter(event.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                        >
+                          <option value="ALL">전체 직원</option>
+                          {scorePolicyEmployeeOptions.map(([employeeId, employeeName]) => (
+                            <option key={employeeId} value={employeeId}>{employeeName}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-semibold text-slate-600">
+                        category
+                        <select
+                          value={scorePolicyCategoryFilter}
+                          onChange={(event) => setScorePolicyCategoryFilter(event.target.value as ScorePolicyCategory2026 | 'UNMAPPED' | 'ALL')}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                        >
+                          <option value="ALL">전체 category</option>
+                          <option value="UNMAPPED">미분류</option>
+                          {scorePolicyReadiness.categoryRules.map((rule) => (
+                            <option key={rule.category} value={rule.category}>{rule.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-xs font-semibold text-slate-600">
+                        violation type
+                        <select
+                          value={scorePolicyViolationFilter}
+                          onChange={(event) => setScorePolicyViolationFilter(event.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                        >
+                          <option value="ALL">전체 위반</option>
+                          {scorePolicyViolationOptions.map((code) => (
+                            <option key={code} value={code}>{code}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="mt-4 max-h-96 overflow-auto rounded-xl border border-slate-100">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">직원</th>
+                            <th className="px-4 py-2 font-semibold">조직</th>
+                            <th className="px-4 py-2 font-semibold">MBO</th>
+                            <th className="px-4 py-2 font-semibold">위반사항</th>
+                            <th className="px-4 py-2 font-semibold">현재/기준</th>
+                            <th className="px-4 py-2 font-semibold">HR action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredScorePolicyViolationRows.slice(0, 120).map((row, index) => (
+                            <tr key={`${row.code}-${row.personalKpiId ?? row.employeeId ?? index}-${index}`}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.departmentPath}</td>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-800">{row.personalKpiName ?? '-'}</div>
+                                <div className="text-slate-400">{row.category ?? 'UNMAPPED'} · weight {row.weight ?? '-'}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge tone={row.severity === 'BLOCKER' ? 'warn' : 'neutral'}>{row.code}</Badge>
+                                <div className="mt-1 text-slate-500">{row.message}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">{row.currentValue ?? '-'} / {row.limitValue ?? '-'}</td>
+                              <td className="px-4 py-3 font-semibold text-sky-800">{row.actionLabel}</td>
+                            </tr>
+                          ))}
+                          {filteredScorePolicyViolationRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 위반사항이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                      {scorePolicyReadiness.adjustmentReadinessWarnings.join(' · ')}
+                    </div>
                   </div>
                 </div>
+              ) : null}
 
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">score simulator</h5>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    저장하지 않는 로컬 preview입니다. 가중 기여도는 adjusted score × weight로만 계산합니다.
-                  </p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {resultWritingReadiness ? (
+                <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 readiness</h5>
+                        <Badge tone="neutral">Read-only</Badge>
+                        <Badge tone="neutral">저장 없음</Badge>
+                        <Badge tone="neutral">공식 점수 미적용</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        이 화면은 2026 수행결과 작성 readiness를 점검합니다. 공식 점수/등급은 변경되지 않습니다.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-emerald-700">
+                        수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다. AI 활용평가 증빙은 연간 업적점수와 별도로 관리됩니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('result-writing-missing-result', resultWritingMissingResultTsv)}
+                        disabled={resultWritingReadiness.summary.missingResultCount === 0}
+                        className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'result-writing-missing-result' ? '결과 누락 복사됨' : 'missing result 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('result-writing-missing-evidence', resultWritingMissingEvidenceTsv)}
+                        disabled={resultWritingReadiness.summary.missingEvidenceCount === 0}
+                        className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'result-writing-missing-evidence' ? '증빙 누락 복사됨' : 'missing evidence 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('result-writing-missing-contribution', resultWritingMissingContributionTsv)}
+                        disabled={resultWritingReadiness.summary.missingContributionCount === 0}
+                        className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'result-writing-missing-contribution' ? '기여 누락 복사됨' : 'missing contribution 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('result-writing-combined', resultWritingCombinedTsv)}
+                        disabled={!filteredResultWritingRows.length}
+                        className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'result-writing-combined' ? 'readiness TSV 복사됨' : 'filtered TSV 복사'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard
+                      label="점검 항목"
+                      value={resultWritingReadiness.summary.totalItemCount.toLocaleString()}
+                      help="Personal KPI / 기존 item"
+                      compact
+                    />
+                    <MetricCard
+                      label="결과 초안"
+                      value={resultWritingReadiness.summary.resultDraftPresentCount.toLocaleString()}
+                      help="itemComment 기준"
+                      compact
+                    />
+                    <MetricCard
+                      label="수행결과 누락"
+                      value={resultWritingReadiness.summary.missingResultCount.toLocaleString()}
+                      help="작성 필요"
+                      compact
+                      variant={resultWritingReadiness.summary.missingResultCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="증빙 부족"
+                      value={resultWritingReadiness.summary.missingEvidenceCount.toLocaleString()}
+                      help="링크/첨부/코멘트"
+                      compact
+                      variant={resultWritingReadiness.summary.missingEvidenceCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="본인 기여 부족"
+                      value={resultWritingReadiness.summary.missingContributionCount.toLocaleString()}
+                      help="역할/기여"
+                      compact
+                      variant={resultWritingReadiness.summary.missingContributionCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="리더 검토 warning"
+                      value={resultWritingReadiness.summary.leaderReviewWarningCount.toLocaleString()}
+                      help="non-blocking"
+                      compact
+                      variant={resultWritingReadiness.summary.leaderReviewWarningCount > 0 ? 'warning' : 'default'}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-emerald-100 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">카테고리별 작성 기준</h6>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {resultWritingReadiness.guidance.map((guide) => (
+                          <div key={guide.category} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="text-xs font-semibold text-slate-900">{guide.label}</div>
+                            <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                              {guide.expectations.map((item) => (
+                                <li key={item}>- {item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-100 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">증빙/리더 검토 checklist</h6>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-xs font-semibold text-slate-900">Evidence guidance</div>
+                          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                            {resultWritingReadiness.evidenceGuidance.map((item) => (
+                              <li key={item}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-xs font-semibold text-slate-900">Leader review checklist</div>
+                          <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                            {resultWritingReadiness.leaderReviewChecklist.map((item) => (
+                              <li key={item}>- {item}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+                    <label className="text-xs font-semibold text-slate-600">
+                      본부
+                      <select
+                        value={resultWritingDivisionFilter}
+                        onChange={(event) => {
+                          setResultWritingDivisionFilter(event.target.value)
+                          setResultWritingTeamFilter('ALL')
+                        }}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 본부</option>
+                        {resultWritingDivisionOptions.map(([divisionId, divisionName]) => (
+                          <option key={divisionId} value={divisionId}>{divisionName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      팀
+                      <select
+                        value={resultWritingTeamFilter}
+                        onChange={(event) => setResultWritingTeamFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 팀</option>
+                        {resultWritingTeamOptions.map(([departmentId, departmentPath]) => (
+                          <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      직원
+                      <select
+                        value={resultWritingEmployeeFilter}
+                        onChange={(event) => setResultWritingEmployeeFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 직원</option>
+                        {resultWritingEmployeeOptions.map(([employeeId, employeeLabel]) => (
+                          <option key={employeeId} value={employeeId}>{employeeLabel}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      리더
+                      <select
+                        value={resultWritingLeaderFilter}
+                        onChange={(event) => setResultWritingLeaderFilter(event.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="ALL">전체 리더</option>
+                        {resultWritingLeaderOptions.map(([leaderId, leaderName]) => (
+                          <option key={leaderId} value={leaderId}>{leaderName}</option>
+                        ))}
+                      </select>
+                    </label>
                     <label className="text-xs font-semibold text-slate-600">
                       category
                       <select
-                        value={simulatorCategory}
-                        onChange={(event) => setSimulatorCategory(event.target.value as ScorePolicyCategory2026)}
+                        value={resultWritingCategoryFilter}
+                        onChange={(event) => setResultWritingCategoryFilter(event.target.value as ResultWritingCategoryFilter2026 | 'ALL')}
                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
                       >
-                        {scorePolicyReadiness.categoryRules.map((rule) => (
-                          <option key={rule.category} value={rule.category}>{rule.label}</option>
+                        {RESULT_WRITING_CATEGORY_FILTERS_2026.map((category) => (
+                          <option key={category} value={category}>{getResultWritingCategoryLabel2026(category)}</option>
                         ))}
                       </select>
                     </label>
                     <label className="text-xs font-semibold text-slate-600">
-                      achievement
+                      result status
                       <select
-                        value={simulatorAchievement}
-                        onChange={(event) => setSimulatorAchievement(event.target.value as 'BELOW_TARGET' | 'TARGET' | 'EXCELLENT')}
+                        value={resultWritingStatusFilter}
+                        onChange={(event) => setResultWritingStatusFilter(event.target.value as ResultWritingStatus2026 | 'ALL')}
                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
                       >
-                        <option value="BELOW_TARGET">below target</option>
-                        <option value="TARGET">target</option>
-                        <option value="EXCELLENT">excellent</option>
+                        {RESULT_WRITING_STATUS_FILTERS_2026.map((status) => (
+                          <option key={status} value={status}>{getResultWritingStatusLabel2026(status)}</option>
+                        ))}
                       </select>
                     </label>
                     <label className="text-xs font-semibold text-slate-600">
-                      weight %
-                      <input
-                        type="number"
-                        value={simulatorWeight}
-                        onChange={(event) => setSimulatorWeight(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
-                      />
-                    </label>
-                    <label className="text-xs font-semibold text-slate-600">
-                      base score
-                      <input
-                        type="number"
-                        value={simulatorBaseScore}
-                        onChange={(event) => setSimulatorBaseScore(event.target.value)}
-                        placeholder="정책 기준 자동"
-                        className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
-                      />
-                    </label>
-                    <label className="text-xs font-semibold text-slate-600">
-                      adjustment
-                      <input
-                        type="number"
-                        value={simulatorAdjustment}
-                        onChange={(event) => setSimulatorAdjustment(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
-                      />
-                    </label>
-                    <label className="text-xs font-semibold text-slate-600">
-                      adjustment reason
-                      <input
-                        value={simulatorAdjustmentReason}
-                        onChange={(event) => setSimulatorAdjustmentReason(event.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700"
-                        placeholder="개인 기여 차이 근거"
-                      />
+                      warning
+                      <select
+                        value={resultWritingWarningFilter}
+                        onChange={(event) => setResultWritingWarningFilter(event.target.value as ResultWritingWarningCode2026 | 'ALL')}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        {RESULT_WRITING_WARNING_FILTERS_2026.map((warning) => (
+                          <option key={warning} value={warning}>{getResultWritingWarningLabel2026(warning)}</option>
+                        ))}
+                      </select>
                     </label>
                   </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                    <MetricCard label="base" value={simulatorBaseScoreValue.toFixed(1)} help="preview" compact />
-                    <MetricCard label="adjusted" value={simulatorAdjustedScore.toFixed(1)} help="±5 check" compact />
-                    <MetricCard label="weighted" value={simulatorWeightedContribution.toFixed(1)} help="기여도" compact />
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyMonitoringTable('result-writing-org-goal-source', resultWritingOrgGoalSourceTsv)}
+                      disabled={resultWritingReadiness.summary.orgGoalSourceWarningCount === 0}
+                      className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      {copiedMonitoringTable === 'result-writing-org-goal-source' ? 'ORG_GOAL 경고 복사됨' : 'ORG_GOAL source warning 복사'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void copyMonitoringTable('result-writing-daily-work-duplicate', resultWritingDailyWorkDuplicateTsv)}
+                      disabled={resultWritingReadiness.summary.dailyWorkDuplicateRiskCount === 0}
+                      className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      {copiedMonitoringTable === 'result-writing-daily-work-duplicate' ? 'DAILY_WORK 위험 복사됨' : 'DAILY_WORK duplicate risk 복사'}
+                    </button>
                   </div>
-                  <ul className="mt-3 space-y-1 text-xs text-amber-800">
-                    {simulatorWarnings.map((warning) => (
-                      <li key={warning}>- {warning}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
 
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h5 className="text-sm font-semibold text-slate-900">현재 MBO 점검 위반사항</h5>
-                    <p className="mt-1 text-xs text-slate-500">
-                      category missing, 가중치 cap, ORG_GOAL 승인 소스, Target/Excellent 기준, DAILY_WORK 중복 신호를 확인합니다.
-                    </p>
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">수행결과 readiness 대상</h6>
+                      <span className="text-xs text-slate-500">
+                        {filteredResultWritingRows.length.toLocaleString()}건 표시 · 전체 {resultWritingRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-emerald-50 text-emerald-700">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">직원</th>
+                            <th className="px-4 py-2 font-semibold">조직/리더</th>
+                            <th className="px-4 py-2 font-semibold">KPI/category</th>
+                            <th className="px-4 py-2 font-semibold">readiness</th>
+                            <th className="px-4 py-2 font-semibold">결과/증빙</th>
+                            <th className="px-4 py-2 font-semibold">warning / next action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredResultWritingRows.slice(0, 120).map((row) => (
+                            <tr key={`${row.employeeId}:${row.personalKpiId}`}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}{row.email ? ` · ${row.email}` : ''}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="text-slate-600">{row.departmentPath}</div>
+                                <div className="mt-1 text-slate-400">{row.leaderName}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.kpiName}</div>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  <Badge tone={row.category ? 'neutral' : 'error'}>{row.categoryLabel}</Badge>
+                                  <Badge tone="neutral">{row.mboStatus}</Badge>
+                                  {row.linkedOrgKpiTitle ? <Badge tone={row.approvedOrgGoalSource ? 'success' : 'warn'}>{row.linkedOrgKpiTitle}</Badge> : null}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge tone={getResultWritingStatusTone2026(row.resultWritingStatus)}>
+                                  {getResultWritingStatusLabel2026(row.resultWritingStatus)}
+                                </Badge>
+                                <div className="mt-1 text-slate-400">{row.latestMonthlyRecordLabel ?? '월간 근거 없음'}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                결과 {row.resultDraftPresent ? '있음' : '없음'} · 증빙 {row.evidencePresent ? `${row.evidenceSourceCount}건` : '없음'} · 기여 {row.personalContributionPresent ? '있음' : '부족'}
+                                <div className="mt-1 text-slate-400">
+                                  정량 {row.measurableResultPresent ? '있음' : '부족'} · 목표/실제 {row.targetActualComparisonPresent ? '있음' : '부족'} · 산출/영향 {row.outputImpactPresent ? '있음' : '부족'}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex max-w-lg flex-wrap gap-1">
+                                  {row.warnings.slice(0, 4).map((warning) => (
+                                    <Badge key={`${row.personalKpiId}:${warning.code}`} tone="warn">{warning.label}</Badge>
+                                  ))}
+                                  {row.warnings.length > 4 ? <Badge tone="neutral">+{row.warnings.length - 4}</Badge> : null}
+                                  {!row.warnings.length ? <Badge tone="success">warning 없음</Badge> : null}
+                                </div>
+                                <div className="mt-2 text-slate-600">{row.nextAction}</div>
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredResultWritingRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">수행결과 readiness 필터 조건에 맞는 항목이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredResultWritingRows.length > 120 ? (
+                      <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                        화면에는 120건까지만 표시합니다. 전체 목록은 filtered TSV 복사로 추출해 주세요.
+                      </div>
+                    ) : null}
                   </div>
-                  <span className="text-xs text-slate-500">
-                    {filteredScorePolicyViolationRows.length.toLocaleString()}건 표시 · 전체 {scorePolicyViolationRows.length.toLocaleString()}건
-                  </span>
                 </div>
+              ) : null}
 
-                <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                  <label className="text-xs font-semibold text-slate-600">
-                    본부
-                    <select
-                      value={scorePolicyDivisionFilter}
-                      onChange={(event) => {
-                        setScorePolicyDivisionFilter(event.target.value)
-                        setScorePolicyTeamFilter('ALL')
-                      }}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
-                    >
-                      <option value="ALL">전체 본부</option>
-                      {scorePolicyDivisionOptions.map(([divisionId, divisionName]) => (
-                        <option key={divisionId} value={divisionId}>{divisionName}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-xs font-semibold text-slate-600">
-                    팀
-                    <select
-                      value={scorePolicyTeamFilter}
-                      onChange={(event) => setScorePolicyTeamFilter(event.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
-                    >
-                      <option value="ALL">전체 팀</option>
-                      {scorePolicyTeamOptions.map(([departmentId, departmentPath]) => (
-                        <option key={departmentId} value={departmentId}>{departmentPath}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-xs font-semibold text-slate-600">
-                    직원
-                    <select
-                      value={scorePolicyEmployeeFilter}
-                      onChange={(event) => setScorePolicyEmployeeFilter(event.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
-                    >
-                      <option value="ALL">전체 직원</option>
-                      {scorePolicyEmployeeOptions.map(([employeeId, employeeName]) => (
-                        <option key={employeeId} value={employeeId}>{employeeName}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-xs font-semibold text-slate-600">
-                    category
-                    <select
-                      value={scorePolicyCategoryFilter}
-                      onChange={(event) => setScorePolicyCategoryFilter(event.target.value as ScorePolicyCategory2026 | 'UNMAPPED' | 'ALL')}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
-                    >
-                      <option value="ALL">전체 category</option>
-                      <option value="UNMAPPED">미분류</option>
-                      {scorePolicyReadiness.categoryRules.map((rule) => (
-                        <option key={rule.category} value={rule.category}>{rule.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-xs font-semibold text-slate-600">
-                    violation type
-                    <select
-                      value={scorePolicyViolationFilter}
-                      onChange={(event) => setScorePolicyViolationFilter(event.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
-                    >
-                      <option value="ALL">전체 위반</option>
-                      {scorePolicyViolationOptions.map((code) => (
-                        <option key={code} value={code}>{code}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+              {leaderEvaluationReadiness ? (
+                <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 리더 평가 readiness</h5>
+                        <Badge tone="neutral">Read-only</Badge>
+                        <Badge tone="neutral">제출/확정 없음</Badge>
+                        <Badge tone="neutral">공식 점수 미적용</Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        이 화면은 2026 리더 평가 readiness를 읽기 전용으로 점검합니다. 공식 점수, 등급, 제출, 확정 상태는 변경하지 않습니다.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-cyan-700">
+                        리더 평가 입력 전 결과 작성, 증빙, 정책 카테고리, 평가자 배정 상태를 확인합니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-first-blocked', leaderEvaluationFirstBlockedTsv)}
+                        disabled={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-first-blocked' ? 'FIRST blocked 복사됨' : 'FIRST blocked 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-second-blocked', leaderEvaluationSecondBlockedTsv)}
+                        disabled={leaderEvaluationReadiness.summary.secondReviewMissingPrerequisitesCount === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-second-blocked' ? 'SECOND blocked 복사됨' : 'SECOND blocked 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-missing-evidence', leaderEvaluationMissingEvidenceTsv)}
+                        disabled={leaderEvaluationReadiness.summary.itemsMissingResultWritingEvidence === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-missing-evidence' ? '증빙 누락 복사됨' : 'missing evidence 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-missing-policy', leaderEvaluationMissingPolicyTsv)}
+                        disabled={leaderEvaluationReadiness.summary.itemsMissingPolicyCategory === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-missing-policy' ? '카테고리 누락 복사됨' : 'missing policyCategory 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-missing-evaluator', leaderEvaluationMissingEvaluatorTsv)}
+                        disabled={leaderEvaluationReadiness.summary.missingEvaluatorCount === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-missing-evaluator' ? '평가자 누락 복사됨' : 'missing evaluator 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-ready', leaderEvaluationReadyTsv)}
+                        disabled={leaderEvaluationReadiness.summary.readyForLeaderReviewCount === 0}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-ready' ? 'ready list 복사됨' : 'ready list 복사'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyMonitoringTable('leader-eval-combined', leaderEvaluationCombinedTsv)}
+                        disabled={!filteredLeaderEvaluationRows.length}
+                        className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
+                      >
+                        {copiedMonitoringTable === 'leader-eval-combined' ? 'combined TSV 복사됨' : 'combined TSV 복사'}
+                      </button>
+                    </div>
+                  </div>
 
-                <div className="mt-4 max-h-96 overflow-auto rounded-xl border border-slate-100">
-                  <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
-                    <thead className="sticky top-0 bg-slate-50 text-slate-500">
-                      <tr>
-                        <th className="px-4 py-2 font-semibold">직원</th>
-                        <th className="px-4 py-2 font-semibold">조직</th>
-                        <th className="px-4 py-2 font-semibold">MBO</th>
-                        <th className="px-4 py-2 font-semibold">위반사항</th>
-                        <th className="px-4 py-2 font-semibold">현재/기준</th>
-                        <th className="px-4 py-2 font-semibold">HR action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {filteredScorePolicyViolationRows.slice(0, 120).map((row, index) => (
-                        <tr key={`${row.code}-${row.personalKpiId ?? row.employeeId ?? index}-${index}`}>
-                          <td className="px-4 py-3">
-                            <div className="font-semibold text-slate-900">{row.employeeName}</div>
-                            <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}</div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{row.departmentPath}</td>
-                          <td className="px-4 py-3">
-                            <div className="font-semibold text-slate-800">{row.personalKpiName ?? '-'}</div>
-                            <div className="text-slate-400">{row.category ?? 'UNMAPPED'} · weight {row.weight ?? '-'}</div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge tone={row.severity === 'BLOCKER' ? 'warn' : 'neutral'}>{row.code}</Badge>
-                            <div className="mt-1 text-slate-500">{row.message}</div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-600">{row.currentValue ?? '-'} / {row.limitValue ?? '-'}</td>
-                          <td className="px-4 py-3 font-semibold text-sky-800">{row.actionLabel}</td>
-                        </tr>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard label="SELF 제출" value={leaderEvaluationReadiness.summary.selfSubmittedCount.toLocaleString()} help="submitted/confirmed" compact />
+                    <MetricCard label="FIRST 준비" value={leaderEvaluationReadiness.summary.firstReviewReadyCount.toLocaleString()} help="리더 평가 입력 전" compact />
+                    <MetricCard
+                      label="FIRST blocker"
+                      value={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount.toLocaleString()}
+                      help="선행 조건 누락"
+                      compact
+                      variant={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard label="SECOND 준비" value={leaderEvaluationReadiness.summary.secondReviewReadyCount.toLocaleString()} help="FIRST 완료 후" compact />
+                    <MetricCard
+                      label="평가자 누락"
+                      value={leaderEvaluationReadiness.summary.missingEvaluatorCount.toLocaleString()}
+                      help="FIRST/SECOND/FINAL"
+                      compact
+                      variant={leaderEvaluationReadiness.summary.missingEvaluatorCount > 0 ? 'warning' : 'default'}
+                    />
+                    <MetricCard
+                      label="전체 blocker"
+                      value={leaderEvaluationReadiness.summary.blockerCount.toLocaleString()}
+                      help="read-only"
+                      compact
+                      variant={leaderEvaluationReadiness.summary.blockerCount > 0 ? 'warning' : 'default'}
+                    />
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-cyan-100 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">FIRST evaluator checklist</h6>
+                      <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                        {leaderEvaluationReadiness.firstEvaluatorChecklist.map((item) => (
+                          <li key={item}>- {item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="rounded-2xl border border-cyan-100 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">SECOND evaluator checklist</h6>
+                      <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                        {leaderEvaluationReadiness.secondEvaluatorChecklist.map((item) => (
+                          <li key={item}>- {item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                    <select value={leaderEvalDivisionFilter} onChange={(event) => setLeaderEvalDivisionFilter(event.target.value)} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">division 전체</option>
+                      {leaderEvalDivisionOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={leaderEvalTeamFilter} onChange={(event) => setLeaderEvalTeamFilter(event.target.value)} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">team 전체</option>
+                      {leaderEvalTeamOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={leaderEvalEvaluatorFilter} onChange={(event) => setLeaderEvalEvaluatorFilter(event.target.value)} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">evaluator 전체</option>
+                      {leaderEvalEvaluatorOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                    </select>
+                    <select value={leaderEvalStageFilter} onChange={(event) => setLeaderEvalStageFilter(event.target.value)} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">stage 전체</option>
+                      {leaderEvalStageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                    </select>
+                    <select value={leaderEvalStatusFilter} onChange={(event) => setLeaderEvalStatusFilter(event.target.value as LeaderEvaluationReadinessStatus2026 | 'ALL')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      {(['ALL', 'READY_FOR_FIRST_REVIEW', 'BLOCKED_SELF_NOT_SUBMITTED', 'BLOCKED_RESULT_MISSING', 'BLOCKED_EVIDENCE_MISSING', 'BLOCKED_POLICY_CATEGORY_MISSING', 'BLOCKED_EVALUATOR_MISSING', 'READY_FOR_SECOND_REVIEW', 'BLOCKED_FIRST_NOT_COMPLETE', 'READY_FOR_FINAL_REVIEW', 'MANUAL_REVIEW'] as const).map((status) => (
+                        <option key={status} value={status}>{getLeaderEvaluationReadinessStatusLabel2026(status)}</option>
                       ))}
-                      {filteredScorePolicyViolationRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 위반사항이 없습니다.</td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
+                    </select>
+                    <select value={leaderEvalPrerequisiteFilter} onChange={(event) => setLeaderEvalPrerequisiteFilter(event.target.value as LeaderEvaluationMissingPrerequisite2026 | 'ALL')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      {(['ALL', 'SELF_NOT_SUBMITTED', 'RESULT_MISSING', 'EVIDENCE_MISSING', 'POLICY_CATEGORY_MISSING', 'EVALUATOR_MISSING', 'FIRST_NOT_COMPLETE', 'ORG_GOAL_SOURCE_MISSING', 'MEASURABLE_RESULT_MISSING', 'PERSONAL_CONTRIBUTION_MISSING', 'SCORE_POLICY_WARNING', 'ADJUSTMENT_READINESS_WARNING'] as const).map((item) => (
+                        <option key={item} value={item}>{getLeaderEvaluationPrerequisiteLabel2026(item)}</option>
+                      ))}
+                    </select>
+                    <select value={leaderEvalPolicyCategoryFilter} onChange={(event) => setLeaderEvalPolicyCategoryFilter(event.target.value as 'ALL' | 'READY' | 'MISSING')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">policyCategory 전체</option>
+                      <option value="READY">policyCategory ready</option>
+                      <option value="MISSING">policyCategory missing</option>
+                    </select>
+                    <select value={leaderEvalEvidenceFilter} onChange={(event) => setLeaderEvalEvidenceFilter(event.target.value as 'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
+                      <option value="ALL">evidence 전체</option>
+                      <option value="READY">evidence ready</option>
+                      <option value="MISSING">evidence missing</option>
+                      <option value="NO_ITEMS">result item 없음</option>
+                    </select>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">리더 평가 readiness 대상</h6>
+                      <span className="text-xs text-slate-500">
+                        {filteredLeaderEvaluationRows.length.toLocaleString()}건 표시 · 전체 {leaderEvaluationRows.length.toLocaleString()}건
+                      </span>
+                    </div>
+                    <div className="max-h-96 overflow-auto">
+                      <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                        <thead className="sticky top-0 bg-cyan-50 text-cyan-700">
+                          <tr>
+                            <th className="px-4 py-2 font-semibold">직원</th>
+                            <th className="px-4 py-2 font-semibold">평가자 chain</th>
+                            <th className="px-4 py-2 font-semibold">stage/status</th>
+                            <th className="px-4 py-2 font-semibold">result/category/evidence</th>
+                            <th className="px-4 py-2 font-semibold">warning</th>
+                            <th className="px-4 py-2 font-semibold">next action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white">
+                          {filteredLeaderEvaluationRows.slice(0, 120).map((row) => (
+                            <tr key={row.employeeId}>
+                              <td className="px-4 py-3">
+                                <div className="font-semibold text-slate-900">{row.employeeName}</div>
+                                <div className="text-slate-400">{row.employeeNo ?? '사번 없음'}{row.email ? ` · ${row.email}` : ''}</div>
+                                <div className="mt-1 text-slate-500">{row.departmentPath}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <div>FIRST: {row.firstEvaluatorName}</div>
+                                <div>SECOND: {row.secondEvaluatorName}</div>
+                                <div>FINAL: {row.finalEvaluatorName}</div>
+                                <div className="mt-1 text-slate-400">{row.currentAssignmentRows.length ? row.currentAssignmentRows.join(' · ') : 'assignment row 없음'}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <Badge tone={getLeaderEvaluationReadinessTone2026(row.readinessStatus)}>
+                                  {getLeaderEvaluationReadinessStatusLabel2026(row.readinessStatus)}
+                                </Badge>
+                                <div className="mt-1 text-slate-500">{row.currentStage}</div>
+                                <div className="mt-1 text-slate-400">SELF {row.selfStatus} · FIRST {row.firstStatus} · SECOND {row.secondStatus}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <div>결과 {row.resultWritingStatus} · category {row.policyCategoryStatus} · evidence {row.evidenceStatus}</div>
+                                <div className="mt-1 text-slate-400">
+                                  item {row.resultItemCount} · result missing {row.missingResultCount} · evidence missing {row.missingEvidenceCount}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex max-w-md flex-wrap gap-1">
+                                  {row.missingPrerequisites.slice(0, 4).map((item) => (
+                                    <Badge key={`${row.employeeId}:${item}`} tone="warn">{getLeaderEvaluationPrerequisiteLabel2026(item)}</Badge>
+                                  ))}
+                                  {row.missingPrerequisites.length > 4 ? <Badge tone="neutral">+{row.missingPrerequisites.length - 4}</Badge> : null}
+                                  {!row.missingPrerequisites.length ? <Badge tone="success">warning 없음</Badge> : null}
+                                </div>
+                                <div className="mt-1 text-slate-400">score warning {row.scorePolicyWarningCount} · adjustment reminder {row.adjustmentReadinessWarningCount}</div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-600">
+                                <div>{row.suggestedNextAction}</div>
+                                {row.blockerReasons.length ? <div className="mt-1 text-slate-400">{row.blockerReasons.slice(0, 2).join(' · ')}</div> : null}
+                              </td>
+                            </tr>
+                          ))}
+                          {filteredLeaderEvaluationRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">리더 평가 readiness 필터 조건에 맞는 대상이 없습니다.</td>
+                            </tr>
+                          ) : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {filteredLeaderEvaluationRows.length > 120 ? (
+                      <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+                        화면에는 120건까지만 표시합니다. 전체 목록은 combined TSV 복사로 추출해 주세요.
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-                  {scorePolicyReadiness.adjustmentReadinessWarnings.join(' · ')}
-                </div>
-              </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -4772,6 +6655,40 @@ function PolicyReadinessPopulation2026Panel(props: {
                 />
               </div>
 
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-slate-600">Quick filters</span>
+                {TEAM_KPI_HR_REVIEW_STATUS_FILTERS_2026.map((status) => {
+                  const count =
+                    status === 'ALL'
+                      ? teamKpiHrReviewCoverage.totalCandidates
+                      : status === 'PENDING_REVIEW'
+                        ? teamKpiHrReviewCoverage.pendingReviewCount
+                        : status === 'APPROVED_FOR_ORG_GOAL'
+                          ? teamKpiHrReviewCoverage.approvedForOrgGoalCount
+                          : status === 'EXCLUDED_DAILY_WORK'
+                            ? teamKpiHrReviewCoverage.excludedDailyWorkCount
+                            : status === 'EXCEPTION_APPROVED'
+                              ? teamKpiHrReviewCoverage.exceptionApprovedCount
+                              : teamKpiHrReviewCoverage.needsDiscussionCount
+                  const isActive = teamReviewStatusFilter === status
+                  return (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => setTeamReviewStatusFilter(status)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                        isActive
+                          ? 'border-indigo-500 bg-indigo-600 text-white'
+                          : 'border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50'
+                      }`}
+                    >
+                      {status === 'PENDING_REVIEW' ? '미지정/PENDING only' : getTeamKpiHrReviewStatusLabel2026(status)}
+                      <span className="ml-1 opacity-80">{count.toLocaleString()}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <label className="text-xs font-semibold text-slate-600">
                   본부
@@ -4829,6 +6746,102 @@ function PolicyReadinessPopulation2026Panel(props: {
                 </label>
               </div>
 
+              {props.canManageTeamKpiReview ? (
+                <div className="mt-4 rounded-2xl border border-indigo-200 bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h5 className="text-sm font-semibold text-slate-900">선택 항목 일괄 HR 결정</h5>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">
+                        선택한 팀 KPI {selectedTeamReviewRows.length.toLocaleString()}건에 동일한 결정/사유/메모를 저장합니다. readiness 메타데이터만 변경됩니다.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={toggleAllVisibleTeamReviews}
+                      disabled={!visibleTeamReviewRows.length || teamReviewBulkSaving}
+                      className="rounded-full border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:opacity-50"
+                    >
+                      {allVisibleTeamReviewSelected ? '보이는 항목 선택 해제' : '보이는 항목 전체 선택'}
+                    </button>
+                  </div>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_1.5fr_auto]">
+                    <label className="text-xs font-semibold text-slate-600">
+                      일괄 결정
+                      <select
+                        value={teamReviewBulkDraft.decision}
+                        onChange={(event) =>
+                          setTeamReviewBulkDraft((current) => ({
+                            ...current,
+                            decision: event.target.value as TeamKpiHrReviewDecision2026 | '',
+                          }))
+                        }
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="">결정 선택</option>
+                        {TEAM_KPI_HR_REVIEW_DECISIONS_2026.map((decision) => (
+                          <option key={decision} value={decision}>{getTeamKpiHrReviewStatusLabel2026(decision)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      일괄 사유
+                      <select
+                        value={teamReviewBulkDraft.reason}
+                        onChange={(event) =>
+                          setTeamReviewBulkDraft((current) => ({
+                            ...current,
+                            reason: event.target.value as TeamKpiHrReviewReason2026 | '',
+                          }))
+                        }
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      >
+                        <option value="">사유 선택</option>
+                        {TEAM_KPI_HR_REVIEW_REASONS_2026.map((reason) => (
+                          <option key={reason} value={reason}>{reason}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      일괄 메모
+                      <textarea
+                        value={teamReviewBulkDraft.note}
+                        onChange={(event) =>
+                          setTeamReviewBulkDraft((current) => ({
+                            ...current,
+                            note: event.target.value,
+                          }))
+                        }
+                        rows={2}
+                        placeholder="선택 항목에 공통으로 남길 HR 검토 메모"
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                      />
+                    </label>
+                    <div className="flex flex-col justify-end gap-2">
+                      <div className="text-xs font-semibold text-slate-600">
+                        선택 {selectedTeamReviewRows.length.toLocaleString()}건
+                        {selectedVisibleTeamReviewCount ? ` · 현재 화면 ${selectedVisibleTeamReviewCount.toLocaleString()}건` : ''}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void saveBulkTeamKpiReviewDecision()}
+                        disabled={
+                          teamReviewBulkSaving ||
+                          !selectedTeamReviewRows.length ||
+                          !teamReviewBulkDraft.decision ||
+                          !teamReviewBulkDraft.reason
+                        }
+                        className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {teamReviewBulkSaving ? '일괄 저장 중...' : '선택 항목 일괄 저장'}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-indigo-700">
+                    일괄 저장은 공식 점수/등급, PersonalKpi/EvaluationItem category, 평가 생성 상태를 변경하지 않습니다.
+                  </p>
+                </div>
+              ) : null}
+
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
                   <h5 className="text-sm font-semibold text-slate-900">팀 KPI 검토 후보</h5>
@@ -4840,6 +6853,20 @@ function PolicyReadinessPopulation2026Panel(props: {
                   <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
                     <thead className="sticky top-0 bg-slate-50 text-slate-500">
                       <tr>
+                        {props.canManageTeamKpiReview ? (
+                          <th className="px-4 py-2 font-semibold">
+                            <label className="inline-flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={allVisibleTeamReviewSelected}
+                                onChange={toggleAllVisibleTeamReviews}
+                                disabled={!visibleTeamReviewRows.length || teamReviewBulkSaving}
+                                className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                              />
+                              선택
+                            </label>
+                          </th>
+                        ) : null}
                         <th className="px-4 py-2 font-semibold">팀 KPI</th>
                         <th className="px-4 py-2 font-semibold">조직/리더</th>
                         <th className="px-4 py-2 font-semibold">연결 본부 KPI</th>
@@ -4852,10 +6879,22 @@ function PolicyReadinessPopulation2026Panel(props: {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 bg-white">
-                      {filteredTeamReviewRows.slice(0, 120).map((row) => {
+                      {visibleTeamReviewRows.map((row) => {
                         const draft = getTeamReviewDraft(row)
                         return (
                           <tr key={row.orgKpiId}>
+                            {props.canManageTeamKpiReview ? (
+                              <td className="px-4 py-3 align-top">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedTeamReviewIdSet.has(row.orgKpiId)}
+                                  onChange={(event) => toggleTeamReviewSelection(row.orgKpiId, event.target.checked)}
+                                  disabled={teamReviewBulkSaving}
+                                  aria-label={`${row.teamKpiName} 선택`}
+                                  className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                                />
+                              </td>
+                            ) : null}
                             <td className="px-4 py-3">
                               <div className="font-semibold text-slate-900">{row.teamKpiName}</div>
                               <div className="mt-1 text-slate-400">
@@ -4947,7 +6986,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                       })}
                       {filteredTeamReviewRows.length === 0 ? (
                         <tr>
-                          <td colSpan={props.canManageTeamKpiReview ? 7 : 6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 팀 KPI가 없습니다.</td>
+                          <td colSpan={props.canManageTeamKpiReview ? 8 : 6} className="px-4 py-6 text-center text-slate-500">필터 조건에 맞는 팀 KPI가 없습니다.</td>
                         </tr>
                       ) : null}
                     </tbody>
@@ -5061,40 +7100,234 @@ function PolicyMapping2026Panel(props: {
   saving: boolean
   error: string
   notice: string
-  categoryDrafts: Record<string, PolicyCategoryDraft2026>
+  categoryDrafts: Record<string, PolicyCategoryWorkbenchDraft2026>
   divisionSalesGroupDrafts: Record<string, SalesGroupDraft2026>
   departmentSalesGroupDrafts: Record<string, SalesGroupDraft2026>
   salesGroupDrafts: Record<string, SalesGroupDraft2026>
   thresholdDecisionDrafts: Record<string, ThresholdDecisionDraft2026>
   onLoad: () => void
   onSave: () => void
-  onCategoryChange: (evaluationItemId: string, value: PolicyCategoryDraft2026) => void
+  onCategoryDraftChange: (mappingId: string, patch: Partial<PolicyCategoryWorkbenchDraft2026>) => void
+  onCategoryBulkDraftChange: (mappingIds: string[], patch: Partial<PolicyCategoryWorkbenchDraft2026>) => void
   onDivisionSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onDepartmentSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onSalesGroupChange: (key: string, value: SalesGroupDraft2026) => void
   onThresholdDecisionChange: (evalCycleId: string, value: ThresholdDecisionDraft2026) => void
 }) {
   const data = props.mappingData
+  const [activeTab, setActiveTab] = useState<PolicyMappingTab2026>('CATEGORY')
+  const [categoryDivisionFilter, setCategoryDivisionFilter] = useState('ALL')
+  const [categoryTeamFilter, setCategoryTeamFilter] = useState('ALL')
+  const [categoryLeaderFilter, setCategoryLeaderFilter] = useState('ALL')
+  const [categoryCurrentFilter, setCategoryCurrentFilter] = useState<PolicyCategoryDraft2026 | 'ALL'>('ALL')
+  const [categorySuggestedFilter, setCategorySuggestedFilter] = useState<PolicyCategoryDraft2026 | 'MANUAL_REVIEW' | 'ALL'>('ALL')
+  const [categoryConfidenceFilter, setCategoryConfidenceFilter] = useState<PolicyCategoryConfidenceFilter2026>('ALL')
+  const [categoryOrgLinkFilter, setCategoryOrgLinkFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL')
+  const [categoryTeamLinkFilter, setCategoryTeamLinkFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL')
+  const [categoryHrSourceFilter, setCategoryHrSourceFilter] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL')
+  const [categoryMboStatusFilter, setCategoryMboStatusFilter] = useState<'ALL' | string>('ALL')
+  const [categorySourceFilter, setCategorySourceFilter] = useState<'ALL' | 'PersonalKpi' | 'EvaluationItem'>('ALL')
+  const [selectedCategoryMappingIds, setSelectedCategoryMappingIds] = useState<Set<string>>(new Set())
+  const [bulkPolicyCategory, setBulkPolicyCategory] = useState<PolicyCategoryDraft2026>('')
+  const [bulkScoreContributionType, setBulkScoreContributionType] = useState<ScoreContributionDraft2026>('')
+  const [bulkPolicyCategoryNote, setBulkPolicyCategoryNote] = useState('')
+  const [departmentOverrideFilter, setDepartmentOverrideFilter] = useState<DepartmentOverrideFilter2026>('IMPORTANT')
+  const [departmentOverrideSearch, setDepartmentOverrideSearch] = useState('')
+  const policyWorkbenchItems = useMemo(
+    () => data?.policyCategoryWorkbenchItems ?? [],
+    [data?.policyCategoryWorkbenchItems]
+  )
   const policyCandidates = data?.policyCategoryCandidates.slice(0, 6) ?? []
   const divisionSalesCandidates = data?.divisionSalesGroupCandidates ?? []
-  const departmentSalesCandidates = data?.departmentSalesGroupCandidates ?? []
+  const departmentSalesCandidates = useMemo(
+    () => data?.departmentSalesGroupCandidates ?? [],
+    [data?.departmentSalesGroupCandidates]
+  )
   const salesCandidates = data?.salesGroupCandidates.slice(0, 6) ?? []
   const thresholdCandidates = data?.thresholdDecisions.slice(0, 3) ?? []
+  const configuredDepartmentOverrideCount = departmentSalesCandidates.filter((candidate) => Boolean(candidate.currentSalesGroup)).length
+  const changedDepartmentOverrideCount = departmentSalesCandidates.filter((candidate) =>
+    Boolean(props.departmentSalesGroupDrafts[`${candidate.evalCycleId}:${candidate.departmentId}`])
+  ).length
+  const departmentOverrideImportantCount = departmentSalesCandidates.filter((candidate) =>
+    Boolean(candidate.currentSalesGroup) ||
+    Boolean(props.departmentSalesGroupDrafts[`${candidate.evalCycleId}:${candidate.departmentId}`]) ||
+    Boolean(candidate.divisionName?.includes('영업')) ||
+    candidate.departmentPath.includes('세일즈마케팅팀')
+  ).length
+  const hrBlockerCount = thresholdCandidates.filter((candidate) => candidate.requiresDecision).length
+  const unsavedDraftCount =
+    Object.values(props.categoryDrafts).filter((draft) => Boolean(draft.category)).length +
+    Object.values(props.divisionSalesGroupDrafts).filter(Boolean).length +
+    Object.values(props.departmentSalesGroupDrafts).filter(Boolean).length +
+    Object.values(props.salesGroupDrafts).filter(Boolean).length +
+    Object.values(props.thresholdDecisionDrafts).filter(Boolean).length
+  const categoryDivisionOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          policyWorkbenchItems
+            .filter((item) => item.divisionId)
+            .map((item) => [item.divisionId as string, item.divisionName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [policyWorkbenchItems]
+  )
+  const categoryTeamOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          policyWorkbenchItems
+            .filter((item) => item.departmentId && (categoryDivisionFilter === 'ALL' || item.divisionId === categoryDivisionFilter))
+            .map((item) => [item.departmentId as string, item.departmentPath])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [categoryDivisionFilter, policyWorkbenchItems]
+  )
+  const categoryLeaderOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          policyWorkbenchItems
+            .filter((item) => item.managerId)
+            .map((item) => [item.managerId as string, item.managerName])
+        ).entries()
+      ).sort((left, right) => left[1].localeCompare(right[1], 'ko')),
+    [policyWorkbenchItems]
+  )
+  const filteredPolicyWorkbenchItems = useMemo(
+    () =>
+      policyWorkbenchItems.filter((item) => {
+        const matchesDivision = categoryDivisionFilter === 'ALL' || item.divisionId === categoryDivisionFilter
+        const matchesTeam = categoryTeamFilter === 'ALL' || item.departmentId === categoryTeamFilter
+        const matchesLeader = categoryLeaderFilter === 'ALL' || item.managerId === categoryLeaderFilter
+        const matchesCurrent =
+          categoryCurrentFilter === 'ALL' ||
+          (categoryCurrentFilter === '' ? !item.currentPolicyCategory : item.currentPolicyCategory === categoryCurrentFilter)
+        const matchesSuggested =
+          categorySuggestedFilter === 'ALL' ||
+          (categorySuggestedFilter === '' ? item.suggestedPolicyCategory === 'MANUAL_REVIEW' : item.suggestedPolicyCategory === categorySuggestedFilter)
+        const matchesConfidence =
+          categoryConfidenceFilter === 'ALL' || item.sourceConfidence === categoryConfidenceFilter
+        const matchesOrgLink =
+          categoryOrgLinkFilter === 'ALL' ||
+          (categoryOrgLinkFilter === 'PRESENT' ? Boolean(item.linkedOrgKpi) : !item.linkedOrgKpi)
+        const matchesTeamLink =
+          categoryTeamLinkFilter === 'ALL' ||
+          (categoryTeamLinkFilter === 'PRESENT' ? Boolean(item.linkedTeamKpi) : !item.linkedTeamKpi)
+        const matchesHrSource =
+          categoryHrSourceFilter === 'ALL' ||
+          (categoryHrSourceFilter === 'PRESENT' ? item.hasHrApprovedSource : !item.hasHrApprovedSource)
+        const matchesMboStatus = categoryMboStatusFilter === 'ALL' || item.mboStatus === categoryMboStatusFilter
+        const matchesSource = categorySourceFilter === 'ALL' || item.itemSource === categorySourceFilter
+        return (
+          matchesDivision &&
+          matchesTeam &&
+          matchesLeader &&
+          matchesCurrent &&
+          matchesSuggested &&
+          matchesConfidence &&
+          matchesOrgLink &&
+          matchesTeamLink &&
+          matchesHrSource &&
+          matchesMboStatus &&
+          matchesSource
+        )
+      }),
+    [
+      categoryConfidenceFilter,
+      categoryCurrentFilter,
+      categoryDivisionFilter,
+      categoryHrSourceFilter,
+      categoryLeaderFilter,
+      categoryMboStatusFilter,
+      categoryOrgLinkFilter,
+      categorySourceFilter,
+      categorySuggestedFilter,
+      categoryTeamFilter,
+      categoryTeamLinkFilter,
+      policyWorkbenchItems,
+    ]
+  )
+  const visiblePolicyWorkbenchItems = filteredPolicyWorkbenchItems.slice(0, 100)
+  const filteredDepartmentSalesCandidates = useMemo(
+    () =>
+      departmentSalesCandidates.filter((candidate) => {
+        const key = `${candidate.evalCycleId}:${candidate.departmentId}`
+        const draftChanged = Boolean(props.departmentSalesGroupDrafts[key])
+        const mapped = Boolean(candidate.currentSalesGroup)
+        const salesDivision = Boolean(candidate.divisionName?.includes('영업'))
+        const highlighted = candidate.departmentPath.includes('세일즈마케팅팀')
+        const matchesFilter =
+          departmentOverrideFilter === 'ALL' ||
+          (departmentOverrideFilter === 'MAPPED' && mapped) ||
+          (departmentOverrideFilter === 'DRAFT_CHANGED' && draftChanged) ||
+          (departmentOverrideFilter === 'SALES_DIVISION' && salesDivision) ||
+          (departmentOverrideFilter === 'IMPORTANT' && (mapped || draftChanged || salesDivision || highlighted))
+        const search = departmentOverrideSearch.trim().toLocaleLowerCase('ko')
+        const matchesSearch =
+          !search ||
+          candidate.departmentPath.toLocaleLowerCase('ko').includes(search) ||
+          candidate.departmentName.toLocaleLowerCase('ko').includes(search) ||
+          (candidate.divisionName ?? '').toLocaleLowerCase('ko').includes(search)
+        return matchesFilter && matchesSearch
+      }),
+    [departmentOverrideFilter, departmentOverrideSearch, departmentSalesCandidates, props.departmentSalesGroupDrafts]
+  )
+  const visibleDepartmentSalesCandidates = filteredDepartmentSalesCandidates.slice(0, departmentOverrideFilter === 'ALL' ? 120 : 30)
+  const selectedVisibleCategoryCount = visiblePolicyWorkbenchItems.filter((item) =>
+    selectedCategoryMappingIds.has(item.mappingId)
+  ).length
+  const allVisibleCategorySelected =
+    visiblePolicyWorkbenchItems.length > 0 && selectedVisibleCategoryCount === visiblePolicyWorkbenchItems.length
   const hasChanges =
-    Object.values(props.categoryDrafts).some(Boolean) ||
+    Object.values(props.categoryDrafts).some((draft) => Boolean(draft.category)) ||
     Object.values(props.divisionSalesGroupDrafts).some(Boolean) ||
     Object.values(props.departmentSalesGroupDrafts).some(Boolean) ||
     Object.values(props.salesGroupDrafts).some(Boolean) ||
     Object.values(props.thresholdDecisionDrafts).some(Boolean)
+  const selectedPolicyWorkbenchIds = useMemo(
+    () =>
+      filteredPolicyWorkbenchItems
+        .filter((item) => selectedCategoryMappingIds.has(item.mappingId))
+        .map((item) => item.mappingId),
+    [filteredPolicyWorkbenchItems, selectedCategoryMappingIds]
+  )
+  const applyBulkPolicyCategoryDraft = () => {
+    if (!selectedPolicyWorkbenchIds.length || !bulkPolicyCategory) return
+    props.onCategoryBulkDraftChange(selectedPolicyWorkbenchIds, {
+      category: bulkPolicyCategory,
+      scoreContributionType: bulkScoreContributionType,
+      note: bulkPolicyCategoryNote,
+    })
+  }
+  const toggleVisiblePolicyWorkbenchSelection = () => {
+    setSelectedCategoryMappingIds((current) => {
+      const next = new Set(current)
+      if (allVisibleCategorySelected) {
+        for (const item of visiblePolicyWorkbenchItems) next.delete(item.mappingId)
+      } else {
+        for (const item of visiblePolicyWorkbenchItems) next.add(item.mappingId)
+      }
+      return next
+    })
+  }
+  const tabs: Array<{ id: PolicyMappingTab2026; label: string; count: number; tone?: 'warn' | 'success' | 'neutral' }> = [
+    { id: 'CATEGORY', label: '카테고리 매핑', count: data?.policyCategoryCandidates.length ?? 0, tone: (data?.policyCategoryCandidates.length ?? 0) > 0 ? 'warn' : 'neutral' },
+    { id: 'DIVISION', label: '본부 영업/비영업', count: data?.divisionMappingSummary.unmappedDivisions ?? 0, tone: (data?.divisionMappingSummary.unmappedDivisions ?? 0) > 0 ? 'warn' : 'success' },
+    { id: 'DEPARTMENT', label: '부서/팀 예외', count: configuredDepartmentOverrideCount + changedDepartmentOverrideCount, tone: configuredDepartmentOverrideCount + changedDepartmentOverrideCount > 0 ? 'warn' : 'neutral' },
+    { id: 'EMPLOYEE', label: '직원별 예외', count: data?.salesGroupCandidates.length ?? 0, tone: (data?.salesGroupCandidates.length ?? 0) > 0 ? 'warn' : 'neutral' },
+    { id: 'HR_CONFIRM', label: 'HR 확인 필요', count: hrBlockerCount, tone: hrBlockerCount > 0 ? 'warn' : 'success' },
+  ]
 
   return (
     <Panel
       title="2026 정책 매핑 관리"
-      description="수동 검토 항목의 정책 카테고리와 preview 전용 division 기준 영업/비영업 구분을 저장합니다. 공식 평가 결과에는 반영되지 않습니다."
+      description="정책 카테고리, 본부/팀/직원 영업 구분, HR 확인 기준을 탭별로 관리합니다. 공식 평가 결과에는 반영되지 않습니다."
     >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
-          <div className="mt-1 rounded-2xl bg-slate-100 p-2 text-slate-600">
+          <div className="rounded-xl bg-slate-100 p-2 text-slate-600">
             <ClipboardList className="h-5 w-5" />
           </div>
           <div>
@@ -5102,11 +7335,12 @@ function PolicyMapping2026Panel(props: {
               <Badge tone="neutral">Metadata only</Badge>
               <Badge tone={data ? 'warn' : 'neutral'}>
                 {data
-                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · division 미지정 ${data.divisionMappingSummary.unmappedDivisions}건`
+                  ? `카테고리 ${data.policyCategoryCandidates.length}건 · division 미지정 ${data.divisionMappingSummary.unmappedDivisions}건 · 팀 override ${configuredDepartmentOverrideCount}건 · HR 확인 ${hrBlockerCount}건`
                   : '미확인'}
               </Badge>
+              {unsavedDraftCount > 0 ? <Badge tone="warn">미저장 draft {unsavedDraftCount}건</Badge> : null}
             </div>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
+            <p className="mt-1 text-xs leading-5 text-slate-600">
               저장 대상은 2026 preview readiness metadata입니다. 저장 점수, 저장 등급, 확정/보정 흐름은 바뀌지 않습니다.
             </p>
           </div>
@@ -5135,30 +7369,226 @@ function PolicyMapping2026Panel(props: {
       {props.notice ? <div className="mt-4"><Banner tone="success" message={props.notice} /></div> : null}
 
       {data ? (
-        <div className="mt-5 space-y-4">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <>
+          <div className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold transition ${
+                  activeTab === tab.id
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+                aria-pressed={activeTab === tab.id}
+              >
+                <span>{tab.label}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] ${
+                  activeTab === tab.id
+                    ? 'bg-white/15 text-white'
+                    : tab.tone === 'warn'
+                      ? 'bg-amber-50 text-amber-700'
+                      : tab.tone === 'success'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-slate-100 text-slate-500'
+                }`}>
+                  {tab.count.toLocaleString()}
+                </span>
+              </button>
+            ))}
+          </div>
+          {unsavedDraftCount > 0 ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+              미저장 draft {unsavedDraftCount.toLocaleString()}건이 있습니다. 탭을 이동해도 draft는 유지되며, 상단의 선택 metadata 저장을 눌러야 저장됩니다.
+            </div>
+          ) : null}
+
+          <div className="mt-4 space-y-4">
+            <div className="grid gap-4">
+              {activeTab === 'CATEGORY' ? (
+                <>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold text-slate-900">수동 검토 필요 항목</h4>
                 <span className="text-xs text-slate-400">{data.policyCategoryCandidates.length}건</span>
               </div>
-              <div className="mt-3 space-y-3">
-                {policyCandidates.length ? policyCandidates.map((candidate) => (
-                  <div key={candidate.evaluationItemId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-900">{candidate.title}</span>
-                      <Badge tone="neutral">{candidate.employeeName}</Badge>
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                      현재 {getPolicyCategoryLabel2026(candidate.currentEffectiveCategory)} · 제안 {getPolicyCategoryLabel2026(candidate.suggestedCategory)} · {candidate.reason}
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      중복 입력을 줄이기 위해 실제 매핑은 아래 bulk workbench에서 처리합니다.
                     </p>
-                    <select
-                      value={props.categoryDrafts[candidate.evaluationItemId] ?? ''}
-                      onChange={(event) =>
-                        props.onCategoryChange(candidate.evaluationItemId, event.target.value as PolicyCategoryDraft2026)
-                      }
-                      className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                    >
+                    {policyCandidates.length ? (
+                      <details className="mt-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        <summary className="cursor-pointer font-semibold text-slate-700">상위 {policyCandidates.length}건 간단히 보기</summary>
+                        <div className="mt-2 grid gap-2 md:grid-cols-2">
+                          {policyCandidates.map((candidate) => (
+                            <div key={candidate.evaluationItemId} className="rounded-lg bg-white p-2">
+                              <div className="font-semibold text-slate-800">{candidate.title}</div>
+                              <div className="mt-1 text-slate-500">
+                                {candidate.employeeName} · 현재 {getPolicyCategoryLabel2026(candidate.currentEffectiveCategory)} · 제안 {getPolicyCategoryLabel2026(candidate.suggestedCategory)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    ) : <EmptyBlock message="현재 조회 범위에서 정책 카테고리 수동 매핑 후보가 없습니다." />}
+                  </div>
+
+            <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 lg:col-span-2">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 policyCategory bulk mapping workbench</h4>
+                    <Badge tone="neutral">Metadata only</Badge>
+                    <Badge tone="warn">{filteredPolicyWorkbenchItems.length.toLocaleString()}건 표시</Badge>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-blue-900">
+                    이 저장은 2026 readiness metadata만 변경합니다. 공식 점수/등급은 변경되지 않습니다. 추천값은 자동 확정이 아니며 HR이 저장해야 반영됩니다.
+                  </p>
+                </div>
+                <div className="text-xs text-slate-500">
+                  전체 후보 {policyWorkbenchItems.length.toLocaleString()}건 · 표시 {visiblePolicyWorkbenchItems.length.toLocaleString()}건
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <label className="text-xs font-semibold text-slate-600">
+                  본부
+                  <select
+                    value={categoryDivisionFilter}
+                    onChange={(event) => {
+                      setCategoryDivisionFilter(event.target.value)
+                      setCategoryTeamFilter('ALL')
+                    }}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 본부</option>
+                    {categoryDivisionOptions.map(([divisionId, divisionName]) => (
+                      <option key={divisionId} value={divisionId}>{divisionName}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  팀
+                  <select
+                    value={categoryTeamFilter}
+                    onChange={(event) => setCategoryTeamFilter(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 팀</option>
+                    {categoryTeamOptions.map(([departmentId, departmentPath]) => (
+                      <option key={departmentId} value={departmentId}>{departmentPath}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  리더
+                  <select
+                    value={categoryLeaderFilter}
+                    onChange={(event) => setCategoryLeaderFilter(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체 리더</option>
+                    {categoryLeaderOptions.map(([leaderId, leaderName]) => (
+                      <option key={leaderId} value={leaderId}>{leaderName}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  현재 category
+                  <select
+                    value={categoryCurrentFilter}
+                    onChange={(event) => setCategoryCurrentFilter(event.target.value as PolicyCategoryDraft2026 | 'ALL')}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체</option>
+                    <option value="">미분류</option>
+                    <option value="ORG_GOAL">조직목표</option>
+                    <option value="PROJECT_T">프로젝트 T</option>
+                    <option value="PROJECT_K">프로젝트 K</option>
+                    <option value="DAILY_WORK">일상업무</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  제안 category
+                  <select
+                    value={categorySuggestedFilter}
+                    onChange={(event) => setCategorySuggestedFilter(event.target.value as PolicyCategoryDraft2026 | 'MANUAL_REVIEW' | 'ALL')}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체</option>
+                    <option value="ORG_GOAL">조직목표</option>
+                    <option value="PROJECT_T">프로젝트 T</option>
+                    <option value="PROJECT_K">프로젝트 K</option>
+                    <option value="DAILY_WORK">일상업무</option>
+                    <option value="MANUAL_REVIEW">수동 검토</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  confidence
+                  <select
+                    value={categoryConfidenceFilter}
+                    onChange={(event) => setCategoryConfidenceFilter(event.target.value as PolicyCategoryConfidenceFilter2026)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="ALL">전체</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="LOW">LOW</option>
+                    <option value="MANUAL_REVIEW">MANUAL_REVIEW</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  조직 KPI
+                  <select value={categoryOrgLinkFilter} onChange={(event) => setCategoryOrgLinkFilter(event.target.value as 'ALL' | 'PRESENT' | 'ABSENT')} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="PRESENT">연결 있음</option>
+                    <option value="ABSENT">연결 없음</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  팀 KPI
+                  <select value={categoryTeamLinkFilter} onChange={(event) => setCategoryTeamLinkFilter(event.target.value as 'ALL' | 'PRESENT' | 'ABSENT')} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="PRESENT">연결 있음</option>
+                    <option value="ABSENT">연결 없음</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  HR 승인 source
+                  <select value={categoryHrSourceFilter} onChange={(event) => setCategoryHrSourceFilter(event.target.value as 'ALL' | 'PRESENT' | 'ABSENT')} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="PRESENT">있음</option>
+                    <option value="ABSENT">없음</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  MBO status
+                  <select value={categoryMboStatusFilter} onChange={(event) => setCategoryMboStatusFilter(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="DRAFT">초안</option>
+                    <option value="SUBMITTED">제출</option>
+                    <option value="MANAGER_REVIEW">리더 검토</option>
+                    <option value="CONFIRMED">확정</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-600">
+                  source
+                  <select value={categorySourceFilter} onChange={(event) => setCategorySourceFilter(event.target.value as 'ALL' | 'PersonalKpi' | 'EvaluationItem')} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                    <option value="ALL">전체</option>
+                    <option value="PersonalKpi">PersonalKpi</option>
+                    <option value="EvaluationItem">EvaluationItem</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-blue-100 bg-white p-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  <button type="button" onClick={toggleVisiblePolicyWorkbenchSelection} disabled={!visiblePolicyWorkbenchItems.length} className="rounded-full border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:opacity-50">
+                    {allVisibleCategorySelected ? '표시 항목 선택 해제' : '표시 항목 전체 선택'}
+                  </button>
+                  <label className="min-w-40 flex-1 text-xs font-semibold text-slate-600">
+                    bulk category
+                    <select value={bulkPolicyCategory} onChange={(event) => setBulkPolicyCategory(event.target.value as PolicyCategoryDraft2026)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
                       <option value="">선택 안 함</option>
                       <option value="ORG_GOAL">조직목표</option>
                       <option value="PROJECT_T">프로젝트 T</option>
@@ -5166,177 +7596,406 @@ function PolicyMapping2026Panel(props: {
                       <option value="DAILY_WORK">일상업무</option>
                       <option value="KEEP_UNCLASSIFIED">제외/미분류 유지</option>
                     </select>
-                  </div>
-                )) : <EmptyBlock message="현재 조회 범위에서 정책 카테고리 수동 매핑 후보가 없습니다." />}
+                  </label>
+                  <label className="min-w-40 flex-1 text-xs font-semibold text-slate-600">
+                    bulk scoreContributionType
+                    <select value={bulkScoreContributionType} onChange={(event) => setBulkScoreContributionType(event.target.value as ScoreContributionDraft2026)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
+                      <option value="">category 기준 자동</option>
+                      <option value="ORGANIZATION">조직성과</option>
+                      <option value="PERSONAL">개인성과</option>
+                    </select>
+                  </label>
+                  <label className="min-w-64 flex-[2] text-xs font-semibold text-slate-600">
+                    bulk review note
+                    <input value={bulkPolicyCategoryNote} onChange={(event) => setBulkPolicyCategoryNote(event.target.value)} maxLength={1000} placeholder="예: HR 일괄 검토 기준으로 확정" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                  </label>
+                  <button type="button" onClick={applyBulkPolicyCategoryDraft} disabled={!selectedPolicyWorkbenchIds.length || !bulkPolicyCategory} className="rounded-full bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-800 disabled:bg-slate-300">
+                    {selectedPolicyWorkbenchIds.length.toLocaleString()}건 bulk 적용
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">bulk 적용은 화면 draft만 바꿉니다. 실제 저장은 상단의 선택 metadata 저장 버튼을 눌러야 수행됩니다.</p>
+              </div>
+
+              <div className="mt-4 overflow-auto rounded-2xl border border-blue-100 bg-white">
+                <table className="min-w-[1500px] divide-y divide-slate-100 text-left text-xs">
+                  <thead className="bg-blue-50 text-blue-800">
+                    <tr>
+                      <th className="px-3 py-2 font-semibold">선택</th>
+                      <th className="px-3 py-2 font-semibold">대상/KPI</th>
+                      <th className="px-3 py-2 font-semibold">조직/리더</th>
+                      <th className="px-3 py-2 font-semibold">연결 KPI</th>
+                      <th className="px-3 py-2 font-semibold">현재/제안</th>
+                      <th className="px-3 py-2 font-semibold">저장 draft</th>
+                      <th className="px-3 py-2 font-semibold">사유/메모</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {visiblePolicyWorkbenchItems.length ? visiblePolicyWorkbenchItems.map((candidate) => {
+                      const draft = props.categoryDrafts[candidate.mappingId] ?? { category: '', scoreContributionType: '', note: '' }
+                      return (
+                        <tr key={candidate.mappingId}>
+                          <td className="px-3 py-3 align-top">
+                            <input
+                              type="checkbox"
+                              checked={selectedCategoryMappingIds.has(candidate.mappingId)}
+                              onChange={(event) => {
+                                setSelectedCategoryMappingIds((current) => {
+                                  const next = new Set(current)
+                                  if (event.target.checked) next.add(candidate.mappingId)
+                                  else next.delete(candidate.mappingId)
+                                  return next
+                                })
+                              }}
+                              className="h-4 w-4 rounded border-slate-300"
+                            />
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <div className="font-semibold text-slate-900">{candidate.kpiTitle}</div>
+                            <div className="mt-1 text-slate-500">{candidate.employeeName} · {candidate.employeeNo ?? '사번 없음'}</div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <Badge tone="neutral">{candidate.itemSource}</Badge>
+                              <Badge tone="neutral">{getMboOperationalStatusLabel2026(candidate.mboStatus)}</Badge>
+                              {candidate.evalStage ? <Badge tone="neutral">{candidate.evalStage}</Badge> : null}
+                            </div>
+                            {candidate.kpiDescription ? <p className="mt-2 line-clamp-2 text-slate-500">{candidate.kpiDescription}</p> : null}
+                          </td>
+                          <td className="px-3 py-3 align-top text-slate-600">
+                            <div>{candidate.departmentPath}</div>
+                            <div className="mt-1 text-slate-400">리더 {candidate.managerName}</div>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            {candidate.linkedOrgKpi ? (
+                              <div>
+                                <div className="font-semibold text-slate-800">{candidate.linkedOrgKpi.title}</div>
+                                <div className="mt-1 text-slate-500">{candidate.linkedOrgKpi.departmentPath ?? candidate.linkedOrgKpi.departmentName ?? '조직 미지정'}</div>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {candidate.linkedOrgKpi.isDivisionKpi ? <Badge tone="success">본부 KPI</Badge> : null}
+                                  {candidate.linkedTeamKpi ? <Badge tone={candidate.hasHrApprovedSource ? 'success' : 'warn'}>{candidate.linkedTeamKpi.reviewStatus}</Badge> : null}
+                                </div>
+                              </div>
+                            ) : <span className="text-slate-400">연결 없음</span>}
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <div className="flex flex-wrap gap-1">
+                              <Badge tone={candidate.currentPolicyCategory ? 'neutral' : 'warn'}>현재 {getPolicyCategoryLabel2026(candidate.currentPolicyCategory)}</Badge>
+                              <Badge tone={getPolicyCategoryConfidenceTone2026(candidate.sourceConfidence)}>제안 {getPolicyCategoryLabel2026(candidate.suggestedPolicyCategory)}</Badge>
+                            </div>
+                            <div className="mt-2 text-slate-500">confidence {getPolicyCategoryConfidenceLabel2026(candidate.sourceConfidence)}</div>
+                            <div className="mt-1 text-slate-500">score {getScoreContributionLabel2026(candidate.currentScoreContributionType)} → {getScoreContributionLabel2026(candidate.suggestedScoreContributionType)}</div>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <select value={draft.category} onChange={(event) => props.onCategoryDraftChange(candidate.mappingId, { category: event.target.value as PolicyCategoryDraft2026 })} className="w-full min-w-40 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
+                              <option value="">선택 안 함</option>
+                              <option value="ORG_GOAL">조직목표</option>
+                              <option value="PROJECT_T">프로젝트 T</option>
+                              <option value="PROJECT_K">프로젝트 K</option>
+                              <option value="DAILY_WORK">일상업무</option>
+                              <option value="KEEP_UNCLASSIFIED">제외/미분류 유지</option>
+                            </select>
+                            <select value={draft.scoreContributionType} onChange={(event) => props.onCategoryDraftChange(candidate.mappingId, { scoreContributionType: event.target.value as ScoreContributionDraft2026 })} className="mt-2 w-full min-w-40 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
+                              <option value="">category 기준 자동</option>
+                              <option value="ORGANIZATION">조직성과</option>
+                              <option value="PERSONAL">개인성과</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-3 align-top">
+                            <div className="max-w-sm text-slate-600">{candidate.suggestionReason}</div>
+                            <textarea value={draft.note} onChange={(event) => props.onCategoryDraftChange(candidate.mappingId, { note: event.target.value })} rows={2} maxLength={1000} placeholder={candidate.reviewNote ?? 'HR 검토 메모'} className="mt-2 w-full min-w-56 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700" />
+                          </td>
+                        </tr>
+                      )
+                    }) : (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">현재 필터 조건에서 policyCategory 매핑 후보가 없습니다.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">Division 영업/비영업 구분</h4>
-                  <span className="text-xs text-slate-400">
-                    전체 {data.divisionMappingSummary.totalDivisions}개 · 미지정 {data.divisionMappingSummary.unmappedDivisions}개
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  전체 조직 master의 division 부서 ID 기준으로 preview readiness metadata를 저장합니다. 평가 대상이 아직 없는 본부도 미리 매핑할 수 있으며, 공식 점수와 등급은 바뀌지 않습니다.
-                </p>
-                {data.divisionMappingSummary.warning ? (
-                  <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-                    {data.divisionMappingSummary.warning}
+                </>
+              ) : null}
+
+              {activeTab === 'DIVISION' ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">Division 영업/비영업 구분</h4>
+                    <span className="text-xs text-slate-400">
+                      전체 {data.divisionMappingSummary.totalDivisions}개 · 미지정 {data.divisionMappingSummary.unmappedDivisions}개
+                    </span>
                   </div>
-                ) : null}
-                <div className="mt-3 space-y-3">
-                  {divisionSalesCandidates.length ? divisionSalesCandidates.map((candidate) => {
-                    const key = `${candidate.evalCycleId}:${candidate.divisionId}`
-                    return (
-                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900">{candidate.divisionName}</span>
-                          <Badge tone="neutral">재직 {candidate.activeEmployeeCount}명</Badge>
-                          <Badge tone={candidate.currentCycleTargetCount > 0 ? 'neutral' : 'warn'}>
-                            현재 주기 대상 {candidate.currentCycleTargetCount}명
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
-                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
-                          {candidate.suggestedSalesGroup ? ` · 참고 제안 ${getSalesGroupLabel2026(candidate.suggestedSalesGroup)}` : ''}
-                          {candidate.sampleEmployees.length ? ` · 현재 주기 샘플 ${candidate.sampleEmployees.join(', ')}` : ''}
-                          {' · '}
-                          {candidate.reason}
-                        </p>
-                        <select
-                          value={props.divisionSalesGroupDrafts[key] ?? ''}
-                          onChange={(event) => props.onDivisionSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
-                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                        >
-                          <option value="">선택 안 함</option>
-                          <option value="SALES">영업</option>
-                          <option value="NON_SALES">비영업</option>
-                          <option value="UNRESOLVED">미해결로 유지</option>
-                        </select>
-                      </div>
-                    )
-                  }) : <EmptyBlock message="현재 조회 범위에서 division 영업/비영업 매핑 후보가 없습니다." />}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">부서/팀 override</h4>
-                  <span className="text-xs text-slate-400">{departmentSalesCandidates.length}건</span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  본부 기본값과 다른 팀만 예외로 지정합니다. 예: 국내영업총괄본부 &gt; 세일즈마케팅팀은 비영업으로 지정할 수 있습니다.
-                </p>
-                <div className="mt-3 space-y-3">
-                  {departmentSalesCandidates.length ? departmentSalesCandidates.map((candidate) => {
-                    const key = `${candidate.evalCycleId}:${candidate.departmentId}`
-                    return (
-                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900">{candidate.departmentPath}</span>
-                          <Badge tone="neutral">영향 {candidate.activeEmployeeCount}명</Badge>
-                          <Badge tone={candidate.currentCycleTargetCount > 0 ? 'neutral' : 'warn'}>
-                            현재 주기 대상 {candidate.currentCycleTargetCount}명
-                          </Badge>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
-                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
-                          {candidate.suggestedSalesGroup ? ` · 참고 제안 ${getSalesGroupLabel2026(candidate.suggestedSalesGroup)}` : ''}
-                          {candidate.sampleEmployees.length ? ` · 현재 주기 샘플 ${candidate.sampleEmployees.join(', ')}` : ''}
-                          {' · '}
-                          {candidate.reason}
-                        </p>
-                        <select
-                          value={props.departmentSalesGroupDrafts[key] ?? ''}
-                          onChange={(event) => props.onDepartmentSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
-                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                        >
-                          <option value="">선택 안 함</option>
-                          <option value="SALES">영업</option>
-                          <option value="NON_SALES">비영업</option>
-                          <option value="UNRESOLVED">미해결로 유지</option>
-                        </select>
-                      </div>
-                    )
-                  }) : <EmptyBlock message="본부 기본값과 다른 부서/팀 override 후보가 없습니다." />}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">직원별 override</h4>
-                  <span className="text-xs text-slate-400">{data.salesGroupCandidates.length}건</span>
-                </div>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  division 매핑으로 해결할 수 없는 대상만 직원별 override로 보완합니다.
-                </p>
-                <div className="mt-3 space-y-3">
-                  {salesCandidates.length ? salesCandidates.map((candidate) => {
-                    const key = `${candidate.evalCycleId}:${candidate.employeeId}`
-                    return (
-                      <div key={key} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-slate-900">{candidate.employeeName}</span>
-                          <Badge tone="neutral">{candidate.departmentName}</Badge>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">
-                          현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)} · {candidate.reason}
-                        </p>
-                        <select
-                          value={props.salesGroupDrafts[key] ?? ''}
-                          onChange={(event) => props.onSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
-                          className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                        >
-                          <option value="">선택 안 함</option>
-                          <option value="SALES">영업</option>
-                          <option value="NON_SALES">비영업</option>
-                          <option value="UNRESOLVED">미해결로 유지</option>
-                        </select>
-                      </div>
-                    )
-                  }) : <EmptyBlock message="현재 조회 범위에서 직원별 override 후보가 없습니다." />}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-sm font-semibold text-slate-900">HR 확인 필요 기준</h4>
-                  <span className="text-xs text-slate-400">TEAM_MEMBER_SALES</span>
-                </div>
-                <div className="mt-3 space-y-3">
-                  {thresholdCandidates.length ? thresholdCandidates.map((candidate) => (
-                    <div key={candidate.evalCycleId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold text-slate-900">{candidate.evalYear} 평가 주기</span>
-                        <Badge tone={candidate.requiresDecision ? 'warn' : 'success'}>
-                          {candidate.requiresDecision ? 'HR 확인 필요' : '결정 기록됨'}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-slate-500">
-                        현재 {getThresholdDecisionLabel2026(candidate.currentDecision)} · 영업 팀원 {candidate.affectedSalesMemberCount}명
-                      </p>
-                      <select
-                        value={props.thresholdDecisionDrafts[candidate.evalCycleId] ?? ''}
-                        onChange={(event) =>
-                          props.onThresholdDecisionChange(candidate.evalCycleId, event.target.value as ThresholdDecisionDraft2026)
-                        }
-                        className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
-                      >
-                        <option value="">선택 안 함</option>
-                        <option value="UNRESOLVED">HR 확인 필요 유지</option>
-                        <option value="SUPER_PRIORITY">110점 이상 Super 우선</option>
-                        <option value="OUTSTANDING_PRIORITY">110점 이상 Outstanding 우선</option>
-                      </select>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    조직 master의 division 기준으로 preview readiness metadata만 저장합니다.
+                  </p>
+                  {data.divisionMappingSummary.warning ? (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+                      {data.divisionMappingSummary.warning}
                     </div>
-                  )) : <EmptyBlock message="현재 조회 범위에서 영업 팀원 Super/Outstanding 기준 후보가 없습니다." />}
+                  ) : null}
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">Division</th>
+                          <th className="px-3 py-2 font-semibold">인원</th>
+                          <th className="px-3 py-2 font-semibold">현재/제안</th>
+                          <th className="px-3 py-2 font-semibold">근거</th>
+                          <th className="px-3 py-2 font-semibold">Draft</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {divisionSalesCandidates.length ? divisionSalesCandidates.map((candidate) => {
+                          const key = `${candidate.evalCycleId}:${candidate.divisionId}`
+                          return (
+                            <tr key={key} className="align-top">
+                              <td className="px-3 py-3 font-semibold text-slate-900">{candidate.divisionName}</td>
+                              <td className="px-3 py-3 text-slate-600">
+                                재직 {candidate.activeEmployeeCount}명
+                                <div className="mt-1 text-slate-400">현재 주기 {candidate.currentCycleTargetCount}명</div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">
+                                현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
+                                <div className="mt-1">
+                                  {candidate.suggestedSalesGroup ? (
+                                    <Badge tone="neutral">제안 {getSalesGroupLabel2026(candidate.suggestedSalesGroup)}</Badge>
+                                  ) : (
+                                    <span className="text-slate-400">제안 없음</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-500">
+                                <div className="max-w-sm">{candidate.reason}</div>
+                                {candidate.sampleEmployees.length ? (
+                                  <div className="mt-1 text-slate-400">샘플 {candidate.sampleEmployees.join(', ')}</div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3">
+                                <select
+                                  value={props.divisionSalesGroupDrafts[key] ?? ''}
+                                  onChange={(event) => props.onDivisionSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                                  className="h-9 min-w-36 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-blue-400"
+                                >
+                                  <option value="">선택 안 함</option>
+                                  <option value="SALES">영업</option>
+                                  <option value="NON_SALES">비영업</option>
+                                  <option value="UNRESOLVED">미해결로 유지</option>
+                                </select>
+                              </td>
+                            </tr>
+                          )
+                        }) : (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">현재 조회 범위에서 division 영업/비영업 매핑 후보가 없습니다.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              ) : null}
+
+              {activeTab === 'DEPARTMENT' ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">부서/팀 예외</h4>
+                    <span className="text-xs text-slate-400">
+                      표시 {visibleDepartmentSalesCandidates.length}건 · 전체 {departmentSalesCandidates.length}건 · 중요 {departmentOverrideImportantCount}건
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    본부 기본값과 다른 팀만 예외로 지정합니다. 기본 필터는 설정됨, 변경 draft, 영업 본부, 세일즈마케팅팀을 우선 보여줍니다.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-end gap-2">
+                    <label className="min-w-60 flex-1 text-xs font-semibold text-slate-600">
+                      경로 검색
+                      <input
+                        value={departmentOverrideSearch}
+                        onChange={(event) => setDepartmentOverrideSearch(event.target.value)}
+                        placeholder="부서/팀 경로 검색"
+                        className="mt-1 h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-800 outline-none focus:border-blue-400"
+                      />
+                    </label>
+                    {([
+                      ['IMPORTANT', '기본 표시'],
+                      ['MAPPED', '설정됨'],
+                      ['DRAFT_CHANGED', 'draft 변경'],
+                      ['SALES_DIVISION', '영업 본부'],
+                      ['ALL', '전체'],
+                    ] as Array<[DepartmentOverrideFilter2026, string]>).map(([filter, label]) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        onClick={() => setDepartmentOverrideFilter(filter)}
+                        className={`h-9 rounded-full px-3 text-xs font-semibold ${
+                          departmentOverrideFilter === filter
+                            ? 'bg-slate-900 text-white'
+                            : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">부서/팀 경로</th>
+                          <th className="px-3 py-2 font-semibold">인원</th>
+                          <th className="px-3 py-2 font-semibold">현재/제안</th>
+                          <th className="px-3 py-2 font-semibold">근거</th>
+                          <th className="px-3 py-2 font-semibold">Draft</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {visibleDepartmentSalesCandidates.length ? visibleDepartmentSalesCandidates.map((candidate) => {
+                          const key = `${candidate.evalCycleId}:${candidate.departmentId}`
+                          return (
+                            <tr key={key} className="align-top">
+                              <td className="px-3 py-3 font-semibold text-slate-900">
+                                {candidate.departmentPath}
+                                {candidate.departmentPath.includes('세일즈마케팅팀') ? (
+                                  <div className="mt-1"><Badge tone="warn">세일즈마케팅팀</Badge></div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">
+                                영향 {candidate.activeEmployeeCount}명
+                                <div className="mt-1 text-slate-400">현재 주기 {candidate.currentCycleTargetCount}명</div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-600">
+                                현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)}
+                                <div className="mt-1">
+                                  {candidate.suggestedSalesGroup ? (
+                                    <Badge tone="neutral">제안 {getSalesGroupLabel2026(candidate.suggestedSalesGroup)}</Badge>
+                                  ) : (
+                                    <span className="text-slate-400">제안 없음</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-slate-500">
+                                <div className="max-w-sm">{candidate.reason}</div>
+                                {candidate.sampleEmployees.length ? (
+                                  <div className="mt-1 text-slate-400">샘플 {candidate.sampleEmployees.join(', ')}</div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3">
+                                <select
+                                  value={props.departmentSalesGroupDrafts[key] ?? ''}
+                                  onChange={(event) => props.onDepartmentSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                                  className="h-9 min-w-36 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-blue-400"
+                                >
+                                  <option value="">선택 안 함</option>
+                                  <option value="SALES">영업</option>
+                                  <option value="NON_SALES">비영업</option>
+                                  <option value="UNRESOLVED">미해결로 유지</option>
+                                </select>
+                              </td>
+                            </tr>
+                          )
+                        }) : (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">현재 필터 조건에서 부서/팀 override 후보가 없습니다.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeTab === 'EMPLOYEE' ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">직원별 예외</h4>
+                    <span className="text-xs text-slate-400">{data.salesGroupCandidates.length}건</span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    division/부서 매핑으로 해결할 수 없는 대상만 직원별 override로 보완합니다.
+                  </p>
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-slate-100">
+                    <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">직원</th>
+                          <th className="px-3 py-2 font-semibold">부서</th>
+                          <th className="px-3 py-2 font-semibold">현재/근거</th>
+                          <th className="px-3 py-2 font-semibold">Draft</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {salesCandidates.length ? salesCandidates.map((candidate) => {
+                          const key = `${candidate.evalCycleId}:${candidate.employeeId}`
+                          return (
+                            <tr key={key} className="align-top">
+                              <td className="px-3 py-3 font-semibold text-slate-900">{candidate.employeeName}</td>
+                              <td className="px-3 py-3 text-slate-600">{candidate.departmentName}</td>
+                              <td className="px-3 py-3 text-slate-500">
+                                현재 {getSalesGroupLabel2026(candidate.currentSalesGroup)} · {candidate.reason}
+                              </td>
+                              <td className="px-3 py-3">
+                                <select
+                                  value={props.salesGroupDrafts[key] ?? ''}
+                                  onChange={(event) => props.onSalesGroupChange(key, event.target.value as SalesGroupDraft2026)}
+                                  className="h-9 min-w-36 rounded-xl border border-slate-200 bg-white px-3 text-xs text-slate-800 outline-none focus:border-blue-400"
+                                >
+                                  <option value="">선택 안 함</option>
+                                  <option value="SALES">영업</option>
+                                  <option value="NON_SALES">비영업</option>
+                                  <option value="UNRESOLVED">미해결로 유지</option>
+                                </select>
+                              </td>
+                            </tr>
+                          )
+                        }) : (
+                          <tr>
+                            <td colSpan={4} className="px-4 py-8 text-center text-sm text-slate-500">현재 조회 범위에서 직원별 override 후보가 없습니다.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeTab === 'HR_CONFIRM' ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">HR 확인 필요 기준</h4>
+                    <span className="text-xs text-slate-400">TEAM_MEMBER_SALES</span>
+                  </div>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {thresholdCandidates.length ? thresholdCandidates.map((candidate) => (
+                      <div key={candidate.evalCycleId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{candidate.evalYear} 평가 주기</span>
+                          <Badge tone={candidate.requiresDecision ? 'warn' : 'success'}>
+                            {candidate.requiresDecision ? 'HR 확인 필요' : '결정 기록됨'}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          현재 {getThresholdDecisionLabel2026(candidate.currentDecision)} · 영업 팀원 {candidate.affectedSalesMemberCount}명
+                        </p>
+                        <select
+                          value={props.thresholdDecisionDrafts[candidate.evalCycleId] ?? ''}
+                          onChange={(event) =>
+                            props.onThresholdDecisionChange(candidate.evalCycleId, event.target.value as ThresholdDecisionDraft2026)
+                          }
+                          className="mt-3 h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
+                        >
+                          <option value="">선택 안 함</option>
+                          <option value="UNRESOLVED">HR 확인 필요 유지</option>
+                          <option value="SUPER_PRIORITY">110점 이상 Super 우선</option>
+                          <option value="OUTSTANDING_PRIORITY">110점 이상 Outstanding 우선</option>
+                        </select>
+                      </div>
+                    )) : <EmptyBlock message="현재 조회 범위에서 영업 팀원 Super/Outstanding 기준 후보가 없습니다." />}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
-        </div>
+        </>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           HR 관리자가 preview blocker를 풀기 위한 정책 매핑 후보를 조회하고, 명시적으로 선택한 metadata만 저장할 수 있습니다.

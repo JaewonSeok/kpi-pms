@@ -35,6 +35,10 @@ const adminPanelSource = readProjectFile('src/components/evaluation/AiCompetency
 const reviewPageClientSource = readProjectFile(
   'src/components/evaluation/AiCompetencyCaseReviewPage.tsx'
 )
+const gateConfigSource = readProjectFile('src/lib/ai-competency-gate-config.ts')
+const gateSharedSource = readProjectFile('src/server/ai-competency-gate-shared.ts')
+const gateServerSource = readProjectFile('src/server/ai-competency-gate.ts')
+const validationsSource = readProjectFile('src/lib/validations.ts')
 const resultsSource = readProjectFile('src/server/evaluation-results.ts')
 const calibrationSource = readProjectFile('src/server/evaluation-calibration.ts')
 const compensationSource = readProjectFile('src/server/compensation-manage.ts')
@@ -92,8 +96,10 @@ run('the actions route exposes only the gate workflow actions', () => {
 
 run('employee, admin, and reviewer UI shells expose Korean gate-oriented copy', () => {
   assert.equal(employeeClientSource.includes('AI 역량평가'), true)
-  assert.equal(employeeClientSource.includes('AI 기반 프로젝트 수행'), true)
-  assert.equal(employeeClientSource.includes('AI 활용 사례 확산'), true)
+  assert.equal(gateConfigSource.includes('AI 기반 프로젝트 수행 T/K'), true)
+  assert.equal(gateConfigSource.includes('조직 기여 AI 활용 사례'), true)
+  assert.equal(gateConfigSource.includes('AI 실무 역량 인증'), true)
+  assert.equal(employeeClientSource.includes('단순 교육 이수나 도구 사용 경험만으로는 인정되지 않습니다.'), true)
   assert.equal(employeeClientSource.includes('제출서 작성'), true)
   assert.equal(employeeClientSource.includes('증빙 자료'), true)
   assert.equal(employeeClientSource.includes('이력 / 결정 내역'), true)
@@ -102,12 +108,42 @@ run('employee, admin, and reviewer UI shells expose Korean gate-oriented copy', 
   assert.equal(adminPanelSource.includes('회차 선택'), true)
   assert.equal(adminPanelSource.includes('회차 관리'), true)
   assert.equal(adminPanelSource.includes('대상자 배정'), true)
+  assert.equal(adminPanelSource.includes('2026 AI 활용평가 readiness'), true)
+  assert.equal(adminPanelSource.includes('정량 개선 누락'), true)
   assert.equal(adminPanelSource.includes('제출 및 검토 대기열'), true)
   assert.equal(adminPanelSource.includes('등록된 AI 역량평가 회차가 없습니다.'), true)
 
   assert.equal(reviewPageClientSource.includes('AI 역량평가 제출서 검토'), true)
   assert.equal(reviewPageClientSource.includes('검토 의견'), true)
   assert.equal(reviewPageClientSource.includes('보완 요청'), true)
+  assert.equal(reviewPageClientSource.includes('통과'), true)
+  assert.equal(reviewPageClientSource.includes('Fail'), true)
+})
+
+run('2026 AI evidence paths are stored as readiness metadata without schema changes', () => {
+  for (const route of [
+    'AI_PROJECT_TK',
+    'ORG_CONTRIBUTION_CASE',
+    'PRACTICAL_AI_CERTIFICATION',
+  ]) {
+    assert.equal(gateConfigSource.includes(route), true)
+    assert.equal(validationsSource.includes(route), true)
+  }
+
+  assert.equal(gateSharedSource.includes('AI_COMPETENCY_GATE_RECOGNITION_ROUTE_REQUIRED'), true)
+  assert.equal(
+    gateSharedSource.includes('AI_COMPETENCY_GATE_QUANTITATIVE_BEFORE_AFTER_REQUIRED'),
+    true
+  )
+  assert.match(gateServerSource, /policyRecognitionRoute/)
+  assert.match(gateServerSource, /2026-PPT-AI-PASS-FAIL/)
+})
+
+run('AI evidence readiness stays separate from annual performance totals and grades', () => {
+  assert.equal(gateServerSource.includes('totalScore'), false)
+  assert.equal(gateServerSource.includes('gradeId'), false)
+  assert.equal(gateSharedSource.includes('totalScore'), false)
+  assert.equal(gateSharedSource.includes('gradeId'), false)
   assert.equal(reviewPageClientSource.includes('통과'), true)
   assert.equal(reviewPageClientSource.includes('Fail'), true)
 })

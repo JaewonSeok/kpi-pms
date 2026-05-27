@@ -1,7 +1,25 @@
 import type { FeedbackRoundStatus, FeedbackRoundType, Prisma, SystemRole } from '@prisma/client'
 import { buildAdminGoogleAccessHref } from '@/lib/admin-google-access-tabs'
+import { readPolicy2026OfficialReadinessEnabled } from '@/lib/evaluation-policy-2026-preview-metadata'
+import {
+  EVALUATION_2026_SCHEDULE_STATUS_LABELS,
+  getEvaluation2026KoreaDateKey,
+  getEvaluation2026ScheduleWindowMap,
+  type Evaluation2026ScheduleWindow,
+  type Evaluation2026ScheduleWindowKey,
+  type Evaluation2026ScheduleWindowStatus,
+} from '@/lib/evaluation-2026-schedule-readiness'
 import { prisma } from '@/lib/prisma'
 import { parsePerformanceDesignConfig } from '@/lib/performance-design'
+import {
+  getEvaluation2026ReadinessPopulationDryRun,
+  type Evaluation2026ReadinessPopulationDryRun,
+} from '@/server/evaluation-2026-readiness-population'
+import {
+  EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS,
+  getEvaluation2026FeedbackLeadershipReadiness,
+  type Evaluation2026FeedbackLeadershipReadinessResult,
+} from '@/server/evaluation-2026-feedback-leadership-readiness'
 
 type CalendarSession = {
   user?: {
@@ -39,6 +57,100 @@ export type PerformanceCalendarEvent = {
   sourceLabel: string
 }
 
+export type PerformanceOperationsMilestoneStatus =
+  | 'NOT_STARTED'
+  | 'IN_PROGRESS'
+  | 'DONE'
+  | 'BLOCKED'
+  | 'NEEDS_REVIEW'
+
+export type PerformanceOperationsScheduleStatus = Evaluation2026ScheduleWindowStatus
+
+export type PerformanceOperationsOwnerRole =
+  | 'HR'
+  | 'TEAM_LEADER'
+  | 'DIVISION_HEAD'
+  | 'EMPLOYEE'
+  | 'SYSTEM'
+
+export type PerformanceOperationsReadinessLink =
+  | 'MBO_COVERAGE'
+  | 'TEAM_KPI_REVIEW'
+  | 'GRADE_POLICY_READINESS'
+  | 'AI_PASS_FAIL_READINESS'
+  | 'ASSIGNMENT_SYNC'
+  | 'PERFORMANCE_CALENDAR'
+
+export type PerformanceOperationsChecklistItem = {
+  id: string
+  name: string
+  plannedRangeLabel: string
+  scheduleWindowKey: Evaluation2026ScheduleWindowKey | null
+  scheduleStatus: PerformanceOperationsScheduleStatus
+  scheduleStatusLabel: string
+  relativeTimingLabel: string
+  ownerRole: PerformanceOperationsOwnerRole
+  ownerRoleLabel: string
+  status: PerformanceOperationsMilestoneStatus
+  statusLabel: string
+  readinessLink: PerformanceOperationsReadinessLink
+  readinessLinkLabel: string
+  href: string
+  blockerCount: number
+  note: string
+  lastUpdated: string | null
+  actionGuidance: string[]
+}
+
+export type PerformanceOperationsChecklistAction = {
+  id: string
+  label: string
+  description: string
+  href: string
+  blockerCount: number
+}
+
+export type PerformanceOperationsChecklist = {
+  policyVersion: '2026-PPT-OPERATIONS-READINESS'
+  mode: 'read_only'
+  selectedCycleId: string | null
+  selectedCycleName: string | null
+  selectedCycleIsOfficialReadinessTarget: boolean
+  persistence: {
+    existing: boolean
+    source: 'EvalCycle.performanceDesignConfig.milestones'
+    saveImplemented: false
+    note: string
+  }
+  safety: {
+    officialScoringEnabled: false
+    officialGradeEnabled: false
+    officialAiScoreExclusionEnabled: false
+    totalScoreChanged: false
+    gradeIdChanged: false
+    evaluationsCreated: 0
+    evaluationItemsCreated: 0
+    backfillRun: false
+  }
+  summary: {
+    totalMilestones: number
+    blockerCount: number
+    statusCounts: Record<PerformanceOperationsMilestoneStatus, number>
+    scheduleStatusCounts: Record<PerformanceOperationsScheduleStatus, number>
+  }
+  schedule: {
+    referenceDate: string
+    activeWindows: Array<{
+      key: Evaluation2026ScheduleWindowKey
+      label: string
+      recommendedAction: string
+      href: string
+    }>
+  }
+  nowActions: PerformanceOperationsChecklistAction[]
+  milestones: PerformanceOperationsChecklistItem[]
+}
+
 export type PerformanceCalendarPageData = {
   state: PerformanceCalendarPageState
   message?: string
@@ -63,11 +175,14 @@ export type PerformanceCalendarPageData = {
   }
   events: PerformanceCalendarEvent[]
   alerts: PerformanceCalendarAlert[]
+  operationsChecklist: PerformanceOperationsChecklist
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult
 }
 
 type CalendarParams = {
   month?: string
   types?: PerformanceCalendarEventType[]
+  today?: string
 }
 
 type EvalCycleLite = {
@@ -137,11 +252,31 @@ type EmployeeLite = {
   } | null
 }
 
+type PerformanceOperationsAssignmentCoverage = {
+  assignmentCount: number
+  targetCount: number
+  evaluatorCount: number
+}
+
+type PerformanceOperationsAiReadiness = {
+  cycleExists: boolean
+  targetCount: number
+  missingSubmissionCount: number
+  needsRevisionCount: number
+  pendingReviewCount: number
+  passedCount: number
+  failedCount: number
+}
+
 type CalendarDeps = {
   loadEvalCycles: (selectedYear: number) => Promise<EvalCycleLite[]>
   loadFeedbackRounds: (selectedYear: number) => Promise<FeedbackRoundLite[]>
   loadAiCompetencyCycles: (selectedYear: number) => Promise<AiCompetencyCycleLite[]>
   loadEmployees: (monthNumber: number) => Promise<EmployeeLite[]>
+  loadReadinessPopulationDryRun?: (evalCycleId: string) => Promise<Evaluation2026ReadinessPopulationDryRun | null>
+  loadAssignmentCoverage?: (evalCycleId: string) => Promise<PerformanceOperationsAssignmentCoverage>
+  loadAiCompetencyReadiness?: (evalCycleId: string) => Promise<PerformanceOperationsAiReadiness>
+  loadFeedbackLeadershipReadiness?: (evalCycleId: string) => Promise<Evaluation2026FeedbackLeadershipReadinessResult>
 }
 
 const TIMEZONE = 'Asia/Seoul'
@@ -153,6 +288,78 @@ const FILTER_LABELS: Record<PerformanceCalendarEventType, string> = {
   calibration: '캘리브레이션',
   anniversary: '입사일',
   milestone: '운영 일정',
+}
+
+const OPERATIONS_STATUS_LABELS: Record<PerformanceOperationsMilestoneStatus, string> = {
+  NOT_STARTED: '시작 전',
+  IN_PROGRESS: '진행 중',
+  DONE: '완료',
+  BLOCKED: 'blocker 있음',
+  NEEDS_REVIEW: '검토 필요',
+}
+
+const OPERATIONS_OWNER_LABELS: Record<PerformanceOperationsOwnerRole, string> = {
+  HR: 'HR',
+  TEAM_LEADER: '팀장',
+  DIVISION_HEAD: '본부장',
+  EMPLOYEE: '직원',
+  SYSTEM: '시스템',
+}
+
+const READINESS_LINK_LABELS: Record<PerformanceOperationsReadinessLink, string> = {
+  MBO_COVERAGE: 'MBO coverage',
+  TEAM_KPI_REVIEW: 'Team KPI review',
+  GRADE_POLICY_READINESS: 'Grade policy readiness',
+  AI_PASS_FAIL_READINESS: 'AI Pass/Fail readiness',
+  ASSIGNMENT_SYNC: 'Assignment sync',
+  PERFORMANCE_CALENDAR: '운영 일정',
+}
+
+const EMPTY_OPERATIONS_CHECKLIST: PerformanceOperationsChecklist = {
+  policyVersion: '2026-PPT-OPERATIONS-READINESS',
+  mode: 'read_only',
+  selectedCycleId: null,
+  selectedCycleName: null,
+  selectedCycleIsOfficialReadinessTarget: false,
+  persistence: {
+    existing: true,
+    source: 'EvalCycle.performanceDesignConfig.milestones',
+    saveImplemented: false,
+    note: '기존 performanceDesignConfig.milestones는 일정 표시용이며 status/note 저장 스키마가 아직 없습니다. 이 체크리스트는 PPT 기준 운영 가이드로 읽기 전용 표시합니다.',
+  },
+  safety: {
+    officialScoringEnabled: false,
+    officialGradeEnabled: false,
+    officialAiScoreExclusionEnabled: false,
+    totalScoreChanged: false,
+    gradeIdChanged: false,
+    evaluationsCreated: 0,
+    evaluationItemsCreated: 0,
+    backfillRun: false,
+  },
+  summary: {
+    totalMilestones: 0,
+    blockerCount: 0,
+    statusCounts: {
+      NOT_STARTED: 0,
+      IN_PROGRESS: 0,
+      DONE: 0,
+      BLOCKED: 0,
+      NEEDS_REVIEW: 0,
+    },
+    scheduleStatusCounts: {
+      UPCOMING: 0,
+      ACTIVE: 0,
+      CLOSED: 0,
+      NEEDS_SETUP: 0,
+    },
+  },
+  schedule: {
+    referenceDate: getEvaluation2026KoreaDateKey(),
+    activeWindows: [],
+  },
+  nowActions: [],
+  milestones: [],
 }
 
 function parseMonthKey(input?: string) {
@@ -169,6 +376,13 @@ function parseMonthKey(input?: string) {
     month: now.getMonth() + 1,
     key: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
   }
+}
+
+function parseReferenceDate(input?: string) {
+  if (input && /^\d{4}-\d{2}-\d{2}$/.test(input)) {
+    return new Date(`${input}T12:00:00+09:00`)
+  }
+  return new Date()
 }
 
 function buildMonthRange(monthKey: string) {
@@ -383,6 +597,54 @@ function buildDefaultDeps(): CalendarDeps {
       }).then((employees) =>
         employees.filter((employee) => employee.joinDate.getUTCMonth() + 1 === monthNumber)
       ),
+    loadReadinessPopulationDryRun: async (evalCycleId) =>
+      getEvaluation2026ReadinessPopulationDryRun({
+        evalCycleId,
+        limit: 20,
+      }),
+    loadAssignmentCoverage: async (evalCycleId) =>
+      prisma.evaluationAssignment.findMany({
+        where: { evalCycleId },
+        select: {
+          targetId: true,
+          evaluatorId: true,
+        },
+      }).then((assignments) => ({
+        assignmentCount: assignments.length,
+        targetCount: new Set(assignments.map((assignment) => assignment.targetId)).size,
+        evaluatorCount: new Set(assignments.map((assignment) => assignment.evaluatorId)).size,
+      })),
+    loadAiCompetencyReadiness: async (evalCycleId) =>
+      prisma.aiCompetencyGateCycle.findUnique({
+        where: { evalCycleId },
+        select: {
+          id: true,
+          assignments: {
+            select: {
+              status: true,
+            },
+          },
+        },
+      }).then((cycle) => {
+        const assignments = cycle?.assignments ?? []
+        return {
+          cycleExists: Boolean(cycle),
+          targetCount: assignments.length,
+          missingSubmissionCount: assignments.filter((assignment) =>
+            assignment.status === 'NOT_STARTED' || assignment.status === 'DRAFT'
+          ).length,
+          needsRevisionCount: assignments.filter((assignment) => assignment.status === 'REVISION_REQUESTED').length,
+          pendingReviewCount: assignments.filter((assignment) =>
+            assignment.status === 'SUBMITTED' ||
+            assignment.status === 'RESUBMITTED' ||
+            assignment.status === 'UNDER_REVIEW'
+          ).length,
+          passedCount: assignments.filter((assignment) => assignment.status === 'PASSED').length,
+          failedCount: assignments.filter((assignment) => assignment.status === 'FAILED').length,
+        }
+      }),
+    loadFeedbackLeadershipReadiness: async (evalCycleId) =>
+      getEvaluation2026FeedbackLeadershipReadiness({ evalCycleId }),
   }
 }
 
@@ -589,11 +851,362 @@ function buildEvents(params: {
   return events.sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.title.localeCompare(b.title))
 }
 
+function selectOperationsCycle(params: { evalCycles: EvalCycleLite[]; selectedYear: number }) {
+  const cycles2026 = params.evalCycles.filter((cycle) => cycle.evalYear === 2026)
+  return (
+    cycles2026.find((cycle) => readPolicy2026OfficialReadinessEnabled(cycle.performanceDesignConfig)) ??
+    cycles2026[0] ??
+    params.evalCycles.find((cycle) => cycle.evalYear === params.selectedYear) ??
+    null
+  )
+}
+
+function dateRangeLabel(start?: Date | null, end?: Date | null, fallback = 'HR 일정 입력 필요') {
+  if (!start && !end) return fallback
+  if (start && end) return `${formatDateLabel(start)} ~ ${formatDateLabel(end)}`
+  if (start) return `${formatDateLabel(start)}부터`
+  return `${formatDateLabel(end as Date)}까지`
+}
+
+function statusForBlockers(blockerCount: number, fallback: PerformanceOperationsMilestoneStatus = 'NOT_STARTED') {
+  if (blockerCount > 0) return 'BLOCKED'
+  return fallback
+}
+
+function makeOperationsMilestone(params: {
+  id: string
+  name: string
+  plannedRangeLabel: string
+  scheduleWindow?: Evaluation2026ScheduleWindow | null
+  ownerRole: PerformanceOperationsOwnerRole
+  status: PerformanceOperationsMilestoneStatus
+  readinessLink: PerformanceOperationsReadinessLink
+  href: string
+  blockerCount?: number
+  note: string
+  actionGuidance: string[]
+}): PerformanceOperationsChecklistItem {
+  return {
+    id: params.id,
+    name: params.name,
+    plannedRangeLabel: params.plannedRangeLabel,
+    scheduleWindowKey: params.scheduleWindow?.key ?? null,
+    scheduleStatus: params.scheduleWindow?.status ?? 'NEEDS_SETUP',
+    scheduleStatusLabel:
+      params.scheduleWindow?.statusLabel ?? EVALUATION_2026_SCHEDULE_STATUS_LABELS.NEEDS_SETUP,
+    relativeTimingLabel: params.scheduleWindow?.relativeTimingLabel ?? 'HR 일정 metadata 확정 필요',
+    ownerRole: params.ownerRole,
+    ownerRoleLabel: OPERATIONS_OWNER_LABELS[params.ownerRole],
+    status: params.status,
+    statusLabel: OPERATIONS_STATUS_LABELS[params.status],
+    readinessLink: params.readinessLink,
+    readinessLinkLabel: READINESS_LINK_LABELS[params.readinessLink],
+    href: params.href,
+    blockerCount: params.blockerCount ?? 0,
+    note: params.note,
+    lastUpdated: null,
+    actionGuidance: params.actionGuidance,
+  }
+}
+
+function buildStatusCounts(milestones: PerformanceOperationsChecklistItem[]) {
+  const counts: Record<PerformanceOperationsMilestoneStatus, number> = {
+    NOT_STARTED: 0,
+    IN_PROGRESS: 0,
+    DONE: 0,
+    BLOCKED: 0,
+    NEEDS_REVIEW: 0,
+  }
+  for (const milestone of milestones) {
+    counts[milestone.status] += 1
+  }
+  return counts
+}
+
+function buildScheduleStatusCounts(milestones: PerformanceOperationsChecklistItem[]) {
+  const counts: Record<PerformanceOperationsScheduleStatus, number> = {
+    UPCOMING: 0,
+    ACTIVE: 0,
+    CLOSED: 0,
+    NEEDS_SETUP: 0,
+  }
+  for (const milestone of milestones) {
+    counts[milestone.scheduleStatus] += 1
+  }
+  return counts
+}
+
+function buildNowActions(milestones: PerformanceOperationsChecklistItem[]) {
+  return milestones
+    .filter((milestone) => milestone.status === 'BLOCKED' || milestone.status === 'NEEDS_REVIEW')
+    .map((milestone) => ({
+      id: `action-${milestone.id}`,
+      label: milestone.actionGuidance[0] ?? milestone.name,
+      description: milestone.note,
+      href: milestone.href,
+      blockerCount: milestone.blockerCount,
+    }))
+}
+
+function buildOperationsChecklist(params: {
+  selectedYear: number
+  evalCycles: EvalCycleLite[]
+  feedbackRounds: FeedbackRoundLite[]
+  readiness: Evaluation2026ReadinessPopulationDryRun | null
+  assignmentCoverage: PerformanceOperationsAssignmentCoverage | null
+  aiReadiness: PerformanceOperationsAiReadiness | null
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null
+  referenceDate: Date
+}): PerformanceOperationsChecklist {
+  const cycle = selectOperationsCycle({
+    evalCycles: params.evalCycles,
+    selectedYear: params.selectedYear,
+  })
+  const readiness = params.readiness
+  const mboMissing = readiness?.mboSetupCoverage.employeesMissingAnyPersonalKpiCount ?? 0
+  const confirmedMissing = readiness?.employeesMissingConfirmedPersonalKpiCount ?? 0
+  const policyCategoryMissing = readiness?.policyCategoryMissingCount ?? 0
+  const teamKpiPending =
+    (readiness?.teamKpiHrReviewCoverage.pendingReviewCount ?? 0) +
+    (readiness?.teamKpiHrReviewCoverage.needsDiscussionCount ?? 0)
+  const gradeBlockers = readiness?.gradePolicyReadiness.blockers.length ?? 0
+  const assignmentTargets = params.assignmentCoverage?.targetCount ?? 0
+  const aiMissing =
+    params.aiReadiness?.cycleExists === false
+      ? 1
+      : (params.aiReadiness?.missingSubmissionCount ?? 0) +
+        (params.aiReadiness?.needsRevisionCount ?? 0) +
+        (params.aiReadiness?.pendingReviewCount ?? 0)
+  const feedbackRoundCount = params.feedbackRounds.filter((round) => round.evalCycle.id === cycle?.id).length
+  const feedbackLeadership = params.feedbackLeadershipReadiness
+  const second360Blockers =
+    feedbackLeadership
+      ? feedbackLeadership.second360Feedback.blockedCount + feedbackLeadership.second360Feedback.needsSetupCount
+      : feedbackRoundCount > 0
+        ? 0
+        : 1
+  const leadershipBlockers =
+    feedbackLeadership
+      ? feedbackLeadership.leadershipDiagnosis.blockedCount + feedbackLeadership.leadershipDiagnosis.needsSetupCount
+      : 1
+  const scheduleWindows = getEvaluation2026ScheduleWindowMap(params.referenceDate)
+
+  const milestones: PerformanceOperationsChecklistItem[] = [
+    makeOperationsMilestone({
+      id: 'member-goal-setup-confirm',
+      name: '팀원 업적목표 수립 및 확정',
+      plannedRangeLabel: dateRangeLabel(cycle?.kpiSetupStart, cycle?.kpiSetupEnd),
+      scheduleWindow: scheduleWindows.MBO_SETUP,
+      ownerRole: 'EMPLOYEE',
+      status: statusForBlockers(mboMissing + confirmedMissing, confirmedMissing === 0 && mboMissing === 0 ? 'DONE' : 'IN_PROGRESS'),
+      readinessLink: 'MBO_COVERAGE',
+      href: '/evaluation/performance',
+      blockerCount: mboMissing + confirmedMissing,
+      note: `MBO 미작성 ${mboMissing}명, 확정 KPI 누락 ${confirmedMissing}명입니다.`,
+      actionGuidance: ['MBO 미작성자 확인', '제출 요청 필요', '리더 검토 필요'],
+    }),
+    makeOperationsMilestone({
+      id: 'org-goal-kpi-adjustment',
+      name: '2026 조직목표 KPI 조정',
+      plannedRangeLabel: dateRangeLabel(cycle?.kpiSetupStart, cycle?.kpiSetupEnd),
+      scheduleWindow: scheduleWindows.ORG_KPI_ADJUSTMENT,
+      ownerRole: 'DIVISION_HEAD',
+      status: teamKpiPending > 0 ? 'NEEDS_REVIEW' : 'IN_PROGRESS',
+      readinessLink: 'TEAM_KPI_REVIEW',
+      href: '/kpi/org',
+      blockerCount: teamKpiPending,
+      note: '본부 KPI와 팀 KPI를 먼저 정리해야 개인 MBO의 조직목표 후보가 안정화됩니다.',
+      actionGuidance: ['팀 KPI 검토 완료', '본부 KPI 외 팀 KPI 확정'],
+    }),
+    makeOperationsMilestone({
+      id: 'policy-briefing',
+      name: '조직장/팀원 설명회',
+      plannedRangeLabel: 'PPT 운영 일정 기준',
+      scheduleWindow: null,
+      ownerRole: 'HR',
+      status: 'NEEDS_REVIEW',
+      readinessLink: 'PERFORMANCE_CALENDAR',
+      href: '/admin/performance-calendar',
+      blockerCount: 0,
+      note: '2026 정책, MBO category, AI Pass/Fail 분리 운영을 설명해야 합니다.',
+      actionGuidance: ['조직장/팀원 설명회 일정 확정'],
+    }),
+    makeOperationsMilestone({
+      id: 'team-kpi-finalization',
+      name: '본부 KPI 외 팀 KPI 확정',
+      plannedRangeLabel: 'MBO 확정 전',
+      scheduleWindow: scheduleWindows.TEAM_KPI_CONFIRMATION,
+      ownerRole: 'HR',
+      status: teamKpiPending > 0 ? 'BLOCKED' : 'DONE',
+      readinessLink: 'TEAM_KPI_REVIEW',
+      href: '/evaluation/performance',
+      blockerCount: teamKpiPending,
+      note: `검토 대기/논의 필요 팀 KPI ${teamKpiPending}건입니다.`,
+      actionGuidance: ['팀 KPI 검토 완료', '조직목표 반영/일상업무 처리 결정'],
+    }),
+    makeOperationsMilestone({
+      id: 'personal-goal-card-update',
+      name: '팀원 개인업적목표관리카드 수정',
+      plannedRangeLabel: '팀 KPI HR 결정 후',
+      scheduleWindow: scheduleWindows.MBO_REVISION,
+      ownerRole: 'EMPLOYEE',
+      status: statusForBlockers(policyCategoryMissing, policyCategoryMissing === 0 ? 'DONE' : 'IN_PROGRESS'),
+      readinessLink: 'MBO_COVERAGE',
+      href: '/kpi/personal',
+      blockerCount: policyCategoryMissing,
+      note: `policyCategory 미확정 KPI ${policyCategoryMissing}건입니다.`,
+      actionGuidance: ['카테고리 확정 필요', '조직목표/프로젝트/일상업무 중복 확인'],
+    }),
+    makeOperationsMilestone({
+      id: 'mid-review-feedback',
+      name: '업무목표 중간 점검/피드백',
+      plannedRangeLabel: scheduleWindows.MID_CHECK.plannedRangeLabel,
+      scheduleWindow: scheduleWindows.MID_CHECK,
+      ownerRole: 'TEAM_LEADER',
+      status: 'NOT_STARTED',
+      readinessLink: 'PERFORMANCE_CALENDAR',
+      href: '/checkin',
+      blockerCount: 0,
+      note: '목표 변경 전 진행률, 장애요인, 피드백 기록을 확인합니다.',
+      actionGuidance: ['중간 점검/피드백 운영 안내'],
+    }),
+    makeOperationsMilestone({
+      id: 'goal-change-request',
+      name: '업무목표 변경 신청 기간',
+      plannedRangeLabel: scheduleWindows.GOAL_CHANGE_REQUEST.plannedRangeLabel,
+      scheduleWindow: scheduleWindows.GOAL_CHANGE_REQUEST,
+      ownerRole: 'EMPLOYEE',
+      status: 'NOT_STARTED',
+      readinessLink: 'PERFORMANCE_CALENDAR',
+      href: '/kpi/personal',
+      blockerCount: 0,
+      note: '업무목표 변경은 공식 scoring 활성화 전 별도 신청/승인 흐름으로 운영해야 합니다.',
+      actionGuidance: ['업무목표 변경 신청 안내'],
+    }),
+    makeOperationsMilestone({
+      id: 'performance-result-writing',
+      name: '2026 업적목표 수행결과 작성',
+      plannedRangeLabel: scheduleWindows.RESULT_WRITING.plannedRangeLabel,
+      scheduleWindow: scheduleWindows.RESULT_WRITING,
+      ownerRole: 'EMPLOYEE',
+      status: assignmentTargets > 0 ? 'NOT_STARTED' : 'BLOCKED',
+      readinessLink: 'ASSIGNMENT_SYNC',
+      href: '/admin/performance-assignments',
+      blockerCount: assignmentTargets > 0 ? 0 : 1,
+      note: `평가자/대상자 배정 대상 ${assignmentTargets}명입니다.`,
+      actionGuidance: ['평가자 배정 확인', '수행결과 작성 안내'],
+    }),
+    makeOperationsMilestone({
+      id: 'org-evaluation-close',
+      name: '2026 조직평가 종료',
+      plannedRangeLabel: scheduleWindows.ORG_EVALUATION_CLOSE.plannedRangeLabel,
+      scheduleWindow: scheduleWindows.ORG_EVALUATION_CLOSE,
+      ownerRole: 'HR',
+      status: gradeBlockers > 0 ? 'BLOCKED' : 'NEEDS_REVIEW',
+      readinessLink: 'GRADE_POLICY_READINESS',
+      href: '/evaluation/performance',
+      blockerCount: gradeBlockers,
+      note: `등급 기준 readiness blocker ${gradeBlockers}건입니다. 공식 등급은 아직 미적용입니다.`,
+      actionGuidance: ['등급 기준 HR 확인', '조직평가 종료 전 blocker 확인'],
+    }),
+    makeOperationsMilestone({
+      id: 'ai-competency-submission',
+      name: 'AI 활용 평가 제출',
+      plannedRangeLabel: '레벨업/승진 Pass/Fail 별도 운영',
+      scheduleWindow: scheduleWindows.AI_EVIDENCE_SUBMISSION,
+      ownerRole: 'EMPLOYEE',
+      status: statusForBlockers(aiMissing, params.aiReadiness?.targetCount ? 'IN_PROGRESS' : 'BLOCKED'),
+      readinessLink: 'AI_PASS_FAIL_READINESS',
+      href: '/evaluation/ai-competency/admin',
+      blockerCount: aiMissing,
+      note: `AI 대상 ${params.aiReadiness?.targetCount ?? 0}명, 미제출/보완/검토 대기 ${aiMissing}건입니다.`,
+      actionGuidance: ['AI 활용평가 대상자 배정', 'AI evidence 제출 현황 확인'],
+    }),
+    makeOperationsMilestone({
+      id: 'second-360-review',
+      name: '2차 다면평가',
+      plannedRangeLabel: 'PPT 운영 일정 기준',
+      scheduleWindow: scheduleWindows.SECOND_360_REVIEW,
+      ownerRole: 'HR',
+      status: second360Blockers > 0 ? 'NEEDS_REVIEW' : 'DONE',
+      readinessLink: 'PERFORMANCE_CALENDAR',
+      href: '/evaluation/360/admin',
+      blockerCount: second360Blockers,
+      note: feedbackLeadership
+        ? `2차 다면평가 ${feedbackLeadership.second360Feedback.status}, reviewer 누락 ${feedbackLeadership.second360Feedback.missingReviewerAssignmentCount}건, 미응답 ${feedbackLeadership.second360Feedback.responseMissingCount}건입니다.`
+        : `현재 연결된 다면평가 라운드 ${feedbackRoundCount}건입니다.`,
+      actionGuidance: ['2차 다면평가 일정/대상 확인'],
+    }),
+    makeOperationsMilestone({
+      id: 'leadership-diagnosis',
+      name: '리더십 진단',
+      plannedRangeLabel: '다면평가/조직평가 일정과 연계',
+      scheduleWindow: scheduleWindows.LEADERSHIP_DIAGNOSIS,
+      ownerRole: 'HR',
+      status: leadershipBlockers > 0 ? 'NEEDS_REVIEW' : 'DONE',
+      readinessLink: 'PERFORMANCE_CALENDAR',
+      href: '/solutions/leadership-diagnosis',
+      blockerCount: leadershipBlockers,
+      note: feedbackLeadership
+        ? `리더십 진단 ${feedbackLeadership.leadershipDiagnosis.status}, 대상 리더 ${feedbackLeadership.leadershipDiagnosis.targetLeaderCount}명, reviewer 누락 ${feedbackLeadership.leadershipDiagnosis.missingReviewerAssignmentCount}건입니다.`
+        : '리더십 진단은 별도 운영 일정과 대상자 확정이 필요합니다.',
+      actionGuidance: ['리더십 진단 운영 일정 확정'],
+    }),
+    makeOperationsMilestone({
+      id: 'ai-case-accumulation',
+      name: 'AI 사례 준비 및 축적',
+      plannedRangeLabel: '2026~2027 상시 축적',
+      scheduleWindow: null,
+      ownerRole: 'EMPLOYEE',
+      status: aiMissing > 0 ? 'IN_PROGRESS' : 'DONE',
+      readinessLink: 'AI_PASS_FAIL_READINESS',
+      href: '/evaluation/ai-competency',
+      blockerCount: aiMissing,
+      note: 'AI 사례는 단순 사용이 아니라 실제 업무 개선/성과 창출 증빙 중심으로 축적합니다.',
+      actionGuidance: ['AI 사례 증빙 준비', '정량 개선/전후 비교 기록'],
+    }),
+  ]
+
+  const statusCounts = buildStatusCounts(milestones)
+  const scheduleStatusCounts = buildScheduleStatusCounts(milestones)
+  const activeWindows = Object.values(scheduleWindows)
+    .filter((window) => window.status === 'ACTIVE')
+    .map((window) => ({
+      key: window.key,
+      label: window.label,
+      recommendedAction: window.recommendedAction,
+      href: window.href,
+    }))
+
+  return {
+    ...EMPTY_OPERATIONS_CHECKLIST,
+    selectedCycleId: cycle?.id ?? null,
+    selectedCycleName: cycle ? `${cycle.evalYear}년 · ${cycle.cycleName}` : null,
+    selectedCycleIsOfficialReadinessTarget: cycle
+      ? readPolicy2026OfficialReadinessEnabled(cycle.performanceDesignConfig)
+      : false,
+    summary: {
+      totalMilestones: milestones.length,
+      blockerCount: milestones.reduce((sum, milestone) => sum + milestone.blockerCount, 0),
+      statusCounts,
+      scheduleStatusCounts,
+    },
+    schedule: {
+      referenceDate: getEvaluation2026KoreaDateKey(params.referenceDate),
+      activeWindows,
+    },
+    nowActions: buildNowActions(milestones),
+    milestones,
+  }
+}
+
 export async function getPerformanceCalendarPageData(
   session: CalendarSession,
   params: CalendarParams = {},
   deps: CalendarDeps = buildDefaultDeps()
 ): Promise<PerformanceCalendarPageData> {
+  const referenceDate = parseReferenceDate(params.today)
+
   if (session.user?.role !== 'ROLE_ADMIN') {
     return {
       state: 'permission-denied',
@@ -610,6 +1223,8 @@ export async function getPerformanceCalendarPageData(
       },
       events: [],
       alerts: [],
+      operationsChecklist: EMPTY_OPERATIONS_CHECKLIST,
+      feedbackLeadershipReadiness: EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS,
     }
   }
 
@@ -663,6 +1278,62 @@ export async function getPerformanceCalendarPageData(
       (Object.keys(FILTER_LABELS) as PerformanceCalendarEventType[])
 
     const filteredEvents = merged.filter((event) => selectedTypes.includes(event.type))
+    const operationsCycle = selectOperationsCycle({
+      evalCycles,
+      selectedYear: selectedMonth.year,
+    })
+    const [readiness, assignmentCoverage, aiReadiness, feedbackLeadershipReadiness] = operationsCycle
+      ? await Promise.all([
+          deps.loadReadinessPopulationDryRun
+            ? loadSection({
+                title: '2026 readiness dry-run',
+                description: '2026 readiness 신호 일부를 불러오지 못해 운영 체크리스트가 부분 데이터로 표시됩니다.',
+                alerts,
+                fallback: null,
+                loader: () => deps.loadReadinessPopulationDryRun?.(operationsCycle.id) ?? Promise.resolve(null),
+              })
+            : Promise.resolve(null),
+          deps.loadAssignmentCoverage
+            ? loadSection({
+                title: '평가자 배정 현황',
+                description: '평가자 배정 현황을 불러오지 못해 assignment milestone이 부분 데이터로 표시됩니다.',
+                alerts,
+                fallback: null,
+                loader: () => deps.loadAssignmentCoverage?.(operationsCycle.id) ?? Promise.resolve(null),
+              })
+            : Promise.resolve(null),
+          deps.loadAiCompetencyReadiness
+            ? loadSection({
+                title: 'AI 활용평가 readiness',
+                description: 'AI 활용평가 readiness를 불러오지 못해 AI milestone이 부분 데이터로 표시됩니다.',
+                alerts,
+                fallback: null,
+                loader: () => deps.loadAiCompetencyReadiness?.(operationsCycle.id) ?? Promise.resolve(null),
+              })
+            : Promise.resolve(null),
+          deps.loadFeedbackLeadershipReadiness
+            ? loadSection({
+                title: '360/리더십 진단 readiness',
+                description: '2차 다면평가/리더십 진단 readiness를 불러오지 못해 관련 milestone이 부분 데이터로 표시됩니다.',
+                alerts,
+                fallback: EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS,
+                loader: () =>
+                  deps.loadFeedbackLeadershipReadiness?.(operationsCycle.id) ??
+                  Promise.resolve(EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS),
+              })
+            : Promise.resolve(EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS),
+        ])
+      : [null, null, null, EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS]
+    const operationsChecklist = buildOperationsChecklist({
+      selectedYear: selectedMonth.year,
+      evalCycles,
+      feedbackRounds,
+      readiness,
+      assignmentCoverage,
+      aiReadiness,
+      feedbackLeadershipReadiness,
+      referenceDate,
+    })
 
     return {
       state: filteredEvents.length ? 'ready' : 'empty',
@@ -694,6 +1365,8 @@ export async function getPerformanceCalendarPageData(
       },
       events: filteredEvents,
       alerts,
+      operationsChecklist,
+      feedbackLeadershipReadiness,
     }
   } catch (error) {
     console.error('[performance-calendar] fatal loader error', error)
@@ -712,6 +1385,8 @@ export async function getPerformanceCalendarPageData(
       },
       events: [],
       alerts,
+      operationsChecklist: EMPTY_OPERATIONS_CHECKLIST,
+      feedbackLeadershipReadiness: EMPTY_EVALUATION_2026_FEEDBACK_LEADERSHIP_READINESS,
     }
   }
 }

@@ -78,6 +78,7 @@ const employees = [
     id: 'emp-with-kpi',
     empId: 'E001',
     empName: 'KPI 보유자',
+    gwsEmail: 'kpi.owner@rsupport.com',
     deptId: 'team-sales',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
@@ -87,6 +88,7 @@ const employees = [
     id: 'emp-missing-kpi',
     empId: 'E002',
     empName: 'KPI 누락자',
+    gwsEmail: 'kpi.missing@rsupport.com',
     deptId: 'team-support',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
@@ -96,6 +98,7 @@ const employees = [
     id: 'emp-existing-eval',
     empId: 'E003',
     empName: '기존 평가자',
+    gwsEmail: 'kpi.existing@rsupport.com',
     deptId: 'team-sales',
     role: 'ROLE_MEMBER',
     position: 'MEMBER',
@@ -295,6 +298,7 @@ function makeDb(overrides: {
   cycle?: Record<string, unknown> | null
   personalKpis?: Array<Record<string, unknown>>
   evaluations?: Array<Record<string, unknown>>
+  evaluationAssignments?: Array<Record<string, unknown>>
   employees?: Array<Record<string, unknown>>
   departments?: Array<Record<string, unknown>>
   orgKpis?: Array<Record<string, unknown>>
@@ -305,6 +309,7 @@ function makeDb(overrides: {
     employeeFindMany: 0,
     personalKpiFindMany: 0,
     evaluationFindMany: 0,
+    evaluationAssignmentFindMany: 0,
     departmentFindMany: 0,
     orgKpiFindMany: 0,
     writes: 0,
@@ -385,6 +390,10 @@ function makeDb(overrides: {
       },
     },
     evaluationAssignment: {
+      findMany: async () => {
+        counts.evaluationAssignmentFindMany += 1
+        return overrides.evaluationAssignments ?? []
+      },
       upsert: async () => {
         counts.writes += 1
         throw new Error('dry-run must not mutate assignments')
@@ -397,6 +406,7 @@ function makeDb(overrides: {
 
 function makeTeamKpiDecisionDb(overrides: {
   orgKpi?: Record<string, unknown> | null
+  orgKpis?: Array<Record<string, unknown>>
   cycle?: Record<string, unknown> | null
 } = {}) {
   const counts = {
@@ -404,27 +414,41 @@ function makeTeamKpiDecisionDb(overrides: {
     orgKpiUpdate: 0,
     audit: 0,
   }
+  const defaultOrgKpi = {
+    id: 'team-kpi-pending',
+    deptId: 'team-sales',
+    evalYear: 2026,
+    kpiName: '신규 고객 확보',
+    status: 'CONFIRMED',
+    parentOrgKpiId: null,
+    mboExceptionApproved: false,
+    mboExceptionReason: null,
+    mboExceptionApprovedById: null,
+    mboExceptionApprovedAt: null,
+    department: {
+      id: 'team-sales',
+      orgId: 'org-1',
+      deptName: '세일즈팀',
+      parentDeptId: 'division-sales',
+    },
+  }
   let orgKpi = overrides.orgKpi === null
     ? null
     : {
-        id: 'team-kpi-pending',
-        deptId: 'team-sales',
-        evalYear: 2026,
-        kpiName: '신규 고객 확보',
-        status: 'CONFIRMED',
-        parentOrgKpiId: null,
-        mboExceptionApproved: false,
-        mboExceptionReason: null,
-        mboExceptionApprovedById: null,
-        mboExceptionApprovedAt: null,
-        department: {
-          id: 'team-sales',
-          orgId: 'org-1',
-          deptName: '세일즈팀',
-          parentDeptId: 'division-sales',
-        },
+        ...defaultOrgKpi,
         ...overrides.orgKpi,
       }
+  const orgKpisById = overrides.orgKpis
+    ? new Map(
+        overrides.orgKpis.map((record) => [
+          String(record.id),
+          {
+            ...defaultOrgKpi,
+            ...record,
+          },
+        ])
+      )
+    : null
   const cycle = overrides.cycle === null
     ? null
     : {
@@ -442,9 +466,28 @@ function makeTeamKpiDecisionDb(overrides: {
       findUnique: async () => cycle,
     },
     orgKpi: {
-      findUnique: async () => orgKpi,
-      update: async ({ data }: { data: Record<string, unknown> }) => {
+      findUnique: async ({ where }: { where: { id: string } }) => {
+        if (orgKpisById) return orgKpisById.get(where.id) ?? null
+        return orgKpi
+      },
+      update: async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
         counts.orgKpiUpdate += 1
+        if (orgKpisById) {
+          const current = orgKpisById.get(where.id)
+          if (!current) throw new Error('missing orgKpi')
+          const updated = {
+            ...current,
+            ...data,
+          }
+          orgKpisById.set(where.id, updated)
+          return {
+            id: updated.id,
+            mboExceptionApproved: updated.mboExceptionApproved,
+            mboExceptionReason: updated.mboExceptionReason,
+            mboExceptionApprovedById: updated.mboExceptionApprovedById,
+            mboExceptionApprovedAt: updated.mboExceptionApprovedAt,
+          }
+        }
         if (!orgKpi) throw new Error('missing orgKpi')
         orgKpi = {
           ...orgKpi,
@@ -499,7 +542,9 @@ async function main() {
     getEvaluation2026ReadinessPopulationDryRunForSession,
   } = await import('../src/server/evaluation-2026-readiness-population')
   const {
+    Evaluation2026TeamKpiHrReviewBulkDecisionSchema,
     Evaluation2026TeamKpiHrReviewDecisionSchema,
+    saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession,
     saveEvaluation2026TeamKpiHrReviewDecisionForSession,
   } = await import('../src/server/evaluation-2026-team-kpi-review-decision')
 
@@ -519,6 +564,7 @@ async function main() {
     assert.equal(dryRun.employeesMissingConfirmedPersonalKpi[0]?.employeeName, 'KPI 누락자')
     assert.equal(dryRun.mboSetupCoverage.monitoring.missingMboEmployees.length, 1)
     assert.equal(dryRun.mboSetupCoverage.monitoring.missingMboEmployees[0]?.actionLabel, '작성 요청 필요')
+    assert.equal(dryRun.mboSetupCoverage.monitoring.missingMboEmployees[0]?.email, 'kpi.missing@rsupport.com')
     assert.equal(dryRun.mboSetupCoverage.monitoring.employeeRows.length, 3)
     assert.equal(fake.counts.writes, 0)
     assert.equal(dryRun.safety.writesPerformed, false)
@@ -555,6 +601,12 @@ async function main() {
     })
 
     assert.equal(dryRun.policyCategoryMissingCount, 1)
+    assert.equal(dryRun.policyCategoryMappingReadiness.missingPolicyCategoryCount, 1)
+    assert.equal(dryRun.policyCategoryMappingReadiness.mappedPolicyCategoryCount, 2)
+    assert.equal(dryRun.policyCategoryMappingReadiness.manualReviewCount, 1)
+    assert.equal(dryRun.policyCategoryMappingReadiness.orgGoalWithoutApprovedSourceCount, 1)
+    assert.equal(dryRun.policyCategoryMappingReadiness.dailyWorkDuplicateRiskCount, 0)
+    assert.equal(dryRun.policyCategoryMappingReadiness.bulkMappingSavedCount, 0)
     assert.equal(
       dryRun.blockers.some((blocker) => blocker.code === 'POLICY_CATEGORY_REQUIRED' && blocker.count === 1),
       true
@@ -792,6 +844,270 @@ async function main() {
         decision: 'APPROVED_FOR_ORG_GOAL',
       }).success,
       false
+    )
+  })
+
+  await run('admin can bulk save multiple Team KPI HR decisions without touching scores', async () => {
+    const fake = makeTeamKpiDecisionDb({
+      orgKpis: [
+        {
+          id: 'team-kpi-bulk-1',
+          deptId: 'team-sales',
+          kpiName: '영업 전환율 개선',
+          department: {
+            id: 'team-sales',
+            orgId: 'org-1',
+            deptName: '세일즈팀',
+            parentDeptId: 'division-sales',
+          },
+        },
+        {
+          id: 'team-kpi-bulk-2',
+          deptId: 'team-support',
+          kpiName: '지원 프로세스 개선',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+      ],
+    })
+
+    const result = await saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiIds: ['team-kpi-bulk-1', 'team-kpi-bulk-2'],
+          evalCycleId: 'cycle-2026',
+          decision: 'APPROVED_FOR_ORG_GOAL',
+          reason: '핵심 과제',
+          note: '일괄 조직목표 반영 승인',
+        },
+      },
+      {
+        db: fake.db as never,
+        audit: fake.audit as never,
+        now: new Date('2026-05-20T01:02:03.000Z'),
+      }
+    )
+
+    assert.equal(result.count, 2)
+    assert.deepEqual(result.results.map((item) => item.orgKpiId), ['team-kpi-bulk-1', 'team-kpi-bulk-2'])
+    assert.equal(result.safety.officialScoresChanged, false)
+    assert.equal(result.safety.officialGradesChanged, false)
+    assert.equal(result.safety.totalScoreChanged, false)
+    assert.equal(result.safety.gradeIdChanged, false)
+    assert.equal(result.safety.evaluationsCreated, 0)
+    assert.equal(result.safety.evaluationItemsCreated, 0)
+    assert.equal(result.safety.personalKpiPolicyCategoryChanged, false)
+    assert.equal(result.safety.evaluationItemPolicyCategoryChanged, false)
+    assert.equal(fake.counts.reviewRunCreate, 2)
+    assert.equal(fake.counts.orgKpiUpdate, 2)
+    assert.equal(fake.counts.audit, 2)
+  })
+
+  await run('member cannot bulk save Team KPI HR decisions', async () => {
+    const fake = makeTeamKpiDecisionDb({
+      orgKpis: [
+        {
+          id: 'team-kpi-bulk-1',
+          deptId: 'team-sales',
+          department: {
+            id: 'team-sales',
+            orgId: 'org-1',
+            deptName: '세일즈팀',
+            parentDeptId: 'division-sales',
+          },
+        },
+      ],
+    })
+
+    await assert.rejects(
+      () =>
+        saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+          {
+            session: makeSession('ROLE_MEMBER', 'member-1'),
+            input: {
+              orgKpiIds: ['team-kpi-bulk-1'],
+              evalCycleId: 'cycle-2026',
+              decision: 'APPROVED_FOR_ORG_GOAL',
+              reason: '핵심 과제',
+              note: '권한 없음',
+            },
+          },
+          {
+            db: fake.db as never,
+            audit: fake.audit as never,
+          }
+        ),
+      (error) => error instanceof AppError && error.statusCode === 403
+    )
+    assert.equal(fake.counts.reviewRunCreate, 0)
+    assert.equal(fake.counts.orgKpiUpdate, 0)
+    assert.equal(fake.counts.audit, 0)
+  })
+
+  await run('invalid or missing bulk Team KPI HR decision fields fail validation', () => {
+    assert.equal(
+      Evaluation2026TeamKpiHrReviewBulkDecisionSchema.safeParse({
+        orgKpiIds: ['team-kpi-bulk-1'],
+        decision: 'INVALID_DECISION',
+        reason: '핵심 과제',
+      }).success,
+      false
+    )
+    assert.equal(
+      Evaluation2026TeamKpiHrReviewBulkDecisionSchema.safeParse({
+        orgKpiIds: ['team-kpi-bulk-1'],
+        decision: 'APPROVED_FOR_ORG_GOAL',
+      }).success,
+      false
+    )
+    assert.equal(
+      Evaluation2026TeamKpiHrReviewBulkDecisionSchema.safeParse({
+        orgKpiIds: [],
+        decision: 'APPROVED_FOR_ORG_GOAL',
+        reason: '핵심 과제',
+      }).success,
+      false
+    )
+  })
+
+  await run('bulk Team KPI HR decisions update ORG_GOAL and DAILY_WORK suggestions', async () => {
+    const approvedFake = makeTeamKpiDecisionDb({
+      orgKpis: [
+        {
+          id: 'team-kpi-pending',
+          deptId: 'team-support',
+          kpiName: '인사 데이터 정비 KPI',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+        {
+          id: 'team-kpi-excluded',
+          deptId: 'team-support',
+          kpiName: '인사 운영 유지 KPI',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+      ],
+    })
+    await saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiIds: ['team-kpi-pending', 'team-kpi-excluded'],
+          evalCycleId: 'cycle-2026',
+          decision: 'APPROVED_FOR_ORG_GOAL',
+          reason: '핵심 과제',
+          note: '일괄 승인',
+        },
+      },
+      {
+        db: approvedFake.db as never,
+        audit: approvedFake.audit as never,
+      }
+    )
+    const approvedItems = approvedFake.createdRuns.map((run) => (run.items as Array<Record<string, unknown>>)[0])
+    const approvedDryRunDb = makeDb({
+      orgKpis: [
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-pending'),
+          teamKpiReviewItems: [approvedItems[0]],
+        },
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-excluded'),
+          teamKpiReviewItems: [approvedItems[1]],
+        },
+      ],
+    })
+    const approvedDryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: approvedDryRunDb.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+    assert.equal(
+      approvedDryRun.teamKpiHrReviewCoverage.candidates.every((candidate) => candidate.suggestedMboCategory === 'ORG_GOAL'),
+      true
+    )
+
+    const excludedFake = makeTeamKpiDecisionDb({
+      orgKpis: [
+        {
+          id: 'team-kpi-pending',
+          deptId: 'team-support',
+          kpiName: '인사 데이터 정비 KPI',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+        {
+          id: 'team-kpi-excluded',
+          deptId: 'team-support',
+          kpiName: '인사 운영 유지 KPI',
+          department: {
+            id: 'team-support',
+            orgId: 'org-1',
+            deptName: '인사팀',
+            parentDeptId: 'division-support',
+          },
+        },
+      ],
+    })
+    await saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession(
+      {
+        session: makeSession('ROLE_ADMIN'),
+        input: {
+          orgKpiIds: ['team-kpi-pending', 'team-kpi-excluded'],
+          evalCycleId: 'cycle-2026',
+          decision: 'EXCLUDED_DAILY_WORK',
+          reason: '단순 운영/유지 업무',
+          note: '일괄 제외',
+        },
+      },
+      {
+        db: excludedFake.db as never,
+        audit: excludedFake.audit as never,
+      }
+    )
+    const excludedItems = excludedFake.createdRuns.map((run) => (run.items as Array<Record<string, unknown>>)[0])
+    const excludedDryRunDb = makeDb({
+      orgKpis: [
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-pending'),
+          teamKpiReviewItems: [excludedItems[0]],
+        },
+        {
+          ...teamOrgKpis.find((item) => item.id === 'team-kpi-excluded'),
+          teamKpiReviewItems: [excludedItems[1]],
+        },
+      ],
+    })
+    const excludedDryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: excludedDryRunDb.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+    assert.equal(
+      excludedDryRun.teamKpiHrReviewCoverage.candidates.every((candidate) => candidate.suggestedMboCategory === 'DAILY_WORK'),
+      true
+    )
+    assert.equal(
+      excludedDryRun.teamKpiHrReviewCoverage.candidates.every((candidate) => candidate.canSuggestAsOrgGoal === false),
+      true
     )
   })
 
@@ -1113,6 +1429,305 @@ async function main() {
     assert.equal(fake.counts.writes, 0)
   })
 
+  await run('follow-up communication readiness has recipient source data and performs no writes', async () => {
+    const fake = makeDb()
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const missing = dryRun.mboSetupCoverage.monitoring.missingMboEmployees
+    const policyCategory = dryRun.mboSetupCoverage.monitoring.policyCategoryMissingItems
+    const teamKpiNeedsHr = dryRun.teamKpiHrReviewCoverage.candidates.filter((candidate) =>
+      candidate.reviewStatus === 'PENDING_REVIEW' || candidate.reviewStatus === 'NEEDS_DISCUSSION'
+    )
+
+    assert.equal(missing[0]?.actionLabel, '작성 요청 필요')
+    assert.equal(missing[0]?.email, 'kpi.missing@rsupport.com')
+    assert.equal(policyCategory[0]?.actionLabel, '카테고리 확정 필요')
+    assert.equal(policyCategory[0]?.email, 'kpi.owner@rsupport.com')
+    assert.equal(teamKpiNeedsHr.length > 0, true)
+    assert.equal(teamKpiNeedsHr[0]?.reviewStatus, 'PENDING_REVIEW')
+    assert.equal(dryRun.safety.writesPerformed, false)
+    assert.equal(dryRun.safety.officialScoringEnabled, false)
+    assert.equal(dryRun.safety.officialGradeEnabled, false)
+    assert.equal(dryRun.safety.totalScoreChanged, false)
+    assert.equal(dryRun.safety.gradeIdChanged, false)
+    assert.equal(fake.counts.writes, 0)
+  })
+
+  await run('result-writing readiness reports guidance, warnings, exports, and performs no writes', async () => {
+    const resultWritingPersonalKpis = [
+      ...confirmedPersonalKpis,
+      {
+        id: 'kpi-daily-duplicate',
+        employeeId: 'emp-with-kpi',
+        kpiName: '매출 성장',
+        definition: '매출 성장 조직목표와 중복될 수 있는 일상 운영 업무입니다.',
+        formula: '',
+        policyCategory: 'DAILY_WORK',
+        status: 'CONFIRMED',
+        weight: 10,
+        targetValueT: 80,
+        linkedOrgKpiId: 'org-1',
+        linkedOrgKpi: null,
+        monthlyRecords: [],
+      },
+      {
+        id: 'kpi-project-k-missing-deliverable',
+        employeeId: 'emp-existing-eval',
+        kpiName: '프로젝트 K 과제 미정',
+        definition: '간단한 과제',
+        formula: '',
+        policyCategory: 'PROJECT_K',
+        status: 'CONFIRMED',
+        weight: 10,
+        targetValueT: null,
+        linkedOrgKpiId: null,
+        linkedOrgKpi: null,
+        monthlyRecords: [],
+      },
+      {
+        id: 'kpi-ai-mixed',
+        employeeId: 'emp-existing-eval',
+        kpiName: 'AI 활용평가 증빙 혼재',
+        definition: 'AI 활용평가 Pass/Fail 증빙을 연간 업적점수 결과에 섞어 쓰는 초안입니다.',
+        formula: '완료율',
+        policyCategory: 'PROJECT_T',
+        status: 'CONFIRMED',
+        weight: 10,
+        targetValueT: 100,
+        linkedOrgKpiId: null,
+        linkedOrgKpi: null,
+        monthlyRecords: [],
+      },
+    ]
+    const fake = makeDb({
+      personalKpis: resultWritingPersonalKpis,
+      evaluations: [
+        {
+          id: 'eval-existing-self',
+          targetId: 'emp-existing-eval',
+          evalStage: 'SELF',
+          items: [
+            {
+              id: 'item-existing',
+              personalKpiId: 'kpi-3',
+              policyCategory: 'PROJECT_T',
+              itemComment: 'Target 100 대비 실제 120건 완료. 본인 주도로 산출물 품질을 개선했고 https://drive.example.com/evidence 를 증빙으로 남겼습니다.',
+              targetAchievementLevel: 'EXCELLENT',
+              personalKpi: {
+                id: 'kpi-3',
+                kpiName: '기존 평가 보존 KPI',
+                policyCategory: 'PROJECT_T',
+              },
+            },
+            {
+              id: 'item-ai-mixed',
+              personalKpiId: 'kpi-ai-mixed',
+              policyCategory: 'PROJECT_T',
+              itemComment: 'AI 활용평가 Pass/Fail 증빙을 연간 업적점수 결과에 포함하려는 초안입니다. https://drive.example.com/ai',
+              targetAchievementLevel: 'TARGET',
+              personalKpi: {
+                id: 'kpi-ai-mixed',
+                kpiName: 'AI 활용평가 증빙 혼재',
+                policyCategory: 'PROJECT_T',
+              },
+            },
+          ],
+        },
+      ],
+    })
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const readiness = dryRun.resultWritingReadiness
+    const findRow = (id: string) => readiness.rows.find((row) => row.personalKpiId === id)
+
+    assert.equal(readiness.mode, 'READ_ONLY')
+    assert.equal(readiness.guidance.some((guide) => guide.category === 'ORG_GOAL'), true)
+    assert.equal(readiness.guidance.some((guide) => guide.category === 'DAILY_WORK'), true)
+    assert.equal(readiness.evidenceGuidance.some((item) => item.includes('Google Drive')), true)
+    assert.equal(readiness.leaderReviewChecklist.some((item) => item.includes('AI Pass/Fail')), true)
+    assert.equal(readiness.exportColumns.includes('employeeNo'), true)
+    assert.equal(readiness.summary.totalItemCount, resultWritingPersonalKpis.length)
+    assert.equal(readiness.summary.missingResultCount > 0, true)
+    assert.equal(readiness.summary.missingEvidenceCount > 0, true)
+    assert.equal(readiness.summary.missingContributionCount > 0, true)
+    assert.equal(readiness.summary.missingMeasurableResultCount > 0, true)
+    assert.equal(readiness.summary.orgGoalSourceWarningCount, 1)
+    assert.equal(readiness.summary.dailyWorkDuplicateRiskCount, 1)
+    assert.equal(readiness.summary.projectTkMissingDeliverableCount, 1)
+    assert.equal(readiness.summary.aiEvidenceMixedCount, 1)
+    assert.equal(findRow('kpi-1')?.warnings.some((warning) => warning.code === 'ORG_GOAL_WITHOUT_APPROVED_SOURCE'), true)
+    assert.equal(findRow('kpi-daily-duplicate')?.warnings.some((warning) => warning.code === 'DAILY_WORK_DUPLICATE_RISK'), true)
+    assert.equal(findRow('kpi-project-k-missing-deliverable')?.warnings.some((warning) => warning.code === 'PROJECT_TK_MISSING_DELIVERABLE'), true)
+    assert.equal(findRow('kpi-ai-mixed')?.warnings.some((warning) => warning.code === 'AI_EVIDENCE_MIXED_IN_ANNUAL_SCORE'), true)
+    assert.equal(findRow('kpi-3')?.resultWritingStatus, 'READY_FOR_REVIEW')
+    assert.equal(
+      dryRun.warnings.some((warning) => warning.code === 'RESULT_WRITING_READINESS_WARNINGS'),
+      true
+    )
+    assert.equal(readiness.safety.writesPerformed, false)
+    assert.equal(readiness.safety.officialScoringEnabled, false)
+    assert.equal(readiness.safety.officialGradeEnabled, false)
+    assert.equal(dryRun.safety.totalScoreChanged, false)
+    assert.equal(dryRun.safety.gradeIdChanged, false)
+    assert.equal(fake.counts.writes, 0)
+  })
+
+  await run('leader evaluation readiness reports stage blockers and exports without writes', async () => {
+    const leaderEmployees = [
+      {
+        id: 'emp-self-pending',
+        empId: 'L001',
+        empName: '셀프 미제출자',
+        gwsEmail: 'self.pending@rsupport.com',
+        deptId: 'team-sales',
+        role: 'ROLE_MEMBER',
+        position: 'MEMBER',
+        department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
+      },
+      {
+        id: 'emp-second-ready',
+        empId: 'L002',
+        empName: '이차 준비자',
+        gwsEmail: 'second.ready@rsupport.com',
+        deptId: 'team-sales',
+        role: 'ROLE_MEMBER',
+        position: 'MEMBER',
+        department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
+      },
+      {
+        id: 'emp-first-incomplete',
+        empId: 'L003',
+        empName: '일차 진행자',
+        gwsEmail: 'first.progress@rsupport.com',
+        deptId: 'team-sales',
+        role: 'ROLE_MEMBER',
+        position: 'MEMBER',
+        department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
+      },
+      {
+        id: 'emp-missing-evaluator',
+        empId: 'L004',
+        empName: '평가자 누락자',
+        gwsEmail: 'missing.evaluator@rsupport.com',
+        deptId: 'team-support',
+        role: 'ROLE_MEMBER',
+        position: 'MEMBER',
+        department: { id: 'team-support', deptName: '인사팀', parentDeptId: 'division-support' },
+      },
+    ]
+    const leaderKpis = leaderEmployees.map((employee, index) => ({
+      id: `leader-kpi-${index + 1}`,
+      employeeId: employee.id,
+      kpiName: `${employee.empName} 프로젝트 산출물`,
+      definition: '본인 주도로 프로젝트 산출물과 개선 결과를 책임집니다.',
+      formula: 'deliverable 완료율과 개선 건수',
+      policyCategory: 'PROJECT_T',
+      status: 'CONFIRMED',
+      weight: 100,
+      targetValueT: 100,
+      linkedOrgKpiId: null,
+      linkedOrgKpi: null,
+      monthlyRecords: [
+        {
+          id: `monthly-${index + 1}`,
+          yearMonth: '2026-12',
+          actualValue: 120,
+          achievementRate: 120,
+          activities: '산출물 완료 및 품질 개선',
+          efforts: '본인 주도 개선 실행',
+          evidenceComment: 'https://drive.example.com/evidence',
+          attachments: [],
+          submittedAt: new Date('2026-12-31T00:00:00.000Z'),
+          isDraft: false,
+        },
+      ],
+    }))
+    const makeItem = (employeeIndex: number) => ({
+      id: `leader-item-${employeeIndex + 1}`,
+      personalKpiId: `leader-kpi-${employeeIndex + 1}`,
+      policyCategory: 'PROJECT_T',
+      itemComment: 'Target 100 대비 실제 120건 완료. 본인 주도로 산출물을 개선했고 https://drive.example.com/evidence 를 증빙으로 남겼습니다.',
+      targetAchievementLevel: 'EXCELLENT',
+      personalKpi: {
+        id: `leader-kpi-${employeeIndex + 1}`,
+        kpiName: `${leaderEmployees[employeeIndex].empName} 프로젝트 산출물`,
+        policyCategory: 'PROJECT_T',
+      },
+    })
+    const leaderEvaluations = [
+      { id: 'eval-self-pending', targetId: 'emp-self-pending', evaluatorId: 'emp-self-pending', evalStage: 'SELF', status: 'PENDING', items: [makeItem(0)] },
+      { id: 'eval-second-ready-self', targetId: 'emp-second-ready', evaluatorId: 'emp-second-ready', evalStage: 'SELF', status: 'SUBMITTED', items: [makeItem(1)] },
+      { id: 'eval-second-ready-first', targetId: 'emp-second-ready', evaluatorId: 'leader-1', evalStage: 'FIRST', status: 'SUBMITTED', items: [] },
+      { id: 'eval-first-progress-self', targetId: 'emp-first-incomplete', evaluatorId: 'emp-first-incomplete', evalStage: 'SELF', status: 'SUBMITTED', items: [makeItem(2)] },
+      { id: 'eval-first-progress-first', targetId: 'emp-first-incomplete', evaluatorId: 'leader-1', evalStage: 'FIRST', status: 'IN_PROGRESS', items: [] },
+      { id: 'eval-missing-evaluator-self', targetId: 'emp-missing-evaluator', evaluatorId: 'emp-missing-evaluator', evalStage: 'SELF', status: 'SUBMITTED', items: [makeItem(3)] },
+    ]
+    const assignmentStages = ['FIRST', 'SECOND', 'FINAL']
+    const leaderAssignments = leaderEmployees
+      .filter((employee) => employee.id !== 'emp-missing-evaluator')
+      .flatMap((employee) =>
+        assignmentStages.map((stage) => ({
+          id: `${employee.id}-${stage}`,
+          targetId: employee.id,
+          evaluatorId: `${stage.toLowerCase()}-evaluator`,
+          evalStage: stage,
+          source: 'AUTO',
+          evaluator: {
+            id: `${stage.toLowerCase()}-evaluator`,
+            empName: `${stage} 평가자`,
+            empId: `${stage}-001`,
+            status: 'ACTIVE',
+          },
+        }))
+      )
+    const fake = makeDb({
+      employees: leaderEmployees,
+      personalKpis: leaderKpis,
+      evaluations: leaderEvaluations,
+      evaluationAssignments: leaderAssignments,
+    })
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const readiness = dryRun.leaderEvaluationReadiness
+    const findRow = (employeeId: string) => readiness.rows.find((row) => row.employeeId === employeeId)
+
+    assert.equal(readiness.mode, 'READ_ONLY')
+    assert.equal(readiness.firstEvaluatorChecklist.some((item) => item.includes('target vs actual')), true)
+    assert.equal(readiness.secondEvaluatorChecklist.some((item) => item.includes('zero-sum')), true)
+    assert.equal(readiness.exportColumns.includes('employeeNo'), true)
+    assert.equal(findRow('emp-self-pending')?.readinessStatus, 'BLOCKED_SELF_NOT_SUBMITTED')
+    assert.equal(findRow('emp-second-ready')?.readinessStatus, 'READY_FOR_SECOND_REVIEW')
+    assert.equal(findRow('emp-first-incomplete')?.readinessStatus, 'BLOCKED_FIRST_NOT_COMPLETE')
+    assert.equal(findRow('emp-missing-evaluator')?.readinessStatus, 'BLOCKED_EVALUATOR_MISSING')
+    assert.equal(findRow('emp-missing-evaluator')?.missingPrerequisites.includes('EVALUATOR_MISSING'), true)
+    assert.equal(readiness.summary.selfSubmittedCount, 3)
+    assert.equal(readiness.summary.secondReviewReadyCount, 1)
+    assert.equal(readiness.summary.secondReviewMissingPrerequisitesCount, 1)
+    assert.equal(readiness.summary.missingEvaluatorCount, 1)
+    assert.equal(readiness.summary.officialScoringEnabled, false)
+    assert.equal(readiness.summary.officialGradeEnabled, false)
+    assert.equal(readiness.safety.writesPerformed, false)
+    assert.equal(readiness.safety.evaluationsCreated, 0)
+    assert.equal(readiness.safety.evaluationItemsCreated, 0)
+    assert.equal(dryRun.warnings.some((warning) => warning.code === 'LEADER_EVALUATION_READINESS_WARNINGS'), true)
+    assert.equal(fake.counts.writes, 0)
+  })
+
   await run('official scoring and grade flags remain disabled in dry-run safety output', async () => {
     const fake = makeDb()
 
@@ -1166,6 +1781,7 @@ async function main() {
     const reviewDecisionRouteSource = read('src/app/api/evaluation/preview-2026/team-kpi-review-decision/route.ts')
     const clientSource = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
     const serverSource = read('src/server/evaluation-2026-readiness-population.ts')
+    const scheduleSource = read('src/lib/evaluation-2026-schedule-readiness.ts')
     const decisionServerSource = read('src/server/evaluation-2026-team-kpi-review-decision.ts')
     const liveRouteSource = read('src/app/api/evaluation/route.ts')
     const submitRouteSource = read('src/app/api/evaluation/[id]/submit/route.ts')
@@ -1182,6 +1798,49 @@ async function main() {
     assert.equal(clientSource.includes('2026 MBO setup coverage'), true)
     assert.equal(clientSource.includes('직원들이 2026 Personal KPI를 작성·제출·확정하는 준비 현황입니다.'), true)
     assert.equal(clientSource.includes('HR MBO setup monitoring'), true)
+    assert.equal(clientSource.includes('2026 MBO 후속조치 안내'), true)
+    assert.equal(clientSource.includes('이 화면은 HR 후속조치용 안내/복사 도구입니다. 알림 발송, 평가 생성, 점수/등급 변경은 수행하지 않습니다.'), true)
+    assert.equal(clientSource.includes('getResultWritingScheduleGuidance'), true)
+    assert.equal(scheduleSource.includes('2026 업적목표 수행결과 작성 기간입니다. 수행 결과는 달성 여부가 아니라 본인 기여와 산출물 중심으로 작성해야 합니다.'), true)
+    assert.equal(clientSource.includes('Evaluation/EvaluationItem을 생성하지 않습니다.'), true)
+    assert.equal(clientSource.includes('2026 MBO 수립을 위해 /kpi/personal에서 개인 KPI를 작성해 주세요.'), true)
+    assert.equal(clientSource.includes('작성 중인 2026 MBO 초안을 보완 후 제출해 주세요.'), true)
+    assert.equal(clientSource.includes('제출된 팀원 MBO를 검토해 주세요.'), true)
+    assert.equal(clientSource.includes('policyCategory 미분류 항목을 ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 하나로 확정해 주세요.'), true)
+    assert.equal(clientSource.includes('팀 KPI별로 조직목표 반영 / 일상업무 처리 / 예외 승인 / 논의 필요를 결정해 주세요.'), true)
+    assert.equal(clientSource.includes('선택 조건 대상 목록 복사'), true)
+    assert.equal(clientSource.includes('후속조치 테이블 복사'), true)
+    assert.equal(clientSource.includes("['employeeNo', 'name', 'email', 'division', 'team', 'leader', 'action', 'followUpType', 'detail']"), true)
+    assert.equal(clientSource.includes('2026 수행결과 작성 readiness'), true)
+    assert.equal(clientSource.includes('이 화면은 2026 수행결과 작성 readiness를 점검합니다. 공식 점수/등급은 변경되지 않습니다.'), true)
+    assert.equal(clientSource.includes('수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다.'), true)
+    assert.equal(clientSource.includes('AI 활용평가 증빙은 연간 업적점수와 별도로 관리됩니다.'), true)
+    assert.equal(clientSource.includes('ORG_GOAL 조직목표'), true)
+    assert.equal(clientSource.includes('PROJECT_T 프로젝트 T'), true)
+    assert.equal(clientSource.includes('PROJECT_K 프로젝트 K'), true)
+    assert.equal(clientSource.includes('DAILY_WORK 일상업무'), true)
+    assert.equal(clientSource.includes('Leader review checklist'), true)
+    assert.equal(clientSource.includes('missing result 복사'), true)
+    assert.equal(clientSource.includes('missing evidence 복사'), true)
+    assert.equal(clientSource.includes('missing contribution 복사'), true)
+    assert.equal(clientSource.includes('ORG_GOAL source warning 복사'), true)
+    assert.equal(clientSource.includes('DAILY_WORK duplicate risk 복사'), true)
+    assert.equal(clientSource.includes('filtered TSV 복사'), true)
+    assert.equal(clientSource.includes('2026 리더 평가 readiness'), true)
+    assert.equal(clientSource.includes('이 화면은 2026 리더 평가 readiness를 읽기 전용으로 점검합니다.'), true)
+    assert.equal(clientSource.includes('공식 점수, 등급, 제출, 확정 상태는 변경하지 않습니다.'), true)
+    assert.equal(clientSource.includes('FIRST evaluator checklist'), true)
+    assert.equal(clientSource.includes('SECOND evaluator checklist'), true)
+    assert.equal(clientSource.includes('FIRST blocked 복사'), true)
+    assert.equal(clientSource.includes('missing evaluator 복사'), true)
+    assert.equal(clientSource.includes('combined TSV 복사'), true)
+    assert.equal(serverSource.includes('LEADER_EVALUATION_READINESS_WARNINGS'), true)
+    assert.equal(serverSource.includes('BLOCKED_SELF_NOT_SUBMITTED'), true)
+    assert.equal(serverSource.includes('READY_FOR_SECOND_REVIEW'), true)
+    assert.equal(serverSource.includes('RESULT_WRITING_READINESS_WARNINGS'), true)
+    assert.equal(serverSource.includes('officialScoringEnabled: false'), true)
+    assert.equal(serverSource.includes('officialGradeEnabled: false'), true)
+    assert.equal(clientSource.includes('/admin/performance-calendar'), true)
     assert.equal(serverSource.includes('작성 요청 필요'), true)
     assert.equal(serverSource.includes('제출 요청 필요'), true)
     assert.equal(serverSource.includes('리더 검토 필요'), true)
@@ -1193,6 +1852,10 @@ async function main() {
     assert.equal(clientSource.includes('팀 KPI 검토 복사'), true)
     assert.equal(clientSource.includes('/api/evaluation/preview-2026/team-kpi-review-decision'), true)
     assert.equal(clientSource.includes('HR 결정 저장'), true)
+    assert.equal(clientSource.includes('미지정/PENDING only'), true)
+    assert.equal(clientSource.includes('선택 항목 일괄 HR 결정'), true)
+    assert.equal(clientSource.includes('보이는 항목 전체 선택'), true)
+    assert.equal(clientSource.includes('선택 항목 일괄 저장'), true)
     assert.equal(clientSource.includes('2026 성과점수 정책 readiness'), true)
     assert.equal(clientSource.includes('조직성과 30% + 개인성과 70%'), true)
     assert.equal(clientSource.includes('score simulator'), true)
@@ -1212,8 +1875,12 @@ async function main() {
     assert.equal(reviewDecisionRouteSource.includes('export async function PATCH'), true)
     assert.equal(reviewDecisionRouteSource.includes('getServerSession(authOptions)'), true)
     assert.equal(reviewDecisionRouteSource.includes('saveEvaluation2026TeamKpiHrReviewDecisionForSession'), true)
+    assert.equal(reviewDecisionRouteSource.includes('saveEvaluation2026TeamKpiHrReviewBulkDecisionForSession'), true)
+    assert.equal(decisionServerSource.includes('Evaluation2026TeamKpiHrReviewBulkDecisionSchema'), true)
     assert.equal(decisionServerSource.includes('teamKpiReviewRun.create'), true)
     assert.equal(decisionServerSource.includes('officialScoresChanged: false'), true)
+    assert.equal(decisionServerSource.includes('personalKpiPolicyCategoryChanged: false'), true)
+    assert.equal(decisionServerSource.includes('evaluationItemPolicyCategoryChanged: false'), true)
     assert.equal(decisionServerSource.includes('evaluationsCreated: 0'), true)
     assert.equal(decisionServerSource.includes('evaluationItemsCreated: 0'), true)
     assert.equal(clientSource.includes("limit: '300'"), true)

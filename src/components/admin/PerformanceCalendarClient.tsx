@@ -3,10 +3,13 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, ExternalLink, Filter } from 'lucide-react'
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, ExternalLink, Filter } from 'lucide-react'
 import type {
   PerformanceCalendarEvent,
   PerformanceCalendarEventType,
+  PerformanceOperationsMilestoneStatus,
+  PerformanceOperationsOwnerRole,
+  PerformanceOperationsScheduleStatus,
   PerformanceCalendarPageData,
 } from '@/server/admin/performance-calendar'
 
@@ -24,6 +27,47 @@ const TYPE_STYLES: Record<PerformanceCalendarEventType, string> = {
   calibration: 'border-amber-200 bg-amber-50 text-amber-700',
   anniversary: 'border-rose-200 bg-rose-50 text-rose-700',
   milestone: 'border-slate-300 bg-slate-100 text-slate-700',
+}
+
+const OPERATIONS_STATUS_STYLES: Record<PerformanceOperationsMilestoneStatus, string> = {
+  NOT_STARTED: 'border-slate-200 bg-slate-50 text-slate-600',
+  IN_PROGRESS: 'border-blue-200 bg-blue-50 text-blue-700',
+  DONE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  BLOCKED: 'border-rose-200 bg-rose-50 text-rose-700',
+  NEEDS_REVIEW: 'border-amber-200 bg-amber-50 text-amber-700',
+}
+
+const SCHEDULE_STATUS_STYLES: Record<PerformanceOperationsScheduleStatus, string> = {
+  UPCOMING: 'border-slate-200 bg-slate-50 text-slate-600',
+  ACTIVE: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  CLOSED: 'border-slate-200 bg-white text-slate-500',
+  NEEDS_SETUP: 'border-amber-200 bg-amber-50 text-amber-700',
+}
+
+const OWNER_FILTER_LABELS: Record<PerformanceOperationsOwnerRole | 'ALL', string> = {
+  ALL: '전체 owner',
+  HR: 'HR',
+  TEAM_LEADER: '팀장',
+  DIVISION_HEAD: '본부장',
+  EMPLOYEE: '직원',
+  SYSTEM: '시스템',
+}
+
+const STATUS_FILTER_LABELS: Record<PerformanceOperationsMilestoneStatus | 'ALL', string> = {
+  ALL: '전체 상태',
+  NOT_STARTED: '시작 전',
+  IN_PROGRESS: '진행 중',
+  DONE: '완료',
+  BLOCKED: 'blocker 있음',
+  NEEDS_REVIEW: '검토 필요',
+}
+
+const SCHEDULE_STATUS_FILTER_LABELS: Record<PerformanceOperationsScheduleStatus | 'ALL', string> = {
+  ALL: '전체 일정',
+  UPCOMING: '예정',
+  ACTIVE: '진행 중',
+  CLOSED: '종료',
+  NEEDS_SETUP: '일정 확정 필요',
 }
 
 const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토']
@@ -55,10 +99,62 @@ function shiftMonth(monthKey: string, delta: number) {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
 }
 
+function buildStringOptions(values: Array<string | null>) {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort((left, right) =>
+    left.localeCompare(right, 'ko')
+  )
+}
+
+type FeedbackLeadershipReadinessRow =
+  PerformanceCalendarPageData['feedbackLeadershipReadiness']['rows'][number]
+
+function formatFeedbackLeadershipTsv(rows: FeedbackLeadershipReadinessRow[]) {
+  const header = [
+    'employeeNo',
+    'name',
+    'email',
+    'departmentPath',
+    'role',
+    'targetType',
+    'readinessStatus',
+    'reviewerAssignmentStatus',
+    'responseStatus',
+    'missingReason',
+    'nextHrAction',
+  ]
+  const body = rows.map((row) => [
+    row.employeeNo,
+    row.name,
+    row.email,
+    row.departmentPath,
+    row.roleLabel,
+    row.targetTypeLabel,
+    row.readinessStatus,
+    row.reviewerAssignmentStatus,
+    row.responseStatus,
+    row.missingReason,
+    row.nextHrAction,
+  ])
+  return [header, ...body]
+    .map((cells) => cells.map((cell) => String(cell ?? '').replace(/\t/g, ' ').replace(/\r?\n/g, ' ')).join('\t'))
+    .join('\n')
+}
+
 export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarPageData }) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [selectedEventId, setSelectedEventId] = useState<string>(data.events[0]?.id ?? '')
+  const [operationsStatusFilter, setOperationsStatusFilter] = useState<PerformanceOperationsMilestoneStatus | 'ALL'>('ALL')
+  const [operationsScheduleFilter, setOperationsScheduleFilter] = useState<PerformanceOperationsScheduleStatus | 'ALL'>('ALL')
+  const [operationsOwnerFilter, setOperationsOwnerFilter] = useState<PerformanceOperationsOwnerRole | 'ALL'>('ALL')
+  const [feedbackTargetTypeFilter, setFeedbackTargetTypeFilter] = useState('ALL')
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState('ALL')
+  const [feedbackDivisionFilter, setFeedbackDivisionFilter] = useState('ALL')
+  const [feedbackSectionFilter, setFeedbackSectionFilter] = useState('ALL')
+  const [feedbackTeamFilter, setFeedbackTeamFilter] = useState('ALL')
+  const [feedbackRoleFilter, setFeedbackRoleFilter] = useState('ALL')
+  const [feedbackIssueFilter, setFeedbackIssueFilter] = useState('ALL')
+  const [feedbackLeaderOnly, setFeedbackLeaderOnly] = useState(false)
   const calendarContextKey = `${data.month}:${data.selectedTypes.join(',')}`
   const previousContextKey = useRef(calendarContextKey)
 
@@ -80,6 +176,46 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
   }, [data.events])
 
   const selectedEvent = data.events.find((item) => item.id === selectedEventId) ?? data.events[0] ?? null
+  const filteredOperationsMilestones = data.operationsChecklist.milestones.filter((milestone) => {
+    const statusMatches = operationsStatusFilter === 'ALL' || milestone.status === operationsStatusFilter
+    const scheduleMatches = operationsScheduleFilter === 'ALL' || milestone.scheduleStatus === operationsScheduleFilter
+    const ownerMatches = operationsOwnerFilter === 'ALL' || milestone.ownerRole === operationsOwnerFilter
+    return statusMatches && scheduleMatches && ownerMatches
+  })
+  const feedbackRows = data.feedbackLeadershipReadiness.rows
+  const feedbackDivisionOptions = useMemo(() => buildStringOptions(feedbackRows.map((row) => row.division)), [feedbackRows])
+  const feedbackSectionOptions = useMemo(() => buildStringOptions(feedbackRows.map((row) => row.section)), [feedbackRows])
+  const feedbackTeamOptions = useMemo(() => buildStringOptions(feedbackRows.map((row) => row.team)), [feedbackRows])
+  const feedbackRoleOptions = useMemo(() => buildStringOptions(feedbackRows.map((row) => row.roleLabel)), [feedbackRows])
+  const filteredFeedbackRows = feedbackRows.filter((row) => {
+    const targetMatches = feedbackTargetTypeFilter === 'ALL' || row.targetType === feedbackTargetTypeFilter
+    const statusMatches = feedbackStatusFilter === 'ALL' || row.readinessStatus === feedbackStatusFilter
+    const divisionMatches = feedbackDivisionFilter === 'ALL' || row.division === feedbackDivisionFilter
+    const sectionMatches = feedbackSectionFilter === 'ALL' || row.section === feedbackSectionFilter
+    const teamMatches = feedbackTeamFilter === 'ALL' || row.team === feedbackTeamFilter
+    const roleMatches = feedbackRoleFilter === 'ALL' || row.roleLabel === feedbackRoleFilter
+    const issueMatches =
+      feedbackIssueFilter === 'ALL'
+        ? true
+        : feedbackIssueFilter === 'MISSING_REVIEWER'
+          ? row.missingReviewerAssignmentCount > 0
+          : row.missingResponseCount > 0
+    const leaderMatches = !feedbackLeaderOnly || row.targetType === 'LEADERSHIP_DIAGNOSIS' || row.role !== 'ROLE_MEMBER'
+    return (
+      targetMatches &&
+      statusMatches &&
+      divisionMatches &&
+      sectionMatches &&
+      teamMatches &&
+      roleMatches &&
+      issueMatches &&
+      leaderMatches
+    )
+  })
+
+  function copyFeedbackRows(rows: typeof feedbackRows) {
+    void navigator.clipboard?.writeText(formatFeedbackLeadershipTsv(rows))
+  }
 
   function pushQuery(nextMonth: string, nextTypes: PerformanceCalendarEventType[]) {
     const params = new URLSearchParams()
@@ -144,6 +280,357 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
             detail={selectedEvent ? selectedEvent.title : '오른쪽 패널에서 일정 상세를 확인하세요.'}
           />
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-500">
+              2026 PPT operations readiness
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900">2026 운영 체크리스트</h2>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">
+              팀원 MBO, 팀 KPI 검토, 등급 기준, AI Pass/Fail, 평가자 배정을 한 흐름으로 확인하는 읽기 전용 운영 가이드입니다.
+            </p>
+            <p className="mt-3 inline-flex rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+              PPT 기준 운영 가이드 · 아직 공식 점수/등급 미적용
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="font-semibold text-slate-900">
+              {data.operationsChecklist.selectedCycleName ?? '2026 readiness 주기 미선택'}
+            </div>
+            <div className="mt-1">
+              공식 readiness 대상: {data.operationsChecklist.selectedCycleIsOfficialReadinessTarget ? '예' : '아니오'}
+            </div>
+            <div className="mt-1">
+              현재 기준: {data.operationsChecklist.schedule.referenceDate}
+            </div>
+            <div className="mt-2 text-xs text-slate-500">
+              저장 방식: {data.operationsChecklist.persistence.saveImplemented ? 'metadata 저장' : 'read-only'}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <div className="font-semibold">2026 schedule gate readiness</div>
+          {data.operationsChecklist.schedule.activeWindows.length ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {data.operationsChecklist.schedule.activeWindows.map((window) => (
+                <Link
+                  key={window.key}
+                  href={window.href}
+                  className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-50"
+                >
+                  {window.label} · {window.recommendedAction}
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-blue-800">
+              현재 ACTIVE 일정 창은 없습니다. 일정 미확정 항목은 NEEDS_SETUP으로 표시합니다.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-5">
+          <MetricCard label="운영 milestone" value={`${data.operationsChecklist.summary.totalMilestones}건`} />
+          <MetricCard label="blocker" value={`${data.operationsChecklist.summary.blockerCount}건`} />
+          <MetricCard label="ACTIVE window" value={`${data.operationsChecklist.summary.scheduleStatusCounts.ACTIVE}건`} />
+          <MetricCard label="NEEDS_SETUP" value={`${data.operationsChecklist.summary.scheduleStatusCounts.NEEDS_SETUP}건`} />
+          <MetricCard label="검토 필요" value={`${data.operationsChecklist.summary.statusCounts.NEEDS_REVIEW}건`} />
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">지금 해야 할 일</div>
+          {data.operationsChecklist.nowActions.length ? (
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {data.operationsChecklist.nowActions.map((action) => (
+                <Link
+                  key={action.id}
+                  href={action.href}
+                  className="rounded-2xl border border-amber-200 bg-white/80 px-3 py-3 transition hover:bg-white"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-slate-900">{action.label}</span>
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                      {action.blockerCount}건
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-600">{action.description}</p>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-amber-800">현재 즉시 처리할 blocker가 없습니다. 다음 milestone 일정을 확인해 주세요.</p>
+          )}
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <ClipboardList className="h-4 w-4 text-violet-600" />
+                2026 360/리더십 readiness
+              </div>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                이 화면은 2차 다면평가와 리더십 진단 readiness를 읽기 전용으로 점검합니다. 응답 요청,
+                알림 발송, 점수/등급 반영은 수행하지 않습니다. 다면평가/리더십 진단 결과는 공식 업적점수
+                계산과 별도 정책으로 관리됩니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => copyFeedbackRows(filteredFeedbackRows)}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                filtered TSV 복사
+              </button>
+              <button
+                type="button"
+                onClick={() => copyFeedbackRows(feedbackRows.filter((row) => row.missingReviewerAssignmentCount > 0))}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                reviewer 누락 복사
+              </button>
+              <button
+                type="button"
+                onClick={() => copyFeedbackRows(feedbackRows.filter((row) => row.missingResponseCount > 0))}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                미응답 복사
+              </button>
+              <button
+                type="button"
+                onClick={() => copyFeedbackRows(feedbackRows.filter((row) => row.targetType === 'LEADERSHIP_DIAGNOSIS'))}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                리더십 대상 복사
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-4 xl:grid-cols-6">
+            <MetricCard label="360 status" value={data.feedbackLeadershipReadiness.second360Feedback.status} detail={`${data.feedbackLeadershipReadiness.second360Feedback.targetEmployeeCount}명`} />
+            <MetricCard label="Leadership" value={data.feedbackLeadershipReadiness.leadershipDiagnosis.status} detail={`${data.feedbackLeadershipReadiness.leadershipDiagnosis.targetLeaderCount}명`} />
+            <MetricCard label="reviewer 배정" value={`${data.feedbackLeadershipReadiness.summary.reviewerAssignmentCount}건`} detail={`누락 ${data.feedbackLeadershipReadiness.summary.missingReviewerAssignmentCount}건`} />
+            <MetricCard label="응답 제출" value={`${data.feedbackLeadershipReadiness.summary.responseSubmittedCount}건`} detail={`미응답 ${data.feedbackLeadershipReadiness.summary.responseMissingCount}건`} />
+            <MetricCard label="완료율" value={`${data.feedbackLeadershipReadiness.summary.completionRate}%`} detail="submitted / assigned" />
+            <MetricCard label="setup/blocker" value={`${data.feedbackLeadershipReadiness.summary.blockedOrNeedsSetupCount}건`} detail="final gate 확인 대상" />
+          </div>
+
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <select value={feedbackTargetTypeFilter} onChange={(event) => setFeedbackTargetTypeFilter(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="ALL">전체 target type</option>
+              <option value="SECOND_360_FEEDBACK">2차 다면평가</option>
+              <option value="LEADERSHIP_DIAGNOSIS">리더십 진단</option>
+            </select>
+            <select value={feedbackStatusFilter} onChange={(event) => setFeedbackStatusFilter(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="ALL">전체 readiness status</option>
+              {['NOT_CONFIGURED', 'READY_TO_ASSIGN', 'ASSIGNMENT_INCOMPLETE', 'IN_PROGRESS', 'COMPLETE', 'BLOCKED', 'MANUAL_REVIEW'].map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+            <select value={feedbackDivisionFilter} onChange={(event) => setFeedbackDivisionFilter(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="ALL">전체 division</option>
+              {feedbackDivisionOptions.map((division) => <option key={division} value={division}>{division}</option>)}
+            </select>
+            <select value={feedbackSectionFilter} onChange={(event) => setFeedbackSectionFilter(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="ALL">전체 section</option>
+              {feedbackSectionOptions.map((section) => <option key={section} value={section}>{section}</option>)}
+            </select>
+            <select value={feedbackTeamFilter} onChange={(event) => setFeedbackTeamFilter(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="ALL">전체 team</option>
+              {feedbackTeamOptions.map((team) => <option key={team} value={team}>{team}</option>)}
+            </select>
+            <select value={feedbackRoleFilter} onChange={(event) => setFeedbackRoleFilter(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="ALL">전체 role</option>
+              {feedbackRoleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
+            </select>
+            <select value={feedbackIssueFilter} onChange={(event) => setFeedbackIssueFilter(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="ALL">전체 누락 유형</option>
+              <option value="MISSING_REVIEWER">missing reviewer</option>
+              <option value="MISSING_RESPONSE">missing response</option>
+            </select>
+            <label className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={feedbackLeaderOnly}
+                onChange={(event) => setFeedbackLeaderOnly(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              leader only
+            </label>
+          </div>
+
+          <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">target</th>
+                  <th className="px-4 py-3">type/status</th>
+                  <th className="px-4 py-3">reviewer</th>
+                  <th className="px-4 py-3">response</th>
+                  <th className="px-4 py-3">missing reason</th>
+                  <th className="px-4 py-3">next HR action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {filteredFeedbackRows.slice(0, 60).map((row) => (
+                  <tr key={row.id}>
+                    <td className="px-4 py-3 align-top">
+                      <div className="font-semibold text-slate-900">{row.name}</div>
+                      <div className="mt-1 text-xs text-slate-500">{row.employeeNo} · {row.roleLabel}</div>
+                      <div className="mt-1 text-xs text-slate-500">{row.departmentPath}</div>
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{row.targetTypeLabel}</span>
+                      <div className="mt-2 text-xs font-semibold text-slate-900">{row.readinessStatus}</div>
+                    </td>
+                    <td className="px-4 py-3 align-top text-slate-600">{row.reviewerAssignmentStatus}</td>
+                    <td className="px-4 py-3 align-top text-slate-600">{row.responseStatus}</td>
+                    <td className="min-w-72 px-4 py-3 align-top text-slate-600">{row.missingReason}</td>
+                    <td className="min-w-72 px-4 py-3 align-top text-slate-600">{row.nextHrAction}</td>
+                  </tr>
+                ))}
+                {filteredFeedbackRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-500">
+                      선택한 필터에서 표시할 360/리더십 readiness 대상이 없습니다.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          {filteredFeedbackRows.length > 60 ? (
+            <p className="mt-2 text-xs text-slate-500">상위 60건만 표시합니다. 전체 목록은 TSV 복사로 확인하세요.</p>
+          ) : null}
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {Object.entries(STATUS_FILTER_LABELS).map(([status, label]) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setOperationsStatusFilter(status as PerformanceOperationsMilestoneStatus | 'ALL')}
+                  className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                    operationsStatusFilter === status
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {Object.entries(SCHEDULE_STATUS_FILTER_LABELS).map(([status, label]) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setOperationsScheduleFilter(status as PerformanceOperationsScheduleStatus | 'ALL')}
+                  className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                    operationsScheduleFilter === status
+                      ? 'border-blue-700 bg-blue-700 text-white'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <select
+            value={operationsOwnerFilter}
+            onChange={(event) => setOperationsOwnerFilter(event.target.value as PerformanceOperationsOwnerRole | 'ALL')}
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-400"
+          >
+            {Object.entries(OWNER_FILTER_LABELS).map(([owner, label]) => (
+              <option key={owner} value={owner}>{label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <tr>
+                <th className="px-4 py-3">milestone</th>
+                <th className="px-4 py-3">owner</th>
+                <th className="px-4 py-3">schedule</th>
+                <th className="px-4 py-3">상태</th>
+                <th className="px-4 py-3">readiness</th>
+                <th className="px-4 py-3">blocker</th>
+                <th className="px-4 py-3">HR action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {filteredOperationsMilestones.map((milestone) => (
+                <tr key={milestone.id}>
+                  <td className="px-4 py-4 align-top">
+                    <div className="font-semibold text-slate-900">{milestone.name}</div>
+                    <div className="mt-1 text-xs text-slate-500">{milestone.plannedRangeLabel}</div>
+                    <div className="mt-2 text-xs leading-5 text-slate-500">{milestone.note}</div>
+                  </td>
+                  <td className="px-4 py-4 align-top text-slate-700">{milestone.ownerRoleLabel}</td>
+                  <td className="px-4 py-4 align-top">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${SCHEDULE_STATUS_STYLES[milestone.scheduleStatus]}`}>
+                      {milestone.scheduleStatusLabel}
+                    </span>
+                    <div className="mt-1 text-xs text-slate-500">{milestone.relativeTimingLabel}</div>
+                  </td>
+                  <td className="px-4 py-4 align-top">
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${OPERATIONS_STATUS_STYLES[milestone.status]}`}>
+                      {milestone.statusLabel}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 align-top">
+                    <Link href={milestone.href} className="text-sm font-semibold text-blue-600 hover:text-blue-700">
+                      {milestone.readinessLinkLabel}
+                    </Link>
+                  </td>
+                  <td className="px-4 py-4 align-top font-semibold text-slate-900">{milestone.blockerCount}건</td>
+                  <td className="px-4 py-4 align-top">
+                    <div className="flex flex-wrap gap-1.5">
+                      {milestone.actionGuidance.map((item) => (
+                        <span key={item} className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          {data.operationsChecklist.milestones.map((milestone) => (
+            <Link
+              key={`timeline-${milestone.id}`}
+              href={milestone.href}
+              className={`rounded-2xl border px-4 py-3 transition hover:bg-slate-50 ${OPERATIONS_STATUS_STYLES[milestone.status]}`}
+            >
+              <div className="flex flex-wrap gap-1.5 text-xs font-semibold">
+                <span>{milestone.statusLabel}</span>
+                <span className={`rounded-full border px-2 py-0.5 ${SCHEDULE_STATUS_STYLES[milestone.scheduleStatus]}`}>
+                  {milestone.scheduleStatusLabel}
+                </span>
+              </div>
+              <div className="mt-2 text-sm font-semibold text-slate-900">{milestone.name}</div>
+              <div className="mt-1 text-xs text-slate-500">{milestone.plannedRangeLabel}</div>
+              <div className="mt-1 text-xs text-slate-500">{milestone.relativeTimingLabel}</div>
+            </Link>
+          ))}
+        </div>
+
+        <p className="mt-4 text-xs leading-5 text-slate-500">{data.operationsChecklist.persistence.note}</p>
       </section>
 
       {data.alerts.length ? (

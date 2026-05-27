@@ -111,6 +111,9 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
   const [assignmentForm, setAssignmentForm] = useState<AssignmentFormState>(() =>
     buildAssignmentForm(pageData)
   )
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [routeFilter, setRouteFilter] = useState('ALL')
+  const [departmentFilter, setDepartmentFilter] = useState('ALL')
 
   useEffect(() => {
     setCycleForm(buildCycleForm(pageData))
@@ -126,6 +129,32 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
   const hasEvalCycleOptions = pageData.evalCycleOptions.length > 0
   const hasEmployeeOptions = pageData.employeeOptions.length > 0
   const hasReviewerOptions = pageData.reviewerOptions.length > 0
+  const departmentFilterOptions = useMemo(
+    () => Array.from(new Set(pageData.assignments.map((item) => item.departmentName))).sort(),
+    [pageData.assignments]
+  )
+  const routeFilterOptions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          pageData.assignments.map((item) => [
+            item.recognitionRoute ?? 'UNSELECTED',
+            item.recognitionRouteLabel ?? '인정 경로 미선택',
+          ])
+        ).entries()
+      ),
+    [pageData.assignments]
+  )
+  const filteredAssignments = useMemo(
+    () =>
+      pageData.assignments.filter((assignment) => {
+        if (statusFilter !== 'ALL' && assignment.status !== statusFilter) return false
+        if (routeFilter !== 'ALL' && (assignment.recognitionRoute ?? 'UNSELECTED') !== routeFilter) return false
+        if (departmentFilter !== 'ALL' && assignment.departmentName !== departmentFilter) return false
+        return true
+      }),
+    [departmentFilter, pageData.assignments, routeFilter, statusFilter]
+  )
 
   const runMutation = (work: () => Promise<void>) => {
     startTransition(() => {
@@ -204,6 +233,86 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
           value={`합격 ${pageData.summary.passedCount}명 / 미통과 ${pageData.summary.failedCount}명`}
         />
       </div>
+
+      <SectionCard
+        title="2026 AI 활용평가 readiness"
+        description="연간 업적평가 점수와 별도로 레벨업/승진 Pass/Fail 요건 준비 현황을 확인합니다."
+      >
+        <NoticeBanner
+          tone="info"
+          title="AI 활용평가는 2026 업적평가 점수에 반영되지 않습니다."
+          description="단순 교육 이수나 도구 사용 경험만으로는 인정되지 않습니다. 실제 업무 개선과 증빙, 검토 결정만 readiness metadata로 관리합니다."
+        />
+        <div className="mt-4 grid gap-4 md:grid-cols-4">
+          <MetricCard label="미제출" value={`${pageData.summary.unsubmittedCount}명`} />
+          <MetricCard label="보완 요청" value={`${pageData.summary.revisionRequestedCount}명`} />
+          <MetricCard label="Pass" value={`${pageData.summary.passedCount}명`} />
+          <MetricCard label="Fail" value={`${pageData.summary.failedCount}명`} />
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          {pageData.summary.evidencePathDistribution.length ? (
+            pageData.summary.evidencePathDistribution.map((item) => (
+              <MetricCard key={item.route} label={item.label} value={`${item.count}명`} />
+            ))
+          ) : (
+            <EmptyBox
+              title="인정 경로 분포가 없습니다."
+              description="대상자를 배정하고 제출서를 저장하면 인정 경로별 현황이 표시됩니다."
+            />
+          )}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-5">
+          <MetricCard label="증빙 누락" value={`${pageData.summary.readinessBlockers.missingEvidence}건`} />
+          <MetricCard
+            label="정량 개선 누락"
+            value={`${pageData.summary.readinessBlockers.missingQuantitativeImpact}건`}
+          />
+          <MetricCard
+            label="Before/After 누락"
+            value={`${pageData.summary.readinessBlockers.missingBeforeAfter}건`}
+          />
+          <MetricCard
+            label="기여 설명 누락"
+            value={`${pageData.summary.readinessBlockers.missingContributionClarity}건`}
+          />
+          <MetricCard
+            label="확산 근거 누락"
+            value={`${pageData.summary.readinessBlockers.missingAdoptionSharing}건`}
+          />
+        </div>
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">조직/팀</th>
+                <th className="px-4 py-3">대상자</th>
+                <th className="px-4 py-3">제출/검토 대기</th>
+                <th className="px-4 py-3">Pass</th>
+                <th className="px-4 py-3">미제출</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {pageData.summary.departmentCoverage.length ? (
+                pageData.summary.departmentCoverage.map((item) => (
+                  <tr key={item.departmentName}>
+                    <td className="px-4 py-3 font-medium text-slate-900">{item.departmentName}</td>
+                    <td className="px-4 py-3 text-slate-700">{item.totalCount}명</td>
+                    <td className="px-4 py-3 text-slate-700">{item.submittedCount}명</td>
+                    <td className="px-4 py-3 text-slate-700">{item.passedCount}명</td>
+                    <td className="px-4 py-3 text-slate-700">{item.missingCount}명</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td className="px-4 py-6 text-slate-500" colSpan={5}>
+                    조직별 readiness 현황이 아직 없습니다.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
 
       <SectionCard
         title="회차 선택"
@@ -399,7 +508,7 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
       {pageData.canAssign ? (
         <SectionCard
           title="대상자 배정"
-          description="직원을 AI 역량평가 대상자로 배정하고 검토자를 지정합니다."
+          description="2026 AI 활용평가 대상자인 팀장/팀원을 배정하고 검토자를 지정합니다. 본부장/실장은 대상에서 제외됩니다."
           action={
             hasSelectedCycle ? (
               <button
@@ -507,8 +616,55 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
           />
         ) : (
           <div className="space-y-3">
-            {pageData.assignments.length ? (
-              pageData.assignments.map((assignment) => (
+            <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
+              <Field label="상태">
+                <select
+                  className={inputClassName}
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                >
+                  <option value="ALL">전체 상태</option>
+                  <option value="NOT_STARTED">미시작</option>
+                  <option value="DRAFT">작성중</option>
+                  <option value="SUBMITTED">제출완료</option>
+                  <option value="RESUBMITTED">재제출</option>
+                  <option value="UNDER_REVIEW">검토중</option>
+                  <option value="REVISION_REQUESTED">보완요청</option>
+                  <option value="PASSED">Pass</option>
+                  <option value="FAILED">Fail</option>
+                </select>
+              </Field>
+              <Field label="인정 경로">
+                <select
+                  className={inputClassName}
+                  value={routeFilter}
+                  onChange={(event) => setRouteFilter(event.target.value)}
+                >
+                  <option value="ALL">전체 인정 경로</option>
+                  {routeFilterOptions.map(([route, label]) => (
+                    <option key={route} value={route}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="조직/팀">
+                <select
+                  className={inputClassName}
+                  value={departmentFilter}
+                  onChange={(event) => setDepartmentFilter(event.target.value)}
+                >
+                  <option value="ALL">전체 조직</option>
+                  {departmentFilterOptions.map((departmentName) => (
+                    <option key={departmentName} value={departmentName}>
+                      {departmentName}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            {filteredAssignments.length ? (
+              filteredAssignments.map((assignment) => (
                 <article
                   key={assignment.id}
                   className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
@@ -517,7 +673,7 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <StatusPill value={assignment.statusLabel} />
-                        {assignment.trackLabel ? <StatusPill value={assignment.trackLabel} /> : null}
+                        <StatusPill value={assignment.recognitionRouteLabel ?? assignment.trackLabel ?? '인정 경로 미선택'} />
                       </div>
                       <h3 className="text-base font-semibold text-slate-950">
                         {assignment.employeeName} · {assignment.departmentName}
@@ -559,7 +715,7 @@ export function AiCompetencyAdminPanel(props: { pageData: AiCompetencyGateAdminP
               ))
             ) : (
               <EmptyBox
-                title="대기열이 비어 있습니다."
+                title={pageData.assignments.length ? '필터 조건에 맞는 대기열이 없습니다.' : '대기열이 비어 있습니다.'}
                 description={
                   pageData.message ??
                   '대상자를 배정하고 제출이 시작되면 이 영역에서 작성 및 검토 상태를 추적할 수 있습니다.'

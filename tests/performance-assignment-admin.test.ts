@@ -20,6 +20,7 @@ const pageSource = read('src/app/(main)/admin/performance-assignments/page.tsx')
 const clientSource = read('src/components/admin/PerformanceAssignmentAdminClient.tsx')
 const routeSource = read('src/app/api/admin/performance-assignments/route.ts')
 const serviceSource = read('src/server/evaluation-performance-assignments.ts')
+const routingReadinessSource = read('src/server/evaluation-2026-evaluator-routing-readiness.ts')
 const navigationSource = read('src/lib/navigation.ts')
 const permissionsSource = read('src/lib/auth/permissions.ts')
 
@@ -36,6 +37,12 @@ run('performance assignment admin route, client, and server files exist', () => 
   )
   assert.equal(
     existsSync(path.resolve(process.cwd(), 'src/app/api/admin/performance-assignments/route.ts')),
+    true
+  )
+  assert.equal(
+    existsSync(
+      path.resolve(process.cwd(), 'src/server/evaluation-2026-evaluator-routing-readiness.ts')
+    ),
     true
   )
 })
@@ -60,6 +67,24 @@ run('performance assignment client supports sync, override, reset, and evaluatio
   assert.equal(clientSource.includes('/evaluation/performance/'), true)
   assert.equal(clientSource.includes('자동 동기화'), true)
   assert.equal(clientSource.includes('자동 기준 복원'), true)
+})
+
+run('performance assignment page renders read-only 2026 evaluator routing QA', () => {
+  assert.equal(serviceSource.includes('getEvaluation2026EvaluatorRoutingReadiness'), true)
+  assert.equal(clientSource.includes('2026 평가자 배정 readiness QA'), true)
+  assert.equal(clientSource.includes('이 화면은 2026 평가자 배정 readiness를 읽기 전용으로 점검합니다.'), true)
+  assert.equal(clientSource.includes('missing FIRST'), true)
+  assert.equal(clientSource.includes('missing SECOND'), true)
+  assert.equal(clientSource.includes('missing FINAL'), true)
+  assert.equal(clientSource.includes('filtered TSV'), true)
+})
+
+run('evaluator routing readiness helper is read-only and reports safety fields', () => {
+  assert.equal(routingReadinessSource.includes('evaluation.create'), false)
+  assert.equal(routingReadinessSource.includes('evaluationItem.create'), false)
+  assert.equal(routingReadinessSource.includes('totalScoreChanged: false'), true)
+  assert.equal(routingReadinessSource.includes('gradeIdChanged: false'), true)
+  assert.equal(routingReadinessSource.includes('writesPerformed: false'), true)
 })
 
 run('performance assignment service persists cycle-specific overrides and auto-reset behavior', () => {

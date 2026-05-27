@@ -57,6 +57,7 @@ import {
   resolvePersonalKpiTargetValues,
 } from '@/lib/personal-kpi-target-values'
 import { joinInlineParts } from '@/lib/metric-copy'
+import { getPersonalKpiScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 
 type Props = PersonalKpiPageData & {
   initialTab?: string
@@ -278,6 +279,14 @@ const MBO_CATEGORY_GUIDE_2026 = [
     label: '일상업무',
     description: '반복·운영 업무이며 조직목표/프로젝트와 중복 기재하지 않습니다.',
   },
+] as const
+
+const RESULT_WRITING_GUIDE_2026 = [
+  'target achievement, actual result, evidence, personal contribution, output/impact, next improvement를 분리해서 준비합니다.',
+  'ORG_GOAL은 본부 KPI 또는 HR 승인 팀 KPI 기여와 증빙을 연결하고 DAILY_WORK와 중복 작성하지 않습니다.',
+  'PROJECT_T/K는 목표 산출물, 실제 deliverable, 본인 역할, 정량/정성 impact를 남깁니다.',
+  'DAILY_WORK는 운영 책임, 품질/안정성, 프로세스 개선과 리더 검토 근거를 중심으로 작성합니다.',
+  'AI 활용평가 증빙은 연간 업적점수와 별도 Pass/Fail readiness로 관리합니다.',
 ] as const
 
 function createEvidenceDraft(kpi?: PersonalKpiViewModel): EvidenceDraft {
@@ -2182,6 +2191,8 @@ export function PersonalKpiManagementClient(props: Props) {
     }
   }
 
+  const scheduleGateGuidance2026 = useMemo(() => getPersonalKpiScheduleGuidance(), [])
+
   return (
     <div className="space-y-6">
       <PageHeader />
@@ -2204,10 +2215,25 @@ export function PersonalKpiManagementClient(props: Props) {
 
       {props.alerts?.length ? <LoadAlerts alerts={props.alerts} /> : null}
       {banner ? <BannerMessage tone={banner.tone} message={banner.message} /> : null}
+      {scheduleGateGuidance2026.warningMessage ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p className="font-semibold">2026 목표 수정 일정 안내</p>
+              <p className="mt-1 leading-6">{scheduleGateGuidance2026.warningMessage}</p>
+              <p className="mt-1 text-xs text-amber-800">
+                이 안내는 비차단 readiness guidance이며 기존 저장/제출 동작을 변경하지 않습니다.
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {props.state === 'ready' ? (
         <>
           <MboSetupGuidePanel />
+          <ResultWritingGuidePanel />
           <MboPolicySummaryPanel summary={derivedSummary.mboPolicy} />
           <Tabs activeTab={activeTab} onChange={setActiveTab} />
           {activeTab === 'mine' ? (
@@ -2301,6 +2327,7 @@ export function PersonalKpiManagementClient(props: Props) {
       ) : (
         <>
           <MboSetupGuidePanel />
+          <ResultWritingGuidePanel />
           <StatePanel state={props.state} message={props.message} />
           <Tabs activeTab={activeTab} onChange={setActiveTab} />
           {activeTab === 'review' ? (
@@ -2687,6 +2714,33 @@ function MboSetupGuidePanel() {
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  )
+}
+
+function ResultWritingGuidePanel() {
+  return (
+    <section className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="rounded-xl bg-white p-2 text-emerald-700">
+            <ClipboardList className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 준비 안내</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다. 이 안내는 read-only이며 저장/제출/점수 계산을 변경하지 않습니다.
+            </p>
+          </div>
+        </div>
+        <ul className="grid gap-2 text-[11px] leading-4 text-slate-600 sm:grid-cols-2 lg:max-w-3xl">
+          {RESULT_WRITING_GUIDE_2026.map((item) => (
+            <li key={item} className="rounded-2xl border border-emerald-100 bg-white px-3 py-2">
+              {item}
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   )
