@@ -298,6 +298,7 @@ function makeDb(overrides: {
   cycle?: Record<string, unknown> | null
   personalKpis?: Array<Record<string, unknown>>
   evaluations?: Array<Record<string, unknown>>
+  evaluationAssignments?: Array<Record<string, unknown>>
   employees?: Array<Record<string, unknown>>
   departments?: Array<Record<string, unknown>>
   orgKpis?: Array<Record<string, unknown>>
@@ -308,6 +309,7 @@ function makeDb(overrides: {
     employeeFindMany: 0,
     personalKpiFindMany: 0,
     evaluationFindMany: 0,
+    evaluationAssignmentFindMany: 0,
     departmentFindMany: 0,
     orgKpiFindMany: 0,
     writes: 0,
@@ -388,6 +390,10 @@ function makeDb(overrides: {
       },
     },
     evaluationAssignment: {
+      findMany: async () => {
+        counts.evaluationAssignmentFindMany += 1
+        return overrides.evaluationAssignments ?? []
+      },
       upsert: async () => {
         counts.writes += 1
         throw new Error('dry-run must not mutate assignments')
@@ -1409,6 +1415,152 @@ async function main() {
     assert.equal(fake.counts.writes, 0)
   })
 
+  await run('leader evaluation readiness reports stage blockers and exports without writes', async () => {
+    const leaderEmployees = [
+      {
+        id: 'emp-self-pending',
+        empId: 'L001',
+        empName: '셀프 미제출자',
+        gwsEmail: 'self.pending@rsupport.com',
+        deptId: 'team-sales',
+        role: 'ROLE_MEMBER',
+        position: 'MEMBER',
+        department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
+      },
+      {
+        id: 'emp-second-ready',
+        empId: 'L002',
+        empName: '이차 준비자',
+        gwsEmail: 'second.ready@rsupport.com',
+        deptId: 'team-sales',
+        role: 'ROLE_MEMBER',
+        position: 'MEMBER',
+        department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
+      },
+      {
+        id: 'emp-first-incomplete',
+        empId: 'L003',
+        empName: '일차 진행자',
+        gwsEmail: 'first.progress@rsupport.com',
+        deptId: 'team-sales',
+        role: 'ROLE_MEMBER',
+        position: 'MEMBER',
+        department: { id: 'team-sales', deptName: '세일즈팀', parentDeptId: 'division-sales' },
+      },
+      {
+        id: 'emp-missing-evaluator',
+        empId: 'L004',
+        empName: '평가자 누락자',
+        gwsEmail: 'missing.evaluator@rsupport.com',
+        deptId: 'team-support',
+        role: 'ROLE_MEMBER',
+        position: 'MEMBER',
+        department: { id: 'team-support', deptName: '인사팀', parentDeptId: 'division-support' },
+      },
+    ]
+    const leaderKpis = leaderEmployees.map((employee, index) => ({
+      id: `leader-kpi-${index + 1}`,
+      employeeId: employee.id,
+      kpiName: `${employee.empName} 프로젝트 산출물`,
+      definition: '본인 주도로 프로젝트 산출물과 개선 결과를 책임집니다.',
+      formula: 'deliverable 완료율과 개선 건수',
+      policyCategory: 'PROJECT_T',
+      status: 'CONFIRMED',
+      weight: 100,
+      targetValueT: 100,
+      linkedOrgKpiId: null,
+      linkedOrgKpi: null,
+      monthlyRecords: [
+        {
+          id: `monthly-${index + 1}`,
+          yearMonth: '2026-12',
+          actualValue: 120,
+          achievementRate: 120,
+          activities: '산출물 완료 및 품질 개선',
+          efforts: '본인 주도 개선 실행',
+          evidenceComment: 'https://drive.example.com/evidence',
+          attachments: [],
+          submittedAt: new Date('2026-12-31T00:00:00.000Z'),
+          isDraft: false,
+        },
+      ],
+    }))
+    const makeItem = (employeeIndex: number) => ({
+      id: `leader-item-${employeeIndex + 1}`,
+      personalKpiId: `leader-kpi-${employeeIndex + 1}`,
+      policyCategory: 'PROJECT_T',
+      itemComment: 'Target 100 대비 실제 120건 완료. 본인 주도로 산출물을 개선했고 https://drive.example.com/evidence 를 증빙으로 남겼습니다.',
+      targetAchievementLevel: 'EXCELLENT',
+      personalKpi: {
+        id: `leader-kpi-${employeeIndex + 1}`,
+        kpiName: `${leaderEmployees[employeeIndex].empName} 프로젝트 산출물`,
+        policyCategory: 'PROJECT_T',
+      },
+    })
+    const leaderEvaluations = [
+      { id: 'eval-self-pending', targetId: 'emp-self-pending', evaluatorId: 'emp-self-pending', evalStage: 'SELF', status: 'PENDING', items: [makeItem(0)] },
+      { id: 'eval-second-ready-self', targetId: 'emp-second-ready', evaluatorId: 'emp-second-ready', evalStage: 'SELF', status: 'SUBMITTED', items: [makeItem(1)] },
+      { id: 'eval-second-ready-first', targetId: 'emp-second-ready', evaluatorId: 'leader-1', evalStage: 'FIRST', status: 'SUBMITTED', items: [] },
+      { id: 'eval-first-progress-self', targetId: 'emp-first-incomplete', evaluatorId: 'emp-first-incomplete', evalStage: 'SELF', status: 'SUBMITTED', items: [makeItem(2)] },
+      { id: 'eval-first-progress-first', targetId: 'emp-first-incomplete', evaluatorId: 'leader-1', evalStage: 'FIRST', status: 'IN_PROGRESS', items: [] },
+      { id: 'eval-missing-evaluator-self', targetId: 'emp-missing-evaluator', evaluatorId: 'emp-missing-evaluator', evalStage: 'SELF', status: 'SUBMITTED', items: [makeItem(3)] },
+    ]
+    const assignmentStages = ['FIRST', 'SECOND', 'FINAL']
+    const leaderAssignments = leaderEmployees
+      .filter((employee) => employee.id !== 'emp-missing-evaluator')
+      .flatMap((employee) =>
+        assignmentStages.map((stage) => ({
+          id: `${employee.id}-${stage}`,
+          targetId: employee.id,
+          evaluatorId: `${stage.toLowerCase()}-evaluator`,
+          evalStage: stage,
+          source: 'AUTO',
+          evaluator: {
+            id: `${stage.toLowerCase()}-evaluator`,
+            empName: `${stage} 평가자`,
+            empId: `${stage}-001`,
+            status: 'ACTIVE',
+          },
+        }))
+      )
+    const fake = makeDb({
+      employees: leaderEmployees,
+      personalKpis: leaderKpis,
+      evaluations: leaderEvaluations,
+      evaluationAssignments: leaderAssignments,
+    })
+
+    const dryRun = await getEvaluation2026ReadinessPopulationDryRun({
+      db: fake.db as never,
+      evalCycleId: 'cycle-2026',
+      env: {} as NodeJS.ProcessEnv,
+    })
+
+    const readiness = dryRun.leaderEvaluationReadiness
+    const findRow = (employeeId: string) => readiness.rows.find((row) => row.employeeId === employeeId)
+
+    assert.equal(readiness.mode, 'READ_ONLY')
+    assert.equal(readiness.firstEvaluatorChecklist.some((item) => item.includes('target vs actual')), true)
+    assert.equal(readiness.secondEvaluatorChecklist.some((item) => item.includes('zero-sum')), true)
+    assert.equal(readiness.exportColumns.includes('employeeNo'), true)
+    assert.equal(findRow('emp-self-pending')?.readinessStatus, 'BLOCKED_SELF_NOT_SUBMITTED')
+    assert.equal(findRow('emp-second-ready')?.readinessStatus, 'READY_FOR_SECOND_REVIEW')
+    assert.equal(findRow('emp-first-incomplete')?.readinessStatus, 'BLOCKED_FIRST_NOT_COMPLETE')
+    assert.equal(findRow('emp-missing-evaluator')?.readinessStatus, 'BLOCKED_EVALUATOR_MISSING')
+    assert.equal(findRow('emp-missing-evaluator')?.missingPrerequisites.includes('EVALUATOR_MISSING'), true)
+    assert.equal(readiness.summary.selfSubmittedCount, 3)
+    assert.equal(readiness.summary.secondReviewReadyCount, 1)
+    assert.equal(readiness.summary.secondReviewMissingPrerequisitesCount, 1)
+    assert.equal(readiness.summary.missingEvaluatorCount, 1)
+    assert.equal(readiness.summary.officialScoringEnabled, false)
+    assert.equal(readiness.summary.officialGradeEnabled, false)
+    assert.equal(readiness.safety.writesPerformed, false)
+    assert.equal(readiness.safety.evaluationsCreated, 0)
+    assert.equal(readiness.safety.evaluationItemsCreated, 0)
+    assert.equal(dryRun.warnings.some((warning) => warning.code === 'LEADER_EVALUATION_READINESS_WARNINGS'), true)
+    assert.equal(fake.counts.writes, 0)
+  })
+
   await run('official scoring and grade flags remain disabled in dry-run safety output', async () => {
     const fake = makeDb()
 
@@ -1507,6 +1659,17 @@ async function main() {
     assert.equal(clientSource.includes('ORG_GOAL source warning 복사'), true)
     assert.equal(clientSource.includes('DAILY_WORK duplicate risk 복사'), true)
     assert.equal(clientSource.includes('filtered TSV 복사'), true)
+    assert.equal(clientSource.includes('2026 리더 평가 readiness'), true)
+    assert.equal(clientSource.includes('이 화면은 2026 리더 평가 readiness를 읽기 전용으로 점검합니다.'), true)
+    assert.equal(clientSource.includes('공식 점수, 등급, 제출, 확정 상태는 변경하지 않습니다.'), true)
+    assert.equal(clientSource.includes('FIRST evaluator checklist'), true)
+    assert.equal(clientSource.includes('SECOND evaluator checklist'), true)
+    assert.equal(clientSource.includes('FIRST blocked 복사'), true)
+    assert.equal(clientSource.includes('missing evaluator 복사'), true)
+    assert.equal(clientSource.includes('combined TSV 복사'), true)
+    assert.equal(serverSource.includes('LEADER_EVALUATION_READINESS_WARNINGS'), true)
+    assert.equal(serverSource.includes('BLOCKED_SELF_NOT_SUBMITTED'), true)
+    assert.equal(serverSource.includes('READY_FOR_SECOND_REVIEW'), true)
     assert.equal(serverSource.includes('RESULT_WRITING_READINESS_WARNINGS'), true)
     assert.equal(serverSource.includes('officialScoringEnabled: false'), true)
     assert.equal(serverSource.includes('officialGradeEnabled: false'), true)

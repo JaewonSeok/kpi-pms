@@ -174,6 +174,40 @@ function readyPopulationDryRun(overrides: Partial<any> = {}) {
         aiExcludedConfirmation: true,
       },
     },
+    leaderEvaluationReadiness: {
+      summary: {
+        targetEmployeeCount: 10,
+        selfSubmittedCount: 10,
+        firstReviewReadyCount: 7,
+        firstReviewMissingPrerequisitesCount: 0,
+        secondReviewReadyCount: 2,
+        secondReviewMissingPrerequisitesCount: 0,
+        finalCeoNotReadyCount: 1,
+        itemsMissingResultWritingEvidence: 0,
+        itemsMissingPolicyCategory: 0,
+        itemsMissingApprovedOrgGoalSource: 0,
+        itemsMissingMeasurableResult: 0,
+        itemsMissingPersonalContribution: 0,
+        itemsWithScorePolicyWarnings: 0,
+        itemsWithAdjustmentReadinessWarnings: 0,
+        missingEvaluatorCount: 0,
+        blockerCount: 0,
+        readyForLeaderReviewCount: 10,
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+      },
+      rows: [],
+      safety: {
+        writesPerformed: false,
+        evaluationsCreated: 0,
+        evaluationItemsCreated: 0,
+        totalScoreChanged: false,
+        gradeIdChanged: false,
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        officialAiScoreExclusionEnabled: false,
+      },
+    },
     warnings: [],
     safety: {
       writesPerformed: false,
@@ -527,6 +561,66 @@ async function main() {
     assert.equal(result.blockers.some((item: any) => item.code === 'FEEDBACK_LEADERSHIP_READINESS_UNRESOLVED'), true)
   })
 
+  await run('activation gate includes leader evaluation readiness blocker', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: true,
+        hrApprovalConfirmed: true,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun({
+        leaderEvaluationReadiness: {
+          summary: {
+            targetEmployeeCount: 10,
+            selfSubmittedCount: 6,
+            firstReviewReadyCount: 4,
+            firstReviewMissingPrerequisitesCount: 3,
+            secondReviewReadyCount: 1,
+            secondReviewMissingPrerequisitesCount: 1,
+            finalCeoNotReadyCount: 9,
+            itemsMissingResultWritingEvidence: 2,
+            itemsMissingPolicyCategory: 1,
+            itemsMissingApprovedOrgGoalSource: 1,
+            itemsMissingMeasurableResult: 2,
+            itemsMissingPersonalContribution: 2,
+            itemsWithScorePolicyWarnings: 2,
+            itemsWithAdjustmentReadinessWarnings: 4,
+            missingEvaluatorCount: 1,
+            blockerCount: 4,
+            readyForLeaderReviewCount: 5,
+            officialScoringEnabled: false,
+            officialGradeEnabled: false,
+          },
+          rows: [],
+          safety: {
+            writesPerformed: false,
+            evaluationsCreated: 0,
+            evaluationItemsCreated: 0,
+            totalScoreChanged: false,
+            gradeIdChanged: false,
+            officialScoringEnabled: false,
+            officialGradeEnabled: false,
+            officialAiScoreExclusionEnabled: false,
+          },
+        },
+      }) as any,
+    })
+
+    const gate = findGate(result, 'OFFICIAL_SCORING')
+    const condition = findCondition(gate, 'LEADER_EVALUATION_READINESS_READY')
+
+    assert.equal(gate.status, 'BLOCKED')
+    assert.equal(condition.status, 'BLOCKED')
+    assert.equal(condition.blockerCount, 4)
+    assert.equal(result.warnings.some((item: any) => item.code === 'LEADER_EVALUATION_READINESS_UNRESOLVED'), true)
+    assert.equal(result.leaderEvaluationReadiness?.summary.blockerCount, 4)
+  })
+
   await run('official scoring gate is blocked before backfill and HR approval', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags({
@@ -670,7 +764,10 @@ async function main() {
     assert.equal(activationSource.includes('evaluator assignment chain complete'), true)
     assert.equal(activationSource.includes('FEEDBACK_360_LEADERSHIP_READINESS_READY'), true)
     assert.equal(activationSource.includes('FEEDBACK_LEADERSHIP_READINESS_UNRESOLVED'), true)
+    assert.equal(activationSource.includes('LEADER_EVALUATION_READINESS_READY'), true)
+    assert.equal(activationSource.includes('LEADER_EVALUATION_READINESS_UNRESOLVED'), true)
     assert.equal(clientSource.includes('360/리더십'), true)
+    assert.equal(clientSource.includes('리더 평가'), true)
     assert.equal(clientSource.includes('공식 전환 실행'), false)
   })
 
