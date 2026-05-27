@@ -2900,7 +2900,15 @@ function PolicyActivationReadiness2026Panel(props: {
   const blockers = activation?.blockers ?? []
   const warnings = activation?.warnings ?? []
   const gates = activation?.officialActivationGates ?? []
+  const runbook = activation?.officialActivationRunbook ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
+  const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
+  const copyActivationRunbookPayload = useCallback(async (key: string, text: string) => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    await navigator.clipboard.writeText(text)
+    setCopiedRunbookKey(key)
+    window.setTimeout(() => setCopiedRunbookKey((current) => (current === key ? null : current)), 1800)
+  }, [])
 
   return (
     <Panel
@@ -2969,6 +2977,13 @@ function PolicyActivationReadiness2026Panel(props: {
               help="공식 실행 전 해소"
               compact
               variant={gates.some((gate) => gate.status === 'BLOCKED') ? 'warning' : 'default'}
+            />
+            <MetricCard
+              label="Runbook"
+              value={runbook ? runbook.summary.blockedSectionCount.toLocaleString() : '미확인'}
+              help={runbook ? `next ${runbook.summary.nextExecutableStep}` : 'read-only'}
+              compact
+              variant={(runbook?.summary.blockedSectionCount ?? 1) > 0 ? 'warning' : 'default'}
             />
             <MetricCard
               label="Migration"
@@ -3042,6 +3057,134 @@ function PolicyActivationReadiness2026Panel(props: {
               variant={(activation.finalizationCeoReadiness?.summary.finalizationBlockerCount ?? 1) > 0 ? 'warning' : 'default'}
             />
           </div>
+
+          {runbook ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 공식 전환 Runbook</h4>
+                    <Badge tone="neutral">{runbook.mode}</Badge>
+                    <Badge tone={runbook.summary.blockedSectionCount > 0 ? 'warn' : 'success'}>
+                      blocker {runbook.summary.totalBlockerCount.toLocaleString()}건
+                    </Badge>
+                    <Badge tone="neutral">No execution buttons in UI</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 공식 전환 실행 순서를 읽기 전용으로 안내합니다. backfill, feature flag, 공식 점수, 공식 등급은 실행하지 않습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['runbook-full', '전체 runbook', runbook.copyPayloads.markdown],
+                    ['runbook-blockers', 'blocker 요약', runbook.copyPayloads.blockerSummary],
+                    ['runbook-hr', 'HR checklist', runbook.copyPayloads.hrApprovalChecklist],
+                    ['runbook-dev', 'Dev checklist', runbook.copyPayloads.developerExecutionChecklist],
+                    ['runbook-prohibited', '금지 목록', runbook.copyPayloads.prohibitedActions],
+                    ['runbook-tsv', 'TSV', runbook.copyPayloads.tsv],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-semibold text-amber-900">현재 단계</p>
+                  <p className="mt-1 text-sm font-semibold text-amber-950">{runbook.currentPosition.currentStage}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-xs font-semibold text-slate-500">다음 필요 단계</p>
+                  <p className="mt-1 text-sm leading-5 text-slate-700">{runbook.currentPosition.nextRequiredStep}</p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <p className="text-xs font-semibold text-slate-500">아직 금지</p>
+                  <p className="mt-1 text-sm leading-5 text-slate-700">
+                    {runbook.currentPosition.prohibitedActions.slice(0, 5).join(', ')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 xl:grid-cols-2">
+                {runbook.sections.map((section) => (
+                  <details
+                    key={section.id}
+                    open={section.status === 'BLOCKED'}
+                    className={`rounded-2xl border ${
+                      section.status === 'BLOCKED'
+                        ? 'border-amber-200 bg-amber-50/60'
+                        : section.status === 'READY_FOR_REVIEW'
+                          ? 'border-emerald-200 bg-emerald-50/50'
+                          : 'border-slate-200 bg-slate-50'
+                    }`}
+                  >
+                    <summary className="cursor-pointer list-none px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone={section.status === 'BLOCKED' ? 'warn' : section.status === 'READY_FOR_REVIEW' ? 'success' : 'neutral'}>
+                            {section.status}
+                          </Badge>
+                          <span className="text-sm font-semibold text-slate-900">{section.title}</span>
+                        </div>
+                        <span className="text-xs text-slate-500">blocker {section.currentBlockerCount.toLocaleString()}건</span>
+                      </div>
+                    </summary>
+                    <div className="border-t border-white/70 px-4 pb-4 pt-3 text-sm leading-6 text-slate-600">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500">Required checks</p>
+                          <ul className="mt-2 space-y-1">
+                            {section.requiredChecks.slice(0, 6).map((check) => (
+                              <li key={check}>- {check}</li>
+                            ))}
+                          </ul>
+                          {section.requiredChecks.length > 6 ? (
+                            <p className="mt-1 text-xs text-slate-400">+{section.requiredChecks.length - 6}개 check</p>
+                          ) : null}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-slate-500">Source readiness panels</p>
+                          <p className="mt-2">{section.sourceReadinessPanels.join(', ')}</p>
+                          <p className="mt-3 text-xs font-semibold text-slate-500">Next HR action</p>
+                          <p>{section.nextHrAction}</p>
+                          <p className="mt-3 text-xs font-semibold text-slate-500">Next developer action</p>
+                          <p>{section.nextDeveloperAction}</p>
+                          <p className="mt-3 text-xs font-semibold text-slate-500">Prohibited actions</p>
+                          <p>{section.prohibitedActions.slice(0, 5).join(', ')}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">HR approval checklist</h5>
+                  <ul className="mt-3 space-y-1 text-sm leading-6 text-slate-600">
+                    {runbook.hrApprovalChecklist.map((item) => (
+                      <li key={item}>- {item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Developer execution checklist</h5>
+                  <ul className="mt-3 space-y-1 text-sm leading-6 text-slate-600">
+                    {runbook.developerExecutionChecklist.map((item) => (
+                      <li key={item}>- {item}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">

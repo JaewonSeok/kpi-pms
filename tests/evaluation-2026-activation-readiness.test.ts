@@ -354,6 +354,12 @@ function findCondition(gate: any, code: string) {
   return condition
 }
 
+function findRunbookSection(runbook: any, id: string) {
+  const section = runbook.sections.find((item: any) => item.id === id)
+  assert.ok(section, `missing runbook section ${id}`)
+  return section
+}
+
 async function main() {
   const {
     getEvaluation2026ActivationReadiness,
@@ -791,6 +797,71 @@ async function main() {
     assert.equal(result.flags.aiScoreExclusionEnabled, false)
   })
 
+  await run('official activation runbook renders all sections and blocks current position while MBO coverage is low', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        backfillExcluded: false,
+        hrApprovalConfirmed: false,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun({
+        employeesMissingConfirmedPersonalKpiCount: 7,
+      }) as any,
+    })
+
+    const runbook = result.officialActivationRunbook
+    assert.equal(runbook.mode, 'READ_ONLY')
+    assert.equal(runbook.sections.length, 7)
+    assert.equal(findRunbookSection(runbook, 'PRECONDITIONS').status, 'BLOCKED')
+    assert.equal(findRunbookSection(runbook, 'BACKFILL_DRY_RUN').status, 'READY_FOR_REVIEW')
+    assert.equal(findRunbookSection(runbook, 'BACKFILL_APPLY').status, 'BLOCKED')
+    assert.equal(runbook.currentPosition.currentStage, 'Readiness preparation')
+    assert.equal(runbook.currentPosition.noExecutionButtonsInUi, true)
+    assert.equal(runbook.summary.noExecutionButtonsInUi, true)
+    assert.equal(runbook.summary.blockedSectionCount > 0, true)
+    assert.equal(runbook.copyPayloads.markdown.includes('2026 공식 전환 Runbook'), true)
+    assert.equal(runbook.copyPayloads.prohibitedActions.includes('backfill --apply'), true)
+    assert.equal(runbook.copyPayloads.prohibitedActions.includes('Evaluation.totalScore write'), true)
+    assert.equal(runbook.safety.writesPerformed, false)
+    assert.equal(runbook.safety.backfillExecuted, false)
+    assert.equal(runbook.safety.totalScoreChanged, false)
+    assert.equal(runbook.safety.gradeIdChanged, false)
+  })
+
+  await run('official activation runbook blocks scoring grade and gradeId sequencing', async () => {
+    const result = await getEvaluation2026ActivationReadiness({
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        backfillExcluded: false,
+        hrApprovalConfirmed: false,
+      }),
+      migrationStatus: readyMigration(),
+      readinessSummary: readySummary(),
+      gradePolicyReadiness: readyGradePolicy() as any,
+      populationDryRun: readyPopulationDryRun() as any,
+    })
+
+    const runbook = result.officialActivationRunbook
+    assert.equal(findRunbookSection(runbook, 'OFFICIAL_SCORING_ACTIVATION').status, 'BLOCKED')
+    assert.equal(findRunbookSection(runbook, 'OFFICIAL_GRADE_ACTIVATION').status, 'BLOCKED')
+    assert.equal(findRunbookSection(runbook, 'EVALUATION_TOTAL_SCORE_WRITE').status, 'BLOCKED')
+    assert.equal(findRunbookSection(runbook, 'EVALUATION_GRADE_ID_WRITE').status, 'BLOCKED')
+    assert.equal(runbook.hrApprovalChecklist.includes('HR confirms DB backup before apply'), true)
+    assert.equal(runbook.developerExecutionChecklist.includes('write gradeId last'), true)
+    assert.equal(runbook.summary.officialScoringEnabled, false)
+    assert.equal(runbook.summary.officialGradeEnabled, false)
+    assert.equal(runbook.summary.officialAiScoreExclusionEnabled, false)
+  })
+
   await run('activation readiness can pass in a fully mocked ready state', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags(),
@@ -855,6 +926,16 @@ async function main() {
     assert.equal(clientSource.includes('Official grade gate'), true)
     assert.equal(clientSource.includes('Evaluation.totalScore write gate'), true)
     assert.equal(clientSource.includes('Evaluation.gradeId write gate'), true)
+    assert.equal(clientSource.includes('2026 공식 전환 Runbook'), true)
+    assert.equal(clientSource.includes('이 화면은 공식 전환 실행 순서를 읽기 전용으로 안내합니다.'), true)
+    assert.equal(clientSource.includes('No execution buttons in UI'), true)
+    assert.equal(clientSource.includes('HR approval checklist'), true)
+    assert.equal(clientSource.includes('Developer execution checklist'), true)
+    assert.equal(activationSource.includes('officialActivationRunbook'), true)
+    assert.equal(activationSource.includes('BACKFILL_DRY_RUN'), true)
+    assert.equal(activationSource.includes('OFFICIAL_SCORING_ACTIVATION'), true)
+    assert.equal(activationSource.includes('EVALUATION_GRADE_ID_WRITE'), true)
+    assert.equal(activationSource.includes('backfill --apply'), true)
     assert.equal(activationSource.includes('evaluator assignment chain complete'), true)
     assert.equal(activationSource.includes('FEEDBACK_360_LEADERSHIP_READINESS_READY'), true)
     assert.equal(activationSource.includes('FEEDBACK_LEADERSHIP_READINESS_UNRESOLVED'), true)
@@ -867,7 +948,7 @@ async function main() {
     assert.equal(clientSource.includes('최종/CEO'), true)
     assert.equal(clientSource.includes('2026 최종 확정 readiness'), true)
     assert.equal(clientSource.includes('공식 점수, 등급, 보정, 대표이사 확정은 수행하지 않습니다.'), true)
-    assert.equal(clientSource.includes('공식 전환 실행'), false)
+    assert.equal(clientSource.includes('export async function POST'), false)
   })
 
   await run('live evaluation routes do not import or use official activation gate yet', () => {
