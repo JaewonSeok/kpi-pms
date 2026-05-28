@@ -3118,6 +3118,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const executionBoard = activation?.readinessExecutionBoard ?? null
   const scenarioSimulator = activation?.readinessScenarioSimulator ?? null
   const ceoReportPack = activation?.ceoReportPack ?? null
+  const fastForwardOperationsCockpit = activation?.fastForwardOperationsCockpit ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
@@ -3359,6 +3360,24 @@ function PolicyActivationReadiness2026Panel(props: {
                   help={ceoReportPack.summary.officialActivationStatus}
                   compact
                   variant={ceoReportPack.summary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'}
+                />
+              </>
+            ) : null}
+            {fastForwardOperationsCockpit ? (
+              <>
+                <MetricCard
+                  label="Fast-forward"
+                  value={fastForwardOperationsCockpit.fastForwardSummary.parallelWorkstreamCount.toLocaleString()}
+                  help="parallel workstreams"
+                  compact
+                  variant="default"
+                />
+                <MetricCard
+                  label="Critical path"
+                  value={fastForwardOperationsCockpit.fastForwardSummary.criticalPathItemCount.toLocaleString()}
+                  help={fastForwardOperationsCockpit.fastForwardSummary.nextCheckpointCondition}
+                  compact
+                  variant={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'}
                 />
               </>
             ) : null}
@@ -3848,6 +3867,235 @@ function PolicyActivationReadiness2026Panel(props: {
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
                   <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{executionBoard.prohibitedActions.join(', ')}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {fastForwardOperationsCockpit ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 Fast-Forward Operations Cockpit</h4>
+                    <Badge tone="neutral">{fastForwardOperationsCockpit.mode}</Badge>
+                    <Badge tone={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus === 'BLOCKED' ? 'warn' : 'neutral'}>
+                      {fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus}
+                    </Badge>
+                    <Badge tone="neutral">copy/export only</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 2026 평가 운영을 병렬로 앞당기기 위한 read-only 실행 지도입니다.
+                    backfill, 공식 점수, 공식 등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['fast-forward-summary', 'Fast-forward summary', fastForwardOperationsCockpit.copyPayloads.fastForwardSummary],
+                    ['fast-forward-critical-path', 'Critical path', fastForwardOperationsCockpit.copyPayloads.criticalPath],
+                    ['fast-forward-quick-wins', 'Quick wins', fastForwardOperationsCockpit.copyPayloads.quickWins],
+                    ['fast-forward-owner-queues', 'Owner action queues', fastForwardOperationsCockpit.copyPayloads.ownerActionQueues],
+                    ['fast-forward-safe-path', 'Minimum safe path', fastForwardOperationsCockpit.copyPayloads.minimumSafePath],
+                    ['fast-forward-prohibited', 'Prohibited actions', fastForwardOperationsCockpit.copyPayloads.prohibitedActions],
+                    ['fast-forward-full', 'Full operations plan', fastForwardOperationsCockpit.copyPayloads.fullOperationsPlan],
+                    ['fast-forward-markdown', 'Markdown', fastForwardOperationsCockpit.copyPayloads.markdown],
+                    ['fast-forward-tsv', 'TSV', fastForwardOperationsCockpit.copyPayloads.tsv],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="current stage" value={fastForwardOperationsCockpit.fastForwardSummary.currentStage} help="readiness stage" compact />
+                <MetricCard label="overall status" value={fastForwardOperationsCockpit.fastForwardSummary.overallReadinessStatus} help="snapshot status" compact />
+                <MetricCard label="official activation" value={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus} help="activation gate" compact variant={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="parallel / blocked" value={`${fastForwardOperationsCockpit.fastForwardSummary.parallelWorkstreamCount}/${fastForwardOperationsCockpit.fastForwardSummary.blockedWorkstreamCount}`} help="workstreams" compact />
+                <MetricCard label="quick wins" value={fastForwardOperationsCockpit.fastForwardSummary.quickWinCount.toLocaleString()} help={fastForwardOperationsCockpit.fastForwardSummary.fastestSafeNextProcess} compact />
+                <MetricCard label="critical path" value={fastForwardOperationsCockpit.fastForwardSummary.criticalPathItemCount.toLocaleString()} help={fastForwardOperationsCockpit.fastForwardSummary.nextCheckpointCondition} compact variant="warning" />
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <h5 className="text-sm font-semibold text-blue-950">Korean operations plan</h5>
+                <p className="mt-3 text-sm leading-6 text-blue-900">{fastForwardOperationsCockpit.operationsPlanText}</p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-500">current bottleneck</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{fastForwardOperationsCockpit.fastForwardSummary.currentBottleneck}</p>
+                  </div>
+                  <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-500">fastest safe next process</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{fastForwardOperationsCockpit.fastForwardSummary.fastestSafeNextProcess}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Parallel workstreams</h5>
+                  <div className="mt-3 grid gap-3">
+                    {fastForwardOperationsCockpit.parallelWorkstreams.map((workstream) => (
+                      <div key={workstream.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone="neutral">{workstream.status}</Badge>
+                          {workstream.owners.map((owner) => <Badge key={owner} tone="neutral">{owner}</Badge>)}
+                        </div>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">{workstream.title}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{workstream.relatedRoutes.join(', ')}</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{workstream.expectedOutput}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {workstream.inputs.slice(0, 3).map((input) => (
+                            <span key={`${workstream.id}-${input.label}`} className="rounded-lg border border-slate-100 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                              {input.label}: {typeof input.value === 'number' ? input.value.toLocaleString() : input.value ?? '미확인'}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <h5 className="text-sm font-semibold text-amber-950">Blocked / later workstreams</h5>
+                  <div className="mt-3 grid gap-3">
+                    {fastForwardOperationsCockpit.blockedWorkstreams.map((workstream) => (
+                      <div key={workstream.id} className="rounded-xl border border-amber-100 bg-white px-3 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone="warn">{workstream.status}</Badge>
+                          {workstream.owners.map((owner) => <Badge key={owner} tone="neutral">{owner}</Badge>)}
+                        </div>
+                        <p className="mt-2 text-sm font-semibold text-slate-900">{workstream.title}</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{workstream.blockedReason ?? workstream.expectedOutput}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                <h5 className="text-sm font-semibold text-slate-900">Critical path</h5>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                      <tr>
+                        <th className="px-3 py-2">order</th>
+                        <th className="px-3 py-2">item</th>
+                        <th className="px-3 py-2">status</th>
+                        <th className="px-3 py-2">owner</th>
+                        <th className="px-3 py-2">next action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {fastForwardOperationsCockpit.criticalPath.map((item) => (
+                        <tr key={item.order}>
+                          <td className="px-3 py-2 font-semibold text-slate-700">{item.order}</td>
+                          <td className="px-3 py-2 font-semibold text-slate-900">{item.title}</td>
+                          <td className="px-3 py-2 text-slate-600">{item.status}</td>
+                          <td className="px-3 py-2 text-slate-600">{item.owner}</td>
+                          <td className="px-3 py-2 text-slate-600">{item.nextAction}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Quick wins</h5>
+                  <div className="mt-3 grid gap-3">
+                    {fastForwardOperationsCockpit.quickWins.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                          <Badge tone="neutral">{item.owner}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          blocker {formatIntegratedSnapshotCount2026(item.blockerCount)} · {item.route}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{item.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Minimum safe path to backfill dry-run review</h5>
+                  <div className="mt-3 grid gap-2">
+                    {fastForwardOperationsCockpit.minimumSafePathToBackfillDryRunReview.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                          <Badge tone={item.status === 'DONE' ? 'success' : item.status === 'READY_FOR_REVIEW' ? 'neutral' : 'warn'}>{item.status}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          blocker {formatIntegratedSnapshotCount2026(item.blockerCount)} · {item.nextAction}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-4">
+                {[
+                  ['HR', fastForwardOperationsCockpit.ownerActionQueues.hr],
+                  ['Leader', fastForwardOperationsCockpit.ownerActionQueues.leader],
+                  ['Employee', fastForwardOperationsCockpit.ownerActionQueues.employee],
+                  ['Developer / Watch', fastForwardOperationsCockpit.ownerActionQueues.developer],
+                ].map(([label, items]) => (
+                  <div key={label as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h5 className="text-sm font-semibold text-slate-900">{label as string} action queue</h5>
+                    <div className="mt-3 space-y-2">
+                      {(items as typeof fastForwardOperationsCockpit.ownerActionQueues.hr).map((item) => (
+                        <div key={`${label}-${item.title}`} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge tone={getReadinessActionPriorityTone2026(item.priority)}>{item.priority}</Badge>
+                            <span className="text-xs text-slate-400">{formatIntegratedSnapshotCount2026(item.blockerCount)}건</span>
+                          </div>
+                          <p className="mt-2 text-sm font-semibold leading-5 text-slate-900">{item.title}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">{item.route} · {item.dependency}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Dependency map</h5>
+                  <div className="mt-3 space-y-2">
+                    {fastForwardOperationsCockpit.dependencyMap.map((item) => (
+                      <div key={`${item.from}-${item.to}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-900">{item.from} → {item.to}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{item.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Route action map</h5>
+                  <div className="mt-3 space-y-2">
+                    {fastForwardOperationsCockpit.routeActionMap.map((item) => (
+                      <div key={item.route} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-900">{item.route}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{item.actions.join(', ')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                  <p className="mt-2 text-sm leading-6 text-rose-900">{fastForwardOperationsCockpit.prohibitedActions.join(', ')}</p>
+                  <p className="mt-3 text-xs leading-5 text-rose-800">{fastForwardOperationsCockpit.metadataTracking.reason}</p>
                 </div>
               </div>
             </div>
