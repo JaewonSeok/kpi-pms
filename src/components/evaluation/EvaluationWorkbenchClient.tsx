@@ -129,6 +129,14 @@ type ReadinessScenarioPreview2026 = {
   markdown: string
   tsv: string
 }
+type DryRunOutputPasteReview2026 = {
+  ok: boolean
+  message: string
+  fields: Array<{
+    field: string
+    value: string
+  }>
+}
 type GradePolicyTeamMemberSalesResolutionPayload2026 =
   | {
       decision: 'APPLY_PPT_BASELINE'
@@ -3101,6 +3109,18 @@ function buildScenarioPreview2026(
   }
 }
 
+function formatDryRunOutputPasteValue2026(value: unknown) {
+  if (value === null) return 'null'
+  if (value === undefined) return 'undefined'
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
 function PolicyActivationReadiness2026Panel(props: {
   activationData: EvaluationActivationReadiness2026ApiData | null
   loading: boolean
@@ -3120,9 +3140,11 @@ function PolicyActivationReadiness2026Panel(props: {
   const ceoReportPack = activation?.ceoReportPack ?? null
   const fastForwardOperationsCockpit = activation?.fastForwardOperationsCockpit ?? null
   const backfillDryRunPreflightPack = activation?.backfillDryRunPreflightPack ?? null
+  const dryRunOutputReviewTemplate = activation?.dryRunOutputReviewTemplate ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
+  const [dryRunOutputPasteText, setDryRunOutputPasteText] = useState('')
   const [scenarioState, setScenarioState] = useState<{
     presetId: string
     inputs: ReadinessScenarioInput2026 | null
@@ -3164,6 +3186,39 @@ function PolicyActivationReadiness2026Panel(props: {
       selectedScenarioPreset?.name ?? 'Manual scenario'
     )
   }, [scenarioInputValues, scenarioSimulator, selectedScenarioPreset])
+  const dryRunOutputPasteReview = useMemo<DryRunOutputPasteReview2026 | null>(() => {
+    if (!dryRunOutputReviewTemplate || !dryRunOutputPasteText.trim()) return null
+    try {
+      const parsed = JSON.parse(dryRunOutputPasteText) as unknown
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {
+          ok: false,
+          message: dryRunOutputReviewTemplate.localOnlyPasteHelper.invalidJsonMessage,
+          fields: [],
+        }
+      }
+      const record = parsed as Record<string, unknown>
+      const fields = dryRunOutputReviewTemplate.localOnlyPasteHelper.knownFields
+        .filter((field) => Object.prototype.hasOwnProperty.call(record, field))
+        .map((field) => ({
+          field,
+          value: formatDryRunOutputPasteValue2026(record[field]),
+        }))
+      return {
+        ok: true,
+        message: fields.length
+          ? '붙여넣은 결과에서 알려진 필드를 확인했습니다. 서버 제출 없이 브라우저 local state에서만 표시합니다.'
+          : '알려진 필드가 없어 수동 검토 템플릿을 사용하세요. 서버 제출, 저장, 업로드는 수행하지 않습니다.',
+        fields,
+      }
+    } catch {
+      return {
+        ok: false,
+        message: dryRunOutputReviewTemplate.localOnlyPasteHelper.invalidJsonMessage,
+        fields: [],
+      }
+    }
+  }, [dryRunOutputPasteText, dryRunOutputReviewTemplate])
   const executionBoardActions = useMemo(() => {
     if (!executionBoard) return []
     if (executionBoardTab === 'ALL') return executionBoard.workstreams.all
@@ -3399,6 +3454,15 @@ function PolicyActivationReadiness2026Panel(props: {
                   variant={backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount > 0 ? 'warning' : 'default'}
                 />
               </>
+            ) : null}
+            {dryRunOutputReviewTemplate ? (
+              <MetricCard
+                label="Dry-run review template"
+                value={dryRunOutputReviewTemplate.templateStatus}
+                help={dryRunOutputReviewTemplate.templateSummary.localOnlyPasteHelperStatus}
+                compact
+                variant="default"
+              />
             ) : null}
           </div>
 
@@ -4173,6 +4237,9 @@ function PolicyActivationReadiness2026Panel(props: {
                 <MetricCard label="DB backup" value={backfillDryRunPreflightPack.preflightSummary.dbBackupStatus} help="external confirmation only" compact variant="warning" />
                 <MetricCard label="HR approval" value={backfillDryRunPreflightPack.preflightSummary.hrApprovalStatus} help="dry-run review only" compact variant="warning" />
                 <MetricCard label="official flags" value={backfillDryRunPreflightPack.preflightSummary.officialFlagsStatus} help="must remain false" compact variant="warning" />
+                {dryRunOutputReviewTemplate ? (
+                  <MetricCard label="review template" value={dryRunOutputReviewTemplate.templateStatus} help="local-only output review" compact />
+                ) : null}
                 <MetricCard label="next preflight action" value={backfillDryRunPreflightPack.preflightSummary.nextPreflightAction} help="no UI execution" compact variant="muted" />
               </div>
 
@@ -4282,6 +4349,210 @@ function PolicyActivationReadiness2026Panel(props: {
                     </p>
                   </div>
                 </div>
+              </div>
+            </div>
+          ) : null}
+
+          {dryRunOutputReviewTemplate ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 Dry-run Output Review Template</h4>
+                    <Badge tone="neutral">{dryRunOutputReviewTemplate.mode}</Badge>
+                    <Badge tone="neutral">{dryRunOutputReviewTemplate.templateStatus}</Badge>
+                    <Badge tone="neutral">local-only paste helper</Badge>
+                    <Badge tone="warn">apply {dryRunOutputReviewTemplate.templateSummary.applyStatus}</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 향후 dry-run 결과를 검토하기 위한 읽기 전용 템플릿입니다.
+                    dry-run, apply, backfill, 공식 점수, 공식 등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['dryrun-output-template', 'Dry-run review template', dryRunOutputReviewTemplate.copyPayloads.reviewTemplate],
+                    ['dryrun-output-must-pass', 'Must-pass criteria', dryRunOutputReviewTemplate.copyPayloads.mustPassCriteria],
+                    ['dryrun-output-red-flags', 'Red flags', dryRunOutputReviewTemplate.copyPayloads.redFlags],
+                    ['dryrun-output-hr', 'HR review checklist', dryRunOutputReviewTemplate.copyPayloads.hrReviewChecklist],
+                    ['dryrun-output-dev', 'Developer review checklist', dryRunOutputReviewTemplate.copyPayloads.developerReviewChecklist],
+                    ['dryrun-output-decision', 'Decision outcome guide', dryRunOutputReviewTemplate.copyPayloads.decisionOutcomeGuide],
+                    ['dryrun-output-next-action', 'Next action mapping', dryRunOutputReviewTemplate.copyPayloads.nextActionMapping],
+                    ['dryrun-output-markdown', 'Markdown', dryRunOutputReviewTemplate.copyPayloads.markdown],
+                    ['dryrun-output-tsv', 'TSV', dryRunOutputReviewTemplate.copyPayloads.tsv],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="current stage" value={dryRunOutputReviewTemplate.templateSummary.currentStage} help="readiness stage" compact />
+                <MetricCard label="overall status" value={dryRunOutputReviewTemplate.templateSummary.overallReadinessStatus} help="snapshot status" compact />
+                <MetricCard label="official activation" value={dryRunOutputReviewTemplate.templateSummary.officialActivationStatus} help="gate status" compact variant={dryRunOutputReviewTemplate.templateSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="preflight status" value={dryRunOutputReviewTemplate.templateSummary.preflightStatus} help="dry-run output is future input" compact variant={dryRunOutputReviewTemplate.templateSummary.preflightStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="paste helper" value={dryRunOutputReviewTemplate.templateSummary.localOnlyPasteHelperStatus} help="no server submit/upload" compact />
+                <MetricCard label="next review action" value={dryRunOutputReviewTemplate.templateSummary.nextReviewAction} help="review only" compact variant="muted" />
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <h5 className="text-sm font-semibold text-blue-950">Local-only paste helper</h5>
+                <p className="mt-2 text-xs leading-5 text-blue-900">
+                  {dryRunOutputReviewTemplate.localOnlyPasteHelper.guidance}
+                  {' '}serverSubmitAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.serverSubmitAvailable)} ·
+                  saveAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.saveAvailable)} ·
+                  uploadAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.uploadAvailable)} ·
+                  apiCallAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.apiCallAvailable)} ·
+                  persistenceAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.persistenceAvailable)}
+                </p>
+                <textarea
+                  value={dryRunOutputPasteText}
+                  onChange={(event) => setDryRunOutputPasteText(event.target.value)}
+                  rows={7}
+                  placeholder='{"writesPerformed":false,"totalScoreChangesExpected":false,"gradeIdChangesExpected":false}'
+                  className="mt-3 min-h-32 w-full rounded-xl border border-blue-200 bg-white p-3 text-xs leading-5 text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+                {dryRunOutputPasteReview ? (
+                  <div className={`mt-3 rounded-xl border p-3 ${dryRunOutputPasteReview.ok ? 'border-blue-200 bg-white' : 'border-amber-200 bg-amber-50'}`}>
+                    <p className={`text-xs font-semibold ${dryRunOutputPasteReview.ok ? 'text-blue-900' : 'text-amber-900'}`}>
+                      {dryRunOutputPasteReview.message}
+                    </p>
+                    {dryRunOutputPasteReview.fields.length ? (
+                      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                        {dryRunOutputPasteReview.fields.map((field) => (
+                          <div key={field.field} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-[11px] font-semibold text-slate-500">{field.field}</p>
+                            <p className="mt-1 break-words text-xs text-slate-700">{field.value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs leading-5 text-blue-800">
+                    JSON 형식 dry-run output을 나중에 붙여넣으면 알려진 필드만 브라우저 local state에서 표시합니다.
+                    붙여넣은 결과는 서버로 전송하지 않습니다.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Review template sections</h5>
+                  <div className="mt-3 grid gap-2">
+                    {dryRunOutputReviewTemplate.reviewTemplateSections.map((section) => (
+                      <div key={section.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-900">{section.title}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{section.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Expected output fields</h5>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        <tr>
+                          <th className="px-3 py-2">field</th>
+                          <th className="px-3 py-2">required</th>
+                          <th className="px-3 py-2">review</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {[...dryRunOutputReviewTemplate.dryRunIdentityFields, ...dryRunOutputReviewTemplate.expectedOutputFields].map((item) => (
+                          <tr key={item.id}>
+                            <td className="px-3 py-2 font-semibold text-slate-900">{item.label}</td>
+                            <td className="px-3 py-2 text-slate-600">{item.requiredValue}</td>
+                            <td className="px-3 py-2 text-slate-600">{item.expectedReview}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                  <h5 className="text-sm font-semibold text-emerald-950">Must-pass criteria</h5>
+                  <div className="mt-3 grid gap-2">
+                    {dryRunOutputReviewTemplate.mustPassCriteria.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-emerald-100 bg-white px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                        <p className="mt-1 text-xs leading-5 text-emerald-800">{item.reviewAction}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <h5 className="text-sm font-semibold text-rose-950">Red flags</h5>
+                  <div className="mt-3 grid gap-2">
+                    {dryRunOutputReviewTemplate.redFlagConditions.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-rose-100 bg-white px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                        <p className="mt-1 text-xs leading-5 text-rose-800">{item.reviewAction}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                {[
+                  ['HR review checklist', dryRunOutputReviewTemplate.hrReviewChecklist],
+                  ['Developer review checklist', dryRunOutputReviewTemplate.developerReviewChecklist],
+                  ['Post-dry-run log watch checklist', dryRunOutputReviewTemplate.postDryRunLogWatchChecklist],
+                ].map(([title, items]) => (
+                  <div key={title as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h5 className="text-sm font-semibold text-slate-900">{title as string}</h5>
+                    <ul className="mt-3 space-y-2 text-xs leading-5 text-slate-600">
+                      {(items as string[]).map((item) => <li key={item}>- {item}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Decision outcomes</h5>
+                  <div className="mt-3 grid gap-2">
+                    {dryRunOutputReviewTemplate.decisionOutcomes.map((item) => (
+                      <div key={item.code} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{item.meaning}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">{item.nextAction}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Next action mapping</h5>
+                  <div className="mt-3 grid gap-2">
+                    {dryRunOutputReviewTemplate.nextActionMapping.map((item) => (
+                      <div key={`${item.condition}-${item.route}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-sm font-semibold text-slate-900">{item.condition}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{item.route}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">{item.nextAction}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                <p className="mt-2 text-sm leading-6 text-rose-900">{dryRunOutputReviewTemplate.prohibitedActions.join(', ')}</p>
               </div>
             </div>
           ) : null}
