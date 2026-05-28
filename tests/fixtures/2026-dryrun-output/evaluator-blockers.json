@@ -1,0 +1,21 @@
+{
+  "dryRun": true,
+  "writesPerformed": false,
+  "policyVersion": "2026-PPT-PHASE0",
+  "targetCycle": "cycle-2026-rehearsal",
+  "targetPopulationCount": 10,
+  "policyCategoryMissingCount": 0,
+  "evaluatorAssignmentMissingCount": 3,
+  "approvedEvaluatorExceptions": false,
+  "mboMissingCount": 0,
+  "teamKpiPendingCount": 0,
+  "scorePolicyBlockerCount": 0,
+  "gradePolicyBlockerCount": 0,
+  "totalScoreChangesExpected": false,
+  "gradeIdChangesExpected": false,
+  "officialScoringEnabled": false,
+  "officialGradeEnabled": false,
+  "featureFlagsChanged": false,
+  "errors": [],
+  "warnings": []
+}

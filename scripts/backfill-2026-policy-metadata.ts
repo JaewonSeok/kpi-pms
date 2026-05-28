@@ -1,6 +1,11 @@
 import 'dotenv/config'
 import { writeFileSync } from 'node:fs'
 import {
+  assertApplyGuardrails,
+  parseBackfillSafetyArgs,
+  summarizeBackfillSafetyMode,
+} from './lib/2026-backfill-safety-guard'
+import {
   classifyEvaluationPolicyItem,
   type EvaluationPolicyClassification,
 } from '../src/lib/evaluation-policy-2026-classification'
@@ -422,9 +427,17 @@ async function main() {
   }
 
   const args = parsePolicyBackfillArgs(process.argv.slice(2))
+  const safetyArgs = parseBackfillSafetyArgs(process.argv.slice(2), {
+    expectedYear: EVALUATION_POLICY_2026.year,
+    expectedPolicyVersion: EVALUATION_POLICY_2026.version,
+    env: process.env,
+  })
   const { prisma } = await import('../src/lib/prisma')
 
   try {
+    console.log('[backfill] 2026 apply safety guard')
+    console.log(JSON.stringify(summarizeBackfillSafetyMode(safetyArgs), null, 2))
+
     const plan = await buildPolicyBackfillPlan({
       prisma,
       year: args.year,
@@ -452,6 +465,7 @@ async function main() {
       return
     }
 
+    assertApplyGuardrails(safetyArgs)
     assertPolicyBackfillCanApply(plan, {
       apply: args.apply,
       excludeManualReview: args.excludeManualReview,
