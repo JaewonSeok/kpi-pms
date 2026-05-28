@@ -2910,8 +2910,11 @@ function getReadinessActionPriorityTone2026(priority: string): 'success' | 'warn
 
 function getReadinessActionStatusTone2026(status: string): 'success' | 'warn' | 'error' | 'neutral' {
   if (status === 'READY_TO_START') return 'success'
+  if (status === 'DONE') return 'success'
   if (status === 'WATCH_ONLY') return 'neutral'
+  if (status === 'NOT_STARTED') return 'neutral'
   if (status === 'WAITING_FOR_DATA') return 'warn'
+  if (status === 'IN_PROGRESS') return 'warn'
   if (status === 'BLOCKED') return 'error'
   return 'neutral'
 }
@@ -2930,8 +2933,10 @@ function PolicyActivationReadiness2026Panel(props: {
   const runbook = activation?.officialActivationRunbook ?? null
   const snapshot = activation?.integratedReadinessSnapshot ?? null
   const actionPlan = activation?.readinessActionPlan ?? null
+  const executionBoard = activation?.readinessExecutionBoard ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
+  const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
   const copyActivationRunbookPayload = useCallback(async (key: string, text: string) => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return
     await navigator.clipboard.writeText(text)
@@ -2947,6 +2952,16 @@ function PolicyActivationReadiness2026Panel(props: {
     autoLoadRequestedKeyRef.current = autoLoadKey
     void onLoad()
   }, [activation, autoLoadKey, error, loading, onLoad])
+  const executionBoardActions = useMemo(() => {
+    if (!executionBoard) return []
+    if (executionBoardTab === 'ALL') return executionBoard.workstreams.all
+    if (executionBoardTab === 'THIS_WEEK') return executionBoard.workstreams.thisWeekFocus
+    if (executionBoardTab === 'HR') return executionBoard.workstreams.hr
+    if (executionBoardTab === 'LEADER') return executionBoard.workstreams.leader
+    if (executionBoardTab === 'EMPLOYEE') return executionBoard.workstreams.employee
+    if (executionBoardTab === 'DEV') return executionBoard.workstreams.developer
+    return executionBoard.workstreams.completedOrDeferred
+  }, [executionBoard, executionBoardTab])
 
   return (
     <Panel
@@ -3094,6 +3109,31 @@ function PolicyActivationReadiness2026Panel(props: {
               compact
               variant={(activation.finalizationCeoReadiness?.summary.finalizationBlockerCount ?? 1) > 0 ? 'warning' : 'default'}
             />
+            {executionBoard ? (
+              <>
+                <MetricCard
+                  label="Action board open"
+                  value={executionBoard.summary.totalOpenActionCount.toLocaleString()}
+                  help={`P0 ${executionBoard.summary.p0Count.toLocaleString()} · no execution buttons`}
+                  compact
+                  variant={executionBoard.summary.p0Count > 0 ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="Next HR action"
+                  value={executionBoard.summary.nextHrAction}
+                  help="read-only tracking"
+                  compact
+                  variant="warning"
+                />
+                <MetricCard
+                  label="Next dev/watch"
+                  value={executionBoard.summary.nextDeveloperWatchAction}
+                  help={executionBoard.summary.lastBaselineTimestamp ?? 'baseline export-only'}
+                  compact
+                  variant="muted"
+                />
+              </>
+            ) : null}
           </div>
 
           {snapshot ? (
@@ -3395,6 +3435,191 @@ function PolicyActivationReadiness2026Panel(props: {
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
                   <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{actionPlan.prohibitedActions.join(', ')}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {executionBoard ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 Readiness Execution Board</h4>
+                    <Badge tone={getIntegratedReadinessStatusTone2026(executionBoard.summary.overallReadinessStatus)}>
+                      {executionBoard.summary.overallReadinessStatus}
+                    </Badge>
+                    <Badge tone={executionBoard.summary.officialActivationStatus === 'BLOCKED' ? 'warn' : 'neutral'}>
+                      {executionBoard.summary.officialActivationStatus}
+                    </Badge>
+                    <Badge tone="neutral">export-only</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 readiness 실행 항목을 운영 관리하기 위한 보드입니다.
+                    공식 점수, 등급, backfill, feature flag, Evaluation.totalScore, Evaluation.gradeId는 변경하지 않습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['execution-full', 'Full board', executionBoard.copyPayloads.fullBoard],
+                    ['execution-week', 'This week', executionBoard.copyPayloads.thisWeekFocus],
+                    ['execution-hr', 'HR list', executionBoard.copyPayloads.hrActionList],
+                    ['execution-leader', 'Leader list', executionBoard.copyPayloads.leaderActionList],
+                    ['execution-employee', 'Employee list', executionBoard.copyPayloads.employeeActionList],
+                    ['execution-dev', 'Dev watch', executionBoard.copyPayloads.developerWatchList],
+                    ['execution-report', 'Executive report', executionBoard.copyPayloads.executiveWeeklyReport],
+                    ['execution-prohibited', 'Prohibited', executionBoard.copyPayloads.prohibitedActions],
+                    ['execution-markdown', 'Markdown', executionBoard.copyPayloads.markdown],
+                    ['execution-tsv', 'TSV', executionBoard.copyPayloads.tsv],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="현재 단계" value={executionBoard.summary.currentStage} help="snapshot stage" compact />
+                <MetricCard label="open actions" value={executionBoard.summary.totalOpenActionCount.toLocaleString()} help="DONE 제외" compact />
+                <MetricCard label="P0 / P1 / P2" value={`${executionBoard.summary.p0Count}/${executionBoard.summary.p1Count}/${executionBoard.summary.p2Count}`} help="priority" compact variant={executionBoard.summary.p0Count > 0 ? 'warning' : 'default'} />
+                <MetricCard label="HR / 리더 / 직원 / DEV" value={`${executionBoard.summary.hrActionCount}/${executionBoard.summary.leaderActionCount}/${executionBoard.summary.employeeActionCount}/${executionBoard.summary.developerWatchActionCount}`} help="owner group" compact />
+                <MetricCard label="blocked / ready / watch" value={`${executionBoard.summary.blockedActionCount}/${executionBoard.summary.readyToStartActionCount}/${executionBoard.summary.watchOnlyActionCount}`} help="status" compact variant={executionBoard.summary.blockedActionCount > 0 ? 'warning' : 'default'} />
+                <MetricCard label="baseline" value={executionBoard.summary.lastBaselineTimestamp ?? 'export-only'} help={executionBoard.summary.lastReviewedTimestamp ?? 'last reviewed 없음'} compact variant="muted" />
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h5 className="text-sm font-semibold text-blue-950">Baseline snapshot support</h5>
+                    <p className="mt-1 text-sm leading-6 text-blue-900">{executionBoard.baselineSnapshot.guidance}</p>
+                  </div>
+                  <Badge tone="neutral">save button 없음</Badge>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-3">
+                  <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-500">snapshot timestamp</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{executionBoard.baselineSnapshot.timestamp}</p>
+                  </div>
+                  <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-500">metadata tracking</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">
+                      {executionBoard.metadataTracking.enabled ? 'enabled' : 'export-only'}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-500">delta</p>
+                    <p className="mt-1 text-sm leading-5 text-slate-700">{executionBoard.baselineSnapshot.deltaFromPreviousBaseline[0]}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {[
+                  ['ALL', '전체'],
+                  ['THIS_WEEK', '이번 주 집중'],
+                  ['HR', 'HR'],
+                  ['LEADER', '리더'],
+                  ['EMPLOYEE', '직원'],
+                  ['DEV', '개발/모니터링'],
+                  ['DONE_HOLD', '완료/보류'],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setExecutionBoardTab(key as typeof executionBoardTab)}
+                    className={`inline-flex min-h-9 items-center justify-center rounded-xl border px-3 text-xs font-semibold transition ${
+                      executionBoardTab === key
+                        ? 'border-slate-900 bg-slate-900 text-white'
+                        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                {executionBoardActions.map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={getReadinessActionPriorityTone2026(item.priority)}>{item.priority}</Badge>
+                      <Badge tone="neutral">{item.ownerGroup}</Badge>
+                      <Badge tone={getReadinessActionStatusTone2026(item.status)}>{item.status}</Badge>
+                    </div>
+                    <p className="mt-3 text-sm font-semibold leading-5 text-slate-900">{item.title}</p>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {item.sourcePanel} · {item.relatedRoute}
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{item.reason}</p>
+                    <div className="mt-3 rounded-xl border border-slate-100 bg-white px-3 py-2">
+                      <p className="text-xs font-semibold text-slate-500">blocker</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {item.relatedBlockerCount == null ? '미확인' : `${item.relatedBlockerCount.toLocaleString()}건`}
+                      </p>
+                    </div>
+                    <p className="mt-3 text-xs leading-5 text-slate-500">{item.suggestedNextStep}</p>
+                    {item.suggestedCommunicationCopy ? (
+                      <button
+                        type="button"
+                        onClick={() => void copyActivationRunbookPayload(`execution-copy-${item.id}`, item.suggestedCommunicationCopy ?? '')}
+                        className="mt-3 inline-flex min-h-8 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-white"
+                      >
+                        {copiedRunbookKey === `execution-copy-${item.id}` ? '복사됨' : 'communication copy'}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Filters available</h5>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {[
+                      ...executionBoard.filters.ownerGroups,
+                      ...executionBoard.filters.priorities,
+                      ...executionBoard.filters.statuses,
+                      ...executionBoard.filters.actionTypes.slice(0, 8),
+                    ].map((filter) => (
+                      <Badge key={filter} tone="neutral">{filter}</Badge>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">HR communication package</h5>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {executionBoard.communicationTemplates.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => void copyActivationRunbookPayload(`comm-${template.id}`, template.copy)}
+                        className="inline-flex min-h-8 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                      >
+                        {copiedRunbookKey === `comm-${template.id}` ? '복사됨' : template.title}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Metadata design note</h5>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{executionBoard.metadataTracking.reason}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Executive weekly report</h5>
+                  <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">{executionBoard.executiveWeeklyReportText}</p>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                  <p className="mt-2 text-sm leading-6 text-rose-900">{executionBoard.prohibitedActions.join(', ')}</p>
                 </div>
               </div>
             </div>

@@ -812,7 +812,22 @@ async function main() {
         missingPolicyCategoryCount: 3,
         aiInsufficientDataCount: 2,
       }),
-      gradePolicyReadiness: readyGradePolicy() as any,
+      gradePolicyReadiness: readyGradePolicy({
+        differsFromPptCount: 1,
+      }) as any,
+      evaluatorRoutingReadiness: readyEvaluatorRouting({
+        summary: {
+          blockerCount: 5,
+          activeEmployeeCount: 10,
+          completeEvaluatorChainCount: 5,
+        },
+      }) as any,
+      feedbackLeadershipReadiness: readyFeedbackLeadership({
+        summary: {
+          blockedOrNeedsSetupCount: 2,
+          completionRate: 70,
+        },
+      }) as any,
       populationDryRun: readyPopulationDryRun({
         activeEmployeeCount: 10,
         employeesWithConfirmedPersonalKpiCount: 3,
@@ -825,6 +840,12 @@ async function main() {
           pendingReviewCount: 2,
           needsDiscussionCount: 1,
           personalKpiOrgGoalWithoutApprovedSourceCount: 0,
+        },
+        scorePolicyReadiness: {
+          summary: {
+            violationsCount: 4,
+            aiExcludedConfirmation: true,
+          },
         },
       }) as any,
     })
@@ -875,6 +896,51 @@ async function main() {
     assert.equal(actionPlan.safety.gradeIdChanged, false)
     assert.equal(actionPlan.safety.noActivationButtons, true)
     assert.equal(actionPlan.safety.noMetadataSaveButtons, true)
+
+    const executionBoard = result.readinessExecutionBoard
+    assert.equal(executionBoard.mode, 'READ_ONLY')
+    assert.equal(executionBoard.summary.currentStage, 'MBO_SETUP_IN_PROGRESS')
+    assert.equal(executionBoard.summary.overallReadinessStatus, 'NEEDS_HR_ACTION')
+    assert.equal(executionBoard.summary.officialActivationStatus, 'BLOCKED')
+    assert.equal(executionBoard.summary.p0Count > 0, true)
+    assert.equal(executionBoard.summary.p1Count > 0, true)
+    assert.equal(executionBoard.summary.p2Count > 0, true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_MISSING_MBO_REQUEST' && item.priority === 'P0'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_DRAFT_SUBMIT_REQUEST' && item.priority === 'P0'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_EVALUATOR_ROUTING_REVIEW' && item.priority === 'P0'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_OFFICIAL_GATE_BLOCKER_REVIEW' && item.priority === 'P0'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_TEAM_KPI_REVIEW' && item.priority === 'P1'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_POLICY_CATEGORY_CONFIRM' && item.priority === 'P1'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_SCORE_POLICY_REVIEW' && item.priority === 'P1'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_GRADE_POLICY_REVIEW' && item.priority === 'P1'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_AI_READINESS_REVIEW' && item.priority === 'P2'), true)
+    assert.equal(executionBoard.actionGroups.hr.some((item: any) => item.id === 'HR_FEEDBACK_LEADERSHIP_REVIEW' && item.priority === 'P2'), true)
+    assert.equal(executionBoard.actionGroups.developer.some((item: any) => item.id === 'DEV_VERCEL_LOG_WATCH'), true)
+    assert.equal(executionBoard.actionGroups.developer.some((item: any) => item.id === 'DEV_WEEKLY_REPORT_EXPORT'), true)
+    assert.equal(executionBoard.workstreams.thisWeekFocus.some((item: any) => item.id === 'HR_BASELINE_RECORD'), true)
+    assert.equal(executionBoard.workstreams.thisWeekFocus.some((item: any) => item.id === 'DEV_VERCEL_LOG_WATCH'), true)
+    assert.equal(executionBoard.communicationTemplates.some((item: any) => item.title === 'MBO 미작성자 작성 요청'), true)
+    assert.equal(executionBoard.executiveWeeklyReportText.includes('Top blockers'), true)
+    assert.equal(executionBoard.executiveWeeklyReportText.includes('Prohibited actions'), true)
+    assert.equal(executionBoard.copyPayloads.hrActionList.includes('MBO 미작성자 작성 요청'), true)
+    assert.equal(executionBoard.copyPayloads.leaderActionList.includes('팀원 MBO 제출/보완 검토'), true)
+    assert.equal(executionBoard.copyPayloads.employeeActionList.includes('2026 MBO 작성'), true)
+    assert.equal(executionBoard.copyPayloads.developerWatchList.includes('Vercel logs watch'), true)
+    assert.equal(executionBoard.copyPayloads.tsv.includes('ownerGroup'), true)
+    assert.equal(executionBoard.prohibitedActions.includes('backfill execution from UI'), true)
+    assert.equal(executionBoard.prohibitedActions.includes('score/grade write from UI'), true)
+    assert.equal(executionBoard.metadataTracking.enabled, false)
+    assert.equal(executionBoard.metadataTracking.saveAvailable, false)
+    assert.equal(executionBoard.baselineSnapshot.guidance.includes('복사/내보내기'), true)
+    assert.equal(executionBoard.safety.writesPerformed, false)
+    assert.equal(executionBoard.safety.notificationsSent, false)
+    assert.equal(executionBoard.safety.emailsSent, false)
+    assert.equal(executionBoard.safety.totalScoreChanged, false)
+    assert.equal(executionBoard.safety.gradeIdChanged, false)
+    assert.equal(executionBoard.safety.noActivationButtons, true)
+    assert.equal(executionBoard.safety.noMetadataSaveButtons, true)
+    assert.equal(executionBoard.safety.noBackfillExecutionButtons, true)
+    assert.equal(executionBoard.safety.noScoreGradeWriteButtons, true)
   })
 
   await run('official activation runbook renders all sections and blocks current position while MBO coverage is low', async () => {
@@ -989,6 +1055,7 @@ async function main() {
     const clientSource = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
     const activationSource = read('src/server/evaluation-2026-activation-readiness.ts')
     const actionPlanSource = read('src/server/evaluation-2026-readiness-action-plan.ts')
+    const executionBoardSource = read('src/server/evaluation-2026-readiness-execution-board.ts')
 
     assert.equal(routeSource.includes('export async function GET'), true)
     assert.equal(routeSource.includes('getServerSession(authOptions)'), true)
@@ -1027,8 +1094,25 @@ async function main() {
     assert.equal(actionPlanSource.includes('Vercel logs watch'), true)
     assert.equal(actionPlanSource.includes('noMetadataSaveButtons'), true)
     assert.equal(clientSource.includes('알림 발송, 저장, backfill, 공식 점수/등급 변경은 수행하지 않습니다.'), true)
+    assert.equal(clientSource.includes('2026 Readiness Execution Board'), true)
+    assert.equal(clientSource.includes('readiness 실행 항목을 운영 관리하기 위한 보드'), true)
+    assert.equal(clientSource.includes('Baseline snapshot support'), true)
+    assert.equal(clientSource.includes('Filters available'), true)
+    assert.equal(clientSource.includes('HR communication package'), true)
+    assert.equal(clientSource.includes('Executive weekly report'), true)
+    assert.equal(clientSource.includes('baseline 저장'), false)
+    assert.equal(clientSource.includes('save tracking button'), false)
     assert.equal(activationSource.includes('readinessActionPlan'), true)
     assert.equal(activationSource.includes('buildEvaluation2026ReadinessActionPlan'), true)
+    assert.equal(activationSource.includes('readinessExecutionBoard'), true)
+    assert.equal(activationSource.includes('buildEvaluation2026ReadinessExecutionBoard'), true)
+    assert.equal(executionBoardSource.includes('Evaluation.totalScore write'), true)
+    assert.equal(executionBoardSource.includes('Evaluation.gradeId write'), true)
+    assert.equal(executionBoardSource.includes('backfill execution from UI'), true)
+    assert.equal(executionBoardSource.includes('score/grade write from UI'), true)
+    assert.equal(executionBoardSource.includes('noMetadataSaveButtons'), true)
+    assert.equal(executionBoardSource.includes('emailsSent: false'), true)
+    assert.equal(executionBoardSource.includes('baseline은 복사/내보내기로 기록해 주세요.'), true)
     assert.equal(activationSource.includes('integratedReadinessSnapshot'), true)
     assert.equal(activationSource.includes('buildEvaluation2026IntegratedReadinessSnapshot'), true)
     assert.equal(clientSource.includes('2026 공식 전환 Runbook'), true)
