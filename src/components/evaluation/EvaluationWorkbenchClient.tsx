@@ -3117,6 +3117,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const actionPlan = activation?.readinessActionPlan ?? null
   const executionBoard = activation?.readinessExecutionBoard ?? null
   const scenarioSimulator = activation?.readinessScenarioSimulator ?? null
+  const ceoReportPack = activation?.ceoReportPack ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
@@ -3340,6 +3341,24 @@ function PolicyActivationReadiness2026Panel(props: {
                   help={executionBoard.summary.lastBaselineTimestamp ?? 'baseline export-only'}
                   compact
                   variant="muted"
+                />
+              </>
+            ) : null}
+            {ceoReportPack ? (
+              <>
+                <MetricCard
+                  label="CEO report pack"
+                  value={ceoReportPack.reportStatus}
+                  help="read-only report"
+                  compact
+                  variant="default"
+                />
+                <MetricCard
+                  label="CEO objective"
+                  value="HR blocker order"
+                  help={ceoReportPack.summary.officialActivationStatus}
+                  compact
+                  variant={ceoReportPack.summary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'}
                 />
               </>
             ) : null}
@@ -3999,6 +4018,178 @@ function PolicyActivationReadiness2026Panel(props: {
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
                   <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{scenarioSimulator.prohibitedActions.join(', ')}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {ceoReportPack ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 대표이사 보고 Pack</h4>
+                    <Badge tone="success">{ceoReportPack.reportStatus}</Badge>
+                    <Badge tone={ceoReportPack.summary.officialActivationStatus === 'BLOCKED' ? 'warn' : 'neutral'}>
+                      {ceoReportPack.summary.officialActivationStatus}
+                    </Badge>
+                    <Badge tone="neutral">read-only export</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 대표이사 보고용 readiness 요약을 읽기 전용으로 제공합니다.
+                    backfill, 공식 점수, 공식 등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['ceo-summary', '경영요약 복사', ceoReportPack.copyPayloads.executiveSummary],
+                    ['ceo-markdown', '대표이사 보고서 Markdown 복사', ceoReportPack.copyPayloads.markdownReport],
+                    ['ceo-blockers', 'Top blockers 복사', ceoReportPack.copyPayloads.topBlockers],
+                    ['ceo-agenda', 'CEO decision agenda 복사', ceoReportPack.copyPayloads.decisionAgenda],
+                    ['ceo-scenarios', 'Scenario comparison 복사', ceoReportPack.copyPayloads.scenarioComparison],
+                    ['ceo-prohibited', 'Prohibited actions 복사', ceoReportPack.copyPayloads.prohibitedActions],
+                    ['ceo-tsv', 'TSV export', ceoReportPack.copyPayloads.tsvSummary],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="current stage" value={ceoReportPack.summary.currentStage} help="readiness stage" compact />
+                <MetricCard label="overall status" value={ceoReportPack.summary.overallReadinessStatus} help="snapshot status" compact />
+                <MetricCard label="official activation" value={ceoReportPack.summary.officialActivationStatus} help="CEO report status" compact variant={ceoReportPack.summary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                {ceoReportPack.keyNumbers.slice(0, 3).map((item) => (
+                  <MetricCard
+                    key={item.id}
+                    label={item.label}
+                    value={item.value == null ? '확인 필요' : String(item.value)}
+                    help={item.note}
+                    compact
+                    variant={item.id === 'MBO_MISSING' || item.id === 'OFFICIAL_GATE_BLOCKERS' ? 'warning' : 'default'}
+                  />
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <h5 className="text-sm font-semibold text-slate-900">Executive summary</h5>
+                <p className="mt-3 text-sm leading-6 text-slate-600">{ceoReportPack.summary.executiveSummaryText}</p>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Key numbers</h5>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        <tr>
+                          <th className="px-3 py-2">metric</th>
+                          <th className="px-3 py-2">value</th>
+                          <th className="px-3 py-2">source</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {ceoReportPack.keyNumbers.map((item) => (
+                          <tr key={item.id}>
+                            <td className="px-3 py-2 font-semibold text-slate-800">{item.label}</td>
+                            <td className="px-3 py-2 text-slate-600">{item.value == null ? '화면 값 확인 필요' : String(item.value)}</td>
+                            <td className="px-3 py-2 text-slate-500">{item.note}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <h5 className="text-sm font-semibold text-amber-950">CEO decision agenda</h5>
+                  <div className="mt-3 space-y-3 text-sm leading-6 text-amber-950">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Decisions needed now</p>
+                      <ul className="mt-1 space-y-1">
+                        {ceoReportPack.decisionAgenda.decisionsNeededNow.map((item) => <li key={item}>- {item}</li>)}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Not yet appropriate</p>
+                      <ul className="mt-1 space-y-1">
+                        {ceoReportPack.decisionAgenda.decisionsNotYetAppropriate.map((item) => <li key={item}>- {item}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                <h5 className="text-sm font-semibold text-slate-900">Top blockers</h5>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                      <tr>
+                        <th className="px-3 py-2">blocker</th>
+                        <th className="px-3 py-2">count</th>
+                        <th className="px-3 py-2">impact</th>
+                        <th className="px-3 py-2">next HR action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {ceoReportPack.topBlockers.map((blocker) => (
+                        <tr key={blocker.code}>
+                          <td className="px-3 py-2">
+                            <p className="font-semibold text-slate-800">{blocker.name}</p>
+                            <p className="text-xs text-slate-400">{blocker.sourcePanel} · {blocker.route}</p>
+                          </td>
+                          <td className="px-3 py-2 font-semibold text-slate-700">{blocker.count.toLocaleString()}건</td>
+                          <td className="px-3 py-2 text-slate-600">{blocker.impact}</td>
+                          <td className="px-3 py-2 text-slate-600">{blocker.nextHrAction}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Scenario comparison</h5>
+                  <div className="mt-3 grid gap-3">
+                    {ceoReportPack.scenarioComparison.map((scenario) => (
+                      <div key={scenario.scenarioName} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                        <p className="text-sm font-semibold text-slate-900">{scenario.scenarioName}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">improvement: {scenario.expectedImprovement}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">remaining: {scenario.remainingBlocker}</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{scenario.recommendedInterpretation}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h5 className="text-sm font-semibold text-slate-900">Recommended execution order</h5>
+                    <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-600">
+                      {ceoReportPack.recommendedExecutionOrder.map((item) => <li key={item}>{item}</li>)}
+                    </ol>
+                  </div>
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <h5 className="text-sm font-semibold text-blue-950">Next checkpoint</h5>
+                    <p className="mt-2 text-sm font-semibold text-blue-900">{ceoReportPack.nextCheckpoint.name}</p>
+                    <p className="mt-2 text-sm leading-6 text-blue-900">{ceoReportPack.nextCheckpoint.nextReviewCondition}</p>
+                    <p className="mt-2 text-xs leading-5 text-blue-800">
+                      required: {ceoReportPack.nextCheckpoint.requiredExportedData.join(', ')}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                    <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                    <p className="mt-2 text-sm leading-6 text-rose-900">{ceoReportPack.prohibitedActions.join(', ')}</p>
+                  </div>
                 </div>
               </div>
             </div>
