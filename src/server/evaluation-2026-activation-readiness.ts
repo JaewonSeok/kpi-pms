@@ -56,6 +56,10 @@ import {
   buildEvaluation2026BackfillDryRunPreflightPack,
   type Evaluation2026BackfillDryRunPreflightPack,
 } from '@/server/evaluation-2026-backfill-dryrun-preflight'
+import {
+  buildEvaluation2026DryRunOutputReviewTemplate,
+  type Evaluation2026DryRunOutputReviewTemplate,
+} from '@/server/evaluation-2026-dryrun-output-review-template'
 
 type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department' | 'employee' | 'evaluationAssignment' | 'multiFeedbackRound' | 'wordCloud360Cycle'>> & {
   $queryRawUnsafe?: typeof prisma.$queryRawUnsafe
@@ -208,6 +212,7 @@ export type Evaluation2026ActivationReadinessResult = {
   ceoReportPack: Evaluation2026CeoReportPack
   fastForwardOperationsCockpit: Evaluation2026FastForwardOperationsCockpit
   backfillDryRunPreflightPack: Evaluation2026BackfillDryRunPreflightPack
+  dryRunOutputReviewTemplate: Evaluation2026DryRunOutputReviewTemplate
   populationDryRunAvailable: boolean
   populationDryRunError: string | null
   blockers: Evaluation2026ActivationReadinessItem[]
@@ -1653,6 +1658,11 @@ export async function getEvaluation2026ActivationReadiness(params: {
     officialActivationGates,
     populationDryRun,
   })
+  const dryRunOutputReviewTemplate = buildEvaluation2026DryRunOutputReviewTemplate({
+    integratedReadinessSnapshot,
+    backfillDryRunPreflightPack,
+    officialActivationRunbook,
+  })
 
   return {
     policyVersion: EVALUATION_POLICY_2026.version,
@@ -1675,6 +1685,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     ceoReportPack,
     fastForwardOperationsCockpit,
     backfillDryRunPreflightPack,
+    dryRunOutputReviewTemplate,
     populationDryRunAvailable: Boolean(populationDryRun),
     populationDryRunError,
     blockers,
