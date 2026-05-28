@@ -3119,6 +3119,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const scenarioSimulator = activation?.readinessScenarioSimulator ?? null
   const ceoReportPack = activation?.ceoReportPack ?? null
   const fastForwardOperationsCockpit = activation?.fastForwardOperationsCockpit ?? null
+  const backfillDryRunPreflightPack = activation?.backfillDryRunPreflightPack ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
@@ -3378,6 +3379,24 @@ function PolicyActivationReadiness2026Panel(props: {
                   help={fastForwardOperationsCockpit.fastForwardSummary.nextCheckpointCondition}
                   compact
                   variant={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'}
+                />
+              </>
+            ) : null}
+            {backfillDryRunPreflightPack ? (
+              <>
+                <MetricCard
+                  label="Backfill preflight"
+                  value={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus}
+                  help={`apply ${backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus}`}
+                  compact
+                  variant={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus === 'BLOCKED' ? 'warning' : 'default'}
+                />
+                <MetricCard
+                  label="Missing preconditions"
+                  value={backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount.toLocaleString()}
+                  help={backfillDryRunPreflightPack.preflightSummary.nextPreflightAction}
+                  compact
+                  variant={backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount > 0 ? 'warning' : 'default'}
                 />
               </>
             ) : null}
@@ -4096,6 +4115,172 @@ function PolicyActivationReadiness2026Panel(props: {
                   <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{fastForwardOperationsCockpit.prohibitedActions.join(', ')}</p>
                   <p className="mt-3 text-xs leading-5 text-rose-800">{fastForwardOperationsCockpit.metadataTracking.reason}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {backfillDryRunPreflightPack ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 Backfill Dry-run Preflight Pack</h4>
+                    <Badge tone="neutral">{backfillDryRunPreflightPack.mode}</Badge>
+                    <Badge tone={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus === 'BLOCKED' ? 'warn' : 'neutral'}>
+                      dry-run {backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus}
+                    </Badge>
+                    <Badge tone="warn">apply {backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus}</Badge>
+                    <Badge tone="neutral">text-only command reference</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 backfill dry-run 검토를 준비하기 위한 읽기 전용 preflight입니다.
+                    dry-run, apply, 공식 점수, 공식 등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['backfill-preflight-summary', 'Preflight summary', backfillDryRunPreflightPack.copyPayloads.preflightSummary],
+                    ['backfill-preflight-preconditions', 'Preconditions', backfillDryRunPreflightPack.copyPayloads.preconditionsChecklist],
+                    ['backfill-preflight-command', 'Dry-run command reference', backfillDryRunPreflightPack.copyPayloads.dryRunCommandReference],
+                    ['backfill-preflight-output', 'Expected output', backfillDryRunPreflightPack.copyPayloads.expectedOutputChecklist],
+                    ['backfill-preflight-backup', 'DB backup', backfillDryRunPreflightPack.copyPayloads.dbBackupChecklist],
+                    ['backfill-preflight-hr', 'HR approval', backfillDryRunPreflightPack.copyPayloads.hrApprovalChecklist],
+                    ['backfill-preflight-dev', 'Developer checklist', backfillDryRunPreflightPack.copyPayloads.developerExecutionChecklist],
+                    ['backfill-preflight-prohibited', 'Prohibited actions', backfillDryRunPreflightPack.copyPayloads.prohibitedActions],
+                    ['backfill-preflight-markdown', 'Markdown', backfillDryRunPreflightPack.copyPayloads.markdown],
+                    ['backfill-preflight-tsv', 'TSV', backfillDryRunPreflightPack.copyPayloads.tsv],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="current stage" value={backfillDryRunPreflightPack.preflightSummary.currentStage} help="readiness stage" compact />
+                <MetricCard label="overall status" value={backfillDryRunPreflightPack.preflightSummary.overallReadinessStatus} help="snapshot status" compact />
+                <MetricCard label="official activation" value={backfillDryRunPreflightPack.preflightSummary.officialActivationStatus} help="gate status" compact variant={backfillDryRunPreflightPack.preflightSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="dry-run review" value={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus} help="preflight status" compact variant={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="apply status" value={backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus} help="apply remains blocked" compact variant="warning" />
+                <MetricCard label="blockers / missing" value={`${backfillDryRunPreflightPack.preflightSummary.blockerCount.toLocaleString()}/${backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount.toLocaleString()}`} help="preconditions" compact variant={backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount > 0 ? 'warning' : 'default'} />
+                <MetricCard label="DB backup" value={backfillDryRunPreflightPack.preflightSummary.dbBackupStatus} help="external confirmation only" compact variant="warning" />
+                <MetricCard label="HR approval" value={backfillDryRunPreflightPack.preflightSummary.hrApprovalStatus} help="dry-run review only" compact variant="warning" />
+                <MetricCard label="official flags" value={backfillDryRunPreflightPack.preflightSummary.officialFlagsStatus} help="must remain false" compact variant="warning" />
+                <MetricCard label="next preflight action" value={backfillDryRunPreflightPack.preflightSummary.nextPreflightAction} help="no UI execution" compact variant="muted" />
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <h5 className="text-sm font-semibold text-amber-950">Command templates are text only</h5>
+                <p className="mt-2 text-xs leading-5 text-amber-800">
+                  복사 전용 참고문이며 UI에서 dry-run, apply, backfill --apply를 실행하지 않습니다.
+                  Production apply command must not be placed in UI.
+                </p>
+                <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                  {backfillDryRunPreflightPack.commandTemplates.map((command) => (
+                    <div key={command.id} className="rounded-xl border border-amber-200 bg-white p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-900">{command.label}</p>
+                        <Badge tone="neutral">{command.mode}</Badge>
+                        <Badge tone={command.executeAvailable ? 'error' : 'neutral'}>
+                          executeAvailable {String(command.executeAvailable)}
+                        </Badge>
+                      </div>
+                      <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-xs leading-5 text-slate-50">{command.commandText}</pre>
+                      <p className="mt-2 text-xs leading-5 text-amber-800">{command.warning}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Preconditions checklist</h5>
+                  <div className="mt-3 grid gap-2 lg:grid-cols-2">
+                    {backfillDryRunPreflightPack.preconditionsChecklist.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone={item.status === 'READY_FOR_REVIEW' ? 'success' : item.status === 'READY_LATER' ? 'neutral' : 'warn'}>{item.status}</Badge>
+                          <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          blocker {item.sourceBlockerCount == null ? '미확인' : item.sourceBlockerCount.toLocaleString()} · {item.relatedRoute}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">{item.nextAction}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h5 className="text-sm font-semibold text-slate-900">Expected dry-run output checklist</h5>
+                    <div className="mt-3 space-y-2">
+                      {backfillDryRunPreflightPack.expectedOutputChecklist.map((item) => (
+                        <div key={item.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">{item.expectedReview}</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-700">required: {item.requiredValue}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                    <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                    <p className="mt-2 text-sm leading-6 text-rose-900">{backfillDryRunPreflightPack.prohibitedActions.join(', ')}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-4">
+                {[
+                  ['DB backup checklist', backfillDryRunPreflightPack.backupChecklist],
+                  ['HR approval checklist', backfillDryRunPreflightPack.hrApprovalChecklist],
+                  ['Developer execution checklist', backfillDryRunPreflightPack.developerExecutionChecklist],
+                  ['Post-check checklist', backfillDryRunPreflightPack.postCheckChecklist],
+                ].map(([title, items]) => (
+                  <div key={title as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h5 className="text-sm font-semibold text-slate-900">{title as string}</h5>
+                    <ul className="mt-3 space-y-2 text-xs leading-5 text-slate-600">
+                      {(items as string[]).map((item) => <li key={item}>- {item}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <h5 className="text-sm font-semibold text-slate-900">Existing dry-run/apply surface found</h5>
+                <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">dry-run scripts</p>
+                    <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                      {backfillDryRunPreflightPack.existingSurface.existingDryRunScripts.map((item) => <li key={item}>- {item}</li>)}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">apply surface</p>
+                    <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                      {backfillDryRunPreflightPack.existingSurface.existingApplyScripts.map((item) => <li key={item}>- {item}</li>)}
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">safe separation</p>
+                    <p className="mt-2 text-xs leading-5 text-slate-600">
+                      dry-run only without writes: {String(backfillDryRunPreflightPack.existingSurface.dryRunOnlyWithoutWritesAvailable)}
+                      <br />
+                      apply separated from dry-run: {String(backfillDryRunPreflightPack.existingSurface.applySeparatedFromDryRun)}
+                      <br />
+                      totalScore write: {String(backfillDryRunPreflightPack.existingSurface.writesTotalScore)}
+                      <br />
+                      gradeId write: {String(backfillDryRunPreflightPack.existingSurface.writesGradeId)}
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
