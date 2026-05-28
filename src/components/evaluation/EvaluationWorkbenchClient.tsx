@@ -103,6 +103,32 @@ type EvaluationActivationReadiness2026ApiData = Evaluation2026ActivationReadines
 type EvaluationGradePolicyReadiness2026ApiData = Evaluation2026GradePolicyReadinessResult
 type EvaluationGradePolicySave2026ApiData = Evaluation2026GradePolicyMetadataSaveResult
 type EvaluationReadinessPopulation2026ApiData = Evaluation2026ReadinessPopulationDryRun
+type ReadinessScenarioSimulator2026 = NonNullable<EvaluationActivationReadiness2026ApiData['readinessScenarioSimulator']>
+type ReadinessScenarioInput2026 = ReadinessScenarioSimulator2026['scenarioInputModel']
+type ReadinessScenarioProjectedCounts2026 = ReadinessScenarioSimulator2026['baselineCounts']
+type ReadinessScenarioPreview2026 = {
+  scenarioName: string
+  projectedCounts: ReadinessScenarioProjectedCounts2026
+  deltaRows: Array<{
+    key: string
+    label: string
+    baseline: number | null
+    projected: number | null
+    delta: number | null
+    note: string
+  }>
+  remainingBlockers: Array<{
+    label: string
+    count: number
+    nextAction: string
+  }>
+  projectedStage: EvaluationActivationReadiness2026ApiData['integratedReadinessSnapshot']['currentStage']
+  projectedStatus: EvaluationActivationReadiness2026ApiData['integratedReadinessSnapshot']['overallStatus']
+  nextHrAction: string
+  reportText: string
+  markdown: string
+  tsv: string
+}
 type GradePolicyTeamMemberSalesResolutionPayload2026 =
   | {
       decision: 'APPLY_PPT_BASELINE'
@@ -2919,6 +2945,162 @@ function getReadinessActionStatusTone2026(status: string): 'success' | 'warn' | 
   return 'neutral'
 }
 
+const SCENARIO_INPUT_FIELDS_2026: Array<{
+  key: keyof ReadinessScenarioInput2026
+  label: string
+  help: string
+}> = [
+  { key: 'mboMissingReduction', label: 'MBO missing 감소', help: '미작성 MBO가 줄어드는 가정' },
+  { key: 'confirmedKpiIncrease', label: 'confirmed KPI 증가', help: '확정 KPI가 늘어나는 가정' },
+  { key: 'teamKpiPendingReduction', label: 'Team KPI pending 감소', help: 'pending/discussion 정리' },
+  { key: 'policyCategoryMissingReduction', label: 'policyCategory 감소', help: '미분류 확정' },
+  { key: 'evaluatorRoutingBlockerReduction', label: '평가자 blocker 감소', help: 'FIRST/SECOND/FINAL 누락 정리' },
+  { key: 'leaderEvaluationBlockerReduction', label: '리더 평가 blocker 감소', help: '리더 평가 선행조건 정리' },
+  { key: 'resultWritingWarningReduction', label: '수행결과 warning 감소', help: '결과/증빙/기여 보완' },
+  { key: 'scorePolicyBlockerReduction', label: 'score policy 감소', help: '점수 정책 warning 정리' },
+  { key: 'gradePolicyBlockerReduction', label: 'grade policy 감소', help: '등급 기준 blocker 정리' },
+  { key: 'feedbackLeadershipBlockerReduction', label: '360/리더십 감소', help: '다면/진단 setup 및 응답 정리' },
+  { key: 'finalizationCeoBlockerReduction', label: '최종/CEO 감소', help: '최종 확정 readiness 정리' },
+]
+
+function numericScenarioValue2026(value: number | null | undefined) {
+  return typeof value === 'number' ? value : 0
+}
+
+function scenarioSub2026(value: number | null, reduction: number) {
+  if (value == null) return null
+  return Math.max(value - Math.max(reduction, 0), 0)
+}
+
+function scenarioConfirmedShortage2026(active: number | null, confirmed: number | null) {
+  if (active == null || confirmed == null) return null
+  return Math.max(active - confirmed, 0)
+}
+
+function determineScenarioStage2026(
+  counts: ReadinessScenarioProjectedCounts2026
+): EvaluationActivationReadiness2026ApiData['integratedReadinessSnapshot']['currentStage'] {
+  if (numericScenarioValue2026(counts.missingMboCount) > 0 || numericScenarioValue2026(counts.confirmedPersonalKpiShortageCount) > 0) {
+    return 'MBO_SETUP_IN_PROGRESS'
+  }
+  if (
+    numericScenarioValue2026(counts.policyCategoryMissingCount) > 0 ||
+    numericScenarioValue2026(counts.teamKpiPendingCount) > 0 ||
+    numericScenarioValue2026(counts.scorePolicyBlockerCount) > 0
+  ) {
+    return 'POLICY_MAPPING_IN_PROGRESS'
+  }
+  if (numericScenarioValue2026(counts.evaluatorRoutingBlockerCount) > 0) return 'REVIEWER_ASSIGNMENT_IN_PROGRESS'
+  if (numericScenarioValue2026(counts.resultWritingWarningCount) > 0) return 'RESULT_WRITING_NOT_READY'
+  if (numericScenarioValue2026(counts.officialActivationGateBlockerCount) > 0) return 'OFFICIAL_ACTIVATION_BLOCKED'
+  return 'READY_FOR_HR_REVIEW'
+}
+
+function buildScenarioPreview2026(
+  simulator: ReadinessScenarioSimulator2026,
+  input: ReadinessScenarioInput2026,
+  scenarioName: string
+): ReadinessScenarioPreview2026 {
+  const base = simulator.baselineCounts
+  const confirmedPersonalKpiCount = base.confirmedPersonalKpiCount == null
+    ? null
+    : Math.min(
+        base.confirmedPersonalKpiCount + Math.max(input.confirmedKpiIncrease, 0),
+        base.activeEmployeeCount ?? base.confirmedPersonalKpiCount + Math.max(input.confirmedKpiIncrease, 0)
+      )
+  const estimatedImpact = Object.values(input).reduce((sum, value) => sum + Math.max(value, 0), 0)
+  const projectedCounts: ReadinessScenarioProjectedCounts2026 = {
+    activeEmployeeCount: base.activeEmployeeCount,
+    confirmedPersonalKpiCount,
+    confirmedPersonalKpiShortageCount: scenarioConfirmedShortage2026(base.activeEmployeeCount, confirmedPersonalKpiCount),
+    missingMboCount: scenarioSub2026(base.missingMboCount, input.mboMissingReduction),
+    teamKpiPendingCount: scenarioSub2026(base.teamKpiPendingCount, input.teamKpiPendingReduction),
+    policyCategoryMissingCount: scenarioSub2026(base.policyCategoryMissingCount, input.policyCategoryMissingReduction),
+    evaluatorRoutingBlockerCount: scenarioSub2026(base.evaluatorRoutingBlockerCount, input.evaluatorRoutingBlockerReduction),
+    leaderEvaluationBlockerCount: scenarioSub2026(base.leaderEvaluationBlockerCount, input.leaderEvaluationBlockerReduction),
+    resultWritingWarningCount: scenarioSub2026(base.resultWritingWarningCount, input.resultWritingWarningReduction),
+    scorePolicyBlockerCount: scenarioSub2026(base.scorePolicyBlockerCount, input.scorePolicyBlockerReduction),
+    gradePolicyBlockerCount: scenarioSub2026(base.gradePolicyBlockerCount, input.gradePolicyBlockerReduction),
+    feedbackLeadershipBlockerCount: scenarioSub2026(base.feedbackLeadershipBlockerCount, input.feedbackLeadershipBlockerReduction),
+    finalizationCeoBlockerCount: scenarioSub2026(base.finalizationCeoBlockerCount, input.finalizationCeoBlockerReduction),
+    officialActivationGateBlockerCount: base.officialActivationGateBlockerCount,
+    estimatedOfficialGateBlockerCount: base.officialActivationGateBlockerCount == null
+      ? null
+      : Math.max(base.officialActivationGateBlockerCount - estimatedImpact, 0),
+    estimatedOfficialGateImpact: estimatedImpact,
+  }
+  const deltaRows = [
+    ['MBO_MISSING', 'MBO missing', base.missingMboCount, projectedCounts.missingMboCount, 'MBO 미작성 감소만 반영'],
+    ['CONFIRMED_KPI_SHORTAGE', 'confirmed KPI shortage', base.confirmedPersonalKpiShortageCount, projectedCounts.confirmedPersonalKpiShortageCount, 'confirmed KPI 증가만 반영'],
+    ['TEAM_KPI_PENDING', 'Team KPI pending', base.teamKpiPendingCount, projectedCounts.teamKpiPendingCount, 'Team KPI pending 감소만 반영'],
+    ['POLICY_CATEGORY_MISSING', 'policyCategory missing', base.policyCategoryMissingCount, projectedCounts.policyCategoryMissingCount, 'policyCategory 미분류 감소만 반영'],
+    ['EVALUATOR_ROUTING', 'evaluator routing blockers', base.evaluatorRoutingBlockerCount, projectedCounts.evaluatorRoutingBlockerCount, '평가자 배정 blocker 감소만 반영'],
+    ['LEADER_EVALUATION', 'leader evaluation blockers', base.leaderEvaluationBlockerCount, projectedCounts.leaderEvaluationBlockerCount, '리더 평가 blocker 감소만 반영'],
+    ['OFFICIAL_GATE', 'official gate blockers', base.officialActivationGateBlockerCount, projectedCounts.officialActivationGateBlockerCount, `gate count는 실제 재산출 전까지 고정, 잠재 영향 -${estimatedImpact}건`],
+  ].map(([key, label, baseline, projected, note]) => ({
+    key: String(key),
+    label: String(label),
+    baseline: baseline as number | null,
+    projected: projected as number | null,
+    delta: baseline == null || projected == null ? null : (projected as number) - (baseline as number),
+    note: String(note),
+  }))
+  const remainingBlockers = [
+    ['MBO missing', projectedCounts.missingMboCount, '미작성자 작성 요청을 계속 진행하세요.'],
+    ['confirmed KPI shortage', projectedCounts.confirmedPersonalKpiShortageCount, '초안 제출과 리더 검토/확정을 요청하세요.'],
+    ['evaluator routing blockers', projectedCounts.evaluatorRoutingBlockerCount, '평가자 배정 누락/조직 경로를 확인하세요.'],
+    ['Team KPI pending', projectedCounts.teamKpiPendingCount, 'Team KPI pending/discussion 항목을 검토하세요.'],
+    ['policyCategory missing', projectedCounts.policyCategoryMissingCount, '미분류 항목을 HR 기준으로 확정하세요.'],
+    ['official gate blockers', projectedCounts.officialActivationGateBlockerCount, 'dry-run, DB backup, HR approval, Runbook 단계를 확인하세요.'],
+  ]
+    .map(([label, count, nextAction]) => ({ label: String(label), count: numericScenarioValue2026(count as number | null), nextAction: String(nextAction) }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count)
+  const projectedStage = determineScenarioStage2026(projectedCounts)
+  const projectedStatus = projectedStage === 'READY_FOR_HR_REVIEW' ? 'READY_LATER' : 'NEEDS_HR_ACTION'
+  const nextHrAction = remainingBlockers[0]?.nextAction ?? 'dry-run, DB backup, HR approval, Runbook 검토를 준비하세요.'
+  const reportText = [
+    `이 시나리오는 ${scenarioName}를 가정합니다.`,
+    `projected stage는 ${projectedStage}, overall status는 ${projectedStatus}입니다.`,
+    `남는 주요 blocker는 ${remainingBlockers.slice(0, 5).map((item) => `${item.label} ${item.count}건`).join(', ') || '직접 blocker 없음'}입니다.`,
+    '공식 전환은 여전히 dry-run, DB backup, HR 승인 전까지 차단됩니다.',
+    simulator.disclaimer,
+  ].join(' ')
+  const markdown = [
+    `# 2026 Readiness Scenario Simulator - ${scenarioName}`,
+    '',
+    reportText,
+    '',
+    '## Delta',
+    deltaRows.map((row) => `- ${row.label}: ${row.delta ?? '미확인'} (${row.note})`).join('\n'),
+    '',
+    '## Prohibited actions',
+    simulator.prohibitedActions.map((item) => `- ${item}`).join('\n'),
+  ].join('\n')
+  const tsv = [
+    'blocker\tbaseline\tprojected\tdelta\tnote',
+    ...deltaRows.map((row) => [
+      row.label,
+      row.baseline == null ? '미확인' : String(row.baseline),
+      row.projected == null ? '미확인' : String(row.projected),
+      row.delta == null ? '미확인' : String(row.delta),
+      row.note,
+    ].join('\t')),
+  ].join('\n')
+  return {
+    scenarioName,
+    projectedCounts,
+    deltaRows,
+    remainingBlockers,
+    projectedStage,
+    projectedStatus,
+    nextHrAction,
+    reportText,
+    markdown,
+    tsv,
+  }
+}
+
 function PolicyActivationReadiness2026Panel(props: {
   activationData: EvaluationActivationReadiness2026ApiData | null
   loading: boolean
@@ -2934,9 +3116,19 @@ function PolicyActivationReadiness2026Panel(props: {
   const snapshot = activation?.integratedReadinessSnapshot ?? null
   const actionPlan = activation?.readinessActionPlan ?? null
   const executionBoard = activation?.readinessExecutionBoard ?? null
+  const scenarioSimulator = activation?.readinessScenarioSimulator ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
+  const [scenarioState, setScenarioState] = useState<{
+    presetId: string
+    inputs: ReadinessScenarioInput2026 | null
+    sourceKey: string
+  }>({
+    presetId: 'MBO_FIRST_REMINDER',
+    inputs: null,
+    sourceKey: '',
+  })
   const copyActivationRunbookPayload = useCallback(async (key: string, text: string) => {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return
     await navigator.clipboard.writeText(text)
@@ -2952,6 +3144,23 @@ function PolicyActivationReadiness2026Panel(props: {
     autoLoadRequestedKeyRef.current = autoLoadKey
     void onLoad()
   }, [activation, autoLoadKey, error, loading, onLoad])
+  const selectedScenarioPreset = useMemo(() => {
+    if (!scenarioSimulator) return null
+    return scenarioSimulator.presets.find((preset) => preset.id === scenarioState.presetId) ?? scenarioSimulator.presets[0] ?? null
+  }, [scenarioSimulator, scenarioState.presetId])
+
+  const scenarioInputValues =
+    scenarioState.sourceKey === autoLoadKey && scenarioState.inputs
+      ? scenarioState.inputs
+      : selectedScenarioPreset?.input ?? scenarioSimulator?.scenarioInputModel ?? null
+  const scenarioPreview = useMemo(() => {
+    if (!scenarioSimulator || !scenarioInputValues) return null
+    return buildScenarioPreview2026(
+      scenarioSimulator,
+      scenarioInputValues,
+      selectedScenarioPreset?.name ?? 'Manual scenario'
+    )
+  }, [scenarioInputValues, scenarioSimulator, selectedScenarioPreset])
   const executionBoardActions = useMemo(() => {
     if (!executionBoard) return []
     if (executionBoardTab === 'ALL') return executionBoard.workstreams.all
@@ -3620,6 +3829,176 @@ function PolicyActivationReadiness2026Panel(props: {
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
                   <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{executionBoard.prohibitedActions.join(', ')}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {scenarioSimulator && scenarioPreview && scenarioInputValues ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900">2026 Readiness Scenario Simulator</h4>
+                    <Badge tone="neutral">read-only</Badge>
+                    <Badge tone="warn">official activation BLOCKED</Badge>
+                    <Badge tone="neutral">local UI state only</Badge>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    이 화면은 blocker 감소 효과를 가정해 보는 read-only 시뮬레이터입니다.
+                    실제 데이터 저장, backfill, 공식 점수/등급, feature flag 변경은 수행하지 않습니다.
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-amber-700">{scenarioSimulator.disclaimer}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    ['scenario-summary', 'Scenario summary', scenarioPreview.reportText],
+                    ['scenario-action', 'Projected action plan', `next HR action: ${scenarioPreview.nextHrAction}\nprojected stage: ${scenarioPreview.projectedStage}\nprojected status: ${scenarioPreview.projectedStatus}\nofficial activation: BLOCKED`],
+                    ['scenario-markdown', 'Markdown', scenarioPreview.markdown],
+                    ['scenario-tsv', 'TSV', scenarioPreview.tsv],
+                    ['scenario-prohibited', 'Prohibited', scenarioSimulator.copyPayloads.prohibitedActions],
+                  ].map(([key, label, text]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                    >
+                      {copiedRunbookKey === key ? '복사됨' : label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <MetricCard label="baseline MBO missing" value={formatIntegratedSnapshotCount2026(scenarioSimulator.baselineCounts.missingMboCount)} help="현재 snapshot" compact />
+                <MetricCard label="projected MBO missing" value={formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.missingMboCount)} help="시나리오 반영" compact variant={numericScenarioValue2026(scenarioPreview.projectedCounts.missingMboCount) > 0 ? 'warning' : 'default'} />
+                <MetricCard label="baseline Team KPI" value={formatIntegratedSnapshotCount2026(scenarioSimulator.baselineCounts.teamKpiPendingCount)} help="pending/discussion" compact />
+                <MetricCard label="projected Team KPI" value={formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.teamKpiPendingCount)} help="시나리오 반영" compact />
+                <MetricCard label="official gate" value={formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.officialActivationGateBlockerCount)} help={`estimated potential ${formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.estimatedOfficialGateBlockerCount)}`} compact variant="warning" />
+                <MetricCard label="projected stage" value={scenarioPreview.projectedStage} help={scenarioPreview.projectedStatus} compact />
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Scenario presets</h5>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {scenarioSimulator.presets.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => setScenarioState({
+                          presetId: preset.id,
+                          inputs: preset.input,
+                          sourceKey: autoLoadKey,
+                        })}
+                        className={`inline-flex min-h-9 items-center justify-center rounded-xl border px-3 text-xs font-semibold transition ${
+                          scenarioState.presetId === preset.id
+                            ? 'border-slate-900 bg-slate-900 text-white'
+                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">
+                    {selectedScenarioPreset?.description ?? 'Manual scenario'}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Manual scenario inputs</h5>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {SCENARIO_INPUT_FIELDS_2026.map((field) => (
+                      <label key={field.key} className="block rounded-xl border border-slate-200 bg-white p-3">
+                        <span className="text-xs font-semibold text-slate-600">{field.label}</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={scenarioInputValues[field.key]}
+                          onChange={(event) => {
+                            const nextValue = Number.isFinite(event.currentTarget.valueAsNumber)
+                              ? Math.max(event.currentTarget.valueAsNumber, 0)
+                              : 0
+                            setScenarioState((current) => ({
+                              presetId: current.presetId,
+                              sourceKey: autoLoadKey,
+                              inputs: {
+                                ...((current.sourceKey === autoLoadKey && current.inputs) ? current.inputs : scenarioInputValues),
+                                [field.key]: nextValue,
+                              },
+                            }))
+                          }}
+                          className="mt-2 h-9 w-full rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-900"
+                        />
+                        <span className="mt-1 block text-xs text-slate-400">{field.help}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Projected delta</h5>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                        <tr>
+                          <th className="px-3 py-2">blocker</th>
+                          <th className="px-3 py-2">baseline</th>
+                          <th className="px-3 py-2">projected</th>
+                          <th className="px-3 py-2">delta</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {scenarioPreview.deltaRows.map((row) => (
+                          <tr key={row.key}>
+                            <td className="px-3 py-2 font-semibold text-slate-800">{row.label}</td>
+                            <td className="px-3 py-2 text-slate-600">{formatIntegratedSnapshotCount2026(row.baseline)}</td>
+                            <td className="px-3 py-2 text-slate-600">{formatIntegratedSnapshotCount2026(row.projected)}</td>
+                            <td className={`px-3 py-2 font-semibold ${numericScenarioValue2026(row.delta) < 0 ? 'text-emerald-700' : 'text-slate-500'}`}>
+                              {row.delta == null ? '미확인' : row.delta.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-slate-500">
+                    공식 gate blocker는 실제 운영 데이터 저장 후 재산출되어야 하며, 이 화면에서는 잠재 영향만 참고값으로 표시합니다.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Remaining blockers / next HR action</h5>
+                  <div className="mt-3 space-y-2">
+                    {scenarioPreview.remainingBlockers.slice(0, 6).map((item) => (
+                      <div key={item.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                          <Badge tone={item.count > 0 ? 'warn' : 'success'}>{item.count.toLocaleString()}건</Badge>
+                        </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{item.nextAction}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                    <p className="text-xs font-semibold text-amber-700">projected next HR action</p>
+                    <p className="mt-1 text-sm leading-6 text-amber-900">{scenarioPreview.nextHrAction}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">Deterministic scenario report</h5>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{scenarioPreview.reportText}</p>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                  <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                  <p className="mt-2 text-sm leading-6 text-rose-900">{scenarioSimulator.prohibitedActions.join(', ')}</p>
                 </div>
               </div>
             </div>

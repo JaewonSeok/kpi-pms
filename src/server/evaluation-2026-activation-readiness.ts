@@ -40,6 +40,10 @@ import {
   buildEvaluation2026ReadinessExecutionBoard,
   type Evaluation2026ReadinessExecutionBoard,
 } from '@/server/evaluation-2026-readiness-execution-board'
+import {
+  buildEvaluation2026ReadinessScenarioSimulator,
+  type Evaluation2026ReadinessScenarioSimulator,
+} from '@/server/evaluation-2026-readiness-scenario-simulator'
 
 type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department' | 'employee' | 'evaluationAssignment' | 'multiFeedbackRound' | 'wordCloud360Cycle'>> & {
   $queryRawUnsafe?: typeof prisma.$queryRawUnsafe
@@ -188,6 +192,7 @@ export type Evaluation2026ActivationReadinessResult = {
   integratedReadinessSnapshot: Evaluation2026IntegratedReadinessSnapshot
   readinessActionPlan: Evaluation2026ReadinessActionPlan
   readinessExecutionBoard: Evaluation2026ReadinessExecutionBoard
+  readinessScenarioSimulator: Evaluation2026ReadinessScenarioSimulator
   populationDryRunAvailable: boolean
   populationDryRunError: string | null
   blockers: Evaluation2026ActivationReadinessItem[]
@@ -1600,6 +1605,12 @@ export async function getEvaluation2026ActivationReadiness(params: {
     officialActivationRunbook,
     officialActivationGates,
   })
+  const readinessScenarioSimulator = buildEvaluation2026ReadinessScenarioSimulator({
+    integratedReadinessSnapshot,
+    readinessActionPlan,
+    readinessExecutionBoard,
+    officialActivationRunbook,
+  })
 
   return {
     policyVersion: EVALUATION_POLICY_2026.version,
@@ -1618,6 +1629,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     integratedReadinessSnapshot,
     readinessActionPlan,
     readinessExecutionBoard,
+    readinessScenarioSimulator,
     populationDryRunAvailable: Boolean(populationDryRun),
     populationDryRunError,
     blockers,
