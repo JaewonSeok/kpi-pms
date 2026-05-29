@@ -270,6 +270,8 @@ type InteractivePilotStepId2026 =
   | 'CEO'
   | 'SAFETY'
 type WorkbenchPilotAlignmentStage2026 =
+  | 'TARGET'
+  | 'KPI'
   | 'SELF'
   | 'FIRST'
   | 'SECOND'
@@ -278,6 +280,9 @@ type WorkbenchPilotAlignmentStage2026 =
   | 'SCORE_PREVIEW'
   | 'GRADE_PREVIEW'
   | 'SAFETY'
+type EvaluationWorkbenchClientProps = EvaluationWorkbenchPageData & {
+  presentationMode?: 'performance' | 'workbench-pilot'
+}
 type InteractivePilotLocalInputs2026 = {
   selectedKpiId: string
   localAchievementLevel: 'BELOW_TARGET' | 'TARGET' | 'EXCELLENT' | 'CUSTOM'
@@ -315,7 +320,7 @@ const TAB_LABELS: Record<WorkbenchTab, string> = {
   history: '이력',
 }
 
-export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
+export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
@@ -606,8 +611,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
       }, 0),
     [editableItems]
   )
+  const isDedicatedWorkbenchPilotRoute = props.presentationMode === 'workbench-pilot'
   const canViewPolicyPreview2026 = Boolean(
-    props.currentUser?.role === 'ROLE_ADMIN' && props.permissions?.canSeeAllInCycle && selected
+    props.currentUser?.role === 'ROLE_ADMIN' &&
+      props.permissions?.canSeeAllInCycle &&
+      (selected || isDedicatedWorkbenchPilotRoute)
   )
 
   const workspaceEvidence = useMemo<EvaluationAssistEvidenceView>(() => {
@@ -1492,6 +1500,19 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchPageData) {
           </div>
         </section>
       </div>
+    )
+  }
+
+  if (isDedicatedWorkbenchPilotRoute) {
+    return (
+      <PolicyActivationReadiness2026Panel
+        activationData={policyActivationReadiness2026}
+        loading={policyActivationReadiness2026Loading}
+        error={policyActivationReadiness2026Error}
+        autoLoadKey={`workbench-pilot:${props.selectedCycleId ?? '2026'}:${props.selectedEvaluationId ?? 'none'}`}
+        onLoad={loadPolicyActivationReadiness2026}
+        presentationMode="workbench-pilot"
+      />
     )
   }
 
@@ -3450,6 +3471,7 @@ function PolicyActivationReadiness2026Panel(props: {
   error: string
   autoLoadKey: string
   onLoad: () => void
+  presentationMode?: 'gate' | 'workbench-pilot'
 }) {
   const { activationData: activation, loading, error, autoLoadKey, onLoad } = props
   const blockers = activation?.blockers ?? []
@@ -3589,6 +3611,38 @@ function PolicyActivationReadiness2026Panel(props: {
     if (executionBoardTab === 'DEV') return executionBoard.workstreams.developer
     return executionBoard.workstreams.completedOrDeferred
   }, [executionBoard, executionBoardTab])
+
+  if (props.presentationMode === 'workbench-pilot') {
+    return (
+      <div className="space-y-5">
+        <DedicatedWorkbenchPilotRoute2026
+          pilot={endToEndPilot2026}
+          loading={loading}
+          error={error}
+          onLoad={onLoad}
+          onExportPreview={openExportPreview}
+        />
+
+        {exportPreview ? (
+          <ReadinessExportPreviewDialog
+            open={Boolean(exportPreview)}
+            onOpenChange={(open) => {
+              if (!open) setExportPreview(null)
+            }}
+            title={exportPreview.title}
+            description={exportPreview.description}
+            content={exportPreview.content}
+            format={exportPreview.format}
+            suggestedFilename={exportPreview.fileName}
+            allowDownload
+            copied={exportPreviewCopied}
+            onCopy={() => void copyExportPreviewToClipboard()}
+            onDownload={downloadExportPreview}
+          />
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <Panel
@@ -6337,6 +6391,79 @@ function PolicyActivationReadiness2026Panel(props: {
   )
 }
 
+function DedicatedWorkbenchPilotRoute2026(props: {
+  pilot: EndToEndPilot2026 | null
+  loading: boolean
+  error: string
+  onLoad: () => void
+  onExportPreview: (key: string, text: string) => void
+}) {
+  const { pilot, loading, error } = props
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-cyan-200 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-600">
+                2026 Evaluation Workbench Pilot
+              </p>
+              <Badge tone="neutral">dedicated route</Badge>
+              <Badge tone="warn">preview-only</Badge>
+              <Badge tone="neutral">official writes disabled</Badge>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">2026 Evaluation Workbench Pilot</h1>
+            <p className="max-w-4xl text-sm leading-6 text-slate-600">
+              이 화면은 실제 평가 워크벤치 흐름을 preview로 체험하기 위한 전용 화면입니다. 입력값은 저장되지 않으며,
+              공식 저장, 제출, 확정, 점수 반영, 등급 반영은 수행하지 않습니다.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/evaluation/performance"
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              readiness 화면으로 돌아가기
+            </Link>
+            <button
+              type="button"
+              onClick={props.onLoad}
+              disabled={loading}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-cyan-700 px-4 text-sm font-semibold text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-cyan-200"
+            >
+              {loading ? 'preview 불러오는 중...' : 'pilot preview 다시 불러오기'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {error ? <Banner tone="error" message={error} /> : null}
+
+      {loading && !pilot ? (
+        <section className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-6 text-sm text-cyan-900">
+          2026 workbench pilot 데이터를 불러오는 중입니다. 이 동작은 읽기 전용 조회이며 저장, 제출, 확정을 수행하지 않습니다.
+        </section>
+      ) : null}
+
+      {!loading && !error && !pilot ? (
+        <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
+          2026 Evaluation Workbench Pilot 데이터를 아직 확인하지 못했습니다. 위 버튼으로 preview-only 데이터를 다시 조회하세요.
+          공식 평가 생성, totalScore write, gradeId write는 수행하지 않습니다.
+        </section>
+      ) : null}
+
+      {pilot ? (
+        <WorkbenchPilotAlignment2026
+          pilot={pilot}
+          onExportPreview={props.onExportPreview}
+          surface="dedicated"
+        />
+      ) : null}
+    </div>
+  )
+}
+
 function ReadinessExportPreviewDialog(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -7013,9 +7140,12 @@ function InteractivePilotWalkthrough2026(props: {
 function WorkbenchPilotAlignment2026(props: {
   pilot: EndToEndPilot2026
   onExportPreview: (key: string, text: string) => void
+  surface?: 'embedded' | 'dedicated'
 }) {
   const { pilot } = props
-  const [activeStage, setActiveStage] = useState<WorkbenchPilotAlignmentStage2026>('SELF')
+  const [activeStage, setActiveStage] = useState<WorkbenchPilotAlignmentStage2026>(
+    props.surface === 'dedicated' ? 'TARGET' : 'SELF'
+  )
   const [inputs, setInputs] = useState<InteractivePilotLocalInputs2026>(() => createInitialInteractivePilotInputs2026(pilot))
   const selectedKpi = pilot.pilotKpis.find((item) => item.id === inputs.selectedKpiId) ?? pilot.pilotKpis[0] ?? null
   const selectedBaseScore = clampPilotScore2026(parsePilotNumber2026(inputs.localBaseScore, selectedKpi?.previewScore ?? 90))
@@ -7039,7 +7169,11 @@ function WorkbenchPilotAlignment2026(props: {
   const gradeStep = pilot.workflowSteps.find((item) => item.id === 'GRADE_PREVIEW')
   const ceoStep = pilot.workflowSteps.find((item) => item.id === 'CEO_FINAL_CONFIRMATION_PREVIEW')
   const safetyStep = pilot.workflowSteps.find((item) => item.id === 'SAFETY_CONFIRMATION')
+  const targetStep = pilot.workflowSteps.find((item) => item.id === 'TARGET_SELECTION')
+  const kpiStep = pilot.workflowSteps.find((item) => item.id === 'KPI_ITEMS')
   const stageRows = [
+    { id: 'TARGET' as const, label: '대상자', source: targetStep, localReady: true },
+    { id: 'KPI' as const, label: 'KPI', source: kpiStep, localReady: Boolean(selectedKpi) },
     { id: 'SELF' as const, label: 'SELF 자기평가', source: selfStep, localReady: Boolean(inputs.selfResultSummary.trim() && inputs.selfContributionComment.trim()) },
     { id: 'FIRST' as const, label: 'FIRST 1차 평가', source: firstStep, localReady: Boolean(inputs.firstReviewerComment.trim()) && !firstAdjustmentNeedsReason },
     { id: 'SECOND' as const, label: 'SECOND 2차 평가', source: secondStep, localReady: Boolean(inputs.finalReviewerComment.trim()) && !finalAdjustmentNeedsReason },
@@ -7063,7 +7197,7 @@ function WorkbenchPilotAlignment2026(props: {
     'gradeId write false',
   ].join('\n')
   const markdownExport = [
-    '# 2026 Evaluation Workbench Pilot Alignment',
+    props.surface === 'dedicated' ? '# 2026 Evaluation Workbench Pilot' : '# 2026 Evaluation Workbench Pilot Alignment',
     '',
     '이 export는 실제 평가 워크벤치 흐름을 preview로 정렬하기 위한 읽기 전용 자료입니다. 공식 평가 저장, 제출, 확정, 점수 반영, 등급 반영은 수행하지 않습니다.',
     '',
@@ -7126,11 +7260,13 @@ function WorkbenchPilotAlignment2026(props: {
   ]
 
   return (
-    <div className="mt-6 rounded-2xl border border-cyan-200 bg-cyan-50/40 p-4">
+    <div className={`${props.surface === 'dedicated' ? '' : 'mt-6'} rounded-2xl border border-cyan-200 bg-cyan-50/40 p-4`}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h5 className="text-sm font-semibold text-slate-900">2026 Evaluation Workbench Pilot Alignment</h5>
+            <h5 className="text-sm font-semibold text-slate-900">
+              {props.surface === 'dedicated' ? '2026 Evaluation Workbench Pilot Shell' : '2026 Evaluation Workbench Pilot Alignment'}
+            </h5>
             <Badge tone="neutral">workbench preview</Badge>
             <Badge tone="warn">no official writes</Badge>
           </div>
@@ -7139,14 +7275,24 @@ function WorkbenchPilotAlignment2026(props: {
             제출, 확정, 점수 반영, 등급 반영은 수행하지 않습니다.
           </p>
         </div>
-        <div className="rounded-2xl border border-cyan-200 bg-white p-3 text-xs leading-5 text-cyan-900">
-          <p className="font-semibold">actual workbench route</p>
-          <p>/evaluation/workbench redirects to /evaluation/performance</p>
-          <p>preview inputs stay in browser state</p>
-        </div>
+        {props.surface === 'dedicated' ? (
+          <div className="rounded-2xl border border-cyan-200 bg-white p-3 text-xs leading-5 text-cyan-900">
+            <p className="font-semibold">dedicated workbench route</p>
+            <p>/evaluation/workbench renders this preview-only pilot shell</p>
+            <p>preview inputs stay in browser state</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-cyan-200 bg-white p-3 text-xs leading-5 text-cyan-900">
+            <p className="font-semibold">actual workbench route</p>
+            <Link href="/evaluation/workbench" className="font-semibold underline-offset-2 hover:underline">
+              전용 Workbench Pilot 열기
+            </Link>
+            <p>navigation only · no save or sync</p>
+          </div>
+        )}
       </div>
 
-      <div className="mt-4 grid gap-2 md:grid-cols-4 xl:grid-cols-8">
+      <div className="mt-4 grid gap-2 md:grid-cols-4 xl:grid-cols-10">
         {stageRows.map((stage) => (
           <button
             key={stage.id}
@@ -7184,6 +7330,65 @@ function WorkbenchPilotAlignment2026(props: {
               로컬 입력 초기화
             </button>
           </div>
+
+          {activeStage === 'TARGET' ? (
+            <div className="mt-4 grid gap-3">
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-xs leading-5 text-cyan-900">
+                <p className="font-semibold">pilot target employee</p>
+                <p>{pilot.pilotEmployee.name} · {pilot.pilotEmployee.departmentName}</p>
+                <p>source: {pilot.pilotEmployee.source}</p>
+                <p>confirmed KPI count: {pilot.pilotEmployee.confirmedPersonalKpiCount}</p>
+                <p>active employee sample source: {pilot.summary.pilotDataSource}</p>
+                {pilot.pilotEmployee.source === 'SAMPLE_PILOT_FIXTURE' ? (
+                  <p className="text-amber-800">SAMPLE/PILOT fallback target입니다. 공식 대상자 확정 전 preview 전용입니다.</p>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {activeStage === 'KPI' ? (
+            <div className="mt-4 grid gap-3">
+              <label className="text-xs font-semibold text-slate-700">
+                KPI item preview
+                <select
+                  value={inputs.selectedKpiId}
+                  onChange={(event) => updateInput('selectedKpiId', event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                >
+                  {pilot.pilotKpis.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.title} · {item.category} · weight {item.weight}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-700">
+                  local achievement level
+                  <select
+                    value={inputs.localAchievementLevel}
+                    onChange={(event) => updateInput('localAchievementLevel', event.target.value as InteractivePilotLocalInputs2026['localAchievementLevel'])}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="BELOW_TARGET">BELOW_TARGET</option>
+                    <option value="TARGET">TARGET</option>
+                    <option value="EXCELLENT">EXCELLENT</option>
+                    <option value="CUSTOM">CUSTOM</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-700">
+                  local base score preview
+                  <input value={inputs.localBaseScore} onChange={(event) => updateInput('localBaseScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                </label>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                <p>policyCategory warning: {pilot.evaluationItemPreview.find((item) => item.personalKpiId === selectedKpi?.id)?.policyCategoryWarning ?? 'none in selected preview item'}</p>
+                <p>weight/cap warning: preview-only score and weight are not persisted.</p>
+                <p>evidence expectation: monthly record, self evidence, and reviewer rationale are required before official execution.</p>
+                <p>EvaluationItem creation false.</p>
+              </div>
+            </div>
+          ) : null}
 
           {activeStage === 'SELF' ? (
             <div className="mt-4 grid gap-3">

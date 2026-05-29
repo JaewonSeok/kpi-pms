@@ -146,9 +146,11 @@ async function main() {
     assert.equal(googleAccessPage.includes("canAccessMenu(session.user.role, 'SYSTEM_SETTING')"), true)
     assert.equal(googleAccessPage.includes("redirect('/403')"), true)
 
-    const evaluationWorkbenchRedirect = read('src/app/(main)/evaluation/workbench/page.tsx')
-    assert.equal(evaluationWorkbenchRedirect.includes('requireProtectedPageSession'), false)
-    assert.equal(evaluationWorkbenchRedirect.includes("redirect(params.size ? `/evaluation/performance?${params.toString()}` : '/evaluation/performance')"), true)
+    const evaluationWorkbenchPage = read('src/app/(main)/evaluation/workbench/page.tsx')
+    assert.equal(evaluationWorkbenchPage.includes('requireProtectedPageSession'), true)
+    assert.equal(evaluationWorkbenchPage.includes('getEvaluationWorkbenchPageData'), true)
+    assert.equal(evaluationWorkbenchPage.includes('presentationMode="workbench-pilot"'), true)
+    assert.equal(evaluationWorkbenchPage.includes('redirect('), false)
   })
 
   await run('protected page session helper caches shared getServerSession lookups for layout and page transitions', () => {
