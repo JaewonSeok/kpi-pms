@@ -4904,19 +4904,39 @@ function PolicyActivationReadiness2026Panel(props: {
                         공식 점수/등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Freeze Pack exports</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {[
+                          ['dryrun-freeze-markdown', 'Export Markdown', dryRunGoNoGoFreezePack.copyPayloads.markdown],
+                          ['dryrun-freeze-tsv', 'Export TSV', dryRunGoNoGoFreezePack.copyPayloads.tsv],
+                        ].map(([key, label, text]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => void copyActivationRunbookPayload(key, text)}
+                            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100"
+                          >
+                            {copiedRunbookKey === key ? '복사됨' : label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Freeze Pack copy actions</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
                       {[
-                        ['dryrun-freeze-summary', 'Go/No-Go summary', dryRunGoNoGoFreezePack.copyPayloads.goNoGoSummary],
-                        ['dryrun-freeze-no-go', 'No-go reasons', dryRunGoNoGoFreezePack.copyPayloads.noGoReasons],
-                        ['dryrun-freeze-go', 'Go conditions', dryRunGoNoGoFreezePack.copyPayloads.goConditions],
-                        ['dryrun-freeze-evidence', 'Evidence pack', dryRunGoNoGoFreezePack.copyPayloads.requiredEvidencePack],
-                        ['dryrun-freeze-hr', 'HR unlock actions', dryRunGoNoGoFreezePack.copyPayloads.hrUnlockActions],
-                        ['dryrun-freeze-dev', 'Developer unlock actions', dryRunGoNoGoFreezePack.copyPayloads.developerUnlockActions],
-                        ['dryrun-freeze-signoff', 'Sign-off checklist', dryRunGoNoGoFreezePack.copyPayloads.signOffChecklist],
-                        ['dryrun-freeze-checkpoint', 'Next checkpoint', dryRunGoNoGoFreezePack.copyPayloads.nextCheckpoint],
-                        ['dryrun-freeze-prohibited', 'Prohibited actions', dryRunGoNoGoFreezePack.copyPayloads.prohibitedActions],
-                        ['dryrun-freeze-markdown', 'Export Markdown', dryRunGoNoGoFreezePack.copyPayloads.markdown],
-                        ['dryrun-freeze-tsv', 'Export TSV', dryRunGoNoGoFreezePack.copyPayloads.tsv],
+                        ['dryrun-freeze-summary', 'Copy Go/No-Go summary', dryRunGoNoGoFreezePack.copyPayloads.goNoGoSummary],
+                        ['dryrun-freeze-no-go', 'Copy No-go reasons', dryRunGoNoGoFreezePack.copyPayloads.noGoReasons],
+                        ['dryrun-freeze-go', 'Copy Go conditions', dryRunGoNoGoFreezePack.copyPayloads.goConditions],
+                        ['dryrun-freeze-evidence', 'Copy Evidence pack', dryRunGoNoGoFreezePack.copyPayloads.requiredEvidencePack],
+                        ['dryrun-freeze-hr', 'Copy HR unlock actions', dryRunGoNoGoFreezePack.copyPayloads.hrUnlockActions],
+                        ['dryrun-freeze-dev', 'Copy Developer unlock actions', dryRunGoNoGoFreezePack.copyPayloads.developerUnlockActions],
+                        ['dryrun-freeze-signoff', 'Copy Sign-off checklist', dryRunGoNoGoFreezePack.copyPayloads.signOffChecklist],
+                        ['dryrun-freeze-checkpoint', 'Copy Next checkpoint', dryRunGoNoGoFreezePack.copyPayloads.nextCheckpoint],
+                        ['dryrun-freeze-prohibited', 'Copy Prohibited actions', dryRunGoNoGoFreezePack.copyPayloads.prohibitedActions],
                       ].map(([key, label, text]) => (
                         <button
                           key={key}
@@ -5010,7 +5030,12 @@ function PolicyActivationReadiness2026Panel(props: {
                     </div>
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <h5 className="text-sm font-semibold text-slate-900">2026 Dry-run Go/No-Go Freeze Pack</h5>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">Go/No-Go 데이터를 불러오는 중입니다.</p>
+                </div>
+              )}
 
               <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
