@@ -249,6 +249,15 @@ type PolicyMappingTab2026 = 'CATEGORY' | 'DIVISION' | 'DEPARTMENT' | 'EMPLOYEE' 
 type DepartmentOverrideFilter2026 = 'IMPORTANT' | 'MAPPED' | 'DRAFT_CHANGED' | 'SALES_DIVISION' | 'ALL'
 type SalesGroupDraft2026 = 'SALES' | 'NON_SALES' | 'UNRESOLVED' | ''
 type ThresholdDecisionDraft2026 = 'UNRESOLVED' | 'SUPER_PRIORITY' | 'OUTSTANDING_PRIORITY' | ''
+type ReadinessExportPreviewFormat = 'plain' | 'markdown' | 'tsv' | 'json'
+type ReadinessExportPreview = {
+  key: string
+  title: string
+  description: string
+  content: string
+  format: ReadinessExportPreviewFormat
+  fileName: string
+}
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '종합',
@@ -3215,6 +3224,55 @@ function reviewDryRunOutputPasteLocally2026(record: Record<string, unknown>) {
   }
 }
 
+function inferReadinessExportFormat(key: string, content: string): ReadinessExportPreviewFormat {
+  const lowerKey = key.toLowerCase()
+  const trimmed = content.trim()
+
+  if (lowerKey.includes('tsv')) return 'tsv'
+  if (lowerKey.includes('markdown') || lowerKey.includes('-md')) return 'markdown'
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) return 'json'
+  if (trimmed.startsWith('# ') || trimmed.includes('\n## ')) return 'markdown'
+  if (trimmed.includes('\t')) return 'tsv'
+  return 'plain'
+}
+
+function getReadinessExportExtension(format: ReadinessExportPreviewFormat) {
+  if (format === 'markdown') return 'md'
+  if (format === 'tsv') return 'tsv'
+  if (format === 'json') return 'json'
+  return 'txt'
+}
+
+function getReadinessExportTitle(key: string) {
+  return key
+    .replace(/^dryrun-/, 'dry-run-')
+    .split('-')
+    .filter(Boolean)
+    .map((word) => {
+      if (word === 'hr') return 'HR'
+      if (word === 'tsv') return 'TSV'
+      if (word === 'dev') return 'Dev'
+      if (word === 'ceo') return 'CEO'
+      if (word === 'nogo') return 'No-Go'
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    })
+    .join(' ')
+}
+
+function createReadinessExportPreview(key: string, content: string): ReadinessExportPreview {
+  const format = inferReadinessExportFormat(key, content)
+  const extension = getReadinessExportExtension(format)
+
+  return {
+    key,
+    title: getReadinessExportTitle(key),
+    description: '클릭하면 미리보기 후 복사할 수 있습니다. 이 미리보기는 읽기 전용이며 저장이나 실행을 수행하지 않습니다.',
+    content,
+    format,
+    fileName: `2026-${key.replace(/[^a-z0-9-]+/gi, '-').toLowerCase()}.${extension}`,
+  }
+}
+
 function PolicyActivationReadiness2026Panel(props: {
   activationData: EvaluationActivationReadiness2026ApiData | null
   loading: boolean
@@ -3240,6 +3298,8 @@ function PolicyActivationReadiness2026Panel(props: {
   const dryRunGoNoGoFreezePack = activation?.dryRunGoNoGoFreezePack ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
+  const [exportPreview, setExportPreview] = useState<ReadinessExportPreview | null>(null)
+  const [exportPreviewCopied, setExportPreviewCopied] = useState(false)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
   const [dryRunOutputPasteText, setDryRunOutputPasteText] = useState('')
   const [scenarioState, setScenarioState] = useState<{
@@ -3251,13 +3311,40 @@ function PolicyActivationReadiness2026Panel(props: {
     inputs: null,
     sourceKey: '',
   })
-  const copyActivationRunbookPayload = useCallback(async (key: string, text: string) => {
-    if (typeof navigator === 'undefined' || !navigator.clipboard) return
-    await navigator.clipboard.writeText(text)
-    setCopiedRunbookKey(key)
-    window.setTimeout(() => setCopiedRunbookKey((current) => (current === key ? null : current)), 1800)
+  const openExportPreview = useCallback((key: string, text: string) => {
+    setExportPreview(createReadinessExportPreview(key, text))
+    setExportPreviewCopied(false)
   }, [])
+  const copyExportPreviewToClipboard = useCallback(async () => {
+    if (!exportPreview || typeof navigator === 'undefined' || !navigator.clipboard) return
+    await navigator.clipboard.writeText(exportPreview.content)
+    setCopiedRunbookKey(exportPreview.key)
+    setExportPreviewCopied(true)
+    window.setTimeout(() => setCopiedRunbookKey((current) => (current === exportPreview.key ? null : current)), 1800)
+  }, [exportPreview])
+  const downloadExportPreview = useCallback(() => {
+    if (!exportPreview || typeof document === 'undefined' || typeof URL === 'undefined') return
+    const blob = new Blob([exportPreview.content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = exportPreview.fileName
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [exportPreview])
   const autoLoadRequestedKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!exportPreview || typeof window === 'undefined') return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setExportPreview(null)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [exportPreview])
 
   useEffect(() => {
     if (activation || loading || error) return
@@ -3353,6 +3440,9 @@ function PolicyActivationReadiness2026Panel(props: {
               backfill --apply, official scoring, official grade, AI score exclusion,
               Evaluation.totalScore, Evaluation.gradeId write를 켜기 전 차단 조건만 확인합니다.
               저장 점수, 저장 등급, 제출, 확정, 보정 흐름은 변경하지 않습니다.
+            </p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              클릭하면 내용을 먼저 미리보고 복사/다운로드할 수 있습니다.
             </p>
           </div>
         </div>
@@ -3623,7 +3713,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -3831,7 +3921,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -3933,7 +4023,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -4025,7 +4115,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     {item.suggestedCommunicationCopy ? (
                       <button
                         type="button"
-                        onClick={() => void copyActivationRunbookPayload(`execution-copy-${item.id}`, item.suggestedCommunicationCopy ?? '')}
+                        onClick={() => void openExportPreview(`execution-copy-${item.id}`, item.suggestedCommunicationCopy ?? '')}
                         className="mt-3 inline-flex min-h-8 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-white"
                       >
                         {copiedRunbookKey === `execution-copy-${item.id}` ? '복사됨' : 'communication copy'}
@@ -4056,7 +4146,7 @@ function PolicyActivationReadiness2026Panel(props: {
                       <button
                         key={template.id}
                         type="button"
-                        onClick={() => void copyActivationRunbookPayload(`comm-${template.id}`, template.copy)}
+                        onClick={() => void openExportPreview(`comm-${template.id}`, template.copy)}
                         className="inline-flex min-h-8 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                       >
                         {copiedRunbookKey === `comm-${template.id}` ? '복사됨' : template.title}
@@ -4115,7 +4205,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -4346,7 +4436,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -4512,7 +4602,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -4617,7 +4707,7 @@ function PolicyActivationReadiness2026Panel(props: {
                         <button
                           key={key}
                           type="button"
-                          onClick={() => void copyActivationRunbookPayload(key, text)}
+                          onClick={() => void openExportPreview(key, text)}
                           className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-white"
                         >
                           {copiedRunbookKey === key ? '복사됨' : label}
@@ -4775,7 +4865,7 @@ function PolicyActivationReadiness2026Panel(props: {
                         <button
                           key={key}
                           type="button"
-                          onClick={() => void copyActivationRunbookPayload(key, text)}
+                          onClick={() => void openExportPreview(key, text)}
                           className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                         >
                           {copiedRunbookKey === key ? '복사됨' : label}
@@ -4914,7 +5004,7 @@ function PolicyActivationReadiness2026Panel(props: {
                           <button
                             key={key}
                             type="button"
-                            onClick={() => void copyActivationRunbookPayload(key, text)}
+                            onClick={() => void openExportPreview(key, text)}
                             className="inline-flex min-h-9 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100"
                           >
                             {copiedRunbookKey === key ? '복사됨' : label}
@@ -4941,7 +5031,7 @@ function PolicyActivationReadiness2026Panel(props: {
                         <button
                           key={key}
                           type="button"
-                          onClick={() => void copyActivationRunbookPayload(key, text)}
+                          onClick={() => void openExportPreview(key, text)}
                           className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                         >
                           {copiedRunbookKey === key ? '복사됨' : label}
@@ -5178,7 +5268,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -5351,7 +5441,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -5521,7 +5611,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => void copyActivationRunbookPayload(key, text)}
+                      onClick={() => void openExportPreview(key, text)}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                     >
                       {copiedRunbookKey === key ? '복사됨' : label}
@@ -5783,7 +5873,121 @@ function PolicyActivationReadiness2026Panel(props: {
           Evaluation.totalScore write gate, Evaluation.gradeId write gate.
         </div>
       )}
+
+      {exportPreview ? (
+        <ReadinessExportPreviewDialog
+          open={Boolean(exportPreview)}
+          onOpenChange={(open) => {
+            if (!open) setExportPreview(null)
+          }}
+          title={exportPreview.title}
+          description={exportPreview.description}
+          content={exportPreview.content}
+          format={exportPreview.format}
+          suggestedFilename={exportPreview.fileName}
+          allowDownload
+          copied={exportPreviewCopied}
+          onCopy={() => void copyExportPreviewToClipboard()}
+          onDownload={downloadExportPreview}
+        />
+      ) : null}
     </Panel>
+  )
+}
+
+function ReadinessExportPreviewDialog(props: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  title: string
+  description: string
+  content: string
+  format: ReadinessExportPreviewFormat
+  suggestedFilename: string
+  allowDownload: boolean
+  copied: boolean
+  onCopy: () => void
+  onDownload: () => void
+}) {
+  if (!props.open) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="readiness-export-preview-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"
+      onClick={() => props.onOpenChange(false)}
+    >
+      <div
+        className="flex max-h-[88vh] w-full max-w-5xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 id="readiness-export-preview-title" className="text-base font-semibold text-slate-900">
+                {props.title}
+              </h4>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                {props.format}
+              </span>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                read-only preview
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-slate-500">{props.description}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-400">file: {props.suggestedFilename}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => props.onOpenChange(false)}
+            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            닫기
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-hidden p-4">
+          <textarea
+            readOnly
+            value={props.content}
+            className="h-[52vh] w-full resize-none rounded-2xl border border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-50 outline-none"
+            aria-label="readiness export preview content"
+          />
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-5 text-slate-500">
+            저장, submit, dry-run, apply, backfill, scoring, grade 실행 없이 브라우저에서만 미리보고 복사합니다.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={props.onCopy}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              {props.copied ? '복사되었습니다.' : '클립보드 복사'}
+            </button>
+            {props.allowDownload ? (
+              <button
+                type="button"
+                onClick={props.onDownload}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                다운로드
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => props.onOpenChange(false)}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
