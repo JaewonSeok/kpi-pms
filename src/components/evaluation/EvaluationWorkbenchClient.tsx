@@ -308,6 +308,40 @@ type InteractivePilotLocalInputs2026 = {
   ceoChecklistCalibration: boolean
   ceoChecklistNoWrite: boolean
 }
+type WorkbenchPilotItemDraft2026 = {
+  selfResultSummary: string
+  selfEvidenceLink: string
+  selfContribution: string
+  selfScorePreview: string
+  firstReviewerScore: string
+  firstReviewerComment: string
+  firstAdjustmentAmount: string
+  firstAdjustmentReason: string
+  firstFeedbackToEmployee: string
+  finalReviewerScore: string
+  finalReviewerComment: string
+  finalAdjustmentAmount: string
+  finalAdjustmentReason: string
+  finalRecommendation: string
+  ceoAdjustmentAmount: string
+  ceoAdjustmentReason: string
+  ceoFinalNote: string
+  ceoEvidenceConfirmed: boolean
+  ceoCalibrationReviewed: boolean
+  ceoNoWriteConfirmed: boolean
+}
+type WorkbenchPilotItemRow2026 = {
+  kpi: EndToEndPilot2026['pilotKpis'][number]
+  draft: WorkbenchPilotItemDraft2026
+  policyCategoryWarning: string | null
+  evidenceStatus: 'READY' | 'WARNING'
+  selfStatus: 'READY' | 'NEEDS_INPUT'
+  firstStatus: 'READY' | 'NEEDS_INPUT' | 'BLOCKED_BY_REASON'
+  finalStatus: 'READY' | 'NEEDS_INPUT' | 'BLOCKED_BY_REASON'
+  ceoStatus: 'READY' | 'NEEDS_INPUT' | 'BLOCKED_BY_REASON'
+  localScorePreview: number
+  warnings: string[]
+}
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '종합',
@@ -3366,6 +3400,44 @@ function createInitialInteractivePilotInputs2026(pilot: EndToEndPilot2026 | null
     ceoChecklistCalibration: false,
     ceoChecklistNoWrite: true,
   }
+}
+
+function createWorkbenchPilotItemDraft2026(
+  item: EndToEndPilot2026['pilotKpis'][number],
+  index: number
+): WorkbenchPilotItemDraft2026 {
+  const baseScore = item.previewScore != null ? String(item.previewScore) : String(88 + index)
+
+  return {
+    selfResultSummary: `SAMPLE/PILOT: ${item.title} 결과와 산출물을 항목 단위로 요약합니다.`,
+    selfEvidenceLink: '',
+    selfContribution: `SAMPLE/PILOT: ${item.category} 기여와 협업 맥락을 분리해 작성합니다.`,
+    selfScorePreview: baseScore,
+    firstReviewerScore: baseScore,
+    firstReviewerComment: `SAMPLE/PILOT: 1차 평가자는 ${item.title} 근거 충분성과 난이도를 확인합니다.`,
+    firstAdjustmentAmount: '0',
+    firstAdjustmentReason: '',
+    firstFeedbackToEmployee: 'SAMPLE/PILOT: 다음 단계에서 보완할 근거와 기대 기준을 안내합니다.',
+    finalReviewerScore: baseScore,
+    finalReviewerComment: `SAMPLE/PILOT: 2차/최종 평가는 ${item.title}의 조직 기준 정합성을 확인합니다.`,
+    finalAdjustmentAmount: '0',
+    finalAdjustmentReason: '',
+    finalRecommendation: 'SAMPLE/PILOT: official execution 전 calibration blocker를 다시 확인합니다.',
+    ceoAdjustmentAmount: '0',
+    ceoAdjustmentReason: '',
+    ceoFinalNote: 'SAMPLE/PILOT: 대표이사 조정은 근거와 사유가 있을 때만 별도 검토합니다.',
+    ceoEvidenceConfirmed: true,
+    ceoCalibrationReviewed: false,
+    ceoNoWriteConfirmed: true,
+  }
+}
+
+function createInitialWorkbenchPilotItemDrafts2026(pilot: EndToEndPilot2026 | null) {
+  const drafts: Record<string, WorkbenchPilotItemDraft2026> = {}
+  for (const [index, item] of (pilot?.pilotKpis ?? []).entries()) {
+    drafts[item.id] = createWorkbenchPilotItemDraft2026(item, index)
+  }
+  return drafts
 }
 
 function parsePilotNumber2026(value: string, fallback: number) {
@@ -7147,16 +7219,25 @@ function WorkbenchPilotAlignment2026(props: {
     props.surface === 'dedicated' ? 'TARGET' : 'SELF'
   )
   const [inputs, setInputs] = useState<InteractivePilotLocalInputs2026>(() => createInitialInteractivePilotInputs2026(pilot))
+  const [itemDrafts, setItemDrafts] = useState<Record<string, WorkbenchPilotItemDraft2026>>(() =>
+    createInitialWorkbenchPilotItemDrafts2026(pilot)
+  )
   const selectedKpi = pilot.pilotKpis.find((item) => item.id === inputs.selectedKpiId) ?? pilot.pilotKpis[0] ?? null
-  const selectedBaseScore = clampPilotScore2026(parsePilotNumber2026(inputs.localBaseScore, selectedKpi?.previewScore ?? 90))
-  const firstReviewerScore = clampPilotScore2026(parsePilotNumber2026(inputs.firstReviewerScore, selectedBaseScore))
-  const finalReviewerScore = clampPilotScore2026(parsePilotNumber2026(inputs.finalReviewerScore, firstReviewerScore))
-  const firstAdjustmentAmount = parsePilotNumber2026(inputs.firstAdjustmentAmount, 0)
-  const finalAdjustmentAmount = parsePilotNumber2026(inputs.finalAdjustmentAmount, 0)
-  const ceoAdjustmentAmount = parsePilotNumber2026(inputs.ceoAdjustmentAmount, 0)
-  const firstAdjustmentNeedsReason = firstAdjustmentAmount !== 0 && !inputs.firstAdjustmentReason.trim()
-  const finalAdjustmentNeedsReason = finalAdjustmentAmount !== 0 && !inputs.finalAdjustmentReason.trim()
-  const ceoAdjustmentNeedsReason = ceoAdjustmentAmount !== 0 && !inputs.ceoAdjustmentReason.trim()
+  const selectedItemDraft =
+    selectedKpi
+      ? itemDrafts[selectedKpi.id] ?? createWorkbenchPilotItemDraft2026(selectedKpi, 0)
+      : null
+  const selectedBaseScore = clampPilotScore2026(
+    parsePilotNumber2026(selectedItemDraft?.selfScorePreview ?? inputs.localBaseScore, selectedKpi?.previewScore ?? 90)
+  )
+  const firstReviewerScore = clampPilotScore2026(parsePilotNumber2026(selectedItemDraft?.firstReviewerScore ?? inputs.firstReviewerScore, selectedBaseScore))
+  const finalReviewerScore = clampPilotScore2026(parsePilotNumber2026(selectedItemDraft?.finalReviewerScore ?? inputs.finalReviewerScore, firstReviewerScore))
+  const firstAdjustmentAmount = parsePilotNumber2026(selectedItemDraft?.firstAdjustmentAmount ?? inputs.firstAdjustmentAmount, 0)
+  const finalAdjustmentAmount = parsePilotNumber2026(selectedItemDraft?.finalAdjustmentAmount ?? inputs.finalAdjustmentAmount, 0)
+  const ceoAdjustmentAmount = parsePilotNumber2026(selectedItemDraft?.ceoAdjustmentAmount ?? inputs.ceoAdjustmentAmount, 0)
+  const firstAdjustmentNeedsReason = firstAdjustmentAmount !== 0 && !(selectedItemDraft?.firstAdjustmentReason ?? inputs.firstAdjustmentReason).trim()
+  const finalAdjustmentNeedsReason = finalAdjustmentAmount !== 0 && !(selectedItemDraft?.finalAdjustmentReason ?? inputs.finalAdjustmentReason).trim()
+  const ceoAdjustmentNeedsReason = ceoAdjustmentAmount !== 0 && !(selectedItemDraft?.ceoAdjustmentReason ?? inputs.ceoAdjustmentReason).trim()
   const organizationScore = pilot.scorePreview.organizationPerformanceScore ?? selectedBaseScore
   const personalScore = clampPilotScore2026(((firstReviewerScore + finalReviewerScore) / 2 * 0.45) + (selectedBaseScore * 0.55))
   const baseScorePreview = clampPilotScore2026((organizationScore * 0.3) + (personalScore * 0.7))
@@ -7187,12 +7268,80 @@ function WorkbenchPilotAlignment2026(props: {
   const updateInput = <Key extends keyof InteractivePilotLocalInputs2026>(key: Key, value: InteractivePilotLocalInputs2026[Key]) => {
     setInputs((current) => ({ ...current, [key]: value }))
   }
+  const updateSelectedItemDraft = <Key extends keyof WorkbenchPilotItemDraft2026>(
+    key: Key,
+    value: WorkbenchPilotItemDraft2026[Key]
+  ) => {
+    if (!selectedKpi) return
+    setItemDrafts((current) => ({
+      ...current,
+      [selectedKpi.id]: {
+        ...(current[selectedKpi.id] ?? createWorkbenchPilotItemDraft2026(selectedKpi, 0)),
+        [key]: value,
+      },
+    }))
+  }
+  const resetLocalPreviewState = () => {
+    setInputs(createInitialInteractivePilotInputs2026(pilot))
+    setItemDrafts(createInitialWorkbenchPilotItemDrafts2026(pilot))
+  }
+  const itemRows: WorkbenchPilotItemRow2026[] = pilot.pilotKpis.map((item, index) => {
+    const draft = itemDrafts[item.id] ?? createWorkbenchPilotItemDraft2026(item, index)
+    const policyPreview = pilot.evaluationItemPreview.find((previewItem) => previewItem.personalKpiId === item.id)
+    const itemSelfScore = clampPilotScore2026(parsePilotNumber2026(draft.selfScorePreview, item.previewScore ?? 90))
+    const itemFirstScore = clampPilotScore2026(parsePilotNumber2026(draft.firstReviewerScore, itemSelfScore))
+    const itemFinalScore = clampPilotScore2026(parsePilotNumber2026(draft.finalReviewerScore, itemFirstScore))
+    const itemFirstAdjustment = parsePilotNumber2026(draft.firstAdjustmentAmount, 0)
+    const itemFinalAdjustment = parsePilotNumber2026(draft.finalAdjustmentAmount, 0)
+    const itemCeoAdjustment = parsePilotNumber2026(draft.ceoAdjustmentAmount, 0)
+    const firstNeedsReason = itemFirstAdjustment !== 0 && !draft.firstAdjustmentReason.trim()
+    const finalNeedsReason = itemFinalAdjustment !== 0 && !draft.finalAdjustmentReason.trim()
+    const ceoNeedsReason = itemCeoAdjustment !== 0 && !draft.ceoAdjustmentReason.trim()
+    const warnings = [
+      draft.selfResultSummary.trim() ? '' : 'SELF result missing',
+      draft.selfEvidenceLink.trim() ? '' : 'evidence link missing',
+      draft.selfContribution.trim() ? '' : 'contribution missing',
+      policyPreview?.policyCategoryWarning ?? '',
+      firstNeedsReason ? 'FIRST adjustment reason required' : '',
+      finalNeedsReason ? 'SECOND/FINAL adjustment reason required' : '',
+      ceoNeedsReason ? 'CEO adjustment reason required' : '',
+      itemSelfScore < 0 || itemSelfScore > 120 ? 'self score range warning' : '',
+      itemFirstScore < 0 || itemFirstScore > 120 ? 'first score range warning' : '',
+      itemFinalScore < 0 || itemFinalScore > 120 ? 'final score range warning' : '',
+    ].filter(Boolean)
+
+    return {
+      kpi: item,
+      draft,
+      policyCategoryWarning: policyPreview?.policyCategoryWarning ?? null,
+      evidenceStatus: draft.selfEvidenceLink.trim() ? 'READY' : 'WARNING',
+      selfStatus: draft.selfResultSummary.trim() && draft.selfContribution.trim() ? 'READY' : 'NEEDS_INPUT',
+      firstStatus: firstNeedsReason ? 'BLOCKED_BY_REASON' : draft.firstReviewerComment.trim() ? 'READY' : 'NEEDS_INPUT',
+      finalStatus: finalNeedsReason ? 'BLOCKED_BY_REASON' : draft.finalReviewerComment.trim() ? 'READY' : 'NEEDS_INPUT',
+      ceoStatus: ceoNeedsReason ? 'BLOCKED_BY_REASON' : draft.ceoNoWriteConfirmed ? 'READY' : 'NEEDS_INPUT',
+      localScorePreview: clampPilotScore2026(
+        (itemSelfScore * 0.25) + (itemFirstScore * 0.35) + (itemFinalScore * 0.4) +
+          itemFirstAdjustment + itemFinalAdjustment + itemCeoAdjustment
+      ),
+      warnings,
+    }
+  })
+  const selectedItemRow =
+    itemRows.find((item) => item.kpi.id === selectedKpi?.id) ?? itemRows[0] ?? null
+  const totalPilotWeight = itemRows.reduce((sum, item) => sum + item.kpi.weight, 0) || 100
+  const personalItemWeightedScore = itemRows.reduce(
+    (sum, item) => sum + (item.localScorePreview * item.kpi.weight) / totalPilotWeight,
+    0
+  )
+  const totalLocalAdjustedPreviewScore = clampPilotScore2026((organizationScore * 0.3) + (personalItemWeightedScore * 0.7))
+  const totalLocalGradePreview = getInteractivePilotGradeLabel2026(totalLocalAdjustedPreviewScore, pilot.gradePreview.gradePreview)
   const scoreGradeText = [
     `organization performance 30%: ${organizationScore.toFixed(1)}`,
-    `personal performance 70%: ${personalScore.toFixed(1)}`,
-    `base score preview: ${baseScorePreview.toFixed(1)}`,
-    `adjusted score preview: ${adjustedScorePreview.toFixed(1)}`,
-    `grade preview: ${gradePreview}`,
+    `personal performance 70%: ${personalItemWeightedScore.toFixed(1)}`,
+    `selected item local score preview: ${selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}`,
+    `total local adjusted preview score: ${totalLocalAdjustedPreviewScore.toFixed(1)}`,
+    `selected item adjusted score preview: ${adjustedScorePreview.toFixed(1)}`,
+    `grade preview: ${totalLocalGradePreview}`,
     'totalScore write false',
     'gradeId write false',
   ].join('\n')
@@ -7204,28 +7353,39 @@ function WorkbenchPilotAlignment2026(props: {
     `- active stage: ${activeRow.label}`,
     `- pilot employee: ${pilot.pilotEmployee.name}`,
     `- selected KPI: ${selectedKpi?.title ?? 'KPI preview pending'}`,
-    `- local score preview: ${adjustedScorePreview.toFixed(1)}`,
-    `- local grade preview: ${gradePreview}`,
+    `- selected item score preview: ${selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}`,
+    `- total local adjusted preview score: ${totalLocalAdjustedPreviewScore.toFixed(1)}`,
+    `- local grade preview: ${totalLocalGradePreview}`,
     `- official blockers: ${pilot.blockers.length ? pilot.blockers.join(', ') : 'none in pilot view'}`,
     '',
+    '## Workbench item table',
+    ...itemRows.map((item) =>
+      `- ${item.kpi.title} / ${item.kpi.category} / weight ${item.kpi.weight} / score ${item.localScorePreview.toFixed(1)} / warnings ${item.warnings.join(', ') || 'none'}`
+    ),
+    '',
     '## SELF',
-    inputs.selfResultSummary,
-    inputs.selfContributionComment,
-    inputs.selfRiskComment,
+    selectedItemDraft?.selfResultSummary ?? inputs.selfResultSummary,
+    selectedItemDraft?.selfContribution ?? inputs.selfContributionComment,
     '',
     '## FIRST',
-    inputs.firstReviewerComment,
-    inputs.firstFeedbackToEmployee,
+    selectedItemDraft?.firstReviewerComment ?? inputs.firstReviewerComment,
+    selectedItemDraft?.firstFeedbackToEmployee ?? inputs.firstFeedbackToEmployee,
     '',
-    '## FINAL',
-    inputs.finalReviewerComment,
-    inputs.finalRecommendation,
+    '## SECOND/FINAL',
+    selectedItemDraft?.finalReviewerComment ?? inputs.finalReviewerComment,
+    selectedItemDraft?.finalRecommendation ?? inputs.finalRecommendation,
     '',
     '## CEO_ADJUST',
-    inputs.ceoFinalNote,
+    selectedItemDraft?.ceoFinalNote ?? inputs.ceoFinalNote,
     '',
     '## SCORE/GRADE',
     scoreGradeText,
+    '',
+    '## Stage handoff summary',
+    `SELF -> FIRST: ${selectedItemDraft?.selfResultSummary ?? 'preview pending'}`,
+    `FIRST -> SECOND/FINAL: ${selectedItemDraft?.firstFeedbackToEmployee ?? 'preview pending'}`,
+    `SECOND/FINAL -> CEO_ADJUST: ${selectedItemDraft?.finalRecommendation ?? 'preview pending'}`,
+    'CEO_ADJUST -> finalization dependency: official finalization remains blocked until separate approval.',
     '',
     '## SAFETY',
     'official scoring false',
@@ -7240,20 +7400,23 @@ function WorkbenchPilotAlignment2026(props: {
     ['active stage', activeRow.label].join('\t'),
     ['pilot employee', pilot.pilotEmployee.name].join('\t'),
     ['selected KPI', selectedKpi?.title ?? 'KPI preview pending'].join('\t'),
-    ['base score preview', baseScorePreview.toFixed(1)].join('\t'),
-    ['adjusted score preview', adjustedScorePreview.toFixed(1)].join('\t'),
-    ['grade preview', gradePreview].join('\t'),
+    ['selected item local score preview', selectedItemRow?.localScorePreview.toFixed(1) ?? '-'].join('\t'),
+    ['total local adjusted preview score', totalLocalAdjustedPreviewScore.toFixed(1)].join('\t'),
+    ['grade preview', totalLocalGradePreview].join('\t'),
     ['totalScore write', 'false'].join('\t'),
     ['gradeId write', 'false'].join('\t'),
     ['API write calls', 'false'].join('\t'),
   ].join('\n')
   const exportRows = [
     { key: 'workbench-pilot-alignment-summary', label: 'Workbench preview summary 보기', text: markdownExport },
-    { key: 'workbench-pilot-alignment-self', label: 'Self preview 보기', text: [inputs.selfResultSummary, inputs.selfEvidenceLink || 'evidence warning', inputs.selfContributionComment, inputs.selfRiskComment].join('\n') },
-    { key: 'workbench-pilot-alignment-first', label: 'First review preview 보기', text: [inputs.firstReviewerComment, `reviewer score preview: ${firstReviewerScore}`, `adjustment amount: ${firstAdjustmentAmount}`, inputs.firstAdjustmentReason || 'reason not required for zero adjustment', inputs.firstFeedbackToEmployee].join('\n') },
-    { key: 'workbench-pilot-alignment-final', label: 'Final review preview 보기', text: [inputs.finalReviewerComment, `final score preview: ${finalReviewerScore}`, `final adjustment: ${finalAdjustmentAmount}`, inputs.finalAdjustmentReason || 'reason not required for zero adjustment', inputs.finalRecommendation].join('\n') },
-    { key: 'workbench-pilot-alignment-score-grade', label: 'Score/grade preview 보기', text: scoreGradeText },
-    { key: 'workbench-pilot-alignment-ceo', label: 'CEO adjustment preview 보기', text: [`CEO adjustment amount: ${ceoAdjustmentAmount}`, inputs.ceoAdjustmentReason || 'reason not required for zero adjustment', inputs.ceoFinalNote].join('\n') },
+    { key: 'workbench-pilot-item-table', label: 'Workbench item table 보기', text: itemRows.map((item) => [item.kpi.title, item.kpi.category, item.kpi.weight, item.localScorePreview.toFixed(1), item.warnings.join('; ') || 'none'].join('\t')).join('\n') },
+    { key: 'workbench-pilot-selected-item', label: 'Selected KPI item preview 보기', text: [selectedKpi?.title ?? 'KPI preview pending', selectedKpi?.category ?? '-', selectedItemRow?.warnings.join('\n') || 'warnings none'].join('\n') },
+    { key: 'workbench-pilot-alignment-self', label: 'SELF item preview 보기', text: [selectedItemDraft?.selfResultSummary, selectedItemDraft?.selfEvidenceLink || 'evidence warning', selectedItemDraft?.selfContribution, `self score preview: ${selectedItemDraft?.selfScorePreview ?? '-'}`].filter(Boolean).join('\n') },
+    { key: 'workbench-pilot-alignment-first', label: 'FIRST review item preview 보기', text: [selectedItemDraft?.firstReviewerComment, `reviewer score preview: ${firstReviewerScore}`, `adjustment amount: ${firstAdjustmentAmount}`, selectedItemDraft?.firstAdjustmentReason || 'reason not required for zero adjustment', selectedItemDraft?.firstFeedbackToEmployee].filter(Boolean).join('\n') },
+    { key: 'workbench-pilot-alignment-final', label: 'SECOND/FINAL item preview 보기', text: [selectedItemDraft?.finalReviewerComment, `final score preview: ${finalReviewerScore}`, `final adjustment: ${finalAdjustmentAmount}`, selectedItemDraft?.finalAdjustmentReason || 'reason not required for zero adjustment', selectedItemDraft?.finalRecommendation].filter(Boolean).join('\n') },
+    { key: 'workbench-pilot-score-grade-side-panel', label: 'Score/grade side panel 보기', text: scoreGradeText },
+    { key: 'workbench-pilot-stage-handoff', label: 'Stage handoff summary 보기', text: [`SELF -> FIRST: ${selectedItemDraft?.selfResultSummary ?? 'preview pending'}`, `FIRST -> SECOND/FINAL: ${selectedItemDraft?.firstFeedbackToEmployee ?? 'preview pending'}`, `SECOND/FINAL -> CEO_ADJUST: ${selectedItemDraft?.finalRecommendation ?? 'preview pending'}`, 'CEO_ADJUST -> finalization dependency: official blocker remains'].join('\n') },
+    { key: 'workbench-pilot-alignment-ceo', label: 'CEO adjustment item preview 보기', text: [`CEO adjustment amount: ${ceoAdjustmentAmount}`, selectedItemDraft?.ceoAdjustmentReason || 'reason not required for zero adjustment', selectedItemDraft?.ceoFinalNote].filter(Boolean).join('\n') },
     { key: 'workbench-pilot-alignment-safety', label: 'Safety summary 보기', text: ['official scoring false', 'official grade false', 'AI exclusion activation false', 'totalScore write false', 'gradeId write false', 'official Evaluation creation false', 'official EvaluationItem creation false', 'API write calls false', 'backfill/apply false', 'feature flag changes false'].join('\n') },
     { key: 'workbench-pilot-alignment-markdown', label: 'Export Markdown', text: markdownExport },
     { key: 'workbench-pilot-alignment-tsv', label: 'Export TSV', text: tsvExport },
@@ -7311,6 +7474,64 @@ function WorkbenchPilotAlignment2026(props: {
         ))}
       </div>
 
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h6 className="text-sm font-semibold text-slate-900">Workbench item-level evaluation table</h6>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              KPI item evaluation table은 local-only preview state로만 계산됩니다. EvaluationItem creation false.
+            </p>
+          </div>
+          <Badge tone="neutral">{itemRows.length} preview items</Badge>
+        </div>
+        <div className="mt-3 overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-xs">
+            <thead className="bg-slate-50 text-left font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <tr>
+                <th className="px-3 py-2">KPI title</th>
+                <th className="px-3 py-2">category</th>
+                <th className="px-3 py-2">weight</th>
+                <th className="px-3 py-2">target</th>
+                <th className="px-3 py-2">evidence</th>
+                <th className="px-3 py-2">SELF</th>
+                <th className="px-3 py-2">FIRST</th>
+                <th className="px-3 py-2">SECOND/FINAL</th>
+                <th className="px-3 py-2">CEO</th>
+                <th className="px-3 py-2">local score</th>
+                <th className="px-3 py-2">warnings</th>
+                <th className="px-3 py-2">action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {itemRows.map((item) => (
+                <tr key={item.kpi.id} className={item.kpi.id === selectedKpi?.id ? 'bg-cyan-50/60' : 'bg-white'}>
+                  <td className="px-3 py-2 font-semibold text-slate-900">{item.kpi.title}</td>
+                  <td className="px-3 py-2 text-slate-600">{item.kpi.category}</td>
+                  <td className="px-3 py-2 text-slate-600">{item.kpi.weight}</td>
+                  <td className="px-3 py-2 text-slate-600">{item.kpi.achievementLevel}</td>
+                  <td className="px-3 py-2"><Badge tone={item.evidenceStatus === 'READY' ? 'success' : 'warn'}>{item.evidenceStatus}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.selfStatus === 'READY' ? 'success' : 'warn'}>{item.selfStatus}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.firstStatus === 'READY' ? 'success' : item.firstStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{item.firstStatus}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.finalStatus === 'READY' ? 'success' : item.finalStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{item.finalStatus}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.ceoStatus === 'READY' ? 'success' : item.ceoStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{item.ceoStatus}</Badge></td>
+                  <td className="px-3 py-2 font-semibold text-slate-900">{item.localScorePreview.toFixed(1)}</td>
+                  <td className="max-w-72 px-3 py-2 text-slate-500">{item.warnings.slice(0, 3).join(', ') || 'none'}</td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => updateInput('selectedKpiId', item.kpi.id)}
+                      className="inline-flex min-h-8 items-center justify-center rounded-lg border border-cyan-300 px-2 text-[11px] font-semibold text-cyan-700 transition hover:bg-cyan-50"
+                    >
+                      항목 선택
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
@@ -7324,7 +7545,7 @@ function WorkbenchPilotAlignment2026(props: {
             </div>
             <button
               type="button"
-              onClick={() => setInputs(createInitialInteractivePilotInputs2026(pilot))}
+              onClick={resetLocalPreviewState}
               className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
             >
               로컬 입력 초기화
@@ -7378,7 +7599,15 @@ function WorkbenchPilotAlignment2026(props: {
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
                   local base score preview
-                  <input value={inputs.localBaseScore} onChange={(event) => updateInput('localBaseScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                  <input
+                    value={selectedItemDraft?.selfScorePreview ?? inputs.localBaseScore}
+                    onChange={(event) => {
+                      updateInput('localBaseScore', event.target.value)
+                      updateSelectedItemDraft('selfScorePreview', event.target.value)
+                    }}
+                    inputMode="decimal"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  />
                 </label>
               </div>
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
@@ -7392,81 +7621,94 @@ function WorkbenchPilotAlignment2026(props: {
 
           {activeStage === 'SELF' ? (
             <div className="mt-4 grid gap-3">
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-xs leading-5 text-cyan-900">
+                <p className="font-semibold">SELF item-level preview</p>
+                <p>selected KPI item detail panel: {selectedKpi?.title ?? 'KPI preview pending'}</p>
+                <p>local-only status: browser state only · no save/submit API call</p>
+              </div>
               <label className="text-xs font-semibold text-slate-700">
                 result summary
-                <textarea value={inputs.selfResultSummary} onChange={(event) => updateInput('selfResultSummary', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.selfResultSummary ?? ''} onChange={(event) => updateSelectedItemDraft('selfResultSummary', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
                 evidence link
-                <input value={inputs.selfEvidenceLink} onChange={(event) => updateInput('selfEvidenceLink', event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <input value={selectedItemDraft?.selfEvidenceLink ?? ''} onChange={(event) => updateSelectedItemDraft('selfEvidenceLink', event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
                 contribution comment
-                <textarea value={inputs.selfContributionComment} onChange={(event) => updateInput('selfContributionComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.selfContribution ?? ''} onChange={(event) => updateSelectedItemDraft('selfContribution', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
-                risk/blocker comment
-                <textarea value={inputs.selfRiskComment} onChange={(event) => updateInput('selfRiskComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                self score preview
+                <input value={selectedItemDraft?.selfScorePreview ?? ''} onChange={(event) => updateSelectedItemDraft('selfScorePreview', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                missing result: {inputs.selfResultSummary.trim() ? 'clear' : 'warning'} · missing evidence: {inputs.selfEvidenceLink.trim() ? 'clear' : 'warning'} · missing contribution: {inputs.selfContributionComment.trim() ? 'clear' : 'warning'} · MBO/KPI blocker remains official blocker.
+                missing result: {selectedItemDraft?.selfResultSummary.trim() ? 'clear' : 'warning'} · missing evidence: {selectedItemDraft?.selfEvidenceLink.trim() ? 'clear' : 'warning'} · missing contribution: {selectedItemDraft?.selfContribution.trim() ? 'clear' : 'warning'} · MBO/KPI blocker remains official blocker.
               </p>
             </div>
           ) : null}
 
           {activeStage === 'FIRST' ? (
             <div className="mt-4 grid gap-3">
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
+                <p className="font-semibold">FIRST reviewer item-level preview</p>
+                <p>{selectedKpi?.title ?? 'KPI preview pending'} · SELF not officially submitted warning remains.</p>
+              </div>
               <label className="text-xs font-semibold text-slate-700">
                 first reviewer comment
-                <textarea value={inputs.firstReviewerComment} onChange={(event) => updateInput('firstReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.firstReviewerComment ?? ''} onChange={(event) => updateSelectedItemDraft('firstReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-700">
                   reviewer score preview
-                  <input value={inputs.firstReviewerScore} onChange={(event) => updateInput('firstReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                  <input value={selectedItemDraft?.firstReviewerScore ?? ''} onChange={(event) => updateSelectedItemDraft('firstReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
                   adjustment amount
-                  <input value={inputs.firstAdjustmentAmount} onChange={(event) => updateInput('firstAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                  <input value={selectedItemDraft?.firstAdjustmentAmount ?? ''} onChange={(event) => updateSelectedItemDraft('firstAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
               </div>
               <label className="text-xs font-semibold text-slate-700">
                 adjustment reason
-                <textarea value={inputs.firstAdjustmentReason} onChange={(event) => updateInput('firstAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.firstAdjustmentReason ?? ''} onChange={(event) => updateSelectedItemDraft('firstAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
                 feedback to employee
-                <textarea value={inputs.firstFeedbackToEmployee} onChange={(event) => updateInput('firstFeedbackToEmployee', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.firstFeedbackToEmployee ?? ''} onChange={(event) => updateSelectedItemDraft('firstFeedbackToEmployee', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                {firstAdjustmentNeedsReason ? 'adjustment reason required if adjustment is not zero.' : 'adjustment reason clear.'} Evaluator routing blocker and SELF not officially completed warning remain.
+                {firstAdjustmentNeedsReason ? 'adjustment reason required if adjustment is not zero.' : 'adjustment reason clear.'} score range warning applies outside 0-120. Evaluator routing blocker remains.
               </p>
             </div>
           ) : null}
 
           {activeStage === 'SECOND' || activeStage === 'FINAL' ? (
             <div className="mt-4 grid gap-3">
+              <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs leading-5 text-violet-900">
+                <p className="font-semibold">SECOND/FINAL item-level preview</p>
+                <p>{selectedKpi?.title ?? 'KPI preview pending'} · prior stage dependency and evaluator chain warning remain.</p>
+              </div>
               <label className="text-xs font-semibold text-slate-700">
                 second/final reviewer comment
-                <textarea value={inputs.finalReviewerComment} onChange={(event) => updateInput('finalReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.finalReviewerComment ?? ''} onChange={(event) => updateSelectedItemDraft('finalReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-700">
                   final score preview
-                  <input value={inputs.finalReviewerScore} onChange={(event) => updateInput('finalReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                  <input value={selectedItemDraft?.finalReviewerScore ?? ''} onChange={(event) => updateSelectedItemDraft('finalReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
                   final adjustment
-                  <input value={inputs.finalAdjustmentAmount} onChange={(event) => updateInput('finalAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                  <input value={selectedItemDraft?.finalAdjustmentAmount ?? ''} onChange={(event) => updateSelectedItemDraft('finalAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
               </div>
               <label className="text-xs font-semibold text-slate-700">
                 adjustment reason
-                <textarea value={inputs.finalAdjustmentReason} onChange={(event) => updateInput('finalAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.finalAdjustmentReason ?? ''} onChange={(event) => updateSelectedItemDraft('finalAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
                 final recommendation
-                <textarea value={inputs.finalRecommendation} onChange={(event) => updateInput('finalRecommendation', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.finalRecommendation ?? ''} onChange={(event) => updateSelectedItemDraft('finalRecommendation', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
                 {finalAdjustmentNeedsReason ? 'adjustment reason required if adjustment is not zero.' : 'final adjustment reason clear.'} Prior stage dependency, chain blocker, and finalization blocked warning remain.
@@ -7476,29 +7718,33 @@ function WorkbenchPilotAlignment2026(props: {
 
           {activeStage === 'CEO_ADJUST' ? (
             <div className="mt-4 grid gap-3">
+              <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-900">
+                <p className="font-semibold">CEO_ADJUST item-level preview</p>
+                <p>{selectedKpi?.title ?? 'KPI preview pending'} · score/grade not official warning remains.</p>
+              </div>
               <label className="text-xs font-semibold text-slate-700">
                 CEO adjustment amount
-                <input value={inputs.ceoAdjustmentAmount} onChange={(event) => updateInput('ceoAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <input value={selectedItemDraft?.ceoAdjustmentAmount ?? ''} onChange={(event) => updateSelectedItemDraft('ceoAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
                 adjustment reason
-                <textarea value={inputs.ceoAdjustmentReason} onChange={(event) => updateInput('ceoAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.ceoAdjustmentReason ?? ''} onChange={(event) => updateSelectedItemDraft('ceoAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
                 final note
-                <textarea value={inputs.ceoFinalNote} onChange={(event) => updateInput('ceoFinalNote', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                <textarea value={selectedItemDraft?.ceoFinalNote ?? ''} onChange={(event) => updateSelectedItemDraft('ceoFinalNote', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="grid gap-2 text-xs text-slate-700">
                 {[
-                  ['ceoChecklistEvidence', 'evidence packet reviewed locally'],
-                  ['ceoChecklistCalibration', 'calibration blockers reviewed locally'],
-                  ['ceoChecklistNoWrite', 'no finalization write'],
+                  ['ceoEvidenceConfirmed', 'evidence packet reviewed locally'],
+                  ['ceoCalibrationReviewed', 'calibration blockers reviewed locally'],
+                  ['ceoNoWriteConfirmed', 'no finalization write'],
                 ].map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      checked={Boolean(inputs[key as keyof InteractivePilotLocalInputs2026])}
-                      onChange={(event) => updateInput(key as keyof InteractivePilotLocalInputs2026, event.target.checked as never)}
+                      checked={Boolean(selectedItemDraft?.[key as keyof WorkbenchPilotItemDraft2026])}
+                      onChange={(event) => updateSelectedItemDraft(key as keyof WorkbenchPilotItemDraft2026, event.target.checked as never)}
                       className="h-4 w-4 rounded border-slate-300"
                     />
                     {label}
@@ -7516,17 +7762,17 @@ function WorkbenchPilotAlignment2026(props: {
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
                 <p className="font-semibold">score preview integration</p>
                 <p>organization performance 30%: {organizationScore.toFixed(1)}</p>
-                <p>personal performance 70%: {personalScore.toFixed(1)}</p>
-                <p>base score preview: {baseScorePreview.toFixed(1)}</p>
-                <p>adjusted score preview: {adjustedScorePreview.toFixed(1)}</p>
+                <p>personal performance 70%: {personalItemWeightedScore.toFixed(1)}</p>
+                <p>selected item local score: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
+                <p>total local adjusted preview score: {totalLocalAdjustedPreviewScore.toFixed(1)}</p>
                 <p>score policy warnings: {pilot.scorePreview.warnings.join(' ')}</p>
                 <p>totalScore write false</p>
               </div>
               <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs leading-5 text-violet-900">
                 <p className="font-semibold">grade preview integration</p>
                 <p>grade policy group: {pilot.gradePreview.applicableGroup}</p>
-                <p>grade mapping: {adjustedScorePreview.toFixed(1)} -&gt; {gradePreview}</p>
-                <p>grade preview: {gradePreview}</p>
+                <p>grade mapping: {totalLocalAdjustedPreviewScore.toFixed(1)} -&gt; {totalLocalGradePreview}</p>
+                <p>grade preview: {totalLocalGradePreview}</p>
                 <p>grade policy warnings: {pilot.gradePreview.warnings.join(' ') || 'none in preview'}</p>
                 <p>gradeId write false</p>
               </div>
@@ -7572,6 +7818,42 @@ function WorkbenchPilotAlignment2026(props: {
               <p>selected KPI: {selectedKpi?.title ?? 'KPI preview pending'}</p>
               <p>category contribution: {selectedKpi?.category ?? 'N/A'} · weight {selectedKpi?.weight ?? 0}</p>
               <p className="text-amber-800">official blocker: {pilot.blockers.length ? pilot.blockers.join(', ') : 'none in pilot view'}</p>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h6 className="text-sm font-semibold text-slate-900">Selected KPI item detail panel</h6>
+            <div className="mt-3 grid gap-2 text-xs leading-5 text-slate-600">
+              <p className="font-semibold text-slate-900">{selectedKpi?.title ?? 'KPI preview pending'}</p>
+              <p>category: {selectedKpi?.category ?? '-'} · type: {selectedKpi?.source ?? 'SAMPLE/PILOT'} · weight {selectedKpi?.weight ?? 0}</p>
+              <p>target: {selectedKpi?.achievementLevel ?? 'TARGET'} · evidence expectation: result, evidence link, contribution, reviewer rationale</p>
+              <p>policyCategory warning: {selectedItemRow?.policyCategoryWarning ?? 'none in selected preview item'}</p>
+              <p>local calculated score: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
+              <p className="text-amber-800">local warning list: {selectedItemRow?.warnings.join(', ') || 'none'}</p>
+            </div>
+          </div>
+          <div className="sticky top-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+            <h6 className="text-sm font-semibold text-blue-950">Score/grade side panel</h6>
+            <div className="mt-3 grid gap-2 text-xs leading-5 text-blue-900">
+              <p>organization performance 30%: {organizationScore.toFixed(1)}</p>
+              <p>personal performance 70%: {personalItemWeightedScore.toFixed(1)}</p>
+              <p>selected item local score: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
+              <p>total local adjusted preview score: {totalLocalAdjustedPreviewScore.toFixed(1)}</p>
+              <p>category contribution summary: {itemRows.map((item) => `${item.kpi.category} ${item.localScorePreview.toFixed(1)}@${item.kpi.weight}`).join(' / ')}</p>
+              <p>grade preview: {totalLocalGradePreview}</p>
+              <p>grade group: {pilot.gradePreview.applicableGroup}</p>
+              <p className="text-amber-800">warnings: {[...pilot.scorePreview.warnings, ...itemRows.flatMap((item) => item.warnings)].slice(0, 5).join(' ') || 'none in preview'}</p>
+              <p>totalScore write false</p>
+              <p>gradeId write false</p>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <h6 className="text-sm font-semibold text-emerald-950">Stage handoff summary</h6>
+            <div className="mt-3 grid gap-2 text-xs leading-5 text-emerald-900">
+              <p>SELF -&gt; FIRST handoff preview: {selectedItemDraft?.selfResultSummary ?? 'preview pending'}</p>
+              <p>FIRST -&gt; SECOND/FINAL handoff preview: {selectedItemDraft?.firstFeedbackToEmployee ?? 'preview pending'}</p>
+              <p>SECOND/FINAL -&gt; CEO_ADJUST handoff preview: {selectedItemDraft?.finalRecommendation ?? 'preview pending'}</p>
+              <p>CEO_ADJUST -&gt; finalization dependency: official finalization remains blocked until separate approval.</p>
+              <p className="text-amber-800">official blocker still prevents real transition: {activeRow.source?.blockedBy.join(', ') || 'separate HR approval required'}</p>
             </div>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
