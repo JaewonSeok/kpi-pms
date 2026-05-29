@@ -1320,6 +1320,74 @@ async function main() {
     assert.equal(freezePack.safety.noScoreGradeWriteButtons, true)
   })
 
+  await run('2026 end-to-end pilot models the workflow as preview-only without official writes', async () => {
+    const { buildEvaluation2026EndToEndPilot } = await import('../src/server/evaluation-2026-end-to-end-pilot')
+    const pilot = buildEvaluation2026EndToEndPilot({
+      populationDryRun: readyPopulationDryRun({
+        employeesWithConfirmedPersonalKpiCount: 1,
+        employeesWithConfirmedPersonalKpi: [
+          {
+            employeeId: 'emp-pilot',
+            employeeNo: 'P-001',
+            employeeName: 'Pilot Employee',
+            departmentName: 'Pilot Team',
+            confirmedPersonalKpiCount: 4,
+          },
+        ],
+        wouldCreateSelfEvaluationCount: 1,
+        wouldCreateEvaluationItemCount: 4,
+      }) as any,
+      gradePolicyReadiness: readyGradePolicy() as any,
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        hrApprovalConfirmed: false,
+      }),
+    })
+
+    assert.equal(pilot.mode, 'PREVIEW_ONLY')
+    assert.equal(pilot.status, 'AVAILABLE')
+    assert.equal(pilot.workflowSteps.length, 9)
+    assert.equal(pilot.workflowSteps.some((step) => step.id === 'TARGET_SELECTION'), true)
+    assert.equal(pilot.workflowSteps.some((step) => step.id === 'SELF_EVALUATION'), true)
+    assert.equal(pilot.workflowSteps.some((step) => step.id === 'FIRST_REVIEW'), true)
+    assert.equal(pilot.workflowSteps.some((step) => step.id === 'SECOND_FINAL_REVIEW'), true)
+    assert.equal(pilot.workflowSteps.some((step) => step.id === 'SCORE_PREVIEW'), true)
+    assert.equal(pilot.workflowSteps.some((step) => step.id === 'GRADE_PREVIEW'), true)
+    assert.equal(pilot.workflowSteps.some((step) => step.id === 'CEO_FINAL_CONFIRMATION_PREVIEW'), true)
+    assert.equal(pilot.summary.canSelectPilotEmployeesSafely, true)
+    assert.equal(pilot.summary.canPreviewEvaluationPopulationWithoutWrites, true)
+    assert.equal(pilot.summary.canPreviewEvaluationItemsWithoutWrites, true)
+    assert.equal(pilot.summary.canSimulateSelfEvaluation, true)
+    assert.equal(pilot.summary.canSimulateFirstReview, true)
+    assert.equal(pilot.summary.canSimulateSecondFinalReview, true)
+    assert.equal(pilot.scorePreview.status, 'READY')
+    assert.equal(pilot.scorePreview.organizationPerformanceWeight, 30)
+    assert.equal(pilot.scorePreview.personalPerformanceWeight, 70)
+    assert.equal(typeof pilot.scorePreview.finalScorePreview === 'number', true)
+    assert.equal(pilot.scorePreview.aiExcludedFromAnnualPerformanceScore, true)
+    assert.equal(pilot.gradePreview.status, 'READY')
+    assert.equal(pilot.ceoFinalConfirmationPreview.finalReviewerStagePreview, 'CEO_ADJUST')
+    assert.equal(pilot.ceoFinalConfirmationPreview.adjustmentReasonRequired, true)
+    assert.equal(pilot.ceoFinalConfirmationPreview.noFinalizationWrite, true)
+    assert.equal(pilot.evaluationItemPreview.every((item) => item.wouldCreateEvaluationItem === false), true)
+    assert.equal(pilot.safety.writesPerformed, false)
+    assert.equal(pilot.safety.dryRunExecuted, false)
+    assert.equal(pilot.safety.backfillApplyExecuted, false)
+    assert.equal(pilot.safety.officialScoringEnabled, false)
+    assert.equal(pilot.safety.officialGradeEnabled, false)
+    assert.equal(pilot.safety.officialAiScoreExclusionEnabled, false)
+    assert.equal(pilot.safety.totalScoreChanged, false)
+    assert.equal(pilot.safety.gradeIdChanged, false)
+    assert.equal(pilot.safety.officialEvaluationsCreated, 0)
+    assert.equal(pilot.safety.officialEvaluationItemsCreated, 0)
+    assert.equal(pilot.safety.noOfficialActivationButtons, true)
+    assert.equal(pilot.safety.noBackfillApplyButtons, true)
+    assert.equal(pilot.safety.noScoreGradeWriteButtons, true)
+  })
+
   await run('official activation runbook renders all sections and blocks current position while MBO coverage is low', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags({
@@ -1441,6 +1509,7 @@ async function main() {
     const dryRunRehearsalSource = read('src/server/evaluation-2026-dryrun-rehearsal-guardrails.ts')
     const commandRunbookSource = read('src/server/evaluation-2026-backfill-dryrun-command-runbook.ts')
     const freezePackSource = read('src/server/evaluation-2026-dryrun-go-no-go-freeze.ts')
+    const endToEndPilotSource = read('src/server/evaluation-2026-end-to-end-pilot.ts')
     const dryRunOutputReviewerSource = read('src/server/evaluation-2026-dryrun-output-reviewer.ts')
     const backfillSafetyGuardSource = read('scripts/lib/2026-backfill-safety-guard.ts')
     const backfillScriptSource = read('scripts/backfill-2026-policy-metadata.ts')
@@ -1566,6 +1635,15 @@ async function main() {
     assert.equal(clientSource.includes('Copy Go/No-Go summary'), true)
     assert.equal(clientSource.includes('Copy Prohibited actions'), true)
     assert.equal(clientSource.includes('Go/No-Go 데이터를 불러오는 중입니다.'), true)
+    assert.equal(clientSource.includes('2026 평가 End-to-End Pilot'), true)
+    assert.equal(clientSource.includes('2026 평가 전체 흐름을 preview/pilot으로 검증합니다'), true)
+    assert.equal(clientSource.includes('Score preview'), true)
+    assert.equal(clientSource.includes('Grade preview'), true)
+    assert.equal(clientSource.includes('CEO/final confirmation preview'), true)
+    assert.equal(clientSource.includes('official scoring false'), true)
+    assert.equal(clientSource.includes('official grade false'), true)
+    assert.equal(clientSource.includes('totalScore write'), true)
+    assert.equal(clientSource.includes('gradeId write'), true)
     assert.equal(clientSource.includes('ReadinessExportPreviewDialog'), true)
     assert.equal(clientSource.includes('openExportPreview'), true)
     assert.equal(clientSource.includes('readiness export preview content'), true)
@@ -1614,6 +1692,8 @@ async function main() {
     assert.equal(activationSource.includes('buildEvaluation2026BackfillDryRunCommandRunbook'), true)
     assert.equal(activationSource.includes('dryRunGoNoGoFreezePack'), true)
     assert.equal(activationSource.includes('buildEvaluation2026DryRunGoNoGoFreezePack'), true)
+    assert.equal(activationSource.includes('endToEndPilot2026'), true)
+    assert.equal(activationSource.includes('buildEvaluation2026EndToEndPilot'), true)
     assert.equal(ceoReportSource.includes('READY_FOR_REPORT'), true)
     assert.equal(ceoReportSource.includes('CEO decision agenda'), true)
     assert.equal(ceoReportSource.includes('MBO 작성 1차 독려'), true)
@@ -1718,6 +1798,32 @@ async function main() {
     assert.equal(freezePackSource.includes('noDryRunExecutionButtons'), true)
     assert.equal(freezePackSource.includes('noApplyButtons'), true)
     assert.equal(freezePackSource.includes('noMetadataSaveButtons'), true)
+    assert.equal(endToEndPilotSource.includes('calculateEvaluationScore2026'), true)
+    assert.equal(endToEndPilotSource.includes('calculateGradePreview2026'), true)
+    assert.equal(endToEndPilotSource.includes('PREVIEW_ONLY'), true)
+    assert.equal(endToEndPilotSource.includes('SAMPLE_PILOT_FIXTURE'), true)
+    assert.equal(endToEndPilotSource.includes('대상자'), true)
+    assert.equal(endToEndPilotSource.includes('KPI 항목'), true)
+    assert.equal(endToEndPilotSource.includes('자기평가'), true)
+    assert.equal(endToEndPilotSource.includes('1차 평가'), true)
+    assert.equal(endToEndPilotSource.includes('2차/최종 평가'), true)
+    assert.equal(endToEndPilotSource.includes('점수 preview'), true)
+    assert.equal(endToEndPilotSource.includes('등급 preview'), true)
+    assert.equal(endToEndPilotSource.includes('대표이사 확정 preview'), true)
+    assert.equal(endToEndPilotSource.includes('안전 확인'), true)
+    assert.equal(endToEndPilotSource.includes('SELF_EVALUATION'), true)
+    assert.equal(endToEndPilotSource.includes('FIRST_REVIEW'), true)
+    assert.equal(endToEndPilotSource.includes('SECOND_FINAL_REVIEW'), true)
+    assert.equal(endToEndPilotSource.includes('SCORE_PREVIEW'), true)
+    assert.equal(endToEndPilotSource.includes('GRADE_PREVIEW'), true)
+    assert.equal(endToEndPilotSource.includes('CEO_ADJUST'), true)
+    assert.equal(endToEndPilotSource.includes('officialEvaluationsCreated: 0'), true)
+    assert.equal(endToEndPilotSource.includes('officialEvaluationItemsCreated: 0'), true)
+    assert.equal(endToEndPilotSource.includes('totalScoreChanged: false'), true)
+    assert.equal(endToEndPilotSource.includes('gradeIdChanged: false'), true)
+    assert.equal(endToEndPilotSource.includes('noOfficialActivationButtons'), true)
+    assert.equal(endToEndPilotSource.includes('noBackfillApplyButtons'), true)
+    assert.equal(endToEndPilotSource.includes('noScoreGradeWriteButtons'), true)
     assert.equal(dryRunOutputReviewerSource.includes('reviewEvaluation2026DryRunOutput'), true)
     assert.equal(dryRunOutputReviewerSource.includes('WRITES_PERFORMED_TRUE'), true)
     assert.equal(dryRunOutputReviewerSource.includes('TOTAL_SCORE_CHANGED'), true)
