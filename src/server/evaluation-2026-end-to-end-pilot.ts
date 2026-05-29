@@ -3,7 +3,12 @@ import type { Evaluation2026FeatureFlags } from '@/lib/feature-flags'
 import { calculateGradePreview2026 } from '@/server/evaluation-grade-2026'
 import { calculateEvaluationScore2026, type EvaluationScore2026ItemInput } from '@/server/evaluation-scoring-2026'
 
-export type Evaluation2026PilotStepStatus = 'READY' | 'BLOCKED' | 'PREVIEW_ONLY'
+export type Evaluation2026PilotStepStatus =
+  | 'READY'
+  | 'PREVIEW_ONLY'
+  | 'PREVIEW_WITH_BLOCKERS'
+  | 'BLOCKED'
+  | 'SAFETY_CONFIRMED'
 export type Evaluation2026PilotDataSource = 'LIVE_READINESS_SAMPLE' | 'SAMPLE_PILOT_FIXTURE'
 
 export type Evaluation2026EndToEndPilotStep = {
@@ -20,9 +25,14 @@ export type Evaluation2026EndToEndPilotStep = {
   order: number
   label: string
   status: Evaluation2026PilotStepStatus
+  previewAvailable: boolean
   dataUsed: string[]
+  whatIsPreviewed: string[]
   officialLater: string
   blockedBy: string[]
+  blocksOfficialExecution: string[]
+  remainingToClose: string[]
+  safetyNote: string
   route: string
 }
 
@@ -40,11 +50,15 @@ export type Evaluation2026EndToEndPilot = {
   mode: 'PREVIEW_ONLY'
   status: 'AVAILABLE'
   summary: {
-    currentDecision: 'PREVIEW_ONLY'
+    currentDecision: 'PREVIEW_ONLY' | 'PREVIEW_WITH_BLOCKERS'
     workflowStepCount: number
     readyStepCount: number
     blockedStepCount: number
+    hardBlockedStepCount: number
     previewOnlyStepCount: number
+    previewWithBlockersStepCount: number
+    previewAvailableStepCount: number
+    previewCompletenessPercentage: number
     pilotDataSource: Evaluation2026PilotDataSource
     pilotEmployeeName: string
     pilotEmployeeDepartment: string
@@ -76,6 +90,7 @@ export type Evaluation2026EndToEndPilot = {
     personalKpiId: string
     title: string
     category: EvaluationPolicyItemCategoryCode
+    policyCategoryWarning: string | null
     wouldCreateEvaluationItem: false
     previewOnly: true
     scoreContributionType: 'ORGANIZATION' | 'PERSONAL'
@@ -84,6 +99,8 @@ export type Evaluation2026EndToEndPilot = {
   workflowSteps: Evaluation2026EndToEndPilotStep[]
   scorePreview: {
     status: 'READY' | 'BLOCKED'
+    calculationStatus: 'READY' | 'BLOCKED'
+    officialReadinessStatus: 'READY' | 'BLOCKED'
     organizationPerformanceWeight: 30
     personalPerformanceWeight: 70
     organizationPerformanceScore: number | null
@@ -102,6 +119,8 @@ export type Evaluation2026EndToEndPilot = {
   }
   gradePreview: {
     status: 'READY' | 'BLOCKED'
+    calculationStatus: 'READY' | 'BLOCKED'
+    officialReadinessStatus: 'READY' | 'BLOCKED'
     applicableGroup: string
     thresholdGroupLabel: string | null
     scoreToGradeMapping: string
@@ -111,15 +130,52 @@ export type Evaluation2026EndToEndPilot = {
     warnings: string[]
     blockers: string[]
   }
+  selfEvaluationPreview: {
+    status: Evaluation2026PilotStepStatus
+    sampleSelfComment: string
+    resultEvidenceReadiness: 'SAMPLE_READY' | 'WARNING'
+    missingEvidenceWarnings: string[]
+    contributionFieldPreview: string
+    saveAvailable: false
+    submitAvailable: false
+  }
+  firstReviewPreview: {
+    status: Evaluation2026PilotStepStatus
+    expectedReviewerSource: string
+    missingReviewerWarning: string | null
+    sampleLeaderFeedback: string
+    reviewCriteriaPreview: string[]
+    saveAvailable: false
+    submitAvailable: false
+  }
+  secondFinalReviewPreview: {
+    status: Evaluation2026PilotStepStatus
+    expectedReviewerSource: string
+    missingChainWarning: string | null
+    finalReviewerRequirement: string
+    sampleFinalFeedback: string
+    escalationCeoReadinessDependency: string
+    saveAvailable: false
+    submitAvailable: false
+  }
   ceoFinalConfirmationPreview: {
     status: Evaluation2026PilotStepStatus
     finalReviewerStagePreview: 'CEO_ADJUST'
     adjustmentReasonRequired: true
+    sampleAdjustmentReason: string
     calibrationFinalizationBlockers: number
     ceoConfirmationBlockers: number
     noFinalizationWrite: true
     notes: string[]
   }
+  pilotGapTable: Array<{
+    step: string
+    currentPreviewStatus: Evaluation2026PilotStepStatus
+    whatIsPreviewed: string
+    whatBlocksOfficialExecution: string
+    whatRemainsToClose: string
+    safetyNote: string
+  }>
   blockers: string[]
   safety: {
     writesPerformed: false
@@ -243,8 +299,9 @@ function finiteNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-function statusFromBlockers(blockers: string[]): Evaluation2026PilotStepStatus {
-  return blockers.length ? 'BLOCKED' : 'PREVIEW_ONLY'
+function statusFromBlockers(blockers: string[], previewAvailable = true): Evaluation2026PilotStepStatus {
+  if (!blockers.length) return 'PREVIEW_ONLY'
+  return previewAvailable ? 'PREVIEW_WITH_BLOCKERS' : 'BLOCKED'
 }
 
 function pickPilotEmployee(population: PopulationInput | null) {
@@ -366,15 +423,27 @@ function buildGapAssessment(params: {
   ]
 }
 
-function buildStep(params: Omit<Evaluation2026EndToEndPilotStep, 'status' | 'blockedBy'> & {
+function buildStep(params: Omit<
+  Evaluation2026EndToEndPilotStep,
+  'status' | 'blockedBy' | 'previewAvailable' | 'blocksOfficialExecution' | 'remainingToClose' | 'safetyNote'
+> & {
   blockedBy?: string[]
   status?: Evaluation2026PilotStepStatus
+  previewAvailable?: boolean
+  blocksOfficialExecution?: string[]
+  remainingToClose?: string[]
+  safetyNote?: string
 }): Evaluation2026EndToEndPilotStep {
   const blockedBy = params.blockedBy ?? []
+  const previewAvailable = params.previewAvailable ?? true
   return {
     ...params,
-    status: params.status ?? statusFromBlockers(blockedBy),
+    previewAvailable,
+    status: params.status ?? statusFromBlockers(blockedBy, previewAvailable),
     blockedBy,
+    blocksOfficialExecution: params.blocksOfficialExecution ?? blockedBy,
+    remainingToClose: params.remainingToClose ?? (blockedBy.length ? blockedBy : ['official approval and activation sequencing']),
+    safetyNote: params.safetyNote ?? '공식 저장 없음: preview-only 상태이며 Evaluation/EvaluationItem, totalScore, gradeId를 변경하지 않습니다.',
   }
 }
 
@@ -395,6 +464,8 @@ export function buildEvaluation2026EndToEndPilot(params: {
   const scorePreview = scoreResult.ok
     ? {
         status: 'READY' as const,
+        calculationStatus: 'READY' as const,
+        officialReadinessStatus: finiteNumber(population?.scorePolicyReadiness?.summary?.violationsCount) > 0 ? 'BLOCKED' as const : 'READY' as const,
         organizationPerformanceWeight: EVALUATION_POLICY_2026.finalScoreFormula.organizationPerformanceWeight as 30,
         personalPerformanceWeight: EVALUATION_POLICY_2026.finalScoreFormula.personalPerformanceWeight as 70,
         organizationPerformanceScore: scoreResult.value.organizationPerformanceScore,
@@ -413,6 +484,8 @@ export function buildEvaluation2026EndToEndPilot(params: {
       }
     : {
         status: 'BLOCKED' as const,
+        calculationStatus: 'BLOCKED' as const,
+        officialReadinessStatus: 'BLOCKED' as const,
         organizationPerformanceWeight: EVALUATION_POLICY_2026.finalScoreFormula.organizationPerformanceWeight as 30,
         personalPerformanceWeight: EVALUATION_POLICY_2026.finalScoreFormula.personalPerformanceWeight as 70,
         organizationPerformanceScore: null,
@@ -435,6 +508,8 @@ export function buildEvaluation2026EndToEndPilot(params: {
   const gradePreview = gradeResult?.ok && !gradeBlockers.length
     ? {
         status: 'READY' as const,
+        calculationStatus: 'READY' as const,
+        officialReadinessStatus: 'READY' as const,
         applicableGroup: 'TEAM_MEMBER_NON_SALES',
         thresholdGroupLabel: gradeResult.value.result2026?.thresholdGroupLabel ?? null,
         scoreToGradeMapping: `${scorePreview.finalScorePreview} -> ${gradeResult.value.grade}`,
@@ -444,8 +519,27 @@ export function buildEvaluation2026EndToEndPilot(params: {
         warnings: gradeResult.warnings.map((item) => item.message),
         blockers: [],
       }
-    : {
+    : gradeResult?.ok
+      ? {
+        status: 'READY' as const,
+        calculationStatus: 'READY' as const,
+        officialReadinessStatus: 'BLOCKED' as const,
+        applicableGroup: 'TEAM_MEMBER_NON_SALES',
+        thresholdGroupLabel: gradeResult.value.result2026?.thresholdGroupLabel ?? null,
+        scoreToGradeMapping: `${scorePreview.finalScorePreview} -> ${gradeResult.value.grade}`,
+        gradePreview: gradeResult.value.grade,
+        formulaVersion: gradeResult.value.formulaVersion,
+        teamMemberSalesSuperNotApplicableNote: 'TEAM_MEMBER_NON_SALES pilot에서는 Super 점수 구간이 별도 운영되지 않습니다. TEAM_MEMBER_SALES Super/Outstanding 중첩은 HR 정책 결정 후 별도 preview가 필요합니다.',
+        warnings: [
+          ...gradeResult.warnings.map((item) => item.message),
+          'Grade calculation preview is visible, but official grade readiness remains blocked.',
+        ],
+        blockers: gradeBlockers,
+      }
+      : {
         status: 'BLOCKED' as const,
+        calculationStatus: 'BLOCKED' as const,
+        officialReadinessStatus: 'BLOCKED' as const,
         applicableGroup: 'TEAM_MEMBER_NON_SALES',
         thresholdGroupLabel: null,
         scoreToGradeMapping: 'blocked until score and grade policy are ready',
@@ -481,10 +575,52 @@ export function buildEvaluation2026EndToEndPilot(params: {
     finiteNumber(population?.finalizationCeoReadiness?.summary?.calibrationReadinessBlockerCount) > 0 ? 'calibration readiness blockers remain' : null,
     finiteNumber(population?.finalizationCeoReadiness?.summary?.ceoConfirmationBlockerCount) > 0 ? 'CEO confirmation blockers remain' : null,
   ].filter((item): item is string => Boolean(item))
+  const firstReviewerMissing = finiteNumber(population?.leaderEvaluationReadiness?.summary?.missingEvaluatorCount) > 0
+  const firstReviewPrerequisitesMissing = finiteNumber(population?.leaderEvaluationReadiness?.summary?.firstReviewMissingPrerequisitesCount) > 0
+  const secondReviewPrerequisitesMissing = finiteNumber(population?.leaderEvaluationReadiness?.summary?.secondReviewMissingPrerequisitesCount) > 0
+  const selfEvaluationPreview = {
+    status: statusFromBlockers(kpiBlockers),
+    sampleSelfComment: 'SAMPLE/PILOT: 목표 대비 핵심 성과, 고객/조직 기여, 월별 근거를 자기평가 코멘트로 구성합니다.',
+    resultEvidenceReadiness: kpiBlockers.length ? 'WARNING' as const : 'SAMPLE_READY' as const,
+    missingEvidenceWarnings: kpiBlockers.length
+      ? ['공식 KPI coverage와 policyCategory 정리가 끝나야 실제 자기평가 저장을 시작할 수 있습니다.']
+      : ['샘플 근거 preview만 표시하며 저장/제출은 제공하지 않습니다.'],
+    contributionFieldPreview: 'SAMPLE/PILOT: 개인 기여도, 협업 기여, 정량 결과, 정성 근거를 별도 필드로 preview합니다.',
+    saveAvailable: false as const,
+    submitAvailable: false as const,
+  }
+  const firstReviewPreview = {
+    status: statusFromBlockers([...kpiBlockers, ...leaderBlockers]),
+    expectedReviewerSource: firstReviewerMissing
+      ? 'FIRST reviewer route has blockers; show org/manager routing warning and sample leader role.'
+      : 'FIRST reviewer route is available from evaluator routing readiness.',
+    missingReviewerWarning: firstReviewerMissing || firstReviewPrerequisitesMissing
+      ? 'FIRST reviewer 또는 선행 자기평가 prerequisite이 아직 공식 실행 준비 상태가 아닙니다.'
+      : null,
+    sampleLeaderFeedback: 'SAMPLE/PILOT: 1차 평가는 성과 근거의 충분성, 목표 난이도, 개인 기여도를 중심으로 코멘트를 preview합니다.',
+    reviewCriteriaPreview: ['성과 근거 충분성', '목표 대비 달성 수준', '개인 기여도', '정책 카테고리 적합성'],
+    saveAvailable: false as const,
+    submitAvailable: false as const,
+  }
+  const secondFinalReviewPreview = {
+    status: statusFromBlockers([...kpiBlockers, ...leaderBlockers]),
+    expectedReviewerSource: secondReviewPrerequisitesMissing
+      ? 'SECOND/FINAL chain has prerequisite blockers; show chain warning and sample final approver role.'
+      : 'SECOND/FINAL reviewer chain is available from leader evaluation readiness.',
+    missingChainWarning: leaderBlockers.length || secondReviewPrerequisitesMissing
+      ? 'SECOND/FINAL chain 또는 prior-stage prerequisite이 아직 공식 제출 준비 상태가 아닙니다.'
+      : null,
+    finalReviewerRequirement: 'FINAL reviewer는 1차/2차 평가 근거와 조정 필요 사유를 확인해야 합니다.',
+    sampleFinalFeedback: 'SAMPLE/PILOT: 최종 평가는 조직 기준 정합성, 조정 사유, CEO/final readiness 의존성을 preview합니다.',
+    escalationCeoReadinessDependency: 'CEO_ADJUST preview는 score/grade 안정화와 finalization readiness가 필요합니다.',
+    saveAvailable: false as const,
+    submitAvailable: false as const,
+  }
   const ceoFinalConfirmationPreview = {
     status: statusFromBlockers(finalizationBlockers),
     finalReviewerStagePreview: 'CEO_ADJUST' as const,
     adjustmentReasonRequired: true as const,
+    sampleAdjustmentReason: 'SAMPLE/PILOT: 최종 등급 조정이 필요한 경우 성과 근거, 조직 calibration, 정책 사유를 함께 기록해야 합니다.',
     calibrationFinalizationBlockers: finiteNumber(population?.finalizationCeoReadiness?.summary?.calibrationReadinessBlockerCount),
     ceoConfirmationBlockers: finiteNumber(population?.finalizationCeoReadiness?.summary?.ceoConfirmationBlockerCount),
     noFinalizationWrite: true as const,
@@ -501,7 +637,10 @@ export function buildEvaluation2026EndToEndPilot(params: {
       label: '대상자',
       status: 'PREVIEW_ONLY',
       dataUsed: ['readiness population sample', 'active employee / confirmed KPI count'],
+      whatIsPreviewed: ['pilot employee selection', 'readiness sample source', 'sample fallback target'],
       officialLater: 'HR가 공식 대상자 범위를 확정한 뒤 population apply를 별도 승인합니다.',
+      blocksOfficialExecution: [],
+      remainingToClose: ['HR official target scope approval'],
       route: '/evaluation/performance',
     }),
     buildStep({
@@ -510,7 +649,9 @@ export function buildEvaluation2026EndToEndPilot(params: {
       label: 'KPI 항목',
       blockedBy: kpiBlockers,
       dataUsed: ['confirmed PersonalKpi', 'policyCategory', '2026 policy category rules'],
+      whatIsPreviewed: ['ORG_GOAL preview item', 'PROJECT_T preview item', 'PROJECT_K preview item', 'DAILY_WORK preview item', 'policyCategory warnings'],
       officialLater: 'EvaluationItem은 backfill/apply 승인 후 별도 생성됩니다.',
+      remainingToClose: ['confirmed PersonalKpi coverage ready', 'policyCategory missing 0 or approved exceptions'],
       route: '/kpi/personal',
     }),
     buildStep({
@@ -519,7 +660,9 @@ export function buildEvaluation2026EndToEndPilot(params: {
       label: '자기평가',
       blockedBy: kpiBlockers,
       dataUsed: ['pilot KPI items', 'sample self comments', 'monthly evidence availability'],
+      whatIsPreviewed: ['sample self comment', 'result/evidence readiness', 'contribution field preview', 'missing evidence warnings'],
       officialLater: '직원이 Evaluation SELF 단계에서 결과와 근거를 저장/제출합니다.',
+      remainingToClose: ['official KPI item population', 'employee result writing guidance ready'],
       route: '/evaluation/workbench',
     }),
     buildStep({
@@ -528,7 +671,9 @@ export function buildEvaluation2026EndToEndPilot(params: {
       label: '1차 평가',
       blockedBy: [...kpiBlockers, ...leaderBlockers],
       dataUsed: ['FIRST evaluator routing readiness', 'SELF stage preview state'],
+      whatIsPreviewed: ['expected FIRST reviewer source', 'missing reviewer warning', 'sample leader feedback', 'review criteria preview'],
       officialLater: '1차 평가자가 공식 review route에서 평가를 저장/제출합니다.',
+      remainingToClose: ['FIRST evaluator chain ready', 'SELF/result readiness complete'],
       route: '/evaluation/workbench',
     }),
     buildStep({
@@ -537,7 +682,9 @@ export function buildEvaluation2026EndToEndPilot(params: {
       label: '2차/최종 평가',
       blockedBy: [...kpiBlockers, ...leaderBlockers],
       dataUsed: ['SECOND/FINAL evaluator routing readiness', 'prior-stage preview chain'],
+      whatIsPreviewed: ['SECOND/FINAL reviewer source', 'chain warning', 'sample final feedback', 'CEO dependency'],
       officialLater: '상위 평가자가 공식 chain에 따라 2차/최종 평가를 제출합니다.',
+      remainingToClose: ['SECOND/FINAL evaluator chain ready', 'prior-stage reviews complete'],
       route: '/evaluation/workbench',
     }),
     buildStep({
@@ -545,8 +692,11 @@ export function buildEvaluation2026EndToEndPilot(params: {
       order: 6,
       label: '점수 preview',
       blockedBy: scoreBlockers,
+      previewAvailable: scorePreview.calculationStatus === 'READY',
       dataUsed: ['2026 scoring pure function', 'organization 30%', 'personal 70%', 'category contributions'],
+      whatIsPreviewed: ['base score', 'category contributions', 'organization 30%', 'personal 70%', 'score policy blocker warnings'],
       officialLater: '공식 scoring flag와 HR 승인 후에만 totalScore write를 별도 수행합니다.',
+      remainingToClose: ['score policy blockers 0', 'official scoring approval later'],
       route: '/evaluation/performance',
     }),
     buildStep({
@@ -554,8 +704,11 @@ export function buildEvaluation2026EndToEndPilot(params: {
       order: 7,
       label: '등급 preview',
       blockedBy: gradePreview.blockers,
+      previewAvailable: gradePreview.calculationStatus === 'READY',
       dataUsed: ['2026 grade pure function', 'TEAM_MEMBER_NON_SALES threshold group'],
+      whatIsPreviewed: ['score-to-grade mapping', 'applicable group', 'grade policy blocker warning if any'],
       officialLater: '공식 grade flag와 finalization 승인 후 gradeId write를 별도 수행합니다.',
+      remainingToClose: ['grade policy blockers 0', 'finalization approval later'],
       route: '/evaluation/performance',
     }),
     buildStep({
@@ -564,16 +717,21 @@ export function buildEvaluation2026EndToEndPilot(params: {
       label: '대표이사 확정 preview',
       blockedBy: finalizationBlockers,
       dataUsed: ['finalization/CEO readiness', 'CEO_ADJUST preview stage', 'adjustment reason rule'],
+      whatIsPreviewed: ['CEO_ADJUST stage', 'adjustment reason requirement', 'sample adjustment reason', 'calibration/finalization blockers'],
       officialLater: 'CEO/final confirmation은 score/grade 안정화 후 별도 화면에서 확정합니다.',
+      remainingToClose: ['finalization blockers 0', 'calibration readiness ready', 'CEO confirmation approval later'],
       route: '/evaluation/ceo-adjust',
     }),
     buildStep({
       id: 'SAFETY_CONFIRMATION',
       order: 9,
       label: '안전 확인',
-      status: 'READY',
+      status: 'SAFETY_CONFIRMED',
       dataUsed: ['feature flags', 'pilot safety flags'],
+      whatIsPreviewed: ['official flags false', 'no totalScore write', 'no gradeId write', 'no official Evaluation/EvaluationItem creation'],
       officialLater: '공식 실행 전에도 pilot 화면은 계속 preview-only 상태를 유지합니다.',
+      blocksOfficialExecution: [],
+      remainingToClose: ['keep official writes disabled until separate activation approval'],
       route: '/evaluation/performance',
     }),
   ]
@@ -585,21 +743,36 @@ export function buildEvaluation2026EndToEndPilot(params: {
     ...finalizationBlockers,
     ...officialFlagBlockers,
   ]))
-  const readyStepCount = workflowSteps.filter((item) => item.status === 'READY').length
+  const readyStepCount = workflowSteps.filter((item) => item.status === 'READY' || item.status === 'SAFETY_CONFIRMED').length
   const blockedStepCount = workflowSteps.filter((item) => item.status === 'BLOCKED').length
   const previewOnlyStepCount = workflowSteps.filter((item) => item.status === 'PREVIEW_ONLY').length
+  const previewWithBlockersStepCount = workflowSteps.filter((item) => item.status === 'PREVIEW_WITH_BLOCKERS').length
+  const previewAvailableStepCount = workflowSteps.filter((item) => item.previewAvailable).length
+  const previewCompletenessPercentage = Math.round((previewAvailableStepCount / workflowSteps.length) * 100)
   const scoreReady = scorePreview.status === 'READY'
   const gradeReady = gradePreview.status === 'READY'
+  const pilotGapTable = workflowSteps.map((step) => ({
+    step: step.label,
+    currentPreviewStatus: step.status,
+    whatIsPreviewed: step.whatIsPreviewed.join(', '),
+    whatBlocksOfficialExecution: step.blocksOfficialExecution.length ? step.blocksOfficialExecution.join(', ') : '공식 blocker 없음',
+    whatRemainsToClose: step.remainingToClose.join(', '),
+    safetyNote: step.safetyNote,
+  }))
 
   return {
     mode: 'PREVIEW_ONLY',
     status: 'AVAILABLE',
     summary: {
-      currentDecision: 'PREVIEW_ONLY',
+      currentDecision: previewWithBlockersStepCount > 0 ? 'PREVIEW_WITH_BLOCKERS' : 'PREVIEW_ONLY',
       workflowStepCount: workflowSteps.length,
       readyStepCount,
       blockedStepCount,
+      hardBlockedStepCount: blockedStepCount,
       previewOnlyStepCount,
+      previewWithBlockersStepCount,
+      previewAvailableStepCount,
+      previewCompletenessPercentage,
       pilotDataSource: pilotEmployee.source,
       pilotEmployeeName: pilotEmployee.name,
       pilotEmployeeDepartment: pilotEmployee.departmentName,
@@ -627,6 +800,7 @@ export function buildEvaluation2026EndToEndPilot(params: {
       personalKpiId: item.id,
       title: item.title,
       category: item.category,
+      policyCategoryWarning: kpiBlockers.includes('policyCategory missing remains') ? 'official policyCategory missing remains; SAMPLE/PILOT category is used for preview' : null,
       wouldCreateEvaluationItem: false,
       previewOnly: true,
       scoreContributionType: item.category === 'ORG_GOAL' ? 'ORGANIZATION' : 'PERSONAL',
@@ -635,7 +809,11 @@ export function buildEvaluation2026EndToEndPilot(params: {
     workflowSteps,
     scorePreview,
     gradePreview,
+    selfEvaluationPreview,
+    firstReviewPreview,
+    secondFinalReviewPreview,
     ceoFinalConfirmationPreview,
+    pilotGapTable,
     blockers,
     safety: {
       writesPerformed: false,

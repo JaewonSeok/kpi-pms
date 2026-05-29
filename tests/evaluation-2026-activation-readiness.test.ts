@@ -1388,6 +1388,89 @@ async function main() {
     assert.equal(pilot.safety.noScoreGradeWriteButtons, true)
   })
 
+  await run('2026 pilot gap closure keeps workflow previewable while official blockers remain', async () => {
+    const { buildEvaluation2026EndToEndPilot } = await import('../src/server/evaluation-2026-end-to-end-pilot')
+    const pilot = buildEvaluation2026EndToEndPilot({
+      populationDryRun: readyPopulationDryRun({
+        employeesMissingConfirmedPersonalKpiCount: 284,
+        policyCategoryMissingCount: 1,
+        scorePolicyReadiness: {
+          summary: {
+            violationsCount: 17,
+            aiExcludedConfirmation: true,
+          },
+        },
+        leaderEvaluationReadiness: {
+          summary: {
+            blockerCount: 289,
+            missingEvaluatorCount: 289,
+            firstReviewMissingPrerequisitesCount: 289,
+            secondReviewMissingPrerequisitesCount: 289,
+          },
+        },
+        finalizationCeoReadiness: {
+          summary: {
+            finalizationBlockerCount: 200,
+            calibrationReadinessBlockerCount: 200,
+            ceoConfirmationBlockerCount: 200,
+          },
+        },
+      }) as any,
+      gradePolicyReadiness: readyGradePolicy() as any,
+      flags: makeFlags({
+        officialScoringEnabled: false,
+        officialGradeEnabled: false,
+        aiScoreExclusionEnabled: false,
+        backfillApplied: false,
+        hrApprovalConfirmed: false,
+      }),
+    })
+    const findPilotStep = (id: string) => {
+      const step = pilot.workflowSteps.find((item) => item.id === id)
+      assert.ok(step, `missing pilot step ${id}`)
+      return step
+    }
+
+    assert.equal(pilot.summary.currentDecision, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(pilot.summary.hardBlockedStepCount, 0)
+    assert.equal(pilot.summary.previewAvailableStepCount, 9)
+    assert.equal(pilot.summary.previewCompletenessPercentage, 100)
+    assert.equal(findPilotStep('KPI_ITEMS').status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(findPilotStep('SELF_EVALUATION').status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(findPilotStep('FIRST_REVIEW').status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(findPilotStep('SECOND_FINAL_REVIEW').status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(findPilotStep('SCORE_PREVIEW').status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(findPilotStep('CEO_FINAL_CONFIRMATION_PREVIEW').status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(findPilotStep('SAFETY_CONFIRMATION').status, 'SAFETY_CONFIRMED')
+    assert.equal(pilot.evaluationItemPreview.some((item) => item.category === 'ORG_GOAL'), true)
+    assert.equal(pilot.evaluationItemPreview.some((item) => item.category === 'PROJECT_T'), true)
+    assert.equal(pilot.evaluationItemPreview.some((item) => item.category === 'PROJECT_K'), true)
+    assert.equal(pilot.evaluationItemPreview.some((item) => item.category === 'DAILY_WORK'), true)
+    assert.equal(pilot.evaluationItemPreview.every((item) => item.previewOnly), true)
+    assert.equal(pilot.selfEvaluationPreview.status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(pilot.selfEvaluationPreview.saveAvailable, false)
+    assert.equal(pilot.selfEvaluationPreview.submitAvailable, false)
+    assert.equal(pilot.firstReviewPreview.status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(pilot.firstReviewPreview.missingReviewerWarning !== null, true)
+    assert.equal(pilot.secondFinalReviewPreview.status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(pilot.secondFinalReviewPreview.missingChainWarning !== null, true)
+    assert.equal(pilot.scorePreview.calculationStatus, 'READY')
+    assert.equal(pilot.scorePreview.officialReadinessStatus, 'BLOCKED')
+    assert.equal(pilot.scorePreview.finalScorePreview !== null, true)
+    assert.equal(pilot.gradePreview.calculationStatus, 'READY')
+    assert.equal(pilot.ceoFinalConfirmationPreview.status, 'PREVIEW_WITH_BLOCKERS')
+    assert.equal(pilot.ceoFinalConfirmationPreview.noFinalizationWrite, true)
+    assert.equal(pilot.pilotGapTable.length, 9)
+    assert.equal(pilot.pilotGapTable.some((row) => row.step === '점수 preview' && row.currentPreviewStatus === 'PREVIEW_WITH_BLOCKERS'), true)
+    assert.equal(pilot.safety.writesPerformed, false)
+    assert.equal(pilot.safety.officialEvaluationsCreated, 0)
+    assert.equal(pilot.safety.officialEvaluationItemsCreated, 0)
+    assert.equal(pilot.safety.totalScoreChanged, false)
+    assert.equal(pilot.safety.gradeIdChanged, false)
+    assert.equal(pilot.safety.officialScoringEnabled, false)
+    assert.equal(pilot.safety.officialGradeEnabled, false)
+  })
+
   await run('official activation runbook renders all sections and blocks current position while MBO coverage is low', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags({
@@ -1637,6 +1720,17 @@ async function main() {
     assert.equal(clientSource.includes('Go/No-Go 데이터를 불러오는 중입니다.'), true)
     assert.equal(clientSource.includes('2026 평가 End-to-End Pilot'), true)
     assert.equal(clientSource.includes('2026 평가 전체 흐름을 preview/pilot으로 검증합니다'), true)
+    assert.equal(clientSource.includes('preview completeness'), true)
+    assert.equal(clientSource.includes('hard-blocked steps'), true)
+    assert.equal(clientSource.includes('Preview 가능한 부분'), true)
+    assert.equal(clientSource.includes('공식 실행 전 blocker'), true)
+    assert.equal(clientSource.includes('실제 저장 금지'), true)
+    assert.equal(clientSource.includes('Pilot gap table'), true)
+    assert.equal(clientSource.includes('Current preview status'), true)
+    assert.equal(clientSource.includes('What blocks official execution'), true)
+    assert.equal(clientSource.includes('Self-evaluation preview'), true)
+    assert.equal(clientSource.includes('First review preview'), true)
+    assert.equal(clientSource.includes('Second/final review preview'), true)
     assert.equal(clientSource.includes('Score preview'), true)
     assert.equal(clientSource.includes('Grade preview'), true)
     assert.equal(clientSource.includes('CEO/final confirmation preview'), true)
@@ -1801,6 +1895,8 @@ async function main() {
     assert.equal(endToEndPilotSource.includes('calculateEvaluationScore2026'), true)
     assert.equal(endToEndPilotSource.includes('calculateGradePreview2026'), true)
     assert.equal(endToEndPilotSource.includes('PREVIEW_ONLY'), true)
+    assert.equal(endToEndPilotSource.includes('PREVIEW_WITH_BLOCKERS'), true)
+    assert.equal(endToEndPilotSource.includes('SAFETY_CONFIRMED'), true)
     assert.equal(endToEndPilotSource.includes('SAMPLE_PILOT_FIXTURE'), true)
     assert.equal(endToEndPilotSource.includes('대상자'), true)
     assert.equal(endToEndPilotSource.includes('KPI 항목'), true)
@@ -1817,6 +1913,11 @@ async function main() {
     assert.equal(endToEndPilotSource.includes('SCORE_PREVIEW'), true)
     assert.equal(endToEndPilotSource.includes('GRADE_PREVIEW'), true)
     assert.equal(endToEndPilotSource.includes('CEO_ADJUST'), true)
+    assert.equal(endToEndPilotSource.includes('selfEvaluationPreview'), true)
+    assert.equal(endToEndPilotSource.includes('firstReviewPreview'), true)
+    assert.equal(endToEndPilotSource.includes('secondFinalReviewPreview'), true)
+    assert.equal(endToEndPilotSource.includes('pilotGapTable'), true)
+    assert.equal(endToEndPilotSource.includes('previewCompletenessPercentage'), true)
     assert.equal(endToEndPilotSource.includes('officialEvaluationsCreated: 0'), true)
     assert.equal(endToEndPilotSource.includes('officialEvaluationItemsCreated: 0'), true)
     assert.equal(endToEndPilotSource.includes('totalScoreChanged: false'), true)
