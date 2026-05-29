@@ -1,3 +1,5 @@
+import type { ComponentType } from 'react'
+
 import { EvaluationWorkbenchClient } from '@/components/evaluation/EvaluationWorkbenchClient'
 import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { getEvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
@@ -11,10 +13,12 @@ type PageProps = {
   }>
 }
 
-export default async function PerformanceEvaluationPage({ searchParams }: PageProps) {
+const EvaluationReadinessClient = EvaluationWorkbenchClient as ComponentType<Record<string, unknown>>
+
+export default async function EvaluationReadinessAdminPage({ searchParams }: PageProps) {
   const session = await requireProtectedPageSession({
-    route: '/evaluation/performance',
-    pathname: '/evaluation/performance',
+    route: '/admin/evaluation-readiness',
+    pathname: '/admin/evaluation-readiness',
   })
 
   const resolvedSearchParams = (await searchParams) ?? {}
@@ -24,5 +28,5 @@ export default async function PerformanceEvaluationPage({ searchParams }: PagePr
     evaluationId: resolvedSearchParams.evaluationId,
   })
 
-  return <EvaluationWorkbenchClient {...data} presentationMode="performance-dashboard" />
+  return <EvaluationReadinessClient {...data} presentationMode="readiness-admin" />
 }

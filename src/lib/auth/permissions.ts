@@ -128,6 +128,8 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/admin/grades', menuKey: 'GRADE_SETTING' },
   { prefix: '/api/admin/grades', menuKey: 'GRADE_SETTING' },
   { prefix: '/admin/eval-cycle', menuKey: 'EVAL_CYCLE' },
+  { prefix: '/admin/evaluation-readiness', menuKey: 'EVAL_CYCLE' },
+  { prefix: '/admin/evaluation-ops', menuKey: 'EVAL_CYCLE' },
   { prefix: '/admin/performance-calendar', menuKey: 'EVAL_CYCLE' },
   { prefix: '/admin/performance-design', menuKey: 'EVAL_CYCLE' },
   { prefix: '/admin/goal-alignment', menuKey: 'EVAL_CYCLE' },

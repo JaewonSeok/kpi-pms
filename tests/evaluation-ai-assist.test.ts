@@ -160,11 +160,11 @@ run('evaluation workbench route renders the dedicated 2026 pilot shell with the 
   assert.doesNotMatch(workbenchPageSource, /redirect\(/)
 })
 
-run('canonical performance page owns the live evaluation AI experience', () => {
+run('canonical performance page owns the compact HR operations dashboard', () => {
   assert.match(performancePageSource, /requireProtectedPageSession/)
   assert.match(performancePageSource, /import \{ getEvaluationWorkbenchPageData \} from '@\/server\/evaluation-workbench'/)
   assert.match(performancePageSource, /import \{ EvaluationWorkbenchClient \} from '@\/components\/evaluation\/EvaluationWorkbenchClient'/)
-  assert.match(performancePageSource, /return <EvaluationWorkbenchClient \{\.\.\.data\} \/>/)
+  assert.match(performancePageSource, /presentationMode="performance-dashboard"/)
   assert.match(performancePageSource, /export const dynamic = 'force-dynamic'/)
   assert.doesNotMatch(performancePageSource, /^'use client'$/m)
 })
