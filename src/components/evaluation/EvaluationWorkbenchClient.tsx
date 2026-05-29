@@ -132,6 +132,9 @@ type ReadinessScenarioPreview2026 = {
 type DryRunOutputPasteReview2026 = {
   ok: boolean
   message: string
+  classification?: string
+  redFlags?: string[]
+  nextActions?: string[]
   fields: Array<{
     field: string
     value: string
@@ -3121,6 +3124,97 @@ function formatDryRunOutputPasteValue2026(value: unknown) {
   }
 }
 
+function getDryRunOutputNumber2026(record: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value)
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return 0
+}
+
+function getDryRunOutputBoolean2026(record: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number') return value > 0
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase()
+      if (['1', 'true', 'yes', 'changed', 'enabled'].includes(normalized)) return true
+      if (['0', 'false', 'no', 'unchanged', 'disabled'].includes(normalized)) return false
+    }
+  }
+  return false
+}
+
+function getDryRunOutputMessages2026(record: Record<string, unknown>, ...keys: string[]) {
+  return keys.flatMap((key) => {
+    const value = record[key]
+    if (Array.isArray(value)) return value.map((item) => String(item))
+    if (typeof value === 'string' && value.trim()) return [value]
+    return []
+  })
+}
+
+function reviewDryRunOutputPasteLocally2026(record: Record<string, unknown>) {
+  const redFlags: string[] = []
+  const nextActions: string[] = []
+  const add = (flag: string, action: string) => {
+    redFlags.push(flag)
+    nextActions.push(action)
+  }
+  if (getDryRunOutputBoolean2026(record, 'writesPerformed', 'writes_performed')) {
+    add('WRITES_PERFORMED_TRUE', '즉시 중단하고 dry-run 실행 경로를 조사하세요.')
+  }
+  if (getDryRunOutputBoolean2026(record, 'totalScoreChangesExpected', 'totalScoreChanged')) {
+    add('TOTAL_SCORE_CHANGED', 'Evaluation.totalScore write 경로를 조사하세요.')
+  }
+  if (getDryRunOutputBoolean2026(record, 'gradeIdChangesExpected', 'gradeIdChanged')) {
+    add('GRADE_ID_CHANGED', 'Evaluation.gradeId write 경로를 조사하세요.')
+  }
+  if (getDryRunOutputBoolean2026(record, 'officialScoringEnabled', 'officialGradeEnabled', 'featureFlagsChanged')) {
+    add('FEATURE_FLAG_OR_OFFICIAL_ACTIVATION', 'official scoring/grade/feature flag 상태를 조사하세요.')
+  }
+  if (getDryRunOutputNumber2026(record, 'policyCategoryMissingCount', 'missingPolicyCategoryCount') > 0) {
+    add('POLICY_CATEGORY_MISSING', 'policyCategory workbench에서 미분류를 정리하세요.')
+  }
+  if (
+    getDryRunOutputNumber2026(record, 'evaluatorAssignmentMissingCount', 'evaluatorMissingCount') > 0 &&
+    !getDryRunOutputBoolean2026(record, 'approvedEvaluatorExceptions', 'evaluatorExceptionsApproved')
+  ) {
+    add('EVALUATOR_MISSING', '/admin/performance-assignments에서 blocker 또는 승인 예외를 확인하세요.')
+  }
+  if (getDryRunOutputNumber2026(record, 'mboMissingCount', 'missingMboCount') > 0) {
+    add('MBO_MISSING', '/kpi/personal에서 MBO coverage를 확인하세요.')
+  }
+  const errors = getDryRunOutputMessages2026(record, 'errors', 'warnings').join(' ')
+  if (/(P2021|P2022|PrismaClientKnownRequestError|column does not exist|relation does not exist|schema error)/i.test(errors)) {
+    add('PRISMA_SCHEMA_ERROR', 'migration 실행 없이 schema/runtime issue를 조사하세요.')
+  }
+  if (/JWT_SESSION_ERROR/i.test(errors)) {
+    add('JWT_SESSION_ERROR', 'auth/session runtime 상태를 확인하세요.')
+  }
+
+  return {
+    classification: redFlags.some((flag) =>
+      ['WRITES_PERFORMED_TRUE', 'TOTAL_SCORE_CHANGED', 'GRADE_ID_CHANGED', 'FEATURE_FLAG_OR_OFFICIAL_ACTIVATION', 'PRISMA_SCHEMA_ERROR'].includes(flag)
+    )
+      ? 'REJECT_DRY_RUN_OUTPUT'
+      : redFlags.some((flag) => flag === 'JWT_SESSION_ERROR')
+        ? 'NEEDS_DEVELOPER_FIX'
+        : redFlags.length
+          ? 'NEEDS_HR_FIX'
+          : 'PASS_FOR_REVIEW',
+    redFlags,
+    nextActions: nextActions.length
+      ? nextActions
+      : ['must-pass criteria를 확인하고 backup/HR approval 논의로만 이동하세요. apply는 여전히 금지입니다.'],
+  }
+}
+
 function PolicyActivationReadiness2026Panel(props: {
   activationData: EvaluationActivationReadiness2026ApiData | null
   loading: boolean
@@ -3141,6 +3235,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const fastForwardOperationsCockpit = activation?.fastForwardOperationsCockpit ?? null
   const backfillDryRunPreflightPack = activation?.backfillDryRunPreflightPack ?? null
   const dryRunOutputReviewTemplate = activation?.dryRunOutputReviewTemplate ?? null
+  const dryRunRehearsalGuardrails = activation?.dryRunRehearsalGuardrails ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
@@ -3204,11 +3299,15 @@ function PolicyActivationReadiness2026Panel(props: {
           field,
           value: formatDryRunOutputPasteValue2026(record[field]),
         }))
+      const localReview = reviewDryRunOutputPasteLocally2026(record)
       return {
         ok: true,
         message: fields.length
           ? '붙여넣은 결과에서 알려진 필드를 확인했습니다. 서버 제출 없이 브라우저 local state에서만 표시합니다.'
           : '알려진 필드가 없어 수동 검토 템플릿을 사용하세요. 서버 제출, 저장, 업로드는 수행하지 않습니다.',
+        classification: localReview.classification,
+        redFlags: localReview.redFlags,
+        nextActions: localReview.nextActions,
         fields,
       }
     } catch {
@@ -3460,6 +3559,15 @@ function PolicyActivationReadiness2026Panel(props: {
                 label="Dry-run review template"
                 value={dryRunOutputReviewTemplate.templateStatus}
                 help={dryRunOutputReviewTemplate.templateSummary.localOnlyPasteHelperStatus}
+                compact
+                variant="default"
+              />
+            ) : null}
+            {dryRunRehearsalGuardrails ? (
+              <MetricCard
+                label="Dry-run rehearsal"
+                value={dryRunRehearsalGuardrails.status}
+                help={dryRunRehearsalGuardrails.summary.applyStatus}
                 compact
                 variant="default"
               />
@@ -4424,6 +4532,24 @@ function PolicyActivationReadiness2026Panel(props: {
                     <p className={`text-xs font-semibold ${dryRunOutputPasteReview.ok ? 'text-blue-900' : 'text-amber-900'}`}>
                       {dryRunOutputPasteReview.message}
                     </p>
+                    {dryRunOutputPasteReview.classification ? (
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p className="text-[11px] font-semibold text-slate-500">local-only classification</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-900">{dryRunOutputPasteReview.classification}</p>
+                        {dryRunOutputPasteReview.redFlags?.length ? (
+                          <p className="mt-1 text-xs leading-5 text-rose-700">
+                            red flags: {dryRunOutputPasteReview.redFlags.join(', ')}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs leading-5 text-emerald-700">red flags: none detected locally</p>
+                        )}
+                        {dryRunOutputPasteReview.nextActions?.length ? (
+                          <p className="mt-1 text-xs leading-5 text-slate-600">
+                            next: {dryRunOutputPasteReview.nextActions.join(' / ')}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {dryRunOutputPasteReview.fields.length ? (
                       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                         {dryRunOutputPasteReview.fields.map((field) => (
@@ -4442,6 +4568,162 @@ function PolicyActivationReadiness2026Panel(props: {
                   </p>
                 )}
               </div>
+
+              {dryRunRehearsalGuardrails ? (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 Dry-run Rehearsal &amp; Guardrails</h5>
+                        <Badge tone="neutral">{dryRunRehearsalGuardrails.mode}</Badge>
+                        <Badge tone="neutral">{dryRunRehearsalGuardrails.status}</Badge>
+                        <Badge tone="warn">{dryRunRehearsalGuardrails.summary.applyStatus}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">
+                        이 화면은 dry-run 결과 판독과 apply 가드레일을 사전 리허설하기 위한 읽기 전용 화면입니다.
+                        dry-run, apply, backfill, 공식 점수/등급, feature flag 변경은 실행하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        ['dryrun-rehearsal-inventory', 'Script inventory', dryRunRehearsalGuardrails.copyPayloads.scriptInventory],
+                        ['dryrun-rehearsal-guardrails', 'Guardrail checklist', dryRunRehearsalGuardrails.copyPayloads.guardrailChecklist],
+                        ['dryrun-rehearsal-fixtures', 'Fixture guide', dryRunRehearsalGuardrails.copyPayloads.fixtureRehearsalGuide],
+                        ['dryrun-rehearsal-red-flags', 'Red flag matrix', dryRunRehearsalGuardrails.copyPayloads.redFlagMatrix],
+                        ['dryrun-rehearsal-decisions', 'Decision guide', dryRunRehearsalGuardrails.copyPayloads.reviewerDecisionGuide],
+                        ['dryrun-rehearsal-markdown', 'Markdown', dryRunRehearsalGuardrails.copyPayloads.markdown],
+                        ['dryrun-rehearsal-tsv', 'TSV', dryRunRehearsalGuardrails.copyPayloads.tsv],
+                      ].map(([key, label, text]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => void copyActivationRunbookPayload(key, text)}
+                          className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-white"
+                        >
+                          {copiedRunbookKey === key ? '복사됨' : label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard label="scripts" value={dryRunRehearsalGuardrails.summary.scriptInventoryCount.toLocaleString()} help="surface inventory" compact />
+                    <MetricCard label="apply capable" value={dryRunRehearsalGuardrails.summary.applyCapableScriptCount.toLocaleString()} help="guarded CLI only" compact variant="warning" />
+                    <MetricCard label="fixtures" value={dryRunRehearsalGuardrails.summary.fixtureExampleCount.toLocaleString()} help="safe examples" compact />
+                    <MetricCard label="reviewer" value={dryRunRehearsalGuardrails.summary.reviewerStatus} help="pure parser" compact />
+                    <MetricCard label="paste validator" value={dryRunRehearsalGuardrails.summary.localOnlyPasteValidatorStatus} help="no server submit" compact />
+                    <MetricCard label="official activation" value={dryRunRehearsalGuardrails.summary.officialActivationStatus} help="still blocked" compact variant="warning" />
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">Script surface inventory</h6>
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                          <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            <tr>
+                              <th className="px-3 py-2">script</th>
+                              <th className="px-3 py-2">dry-run</th>
+                              <th className="px-3 py-2">apply</th>
+                              <th className="px-3 py-2">writes</th>
+                              <th className="px-3 py-2">safe use</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {dryRunRehearsalGuardrails.scriptSurfaceInventory.map((item) => (
+                              <tr key={item.scriptName}>
+                                <td className="px-3 py-2 font-semibold text-slate-900">{item.scriptName}</td>
+                                <td className="px-3 py-2 text-slate-600">{item.dryRunAvailable ? 'yes' : 'no'}</td>
+                                <td className="px-3 py-2 text-slate-600">{item.applyCapable ? item.applyTrigger : 'no'}</td>
+                                <td className="px-3 py-2 text-slate-600">
+                                  Evaluation {item.writesEvaluation} · Item {item.writesEvaluationItem} · totalScore {item.writesEvaluationTotalScore} · gradeId {item.writesEvaluationGradeId}
+                                </td>
+                                <td className="px-3 py-2 text-slate-600">{item.recommendedSafeUse}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <h6 className="text-sm font-semibold text-amber-950">Apply guardrail status</h6>
+                        <div className="mt-3 grid gap-2">
+                          {dryRunRehearsalGuardrails.applyGuardrailStatus.map((item) => (
+                            <div key={item.id} className="rounded-xl border border-amber-100 bg-white px-3 py-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge tone={item.status === 'CONFIRMED_IN_CODE' ? 'success' : 'warn'}>{item.status}</Badge>
+                                <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                              </div>
+                              <p className="mt-1 text-xs leading-5 text-slate-600">{item.evidence}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                        <h6 className="text-sm font-semibold text-blue-950">Local-only paste validator</h6>
+                        <p className="mt-2 text-xs leading-5 text-blue-900">
+                          {dryRunRehearsalGuardrails.localOnlyPasteValidator.guidance}
+                          {' '}serverSubmitAvailable {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.serverSubmitAvailable)} ·
+                          saveAvailable {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.saveAvailable)} ·
+                          apiCallAvailable {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.apiCallAvailable)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">Fixture rehearsal</h6>
+                      <div className="mt-3 grid gap-2">
+                        {dryRunRehearsalGuardrails.fixtureRehearsalExamples.map((item) => (
+                          <div key={item.fileName} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-sm font-semibold text-slate-900">{item.fileName}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">{item.label}</p>
+                            <p className="mt-1 text-xs font-semibold text-slate-700">{item.expectedClassification}</p>
+                            <p className="mt-1 text-xs leading-5 text-rose-700">red flags: {item.expectedRedFlags.join(', ') || 'none'}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">{item.nextAction}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                      <h6 className="text-sm font-semibold text-rose-950">Red flag matrix</h6>
+                      <div className="mt-3 grid gap-2">
+                        {dryRunRehearsalGuardrails.redFlagMatrix.map((item) => (
+                          <div key={item.id} className="rounded-xl border border-rose-100 bg-white px-3 py-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge tone={item.severity === 'REJECT' ? 'error' : 'warn'}>{item.severity}</Badge>
+                              <span className="text-sm font-semibold text-slate-900">{item.label}</span>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-rose-800">{item.nextAction}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">Reviewer decision guide</h6>
+                      <div className="mt-3 grid gap-2">
+                        {dryRunRehearsalGuardrails.reviewerDecisionGuide.map((item) => (
+                          <div key={item.classification} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-sm font-semibold text-slate-900">{item.classification}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">{item.meaning}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">{item.nextAction}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-rose-200 bg-white p-4">
+                    <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
+                    <p className="mt-2 text-sm leading-6 text-rose-900">{dryRunRehearsalGuardrails.prohibitedActions.join(', ')}</p>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
