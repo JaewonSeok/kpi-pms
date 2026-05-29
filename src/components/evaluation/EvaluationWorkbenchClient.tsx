@@ -281,7 +281,7 @@ type WorkbenchPilotAlignmentStage2026 =
   | 'GRADE_PREVIEW'
   | 'SAFETY'
 type EvaluationWorkbenchClientProps = EvaluationWorkbenchPageData & {
-  presentationMode?: 'performance' | 'workbench-pilot'
+  presentationMode?: 'performance' | 'performance-dashboard' | 'readiness-admin' | 'workbench-pilot'
 }
 type InteractivePilotLocalInputs2026 = {
   selectedKpiId: string
@@ -646,6 +646,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
     [editableItems]
   )
   const isDedicatedWorkbenchPilotRoute = props.presentationMode === 'workbench-pilot'
+  const isPerformanceDashboardRoute = props.presentationMode === 'performance-dashboard'
+  const isReadinessAdminRoute = props.presentationMode === 'readiness-admin'
   const canViewPolicyPreview2026 = Boolean(
     props.currentUser?.role === 'ROLE_ADMIN' &&
       props.permissions?.canSeeAllInCycle &&
@@ -1546,6 +1548,32 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
         autoLoadKey={`workbench-pilot:${props.selectedCycleId ?? '2026'}:${props.selectedEvaluationId ?? 'none'}`}
         onLoad={loadPolicyActivationReadiness2026}
         presentationMode="workbench-pilot"
+      />
+    )
+  }
+
+  if (isPerformanceDashboardRoute) {
+    return (
+      <PolicyActivationReadiness2026Panel
+        activationData={policyActivationReadiness2026}
+        loading={policyActivationReadiness2026Loading}
+        error={policyActivationReadiness2026Error}
+        autoLoadKey={`performance-dashboard:${props.selectedCycleId ?? '2026'}:${props.selectedEvaluationId ?? 'none'}`}
+        onLoad={loadPolicyActivationReadiness2026}
+        presentationMode="performance-dashboard"
+      />
+    )
+  }
+
+  if (isReadinessAdminRoute) {
+    return (
+      <PolicyActivationReadiness2026Panel
+        activationData={policyActivationReadiness2026}
+        loading={policyActivationReadiness2026Loading}
+        error={policyActivationReadiness2026Error}
+        autoLoadKey={`readiness-admin:${props.selectedCycleId ?? '2026'}:${props.selectedEvaluationId ?? 'none'}`}
+        onLoad={loadPolicyActivationReadiness2026}
+        presentationMode="readiness-admin"
       />
     )
   }
@@ -3543,7 +3571,7 @@ function PolicyActivationReadiness2026Panel(props: {
   error: string
   autoLoadKey: string
   onLoad: () => void
-  presentationMode?: 'gate' | 'workbench-pilot'
+  presentationMode?: 'gate' | 'performance-dashboard' | 'readiness-admin' | 'workbench-pilot'
 }) {
   const { activationData: activation, loading, error, autoLoadKey, onLoad } = props
   const blockers = activation?.blockers ?? []
@@ -3563,6 +3591,18 @@ function PolicyActivationReadiness2026Panel(props: {
   const dryRunGoNoGoFreezePack = activation?.dryRunGoNoGoFreezePack ?? null
   const endToEndPilot2026 = activation?.endToEndPilot2026 ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
+  const isPerformanceDashboardMode = props.presentationMode === 'performance-dashboard'
+  const isReadinessAdminMode = props.presentationMode === 'readiness-admin'
+  const panelTitle = isReadinessAdminMode
+    ? '2026 공식 전환 준비'
+    : isPerformanceDashboardMode
+      ? '2026 평가 운영 대시보드'
+      : '2026 공식 전환 Gate'
+  const panelDescription = isReadinessAdminMode
+    ? '공식 전환 Gate, readiness 상세, dry-run 준비 도구, Go/No-Go, unlock plan을 한 곳에서 확인합니다. 이 화면은 읽기 전용이며 공식 점수/등급/backfill을 실행하지 않습니다.'
+    : isPerformanceDashboardMode
+      ? 'HR/admin daily evaluation operations만 compact하게 보여줍니다. 상세 공식 전환 진단과 dry-run 도구는 고급 전환 준비 화면에서 확인하세요.'
+      : '이 화면은 공식 전환 가능 여부를 읽기 전용으로 점검합니다. 여기서는 backfill, 점수, 등급, feature flag를 실행하지 않습니다.'
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [exportPreview, setExportPreview] = useState<ReadinessExportPreview | null>(null)
   const [exportPreviewCopied, setExportPreviewCopied] = useState(false)
@@ -3718,8 +3758,8 @@ function PolicyActivationReadiness2026Panel(props: {
 
   return (
     <Panel
-      title="2026 공식 전환 Gate"
-      description="이 화면은 공식 전환 가능 여부를 읽기 전용으로 점검합니다. 여기서는 backfill, 점수, 등급, feature flag를 실행하지 않습니다."
+      title={panelTitle}
+      description={panelDescription}
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-start gap-3">
@@ -3906,11 +3946,23 @@ function PolicyActivationReadiness2026Panel(props: {
                 <Link href="/evaluation/workbench" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-slate-800">
                   전용 평가 Workbench 열기
                 </Link>
+                <Link href="/admin/evaluation-readiness" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100">
+                  공식 전환 준비 열기
+                </Link>
+                <Link href="/admin/evaluation-ops" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100">
+                  평가 운영 허브 열기
+                </Link>
                 <Link href="/admin/performance-calendar" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                   평가 일정 보기
                 </Link>
                 <Link href="/admin/performance-assignments" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                   평가자 배정 보기
+                </Link>
+                <Link href="/kpi/personal" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                  개인 KPI 보기
+                </Link>
+                <Link href="/kpi/monthly" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                  월간 실적 보기
                 </Link>
               </div>
             </div>
@@ -3958,7 +4010,23 @@ function PolicyActivationReadiness2026Panel(props: {
             ))}
           </div>
 
-          <details className="rounded-2xl border border-slate-200 bg-slate-50">
+          {isPerformanceDashboardMode ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-amber-950">상세 공식 전환 진단 분리됨</h4>
+                  <p className="mt-2 text-sm leading-6 text-amber-900">
+                    상세 공식 전환 진단과 dry-run 도구는 고급 전환 준비 화면에서 확인하세요.
+                    이 daily page에는 실행, 저장, 점수/등급 반영, backfill 버튼을 두지 않습니다.
+                  </p>
+                </div>
+                <Link href="/admin/evaluation-readiness" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-700 px-3 text-xs font-semibold text-white transition hover:bg-amber-800">
+                  고급 전환 준비 화면 열기
+                </Link>
+              </div>
+            </div>
+          ) : null}
+          <details className={isPerformanceDashboardMode ? 'hidden' : 'rounded-2xl border border-slate-200 bg-slate-50'}>
             <summary className="cursor-pointer list-none px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

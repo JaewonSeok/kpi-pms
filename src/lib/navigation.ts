@@ -35,7 +35,14 @@ export const NAV_ITEMS: NavigationItem[] = [
     href: '/evaluation',
     children: [
       { label: 'AI 역량평가', href: '/evaluation/ai-competency', menuKey: 'AI_COMPETENCY' },
-      { label: '업적평가', href: '/evaluation/performance', menuKey: 'PERFORMANCE_EVALUATION' },
+      { label: '성과평가 운영', href: '/evaluation/performance', menuKey: 'PERFORMANCE_EVALUATION' },
+      { label: '평가 Workbench', href: '/evaluation/workbench', menuKey: 'PERFORMANCE_EVALUATION' },
+      {
+        label: '공식 전환 준비',
+        href: '/admin/evaluation-readiness',
+        menuKey: 'EVAL_CYCLE',
+        roles: ['ROLE_ADMIN'],
+      },
       { label: '360 다면평가', href: '/evaluation/360', menuKey: 'FEEDBACK_360' },
       { label: '상향 평가', href: '/evaluation/upward/respond', menuKey: 'FEEDBACK_360' },
       {
@@ -84,6 +91,8 @@ export const NAV_ITEMS: NavigationItem[] = [
       },
       { label: '등급 설정', href: '/admin/grades', menuKey: 'GRADE_SETTING' },
       { label: '평가 주기', href: '/admin/eval-cycle', menuKey: 'EVAL_CYCLE' },
+      { label: '평가 운영 허브', href: '/admin/evaluation-ops', menuKey: 'EVAL_CYCLE' },
+      { label: '공식 전환 준비', href: '/admin/evaluation-readiness', menuKey: 'EVAL_CYCLE' },
       { label: '평가 배정', href: '/admin/performance-assignments', menuKey: 'EVAL_CYCLE' },
       { label: '성과 관리 일정', href: '/admin/performance-calendar', menuKey: 'EVAL_CYCLE' },
       { label: '성과 체계', href: '/admin/performance-design', menuKey: 'EVAL_CYCLE' },

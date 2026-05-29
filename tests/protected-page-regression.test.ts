@@ -133,6 +133,8 @@ async function main() {
       'src/app/(main)/evaluation/upward/respond/page.tsx',
       'src/app/(main)/evaluation/upward/respond/[feedbackId]/page.tsx',
       'src/app/(main)/evaluation/upward/results/page.tsx',
+      'src/app/(main)/admin/evaluation-readiness/page.tsx',
+      'src/app/(main)/admin/evaluation-ops/page.tsx',
       'src/app/(main)/admin/google-access/page.tsx',
     ]
 
@@ -151,6 +153,14 @@ async function main() {
     assert.equal(evaluationWorkbenchPage.includes('getEvaluationWorkbenchPageData'), true)
     assert.equal(evaluationWorkbenchPage.includes('presentationMode="workbench-pilot"'), true)
     assert.equal(evaluationWorkbenchPage.includes('redirect('), false)
+
+    const evaluationReadinessPage = read('src/app/(main)/admin/evaluation-readiness/page.tsx')
+    assert.equal(evaluationReadinessPage.includes('presentationMode="readiness-admin"'), true)
+    assert.equal(evaluationReadinessPage.includes("route: '/admin/evaluation-readiness'"), true)
+
+    const evaluationOpsPage = read('src/app/(main)/admin/evaluation-ops/page.tsx')
+    assert.equal(evaluationOpsPage.includes("route: '/admin/evaluation-ops'"), true)
+    assert.equal(evaluationOpsPage.includes('/evaluation/workbench'), true)
   })
 
   await run('protected page session helper caches shared getServerSession lookups for layout and page transitions', () => {
