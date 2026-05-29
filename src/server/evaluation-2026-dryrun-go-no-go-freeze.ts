@@ -145,6 +145,9 @@ const SIGN_OFF_CHECKLIST = [
   'Final dry-run review only acknowledgement',
 ]
 
+const SAFETY_NOTE =
+  'This freeze pack is read-only. dry-run, apply, backfill, official scoring, official grade, AI score exclusion, feature flag changes, Evaluation.totalScore write, and Evaluation.gradeId write are not executed.'
+
 function valueOrZero(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
@@ -448,6 +451,9 @@ function buildMarkdown(params: {
     '',
     '## Prohibited actions',
     buildTextList(params.nextCheckpoint.stillProhibitedActions),
+    '',
+    '## Safety note',
+    SAFETY_NOTE,
   ].join('\n')
 }
 

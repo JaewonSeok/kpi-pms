@@ -4915,8 +4915,8 @@ function PolicyActivationReadiness2026Panel(props: {
                         ['dryrun-freeze-signoff', 'Sign-off checklist', dryRunGoNoGoFreezePack.copyPayloads.signOffChecklist],
                         ['dryrun-freeze-checkpoint', 'Next checkpoint', dryRunGoNoGoFreezePack.copyPayloads.nextCheckpoint],
                         ['dryrun-freeze-prohibited', 'Prohibited actions', dryRunGoNoGoFreezePack.copyPayloads.prohibitedActions],
-                        ['dryrun-freeze-markdown', 'Markdown', dryRunGoNoGoFreezePack.copyPayloads.markdown],
-                        ['dryrun-freeze-tsv', 'TSV', dryRunGoNoGoFreezePack.copyPayloads.tsv],
+                        ['dryrun-freeze-markdown', 'Export Markdown', dryRunGoNoGoFreezePack.copyPayloads.markdown],
+                        ['dryrun-freeze-tsv', 'Export TSV', dryRunGoNoGoFreezePack.copyPayloads.tsv],
                       ].map(([key, label, text]) => (
                         <button
                           key={key}
