@@ -62,6 +62,7 @@ import type {
   EvaluationPolicy2026MappingCandidates,
   EvaluationPolicy2026MetadataPatchResult,
 } from '@/server/evaluation-preview-2026-mapping'
+import { evaluation2026SandboxDraftPersistenceDecision } from '@/lib/evaluation-2026-sandbox-draft-requirements'
 
 type WorkbenchTab =
   | 'workbench'
@@ -7454,6 +7455,61 @@ function WorkbenchPilotAlignment2026(props: {
           </div>
         )}
       </div>
+
+      {props.surface === 'dedicated' ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h6 className="text-sm font-semibold text-amber-950">2026 Evaluation Sandbox Draft Bridge</h6>
+                <Badge tone="warn">{evaluation2026SandboxDraftPersistenceDecision.status}</Badge>
+                <Badge tone="neutral">design-only</Badge>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-amber-900">
+                {evaluation2026SandboxDraftPersistenceDecision.uiMessage}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-amber-900">
+                {evaluation2026SandboxDraftPersistenceDecision.safetyCopy}
+              </p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-white p-3 text-xs leading-5 text-amber-900">
+              <p className="font-semibold">persistence decision</p>
+              <p>implemented: {String(evaluation2026SandboxDraftPersistenceDecision.implemented)}</p>
+              <p>safe without migration: {String(evaluation2026SandboxDraftPersistenceDecision.safeWithoutMigration)}</p>
+              <p>pilot remains local-only until dedicated sandbox schema exists.</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <div className="rounded-xl border border-amber-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Current persistence model found</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-amber-900">
+                {evaluation2026SandboxDraftPersistenceDecision.currentPersistenceModel.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Required schema before writes</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-amber-900">
+                {evaluation2026SandboxDraftPersistenceDecision.requiredSchema.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Still prohibited</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-amber-900">
+                {evaluation2026SandboxDraftPersistenceDecision.prohibitedUntilSchemaExists.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs leading-5 text-amber-900">
+                No pilot-draft API route is exposed. No Sandbox draft load/save/reset controls are rendered.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-2 md:grid-cols-4 xl:grid-cols-10">
         {stageRows.map((stage) => (
