@@ -258,6 +258,42 @@ type ReadinessExportPreview = {
   format: ReadinessExportPreviewFormat
   fileName: string
 }
+type EndToEndPilot2026 = NonNullable<EvaluationActivationReadiness2026ApiData['endToEndPilot2026']>
+type InteractivePilotStepId2026 =
+  | 'TARGET'
+  | 'KPI'
+  | 'SELF'
+  | 'FIRST'
+  | 'SECOND_FINAL'
+  | 'SCORE'
+  | 'GRADE'
+  | 'CEO'
+  | 'SAFETY'
+type InteractivePilotLocalInputs2026 = {
+  selectedKpiId: string
+  localAchievementLevel: 'BELOW_TARGET' | 'TARGET' | 'EXCELLENT' | 'CUSTOM'
+  localBaseScore: string
+  selfResultSummary: string
+  selfEvidenceLink: string
+  selfContributionComment: string
+  selfRiskComment: string
+  firstReviewerComment: string
+  firstReviewerScore: string
+  firstAdjustmentAmount: string
+  firstAdjustmentReason: string
+  firstFeedbackToEmployee: string
+  finalReviewerComment: string
+  finalReviewerScore: string
+  finalAdjustmentAmount: string
+  finalAdjustmentReason: string
+  finalRecommendation: string
+  ceoAdjustmentAmount: string
+  ceoAdjustmentReason: string
+  ceoFinalNote: string
+  ceoChecklistEvidence: boolean
+  ceoChecklistCalibration: boolean
+  ceoChecklistNoWrite: boolean
+}
 
 const TAB_LABELS: Record<WorkbenchTab, string> = {
   workbench: '종합',
@@ -3273,6 +3309,132 @@ function createReadinessExportPreview(key: string, content: string): ReadinessEx
   }
 }
 
+function createInitialInteractivePilotInputs2026(pilot: EndToEndPilot2026 | null): InteractivePilotLocalInputs2026 {
+  const firstKpi = pilot?.pilotKpis[0]
+  return {
+    selectedKpiId: firstKpi?.id ?? '',
+    localAchievementLevel: firstKpi?.achievementLevel === 'EXCELLENT' ? 'EXCELLENT' : firstKpi?.achievementLevel === 'CUSTOM' ? 'CUSTOM' : 'TARGET',
+    localBaseScore: firstKpi?.previewScore != null ? String(firstKpi.previewScore) : '90',
+    selfResultSummary: 'SAMPLE/PILOT: 목표 대비 주요 산출물과 정량 결과를 요약합니다.',
+    selfEvidenceLink: '',
+    selfContributionComment: 'SAMPLE/PILOT: 개인 기여도와 협업 기여를 분리해서 작성합니다.',
+    selfRiskComment: 'SAMPLE/PILOT: 공식 실행 전 policyCategory/evaluator blocker를 확인합니다.',
+    firstReviewerComment: 'SAMPLE/PILOT: 1차 평가자는 성과 근거의 충분성과 목표 난이도를 검토합니다.',
+    firstReviewerScore: '88',
+    firstAdjustmentAmount: '0',
+    firstAdjustmentReason: '',
+    firstFeedbackToEmployee: 'SAMPLE/PILOT: 보완할 근거와 다음 평가 단계 준비사항을 안내합니다.',
+    finalReviewerComment: 'SAMPLE/PILOT: 2차/최종 평가는 조직 기준 정합성과 조정 필요성을 검토합니다.',
+    finalReviewerScore: '90',
+    finalAdjustmentAmount: '0',
+    finalAdjustmentReason: '',
+    finalRecommendation: 'SAMPLE/PILOT: 공식 확정 전 calibration과 CEO readiness 확인이 필요합니다.',
+    ceoAdjustmentAmount: '0',
+    ceoAdjustmentReason: '',
+    ceoFinalNote: 'SAMPLE/PILOT: 대표이사 조정은 사유와 근거가 있을 때만 별도 승인 대상입니다.',
+    ceoChecklistEvidence: true,
+    ceoChecklistCalibration: false,
+    ceoChecklistNoWrite: true,
+  }
+}
+
+function parsePilotNumber2026(value: string, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function clampPilotScore2026(value: number) {
+  return Math.max(0, Math.min(120, value))
+}
+
+function getInteractivePilotGradeLabel2026(score: number | null, fallback: string | null) {
+  if (score == null) return fallback ?? 'PREVIEW_PENDING'
+  if (score >= 100) return 'S'
+  if (score >= 90) return 'A'
+  if (score >= 80) return 'B'
+  if (score >= 70) return 'C'
+  return 'D'
+}
+
+function formatInteractivePilotMarkdown2026(params: {
+  pilot: EndToEndPilot2026
+  inputs: InteractivePilotLocalInputs2026
+  selectedKpiTitle: string
+  localFinalScore: number
+  localGrade: string
+  completionPercentage: number
+  completedStepCount: number
+  activeStepLabel: string
+}) {
+  return [
+    '# 2026 Interactive Pilot Walkthrough',
+    '',
+    '이 export는 로컬 preview 보고용입니다. dry-run, apply, backfill, official scoring/grade, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.',
+    '',
+    `- active step: ${params.activeStepLabel}`,
+    `- pilot employee: ${params.pilot.pilotEmployee.name} / ${params.pilot.pilotEmployee.departmentName}`,
+    `- selected KPI: ${params.selectedKpiTitle}`,
+    `- local completion: ${params.completionPercentage}% (${params.completedStepCount}/9)`,
+    `- local score preview: ${params.localFinalScore.toFixed(1)}`,
+    `- local grade preview: ${params.localGrade}`,
+    `- official blockers: ${params.pilot.blockers.length ? params.pilot.blockers.join(', ') : 'none in pilot view'}`,
+    '',
+    '## Self evaluation preview',
+    params.inputs.selfResultSummary,
+    params.inputs.selfContributionComment,
+    params.inputs.selfRiskComment,
+    '',
+    '## First review preview',
+    params.inputs.firstReviewerComment,
+    `reviewer score: ${params.inputs.firstReviewerScore}`,
+    `adjustment: ${params.inputs.firstAdjustmentAmount}`,
+    params.inputs.firstAdjustmentReason ? `adjustment reason: ${params.inputs.firstAdjustmentReason}` : 'adjustment reason: not required for zero adjustment',
+    '',
+    '## Second/final review preview',
+    params.inputs.finalReviewerComment,
+    `final score: ${params.inputs.finalReviewerScore}`,
+    `final adjustment: ${params.inputs.finalAdjustmentAmount}`,
+    params.inputs.finalAdjustmentReason ? `final adjustment reason: ${params.inputs.finalAdjustmentReason}` : 'final adjustment reason: not required for zero adjustment',
+    '',
+    '## CEO adjustment preview',
+    `CEO adjustment: ${params.inputs.ceoAdjustmentAmount}`,
+    params.inputs.ceoAdjustmentReason ? `CEO reason: ${params.inputs.ceoAdjustmentReason}` : 'CEO reason: not required for zero adjustment',
+    params.inputs.ceoFinalNote,
+    '',
+    '## Safety',
+    '- official scoring false',
+    '- official grade false',
+    '- AI exclusion activation false',
+    '- totalScore write false',
+    '- gradeId write false',
+    '- official Evaluation/EvaluationItem creation false',
+    '- backfill/apply false',
+    '- feature flag changes false',
+    '- no API write calls',
+  ].join('\n')
+}
+
+function formatInteractivePilotTsv2026(params: {
+  pilot: EndToEndPilot2026
+  selectedKpiTitle: string
+  localFinalScore: number
+  localGrade: string
+  completionPercentage: number
+}) {
+  return [
+    ['field', 'value'].join('\t'),
+    ['pilot employee', `${params.pilot.pilotEmployee.name} / ${params.pilot.pilotEmployee.departmentName}`].join('\t'),
+    ['selected KPI', params.selectedKpiTitle].join('\t'),
+    ['completion percentage', `${params.completionPercentage}%`].join('\t'),
+    ['local score preview', params.localFinalScore.toFixed(1)].join('\t'),
+    ['local grade preview', params.localGrade].join('\t'),
+    ['official blockers', params.pilot.blockers.length ? params.pilot.blockers.join(', ') : 'none in pilot view'].join('\t'),
+    ['totalScore write', 'false'].join('\t'),
+    ['gradeId write', 'false'].join('\t'),
+    ['official Evaluation/EvaluationItem creation', 'false'].join('\t'),
+  ].join('\n')
+}
+
 function PolicyActivationReadiness2026Panel(props: {
   activationData: EvaluationActivationReadiness2026ApiData | null
   loading: boolean
@@ -5386,6 +5548,11 @@ function PolicyActivationReadiness2026Panel(props: {
                       </div>
                     </div>
                   </div>
+
+                  <InteractivePilotWalkthrough2026
+                    pilot={endToEndPilot2026}
+                    onExportPreview={openExportPreview}
+                  />
                 </div>
               ) : null}
 
@@ -6247,6 +6414,583 @@ function ReadinessExportPreviewDialog(props: {
               닫기
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InteractivePilotWalkthrough2026(props: {
+  pilot: EndToEndPilot2026
+  onExportPreview: (key: string, text: string) => void
+}) {
+  const { pilot } = props
+  const [activeStep, setActiveStep] = useState<InteractivePilotStepId2026>('TARGET')
+  const [inputs, setInputs] = useState<InteractivePilotLocalInputs2026>(() => createInitialInteractivePilotInputs2026(pilot))
+
+  const selectedKpi = useMemo(
+    () => pilot.pilotKpis.find((item) => item.id === inputs.selectedKpiId) ?? pilot.pilotKpis[0] ?? null,
+    [inputs.selectedKpiId, pilot.pilotKpis]
+  )
+  const selectedBaseScore = clampPilotScore2026(parsePilotNumber2026(inputs.localBaseScore, selectedKpi?.previewScore ?? 90))
+  const firstReviewerScore = clampPilotScore2026(parsePilotNumber2026(inputs.firstReviewerScore, selectedBaseScore))
+  const finalReviewerScore = clampPilotScore2026(parsePilotNumber2026(inputs.finalReviewerScore, firstReviewerScore))
+  const firstAdjustmentAmount = parsePilotNumber2026(inputs.firstAdjustmentAmount, 0)
+  const finalAdjustmentAmount = parsePilotNumber2026(inputs.finalAdjustmentAmount, 0)
+  const ceoAdjustmentAmount = parsePilotNumber2026(inputs.ceoAdjustmentAmount, 0)
+  const firstAdjustmentNeedsReason = firstAdjustmentAmount !== 0 && !inputs.firstAdjustmentReason.trim()
+  const finalAdjustmentNeedsReason = finalAdjustmentAmount !== 0 && !inputs.finalAdjustmentReason.trim()
+  const ceoAdjustmentNeedsReason = ceoAdjustmentAmount !== 0 && !inputs.ceoAdjustmentReason.trim()
+
+  const localScorePreview = useMemo(() => {
+    const rows = pilot.pilotKpis.map((item) => {
+      const isSelected = selectedKpi?.id === item.id
+      const previewScore = isSelected ? selectedBaseScore : item.previewScore
+      return {
+        ...item,
+        previewScore,
+        contributionType: item.category === 'ORG_GOAL' ? 'ORGANIZATION' as const : 'PERSONAL' as const,
+      }
+    })
+    const weightedAverage = (items: typeof rows) => {
+      const totalWeight = items.reduce((sum, item) => sum + Math.max(item.weight, 0), 0)
+      if (!items.length || totalWeight <= 0) return null
+      return items.reduce((sum, item) => sum + item.previewScore * Math.max(item.weight, 0), 0) / totalWeight
+    }
+    const organizationScore = weightedAverage(rows.filter((item) => item.category === 'ORG_GOAL')) ?? pilot.scorePreview.organizationPerformanceScore ?? selectedBaseScore
+    const personalScoreRaw = weightedAverage(rows.filter((item) => item.category !== 'ORG_GOAL')) ?? pilot.scorePreview.personalPerformanceScore ?? selectedBaseScore
+    const reviewerInfluence = (firstReviewerScore + finalReviewerScore) / 2
+    const personalScore = clampPilotScore2026((personalScoreRaw * 0.7) + (reviewerInfluence * 0.3))
+    const baseScore = clampPilotScore2026((organizationScore * 0.3) + (personalScore * 0.7))
+    const adjustedScore = clampPilotScore2026(baseScore + firstAdjustmentAmount + finalAdjustmentAmount + ceoAdjustmentAmount)
+
+    return {
+      rows,
+      organizationScore,
+      personalScore,
+      baseScore,
+      adjustedScore,
+    }
+  }, [
+    ceoAdjustmentAmount,
+    finalAdjustmentAmount,
+    finalReviewerScore,
+    firstAdjustmentAmount,
+    firstReviewerScore,
+    pilot.pilotKpis,
+    pilot.scorePreview.organizationPerformanceScore,
+    pilot.scorePreview.personalPerformanceScore,
+    selectedBaseScore,
+    selectedKpi?.id,
+  ])
+  const localGradePreview = getInteractivePilotGradeLabel2026(localScorePreview.adjustedScore, pilot.gradePreview.gradePreview)
+  const targetStep = pilot.workflowSteps.find((item) => item.id === 'TARGET_SELECTION')
+  const kpiStep = pilot.workflowSteps.find((item) => item.id === 'KPI_ITEMS')
+  const selfStep = pilot.workflowSteps.find((item) => item.id === 'SELF_EVALUATION')
+  const firstStep = pilot.workflowSteps.find((item) => item.id === 'FIRST_REVIEW')
+  const secondStep = pilot.workflowSteps.find((item) => item.id === 'SECOND_FINAL_REVIEW')
+  const scoreStep = pilot.workflowSteps.find((item) => item.id === 'SCORE_PREVIEW')
+  const gradeStep = pilot.workflowSteps.find((item) => item.id === 'GRADE_PREVIEW')
+  const ceoStep = pilot.workflowSteps.find((item) => item.id === 'CEO_FINAL_CONFIRMATION_PREVIEW')
+  const safetyStep = pilot.workflowSteps.find((item) => item.id === 'SAFETY_CONFIRMATION')
+  const stepDefinitions = [
+    { id: 'TARGET' as const, order: 1, label: '대상자', source: targetStep, complete: true },
+    { id: 'KPI' as const, order: 2, label: 'KPI 항목', source: kpiStep, complete: Boolean(selectedKpi) },
+    { id: 'SELF' as const, order: 3, label: '자기평가 preview', source: selfStep, complete: Boolean(inputs.selfResultSummary.trim() && inputs.selfContributionComment.trim()) },
+    { id: 'FIRST' as const, order: 4, label: '1차 평가 preview', source: firstStep, complete: Boolean(inputs.firstReviewerComment.trim()) && !firstAdjustmentNeedsReason },
+    { id: 'SECOND_FINAL' as const, order: 5, label: '2차/최종 평가 preview', source: secondStep, complete: Boolean(inputs.finalReviewerComment.trim()) && !finalAdjustmentNeedsReason },
+    { id: 'SCORE' as const, order: 6, label: '점수 preview', source: scoreStep, complete: Number.isFinite(localScorePreview.adjustedScore) },
+    { id: 'GRADE' as const, order: 7, label: '등급 preview', source: gradeStep, complete: Boolean(localGradePreview) },
+    { id: 'CEO' as const, order: 8, label: '대표이사 조정 preview', source: ceoStep, complete: inputs.ceoChecklistNoWrite && !ceoAdjustmentNeedsReason },
+    { id: 'SAFETY' as const, order: 9, label: '안전 확인', source: safetyStep, complete: true },
+  ]
+  const completedStepCount = stepDefinitions.filter((item) => item.complete).length
+  const completionPercentage = Math.round((completedStepCount / stepDefinitions.length) * 100)
+  const activeStepDefinition = stepDefinitions.find((item) => item.id === activeStep) ?? stepDefinitions[0]
+  const unresolvedOfficialBlockers = pilot.blockers.length ? pilot.blockers : ['공식 실행 전 blocker 없음']
+  const markdownExport = formatInteractivePilotMarkdown2026({
+    pilot,
+    inputs,
+    selectedKpiTitle: selectedKpi?.title ?? 'KPI preview pending',
+    localFinalScore: localScorePreview.adjustedScore,
+    localGrade: localGradePreview,
+    completionPercentage,
+    completedStepCount,
+    activeStepLabel: activeStepDefinition.label,
+  })
+  const tsvExport = formatInteractivePilotTsv2026({
+    pilot,
+    selectedKpiTitle: selectedKpi?.title ?? 'KPI preview pending',
+    localFinalScore: localScorePreview.adjustedScore,
+    localGrade: localGradePreview,
+    completionPercentage,
+  })
+  const updateInput = <Key extends keyof InteractivePilotLocalInputs2026>(key: Key, value: InteractivePilotLocalInputs2026[Key]) => {
+    setInputs((current) => ({ ...current, [key]: value }))
+  }
+  const moveToNextStep = () => {
+    const currentIndex = stepDefinitions.findIndex((item) => item.id === activeStep)
+    const next = stepDefinitions[Math.min(currentIndex + 1, stepDefinitions.length - 1)]
+    setActiveStep(next.id)
+  }
+
+  const exportItems = [
+    {
+      key: 'interactive-pilot-summary',
+      label: 'Preview summary 보기',
+      text: [
+        `2026 Interactive Pilot Walkthrough`,
+        `completion: ${completionPercentage}% (${completedStepCount}/9)`,
+        `current step: ${activeStepDefinition.label}`,
+        `selected KPI: ${selectedKpi?.title ?? 'pending'}`,
+        `score preview: ${localScorePreview.adjustedScore.toFixed(1)}`,
+        `grade preview: ${localGradePreview}`,
+        `official blockers: ${unresolvedOfficialBlockers.join(', ')}`,
+        `safety: no official writes, no API write calls`,
+      ].join('\n'),
+    },
+    {
+      key: 'interactive-pilot-self-evaluation',
+      label: 'Self evaluation preview 보기',
+      text: [inputs.selfResultSummary, inputs.selfContributionComment, inputs.selfRiskComment, `evidence: ${inputs.selfEvidenceLink || 'missing warning'}`].join('\n'),
+    },
+    {
+      key: 'interactive-pilot-first-review',
+      label: 'First review preview 보기',
+      text: [inputs.firstReviewerComment, `score: ${firstReviewerScore}`, `adjustment: ${firstAdjustmentAmount}`, inputs.firstAdjustmentReason || 'adjustment reason not required for zero adjustment', inputs.firstFeedbackToEmployee].join('\n'),
+    },
+    {
+      key: 'interactive-pilot-final-review',
+      label: 'Final review preview 보기',
+      text: [inputs.finalReviewerComment, `score: ${finalReviewerScore}`, `adjustment: ${finalAdjustmentAmount}`, inputs.finalAdjustmentReason || 'adjustment reason not required for zero adjustment', inputs.finalRecommendation].join('\n'),
+    },
+    {
+      key: 'interactive-pilot-score-grade',
+      label: 'Score/grade preview 보기',
+      text: [`score preview: ${localScorePreview.adjustedScore.toFixed(1)}`, `grade preview: ${localGradePreview}`, 'totalScore write: false', 'gradeId write: false'].join('\n'),
+    },
+    {
+      key: 'interactive-pilot-safety-summary',
+      label: 'Safety summary 보기',
+      text: ['official scoring false', 'official grade false', 'AI exclusion activation false', 'totalScore write false', 'gradeId write false', 'official Evaluation/EvaluationItem creation false', 'backfill/apply false', 'feature flag changes false', 'no API write calls'].join('\n'),
+    },
+    { key: 'interactive-pilot-export-markdown', label: 'Export Markdown', text: markdownExport },
+    { key: 'interactive-pilot-export-tsv', label: 'Export TSV', text: tsvExport },
+  ]
+
+  return (
+    <div className="mt-6 rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h5 className="text-sm font-semibold text-slate-900">2026 Interactive Pilot Walkthrough</h5>
+            <Badge tone="neutral">local-only</Badge>
+            <Badge tone={pilot.summary.currentDecision === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : 'success'}>
+              {pilot.summary.currentDecision}
+            </Badge>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-600">
+            이 화면은 2026 평가 흐름을 로컬 preview로 체험하기 위한 화면입니다. 입력값은 저장되지 않으며, 공식 평가 생성,
+            공식 점수, 공식 등급, totalScore, gradeId, backfill은 실행하지 않습니다.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-indigo-200 bg-white p-3 text-xs leading-5 text-indigo-900">
+          <p className="font-semibold">local summary</p>
+          <p>{completedStepCount}/9 local steps · {completionPercentage}% complete</p>
+          <p>official blockers: {pilot.blockers.length.toLocaleString()}</p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <MetricCard label="pilot completion" value={`${completionPercentage}%`} help={`${completedStepCount} completed local steps`} compact />
+        <MetricCard label="selected target" value={pilot.pilotEmployee.name} help={pilot.pilotEmployee.departmentName} compact />
+        <MetricCard label="local score preview" value={localScorePreview.adjustedScore.toFixed(1)} help="Evaluation.totalScore write false" compact />
+        <MetricCard label="local grade preview" value={localGradePreview} help="Evaluation.gradeId write false" compact />
+      </div>
+
+      <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-9">
+        {stepDefinitions.map((step) => (
+          <button
+            key={step.id}
+            type="button"
+            onClick={() => setActiveStep(step.id)}
+            className={`rounded-xl border px-3 py-3 text-left text-xs transition ${activeStep === step.id ? 'border-indigo-300 bg-white shadow-sm' : 'border-slate-200 bg-white/70 hover:bg-white'}`}
+          >
+            <span className="block font-semibold text-slate-900">{step.order}. {step.label}</span>
+            <span className="mt-2 flex flex-wrap gap-1">
+              <Badge tone={step.source?.status === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : step.source?.status === 'BLOCKED' ? 'error' : 'success'}>
+                {step.source?.status ?? 'PREVIEW_ONLY'}
+              </Badge>
+              <Badge tone={step.complete ? 'success' : 'warn'}>{step.complete ? 'local ready' : 'local open'}</Badge>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h6 className="text-sm font-semibold text-slate-900">{activeStepDefinition.order}. {activeStepDefinition.label}</h6>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              official blocker warning: {activeStepDefinition.source?.blockedBy.length ? activeStepDefinition.source.blockedBy.join(', ') : '현재 step preview 기준 blocker 없음'}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              officially later: {activeStepDefinition.source?.officialLater ?? '공식 실행은 별도 승인 후에만 가능합니다.'}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-emerald-700">
+              safety note: {activeStepDefinition.source?.safetyNote ?? 'local-only preview, no official writes'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setInputs(createInitialInteractivePilotInputs2026(pilot))
+              setActiveStep('TARGET')
+            }}
+            className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            로컬 입력 초기화
+          </button>
+        </div>
+
+        {activeStep === 'TARGET' ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-900">Pilot employee</p>
+              <p className="mt-2 text-sm font-semibold text-slate-800">{pilot.pilotEmployee.name}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">{pilot.pilotEmployee.departmentName} · {pilot.pilotEmployee.employeeNo ?? 'employeeNo 미확인'}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">source: {pilot.pilotEmployee.source}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">confirmed KPI count: {pilot.pilotEmployee.confirmedPersonalKpiCount}</p>
+              {pilot.pilotEmployee.source === 'SAMPLE_PILOT_FIXTURE' ? (
+                <p className="mt-2 text-xs leading-5 text-amber-800">SAMPLE/PILOT fallback 대상자입니다. 공식 대상자 선정은 아직 수행하지 않습니다.</p>
+              ) : null}
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-900">Selection mode</p>
+              <p className="mt-2 text-xs leading-5 text-slate-600">
+                현재 pilot helper가 제공하는 대상자는 1명입니다. 여러 pilot sample이 제공되면 이 단계에서 대상자를 선택할 수 있습니다.
+              </p>
+              <p className="mt-2 text-xs leading-5 text-emerald-700">대상자 선택은 local state만 사용하며 공식 population apply를 호출하지 않습니다.</p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === 'KPI' ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <label className="text-xs font-semibold text-slate-900" htmlFor="interactive-pilot-kpi-select">KPI item preview</label>
+              <select
+                id="interactive-pilot-kpi-select"
+                value={selectedKpi?.id ?? ''}
+                onChange={(event) => {
+                  const next = pilot.pilotKpis.find((item) => item.id === event.target.value)
+                  setInputs((current) => ({
+                    ...current,
+                    selectedKpiId: event.target.value,
+                    localAchievementLevel: next?.achievementLevel === 'EXCELLENT' ? 'EXCELLENT' : next?.achievementLevel === 'CUSTOM' ? 'CUSTOM' : 'TARGET',
+                    localBaseScore: next?.previewScore != null ? String(next.previewScore) : current.localBaseScore,
+                  }))
+                }}
+                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+              >
+                {pilot.pilotKpis.map((item) => (
+                  <option key={item.id} value={item.id}>{item.title}</option>
+                ))}
+              </select>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-700">
+                  achievement level
+                  <select
+                    value={inputs.localAchievementLevel}
+                    onChange={(event) => updateInput('localAchievementLevel', event.target.value as InteractivePilotLocalInputs2026['localAchievementLevel'])}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  >
+                    <option value="BELOW_TARGET">BELOW_TARGET</option>
+                    <option value="TARGET">TARGET</option>
+                    <option value="EXCELLENT">EXCELLENT</option>
+                    <option value="CUSTOM">CUSTOM</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-700">
+                  local base score
+                  <input
+                    value={inputs.localBaseScore}
+                    onChange={(event) => updateInput('localBaseScore', event.target.value)}
+                    inputMode="decimal"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                  />
+                </label>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-emerald-700">No EvaluationItem creation. KPI item preview는 browser state만 변경합니다.</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold text-slate-900">KPI detail</p>
+              {selectedKpi ? (
+                <div className="mt-2 grid gap-2 text-xs leading-5 text-slate-600">
+                  <p>title: {selectedKpi.title}</p>
+                  <p>category: {selectedKpi.category}</p>
+                  <p>weight: {selectedKpi.weight}</p>
+                  <p>target: SAMPLE/PILOT target evidence and result summary</p>
+                  <p>evidence expectation: result summary, monthly evidence, contribution comment</p>
+                  <p className="text-amber-800">policyCategory warning: {pilot.evaluationItemPreview.find((item) => item.personalKpiId === selectedKpi.id)?.policyCategoryWarning ?? 'official policyCategory warning 없음'}</p>
+                  <p className="text-amber-800">weight/cap warning: preview score is capped between 0 and 120; official policy still blocks writes when readiness is incomplete.</p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === 'SELF' ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <label className="block text-xs font-semibold text-slate-700">
+                achievement level
+                <input value={inputs.localAchievementLevel} readOnly className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                result summary
+                <textarea value={inputs.selfResultSummary} onChange={(event) => updateInput('selfResultSummary', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                evidence link
+                <input value={inputs.selfEvidenceLink} onChange={(event) => updateInput('selfEvidenceLink', event.target.value)} placeholder="local-only preview URL or note" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+            </div>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+              <label className="block text-xs font-semibold text-slate-700">
+                contribution comment
+                <textarea value={inputs.selfContributionComment} onChange={(event) => updateInput('selfContributionComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                risk/blocker comment
+                <textarea value={inputs.selfRiskComment} onChange={(event) => updateInput('selfRiskComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                <p>missing result warning: {inputs.selfResultSummary.trim() ? 'clear in local preview' : 'result summary is missing'}</p>
+                <p>missing evidence warning: {inputs.selfEvidenceLink.trim() ? 'evidence reference entered locally' : 'evidence link is empty; use manual evidence note later'}</p>
+                <p>missing contribution warning: {inputs.selfContributionComment.trim() ? 'clear in local preview' : 'contribution comment is missing'}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === 'FIRST' ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <label className="block text-xs font-semibold text-slate-700">
+                first reviewer comment
+                <textarea value={inputs.firstReviewerComment} onChange={(event) => updateInput('firstReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-700">
+                  reviewer score preview
+                  <input value={inputs.firstReviewerScore} onChange={(event) => updateInput('firstReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                </label>
+                <label className="text-xs font-semibold text-slate-700">
+                  adjustment amount preview
+                  <input value={inputs.firstAdjustmentAmount} onChange={(event) => updateInput('firstAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                </label>
+              </div>
+            </div>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+              <label className="block text-xs font-semibold text-slate-700">
+                adjustment reason
+                <textarea value={inputs.firstAdjustmentReason} onChange={(event) => updateInput('firstAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                feedback to employee
+                <textarea value={inputs.firstFeedbackToEmployee} onChange={(event) => updateInput('firstFeedbackToEmployee', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                {firstAdjustmentNeedsReason ? 'adjustment reason required if adjustment is not zero.' : 'adjustment reason validation clear in local preview.'} Evaluator routing blocker warning remains visible for official execution.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === 'SECOND_FINAL' ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <label className="block text-xs font-semibold text-slate-700">
+                second/final reviewer comment
+                <textarea value={inputs.finalReviewerComment} onChange={(event) => updateInput('finalReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-700">
+                  final reviewer score preview
+                  <input value={inputs.finalReviewerScore} onChange={(event) => updateInput('finalReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                </label>
+                <label className="text-xs font-semibold text-slate-700">
+                  adjustment amount preview
+                  <input value={inputs.finalAdjustmentAmount} onChange={(event) => updateInput('finalAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                </label>
+              </div>
+            </div>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+              <label className="block text-xs font-semibold text-slate-700">
+                adjustment reason
+                <textarea value={inputs.finalAdjustmentReason} onChange={(event) => updateInput('finalAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <label className="block text-xs font-semibold text-slate-700">
+                final recommendation
+                <textarea value={inputs.finalRecommendation} onChange={(event) => updateInput('finalRecommendation', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                {finalAdjustmentNeedsReason ? 'adjustment reason required if final adjustment is not zero.' : 'final adjustment validation clear in local preview.'} Chain blocker and prior-stage dependency remain official blockers.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === 'SCORE' ? (
+          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3">
+            <div className="grid gap-3 md:grid-cols-4">
+              <MetricCard label="organization performance" value={localScorePreview.organizationScore.toFixed(1)} help="30%" compact />
+              <MetricCard label="personal performance" value={localScorePreview.personalScore.toFixed(1)} help="70%" compact />
+              <MetricCard label="base score preview" value={localScorePreview.baseScore.toFixed(1)} help="local inputs" compact />
+              <MetricCard label="adjusted score preview" value={localScorePreview.adjustedScore.toFixed(1)} help="not written" compact />
+            </div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-full divide-y divide-blue-100 text-left text-xs">
+                <thead className="text-blue-700">
+                  <tr>
+                    <th className="px-2 py-2 font-semibold">category</th>
+                    <th className="px-2 py-2 font-semibold">type</th>
+                    <th className="px-2 py-2 font-semibold">local score</th>
+                    <th className="px-2 py-2 font-semibold">weight</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-blue-100">
+                  {localScorePreview.rows.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-2 py-2">{item.category}</td>
+                      <td className="px-2 py-2">{item.contributionType}</td>
+                      <td className="px-2 py-2">{item.previewScore.toFixed(1)}</td>
+                      <td className="px-2 py-2">{item.weight}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-blue-900">totalScore write: false · official scoring activation: false · AI excluded from annual performance score.</p>
+          </div>
+        ) : null}
+
+        {activeStep === 'GRADE' ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
+              <p className="text-xs font-semibold text-violet-900">grade preview</p>
+              <p className="mt-2 text-2xl font-semibold text-violet-950">{localGradePreview}</p>
+              <p className="mt-2 text-xs leading-5 text-violet-900">score-to-grade local mapping: {localScorePreview.adjustedScore.toFixed(1)} -&gt; {localGradePreview}</p>
+              <p className="mt-1 text-xs leading-5 text-violet-900">grade group: {pilot.gradePreview.applicableGroup}</p>
+            </div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+              <p className="font-semibold">policy warning</p>
+              <p>{pilot.gradePreview.blockers.length ? pilot.gradePreview.blockers.join(', ') : 'grade policy preview 기준 blocker 없음'}</p>
+              <p className="mt-2">gradeId write: false · official grade activation: false.</p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === 'CEO' ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
+              <label className="block text-xs font-semibold text-sky-900">
+                CEO adjustment preview
+                <input value={inputs.ceoAdjustmentAmount} onChange={(event) => updateInput('ceoAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <label className="block text-xs font-semibold text-sky-900">
+                adjustment reason
+                <textarea value={inputs.ceoAdjustmentReason} onChange={(event) => updateInput('ceoAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+              <label className="block text-xs font-semibold text-sky-900">
+                final note
+                <textarea value={inputs.ceoFinalNote} onChange={(event) => updateInput('ceoFinalNote', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+              </label>
+            </div>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold text-slate-900">confirmation checklist</p>
+              {[
+                ['ceoChecklistEvidence', 'evidence packet reviewed locally'],
+                ['ceoChecklistCalibration', 'calibration blockers reviewed locally'],
+                ['ceoChecklistNoWrite', 'no finalization write'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 text-xs text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(inputs[key as keyof InteractivePilotLocalInputs2026])}
+                    onChange={(event) => updateInput(key as keyof InteractivePilotLocalInputs2026, event.target.checked as never)}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  {label}
+                </label>
+              ))}
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                {ceoAdjustmentNeedsReason ? 'reason required if CEO adjustment is not zero.' : 'CEO adjustment validation clear in local preview.'} Finalization/CEO blockers and calibration blockers remain official blockers.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {activeStep === 'SAFETY' ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[
+              ['official scoring false', String(pilot.safety.officialScoringEnabled)],
+              ['official grade false', String(pilot.safety.officialGradeEnabled)],
+              ['AI exclusion activation false', String(pilot.safety.officialAiScoreExclusionEnabled)],
+              ['totalScore write false', String(pilot.safety.totalScoreChanged)],
+              ['gradeId write false', String(pilot.safety.gradeIdChanged)],
+              ['official Evaluation creation false', String(pilot.safety.officialEvaluationsCreated)],
+              ['official EvaluationItem creation false', String(pilot.safety.officialEvaluationItemsCreated)],
+              ['backfill/apply false', `${String(pilot.safety.backfillExecuted)} / ${String(pilot.safety.backfillApplyExecuted)}`],
+              ['feature flag changes false', String(pilot.safety.featureFlagsChanged)],
+              ['no API write calls', 'true'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900">
+                <p className="font-semibold">{label}</p>
+                <p>{value}</p>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={moveToNextStep}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white transition hover:bg-indigo-600"
+          >
+            다음 단계 preview
+          </button>
+          <button
+            type="button"
+            onClick={moveToNextStep}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-indigo-300 px-4 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
+          >
+            preview 반영
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h6 className="text-sm font-semibold text-slate-900">Interactive pilot export preview</h6>
+            <p className="mt-1 text-xs leading-5 text-slate-500">클릭하면 내용을 먼저 미리보고 복사/다운로드할 수 있습니다.</p>
+          </div>
+          <Badge tone="neutral">copy/export only</Badge>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {exportItems.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => props.onExportPreview(item.key, item.text)}
+              className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
       </div>
     </div>
