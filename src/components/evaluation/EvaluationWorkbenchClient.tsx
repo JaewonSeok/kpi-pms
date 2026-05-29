@@ -3296,6 +3296,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const dryRunRehearsalGuardrails = activation?.dryRunRehearsalGuardrails ?? null
   const backfillDryRunCommandRunbook = activation?.backfillDryRunCommandRunbook ?? null
   const dryRunGoNoGoFreezePack = activation?.dryRunGoNoGoFreezePack ?? null
+  const dryRunUnlockPlan = activation?.dryRunUnlockPlan ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [exportPreview, setExportPreview] = useState<ReadinessExportPreview | null>(null)
@@ -3680,6 +3681,15 @@ function PolicyActivationReadiness2026Panel(props: {
                 help={`apply ${dryRunGoNoGoFreezePack.decision.applyStatus}`}
                 compact
                 variant={dryRunGoNoGoFreezePack.decision.currentDecision === 'READY_FOR_REVIEW' ? 'default' : 'warning'}
+              />
+            ) : null}
+            {dryRunUnlockPlan ? (
+              <MetricCard
+                label="Dry-run Unlock Plan"
+                value={dryRunUnlockPlan.summary.currentDecision}
+                help={dryRunUnlockPlan.summary.nextUnlockMilestone}
+                compact
+                variant={dryRunUnlockPlan.summary.currentDecision === 'READY_FOR_REVIEW' ? 'default' : 'warning'}
               />
             ) : null}
           </div>
@@ -5126,6 +5136,209 @@ function PolicyActivationReadiness2026Panel(props: {
                   <p className="mt-2 text-sm leading-6 text-slate-600">Go/No-Go 데이터를 불러오는 중입니다.</p>
                 </div>
               )}
+
+              {dryRunUnlockPlan ? (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 Dry-run Unlock Plan</h5>
+                        <Badge tone="neutral">{dryRunUnlockPlan.mode}</Badge>
+                        <Badge tone={dryRunUnlockPlan.summary.currentDecision === 'READY_FOR_REVIEW' ? 'success' : 'warn'}>
+                          {dryRunUnlockPlan.summary.currentDecision}
+                        </Badge>
+                        <Badge tone="warn">apply {dryRunUnlockPlan.summary.applyStatus}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">
+                        이 화면은 NO_GO 상태를 해제하기 위한 실행 순서를 읽기 전용으로 정리합니다. dry-run,
+                        apply, backfill, 공식 점수/등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        ['dryrun-unlock-summary', 'Unlock summary 보기', dryRunUnlockPlan.copyPayloads.unlockSummary],
+                        ['dryrun-unlock-p0', 'P0 actions 보기', dryRunUnlockPlan.copyPayloads.p0Actions],
+                        ['dryrun-unlock-p1', 'P1 actions 보기', dryRunUnlockPlan.copyPayloads.p1Actions],
+                        ['dryrun-unlock-evidence', 'Evidence pack 보기', dryRunUnlockPlan.copyPayloads.evidencePack],
+                        ['dryrun-unlock-table', 'Owner action table 보기', dryRunUnlockPlan.copyPayloads.ownerActionTable],
+                        ['dryrun-unlock-ready-later', 'READY_LATER conditions 보기', dryRunUnlockPlan.copyPayloads.readyLaterConditions],
+                        ['dryrun-unlock-ready-review', 'READY_FOR_REVIEW conditions 보기', dryRunUnlockPlan.copyPayloads.readyForReviewConditions],
+                        ['dryrun-unlock-prohibited', 'Prohibited actions 보기', dryRunUnlockPlan.copyPayloads.prohibitedActions],
+                        ['dryrun-unlock-markdown', 'Export Markdown', dryRunUnlockPlan.copyPayloads.markdown],
+                        ['dryrun-unlock-tsv', 'Export TSV', dryRunUnlockPlan.copyPayloads.tsv],
+                      ].map(([key, label, text]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => void openExportPreview(key, text)}
+                          className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          {copiedRunbookKey === key ? '복사됨' : label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <MetricCard label="current decision" value={dryRunUnlockPlan.summary.currentDecision} help="unlock state" compact variant={dryRunUnlockPlan.summary.currentDecision === 'READY_FOR_REVIEW' ? 'default' : 'warning'} />
+                    <MetricCard label="dry-run review" value={dryRunUnlockPlan.summary.dryRunReviewStatus} help="review only" compact variant="warning" />
+                    <MetricCard label="apply status" value={dryRunUnlockPlan.summary.applyStatus} help="apply remains prohibited" compact variant="warning" />
+                    <MetricCard label="missing conditions" value={dryRunUnlockPlan.summary.missingGoConditionsCount.toLocaleString()} help="go conditions" compact />
+                    <MetricCard label="current stage" value={dryRunUnlockPlan.summary.currentStage} help="readiness stage" compact />
+                    <MetricCard label="next checkpoint" value={dryRunUnlockPlan.summary.nextCheckpoint} help={dryRunUnlockPlan.summary.nextUnlockMilestone} compact />
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-950">
+                      <h6 className="text-sm font-semibold">P0 unlock actions</h6>
+                      <div className="mt-3 space-y-3">
+                        {dryRunUnlockPlan.p0UnlockActions.map((item) => (
+                          <div key={item.id} className="rounded-xl border border-white/70 bg-white/70 p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge tone={item.currentStatus === 'READY' ? 'success' : item.currentStatus === 'READY_LATER' ? 'neutral' : 'warn'}>
+                                {item.currentStatus}
+                              </Badge>
+                              <span className="text-xs font-semibold">{item.title}</span>
+                            </div>
+                            <p className="mt-2 text-xs leading-5">
+                              current: {item.currentCount == null ? item.currentStatus : item.currentCount.toLocaleString()} · required: {item.requiredState}
+                            </p>
+                            <p className="mt-1 text-xs leading-5">owner: {item.owner} · route: {item.route}</p>
+                            <p className="mt-1 text-xs leading-5">{item.nextAction}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+                      <h6 className="text-sm font-semibold">P1 unlock actions</h6>
+                      <div className="mt-3 space-y-3">
+                        {dryRunUnlockPlan.p1UnlockActions.map((item) => (
+                          <div key={item.id} className="rounded-xl border border-white/70 bg-white/70 p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge tone={item.currentStatus === 'READY' ? 'success' : item.currentStatus === 'READY_LATER' ? 'neutral' : 'warn'}>
+                                {item.currentStatus}
+                              </Badge>
+                              <span className="text-xs font-semibold">{item.title}</span>
+                            </div>
+                            <p className="mt-2 text-xs leading-5">
+                              current: {item.currentCount == null ? item.currentStatus : item.currentCount.toLocaleString()} · required: {item.requiredState}
+                            </p>
+                            <p className="mt-1 text-xs leading-5">owner: {item.owner} · route: {item.route}</p>
+                            <p className="mt-1 text-xs leading-5">{item.nextAction}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-950">
+                      <h6 className="text-sm font-semibold">P2 / evidence actions</h6>
+                      <div className="mt-3 space-y-3">
+                        {dryRunUnlockPlan.p2EvidenceActions.map((item) => (
+                          <div key={item.id} className="rounded-xl border border-white/70 bg-white/70 p-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge tone={item.currentStatus === 'READY' ? 'success' : item.currentStatus === 'READY_LATER' ? 'neutral' : 'warn'}>
+                                {item.currentStatus}
+                              </Badge>
+                              <span className="text-xs font-semibold">{item.title}</span>
+                            </div>
+                            <p className="mt-2 text-xs leading-5">
+                              current: {item.currentCount == null ? item.currentStatus : item.currentCount.toLocaleString()} · required: {item.requiredState}
+                            </p>
+                            <p className="mt-1 text-xs leading-5">owner: {item.owner} · route: {item.route}</p>
+                            <p className="mt-1 text-xs leading-5">{item.nextAction}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">READY_LATER conditions</h6>
+                      <ul className="mt-3 space-y-2 text-xs leading-5 text-slate-700">
+                        {dryRunUnlockPlan.readyLaterConditions.map((item) => (
+                          <li key={item.id}>
+                            <span className="font-semibold">{item.status}</span> · {item.label} · current {item.currentCount == null ? 'status-only' : item.currentCount.toLocaleString()} · required {item.requiredState}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">READY_FOR_REVIEW conditions</h6>
+                      <ul className="mt-3 space-y-2 text-xs leading-5 text-slate-700">
+                        {dryRunUnlockPlan.readyForReviewConditions.map((item) => (
+                          <li key={item.id}>
+                            <span className="font-semibold">{item.status}</span> · {item.label} · required {item.requiredState}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                    {[
+                      ['Evidence pack', dryRunUnlockPlan.evidencePack],
+                      ['HR action plan', dryRunUnlockPlan.hrActionPlan],
+                      ['Developer / watch action plan', dryRunUnlockPlan.developerWatchActionPlan],
+                    ].map(([title, items]) => (
+                      <div key={title as string} className="rounded-2xl border border-slate-200 bg-white p-4">
+                        <h6 className="text-sm font-semibold text-slate-900">{title as string}</h6>
+                        <ul className="mt-3 space-y-2 text-xs leading-5 text-slate-700">
+                          {(items as string[]).map((item) => <li key={item}>- {item}</li>)}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                      <h6 className="text-sm font-semibold text-slate-900">Owner action table</h6>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2 font-semibold">Priority</th>
+                            <th className="px-3 py-2 font-semibold">Condition</th>
+                            <th className="px-3 py-2 font-semibold">Current</th>
+                            <th className="px-3 py-2 font-semibold">Required state</th>
+                            <th className="px-3 py-2 font-semibold">Owner</th>
+                            <th className="px-3 py-2 font-semibold">Route</th>
+                            <th className="px-3 py-2 font-semibold">Next action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
+                          {dryRunUnlockPlan.ownerActionTable.map((item) => (
+                            <tr key={item.id}>
+                              <td className="px-3 py-2 font-semibold">{item.priority}</td>
+                              <td className="px-3 py-2">{item.condition}</td>
+                              <td className="px-3 py-2">{item.currentCount == null ? item.currentStatus : item.currentCount.toLocaleString()}</td>
+                              <td className="px-3 py-2">{item.requiredState}</td>
+                              <td className="px-3 py-2">{item.owner}</td>
+                              <td className="px-3 py-2">{item.route}</td>
+                              <td className="px-3 py-2">{item.nextAction}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                      <h6 className="text-sm font-semibold text-blue-950">Next checkpoint</h6>
+                      <p className="mt-2 text-sm font-semibold text-blue-900">{dryRunUnlockPlan.checkpointPlan.name}</p>
+                      <p className="mt-2 text-xs leading-5 text-blue-900">owner: {dryRunUnlockPlan.checkpointPlan.decisionOwner}</p>
+                      <p className="mt-1 text-xs leading-5 text-blue-900">expected: {dryRunUnlockPlan.checkpointPlan.statusExpectedAfterCheckpoint}</p>
+                      <p className="mt-2 text-xs leading-5 text-blue-900">required export: {dryRunUnlockPlan.checkpointPlan.requiredExport.join(', ')}</p>
+                      <p className="mt-1 text-xs leading-5 text-blue-900">delta table: {dryRunUnlockPlan.checkpointPlan.expectedBeforeAfterDeltaTable.join(', ')}</p>
+                    </div>
+                    <div className="rounded-2xl border border-rose-200 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
+                      <p className="mt-2 text-sm leading-6 text-rose-900">{dryRunUnlockPlan.prohibitedActions.join(', ')}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
