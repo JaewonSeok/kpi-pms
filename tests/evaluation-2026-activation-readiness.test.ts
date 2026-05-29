@@ -1357,6 +1357,97 @@ async function main() {
     assert.equal(runbook.safety.gradeIdChanged, false)
   })
 
+  await run('dry-run unlock plan renders conservative no-go unlock actions and read-only exports', async () => {
+    const { buildEvaluation2026DryRunUnlockPlan } = await import('../src/server/evaluation-2026-dryrun-unlock-plan')
+    const unlockPlan = buildEvaluation2026DryRunUnlockPlan({
+      dryRunGoNoGoFreezePack: {
+        decision: {
+          currentDecision: 'NO_GO',
+        },
+      },
+      integratedReadinessSnapshot: {
+        currentStage: 'MBO_SETUP_IN_PROGRESS',
+        overallStatus: 'NEEDS_HR_ACTION',
+        summary: {
+          activeEmployeeCount: 289,
+          confirmedPersonalKpiCount: 1,
+          officialActivationGateBlockerCount: 1753,
+          missingMboCount: 284,
+          evaluatorRoutingBlockerCount: 289,
+          teamKpiPendingCount: 25,
+          policyCategoryMissingCount: 1,
+          aiReadinessBlockerCount: 287,
+          feedbackLeadershipBlockerCount: 287,
+          scorePolicyBlockerCount: 17,
+          gradePolicyBlockerCount: 0,
+          resultWritingBlockerCount: 12,
+          leaderEvaluationBlockerCount: 289,
+          finalizationCeoBlockerCount: 200,
+        },
+      },
+      fastForwardOperationsCockpit: {
+        ownerActionQueues: {
+          developer: ['watch production logs'],
+        },
+      },
+      backfillDryRunPreflightPack: {
+        preflightSummary: {
+          dbBackupStatus: 'REQUIRED_NOT_CONFIRMED',
+          hrApprovalStatus: 'REQUIRED_NOT_COLLECTED',
+        },
+      },
+      backfillDryRunCommandRunbook: {
+        status: 'AVAILABLE',
+        dryRunOnlyCommandReference: {
+          executeAvailable: false,
+        },
+      },
+      dryRunOutputReviewTemplate: {
+        templateStatus: 'AVAILABLE',
+      },
+      dryRunRehearsalGuardrails: {
+        safety: {
+          officialScoringEnabled: false,
+          officialGradeEnabled: false,
+          officialAiScoreExclusionEnabled: false,
+        },
+      },
+      populationDryRun: {
+        employeesMissingConfirmedPersonalKpiCount: 288,
+      },
+    })
+
+    assert.equal(unlockPlan.mode, 'READ_ONLY')
+    assert.equal(unlockPlan.summary.currentDecision, 'NO_GO')
+    assert.equal(unlockPlan.summary.applyStatus, 'NOT_ALLOWED')
+    assert.equal(unlockPlan.p0UnlockActions.some((item) => item.id === 'OFFICIAL_GATE_BLOCKERS'), true)
+    assert.equal(unlockPlan.p0UnlockActions.some((item) => item.id === 'MBO_MISSING'), true)
+    assert.equal(unlockPlan.p0UnlockActions.some((item) => item.id === 'EVALUATOR_ROUTING'), true)
+    assert.equal(unlockPlan.p0UnlockActions.some((item) => item.id === 'TEAM_KPI_PENDING'), true)
+    assert.equal(unlockPlan.p0UnlockActions.some((item) => item.id === 'POLICY_CATEGORY_MISSING'), true)
+    assert.equal(unlockPlan.p1UnlockActions.some((item) => item.id === 'SCORE_POLICY_BLOCKERS'), true)
+    assert.equal(unlockPlan.p1UnlockActions.some((item) => item.id === 'RESULT_WRITING_READINESS'), true)
+    assert.equal(unlockPlan.p1UnlockActions.some((item) => item.id === 'LEADER_EVALUATION_READINESS'), true)
+    assert.equal(unlockPlan.p1UnlockActions.some((item) => item.id === 'FINALIZATION_CEO_READINESS'), true)
+    assert.equal(unlockPlan.p1UnlockActions.some((item) => item.id === 'AI_360_READINESS'), true)
+    assert.equal(unlockPlan.evidencePack.includes('Go/No-Go Freeze Pack export'), true)
+    assert.equal(unlockPlan.readyLaterConditions.some((item) => item.id === 'MBO_MISSING'), true)
+    assert.equal(unlockPlan.readyForReviewConditions.some((item) => item.id === 'DB_BACKUP_EVIDENCE'), true)
+    assert.equal(unlockPlan.ownerActionTable.length, unlockPlan.p0UnlockActions.length + unlockPlan.p1UnlockActions.length + unlockPlan.p2EvidenceActions.length)
+    assert.equal(unlockPlan.prohibitedActions.includes('backfill --apply'), true)
+    assert.equal(unlockPlan.copyPayloads.markdown.includes('2026 Dry-run Unlock Plan'), true)
+    assert.equal(unlockPlan.copyPayloads.markdown.includes('## READY_LATER conditions'), true)
+    assert.equal(unlockPlan.copyPayloads.tsv.includes('owner_action'), true)
+    assert.equal(unlockPlan.safety.writesPerformed, false)
+    assert.equal(unlockPlan.safety.dryRunExecuted, false)
+    assert.equal(unlockPlan.safety.backfillApplyExecuted, false)
+    assert.equal(unlockPlan.safety.totalScoreChanged, false)
+    assert.equal(unlockPlan.safety.gradeIdChanged, false)
+    assert.equal(unlockPlan.safety.noDryRunExecutionButtons, true)
+    assert.equal(unlockPlan.safety.noApplyButtons, true)
+    assert.equal(unlockPlan.safety.noScoreGradeWriteButtons, true)
+  })
+
   await run('official activation runbook blocks scoring grade and gradeId sequencing', async () => {
     const result = await getEvaluation2026ActivationReadiness({
       flags: makeFlags({
@@ -1441,6 +1532,7 @@ async function main() {
     const dryRunRehearsalSource = read('src/server/evaluation-2026-dryrun-rehearsal-guardrails.ts')
     const commandRunbookSource = read('src/server/evaluation-2026-backfill-dryrun-command-runbook.ts')
     const freezePackSource = read('src/server/evaluation-2026-dryrun-go-no-go-freeze.ts')
+    const unlockPlanSource = read('src/server/evaluation-2026-dryrun-unlock-plan.ts')
     const dryRunOutputReviewerSource = read('src/server/evaluation-2026-dryrun-output-reviewer.ts')
     const backfillSafetyGuardSource = read('scripts/lib/2026-backfill-safety-guard.ts')
     const backfillScriptSource = read('scripts/backfill-2026-policy-metadata.ts')
@@ -1551,6 +1643,16 @@ async function main() {
     assert.equal(clientSource.includes('Explicitly forbidden commands'), true)
     assert.equal(clientSource.includes('2026 Dry-run Go/No-Go Freeze Pack'), true)
     assert.equal(clientSource.includes('future dry-run 검토 가능 여부를 읽기 전용으로 판정합니다'), true)
+    assert.equal(clientSource.includes('2026 Dry-run Unlock Plan'), true)
+    assert.equal(clientSource.includes('NO_GO 상태를 해제하기 위한 실행 순서'), true)
+    assert.equal(clientSource.includes('P0 unlock actions'), true)
+    assert.equal(clientSource.includes('P1 unlock actions'), true)
+    assert.equal(clientSource.includes('P2 / evidence actions'), true)
+    assert.equal(clientSource.includes('READY_LATER conditions'), true)
+    assert.equal(clientSource.includes('READY_FOR_REVIEW conditions'), true)
+    assert.equal(clientSource.includes('Owner action table'), true)
+    assert.equal(clientSource.includes('Unlock summary 보기'), true)
+    assert.equal(clientSource.includes('Export Markdown'), true)
     assert.equal(clientSource.includes('Go/No-Go summary'), true)
     assert.equal(clientSource.includes('No-go reasons'), true)
     assert.equal(clientSource.includes('Go conditions'), true)
@@ -1614,6 +1716,8 @@ async function main() {
     assert.equal(activationSource.includes('buildEvaluation2026BackfillDryRunCommandRunbook'), true)
     assert.equal(activationSource.includes('dryRunGoNoGoFreezePack'), true)
     assert.equal(activationSource.includes('buildEvaluation2026DryRunGoNoGoFreezePack'), true)
+    assert.equal(activationSource.includes('dryRunUnlockPlan'), true)
+    assert.equal(activationSource.includes('buildEvaluation2026DryRunUnlockPlan'), true)
     assert.equal(ceoReportSource.includes('READY_FOR_REPORT'), true)
     assert.equal(ceoReportSource.includes('CEO decision agenda'), true)
     assert.equal(ceoReportSource.includes('MBO 작성 1차 독려'), true)
@@ -1718,6 +1822,29 @@ async function main() {
     assert.equal(freezePackSource.includes('noDryRunExecutionButtons'), true)
     assert.equal(freezePackSource.includes('noApplyButtons'), true)
     assert.equal(freezePackSource.includes('noMetadataSaveButtons'), true)
+    assert.equal(unlockPlanSource.includes('2026 Dry-run Unlock Plan'), true)
+    assert.equal(unlockPlanSource.includes('P0'), true)
+    assert.equal(unlockPlanSource.includes('P1'), true)
+    assert.equal(unlockPlanSource.includes('P2'), true)
+    assert.equal(unlockPlanSource.includes('official activation gate blockers'), true)
+    assert.equal(unlockPlanSource.includes('MBO missing'), true)
+    assert.equal(unlockPlanSource.includes('evaluator routing blockers'), true)
+    assert.equal(unlockPlanSource.includes('Team KPI pending'), true)
+    assert.equal(unlockPlanSource.includes('policyCategory missing'), true)
+    assert.equal(unlockPlanSource.includes('score policy blockers'), true)
+    assert.equal(unlockPlanSource.includes('result-writing readiness'), true)
+    assert.equal(unlockPlanSource.includes('leader evaluation readiness'), true)
+    assert.equal(unlockPlanSource.includes('finalization/CEO readiness'), true)
+    assert.equal(unlockPlanSource.includes('AI/360 readiness'), true)
+    assert.equal(unlockPlanSource.includes('READY_LATER conditions'), true)
+    assert.equal(unlockPlanSource.includes('READY_FOR_REVIEW conditions'), true)
+    assert.equal(unlockPlanSource.includes("applyStatus: 'NOT_ALLOWED'"), true)
+    assert.equal(unlockPlanSource.includes('dryRunExecuted: false'), true)
+    assert.equal(unlockPlanSource.includes('backfillApplyExecuted: false'), true)
+    assert.equal(unlockPlanSource.includes('totalScoreChanged: false'), true)
+    assert.equal(unlockPlanSource.includes('gradeIdChanged: false'), true)
+    assert.equal(unlockPlanSource.includes('noDryRunExecutionButtons'), true)
+    assert.equal(unlockPlanSource.includes('noApplyButtons'), true)
     assert.equal(dryRunOutputReviewerSource.includes('reviewEvaluation2026DryRunOutput'), true)
     assert.equal(dryRunOutputReviewerSource.includes('WRITES_PERFORMED_TRUE'), true)
     assert.equal(dryRunOutputReviewerSource.includes('TOTAL_SCORE_CHANGED'), true)
