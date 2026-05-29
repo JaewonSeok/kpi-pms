@@ -3758,6 +3758,219 @@ function PolicyActivationReadiness2026Panel(props: {
 
       {activation ? (
         <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="success">HR dashboard</Badge>
+                  <Badge tone={gatesReady ? 'success' : 'warn'}>{gatesReady ? '공식 전환 준비 확인 필요' : '공식 전환 BLOCKED'}</Badge>
+                  <Badge tone="neutral">쓰기 없음</Badge>
+                </div>
+                <h4 className="mt-3 text-lg font-semibold text-emerald-950">2026 평가 운영 요약</h4>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-emerald-900">
+                  HR/admin이 매일 확인할 항목만 먼저 보여줍니다. 상세 readiness, dry-run, runbook, watch-only 도구는 아래 고급 섹션에 접어 두었습니다.
+                </p>
+              </div>
+              <Link
+                href="/evaluation/workbench"
+                className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800"
+              >
+                전용 평가 Workbench 열기
+              </Link>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <MetricCard
+                label="현재 단계"
+                value={snapshot?.currentStage ?? executionBoard?.summary.currentStage ?? '미확인'}
+                help="준비 상태"
+                compact
+                variant={snapshot?.overallStatus === 'READY_FOR_REVIEW' || snapshot?.overallStatus === 'READY_LATER' ? 'default' : 'warning'}
+              />
+              <MetricCard
+                label="전체 준비 상태"
+                value={snapshot?.overallStatus ?? executionBoard?.summary.overallReadinessStatus ?? '미확인'}
+                help="readiness 요약"
+                compact
+                variant={snapshot?.overallStatus === 'READY_FOR_REVIEW' || snapshot?.overallStatus === 'READY_LATER' ? 'default' : 'warning'}
+              />
+              <MetricCard
+                label="Go/No-Go"
+                value={dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO'}
+                help={`apply ${dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED'}`}
+                compact
+                variant={dryRunGoNoGoFreezePack?.decision.currentDecision === 'READY_FOR_REVIEW' ? 'default' : 'warning'}
+              />
+              <MetricCard
+                label="공식 전환"
+                value={gatesReady ? 'READY 확인 필요' : 'BLOCKED'}
+                help="실행 버튼 없음"
+                compact
+                variant={gatesReady ? 'default' : 'warning'}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
+              <div className="rounded-2xl border border-white/80 bg-white p-4">
+                <h5 className="text-sm font-semibold text-slate-900">Top 3 해소 필요 항목</h5>
+                {snapshot?.topBlockers.length ? (
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+                    {snapshot.topBlockers.slice(0, 3).map((blocker) => (
+                      <li key={blocker.code}>
+                        <span className="font-semibold text-slate-950">{blocker.name}</span> · {blocker.count.toLocaleString()}건
+                      </li>
+                    ))}
+                  </ul>
+                ) : blockers.length ? (
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+                    {blockers.slice(0, 3).map((blocker, index) => (
+                      <li key={`${blocker.code}-${index}`}>
+                        <span className="font-semibold text-slate-950">{blocker.code}</span> · {blocker.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-sm leading-6 text-emerald-800">현재 요약 범위에서는 주요 blocker가 없습니다.</p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-white/80 bg-white p-4">
+                <h5 className="text-sm font-semibold text-slate-900">오늘 할 일</h5>
+                <div className="mt-3 grid gap-2 text-sm">
+                  <Link href="/kpi/personal" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                    MBO 작성/제출 요청
+                  </Link>
+                  <Link href="/kpi/monthly" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                    Team KPI 검토
+                  </Link>
+                  <Link href="/evaluation/performance" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                    policyCategory 확정
+                  </Link>
+                  <Link href="/admin/performance-assignments" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                    평가자 배정 확인
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => snapshot ? void openExportPreview('snapshot-compact-markdown', snapshot.copyPayloads.markdown) : undefined}
+                    disabled={!snapshot}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    updated snapshot export
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/80 bg-white p-4">
+                <h5 className="text-sm font-semibold text-slate-900">다음 action</h5>
+                <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">HR</p>
+                    <p>{executionBoard?.summary.nextHrAction ?? snapshot?.nextActions.hr[0]?.detail ?? 'MBO, Team KPI, policyCategory, 평가자 배정을 먼저 확인합니다.'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Developer / Watch</p>
+                    <p>{executionBoard?.summary.nextDeveloperWatchAction ?? snapshot?.nextActions.developer[0]?.detail ?? '공식 전환/feature flag는 계속 BLOCKED로 감시합니다.'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <h5 className="text-sm font-semibold text-amber-950">공식 전환 상태</h5>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                <div className="rounded-xl border border-amber-100 bg-white px-3 py-2 text-sm text-amber-950">
+                  Go/No-Go: {dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO / READY_LATER / READY_FOR_REVIEW 확인 필요'}
+                </div>
+                <div className="rounded-xl border border-amber-100 bg-white px-3 py-2 text-sm text-amber-950">
+                  Apply: {dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED'}
+                </div>
+                <div className="rounded-xl border border-amber-100 bg-white px-3 py-2 text-sm text-amber-950">
+                  Official activation: {gatesReady ? 'READY 확인 필요' : 'BLOCKED'}
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-amber-800">
+                이 요약에는 dry-run 실행, apply, backfill, 공식 점수/등급, feature flag 변경 버튼이 없습니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">평가 워크벤치 바로가기</h4>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  실제 평가 흐름은 전용 Workbench에서 preview로 확인합니다. `/evaluation/performance`는 HR 운영 요약과 고급 진단 접근점으로 유지합니다.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Link href="/evaluation/workbench" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-slate-800">
+                  전용 평가 Workbench 열기
+                </Link>
+                <Link href="/admin/performance-calendar" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                  평가 일정 보기
+                </Link>
+                <Link href="/admin/performance-assignments" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                  평가자 배정 보기
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h4 className="text-sm font-semibold text-slate-900">용어 설명</h4>
+            <div className="mt-3 grid gap-2 text-xs leading-5 text-slate-600 md:grid-cols-2 xl:grid-cols-3">
+              {[
+                ['readiness', '준비 상태'],
+                ['gate', '공식 전환 차단 조건'],
+                ['blocker', '해소 필요 항목'],
+                ['dry-run', '쓰기 없는 사전 실행 검토'],
+                ['apply', '실제 반영'],
+                ['backfill', '기존 데이터를 평가 구조에 맞게 채우는 작업'],
+                ['official scoring', '공식 점수 반영'],
+                ['official grade', '공식 등급 반영'],
+                ['feature flag', '기능 활성화 스위치'],
+                ['totalScore', '공식 저장 점수'],
+                ['gradeId', '공식 저장 등급'],
+              ].map(([term, meaning]) => (
+                <div key={term} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                  <span className="font-semibold text-slate-900">{term}</span> = {meaning}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 xl:grid-cols-4">
+            {[
+              ['고급 진단 / Readiness 상세', '통합 readiness snapshot, action plan, execution board, scenario simulator를 필요할 때만 펼칩니다.'],
+              ['공식 전환 준비 / Dry-run 도구', 'Fast-Forward cockpit, backfill preflight, output review, rehearsal guardrails, command runbook, Go/No-Go, unlock plan을 접어 둡니다.'],
+              ['대표/최종 보고', 'CEO report pack, finalization/CEO readiness, 360/leadership readiness는 보고 시점에 펼칩니다.'],
+              ['개발자/Watch-only', 'Vercel/log watch, prohibited actions, feature flag watch, command reference는 개발/감시 용도로만 확인합니다.'],
+            ].map(([title, description]) => (
+              <details key={title} className="rounded-2xl border border-slate-200 bg-white">
+                <summary className="cursor-pointer list-none px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-slate-900">{title}</span>
+                    <Badge tone="neutral">기본 접힘</Badge>
+                  </div>
+                </summary>
+                <p className="border-t border-slate-100 px-4 pb-4 pt-3 text-sm leading-6 text-slate-600">{description}</p>
+              </details>
+            ))}
+          </div>
+
+          <details className="rounded-2xl border border-slate-200 bg-slate-50">
+            <summary className="cursor-pointer list-none px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-900">전체 상세 진단 열기</h4>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    기존 readiness, dry-run, runbook, CEO/report, developer watch 도구는 삭제하지 않고 이 영역 안에 접어 두었습니다.
+                  </p>
+                </div>
+                <Badge tone="neutral">advanced collapsed</Badge>
+              </div>
+            </summary>
+            <div className="space-y-4 border-t border-slate-200 bg-white p-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={activation.readiness.cycleScope.isOfficialReadinessTarget ? 'success' : 'warn'}>
@@ -6433,6 +6646,8 @@ function PolicyActivationReadiness2026Panel(props: {
               ) : null}
             </div>
           </div>
+            </div>
+          </details>
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
