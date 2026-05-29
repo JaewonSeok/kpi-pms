@@ -3237,6 +3237,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const dryRunOutputReviewTemplate = activation?.dryRunOutputReviewTemplate ?? null
   const dryRunRehearsalGuardrails = activation?.dryRunRehearsalGuardrails ?? null
   const backfillDryRunCommandRunbook = activation?.backfillDryRunCommandRunbook ?? null
+  const dryRunGoNoGoFreezePack = activation?.dryRunGoNoGoFreezePack ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
@@ -3580,6 +3581,15 @@ function PolicyActivationReadiness2026Panel(props: {
                 help={backfillDryRunCommandRunbook.summary.applyStatus}
                 compact
                 variant="warning"
+              />
+            ) : null}
+            {dryRunGoNoGoFreezePack ? (
+              <MetricCard
+                label="Dry-run Go/No-Go"
+                value={dryRunGoNoGoFreezePack.decision.currentDecision}
+                help={`apply ${dryRunGoNoGoFreezePack.decision.applyStatus}`}
+                compact
+                variant={dryRunGoNoGoFreezePack.decision.currentDecision === 'READY_FOR_REVIEW' ? 'default' : 'warning'}
               />
             ) : null}
           </div>
@@ -4873,6 +4883,131 @@ function PolicyActivationReadiness2026Panel(props: {
                   <div className="mt-4 rounded-2xl border border-rose-200 bg-white p-4">
                     <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
                     <p className="mt-2 text-sm leading-6 text-rose-900">{backfillDryRunCommandRunbook.prohibitedActions.join(', ')}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {dryRunGoNoGoFreezePack ? (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 Dry-run Go/No-Go Freeze Pack</h5>
+                        <Badge tone="neutral">{dryRunGoNoGoFreezePack.mode}</Badge>
+                        <Badge tone={dryRunGoNoGoFreezePack.decision.currentDecision === 'READY_FOR_REVIEW' ? 'success' : 'warn'}>
+                          {dryRunGoNoGoFreezePack.decision.currentDecision}
+                        </Badge>
+                        <Badge tone="warn">apply {dryRunGoNoGoFreezePack.decision.applyStatus}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">
+                        이 화면은 future dry-run 검토 가능 여부를 읽기 전용으로 판정합니다. dry-run, apply, backfill,
+                        공식 점수/등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        ['dryrun-freeze-summary', 'Go/No-Go summary', dryRunGoNoGoFreezePack.copyPayloads.goNoGoSummary],
+                        ['dryrun-freeze-no-go', 'No-go reasons', dryRunGoNoGoFreezePack.copyPayloads.noGoReasons],
+                        ['dryrun-freeze-go', 'Go conditions', dryRunGoNoGoFreezePack.copyPayloads.goConditions],
+                        ['dryrun-freeze-evidence', 'Evidence pack', dryRunGoNoGoFreezePack.copyPayloads.requiredEvidencePack],
+                        ['dryrun-freeze-hr', 'HR unlock actions', dryRunGoNoGoFreezePack.copyPayloads.hrUnlockActions],
+                        ['dryrun-freeze-dev', 'Developer unlock actions', dryRunGoNoGoFreezePack.copyPayloads.developerUnlockActions],
+                        ['dryrun-freeze-signoff', 'Sign-off checklist', dryRunGoNoGoFreezePack.copyPayloads.signOffChecklist],
+                        ['dryrun-freeze-checkpoint', 'Next checkpoint', dryRunGoNoGoFreezePack.copyPayloads.nextCheckpoint],
+                        ['dryrun-freeze-prohibited', 'Prohibited actions', dryRunGoNoGoFreezePack.copyPayloads.prohibitedActions],
+                        ['dryrun-freeze-markdown', 'Markdown', dryRunGoNoGoFreezePack.copyPayloads.markdown],
+                        ['dryrun-freeze-tsv', 'TSV', dryRunGoNoGoFreezePack.copyPayloads.tsv],
+                      ].map(([key, label, text]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => void copyActivationRunbookPayload(key, text)}
+                          className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          {copiedRunbookKey === key ? '복사됨' : label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={dryRunGoNoGoFreezePack.decision.currentDecision === 'READY_FOR_REVIEW' ? 'success' : 'warn'}>
+                        {dryRunGoNoGoFreezePack.decision.currentDecision}
+                      </Badge>
+                      <Badge tone="warn">apply {dryRunGoNoGoFreezePack.decision.applyStatus}</Badge>
+                      <Badge tone="neutral">missing {dryRunGoNoGoFreezePack.decision.missingGoConditionsCount}</Badge>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-amber-950">{dryRunGoNoGoFreezePack.decision.explanationKo}</p>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                      <h6 className="text-sm font-semibold text-rose-950">No-go reasons</h6>
+                      <div className="mt-3 grid gap-2">
+                        {dryRunGoNoGoFreezePack.noGoReasons.map((item) => (
+                          <div key={item.id} className="rounded-xl border border-rose-100 bg-white px-3 py-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold text-rose-950">{item.label}</p>
+                              <Badge tone={item.status === 'READY' ? 'success' : 'warn'}>{item.status}</Badge>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-rose-700">
+                              count {item.blockerCount ?? 'n/a'} · {item.source}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-rose-800">{item.nextAction}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">Go conditions</h6>
+                      <div className="mt-3 grid gap-2">
+                        {dryRunGoNoGoFreezePack.goConditions.map((item) => (
+                          <div key={item.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold text-slate-900">{item.label}</p>
+                              <Badge tone={item.status === 'READY' ? 'success' : item.status === 'READY_LATER' ? 'neutral' : 'warn'}>{item.status}</Badge>
+                            </div>
+                            <p className="mt-1 text-xs leading-5 text-slate-500">
+                              count {item.blockerCount ?? 'n/a'} · {item.source}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-4">
+                    {[
+                      ['Required evidence pack', dryRunGoNoGoFreezePack.requiredEvidencePack],
+                      ['HR unlock actions', dryRunGoNoGoFreezePack.hrUnlockActions],
+                      ['Developer unlock actions', dryRunGoNoGoFreezePack.developerUnlockActions],
+                      ['Sign-off checklist', dryRunGoNoGoFreezePack.signOffChecklist],
+                    ].map(([title, items]) => (
+                      <div key={title as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <h6 className="text-sm font-semibold text-slate-900">{title as string}</h6>
+                        <ul className="mt-3 space-y-2 text-xs leading-5 text-slate-700">
+                          {(items as string[]).map((item) => <li key={item}>- {item}</li>)}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                      <h6 className="text-sm font-semibold text-blue-950">Next checkpoint</h6>
+                      <p className="mt-2 text-xs leading-5 text-blue-900">{dryRunGoNoGoFreezePack.nextCheckpoint.name}</p>
+                      <p className="mt-1 text-xs leading-5 text-blue-900">{dryRunGoNoGoFreezePack.nextCheckpoint.requiredBeforeAfterSnapshot}</p>
+                      <p className="mt-1 text-xs leading-5 text-blue-900">owner: {dryRunGoNoGoFreezePack.nextCheckpoint.decisionOwner}</p>
+                      <p className="mt-2 text-xs leading-5 text-blue-900">
+                        delta: {dryRunGoNoGoFreezePack.nextCheckpoint.deltaTableRequired.join(', ')}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-rose-200 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
+                      <p className="mt-2 text-sm leading-6 text-rose-900">{dryRunGoNoGoFreezePack.prohibitedActions.join(', ')}</p>
+                    </div>
                   </div>
                 </div>
               ) : null}
