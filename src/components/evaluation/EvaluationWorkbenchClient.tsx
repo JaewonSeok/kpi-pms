@@ -3296,6 +3296,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const dryRunRehearsalGuardrails = activation?.dryRunRehearsalGuardrails ?? null
   const backfillDryRunCommandRunbook = activation?.backfillDryRunCommandRunbook ?? null
   const dryRunGoNoGoFreezePack = activation?.dryRunGoNoGoFreezePack ?? null
+  const endToEndPilot2026 = activation?.endToEndPilot2026 ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [exportPreview, setExportPreview] = useState<ReadinessExportPreview | null>(null)
@@ -3680,6 +3681,15 @@ function PolicyActivationReadiness2026Panel(props: {
                 help={`apply ${dryRunGoNoGoFreezePack.decision.applyStatus}`}
                 compact
                 variant={dryRunGoNoGoFreezePack.decision.currentDecision === 'READY_FOR_REVIEW' ? 'default' : 'warning'}
+              />
+            ) : null}
+            {endToEndPilot2026 ? (
+              <MetricCard
+                label="E2E Pilot"
+                value={endToEndPilot2026.summary.currentDecision}
+                help={`${endToEndPilot2026.summary.workflowStepCount} steps · ${endToEndPilot2026.summary.blockedStepCount} blocked`}
+                compact
+                variant={endToEndPilot2026.summary.blockedStepCount > 0 ? 'warning' : 'default'}
               />
             ) : null}
           </div>
@@ -5126,6 +5136,150 @@ function PolicyActivationReadiness2026Panel(props: {
                   <p className="mt-2 text-sm leading-6 text-slate-600">Go/No-Go 데이터를 불러오는 중입니다.</p>
                 </div>
               )}
+
+              {endToEndPilot2026 ? (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 평가 End-to-End Pilot</h5>
+                        <Badge tone="neutral">{endToEndPilot2026.mode}</Badge>
+                        <Badge tone={endToEndPilot2026.summary.blockedStepCount > 0 ? 'warn' : 'success'}>
+                          {endToEndPilot2026.summary.currentDecision}
+                        </Badge>
+                        <Badge tone="neutral">{endToEndPilot2026.summary.pilotDataSource}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">
+                        이 화면은 2026 평가 전체 흐름을 preview/pilot으로 검증합니다. 공식 평가 생성, 공식 점수,
+                        공식 등급, totalScore, gradeId, backfill은 실행하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900">
+                      <p className="font-semibold">pilot target</p>
+                      <p>{endToEndPilot2026.pilotEmployee.name} · {endToEndPilot2026.pilotEmployee.departmentName}</p>
+                      <p>confirmed KPI {endToEndPilot2026.pilotEmployee.confirmedPersonalKpiCount}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+                    <MetricCard label="workflow steps" value={endToEndPilot2026.summary.workflowStepCount.toLocaleString()} help="target to safety" compact />
+                    <MetricCard label="blocked steps" value={endToEndPilot2026.summary.blockedStepCount.toLocaleString()} help="shown as BLOCKED" compact variant={endToEndPilot2026.summary.blockedStepCount > 0 ? 'warning' : 'default'} />
+                    <MetricCard label="preview-only steps" value={endToEndPilot2026.summary.previewOnlyStepCount.toLocaleString()} help="no writes" compact />
+                    <MetricCard label="score preview" value={endToEndPilot2026.scorePreview.status} help="no totalScore write" compact variant={endToEndPilot2026.scorePreview.status === 'BLOCKED' ? 'warning' : 'default'} />
+                    <MetricCard label="grade preview" value={endToEndPilot2026.gradePreview.status} help="no gradeId write" compact variant={endToEndPilot2026.gradePreview.status === 'BLOCKED' ? 'warning' : 'default'} />
+                    <MetricCard label="CEO preview" value={endToEndPilot2026.ceoFinalConfirmationPreview.status} help="no finalization write" compact variant={endToEndPilot2026.ceoFinalConfirmationPreview.status === 'BLOCKED' ? 'warning' : 'default'} />
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <h6 className="text-sm font-semibold text-slate-900">Workflow stepper</h6>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {endToEndPilot2026.workflowSteps.map((step) => (
+                        <div key={step.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-semibold text-slate-900">{step.order}. {step.label}</p>
+                            <Badge tone={step.status === 'READY' ? 'success' : step.status === 'BLOCKED' ? 'warn' : 'neutral'}>
+                              {step.status}
+                            </Badge>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-slate-600">data: {step.dataUsed.join(', ')}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-600">official later: {step.officialLater}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">route/source: {step.route}</p>
+                          {step.blockedBy.length ? (
+                            <p className="mt-2 text-xs leading-5 text-amber-800">blocked: {step.blockedBy.join(', ')}</p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                      <h6 className="text-sm font-semibold text-blue-950">Score preview</h6>
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <MetricCard label="org performance" value={endToEndPilot2026.scorePreview.organizationPerformanceScore?.toFixed(1) ?? '-'} help="30%" compact />
+                        <MetricCard label="personal performance" value={endToEndPilot2026.scorePreview.personalPerformanceScore?.toFixed(1) ?? '-'} help="70%" compact />
+                        <MetricCard label="base score preview" value={endToEndPilot2026.scorePreview.finalScorePreview?.toFixed(1) ?? '-'} help="not written" compact />
+                      </div>
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="min-w-full divide-y divide-blue-100 text-left text-xs">
+                          <thead className="text-blue-700">
+                            <tr>
+                              <th className="px-2 py-2 font-semibold">category</th>
+                              <th className="px-2 py-2 font-semibold">type</th>
+                              <th className="px-2 py-2 font-semibold">base</th>
+                              <th className="px-2 py-2 font-semibold">final</th>
+                              <th className="px-2 py-2 font-semibold">weight</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-blue-100">
+                            {endToEndPilot2026.scorePreview.categoryContributions.map((item) => (
+                              <tr key={`${item.category}-${item.weight}`}>
+                                <td className="px-2 py-2">{item.category}</td>
+                                <td className="px-2 py-2">{item.contributionType}</td>
+                                <td className="px-2 py-2">{item.baseScore.toFixed(1)}</td>
+                                <td className="px-2 py-2">{item.finalScore.toFixed(1)}</td>
+                                <td className="px-2 py-2">{item.weight}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="mt-3 text-xs leading-5 text-blue-900">{endToEndPilot2026.scorePreview.warnings.join(' ')}</p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                        <h6 className="text-sm font-semibold text-violet-950">Grade preview</h6>
+                        <p className="mt-2 text-sm font-semibold text-violet-900">{endToEndPilot2026.gradePreview.gradePreview ?? endToEndPilot2026.gradePreview.status}</p>
+                        <p className="mt-2 text-xs leading-5 text-violet-900">
+                          group: {endToEndPilot2026.gradePreview.applicableGroup} · mapping: {endToEndPilot2026.gradePreview.scoreToGradeMapping}
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-violet-900">{endToEndPilot2026.gradePreview.teamMemberSalesSuperNotApplicableNote}</p>
+                        {endToEndPilot2026.gradePreview.blockers.length ? (
+                          <p className="mt-2 text-xs leading-5 text-amber-800">blocked: {endToEndPilot2026.gradePreview.blockers.join(', ')}</p>
+                        ) : null}
+                      </div>
+                      <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                        <h6 className="text-sm font-semibold text-sky-950">CEO/final confirmation preview</h6>
+                        <p className="mt-2 text-xs leading-5 text-sky-900">
+                          stage: {endToEndPilot2026.ceoFinalConfirmationPreview.finalReviewerStagePreview} · adjustment reason required: {String(endToEndPilot2026.ceoFinalConfirmationPreview.adjustmentReasonRequired)}
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-sky-900">
+                          calibration blockers {endToEndPilot2026.ceoFinalConfirmationPreview.calibrationFinalizationBlockers} · CEO blockers {endToEndPilot2026.ceoFinalConfirmationPreview.ceoConfirmationBlockers}
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-sky-900">{endToEndPilot2026.ceoFinalConfirmationPreview.notes.join(' ')}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">End-to-end gaps found</h6>
+                      <div className="mt-3 space-y-2">
+                        {endToEndPilot2026.gapAssessment.map((item) => (
+                          <div key={item.question} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-xs font-semibold text-slate-900">{item.question}</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-600">{item.answer} · {item.note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                      <h6 className="text-sm font-semibold text-emerald-950">Safety confirmation</h6>
+                      <div className="mt-3 grid gap-2 text-xs leading-5 text-emerald-900">
+                        <p>official scoring false: {String(endToEndPilot2026.safety.officialScoringEnabled)}</p>
+                        <p>official grade false: {String(endToEndPilot2026.safety.officialGradeEnabled)}</p>
+                        <p>AI exclusion activation false: {String(endToEndPilot2026.safety.officialAiScoreExclusionEnabled)}</p>
+                        <p>totalScore write: {String(endToEndPilot2026.safety.totalScoreChanged)}</p>
+                        <p>gradeId write: {String(endToEndPilot2026.safety.gradeIdChanged)}</p>
+                        <p>official Evaluation/EvaluationItem creation: {endToEndPilot2026.safety.officialEvaluationsCreated}/{endToEndPilot2026.safety.officialEvaluationItemsCreated}</p>
+                        <p>backfill/apply executed: {String(endToEndPilot2026.safety.backfillExecuted)} / {String(endToEndPilot2026.safety.backfillApplyExecuted)}</p>
+                        <p>feature flags changed: {String(endToEndPilot2026.safety.featureFlagsChanged)}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
