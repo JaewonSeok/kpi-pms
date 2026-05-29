@@ -891,14 +891,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
       })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.success) {
-        throw new Error(json?.error?.message ?? '2026 등급 기준 readiness를 불러오지 못했습니다.')
+        throw new Error(json?.error?.message ?? '2026 등급 기준 준비 상태를 불러오지 못했습니다.')
       }
 
       setPolicyGradeReadiness2026(json.data as EvaluationGradePolicyReadiness2026ApiData)
     } catch (error) {
       setPolicyGradeReadiness2026(null)
       setPolicyGradeReadiness2026Error(
-        error instanceof Error ? error.message : '2026 등급 기준 readiness를 불러오지 못했습니다.'
+        error instanceof Error ? error.message : '2026 등급 기준 준비 상태를 불러오지 못했습니다.'
       )
     } finally {
       setPolicyGradeReadiness2026Loading(false)
@@ -1014,14 +1014,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
       })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.success) {
-        throw new Error(json?.error?.message ?? '2026 readiness population dry-run을 불러오지 못했습니다.')
+        throw new Error(json?.error?.message ?? '2026 준비 상태 인원 점검 사전 실행 검토를 불러오지 못했습니다.')
       }
 
       setPolicyPopulationDryRun2026(json.data as EvaluationReadinessPopulation2026ApiData)
     } catch (error) {
       setPolicyPopulationDryRun2026(null)
       setPolicyPopulationDryRun2026Error(
-        error instanceof Error ? error.message : '2026 readiness population dry-run을 불러오지 못했습니다.'
+        error instanceof Error ? error.message : '2026 준비 상태 인원 점검 사전 실행 검토를 불러오지 못했습니다.'
       )
     } finally {
       setPolicyPopulationDryRun2026Loading(false)
@@ -1050,14 +1050,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
       })
       const json = await response.json().catch(() => null)
       if (!response.ok || !json?.success) {
-        throw new Error(json?.error?.message ?? '2026 readiness 대상 주기를 저장하지 못했습니다.')
+        throw new Error(json?.error?.message ?? '2026 준비 상태 대상 주기를 저장하지 못했습니다.')
       }
 
       const result = json.data as EvaluationPolicyOfficialReadinessCycle2026ApiData
       setPolicyOfficialCycle2026Notice(
         result.enabled
-          ? `${result.cycleName}을(를) 공식 readiness 대상 주기로 지정했습니다. 공식 점수 전환은 활성화되지 않았습니다.`
-          : `${result.cycleName}의 공식 readiness 대상 지정을 해제했습니다.`
+          ? `${result.cycleName}을(를) 공식 준비 상태 대상 주기로 지정했습니다. 공식 점수 전환은 활성화되지 않았습니다.`
+          : `${result.cycleName}의 공식 준비 상태 대상 지정을 해제했습니다.`
       )
       await loadPolicyReadiness2026()
       if (policyActivationReadiness2026) {
@@ -1068,7 +1068,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
       }
     } catch (error) {
       setPolicyOfficialCycle2026Error(
-        error instanceof Error ? error.message : '2026 readiness 대상 주기를 저장하지 못했습니다.'
+        error instanceof Error ? error.message : '2026 준비 상태 대상 주기를 저장하지 못했습니다.'
       )
     } finally {
       setPolicyOfficialCycle2026Saving(false)
@@ -1740,7 +1740,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
       {errorNotice ? <Banner tone="error" message={errorNotice} /> : null}
       {props.alerts?.map((alert) => <Banner key={alert} tone="warn" message={alert} />)}
       {resultWritingScheduleGuidance2026.isActive ? (
-        <Banner tone="warn" message={`${resultWritingScheduleGuidance2026.message} 이 안내는 preview guidance이며 Evaluation/EvaluationItem을 생성하지 않습니다.`} />
+        <Banner tone="warn" message={`${resultWritingScheduleGuidance2026.message} 이 안내는 미리보기 참고이며 Evaluation/EvaluationItem을 생성하지 않습니다.`} />
       ) : null}
 
       {/* A. My Action Items — actionable evaluations surfaced from props.evaluations. */}
@@ -2874,7 +2874,7 @@ function PolicyReadiness2026Panel(props: {
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="neutral">Readiness only</Badge>
+              <Badge tone="neutral">준비 상태 전용</Badge>
               <Badge tone={readiness && readiness.blockedCount === 0 ? 'success' : readiness ? 'warn' : 'neutral'}>
                 {readiness
                   ? readiness.blockedCount === 0
@@ -2909,10 +2909,10 @@ function PolicyReadiness2026Panel(props: {
       <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-sm font-semibold text-slate-900">공식 readiness 대상 주기 지정</div>
+            <div className="text-sm font-semibold text-slate-900">공식 준비 상태 대상 주기 지정</div>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              공식 점수 전환이 아니라 readiness 대상 주기 지정입니다. 이 설정은 EvalCycle.performanceDesignConfig metadata만 변경하며,
-              공식 scoring/grade/AI 제외 flag와 저장 점수는 변경하지 않습니다.
+              공식 점수 전환이 아니라 준비 상태 대상 주기 지정입니다. 이 설정은 EvalCycle.performanceDesignConfig 메타데이터만 변경하며,
+              공식 점수/등급/AI 제외 기능 활성화 스위치와 저장 점수는 변경하지 않습니다.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -2922,7 +2922,7 @@ function PolicyReadiness2026Panel(props: {
               disabled={!props.selectedCycleId || props.officialCycleSaving || selectedCycleIsOfficial}
               className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {props.officialCycleSaving ? '저장 중...' : selectedCycleIsOfficial ? '지정됨' : '이 주기를 readiness 대상으로 지정'}
+              {props.officialCycleSaving ? '저장 중...' : selectedCycleIsOfficial ? '지정됨' : '이 주기를 준비 상태 대상으로 지정'}
             </button>
             <button
               type="button"
@@ -2930,12 +2930,12 @@ function PolicyReadiness2026Panel(props: {
               disabled={!props.selectedCycleId || props.officialCycleSaving || !selectedCycleIsOfficial}
               className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
             >
-              readiness 대상 해제
+              준비 상태 대상 해제
             </button>
           </div>
         </div>
         {!props.selectedCycleId ? (
-          <p className="mt-3 text-xs text-amber-700">평가 주기를 선택한 뒤 readiness 대상 여부를 지정할 수 있습니다.</p>
+          <p className="mt-3 text-xs text-amber-700">평가 주기를 선택한 뒤 준비 상태 대상 여부를 지정할 수 있습니다.</p>
         ) : null}
       </div>
 
@@ -2944,7 +2944,7 @@ function PolicyReadiness2026Panel(props: {
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={readiness.cycleScope.isOfficialReadinessTarget ? 'success' : 'warn'}>
-                {readiness.cycleScope.isOfficialReadinessTarget ? '공식 readiness cycle' : '공식 cycle 미확정'}
+                {readiness.cycleScope.isOfficialReadinessTarget ? '공식 준비 상태 대상 주기' : '공식 대상 주기 미확정'}
               </Badge>
               <span className="text-sm font-semibold text-slate-900">
                 {readiness.cycleScope.selectedCycleName ?? '선택된 공식 평가 주기 없음'}
@@ -2954,7 +2954,7 @@ function PolicyReadiness2026Panel(props: {
               ) : null}
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500">
-              cycleId {readiness.cycleScope.selectedCycleId ?? '미지정'} · mode {readiness.cycleScope.selectionMode}
+              cycleId {readiness.cycleScope.selectedCycleId ?? '미지정'} · 선택 방식 {readiness.cycleScope.selectionMode}
             </p>
             {readiness.cycleScope.warning ? (
               <div className="mt-3">
@@ -2966,13 +2966,13 @@ function PolicyReadiness2026Panel(props: {
             <MetricCard
               label="평가 확인"
               value={readiness.totalEvaluationsChecked.toLocaleString()}
-              help="read-only scan"
+              help="읽기 전용 점검"
               compact
             />
             <MetricCard
               label="산출 가능"
               value={readiness.canCalculateCount.toLocaleString()}
-              help="preview 가능"
+              help="미리보기 가능"
               compact
               variant={readiness.canCalculateCount > 0 ? 'default' : 'muted'}
             />
@@ -3069,6 +3069,48 @@ function formatIntegratedSnapshotCount2026(value: number | null | undefined) {
   return typeof value === 'number' ? value.toLocaleString() : '미확인'
 }
 
+function formatReadinessUiStatus2026(status: string | null | undefined) {
+  if (!status) return '미확인'
+  const labels: Record<string, string> = {
+    READY: '준비됨',
+    BLOCKED: '차단됨',
+    READY_LATER: '추후 가능',
+    READY_FOR_REVIEW: '검토 가능',
+    NOT_ALLOWED: '허용 안 됨',
+    WATCH_ONLY: '모니터링 전용',
+    READ_ONLY: '읽기 전용',
+    PREVIEW_ONLY: '미리보기 전용',
+    PREVIEW_WITH_BLOCKERS: '미리보기 가능 / 공식 실행 차단',
+    SAFETY_CONFIRMED: '안전 확인됨',
+    NO_GO: '진행 불가',
+    GO: '진행 가능',
+    DRY_RUN: '사전 실행 검토',
+    DRY_RUN_ONLY: '사전 실행 검토 전용',
+    REFERENCE: '참고',
+    NEEDS_DATA: '데이터 보완 필요',
+    NEEDS_HR_ACTION: '인사 조치 필요',
+    NEEDS_INPUT: '입력 필요',
+    BLOCKED_BY_REASON: '사유 필요',
+    WARNING: '주의',
+    READY_TO_START: '시작 가능',
+    DONE: '완료',
+    NOT_STARTED: '미시작',
+    WAITING_FOR_DATA: '데이터 대기',
+    IN_PROGRESS: '진행 중',
+    REFERENCE_ONLY: '참고 전용',
+    LOCAL_ONLY: '로컬 전용',
+    COPY_ONLY: '복사 전용',
+    TEXT_ONLY: '텍스트 전용',
+    AVAILABLE: '사용 가능',
+    UNAVAILABLE: '사용 불가',
+    PROHIBITED: '금지',
+    PROHIBITED_UNTIL_GATE_READY: '공식 전환 조건 충족 전 금지',
+    NOT_EXECUTED: '실행 안 함',
+    TEMPLATE_READY: '양식 준비됨',
+  }
+  return labels[status] ?? status
+}
+
 function getIntegratedReadinessStatusTone2026(status: string): 'success' | 'warn' | 'error' | 'neutral' {
   if (status === 'READY_FOR_REVIEW' || status === 'READY_LATER') return 'success'
   if (status === 'NEEDS_DATA' || status === 'NEEDS_HR_ACTION') return 'warn'
@@ -3098,17 +3140,17 @@ const SCENARIO_INPUT_FIELDS_2026: Array<{
   label: string
   help: string
 }> = [
-  { key: 'mboMissingReduction', label: 'MBO missing 감소', help: '미작성 MBO가 줄어드는 가정' },
+  { key: 'mboMissingReduction', label: 'MBO 미작성 감소', help: '미작성 MBO가 줄어드는 가정' },
   { key: 'confirmedKpiIncrease', label: 'confirmed KPI 증가', help: '확정 KPI가 늘어나는 가정' },
-  { key: 'teamKpiPendingReduction', label: 'Team KPI pending 감소', help: 'pending/discussion 정리' },
+  { key: 'teamKpiPendingReduction', label: 'Team KPI 검토 대기 감소', help: '검토 대기/논의 필요 정리' },
   { key: 'policyCategoryMissingReduction', label: 'policyCategory 감소', help: '미분류 확정' },
   { key: 'evaluatorRoutingBlockerReduction', label: '평가자 blocker 감소', help: 'FIRST/SECOND/FINAL 누락 정리' },
-  { key: 'leaderEvaluationBlockerReduction', label: '리더 평가 blocker 감소', help: '리더 평가 선행조건 정리' },
+  { key: 'leaderEvaluationBlockerReduction', label: '리더 평가 해소 필요 항목 감소', help: '리더 평가 선행조건 정리' },
   { key: 'resultWritingWarningReduction', label: '수행결과 warning 감소', help: '결과/증빙/기여 보완' },
   { key: 'scorePolicyBlockerReduction', label: 'score policy 감소', help: '점수 정책 warning 정리' },
   { key: 'gradePolicyBlockerReduction', label: 'grade policy 감소', help: '등급 기준 blocker 정리' },
   { key: 'feedbackLeadershipBlockerReduction', label: '360/리더십 감소', help: '다면/진단 setup 및 응답 정리' },
-  { key: 'finalizationCeoBlockerReduction', label: '최종/CEO 감소', help: '최종 확정 readiness 정리' },
+  { key: 'finalizationCeoBlockerReduction', label: '최종/CEO 감소', help: '최종 확정 준비 상태 정리' },
 ]
 
 function numericScenarioValue2026(value: number | null | undefined) {
@@ -3178,13 +3220,13 @@ function buildScenarioPreview2026(
     estimatedOfficialGateImpact: estimatedImpact,
   }
   const deltaRows = [
-    ['MBO_MISSING', 'MBO missing', base.missingMboCount, projectedCounts.missingMboCount, 'MBO 미작성 감소만 반영'],
-    ['CONFIRMED_KPI_SHORTAGE', 'confirmed KPI shortage', base.confirmedPersonalKpiShortageCount, projectedCounts.confirmedPersonalKpiShortageCount, 'confirmed KPI 증가만 반영'],
-    ['TEAM_KPI_PENDING', 'Team KPI pending', base.teamKpiPendingCount, projectedCounts.teamKpiPendingCount, 'Team KPI pending 감소만 반영'],
-    ['POLICY_CATEGORY_MISSING', 'policyCategory missing', base.policyCategoryMissingCount, projectedCounts.policyCategoryMissingCount, 'policyCategory 미분류 감소만 반영'],
-    ['EVALUATOR_ROUTING', 'evaluator routing blockers', base.evaluatorRoutingBlockerCount, projectedCounts.evaluatorRoutingBlockerCount, '평가자 배정 blocker 감소만 반영'],
-    ['LEADER_EVALUATION', 'leader evaluation blockers', base.leaderEvaluationBlockerCount, projectedCounts.leaderEvaluationBlockerCount, '리더 평가 blocker 감소만 반영'],
-    ['OFFICIAL_GATE', 'official gate blockers', base.officialActivationGateBlockerCount, projectedCounts.officialActivationGateBlockerCount, `gate count는 실제 재산출 전까지 고정, 잠재 영향 -${estimatedImpact}건`],
+    ['MBO_MISSING', 'MBO 미작성', base.missingMboCount, projectedCounts.missingMboCount, 'MBO 미작성 감소만 반영'],
+    ['CONFIRMED_KPI_SHORTAGE', '확정 KPI 부족', base.confirmedPersonalKpiShortageCount, projectedCounts.confirmedPersonalKpiShortageCount, '확정 KPI 증가만 반영'],
+    ['TEAM_KPI_PENDING', 'Team KPI 검토 대기', base.teamKpiPendingCount, projectedCounts.teamKpiPendingCount, 'Team KPI 검토 대기 감소만 반영'],
+    ['POLICY_CATEGORY_MISSING', 'policyCategory 미분류', base.policyCategoryMissingCount, projectedCounts.policyCategoryMissingCount, 'policyCategory 미분류 감소만 반영'],
+    ['EVALUATOR_ROUTING', '평가자 배정 해소 필요 항목', base.evaluatorRoutingBlockerCount, projectedCounts.evaluatorRoutingBlockerCount, '평가자 배정 해소 필요 항목 감소만 반영'],
+    ['LEADER_EVALUATION', '리더 평가 해소 필요 항목', base.leaderEvaluationBlockerCount, projectedCounts.leaderEvaluationBlockerCount, '리더 평가 해소 필요 항목 감소만 반영'],
+    ['OFFICIAL_GATE', '공식 전환 해소 필요 항목', base.officialActivationGateBlockerCount, projectedCounts.officialActivationGateBlockerCount, `공식 전환 조건 수는 실제 재산출 전까지 고정, 잠재 영향 -${estimatedImpact}건`],
   ].map(([key, label, baseline, projected, note]) => ({
     key: String(key),
     label: String(label),
@@ -3194,39 +3236,39 @@ function buildScenarioPreview2026(
     note: String(note),
   }))
   const remainingBlockers = [
-    ['MBO missing', projectedCounts.missingMboCount, '미작성자 작성 요청을 계속 진행하세요.'],
-    ['confirmed KPI shortage', projectedCounts.confirmedPersonalKpiShortageCount, '초안 제출과 리더 검토/확정을 요청하세요.'],
-    ['evaluator routing blockers', projectedCounts.evaluatorRoutingBlockerCount, '평가자 배정 누락/조직 경로를 확인하세요.'],
-    ['Team KPI pending', projectedCounts.teamKpiPendingCount, 'Team KPI pending/discussion 항목을 검토하세요.'],
-    ['policyCategory missing', projectedCounts.policyCategoryMissingCount, '미분류 항목을 HR 기준으로 확정하세요.'],
-    ['official gate blockers', projectedCounts.officialActivationGateBlockerCount, 'dry-run, DB backup, HR approval, Runbook 단계를 확인하세요.'],
+    ['MBO 미작성', projectedCounts.missingMboCount, '미작성자 작성 요청을 계속 진행하세요.'],
+    ['확정 KPI 부족', projectedCounts.confirmedPersonalKpiShortageCount, '초안 제출과 리더 검토/확정을 요청하세요.'],
+    ['평가자 배정 해소 필요 항목', projectedCounts.evaluatorRoutingBlockerCount, '평가자 배정 누락/조직 경로를 확인하세요.'],
+    ['Team KPI 검토 대기', projectedCounts.teamKpiPendingCount, 'Team KPI 검토 대기/논의 필요 항목을 검토하세요.'],
+    ['policyCategory 미분류', projectedCounts.policyCategoryMissingCount, '미분류 항목을 HR 기준으로 확정하세요.'],
+    ['공식 전환 차단 조건', projectedCounts.officialActivationGateBlockerCount, '사전 실행 검토, DB 백업, HR 승인, 실행 절차서 단계를 확인하세요.'],
   ]
     .map(([label, count, nextAction]) => ({ label: String(label), count: numericScenarioValue2026(count as number | null), nextAction: String(nextAction) }))
     .filter((item) => item.count > 0)
     .sort((a, b) => b.count - a.count)
   const projectedStage = determineScenarioStage2026(projectedCounts)
   const projectedStatus = projectedStage === 'READY_FOR_HR_REVIEW' ? 'READY_LATER' : 'NEEDS_HR_ACTION'
-  const nextHrAction = remainingBlockers[0]?.nextAction ?? 'dry-run, DB backup, HR approval, Runbook 검토를 준비하세요.'
+  const nextHrAction = remainingBlockers[0]?.nextAction ?? '사전 실행 검토, DB 백업, HR 승인, 실행 절차서 검토를 준비하세요.'
   const reportText = [
     `이 시나리오는 ${scenarioName}를 가정합니다.`,
-    `projected stage는 ${projectedStage}, overall status는 ${projectedStatus}입니다.`,
-    `남는 주요 blocker는 ${remainingBlockers.slice(0, 5).map((item) => `${item.label} ${item.count}건`).join(', ') || '직접 blocker 없음'}입니다.`,
-    '공식 전환은 여전히 dry-run, DB backup, HR 승인 전까지 차단됩니다.',
+    `예상 단계는 ${projectedStage}, 전체 상태는 ${formatReadinessUiStatus2026(projectedStatus)}입니다.`,
+    `남는 주요 해소 필요 항목은 ${remainingBlockers.slice(0, 5).map((item) => `${item.label} ${item.count}건`).join(', ') || '직접 차단 조건 없음'}입니다.`,
+    '공식 전환은 여전히 사전 실행 검토, DB 백업, HR 승인 전까지 차단됩니다.',
     simulator.disclaimer,
   ].join(' ')
   const markdown = [
-    `# 2026 Readiness Scenario Simulator - ${scenarioName}`,
+    `# 2026 준비 상태 시나리오 시뮬레이터 - ${scenarioName}`,
     '',
     reportText,
     '',
-    '## Delta',
+    '## 변화량',
     deltaRows.map((row) => `- ${row.label}: ${row.delta ?? '미확인'} (${row.note})`).join('\n'),
     '',
-    '## Prohibited actions',
+    '## 금지 작업',
     simulator.prohibitedActions.map((item) => `- ${item}`).join('\n'),
   ].join('\n')
   const tsv = [
-    'blocker\tbaseline\tprojected\tdelta\tnote',
+    '해소 필요 항목\t기준값\t예상값\t변화량\t메모',
     ...deltaRows.map((row) => [
       row.label,
       row.baseline == null ? '미확인' : String(row.baseline),
@@ -3304,7 +3346,7 @@ function reviewDryRunOutputPasteLocally2026(record: Record<string, unknown>) {
     nextActions.push(action)
   }
   if (getDryRunOutputBoolean2026(record, 'writesPerformed', 'writes_performed')) {
-    add('WRITES_PERFORMED_TRUE', '즉시 중단하고 dry-run 실행 경로를 조사하세요.')
+    add('WRITES_PERFORMED_TRUE', '즉시 중단하고 사전 실행 검토 실행 경로를 조사하세요.')
   }
   if (getDryRunOutputBoolean2026(record, 'totalScoreChangesExpected', 'totalScoreChanged')) {
     add('TOTAL_SCORE_CHANGED', 'Evaluation.totalScore write 경로를 조사하세요.')
@@ -3313,7 +3355,7 @@ function reviewDryRunOutputPasteLocally2026(record: Record<string, unknown>) {
     add('GRADE_ID_CHANGED', 'Evaluation.gradeId write 경로를 조사하세요.')
   }
   if (getDryRunOutputBoolean2026(record, 'officialScoringEnabled', 'officialGradeEnabled', 'featureFlagsChanged')) {
-    add('FEATURE_FLAG_OR_OFFICIAL_ACTIVATION', 'official scoring/grade/feature flag 상태를 조사하세요.')
+    add('FEATURE_FLAG_OR_OFFICIAL_ACTIVATION', '공식 점수/등급/기능 활성화 스위치 상태를 조사하세요.')
   }
   if (getDryRunOutputNumber2026(record, 'policyCategoryMissingCount', 'missingPolicyCategoryCount') > 0) {
     add('POLICY_CATEGORY_MISSING', 'policyCategory workbench에서 미분류를 정리하세요.')
@@ -3348,7 +3390,7 @@ function reviewDryRunOutputPasteLocally2026(record: Record<string, unknown>) {
     redFlags,
     nextActions: nextActions.length
       ? nextActions
-      : ['must-pass criteria를 확인하고 backup/HR approval 논의로만 이동하세요. apply는 여전히 금지입니다.'],
+      : ['필수 통과 기준을 확인하고 백업/HR 승인 논의로만 이동하세요. 실제 반영은 여전히 금지입니다.'],
   }
 }
 
@@ -3372,18 +3414,62 @@ function getReadinessExportExtension(format: ReadinessExportPreviewFormat) {
 }
 
 function getReadinessExportTitle(key: string) {
+  const labels: Record<string, string> = {
+    abort: '중단 조건',
+    action: '액션',
+    actions: '액션',
+    agenda: '안건',
+    alignment: '정렬',
+    board: '보드',
+    blockers: '해소 필요 항목',
+    ceo: '대표이사',
+    command: '명령',
+    compact: '간단',
+    conditions: '조건',
+    dev: '개발/모니터링',
+    developer: '개발/모니터링',
+    dryrun: '사전 실행 검토',
+    evidence: '증빙',
+    export: '내보내기',
+    final: '최종',
+    freeze: '최종 판정',
+    full: '전체',
+    go: '진행 가능',
+    grade: '등급',
+    handoff: '인계',
+    hr: 'HR/인사',
+    item: '항목',
+    later: '추후 가능',
+    logs: '로그',
+    markdown: '마크다운',
+    nogo: '진행 불가',
+    owner: '담당자',
+    pack: '패키지',
+    pilot: '미리보기',
+    preview: '미리보기',
+    prohibited: '금지 작업',
+    readiness: '준비 상태',
+    reasons: '사유',
+    review: '검토',
+    runbook: '절차서',
+    safety: '안전',
+    scenario: '시나리오',
+    score: '점수',
+    selected: '선택',
+    signoff: '승인 확인',
+    snapshot: '준비 상태 요약',
+    summary: '요약',
+    table: '표',
+    tsv: 'TSV',
+    watch: '모니터링',
+    workbench: '평가 워크벤치',
+  }
+
   return key
     .replace(/^dryrun-/, 'dry-run-')
     .split('-')
     .filter(Boolean)
-    .map((word) => {
-      if (word === 'hr') return 'HR'
-      if (word === 'tsv') return 'TSV'
-      if (word === 'dev') return 'Dev'
-      if (word === 'ceo') return 'CEO'
-      if (word === 'nogo') return 'No-Go'
-      return word.charAt(0).toUpperCase() + word.slice(1)
-    })
+    .map((word) => labels[word.toLowerCase()] ?? word)
     .join(' ')
 }
 
@@ -3410,7 +3496,7 @@ function createInitialInteractivePilotInputs2026(pilot: EndToEndPilot2026 | null
     selfResultSummary: 'SAMPLE/PILOT: 목표 대비 주요 산출물과 정량 결과를 요약합니다.',
     selfEvidenceLink: '',
     selfContributionComment: 'SAMPLE/PILOT: 개인 기여도와 협업 기여를 분리해서 작성합니다.',
-    selfRiskComment: 'SAMPLE/PILOT: 공식 실행 전 policyCategory/evaluator blocker를 확인합니다.',
+    selfRiskComment: 'SAMPLE/PILOT: 공식 실행 전 정책 분류/평가자 배정 차단 조건을 확인합니다.',
     firstReviewerComment: 'SAMPLE/PILOT: 1차 평가자는 성과 근거의 충분성과 목표 난이도를 검토합니다.',
     firstReviewerScore: '88',
     firstAdjustmentAmount: '0',
@@ -3420,7 +3506,7 @@ function createInitialInteractivePilotInputs2026(pilot: EndToEndPilot2026 | null
     finalReviewerScore: '90',
     finalAdjustmentAmount: '0',
     finalAdjustmentReason: '',
-    finalRecommendation: 'SAMPLE/PILOT: 공식 확정 전 calibration과 CEO readiness 확인이 필요합니다.',
+    finalRecommendation: 'SAMPLE/PILOT: 공식 확정 전 캘리브레이션과 대표이사 준비 상태 확인이 필요합니다.',
     ceoAdjustmentAmount: '0',
     ceoAdjustmentReason: '',
     ceoFinalNote: 'SAMPLE/PILOT: 대표이사 조정은 사유와 근거가 있을 때만 별도 승인 대상입니다.',
@@ -3497,50 +3583,50 @@ function formatInteractivePilotMarkdown2026(params: {
   activeStepLabel: string
 }) {
   return [
-    '# 2026 Interactive Pilot Walkthrough',
+    '# 2026 단계별 체험 미리보기',
     '',
-    '이 export는 로컬 preview 보고용입니다. dry-run, apply, backfill, official scoring/grade, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.',
+    '이 내보내기는 로컬 미리보기 보고용입니다. 사전 실행 검토, 실제 반영, 기존 데이터 채우기, 공식 점수/등급 반영, 기능 활성화 스위치, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId)은 실행하지 않습니다.',
     '',
-    `- active step: ${params.activeStepLabel}`,
-    `- pilot employee: ${params.pilot.pilotEmployee.name} / ${params.pilot.pilotEmployee.departmentName}`,
-    `- selected KPI: ${params.selectedKpiTitle}`,
-    `- local completion: ${params.completionPercentage}% (${params.completedStepCount}/9)`,
-    `- local score preview: ${params.localFinalScore.toFixed(1)}`,
-    `- local grade preview: ${params.localGrade}`,
-    `- official blockers: ${params.pilot.blockers.length ? params.pilot.blockers.join(', ') : 'none in pilot view'}`,
+    `- 활성 단계: ${params.activeStepLabel}`,
+    `- 파일럿 대상자: ${params.pilot.pilotEmployee.name} / ${params.pilot.pilotEmployee.departmentName}`,
+    `- 선택 KPI: ${params.selectedKpiTitle}`,
+    `- 로컬 완료율: ${params.completionPercentage}% (${params.completedStepCount}/9)`,
+    `- 로컬 점수 미리보기: ${params.localFinalScore.toFixed(1)}`,
+    `- 로컬 등급 미리보기: ${params.localGrade}`,
+    `- 공식 차단 조건: ${params.pilot.blockers.length ? params.pilot.blockers.join(', ') : '파일럿 화면 기준 없음'}`,
     '',
-    '## Self evaluation preview',
+    '## 자기평가 미리보기',
     params.inputs.selfResultSummary,
     params.inputs.selfContributionComment,
     params.inputs.selfRiskComment,
     '',
-    '## First review preview',
+    '## 1차 평가 미리보기',
     params.inputs.firstReviewerComment,
-    `reviewer score: ${params.inputs.firstReviewerScore}`,
-    `adjustment: ${params.inputs.firstAdjustmentAmount}`,
-    params.inputs.firstAdjustmentReason ? `adjustment reason: ${params.inputs.firstAdjustmentReason}` : 'adjustment reason: not required for zero adjustment',
+    `평가자 점수: ${params.inputs.firstReviewerScore}`,
+    `조정값: ${params.inputs.firstAdjustmentAmount}`,
+    params.inputs.firstAdjustmentReason ? `조정 사유: ${params.inputs.firstAdjustmentReason}` : '조정값이 0이면 조정 사유가 필요 없습니다',
     '',
-    '## Second/final review preview',
+    '## 2차/최종 평가 미리보기',
     params.inputs.finalReviewerComment,
-    `final score: ${params.inputs.finalReviewerScore}`,
-    `final adjustment: ${params.inputs.finalAdjustmentAmount}`,
-    params.inputs.finalAdjustmentReason ? `final adjustment reason: ${params.inputs.finalAdjustmentReason}` : 'final adjustment reason: not required for zero adjustment',
+    `최종 점수: ${params.inputs.finalReviewerScore}`,
+    `최종 조정값: ${params.inputs.finalAdjustmentAmount}`,
+    params.inputs.finalAdjustmentReason ? `최종 조정 사유: ${params.inputs.finalAdjustmentReason}` : '조정값이 0이면 조정 사유가 필요 없습니다',
     '',
-    '## CEO adjustment preview',
-    `CEO adjustment: ${params.inputs.ceoAdjustmentAmount}`,
-    params.inputs.ceoAdjustmentReason ? `CEO reason: ${params.inputs.ceoAdjustmentReason}` : 'CEO reason: not required for zero adjustment',
+    '## 대표이사 조정 미리보기',
+    `대표이사 조정값: ${params.inputs.ceoAdjustmentAmount}`,
+    params.inputs.ceoAdjustmentReason ? `대표이사 조정 사유: ${params.inputs.ceoAdjustmentReason}` : '조정값이 0이면 대표이사 조정 사유가 필요 없습니다',
     params.inputs.ceoFinalNote,
     '',
-    '## Safety',
-    '- official scoring false',
-    '- official grade false',
-    '- AI exclusion activation false',
-    '- totalScore write false',
-    '- gradeId write false',
-    '- official Evaluation/EvaluationItem creation false',
-    '- backfill/apply false',
-    '- feature flag changes false',
-    '- no API write calls',
+    '## 안전 확인',
+    '- 공식 점수 반영 false',
+    '- 공식 등급 반영 false',
+    '- AI 제외 활성화 false',
+    '- 공식 저장 점수(totalScore) 쓰기 false',
+    '- 공식 저장 등급(gradeId) 쓰기 false',
+    '- 공식 Evaluation/EvaluationItem 생성 false',
+    '- 기존 데이터 채우기/실제 반영 false',
+    '- 기능 활성화 스위치 변경 false',
+    '- API 쓰기 호출 없음',
   ].join('\n')
 }
 
@@ -3552,16 +3638,16 @@ function formatInteractivePilotTsv2026(params: {
   completionPercentage: number
 }) {
   return [
-    ['field', 'value'].join('\t'),
-    ['pilot employee', `${params.pilot.pilotEmployee.name} / ${params.pilot.pilotEmployee.departmentName}`].join('\t'),
-    ['selected KPI', params.selectedKpiTitle].join('\t'),
-    ['completion percentage', `${params.completionPercentage}%`].join('\t'),
-    ['local score preview', params.localFinalScore.toFixed(1)].join('\t'),
-    ['local grade preview', params.localGrade].join('\t'),
-    ['official blockers', params.pilot.blockers.length ? params.pilot.blockers.join(', ') : 'none in pilot view'].join('\t'),
-    ['totalScore write', 'false'].join('\t'),
-    ['gradeId write', 'false'].join('\t'),
-    ['official Evaluation/EvaluationItem creation', 'false'].join('\t'),
+    ['항목', '값'].join('\t'),
+    ['파일럿 대상자', `${params.pilot.pilotEmployee.name} / ${params.pilot.pilotEmployee.departmentName}`].join('\t'),
+    ['선택 KPI', params.selectedKpiTitle].join('\t'),
+    ['완료율', `${params.completionPercentage}%`].join('\t'),
+    ['로컬 점수 미리보기', params.localFinalScore.toFixed(1)].join('\t'),
+    ['로컬 등급 미리보기', params.localGrade].join('\t'),
+    ['공식 차단 조건', params.pilot.blockers.length ? params.pilot.blockers.join(', ') : '파일럿 화면 기준 없음'].join('\t'),
+    ['공식 저장 점수(totalScore) 쓰기', 'false'].join('\t'),
+    ['공식 저장 등급(gradeId) 쓰기', 'false'].join('\t'),
+    ['공식 Evaluation/EvaluationItem 생성', 'false'].join('\t'),
   ].join('\n')
 }
 
@@ -3597,12 +3683,12 @@ function PolicyActivationReadiness2026Panel(props: {
     ? '2026 공식 전환 준비'
     : isPerformanceDashboardMode
       ? '2026 평가 운영 대시보드'
-      : '2026 공식 전환 Gate'
+      : '2026 공식 전환 차단 조건'
   const panelDescription = isReadinessAdminMode
-    ? '공식 전환 Gate, readiness 상세, dry-run 준비 도구, Go/No-Go, unlock plan을 한 곳에서 확인합니다. 이 화면은 읽기 전용이며 공식 점수/등급/backfill을 실행하지 않습니다.'
+    ? '공식 전환 차단 조건, 준비 상태 상세, 사전 실행 검토 도구, 진행 가능 여부, 해제 계획을 한 곳에서 확인합니다. 이 화면은 읽기 전용이며 공식 점수/등급/기존 데이터 채우기를 실행하지 않습니다.'
     : isPerformanceDashboardMode
-      ? 'HR/admin daily evaluation operations만 compact하게 보여줍니다. 상세 공식 전환 진단과 dry-run 도구는 고급 전환 준비 화면에서 확인하세요.'
-      : '이 화면은 공식 전환 가능 여부를 읽기 전용으로 점검합니다. 여기서는 backfill, 점수, 등급, feature flag를 실행하지 않습니다.'
+      ? 'HR/인사 관리자가 매일 확인할 평가 운영 항목만 간결하게 보여줍니다. 상세 공식 전환 진단과 사전 실행 검토 도구는 고급 전환 준비 화면에서 확인하세요.'
+      : '이 화면은 공식 전환 가능 여부를 읽기 전용으로 점검합니다. 여기서는 기존 데이터 채우기, 점수, 등급, 기능 활성화 스위치를 실행하지 않습니다.'
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [exportPreview, setExportPreview] = useState<ReadinessExportPreview | null>(null)
   const [exportPreviewCopied, setExportPreviewCopied] = useState(false)
@@ -3768,15 +3854,15 @@ function PolicyActivationReadiness2026Panel(props: {
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="neutral">Status only</Badge>
+              <Badge tone="neutral">상태 확인 전용</Badge>
               <Badge tone={gatesReady ? 'success' : activation ? 'warn' : 'neutral'}>
-                {gatesReady ? 'Gate ready' : activation ? 'Gate blocked' : '미확인'}
+                {gatesReady ? '공식 전환 조건 충족' : activation ? '공식 전환 차단' : '미확인'}
               </Badge>
               <Badge tone="neutral">활성화 버튼 없음</Badge>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              backfill --apply, official scoring, official grade, AI score exclusion,
-              Evaluation.totalScore, Evaluation.gradeId write를 켜기 전 차단 조건만 확인합니다.
+              기존 데이터 채우기 실제 반영, 공식 점수 반영, 공식 등급 반영, AI 점수 제외 활성화,
+              공식 저장 점수(totalScore), 공식 저장 등급(gradeId) 쓰기를 켜기 전 차단 조건만 확인합니다.
               저장 점수, 저장 등급, 제출, 확정, 보정 흐름은 변경하지 않습니다.
             </p>
             <p className="mt-2 text-xs leading-5 text-slate-500">
@@ -3802,20 +3888,20 @@ function PolicyActivationReadiness2026Panel(props: {
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="success">HR dashboard</Badge>
-                  <Badge tone={gatesReady ? 'success' : 'warn'}>{gatesReady ? '공식 전환 준비 확인 필요' : '공식 전환 BLOCKED'}</Badge>
+                  <Badge tone="success">인사 운영 요약</Badge>
+                  <Badge tone={gatesReady ? 'success' : 'warn'}>{gatesReady ? '공식 전환 준비 확인 필요' : '공식 전환 차단'}</Badge>
                   <Badge tone="neutral">쓰기 없음</Badge>
                 </div>
                 <h4 className="mt-3 text-lg font-semibold text-emerald-950">2026 평가 운영 요약</h4>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-emerald-900">
-                  HR/admin이 매일 확인할 항목만 먼저 보여줍니다. 상세 readiness, dry-run, runbook, watch-only 도구는 아래 고급 섹션에 접어 두었습니다.
+                  HR/인사 관리자가 매일 확인할 항목만 먼저 보여줍니다. 상세 준비 상태, 사전 실행 검토, 실행 절차서, 모니터링 전용 도구는 아래 고급 섹션에 접어 두었습니다.
                 </p>
               </div>
               <Link
                 href="/evaluation/workbench"
                 className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-emerald-700 px-4 text-sm font-semibold text-white transition hover:bg-emerald-800"
               >
-                전용 평가 Workbench 열기
+                전용 평가 워크벤치 열기
               </Link>
             </div>
 
@@ -3830,20 +3916,20 @@ function PolicyActivationReadiness2026Panel(props: {
               <MetricCard
                 label="전체 준비 상태"
                 value={snapshot?.overallStatus ?? executionBoard?.summary.overallReadinessStatus ?? '미확인'}
-                help="readiness 요약"
+                help="준비 상태 요약"
                 compact
                 variant={snapshot?.overallStatus === 'READY_FOR_REVIEW' || snapshot?.overallStatus === 'READY_LATER' ? 'default' : 'warning'}
               />
               <MetricCard
-                label="Go/No-Go"
-                value={dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO'}
-                help={`apply ${dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED'}`}
+                label="진행 판단"
+                value={formatReadinessUiStatus2026(dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO')}
+                help={`실제 반영 ${formatReadinessUiStatus2026(dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED')}`}
                 compact
                 variant={dryRunGoNoGoFreezePack?.decision.currentDecision === 'READY_FOR_REVIEW' ? 'default' : 'warning'}
               />
               <MetricCard
                 label="공식 전환"
-                value={gatesReady ? 'READY 확인 필요' : 'BLOCKED'}
+                value={gatesReady ? '준비 확인 필요' : '차단됨'}
                 help="실행 버튼 없음"
                 compact
                 variant={gatesReady ? 'default' : 'warning'}
@@ -3895,21 +3981,21 @@ function PolicyActivationReadiness2026Panel(props: {
                     disabled={!snapshot}
                     className="rounded-xl border border-slate-200 px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
                   >
-                    updated snapshot export
+                    최신 준비 상태 내보내기
                   </button>
                 </div>
               </div>
 
               <div className="rounded-2xl border border-white/80 bg-white p-4">
-                <h5 className="text-sm font-semibold text-slate-900">다음 action</h5>
+                <h5 className="text-sm font-semibold text-slate-900">다음 액션</h5>
                 <div className="mt-3 space-y-3 text-sm leading-6 text-slate-700">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">HR</p>
                     <p>{executionBoard?.summary.nextHrAction ?? snapshot?.nextActions.hr[0]?.detail ?? 'MBO, Team KPI, policyCategory, 평가자 배정을 먼저 확인합니다.'}</p>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">Developer / Watch</p>
-                    <p>{executionBoard?.summary.nextDeveloperWatchAction ?? snapshot?.nextActions.developer[0]?.detail ?? '공식 전환/feature flag는 계속 BLOCKED로 감시합니다.'}</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">개발/모니터링</p>
+                    <p>{executionBoard?.summary.nextDeveloperWatchAction ?? snapshot?.nextActions.developer[0]?.detail ?? '공식 전환/기능 활성화 스위치는 계속 차단 상태로 감시합니다.'}</p>
                   </div>
                 </div>
               </div>
@@ -3919,17 +4005,17 @@ function PolicyActivationReadiness2026Panel(props: {
               <h5 className="text-sm font-semibold text-amber-950">공식 전환 상태</h5>
               <div className="mt-3 grid gap-2 md:grid-cols-3">
                 <div className="rounded-xl border border-amber-100 bg-white px-3 py-2 text-sm text-amber-950">
-                  Go/No-Go: {dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO / READY_LATER / READY_FOR_REVIEW 확인 필요'}
+                  진행 판단: {formatReadinessUiStatus2026(dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO')}
                 </div>
                 <div className="rounded-xl border border-amber-100 bg-white px-3 py-2 text-sm text-amber-950">
-                  Apply: {dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED'}
+                  실제 반영: {formatReadinessUiStatus2026(dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED')}
                 </div>
                 <div className="rounded-xl border border-amber-100 bg-white px-3 py-2 text-sm text-amber-950">
-                  Official activation: {gatesReady ? 'READY 확인 필요' : 'BLOCKED'}
+                  공식 전환: {gatesReady ? '준비 확인 필요' : '차단됨'}
                 </div>
               </div>
               <p className="mt-3 text-xs leading-5 text-amber-800">
-                이 요약에는 dry-run 실행, apply, backfill, 공식 점수/등급, feature flag 변경 버튼이 없습니다.
+                이 요약에는 사전 실행 검토 실행, 실제 반영, 기존 데이터 채우기, 공식 점수/등급, 기능 활성화 스위치 변경 버튼이 없습니다.
               </p>
             </div>
           </div>
@@ -3939,12 +4025,12 @@ function PolicyActivationReadiness2026Panel(props: {
               <div>
                 <h4 className="text-sm font-semibold text-slate-900">평가 워크벤치 바로가기</h4>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  실제 평가 흐름은 전용 Workbench에서 preview로 확인합니다. `/evaluation/performance`는 HR 운영 요약과 고급 진단 접근점으로 유지합니다.
+                  실제 평가 흐름은 전용 평가 워크벤치에서 미리보기로 확인합니다. `/evaluation/performance`는 HR 운영 요약과 고급 진단 접근점으로 유지합니다.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Link href="/evaluation/workbench" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-slate-800">
-                  전용 평가 Workbench 열기
+                  전용 평가 워크벤치 열기
                 </Link>
                 <Link href="/admin/evaluation-readiness" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100">
                   공식 전환 준비 열기
@@ -3968,35 +4054,33 @@ function PolicyActivationReadiness2026Panel(props: {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <h4 className="text-sm font-semibold text-slate-900">용어 설명</h4>
-            <div className="mt-3 grid gap-2 text-xs leading-5 text-slate-600 md:grid-cols-2 xl:grid-cols-3">
+          <details className="rounded-2xl border border-slate-200 bg-slate-50">
+            <summary className="cursor-pointer list-none px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-sm font-semibold text-slate-900">기술 용어 참고</h4>
+                <Badge tone="neutral">기본 접힘</Badge>
+              </div>
+            </summary>
+            <div className="grid gap-2 border-t border-slate-200 px-4 pb-4 pt-3 text-xs leading-5 text-slate-600 md:grid-cols-2 xl:grid-cols-4">
               {[
-                ['readiness', '준비 상태'],
-                ['gate', '공식 전환 차단 조건'],
-                ['blocker', '해소 필요 항목'],
-                ['dry-run', '쓰기 없는 사전 실행 검토'],
-                ['apply', '실제 반영'],
-                ['backfill', '기존 데이터를 평가 구조에 맞게 채우는 작업'],
-                ['official scoring', '공식 점수 반영'],
-                ['official grade', '공식 등급 반영'],
-                ['feature flag', '기능 활성화 스위치'],
-                ['totalScore', '공식 저장 점수'],
-                ['gradeId', '공식 저장 등급'],
+                ['공식 저장 점수(totalScore)', '공식 평가 점수 필드'],
+                ['공식 저장 등급(gradeId)', '공식 평가 등급 필드'],
+                ['기능 활성화 스위치(feature flag)', '공식 기능 켜기/끄기 설정'],
+                ['사전 실행 검토(dry-run)', '쓰기 없이 결과를 먼저 확인하는 절차'],
               ].map(([term, meaning]) => (
                 <div key={term} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                  <span className="font-semibold text-slate-900">{term}</span> = {meaning}
+                  <span className="font-semibold text-slate-900">{term}</span> · {meaning}
                 </div>
               ))}
             </div>
-          </div>
+          </details>
 
           <div className="grid gap-3 xl:grid-cols-4">
             {[
-              ['고급 진단 / Readiness 상세', '통합 readiness snapshot, action plan, execution board, scenario simulator를 필요할 때만 펼칩니다.'],
-              ['공식 전환 준비 / Dry-run 도구', 'Fast-Forward cockpit, backfill preflight, output review, rehearsal guardrails, command runbook, Go/No-Go, unlock plan을 접어 둡니다.'],
-              ['대표/최종 보고', 'CEO report pack, finalization/CEO readiness, 360/leadership readiness는 보고 시점에 펼칩니다.'],
-              ['개발자/Watch-only', 'Vercel/log watch, prohibited actions, feature flag watch, command reference는 개발/감시 용도로만 확인합니다.'],
+              ['고급 진단 / 준비 상태 상세', '통합 준비 상태, 액션 플랜, 실행 보드, 시나리오 시뮬레이터를 필요할 때만 펼칩니다.'],
+              ['공식 전환 준비 / 사전 실행 검토 도구', '병렬 운영 현황판, 기존 데이터 채우기 사전 점검, 결과 검토, 리허설 안전장치, 명령 실행 절차서, 진행 판단, 해제 계획을 접어 둡니다.'],
+              ['대표/최종 보고', '대표이사 보고 패키지, 최종 확정 준비 상태, 360/리더십 준비 상태는 보고 시점에 펼칩니다.'],
+              ['개발자/모니터링 전용', 'Vercel 로그 감시, 금지 작업, 기능 활성화 스위치 감시, 명령 참고 자료는 개발/감시 용도로만 확인합니다.'],
             ].map(([title, description]) => (
               <details key={title} className="rounded-2xl border border-slate-200 bg-white">
                 <summary className="cursor-pointer list-none px-4 py-3">
@@ -4016,8 +4100,8 @@ function PolicyActivationReadiness2026Panel(props: {
                 <div>
                   <h4 className="text-sm font-semibold text-amber-950">상세 공식 전환 진단 분리됨</h4>
                   <p className="mt-2 text-sm leading-6 text-amber-900">
-                    상세 공식 전환 진단과 dry-run 도구는 고급 전환 준비 화면에서 확인하세요.
-                    이 daily page에는 실행, 저장, 점수/등급 반영, backfill 버튼을 두지 않습니다.
+                    상세 공식 전환 진단과 사전 실행 검토 도구는 고급 전환 준비 화면에서 확인하세요.
+                    이 일일 운영 화면에는 실행, 저장, 점수/등급 반영, 기존 데이터 채우기 버튼을 두지 않습니다.
                   </p>
                 </div>
                 <Link href="/admin/evaluation-readiness" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-700 px-3 text-xs font-semibold text-white transition hover:bg-amber-800">
@@ -4032,17 +4116,17 @@ function PolicyActivationReadiness2026Panel(props: {
                 <div>
                   <h4 className="text-sm font-semibold text-slate-900">전체 상세 진단 열기</h4>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    기존 readiness, dry-run, runbook, CEO/report, developer watch 도구는 삭제하지 않고 이 영역 안에 접어 두었습니다.
+                    기존 준비 상태, 사전 실행 검토, 실행 절차서, 대표이사 보고, 개발/모니터링 도구는 삭제하지 않고 이 영역 안에 접어 두었습니다.
                   </p>
                 </div>
-                <Badge tone="neutral">advanced collapsed</Badge>
+                <Badge tone="neutral">고급 영역 접힘</Badge>
               </div>
             </summary>
             <div className="space-y-4 border-t border-slate-200 bg-white p-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={activation.readiness.cycleScope.isOfficialReadinessTarget ? 'success' : 'warn'}>
-                {activation.readiness.cycleScope.isOfficialReadinessTarget ? '공식 readiness cycle' : '공식 cycle 미확정'}
+                {activation.readiness.cycleScope.isOfficialReadinessTarget ? '공식 준비 상태 대상 주기' : '공식 대상 주기 미확정'}
               </Badge>
               <span className="text-sm font-semibold text-slate-900">
                 {activation.readiness.cycleScope.selectedCycleName ?? '선택된 공식 평가 주기 없음'}
@@ -4052,7 +4136,7 @@ function PolicyActivationReadiness2026Panel(props: {
               ) : null}
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500">
-              cycleId {activation.readiness.cycleScope.selectedCycleId ?? '미지정'} · mode {activation.readiness.cycleScope.selectionMode}
+              cycleId {activation.readiness.cycleScope.selectedCycleId ?? '미지정'} · 선택 방식 {activation.readiness.cycleScope.selectionMode}
             </p>
             {activation.readiness.cycleScope.warning ? (
               <div className="mt-3">
@@ -4062,28 +4146,28 @@ function PolicyActivationReadiness2026Panel(props: {
           </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <MetricCard
-              label="Gate blocked"
+              label="공식 전환 차단"
               value={gates.filter((gate) => gate.status === 'BLOCKED').length.toLocaleString()}
               help="공식 실행 전 해소"
               compact
               variant={gates.some((gate) => gate.status === 'BLOCKED') ? 'warning' : 'default'}
             />
             <MetricCard
-              label="Runbook"
+              label="실행 절차서"
               value={runbook ? runbook.summary.blockedSectionCount.toLocaleString() : '미확인'}
-              help={runbook ? `next ${runbook.summary.nextExecutableStep}` : 'read-only'}
+              help={runbook ? `다음 ${runbook.summary.nextExecutableStep}` : '읽기 전용'}
               compact
               variant={(runbook?.summary.blockedSectionCount ?? 1) > 0 ? 'warning' : 'default'}
             />
             <MetricCard
-              label="Migration"
+              label="마이그레이션"
               value={activation.migration.migrationApplied ? '확인' : '미확인'}
-              help={activation.migration.requiredSchemaPresent ? 'schema present' : 'schema missing'}
+              help={activation.migration.requiredSchemaPresent ? '스키마 확인' : '스키마 누락'}
               compact
               variant={activation.migration.migrationApplied ? 'default' : 'warning'}
             />
             <MetricCard
-              label="Backfill"
+              label="기존 데이터 채우기"
               value={
                 activation.flags.backfillApplied
                   ? '적용'
@@ -4096,7 +4180,7 @@ function PolicyActivationReadiness2026Panel(props: {
               variant={activation.flags.backfillApplied || activation.flags.backfillExcluded ? 'default' : 'warning'}
             />
             <MetricCard
-              label="Official flags"
+              label="공식 기능 스위치"
               value={
                 activation.flags.officialScoringEnabled &&
                 activation.flags.officialGradeEnabled &&
@@ -4104,7 +4188,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   ? '승인'
                   : '대기'
               }
-              help="scoring/grade/AI"
+              help="점수/등급/AI"
               compact
               variant={
                 activation.flags.officialScoringEnabled &&
@@ -4117,14 +4201,14 @@ function PolicyActivationReadiness2026Panel(props: {
             <MetricCard
               label="HR 승인"
               value={activation.flags.hrApprovalConfirmed ? '확인' : '대기'}
-              help="명시 승인 flag"
+              help="명시 승인 스위치"
               compact
               variant={activation.flags.hrApprovalConfirmed ? 'default' : 'warning'}
             />
             <MetricCard
               label="360/리더십"
               value={activation.feedbackLeadershipReadiness?.summary.blockedOrNeedsSetupCount.toLocaleString() ?? '미확인'}
-              help="readiness blocker"
+              help="준비 상태 차단 조건"
               compact
               variant={
                 (activation.feedbackLeadershipReadiness?.summary.blockedOrNeedsSetupCount ?? 1) > 0
@@ -4135,7 +4219,7 @@ function PolicyActivationReadiness2026Panel(props: {
             <MetricCard
               label="리더 평가"
               value={activation.leaderEvaluationReadiness?.summary.blockerCount.toLocaleString() ?? '미확인'}
-              help="readiness blocker"
+              help="준비 상태 차단 조건"
               compact
               variant={(activation.leaderEvaluationReadiness?.summary.blockerCount ?? 1) > 0 ? 'warning' : 'default'}
             />
@@ -4149,23 +4233,23 @@ function PolicyActivationReadiness2026Panel(props: {
             {executionBoard ? (
               <>
                 <MetricCard
-                  label="Action board open"
+                  label="열린 액션 보드"
                   value={executionBoard.summary.totalOpenActionCount.toLocaleString()}
-                  help={`P0 ${executionBoard.summary.p0Count.toLocaleString()} · no execution buttons`}
+                  help={`P0 ${executionBoard.summary.p0Count.toLocaleString()} · 실행 버튼 없음`}
                   compact
                   variant={executionBoard.summary.p0Count > 0 ? 'warning' : 'default'}
                 />
                 <MetricCard
-                  label="Next HR action"
+                  label="다음 인사 액션"
                   value={executionBoard.summary.nextHrAction}
-                  help="read-only tracking"
+                  help="읽기 전용 추적"
                   compact
                   variant="warning"
                 />
                 <MetricCard
-                  label="Next dev/watch"
+                  label="다음 개발/모니터링"
                   value={executionBoard.summary.nextDeveloperWatchAction}
-                  help={executionBoard.summary.lastBaselineTimestamp ?? 'baseline export-only'}
+                  help={executionBoard.summary.lastBaselineTimestamp ?? '기준선 내보내기 전용'}
                   compact
                   variant="muted"
                 />
@@ -4174,14 +4258,14 @@ function PolicyActivationReadiness2026Panel(props: {
             {ceoReportPack ? (
               <>
                 <MetricCard
-                  label="CEO report pack"
+                  label="대표이사 보고 패키지"
                   value={ceoReportPack.reportStatus}
-                  help="read-only report"
+                  help="읽기 전용 보고"
                   compact
                   variant="default"
                 />
                 <MetricCard
-                  label="CEO objective"
+                  label="대표이사 확인 목표"
                   value="HR blocker order"
                   help={ceoReportPack.summary.officialActivationStatus}
                   compact
@@ -4192,14 +4276,14 @@ function PolicyActivationReadiness2026Panel(props: {
             {fastForwardOperationsCockpit ? (
               <>
                 <MetricCard
-                  label="Fast-forward"
+                  label="병렬 운영"
                   value={fastForwardOperationsCockpit.fastForwardSummary.parallelWorkstreamCount.toLocaleString()}
-                  help="parallel workstreams"
+                  help="병렬 작업 흐름"
                   compact
                   variant="default"
                 />
                 <MetricCard
-                  label="Critical path"
+                  label="핵심 진행 경로"
                   value={fastForwardOperationsCockpit.fastForwardSummary.criticalPathItemCount.toLocaleString()}
                   help={fastForwardOperationsCockpit.fastForwardSummary.nextCheckpointCondition}
                   compact
@@ -4210,14 +4294,14 @@ function PolicyActivationReadiness2026Panel(props: {
             {backfillDryRunPreflightPack ? (
               <>
                 <MetricCard
-                  label="Backfill preflight"
-                  value={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus}
-                  help={`apply ${backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus}`}
+                  label="기존 데이터 사전 점검"
+                  value={formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus)}
+                  help={`실제 반영 ${formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus)}`}
                   compact
                   variant={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus === 'BLOCKED' ? 'warning' : 'default'}
                 />
                 <MetricCard
-                  label="Missing preconditions"
+                  label="누락된 선행 조건"
                   value={backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount.toLocaleString()}
                   help={backfillDryRunPreflightPack.preflightSummary.nextPreflightAction}
                   compact
@@ -4227,45 +4311,45 @@ function PolicyActivationReadiness2026Panel(props: {
             ) : null}
             {dryRunOutputReviewTemplate ? (
               <MetricCard
-                label="Dry-run review template"
-                value={dryRunOutputReviewTemplate.templateStatus}
-                help={dryRunOutputReviewTemplate.templateSummary.localOnlyPasteHelperStatus}
+                label="사전 실행 결과 검토 양식"
+                value={formatReadinessUiStatus2026(dryRunOutputReviewTemplate.templateStatus)}
+                help={formatReadinessUiStatus2026(dryRunOutputReviewTemplate.templateSummary.localOnlyPasteHelperStatus)}
                 compact
                 variant="default"
               />
             ) : null}
             {dryRunRehearsalGuardrails ? (
               <MetricCard
-                label="Dry-run rehearsal"
-                value={dryRunRehearsalGuardrails.status}
-                help={dryRunRehearsalGuardrails.summary.applyStatus}
+                label="사전 실행 리허설"
+                value={formatReadinessUiStatus2026(dryRunRehearsalGuardrails.status)}
+                help={formatReadinessUiStatus2026(dryRunRehearsalGuardrails.summary.applyStatus)}
                 compact
                 variant="default"
               />
             ) : null}
             {backfillDryRunCommandRunbook ? (
               <MetricCard
-                label="Dry-run command runbook"
-                value={backfillDryRunCommandRunbook.summary.commandReferenceStatus}
-                help={backfillDryRunCommandRunbook.summary.applyStatus}
+                label="사전 실행 명령 절차서"
+                value={formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.commandReferenceStatus)}
+                help={formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.applyStatus)}
                 compact
                 variant="warning"
               />
             ) : null}
             {dryRunGoNoGoFreezePack ? (
               <MetricCard
-                label="Dry-run Go/No-Go"
-                value={dryRunGoNoGoFreezePack.decision.currentDecision}
-                help={`apply ${dryRunGoNoGoFreezePack.decision.applyStatus}`}
+                label="사전 실행 진행 판단"
+                value={formatReadinessUiStatus2026(dryRunGoNoGoFreezePack.decision.currentDecision)}
+                help={`실제 반영 ${formatReadinessUiStatus2026(dryRunGoNoGoFreezePack.decision.applyStatus)}`}
                 compact
                 variant={dryRunGoNoGoFreezePack.decision.currentDecision === 'READY_FOR_REVIEW' ? 'default' : 'warning'}
               />
             ) : null}
             {endToEndPilot2026 ? (
               <MetricCard
-                label="E2E Pilot"
-                value={endToEndPilot2026.summary.currentDecision}
-                help={`${endToEndPilot2026.summary.previewCompletenessPercentage}% preview · ${endToEndPilot2026.summary.hardBlockedStepCount} hard blocked`}
+                label="전체 흐름 미리보기"
+                value={formatReadinessUiStatus2026(endToEndPilot2026.summary.currentDecision)}
+                help={`${endToEndPilot2026.summary.previewCompletenessPercentage}% 미리보기 · ${endToEndPilot2026.summary.hardBlockedStepCount}개 완전 차단`}
                 compact
                 variant={endToEndPilot2026.summary.hardBlockedStepCount > 0 ? 'warning' : 'default'}
               />
@@ -4277,26 +4361,26 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 통합 readiness snapshot</h4>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 통합 준비 상태 요약</h4>
                     <Badge tone={getIntegratedReadinessStatusTone2026(snapshot.overallStatus)}>
-                      {snapshot.overallStatus}
+                      {formatReadinessUiStatus2026(snapshot.overallStatus)}
                     </Badge>
                     <Badge tone="neutral">{snapshot.currentStage}</Badge>
-                    <Badge tone="neutral">read-only report</Badge>
+                    <Badge tone="neutral">읽기 전용 보고</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 2026 공식 전환 준비 상태를 읽기 전용으로 요약합니다. backfill, 공식 점수, 공식 등급, feature flag는 실행하지 않습니다.
+                    이 화면은 2026 공식 전환 준비 상태를 읽기 전용으로 요약합니다. 기존 데이터 채우기, 공식 점수, 공식 등급, 기능 활성화 스위치는 실행하지 않습니다.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
                     ['snapshot-executive', '경영요약', snapshot.copyPayloads.executiveSummary],
-                    ['snapshot-hr', 'HR action', snapshot.copyPayloads.hrActionList],
-                    ['snapshot-dev', 'Dev action', snapshot.copyPayloads.developerActionList],
-                    ['snapshot-blockers', 'blocker 요약', snapshot.copyPayloads.blockerSummary],
+                    ['snapshot-hr', '인사 액션', snapshot.copyPayloads.hrActionList],
+                    ['snapshot-dev', '개발/모니터링 액션', snapshot.copyPayloads.developerActionList],
+                    ['snapshot-blockers', '해소 필요 항목 요약', snapshot.copyPayloads.blockerSummary],
                     ['snapshot-prohibited', '금지 목록', snapshot.copyPayloads.prohibitedActions],
-                    ['snapshot-markdown', 'Markdown', snapshot.copyPayloads.markdown],
-                    ['snapshot-tsv', 'TSV', snapshot.copyPayloads.tsv],
+                    ['snapshot-markdown', '마크다운 보기', snapshot.copyPayloads.markdown],
+                    ['snapshot-tsv', 'TSV 보기', snapshot.copyPayloads.tsv],
                   ].map(([key, label, text]) => (
                     <button
                       key={key}
@@ -4312,40 +4396,40 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 <MetricCard
-                  label="active employees"
+                  label="재직자"
                   value={formatIntegratedSnapshotCount2026(snapshot.summary.activeEmployeeCount)}
-                  help="target scope"
+                  help="대상 범위"
                   compact
                 />
                 <MetricCard
-                  label="confirmed KPI"
+                  label="확정 KPI"
                   value={formatIntegratedSnapshotCount2026(snapshot.summary.confirmedPersonalKpiCount)}
                   help={snapshot.completionRates.mboConfirmedRate == null ? 'rate 미확인' : `${snapshot.completionRates.mboConfirmedRate}%`}
                   compact
                 />
                 <MetricCard
-                  label="missing MBO"
+                  label="MBO 미작성"
                   value={formatIntegratedSnapshotCount2026(snapshot.summary.missingMboCount)}
                   help="작성 필요"
                   compact
                   variant={(snapshot.summary.missingMboCount ?? 1) > 0 ? 'warning' : 'default'}
                 />
                 <MetricCard
-                  label="policyCategory"
+                  label="정책 분류"
                   value={formatIntegratedSnapshotCount2026(snapshot.summary.policyCategoryMissingCount)}
-                  help="missing"
+                  help="미분류"
                   compact
                   variant={(snapshot.summary.policyCategoryMissingCount ?? 1) > 0 ? 'warning' : 'default'}
                 />
                 <MetricCard
-                  label="routing blocker"
+                  label="평가자 배정 차단"
                   value={formatIntegratedSnapshotCount2026(snapshot.summary.evaluatorRoutingBlockerCount)}
                   help="평가자 배정"
                   compact
                   variant={(snapshot.summary.evaluatorRoutingBlockerCount ?? 1) > 0 ? 'warning' : 'default'}
                 />
                 <MetricCard
-                  label="official gate"
+                  label="공식 전환 조건"
                   value={formatIntegratedSnapshotCount2026(snapshot.summary.officialActivationGateBlockerCount)}
                   help="공식 전환"
                   compact
@@ -4355,7 +4439,7 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <h5 className="text-sm font-semibold text-amber-950">Top blockers</h5>
+                  <h5 className="text-sm font-semibold text-amber-950">주요 해소 필요 항목</h5>
                   {snapshot.topBlockers.length ? (
                     <ul className="mt-3 space-y-2">
                       {snapshot.topBlockers.slice(0, 8).map((blocker) => (
@@ -4366,11 +4450,11 @@ function PolicyActivationReadiness2026Panel(props: {
                       ))}
                     </ul>
                   ) : (
-                    <p className="mt-3 text-sm leading-6 text-emerald-800">현재 통합 snapshot 기준 주요 blocker가 없습니다.</p>
+                    <p className="mt-3 text-sm leading-6 text-emerald-800">현재 통합 요약 기준 주요 해소 필요 항목이 없습니다.</p>
                   )}
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Next actions</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">다음 액션</h5>
                   <div className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
                     <div>
                       <p className="text-xs font-semibold text-slate-500">HR</p>
@@ -4381,7 +4465,7 @@ function PolicyActivationReadiness2026Panel(props: {
                       </ul>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-slate-500">Developer</p>
+                      <p className="text-xs font-semibold text-slate-500">개발/모니터링</p>
                       <ul className="mt-1 space-y-1">
                         {snapshot.nextActions.developer.map((action) => (
                           <li key={`${action.label}-${action.route}`}>- {action.label}: {action.detail}</li>
@@ -4391,22 +4475,22 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Executive report</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">경영진 요약</h5>
                   <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">{snapshot.executiveReportText}</p>
                 </div>
               </div>
 
               <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Decision readiness</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">판정 준비 상태</h5>
                   <div className="mt-3 overflow-x-auto">
                     <table className="min-w-full text-left text-xs">
                       <thead className="text-slate-400">
                         <tr>
-                          <th className="whitespace-nowrap px-2 py-2 font-semibold">decision</th>
-                          <th className="whitespace-nowrap px-2 py-2 font-semibold">status</th>
-                          <th className="whitespace-nowrap px-2 py-2 font-semibold">blocker</th>
-                          <th className="whitespace-nowrap px-2 py-2 font-semibold">next action</th>
+                          <th className="whitespace-nowrap px-2 py-2 font-semibold">판정</th>
+                          <th className="whitespace-nowrap px-2 py-2 font-semibold">상태</th>
+                          <th className="whitespace-nowrap px-2 py-2 font-semibold">해소 필요</th>
+                          <th className="whitespace-nowrap px-2 py-2 font-semibold">다음 액션</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -4414,7 +4498,7 @@ function PolicyActivationReadiness2026Panel(props: {
                           <tr key={decision.id}>
                             <td className="min-w-44 px-2 py-2 font-semibold text-slate-900">{decision.label}</td>
                             <td className="px-2 py-2">
-                              <Badge tone={getIntegratedReadinessStatusTone2026(decision.status)}>{decision.status}</Badge>
+                              <Badge tone={getIntegratedReadinessStatusTone2026(decision.status)}>{formatReadinessUiStatus2026(decision.status)}</Badge>
                             </td>
                             <td className="px-2 py-2">{decision.blockerCount.toLocaleString()}건</td>
                             <td className="min-w-72 px-2 py-2">{decision.nextAction}</td>
@@ -4425,16 +4509,16 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Official activation state</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">공식 전환 상태</h5>
                   <div className="mt-3 grid gap-2">
                     {snapshot.activationState.map((item) => (
                       <div key={item.id} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-sm font-semibold text-slate-900">{item.label}</span>
-                          <Badge tone={getIntegratedReadinessStatusTone2026(item.status)}>{item.status}</Badge>
+                          <Badge tone={getIntegratedReadinessStatusTone2026(item.status)}>{formatReadinessUiStatus2026(item.status)}</Badge>
                         </div>
                         <p className="mt-1 text-xs leading-5 text-slate-500">
-                          blocker {item.blockerCount.toLocaleString()}건 · {item.nextAction}
+                          해소 필요 {item.blockerCount.toLocaleString()}건 · {item.nextAction}
                         </p>
                       </div>
                     ))}
@@ -4443,7 +4527,7 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                <h5 className="text-sm font-semibold text-rose-950">금지 작업</h5>
                 <p className="mt-2 text-sm leading-6 text-rose-900">{snapshot.prohibitedActions.join(', ')}</p>
               </div>
             </div>
@@ -4452,13 +4536,13 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 통합 readiness snapshot</h4>
-                    <Badge tone="neutral">{loading ? 'loading' : '미확인'}</Badge>
-                    <Badge tone="neutral">read-only report</Badge>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 통합 준비 상태 요약</h4>
+                    <Badge tone="neutral">{loading ? '불러오는 중' : '미확인'}</Badge>
+                    <Badge tone="neutral">읽기 전용 보고</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    공식 전환 Gate 데이터를 불러오면 현재 단계, overall readiness status, top blockers,
-                    official activation state, decision readiness, prohibited actions와 copy/export 버튼이 표시됩니다.
+                    공식 전환 조건 데이터를 불러오면 현재 단계, 전체 준비 상태, 주요 해소 필요 항목,
+                    공식 전환 상태, 판정 준비 상태, 금지 작업과 복사/내보내기 버튼이 표시됩니다.
                   </p>
                 </div>
                 <button
@@ -4467,14 +4551,14 @@ function PolicyActivationReadiness2026Panel(props: {
                   disabled={loading}
                   className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
                 >
-                  {loading ? 'snapshot 불러오는 중...' : 'snapshot 다시 불러오기'}
+                  {loading ? '요약 불러오는 중...' : '요약 다시 불러오기'}
                 </button>
               </div>
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard label="현재 단계" value="미확인" help="activation readiness load 필요" compact variant="muted" />
-                <MetricCard label="overall readiness status" value="미확인" help="activation readiness load 필요" compact variant="muted" />
-                <MetricCard label="top blockers" value="미확인" help="blocker summary 대기" compact variant="muted" />
-                <MetricCard label="official activation state" value="미확인" help="read-only gate 대기" compact variant="muted" />
+                <MetricCard label="현재 단계" value="미확인" help="공식 전환 준비 상태 불러오기 필요" compact variant="muted" />
+                <MetricCard label="전체 준비 상태" value="미확인" help="공식 전환 준비 상태 불러오기 필요" compact variant="muted" />
+                <MetricCard label="주요 해소 필요 항목" value="미확인" help="요약 대기" compact variant="muted" />
+                <MetricCard label="공식 전환 상태" value="미확인" help="읽기 전용 조건 대기" compact variant="muted" />
               </div>
             </div>
           )}
@@ -4484,27 +4568,27 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 Readiness Action Plan</h4>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 준비 상태 액션 계획</h4>
                     <Badge tone="neutral">{actionPlan.currentStage}</Badge>
                     <Badge tone={getIntegratedReadinessStatusTone2026(actionPlan.overallStatus)}>
-                      {actionPlan.overallStatus}
+                      {formatReadinessUiStatus2026(actionPlan.overallStatus)}
                     </Badge>
-                    <Badge tone="neutral">read-only board</Badge>
+                    <Badge tone="neutral">읽기 전용 보드</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 readiness blocker를 실행 항목으로 정리하는 읽기 전용 보드입니다.
-                    알림 발송, 저장, backfill, 공식 점수/등급 변경은 수행하지 않습니다.
+                    이 화면은 준비 상태 해소 필요 항목을 실행 항목으로 정리하는 읽기 전용 보드입니다.
+                    알림 발송, 저장, 기존 데이터 채우기, 공식 점수/등급 변경은 수행하지 않습니다.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    ['action-hr', 'HR plan', actionPlan.copyPayloads.hrActionPlan],
-                    ['action-leader', 'Leader plan', actionPlan.copyPayloads.leaderActionPlan],
-                    ['action-employee', 'Employee plan', actionPlan.copyPayloads.employeeActionPlan],
-                    ['action-dev', 'Dev watch', actionPlan.copyPayloads.developerWatchPlan],
-                    ['action-full', 'Full board', actionPlan.copyPayloads.fullActionBoard],
-                    ['action-markdown', 'Markdown', actionPlan.copyPayloads.markdown],
-                    ['action-tsv', 'TSV', actionPlan.copyPayloads.tsv],
+                    ['action-hr', '인사 계획', actionPlan.copyPayloads.hrActionPlan],
+                    ['action-leader', '리더 계획', actionPlan.copyPayloads.leaderActionPlan],
+                    ['action-employee', '직원 계획', actionPlan.copyPayloads.employeeActionPlan],
+                    ['action-dev', '개발/모니터링', actionPlan.copyPayloads.developerWatchPlan],
+                    ['action-full', '전체 보드 보기', actionPlan.copyPayloads.fullActionBoard],
+                    ['action-markdown', '마크다운 보기', actionPlan.copyPayloads.markdown],
+                    ['action-tsv', 'TSV 보기', actionPlan.copyPayloads.tsv],
                   ].map(([key, label, text]) => (
                     <button
                       key={key}
@@ -4519,7 +4603,7 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                <h5 className="text-sm font-semibold text-blue-950">This week focus</h5>
+                <h5 className="text-sm font-semibold text-blue-950">이번 주 집중 항목</h5>
                 <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
                   {actionPlan.thisWeekFocus.map((item) => (
                     <div key={item.id} className="rounded-xl border border-blue-100 bg-white px-3 py-2">
@@ -4539,9 +4623,9 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="mt-4 grid gap-4 xl:grid-cols-4">
                 {[
                   ['HR', actionPlan.actionGroups.hr],
-                  ['Leaders', actionPlan.actionGroups.leader],
-                  ['Employees', actionPlan.actionGroups.employee],
-                  ['Developers / ops', actionPlan.actionGroups.developer],
+                  ['리더', actionPlan.actionGroups.leader],
+                  ['직원', actionPlan.actionGroups.employee],
+                  ['개발/운영', actionPlan.actionGroups.developer],
                 ].map(([label, items]) => (
                   <div key={label as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <h5 className="text-sm font-semibold text-slate-900">{label as string}</h5>
@@ -4550,11 +4634,11 @@ function PolicyActivationReadiness2026Panel(props: {
                         <div key={item.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge tone={getReadinessActionPriorityTone2026(item.priority)}>{item.priority}</Badge>
-                            <Badge tone={getReadinessActionStatusTone2026(item.status)}>{item.status}</Badge>
+                          <Badge tone={getReadinessActionStatusTone2026(item.status)}>{formatReadinessUiStatus2026(item.status)}</Badge>
                           </div>
                           <p className="mt-2 text-sm font-semibold leading-5 text-slate-900">{item.title}</p>
                           <p className="mt-1 text-xs leading-5 text-slate-500">
-                            {item.relatedBlockerCount == null ? 'blocker 미확인' : `${item.relatedBlockerCount.toLocaleString()}건`} · {item.relatedRoute}
+                            {item.relatedBlockerCount == null ? '해소 필요 항목 미확인' : `${item.relatedBlockerCount.toLocaleString()}건`} · {item.relatedRoute}
                           </p>
                         </div>
                       ))}
@@ -4565,11 +4649,11 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Action report</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">액션 보고</h5>
                   <p className="mt-3 text-sm leading-6 text-slate-600">{actionPlan.reportText}</p>
                 </div>
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                  <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                  <h5 className="text-sm font-semibold text-rose-950">금지 작업</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{actionPlan.prohibitedActions.join(', ')}</p>
                 </div>
               </div>
@@ -4581,32 +4665,32 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 Readiness Execution Board</h4>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 준비 상태 실행 보드</h4>
                     <Badge tone={getIntegratedReadinessStatusTone2026(executionBoard.summary.overallReadinessStatus)}>
-                      {executionBoard.summary.overallReadinessStatus}
+                      {formatReadinessUiStatus2026(executionBoard.summary.overallReadinessStatus)}
                     </Badge>
                     <Badge tone={executionBoard.summary.officialActivationStatus === 'BLOCKED' ? 'warn' : 'neutral'}>
-                      {executionBoard.summary.officialActivationStatus}
+                      {formatReadinessUiStatus2026(executionBoard.summary.officialActivationStatus)}
                     </Badge>
-                    <Badge tone="neutral">export-only</Badge>
+                    <Badge tone="neutral">내보내기 전용</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 readiness 실행 항목을 운영 관리하기 위한 보드입니다.
-                    공식 점수, 등급, backfill, feature flag, Evaluation.totalScore, Evaluation.gradeId는 변경하지 않습니다.
+                    이 화면은 준비 상태 실행 항목을 운영 관리하기 위한 보드입니다.
+                    공식 점수, 등급, 기존 데이터 채우기, 기능 활성화 스위치, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId)은 변경하지 않습니다.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    ['execution-full', 'Full board', executionBoard.copyPayloads.fullBoard],
-                    ['execution-week', 'This week', executionBoard.copyPayloads.thisWeekFocus],
-                    ['execution-hr', 'HR list', executionBoard.copyPayloads.hrActionList],
-                    ['execution-leader', 'Leader list', executionBoard.copyPayloads.leaderActionList],
-                    ['execution-employee', 'Employee list', executionBoard.copyPayloads.employeeActionList],
-                    ['execution-dev', 'Dev watch', executionBoard.copyPayloads.developerWatchList],
-                    ['execution-report', 'Executive report', executionBoard.copyPayloads.executiveWeeklyReport],
-                    ['execution-prohibited', 'Prohibited', executionBoard.copyPayloads.prohibitedActions],
-                    ['execution-markdown', 'Markdown', executionBoard.copyPayloads.markdown],
-                    ['execution-tsv', 'TSV', executionBoard.copyPayloads.tsv],
+                    ['execution-full', '전체 보드 보기', executionBoard.copyPayloads.fullBoard],
+                    ['execution-week', '이번 주 항목 보기', executionBoard.copyPayloads.thisWeekFocus],
+                    ['execution-hr', '인사 액션 보기', executionBoard.copyPayloads.hrActionList],
+                    ['execution-leader', '리더 액션 보기', executionBoard.copyPayloads.leaderActionList],
+                    ['execution-employee', '직원 액션 보기', executionBoard.copyPayloads.employeeActionList],
+                    ['execution-dev', '개발/모니터링 보기', executionBoard.copyPayloads.developerWatchList],
+                    ['execution-report', '경영진 요약 보기', executionBoard.copyPayloads.executiveWeeklyReport],
+                    ['execution-prohibited', '금지 작업 보기', executionBoard.copyPayloads.prohibitedActions],
+                    ['execution-markdown', '마크다운 보기', executionBoard.copyPayloads.markdown],
+                    ['execution-tsv', 'TSV 보기', executionBoard.copyPayloads.tsv],
                   ].map(([key, label, text]) => (
                     <button
                       key={key}
@@ -4621,35 +4705,35 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <MetricCard label="현재 단계" value={executionBoard.summary.currentStage} help="snapshot stage" compact />
-                <MetricCard label="open actions" value={executionBoard.summary.totalOpenActionCount.toLocaleString()} help="DONE 제외" compact />
-                <MetricCard label="P0 / P1 / P2" value={`${executionBoard.summary.p0Count}/${executionBoard.summary.p1Count}/${executionBoard.summary.p2Count}`} help="priority" compact variant={executionBoard.summary.p0Count > 0 ? 'warning' : 'default'} />
+                <MetricCard label="현재 단계" value={executionBoard.summary.currentStage} help="요약 단계" compact />
+                <MetricCard label="열린 액션" value={executionBoard.summary.totalOpenActionCount.toLocaleString()} help="DONE 제외" compact />
+                <MetricCard label="P0 / P1 / P2" value={`${executionBoard.summary.p0Count}/${executionBoard.summary.p1Count}/${executionBoard.summary.p2Count}`} help="우선순위" compact variant={executionBoard.summary.p0Count > 0 ? 'warning' : 'default'} />
                 <MetricCard label="HR / 리더 / 직원 / DEV" value={`${executionBoard.summary.hrActionCount}/${executionBoard.summary.leaderActionCount}/${executionBoard.summary.employeeActionCount}/${executionBoard.summary.developerWatchActionCount}`} help="owner group" compact />
-                <MetricCard label="blocked / ready / watch" value={`${executionBoard.summary.blockedActionCount}/${executionBoard.summary.readyToStartActionCount}/${executionBoard.summary.watchOnlyActionCount}`} help="status" compact variant={executionBoard.summary.blockedActionCount > 0 ? 'warning' : 'default'} />
-                <MetricCard label="baseline" value={executionBoard.summary.lastBaselineTimestamp ?? 'export-only'} help={executionBoard.summary.lastReviewedTimestamp ?? 'last reviewed 없음'} compact variant="muted" />
+                <MetricCard label="차단 / 준비 / 모니터링" value={`${executionBoard.summary.blockedActionCount}/${executionBoard.summary.readyToStartActionCount}/${executionBoard.summary.watchOnlyActionCount}`} help="상태" compact variant={executionBoard.summary.blockedActionCount > 0 ? 'warning' : 'default'} />
+                <MetricCard label="기준선" value={executionBoard.summary.lastBaselineTimestamp ?? '내보내기 전용'} help={executionBoard.summary.lastReviewedTimestamp ?? '최종 검토 없음'} compact variant="muted" />
               </div>
 
               <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h5 className="text-sm font-semibold text-blue-950">Baseline snapshot support</h5>
+                    <h5 className="text-sm font-semibold text-blue-950">기준선 요약 지원</h5>
                     <p className="mt-1 text-sm leading-6 text-blue-900">{executionBoard.baselineSnapshot.guidance}</p>
                   </div>
                   <Badge tone="neutral">save button 없음</Badge>
                 </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-3">
                   <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-500">snapshot timestamp</p>
+                    <p className="text-xs font-semibold text-slate-500">요약 시각</p>
                     <p className="mt-1 text-sm font-semibold text-slate-900">{executionBoard.baselineSnapshot.timestamp}</p>
                   </div>
                   <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-500">metadata tracking</p>
+                    <p className="text-xs font-semibold text-slate-500">메타데이터 추적</p>
                     <p className="mt-1 text-sm font-semibold text-slate-900">
-                      {executionBoard.metadataTracking.enabled ? 'enabled' : 'export-only'}
+                      {executionBoard.metadataTracking.enabled ? '활성' : '내보내기 전용'}
                     </p>
                   </div>
                   <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-500">delta</p>
+                    <p className="text-xs font-semibold text-slate-500">변화량</p>
                     <p className="mt-1 text-sm leading-5 text-slate-700">{executionBoard.baselineSnapshot.deltaFromPreviousBaseline[0]}</p>
                   </div>
                 </div>
@@ -4686,7 +4770,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={getReadinessActionPriorityTone2026(item.priority)}>{item.priority}</Badge>
                       <Badge tone="neutral">{item.ownerGroup}</Badge>
-                      <Badge tone={getReadinessActionStatusTone2026(item.status)}>{item.status}</Badge>
+                      <Badge tone={getReadinessActionStatusTone2026(item.status)}>{formatReadinessUiStatus2026(item.status)}</Badge>
                     </div>
                     <p className="mt-3 text-sm font-semibold leading-5 text-slate-900">{item.title}</p>
                     <p className="mt-2 text-xs leading-5 text-slate-500">
@@ -4694,7 +4778,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     </p>
                     <p className="mt-2 text-sm leading-6 text-slate-600">{item.reason}</p>
                     <div className="mt-3 rounded-xl border border-slate-100 bg-white px-3 py-2">
-                      <p className="text-xs font-semibold text-slate-500">blocker</p>
+                      <p className="text-xs font-semibold text-slate-500">해소 필요 항목</p>
                       <p className="mt-1 text-sm font-semibold text-slate-900">
                         {item.relatedBlockerCount == null ? '미확인' : `${item.relatedBlockerCount.toLocaleString()}건`}
                       </p>
@@ -4706,7 +4790,7 @@ function PolicyActivationReadiness2026Panel(props: {
                         onClick={() => void openExportPreview(`execution-copy-${item.id}`, item.suggestedCommunicationCopy ?? '')}
                         className="mt-3 inline-flex min-h-8 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-white"
                       >
-                        {copiedRunbookKey === `execution-copy-${item.id}` ? '복사됨' : 'communication copy'}
+                        {copiedRunbookKey === `execution-copy-${item.id}` ? '복사됨' : '안내문 복사'}
                       </button>
                     ) : null}
                   </div>
@@ -4715,7 +4799,7 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Filters available</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">사용 가능한 필터</h5>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {[
                       ...executionBoard.filters.ownerGroups,
@@ -4728,7 +4812,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">HR communication package</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">인사 안내문 패키지</h5>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {executionBoard.communicationTemplates.map((template) => (
                       <button
@@ -4743,18 +4827,18 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Metadata design note</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">메타데이터 설계 메모</h5>
                   <p className="mt-3 text-sm leading-6 text-slate-600">{executionBoard.metadataTracking.reason}</p>
                 </div>
               </div>
 
               <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Executive weekly report</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">경영진 주간 요약</h5>
                   <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">{executionBoard.executiveWeeklyReportText}</p>
                 </div>
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                  <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                  <h5 className="text-sm font-semibold text-rose-950">금지 작업</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{executionBoard.prohibitedActions.join(', ')}</p>
                 </div>
               </div>
@@ -4766,29 +4850,29 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 Fast-Forward Operations Cockpit</h4>
-                    <Badge tone="neutral">{fastForwardOperationsCockpit.mode}</Badge>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 병렬 운영 현황판</h4>
+                    <Badge tone="neutral">{formatReadinessUiStatus2026(fastForwardOperationsCockpit.mode)}</Badge>
                     <Badge tone={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus === 'BLOCKED' ? 'warn' : 'neutral'}>
-                      {fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus}
+                      {formatReadinessUiStatus2026(fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus)}
                     </Badge>
-                    <Badge tone="neutral">copy/export only</Badge>
+                    <Badge tone="neutral">복사/내보내기 전용</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 2026 평가 운영을 병렬로 앞당기기 위한 read-only 실행 지도입니다.
-                    backfill, 공식 점수, 공식 등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                    이 화면은 2026 평가 운영을 병렬로 앞당기기 위한 읽기 전용 실행 지도입니다.
+                    기존 데이터 채우기, 공식 점수, 공식 등급, 기능 활성화 스위치, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId)은 실행하지 않습니다.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    ['fast-forward-summary', 'Fast-forward summary', fastForwardOperationsCockpit.copyPayloads.fastForwardSummary],
-                    ['fast-forward-critical-path', 'Critical path', fastForwardOperationsCockpit.copyPayloads.criticalPath],
-                    ['fast-forward-quick-wins', 'Quick wins', fastForwardOperationsCockpit.copyPayloads.quickWins],
-                    ['fast-forward-owner-queues', 'Owner action queues', fastForwardOperationsCockpit.copyPayloads.ownerActionQueues],
-                    ['fast-forward-safe-path', 'Minimum safe path', fastForwardOperationsCockpit.copyPayloads.minimumSafePath],
-                    ['fast-forward-prohibited', 'Prohibited actions', fastForwardOperationsCockpit.copyPayloads.prohibitedActions],
-                    ['fast-forward-full', 'Full operations plan', fastForwardOperationsCockpit.copyPayloads.fullOperationsPlan],
-                    ['fast-forward-markdown', 'Markdown', fastForwardOperationsCockpit.copyPayloads.markdown],
-                    ['fast-forward-tsv', 'TSV', fastForwardOperationsCockpit.copyPayloads.tsv],
+                    ['fast-forward-summary', '병렬 운영 요약', fastForwardOperationsCockpit.copyPayloads.fastForwardSummary],
+                    ['fast-forward-critical-path', '핵심 진행 경로', fastForwardOperationsCockpit.copyPayloads.criticalPath],
+                    ['fast-forward-quick-wins', '빠른 정리 항목', fastForwardOperationsCockpit.copyPayloads.quickWins],
+                    ['fast-forward-owner-queues', '담당자별 액션', fastForwardOperationsCockpit.copyPayloads.ownerActionQueues],
+                    ['fast-forward-safe-path', '최소 안전 진행 조건', fastForwardOperationsCockpit.copyPayloads.minimumSafePath],
+                    ['fast-forward-prohibited', '금지 작업', fastForwardOperationsCockpit.copyPayloads.prohibitedActions],
+                    ['fast-forward-full', '전체 운영 계획', fastForwardOperationsCockpit.copyPayloads.fullOperationsPlan],
+                    ['fast-forward-markdown', '마크다운 보기', fastForwardOperationsCockpit.copyPayloads.markdown],
+                    ['fast-forward-tsv', 'TSV 보기', fastForwardOperationsCockpit.copyPayloads.tsv],
                   ].map(([key, label, text]) => (
                     <button
                       key={key}
@@ -4803,24 +4887,24 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <MetricCard label="current stage" value={fastForwardOperationsCockpit.fastForwardSummary.currentStage} help="readiness stage" compact />
-                <MetricCard label="overall status" value={fastForwardOperationsCockpit.fastForwardSummary.overallReadinessStatus} help="snapshot status" compact />
-                <MetricCard label="official activation" value={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus} help="activation gate" compact variant={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
-                <MetricCard label="parallel / blocked" value={`${fastForwardOperationsCockpit.fastForwardSummary.parallelWorkstreamCount}/${fastForwardOperationsCockpit.fastForwardSummary.blockedWorkstreamCount}`} help="workstreams" compact />
-                <MetricCard label="quick wins" value={fastForwardOperationsCockpit.fastForwardSummary.quickWinCount.toLocaleString()} help={fastForwardOperationsCockpit.fastForwardSummary.fastestSafeNextProcess} compact />
-                <MetricCard label="critical path" value={fastForwardOperationsCockpit.fastForwardSummary.criticalPathItemCount.toLocaleString()} help={fastForwardOperationsCockpit.fastForwardSummary.nextCheckpointCondition} compact variant="warning" />
+                <MetricCard label="현재 단계" value={fastForwardOperationsCockpit.fastForwardSummary.currentStage} help="준비 상태 단계" compact />
+                <MetricCard label="전체 상태" value={formatReadinessUiStatus2026(fastForwardOperationsCockpit.fastForwardSummary.overallReadinessStatus)} help="요약 상태" compact />
+                <MetricCard label="공식 전환" value={formatReadinessUiStatus2026(fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus)} help="공식 전환 조건" compact variant={fastForwardOperationsCockpit.fastForwardSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="병렬 / 차단" value={`${fastForwardOperationsCockpit.fastForwardSummary.parallelWorkstreamCount}/${fastForwardOperationsCockpit.fastForwardSummary.blockedWorkstreamCount}`} help="작업 흐름" compact />
+                <MetricCard label="빠른 정리 항목" value={fastForwardOperationsCockpit.fastForwardSummary.quickWinCount.toLocaleString()} help={fastForwardOperationsCockpit.fastForwardSummary.fastestSafeNextProcess} compact />
+                <MetricCard label="핵심 진행 경로" value={fastForwardOperationsCockpit.fastForwardSummary.criticalPathItemCount.toLocaleString()} help={fastForwardOperationsCockpit.fastForwardSummary.nextCheckpointCondition} compact variant="warning" />
               </div>
 
               <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                <h5 className="text-sm font-semibold text-blue-950">Korean operations plan</h5>
+                <h5 className="text-sm font-semibold text-blue-950">한국어 운영 계획</h5>
                 <p className="mt-3 text-sm leading-6 text-blue-900">{fastForwardOperationsCockpit.operationsPlanText}</p>
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-500">current bottleneck</p>
+                    <p className="text-xs font-semibold text-slate-500">현재 병목</p>
                     <p className="mt-1 text-sm font-semibold text-slate-900">{fastForwardOperationsCockpit.fastForwardSummary.currentBottleneck}</p>
                   </div>
                   <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-500">fastest safe next process</p>
+                    <p className="text-xs font-semibold text-slate-500">가장 빠른 안전 다음 단계</p>
                     <p className="mt-1 text-sm font-semibold text-slate-900">{fastForwardOperationsCockpit.fastForwardSummary.fastestSafeNextProcess}</p>
                   </div>
                 </div>
@@ -4828,12 +4912,12 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Parallel workstreams</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">병렬 작업 흐름</h5>
                   <div className="mt-3 grid gap-3">
                     {fastForwardOperationsCockpit.parallelWorkstreams.map((workstream) => (
                       <div key={workstream.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge tone="neutral">{workstream.status}</Badge>
+                          <Badge tone="neutral">{formatReadinessUiStatus2026(workstream.status)}</Badge>
                           {workstream.owners.map((owner) => <Badge key={owner} tone="neutral">{owner}</Badge>)}
                         </div>
                         <p className="mt-2 text-sm font-semibold text-slate-900">{workstream.title}</p>
@@ -4852,12 +4936,12 @@ function PolicyActivationReadiness2026Panel(props: {
                 </div>
 
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <h5 className="text-sm font-semibold text-amber-950">Blocked / later workstreams</h5>
+                  <h5 className="text-sm font-semibold text-amber-950">차단 / 추후 진행 작업 흐름</h5>
                   <div className="mt-3 grid gap-3">
                     {fastForwardOperationsCockpit.blockedWorkstreams.map((workstream) => (
                       <div key={workstream.id} className="rounded-xl border border-amber-100 bg-white px-3 py-3">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge tone="warn">{workstream.status}</Badge>
+                          <Badge tone="warn">{formatReadinessUiStatus2026(workstream.status)}</Badge>
                           {workstream.owners.map((owner) => <Badge key={owner} tone="neutral">{owner}</Badge>)}
                         </div>
                         <p className="mt-2 text-sm font-semibold text-slate-900">{workstream.title}</p>
@@ -4869,16 +4953,16 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                <h5 className="text-sm font-semibold text-slate-900">Critical path</h5>
+                <h5 className="text-sm font-semibold text-slate-900">핵심 진행 경로</h5>
                 <div className="mt-3 overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
                       <tr>
-                        <th className="px-3 py-2">order</th>
-                        <th className="px-3 py-2">item</th>
-                        <th className="px-3 py-2">status</th>
-                        <th className="px-3 py-2">owner</th>
-                        <th className="px-3 py-2">next action</th>
+                        <th className="px-3 py-2">순서</th>
+                        <th className="px-3 py-2">항목</th>
+                        <th className="px-3 py-2">상태</th>
+                        <th className="px-3 py-2">담당</th>
+                        <th className="px-3 py-2">다음 액션</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -4886,7 +4970,7 @@ function PolicyActivationReadiness2026Panel(props: {
                         <tr key={item.order}>
                           <td className="px-3 py-2 font-semibold text-slate-700">{item.order}</td>
                           <td className="px-3 py-2 font-semibold text-slate-900">{item.title}</td>
-                          <td className="px-3 py-2 text-slate-600">{item.status}</td>
+                          <td className="px-3 py-2 text-slate-600">{formatReadinessUiStatus2026(item.status)}</td>
                           <td className="px-3 py-2 text-slate-600">{item.owner}</td>
                           <td className="px-3 py-2 text-slate-600">{item.nextAction}</td>
                         </tr>
@@ -4898,7 +4982,7 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Quick wins</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">빠른 정리 항목</h5>
                   <div className="mt-3 grid gap-3">
                     {fastForwardOperationsCockpit.quickWins.map((item) => (
                       <div key={item.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
@@ -4907,7 +4991,7 @@ function PolicyActivationReadiness2026Panel(props: {
                           <Badge tone="neutral">{item.owner}</Badge>
                         </div>
                         <p className="mt-1 text-xs leading-5 text-slate-500">
-                          blocker {formatIntegratedSnapshotCount2026(item.blockerCount)} · {item.route}
+                          해소 필요 {formatIntegratedSnapshotCount2026(item.blockerCount)} · {item.route}
                         </p>
                         <p className="mt-2 text-sm leading-6 text-slate-600">{item.reason}</p>
                       </div>
@@ -4916,16 +5000,16 @@ function PolicyActivationReadiness2026Panel(props: {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Minimum safe path to backfill dry-run review</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">사전 실행 검토까지 최소 안전 진행 조건</h5>
                   <div className="mt-3 grid gap-2">
                     {fastForwardOperationsCockpit.minimumSafePathToBackfillDryRunReview.map((item) => (
                       <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-slate-900">{item.label}</p>
-                          <Badge tone={item.status === 'DONE' ? 'success' : item.status === 'READY_FOR_REVIEW' ? 'neutral' : 'warn'}>{item.status}</Badge>
+                          <Badge tone={item.status === 'DONE' ? 'success' : item.status === 'READY_FOR_REVIEW' ? 'neutral' : 'warn'}>{formatReadinessUiStatus2026(item.status)}</Badge>
                         </div>
                         <p className="mt-1 text-xs leading-5 text-slate-500">
-                          blocker {formatIntegratedSnapshotCount2026(item.blockerCount)} · {item.nextAction}
+                          해소 필요 {formatIntegratedSnapshotCount2026(item.blockerCount)} · {item.nextAction}
                         </p>
                       </div>
                     ))}
@@ -4936,12 +5020,12 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="mt-4 grid gap-4 xl:grid-cols-4">
                 {[
                   ['HR', fastForwardOperationsCockpit.ownerActionQueues.hr],
-                  ['Leader', fastForwardOperationsCockpit.ownerActionQueues.leader],
-                  ['Employee', fastForwardOperationsCockpit.ownerActionQueues.employee],
-                  ['Developer / Watch', fastForwardOperationsCockpit.ownerActionQueues.developer],
+                  ['리더', fastForwardOperationsCockpit.ownerActionQueues.leader],
+                  ['직원', fastForwardOperationsCockpit.ownerActionQueues.employee],
+                  ['개발/모니터링', fastForwardOperationsCockpit.ownerActionQueues.developer],
                 ].map(([label, items]) => (
                   <div key={label as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <h5 className="text-sm font-semibold text-slate-900">{label as string} action queue</h5>
+                    <h5 className="text-sm font-semibold text-slate-900">{label as string} 액션 목록</h5>
                     <div className="mt-3 space-y-2">
                       {(items as typeof fastForwardOperationsCockpit.ownerActionQueues.hr).map((item) => (
                         <div key={`${label}-${item.title}`} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
@@ -4960,7 +5044,7 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Dependency map</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">의존 관계 지도</h5>
                   <div className="mt-3 space-y-2">
                     {fastForwardOperationsCockpit.dependencyMap.map((item) => (
                       <div key={`${item.from}-${item.to}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -4971,7 +5055,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Route action map</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">화면별 액션 지도</h5>
                   <div className="mt-3 space-y-2">
                     {fastForwardOperationsCockpit.routeActionMap.map((item) => (
                       <div key={item.route} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -4982,7 +5066,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
                 </div>
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                  <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                  <h5 className="text-sm font-semibold text-rose-950">금지 작업</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{fastForwardOperationsCockpit.prohibitedActions.join(', ')}</p>
                   <p className="mt-3 text-xs leading-5 text-rose-800">{fastForwardOperationsCockpit.metadataTracking.reason}</p>
                 </div>
@@ -4995,31 +5079,31 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 Backfill Dry-run Preflight Pack</h4>
-                    <Badge tone="neutral">{backfillDryRunPreflightPack.mode}</Badge>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 기존 데이터 채우기 사전 점검</h4>
+                    <Badge tone="neutral">{formatReadinessUiStatus2026(backfillDryRunPreflightPack.mode)}</Badge>
                     <Badge tone={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus === 'BLOCKED' ? 'warn' : 'neutral'}>
-                      dry-run {backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus}
+                      사전 실행 검토 {formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus)}
                     </Badge>
-                    <Badge tone="warn">apply {backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus}</Badge>
-                    <Badge tone="neutral">text-only command reference</Badge>
+                    <Badge tone="warn">실제 반영 {formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus)}</Badge>
+                    <Badge tone="neutral">텍스트 명령 참고</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 backfill dry-run 검토를 준비하기 위한 읽기 전용 preflight입니다.
-                    dry-run, apply, 공식 점수, 공식 등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                    이 화면은 기존 데이터 채우기 사전 실행 검토를 준비하기 위한 읽기 전용 사전 점검입니다.
+                    사전 실행 검토, 실제 반영, 공식 점수, 공식 등급, 기능 활성화 스위치, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId)은 실행하지 않습니다.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    ['backfill-preflight-summary', 'Preflight summary', backfillDryRunPreflightPack.copyPayloads.preflightSummary],
-                    ['backfill-preflight-preconditions', 'Preconditions', backfillDryRunPreflightPack.copyPayloads.preconditionsChecklist],
-                    ['backfill-preflight-command', 'Dry-run command reference', backfillDryRunPreflightPack.copyPayloads.dryRunCommandReference],
-                    ['backfill-preflight-output', 'Expected output', backfillDryRunPreflightPack.copyPayloads.expectedOutputChecklist],
-                    ['backfill-preflight-backup', 'DB backup', backfillDryRunPreflightPack.copyPayloads.dbBackupChecklist],
-                    ['backfill-preflight-hr', 'HR approval', backfillDryRunPreflightPack.copyPayloads.hrApprovalChecklist],
-                    ['backfill-preflight-dev', 'Developer checklist', backfillDryRunPreflightPack.copyPayloads.developerExecutionChecklist],
-                    ['backfill-preflight-prohibited', 'Prohibited actions', backfillDryRunPreflightPack.copyPayloads.prohibitedActions],
-                    ['backfill-preflight-markdown', 'Markdown', backfillDryRunPreflightPack.copyPayloads.markdown],
-                    ['backfill-preflight-tsv', 'TSV', backfillDryRunPreflightPack.copyPayloads.tsv],
+                    ['backfill-preflight-summary', '사전 점검 요약', backfillDryRunPreflightPack.copyPayloads.preflightSummary],
+                    ['backfill-preflight-preconditions', '선행 조건', backfillDryRunPreflightPack.copyPayloads.preconditionsChecklist],
+                    ['backfill-preflight-command', '사전 실행 명령 참고', backfillDryRunPreflightPack.copyPayloads.dryRunCommandReference],
+                    ['backfill-preflight-output', '예상 결과', backfillDryRunPreflightPack.copyPayloads.expectedOutputChecklist],
+                    ['backfill-preflight-backup', 'DB 백업', backfillDryRunPreflightPack.copyPayloads.dbBackupChecklist],
+                    ['backfill-preflight-hr', 'HR 승인', backfillDryRunPreflightPack.copyPayloads.hrApprovalChecklist],
+                    ['backfill-preflight-dev', '개발자 점검 목록', backfillDryRunPreflightPack.copyPayloads.developerExecutionChecklist],
+                    ['backfill-preflight-prohibited', '금지 작업', backfillDryRunPreflightPack.copyPayloads.prohibitedActions],
+                    ['backfill-preflight-markdown', '마크다운 보기', backfillDryRunPreflightPack.copyPayloads.markdown],
+                    ['backfill-preflight-tsv', 'TSV 보기', backfillDryRunPreflightPack.copyPayloads.tsv],
                   ].map(([key, label, text]) => (
                     <button
                       key={key}
@@ -5034,35 +5118,35 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <MetricCard label="current stage" value={backfillDryRunPreflightPack.preflightSummary.currentStage} help="readiness stage" compact />
-                <MetricCard label="overall status" value={backfillDryRunPreflightPack.preflightSummary.overallReadinessStatus} help="snapshot status" compact />
-                <MetricCard label="official activation" value={backfillDryRunPreflightPack.preflightSummary.officialActivationStatus} help="gate status" compact variant={backfillDryRunPreflightPack.preflightSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
-                <MetricCard label="dry-run review" value={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus} help="preflight status" compact variant={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus === 'BLOCKED' ? 'warning' : 'default'} />
-                <MetricCard label="apply status" value={backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus} help="apply remains blocked" compact variant="warning" />
-                <MetricCard label="blockers / missing" value={`${backfillDryRunPreflightPack.preflightSummary.blockerCount.toLocaleString()}/${backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount.toLocaleString()}`} help="preconditions" compact variant={backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount > 0 ? 'warning' : 'default'} />
-                <MetricCard label="DB backup" value={backfillDryRunPreflightPack.preflightSummary.dbBackupStatus} help="external confirmation only" compact variant="warning" />
-                <MetricCard label="HR approval" value={backfillDryRunPreflightPack.preflightSummary.hrApprovalStatus} help="dry-run review only" compact variant="warning" />
-                <MetricCard label="official flags" value={backfillDryRunPreflightPack.preflightSummary.officialFlagsStatus} help="must remain false" compact variant="warning" />
+                <MetricCard label="현재 단계" value={backfillDryRunPreflightPack.preflightSummary.currentStage} help="준비 상태 단계" compact />
+                <MetricCard label="전체 상태" value={formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.overallReadinessStatus)} help="스냅샷 상태" compact />
+                <MetricCard label="공식 전환" value={formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.officialActivationStatus)} help="공식 전환 차단 조건" compact variant={backfillDryRunPreflightPack.preflightSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="사전 실행 검토" value={formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus)} help="사전 점검 상태" compact variant={backfillDryRunPreflightPack.preflightSummary.backfillDryRunReviewStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="실제 반영 상태" value={formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.backfillApplyStatus)} help="실제 반영 차단 유지" compact variant="warning" />
+                <MetricCard label="차단/누락" value={`${backfillDryRunPreflightPack.preflightSummary.blockerCount.toLocaleString()}/${backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount.toLocaleString()}`} help="선행 조건" compact variant={backfillDryRunPreflightPack.preflightSummary.missingPreconditionsCount > 0 ? 'warning' : 'default'} />
+                <MetricCard label="DB 백업" value={formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.dbBackupStatus)} help="외부 확인 전용" compact variant="warning" />
+                <MetricCard label="HR 승인" value={formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.hrApprovalStatus)} help="사전 실행 검토 전용" compact variant="warning" />
+                <MetricCard label="공식 스위치" value={formatReadinessUiStatus2026(backfillDryRunPreflightPack.preflightSummary.officialFlagsStatus)} help="false 유지 필요" compact variant="warning" />
                 {dryRunOutputReviewTemplate ? (
-                  <MetricCard label="review template" value={dryRunOutputReviewTemplate.templateStatus} help="local-only output review" compact />
+                  <MetricCard label="검토 양식" value={dryRunOutputReviewTemplate.templateStatus} help="로컬 전용 결과 검토" compact />
                 ) : null}
-                <MetricCard label="next preflight action" value={backfillDryRunPreflightPack.preflightSummary.nextPreflightAction} help="no UI execution" compact variant="muted" />
+                <MetricCard label="다음 사전 점검 액션" value={backfillDryRunPreflightPack.preflightSummary.nextPreflightAction} help="UI 실행 없음" compact variant="muted" />
               </div>
 
               <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                <h5 className="text-sm font-semibold text-amber-950">Command templates are text only</h5>
+                <h5 className="text-sm font-semibold text-amber-950">명령 템플릿은 텍스트 참고 전용</h5>
                 <p className="mt-2 text-xs leading-5 text-amber-800">
-                  복사 전용 참고문이며 UI에서 dry-run, apply, backfill --apply를 실행하지 않습니다.
-                  Production apply command must not be placed in UI.
+                  복사 전용 참고문이며 UI에서 사전 실행 검토, 실제 반영, 기존 데이터 채우기 실제 반영을 실행하지 않습니다.
+                  운영 실제 반영 명령은 UI에 배치하지 않습니다.
                 </p>
                 <div className="mt-3 grid gap-3 lg:grid-cols-2">
                   {backfillDryRunPreflightPack.commandTemplates.map((command) => (
                     <div key={command.id} className="rounded-xl border border-amber-200 bg-white p-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold text-slate-900">{command.label}</p>
-                        <Badge tone="neutral">{command.mode}</Badge>
+                        <Badge tone="neutral">{formatReadinessUiStatus2026(command.mode)}</Badge>
                         <Badge tone={command.executeAvailable ? 'error' : 'neutral'}>
-                          executeAvailable {String(command.executeAvailable)}
+                          실행 가능 {String(command.executeAvailable)}
                         </Badge>
                       </div>
                       <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-950 p-3 text-xs leading-5 text-slate-50">{command.commandText}</pre>
@@ -5074,16 +5158,16 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Preconditions checklist</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">선행 조건 점검 목록</h5>
                   <div className="mt-3 grid gap-2 lg:grid-cols-2">
                     {backfillDryRunPreflightPack.preconditionsChecklist.map((item) => (
                       <div key={item.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge tone={item.status === 'READY_FOR_REVIEW' ? 'success' : item.status === 'READY_LATER' ? 'neutral' : 'warn'}>{item.status}</Badge>
+                          <Badge tone={item.status === 'READY_FOR_REVIEW' ? 'success' : item.status === 'READY_LATER' ? 'neutral' : 'warn'}>{formatReadinessUiStatus2026(item.status)}</Badge>
                           <span className="text-sm font-semibold text-slate-900">{item.label}</span>
                         </div>
                         <p className="mt-1 text-xs leading-5 text-slate-500">
-                          blocker {item.sourceBlockerCount == null ? '미확인' : item.sourceBlockerCount.toLocaleString()} · {item.relatedRoute}
+                          해소 필요 {item.sourceBlockerCount == null ? '미확인' : item.sourceBlockerCount.toLocaleString()} · {item.relatedRoute}
                         </p>
                         <p className="mt-1 text-xs leading-5 text-slate-600">{item.nextAction}</p>
                       </div>
@@ -5093,19 +5177,19 @@ function PolicyActivationReadiness2026Panel(props: {
 
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <h5 className="text-sm font-semibold text-slate-900">Expected dry-run output checklist</h5>
+                    <h5 className="text-sm font-semibold text-slate-900">예상 사전 실행 결과 점검 목록</h5>
                     <div className="mt-3 space-y-2">
                       {backfillDryRunPreflightPack.expectedOutputChecklist.map((item) => (
                         <div key={item.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <p className="text-sm font-semibold text-slate-900">{item.label}</p>
                           <p className="mt-1 text-xs leading-5 text-slate-500">{item.expectedReview}</p>
-                          <p className="mt-1 text-xs font-semibold text-slate-700">required: {item.requiredValue}</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-700">필수값: {item.requiredValue}</p>
                         </div>
                       ))}
                     </div>
                   </div>
                   <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                    <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                    <h5 className="text-sm font-semibold text-rose-950">금지 작업</h5>
                     <p className="mt-2 text-sm leading-6 text-rose-900">{backfillDryRunPreflightPack.prohibitedActions.join(', ')}</p>
                   </div>
                 </div>
@@ -5113,10 +5197,10 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 lg:grid-cols-4">
                 {[
-                  ['DB backup checklist', backfillDryRunPreflightPack.backupChecklist],
-                  ['HR approval checklist', backfillDryRunPreflightPack.hrApprovalChecklist],
-                  ['Developer execution checklist', backfillDryRunPreflightPack.developerExecutionChecklist],
-                  ['Post-check checklist', backfillDryRunPreflightPack.postCheckChecklist],
+                  ['DB 백업 점검 목록', backfillDryRunPreflightPack.backupChecklist],
+                  ['HR 승인 점검 목록', backfillDryRunPreflightPack.hrApprovalChecklist],
+                  ['개발자 실행 전 점검 목록', backfillDryRunPreflightPack.developerExecutionChecklist],
+                  ['사후 점검 목록', backfillDryRunPreflightPack.postCheckChecklist],
                 ].map(([title, items]) => (
                   <div key={title as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <h5 className="text-sm font-semibold text-slate-900">{title as string}</h5>
@@ -5128,30 +5212,30 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <h5 className="text-sm font-semibold text-slate-900">Existing dry-run/apply surface found</h5>
+                <h5 className="text-sm font-semibold text-slate-900">기존 사전 실행/실제 반영 표면 확인</h5>
                 <div className="mt-3 grid gap-3 lg:grid-cols-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">dry-run scripts</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">사전 실행 스크립트</p>
                     <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
                       {backfillDryRunPreflightPack.existingSurface.existingDryRunScripts.map((item) => <li key={item}>- {item}</li>)}
                     </ul>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">apply surface</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">실제 반영 표면</p>
                     <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
                       {backfillDryRunPreflightPack.existingSurface.existingApplyScripts.map((item) => <li key={item}>- {item}</li>)}
                     </ul>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">safe separation</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">안전 분리</p>
                     <p className="mt-2 text-xs leading-5 text-slate-600">
-                      dry-run only without writes: {String(backfillDryRunPreflightPack.existingSurface.dryRunOnlyWithoutWritesAvailable)}
+                      쓰기 없는 사전 실행만 가능: {String(backfillDryRunPreflightPack.existingSurface.dryRunOnlyWithoutWritesAvailable)}
                       <br />
-                      apply separated from dry-run: {String(backfillDryRunPreflightPack.existingSurface.applySeparatedFromDryRun)}
+                      실제 반영과 사전 실행 분리: {String(backfillDryRunPreflightPack.existingSurface.applySeparatedFromDryRun)}
                       <br />
-                      totalScore write: {String(backfillDryRunPreflightPack.existingSurface.writesTotalScore)}
+                      공식 저장 점수(totalScore) 쓰기: {String(backfillDryRunPreflightPack.existingSurface.writesTotalScore)}
                       <br />
-                      gradeId write: {String(backfillDryRunPreflightPack.existingSurface.writesGradeId)}
+                      공식 저장 등급(gradeId) 쓰기: {String(backfillDryRunPreflightPack.existingSurface.writesGradeId)}
                     </p>
                   </div>
                 </div>
@@ -5164,28 +5248,28 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 Dry-run Output Review Template</h4>
-                    <Badge tone="neutral">{dryRunOutputReviewTemplate.mode}</Badge>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 사전 실행 결과 검토 양식</h4>
+                    <Badge tone="neutral">{formatReadinessUiStatus2026(dryRunOutputReviewTemplate.mode)}</Badge>
                     <Badge tone="neutral">{dryRunOutputReviewTemplate.templateStatus}</Badge>
-                    <Badge tone="neutral">local-only paste helper</Badge>
-                    <Badge tone="warn">apply {dryRunOutputReviewTemplate.templateSummary.applyStatus}</Badge>
+                    <Badge tone="neutral">로컬 붙여넣기 도구</Badge>
+                    <Badge tone="warn">실제 반영 {formatReadinessUiStatus2026(dryRunOutputReviewTemplate.templateSummary.applyStatus)}</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 향후 dry-run 결과를 검토하기 위한 읽기 전용 템플릿입니다.
-                    dry-run, apply, backfill, 공식 점수, 공식 등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                    이 화면은 향후 사전 실행 결과를 검토하기 위한 읽기 전용 양식입니다.
+                    사전 실행 검토, 실제 반영, 기존 데이터 채우기, 공식 점수, 공식 등급, 기능 활성화 스위치, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId)은 실행하지 않습니다.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    ['dryrun-output-template', 'Dry-run review template', dryRunOutputReviewTemplate.copyPayloads.reviewTemplate],
-                    ['dryrun-output-must-pass', 'Must-pass criteria', dryRunOutputReviewTemplate.copyPayloads.mustPassCriteria],
-                    ['dryrun-output-red-flags', 'Red flags', dryRunOutputReviewTemplate.copyPayloads.redFlags],
-                    ['dryrun-output-hr', 'HR review checklist', dryRunOutputReviewTemplate.copyPayloads.hrReviewChecklist],
-                    ['dryrun-output-dev', 'Developer review checklist', dryRunOutputReviewTemplate.copyPayloads.developerReviewChecklist],
-                    ['dryrun-output-decision', 'Decision outcome guide', dryRunOutputReviewTemplate.copyPayloads.decisionOutcomeGuide],
-                    ['dryrun-output-next-action', 'Next action mapping', dryRunOutputReviewTemplate.copyPayloads.nextActionMapping],
-                    ['dryrun-output-markdown', 'Markdown', dryRunOutputReviewTemplate.copyPayloads.markdown],
-                    ['dryrun-output-tsv', 'TSV', dryRunOutputReviewTemplate.copyPayloads.tsv],
+                    ['dryrun-output-template', '사전 실행 검토 양식', dryRunOutputReviewTemplate.copyPayloads.reviewTemplate],
+                    ['dryrun-output-must-pass', '필수 통과 기준', dryRunOutputReviewTemplate.copyPayloads.mustPassCriteria],
+                    ['dryrun-output-red-flags', '위험 신호', dryRunOutputReviewTemplate.copyPayloads.redFlags],
+                    ['dryrun-output-hr', 'HR 검토 목록', dryRunOutputReviewTemplate.copyPayloads.hrReviewChecklist],
+                    ['dryrun-output-dev', '개발자 검토 목록', dryRunOutputReviewTemplate.copyPayloads.developerReviewChecklist],
+                    ['dryrun-output-decision', '판정 결과 가이드', dryRunOutputReviewTemplate.copyPayloads.decisionOutcomeGuide],
+                    ['dryrun-output-next-action', '다음 액션 매핑', dryRunOutputReviewTemplate.copyPayloads.nextActionMapping],
+                    ['dryrun-output-markdown', '마크다운 보기', dryRunOutputReviewTemplate.copyPayloads.markdown],
+                    ['dryrun-output-tsv', 'TSV 보기', dryRunOutputReviewTemplate.copyPayloads.tsv],
                   ].map(([key, label, text]) => (
                     <button
                       key={key}
@@ -5200,23 +5284,23 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <MetricCard label="current stage" value={dryRunOutputReviewTemplate.templateSummary.currentStage} help="readiness stage" compact />
-                <MetricCard label="overall status" value={dryRunOutputReviewTemplate.templateSummary.overallReadinessStatus} help="snapshot status" compact />
-                <MetricCard label="official activation" value={dryRunOutputReviewTemplate.templateSummary.officialActivationStatus} help="gate status" compact variant={dryRunOutputReviewTemplate.templateSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
-                <MetricCard label="preflight status" value={dryRunOutputReviewTemplate.templateSummary.preflightStatus} help="dry-run output is future input" compact variant={dryRunOutputReviewTemplate.templateSummary.preflightStatus === 'BLOCKED' ? 'warning' : 'default'} />
-                <MetricCard label="paste helper" value={dryRunOutputReviewTemplate.templateSummary.localOnlyPasteHelperStatus} help="no server submit/upload" compact />
-                <MetricCard label="next review action" value={dryRunOutputReviewTemplate.templateSummary.nextReviewAction} help="review only" compact variant="muted" />
+                <MetricCard label="현재 단계" value={dryRunOutputReviewTemplate.templateSummary.currentStage} help="준비 상태 단계" compact />
+                <MetricCard label="전체 상태" value={formatReadinessUiStatus2026(dryRunOutputReviewTemplate.templateSummary.overallReadinessStatus)} help="스냅샷 상태" compact />
+                <MetricCard label="공식 전환" value={formatReadinessUiStatus2026(dryRunOutputReviewTemplate.templateSummary.officialActivationStatus)} help="공식 전환 차단 조건" compact variant={dryRunOutputReviewTemplate.templateSummary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="사전 점검 상태" value={formatReadinessUiStatus2026(dryRunOutputReviewTemplate.templateSummary.preflightStatus)} help="사전 실행 결과는 향후 입력" compact variant={dryRunOutputReviewTemplate.templateSummary.preflightStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="붙여넣기 도구" value={dryRunOutputReviewTemplate.templateSummary.localOnlyPasteHelperStatus} help="서버 제출/업로드 없음" compact />
+                <MetricCard label="다음 검토 액션" value={dryRunOutputReviewTemplate.templateSummary.nextReviewAction} help="검토 전용" compact variant="muted" />
               </div>
 
               <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                <h5 className="text-sm font-semibold text-blue-950">Local-only paste helper</h5>
+                <h5 className="text-sm font-semibold text-blue-950">로컬 붙여넣기 도구</h5>
                 <p className="mt-2 text-xs leading-5 text-blue-900">
                   {dryRunOutputReviewTemplate.localOnlyPasteHelper.guidance}
-                  {' '}serverSubmitAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.serverSubmitAvailable)} ·
-                  saveAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.saveAvailable)} ·
-                  uploadAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.uploadAvailable)} ·
-                  apiCallAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.apiCallAvailable)} ·
-                  persistenceAvailable {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.persistenceAvailable)}
+                  {' '}서버 제출 가능 {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.serverSubmitAvailable)} ·
+                  저장 가능 {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.saveAvailable)} ·
+                  업로드 가능 {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.uploadAvailable)} ·
+                  API 호출 가능 {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.apiCallAvailable)} ·
+                  영속 저장 가능 {String(dryRunOutputReviewTemplate.localOnlyPasteHelper.persistenceAvailable)}
                 </p>
                 <textarea
                   value={dryRunOutputPasteText}
@@ -5232,18 +5316,18 @@ function PolicyActivationReadiness2026Panel(props: {
                     </p>
                     {dryRunOutputPasteReview.classification ? (
                       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <p className="text-[11px] font-semibold text-slate-500">local-only classification</p>
+                        <p className="text-[11px] font-semibold text-slate-500">로컬 전용 분류</p>
                         <p className="mt-1 text-xs font-semibold text-slate-900">{dryRunOutputPasteReview.classification}</p>
                         {dryRunOutputPasteReview.redFlags?.length ? (
                           <p className="mt-1 text-xs leading-5 text-rose-700">
-                            red flags: {dryRunOutputPasteReview.redFlags.join(', ')}
+                            위험 신호: {dryRunOutputPasteReview.redFlags.join(', ')}
                           </p>
                         ) : (
-                          <p className="mt-1 text-xs leading-5 text-emerald-700">red flags: none detected locally</p>
+                          <p className="mt-1 text-xs leading-5 text-emerald-700">위험 신호: 로컬에서 감지되지 않음</p>
                         )}
                         {dryRunOutputPasteReview.nextActions?.length ? (
                           <p className="mt-1 text-xs leading-5 text-slate-600">
-                            next: {dryRunOutputPasteReview.nextActions.join(' / ')}
+                            다음 액션: {dryRunOutputPasteReview.nextActions.join(' / ')}
                           </p>
                         ) : null}
                       </div>
@@ -5261,7 +5345,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
                 ) : (
                   <p className="mt-2 text-xs leading-5 text-blue-800">
-                    JSON 형식 dry-run output을 나중에 붙여넣으면 알려진 필드만 브라우저 local state에서 표시합니다.
+                    JSON 형식 사전 실행 결과를 나중에 붙여넣으면 알려진 필드만 브라우저 로컬 상태에서 표시합니다.
                     붙여넣은 결과는 서버로 전송하지 않습니다.
                   </p>
                 )}
@@ -5272,25 +5356,25 @@ function PolicyActivationReadiness2026Panel(props: {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">2026 Dry-run Rehearsal &amp; Guardrails</h5>
-                        <Badge tone="neutral">{dryRunRehearsalGuardrails.mode}</Badge>
+                        <h5 className="text-sm font-semibold text-slate-900">2026 사전 실행 리허설 및 안전장치</h5>
+                        <Badge tone="neutral">{formatReadinessUiStatus2026(dryRunRehearsalGuardrails.mode)}</Badge>
                         <Badge tone="neutral">{dryRunRehearsalGuardrails.status}</Badge>
                         <Badge tone="warn">{dryRunRehearsalGuardrails.summary.applyStatus}</Badge>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">
-                        이 화면은 dry-run 결과 판독과 apply 가드레일을 사전 리허설하기 위한 읽기 전용 화면입니다.
-                        dry-run, apply, backfill, 공식 점수/등급, feature flag 변경은 실행하지 않습니다.
+                        이 화면은 사전 실행 결과 판독과 실제 반영 안전장치를 사전 리허설하기 위한 읽기 전용 화면입니다.
+                        사전 실행 검토, 실제 반영, 기존 데이터 채우기, 공식 점수/등급, 기능 활성화 스위치 변경은 실행하지 않습니다.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {[
-                        ['dryrun-rehearsal-inventory', 'Script inventory', dryRunRehearsalGuardrails.copyPayloads.scriptInventory],
-                        ['dryrun-rehearsal-guardrails', 'Guardrail checklist', dryRunRehearsalGuardrails.copyPayloads.guardrailChecklist],
-                        ['dryrun-rehearsal-fixtures', 'Fixture guide', dryRunRehearsalGuardrails.copyPayloads.fixtureRehearsalGuide],
-                        ['dryrun-rehearsal-red-flags', 'Red flag matrix', dryRunRehearsalGuardrails.copyPayloads.redFlagMatrix],
-                        ['dryrun-rehearsal-decisions', 'Decision guide', dryRunRehearsalGuardrails.copyPayloads.reviewerDecisionGuide],
-                        ['dryrun-rehearsal-markdown', 'Markdown', dryRunRehearsalGuardrails.copyPayloads.markdown],
-                        ['dryrun-rehearsal-tsv', 'TSV', dryRunRehearsalGuardrails.copyPayloads.tsv],
+                        ['dryrun-rehearsal-inventory', '스크립트 목록', dryRunRehearsalGuardrails.copyPayloads.scriptInventory],
+                        ['dryrun-rehearsal-guardrails', '안전장치 점검 목록', dryRunRehearsalGuardrails.copyPayloads.guardrailChecklist],
+                        ['dryrun-rehearsal-fixtures', '예시 결과 가이드', dryRunRehearsalGuardrails.copyPayloads.fixtureRehearsalGuide],
+                        ['dryrun-rehearsal-red-flags', '위험 신호 표', dryRunRehearsalGuardrails.copyPayloads.redFlagMatrix],
+                        ['dryrun-rehearsal-decisions', '검토자 판정 가이드', dryRunRehearsalGuardrails.copyPayloads.reviewerDecisionGuide],
+                        ['dryrun-rehearsal-markdown', '마크다운 보기', dryRunRehearsalGuardrails.copyPayloads.markdown],
+                        ['dryrun-rehearsal-tsv', 'TSV 보기', dryRunRehearsalGuardrails.copyPayloads.tsv],
                       ].map(([key, label, text]) => (
                         <button
                           key={key}
@@ -5305,34 +5389,34 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                    <MetricCard label="scripts" value={dryRunRehearsalGuardrails.summary.scriptInventoryCount.toLocaleString()} help="surface inventory" compact />
-                    <MetricCard label="apply capable" value={dryRunRehearsalGuardrails.summary.applyCapableScriptCount.toLocaleString()} help="guarded CLI only" compact variant="warning" />
-                    <MetricCard label="fixtures" value={dryRunRehearsalGuardrails.summary.fixtureExampleCount.toLocaleString()} help="safe examples" compact />
-                    <MetricCard label="reviewer" value={dryRunRehearsalGuardrails.summary.reviewerStatus} help="pure parser" compact />
-                    <MetricCard label="paste validator" value={dryRunRehearsalGuardrails.summary.localOnlyPasteValidatorStatus} help="no server submit" compact />
-                    <MetricCard label="official activation" value={dryRunRehearsalGuardrails.summary.officialActivationStatus} help="still blocked" compact variant="warning" />
+                    <MetricCard label="스크립트" value={dryRunRehearsalGuardrails.summary.scriptInventoryCount.toLocaleString()} help="표면 목록" compact />
+                    <MetricCard label="실제 반영 가능" value={dryRunRehearsalGuardrails.summary.applyCapableScriptCount.toLocaleString()} help="보호된 CLI 전용" compact variant="warning" />
+                    <MetricCard label="예시 결과" value={dryRunRehearsalGuardrails.summary.fixtureExampleCount.toLocaleString()} help="안전 예시" compact />
+                    <MetricCard label="검토기" value={dryRunRehearsalGuardrails.summary.reviewerStatus} help="순수 파서" compact />
+                    <MetricCard label="붙여넣기 검증" value={dryRunRehearsalGuardrails.summary.localOnlyPasteValidatorStatus} help="서버 제출 없음" compact />
+                    <MetricCard label="공식 전환" value={formatReadinessUiStatus2026(dryRunRehearsalGuardrails.summary.officialActivationStatus)} help="계속 차단" compact variant="warning" />
                   </div>
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">Script surface inventory</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">스크립트 표면 목록</h6>
                       <div className="mt-3 overflow-x-auto">
                         <table className="min-w-full divide-y divide-slate-200 text-sm">
                           <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
                             <tr>
-                              <th className="px-3 py-2">script</th>
-                              <th className="px-3 py-2">dry-run</th>
-                              <th className="px-3 py-2">apply</th>
-                              <th className="px-3 py-2">writes</th>
-                              <th className="px-3 py-2">safe use</th>
+                              <th className="px-3 py-2">스크립트</th>
+                              <th className="px-3 py-2">사전 실행 검토</th>
+                              <th className="px-3 py-2">실제 반영</th>
+                              <th className="px-3 py-2">쓰기 여부</th>
+                              <th className="px-3 py-2">안전 사용</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {dryRunRehearsalGuardrails.scriptSurfaceInventory.map((item) => (
                               <tr key={item.scriptName}>
                                 <td className="px-3 py-2 font-semibold text-slate-900">{item.scriptName}</td>
-                                <td className="px-3 py-2 text-slate-600">{item.dryRunAvailable ? 'yes' : 'no'}</td>
-                                <td className="px-3 py-2 text-slate-600">{item.applyCapable ? item.applyTrigger : 'no'}</td>
+                                <td className="px-3 py-2 text-slate-600">{item.dryRunAvailable ? '있음' : '없음'}</td>
+                                <td className="px-3 py-2 text-slate-600">{item.applyCapable ? item.applyTrigger : '없음'}</td>
                                 <td className="px-3 py-2 text-slate-600">
                                   Evaluation {item.writesEvaluation} · Item {item.writesEvaluationItem} · totalScore {item.writesEvaluationTotalScore} · gradeId {item.writesEvaluationGradeId}
                                 </td>
@@ -5346,12 +5430,12 @@ function PolicyActivationReadiness2026Panel(props: {
 
                     <div className="space-y-4">
                       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                        <h6 className="text-sm font-semibold text-amber-950">Apply guardrail status</h6>
+                        <h6 className="text-sm font-semibold text-amber-950">실제 반영 안전장치 상태</h6>
                         <div className="mt-3 grid gap-2">
                           {dryRunRehearsalGuardrails.applyGuardrailStatus.map((item) => (
                             <div key={item.id} className="rounded-xl border border-amber-100 bg-white px-3 py-2">
                               <div className="flex flex-wrap items-center gap-2">
-                                <Badge tone={item.status === 'CONFIRMED_IN_CODE' ? 'success' : 'warn'}>{item.status}</Badge>
+                                <Badge tone={item.status === 'CONFIRMED_IN_CODE' ? 'success' : 'warn'}>{formatReadinessUiStatus2026(item.status)}</Badge>
                                 <span className="text-sm font-semibold text-slate-900">{item.label}</span>
                               </div>
                               <p className="mt-1 text-xs leading-5 text-slate-600">{item.evidence}</p>
@@ -5360,12 +5444,12 @@ function PolicyActivationReadiness2026Panel(props: {
                         </div>
                       </div>
                       <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                        <h6 className="text-sm font-semibold text-blue-950">Local-only paste validator</h6>
+                        <h6 className="text-sm font-semibold text-blue-950">로컬 전용 붙여넣기 검증기</h6>
                         <p className="mt-2 text-xs leading-5 text-blue-900">
                           {dryRunRehearsalGuardrails.localOnlyPasteValidator.guidance}
-                          {' '}serverSubmitAvailable {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.serverSubmitAvailable)} ·
-                          saveAvailable {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.saveAvailable)} ·
-                          apiCallAvailable {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.apiCallAvailable)}
+                          {' '}서버 제출 가능 {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.serverSubmitAvailable)} ·
+                          저장 가능 {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.saveAvailable)} ·
+                          API 호출 가능 {String(dryRunRehearsalGuardrails.localOnlyPasteValidator.apiCallAvailable)}
                         </p>
                       </div>
                     </div>
@@ -5373,14 +5457,14 @@ function PolicyActivationReadiness2026Panel(props: {
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-3">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">Fixture rehearsal</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">예시 결과 리허설</h6>
                       <div className="mt-3 grid gap-2">
                         {dryRunRehearsalGuardrails.fixtureRehearsalExamples.map((item) => (
                           <div key={item.fileName} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="text-sm font-semibold text-slate-900">{item.fileName}</p>
                             <p className="mt-1 text-xs leading-5 text-slate-500">{item.label}</p>
                             <p className="mt-1 text-xs font-semibold text-slate-700">{item.expectedClassification}</p>
-                            <p className="mt-1 text-xs leading-5 text-rose-700">red flags: {item.expectedRedFlags.join(', ') || 'none'}</p>
+                            <p className="mt-1 text-xs leading-5 text-rose-700">위험 신호: {item.expectedRedFlags.join(', ') || '없음'}</p>
                             <p className="mt-1 text-xs leading-5 text-slate-600">{item.nextAction}</p>
                           </div>
                         ))}
@@ -5388,7 +5472,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     </div>
 
                     <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                      <h6 className="text-sm font-semibold text-rose-950">Red flag matrix</h6>
+                      <h6 className="text-sm font-semibold text-rose-950">위험 신호 표</h6>
                       <div className="mt-3 grid gap-2">
                         {dryRunRehearsalGuardrails.redFlagMatrix.map((item) => (
                           <div key={item.id} className="rounded-xl border border-rose-100 bg-white px-3 py-2">
@@ -5403,7 +5487,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">Reviewer decision guide</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">검토자 판정 가이드</h6>
                       <div className="mt-3 grid gap-2">
                         {dryRunRehearsalGuardrails.reviewerDecisionGuide.map((item) => (
                           <div key={item.classification} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -5417,7 +5501,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-rose-200 bg-white p-4">
-                    <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
+                    <h6 className="text-sm font-semibold text-rose-950">금지 작업</h6>
                     <p className="mt-2 text-sm leading-6 text-rose-900">{dryRunRehearsalGuardrails.prohibitedActions.join(', ')}</p>
                   </div>
                 </div>
@@ -5428,27 +5512,27 @@ function PolicyActivationReadiness2026Panel(props: {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">2026 Backfill Dry-run Command Runbook</h5>
-                        <Badge tone="neutral">{backfillDryRunCommandRunbook.mode}</Badge>
-                        <Badge tone="neutral">{backfillDryRunCommandRunbook.status}</Badge>
-                        <Badge tone="neutral">{backfillDryRunCommandRunbook.summary.commandReferenceStatus}</Badge>
-                        <Badge tone="warn">apply {backfillDryRunCommandRunbook.summary.applyStatus}</Badge>
+                        <h5 className="text-sm font-semibold text-slate-900">2026 기존 데이터 채우기 명령 실행 절차서</h5>
+                        <Badge tone="neutral">{formatReadinessUiStatus2026(backfillDryRunCommandRunbook.mode)}</Badge>
+                        <Badge tone="neutral">{formatReadinessUiStatus2026(backfillDryRunCommandRunbook.status)}</Badge>
+                        <Badge tone="neutral">{formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.commandReferenceStatus)}</Badge>
+                        <Badge tone="warn">실제 반영 {formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.applyStatus)}</Badge>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">
-                        이 화면은 향후 dry-run-only 실행 절차를 문서화합니다. 이 화면에서는 dry-run, apply, backfill,
-                        공식 점수/등급, feature flag 변경을 실행하지 않습니다.
+                        이 화면은 향후 사전 실행 검토 전용 절차를 문서화합니다. 이 화면에서는 사전 실행 검토, 실제 반영, 기존 데이터 채우기,
+                        공식 점수/등급, 기능 활성화 스위치 변경을 실행하지 않습니다.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {[
-                        ['dryrun-command-summary', 'Operator summary', backfillDryRunCommandRunbook.copyPayloads.operatorSummary],
-                        ['dryrun-command-prerun', 'Pre-run checklist', backfillDryRunCommandRunbook.copyPayloads.preRunChecklist],
-                        ['dryrun-command-reference', 'Dry-run command reference', backfillDryRunCommandRunbook.copyPayloads.dryRunCommandReference],
-                        ['dryrun-command-logs', 'Log watch checklist', backfillDryRunCommandRunbook.copyPayloads.logWatchChecklist],
-                        ['dryrun-command-abort', 'Abort conditions', backfillDryRunCommandRunbook.copyPayloads.abortConditions],
-                        ['dryrun-command-handoff', 'Handoff checklist', backfillDryRunCommandRunbook.copyPayloads.handoffChecklist],
-                        ['dryrun-command-markdown', 'Markdown', backfillDryRunCommandRunbook.copyPayloads.markdown],
-                        ['dryrun-command-tsv', 'TSV', backfillDryRunCommandRunbook.copyPayloads.tsv],
+                        ['dryrun-command-summary', '운영자 요약', backfillDryRunCommandRunbook.copyPayloads.operatorSummary],
+                        ['dryrun-command-prerun', '사전 점검 목록', backfillDryRunCommandRunbook.copyPayloads.preRunChecklist],
+                        ['dryrun-command-reference', '사전 실행 명령 참고', backfillDryRunCommandRunbook.copyPayloads.dryRunCommandReference],
+                        ['dryrun-command-logs', '로그 감시 목록', backfillDryRunCommandRunbook.copyPayloads.logWatchChecklist],
+                        ['dryrun-command-abort', '중단 조건', backfillDryRunCommandRunbook.copyPayloads.abortConditions],
+                        ['dryrun-command-handoff', '인계 목록', backfillDryRunCommandRunbook.copyPayloads.handoffChecklist],
+                        ['dryrun-command-markdown', '마크다운 보기', backfillDryRunCommandRunbook.copyPayloads.markdown],
+                        ['dryrun-command-tsv', 'TSV 보기', backfillDryRunCommandRunbook.copyPayloads.tsv],
                       ].map(([key, label, text]) => (
                         <button
                           key={key}
@@ -5463,22 +5547,22 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                    <MetricCard label="current stage" value={backfillDryRunCommandRunbook.summary.currentStage} help="readiness stage" compact />
-                    <MetricCard label="overall status" value={backfillDryRunCommandRunbook.summary.overallReadinessStatus} help="snapshot status" compact />
-                    <MetricCard label="official activation" value={backfillDryRunCommandRunbook.summary.officialActivationStatus} help="gate status" compact variant="warning" />
-                    <MetricCard label="dry-run command" value={backfillDryRunCommandRunbook.summary.commandReferenceStatus} help="text only" compact />
-                    <MetricCard label="dry-run execution" value={backfillDryRunCommandRunbook.summary.dryRunExecutionStatus} help="not run" compact variant="warning" />
-                    <MetricCard label="apply" value={backfillDryRunCommandRunbook.summary.applyStatus} help="hidden / prohibited" compact variant="warning" />
+                    <MetricCard label="현재 단계" value={backfillDryRunCommandRunbook.summary.currentStage} help="준비 상태 단계" compact />
+                    <MetricCard label="전체 상태" value={formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.overallReadinessStatus)} help="스냅샷 상태" compact />
+                    <MetricCard label="공식 전환" value={formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.officialActivationStatus)} help="공식 전환 차단 조건" compact variant="warning" />
+                    <MetricCard label="사전 실행 명령" value={formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.commandReferenceStatus)} help="텍스트 전용" compact />
+                    <MetricCard label="사전 실행 여부" value={formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.dryRunExecutionStatus)} help="실행 안 함" compact variant="warning" />
+                    <MetricCard label="실제 반영" value={formatReadinessUiStatus2026(backfillDryRunCommandRunbook.summary.applyStatus)} help="숨김 / 금지" compact variant="warning" />
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                    <h6 className="text-sm font-semibold text-blue-950">Operator summary</h6>
+                    <h6 className="text-sm font-semibold text-blue-950">운영자 요약</h6>
                     <dl className="mt-3 grid gap-3 md:grid-cols-2">
                       {[
-                        ['purpose', backfillDryRunCommandRunbook.operatorSummary.purpose],
-                        ['current status', backfillDryRunCommandRunbook.operatorSummary.currentStatus],
-                        ['when usable', backfillDryRunCommandRunbook.operatorSummary.whenThisRunbookCanBeUsed],
-                        ['why apply prohibited', backfillDryRunCommandRunbook.operatorSummary.whyApplyRemainsProhibited],
+                        ['목적', backfillDryRunCommandRunbook.operatorSummary.purpose],
+                        ['현재 상태', backfillDryRunCommandRunbook.operatorSummary.currentStatus],
+                        ['사용 가능 시점', backfillDryRunCommandRunbook.operatorSummary.whenThisRunbookCanBeUsed],
+                        ['실제 반영 금지 이유', backfillDryRunCommandRunbook.operatorSummary.whyApplyRemainsProhibited],
                       ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-blue-100 bg-white px-3 py-2">
                           <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-500">{label}</dt>
@@ -5490,7 +5574,7 @@ function PolicyActivationReadiness2026Panel(props: {
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">Pre-run checklist</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">사전 실행 전 점검 목록</h6>
                       <div className="mt-3 grid gap-2">
                         {backfillDryRunCommandRunbook.preRunChecklist.map((item) => (
                           <div key={item} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">{item}</div>
@@ -5499,7 +5583,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     </div>
 
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                      <h6 className="text-sm font-semibold text-amber-950">Dry-run-only command reference</h6>
+                      <h6 className="text-sm font-semibold text-amber-950">사전 실행 전용 명령 참고</h6>
                       <p className="mt-2 text-xs leading-5 text-amber-900">
                         {backfillDryRunCommandRunbook.dryRunOnlyCommandReference.warning}
                       </p>
@@ -5507,18 +5591,18 @@ function PolicyActivationReadiness2026Panel(props: {
                         {backfillDryRunCommandRunbook.dryRunOnlyCommandReference.commandText}
                       </pre>
                       <p className="mt-2 text-xs leading-5 text-amber-900">
-                        mode {backfillDryRunCommandRunbook.dryRunOnlyCommandReference.mode} · copyOnly {String(backfillDryRunCommandRunbook.dryRunOnlyCommandReference.copyOnly)} ·
-                        executeAvailable {String(backfillDryRunCommandRunbook.dryRunOnlyCommandReference.executeAvailable)}
+                        모드 {formatReadinessUiStatus2026(backfillDryRunCommandRunbook.dryRunOnlyCommandReference.mode)} · 복사 전용 {String(backfillDryRunCommandRunbook.dryRunOnlyCommandReference.copyOnly)} ·
+                        실행 가능 {String(backfillDryRunCommandRunbook.dryRunOnlyCommandReference.executeAvailable)}
                       </p>
                     </div>
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                    <h6 className="text-sm font-semibold text-rose-950">Apply command warning</h6>
+                    <h6 className="text-sm font-semibold text-rose-950">실제 반영 명령 경고</h6>
                     <p className="mt-2 text-xs leading-5 text-rose-900">
                       {backfillDryRunCommandRunbook.applyCommandWarning.warning}
-                      {' '}applyCommandExposed {String(backfillDryRunCommandRunbook.applyCommandWarning.applyCommandExposed)} ·
-                      applyIsPartOfThisRunbook {String(backfillDryRunCommandRunbook.applyCommandWarning.applyIsPartOfThisRunbook)}
+                      {' '}실제 반영 명령 노출 {String(backfillDryRunCommandRunbook.applyCommandWarning.applyCommandExposed)} ·
+                      이 절차서 포함 여부 {String(backfillDryRunCommandRunbook.applyCommandWarning.applyIsPartOfThisRunbook)}
                     </p>
                     <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
                       {backfillDryRunCommandRunbook.applyCommandWarning.guardrailReminder.map((item) => (
@@ -5529,10 +5613,10 @@ function PolicyActivationReadiness2026Panel(props: {
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-4">
                     {[
-                      ['Output archive checklist', backfillDryRunCommandRunbook.outputArchiveChecklist],
-                      ['Log watch checklist', backfillDryRunCommandRunbook.logWatchChecklist],
-                      ['Abort conditions', backfillDryRunCommandRunbook.abortConditions],
-                      ['Handoff checklist', backfillDryRunCommandRunbook.handoffChecklist],
+                      ['결과 보관 점검 목록', backfillDryRunCommandRunbook.outputArchiveChecklist],
+                      ['로그 감시 점검 목록', backfillDryRunCommandRunbook.logWatchChecklist],
+                      ['중단 조건', backfillDryRunCommandRunbook.abortConditions],
+                      ['인계 점검 목록', backfillDryRunCommandRunbook.handoffChecklist],
                     ].map(([title, items]) => (
                       <div key={title as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <h6 className="text-sm font-semibold text-slate-900">{title as string}</h6>
@@ -5545,13 +5629,13 @@ function PolicyActivationReadiness2026Panel(props: {
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-2">
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                      <h6 className="text-sm font-semibold text-emerald-950">Allowed commands</h6>
+                      <h6 className="text-sm font-semibold text-emerald-950">허용 명령</h6>
                       <ul className="mt-3 space-y-2 text-xs leading-5 text-emerald-900">
                         {backfillDryRunCommandRunbook.allowedCommands.map((item) => <li key={item}>- {item}</li>)}
                       </ul>
                     </div>
                     <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                      <h6 className="text-sm font-semibold text-rose-950">Explicitly forbidden commands</h6>
+                      <h6 className="text-sm font-semibold text-rose-950">명시적으로 금지된 명령</h6>
                       <ul className="mt-3 space-y-2 text-xs leading-5 text-rose-900">
                         {backfillDryRunCommandRunbook.explicitlyForbiddenCommands.map((item) => <li key={item}>- {item}</li>)}
                       </ul>
@@ -5559,7 +5643,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-rose-200 bg-white p-4">
-                    <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
+                    <h6 className="text-sm font-semibold text-rose-950">금지 작업</h6>
                     <p className="mt-2 text-sm leading-6 text-rose-900">{backfillDryRunCommandRunbook.prohibitedActions.join(', ')}</p>
                   </div>
                 </div>
@@ -5570,24 +5654,24 @@ function PolicyActivationReadiness2026Panel(props: {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">2026 Dry-run Go/No-Go Freeze Pack</h5>
-                        <Badge tone="neutral">{dryRunGoNoGoFreezePack.mode}</Badge>
+                        <h5 className="text-sm font-semibold text-slate-900">2026 사전 실행 진행 가능 여부 최종 판정</h5>
+                        <Badge tone="neutral">{formatReadinessUiStatus2026(dryRunGoNoGoFreezePack.mode)}</Badge>
                         <Badge tone={dryRunGoNoGoFreezePack.decision.currentDecision === 'READY_FOR_REVIEW' ? 'success' : 'warn'}>
-                          {dryRunGoNoGoFreezePack.decision.currentDecision}
+                          {formatReadinessUiStatus2026(dryRunGoNoGoFreezePack.decision.currentDecision)}
                         </Badge>
-                        <Badge tone="warn">apply {dryRunGoNoGoFreezePack.decision.applyStatus}</Badge>
+                        <Badge tone="warn">실제 반영 {formatReadinessUiStatus2026(dryRunGoNoGoFreezePack.decision.applyStatus)}</Badge>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">
-                        이 화면은 future dry-run 검토 가능 여부를 읽기 전용으로 판정합니다. dry-run, apply, backfill,
-                        공식 점수/등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                        이 화면은 향후 사전 실행 검토 가능 여부를 읽기 전용으로 판정합니다. 사전 실행 검토, 실제 반영, 기존 데이터 채우기,
+                        공식 점수/등급, 기능 활성화 스위치, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId)은 실행하지 않습니다.
                       </p>
                     </div>
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">Freeze Pack exports</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">최종 판정 내보내기</p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {[
-                          ['dryrun-freeze-markdown', 'Export Markdown', dryRunGoNoGoFreezePack.copyPayloads.markdown],
-                          ['dryrun-freeze-tsv', 'Export TSV', dryRunGoNoGoFreezePack.copyPayloads.tsv],
+                          ['dryrun-freeze-markdown', '마크다운 내보내기', dryRunGoNoGoFreezePack.copyPayloads.markdown],
+                          ['dryrun-freeze-tsv', 'TSV 내보내기', dryRunGoNoGoFreezePack.copyPayloads.tsv],
                         ].map(([key, label, text]) => (
                           <button
                             key={key}
@@ -5603,18 +5687,18 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
 
                   <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Freeze Pack copy actions</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">최종 판정 복사 항목</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {[
-                        ['dryrun-freeze-summary', 'Copy Go/No-Go summary', dryRunGoNoGoFreezePack.copyPayloads.goNoGoSummary],
-                        ['dryrun-freeze-no-go', 'Copy No-go reasons', dryRunGoNoGoFreezePack.copyPayloads.noGoReasons],
-                        ['dryrun-freeze-go', 'Copy Go conditions', dryRunGoNoGoFreezePack.copyPayloads.goConditions],
-                        ['dryrun-freeze-evidence', 'Copy Evidence pack', dryRunGoNoGoFreezePack.copyPayloads.requiredEvidencePack],
-                        ['dryrun-freeze-hr', 'Copy HR unlock actions', dryRunGoNoGoFreezePack.copyPayloads.hrUnlockActions],
-                        ['dryrun-freeze-dev', 'Copy Developer unlock actions', dryRunGoNoGoFreezePack.copyPayloads.developerUnlockActions],
-                        ['dryrun-freeze-signoff', 'Copy Sign-off checklist', dryRunGoNoGoFreezePack.copyPayloads.signOffChecklist],
-                        ['dryrun-freeze-checkpoint', 'Copy Next checkpoint', dryRunGoNoGoFreezePack.copyPayloads.nextCheckpoint],
-                        ['dryrun-freeze-prohibited', 'Copy Prohibited actions', dryRunGoNoGoFreezePack.copyPayloads.prohibitedActions],
+                        ['dryrun-freeze-summary', '진행 판단 요약 복사', dryRunGoNoGoFreezePack.copyPayloads.goNoGoSummary],
+                        ['dryrun-freeze-no-go', '진행 불가 사유 복사', dryRunGoNoGoFreezePack.copyPayloads.noGoReasons],
+                        ['dryrun-freeze-go', '진행 조건 복사', dryRunGoNoGoFreezePack.copyPayloads.goConditions],
+                        ['dryrun-freeze-evidence', '증빙 패키지 복사', dryRunGoNoGoFreezePack.copyPayloads.requiredEvidencePack],
+                        ['dryrun-freeze-hr', 'HR 해제 액션 복사', dryRunGoNoGoFreezePack.copyPayloads.hrUnlockActions],
+                        ['dryrun-freeze-dev', '개발자 해제 액션 복사', dryRunGoNoGoFreezePack.copyPayloads.developerUnlockActions],
+                        ['dryrun-freeze-signoff', '승인 확인 목록 복사', dryRunGoNoGoFreezePack.copyPayloads.signOffChecklist],
+                        ['dryrun-freeze-checkpoint', '다음 점검 지점 복사', dryRunGoNoGoFreezePack.copyPayloads.nextCheckpoint],
+                        ['dryrun-freeze-prohibited', '금지 작업 복사', dryRunGoNoGoFreezePack.copyPayloads.prohibitedActions],
                       ].map(([key, label, text]) => (
                         <button
                           key={key}
@@ -5631,26 +5715,26 @@ function PolicyActivationReadiness2026Panel(props: {
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone={dryRunGoNoGoFreezePack.decision.currentDecision === 'READY_FOR_REVIEW' ? 'success' : 'warn'}>
-                        {dryRunGoNoGoFreezePack.decision.currentDecision}
+                        {formatReadinessUiStatus2026(dryRunGoNoGoFreezePack.decision.currentDecision)}
                       </Badge>
-                      <Badge tone="warn">apply {dryRunGoNoGoFreezePack.decision.applyStatus}</Badge>
-                      <Badge tone="neutral">missing {dryRunGoNoGoFreezePack.decision.missingGoConditionsCount}</Badge>
+                      <Badge tone="warn">실제 반영 {formatReadinessUiStatus2026(dryRunGoNoGoFreezePack.decision.applyStatus)}</Badge>
+                      <Badge tone="neutral">누락 조건 {dryRunGoNoGoFreezePack.decision.missingGoConditionsCount}</Badge>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-amber-950">{dryRunGoNoGoFreezePack.decision.explanationKo}</p>
                   </div>
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
                     <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                      <h6 className="text-sm font-semibold text-rose-950">No-go reasons</h6>
+                      <h6 className="text-sm font-semibold text-rose-950">진행 불가 사유</h6>
                       <div className="mt-3 grid gap-2">
                         {dryRunGoNoGoFreezePack.noGoReasons.map((item) => (
                           <div key={item.id} className="rounded-xl border border-rose-100 bg-white px-3 py-2">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <p className="text-xs font-semibold text-rose-950">{item.label}</p>
-                              <Badge tone={item.status === 'READY' ? 'success' : 'warn'}>{item.status}</Badge>
+                              <Badge tone={item.status === 'READY' ? 'success' : 'warn'}>{formatReadinessUiStatus2026(item.status)}</Badge>
                             </div>
                             <p className="mt-1 text-xs leading-5 text-rose-700">
-                              count {item.blockerCount ?? 'n/a'} · {item.source}
+                              건수 {item.blockerCount ?? 'n/a'} · {item.source}
                             </p>
                             <p className="mt-1 text-xs leading-5 text-rose-800">{item.nextAction}</p>
                           </div>
@@ -5659,16 +5743,16 @@ function PolicyActivationReadiness2026Panel(props: {
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">Go conditions</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">진행 조건</h6>
                       <div className="mt-3 grid gap-2">
                         {dryRunGoNoGoFreezePack.goConditions.map((item) => (
                           <div key={item.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <p className="text-xs font-semibold text-slate-900">{item.label}</p>
-                              <Badge tone={item.status === 'READY' ? 'success' : item.status === 'READY_LATER' ? 'neutral' : 'warn'}>{item.status}</Badge>
+                              <Badge tone={item.status === 'READY' ? 'success' : item.status === 'READY_LATER' ? 'neutral' : 'warn'}>{formatReadinessUiStatus2026(item.status)}</Badge>
                             </div>
                             <p className="mt-1 text-xs leading-5 text-slate-500">
-                              count {item.blockerCount ?? 'n/a'} · {item.source}
+                              건수 {item.blockerCount ?? 'n/a'} · {item.source}
                             </p>
                           </div>
                         ))}
@@ -5678,10 +5762,10 @@ function PolicyActivationReadiness2026Panel(props: {
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-4">
                     {[
-                      ['Required evidence pack', dryRunGoNoGoFreezePack.requiredEvidencePack],
-                      ['HR unlock actions', dryRunGoNoGoFreezePack.hrUnlockActions],
-                      ['Developer unlock actions', dryRunGoNoGoFreezePack.developerUnlockActions],
-                      ['Sign-off checklist', dryRunGoNoGoFreezePack.signOffChecklist],
+                      ['필수 증빙 패키지', dryRunGoNoGoFreezePack.requiredEvidencePack],
+                      ['인사 해제 액션', dryRunGoNoGoFreezePack.hrUnlockActions],
+                      ['개발자 해제 액션', dryRunGoNoGoFreezePack.developerUnlockActions],
+                      ['승인 확인 목록', dryRunGoNoGoFreezePack.signOffChecklist],
                     ].map(([title, items]) => (
                       <div key={title as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                         <h6 className="text-sm font-semibold text-slate-900">{title as string}</h6>
@@ -5694,24 +5778,24 @@ function PolicyActivationReadiness2026Panel(props: {
 
                   <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                     <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                      <h6 className="text-sm font-semibold text-blue-950">Next checkpoint</h6>
+                      <h6 className="text-sm font-semibold text-blue-950">다음 점검 지점</h6>
                       <p className="mt-2 text-xs leading-5 text-blue-900">{dryRunGoNoGoFreezePack.nextCheckpoint.name}</p>
                       <p className="mt-1 text-xs leading-5 text-blue-900">{dryRunGoNoGoFreezePack.nextCheckpoint.requiredBeforeAfterSnapshot}</p>
-                      <p className="mt-1 text-xs leading-5 text-blue-900">owner: {dryRunGoNoGoFreezePack.nextCheckpoint.decisionOwner}</p>
+                      <p className="mt-1 text-xs leading-5 text-blue-900">담당: {dryRunGoNoGoFreezePack.nextCheckpoint.decisionOwner}</p>
                       <p className="mt-2 text-xs leading-5 text-blue-900">
-                        delta: {dryRunGoNoGoFreezePack.nextCheckpoint.deltaTableRequired.join(', ')}
+                        변화표: {dryRunGoNoGoFreezePack.nextCheckpoint.deltaTableRequired.join(', ')}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-rose-200 bg-white p-4">
-                      <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
+                      <h6 className="text-sm font-semibold text-rose-950">금지 작업</h6>
                       <p className="mt-2 text-sm leading-6 text-rose-900">{dryRunGoNoGoFreezePack.prohibitedActions.join(', ')}</p>
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">2026 Dry-run Go/No-Go Freeze Pack</h5>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">Go/No-Go 데이터를 불러오는 중입니다.</p>
+                  <h5 className="text-sm font-semibold text-slate-900">2026 사전 실행 진행 가능 여부 최종 판정</h5>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">진행 판단 데이터를 불러오는 중입니다.</p>
                 </div>
               )}
 
@@ -5720,66 +5804,66 @@ function PolicyActivationReadiness2026Panel(props: {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">2026 평가 End-to-End Pilot</h5>
-                        <Badge tone="neutral">{endToEndPilot2026.mode}</Badge>
+                        <h5 className="text-sm font-semibold text-slate-900">2026 평가 전체 흐름 미리보기</h5>
+                        <Badge tone="neutral">{formatReadinessUiStatus2026(endToEndPilot2026.mode)}</Badge>
                         <Badge tone={endToEndPilot2026.summary.hardBlockedStepCount > 0 ? 'error' : endToEndPilot2026.summary.previewWithBlockersStepCount > 0 ? 'warn' : 'success'}>
-                          {endToEndPilot2026.summary.currentDecision}
+                          {formatReadinessUiStatus2026(endToEndPilot2026.summary.currentDecision)}
                         </Badge>
                         <Badge tone="neutral">{endToEndPilot2026.summary.pilotDataSource}</Badge>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">
-                        이 화면은 2026 평가 전체 흐름을 preview/pilot으로 검증합니다. 공식 평가 생성, 공식 점수,
-                        공식 등급, totalScore, gradeId, backfill은 실행하지 않습니다.
+                        이 화면은 2026 평가 전체 흐름을 미리보기/파일럿으로 검증합니다. 공식 평가 생성, 공식 점수,
+                        공식 등급, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId), 기존 데이터 채우기는 실행하지 않습니다.
                       </p>
                     </div>
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900">
-                      <p className="font-semibold">pilot target</p>
+                      <p className="font-semibold">파일럿 대상자</p>
                       <p>{endToEndPilot2026.pilotEmployee.name} · {endToEndPilot2026.pilotEmployee.departmentName}</p>
-                      <p>confirmed KPI {endToEndPilot2026.pilotEmployee.confirmedPersonalKpiCount}</p>
+                      <p>확정 KPI {endToEndPilot2026.pilotEmployee.confirmedPersonalKpiCount}</p>
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-                    <MetricCard label="workflow steps" value={endToEndPilot2026.summary.workflowStepCount.toLocaleString()} help="target to safety" compact />
-                    <MetricCard label="preview completeness" value={`${endToEndPilot2026.summary.previewCompletenessPercentage}%`} help={`${endToEndPilot2026.summary.previewAvailableStepCount} steps previewable`} compact />
-                    <MetricCard label="hard-blocked steps" value={endToEndPilot2026.summary.hardBlockedStepCount.toLocaleString()} help="no safe preview available" compact variant={endToEndPilot2026.summary.hardBlockedStepCount > 0 ? 'warning' : 'default'} />
-                    <MetricCard label="with blockers" value={endToEndPilot2026.summary.previewWithBlockersStepCount.toLocaleString()} help="preview exists, official blocked" compact variant={endToEndPilot2026.summary.previewWithBlockersStepCount > 0 ? 'warning' : 'default'} />
-                    <MetricCard label="preview-only steps" value={endToEndPilot2026.summary.previewOnlyStepCount.toLocaleString()} help="no writes" compact />
-                    <MetricCard label="score preview" value={endToEndPilot2026.scorePreview.status} help="no totalScore write" compact variant={endToEndPilot2026.scorePreview.status === 'BLOCKED' ? 'warning' : 'default'} />
+                    <MetricCard label="흐름 단계" value={endToEndPilot2026.summary.workflowStepCount.toLocaleString()} help="대상자부터 안전 확인까지" compact />
+                    <MetricCard label="미리보기 완성도" value={`${endToEndPilot2026.summary.previewCompletenessPercentage}%`} help={`${endToEndPilot2026.summary.previewAvailableStepCount}개 단계 미리보기 가능`} compact />
+                    <MetricCard label="완전 차단 단계" value={endToEndPilot2026.summary.hardBlockedStepCount.toLocaleString()} help="안전한 미리보기 없음" compact variant={endToEndPilot2026.summary.hardBlockedStepCount > 0 ? 'warning' : 'default'} />
+                    <MetricCard label="차단 조건 포함" value={endToEndPilot2026.summary.previewWithBlockersStepCount.toLocaleString()} help="미리보기 가능, 공식 실행 차단" compact variant={endToEndPilot2026.summary.previewWithBlockersStepCount > 0 ? 'warning' : 'default'} />
+                    <MetricCard label="미리보기 전용 단계" value={endToEndPilot2026.summary.previewOnlyStepCount.toLocaleString()} help="쓰기 없음" compact />
+                    <MetricCard label="점수 미리보기" value={formatReadinessUiStatus2026(endToEndPilot2026.scorePreview.status)} help="공식 저장 점수(totalScore) 쓰기 없음" compact variant={endToEndPilot2026.scorePreview.status === 'BLOCKED' ? 'warning' : 'default'} />
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900">
-                      <p className="font-semibold">Preview 가능한 부분</p>
-                      <p>{endToEndPilot2026.summary.previewAvailableStepCount}개 단계가 in-memory/sample preview로 표시됩니다.</p>
+                      <p className="font-semibold">미리보기 가능한 부분</p>
+                      <p>{endToEndPilot2026.summary.previewAvailableStepCount}개 단계가 메모리/샘플 미리보기로 표시됩니다.</p>
                     </div>
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                      <p className="font-semibold">공식 실행 전 blocker</p>
-                      <p>{endToEndPilot2026.blockers.length ? endToEndPilot2026.blockers.join(', ') : '현재 pilot 기준 공식 blocker 없음'}</p>
+                      <p className="font-semibold">공식 실행 전 차단 조건</p>
+                      <p>{endToEndPilot2026.blockers.length ? endToEndPilot2026.blockers.join(', ') : '현재 파일럿 기준 공식 차단 조건 없음'}</p>
                     </div>
                     <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-900">
                       <p className="font-semibold">실제 저장 금지</p>
-                      <p>공식 저장 없음: save/submit/finalize, totalScore, gradeId, Evaluation/EvaluationItem 생성은 실행하지 않습니다.</p>
+                      <p>공식 저장 없음: 저장/제출/확정, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId), Evaluation/EvaluationItem 생성은 실행하지 않습니다.</p>
                     </div>
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <h6 className="text-sm font-semibold text-slate-900">Workflow stepper</h6>
+                    <h6 className="text-sm font-semibold text-slate-900">흐름 단계</h6>
                     <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                       {endToEndPilot2026.workflowSteps.map((step) => (
                         <div key={step.id} className="rounded-xl border border-slate-200 bg-white p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-sm font-semibold text-slate-900">{step.order}. {step.label}</p>
                             <Badge tone={step.status === 'READY' || step.status === 'SAFETY_CONFIRMED' ? 'success' : step.status === 'BLOCKED' ? 'error' : step.status === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : 'neutral'}>
-                              {step.status}
+                              {formatReadinessUiStatus2026(step.status)}
                             </Badge>
                           </div>
-                          <p className="mt-2 text-xs leading-5 text-slate-600">data: {step.dataUsed.join(', ')}</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-600">preview: {step.whatIsPreviewed.join(', ')}</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-600">official later: {step.officialLater}</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">route/source: {step.route}</p>
+                          <p className="mt-2 text-xs leading-5 text-slate-600">사용 데이터: {step.dataUsed.join(', ')}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-600">미리보기: {step.whatIsPreviewed.join(', ')}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-600">공식 진행 시점: {step.officialLater}</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">화면/출처: {step.route}</p>
                           {step.blockedBy.length ? (
-                            <p className="mt-2 text-xs leading-5 text-amber-800">official blockers: {step.blockedBy.join(', ')}</p>
+                            <p className="mt-2 text-xs leading-5 text-amber-800">공식 차단 조건: {step.blockedBy.join(', ')}</p>
                           ) : null}
                           <p className="mt-2 text-xs leading-5 text-emerald-700">{step.safetyNote}</p>
                         </div>
@@ -5788,24 +5872,24 @@ function PolicyActivationReadiness2026Panel(props: {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                    <h6 className="text-sm font-semibold text-slate-900">Pilot gap table</h6>
+                    <h6 className="text-sm font-semibold text-slate-900">파일럿 보완 표</h6>
                     <div className="mt-3 overflow-x-auto">
                       <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
                         <thead className="text-slate-500">
                           <tr>
-                            <th className="px-2 py-2 font-semibold">Step</th>
-                            <th className="px-2 py-2 font-semibold">Current preview status</th>
-                            <th className="px-2 py-2 font-semibold">What is previewed</th>
-                            <th className="px-2 py-2 font-semibold">What blocks official execution</th>
-                            <th className="px-2 py-2 font-semibold">What remains to close</th>
-                            <th className="px-2 py-2 font-semibold">Safety note</th>
+                            <th className="px-2 py-2 font-semibold">단계</th>
+                            <th className="px-2 py-2 font-semibold">현재 미리보기 상태</th>
+                            <th className="px-2 py-2 font-semibold">미리보기 내용</th>
+                            <th className="px-2 py-2 font-semibold">공식 실행 차단 조건</th>
+                            <th className="px-2 py-2 font-semibold">남은 보완</th>
+                            <th className="px-2 py-2 font-semibold">안전 메모</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {endToEndPilot2026.pilotGapTable.map((row) => (
                             <tr key={`${row.step}-${row.currentPreviewStatus}`}>
                               <td className="px-2 py-2 font-semibold text-slate-900">{row.step}</td>
-                              <td className="px-2 py-2 text-slate-700">{row.currentPreviewStatus}</td>
+                              <td className="px-2 py-2 text-slate-700">{formatReadinessUiStatus2026(row.currentPreviewStatus)}</td>
                               <td className="px-2 py-2 text-slate-600">{row.whatIsPreviewed}</td>
                               <td className="px-2 py-2 text-amber-800">{row.whatBlocksOfficialExecution}</td>
                               <td className="px-2 py-2 text-slate-600">{row.whatRemainsToClose}</td>
@@ -5820,35 +5904,35 @@ function PolicyActivationReadiness2026Panel(props: {
                   <div className="mt-4 grid gap-4 xl:grid-cols-3">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h6 className="text-sm font-semibold text-slate-900">Self-evaluation preview</h6>
+                        <h6 className="text-sm font-semibold text-slate-900">자기평가 미리보기</h6>
                         <Badge tone={endToEndPilot2026.selfEvaluationPreview.status === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : 'neutral'}>
-                          {endToEndPilot2026.selfEvaluationPreview.status}
+                          {formatReadinessUiStatus2026(endToEndPilot2026.selfEvaluationPreview.status)}
                         </Badge>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">{endToEndPilot2026.selfEvaluationPreview.sampleSelfComment}</p>
                       <p className="mt-2 text-xs leading-5 text-slate-600">{endToEndPilot2026.selfEvaluationPreview.contributionFieldPreview}</p>
                       <p className="mt-2 text-xs leading-5 text-amber-800">{endToEndPilot2026.selfEvaluationPreview.missingEvidenceWarnings.join(' ')}</p>
-                      <p className="mt-2 text-xs font-semibold text-emerald-700">save/submit: {String(endToEndPilot2026.selfEvaluationPreview.saveAvailable)} / {String(endToEndPilot2026.selfEvaluationPreview.submitAvailable)}</p>
+                      <p className="mt-2 text-xs font-semibold text-emerald-700">저장/제출 가능: {String(endToEndPilot2026.selfEvaluationPreview.saveAvailable)} / {String(endToEndPilot2026.selfEvaluationPreview.submitAvailable)}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h6 className="text-sm font-semibold text-slate-900">First review preview</h6>
+                        <h6 className="text-sm font-semibold text-slate-900">1차 평가 미리보기</h6>
                         <Badge tone={endToEndPilot2026.firstReviewPreview.status === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : 'neutral'}>
-                          {endToEndPilot2026.firstReviewPreview.status}
+                          {formatReadinessUiStatus2026(endToEndPilot2026.firstReviewPreview.status)}
                         </Badge>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">{endToEndPilot2026.firstReviewPreview.expectedReviewerSource}</p>
                       <p className="mt-2 text-xs leading-5 text-slate-600">{endToEndPilot2026.firstReviewPreview.sampleLeaderFeedback}</p>
-                      <p className="mt-2 text-xs leading-5 text-slate-500">criteria: {endToEndPilot2026.firstReviewPreview.reviewCriteriaPreview.join(', ')}</p>
+                      <p className="mt-2 text-xs leading-5 text-slate-500">검토 기준: {endToEndPilot2026.firstReviewPreview.reviewCriteriaPreview.join(', ')}</p>
                       {endToEndPilot2026.firstReviewPreview.missingReviewerWarning ? (
                         <p className="mt-2 text-xs leading-5 text-amber-800">{endToEndPilot2026.firstReviewPreview.missingReviewerWarning}</p>
                       ) : null}
                     </div>
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h6 className="text-sm font-semibold text-slate-900">Second/final review preview</h6>
+                        <h6 className="text-sm font-semibold text-slate-900">2차/최종 평가 미리보기</h6>
                         <Badge tone={endToEndPilot2026.secondFinalReviewPreview.status === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : 'neutral'}>
-                          {endToEndPilot2026.secondFinalReviewPreview.status}
+                          {formatReadinessUiStatus2026(endToEndPilot2026.secondFinalReviewPreview.status)}
                         </Badge>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">{endToEndPilot2026.secondFinalReviewPreview.expectedReviewerSource}</p>
@@ -5863,29 +5947,29 @@ function PolicyActivationReadiness2026Panel(props: {
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
                     <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                      <h6 className="text-sm font-semibold text-blue-950">Score preview</h6>
+                      <h6 className="text-sm font-semibold text-blue-950">점수 미리보기</h6>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Badge tone={endToEndPilot2026.scorePreview.calculationStatus === 'READY' ? 'success' : 'error'}>
-                          calculation {endToEndPilot2026.scorePreview.calculationStatus}
+                          계산 {formatReadinessUiStatus2026(endToEndPilot2026.scorePreview.calculationStatus)}
                         </Badge>
                         <Badge tone={endToEndPilot2026.scorePreview.officialReadinessStatus === 'READY' ? 'success' : 'warn'}>
-                          official score readiness {endToEndPilot2026.scorePreview.officialReadinessStatus}
+                          공식 점수 준비 {formatReadinessUiStatus2026(endToEndPilot2026.scorePreview.officialReadinessStatus)}
                         </Badge>
                       </div>
                       <div className="mt-3 grid gap-3 md:grid-cols-3">
-                        <MetricCard label="org performance" value={endToEndPilot2026.scorePreview.organizationPerformanceScore?.toFixed(1) ?? '-'} help="30%" compact />
-                        <MetricCard label="personal performance" value={endToEndPilot2026.scorePreview.personalPerformanceScore?.toFixed(1) ?? '-'} help="70%" compact />
-                        <MetricCard label="base score preview" value={endToEndPilot2026.scorePreview.finalScorePreview?.toFixed(1) ?? '-'} help="not written" compact />
+                        <MetricCard label="조직 성과" value={endToEndPilot2026.scorePreview.organizationPerformanceScore?.toFixed(1) ?? '-'} help="30%" compact />
+                        <MetricCard label="개인 성과" value={endToEndPilot2026.scorePreview.personalPerformanceScore?.toFixed(1) ?? '-'} help="70%" compact />
+                        <MetricCard label="기준 점수 미리보기" value={endToEndPilot2026.scorePreview.finalScorePreview?.toFixed(1) ?? '-'} help="저장 안 함" compact />
                       </div>
                       <div className="mt-3 overflow-x-auto">
                         <table className="min-w-full divide-y divide-blue-100 text-left text-xs">
                           <thead className="text-blue-700">
                             <tr>
-                              <th className="px-2 py-2 font-semibold">category</th>
-                              <th className="px-2 py-2 font-semibold">type</th>
-                              <th className="px-2 py-2 font-semibold">base</th>
-                              <th className="px-2 py-2 font-semibold">final</th>
-                              <th className="px-2 py-2 font-semibold">weight</th>
+                              <th className="px-2 py-2 font-semibold">분류</th>
+                              <th className="px-2 py-2 font-semibold">유형</th>
+                              <th className="px-2 py-2 font-semibold">기준</th>
+                              <th className="px-2 py-2 font-semibold">최종</th>
+                              <th className="px-2 py-2 font-semibold">가중치</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-blue-100">
@@ -5906,41 +5990,41 @@ function PolicyActivationReadiness2026Panel(props: {
 
                     <div className="space-y-4">
                       <div className="rounded-2xl border border-violet-200 bg-violet-50 p-4">
-                        <h6 className="text-sm font-semibold text-violet-950">Grade preview</h6>
+                        <h6 className="text-sm font-semibold text-violet-950">등급 미리보기</h6>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <Badge tone={endToEndPilot2026.gradePreview.calculationStatus === 'READY' ? 'success' : 'error'}>
-                            calculation {endToEndPilot2026.gradePreview.calculationStatus}
+                            계산 {formatReadinessUiStatus2026(endToEndPilot2026.gradePreview.calculationStatus)}
                           </Badge>
                           <Badge tone={endToEndPilot2026.gradePreview.officialReadinessStatus === 'READY' ? 'success' : 'warn'}>
-                            official grade readiness {endToEndPilot2026.gradePreview.officialReadinessStatus}
+                            공식 등급 준비 {formatReadinessUiStatus2026(endToEndPilot2026.gradePreview.officialReadinessStatus)}
                           </Badge>
                         </div>
                         <p className="mt-2 text-sm font-semibold text-violet-900">{endToEndPilot2026.gradePreview.gradePreview ?? endToEndPilot2026.gradePreview.status}</p>
                         <p className="mt-2 text-xs leading-5 text-violet-900">
-                          group: {endToEndPilot2026.gradePreview.applicableGroup} · mapping: {endToEndPilot2026.gradePreview.scoreToGradeMapping}
+                          그룹: {endToEndPilot2026.gradePreview.applicableGroup} · 매핑: {endToEndPilot2026.gradePreview.scoreToGradeMapping}
                         </p>
                         <p className="mt-2 text-xs leading-5 text-violet-900">{endToEndPilot2026.gradePreview.teamMemberSalesSuperNotApplicableNote}</p>
                         {endToEndPilot2026.gradePreview.blockers.length ? (
-                          <p className="mt-2 text-xs leading-5 text-amber-800">blocked: {endToEndPilot2026.gradePreview.blockers.join(', ')}</p>
+                          <p className="mt-2 text-xs leading-5 text-amber-800">차단: {endToEndPilot2026.gradePreview.blockers.join(', ')}</p>
                         ) : null}
                       </div>
                       <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
-                        <h6 className="text-sm font-semibold text-sky-950">CEO/final confirmation preview</h6>
+                        <h6 className="text-sm font-semibold text-sky-950">대표이사/최종 확정 미리보기</h6>
                         <p className="mt-2 text-xs leading-5 text-sky-900">
-                          stage: {endToEndPilot2026.ceoFinalConfirmationPreview.finalReviewerStagePreview} · adjustment reason required: {String(endToEndPilot2026.ceoFinalConfirmationPreview.adjustmentReasonRequired)}
+                          단계: {endToEndPilot2026.ceoFinalConfirmationPreview.finalReviewerStagePreview} · 조정 사유 필수: {String(endToEndPilot2026.ceoFinalConfirmationPreview.adjustmentReasonRequired)}
                         </p>
                         <p className="mt-1 text-xs leading-5 text-sky-900">
-                          calibration blockers {endToEndPilot2026.ceoFinalConfirmationPreview.calibrationFinalizationBlockers} · CEO blockers {endToEndPilot2026.ceoFinalConfirmationPreview.ceoConfirmationBlockers}
+                          보정 차단 {endToEndPilot2026.ceoFinalConfirmationPreview.calibrationFinalizationBlockers} · 대표이사 차단 {endToEndPilot2026.ceoFinalConfirmationPreview.ceoConfirmationBlockers}
                         </p>
                         <p className="mt-2 text-xs leading-5 text-sky-900">{endToEndPilot2026.ceoFinalConfirmationPreview.notes.join(' ')}</p>
-                        <p className="mt-2 text-xs leading-5 text-sky-900">sample reason: {endToEndPilot2026.ceoFinalConfirmationPreview.sampleAdjustmentReason}</p>
+                        <p className="mt-2 text-xs leading-5 text-sky-900">샘플 사유: {endToEndPilot2026.ceoFinalConfirmationPreview.sampleAdjustmentReason}</p>
                       </div>
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-4 xl:grid-cols-2">
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">End-to-end gaps found</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">전체 흐름 보완 지점</h6>
                       <div className="mt-3 space-y-2">
                         {endToEndPilot2026.gapAssessment.map((item) => (
                           <div key={item.question} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -5951,16 +6035,16 @@ function PolicyActivationReadiness2026Panel(props: {
                       </div>
                     </div>
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                      <h6 className="text-sm font-semibold text-emerald-950">Safety confirmation</h6>
+                      <h6 className="text-sm font-semibold text-emerald-950">안전 확인</h6>
                       <div className="mt-3 grid gap-2 text-xs leading-5 text-emerald-900">
-                        <p>official scoring false: {String(endToEndPilot2026.safety.officialScoringEnabled)}</p>
-                        <p>official grade false: {String(endToEndPilot2026.safety.officialGradeEnabled)}</p>
-                        <p>AI exclusion activation false: {String(endToEndPilot2026.safety.officialAiScoreExclusionEnabled)}</p>
-                        <p>totalScore write: {String(endToEndPilot2026.safety.totalScoreChanged)}</p>
-                        <p>gradeId write: {String(endToEndPilot2026.safety.gradeIdChanged)}</p>
-                        <p>official Evaluation/EvaluationItem creation: {endToEndPilot2026.safety.officialEvaluationsCreated}/{endToEndPilot2026.safety.officialEvaluationItemsCreated}</p>
-                        <p>backfill/apply executed: {String(endToEndPilot2026.safety.backfillExecuted)} / {String(endToEndPilot2026.safety.backfillApplyExecuted)}</p>
-                        <p>feature flags changed: {String(endToEndPilot2026.safety.featureFlagsChanged)}</p>
+                        <p>공식 점수 반영 false: {String(endToEndPilot2026.safety.officialScoringEnabled)}</p>
+                        <p>공식 등급 반영 false: {String(endToEndPilot2026.safety.officialGradeEnabled)}</p>
+                        <p>AI 제외 활성화 false: {String(endToEndPilot2026.safety.officialAiScoreExclusionEnabled)}</p>
+                        <p>공식 저장 점수(totalScore) 쓰기: {String(endToEndPilot2026.safety.totalScoreChanged)}</p>
+                        <p>공식 저장 등급(gradeId) 쓰기: {String(endToEndPilot2026.safety.gradeIdChanged)}</p>
+                        <p>공식 Evaluation/EvaluationItem 생성: {endToEndPilot2026.safety.officialEvaluationsCreated}/{endToEndPilot2026.safety.officialEvaluationItemsCreated}</p>
+                        <p>기존 데이터 채우기/실제 반영 실행: {String(endToEndPilot2026.safety.backfillExecuted)} / {String(endToEndPilot2026.safety.backfillApplyExecuted)}</p>
+                        <p>기능 활성화 스위치 변경: {String(endToEndPilot2026.safety.featureFlagsChanged)}</p>
                       </div>
                     </div>
                   </div>
@@ -6044,7 +6128,7 @@ function PolicyActivationReadiness2026Panel(props: {
                 {[
                   ['HR review checklist', dryRunOutputReviewTemplate.hrReviewChecklist],
                   ['Developer review checklist', dryRunOutputReviewTemplate.developerReviewChecklist],
-                  ['Post-dry-run log watch checklist', dryRunOutputReviewTemplate.postDryRunLogWatchChecklist],
+                  ['사전 실행 후 로그 감시 점검 목록', dryRunOutputReviewTemplate.postDryRunLogWatchChecklist],
                 ].map(([title, items]) => (
                   <div key={title as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <h5 className="text-sm font-semibold text-slate-900">{title as string}</h5>
@@ -6084,7 +6168,7 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                <h5 className="text-sm font-semibold text-rose-950">금지 작업</h5>
                 <p className="mt-2 text-sm leading-6 text-rose-900">{dryRunOutputReviewTemplate.prohibitedActions.join(', ')}</p>
               </div>
             </div>
@@ -6095,24 +6179,24 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 Readiness Scenario Simulator</h4>
-                    <Badge tone="neutral">read-only</Badge>
-                    <Badge tone="warn">official activation BLOCKED</Badge>
-                    <Badge tone="neutral">local UI state only</Badge>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 준비 상태 시나리오 시뮬레이터</h4>
+                    <Badge tone="neutral">읽기 전용</Badge>
+                    <Badge tone="warn">공식 전환 차단됨</Badge>
+                    <Badge tone="neutral">로컬 UI 상태만</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 blocker 감소 효과를 가정해 보는 read-only 시뮬레이터입니다.
-                    실제 데이터 저장, backfill, 공식 점수/등급, feature flag 변경은 수행하지 않습니다.
+                    이 화면은 해소 필요 항목 감소 효과를 가정해 보는 읽기 전용 시뮬레이터입니다.
+                    실제 데이터 저장, 기존 데이터 채우기, 공식 점수/등급, 기능 활성화 스위치 변경은 수행하지 않습니다.
                   </p>
                   <p className="mt-2 text-xs leading-5 text-amber-700">{scenarioSimulator.disclaimer}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    ['scenario-summary', 'Scenario summary', scenarioPreview.reportText],
-                    ['scenario-action', 'Projected action plan', `next HR action: ${scenarioPreview.nextHrAction}\nprojected stage: ${scenarioPreview.projectedStage}\nprojected status: ${scenarioPreview.projectedStatus}\nofficial activation: BLOCKED`],
-                    ['scenario-markdown', 'Markdown', scenarioPreview.markdown],
-                    ['scenario-tsv', 'TSV', scenarioPreview.tsv],
-                    ['scenario-prohibited', 'Prohibited', scenarioSimulator.copyPayloads.prohibitedActions],
+                    ['scenario-summary', '시나리오 요약 보기', scenarioPreview.reportText],
+                    ['scenario-action', '예상 액션 계획 보기', `다음 HR 액션: ${scenarioPreview.nextHrAction}\n예상 단계: ${scenarioPreview.projectedStage}\n예상 상태: ${formatReadinessUiStatus2026(scenarioPreview.projectedStatus)}\n공식 전환: 차단됨`],
+                    ['scenario-markdown', '마크다운 보기', scenarioPreview.markdown],
+                    ['scenario-tsv', 'TSV 보기', scenarioPreview.tsv],
+                    ['scenario-prohibited', '금지 작업', scenarioSimulator.copyPayloads.prohibitedActions],
                   ].map(([key, label, text]) => (
                     <button
                       key={key}
@@ -6127,8 +6211,8 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <MetricCard label="baseline MBO missing" value={formatIntegratedSnapshotCount2026(scenarioSimulator.baselineCounts.missingMboCount)} help="현재 snapshot" compact />
-                <MetricCard label="projected MBO missing" value={formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.missingMboCount)} help="시나리오 반영" compact variant={numericScenarioValue2026(scenarioPreview.projectedCounts.missingMboCount) > 0 ? 'warning' : 'default'} />
+                <MetricCard label="현재 MBO 미작성" value={formatIntegratedSnapshotCount2026(scenarioSimulator.baselineCounts.missingMboCount)} help="현재 요약" compact />
+                <MetricCard label="예상 MBO 미작성" value={formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.missingMboCount)} help="시나리오 반영" compact variant={numericScenarioValue2026(scenarioPreview.projectedCounts.missingMboCount) > 0 ? 'warning' : 'default'} />
                 <MetricCard label="baseline Team KPI" value={formatIntegratedSnapshotCount2026(scenarioSimulator.baselineCounts.teamKpiPendingCount)} help="pending/discussion" compact />
                 <MetricCard label="projected Team KPI" value={formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.teamKpiPendingCount)} help="시나리오 반영" compact />
                 <MetricCard label="official gate" value={formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.officialActivationGateBlockerCount)} help={`estimated potential ${formatIntegratedSnapshotCount2026(scenarioPreview.projectedCounts.estimatedOfficialGateBlockerCount)}`} compact variant="warning" />
@@ -6164,7 +6248,7 @@ function PolicyActivationReadiness2026Panel(props: {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Manual scenario inputs</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">수동 시나리오 입력</h5>
                   <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     {SCENARIO_INPUT_FIELDS_2026.map((field) => (
                       <label key={field.key} className="block rounded-xl border border-slate-200 bg-white p-3">
@@ -6197,7 +6281,7 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Projected delta</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">예상 변화</h5>
                   <div className="mt-3 overflow-x-auto">
                     <table className="min-w-full divide-y divide-slate-200 text-sm">
                       <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
@@ -6228,7 +6312,7 @@ function PolicyActivationReadiness2026Panel(props: {
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Remaining blockers / next HR action</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">남은 해소 필요 항목 / 다음 HR 액션</h5>
                   <div className="mt-3 space-y-2">
                     {scenarioPreview.remainingBlockers.slice(0, 6).map((item) => (
                       <div key={item.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -6241,7 +6325,7 @@ function PolicyActivationReadiness2026Panel(props: {
                     ))}
                   </div>
                   <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                    <p className="text-xs font-semibold text-amber-700">projected next HR action</p>
+                    <p className="text-xs font-semibold text-amber-700">예상 다음 HR 액션</p>
                     <p className="mt-1 text-sm leading-6 text-amber-900">{scenarioPreview.nextHrAction}</p>
                   </div>
                 </div>
@@ -6253,7 +6337,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   <p className="mt-3 text-sm leading-6 text-slate-600">{scenarioPreview.reportText}</p>
                 </div>
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                  <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                <h5 className="text-sm font-semibold text-rose-950">금지 작업</h5>
                   <p className="mt-2 text-sm leading-6 text-rose-900">{scenarioSimulator.prohibitedActions.join(', ')}</p>
                 </div>
               </div>
@@ -6270,22 +6354,22 @@ function PolicyActivationReadiness2026Panel(props: {
                     <Badge tone={ceoReportPack.summary.officialActivationStatus === 'BLOCKED' ? 'warn' : 'neutral'}>
                       {ceoReportPack.summary.officialActivationStatus}
                     </Badge>
-                    <Badge tone="neutral">read-only export</Badge>
+                    <Badge tone="neutral">읽기 전용 내보내기</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 대표이사 보고용 readiness 요약을 읽기 전용으로 제공합니다.
-                    backfill, 공식 점수, 공식 등급, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.
+                    이 화면은 대표이사 보고용 준비 상태 요약을 읽기 전용으로 제공합니다.
+                    기존 데이터 채우기, 공식 점수, 공식 등급, 기능 활성화 스위치, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId)은 실행하지 않습니다.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
                     ['ceo-summary', '경영요약 복사', ceoReportPack.copyPayloads.executiveSummary],
-                    ['ceo-markdown', '대표이사 보고서 Markdown 복사', ceoReportPack.copyPayloads.markdownReport],
-                    ['ceo-blockers', 'Top blockers 복사', ceoReportPack.copyPayloads.topBlockers],
-                    ['ceo-agenda', 'CEO decision agenda 복사', ceoReportPack.copyPayloads.decisionAgenda],
-                    ['ceo-scenarios', 'Scenario comparison 복사', ceoReportPack.copyPayloads.scenarioComparison],
-                    ['ceo-prohibited', 'Prohibited actions 복사', ceoReportPack.copyPayloads.prohibitedActions],
-                    ['ceo-tsv', 'TSV export', ceoReportPack.copyPayloads.tsvSummary],
+                    ['ceo-markdown', '대표이사 보고서 마크다운 복사', ceoReportPack.copyPayloads.markdownReport],
+                    ['ceo-blockers', '주요 해소 필요 항목 복사', ceoReportPack.copyPayloads.topBlockers],
+                    ['ceo-agenda', '대표이사 의사결정 안건 복사', ceoReportPack.copyPayloads.decisionAgenda],
+                    ['ceo-scenarios', '시나리오 비교 복사', ceoReportPack.copyPayloads.scenarioComparison],
+                    ['ceo-prohibited', '금지 작업 복사', ceoReportPack.copyPayloads.prohibitedActions],
+                    ['ceo-tsv', 'TSV 내보내기', ceoReportPack.copyPayloads.tsvSummary],
                   ].map(([key, label, text]) => (
                     <button
                       key={key}
@@ -6300,9 +6384,9 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <MetricCard label="current stage" value={ceoReportPack.summary.currentStage} help="readiness stage" compact />
-                <MetricCard label="overall status" value={ceoReportPack.summary.overallReadinessStatus} help="snapshot status" compact />
-                <MetricCard label="official activation" value={ceoReportPack.summary.officialActivationStatus} help="CEO report status" compact variant={ceoReportPack.summary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
+                <MetricCard label="현재 단계" value={ceoReportPack.summary.currentStage} help="준비 상태 단계" compact />
+                <MetricCard label="전체 상태" value={formatReadinessUiStatus2026(ceoReportPack.summary.overallReadinessStatus)} help="준비 상태 요약" compact />
+                <MetricCard label="공식 전환" value={formatReadinessUiStatus2026(ceoReportPack.summary.officialActivationStatus)} help="대표이사 보고 상태" compact variant={ceoReportPack.summary.officialActivationStatus === 'BLOCKED' ? 'warning' : 'default'} />
                 {ceoReportPack.keyNumbers.slice(0, 3).map((item) => (
                   <MetricCard
                     key={item.id}
@@ -6346,7 +6430,7 @@ function PolicyActivationReadiness2026Panel(props: {
                 </div>
 
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                  <h5 className="text-sm font-semibold text-amber-950">CEO decision agenda</h5>
+                  <h5 className="text-sm font-semibold text-amber-950">대표이사 의사결정 안건</h5>
                   <div className="mt-3 space-y-3 text-sm leading-6 text-amber-950">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Decisions needed now</p>
@@ -6365,15 +6449,15 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                <h5 className="text-sm font-semibold text-slate-900">Top blockers</h5>
+                <h5 className="text-sm font-semibold text-slate-900">주요 해소 필요 항목</h5>
                 <div className="mt-3 overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
                       <tr>
                         <th className="px-3 py-2">blocker</th>
-                        <th className="px-3 py-2">count</th>
-                        <th className="px-3 py-2">impact</th>
-                        <th className="px-3 py-2">next HR action</th>
+                        <th className="px-3 py-2">건수</th>
+                        <th className="px-3 py-2">영향</th>
+                        <th className="px-3 py-2">다음 HR 액션</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -6395,7 +6479,7 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-4 xl:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Scenario comparison</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">시나리오 비교</h5>
                   <div className="mt-3 grid gap-3">
                     {ceoReportPack.scenarioComparison.map((scenario) => (
                       <div key={scenario.scenarioName} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
@@ -6416,15 +6500,15 @@ function PolicyActivationReadiness2026Panel(props: {
                     </ol>
                   </div>
                   <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
-                    <h5 className="text-sm font-semibold text-blue-950">Next checkpoint</h5>
+                    <h5 className="text-sm font-semibold text-blue-950">다음 점검 지점</h5>
                     <p className="mt-2 text-sm font-semibold text-blue-900">{ceoReportPack.nextCheckpoint.name}</p>
                     <p className="mt-2 text-sm leading-6 text-blue-900">{ceoReportPack.nextCheckpoint.nextReviewCondition}</p>
                     <p className="mt-2 text-xs leading-5 text-blue-800">
-                      required: {ceoReportPack.nextCheckpoint.requiredExportedData.join(', ')}
+                      필요 자료: {ceoReportPack.nextCheckpoint.requiredExportedData.join(', ')}
                     </p>
                   </div>
                   <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                    <h5 className="text-sm font-semibold text-rose-950">Prohibited actions</h5>
+                    <h5 className="text-sm font-semibold text-rose-950">금지 작업</h5>
                     <p className="mt-2 text-sm leading-6 text-rose-900">{ceoReportPack.prohibitedActions.join(', ')}</p>
                   </div>
                 </div>
@@ -6437,15 +6521,15 @@ function PolicyActivationReadiness2026Panel(props: {
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h4 className="text-sm font-semibold text-slate-900">2026 공식 전환 Runbook</h4>
-                    <Badge tone="neutral">{runbook.mode}</Badge>
+                    <h4 className="text-sm font-semibold text-slate-900">2026 공식 전환 실행 절차서</h4>
+                    <Badge tone="neutral">{formatReadinessUiStatus2026(runbook.mode)}</Badge>
                     <Badge tone={runbook.summary.blockedSectionCount > 0 ? 'warn' : 'success'}>
-                      blocker {runbook.summary.totalBlockerCount.toLocaleString()}건
+                      해소 필요 항목 {runbook.summary.totalBlockerCount.toLocaleString()}건
                     </Badge>
-                    <Badge tone="neutral">No execution buttons in UI</Badge>
+                    <Badge tone="neutral">UI 실행 버튼 없음</Badge>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    이 화면은 공식 전환 실행 순서를 읽기 전용으로 안내합니다. backfill, feature flag, 공식 점수, 공식 등급은 실행하지 않습니다.
+                    이 화면은 공식 전환 실행 순서를 읽기 전용으로 안내합니다. 기존 데이터 채우기, 기능 활성화 스위치, 공식 점수, 공식 등급은 실행하지 않습니다.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -6524,13 +6608,13 @@ function PolicyActivationReadiness2026Panel(props: {
                           ) : null}
                         </div>
                         <div>
-                          <p className="text-xs font-semibold text-slate-500">Source readiness panels</p>
+                          <p className="text-xs font-semibold text-slate-500">출처 준비 상태 패널</p>
                           <p className="mt-2">{section.sourceReadinessPanels.join(', ')}</p>
-                          <p className="mt-3 text-xs font-semibold text-slate-500">Next HR action</p>
+                          <p className="mt-3 text-xs font-semibold text-slate-500">다음 HR 액션</p>
                           <p>{section.nextHrAction}</p>
-                          <p className="mt-3 text-xs font-semibold text-slate-500">Next developer action</p>
+                          <p className="mt-3 text-xs font-semibold text-slate-500">다음 개발/모니터링 액션</p>
                           <p>{section.nextDeveloperAction}</p>
-                          <p className="mt-3 text-xs font-semibold text-slate-500">Prohibited actions</p>
+                          <p className="mt-3 text-xs font-semibold text-slate-500">금지 작업</p>
                           <p>{section.prohibitedActions.slice(0, 5).join(', ')}</p>
                         </div>
                       </div>
@@ -6541,7 +6625,7 @@ function PolicyActivationReadiness2026Panel(props: {
 
               <div className="mt-4 grid gap-3 lg:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">HR approval checklist</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">HR 승인 확인 목록</h5>
                   <ul className="mt-3 space-y-1 text-sm leading-6 text-slate-600">
                     {runbook.hrApprovalChecklist.map((item) => (
                       <li key={item}>- {item}</li>
@@ -6549,7 +6633,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   </ul>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <h5 className="text-sm font-semibold text-slate-900">Developer execution checklist</h5>
+                  <h5 className="text-sm font-semibold text-slate-900">개발자 실행 확인 목록</h5>
                   <ul className="mt-3 space-y-1 text-sm leading-6 text-slate-600">
                     {runbook.developerExecutionChecklist.map((item) => (
                       <li key={item}>- {item}</li>
@@ -6563,12 +6647,12 @@ function PolicyActivationReadiness2026Panel(props: {
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
               <div>
-                <h4 className="text-sm font-semibold text-slate-900">2026 공식 전환 Gate checklist</h4>
+                <h4 className="text-sm font-semibold text-slate-900">2026 공식 전환 조건 확인 목록</h4>
                 <p className="mt-1 text-sm leading-6 text-slate-500">
-                  각 gate는 필요한 조건, 현재 blocker 수, 차단 이유, 다음 HR action을 표시합니다. 실행 버튼은 제공하지 않습니다.
+                  각 공식 전환 조건은 필요한 조건, 현재 해소 필요 항목 수, 차단 이유, 다음 HR 액션을 표시합니다. 실행 버튼은 제공하지 않습니다.
                 </p>
               </div>
-              <Badge tone="neutral">read-only checklist</Badge>
+              <Badge tone="neutral">읽기 전용 점검 목록</Badge>
             </div>
 
             {activation.populationDryRunError ? (
@@ -6625,7 +6709,7 @@ function PolicyActivationReadiness2026Panel(props: {
                             <th className="whitespace-nowrap px-2 py-2 font-semibold">조건</th>
                             <th className="whitespace-nowrap px-2 py-2 font-semibold">상태</th>
                             <th className="whitespace-nowrap px-2 py-2 font-semibold">현재값</th>
-                            <th className="whitespace-nowrap px-2 py-2 font-semibold">다음 HR action</th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold">다음 HR 액션</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white/80 text-slate-700">
@@ -6678,8 +6762,8 @@ function PolicyActivationReadiness2026Panel(props: {
               </div>
               <div className="mt-3 grid gap-2 text-sm text-slate-600">
                 <div className="flex justify-between gap-3">
-                  <span>Preview</span>
-                  <span className="font-semibold text-slate-900">{activation.flags.previewEnabled ? 'enabled' : 'disabled'}</span>
+                  <span>미리보기</span>
+                  <span className="font-semibold text-slate-900">{activation.flags.previewEnabled ? '활성' : '비활성'}</span>
                 </div>
                 <div className="flex justify-between gap-3">
                   <span>Official scoring</span>
@@ -6719,9 +6803,9 @@ function PolicyActivationReadiness2026Panel(props: {
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-          HR 관리자가 공식 전환 전에 backfill, scoring, AI exclusion, grade, totalScore/gradeId write gate를 읽기 전용으로 점검할 수 있습니다.
-          확인 대상: Backfill apply gate, Official scoring gate, AI score exclusion gate, Official grade gate,
-          Evaluation.totalScore write gate, Evaluation.gradeId write gate.
+          HR 관리자가 공식 전환 전에 기존 데이터 채우기, 점수 반영, AI 제외, 등급, 공식 저장 점수/등급 쓰기 조건을 읽기 전용으로 점검할 수 있습니다.
+          확인 대상: 기존 데이터 실제 반영 조건, 공식 점수 반영 조건, AI 점수 제외 조건, 공식 등급 반영 조건,
+          Evaluation.totalScore 쓰기 조건, Evaluation.gradeId 쓰기 조건.
         </div>
       )}
 
@@ -6762,15 +6846,15 @@ function DedicatedWorkbenchPilotRoute2026(props: {
           <div className="min-w-0 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-600">
-                2026 Evaluation Workbench Pilot
+                2026 평가 워크벤치 미리보기
               </p>
-              <Badge tone="neutral">dedicated route</Badge>
-              <Badge tone="warn">preview-only</Badge>
-              <Badge tone="neutral">official writes disabled</Badge>
+              <Badge tone="neutral">전용 화면</Badge>
+              <Badge tone="warn">미리보기 전용</Badge>
+              <Badge tone="neutral">공식 저장 비활성</Badge>
             </div>
-            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">2026 Evaluation Workbench Pilot</h1>
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">2026 평가 워크벤치 미리보기</h1>
             <p className="max-w-4xl text-sm leading-6 text-slate-600">
-              이 화면은 실제 평가 워크벤치 흐름을 preview로 체험하기 위한 전용 화면입니다. 입력값은 저장되지 않으며,
+              이 화면은 실제 평가 워크벤치 흐름을 미리보기로 체험하기 위한 전용 화면입니다. 입력값은 저장되지 않으며,
               공식 저장, 제출, 확정, 점수 반영, 등급 반영은 수행하지 않습니다.
             </p>
           </div>
@@ -6779,7 +6863,7 @@ function DedicatedWorkbenchPilotRoute2026(props: {
               href="/evaluation/performance"
               className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
             >
-              readiness 화면으로 돌아가기
+              준비 상태 화면으로 돌아가기
             </Link>
             <button
               type="button"
@@ -6787,7 +6871,7 @@ function DedicatedWorkbenchPilotRoute2026(props: {
               disabled={loading}
               className="inline-flex min-h-10 items-center justify-center rounded-xl bg-cyan-700 px-4 text-sm font-semibold text-white transition hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-cyan-200"
             >
-              {loading ? 'preview 불러오는 중...' : 'pilot preview 다시 불러오기'}
+              {loading ? '미리보기 불러오는 중...' : '파일럿 미리보기 다시 불러오기'}
             </button>
           </div>
         </div>
@@ -6797,14 +6881,14 @@ function DedicatedWorkbenchPilotRoute2026(props: {
 
       {loading && !pilot ? (
         <section className="rounded-2xl border border-dashed border-cyan-200 bg-cyan-50 p-6 text-sm text-cyan-900">
-          2026 workbench pilot 데이터를 불러오는 중입니다. 이 동작은 읽기 전용 조회이며 저장, 제출, 확정을 수행하지 않습니다.
+          2026 워크벤치 파일럿 데이터를 불러오는 중입니다. 이 동작은 읽기 전용 조회이며 저장, 제출, 확정을 수행하지 않습니다.
         </section>
       ) : null}
 
       {!loading && !error && !pilot ? (
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-          2026 Evaluation Workbench Pilot 데이터를 아직 확인하지 못했습니다. 위 버튼으로 preview-only 데이터를 다시 조회하세요.
-          공식 평가 생성, totalScore write, gradeId write는 수행하지 않습니다.
+          2026 평가 워크벤치 미리보기 데이터를 아직 확인하지 못했습니다. 위 버튼으로 미리보기 전용 데이터를 다시 조회하세요.
+          공식 평가 생성, 공식 저장 점수(totalScore) 쓰기, 공식 저장 등급(gradeId) 쓰기는 수행하지 않습니다.
         </section>
       ) : null}
 
@@ -6856,11 +6940,11 @@ function ReadinessExportPreviewDialog(props: {
                 {props.format}
               </span>
               <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
-                read-only preview
+                읽기 전용 미리보기
               </span>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-500">{props.description}</p>
-            <p className="mt-1 text-xs leading-5 text-slate-400">file: {props.suggestedFilename}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-400">파일: {props.suggestedFilename}</p>
           </div>
           <button
             type="button"
@@ -6876,13 +6960,13 @@ function ReadinessExportPreviewDialog(props: {
             readOnly
             value={props.content}
             className="h-[52vh] w-full resize-none rounded-2xl border border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-5 text-slate-50 outline-none"
-            aria-label="readiness export preview content"
+            aria-label="준비 상태 내보내기 미리보기 내용"
           />
         </div>
 
         <div className="flex flex-col gap-3 border-t border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs leading-5 text-slate-500">
-            저장, submit, dry-run, apply, backfill, scoring, grade 실행 없이 브라우저에서만 미리보고 복사합니다.
+            저장, 제출, 사전 실행 검토, 실제 반영, 기존 데이터 채우기, 점수/등급 실행 없이 브라우저에서만 미리보고 복사합니다.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -6991,22 +7075,22 @@ function InteractivePilotWalkthrough2026(props: {
   const stepDefinitions = [
     { id: 'TARGET' as const, order: 1, label: '대상자', source: targetStep, complete: true },
     { id: 'KPI' as const, order: 2, label: 'KPI 항목', source: kpiStep, complete: Boolean(selectedKpi) },
-    { id: 'SELF' as const, order: 3, label: '자기평가 preview', source: selfStep, complete: Boolean(inputs.selfResultSummary.trim() && inputs.selfContributionComment.trim()) },
-    { id: 'FIRST' as const, order: 4, label: '1차 평가 preview', source: firstStep, complete: Boolean(inputs.firstReviewerComment.trim()) && !firstAdjustmentNeedsReason },
-    { id: 'SECOND_FINAL' as const, order: 5, label: '2차/최종 평가 preview', source: secondStep, complete: Boolean(inputs.finalReviewerComment.trim()) && !finalAdjustmentNeedsReason },
-    { id: 'SCORE' as const, order: 6, label: '점수 preview', source: scoreStep, complete: Number.isFinite(localScorePreview.adjustedScore) },
-    { id: 'GRADE' as const, order: 7, label: '등급 preview', source: gradeStep, complete: Boolean(localGradePreview) },
-    { id: 'CEO' as const, order: 8, label: '대표이사 조정 preview', source: ceoStep, complete: inputs.ceoChecklistNoWrite && !ceoAdjustmentNeedsReason },
+    { id: 'SELF' as const, order: 3, label: '자기평가 미리보기', source: selfStep, complete: Boolean(inputs.selfResultSummary.trim() && inputs.selfContributionComment.trim()) },
+    { id: 'FIRST' as const, order: 4, label: '1차 평가 미리보기', source: firstStep, complete: Boolean(inputs.firstReviewerComment.trim()) && !firstAdjustmentNeedsReason },
+    { id: 'SECOND_FINAL' as const, order: 5, label: '2차/최종 평가 미리보기', source: secondStep, complete: Boolean(inputs.finalReviewerComment.trim()) && !finalAdjustmentNeedsReason },
+    { id: 'SCORE' as const, order: 6, label: '점수 미리보기', source: scoreStep, complete: Number.isFinite(localScorePreview.adjustedScore) },
+    { id: 'GRADE' as const, order: 7, label: '등급 미리보기', source: gradeStep, complete: Boolean(localGradePreview) },
+    { id: 'CEO' as const, order: 8, label: '대표이사 조정 미리보기', source: ceoStep, complete: inputs.ceoChecklistNoWrite && !ceoAdjustmentNeedsReason },
     { id: 'SAFETY' as const, order: 9, label: '안전 확인', source: safetyStep, complete: true },
   ]
   const completedStepCount = stepDefinitions.filter((item) => item.complete).length
   const completionPercentage = Math.round((completedStepCount / stepDefinitions.length) * 100)
   const activeStepDefinition = stepDefinitions.find((item) => item.id === activeStep) ?? stepDefinitions[0]
-  const unresolvedOfficialBlockers = pilot.blockers.length ? pilot.blockers : ['공식 실행 전 blocker 없음']
+  const unresolvedOfficialBlockers = pilot.blockers.length ? pilot.blockers : ['공식 실행 전 차단 조건 없음']
   const markdownExport = formatInteractivePilotMarkdown2026({
     pilot,
     inputs,
-    selectedKpiTitle: selectedKpi?.title ?? 'KPI preview pending',
+    selectedKpiTitle: selectedKpi?.title ?? 'KPI 미리보기 대기',
     localFinalScore: localScorePreview.adjustedScore,
     localGrade: localGradePreview,
     completionPercentage,
@@ -7015,7 +7099,7 @@ function InteractivePilotWalkthrough2026(props: {
   })
   const tsvExport = formatInteractivePilotTsv2026({
     pilot,
-    selectedKpiTitle: selectedKpi?.title ?? 'KPI preview pending',
+    selectedKpiTitle: selectedKpi?.title ?? 'KPI 미리보기 대기',
     localFinalScore: localScorePreview.adjustedScore,
     localGrade: localGradePreview,
     completionPercentage,
@@ -7032,45 +7116,45 @@ function InteractivePilotWalkthrough2026(props: {
   const exportItems = [
     {
       key: 'interactive-pilot-summary',
-      label: 'Preview summary 보기',
+      label: '미리보기 요약 보기',
       text: [
-        `2026 Interactive Pilot Walkthrough`,
-        `completion: ${completionPercentage}% (${completedStepCount}/9)`,
-        `current step: ${activeStepDefinition.label}`,
-        `selected KPI: ${selectedKpi?.title ?? 'pending'}`,
-        `score preview: ${localScorePreview.adjustedScore.toFixed(1)}`,
-        `grade preview: ${localGradePreview}`,
-        `official blockers: ${unresolvedOfficialBlockers.join(', ')}`,
-        `safety: no official writes, no API write calls`,
+        `2026 단계별 체험 미리보기`,
+        `완료율: ${completionPercentage}% (${completedStepCount}/9)`,
+        `현재 단계: ${activeStepDefinition.label}`,
+        `선택 KPI: ${selectedKpi?.title ?? '대기'}`,
+        `점수 미리보기: ${localScorePreview.adjustedScore.toFixed(1)}`,
+        `등급 미리보기: ${localGradePreview}`,
+        `공식 차단 조건: ${unresolvedOfficialBlockers.join(', ')}`,
+        `안전: 공식 저장 없음, API 쓰기 호출 없음`,
       ].join('\n'),
     },
     {
       key: 'interactive-pilot-self-evaluation',
-      label: 'Self evaluation preview 보기',
-      text: [inputs.selfResultSummary, inputs.selfContributionComment, inputs.selfRiskComment, `evidence: ${inputs.selfEvidenceLink || 'missing warning'}`].join('\n'),
+      label: '자기평가 미리보기',
+      text: [inputs.selfResultSummary, inputs.selfContributionComment, inputs.selfRiskComment, `증빙: ${inputs.selfEvidenceLink || '누락 주의'}`].join('\n'),
     },
     {
       key: 'interactive-pilot-first-review',
-      label: 'First review preview 보기',
-      text: [inputs.firstReviewerComment, `score: ${firstReviewerScore}`, `adjustment: ${firstAdjustmentAmount}`, inputs.firstAdjustmentReason || 'adjustment reason not required for zero adjustment', inputs.firstFeedbackToEmployee].join('\n'),
+      label: '1차 평가 미리보기',
+      text: [inputs.firstReviewerComment, `점수: ${firstReviewerScore}`, `조정값: ${firstAdjustmentAmount}`, inputs.firstAdjustmentReason || '조정값이 0이면 조정 사유가 필요 없습니다', inputs.firstFeedbackToEmployee].join('\n'),
     },
     {
       key: 'interactive-pilot-final-review',
-      label: 'Final review preview 보기',
-      text: [inputs.finalReviewerComment, `score: ${finalReviewerScore}`, `adjustment: ${finalAdjustmentAmount}`, inputs.finalAdjustmentReason || 'adjustment reason not required for zero adjustment', inputs.finalRecommendation].join('\n'),
+      label: '최종 평가 미리보기',
+      text: [inputs.finalReviewerComment, `점수: ${finalReviewerScore}`, `조정값: ${finalAdjustmentAmount}`, inputs.finalAdjustmentReason || '조정값이 0이면 조정 사유가 필요 없습니다', inputs.finalRecommendation].join('\n'),
     },
     {
       key: 'interactive-pilot-score-grade',
-      label: 'Score/grade preview 보기',
-      text: [`score preview: ${localScorePreview.adjustedScore.toFixed(1)}`, `grade preview: ${localGradePreview}`, 'totalScore write: false', 'gradeId write: false'].join('\n'),
+      label: '점수/등급 미리보기',
+      text: [`점수 미리보기: ${localScorePreview.adjustedScore.toFixed(1)}`, `등급 미리보기: ${localGradePreview}`, '공식 저장 점수(totalScore) 쓰기: false', '공식 저장 등급(gradeId) 쓰기: false'].join('\n'),
     },
     {
       key: 'interactive-pilot-safety-summary',
-      label: 'Safety summary 보기',
-      text: ['official scoring false', 'official grade false', 'AI exclusion activation false', 'totalScore write false', 'gradeId write false', 'official Evaluation/EvaluationItem creation false', 'backfill/apply false', 'feature flag changes false', 'no API write calls'].join('\n'),
+      label: '안전 확인 요약 보기',
+      text: ['공식 점수 반영 false', '공식 등급 반영 false', 'AI 제외 활성화 false', '공식 저장 점수(totalScore) 쓰기 false', '공식 저장 등급(gradeId) 쓰기 false', '공식 Evaluation/EvaluationItem 생성 false', '기존 데이터 채우기/실제 반영 false', '기능 활성화 스위치 변경 false', 'API 쓰기 호출 없음'].join('\n'),
     },
-    { key: 'interactive-pilot-export-markdown', label: 'Export Markdown', text: markdownExport },
-    { key: 'interactive-pilot-export-tsv', label: 'Export TSV', text: tsvExport },
+    { key: 'interactive-pilot-export-markdown', label: '마크다운 내보내기', text: markdownExport },
+    { key: 'interactive-pilot-export-tsv', label: 'TSV 내보내기', text: tsvExport },
   ]
 
   return (
@@ -7078,29 +7162,29 @@ function InteractivePilotWalkthrough2026(props: {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h5 className="text-sm font-semibold text-slate-900">2026 Interactive Pilot Walkthrough</h5>
-            <Badge tone="neutral">local-only</Badge>
+            <h5 className="text-sm font-semibold text-slate-900">2026 단계별 체험 미리보기</h5>
+            <Badge tone="neutral">로컬 전용</Badge>
             <Badge tone={pilot.summary.currentDecision === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : 'success'}>
-              {pilot.summary.currentDecision}
+              {formatReadinessUiStatus2026(pilot.summary.currentDecision)}
             </Badge>
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-600">
-            이 화면은 2026 평가 흐름을 로컬 preview로 체험하기 위한 화면입니다. 입력값은 저장되지 않으며, 공식 평가 생성,
-            공식 점수, 공식 등급, totalScore, gradeId, backfill은 실행하지 않습니다.
+            이 화면은 2026 평가 흐름을 로컬 미리보기로 체험하기 위한 화면입니다. 입력값은 저장되지 않으며, 공식 평가 생성,
+            공식 점수, 공식 등급, 공식 저장 점수(totalScore), 공식 저장 등급(gradeId), 기존 데이터 채우기는 실행하지 않습니다.
           </p>
         </div>
         <div className="rounded-2xl border border-indigo-200 bg-white p-3 text-xs leading-5 text-indigo-900">
-          <p className="font-semibold">local summary</p>
-          <p>{completedStepCount}/9 local steps · {completionPercentage}% complete</p>
-          <p>official blockers: {pilot.blockers.length.toLocaleString()}</p>
+          <p className="font-semibold">로컬 요약</p>
+          <p>{completedStepCount}/9 로컬 단계 · {completionPercentage}% 완료</p>
+          <p>공식 차단 조건: {pilot.blockers.length.toLocaleString()}</p>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 md:grid-cols-4">
-        <MetricCard label="pilot completion" value={`${completionPercentage}%`} help={`${completedStepCount} completed local steps`} compact />
-        <MetricCard label="selected target" value={pilot.pilotEmployee.name} help={pilot.pilotEmployee.departmentName} compact />
-        <MetricCard label="local score preview" value={localScorePreview.adjustedScore.toFixed(1)} help="Evaluation.totalScore write false" compact />
-        <MetricCard label="local grade preview" value={localGradePreview} help="Evaluation.gradeId write false" compact />
+        <MetricCard label="파일럿 완료율" value={`${completionPercentage}%`} help={`${completedStepCount}개 로컬 단계 완료`} compact />
+        <MetricCard label="선택 대상자" value={pilot.pilotEmployee.name} help={pilot.pilotEmployee.departmentName} compact />
+        <MetricCard label="로컬 점수 미리보기" value={localScorePreview.adjustedScore.toFixed(1)} help="공식 저장 점수(totalScore) 쓰기 false" compact />
+        <MetricCard label="로컬 등급 미리보기" value={localGradePreview} help="공식 저장 등급(gradeId) 쓰기 false" compact />
       </div>
 
       <div className="mt-4 grid gap-2 md:grid-cols-3 xl:grid-cols-9">
@@ -7114,9 +7198,9 @@ function InteractivePilotWalkthrough2026(props: {
             <span className="block font-semibold text-slate-900">{step.order}. {step.label}</span>
             <span className="mt-2 flex flex-wrap gap-1">
               <Badge tone={step.source?.status === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : step.source?.status === 'BLOCKED' ? 'error' : 'success'}>
-                {step.source?.status ?? 'PREVIEW_ONLY'}
+                {formatReadinessUiStatus2026(step.source?.status ?? 'PREVIEW_ONLY')}
               </Badge>
-              <Badge tone={step.complete ? 'success' : 'warn'}>{step.complete ? 'local ready' : 'local open'}</Badge>
+              <Badge tone={step.complete ? 'success' : 'warn'}>{step.complete ? '로컬 완료' : '로컬 입력 가능'}</Badge>
             </span>
           </button>
         ))}
@@ -7127,13 +7211,13 @@ function InteractivePilotWalkthrough2026(props: {
           <div>
             <h6 className="text-sm font-semibold text-slate-900">{activeStepDefinition.order}. {activeStepDefinition.label}</h6>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              official blocker warning: {activeStepDefinition.source?.blockedBy.length ? activeStepDefinition.source.blockedBy.join(', ') : '현재 step preview 기준 blocker 없음'}
+              공식 차단 조건 주의: {activeStepDefinition.source?.blockedBy.length ? activeStepDefinition.source.blockedBy.join(', ') : '현재 단계 미리보기 기준 차단 조건 없음'}
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              officially later: {activeStepDefinition.source?.officialLater ?? '공식 실행은 별도 승인 후에만 가능합니다.'}
+              공식 진행 시점: {activeStepDefinition.source?.officialLater ?? '공식 실행은 별도 승인 후에만 가능합니다.'}
             </p>
             <p className="mt-1 text-xs leading-5 text-emerald-700">
-              safety note: {activeStepDefinition.source?.safetyNote ?? 'local-only preview, no official writes'}
+              안전 메모: {activeStepDefinition.source?.safetyNote ?? '로컬 미리보기 전용, 공식 저장 없음'}
             </p>
           </div>
           <button
@@ -7151,21 +7235,21 @@ function InteractivePilotWalkthrough2026(props: {
         {activeStep === 'TARGET' ? (
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs font-semibold text-slate-900">Pilot employee</p>
+              <p className="text-xs font-semibold text-slate-900">파일럿 대상자</p>
               <p className="mt-2 text-sm font-semibold text-slate-800">{pilot.pilotEmployee.name}</p>
               <p className="mt-1 text-xs leading-5 text-slate-600">{pilot.pilotEmployee.departmentName} · {pilot.pilotEmployee.employeeNo ?? 'employeeNo 미확인'}</p>
-              <p className="mt-1 text-xs leading-5 text-slate-600">source: {pilot.pilotEmployee.source}</p>
-              <p className="mt-1 text-xs leading-5 text-slate-600">confirmed KPI count: {pilot.pilotEmployee.confirmedPersonalKpiCount}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">출처: {pilot.pilotEmployee.source}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">확정 KPI 수: {pilot.pilotEmployee.confirmedPersonalKpiCount}</p>
               {pilot.pilotEmployee.source === 'SAMPLE_PILOT_FIXTURE' ? (
                 <p className="mt-2 text-xs leading-5 text-amber-800">SAMPLE/PILOT fallback 대상자입니다. 공식 대상자 선정은 아직 수행하지 않습니다.</p>
               ) : null}
             </div>
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs font-semibold text-slate-900">Selection mode</p>
+              <p className="text-xs font-semibold text-slate-900">선택 방식</p>
               <p className="mt-2 text-xs leading-5 text-slate-600">
                 현재 pilot helper가 제공하는 대상자는 1명입니다. 여러 pilot sample이 제공되면 이 단계에서 대상자를 선택할 수 있습니다.
               </p>
-              <p className="mt-2 text-xs leading-5 text-emerald-700">대상자 선택은 local state만 사용하며 공식 population apply를 호출하지 않습니다.</p>
+              <p className="mt-2 text-xs leading-5 text-emerald-700">대상자 선택은 로컬 상태만 사용하며 공식 인원 생성 실제 반영을 호출하지 않습니다.</p>
             </div>
           </div>
         ) : null}
@@ -7173,7 +7257,7 @@ function InteractivePilotWalkthrough2026(props: {
         {activeStep === 'KPI' ? (
           <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <label className="text-xs font-semibold text-slate-900" htmlFor="interactive-pilot-kpi-select">KPI item preview</label>
+              <label className="text-xs font-semibold text-slate-900" htmlFor="interactive-pilot-kpi-select">KPI 항목 미리보기</label>
               <select
                 id="interactive-pilot-kpi-select"
                 value={selectedKpi?.id ?? ''}
@@ -7194,7 +7278,7 @@ function InteractivePilotWalkthrough2026(props: {
               </select>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-700">
-                  achievement level
+                  달성 수준
                   <select
                     value={inputs.localAchievementLevel}
                     onChange={(event) => updateInput('localAchievementLevel', event.target.value as InteractivePilotLocalInputs2026['localAchievementLevel'])}
@@ -7207,7 +7291,7 @@ function InteractivePilotWalkthrough2026(props: {
                   </select>
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
-                  local base score
+                  로컬 기준 점수
                   <input
                     value={inputs.localBaseScore}
                     onChange={(event) => updateInput('localBaseScore', event.target.value)}
@@ -7216,19 +7300,19 @@ function InteractivePilotWalkthrough2026(props: {
                   />
                 </label>
               </div>
-              <p className="mt-3 text-xs leading-5 text-emerald-700">No EvaluationItem creation. KPI item preview는 browser state만 변경합니다.</p>
+              <p className="mt-3 text-xs leading-5 text-emerald-700">EvaluationItem을 생성하지 않습니다. KPI 항목 미리보기는 브라우저 로컬 상태만 변경합니다.</p>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-xs font-semibold text-slate-900">KPI detail</p>
+              <p className="text-xs font-semibold text-slate-900">KPI 상세</p>
               {selectedKpi ? (
                 <div className="mt-2 grid gap-2 text-xs leading-5 text-slate-600">
-                  <p>title: {selectedKpi.title}</p>
-                  <p>category: {selectedKpi.category}</p>
-                  <p>weight: {selectedKpi.weight}</p>
-                  <p>target: SAMPLE/PILOT target evidence and result summary</p>
-                  <p>evidence expectation: result summary, monthly evidence, contribution comment</p>
-                  <p className="text-amber-800">policyCategory warning: {pilot.evaluationItemPreview.find((item) => item.personalKpiId === selectedKpi.id)?.policyCategoryWarning ?? 'official policyCategory warning 없음'}</p>
-                  <p className="text-amber-800">weight/cap warning: preview score is capped between 0 and 120; official policy still blocks writes when readiness is incomplete.</p>
+                  <p>제목: {selectedKpi.title}</p>
+                  <p>분류: {selectedKpi.category}</p>
+                  <p>가중치: {selectedKpi.weight}</p>
+                  <p>목표: SAMPLE/PILOT 대상 증빙과 결과 요약</p>
+                  <p>증빙 기대값: 결과 요약, 월별 증빙, 기여도 코멘트</p>
+                  <p className="text-amber-800">정책 분류 주의: {pilot.evaluationItemPreview.find((item) => item.personalKpiId === selectedKpi.id)?.policyCategoryWarning ?? '공식 정책 분류 주의 없음'}</p>
+                  <p className="text-amber-800">가중치/상한 주의: 미리보기 점수는 0~120 범위로 제한되며, 준비 상태가 불완전하면 공식 정책은 쓰기를 계속 차단합니다.</p>
                 </div>
               ) : null}
             </div>
@@ -7239,31 +7323,31 @@ function InteractivePilotWalkthrough2026(props: {
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <label className="block text-xs font-semibold text-slate-700">
-                achievement level
+                달성 수준
                 <input value={inputs.localAchievementLevel} readOnly className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="block text-xs font-semibold text-slate-700">
-                result summary
+                결과 요약
                 <textarea value={inputs.selfResultSummary} onChange={(event) => updateInput('selfResultSummary', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="block text-xs font-semibold text-slate-700">
-                evidence link
-                <input value={inputs.selfEvidenceLink} onChange={(event) => updateInput('selfEvidenceLink', event.target.value)} placeholder="local-only preview URL or note" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
+                증빙 링크
+                <input value={inputs.selfEvidenceLink} onChange={(event) => updateInput('selfEvidenceLink', event.target.value)} placeholder="로컬 전용 미리보기 URL 또는 메모" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
             </div>
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
               <label className="block text-xs font-semibold text-slate-700">
-                contribution comment
+                기여도 코멘트
                 <textarea value={inputs.selfContributionComment} onChange={(event) => updateInput('selfContributionComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="block text-xs font-semibold text-slate-700">
-                risk/blocker comment
+                위험/해소 필요 코멘트
                 <textarea value={inputs.selfRiskComment} onChange={(event) => updateInput('selfRiskComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                <p>missing result warning: {inputs.selfResultSummary.trim() ? 'clear in local preview' : 'result summary is missing'}</p>
-                <p>missing evidence warning: {inputs.selfEvidenceLink.trim() ? 'evidence reference entered locally' : 'evidence link is empty; use manual evidence note later'}</p>
-                <p>missing contribution warning: {inputs.selfContributionComment.trim() ? 'clear in local preview' : 'contribution comment is missing'}</p>
+                <p>결과 누락 경고: {inputs.selfResultSummary.trim() ? '로컬 미리보기 기준 통과' : '결과 요약이 비어 있습니다'}</p>
+                <p>증빙 누락 경고: {inputs.selfEvidenceLink.trim() ? '로컬 증빙 참고가 입력되었습니다' : '증빙 링크가 비어 있습니다. 이후 수동 증빙 메모가 필요합니다'}</p>
+                <p>기여도 누락 경고: {inputs.selfContributionComment.trim() ? '로컬 미리보기 기준 통과' : '기여도 코멘트가 비어 있습니다'}</p>
               </div>
             </div>
           </div>
@@ -7273,31 +7357,31 @@ function InteractivePilotWalkthrough2026(props: {
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <label className="block text-xs font-semibold text-slate-700">
-                first reviewer comment
+                1차 평가자 코멘트
                 <textarea value={inputs.firstReviewerComment} onChange={(event) => updateInput('firstReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-700">
-                  reviewer score preview
+                  평가자 점수 미리보기
                   <input value={inputs.firstReviewerScore} onChange={(event) => updateInput('firstReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
-                  adjustment amount preview
+                  조정값 미리보기
                   <input value={inputs.firstAdjustmentAmount} onChange={(event) => updateInput('firstAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
               </div>
             </div>
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
               <label className="block text-xs font-semibold text-slate-700">
-                adjustment reason
+                조정 사유
                 <textarea value={inputs.firstAdjustmentReason} onChange={(event) => updateInput('firstAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="block text-xs font-semibold text-slate-700">
-                feedback to employee
+                직원 피드백
                 <textarea value={inputs.firstFeedbackToEmployee} onChange={(event) => updateInput('firstFeedbackToEmployee', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                {firstAdjustmentNeedsReason ? 'adjustment reason required if adjustment is not zero.' : 'adjustment reason validation clear in local preview.'} Evaluator routing blocker warning remains visible for official execution.
+                {firstAdjustmentNeedsReason ? '조정값이 0이 아니면 조정 사유가 필요합니다.' : '로컬 미리보기 기준 조정 사유 검증을 통과했습니다.'} 공식 실행 전 평가자 배정 차단 경고는 계속 표시됩니다.
               </p>
             </div>
           </div>
@@ -7307,31 +7391,31 @@ function InteractivePilotWalkthrough2026(props: {
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <label className="block text-xs font-semibold text-slate-700">
-                second/final reviewer comment
+                2차/최종 평가자 코멘트
                 <textarea value={inputs.finalReviewerComment} onChange={(event) => updateInput('finalReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-700">
-                  final reviewer score preview
+                  최종 평가자 점수 미리보기
                   <input value={inputs.finalReviewerScore} onChange={(event) => updateInput('finalReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
-                  adjustment amount preview
+                  조정값 미리보기
                   <input value={inputs.finalAdjustmentAmount} onChange={(event) => updateInput('finalAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
               </div>
             </div>
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
               <label className="block text-xs font-semibold text-slate-700">
-                adjustment reason
+                조정 사유
                 <textarea value={inputs.finalAdjustmentReason} onChange={(event) => updateInput('finalAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="block text-xs font-semibold text-slate-700">
-                final recommendation
+                최종 권고
                 <textarea value={inputs.finalRecommendation} onChange={(event) => updateInput('finalRecommendation', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                {finalAdjustmentNeedsReason ? 'adjustment reason required if final adjustment is not zero.' : 'final adjustment validation clear in local preview.'} Chain blocker and prior-stage dependency remain official blockers.
+                {finalAdjustmentNeedsReason ? '최종 조정값이 0이 아니면 조정 사유가 필요합니다.' : '로컬 미리보기 기준 최종 조정 검증을 통과했습니다.'} 평가 체인과 이전 단계 의존성은 공식 실행 차단 조건으로 남아 있습니다.
               </p>
             </div>
           </div>
@@ -7340,19 +7424,19 @@ function InteractivePilotWalkthrough2026(props: {
         {activeStep === 'SCORE' ? (
           <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3">
             <div className="grid gap-3 md:grid-cols-4">
-              <MetricCard label="organization performance" value={localScorePreview.organizationScore.toFixed(1)} help="30%" compact />
-              <MetricCard label="personal performance" value={localScorePreview.personalScore.toFixed(1)} help="70%" compact />
-              <MetricCard label="base score preview" value={localScorePreview.baseScore.toFixed(1)} help="local inputs" compact />
-              <MetricCard label="adjusted score preview" value={localScorePreview.adjustedScore.toFixed(1)} help="not written" compact />
+              <MetricCard label="조직성과" value={localScorePreview.organizationScore.toFixed(1)} help="30%" compact />
+              <MetricCard label="개인성과" value={localScorePreview.personalScore.toFixed(1)} help="70%" compact />
+              <MetricCard label="기준 점수 미리보기" value={localScorePreview.baseScore.toFixed(1)} help="로컬 입력" compact />
+              <MetricCard label="조정 점수 미리보기" value={localScorePreview.adjustedScore.toFixed(1)} help="저장 안 함" compact />
             </div>
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-full divide-y divide-blue-100 text-left text-xs">
                 <thead className="text-blue-700">
                   <tr>
-                    <th className="px-2 py-2 font-semibold">category</th>
-                    <th className="px-2 py-2 font-semibold">type</th>
-                    <th className="px-2 py-2 font-semibold">local score</th>
-                    <th className="px-2 py-2 font-semibold">weight</th>
+                    <th className="px-2 py-2 font-semibold">분류</th>
+                    <th className="px-2 py-2 font-semibold">유형</th>
+                    <th className="px-2 py-2 font-semibold">로컬 점수</th>
+                    <th className="px-2 py-2 font-semibold">가중치</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-blue-100">
@@ -7367,22 +7451,22 @@ function InteractivePilotWalkthrough2026(props: {
                 </tbody>
               </table>
             </div>
-            <p className="mt-3 text-xs leading-5 text-blue-900">totalScore write: false · official scoring activation: false · AI excluded from annual performance score.</p>
+            <p className="mt-3 text-xs leading-5 text-blue-900">공식 저장 점수(totalScore) 쓰기: false · 공식 점수 반영 활성화: false · AI는 연간 업적평가 점수에서 제외됩니다.</p>
           </div>
         ) : null}
 
         {activeStep === 'GRADE' ? (
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="rounded-xl border border-violet-200 bg-violet-50 p-3">
-              <p className="text-xs font-semibold text-violet-900">grade preview</p>
+              <p className="text-xs font-semibold text-violet-900">등급 미리보기</p>
               <p className="mt-2 text-2xl font-semibold text-violet-950">{localGradePreview}</p>
-              <p className="mt-2 text-xs leading-5 text-violet-900">score-to-grade local mapping: {localScorePreview.adjustedScore.toFixed(1)} -&gt; {localGradePreview}</p>
-              <p className="mt-1 text-xs leading-5 text-violet-900">grade group: {pilot.gradePreview.applicableGroup}</p>
+              <p className="mt-2 text-xs leading-5 text-violet-900">점수-등급 로컬 매핑: {localScorePreview.adjustedScore.toFixed(1)} -&gt; {localGradePreview}</p>
+              <p className="mt-1 text-xs leading-5 text-violet-900">등급 그룹: {pilot.gradePreview.applicableGroup}</p>
             </div>
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-              <p className="font-semibold">policy warning</p>
-              <p>{pilot.gradePreview.blockers.length ? pilot.gradePreview.blockers.join(', ') : 'grade policy preview 기준 blocker 없음'}</p>
-              <p className="mt-2">gradeId write: false · official grade activation: false.</p>
+              <p className="font-semibold">정책 주의</p>
+              <p>{pilot.gradePreview.blockers.length ? pilot.gradePreview.blockers.join(', ') : '등급 정책 미리보기 기준 해소 필요 항목 없음'}</p>
+              <p className="mt-2">공식 저장 등급(gradeId) 쓰기: false · 공식 등급 반영 활성화: false.</p>
             </div>
           </div>
         ) : null}
@@ -7391,24 +7475,24 @@ function InteractivePilotWalkthrough2026(props: {
           <div className="mt-4 grid gap-4 xl:grid-cols-2">
             <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50 p-3">
               <label className="block text-xs font-semibold text-sky-900">
-                CEO adjustment preview
+                대표이사 조정 미리보기
                 <input value={inputs.ceoAdjustmentAmount} onChange={(event) => updateInput('ceoAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="block text-xs font-semibold text-sky-900">
-                adjustment reason
+                조정 사유
                 <textarea value={inputs.ceoAdjustmentReason} onChange={(event) => updateInput('ceoAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="block text-xs font-semibold text-sky-900">
-                final note
+                최종 메모
                 <textarea value={inputs.ceoFinalNote} onChange={(event) => updateInput('ceoFinalNote', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
             </div>
             <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
-              <p className="text-xs font-semibold text-slate-900">confirmation checklist</p>
+              <p className="text-xs font-semibold text-slate-900">확인 점검 목록</p>
               {[
-                ['ceoChecklistEvidence', 'evidence packet reviewed locally'],
-                ['ceoChecklistCalibration', 'calibration blockers reviewed locally'],
-                ['ceoChecklistNoWrite', 'no finalization write'],
+                ['ceoChecklistEvidence', '증빙 패키지 로컬 검토'],
+                ['ceoChecklistCalibration', '캘리브레이션 차단 조건 로컬 검토'],
+                ['ceoChecklistNoWrite', '최종 확정 쓰기 없음'],
               ].map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 text-xs text-slate-700">
                   <input
@@ -7421,7 +7505,7 @@ function InteractivePilotWalkthrough2026(props: {
                 </label>
               ))}
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                {ceoAdjustmentNeedsReason ? 'reason required if CEO adjustment is not zero.' : 'CEO adjustment validation clear in local preview.'} Finalization/CEO blockers and calibration blockers remain official blockers.
+                {ceoAdjustmentNeedsReason ? '대표이사 조정값이 0이 아니면 사유가 필요합니다.' : '로컬 미리보기 기준 대표이사 조정 검증을 통과했습니다.'} 최종 확정/대표이사 및 캘리브레이션 차단 조건은 공식 차단 조건으로 남아 있습니다.
               </p>
             </div>
           </div>
@@ -7430,16 +7514,16 @@ function InteractivePilotWalkthrough2026(props: {
         {activeStep === 'SAFETY' ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {[
-              ['official scoring false', String(pilot.safety.officialScoringEnabled)],
-              ['official grade false', String(pilot.safety.officialGradeEnabled)],
-              ['AI exclusion activation false', String(pilot.safety.officialAiScoreExclusionEnabled)],
-              ['totalScore write false', String(pilot.safety.totalScoreChanged)],
-              ['gradeId write false', String(pilot.safety.gradeIdChanged)],
-              ['official Evaluation creation false', String(pilot.safety.officialEvaluationsCreated)],
-              ['official EvaluationItem creation false', String(pilot.safety.officialEvaluationItemsCreated)],
-              ['backfill/apply false', `${String(pilot.safety.backfillExecuted)} / ${String(pilot.safety.backfillApplyExecuted)}`],
-              ['feature flag changes false', String(pilot.safety.featureFlagsChanged)],
-              ['no API write calls', 'true'],
+              ['공식 점수 반영 false', String(pilot.safety.officialScoringEnabled)],
+              ['공식 등급 반영 false', String(pilot.safety.officialGradeEnabled)],
+              ['AI 제외 활성화 false', String(pilot.safety.officialAiScoreExclusionEnabled)],
+              ['공식 저장 점수(totalScore) 쓰기 false', String(pilot.safety.totalScoreChanged)],
+              ['공식 저장 등급(gradeId) 쓰기 false', String(pilot.safety.gradeIdChanged)],
+              ['공식 Evaluation 생성 false', String(pilot.safety.officialEvaluationsCreated)],
+              ['공식 EvaluationItem 생성 false', String(pilot.safety.officialEvaluationItemsCreated)],
+              ['기존 데이터 채우기/실제 반영 false', `${String(pilot.safety.backfillExecuted)} / ${String(pilot.safety.backfillApplyExecuted)}`],
+              ['기능 활성화 스위치 변경 false', String(pilot.safety.featureFlagsChanged)],
+              ['API 쓰기 호출 없음', 'true'],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900">
                 <p className="font-semibold">{label}</p>
@@ -7455,14 +7539,14 @@ function InteractivePilotWalkthrough2026(props: {
             onClick={moveToNextStep}
             className="inline-flex min-h-10 items-center justify-center rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white transition hover:bg-indigo-600"
           >
-            다음 단계 preview
+            다음 단계 미리보기
           </button>
           <button
             type="button"
             onClick={moveToNextStep}
             className="inline-flex min-h-10 items-center justify-center rounded-xl border border-indigo-300 px-4 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-50"
           >
-            preview 반영
+            미리보기 반영
           </button>
         </div>
       </div>
@@ -7470,10 +7554,10 @@ function InteractivePilotWalkthrough2026(props: {
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h6 className="text-sm font-semibold text-slate-900">Interactive pilot export preview</h6>
+            <h6 className="text-sm font-semibold text-slate-900">단계별 체험 미리보기 내보내기</h6>
             <p className="mt-1 text-xs leading-5 text-slate-500">클릭하면 내용을 먼저 미리보고 복사/다운로드할 수 있습니다.</p>
           </div>
-          <Badge tone="neutral">copy/export only</Badge>
+          <Badge tone="neutral">복사/내보내기 전용</Badge>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {exportItems.map((item) => (
@@ -7538,14 +7622,14 @@ function WorkbenchPilotAlignment2026(props: {
   const stageRows = [
     { id: 'TARGET' as const, label: '대상자', source: targetStep, localReady: true },
     { id: 'KPI' as const, label: 'KPI', source: kpiStep, localReady: Boolean(selectedKpi) },
-    { id: 'SELF' as const, label: 'SELF 자기평가', source: selfStep, localReady: Boolean(inputs.selfResultSummary.trim() && inputs.selfContributionComment.trim()) },
-    { id: 'FIRST' as const, label: 'FIRST 1차 평가', source: firstStep, localReady: Boolean(inputs.firstReviewerComment.trim()) && !firstAdjustmentNeedsReason },
-    { id: 'SECOND' as const, label: 'SECOND 2차 평가', source: secondStep, localReady: Boolean(inputs.finalReviewerComment.trim()) && !finalAdjustmentNeedsReason },
-    { id: 'FINAL' as const, label: 'FINAL 최종 평가', source: secondStep, localReady: Boolean(inputs.finalRecommendation.trim()) && !finalAdjustmentNeedsReason },
-    { id: 'CEO_ADJUST' as const, label: 'CEO_ADJUST 대표이사 조정', source: ceoStep, localReady: !ceoAdjustmentNeedsReason },
-    { id: 'SCORE_PREVIEW' as const, label: 'SCORE_PREVIEW', source: scoreStep, localReady: Number.isFinite(adjustedScorePreview) },
-    { id: 'GRADE_PREVIEW' as const, label: 'GRADE_PREVIEW', source: gradeStep, localReady: Boolean(gradePreview) },
-    { id: 'SAFETY' as const, label: 'SAFETY', source: safetyStep, localReady: true },
+    { id: 'SELF' as const, label: '자기평가', source: selfStep, localReady: Boolean(inputs.selfResultSummary.trim() && inputs.selfContributionComment.trim()) },
+    { id: 'FIRST' as const, label: '1차 평가', source: firstStep, localReady: Boolean(inputs.firstReviewerComment.trim()) && !firstAdjustmentNeedsReason },
+    { id: 'SECOND' as const, label: '2차 평가', source: secondStep, localReady: Boolean(inputs.finalReviewerComment.trim()) && !finalAdjustmentNeedsReason },
+    { id: 'FINAL' as const, label: '최종 평가', source: secondStep, localReady: Boolean(inputs.finalRecommendation.trim()) && !finalAdjustmentNeedsReason },
+    { id: 'CEO_ADJUST' as const, label: '대표이사 조정', source: ceoStep, localReady: !ceoAdjustmentNeedsReason },
+    { id: 'SCORE_PREVIEW' as const, label: '점수 미리보기', source: scoreStep, localReady: Number.isFinite(adjustedScorePreview) },
+    { id: 'GRADE_PREVIEW' as const, label: '등급 미리보기', source: gradeStep, localReady: Boolean(gradePreview) },
+    { id: 'SAFETY' as const, label: '안전 확인', source: safetyStep, localReady: true },
   ]
   const activeRow = stageRows.find((item) => item.id === activeStage) ?? stageRows[0]
   const updateInput = <Key extends keyof InteractivePilotLocalInputs2026>(key: Key, value: InteractivePilotLocalInputs2026[Key]) => {
@@ -7619,31 +7703,31 @@ function WorkbenchPilotAlignment2026(props: {
   const totalLocalAdjustedPreviewScore = clampPilotScore2026((organizationScore * 0.3) + (personalItemWeightedScore * 0.7))
   const totalLocalGradePreview = getInteractivePilotGradeLabel2026(totalLocalAdjustedPreviewScore, pilot.gradePreview.gradePreview)
   const scoreGradeText = [
-    `organization performance 30%: ${organizationScore.toFixed(1)}`,
-    `personal performance 70%: ${personalItemWeightedScore.toFixed(1)}`,
-    `selected item local score preview: ${selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}`,
-    `total local adjusted preview score: ${totalLocalAdjustedPreviewScore.toFixed(1)}`,
-    `selected item adjusted score preview: ${adjustedScorePreview.toFixed(1)}`,
-    `grade preview: ${totalLocalGradePreview}`,
-    'totalScore write false',
-    'gradeId write false',
+    `조직 성과 30%: ${organizationScore.toFixed(1)}`,
+    `개인 성과 70%: ${personalItemWeightedScore.toFixed(1)}`,
+    `선택 항목 로컬 점수 미리보기: ${selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}`,
+    `전체 로컬 조정 점수 미리보기: ${totalLocalAdjustedPreviewScore.toFixed(1)}`,
+    `선택 항목 조정 점수 미리보기: ${adjustedScorePreview.toFixed(1)}`,
+    `등급 미리보기: ${totalLocalGradePreview}`,
+    '공식 저장 점수(totalScore) 쓰기 false',
+    '공식 저장 등급(gradeId) 쓰기 false',
   ].join('\n')
   const markdownExport = [
-    props.surface === 'dedicated' ? '# 2026 Evaluation Workbench Pilot' : '# 2026 Evaluation Workbench Pilot Alignment',
+    props.surface === 'dedicated' ? '# 2026 평가 워크벤치 미리보기' : '# 2026 평가 워크벤치 흐름 정렬',
     '',
-    '이 export는 실제 평가 워크벤치 흐름을 preview로 정렬하기 위한 읽기 전용 자료입니다. 공식 평가 저장, 제출, 확정, 점수 반영, 등급 반영은 수행하지 않습니다.',
+    '이 내보내기는 실제 평가 워크벤치 흐름을 미리보기로 정렬하기 위한 읽기 전용 자료입니다. 공식 평가 저장, 제출, 확정, 점수 반영, 등급 반영은 수행하지 않습니다.',
     '',
-    `- active stage: ${activeRow.label}`,
-    `- pilot employee: ${pilot.pilotEmployee.name}`,
-    `- selected KPI: ${selectedKpi?.title ?? 'KPI preview pending'}`,
-    `- selected item score preview: ${selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}`,
-    `- total local adjusted preview score: ${totalLocalAdjustedPreviewScore.toFixed(1)}`,
-    `- local grade preview: ${totalLocalGradePreview}`,
-    `- official blockers: ${pilot.blockers.length ? pilot.blockers.join(', ') : 'none in pilot view'}`,
+    `- 활성 단계: ${activeRow.label}`,
+    `- 파일럿 대상자: ${pilot.pilotEmployee.name}`,
+    `- 선택 KPI: ${selectedKpi?.title ?? 'KPI 미리보기 대기'}`,
+    `- 선택 항목 점수 미리보기: ${selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}`,
+    `- 전체 로컬 조정 점수 미리보기: ${totalLocalAdjustedPreviewScore.toFixed(1)}`,
+    `- 로컬 등급 미리보기: ${totalLocalGradePreview}`,
+    `- 공식 차단 조건: ${pilot.blockers.length ? pilot.blockers.join(', ') : '파일럿 화면 기준 없음'}`,
     '',
-    '## Workbench item table',
+    '## 워크벤치 KPI 항목 표',
     ...itemRows.map((item) =>
-      `- ${item.kpi.title} / ${item.kpi.category} / weight ${item.kpi.weight} / score ${item.localScorePreview.toFixed(1)} / warnings ${item.warnings.join(', ') || 'none'}`
+      `- ${item.kpi.title} / ${item.kpi.category} / 가중치 ${item.kpi.weight} / 점수 ${item.localScorePreview.toFixed(1)} / 주의 ${item.warnings.join(', ') || '없음'}`
     ),
     '',
     '## SELF',
@@ -7658,51 +7742,51 @@ function WorkbenchPilotAlignment2026(props: {
     selectedItemDraft?.finalReviewerComment ?? inputs.finalReviewerComment,
     selectedItemDraft?.finalRecommendation ?? inputs.finalRecommendation,
     '',
-    '## CEO_ADJUST',
+    '## 대표이사 조정',
     selectedItemDraft?.ceoFinalNote ?? inputs.ceoFinalNote,
     '',
     '## SCORE/GRADE',
     scoreGradeText,
     '',
-    '## Stage handoff summary',
-    `SELF -> FIRST: ${selectedItemDraft?.selfResultSummary ?? 'preview pending'}`,
-    `FIRST -> SECOND/FINAL: ${selectedItemDraft?.firstFeedbackToEmployee ?? 'preview pending'}`,
-    `SECOND/FINAL -> CEO_ADJUST: ${selectedItemDraft?.finalRecommendation ?? 'preview pending'}`,
-    'CEO_ADJUST -> finalization dependency: official finalization remains blocked until separate approval.',
+    '## 단계 인계 요약',
+    `자기평가 -> 1차 평가: ${selectedItemDraft?.selfResultSummary ?? '미리보기 대기'}`,
+    `1차 평가 -> 2차/최종 평가: ${selectedItemDraft?.firstFeedbackToEmployee ?? '미리보기 대기'}`,
+    `2차/최종 평가 -> 대표이사 조정: ${selectedItemDraft?.finalRecommendation ?? '미리보기 대기'}`,
+    '대표이사 조정 -> 최종 확정 의존성: 별도 승인 전까지 공식 최종 확정은 차단됩니다.',
     '',
-    '## SAFETY',
-    'official scoring false',
-    'official grade false',
-    'AI exclusion activation false',
-    'API write calls false',
-    'backfill/apply false',
-    'feature flag changes false',
+    '## 안전 확인',
+    '공식 점수 반영 false',
+    '공식 등급 반영 false',
+    'AI 제외 활성화 false',
+    'API 쓰기 호출 false',
+    '기존 데이터 채우기/실제 반영 false',
+    '기능 활성화 스위치 변경 false',
   ].join('\n')
   const tsvExport = [
-    ['field', 'value'].join('\t'),
-    ['active stage', activeRow.label].join('\t'),
-    ['pilot employee', pilot.pilotEmployee.name].join('\t'),
-    ['selected KPI', selectedKpi?.title ?? 'KPI preview pending'].join('\t'),
-    ['selected item local score preview', selectedItemRow?.localScorePreview.toFixed(1) ?? '-'].join('\t'),
-    ['total local adjusted preview score', totalLocalAdjustedPreviewScore.toFixed(1)].join('\t'),
-    ['grade preview', totalLocalGradePreview].join('\t'),
-    ['totalScore write', 'false'].join('\t'),
-    ['gradeId write', 'false'].join('\t'),
-    ['API write calls', 'false'].join('\t'),
+    ['항목', '값'].join('\t'),
+    ['활성 단계', activeRow.label].join('\t'),
+    ['파일럿 대상자', pilot.pilotEmployee.name].join('\t'),
+    ['선택 KPI', selectedKpi?.title ?? 'KPI 미리보기 대기'].join('\t'),
+    ['선택 항목 로컬 점수 미리보기', selectedItemRow?.localScorePreview.toFixed(1) ?? '-'].join('\t'),
+    ['전체 로컬 조정 점수 미리보기', totalLocalAdjustedPreviewScore.toFixed(1)].join('\t'),
+    ['등급 미리보기', totalLocalGradePreview].join('\t'),
+    ['공식 저장 점수(totalScore) 쓰기', 'false'].join('\t'),
+    ['공식 저장 등급(gradeId) 쓰기', 'false'].join('\t'),
+    ['API 쓰기 호출', 'false'].join('\t'),
   ].join('\n')
   const exportRows = [
-    { key: 'workbench-pilot-alignment-summary', label: 'Workbench preview summary 보기', text: markdownExport },
-    { key: 'workbench-pilot-item-table', label: 'Workbench item table 보기', text: itemRows.map((item) => [item.kpi.title, item.kpi.category, item.kpi.weight, item.localScorePreview.toFixed(1), item.warnings.join('; ') || 'none'].join('\t')).join('\n') },
-    { key: 'workbench-pilot-selected-item', label: 'Selected KPI item preview 보기', text: [selectedKpi?.title ?? 'KPI preview pending', selectedKpi?.category ?? '-', selectedItemRow?.warnings.join('\n') || 'warnings none'].join('\n') },
-    { key: 'workbench-pilot-alignment-self', label: 'SELF item preview 보기', text: [selectedItemDraft?.selfResultSummary, selectedItemDraft?.selfEvidenceLink || 'evidence warning', selectedItemDraft?.selfContribution, `self score preview: ${selectedItemDraft?.selfScorePreview ?? '-'}`].filter(Boolean).join('\n') },
-    { key: 'workbench-pilot-alignment-first', label: 'FIRST review item preview 보기', text: [selectedItemDraft?.firstReviewerComment, `reviewer score preview: ${firstReviewerScore}`, `adjustment amount: ${firstAdjustmentAmount}`, selectedItemDraft?.firstAdjustmentReason || 'reason not required for zero adjustment', selectedItemDraft?.firstFeedbackToEmployee].filter(Boolean).join('\n') },
-    { key: 'workbench-pilot-alignment-final', label: 'SECOND/FINAL item preview 보기', text: [selectedItemDraft?.finalReviewerComment, `final score preview: ${finalReviewerScore}`, `final adjustment: ${finalAdjustmentAmount}`, selectedItemDraft?.finalAdjustmentReason || 'reason not required for zero adjustment', selectedItemDraft?.finalRecommendation].filter(Boolean).join('\n') },
-    { key: 'workbench-pilot-score-grade-side-panel', label: 'Score/grade side panel 보기', text: scoreGradeText },
-    { key: 'workbench-pilot-stage-handoff', label: 'Stage handoff summary 보기', text: [`SELF -> FIRST: ${selectedItemDraft?.selfResultSummary ?? 'preview pending'}`, `FIRST -> SECOND/FINAL: ${selectedItemDraft?.firstFeedbackToEmployee ?? 'preview pending'}`, `SECOND/FINAL -> CEO_ADJUST: ${selectedItemDraft?.finalRecommendation ?? 'preview pending'}`, 'CEO_ADJUST -> finalization dependency: official blocker remains'].join('\n') },
-    { key: 'workbench-pilot-alignment-ceo', label: 'CEO adjustment item preview 보기', text: [`CEO adjustment amount: ${ceoAdjustmentAmount}`, selectedItemDraft?.ceoAdjustmentReason || 'reason not required for zero adjustment', selectedItemDraft?.ceoFinalNote].filter(Boolean).join('\n') },
-    { key: 'workbench-pilot-alignment-safety', label: 'Safety summary 보기', text: ['official scoring false', 'official grade false', 'AI exclusion activation false', 'totalScore write false', 'gradeId write false', 'official Evaluation creation false', 'official EvaluationItem creation false', 'API write calls false', 'backfill/apply false', 'feature flag changes false'].join('\n') },
-    { key: 'workbench-pilot-alignment-markdown', label: 'Export Markdown', text: markdownExport },
-    { key: 'workbench-pilot-alignment-tsv', label: 'Export TSV', text: tsvExport },
+    { key: 'workbench-pilot-alignment-summary', label: '워크벤치 미리보기 요약 보기', text: markdownExport },
+    { key: 'workbench-pilot-item-table', label: 'KPI 항목 표 보기', text: itemRows.map((item) => [item.kpi.title, item.kpi.category, item.kpi.weight, item.localScorePreview.toFixed(1), item.warnings.join('; ') || 'none'].join('\t')).join('\n') },
+    { key: 'workbench-pilot-selected-item', label: '선택 KPI 항목 미리보기', text: [selectedKpi?.title ?? 'KPI 미리보기 대기', selectedKpi?.category ?? '-', selectedItemRow?.warnings.join('\n') || '경고 없음'].join('\n') },
+    { key: 'workbench-pilot-alignment-self', label: '자기평가 항목 미리보기', text: [selectedItemDraft?.selfResultSummary, selectedItemDraft?.selfEvidenceLink || '증빙 경고', selectedItemDraft?.selfContribution, `자기평가 점수 미리보기: ${selectedItemDraft?.selfScorePreview ?? '-'}`].filter(Boolean).join('\n') },
+    { key: 'workbench-pilot-alignment-first', label: '1차 평가 항목 미리보기', text: [selectedItemDraft?.firstReviewerComment, `평가자 점수 미리보기: ${firstReviewerScore}`, `조정값: ${firstAdjustmentAmount}`, selectedItemDraft?.firstAdjustmentReason || '조정값이 0이면 사유가 필요 없습니다', selectedItemDraft?.firstFeedbackToEmployee].filter(Boolean).join('\n') },
+    { key: 'workbench-pilot-alignment-final', label: '2차/최종 평가 항목 미리보기', text: [selectedItemDraft?.finalReviewerComment, `최종 점수 미리보기: ${finalReviewerScore}`, `최종 조정값: ${finalAdjustmentAmount}`, selectedItemDraft?.finalAdjustmentReason || '조정값이 0이면 사유가 필요 없습니다', selectedItemDraft?.finalRecommendation].filter(Boolean).join('\n') },
+    { key: 'workbench-pilot-score-grade-side-panel', label: '점수/등급 보조 패널 보기', text: scoreGradeText },
+    { key: 'workbench-pilot-stage-handoff', label: '단계 인계 요약 보기', text: [`자기평가 -> 1차 평가: ${selectedItemDraft?.selfResultSummary ?? '미리보기 대기'}`, `1차 평가 -> 2차/최종 평가: ${selectedItemDraft?.firstFeedbackToEmployee ?? '미리보기 대기'}`, `2차/최종 평가 -> 대표이사 조정: ${selectedItemDraft?.finalRecommendation ?? '미리보기 대기'}`, '대표이사 조정 -> 최종 확정 의존성: 공식 차단 조건 유지'].join('\n') },
+    { key: 'workbench-pilot-alignment-ceo', label: '대표이사 조정 항목 미리보기', text: [`대표이사 조정값: ${ceoAdjustmentAmount}`, selectedItemDraft?.ceoAdjustmentReason || '조정값이 0이면 사유가 필요 없습니다', selectedItemDraft?.ceoFinalNote].filter(Boolean).join('\n') },
+    { key: 'workbench-pilot-alignment-safety', label: '안전 확인 요약 보기', text: ['공식 점수 반영 false', '공식 등급 반영 false', 'AI 제외 활성화 false', '공식 저장 점수(totalScore) 쓰기 false', '공식 저장 등급(gradeId) 쓰기 false', '공식 Evaluation 생성 false', '공식 EvaluationItem 생성 false', 'API 쓰기 호출 false', '기존 데이터 채우기/실제 반영 false', '기능 활성화 스위치 변경 false'].join('\n') },
+    { key: 'workbench-pilot-alignment-markdown', label: '마크다운 내보내기', text: markdownExport },
+    { key: 'workbench-pilot-alignment-tsv', label: 'TSV 내보내기', text: tsvExport },
   ]
 
   return (
@@ -7711,29 +7795,29 @@ function WorkbenchPilotAlignment2026(props: {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h5 className="text-sm font-semibold text-slate-900">
-              {props.surface === 'dedicated' ? '2026 Evaluation Workbench Pilot Shell' : '2026 Evaluation Workbench Pilot Alignment'}
+              {props.surface === 'dedicated' ? '2026 평가 워크벤치 미리보기 화면' : '2026 평가 워크벤치 흐름 정렬'}
             </h5>
-            <Badge tone="neutral">workbench preview</Badge>
-            <Badge tone="warn">no official writes</Badge>
+            <Badge tone="neutral">워크벤치 미리보기</Badge>
+            <Badge tone="warn">공식 저장 없음</Badge>
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-600">
-            이 화면은 실제 평가 워크벤치 흐름을 preview로 정렬합니다. 입력값은 저장되지 않으며, 공식 평가 저장,
+            이 화면은 실제 평가 워크벤치 흐름을 미리보기로 정렬합니다. 입력값은 저장되지 않으며, 공식 평가 저장,
             제출, 확정, 점수 반영, 등급 반영은 수행하지 않습니다.
           </p>
         </div>
         {props.surface === 'dedicated' ? (
           <div className="rounded-2xl border border-cyan-200 bg-white p-3 text-xs leading-5 text-cyan-900">
-            <p className="font-semibold">dedicated workbench route</p>
-            <p>/evaluation/workbench renders this preview-only pilot shell</p>
-            <p>preview inputs stay in browser state</p>
+            <p className="font-semibold">전용 평가 워크벤치 화면</p>
+            <p>/evaluation/workbench는 미리보기 전용 화면만 렌더링합니다</p>
+            <p>미리보기 입력값은 브라우저 상태에만 남습니다</p>
           </div>
         ) : (
           <div className="rounded-2xl border border-cyan-200 bg-white p-3 text-xs leading-5 text-cyan-900">
-            <p className="font-semibold">actual workbench route</p>
+            <p className="font-semibold">실제 평가 워크벤치 화면</p>
             <Link href="/evaluation/workbench" className="font-semibold underline-offset-2 hover:underline">
-              전용 Workbench Pilot 열기
+              전용 평가 워크벤치 미리보기 열기
             </Link>
-            <p>navigation only · no save or sync</p>
+            <p>화면 이동만 수행 · 저장/동기화 없음</p>
           </div>
         )}
       </div>
@@ -7749,9 +7833,9 @@ function WorkbenchPilotAlignment2026(props: {
             <span className="block font-semibold text-slate-900">{stage.label}</span>
             <span className="mt-2 flex flex-wrap gap-1">
               <Badge tone={stage.source?.status === 'PREVIEW_WITH_BLOCKERS' ? 'warn' : stage.source?.status === 'BLOCKED' ? 'error' : 'success'}>
-                {stage.source?.status ?? 'PREVIEW_ONLY'}
+                {formatReadinessUiStatus2026(stage.source?.status ?? 'PREVIEW_ONLY')}
               </Badge>
-              <Badge tone={stage.localReady ? 'success' : 'warn'}>{stage.localReady ? 'local ready' : 'needs input'}</Badge>
+              <Badge tone={stage.localReady ? 'success' : 'warn'}>{stage.localReady ? '로컬 입력 완료' : '입력 필요'}</Badge>
             </span>
           </button>
         ))}
@@ -7760,29 +7844,29 @@ function WorkbenchPilotAlignment2026(props: {
       <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h6 className="text-sm font-semibold text-slate-900">Workbench item-level evaluation table</h6>
+            <h6 className="text-sm font-semibold text-slate-900">KPI 항목별 평가 표</h6>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              KPI item evaluation table은 local-only preview state로만 계산됩니다. EvaluationItem creation false.
+              KPI 항목별 평가 표는 로컬 미리보기 상태로만 계산됩니다. 공식 평가 항목 생성은 수행하지 않습니다.
             </p>
           </div>
-          <Badge tone="neutral">{itemRows.length} preview items</Badge>
+          <Badge tone="neutral">{itemRows.length}개 미리보기 항목</Badge>
         </div>
         <div className="mt-3 overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-xs">
             <thead className="bg-slate-50 text-left font-semibold uppercase tracking-[0.12em] text-slate-400">
               <tr>
-                <th className="px-3 py-2">KPI title</th>
-                <th className="px-3 py-2">category</th>
-                <th className="px-3 py-2">weight</th>
-                <th className="px-3 py-2">target</th>
-                <th className="px-3 py-2">evidence</th>
-                <th className="px-3 py-2">SELF</th>
-                <th className="px-3 py-2">FIRST</th>
-                <th className="px-3 py-2">SECOND/FINAL</th>
-                <th className="px-3 py-2">CEO</th>
-                <th className="px-3 py-2">local score</th>
-                <th className="px-3 py-2">warnings</th>
-                <th className="px-3 py-2">action</th>
+                <th className="px-3 py-2">KPI 제목</th>
+                <th className="px-3 py-2">분류</th>
+                <th className="px-3 py-2">가중치</th>
+                <th className="px-3 py-2">목표</th>
+                <th className="px-3 py-2">증빙</th>
+                <th className="px-3 py-2">자기평가</th>
+                <th className="px-3 py-2">1차 평가</th>
+                <th className="px-3 py-2">2차/최종</th>
+                <th className="px-3 py-2">대표이사</th>
+                <th className="px-3 py-2">로컬 점수</th>
+                <th className="px-3 py-2">주의 항목</th>
+                <th className="px-3 py-2">액션</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -7792,13 +7876,13 @@ function WorkbenchPilotAlignment2026(props: {
                   <td className="px-3 py-2 text-slate-600">{item.kpi.category}</td>
                   <td className="px-3 py-2 text-slate-600">{item.kpi.weight}</td>
                   <td className="px-3 py-2 text-slate-600">{item.kpi.achievementLevel}</td>
-                  <td className="px-3 py-2"><Badge tone={item.evidenceStatus === 'READY' ? 'success' : 'warn'}>{item.evidenceStatus}</Badge></td>
-                  <td className="px-3 py-2"><Badge tone={item.selfStatus === 'READY' ? 'success' : 'warn'}>{item.selfStatus}</Badge></td>
-                  <td className="px-3 py-2"><Badge tone={item.firstStatus === 'READY' ? 'success' : item.firstStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{item.firstStatus}</Badge></td>
-                  <td className="px-3 py-2"><Badge tone={item.finalStatus === 'READY' ? 'success' : item.finalStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{item.finalStatus}</Badge></td>
-                  <td className="px-3 py-2"><Badge tone={item.ceoStatus === 'READY' ? 'success' : item.ceoStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{item.ceoStatus}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.evidenceStatus === 'READY' ? 'success' : 'warn'}>{formatReadinessUiStatus2026(item.evidenceStatus)}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.selfStatus === 'READY' ? 'success' : 'warn'}>{formatReadinessUiStatus2026(item.selfStatus)}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.firstStatus === 'READY' ? 'success' : item.firstStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{formatReadinessUiStatus2026(item.firstStatus)}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.finalStatus === 'READY' ? 'success' : item.finalStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{formatReadinessUiStatus2026(item.finalStatus)}</Badge></td>
+                  <td className="px-3 py-2"><Badge tone={item.ceoStatus === 'READY' ? 'success' : item.ceoStatus === 'BLOCKED_BY_REASON' ? 'error' : 'warn'}>{formatReadinessUiStatus2026(item.ceoStatus)}</Badge></td>
                   <td className="px-3 py-2 font-semibold text-slate-900">{item.localScorePreview.toFixed(1)}</td>
-                  <td className="max-w-72 px-3 py-2 text-slate-500">{item.warnings.slice(0, 3).join(', ') || 'none'}</td>
+                  <td className="max-w-72 px-3 py-2 text-slate-500">{item.warnings.slice(0, 3).join(', ') || '없음'}</td>
                   <td className="px-3 py-2">
                     <button
                       type="button"
@@ -7820,11 +7904,11 @@ function WorkbenchPilotAlignment2026(props: {
           <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h6 className="text-sm font-semibold text-slate-900">{activeRow.label}</h6>
-              <p className="mt-1 text-xs leading-5 text-slate-500">preview status: {activeRow.source?.status ?? 'PREVIEW_ONLY'}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">미리보기 상태: {formatReadinessUiStatus2026(activeRow.source?.status ?? 'PREVIEW_ONLY')}</p>
               <p className="mt-1 text-xs leading-5 text-amber-800">
-                official blocker: {activeRow.source?.blockedBy.length ? activeRow.source.blockedBy.join(', ') : '현재 preview 기준 공식 blocker 없음'}
+                공식 차단 조건: {activeRow.source?.blockedBy.length ? activeRow.source.blockedBy.join(', ') : '현재 미리보기 기준 공식 차단 조건 없음'}
               </p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">official later: {activeRow.source?.officialLater ?? '별도 공식 승인 후에만 가능합니다.'}</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">공식 진행 시점: {activeRow.source?.officialLater ?? '별도 공식 승인 후에만 가능합니다.'}</p>
             </div>
             <button
               type="button"
@@ -7838,13 +7922,13 @@ function WorkbenchPilotAlignment2026(props: {
           {activeStage === 'TARGET' ? (
             <div className="mt-4 grid gap-3">
               <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-xs leading-5 text-cyan-900">
-                <p className="font-semibold">pilot target employee</p>
+                <p className="font-semibold">파일럿 평가 대상자</p>
                 <p>{pilot.pilotEmployee.name} · {pilot.pilotEmployee.departmentName}</p>
-                <p>source: {pilot.pilotEmployee.source}</p>
-                <p>confirmed KPI count: {pilot.pilotEmployee.confirmedPersonalKpiCount}</p>
-                <p>active employee sample source: {pilot.summary.pilotDataSource}</p>
+                <p>출처: {pilot.pilotEmployee.source}</p>
+                <p>확정 KPI 수: {pilot.pilotEmployee.confirmedPersonalKpiCount}</p>
+                <p>재직자 샘플 출처: {pilot.summary.pilotDataSource}</p>
                 {pilot.pilotEmployee.source === 'SAMPLE_PILOT_FIXTURE' ? (
-                  <p className="text-amber-800">SAMPLE/PILOT fallback target입니다. 공식 대상자 확정 전 preview 전용입니다.</p>
+                  <p className="text-amber-800">SAMPLE/PILOT 대체 대상입니다. 공식 대상자 확정 전 미리보기 전용입니다.</p>
                 ) : null}
               </div>
             </div>
@@ -7853,7 +7937,7 @@ function WorkbenchPilotAlignment2026(props: {
           {activeStage === 'KPI' ? (
             <div className="mt-4 grid gap-3">
               <label className="text-xs font-semibold text-slate-700">
-                KPI item preview
+                KPI 항목 미리보기
                 <select
                   value={inputs.selectedKpiId}
                   onChange={(event) => updateInput('selectedKpiId', event.target.value)}
@@ -7861,14 +7945,14 @@ function WorkbenchPilotAlignment2026(props: {
                 >
                   {pilot.pilotKpis.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.title} · {item.category} · weight {item.weight}
+                      {item.title} · {item.category} · 가중치 {item.weight}
                     </option>
                   ))}
                 </select>
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-700">
-                  local achievement level
+                  로컬 달성 수준
                   <select
                     value={inputs.localAchievementLevel}
                     onChange={(event) => updateInput('localAchievementLevel', event.target.value as InteractivePilotLocalInputs2026['localAchievementLevel'])}
@@ -7881,7 +7965,7 @@ function WorkbenchPilotAlignment2026(props: {
                   </select>
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
-                  local base score preview
+                  로컬 기준 점수 미리보기
                   <input
                     value={selectedItemDraft?.selfScorePreview ?? inputs.localBaseScore}
                     onChange={(event) => {
@@ -7894,10 +7978,10 @@ function WorkbenchPilotAlignment2026(props: {
                 </label>
               </div>
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                <p>policyCategory warning: {pilot.evaluationItemPreview.find((item) => item.personalKpiId === selectedKpi?.id)?.policyCategoryWarning ?? 'none in selected preview item'}</p>
-                <p>weight/cap warning: preview-only score and weight are not persisted.</p>
-                <p>evidence expectation: monthly record, self evidence, and reviewer rationale are required before official execution.</p>
-                <p>EvaluationItem creation false.</p>
+                <p>정책 분류 주의: {pilot.evaluationItemPreview.find((item) => item.personalKpiId === selectedKpi?.id)?.policyCategoryWarning ?? '선택 항목 기준 주의 없음'}</p>
+                <p>가중치/상한 주의: 미리보기 점수와 가중치는 저장되지 않습니다.</p>
+                <p>증빙 기대값: 공식 실행 전 월간 실적, 자기평가 증빙, 평가자 근거가 필요합니다.</p>
+                <p>공식 평가 항목 생성 false.</p>
               </div>
             </div>
           ) : null}
@@ -7905,28 +7989,28 @@ function WorkbenchPilotAlignment2026(props: {
           {activeStage === 'SELF' ? (
             <div className="mt-4 grid gap-3">
               <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-xs leading-5 text-cyan-900">
-                <p className="font-semibold">SELF item-level preview</p>
-                <p>selected KPI item detail panel: {selectedKpi?.title ?? 'KPI preview pending'}</p>
-                <p>local-only status: browser state only · no save/submit API call</p>
+                <p className="font-semibold">자기평가 항목 미리보기</p>
+                <p>선택 KPI 항목 상세: {selectedKpi?.title ?? 'KPI 미리보기 대기'}</p>
+                <p>로컬 전용 상태: 브라우저 상태만 사용 · 저장/제출 API 호출 없음</p>
               </div>
               <label className="text-xs font-semibold text-slate-700">
-                result summary
+                수행 결과 요약
                 <textarea value={selectedItemDraft?.selfResultSummary ?? ''} onChange={(event) => updateSelectedItemDraft('selfResultSummary', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
-                evidence link
+                증빙 링크
                 <input value={selectedItemDraft?.selfEvidenceLink ?? ''} onChange={(event) => updateSelectedItemDraft('selfEvidenceLink', event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
-                contribution comment
+                기여도 의견
                 <textarea value={selectedItemDraft?.selfContribution ?? ''} onChange={(event) => updateSelectedItemDraft('selfContribution', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
-                self score preview
+                자기평가 점수 미리보기
                 <input value={selectedItemDraft?.selfScorePreview ?? ''} onChange={(event) => updateSelectedItemDraft('selfScorePreview', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                missing result: {selectedItemDraft?.selfResultSummary.trim() ? 'clear' : 'warning'} · missing evidence: {selectedItemDraft?.selfEvidenceLink.trim() ? 'clear' : 'warning'} · missing contribution: {selectedItemDraft?.selfContribution.trim() ? 'clear' : 'warning'} · MBO/KPI blocker remains official blocker.
+                결과 요약: {selectedItemDraft?.selfResultSummary.trim() ? '확인됨' : '주의'} · 증빙: {selectedItemDraft?.selfEvidenceLink.trim() ? '확인됨' : '주의'} · 기여도: {selectedItemDraft?.selfContribution.trim() ? '확인됨' : '주의'} · MBO/KPI 차단 조건은 공식 실행 전까지 유지됩니다.
               </p>
             </div>
           ) : null}
@@ -7934,33 +8018,33 @@ function WorkbenchPilotAlignment2026(props: {
           {activeStage === 'FIRST' ? (
             <div className="mt-4 grid gap-3">
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
-                <p className="font-semibold">FIRST reviewer item-level preview</p>
-                <p>{selectedKpi?.title ?? 'KPI preview pending'} · SELF not officially submitted warning remains.</p>
+                <p className="font-semibold">1차 평가자 항목 미리보기</p>
+                <p>{selectedKpi?.title ?? 'KPI 미리보기 대기'} · 자기평가 공식 제출 전 주의가 유지됩니다.</p>
               </div>
               <label className="text-xs font-semibold text-slate-700">
-                first reviewer comment
+                1차 평가자 의견
                 <textarea value={selectedItemDraft?.firstReviewerComment ?? ''} onChange={(event) => updateSelectedItemDraft('firstReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-700">
-                  reviewer score preview
+                  평가자 점수 미리보기
                   <input value={selectedItemDraft?.firstReviewerScore ?? ''} onChange={(event) => updateSelectedItemDraft('firstReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
-                  adjustment amount
+                  조정값
                   <input value={selectedItemDraft?.firstAdjustmentAmount ?? ''} onChange={(event) => updateSelectedItemDraft('firstAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
               </div>
               <label className="text-xs font-semibold text-slate-700">
-                adjustment reason
+                조정 사유
                 <textarea value={selectedItemDraft?.firstAdjustmentReason ?? ''} onChange={(event) => updateSelectedItemDraft('firstAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
-                feedback to employee
+                직원에게 전달할 피드백
                 <textarea value={selectedItemDraft?.firstFeedbackToEmployee ?? ''} onChange={(event) => updateSelectedItemDraft('firstFeedbackToEmployee', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                {firstAdjustmentNeedsReason ? 'adjustment reason required if adjustment is not zero.' : 'adjustment reason clear.'} score range warning applies outside 0-120. Evaluator routing blocker remains.
+                {firstAdjustmentNeedsReason ? '조정값이 0이 아니면 조정 사유가 필요합니다.' : '조정 사유 확인됨.'} 0~120 범위를 벗어나면 점수 범위 주의가 표시됩니다. 평가자 배정 차단 조건은 유지됩니다.
               </p>
             </div>
           ) : null}
@@ -7968,33 +8052,33 @@ function WorkbenchPilotAlignment2026(props: {
           {activeStage === 'SECOND' || activeStage === 'FINAL' ? (
             <div className="mt-4 grid gap-3">
               <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs leading-5 text-violet-900">
-                <p className="font-semibold">SECOND/FINAL item-level preview</p>
-                <p>{selectedKpi?.title ?? 'KPI preview pending'} · prior stage dependency and evaluator chain warning remain.</p>
+                <p className="font-semibold">2차/최종 평가 항목 미리보기</p>
+                <p>{selectedKpi?.title ?? 'KPI 미리보기 대기'} · 이전 단계 의존성과 평가자 체인 주의가 유지됩니다.</p>
               </div>
               <label className="text-xs font-semibold text-slate-700">
-                second/final reviewer comment
+                2차/최종 평가자 의견
                 <textarea value={selectedItemDraft?.finalReviewerComment ?? ''} onChange={(event) => updateSelectedItemDraft('finalReviewerComment', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="text-xs font-semibold text-slate-700">
-                  final score preview
+                  최종 점수 미리보기
                   <input value={selectedItemDraft?.finalReviewerScore ?? ''} onChange={(event) => updateSelectedItemDraft('finalReviewerScore', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
                 <label className="text-xs font-semibold text-slate-700">
-                  final adjustment
+                  최종 조정값
                   <input value={selectedItemDraft?.finalAdjustmentAmount ?? ''} onChange={(event) => updateSelectedItemDraft('finalAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                 </label>
               </div>
               <label className="text-xs font-semibold text-slate-700">
-                adjustment reason
+                조정 사유
                 <textarea value={selectedItemDraft?.finalAdjustmentReason ?? ''} onChange={(event) => updateSelectedItemDraft('finalAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
-                final recommendation
+                최종 추천 의견
                 <textarea value={selectedItemDraft?.finalRecommendation ?? ''} onChange={(event) => updateSelectedItemDraft('finalRecommendation', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                {finalAdjustmentNeedsReason ? 'adjustment reason required if adjustment is not zero.' : 'final adjustment reason clear.'} Prior stage dependency, chain blocker, and finalization blocked warning remain.
+                {finalAdjustmentNeedsReason ? '조정값이 0이 아니면 조정 사유가 필요합니다.' : '최종 조정 사유 확인됨.'} 이전 단계 의존성, 평가자 체인 차단, 최종 확정 차단 주의가 유지됩니다.
               </p>
             </div>
           ) : null}
@@ -8002,26 +8086,26 @@ function WorkbenchPilotAlignment2026(props: {
           {activeStage === 'CEO_ADJUST' ? (
             <div className="mt-4 grid gap-3">
               <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-900">
-                <p className="font-semibold">CEO_ADJUST item-level preview</p>
-                <p>{selectedKpi?.title ?? 'KPI preview pending'} · score/grade not official warning remains.</p>
+                <p className="font-semibold">대표이사 조정 항목 미리보기</p>
+                <p>{selectedKpi?.title ?? 'KPI 미리보기 대기'} · 점수/등급이 공식 반영되지 않았다는 주의가 유지됩니다.</p>
               </div>
               <label className="text-xs font-semibold text-slate-700">
-                CEO adjustment amount
+                대표이사 조정값
                 <input value={selectedItemDraft?.ceoAdjustmentAmount ?? ''} onChange={(event) => updateSelectedItemDraft('ceoAdjustmentAmount', event.target.value)} inputMode="decimal" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
-                adjustment reason
+                조정 사유
                 <textarea value={selectedItemDraft?.ceoAdjustmentReason ?? ''} onChange={(event) => updateSelectedItemDraft('ceoAdjustmentReason', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <label className="text-xs font-semibold text-slate-700">
-                final note
+                최종 메모
                 <textarea value={selectedItemDraft?.ceoFinalNote ?? ''} onChange={(event) => updateSelectedItemDraft('ceoFinalNote', event.target.value)} rows={3} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
               </label>
               <div className="grid gap-2 text-xs text-slate-700">
                 {[
-                  ['ceoEvidenceConfirmed', 'evidence packet reviewed locally'],
-                  ['ceoCalibrationReviewed', 'calibration blockers reviewed locally'],
-                  ['ceoNoWriteConfirmed', 'no finalization write'],
+                  ['ceoEvidenceConfirmed', '증빙 패키지 로컬 검토'],
+                  ['ceoCalibrationReviewed', '보정 차단 조건 로컬 검토'],
+                  ['ceoNoWriteConfirmed', '최종 확정 쓰기 없음'],
                 ].map(([key, label]) => (
                   <label key={key} className="flex items-center gap-2">
                     <input
@@ -8035,7 +8119,7 @@ function WorkbenchPilotAlignment2026(props: {
                 ))}
               </div>
               <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                {ceoAdjustmentNeedsReason ? 'reason required if adjustment is not zero.' : 'CEO adjustment reason clear.'} Calibration blockers, finalization/CEO blockers, and score/grade not official warnings remain.
+                {ceoAdjustmentNeedsReason ? '조정값이 0이 아니면 사유가 필요합니다.' : '대표이사 조정 사유 확인됨.'} 보정 차단 조건, 최종 확정/대표이사 차단 조건, 점수/등급 미반영 주의가 유지됩니다.
               </p>
             </div>
           ) : null}
@@ -8043,27 +8127,27 @@ function WorkbenchPilotAlignment2026(props: {
           {activeStage === 'SCORE_PREVIEW' || activeStage === 'GRADE_PREVIEW' || activeStage === 'SAFETY' ? (
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs leading-5 text-blue-900">
-                <p className="font-semibold">score preview integration</p>
-                <p>organization performance 30%: {organizationScore.toFixed(1)}</p>
-                <p>personal performance 70%: {personalItemWeightedScore.toFixed(1)}</p>
-                <p>selected item local score: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
-                <p>total local adjusted preview score: {totalLocalAdjustedPreviewScore.toFixed(1)}</p>
-                <p>score policy warnings: {pilot.scorePreview.warnings.join(' ')}</p>
-                <p>totalScore write false</p>
+                <p className="font-semibold">점수 미리보기 연결</p>
+                <p>조직 성과 30%: {organizationScore.toFixed(1)}</p>
+                <p>개인 성과 70%: {personalItemWeightedScore.toFixed(1)}</p>
+                <p>선택 항목 로컬 점수: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
+                <p>전체 로컬 조정 점수 미리보기: {totalLocalAdjustedPreviewScore.toFixed(1)}</p>
+                <p>점수 정책 주의: {pilot.scorePreview.warnings.join(' ')}</p>
+                <p>공식 저장 점수(totalScore) 쓰기 false</p>
               </div>
               <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs leading-5 text-violet-900">
-                <p className="font-semibold">grade preview integration</p>
-                <p>grade policy group: {pilot.gradePreview.applicableGroup}</p>
-                <p>grade mapping: {totalLocalAdjustedPreviewScore.toFixed(1)} -&gt; {totalLocalGradePreview}</p>
-                <p>grade preview: {totalLocalGradePreview}</p>
-                <p>grade policy warnings: {pilot.gradePreview.warnings.join(' ') || 'none in preview'}</p>
-                <p>gradeId write false</p>
+                <p className="font-semibold">등급 미리보기 연결</p>
+                <p>등급 정책 그룹: {pilot.gradePreview.applicableGroup}</p>
+                <p>등급 매핑: {totalLocalAdjustedPreviewScore.toFixed(1)} -&gt; {totalLocalGradePreview}</p>
+                <p>등급 미리보기: {totalLocalGradePreview}</p>
+                <p>등급 정책 주의: {pilot.gradePreview.warnings.join(' ') || '미리보기 기준 주의 없음'}</p>
+                <p>공식 저장 등급(gradeId) 쓰기 false</p>
               </div>
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-900 md:col-span-2">
-                <p className="font-semibold">safety panel</p>
-                <p>official scoring false · official grade false · AI exclusion activation false</p>
-                <p>official Evaluation creation false · official EvaluationItem creation false · API write calls false</p>
-                <p>backfill/apply false · feature flag changes false</p>
+                <p className="font-semibold">안전 확인 패널</p>
+                <p>공식 점수 반영 false · 공식 등급 반영 false · AI 제외 활성화 false</p>
+                <p>공식 Evaluation 생성 false · 공식 EvaluationItem 생성 false · API 쓰기 호출 false</p>
+                <p>기존 데이터 채우기/실제 반영 false · 기능 활성화 스위치 변경 false</p>
               </div>
             </div>
           ) : null}
@@ -8077,7 +8161,7 @@ function WorkbenchPilotAlignment2026(props: {
               }}
               className="inline-flex min-h-10 items-center justify-center rounded-xl bg-cyan-700 px-4 text-sm font-semibold text-white transition hover:bg-cyan-600"
             >
-              다음 단계 preview
+              다음 단계 미리보기
             </button>
             <button
               type="button"
@@ -8087,60 +8171,60 @@ function WorkbenchPilotAlignment2026(props: {
               }}
               className="inline-flex min-h-10 items-center justify-center rounded-xl border border-cyan-300 px-4 text-sm font-semibold text-cyan-700 transition hover:bg-cyan-50"
             >
-              preview 반영
+              미리보기 반영
             </button>
           </div>
         </div>
 
         <div className="space-y-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h6 className="text-sm font-semibold text-slate-900">Workbench target/KPI context</h6>
+            <h6 className="text-sm font-semibold text-slate-900">워크벤치 대상자/KPI 맥락</h6>
             <div className="mt-3 grid gap-2 text-xs leading-5 text-slate-600">
-              <p>target: {pilot.pilotEmployee.name} · {pilot.pilotEmployee.departmentName}</p>
-              <p>source: {pilot.pilotEmployee.source}</p>
-              <p>selected KPI: {selectedKpi?.title ?? 'KPI preview pending'}</p>
-              <p>category contribution: {selectedKpi?.category ?? 'N/A'} · weight {selectedKpi?.weight ?? 0}</p>
-              <p className="text-amber-800">official blocker: {pilot.blockers.length ? pilot.blockers.join(', ') : 'none in pilot view'}</p>
+              <p>대상자: {pilot.pilotEmployee.name} · {pilot.pilotEmployee.departmentName}</p>
+              <p>출처: {pilot.pilotEmployee.source}</p>
+              <p>선택 KPI: {selectedKpi?.title ?? 'KPI 미리보기 대기'}</p>
+              <p>분류 기여도: {selectedKpi?.category ?? 'N/A'} · 가중치 {selectedKpi?.weight ?? 0}</p>
+              <p className="text-amber-800">공식 차단 조건: {pilot.blockers.length ? pilot.blockers.join(', ') : '파일럿 화면 기준 없음'}</p>
             </div>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h6 className="text-sm font-semibold text-slate-900">Selected KPI item detail panel</h6>
+            <h6 className="text-sm font-semibold text-slate-900">선택 KPI 항목 상세 패널</h6>
             <div className="mt-3 grid gap-2 text-xs leading-5 text-slate-600">
-              <p className="font-semibold text-slate-900">{selectedKpi?.title ?? 'KPI preview pending'}</p>
-              <p>category: {selectedKpi?.category ?? '-'} · type: {selectedKpi?.source ?? 'SAMPLE/PILOT'} · weight {selectedKpi?.weight ?? 0}</p>
-              <p>target: {selectedKpi?.achievementLevel ?? 'TARGET'} · evidence expectation: result, evidence link, contribution, reviewer rationale</p>
-              <p>policyCategory warning: {selectedItemRow?.policyCategoryWarning ?? 'none in selected preview item'}</p>
-              <p>local calculated score: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
-              <p className="text-amber-800">local warning list: {selectedItemRow?.warnings.join(', ') || 'none'}</p>
+              <p className="font-semibold text-slate-900">{selectedKpi?.title ?? 'KPI 미리보기 대기'}</p>
+              <p>분류: {selectedKpi?.category ?? '-'} · 유형: {selectedKpi?.source ?? 'SAMPLE/PILOT'} · 가중치 {selectedKpi?.weight ?? 0}</p>
+              <p>목표: {selectedKpi?.achievementLevel ?? 'TARGET'} · 증빙 기대값: 결과, 증빙 링크, 기여도, 평가자 근거</p>
+              <p>정책 분류 주의: {selectedItemRow?.policyCategoryWarning ?? '선택 항목 기준 주의 없음'}</p>
+              <p>로컬 계산 점수: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
+              <p className="text-amber-800">로컬 주의 목록: {selectedItemRow?.warnings.join(', ') || '없음'}</p>
             </div>
           </div>
           <div className="sticky top-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
-            <h6 className="text-sm font-semibold text-blue-950">Score/grade side panel</h6>
+            <h6 className="text-sm font-semibold text-blue-950">점수/등급 보조 패널</h6>
             <div className="mt-3 grid gap-2 text-xs leading-5 text-blue-900">
-              <p>organization performance 30%: {organizationScore.toFixed(1)}</p>
-              <p>personal performance 70%: {personalItemWeightedScore.toFixed(1)}</p>
-              <p>selected item local score: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
-              <p>total local adjusted preview score: {totalLocalAdjustedPreviewScore.toFixed(1)}</p>
-              <p>category contribution summary: {itemRows.map((item) => `${item.kpi.category} ${item.localScorePreview.toFixed(1)}@${item.kpi.weight}`).join(' / ')}</p>
-              <p>grade preview: {totalLocalGradePreview}</p>
-              <p>grade group: {pilot.gradePreview.applicableGroup}</p>
-              <p className="text-amber-800">warnings: {[...pilot.scorePreview.warnings, ...itemRows.flatMap((item) => item.warnings)].slice(0, 5).join(' ') || 'none in preview'}</p>
-              <p>totalScore write false</p>
-              <p>gradeId write false</p>
+              <p>조직 성과 30%: {organizationScore.toFixed(1)}</p>
+              <p>개인 성과 70%: {personalItemWeightedScore.toFixed(1)}</p>
+              <p>선택 항목 로컬 점수: {selectedItemRow?.localScorePreview.toFixed(1) ?? '-'}</p>
+              <p>전체 로컬 조정 점수 미리보기: {totalLocalAdjustedPreviewScore.toFixed(1)}</p>
+              <p>분류별 기여도 요약: {itemRows.map((item) => `${item.kpi.category} ${item.localScorePreview.toFixed(1)}@${item.kpi.weight}`).join(' / ')}</p>
+              <p>등급 미리보기: {totalLocalGradePreview}</p>
+              <p>등급 그룹: {pilot.gradePreview.applicableGroup}</p>
+              <p className="text-amber-800">주의: {[...pilot.scorePreview.warnings, ...itemRows.flatMap((item) => item.warnings)].slice(0, 5).join(' ') || '미리보기 기준 주의 없음'}</p>
+              <p>공식 저장 점수(totalScore) 쓰기 false</p>
+              <p>공식 저장 등급(gradeId) 쓰기 false</p>
             </div>
           </div>
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-            <h6 className="text-sm font-semibold text-emerald-950">Stage handoff summary</h6>
+            <h6 className="text-sm font-semibold text-emerald-950">단계 인계 요약</h6>
             <div className="mt-3 grid gap-2 text-xs leading-5 text-emerald-900">
-              <p>SELF -&gt; FIRST handoff preview: {selectedItemDraft?.selfResultSummary ?? 'preview pending'}</p>
-              <p>FIRST -&gt; SECOND/FINAL handoff preview: {selectedItemDraft?.firstFeedbackToEmployee ?? 'preview pending'}</p>
-              <p>SECOND/FINAL -&gt; CEO_ADJUST handoff preview: {selectedItemDraft?.finalRecommendation ?? 'preview pending'}</p>
-              <p>CEO_ADJUST -&gt; finalization dependency: official finalization remains blocked until separate approval.</p>
-              <p className="text-amber-800">official blocker still prevents real transition: {activeRow.source?.blockedBy.join(', ') || 'separate HR approval required'}</p>
+              <p>자기평가 -&gt; 1차 평가 인계 미리보기: {selectedItemDraft?.selfResultSummary ?? '미리보기 대기'}</p>
+              <p>1차 평가 -&gt; 2차/최종 평가 인계 미리보기: {selectedItemDraft?.firstFeedbackToEmployee ?? '미리보기 대기'}</p>
+              <p>2차/최종 평가 -&gt; 대표이사 조정 인계 미리보기: {selectedItemDraft?.finalRecommendation ?? '미리보기 대기'}</p>
+              <p>대표이사 조정 -&gt; 최종 확정 의존성: 별도 승인 전까지 공식 최종 확정은 차단됩니다.</p>
+              <p className="text-amber-800">실제 전환을 막는 공식 차단 조건: {activeRow.source?.blockedBy.join(', ') || '별도 HR 승인 필요'}</p>
             </div>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h6 className="text-sm font-semibold text-slate-900">Workbench alignment exports</h6>
+            <h6 className="text-sm font-semibold text-slate-900">워크벤치 미리보기 내보내기</h6>
             <p className="mt-1 text-xs leading-5 text-slate-500">클릭하면 내용을 먼저 미리보고 복사/다운로드할 수 있습니다.</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {exportRows.map((item) => (
@@ -8255,7 +8339,7 @@ function PolicyGradeReadiness2026Panel(props: {
 
   return (
     <Panel
-      title="2026 등급 기준 readiness"
+      title="2026 등급 기준 준비 상태"
       description="PPT 기준 등급 threshold와 현재 저장 정책을 비교합니다. 저장해도 공식 점수/등급은 변경되지 않습니다."
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -8276,7 +8360,7 @@ function PolicyGradeReadiness2026Panel(props: {
               <Badge tone="neutral">공식 등급 미적용</Badge>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              이 화면은 2026 등급 기준 readiness 확인용입니다. 저장해도 공식 점수/등급은 변경되지 않습니다.
+              이 화면은 2026 등급 기준 준비 상태 확인용입니다. 저장해도 공식 점수/등급은 변경되지 않습니다.
               TEAM_MEMBER_SALES Super/Outstanding 중첩은 HR 결정 전까지 blocker로 남습니다.
             </p>
           </div>
@@ -8397,7 +8481,7 @@ function PolicyGradeReadiness2026Panel(props: {
                   </div>
                   <p className="mt-2 text-xs leading-5 text-violet-900">
                     PPT 해석상 팀원 영업 Super는 별도 구간을 운영하지 않고, Outstanding은 110점 이상으로 둡니다.
-                    이 저장은 등급 기준 readiness metadata만 변경하며 공식 점수/등급은 변경하지 않습니다.
+                    이 저장은 등급 기준 준비 상태 메타데이터만 변경하며 공식 점수/등급은 변경하지 않습니다.
                   </p>
                 </div>
               </div>
@@ -8748,7 +8832,7 @@ const MBO_FOLLOW_UP_TEMPLATES_2026: Record<MboFollowUpType2026, string> = {
   TEAM_KPI_REVIEW: [
     '팀 KPI별로 조직목표 반영 / 일상업무 처리 / 예외 승인 / 논의 필요를 결정해 주세요.',
     '결정 사유를 남겨 주세요.',
-    '이 결정은 공식 점수/등급이 아니라 MBO readiness metadata입니다.',
+    '이 결정은 공식 점수/등급이 아니라 MBO 준비 상태 메타데이터입니다.',
   ].join('\n'),
 }
 
@@ -8828,7 +8912,7 @@ function getResultWritingWarningLabel2026(value: ResultWritingWarningCode2026 | 
 
 function getLeaderEvaluationReadinessStatusLabel2026(value: LeaderEvaluationReadinessStatus2026 | 'ALL') {
   const labels: Record<LeaderEvaluationReadinessStatus2026, string> = {
-    READY_FOR_FIRST_REVIEW: 'FIRST review 준비',
+    READY_FOR_FIRST_REVIEW: '1차 평가 준비',
     BLOCKED_SELF_NOT_SUBMITTED: 'SELF 미제출',
     BLOCKED_RESULT_MISSING: '수행결과 누락',
     BLOCKED_EVIDENCE_MISSING: '증빙 부족',
@@ -8863,7 +8947,7 @@ function getLeaderEvaluationPrerequisiteLabel2026(value: LeaderEvaluationMissing
     MEASURABLE_RESULT_MISSING: '정량 결과 부족',
     PERSONAL_CONTRIBUTION_MISSING: '본인 기여 부족',
     SCORE_POLICY_WARNING: 'score policy warning',
-    ADJUSTMENT_READINESS_WARNING: 'adjustment readiness',
+    ADJUSTMENT_READINESS_WARNING: '조정 준비 상태',
   }
   if (value === 'ALL') return '전체'
   return labels[value]
@@ -8880,7 +8964,7 @@ function getFinalizationCeoStatusLabel2026(value: FinalizationCeoReadinessStatus
     BLOCKED_SCORE_POLICY: 'score policy blocker',
     BLOCKED_GRADE_POLICY: 'grade policy blocker',
     BLOCKED_FEEDBACK_LEADERSHIP: '360/리더십 blocker',
-    BLOCKED_AI_READINESS: 'AI readiness blocker',
+    BLOCKED_AI_READINESS: 'AI 준비 상태 차단 조건',
     READY_FOR_FINAL_REVIEW: 'FINAL review 준비',
     READY_FOR_CEO_CONFIRMATION_LATER: 'CEO 확인 later-ready',
     MANUAL_REVIEW: '수동 검토',
@@ -8907,7 +8991,7 @@ function getFinalizationCeoBlockerLabel2026(value: FinalizationCeoBlockerType202
     SCORE_POLICY: 'score policy',
     GRADE_POLICY: 'grade policy',
     FEEDBACK_LEADERSHIP: '360/리더십',
-    AI_READINESS: 'AI readiness',
+    AI_READINESS: 'AI 준비 상태',
     MANUAL_REVIEW: '수동 검토',
   }
   if (value === 'ALL') return '전체'
@@ -10226,7 +10310,7 @@ function PolicyReadinessPopulation2026Panel(props: {
 
   return (
     <Panel
-      title="2026 readiness population dry-run"
+      title="2026 준비 상태 인원 점검 사전 실행 검토"
       description="선택한 평가 주기에 대해 SELF 평가와 평가항목을 만들 경우의 범위를 읽기 전용으로 점검합니다."
     >
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -10236,7 +10320,7 @@ function PolicyReadinessPopulation2026Panel(props: {
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="neutral">Dry-run only</Badge>
+              <Badge tone="neutral">사전 실행 전용</Badge>
               <Badge tone={dryRun && blockers.length === 0 ? 'success' : dryRun ? 'warn' : 'neutral'}>
                 {dryRun
                   ? blockers.length === 0
@@ -10246,7 +10330,7 @@ function PolicyReadinessPopulation2026Panel(props: {
               </Badge>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              이 기능은 dry-run이며 공식 점수/등급을 변경하지 않습니다. Evaluation, EvaluationItem, Assignment는 생성하거나 수정하지 않습니다.
+              이 기능은 사전 실행 검토이며 공식 점수/등급을 변경하지 않습니다. Evaluation, EvaluationItem, Assignment는 생성하거나 수정하지 않습니다.
             </p>
           </div>
         </div>
@@ -10256,13 +10340,13 @@ function PolicyReadinessPopulation2026Panel(props: {
           disabled={!props.selectedCycleId || props.loading}
           className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
         >
-          {props.loading ? '점검 중...' : dryRun ? 'dry-run 다시 실행' : '2026 readiness population dry-run'}
+          {props.loading ? '점검 중...' : dryRun ? '사전 실행 검토 다시 실행' : '2026 준비 상태 인원 점검 사전 실행 검토'}
         </button>
       </div>
 
       {!props.selectedCycleId ? (
         <div className="mt-4">
-          <Banner tone="warn" message="평가 주기를 선택한 뒤 population dry-run을 실행할 수 있습니다." />
+          <Banner tone="warn" message="평가 주기를 선택한 뒤 인원 점검 사전 실행 검토를 실행할 수 있습니다." />
         </div>
       ) : null}
       {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
@@ -10272,7 +10356,7 @@ function PolicyReadinessPopulation2026Panel(props: {
           <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone={dryRun.selectedEvalCycle.isOfficialReadinessTarget ? 'success' : 'warn'}>
-                {dryRun.selectedEvalCycle.isOfficialReadinessTarget ? '공식 readiness cycle' : '공식 cycle 미확정'}
+                {dryRun.selectedEvalCycle.isOfficialReadinessTarget ? '공식 준비 상태 주기' : '공식 주기 미확정'}
               </Badge>
               <span className="text-sm font-semibold text-slate-900">
                 {dryRun.selectedEvalCycle.name}
@@ -10315,7 +10399,7 @@ function PolicyReadinessPopulation2026Panel(props: {
             <MetricCard
               label="생성 예상 SELF"
               value={dryRun.wouldCreateSelfEvaluationCount.toLocaleString()}
-              help="dry-run preview"
+              help="사전 실행 미리보기"
               compact
               emphasized
             />
@@ -10362,16 +10446,16 @@ function PolicyReadinessPopulation2026Panel(props: {
               variant={dryRun.policyCategoryMappingReadiness.manualReviewCount > 0 ? 'warning' : 'default'}
             />
             <MetricCard
-              label="ORG_GOAL source warning"
+              label="ORG_GOAL 출처 경고"
               value={dryRun.policyCategoryMappingReadiness.orgGoalWithoutApprovedSourceCount.toLocaleString()}
               help="본부/HR 승인 팀 KPI 필요"
               compact
               variant={dryRun.policyCategoryMappingReadiness.orgGoalWithoutApprovedSourceCount > 0 ? 'warning' : 'default'}
             />
             <MetricCard
-              label="bulk mapping saved"
+              label="일괄 매핑 저장"
               value={dryRun.policyCategoryMappingReadiness.bulkMappingSavedCount.toLocaleString()}
-              help="HR metadata audit"
+              help="HR 메타데이터 감사"
               compact
             />
           </div>
@@ -10380,9 +10464,9 @@ function PolicyReadinessPopulation2026Panel(props: {
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-900">2026 MBO setup coverage</h4>
+                  <h4 className="text-sm font-semibold text-slate-900">2026 MBO 수립 준비 현황</h4>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    직원들이 2026 Personal KPI를 작성·제출·확정하는 준비 현황입니다. 이 요약은 read-only이며 Evaluation/EvaluationItem을 만들지 않습니다.
+                    직원들이 2026 Personal KPI를 작성·제출·확정하는 준비 현황입니다. 이 요약은 읽기 전용이며 Evaluation/EvaluationItem을 만들지 않습니다.
                   </p>
                 </div>
                 <Badge tone="neutral">MBO setup only</Badge>
@@ -10446,7 +10530,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {[
                       ['ORG_GOAL without eligible KPI', mboCoverage.warningCounts.orgGoalWithoutEligibleOrgKpi],
-                      ['DAILY_WORK duplicate risk', mboCoverage.warningCounts.dailyWorkDuplicateRisk],
+                      ['DAILY_WORK 중복 위험', mboCoverage.warningCounts.dailyWorkDuplicateRisk],
                       ['missing weight', mboCoverage.warningCounts.missingWeight],
                       ['missing plan/how', mboCoverage.warningCounts.missingPlan],
                       ['missing measurable target', mboCoverage.warningCounts.missingMeasurableTarget],
@@ -10494,9 +10578,9 @@ function PolicyReadinessPopulation2026Panel(props: {
                 <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/60 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <h5 className="text-sm font-semibold text-slate-900">HR MBO setup monitoring</h5>
+                      <h5 className="text-sm font-semibold text-slate-900">인사 MBO 수립 모니터링</h5>
                       <p className="mt-1 text-xs leading-5 text-slate-600">
-                        누가 작성 요청, 제출 요청, 리더 검토, 카테고리 확정이 필요한지 확인하는 read-only 목록입니다. 알림 발송이나 데이터 수정은 하지 않습니다.
+                        누가 작성 요청, 제출 요청, 리더 검토, 카테고리 확정이 필요한지 확인하는 읽기 전용 목록입니다. 알림 발송이나 데이터 수정은 하지 않습니다.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -10597,7 +10681,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                             <th className="px-4 py-2 font-semibold">리더</th>
                             <th className="px-4 py-2 font-semibold">상태</th>
                             <th className="px-4 py-2 font-semibold">KPI</th>
-                            <th className="px-4 py-2 font-semibold">HR action</th>
+                            <th className="px-4 py-2 font-semibold">HR 액션</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
@@ -10635,7 +10719,7 @@ function PolicyReadinessPopulation2026Panel(props: {
 
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-white">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-100 px-4 py-3">
-                      <h6 className="text-sm font-semibold text-amber-900">policyCategory missing items</h6>
+                      <h6 className="text-sm font-semibold text-amber-900">policyCategory 미분류 항목</h6>
                       <span className="text-xs text-amber-700">
                         {filteredPolicyCategoryMissingRows.length.toLocaleString()}건 표시 · 전체 {policyCategoryMissingRows.length.toLocaleString()}건
                       </span>
@@ -10648,7 +10732,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                             <th className="px-4 py-2 font-semibold">조직</th>
                             <th className="px-4 py-2 font-semibold">KPI</th>
                             <th className="px-4 py-2 font-semibold">연결 조직 KPI</th>
-                            <th className="px-4 py-2 font-semibold">HR action</th>
+                            <th className="px-4 py-2 font-semibold">HR 액션</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
@@ -10682,11 +10766,11 @@ function PolicyReadinessPopulation2026Panel(props: {
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <h5 className="text-sm font-semibold text-slate-900">2026 MBO 후속조치 안내</h5>
-                        <Badge tone="neutral">Copy-only</Badge>
+                        <Badge tone="neutral">복사 전용</Badge>
                         <Badge tone="neutral">알림 발송 없음</Badge>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-slate-600">
-                        HR이 MBO 미작성자, 초안 보유자, 리더 검토 대상, policyCategory 미분류, 팀 KPI 검토 대상을 나누어 안내문과 수신자 목록을 복사하는 read-only 도구입니다.
+                        인사 담당자가 MBO 미작성자, 초안 보유자, 리더 검토 대상, policyCategory 미분류, 팀 KPI 검토 대상을 나누어 안내문과 수신자 목록을 복사하는 읽기 전용 도구입니다.
                       </p>
                       <p className="mt-1 text-xs leading-5 text-violet-700">
                         이 화면은 HR 후속조치용 안내/복사 도구입니다. 알림 발송, 평가 생성, 점수/등급 변경은 수행하지 않습니다.
@@ -10834,7 +10918,7 @@ function PolicyReadinessPopulation2026Panel(props: {
 
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                      <h6 className="text-sm font-semibold text-slate-900">후속조치 대상 preview</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">후속조치 대상 미리보기</h6>
                       <span className="text-xs text-slate-500">
                         {filteredFollowUpRows.length.toLocaleString()}건 표시 · 전체 {followUpRows.length.toLocaleString()}건
                       </span>
@@ -10893,16 +10977,16 @@ function PolicyReadinessPopulation2026Panel(props: {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">2026 성과점수 정책 readiness</h5>
+                        <h5 className="text-sm font-semibold text-slate-900">2026 성과점수 정책 준비 상태</h5>
                         <Badge tone="neutral">PPT 기준</Badge>
-                        <Badge tone="neutral">Read-only simulator</Badge>
+                        <Badge tone="neutral">읽기 전용 시뮬레이터</Badge>
                         <Badge tone="neutral">공식 점수 미적용</Badge>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-slate-600">
                         조직성과 30% + 개인성과 70%, MBO category별 기준점·가중치 cap·±5 조정 원칙을 읽기 전용으로 점검합니다.
                       </p>
                       <p className="mt-1 text-xs leading-5 text-sky-700">
-                        이 계산은 preview/simulation이며 공식 점수 또는 등급에 반영되지 않습니다. AI 활용평가는 연간 업적평가 점수에서 제외됩니다.
+                        이 계산은 미리보기/시뮬레이션이며 공식 점수 또는 등급에 반영되지 않습니다. AI 활용평가는 연간 업적평가 점수에서 제외됩니다.
                       </p>
                     </div>
                     <button
@@ -11005,9 +11089,9 @@ function PolicyReadinessPopulation2026Panel(props: {
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">score simulator</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">점수 시뮬레이터</h6>
                       <p className="mt-1 text-xs leading-5 text-slate-500">
-                        저장하지 않는 로컬 preview입니다. 가중 기여도는 adjusted score × weight로만 계산합니다.
+                        저장하지 않는 로컬 미리보기입니다. 가중 기여도는 조정 점수 × 가중치로만 계산합니다.
                       </p>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2">
                         <label className="text-xs font-semibold text-slate-600">
@@ -11073,9 +11157,9 @@ function PolicyReadinessPopulation2026Panel(props: {
                         </label>
                       </div>
                       <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                        <MetricCard label="base" value={simulatorBaseScoreValue.toFixed(1)} help="preview" compact />
-                        <MetricCard label="adjusted" value={simulatorAdjustedScore.toFixed(1)} help="±5 check" compact />
-                        <MetricCard label="weighted" value={simulatorWeightedContribution.toFixed(1)} help="기여도" compact />
+                        <MetricCard label="기준" value={simulatorBaseScoreValue.toFixed(1)} help="미리보기" compact />
+                        <MetricCard label="조정 후" value={simulatorAdjustedScore.toFixed(1)} help="±5 점검" compact />
+                        <MetricCard label="가중 기여" value={simulatorWeightedContribution.toFixed(1)} help="기여도" compact />
                       </div>
                       <ul className="mt-3 space-y-1 text-xs text-amber-800">
                         {simulatorWarnings.map((warning) => (
@@ -11179,7 +11263,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                             <th className="px-4 py-2 font-semibold">MBO</th>
                             <th className="px-4 py-2 font-semibold">위반사항</th>
                             <th className="px-4 py-2 font-semibold">현재/기준</th>
-                            <th className="px-4 py-2 font-semibold">HR action</th>
+                            <th className="px-4 py-2 font-semibold">HR 액션</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
@@ -11222,13 +11306,13 @@ function PolicyReadinessPopulation2026Panel(props: {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 readiness</h5>
-                        <Badge tone="neutral">Read-only</Badge>
+                        <h5 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 준비 상태</h5>
+                        <Badge tone="neutral">읽기 전용</Badge>
                         <Badge tone="neutral">저장 없음</Badge>
                         <Badge tone="neutral">공식 점수 미적용</Badge>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-slate-600">
-                        이 화면은 2026 수행결과 작성 readiness를 점검합니다. 공식 점수/등급은 변경되지 않습니다.
+                        이 화면은 2026 수행결과 작성 준비 상태를 점검합니다. 공식 점수/등급은 변경되지 않습니다.
                       </p>
                       <p className="mt-1 text-xs leading-5 text-emerald-700">
                         수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다. AI 활용평가 증빙은 연간 업적점수와 별도로 관리됩니다.
@@ -11241,7 +11325,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={resultWritingReadiness.summary.missingResultCount === 0}
                         className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'result-writing-missing-result' ? '결과 누락 복사됨' : 'missing result 복사'}
+                        {copiedMonitoringTable === 'result-writing-missing-result' ? '결과 누락 복사됨' : '결과 누락 복사'}
                       </button>
                       <button
                         type="button"
@@ -11249,7 +11333,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={resultWritingReadiness.summary.missingEvidenceCount === 0}
                         className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'result-writing-missing-evidence' ? '증빙 누락 복사됨' : 'missing evidence 복사'}
+                        {copiedMonitoringTable === 'result-writing-missing-evidence' ? '증빙 누락 복사됨' : '증빙 누락 복사'}
                       </button>
                       <button
                         type="button"
@@ -11257,7 +11341,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={resultWritingReadiness.summary.missingContributionCount === 0}
                         className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'result-writing-missing-contribution' ? '기여 누락 복사됨' : 'missing contribution 복사'}
+                        {copiedMonitoringTable === 'result-writing-missing-contribution' ? '기여 누락 복사됨' : '기여 누락 복사'}
                       </button>
                       <button
                         type="button"
@@ -11265,7 +11349,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={!filteredResultWritingRows.length}
                         className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'result-writing-combined' ? 'readiness TSV 복사됨' : 'filtered TSV 복사'}
+                        {copiedMonitoringTable === 'result-writing-combined' ? '준비 상태 TSV 복사됨' : '필터된 TSV 복사'}
                       </button>
                     </div>
                   </div>
@@ -11341,7 +11425,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                           </ul>
                         </div>
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-xs font-semibold text-slate-900">Leader review checklist</div>
+                          <div className="text-xs font-semibold text-slate-900">리더 검토 확인 목록</div>
                           <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
                             {resultWritingReadiness.leaderReviewChecklist.map((item) => (
                               <li key={item}>- {item}</li>
@@ -11453,7 +11537,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                       disabled={resultWritingReadiness.summary.orgGoalSourceWarningCount === 0}
                       className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
                     >
-                      {copiedMonitoringTable === 'result-writing-org-goal-source' ? 'ORG_GOAL 경고 복사됨' : 'ORG_GOAL source warning 복사'}
+                      {copiedMonitoringTable === 'result-writing-org-goal-source' ? 'ORG_GOAL 경고 복사됨' : 'ORG_GOAL 출처 경고 복사'}
                     </button>
                     <button
                       type="button"
@@ -11461,13 +11545,13 @@ function PolicyReadinessPopulation2026Panel(props: {
                       disabled={resultWritingReadiness.summary.dailyWorkDuplicateRiskCount === 0}
                       className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
                     >
-                      {copiedMonitoringTable === 'result-writing-daily-work-duplicate' ? 'DAILY_WORK 위험 복사됨' : 'DAILY_WORK duplicate risk 복사'}
+                      {copiedMonitoringTable === 'result-writing-daily-work-duplicate' ? 'DAILY_WORK 위험 복사됨' : 'DAILY_WORK 중복 위험 복사'}
                     </button>
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                      <h6 className="text-sm font-semibold text-slate-900">수행결과 readiness 대상</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">수행결과 준비 상태 대상</h6>
                       <span className="text-xs text-slate-500">
                         {filteredResultWritingRows.length.toLocaleString()}건 표시 · 전체 {resultWritingRows.length.toLocaleString()}건
                       </span>
@@ -11479,7 +11563,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                             <th className="px-4 py-2 font-semibold">직원</th>
                             <th className="px-4 py-2 font-semibold">조직/리더</th>
                             <th className="px-4 py-2 font-semibold">KPI/category</th>
-                            <th className="px-4 py-2 font-semibold">readiness</th>
+                            <th className="px-4 py-2 font-semibold">준비 상태</th>
                             <th className="px-4 py-2 font-semibold">결과/증빙</th>
                             <th className="px-4 py-2 font-semibold">warning / next action</th>
                           </tr>
@@ -11529,7 +11613,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                           ))}
                           {filteredResultWritingRows.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">수행결과 readiness 필터 조건에 맞는 항목이 없습니다.</td>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">수행결과 준비 상태 필터 조건에 맞는 항목이 없습니다.</td>
                             </tr>
                           ) : null}
                         </tbody>
@@ -11537,7 +11621,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                     </div>
                     {filteredResultWritingRows.length > 120 ? (
                       <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
-                        화면에는 120건까지만 표시합니다. 전체 목록은 filtered TSV 복사로 추출해 주세요.
+                        화면에는 120건까지만 표시합니다. 전체 목록은 필터된 TSV 복사로 추출해 주세요.
                       </div>
                     ) : null}
                   </div>
@@ -11549,13 +11633,13 @@ function PolicyReadinessPopulation2026Panel(props: {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">2026 리더 평가 readiness</h5>
-                        <Badge tone="neutral">Read-only</Badge>
+                        <h5 className="text-sm font-semibold text-slate-900">2026 리더 평가 준비 상태</h5>
+                        <Badge tone="neutral">읽기 전용</Badge>
                         <Badge tone="neutral">제출/확정 없음</Badge>
                         <Badge tone="neutral">공식 점수 미적용</Badge>
                       </div>
                       <p className="mt-1 text-xs leading-5 text-slate-600">
-                        이 화면은 2026 리더 평가 readiness를 읽기 전용으로 점검합니다. 공식 점수, 등급, 제출, 확정 상태는 변경하지 않습니다.
+                        이 화면은 2026 리더 평가 준비 상태를 읽기 전용으로 점검합니다. 공식 점수, 등급, 제출, 확정 상태는 변경하지 않습니다.
                       </p>
                       <p className="mt-1 text-xs leading-5 text-cyan-700">
                         리더 평가 입력 전 결과 작성, 증빙, 정책 카테고리, 평가자 배정 상태를 확인합니다.
@@ -11568,7 +11652,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount === 0}
                         className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'leader-eval-first-blocked' ? 'FIRST blocked 복사됨' : 'FIRST blocked 복사'}
+                        {copiedMonitoringTable === 'leader-eval-first-blocked' ? '1차 평가 차단 복사됨' : '1차 평가 차단 복사'}
                       </button>
                       <button
                         type="button"
@@ -11584,7 +11668,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={leaderEvaluationReadiness.summary.itemsMissingResultWritingEvidence === 0}
                         className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'leader-eval-missing-evidence' ? '증빙 누락 복사됨' : 'missing evidence 복사'}
+                        {copiedMonitoringTable === 'leader-eval-missing-evidence' ? '증빙 누락 복사됨' : '증빙 누락 복사'}
                       </button>
                       <button
                         type="button"
@@ -11600,7 +11684,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={leaderEvaluationReadiness.summary.missingEvaluatorCount === 0}
                         className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'leader-eval-missing-evaluator' ? '평가자 누락 복사됨' : 'missing evaluator 복사'}
+                        {copiedMonitoringTable === 'leader-eval-missing-evaluator' ? '평가자 누락 복사됨' : '평가자 누락 복사'}
                       </button>
                       <button
                         type="button"
@@ -11616,33 +11700,33 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={!filteredLeaderEvaluationRows.length}
                         className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-700 transition hover:bg-cyan-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'leader-eval-combined' ? 'combined TSV 복사됨' : 'combined TSV 복사'}
+                        {copiedMonitoringTable === 'leader-eval-combined' ? '통합 TSV 복사됨' : '통합 TSV 복사'}
                       </button>
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                    <MetricCard label="SELF 제출" value={leaderEvaluationReadiness.summary.selfSubmittedCount.toLocaleString()} help="submitted/confirmed" compact />
-                    <MetricCard label="FIRST 준비" value={leaderEvaluationReadiness.summary.firstReviewReadyCount.toLocaleString()} help="리더 평가 입력 전" compact />
+                    <MetricCard label="자기평가 제출" value={leaderEvaluationReadiness.summary.selfSubmittedCount.toLocaleString()} help="제출/확정" compact />
+                    <MetricCard label="1차 평가 준비" value={leaderEvaluationReadiness.summary.firstReviewReadyCount.toLocaleString()} help="리더 평가 입력 전" compact />
                     <MetricCard
-                      label="FIRST blocker"
+                      label="1차 평가 차단"
                       value={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount.toLocaleString()}
                       help="선행 조건 누락"
                       compact
                       variant={leaderEvaluationReadiness.summary.firstReviewMissingPrerequisitesCount > 0 ? 'warning' : 'default'}
                     />
-                    <MetricCard label="SECOND 준비" value={leaderEvaluationReadiness.summary.secondReviewReadyCount.toLocaleString()} help="FIRST 완료 후" compact />
+                    <MetricCard label="2차 평가 준비" value={leaderEvaluationReadiness.summary.secondReviewReadyCount.toLocaleString()} help="1차 평가 완료 후" compact />
                     <MetricCard
                       label="평가자 누락"
                       value={leaderEvaluationReadiness.summary.missingEvaluatorCount.toLocaleString()}
-                      help="FIRST/SECOND/FINAL"
+                      help="1차/2차/최종"
                       compact
                       variant={leaderEvaluationReadiness.summary.missingEvaluatorCount > 0 ? 'warning' : 'default'}
                     />
                     <MetricCard
                       label="전체 blocker"
                       value={leaderEvaluationReadiness.summary.blockerCount.toLocaleString()}
-                      help="read-only"
+                      help="읽기 전용"
                       compact
                       variant={leaderEvaluationReadiness.summary.blockerCount > 0 ? 'warning' : 'default'}
                     />
@@ -11650,7 +11734,7 @@ function PolicyReadinessPopulation2026Panel(props: {
 
                   <div className="mt-4 grid gap-3 lg:grid-cols-2">
                     <div className="rounded-2xl border border-cyan-100 bg-white p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">FIRST evaluator checklist</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">1차 평가자 확인 목록</h6>
                       <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
                         {leaderEvaluationReadiness.firstEvaluatorChecklist.map((item) => (
                           <li key={item}>- {item}</li>
@@ -11658,7 +11742,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                       </ul>
                     </div>
                     <div className="rounded-2xl border border-cyan-100 bg-white p-4">
-                      <h6 className="text-sm font-semibold text-slate-900">SECOND evaluator checklist</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">2차 평가자 확인 목록</h6>
                       <ul className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
                         {leaderEvaluationReadiness.secondEvaluatorChecklist.map((item) => (
                           <li key={item}>- {item}</li>
@@ -11697,7 +11781,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                     <select value={leaderEvalPolicyCategoryFilter} onChange={(event) => setLeaderEvalPolicyCategoryFilter(event.target.value as 'ALL' | 'READY' | 'MISSING')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
                       <option value="ALL">policyCategory 전체</option>
                       <option value="READY">policyCategory ready</option>
-                      <option value="MISSING">policyCategory missing</option>
+                      <option value="MISSING">policyCategory 미분류</option>
                     </select>
                     <select value={leaderEvalEvidenceFilter} onChange={(event) => setLeaderEvalEvidenceFilter(event.target.value as 'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS')} className="rounded-xl border border-cyan-100 bg-white px-3 py-2 text-xs text-slate-700">
                       <option value="ALL">evidence 전체</option>
@@ -11709,7 +11793,7 @@ function PolicyReadinessPopulation2026Panel(props: {
 
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                      <h6 className="text-sm font-semibold text-slate-900">리더 평가 readiness 대상</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">리더 평가 준비 상태 대상</h6>
                       <span className="text-xs text-slate-500">
                         {filteredLeaderEvaluationRows.length.toLocaleString()}건 표시 · 전체 {leaderEvaluationRows.length.toLocaleString()}건
                       </span>
@@ -11771,7 +11855,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                           ))}
                           {filteredLeaderEvaluationRows.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">리더 평가 readiness 필터 조건에 맞는 대상이 없습니다.</td>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">리더 평가 준비 상태 필터 조건에 맞는 대상이 없습니다.</td>
                             </tr>
                           ) : null}
                         </tbody>
@@ -11779,7 +11863,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                     </div>
                     {filteredLeaderEvaluationRows.length > 120 ? (
                       <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
-                        화면에는 120건까지만 표시합니다. 전체 목록은 combined TSV 복사로 추출해 주세요.
+                        화면에는 120건까지만 표시합니다. 전체 목록은 통합 TSV 복사로 추출해 주세요.
                       </div>
                     ) : null}
                   </div>
@@ -11791,8 +11875,8 @@ function PolicyReadinessPopulation2026Panel(props: {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h5 className="text-sm font-semibold text-slate-900">2026 최종 확정 readiness</h5>
-                        <Badge tone="neutral">Read-only</Badge>
+                        <h5 className="text-sm font-semibold text-slate-900">2026 최종 확정 준비 상태</h5>
+                        <Badge tone="neutral">읽기 전용</Badge>
                         <Badge tone="neutral">보정/CEO 확정 없음</Badge>
                         <Badge tone="neutral">gradeId 미변경</Badge>
                       </div>
@@ -11810,7 +11894,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={finalizationCeoReadiness.summary.blockedBeforeFirstCount === 0}
                         className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'finalization-first-blocked' ? 'FIRST 전 blocker 복사됨' : 'FIRST 전 blocker 복사'}
+                        {copiedMonitoringTable === 'finalization-first-blocked' ? '1차 평가 전 해소 필요 항목 복사됨' : '1차 평가 전 해소 필요 항목 복사'}
                       </button>
                       <button
                         type="button"
@@ -11842,7 +11926,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={finalizationCeoRows.every((row) => row.finalizationReadinessStatus !== 'READY_FOR_CEO_CONFIRMATION_LATER')}
                         className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'finalization-ceo-ready' ? 'CEO later-ready 복사됨' : 'CEO later-ready 복사'}
+                        {copiedMonitoringTable === 'finalization-ceo-ready' ? '대표이사 확정 추후 가능 복사됨' : '대표이사 확정 추후 가능 복사'}
                       </button>
                       <button
                         type="button"
@@ -11850,7 +11934,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={finalizationCeoReadiness.summary.manualReviewCount === 0}
                         className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'finalization-manual' ? 'manual review 복사됨' : 'manual review 복사'}
+                        {copiedMonitoringTable === 'finalization-manual' ? '수동 검토 복사됨' : '수동 검토 복사'}
                       </button>
                       <button
                         type="button"
@@ -11858,18 +11942,18 @@ function PolicyReadinessPopulation2026Panel(props: {
                         disabled={!filteredFinalizationCeoRows.length}
                         className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                       >
-                        {copiedMonitoringTable === 'finalization-combined' ? 'combined TSV 복사됨' : 'combined TSV 복사'}
+                        {copiedMonitoringTable === 'finalization-combined' ? '통합 TSV 복사됨' : '통합 TSV 복사'}
                       </button>
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                     <MetricCard label="최종 후보" value={finalizationCeoReadiness.summary.finalReviewCandidateCount.toLocaleString()} help="대상자" compact />
-                    <MetricCard label="ready later" value={finalizationCeoReadiness.summary.readyLaterCount.toLocaleString()} help="final/CEO 후보" compact />
+                    <MetricCard label="추후 가능" value={finalizationCeoReadiness.summary.readyLaterCount.toLocaleString()} help="최종/대표이사 후보" compact />
                     <MetricCard
-                      label="FIRST 전 blocker"
+                      label="1차 전 차단"
                       value={finalizationCeoReadiness.summary.blockedBeforeFirstCount.toLocaleString()}
-                      help="SELF/result/category/evaluator"
+                      help="자기평가/결과/분류/평가자"
                       compact
                       variant={finalizationCeoReadiness.summary.blockedBeforeFirstCount > 0 ? 'warning' : 'default'}
                     />
@@ -11883,7 +11967,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                     <MetricCard
                       label="CEO blocker"
                       value={finalizationCeoReadiness.summary.ceoConfirmationBlockerCount.toLocaleString()}
-                      help="CEO later-ready 전"
+                      help="대표이사 확정 추후 가능 전"
                       compact
                       variant={finalizationCeoReadiness.summary.ceoConfirmationBlockerCount > 0 ? 'warning' : 'default'}
                     />
@@ -11926,7 +12010,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                       variant={finalizationCeoReadiness.summary.gradePolicyBlockerCount > 0 ? 'warning' : 'default'}
                     />
                     <MetricCard
-                      label="manual review"
+                      label="수동 검토"
                       value={finalizationCeoReadiness.summary.manualReviewCount.toLocaleString()}
                       help="HR 확인"
                       compact
@@ -11935,7 +12019,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <h6 className="text-sm font-semibold text-slate-900">Final/CEO review checklist</h6>
+                    <h6 className="text-sm font-semibold text-slate-900">최종/대표이사 검토 확인 목록</h6>
                     <ul className="mt-2 grid gap-1 text-xs leading-5 text-slate-600 md:grid-cols-2">
                       {finalizationCeoReadiness.finalCeoChecklist.map((item) => (
                         <li key={item}>- {item}</li>
@@ -11977,7 +12061,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                     <select value={finalizationPolicyFilter} onChange={(event) => setFinalizationPolicyFilter(event.target.value as 'ALL' | 'READY' | 'MISSING')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
                       <option value="ALL">policyCategory 전체</option>
                       <option value="READY">policyCategory ready</option>
-                      <option value="MISSING">policyCategory missing</option>
+                      <option value="MISSING">policyCategory 미분류</option>
                     </select>
                     <select value={finalizationEvidenceFilter} onChange={(event) => setFinalizationEvidenceFilter(event.target.value as 'ALL' | 'READY' | 'MISSING' | 'NO_ITEMS')} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
                       <option value="ALL">evidence 전체</option>
@@ -12003,13 +12087,13 @@ function PolicyReadinessPopulation2026Panel(props: {
                         onChange={(event) => setFinalizationManualOnly(event.target.checked)}
                         className="h-4 w-4 rounded border-slate-300"
                       />
-                      manual review only
+                      수동 검토 전용
                     </label>
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                      <h6 className="text-sm font-semibold text-slate-900">최종 확정 readiness 대상</h6>
+                      <h6 className="text-sm font-semibold text-slate-900">최종 확정 준비 상태 대상</h6>
                       <span className="text-xs text-slate-500">
                         {filteredFinalizationCeoRows.length.toLocaleString()}건 표시 · 전체 {finalizationCeoRows.length.toLocaleString()}건
                       </span>
@@ -12020,10 +12104,10 @@ function PolicyReadinessPopulation2026Panel(props: {
                           <tr>
                             <th className="px-4 py-2 font-semibold">직원</th>
                             <th className="px-4 py-2 font-semibold">평가 stage</th>
-                            <th className="px-4 py-2 font-semibold">final/CEO readiness</th>
-                            <th className="px-4 py-2 font-semibold">chain/status</th>
-                            <th className="px-4 py-2 font-semibold">blocker</th>
-                            <th className="px-4 py-2 font-semibold">next HR action</th>
+                            <th className="px-4 py-2 font-semibold">최종/대표이사 준비 상태</th>
+                            <th className="px-4 py-2 font-semibold">체인/상태</th>
+                            <th className="px-4 py-2 font-semibold">해소 필요 항목</th>
+                            <th className="px-4 py-2 font-semibold">다음 HR 액션</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 bg-white">
@@ -12066,7 +12150,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                           ))}
                           {filteredFinalizationCeoRows.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">최종 확정 readiness 필터 조건에 맞는 대상이 없습니다.</td>
+                              <td colSpan={6} className="px-4 py-6 text-center text-slate-500">최종 확정 준비 상태 필터 조건에 맞는 대상이 없습니다.</td>
                             </tr>
                           ) : null}
                         </tbody>
@@ -12074,7 +12158,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                     </div>
                     {filteredFinalizationCeoRows.length > 120 ? (
                       <div className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
-                        화면에는 120건까지만 표시합니다. 전체 목록은 combined TSV 복사로 추출해 주세요.
+                        화면에는 120건까지만 표시합니다. 전체 목록은 통합 TSV 복사로 추출해 주세요.
                       </div>
                     ) : null}
                   </div>
@@ -12089,13 +12173,13 @@ function PolicyReadinessPopulation2026Panel(props: {
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h4 className="text-sm font-semibold text-slate-900">2026 팀 KPI 검토</h4>
-                    <Badge tone="neutral">{props.canManageTeamKpiReview ? 'HR metadata' : 'Read-only'}</Badge>
+                    <Badge tone="neutral">{props.canManageTeamKpiReview ? 'HR 메타데이터' : '읽기 전용'}</Badge>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-slate-600">
-                    본부 KPI에 포함되거나 HR이 승인한 팀 KPI만 개인 MBO의 조직목표 후보가 됩니다. 이 목록은 기존 Team KPI review와 예외 승인 메타데이터를 읽어 readiness 판단을 돕습니다.
+                    본부 KPI에 포함되거나 HR이 승인한 팀 KPI만 개인 MBO의 조직목표 후보가 됩니다. 이 목록은 기존 팀 KPI 검토와 예외 승인 메타데이터를 읽어 준비 상태 판단을 돕습니다.
                   </p>
                   <p className="mt-1 text-xs leading-5 text-indigo-700">
-                    HR 결정 저장은 readiness 메타데이터만 변경하며 공식 점수/등급, 평가 항목, 최종화/조정에는 반영되지 않습니다.
+                    HR 결정 저장은 준비 상태 메타데이터만 변경하며 공식 점수/등급, 평가 항목, 최종화/조정에는 반영되지 않습니다.
                   </p>
                 </div>
                 <button
@@ -12186,7 +12270,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                           : 'border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50'
                       }`}
                     >
-                      {status === 'PENDING_REVIEW' ? '미지정/PENDING only' : getTeamKpiHrReviewStatusLabel2026(status)}
+                      {status === 'PENDING_REVIEW' ? '미지정/검토 대기만' : getTeamKpiHrReviewStatusLabel2026(status)}
                       <span className="ml-1 opacity-80">{count.toLocaleString()}</span>
                     </button>
                   )
@@ -12256,7 +12340,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                     <div>
                       <h5 className="text-sm font-semibold text-slate-900">선택 항목 일괄 HR 결정</h5>
                       <p className="mt-1 text-xs leading-5 text-slate-600">
-                        선택한 팀 KPI {selectedTeamReviewRows.length.toLocaleString()}건에 동일한 결정/사유/메모를 저장합니다. readiness 메타데이터만 변경됩니다.
+                        선택한 팀 KPI {selectedTeamReviewRows.length.toLocaleString()}건에 동일한 결정/사유/메모를 저장합니다. 준비 상태 메타데이터만 변경됩니다.
                       </p>
                     </div>
                     <button
@@ -12510,7 +12594,7 @@ function PolicyReadinessPopulation2026Panel(props: {
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-amber-700" />
-                  <h4 className="text-sm font-semibold text-amber-900">safe apply 차단 조건</h4>
+                  <h4 className="text-sm font-semibold text-amber-900">안전한 실제 반영 차단 조건</h4>
                 </div>
                 <ul className="mt-3 space-y-2">
                   {blockers.length ? blockers.map((blocker) => (
@@ -12518,7 +12602,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                       {blocker.message}{blocker.count != null ? ` (${blocker.count.toLocaleString()}건)` : ''}
                     </li>
                   )) : (
-                    <li className="text-sm text-amber-800">현재 dry-run 기준 차단 조건은 없습니다.</li>
+                    <li className="text-sm text-amber-800">현재 사전 실행 기준 차단 조건은 없습니다.</li>
                   )}
                 </ul>
               </div>
@@ -12591,7 +12675,7 @@ function PolicyReadinessPopulation2026Panel(props: {
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-          HR 관리자가 선택한 평가 주기에 대해 population dry-run을 실행할 수 있습니다. 이 단계는 읽기 전용입니다.
+          HR 관리자가 선택한 평가 주기에 대해 인원 점검 사전 실행 검토를 실행할 수 있습니다. 이 단계는 읽기 전용입니다.
         </div>
       )}
     </Panel>
@@ -12845,7 +12929,7 @@ function PolicyMapping2026Panel(props: {
               {unsavedDraftCount > 0 ? <Badge tone="warn">미저장 draft {unsavedDraftCount}건</Badge> : null}
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-600">
-              저장 대상은 2026 preview readiness metadata입니다. 저장 점수, 저장 등급, 확정/보정 흐름은 바뀌지 않습니다.
+              저장 대상은 2026 미리보기 준비 상태 메타데이터입니다. 저장 점수, 저장 등급, 확정/보정 흐름은 바뀌지 않습니다.
             </p>
           </div>
         </div>
@@ -12946,7 +13030,7 @@ function PolicyMapping2026Panel(props: {
                     <Badge tone="warn">{filteredPolicyWorkbenchItems.length.toLocaleString()}건 표시</Badge>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-blue-900">
-                    이 저장은 2026 readiness metadata만 변경합니다. 공식 점수/등급은 변경되지 않습니다. 추천값은 자동 확정이 아니며 HR이 저장해야 반영됩니다.
+                    이 저장은 2026 준비 상태 메타데이터만 변경합니다. 공식 점수/등급은 변경되지 않습니다. 추천값은 자동 확정이 아니며 HR이 저장해야 반영됩니다.
                   </p>
                 </div>
                 <div className="text-xs text-slate-500">
@@ -13114,10 +13198,10 @@ function PolicyMapping2026Panel(props: {
                     <input value={bulkPolicyCategoryNote} onChange={(event) => setBulkPolicyCategoryNote(event.target.value)} maxLength={1000} placeholder="예: HR 일괄 검토 기준으로 확정" className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700" />
                   </label>
                   <button type="button" onClick={applyBulkPolicyCategoryDraft} disabled={!selectedPolicyWorkbenchIds.length || !bulkPolicyCategory} className="rounded-full bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition hover:bg-blue-800 disabled:bg-slate-300">
-                    {selectedPolicyWorkbenchIds.length.toLocaleString()}건 bulk 적용
+                    {selectedPolicyWorkbenchIds.length.toLocaleString()}건 일괄 적용
                   </button>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">bulk 적용은 화면 draft만 바꿉니다. 실제 저장은 상단의 선택 metadata 저장 버튼을 눌러야 수행됩니다.</p>
+                <p className="mt-2 text-xs text-slate-500">일괄 적용은 화면 초안만 바꿉니다. 실제 저장은 상단의 선택 메타데이터 저장 버튼을 눌러야 수행됩니다.</p>
               </div>
 
               <div className="mt-4 overflow-auto rounded-2xl border border-blue-100 bg-white">
@@ -13230,7 +13314,7 @@ function PolicyMapping2026Panel(props: {
                     </span>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    조직 master의 division 기준으로 preview readiness metadata만 저장합니다.
+                    조직 master의 division 기준으로 미리보기 준비 상태 메타데이터만 저장합니다.
                   </p>
                   {data.divisionMappingSummary.warning ? (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
@@ -13502,7 +13586,7 @@ function PolicyMapping2026Panel(props: {
         </>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-          HR 관리자가 preview blocker를 풀기 위한 정책 매핑 후보를 조회하고, 명시적으로 선택한 metadata만 저장할 수 있습니다.
+          HR 관리자가 미리보기 차단 조건을 풀기 위한 정책 매핑 후보를 조회하고, 명시적으로 선택한 메타데이터만 저장할 수 있습니다.
         </div>
       )}
     </Panel>
@@ -13531,7 +13615,7 @@ function PolicyPreview2026Panel(props: {
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="neutral">Preview only</Badge>
+              <Badge tone="neutral">미리보기 전용</Badge>
               <Badge tone={preview?.canCalculate ? 'success' : preview ? 'warn' : 'neutral'}>
                 {preview?.canCalculate ? '산출 가능' : preview ? '검토 필요' : '미생성'}
               </Badge>
@@ -13566,19 +13650,19 @@ function PolicyPreview2026Panel(props: {
             <MetricCard
               label="조직성과"
               value={formatPreviewScore2026(preview.score.organizationScore)}
-              help="30% 반영 preview"
+              help="30% 반영 미리보기"
               compact
             />
             <MetricCard
               label="개인성과"
               value={formatPreviewScore2026(preview.score.personalScore)}
-              help="70% 반영 preview"
+              help="70% 반영 미리보기"
               compact
             />
             <MetricCard
               label="등급"
               value={preview.grade.calculatedGrade ?? '-'}
-              help={preview.grade.requiresPolicyConfirmation ? '정책 확인 필요' : '절대등급 preview'}
+              help={preview.grade.requiresPolicyConfirmation ? '정책 확인 필요' : '절대등급 미리보기'}
               compact
               variant={preview.grade.requiresPolicyConfirmation ? 'warning' : 'default'}
             />
@@ -13632,13 +13716,13 @@ function PolicyPreview2026Panel(props: {
             </div>
           ) : (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              현재 preview 계산에 필요한 필수 데이터가 확인되었습니다.
+              현재 미리보기 계산에 필요한 필수 데이터가 확인되었습니다.
             </div>
           )}
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-          HR 관리자가 선택한 평가에 대해 2026 정책 기준 preview를 수동으로 계산할 수 있습니다.
+          HR 관리자가 선택한 평가에 대해 2026 정책 기준 미리보기를 수동으로 계산할 수 있습니다.
         </div>
       )}
     </Panel>
