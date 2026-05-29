@@ -151,12 +151,13 @@ run('legacy evaluation assistant route is redirect-only and points to the canoni
   assert.doesNotMatch(assistantRedirectSource, /\/api\/ai\/assist/)
 })
 
-run('legacy evaluation workbench route redirects into the canonical performance route', () => {
+run('evaluation workbench route renders the dedicated 2026 pilot shell with the canonical loader', () => {
   assert.match(workbenchPageSource, /export const dynamic = 'force-dynamic'/)
-  assert.match(workbenchPageSource, /redirect\(params\.size \? `\$\{base\}\?\$\{params\.toString\(\)\}` : base\)/)
-  assert.match(workbenchPageSource, /\/evaluation\/performance/)
-  assert.doesNotMatch(workbenchPageSource, /getEvaluationWorkbenchPageData/)
-  assert.doesNotMatch(workbenchPageSource, /EvaluationWorkbenchClient/)
+  assert.match(workbenchPageSource, /requireProtectedPageSession/)
+  assert.match(workbenchPageSource, /getEvaluationWorkbenchPageData/)
+  assert.match(workbenchPageSource, /presentationMode="workbench-pilot"/)
+  assert.match(workbenchPageSource, /EvaluationWorkbenchClient/)
+  assert.doesNotMatch(workbenchPageSource, /redirect\(/)
 })
 
 run('canonical performance page owns the live evaluation AI experience', () => {
@@ -176,10 +177,10 @@ run('performance detail route exists for direct evaluation deep links', () => {
   assert.match(detailPageSource, /EvaluationWorkbenchClient/)
 })
 
-run('evaluation assistant surface no longer treats the workbench route as canonical', () => {
-  assert.match(workbenchPageSource, /redirect\(/)
-  assert.doesNotMatch(workbenchPageSource, /getEvaluationWorkbenchPageData/)
-  assert.doesNotMatch(workbenchPageSource, /return <EvaluationWorkbenchClient \{\.\.\.data\} \/>/)
+run('evaluation assistant surface keeps the workbench pilot separate from the legacy assistant path', () => {
+  assert.match(workbenchPageSource, /presentationMode="workbench-pilot"/)
+  assert.match(workbenchPageSource, /getEvaluationWorkbenchPageData/)
+  assert.doesNotMatch(workbenchPageSource, /\/api\/ai\/assist/)
 })
 
 run('evaluation workbench exposes exactly three assist modes on the dedicated route', () => {
