@@ -146,7 +146,7 @@ const SIGN_OFF_CHECKLIST = [
 ]
 
 const SAFETY_NOTE =
-  'This freeze pack is read-only. dry-run, apply, backfill, official scoring, official grade, AI score exclusion, feature flag changes, Evaluation.totalScore write, and Evaluation.gradeId write are not executed.'
+  '이 export는 읽기 전용 보고용입니다. dry-run, apply, backfill, official scoring/grade, feature flag, Evaluation.totalScore, Evaluation.gradeId는 실행하지 않습니다.'
 
 function valueOrZero(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
