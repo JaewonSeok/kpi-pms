@@ -3236,6 +3236,7 @@ function PolicyActivationReadiness2026Panel(props: {
   const backfillDryRunPreflightPack = activation?.backfillDryRunPreflightPack ?? null
   const dryRunOutputReviewTemplate = activation?.dryRunOutputReviewTemplate ?? null
   const dryRunRehearsalGuardrails = activation?.dryRunRehearsalGuardrails ?? null
+  const backfillDryRunCommandRunbook = activation?.backfillDryRunCommandRunbook ?? null
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [executionBoardTab, setExecutionBoardTab] = useState<'ALL' | 'THIS_WEEK' | 'HR' | 'LEADER' | 'EMPLOYEE' | 'DEV' | 'DONE_HOLD'>('THIS_WEEK')
@@ -3570,6 +3571,15 @@ function PolicyActivationReadiness2026Panel(props: {
                 help={dryRunRehearsalGuardrails.summary.applyStatus}
                 compact
                 variant="default"
+              />
+            ) : null}
+            {backfillDryRunCommandRunbook ? (
+              <MetricCard
+                label="Dry-run command runbook"
+                value={backfillDryRunCommandRunbook.summary.commandReferenceStatus}
+                help={backfillDryRunCommandRunbook.summary.applyStatus}
+                compact
+                variant="warning"
               />
             ) : null}
           </div>
@@ -4721,6 +4731,148 @@ function PolicyActivationReadiness2026Panel(props: {
                   <div className="mt-4 rounded-2xl border border-rose-200 bg-white p-4">
                     <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
                     <p className="mt-2 text-sm leading-6 text-rose-900">{dryRunRehearsalGuardrails.prohibitedActions.join(', ')}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {backfillDryRunCommandRunbook ? (
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="text-sm font-semibold text-slate-900">2026 Backfill Dry-run Command Runbook</h5>
+                        <Badge tone="neutral">{backfillDryRunCommandRunbook.mode}</Badge>
+                        <Badge tone="neutral">{backfillDryRunCommandRunbook.status}</Badge>
+                        <Badge tone="neutral">{backfillDryRunCommandRunbook.summary.commandReferenceStatus}</Badge>
+                        <Badge tone="warn">apply {backfillDryRunCommandRunbook.summary.applyStatus}</Badge>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">
+                        이 화면은 향후 dry-run-only 실행 절차를 문서화합니다. 이 화면에서는 dry-run, apply, backfill,
+                        공식 점수/등급, feature flag 변경을 실행하지 않습니다.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        ['dryrun-command-summary', 'Operator summary', backfillDryRunCommandRunbook.copyPayloads.operatorSummary],
+                        ['dryrun-command-prerun', 'Pre-run checklist', backfillDryRunCommandRunbook.copyPayloads.preRunChecklist],
+                        ['dryrun-command-reference', 'Dry-run command reference', backfillDryRunCommandRunbook.copyPayloads.dryRunCommandReference],
+                        ['dryrun-command-logs', 'Log watch checklist', backfillDryRunCommandRunbook.copyPayloads.logWatchChecklist],
+                        ['dryrun-command-abort', 'Abort conditions', backfillDryRunCommandRunbook.copyPayloads.abortConditions],
+                        ['dryrun-command-handoff', 'Handoff checklist', backfillDryRunCommandRunbook.copyPayloads.handoffChecklist],
+                        ['dryrun-command-markdown', 'Markdown', backfillDryRunCommandRunbook.copyPayloads.markdown],
+                        ['dryrun-command-tsv', 'TSV', backfillDryRunCommandRunbook.copyPayloads.tsv],
+                      ].map(([key, label, text]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => void copyActivationRunbookPayload(key, text)}
+                          className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                        >
+                          {copiedRunbookKey === key ? '복사됨' : label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                    <MetricCard label="current stage" value={backfillDryRunCommandRunbook.summary.currentStage} help="readiness stage" compact />
+                    <MetricCard label="overall status" value={backfillDryRunCommandRunbook.summary.overallReadinessStatus} help="snapshot status" compact />
+                    <MetricCard label="official activation" value={backfillDryRunCommandRunbook.summary.officialActivationStatus} help="gate status" compact variant="warning" />
+                    <MetricCard label="dry-run command" value={backfillDryRunCommandRunbook.summary.commandReferenceStatus} help="text only" compact />
+                    <MetricCard label="dry-run execution" value={backfillDryRunCommandRunbook.summary.dryRunExecutionStatus} help="not run" compact variant="warning" />
+                    <MetricCard label="apply" value={backfillDryRunCommandRunbook.summary.applyStatus} help="hidden / prohibited" compact variant="warning" />
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <h6 className="text-sm font-semibold text-blue-950">Operator summary</h6>
+                    <dl className="mt-3 grid gap-3 md:grid-cols-2">
+                      {[
+                        ['purpose', backfillDryRunCommandRunbook.operatorSummary.purpose],
+                        ['current status', backfillDryRunCommandRunbook.operatorSummary.currentStatus],
+                        ['when usable', backfillDryRunCommandRunbook.operatorSummary.whenThisRunbookCanBeUsed],
+                        ['why apply prohibited', backfillDryRunCommandRunbook.operatorSummary.whyApplyRemainsProhibited],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-blue-100 bg-white px-3 py-2">
+                          <dt className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-500">{label}</dt>
+                          <dd className="mt-1 text-xs leading-5 text-blue-950">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <h6 className="text-sm font-semibold text-slate-900">Pre-run checklist</h6>
+                      <div className="mt-3 grid gap-2">
+                        {backfillDryRunCommandRunbook.preRunChecklist.map((item) => (
+                          <div key={item} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">{item}</div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                      <h6 className="text-sm font-semibold text-amber-950">Dry-run-only command reference</h6>
+                      <p className="mt-2 text-xs leading-5 text-amber-900">
+                        {backfillDryRunCommandRunbook.dryRunOnlyCommandReference.warning}
+                      </p>
+                      <pre className="mt-3 overflow-x-auto rounded-xl border border-amber-100 bg-white p-3 text-xs leading-5 text-slate-700">
+                        {backfillDryRunCommandRunbook.dryRunOnlyCommandReference.commandText}
+                      </pre>
+                      <p className="mt-2 text-xs leading-5 text-amber-900">
+                        mode {backfillDryRunCommandRunbook.dryRunOnlyCommandReference.mode} · copyOnly {String(backfillDryRunCommandRunbook.dryRunOnlyCommandReference.copyOnly)} ·
+                        executeAvailable {String(backfillDryRunCommandRunbook.dryRunOnlyCommandReference.executeAvailable)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                    <h6 className="text-sm font-semibold text-rose-950">Apply command warning</h6>
+                    <p className="mt-2 text-xs leading-5 text-rose-900">
+                      {backfillDryRunCommandRunbook.applyCommandWarning.warning}
+                      {' '}applyCommandExposed {String(backfillDryRunCommandRunbook.applyCommandWarning.applyCommandExposed)} ·
+                      applyIsPartOfThisRunbook {String(backfillDryRunCommandRunbook.applyCommandWarning.applyIsPartOfThisRunbook)}
+                    </p>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                      {backfillDryRunCommandRunbook.applyCommandWarning.guardrailReminder.map((item) => (
+                        <div key={item} className="rounded-xl border border-rose-100 bg-white px-3 py-2 text-xs text-rose-800">{item}</div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-4">
+                    {[
+                      ['Output archive checklist', backfillDryRunCommandRunbook.outputArchiveChecklist],
+                      ['Log watch checklist', backfillDryRunCommandRunbook.logWatchChecklist],
+                      ['Abort conditions', backfillDryRunCommandRunbook.abortConditions],
+                      ['Handoff checklist', backfillDryRunCommandRunbook.handoffChecklist],
+                    ].map(([title, items]) => (
+                      <div key={title as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <h6 className="text-sm font-semibold text-slate-900">{title as string}</h6>
+                        <ul className="mt-3 space-y-2 text-xs leading-5 text-slate-700">
+                          {(items as string[]).map((item) => <li key={item}>- {item}</li>)}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                      <h6 className="text-sm font-semibold text-emerald-950">Allowed commands</h6>
+                      <ul className="mt-3 space-y-2 text-xs leading-5 text-emerald-900">
+                        {backfillDryRunCommandRunbook.allowedCommands.map((item) => <li key={item}>- {item}</li>)}
+                      </ul>
+                    </div>
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                      <h6 className="text-sm font-semibold text-rose-950">Explicitly forbidden commands</h6>
+                      <ul className="mt-3 space-y-2 text-xs leading-5 text-rose-900">
+                        {backfillDryRunCommandRunbook.explicitlyForbiddenCommands.map((item) => <li key={item}>- {item}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-rose-200 bg-white p-4">
+                    <h6 className="text-sm font-semibold text-rose-950">Prohibited actions</h6>
+                    <p className="mt-2 text-sm leading-6 text-rose-900">{backfillDryRunCommandRunbook.prohibitedActions.join(', ')}</p>
                   </div>
                 </div>
               ) : null}
