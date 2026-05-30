@@ -598,11 +598,6 @@ model EvalCycle {
   goalEditMode    GoalEditMode @default(FULL)
   calibrationSessionConfig Json?
   performanceDesignConfig Json?
-  officialEvaluationStatus OfficialEvaluationCycleStatus @default(NOT_STARTED)
-  officialEvaluationStartedAt DateTime?
-  officialEvaluationStartedById String?
-  officialEvaluationFinalizedAt DateTime?
-  officialEvaluationFinalizedById String?
   kpiSetupStart   DateTime?
   kpiSetupEnd     DateTime?
   selfEvalStart   DateTime?
@@ -635,8 +630,6 @@ model EvalCycle {
   teamKpiRecommendationSets TeamKpiRecommendationSet[]
   teamKpiReviewRuns   TeamKpiReviewRun[]
   midReviewCycles     MidReviewCycle[]
-  evaluationPopulationRuns EvaluationPopulationRun[]
-  officialEvaluationAuditEvents EvaluationAuditEvent[]
 
   @@map("eval_cycles")
 }
@@ -794,12 +787,6 @@ model Evaluation {
   evaluatorId     String
   evaluator       Employee   @relation("Evaluator", fields: [evaluatorId], references: [id])
   evalStage       EvalStage
-  operationMode   EvaluationOperationMode @default(OFFICIAL)
-  officialState   OfficialEvaluationState @default(NOT_POPULATED)
-  populationRunId String?
-  populationRun   EvaluationPopulationRun? @relation(fields: [populationRunId], references: [id], onDelete: SetNull)
-  scoreWriteStatus ScoreWriteStatus @default(NOT_ALLOWED)
-  gradeWriteStatus GradeWriteStatus @default(NOT_ALLOWED)
   totalScore      Float?
   policyFormulaVersion String?
   organizationPerformanceScore Float?
@@ -817,31 +804,13 @@ model Evaluation {
   isRejected      Boolean    @default(false)
   rejectionReason String?
   rejectedAt      DateTime?
-  finalizedAt     DateTime?
-  finalizedById   String?
-  returnedAt      DateTime?
-  returnedById    String?
-  returnReason    String?
-  ceoConfirmedAt  DateTime?
-  ceoConfirmedById String?
-  ceoAdjustmentReason String?
-  scoreCalculatedAt DateTime?
-  scoreCalculatedById String?
-  gradeCalculatedAt DateTime?
-  gradeCalculatedById String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
   items   EvaluationItem[]
   appeals Appeal[]
-  stageSubmissions EvaluationStageSubmission[]
-  officialAuditEvents EvaluationAuditEvent[]
 
   @@unique([evalCycleId, targetId, evalStage])
-  @@index([operationMode, officialState])
-  @@index([populationRunId])
-  @@index([scoreWriteStatus])
-  @@index([gradeWriteStatus])
   @@map("evaluations")
 }
 
@@ -859,74 +828,6 @@ enum EvalStatus {
   SUBMITTED
   REJECTED
   CONFIRMED
-}
-
-enum EvaluationOperationMode {
-  OFFICIAL
-  SANDBOX
-  PREVIEW_IMPORTED
-}
-
-enum OfficialEvaluationState {
-  NOT_POPULATED
-  POPULATED
-  SELF_DRAFT
-  SELF_SUBMITTED
-  FIRST_DRAFT
-  FIRST_SUBMITTED
-  SECOND_DRAFT
-  SECOND_SUBMITTED
-  FINAL_DRAFT
-  FINAL_SUBMITTED
-  CEO_ADJUST_DRAFT
-  CEO_CONFIRMED
-  SCORE_CALCULATED
-  GRADE_CALCULATED
-  FINALIZED
-  RETURNED_FOR_REVISION
-  APPEAL_OPEN
-  APPEAL_RESOLVED
-}
-
-enum OfficialEvaluationCycleStatus {
-  NOT_STARTED
-  POPULATION_READY
-  POPULATED
-  IN_PROGRESS
-  SCORE_READY
-  GRADE_READY
-  FINALIZED
-}
-
-enum ScoreWriteStatus {
-  NOT_ALLOWED
-  READY_FOR_CALCULATION
-  CALCULATED
-  LOCKED
-}
-
-enum GradeWriteStatus {
-  NOT_ALLOWED
-  READY_FOR_CALCULATION
-  CALCULATED
-  LOCKED
-}
-
-enum EvaluationPopulationRunStatus {
-  DRY_RUN
-  READY_FOR_APPLY
-  APPLIED
-  FAILED
-  REJECTED
-}
-
-enum EvaluationStageAction {
-  DRAFT_SAVED
-  SUBMITTED
-  RETURNED
-  REOPENED
-  APPROVED
-  CEO_CONFIRMED
 }
 
 enum EvaluationAssignmentSource {
@@ -987,97 +888,6 @@ model EvaluationItem {
   @@map("evaluation_items")
   @@index([policyCategory])
   @@index([adjustmentGroupKey])
-}
-
-model EvaluationPopulationRun {
-  id String @id @default(cuid())
-  cycleId String
-  cycle EvalCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
-  operationMode EvaluationOperationMode
-  status EvaluationPopulationRunStatus
-  sourceSnapshotHash String?
-  targetEmployeeCount Int @default(0)
-  createdEvaluationCount Int @default(0)
-  createdEvaluationItemCount Int @default(0)
-  skippedCount Int @default(0)
-  blockerSummaryJson Json?
-  dryRunOutputJson Json?
-  approvalReference String?
-  appliedAt DateTime?
-  appliedById String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  evaluations Evaluation[]
-
-  @@index([cycleId])
-  @@index([operationMode, status])
-  @@map("evaluation_population_runs")
-}
-
-model EvaluationStageSubmission {
-  id String @id @default(cuid())
-  evaluationId String
-  evaluation Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
-  stage EvalStage
-  action EvaluationStageAction
-  actorId String
-  fromStatus EvalStatus?
-  toStatus EvalStatus?
-  fromOfficialState OfficialEvaluationState?
-  toOfficialState OfficialEvaluationState?
-  reason String?
-  payloadSnapshotJson Json?
-  createdAt DateTime @default(now())
-
-  @@index([evaluationId])
-  @@index([stage, action])
-  @@index([actorId])
-  @@map("evaluation_stage_submissions")
-}
-
-model EvaluationAuditEvent {
-  id String @id @default(cuid())
-  cycleId String
-  cycle EvalCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
-  employeeId String?
-  evaluationId String?
-  evaluation Evaluation? @relation(fields: [evaluationId], references: [id], onDelete: SetNull)
-  evaluationItemId String?
-  eventType String
-  actorId String
-  operationMode EvaluationOperationMode
-  beforeJson Json?
-  afterJson Json?
-  metadataJson Json?
-  requestId String?
-  createdAt DateTime @default(now())
-
-  @@index([cycleId])
-  @@index([employeeId])
-  @@index([evaluationId])
-  @@index([evaluationItemId])
-  @@index([eventType])
-  @@index([actorId])
-  @@index([operationMode])
-  @@map("evaluation_audit_events")
-}
-
-model EvaluationSandboxSession {
-  id String @id @default(cuid())
-  cycleId String
-  employeeId String
-  ownerId String
-  status String
-  payloadJson Json
-  expiresAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([cycleId])
-  @@index([employeeId])
-  @@index([ownerId])
-  @@map("evaluation_sandbox_sessions")
 }
 
 // ============================================
