@@ -1667,6 +1667,86 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
           onLoad={loadPolicyActivationReadiness2026}
           presentationMode="readiness-admin"
         />
+        {props.currentUser?.role === 'ROLE_ADMIN' ? (
+          <>
+            <PolicyCategoryMissingResolver2026Panel
+              policyCategoryMissingCount={
+                policyActivationReadiness2026?.integratedReadinessSnapshot.summary.policyCategoryMissingCount ?? null
+              }
+              mappingData={policyMapping2026}
+              loading={policyMapping2026Loading}
+              saving={policyMapping2026Saving}
+              error={policyMapping2026Error}
+              notice={policyMapping2026Notice}
+              categoryDrafts={policyCategoryWorkbenchDrafts2026}
+              onLoad={loadPolicyMappingCandidates2026}
+              onSave={savePolicyMetadata2026}
+              onBaselineRefresh={loadPolicyActivationReadiness2026}
+              onCategoryDraftChange={(id, patch) =>
+                setPolicyCategoryWorkbenchDrafts2026((current) => ({
+                  ...current,
+                  [id]: {
+                    category: current[id]?.category ?? '',
+                    scoreContributionType: current[id]?.scoreContributionType ?? '',
+                    note: current[id]?.note ?? '',
+                    ...patch,
+                  },
+                }))
+              }
+            />
+            <PolicyMapping2026Panel
+              mappingData={policyMapping2026}
+              loading={policyMapping2026Loading}
+              saving={policyMapping2026Saving}
+              error={policyMapping2026Error}
+              notice={policyMapping2026Notice}
+              categoryDrafts={policyCategoryWorkbenchDrafts2026}
+              divisionSalesGroupDrafts={divisionSalesGroupDrafts2026}
+              departmentSalesGroupDrafts={departmentSalesGroupDrafts2026}
+              salesGroupDrafts={salesGroupDrafts2026}
+              thresholdDecisionDrafts={thresholdDecisionDrafts2026}
+              onLoad={loadPolicyMappingCandidates2026}
+              onSave={savePolicyMetadata2026}
+              onCategoryDraftChange={(id, patch) =>
+                setPolicyCategoryWorkbenchDrafts2026((current) => ({
+                  ...current,
+                  [id]: {
+                    category: current[id]?.category ?? '',
+                    scoreContributionType: current[id]?.scoreContributionType ?? '',
+                    note: current[id]?.note ?? '',
+                    ...patch,
+                  },
+                }))
+              }
+              onCategoryBulkDraftChange={(ids, patch) =>
+                setPolicyCategoryWorkbenchDrafts2026((current) => {
+                  const next = { ...current }
+                  for (const id of ids) {
+                    next[id] = {
+                      category: current[id]?.category ?? '',
+                      scoreContributionType: current[id]?.scoreContributionType ?? '',
+                      note: current[id]?.note ?? '',
+                      ...patch,
+                    }
+                  }
+                  return next
+                })
+              }
+              onDivisionSalesGroupChange={(key, value) =>
+                setDivisionSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
+              }
+              onDepartmentSalesGroupChange={(key, value) =>
+                setDepartmentSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
+              }
+              onSalesGroupChange={(key, value) =>
+                setSalesGroupDrafts2026((current) => ({ ...current, [key]: value }))
+              }
+              onThresholdDecisionChange={(cycleId, value) =>
+                setThresholdDecisionDrafts2026((current) => ({ ...current, [cycleId]: value }))
+              }
+            />
+          </>
+        ) : null}
       </div>
     )
   }
@@ -13295,6 +13375,161 @@ function PolicyReadinessPopulation2026Panel(props: {
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
           HR 관리자가 선택한 평가 주기에 대해 인원 점검 사전 실행 검토를 실행할 수 있습니다. 이 단계는 읽기 전용입니다.
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+function PolicyCategoryMissingResolver2026Panel(props: {
+  policyCategoryMissingCount: number | null
+  mappingData: EvaluationPolicyMapping2026ApiData | null
+  loading: boolean
+  saving: boolean
+  error: string
+  notice: string
+  categoryDrafts: Record<string, PolicyCategoryWorkbenchDraft2026>
+  onLoad: () => void
+  onSave: () => void
+  onBaselineRefresh: () => void
+  onCategoryDraftChange: (mappingId: string, patch: Partial<PolicyCategoryWorkbenchDraft2026>) => void
+}) {
+  const missingItems = useMemo(
+    () => props.mappingData?.policyCategoryWorkbenchItems.filter((item) => !item.currentPolicyCategory) ?? [],
+    [props.mappingData?.policyCategoryWorkbenchItems]
+  )
+  const visibleMissingItems = missingItems.slice(0, 6)
+  const resolvedMissingCount = props.policyCategoryMissingCount ?? (props.mappingData ? missingItems.length : null)
+  const categoryDraftCount = Object.values(props.categoryDrafts).filter((draft) => Boolean(draft.category)).length
+  const hasLoadedCandidates = Boolean(props.mappingData)
+
+  return (
+    <Panel
+      title="policyCategory 미분류 처리"
+      description="공식 평가 생성 전 미분류 KPI의 정책 카테고리를 정리합니다. 이 작업은 공식 점수, 등급, Evaluation, EvaluationItem을 변경하지 않습니다."
+    >
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={(resolvedMissingCount ?? 1) > 0 ? 'warn' : 'success'}>
+              현재 미분류 {formatBaselineCount2026(resolvedMissingCount)}건
+            </Badge>
+            <Badge tone="neutral">metadata-only</Badge>
+            <Badge tone="neutral">공식 평가 생성 없음</Badge>
+            <Badge tone="neutral">점수/등급 반영 없음</Badge>
+          </div>
+          <p className="text-sm leading-6 text-slate-600">
+            기존 안전 경로인 정책 매핑 후보 조회와 2026 정책 metadata 저장만 사용합니다. ORG_GOAL / PROJECT_T / PROJECT_K / DAILY_WORK 중 HR 기준으로 확정한 뒤 Baseline을 다시 확인하세요.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 xl:justify-end">
+          <button
+            type="button"
+            onClick={props.onLoad}
+            disabled={props.loading || props.saving}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
+          >
+            {props.loading ? '조회 중...' : '미분류 항목 보기'}
+          </button>
+          <button
+            type="button"
+            onClick={props.onSave}
+            disabled={!hasLoadedCandidates || categoryDraftCount === 0 || props.loading || props.saving}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {props.saving ? '저장 중...' : '정책 카테고리 저장'}
+          </button>
+          <button
+            type="button"
+            onClick={props.onBaselineRefresh}
+            disabled={props.loading || props.saving}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-300"
+          >
+            Baseline 다시 내보내기
+          </button>
+        </div>
+      </div>
+
+      {props.error ? <div className="mt-4"><Banner tone="error" message={props.error} /></div> : null}
+      {props.notice ? <div className="mt-4"><Banner tone="success" message={props.notice} /></div> : null}
+
+      {!hasLoadedCandidates ? (
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          미분류 항목 보기를 눌러 현재 정책 카테고리 후보를 조회하세요. 아래의 기존 정책 매핑 관리 영역에서도 같은 후보 조회와 metadata-only 저장 경로를 사용할 수 있습니다.
+        </div>
+      ) : missingItems.length ? (
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold text-slate-900">미분류 항목</h4>
+            <span className="text-xs text-slate-500">
+              {visibleMissingItems.length.toLocaleString('ko-KR')} / {missingItems.length.toLocaleString('ko-KR')}건 표시
+            </span>
+          </div>
+          <div className="grid gap-3">
+            {visibleMissingItems.map((item) => {
+              const draft = props.categoryDrafts[item.mappingId] ?? { category: '', scoreContributionType: '', note: '' }
+              return (
+                <div key={item.mappingId} className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] lg:items-start">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h5 className="truncate text-sm font-semibold text-slate-900">{item.kpiTitle}</h5>
+                        <Badge tone={getPolicyCategoryConfidenceTone2026(item.sourceConfidence)}>
+                          제안 {getPolicyCategoryLabel2026(item.suggestedPolicyCategory)}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {item.employeeName} · {item.departmentPath} · 리더 {item.managerName}
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">{item.suggestionReason}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-slate-600">
+                        정책 카테고리
+                        <select
+                          value={draft.category}
+                          onChange={(event) =>
+                            props.onCategoryDraftChange(item.mappingId, {
+                              category: event.target.value as PolicyCategoryDraft2026,
+                            })
+                          }
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700"
+                        >
+                          <option value="">선택 안 함</option>
+                          <option value="ORG_GOAL">ORG_GOAL 조직목표</option>
+                          <option value="PROJECT_T">PROJECT_T 프로젝트 T</option>
+                          <option value="PROJECT_K">PROJECT_K 프로젝트 K</option>
+                          <option value="DAILY_WORK">DAILY_WORK 일상업무</option>
+                          <option value="KEEP_UNCLASSIFIED">제외/미분류 유지</option>
+                        </select>
+                      </label>
+                      <textarea
+                        value={draft.note}
+                        onChange={(event) => props.onCategoryDraftChange(item.mappingId, { note: event.target.value })}
+                        rows={2}
+                        maxLength={1000}
+                        placeholder={item.reviewNote ?? 'HR 검토 메모'}
+                        className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          {missingItems.length > visibleMissingItems.length ? (
+            <p className="text-xs text-slate-500">
+              나머지 항목은 아래 2026 정책 매핑 관리의 카테고리 매핑 탭에서 필터와 일괄 선택으로 처리하세요.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="mt-4 flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <div className="font-semibold">policyCategory 미분류 항목이 없습니다.</div>
+            <p className="mt-1 text-xs leading-5">Baseline을 다시 확인해 policyCategory missing이 0건인지 검증하세요.</p>
+          </div>
         </div>
       )}
     </Panel>
