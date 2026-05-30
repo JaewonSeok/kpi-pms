@@ -140,6 +140,84 @@ type DryRunOutputPasteReview2026 = {
     value: string
   }>
 }
+type OfficialDataReadinessBaselineRow2026 = {
+  item: string
+  currentCountStatus: string
+  requiredState: string
+  owner: string
+  route: string
+  canBeSolvedNow: 'yes' | 'no' | 'partial'
+  officialWriteNeeded: 'yes' | 'no'
+  nextAction: string
+}
+type OfficialDataReadinessBaselineCounts2026 = {
+  activeEmployees: number | null
+  targetPopulationCount: number | null
+  confirmedKpiCount: number | null
+  confirmedKpiCoverageRate: number | null
+  mboMissing: number | null
+  confirmedKpiShortage: number | null
+  draftKpiHolders: number | null
+  submittedKpiCount: number | null
+  teamKpiPending: number | null
+  policyCategoryMissing: number | null
+  orgGoalCount: number | null
+  projectTCount: number | null
+  projectKCount: number | null
+  dailyWorkCount: number | null
+  evaluatorRoutingBlockers: number | null
+  missingFirstEvaluator: number | null
+  missingSecondEvaluator: number | null
+  missingFinalEvaluator: number | null
+  manualReviewCount: number | null
+  inactiveEvaluatorCount: number | null
+  managerMissingCount: number | null
+  scorePolicyBlockers: number | null
+  gradePolicyBlockers: number | null
+  weightCapWarnings: number | null
+  categorySourceWarnings: number | null
+  gradeThresholdBlockers: number | null
+  resultWritingWarnings: number | null
+  leaderEvaluationBlockers: number | null
+  finalizationCeoBlockers: number | null
+  calibrationBlockers: number | null
+  ceoConfirmationBlockers: number | null
+  leadership360Blockers: number | null
+  missingReviewerAssignments: number | null
+  missingResponses: number | null
+  aiPassFailBlockers: number | null
+  officialGateBlockers: number | null
+}
+type OfficialDataReadinessBaselineExport2026 = {
+  snapshotTimestamp: string
+  targetCycleName: string
+  targetYear: number | null
+  officialPopulationReadiness: 'READY' | 'NOT_READY' | 'READY_WITH_APPROVED_EXCEPTIONS'
+  counts: OfficialDataReadinessBaselineCounts2026
+  blockers: string[]
+  nextHrActions: string[]
+  nextDeveloperWatchActions: string[]
+  prohibitedActions: string[]
+  baselineRows: OfficialDataReadinessBaselineRow2026[]
+  copyPayloads: {
+    summary: string
+    markdown: string
+    tsv: string
+  }
+  safety: {
+    productionDataMutation: false
+    migration: false
+    backfillApply: false
+    officialScoring: false
+    officialGrade: false
+    aiScoreExclusion: false
+    totalScoreWrite: false
+    gradeIdWrite: false
+    evaluationCreation: false
+    evaluationItemCreation: false
+    featureFlagChange: false
+  }
+}
 type GradePolicyTeamMemberSalesResolutionPayload2026 =
   | {
       decision: 'APPLY_PPT_BASELINE'
@@ -3080,7 +3158,7 @@ function PolicyReadiness2026Panel(props: {
   )
 }
 
-function formatIntegratedSnapshotCount2026(value: number | null | undefined) {
+function formatIntegratedSnapshotCount2026(value: unknown) {
   return typeof value === 'number' ? value.toLocaleString() : '미확인'
 }
 
@@ -3088,6 +3166,8 @@ function formatReadinessUiStatus2026(status: string | null | undefined) {
   if (!status) return '미확인'
   const labels: Record<string, string> = {
     READY: '준비됨',
+    NOT_READY: '준비 안 됨',
+    READY_WITH_APPROVED_EXCEPTIONS: '승인 예외 포함 준비',
     BLOCKED: '차단됨',
     READY_LATER: '추후 가능',
     READY_FOR_REVIEW: '검토 가능',
@@ -3124,6 +3204,444 @@ function formatReadinessUiStatus2026(status: string | null | undefined) {
     TEMPLATE_READY: '양식 준비됨',
   }
   return labels[status] ?? status
+}
+
+function optionalBaselineNumber2026(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function formatBaselineCount2026(value: number | string | null | undefined) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value.toLocaleString('ko-KR')
+  if (typeof value === 'string' && value.trim()) return value
+  return '미확인'
+}
+
+function formatBaselineRate2026(value: number | null | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '미확인'
+  return `${value.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}%`
+}
+
+function escapeBaselineTsvCell2026(value: string) {
+  return value.replace(/\t/g, ' ').replace(/\r?\n/g, ' ')
+}
+
+function buildBaselineTsv2026(rows: OfficialDataReadinessBaselineRow2026[]) {
+  const headers = [
+    'Item',
+    'Current count/status',
+    'Required state',
+    'Owner',
+    'Route',
+    'Can be solved now?',
+    'Official write needed?',
+    'Next action',
+  ]
+  return [
+    headers.join('\t'),
+    ...rows.map((row) => [
+      row.item,
+      row.currentCountStatus,
+      row.requiredState,
+      row.owner,
+      row.route,
+      row.canBeSolvedNow,
+      row.officialWriteNeeded,
+      row.nextAction,
+    ].map(escapeBaselineTsvCell2026).join('\t')),
+  ].join('\n')
+}
+
+function buildOfficialDataReadinessBaselineExport2026(
+  activation: EvaluationActivationReadiness2026ApiData
+): OfficialDataReadinessBaselineExport2026 {
+  const snapshot = activation.integratedReadinessSnapshot
+  const snapshotSummary = snapshot.summary
+  const cycleScope = activation.readiness.cycleScope
+  const evaluatorSummary = activation.evaluatorRoutingReadiness?.summary
+  const feedbackSummary = activation.feedbackLeadershipReadiness?.summary
+  const leaderSummary = activation.leaderEvaluationReadiness?.summary
+  const finalizationSummary = activation.finalizationCeoReadiness?.summary
+  const gradePolicy = activation.gradePolicyReadiness
+  const activeEmployees = optionalBaselineNumber2026(snapshotSummary.activeEmployeeCount)
+  const confirmedKpiCount = optionalBaselineNumber2026(snapshotSummary.confirmedPersonalKpiCount)
+  const confirmedKpiShortage =
+    activeEmployees == null || confirmedKpiCount == null
+      ? null
+      : Math.max(activeEmployees - confirmedKpiCount, 0)
+  const officialGateBlockers = optionalBaselineNumber2026(snapshotSummary.officialActivationGateBlockerCount)
+    ?? activation.officialActivationGates.filter((gate) => gate.status !== 'READY' && gate.status !== 'NOT_APPLICABLE').length
+  const gradeThresholdBlockers = gradePolicy
+    ? gradePolicy.missingRowsCount + gradePolicy.differsFromPptCount + gradePolicy.overlapCount + gradePolicy.gapCount + gradePolicy.missingHrDecisionCount
+    : null
+  const counts: OfficialDataReadinessBaselineCounts2026 = {
+    activeEmployees,
+    targetPopulationCount: activeEmployees,
+    confirmedKpiCount,
+    confirmedKpiCoverageRate: optionalBaselineNumber2026(snapshot.completionRates.mboConfirmedRate),
+    mboMissing: optionalBaselineNumber2026(snapshotSummary.missingMboCount),
+    confirmedKpiShortage,
+    draftKpiHolders: null,
+    submittedKpiCount: null,
+    teamKpiPending: optionalBaselineNumber2026(snapshotSummary.teamKpiPendingCount),
+    policyCategoryMissing: optionalBaselineNumber2026(snapshotSummary.policyCategoryMissingCount),
+    orgGoalCount: null,
+    projectTCount: null,
+    projectKCount: null,
+    dailyWorkCount: null,
+    evaluatorRoutingBlockers: optionalBaselineNumber2026(snapshotSummary.evaluatorRoutingBlockerCount),
+    missingFirstEvaluator: evaluatorSummary?.missingFirstEvaluatorCount ?? null,
+    missingSecondEvaluator: evaluatorSummary?.missingSecondEvaluatorCount ?? null,
+    missingFinalEvaluator: evaluatorSummary?.missingFinalApproverCount ?? null,
+    manualReviewCount: evaluatorSummary?.manualReviewCount ?? null,
+    inactiveEvaluatorCount: evaluatorSummary?.inactiveEvaluatorWarningCount ?? null,
+    managerMissingCount: evaluatorSummary?.managerEmployeeNoMissingCount ?? null,
+    scorePolicyBlockers: optionalBaselineNumber2026(snapshotSummary.scorePolicyBlockerCount),
+    gradePolicyBlockers: optionalBaselineNumber2026(snapshotSummary.gradePolicyBlockerCount),
+    weightCapWarnings: null,
+    categorySourceWarnings: null,
+    gradeThresholdBlockers,
+    resultWritingWarnings: optionalBaselineNumber2026(snapshotSummary.resultWritingBlockerCount),
+    leaderEvaluationBlockers: optionalBaselineNumber2026(snapshotSummary.leaderEvaluationBlockerCount) ?? leaderSummary?.blockerCount ?? null,
+    finalizationCeoBlockers: optionalBaselineNumber2026(snapshotSummary.finalizationCeoBlockerCount) ?? finalizationSummary?.finalizationBlockerCount ?? null,
+    calibrationBlockers: finalizationSummary?.calibrationReadinessBlockerCount ?? null,
+    ceoConfirmationBlockers: finalizationSummary?.ceoConfirmationBlockerCount ?? null,
+    leadership360Blockers: optionalBaselineNumber2026(snapshotSummary.feedbackLeadershipBlockerCount) ?? feedbackSummary?.blockedOrNeedsSetupCount ?? null,
+    missingReviewerAssignments: feedbackSummary?.missingReviewerAssignmentCount ?? null,
+    missingResponses: feedbackSummary?.responseMissingCount ?? null,
+    aiPassFailBlockers: optionalBaselineNumber2026(snapshotSummary.aiReadinessBlockerCount),
+    officialGateBlockers,
+  }
+  const requiredBlockerValues = [
+    counts.mboMissing,
+    counts.confirmedKpiShortage,
+    counts.teamKpiPending,
+    counts.policyCategoryMissing,
+    counts.evaluatorRoutingBlockers,
+    counts.scorePolicyBlockers,
+    counts.gradePolicyBlockers,
+    counts.officialGateBlockers,
+  ]
+  const officialPopulationReadiness: OfficialDataReadinessBaselineExport2026['officialPopulationReadiness'] =
+    requiredBlockerValues.every((value) => value === 0) ? 'READY' : 'NOT_READY'
+  const baselineRows: OfficialDataReadinessBaselineRow2026[] = [
+    {
+      item: 'active employees',
+      currentCountStatus: formatBaselineCount2026(counts.activeEmployees),
+      requiredState: 'HR confirmed official target scope',
+      owner: 'HR/인사',
+      route: '/admin/evaluation-ops',
+      canBeSolvedNow: 'yes',
+      officialWriteNeeded: 'no',
+      nextAction: '대상자 범위와 제외 기준을 확정합니다.',
+    },
+    {
+      item: 'confirmed KPI count / coverage rate',
+      currentCountStatus: `${formatBaselineCount2026(counts.confirmedKpiCount)} / ${formatBaselineRate2026(counts.confirmedKpiCoverageRate)}`,
+      requiredState: 'confirmed KPI coverage sufficient or exceptions approved',
+      owner: 'HR/인사 + 리더',
+      route: '/kpi/personal',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: '확정 KPI 부족 대상자를 확인하고 제출/확정 follow-up을 진행합니다.',
+    },
+    {
+      item: 'MBO missing',
+      currentCountStatus: formatBaselineCount2026(counts.mboMissing),
+      requiredState: '0 or approved exclusions',
+      owner: '직원 + 리더',
+      route: '/kpi/personal',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: 'MBO 미작성 대상자에게 작성/제출을 요청합니다.',
+    },
+    {
+      item: 'confirmed KPI shortage',
+      currentCountStatus: formatBaselineCount2026(counts.confirmedKpiShortage),
+      requiredState: '0 or approved exclusions',
+      owner: 'HR/인사 + 리더',
+      route: '/kpi/personal',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: '확정 KPI 부족 대상자와 예외 승인 여부를 정리합니다.',
+    },
+    {
+      item: 'Team KPI pending/discussion',
+      currentCountStatus: formatBaselineCount2026(counts.teamKpiPending),
+      requiredState: '0 or approved exceptions',
+      owner: 'HR/인사',
+      route: '/admin/evaluation-ops',
+      canBeSolvedNow: 'yes',
+      officialWriteNeeded: 'no',
+      nextAction: 'Team KPI 검토 대기/논의 필요 건을 확정합니다.',
+    },
+    {
+      item: 'policyCategory missing',
+      currentCountStatus: formatBaselineCount2026(counts.policyCategoryMissing),
+      requiredState: '0 or approved exceptions',
+      owner: 'HR/인사',
+      route: '/admin/evaluation-ops',
+      canBeSolvedNow: 'yes',
+      officialWriteNeeded: 'no',
+      nextAction: 'policyCategory 미분류 KPI를 분류합니다.',
+    },
+    {
+      item: 'evaluator routing blockers',
+      currentCountStatus: formatBaselineCount2026(counts.evaluatorRoutingBlockers),
+      requiredState: '0 or approved exceptions',
+      owner: 'HR/인사',
+      route: '/admin/performance-assignments',
+      canBeSolvedNow: 'yes',
+      officialWriteNeeded: 'no',
+      nextAction: 'FIRST/SECOND/FINAL 평가자 누락과 수동 검토 건을 정리합니다.',
+    },
+    {
+      item: 'score policy blockers',
+      currentCountStatus: formatBaselineCount2026(counts.scorePolicyBlockers),
+      requiredState: '0',
+      owner: 'HR/인사 + 개발/모니터링',
+      route: '/admin/evaluation-readiness',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: '점수 정책 경고와 AI Pass/Fail 분리 정책을 검토합니다.',
+    },
+    {
+      item: 'grade policy blockers',
+      currentCountStatus: formatBaselineCount2026(counts.gradePolicyBlockers),
+      requiredState: '0',
+      owner: 'HR/인사',
+      route: '/admin/evaluation-readiness',
+      canBeSolvedNow: 'yes',
+      officialWriteNeeded: 'no',
+      nextAction: '등급 기준 누락/차이/경계 조건을 확정합니다.',
+    },
+    {
+      item: 'leader evaluation blockers',
+      currentCountStatus: formatBaselineCount2026(counts.leaderEvaluationBlockers),
+      requiredState: '0 or approved exceptions',
+      owner: '리더 + HR/인사',
+      route: '/admin/evaluation-readiness',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: '리더 평가 선행 조건과 결과 작성 준비 상태를 확인합니다.',
+    },
+    {
+      item: 'finalization/CEO blockers',
+      currentCountStatus: formatBaselineCount2026(counts.finalizationCeoBlockers),
+      requiredState: '0 before finalization discussion',
+      owner: 'HR/인사 + CEO office',
+      route: '/admin/evaluation-readiness',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: '최종/대표이사 확정 전 차단 조건과 보정 준비 상태를 확인합니다.',
+    },
+    {
+      item: '360/leadership blockers',
+      currentCountStatus: formatBaselineCount2026(counts.leadership360Blockers),
+      requiredState: '0 or approved exceptions',
+      owner: 'HR/인사',
+      route: '/admin/evaluation-ops',
+      canBeSolvedNow: 'yes',
+      officialWriteNeeded: 'no',
+      nextAction: '360/리더십 reviewer 배정과 응답 누락을 정리합니다.',
+    },
+    {
+      item: 'AI Pass/Fail readiness blockers',
+      currentCountStatus: `${formatBaselineCount2026(counts.aiPassFailBlockers)} / annual score exclusion ${activation.flags.aiScoreExclusionEnabled ? '활성화됨' : '비활성화'}`,
+      requiredState: 'Pass/Fail separated from annual score',
+      owner: 'HR/인사 + 개발/모니터링',
+      route: '/evaluation/ai-competency/admin',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: 'AI 활용평가가 연간 점수와 분리되어 있는지 확인합니다.',
+    },
+    {
+      item: 'official gate blockers',
+      currentCountStatus: formatBaselineCount2026(counts.officialGateBlockers),
+      requiredState: '0 before official population',
+      owner: 'HR/인사 + 개발/모니터링',
+      route: '/admin/evaluation-readiness',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: '공식 전환 차단 조건과 승인 증빙을 정리합니다.',
+    },
+    {
+      item: 'blocked until schema/save-flow',
+      currentCountStatus: 'official Evaluation/EvaluationItem creation, totalScore write, gradeId write',
+      requiredState: 'schema boundary migration strategy approved',
+      owner: '개발/모니터링',
+      route: '/admin/evaluation-readiness',
+      canBeSolvedNow: 'no',
+      officialWriteNeeded: 'yes',
+      nextAction: 'staging/preview DB rehearsal과 production migration sequencing 승인 전까지 보류합니다.',
+    },
+    {
+      item: 'unavailable detail fields',
+      currentCountStatus: [
+        `draft KPI holders ${formatBaselineCount2026(counts.draftKpiHolders)}`,
+        `ORG_GOAL ${formatBaselineCount2026(counts.orgGoalCount)}`,
+        `PROJECT_T ${formatBaselineCount2026(counts.projectTCount)}`,
+        `PROJECT_K ${formatBaselineCount2026(counts.projectKCount)}`,
+        `DAILY_WORK ${formatBaselineCount2026(counts.dailyWorkCount)}`,
+        `weight/cap warnings ${formatBaselineCount2026(counts.weightCapWarnings)}`,
+        `category/source warnings ${formatBaselineCount2026(counts.categorySourceWarnings)}`,
+      ].join(' · '),
+      requiredState: 'existing export exposes field or HR confirms manually',
+      owner: 'HR/인사 + 개발/모니터링',
+      route: '/admin/evaluation-readiness',
+      canBeSolvedNow: 'partial',
+      officialWriteNeeded: 'no',
+      nextAction: '현재 읽기 전용 응답에 없는 상세 필드는 미확인으로 표시합니다.',
+    },
+  ]
+  const blockers = snapshot.topBlockers.map((item) => `${item.name}: ${formatBaselineCount2026(item.count)}건`)
+  const nextHrActions = snapshot.nextActions.hr.map((item) => `${item.label}: ${item.detail} (${item.route})`)
+  const nextDeveloperWatchActions = snapshot.nextActions.developer.map((item) => `${item.label}: ${item.detail} (${item.route})`)
+  const prohibitedActions = Array.from(new Set([
+    ...snapshot.prohibitedActions,
+    ...(activation.dryRunGoNoGoFreezePack?.prohibitedActions ?? []),
+  ]))
+  const tsv = buildBaselineTsv2026(baselineRows)
+  const summaryLines = [
+    '2026 Official Data Readiness Baseline v1',
+    `snapshot timestamp: ${activation.checkedAt}`,
+    `target cycle: ${cycleScope.selectedCycleName ?? '미확인'}`,
+    `target year: ${formatBaselineCount2026(cycleScope.selectedCycleYear)}`,
+    `official population readiness: ${formatReadinessUiStatus2026(officialPopulationReadiness)}`,
+    `active employees: ${formatBaselineCount2026(counts.activeEmployees)}`,
+    `confirmed KPI count / coverage rate: ${formatBaselineCount2026(counts.confirmedKpiCount)} / ${formatBaselineRate2026(counts.confirmedKpiCoverageRate)}`,
+    `MBO missing: ${formatBaselineCount2026(counts.mboMissing)}`,
+    `confirmed KPI shortage: ${formatBaselineCount2026(counts.confirmedKpiShortage)}`,
+    `Team KPI pending/discussion: ${formatBaselineCount2026(counts.teamKpiPending)}`,
+    `policyCategory missing: ${formatBaselineCount2026(counts.policyCategoryMissing)}`,
+    `evaluator routing blockers: ${formatBaselineCount2026(counts.evaluatorRoutingBlockers)}`,
+    `official gate blockers: ${formatBaselineCount2026(counts.officialGateBlockers)}`,
+    `Go/No-Go status: ${formatReadinessUiStatus2026(activation.dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO')}`,
+    `apply status: ${formatReadinessUiStatus2026(activation.dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED')}`,
+  ]
+  const markdown = [
+    '# 2026 Official Data Readiness Baseline v1',
+    '',
+    `- snapshot timestamp: ${activation.checkedAt}`,
+    `- target cycle: ${cycleScope.selectedCycleName ?? '미확인'}`,
+    `- target year: ${formatBaselineCount2026(cycleScope.selectedCycleYear)}`,
+    `- official population readiness: ${formatReadinessUiStatus2026(officialPopulationReadiness)}`,
+    `- active employees: ${formatBaselineCount2026(counts.activeEmployees)}`,
+    `- confirmed KPI count / coverage rate: ${formatBaselineCount2026(counts.confirmedKpiCount)} / ${formatBaselineRate2026(counts.confirmedKpiCoverageRate)}`,
+    `- MBO missing: ${formatBaselineCount2026(counts.mboMissing)}`,
+    `- confirmed KPI shortage: ${formatBaselineCount2026(counts.confirmedKpiShortage)}`,
+    `- draft KPI holders: ${formatBaselineCount2026(counts.draftKpiHolders)}`,
+    `- submitted KPI count: ${formatBaselineCount2026(counts.submittedKpiCount)}`,
+    `- Team KPI pending/discussion: ${formatBaselineCount2026(counts.teamKpiPending)}`,
+    `- policyCategory missing: ${formatBaselineCount2026(counts.policyCategoryMissing)}`,
+    `- ORG_GOAL count: ${formatBaselineCount2026(counts.orgGoalCount)}`,
+    `- PROJECT_T count: ${formatBaselineCount2026(counts.projectTCount)}`,
+    `- PROJECT_K count: ${formatBaselineCount2026(counts.projectKCount)}`,
+    `- DAILY_WORK count: ${formatBaselineCount2026(counts.dailyWorkCount)}`,
+    `- evaluator routing blockers: ${formatBaselineCount2026(counts.evaluatorRoutingBlockers)}`,
+    `- missing FIRST evaluator: ${formatBaselineCount2026(counts.missingFirstEvaluator)}`,
+    `- missing SECOND evaluator: ${formatBaselineCount2026(counts.missingSecondEvaluator)}`,
+    `- missing FINAL evaluator: ${formatBaselineCount2026(counts.missingFinalEvaluator)}`,
+    `- score policy blockers: ${formatBaselineCount2026(counts.scorePolicyBlockers)}`,
+    `- grade policy blockers: ${formatBaselineCount2026(counts.gradePolicyBlockers)}`,
+    `- grade threshold blockers: ${formatBaselineCount2026(counts.gradeThresholdBlockers)}`,
+    `- TEAM_MEMBER_SALES Super/Outstanding issue: ${gradePolicy?.teamMemberSalesAmbiguity.requiresDecision ? gradePolicy.teamMemberSalesAmbiguity.message : '해당 없음 또는 확정됨'}`,
+    `- result-writing warnings: ${formatBaselineCount2026(counts.resultWritingWarnings)}`,
+    `- leader evaluation blockers: ${formatBaselineCount2026(counts.leaderEvaluationBlockers)}`,
+    `- finalization/CEO blockers: ${formatBaselineCount2026(counts.finalizationCeoBlockers)}`,
+    `- calibration blockers: ${formatBaselineCount2026(counts.calibrationBlockers)}`,
+    `- CEO confirmation blockers: ${formatBaselineCount2026(counts.ceoConfirmationBlockers)}`,
+    `- 360/leadership blockers: ${formatBaselineCount2026(counts.leadership360Blockers)}`,
+    `- missing reviewer assignments: ${formatBaselineCount2026(counts.missingReviewerAssignments)}`,
+    `- missing responses: ${formatBaselineCount2026(counts.missingResponses)}`,
+    `- AI Pass/Fail blockers: ${formatBaselineCount2026(counts.aiPassFailBlockers)}`,
+    `- AI annual score exclusion status: ${activation.flags.aiScoreExclusionEnabled ? '활성화됨' : '비활성화'}`,
+    `- official gate blockers: ${formatBaselineCount2026(counts.officialGateBlockers)}`,
+    `- Go/No-Go status: ${formatReadinessUiStatus2026(activation.dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO')}`,
+    `- apply status: ${formatReadinessUiStatus2026(activation.dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED')}`,
+    '',
+    '## HR-resolvable blockers',
+    '- MBO missing / confirmed KPI shortage',
+    '- evaluator routing blockers',
+    '- Team KPI pending/discussion',
+    '- policyCategory missing',
+    '- score policy blockers',
+    '- grade policy blockers',
+    '',
+    '## Leader/employee blockers',
+    '- employee MBO 작성/제출',
+    '- leader KPI review/confirmation',
+    '- result evidence/comment preparation',
+    '',
+    '## Developer/watch blockers',
+    '- production log watch',
+    '- schema migration hold',
+    '- no feature flag changes',
+    '',
+    '## Blocked until schema/save-flow',
+    '- official Evaluation creation',
+    '- official EvaluationItem creation',
+    '- official stage save/submit',
+    '- official totalScore write',
+    '- official gradeId write',
+    '- finalization write',
+    '',
+    '## Cycle 1 P0/P1/P2 plan',
+    '- P0: MBO missing / confirmed KPI shortage, evaluator routing blockers, Team KPI pending, policyCategory missing',
+    '- P1: score policy blockers, grade policy blockers, result-writing warnings, leader evaluation readiness, finalization/CEO readiness, 360/leadership readiness',
+    '- P2/watch: AI Pass/Fail separation, production log watch, schema migration hold, no official writes',
+    '',
+    '## Data readiness table',
+    tsv,
+    '',
+    '## Top blockers',
+    ...(blockers.length ? blockers.map((item) => `- ${item}`) : ['- 미확인']),
+    '',
+    '## Next HR actions',
+    ...(nextHrActions.length ? nextHrActions.map((item) => `- ${item}`) : ['- 미확인']),
+    '',
+    '## Next developer/watch actions',
+    ...(nextDeveloperWatchActions.length ? nextDeveloperWatchActions.map((item) => `- ${item}`) : ['- 미확인']),
+    '',
+    '## Safety confirmation',
+    '- no production data mutation',
+    '- no migrations',
+    '- no dry-run/backfill/apply',
+    '- no official scoring/grade/AI activation',
+    '- no Evaluation.totalScore write',
+    '- no Evaluation.gradeId write',
+    '- no Evaluation/EvaluationItem creation',
+    '- no feature flag changes',
+  ].join('\n')
+  return {
+    snapshotTimestamp: activation.checkedAt,
+    targetCycleName: cycleScope.selectedCycleName ?? '미확인',
+    targetYear: cycleScope.selectedCycleYear,
+    officialPopulationReadiness,
+    counts,
+    blockers,
+    nextHrActions,
+    nextDeveloperWatchActions,
+    prohibitedActions,
+    baselineRows,
+    copyPayloads: {
+      summary: summaryLines.join('\n'),
+      markdown,
+      tsv,
+    },
+    safety: {
+      productionDataMutation: false,
+      migration: false,
+      backfillApply: false,
+      officialScoring: false,
+      officialGrade: false,
+      aiScoreExclusion: false,
+      totalScoreWrite: false,
+      gradeIdWrite: false,
+      evaluationCreation: false,
+      evaluationItemCreation: false,
+      featureFlagChange: false,
+    },
+  }
 }
 
 function getIntegratedReadinessStatusTone2026(status: string): 'success' | 'warn' | 'error' | 'neutral' {
@@ -3691,6 +4209,10 @@ function PolicyActivationReadiness2026Panel(props: {
   const backfillDryRunCommandRunbook = activation?.backfillDryRunCommandRunbook ?? null
   const dryRunGoNoGoFreezePack = activation?.dryRunGoNoGoFreezePack ?? null
   const endToEndPilot2026 = activation?.endToEndPilot2026 ?? null
+  const officialDataReadinessBaseline = useMemo(
+    () => (activation ? buildOfficialDataReadinessBaselineExport2026(activation) : null),
+    [activation]
+  )
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const isPerformanceDashboardMode = props.presentationMode === 'performance-dashboard'
   const isReadinessAdminMode = props.presentationMode === 'readiness-admin'
@@ -3899,6 +4421,68 @@ function PolicyActivationReadiness2026Panel(props: {
 
       {activation ? (
         <div className="mt-5 space-y-4">
+          {isReadinessAdminMode && officialDataReadinessBaseline ? (
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="neutral">읽기 전용</Badge>
+                    <Badge tone={officialDataReadinessBaseline.officialPopulationReadiness === 'READY' ? 'success' : 'warn'}>
+                      {formatReadinessUiStatus2026(officialDataReadinessBaseline.officialPopulationReadiness)}
+                    </Badge>
+                    <Badge tone="neutral">공식 write 없음</Badge>
+                  </div>
+                  <h4 className="mt-3 text-lg font-semibold text-blue-950">2026 공식 데이터 준비 Baseline</h4>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-blue-900">
+                    공식 평가 생성 전 필요한 운영 데이터 준비 상태를 한 번에 내보냅니다. 이 내보내기는 읽기 전용이며 공식 저장, 점수 반영,
+                    등급 반영, 기존 데이터 채우기를 실행하지 않습니다.
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-blue-800">
+                    기준 시각 {officialDataReadinessBaseline.snapshotTimestamp} · 대상 주기 {officialDataReadinessBaseline.targetCycleName}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openExportPreview('official-data-readiness-baseline-summary', officialDataReadinessBaseline.copyPayloads.summary)}
+                    className="inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-700 px-3 text-xs font-semibold text-white transition hover:bg-blue-800"
+                  >
+                    공식 데이터 준비 Baseline 내보내기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openExportPreview('official-data-readiness-baseline-markdown', officialDataReadinessBaseline.copyPayloads.markdown)}
+                    className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-300 bg-white px-3 text-xs font-semibold text-blue-800 transition hover:bg-blue-50"
+                  >
+                    Baseline 마크다운 내보내기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openExportPreview('official-data-readiness-baseline-tsv', officialDataReadinessBaseline.copyPayloads.tsv)}
+                    className="inline-flex min-h-10 items-center justify-center rounded-xl border border-blue-300 bg-white px-3 text-xs font-semibold text-blue-800 transition hover:bg-blue-50"
+                  >
+                    Baseline TSV 내보내기
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <MetricCard label="active employees" value={formatIntegratedSnapshotCount2026(officialDataReadinessBaseline.counts.activeEmployees)} help="대상 범위" compact />
+                <MetricCard label="MBO missing" value={formatIntegratedSnapshotCount2026(officialDataReadinessBaseline.counts.mboMissing)} help="P0" compact variant={officialDataReadinessBaseline.counts.mboMissing ? 'warning' : 'default'} />
+                <MetricCard label="policyCategory missing" value={formatIntegratedSnapshotCount2026(officialDataReadinessBaseline.counts.policyCategoryMissing)} help="P0" compact variant={officialDataReadinessBaseline.counts.policyCategoryMissing ? 'warning' : 'default'} />
+                <MetricCard label="official gate blockers" value={formatIntegratedSnapshotCount2026(officialDataReadinessBaseline.counts.officialGateBlockers)} help="공식 실행 차단" compact variant={officialDataReadinessBaseline.counts.officialGateBlockers ? 'warning' : 'default'} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => openExportPreview('official-data-readiness-baseline-summary-view', officialDataReadinessBaseline.copyPayloads.summary)}
+                  className="inline-flex min-h-9 items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-800 transition hover:bg-blue-50"
+                >
+                  Baseline 요약 보기
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
