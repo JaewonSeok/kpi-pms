@@ -36,7 +36,7 @@ export const NAV_ITEMS: NavigationItem[] = [
     children: [
       { label: 'AI 역량평가', href: '/evaluation/ai-competency', menuKey: 'AI_COMPETENCY' },
       { label: '성과평가 운영', href: '/evaluation/performance', menuKey: 'PERFORMANCE_EVALUATION' },
-      { label: '평가 Workbench', href: '/evaluation/workbench', menuKey: 'PERFORMANCE_EVALUATION' },
+      { label: '평가 워크벤치', href: '/evaluation/workbench', menuKey: 'PERFORMANCE_EVALUATION' },
       {
         label: '공식 전환 준비',
         href: '/admin/evaluation-readiness',

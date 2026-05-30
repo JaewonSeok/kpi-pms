@@ -11,14 +11,14 @@ const operationLinks = [
     description: '일일 HR 운영 요약, 오늘 할 일, 공식 전환 상태 요약을 확인합니다.',
   },
   {
-    title: '평가 Workbench',
+    title: '평가 워크벤치',
     href: '/evaluation/workbench',
-    description: '실제 평가 흐름을 preview-only로 확인합니다.',
+    description: '실제 평가 흐름을 미리보기 전용으로 확인합니다.',
   },
   {
     title: '공식 전환 준비',
     href: '/admin/evaluation-readiness',
-    description: 'Gate, readiness 상세, dry-run 준비 도구, Go/No-Go를 읽기 전용으로 확인합니다.',
+    description: '공식 전환 차단 조건, 준비 상태 상세, 사전 실행 검토 도구, 진행 판단을 읽기 전용으로 확인합니다.',
   },
   {
     title: '평가자 배정 관리',
@@ -43,7 +43,7 @@ const operationLinks = [
   {
     title: '360/리더십',
     href: '/evaluation/360/admin',
-    description: '다면 피드백과 리더십 readiness 흐름을 확인합니다.',
+    description: '다면 피드백과 리더십 준비 상태 흐름을 확인합니다.',
   },
   {
     title: 'AI 역량 관리',
@@ -62,12 +62,12 @@ export default async function EvaluationOpsPage() {
     <div className="space-y-5">
       <section className="rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-600">
-          HR evaluation operations
+          인사 평가 운영
         </p>
         <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">2026 평가 운영 허브</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-          HR/admin이 자주 쓰는 평가 운영 화면을 역할별로 모았습니다. 이 화면은 navigation-only이며 저장, 제출,
-          확정, dry-run, apply, backfill, 공식 점수/등급 반영을 실행하지 않습니다.
+          HR/인사 관리자가 자주 쓰는 평가 운영 화면을 역할별로 모았습니다. 이 화면은 화면 이동 전용이며 저장, 제출,
+          확정, 사전 실행 검토, 실제 반영, 기존 데이터 채우기, 공식 점수/등급 반영을 실행하지 않습니다.
         </p>
       </section>
 
@@ -86,8 +86,8 @@ export default async function EvaluationOpsPage() {
       </section>
 
       <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-        안전 경계: 이 허브에는 backfill --apply, dry-run 실행, official scoring, official grade, AI score exclusion,
-        Evaluation.totalScore write, Evaluation.gradeId write, feature flag 변경 버튼이 없습니다.
+        안전 경계: 이 허브에는 기존 데이터 채우기 실제 반영, 사전 실행 검토 실행, 공식 점수 반영, 공식 등급 반영,
+        AI 점수 제외 활성화, 공식 저장 점수(totalScore) 쓰기, 공식 저장 등급(gradeId) 쓰기, 기능 활성화 스위치 변경 버튼이 없습니다.
       </section>
     </div>
   )
