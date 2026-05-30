@@ -1567,14 +1567,29 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
 
   if (isReadinessAdminRoute) {
     return (
-      <PolicyActivationReadiness2026Panel
-        activationData={policyActivationReadiness2026}
-        loading={policyActivationReadiness2026Loading}
-        error={policyActivationReadiness2026Error}
-        autoLoadKey={`readiness-admin:${props.selectedCycleId ?? '2026'}:${props.selectedEvaluationId ?? 'none'}`}
-        onLoad={loadPolicyActivationReadiness2026}
-        presentationMode="readiness-admin"
-      />
+      <div className="space-y-5">
+        {props.currentUser?.role === 'ROLE_ADMIN' ? (
+          <PolicyReadiness2026Panel
+            selectedCycleId={props.selectedCycleId ?? null}
+            readinessData={policyReadiness2026}
+            loading={policyReadiness2026Loading}
+            error={policyReadiness2026Error}
+            officialCycleSaving={policyOfficialCycle2026Saving}
+            officialCycleError={policyOfficialCycle2026Error}
+            officialCycleNotice={policyOfficialCycle2026Notice}
+            onLoad={loadPolicyReadiness2026}
+            onSetOfficialCycle={setPolicyOfficialReadinessCycle2026}
+          />
+        ) : null}
+        <PolicyActivationReadiness2026Panel
+          activationData={policyActivationReadiness2026}
+          loading={policyActivationReadiness2026Loading}
+          error={policyActivationReadiness2026Error}
+          autoLoadKey={`readiness-admin:${props.selectedCycleId ?? '2026'}:${props.selectedEvaluationId ?? 'none'}`}
+          onLoad={loadPolicyActivationReadiness2026}
+          presentationMode="readiness-admin"
+        />
+      </div>
     )
   }
 
@@ -4077,40 +4092,59 @@ function PolicyActivationReadiness2026Panel(props: {
 
           <div className="grid gap-3 xl:grid-cols-4">
             {[
-              ['고급 진단 / 준비 상태 상세', '통합 준비 상태, 액션 플랜, 실행 보드, 시나리오 시뮬레이터를 필요할 때만 펼칩니다.'],
-              ['공식 전환 준비 / 사전 실행 검토 도구', '병렬 운영 현황판, 기존 데이터 채우기 사전 점검, 결과 검토, 리허설 안전장치, 명령 실행 절차서, 진행 판단, 해제 계획을 접어 둡니다.'],
-              ['대표/최종 보고', '대표이사 보고 패키지, 최종 확정 준비 상태, 360/리더십 준비 상태는 보고 시점에 펼칩니다.'],
-              ['개발자/모니터링 전용', 'Vercel 로그 감시, 금지 작업, 기능 활성화 스위치 감시, 명령 참고 자료는 개발/감시 용도로만 확인합니다.'],
-            ].map(([title, description]) => (
-              <details key={title} className="rounded-2xl border border-slate-200 bg-white">
+              {
+                title: '고급 진단 / 준비 상태 상세',
+                description: '공식 전환 준비 화면에서 상세 준비 상태를 확인하세요.',
+                href: '/admin/evaluation-readiness',
+                cta: '상세 준비 상태 열기',
+                items: ['통합 준비 상태 스냅샷', '준비 상태 액션 플랜', '실행 보드', '시나리오 시뮬레이터', '등급 기준 준비 상태', '정책 매핑 관리', '평가 미리보기'],
+              },
+              {
+                title: '공식 전환 준비 / 사전 실행 검토 도구',
+                description: '공식 전환 준비 화면에서 사전 실행 검토와 사전 점검 도구를 확인하세요.',
+                href: '/admin/evaluation-readiness',
+                cta: '사전 실행 검토 도구 열기',
+                items: ['공식 전환 차단 조건', '준비 상태 대상자 사전 실행 검토', '병렬 운영 현황판', '기존 데이터 채우기 사전 점검', '결과 검토', '리허설 안전장치', '명령 실행 절차서', '진행 가능 여부 판정', '해제 계획'],
+              },
+              {
+                title: '대표/최종 보고',
+                description: '공식 전환 준비 화면에서 대표/최종 보고 준비 상태를 확인하세요.',
+                href: '/admin/evaluation-readiness',
+                cta: '대표/최종 보고 열기',
+                items: ['대표이사 보고 패키지', '최종 확정/대표이사 준비 상태', '360/리더십 준비 상태'],
+              },
+              {
+                title: '개발자/모니터링 전용',
+                description: '공식 전환 준비 화면에서 모니터링 전용 항목과 금지 작업을 확인하세요.',
+                href: '/admin/evaluation-readiness',
+                cta: '모니터링 전용 항목 열기',
+                items: ['Vercel 로그 감시', '명령 참고 자료', '기능 활성화 스위치 감시', '금지 작업'],
+              },
+            ].map((group) => (
+              <details key={group.title} className="rounded-2xl border border-slate-200 bg-white">
                 <summary className="cursor-pointer list-none px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-slate-900">{title}</span>
+                    <span className="text-sm font-semibold text-slate-900">{group.title}</span>
                     <Badge tone="neutral">기본 접힘</Badge>
                   </div>
                 </summary>
-                <p className="border-t border-slate-100 px-4 pb-4 pt-3 text-sm leading-6 text-slate-600">{description}</p>
+                <div className="space-y-3 border-t border-slate-100 px-4 pb-4 pt-3">
+                  <p className="text-sm leading-6 text-slate-600">{group.description}</p>
+                  <ul className="space-y-1 text-xs leading-5 text-slate-500">
+                    {group.items.map((item) => (
+                      <li key={`${group.title}-${item}`}>- {item}</li>
+                    ))}
+                  </ul>
+                  <Link href={group.href} className="inline-flex min-h-9 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                    {group.cta}
+                  </Link>
+                </div>
               </details>
             ))}
           </div>
 
-          {isPerformanceDashboardMode ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <h4 className="text-sm font-semibold text-amber-950">상세 공식 전환 진단 분리됨</h4>
-                  <p className="mt-2 text-sm leading-6 text-amber-900">
-                    상세 공식 전환 진단과 사전 실행 검토 도구는 고급 전환 준비 화면에서 확인하세요.
-                    이 일일 운영 화면에는 실행, 저장, 점수/등급 반영, 기존 데이터 채우기 버튼을 두지 않습니다.
-                  </p>
-                </div>
-                <Link href="/admin/evaluation-readiness" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-700 px-3 text-xs font-semibold text-white transition hover:bg-amber-800">
-                  고급 전환 준비 화면 열기
-                </Link>
-              </div>
-            </div>
-          ) : null}
-          <details className={isPerformanceDashboardMode ? 'hidden' : 'rounded-2xl border border-slate-200 bg-slate-50'}>
+          {!isPerformanceDashboardMode ? (
+          <details className="rounded-2xl border border-slate-200 bg-slate-50">
             <summary className="cursor-pointer list-none px-4 py-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -6800,6 +6834,7 @@ function PolicyActivationReadiness2026Panel(props: {
           </div>
             </div>
           </details>
+          ) : null}
         </div>
       ) : (
         <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
