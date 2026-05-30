@@ -28,7 +28,7 @@
     "test:goal-alignment": "ts-node -P tsconfig.seed.json tests/goal-alignment.test.ts",
     "test:kpi-clone": "ts-node -P tsconfig.seed.json tests/kpi-clone.test.ts",
     "test:evaluation-display": "ts-node -P tsconfig.seed.json tests/evaluation-display-settings.test.ts",
-    "test:evaluation-workbench": "ts-node -P tsconfig.seed.json tests/evaluation-writing-guide.test.ts && ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/evaluation-workbench-loader.test.ts",
+    "test:evaluation-workbench": "ts-node -P tsconfig.seed.json tests/evaluation-writing-guide.test.ts && ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/evaluation-workbench-loader.test.ts && ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/evaluation-submit-schema-adjustment.test.ts && ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/evaluation-submit-adjustment-integration.test.ts && ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/evaluation-workbench-adjustment-ui.test.ts",
     "test:evaluation-policy-2026": "ts-node -P tsconfig.seed.json tests/evaluation-policy-2026.test.ts",
     "test:evaluation-appeal": "ts-node -P tsconfig.seed.json tests/evaluation-appeal-workspace.test.ts",
     "test:evaluation-results": "ts-node -P tsconfig.seed.json tests/evaluation-results-workspace.test.ts && ts-node -P tsconfig.seed.json tests/evaluation-results-pdf.test.ts",

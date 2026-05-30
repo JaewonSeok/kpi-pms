@@ -74,6 +74,27 @@ async function main() {
     assert.equal(result.success, true)
   })
 
+  await run('Submit: adjustmentScore=2.5 → 거부 (정수 아님, .int())', () => {
+    const result = SubmitEvaluationSchema.safeParse({
+      ...validBase,
+      items: [item({ adjustmentScore: 2.5, adjustmentReason: 'r' })],
+    })
+    assert.equal(result.success, false)
+    if (!result.success) {
+      assert.ok(
+        result.error.issues.some((i) => i.path.includes('adjustmentScore')),
+        'adjustmentScore path 에러가 있어야 함',
+      )
+    }
+  })
+
+  await run('Draft: adjustmentScore=2.5 → 거부 (정수 아님, .int())', () => {
+    const result = SaveEvaluationDraftSchema.safeParse({
+      items: [item({ adjustmentScore: 2.5, adjustmentReason: 'r' })],
+    })
+    assert.equal(result.success, false)
+  })
+
   await run('Submit: adjustmentScore=-6 → 거부 (범위 밖)', () => {
     const result = SubmitEvaluationSchema.safeParse({
       ...validBase,

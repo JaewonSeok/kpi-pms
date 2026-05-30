@@ -50,6 +50,12 @@ import {
   type EvaluationQualityWarning,
 } from '@/lib/evaluation-writing-guide'
 import type { EvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
+import {
+  buildAdjustmentPayloadFromDraft,
+  deriveAdjustmentGroupKey,
+  resolveAdjustmentFieldVisibility,
+  validateAdjustmentClientUx,
+} from '@/lib/evaluation-adjustment-2026-ui'
 import type { Evaluation2026ActivationReadinessResult } from '@/server/evaluation-2026-activation-readiness'
 import type {
   Evaluation2026GradePolicyMetadataSaveResult,
@@ -81,6 +87,8 @@ type DraftItemState = {
   checkScore?: number | null
   actScore?: number | null
   itemComment?: string
+  adjustmentScore?: number | null
+  adjustmentReason?: string
 }
 
 type EvidenceSectionKey = 'highlights' | 'kpi' | 'notes' | 'warnings'
@@ -679,9 +687,44 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
         checkScore: item.checkScore ?? null,
         actScore: item.actScore ?? null,
         itemComment: item.itemComment ?? '',
+        adjustmentScore: null,
+        adjustmentReason: '',
       },
     }))
   }, [draftItems, selected])
+
+  // 2026 가감점 — 항목별 노출 가능 여부 + 클라 사전 UX 차단.
+  // 정책 active=false면 서버가 canAdjustScore=false로 내려주므로 모두 invisible.
+  const adjustmentValidationByKpiId = useMemo(() => {
+    const map = new Map<string, { visible: boolean; uxError: string | null }>()
+    const canAdjustScore = Boolean(selected?.permissions.canAdjustScore)
+    for (const item of editableItems) {
+      const groupKey = deriveAdjustmentGroupKey({
+        category: item.policyCategory ?? null,
+        linkedOrgKpiId: item.linkedOrgKpiId ?? null,
+      })
+      const visibility = resolveAdjustmentFieldVisibility({
+        canAdjustScore,
+        policyCategory: item.policyCategory ?? null,
+        groupKey,
+      })
+      if (!visibility.visible) {
+        map.set(item.personalKpiId, { visible: false, uxError: null })
+        continue
+      }
+      const ux = validateAdjustmentClientUx({
+        adjustmentScore: item.draft.adjustmentScore,
+        adjustmentReason: item.draft.adjustmentReason,
+      })
+      map.set(item.personalKpiId, { visible: true, uxError: ux.ok ? null : ux.message })
+    }
+    return map
+  }, [editableItems, selected?.permissions.canAdjustScore])
+
+  const hasAdjustmentBlockingError = useMemo(
+    () => Array.from(adjustmentValidationByKpiId.values()).some((entry) => entry.uxError !== null),
+    [adjustmentValidationByKpiId]
+  )
 
   const filteredEvaluations = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -1863,10 +1906,23 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                       checkScore: item.draft.checkScore ?? null,
                       actScore: item.draft.actScore ?? null,
                       itemComment: item.draft.itemComment ?? '',
+                      ...buildAdjustmentPayloadFromDraft({
+                        draft: {
+                          adjustmentScore: item.draft.adjustmentScore,
+                          adjustmentReason: item.draft.adjustmentReason,
+                        },
+                        item: {
+                          policyCategory: item.policyCategory ?? null,
+                          linkedOrgKpiId: item.linkedOrgKpiId ?? null,
+                        },
+                        canAdjustScore: Boolean(selected?.permissions.canAdjustScore),
+                      }),
                     })),
                   })
                 }
-                disabled={!selected?.permissions.canEdit || isPending}
+                disabled={
+                  !selected?.permissions.canEdit || isPending || hasAdjustmentBlockingError
+                }
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
               >
                 임시저장
@@ -1888,10 +1944,23 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                       checkScore: item.draft.checkScore ?? undefined,
                       actScore: item.draft.actScore ?? undefined,
                       itemComment: item.draft.itemComment ?? undefined,
+                      ...buildAdjustmentPayloadFromDraft({
+                        draft: {
+                          adjustmentScore: item.draft.adjustmentScore,
+                          adjustmentReason: item.draft.adjustmentReason,
+                        },
+                        item: {
+                          policyCategory: item.policyCategory ?? null,
+                          linkedOrgKpiId: item.linkedOrgKpiId ?? null,
+                        },
+                        canAdjustScore: Boolean(selected?.permissions.canAdjustScore),
+                      }),
                     })),
                   })
                 }
-                disabled={!selected?.permissions.canSubmit || isPending}
+                disabled={
+                  !selected?.permissions.canSubmit || isPending || hasAdjustmentBlockingError
+                }
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
               >
                 <Send className="mr-2 h-4 w-4" />
@@ -2635,6 +2704,63 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                               </label>
                             </div>
                           )}
+
+                          {adjustmentValidationByKpiId.get(item.personalKpiId)?.visible ? (
+                            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h5 className="text-sm font-semibold text-slate-900">가감점</h5>
+                                <Badge tone="neutral">2026 정책 · ±5 정수</Badge>
+                              </div>
+                              <p className="mt-1 text-xs text-slate-500">
+                                같은 조직목표를 평가하는 평가자 간 합산이 0이 되도록 본부검수에서 조정됩니다.
+                              </p>
+                              <div className="mt-3 grid gap-4 md:grid-cols-[140px_minmax(0,1fr)]">
+                                <label className="space-y-2">
+                                  <span className="text-sm font-semibold text-slate-700">점수 가감</span>
+                                  <input
+                                    type="number"
+                                    min={-5}
+                                    max={5}
+                                    step={1}
+                                    value={item.draft.adjustmentScore ?? ''}
+                                    onChange={(event) =>
+                                      updateItemField(
+                                        item.personalKpiId,
+                                        'adjustmentScore',
+                                        event.target.value === '' ? null : Number(event.target.value)
+                                      )
+                                    }
+                                    disabled={selected.permissions.readOnly}
+                                    className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                                  />
+                                </label>
+                                <label className="space-y-2">
+                                  <span className="text-sm font-semibold text-slate-700">
+                                    적용 사유 <span className="text-rose-500">*</span>
+                                  </span>
+                                  <textarea
+                                    value={item.draft.adjustmentReason ?? ''}
+                                    onChange={(event) =>
+                                      updateItemField(
+                                        item.personalKpiId,
+                                        'adjustmentReason',
+                                        event.target.value
+                                      )
+                                    }
+                                    disabled={selected.permissions.readOnly}
+                                    maxLength={500}
+                                    placeholder="가감점이 0이 아니면 사유는 필수입니다."
+                                    className="min-h-20 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                                  />
+                                </label>
+                              </div>
+                              {adjustmentValidationByKpiId.get(item.personalKpiId)?.uxError ? (
+                                <p className="mt-2 text-xs font-semibold text-rose-600">
+                                  {adjustmentValidationByKpiId.get(item.personalKpiId)?.uxError}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </article>
                       ))}
                     </div>
