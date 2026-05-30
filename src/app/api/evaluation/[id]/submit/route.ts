@@ -22,6 +22,12 @@ import {
   validateImpersonationRiskRequest,
   type ValidatedImpersonationRiskContext,
 } from '@/server/impersonation'
+import {
+  shouldApplyAdjustmentRule2026,
+  validateAdjustment2026,
+  type EvaluationAdjustmentStage,
+} from '@/server/evaluation-scoring-2026'
+import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
 
 type NextStageEntry = {
   stage: EvalStage
@@ -96,6 +102,13 @@ export async function PATCH(
     let finalized = false
     let nextStageLabel: string | null = null
 
+    // 2026 가감점 분기 — active && cycle.year===2026 && stage∈{FIRST,SECOND,FINAL}일 때만 검증/저장.
+    // zero-sum 총합(=0) 검증은 cross-person이라 본부검수(HR) 단계에서 별도로 집계한다.
+    const allowAdjustment = shouldApplyAdjustmentRule2026({
+      cycleYear: evaluation.evalCycle.evalYear,
+      evalStage: evaluation.evalStage as EvaluationAdjustmentStage,
+    })
+
     await prisma.$transaction(async (tx) => {
       for (const itemInput of items) {
         const evaluationItem = evaluation.items.find(
@@ -120,6 +133,48 @@ export async function PATCH(
         const weightedScore = calcWeightedScore(normalizedScore, kpi.weight)
         totalScore += weightedScore
 
+        // 가감점 처리: 분기 활성일 때만. adjustmentScore가 0/null/undefined이면 검증 통과(validateAdjustment2026 내부에서 조기 ok).
+        const adjustmentUpdate: {
+          adjustmentScore?: number | null
+          adjustmentGroupKey?: string | null
+          adjustmentReason?: string | null
+        } = {}
+        if (allowAdjustment) {
+          const inputAdjustmentScore =
+            itemInput.adjustmentScore === undefined ? null : itemInput.adjustmentScore
+          if (typeof inputAdjustmentScore === 'number' && inputAdjustmentScore !== 0) {
+            const validation = validateAdjustment2026({
+              itemId: evaluationItem.id,
+              category: (evaluationItem.policyCategory ?? null) as
+                | EvaluationPolicyItemCategoryCode
+                | null,
+              achievementLevel: evaluationItem.targetAchievementLevel as
+                | 'BELOW_TARGET'
+                | 'TARGET'
+                | 'EXCELLENT'
+                | null
+                | undefined,
+              // basePolicyScore와 normalizedScore는 단위가 달라(정책 baseline vs 사용자 입력)
+              // fallback 시 약화 위험이 있어 그대로 null/undefined를 넘기고 precondition gate에 위임.
+              baseScore: evaluationItem.basePolicyScore,
+              adjustmentScore: inputAdjustmentScore,
+            })
+            if (!validation.ok) {
+              const firstError = validation.errors[0]
+              throw new AppError(
+                400,
+                firstError?.code ?? 'ADJUSTMENT_VALIDATION_FAILED',
+                firstError?.message ?? '가감점 검증에 실패했습니다.'
+              )
+            }
+          }
+          adjustmentUpdate.adjustmentScore = inputAdjustmentScore
+          adjustmentUpdate.adjustmentGroupKey =
+            itemInput.adjustmentGroupKey === undefined ? null : itemInput.adjustmentGroupKey
+          adjustmentUpdate.adjustmentReason =
+            itemInput.adjustmentReason === undefined ? null : itemInput.adjustmentReason
+        }
+
         await tx.evaluationItem.update({
           where: { id: evaluationItem.id },
           data: {
@@ -139,6 +194,7 @@ export async function PATCH(
                 : null,
             itemComment: itemInput.itemComment,
             weightedScore,
+            ...adjustmentUpdate,
           },
         })
       }

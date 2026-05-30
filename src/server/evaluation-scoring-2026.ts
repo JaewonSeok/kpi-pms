@@ -23,6 +23,7 @@ export type EvaluationScore2026ValidationErrorCode =
   | 'ADJUSTMENT_OUT_OF_RANGE'
   | 'ADJUSTMENT_CATEGORY_NOT_ALLOWED'
   | 'ADJUSTMENT_BELOW_TARGET_NOT_ALLOWED'
+  | 'ADJUSTMENT_PRECONDITION_MISSING'
   | 'ADJUSTMENT_GROUP_REQUIRED'
   | 'ADJUSTMENT_GROUP_NOT_ZERO_SUM'
   | 'MISSING_ORGANIZATION_SCORE'
@@ -244,9 +245,10 @@ export function calculateItemBaseScore2026(
 export function isBelowTarget2026(params: {
   category: EvaluationPolicyItemCategoryCode
   achievementLevel?: EvaluationScore2026AchievementLevel | null
-  baseScore: number
+  baseScore?: number | null
 }) {
   if (params.achievementLevel === 'BELOW_TARGET') return true
+  if (typeof params.baseScore !== 'number' || !isFiniteNumber(params.baseScore)) return false
 
   const targetScore = getTargetScore2026(params.category)
   return isFiniteNumber(targetScore) && params.baseScore < targetScore
@@ -256,9 +258,13 @@ export function validateAdjustment2026(params: {
   itemId?: string
   category?: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
   achievementLevel?: EvaluationScore2026AchievementLevel | null
-  baseScore: number
+  baseScore?: number | null
   adjustmentScore?: number | null
+  // enforceTargetGate=true(기본): precondition(basePolicyScore/achievementLevel 둘 다 없으면 거부) +
+  // below-target 검사. submit 라우트용. false면 둘 다 건너뜀 — draft 라우트용(작성 중이라 점수/Target 확정 전).
+  enforceTargetGate?: boolean
 }): EvaluationScore2026Result<null> {
+  const enforceTargetGate = params.enforceTargetGate ?? true
   const categoryResult = validateScoringCategory(params.category, params.itemId)
   if (!categoryResult.ok) return categoryResult
 
@@ -288,20 +294,36 @@ export function validateAdjustment2026(params: {
     )
   }
 
-  if (
-    rule.notApplicableBelowTarget &&
-    isBelowTarget2026({
-      category,
-      achievementLevel: params.achievementLevel,
-      baseScore: params.baseScore,
-    })
-  ) {
-    errors.push(
-      validationError('ADJUSTMENT_BELOW_TARGET_NOT_ALLOWED', 'Target 미만 항목에는 2026 조정점수를 적용할 수 없습니다.', {
-        itemId: params.itemId,
+  if (enforceTargetGate) {
+    const hasBaseScore = typeof params.baseScore === 'number' && isFiniteNumber(params.baseScore)
+    const hasAchievementLevel =
+      params.achievementLevel === 'BELOW_TARGET' ||
+      params.achievementLevel === 'TARGET' ||
+      params.achievementLevel === 'EXCELLENT'
+
+    if (!hasBaseScore && !hasAchievementLevel) {
+      errors.push(
+        validationError(
+          'ADJUSTMENT_PRECONDITION_MISSING',
+          '가감점 적용 전에 기본 점수(basePolicyScore) 또는 달성 수준(targetAchievementLevel)이 확정되어야 합니다.',
+          { itemId: params.itemId, category },
+        ),
+      )
+    } else if (
+      rule.notApplicableBelowTarget &&
+      isBelowTarget2026({
         category,
+        achievementLevel: params.achievementLevel,
+        baseScore: params.baseScore,
       })
-    )
+    ) {
+      errors.push(
+        validationError('ADJUSTMENT_BELOW_TARGET_NOT_ALLOWED', 'Target 미만 항목에는 2026 조정점수를 적용할 수 없습니다.', {
+          itemId: params.itemId,
+          category,
+        })
+      )
+    }
   }
 
   return errors.length ? fail(errors) : ok(null)
@@ -330,6 +352,27 @@ export function calculateItemScore2026(
     finalScore: roundToSingle(baseResult.value.baseScore + adjustmentScore),
     weight: normalizeWeight(input.weight),
   })
+}
+
+// 2026 가감점 적용 분기 결정 — submit/draft 라우트가 이 함수로 active/cycle/stage 게이트를 판정한다.
+// 분기 true일 때만 라우트가 항목별 validateAdjustment2026 호출 + 가감점 3필드를 DB에 persist.
+// cross-person zero-sum 총합 검증은 본부검수(HR) 단계에서 별도로 처리한다.
+export type EvaluationAdjustmentStage = 'SELF' | 'FIRST' | 'SECOND' | 'FINAL' | 'CEO_ADJUST'
+
+// 명시적 allowlist. 9단계 확장 시 새 stage가 자동으로 가감점 허용되지 않도록 set 멤버십으로 판정.
+export const ALLOWED_ADJUSTMENT_STAGES_2026: ReadonlySet<EvaluationAdjustmentStage> = new Set([
+  'FIRST',
+  'SECOND',
+  'FINAL',
+])
+
+export function shouldApplyAdjustmentRule2026(params: {
+  cycleYear: number
+  evalStage: EvaluationAdjustmentStage
+}): boolean {
+  if (!EVALUATION_POLICY_2026.adjustmentRule.active) return false
+  if (params.cycleYear !== 2026) return false
+  return ALLOWED_ADJUSTMENT_STAGES_2026.has(params.evalStage)
 }
 
 export function validateAdjustmentGroupZeroSum2026(
