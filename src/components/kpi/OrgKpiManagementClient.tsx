@@ -40,6 +40,7 @@ import {
   isOrgKpiTopLevelDivisionGoal,
   type OrgKpiHierarchyNode,
 } from '@/lib/org-kpi-hierarchy'
+import { getSelectableOrgKpis, resolveSelectedOrgKpi } from '@/lib/org-kpi-selection'
 import {
   formatOrgKpiTargetValues,
   resolveOrgKpiTargetValues,
@@ -914,10 +915,20 @@ export function OrgKpiManagementClient({
     setExpandedMapNodeIds([])
   }, [activeScopeDepartmentId, commitSelectedKpi, pageData, viewContextKey])
 
-  useEffect(() => {
-    const selectableItems =
-      tab === 'map' ? list.filter((item) => hierarchyStructure.visibleIds.has(item.id)) : filteredList
+  // effect와 render fallback이 동일 selectable 규칙을 공유 — 동일 출처(getSelectableOrgKpis).
+  // 이전엔 render가 list 전역으로 폴백해 effect의 stale 클리어를 우회했음.
+  const selectableItems = useMemo(
+    () =>
+      getSelectableOrgKpis({
+        tab,
+        list,
+        filteredList,
+        hierarchyVisibleIds: hierarchyStructure.visibleIds,
+      }),
+    [tab, list, filteredList, hierarchyStructure.visibleIds]
+  )
 
+  useEffect(() => {
     if (!selectableItems.length) {
       commitSelectedKpi('')
       return
@@ -925,14 +936,9 @@ export function OrgKpiManagementClient({
     if (!selectableItems.some((item) => item.id === selectedKpiId)) {
       commitSelectedKpi(selectableItems[0].id)
     }
-  }, [commitSelectedKpi, filteredList, hierarchyStructure.visibleIds, list, selectedKpiId, tab])
+  }, [commitSelectedKpi, selectableItems, selectedKpiId])
 
-  const selectedKpi =
-    filteredList.find((item) => item.id === selectedKpiId) ??
-    list.find((item) => item.id === selectedKpiId) ??
-    filteredList[0] ??
-    list[0] ??
-    null
+  const selectedKpi = resolveSelectedOrgKpi({ selectedKpiId, selectableItems })
   const selectedParentReference = selectedKpi?.parentReference ?? null
   const selectedChildReferences = selectedKpi?.childReferences ?? []
   const goalEditLocked =
