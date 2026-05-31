@@ -19,7 +19,8 @@ function run(name: string, fn: () => void | Promise<void>) {
 }
 
 function read(relativePath: string) {
-  return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
+  // CRLF -> LF 정규화: 어서션 리터럴이 \n만 쓰므로 Windows 체크아웃에서도 매치되도록 통일.
+  return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8').replace(/\r\n/g, '\n')
 }
 
 function extractSchemaBlock(source: string, schemaName: string) {
@@ -33,7 +34,6 @@ void (async () => {
 
   const aiAssistSource = read('src/lib/ai-assist.ts')
   const routeSource = read('src/app/api/kpi/org/ai/route.ts')
-  const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
   await run('org_kpi_alignment schema satisfies strict required/property parity', () => {
     const schema = extractSchemaBlock(aiAssistSource, 'ORG_KPI_ALIGNMENT_SCHEMA')
@@ -51,17 +51,26 @@ void (async () => {
   await run('org_kpi_draft schema satisfies strict required/property parity for fallback-free structured output', () => {
     const schema = extractSchemaBlock(aiAssistSource, 'ORG_KPI_DRAFT_SCHEMA')
 
-    assert.equal(schema.includes("'targetValueT'"), true)
-    assert.equal(schema.includes("'targetValueE'"), true)
-    assert.equal(schema.includes("'targetValueS'"), true)
-    assert.equal(schema.includes("'linkedParentKpiId'"), true)
-    assert.equal(
-      schema.includes(
-        "required: [\n          'recommendedTitle',\n          'recommendedDefinition',\n          'category',\n          'formula',",
-      ),
-      true,
-    )
+    // 필수 필드 — 포맷/들여쓰기 무관하게 키 목록 자체로 검증 (refactor에 강건)
+    // 필드명 변경: recommendedTitle/Definition → title/definition (linkage 필드는 별도로 retain)
+    for (const key of [
+      'title',
+      'category',
+      'definition',
+      'formula',
+      'targetValueT',
+      'targetValueE',
+      'targetValueS',
+      'linkedParentKpiId',
+      'linkedParentKpiTitle',
+      'linkageReason',
+    ]) {
+      assert.equal(schema.includes(`'${key}'`), true, `schema missing required key '${key}'`)
+    }
+    // linkedParentKpiId만 nullable (없으면 alignment 추천 자체가 없는 경우);
+    // linkedParentKpiTitle은 string 필수 (id 있으면 title도 함께)
     assert.equal(schema.includes("linkedParentKpiId: { type: ['string', 'null'] }"), true)
+    assert.equal(schema.includes("linkedParentKpiTitle: { type: 'string' }"), true)
   })
 
   await run('org KPI fallback result keeps readable strings and does not leak placeholder cards', () => {
@@ -105,13 +114,10 @@ void (async () => {
     assert.equal(routeSource.includes('toPublicOrgKpiFallbackReason'), true)
   })
 
-  await run('org KPI client sanitizes fallback rendering instead of exposing raw schema errors', () => {
-    assert.equal(clientSource.includes('ORG_KPI_AI_PREVIEW_ERROR_MESSAGE'), true)
-    assert.equal(clientSource.includes('function toOrgKpiAiPreviewErrorMessage('), true)
-    assert.equal(clientSource.includes("data.source === 'ai' ? null : toOrgKpiAiPreviewErrorMessage(data.fallbackReason)"), true)
-    assert.equal(clientSource.includes("lower.includes('response_format')"), true)
-    assert.equal(clientSource.includes('toOrgKpiAiPreviewErrorMessage(error.message)'), true)
-  })
+  // 'org KPI client sanitizes fallback rendering...' 테스트는 제거됨.
+  // sanitization은 라우트(`/api/kpi/org/ai/route.ts`)로 이관 (d6ef019)되었고,
+  // fae26b0에서 클라 측 sanitization 식별자가 일괄 삭제되어 invariant가 없다.
+  // 라우트 측 책임은 바로 위 테스트 "org KPI AI route masks raw schema/provider errors..."가 검증.
 
   await run('org KPI AI server emits typed schema and fallback logs for exact failure-step tracing', () => {
     assert.equal(aiAssistSource.includes('ORG_KPI_AI_SCHEMA_VALIDATE_START'), true)

@@ -94,9 +94,13 @@ void (async () => {
     assert.equal(workspaceSource.includes('기본 화면으로 계속'), true)
   })
 
-  await run('workspace receives runtime fallback state and actions from org kpi client', () => {
-    assert.equal(clientSource.includes('runtimeState={teamAiRuntimeState}'), true)
-    assert.equal(clientSource.includes("onRetryRuntimeFallback={() => void loadTeamAiContext(selectedDepartmentId)}"), true)
-    assert.equal(clientSource.includes("onContinueWithoutAi={() => setTab('list')}"), true)
+  await run('workspace owns runtime fallback contract (org KPI client no longer mounts it directly)', () => {
+    // org-kpi-tab-role.test의 "removes the bounded AI improve trigger and the dedicated AI tab
+    // workspace" spec과 일관: 클라이언트는 더 이상 OrgKpiTeamAiWorkspace를 마운트하지 않음.
+    // runtime fallback contract는 workspace 컴포넌트의 props로 정의되어 호출측이 주입하는 형태로 보존.
+    assert.equal(clientSource.includes('OrgKpiTeamAiWorkspace'), false)
+    assert.equal(workspaceSource.includes('onRetryRuntimeFallback'), true)
+    assert.equal(workspaceSource.includes('onContinueWithoutAi'), true)
+    assert.equal(workspaceSource.includes('runtimeState'), true)
   })
 })()

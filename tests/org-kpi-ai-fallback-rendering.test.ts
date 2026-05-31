@@ -94,14 +94,19 @@ void (async () => {
   })
 
   await run('org KPI fallback path wires retry handling and state-mode logging', () => {
+    // KpiAiPreviewPanel: 비-AI 소스(=fallback) 분기 + FallbackStatePanel 사용 + onRetry prop 노출
     assert.equal(previewPanelSource.includes("if (props.preview.source !== 'ai')"), true)
     assert.equal(previewPanelSource.includes('<FallbackStatePanel'), true)
-    assert.equal(orgClientSource.includes("onRetry={aiPreview ? () => void requestAi(aiAction) : undefined}"), true)
-    assert.equal(orgClientSource.includes('ORG_KPI_AI_RESULT_MODE_FALLBACK'), true)
-    assert.equal(orgClientSource.includes('ORG_KPI_AI_RESULT_MODE_NORMAL'), true)
+    assert.equal(previewPanelSource.includes('onRetry?: () => void'), true)
+    // OrgKpiTeamAiWorkspace로 result-mode 로깅이 통합됨 (이전엔 client에 분산)
+    // 모든 결과 모드 enum이 워크스페이스에서 정의되고 로그 호출도 모두 여기.
+    assert.equal(workspaceSource.includes("'ORG_KPI_AI_RESULT_MODE_NORMAL'"), true)
+    assert.equal(workspaceSource.includes("'ORG_KPI_AI_RESULT_MODE_TRUE_FALLBACK'"), true)
     assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_BUSINESS_PLAN_EMPTY'), true)
     assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_RECOMMENDATION_EMPTY'), true)
     assert.equal(workspaceSource.includes('ORG_KPI_AI_RESULT_MODE_REVIEW_EMPTY'), true)
+    // 워크스페이스는 runtime fallback 재시도 핸들러를 prop으로 받아 위임
+    assert.equal(workspaceSource.includes('onRetryRuntimeFallback: () => void'), true)
   })
 
   await run('english placeholder fallback strings are removed from the org KPI fallback generator', () => {

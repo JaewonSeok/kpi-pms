@@ -275,46 +275,23 @@ void (async () => {
     assert.equal(selectedOpenHtml.includes('선택됨'), true)
   })
 
-  await run('org KPI client renders dropdown-driven recommendation switching and keeps preview state on modal close', () => {
-    assert.equal(orgClientSource.includes('function handleAiRecommendationSelection(index: number)'), true)
-    assert.equal(orgClientSource.includes('function requestCloseEditorModal()'), true)
-    assert.equal(orgClientSource.includes('추천안 선택'), true)
-    assert.equal(orgClientSource.includes('추천안을 선택해 주세요'), true)
-    assert.equal(orgClientSource.includes('AI 추천안 중 하나를 선택해 초안에 반영한 뒤 필요한 내용을 수정해 저장하세요.'), true)
-    assert.equal(orgClientSource.includes('다른 추천안으로 변경하시겠습니까?'), true)
-    assert.equal(orgClientSource.includes('현재 수정 중인 내용이 있습니다. 다른 추천안을 선택하면 지금 입력한 내용이 새 추천안으로 덮어써집니다.'), true)
-    assert.equal(orgClientSource.includes('저장하지 않은 변경 사항은 복구할 수 없습니다.'), true)
-    assert.equal(orgClientSource.includes('작성 중인 초안을 닫으시겠습니까?'), true)
-    assert.equal(orgClientSource.includes('현재 팝업의 입력 내용은 닫히지만, AI 추천 결과는 화면에 그대로 유지됩니다.'), true)
-    assert.equal(orgClientSource.includes('다시 열어서 같은 추천안 또는 다른 추천안을 선택할 수 있습니다.'), true)
-    assert.equal(orgClientSource.includes('AI 추천 결과가 유지되고 있습니다.'), true)
-    assert.equal(orgClientSource.includes('팝업을 닫아도 추천안은 사라지지 않습니다. 원하는 추천안을 다시 선택해 초안으로 불러올 수 있습니다.'), true)
-    assert.equal(orgClientSource.includes('setPendingAiRecommendationIndex(index)'), true)
-    assert.equal(orgClientSource.includes('setShowRecommendationSwitchConfirm(true)'), true)
-    assert.equal(orgClientSource.includes('setShowEditorCloseConfirm(true)'), true)
-    assert.equal(orgClientSource.includes('setShowAiRecommendationRetainedNotice(true)'), true)
-    assert.equal(orgClientSource.includes('recommendationOptions={canUseAiRecommendationDraftOptions ? aiPreviewRecommendations : []}'), true)
-    assert.equal(orgClientSource.includes('draftSourceLabel={editorRecommendationStatusLabel}'), true)
-    assert.equal(orgClientSource.includes('onClose={requestCloseEditorModal}'), true)
-
-    const closeHandlerMatch = orgClientSource.match(/function closeEditorModal\(\)\s*\{([\s\S]*?)\n  \}/)
-    assert.ok(closeHandlerMatch)
-    assert.equal(closeHandlerMatch?.[1].includes('setAiPreview(null)'), false)
-    assert.equal(closeHandlerMatch?.[1].includes('setSelectedAiRecommendationIndex(null)'), false)
+  await run('org KPI client no longer mounts the dropdown-driven recommendation switching modal directly', () => {
+    // org KPI 클라엔 AI 드롭다운 모달 없음 — fae26b0("ai 탭 삭제")의 의도 제거, 재부착 방지.
+    // 추천 → 폼 변환 contract는 lib(`org-kpi-ai-recommendation-draft`)의 helper로 보존되며
+    // 본 파일 상단의 buildOrgKpiFormFromAiRecommendation 등 PASS 케이스가 검증한다.
+    // (Personal KPI는 별도 컴포넌트로 분리 — 본 invariant는 org client에만 적용.)
+    assert.equal(orgClientSource.includes('handleAiRecommendationSelection'), false)
+    assert.equal(orgClientSource.includes('setShowRecommendationSwitchConfirm'), false)
+    assert.equal(orgClientSource.includes('setShowEditorCloseConfirm'), false)
+    assert.equal(orgClientSource.includes('setPendingAiRecommendationIndex'), false)
+    assert.equal(orgClientSource.includes('recommendationOptions={canUseAiRecommendationDraftOptions'), false)
   })
 
-  await run('success and error copy for recommendation apply and save paths use the requested Korean text', () => {
-    assert.equal(orgClientSource.includes('AI 추천안 ${index + 1}을 초안에 반영했습니다.'), true)
-    assert.equal(orgClientSource.includes('조직 KPI를 저장했습니다.'), true)
-    assert.equal(orgClientSource.includes('조직 KPI를 수정했습니다.'), true)
-    assert.equal(orgClientSource.includes('조직 KPI 저장 중 문제가 발생했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요.'), true)
-    assert.equal(orgClientSource.includes('선택할 수 있는 AI 추천안이 없습니다. 먼저 추천을 생성해 주세요.'), true)
-  })
-
-  await run('generate-draft apply keeps AI preview alive by opening the primary recommendation instead of clearing preview immediately', () => {
-    assert.equal(orgClientSource.includes('const primaryRecommendation = extractKpiAiPreviewRecommendations(aiPreview.result)[0]'), true)
-    assert.equal(orgClientSource.includes('openAiPreviewRecommendationEditor(primaryRecommendation, 0)'), true)
-  })
+  // 이하 두 테스트는 제거됨 (pure absent, invariant 없음):
+  // - 'client no longer carries the inline recommendation apply/save Korean copy'
+  // - 'client no longer auto-opens the primary recommendation editor on generate-draft'
+  // 드롭다운 모달 부재가 이미 위 invariant로 보장되므로 부수 식별자의 absent 어서션은
+  // 회귀 가드 가치가 낮다.
 
   await run('preview panel source contains per-recommendation write CTA wiring', () => {
     assert.equal(previewPanelSource.includes('onSelectRecommendation?: (item: KpiAiPreviewRecommendation, index: number) => void'), true)

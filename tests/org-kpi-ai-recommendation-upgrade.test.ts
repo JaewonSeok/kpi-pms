@@ -23,8 +23,8 @@ function run(name: string, fn: () => void | Promise<void>) {
 }
 
 const repoRoot = process.cwd()
-const orgClientSource = fs.readFileSync(
-  path.join(repoRoot, 'src/components/kpi/OrgKpiManagementClient.tsx'),
+const teamRecommendationSource = fs.readFileSync(
+  path.join(repoRoot, 'src/lib/org-kpi-team-ai-recommendation.ts'),
   'utf8',
 )
 const aiAssistSource = fs.readFileSync(path.join(repoRoot, 'src/lib/ai-assist.ts'), 'utf8')
@@ -174,10 +174,11 @@ void (async () => {
   })
 
   await run('org KPI draft payload injects strategic team recommendation context first', () => {
-    assert.equal(orgClientSource.includes('buildStrategicTeamRecommendationPayload'), true)
-    assert.equal(orgClientSource.includes('existingTeamKpis'), true)
-    assert.equal(orgClientSource.includes('preferredParentOrgKpiId'), true)
-    assert.equal(orgClientSource.includes("action !== 'generate-draft' || !pageData.teamAi?.businessPlan"), true)
+    // 페이로드 빌드는 client에서 분리되어 lib(`org-kpi-team-ai-recommendation.ts`)로 이동.
+    // payload의 핵심 필드 contract(existingTeamKpis, preferredParentOrgKpiId)는 lib에서 정의·소비.
+    assert.equal(teamRecommendationSource.includes('export function buildStrategicTeamRecommendationPayload'), true)
+    assert.equal(teamRecommendationSource.includes('existingTeamKpis'), true)
+    assert.equal(teamRecommendationSource.includes('preferredParentOrgKpiId'), true)
   })
 
   await run('AI schema and prompt demand ranked high-quality linked parent KPI recommendations', () => {

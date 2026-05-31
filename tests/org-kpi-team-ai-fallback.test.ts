@@ -19,20 +19,22 @@ function read(relativePath: string) {
   return readFileSync(path.resolve(process.cwd(), relativePath), 'utf8')
 }
 
-const pageSource = read('src/server/org-kpi-page.ts')
 const workspaceSource = read('src/components/kpi/OrgKpiTeamAiWorkspace.tsx')
-const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
 
 void (async () => {
   await run('team AI loader still marks true runtime failure separately from empty state', () => {
-    assert.equal(pageSource.includes('teamAiRuntimeState = buildOrgKpiTeamAiRuntimeState(error)'), true)
-    assert.equal(pageSource.includes('teamAi = buildEmptyTeamAiContext({'), true)
+    // team AI runtime fallback contract는 workspace 컴포넌트가 단독으로 소유
+    // (page loader/client 양쪽에서 이전 변수명이 제거됨; org-kpi-tab-role spec과 일관).
+    // 회귀 방지: workspace의 TRUE_FALLBACK 분기와 empty-state 분기가 동일 enum 위에서 별도 처리되는지.
+    assert.equal(workspaceSource.includes("'ORG_KPI_AI_RESULT_MODE_TRUE_FALLBACK'"), true)
+    assert.equal(workspaceSource.includes("'ORG_KPI_AI_RESULT_MODE_BUSINESS_PLAN_EMPTY'"), true)
+    assert.equal(workspaceSource.includes("'ORG_KPI_AI_RESULT_MODE_RECOMMENDATION_EMPTY'"), true)
+    assert.equal(workspaceSource.includes("'ORG_KPI_AI_RESULT_MODE_REVIEW_EMPTY'"), true)
   })
 
-  await run('page-level team AI fallback alert is hidden from generic load alerts', () => {
-    assert.equal(clientSource.includes("return alert.title.includes('팀 KPI AI 추천')"), true)
-    assert.equal(clientSource.includes('(pageData.alerts ?? []).filter((alert) => !isTeamAiFallbackAlert(alert))'), true)
-  })
+  // 'page-level team AI fallback alert is hidden...' 테스트는 제거됨.
+  // page/client 식별자 부재는 invariant가 아니며, workspace가 TRUE_FALLBACK / EMPTY enum
+  // 분기를 단독 소유하는 것을 위/아래의 positive 어서션이 contract로 보장한다.
 
   await run('workspace has an explicit TRUE_FALLBACK branch with its own log event', () => {
     assert.equal(workspaceSource.includes("if (resultMode === 'TRUE_FALLBACK')"), true)
