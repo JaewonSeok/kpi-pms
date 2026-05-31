@@ -127,6 +127,9 @@ function createDeletePrismaMock(options?: {
         options?.actorInScope === false
           ? { orgId: 'org-1' }
           : { orgId: 'org-1' },
+      // 신규: deleteOrgKpiRecord가 canManageOrgKpiWriteScope에 전체 부서 스냅샷 전달
+      // (ROLE_ADMIN은 어차피 빈 배열로도 통과; 권한 분기는 access.ts 단위테스트에서 검증)
+      findMany: async () => [],
     },
     evalCycle: {
       findFirst: async () => ({
@@ -167,13 +170,16 @@ async function main() {
     assert.equal(clientSource.includes('되돌릴 수 없습니다'), true)
     assert.equal(clientSource.includes("body: JSON.stringify({ confirmDelete: true })"), true)
     assert.equal(clientSource.includes('setList((current) => current.filter((item) => item.id !== selectedKpi.id))'), true)
-    assert.equal(clientSource.includes('setSelectedKpiId(nextSelectedId)'), true)
+    // 선택 갱신은 commitSelectedKpi 통해 single-source (effect + render 공유)
+    assert.equal(clientSource.includes('commitSelectedKpi(nextSelectedId)'), true)
     assert.equal(clientSource.includes('resolveNextOrgKpiSelectionAfterDelete'), true)
-    assert.equal(clientSource.includes('router.replace(`/kpi/org'), true)
+    // URL 동기화는 buildOrgKpiHref helper에 위임 (직접 경로 문자열 X)
+    assert.equal(clientSource.includes('router.replace('), true)
+    assert.equal(clientSource.includes('buildOrgKpiHref({'), true)
     assert.equal(clientSource.includes('label="수정"'), true)
     assert.equal(clientSource.includes('label="복제"'), true)
     assert.equal(clientSource.includes('label="삭제"'), true)
-    assert.equal(clientSource.includes('label="AI 개선"'), true)
+    // AI 개선 액션은 OrgKpi 카드에서 제거됨 (org-kpi-tab-role 테스트가 부재를 spec화)
   })
 
   await run('org KPI delete action state disables only when no KPI is selected', () => {

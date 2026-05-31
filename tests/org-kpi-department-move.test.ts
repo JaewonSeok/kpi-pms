@@ -156,10 +156,12 @@ async function main() {
     assert.equal(moved.parentReference?.scope, 'division')
     assert.equal(moved.title, 'Core Talent Information')
     assert.equal(moved.category, '인사')
-    assert.equal(moved.targetValue, 12)
-    assert.equal(moved.targetValueT, 10)
-    assert.equal(moved.targetValueE, 12)
-    assert.equal(moved.targetValueS, 14)
+    // targetValue 시리즈는 text-capable string으로 보존됨 (한국어/혼합 단위 허용)
+    // → org-kpi-target-values 테스트가 "schema and persistence now keep text-capable targets as strings"로 spec화
+    assert.equal(moved.targetValue, '12')
+    assert.equal(moved.targetValueT, '10')
+    assert.equal(moved.targetValueE, '12')
+    assert.equal(moved.targetValueS, '14')
   })
 
   await run('org KPI client keeps URL state synchronized with scope, tab, and selected KPI', () => {
