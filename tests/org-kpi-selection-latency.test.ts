@@ -136,13 +136,13 @@ run('split hierarchy helpers preserve the same structure and selection lineage a
 
   const combined = buildOrgKpiHierarchyView({
     items: [root, child, grandChild, solo],
-    selectedDepartmentId: 'ALL',
+    selectedDepartmentIds: [],
     search: '',
     selectedKpiId: 'child',
   })
   const structure = buildOrgKpiHierarchyStructure({
     items: [root, child, grandChild, solo],
-    selectedDepartmentId: 'ALL',
+    selectedDepartmentIds: [],
     search: '',
   })
   const selection = buildOrgKpiHierarchySelectionView({
@@ -180,7 +180,8 @@ run('team-scope KPI with a hidden division parent is not treated as an orphan', 
 
   const structure = buildOrgKpiHierarchyStructure({
     items: [teamGoal],
-    selectedDepartmentId: 'ALL',
+    // contract: selectedDepartmentIds 미전달 또는 빈 배열이면 모든 부서 허용 ('ALL' 매직 문자열은 더 이상 지원 안 함)
+    selectedDepartmentIds: [],
     search: '',
   })
 
@@ -272,7 +273,7 @@ run('hierarchy interaction changes stay inside the affected branch', () => {
   const items = [rootA, branchA, leafA1, leafA2, rootB, leafB1]
   const structure = buildOrgKpiHierarchyStructure({
     items,
-    selectedDepartmentId: 'ALL',
+    selectedDepartmentIds: [],
     search: '',
   })
   const beforeSelection = buildOrgKpiHierarchySelectionView({
