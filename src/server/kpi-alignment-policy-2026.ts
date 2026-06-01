@@ -1,4 +1,5 @@
 import {
+  EVALUATION_POLICY_2026,
   isEvaluationPolicyItemCategory,
   type EvaluationPolicyItemCategoryCode,
 } from '../lib/evaluation-policy-2026'
@@ -34,6 +35,9 @@ export type MboPolicyIssueCode2026 =
   | 'HR_EXCEPTION_REQUIRED'
   | 'MISSING_MBO_CATEGORY'
   | 'WEIGHT_POLICY_REVIEW_REQUIRED'
+  | 'WEIGHT_CATEGORY_ITEM_CAP_EXCEEDED'
+  | 'WEIGHT_CATEGORY_SUM_CAP_EXCEEDED'
+  | 'WEIGHT_TOTAL_SUM_INVALID'
 
 export type MboPolicyIssue2026 = {
   code: MboPolicyIssueCode2026
@@ -781,6 +785,143 @@ export function summarizeMboPolicyIssues2026(params: {
       orgGoalItems: orgGoalItems.filter((orgGoal) => orgGoal.id !== item.id),
     }).issues
   )
+
+  return diagnosticFromIssues(issues)
+}
+
+// 2026 가중치 정책 — III-2 비중 상한 검증.
+//
+// 정책(슬라이드 14):
+//   - ORG_GOAL: 항목≤10%, 합계≤50%
+//   - PROJECT_T: 항목≤10% (합 cap 없음)
+//   - PROJECT_K: 항목≤5%  (합 cap 없음)
+//   - DAILY_WORK: 잔여 = 100 - (ORG_GOAL + PROJECT_T + PROJECT_K)
+//   - 전체 합 = 100%
+//
+// Cutover gate(EVALUATION_POLICY_2026.weightRule.enforced):
+//   - false (현재, H2 cutover 전): 모든 위반을 severity='warning'으로 surface.
+//     라우트는 저장을 차단하지 않음(레거시 카드 호환).
+//   - true (2026-07-01 flip 후): severity='blocker'. 라우트가 400으로 차단.
+//   - 2026 cycle이 아니면 검증 전체 skip (다른 연도 영향 0).
+
+export type PersonalKpiWeightCapInput2026 = {
+  id?: string | null
+  policyCategory?: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
+  category?: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
+  weight?: number | null
+  kpiName?: string | null
+  title?: string | null
+}
+
+function severityForWeightRule(): MboPolicySeverity2026 {
+  return EVALUATION_POLICY_2026.weightRule.enforced ? 'blocker' : 'warning'
+}
+
+function resolveWeightCategory(
+  item: PersonalKpiWeightCapInput2026
+): EvaluationPolicyItemCategoryCode | null {
+  const raw = item.policyCategory ?? item.category ?? null
+  if (!raw || raw === 'UNKNOWN') return null
+  return isEvaluationPolicyItemCategory(raw) ? raw : null
+}
+
+export function validatePersonalKpiWeightCapItem2026(params: {
+  item: PersonalKpiWeightCapInput2026
+  cycleYear: number
+}): MboPolicyDiagnostic2026 {
+  if (params.cycleYear !== EVALUATION_POLICY_2026.weightRule.cycleYear) {
+    return diagnosticFromIssues([])
+  }
+
+  const category = resolveWeightCategory(params.item)
+  const weight = params.item.weight
+  if (!category || typeof weight !== 'number' || !Number.isFinite(weight)) {
+    return diagnosticFromIssues([])
+  }
+
+  const cap = EVALUATION_POLICY_2026.categories[category].weightCap as
+    | { perItem?: number; sumMax?: number; isRemainder?: boolean }
+    | undefined
+  if (!cap || typeof cap.perItem !== 'number') {
+    return diagnosticFromIssues([])
+  }
+  const perItemCap = cap.perItem
+
+  const issues: MboPolicyIssue2026[] = []
+  if (weight > perItemCap) {
+    const categoryLabel = EVALUATION_POLICY_2026.categories[category].labelKo
+    issues.push(
+      issue({
+        code: 'WEIGHT_CATEGORY_ITEM_CAP_EXCEEDED',
+        severity: severityForWeightRule(),
+        message: `${categoryLabel} 항목 가중치는 최대 ${perItemCap}%까지 허용됩니다. (현재 ${weight}%)`,
+        targetField: 'weight',
+        suggestedAction: `${categoryLabel} 카테고리의 항목별 가중치를 ${perItemCap}% 이하로 조정해 주세요.`,
+      })
+    )
+  }
+
+  return diagnosticFromIssues(issues)
+}
+
+export function validatePersonalKpiWeightAggregate2026(params: {
+  items: PersonalKpiWeightCapInput2026[]
+  cycleYear: number
+}): MboPolicyDiagnostic2026 {
+  if (params.cycleYear !== EVALUATION_POLICY_2026.weightRule.cycleYear) {
+    return diagnosticFromIssues([])
+  }
+
+  const issues: MboPolicyIssue2026[] = []
+  const totalSumExpected = EVALUATION_POLICY_2026.weightRule.totalSum
+  const sumByCategory = new Map<EvaluationPolicyItemCategoryCode, number>()
+  let totalSum = 0
+
+  for (const item of params.items) {
+    const category = resolveWeightCategory(item)
+    const weight = item.weight
+    if (typeof weight !== 'number' || !Number.isFinite(weight)) continue
+    totalSum += weight
+    if (category) {
+      sumByCategory.set(category, (sumByCategory.get(category) ?? 0) + weight)
+    }
+  }
+
+  // 카테고리 합계 cap (현재 ORG_GOAL만 sumMax 50)
+  for (const code of ['ORG_GOAL', 'PROJECT_T', 'PROJECT_K', 'DAILY_WORK'] as const) {
+    const cap = EVALUATION_POLICY_2026.categories[code].weightCap as
+      | { perItem?: number; sumMax?: number; isRemainder?: boolean }
+      | undefined
+    if (!cap || typeof cap.sumMax !== 'number') continue
+    const sumMaxCap = cap.sumMax
+    const actual = sumByCategory.get(code) ?? 0
+    if (actual > sumMaxCap) {
+      const categoryLabel = EVALUATION_POLICY_2026.categories[code].labelKo
+      issues.push(
+        issue({
+          code: 'WEIGHT_CATEGORY_SUM_CAP_EXCEEDED',
+          severity: severityForWeightRule(),
+          message: `${categoryLabel} 가중치 합계는 ${sumMaxCap}%를 초과할 수 없습니다. (현재 ${Math.round(actual * 100) / 100}%)`,
+          targetField: 'weight',
+          suggestedAction: `${categoryLabel} 항목들의 가중치 합을 ${sumMaxCap}% 이하로 조정해 주세요.`,
+        })
+      )
+    }
+  }
+
+  // 전체 합계 정확히 100%
+  const totalSumRounded = Math.round(totalSum * 100) / 100
+  if (totalSumRounded !== totalSumExpected) {
+    issues.push(
+      issue({
+        code: 'WEIGHT_TOTAL_SUM_INVALID',
+        severity: severityForWeightRule(),
+        message: `전체 가중치 합계는 정확히 ${totalSumExpected}%여야 합니다. (현재 ${totalSumRounded}%)`,
+        targetField: 'weight',
+        suggestedAction: '일상업무 항목 가중치로 잔여 비중을 채워 전체 합을 100%로 맞춰 주세요.',
+      })
+    )
+  }
 
   return diagnosticFromIssues(issues)
 }

@@ -61,6 +61,7 @@ export const EVALUATION_POLICY_2026 = {
         target: 90,
         excellent: 100,
       },
+      weightCap: { perItem: 10, sumMax: 50 },
     },
     PROJECT_T: {
       code: 'PROJECT_T',
@@ -70,6 +71,7 @@ export const EVALUATION_POLICY_2026 = {
         target: 90,
         excellent: 100,
       },
+      weightCap: { perItem: 10 },
     },
     PROJECT_K: {
       code: 'PROJECT_K',
@@ -79,12 +81,15 @@ export const EVALUATION_POLICY_2026 = {
         target: 80,
         excellent: 90,
       },
+      weightCap: { perItem: 5 },
     },
     DAILY_WORK: {
       code: 'DAILY_WORK',
       labelKo: '일상업무',
       contributionType: 'PERSONAL',
       maxScore: 80,
+      // DAILY_WORK는 잔여 비중 = 100 - (ORG_GOAL + PROJECT_T + PROJECT_K). 별도 cap 없음.
+      weightCap: { isRemainder: true },
     },
   } satisfies Record<
     EvaluationPolicyItemCategoryCode,
@@ -97,8 +102,21 @@ export const EVALUATION_POLICY_2026 = {
         excellent: number
       }
       maxScore?: number
+      weightCap?: {
+        perItem?: number
+        sumMax?: number
+        isRemainder?: boolean
+      }
     }
   >,
+  // 2026 정책 가중치 제약 — cutover flag로 enforcement severity 제어.
+  // enforced=false (cutover 전): 위반은 warning. H2 cutover(2026-07-01) 시 true로 flip하면
+  // 라우트에서 400 blocker로 전환. 가감점 adjustmentRule.active와 동일 dormant 패턴.
+  weightRule: {
+    enforced: false,
+    totalSum: 100,
+    cycleYear: 2026,
+  },
   finalScoreFormula: {
     organizationPerformanceWeight: 30,
     personalPerformanceWeight: 70,
