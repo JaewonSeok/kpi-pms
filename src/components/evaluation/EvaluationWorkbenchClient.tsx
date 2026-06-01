@@ -218,6 +218,13 @@ type OfficialDataReadinessBaselineExport2026 = {
     featureFlagChange: false
   }
 }
+type OfficialWriteGuardDisplayRow2026 = {
+  key: string
+  label: string
+  status: string
+  reasons: string[]
+  nextAction: string
+}
 type GradePolicyTeamMemberSalesResolutionPayload2026 =
   | {
       decision: 'APPLY_PPT_BASELINE'
@@ -3249,8 +3256,10 @@ function formatReadinessUiStatus2026(status: string | null | undefined) {
     NOT_READY: '준비 안 됨',
     READY_WITH_APPROVED_EXCEPTIONS: '승인 예외 포함 준비',
     BLOCKED: '차단됨',
+    ALLOW: '허용',
     READY_LATER: '추후 가능',
     READY_FOR_REVIEW: '검토 가능',
+    NEEDS_APPROVAL: '승인 필요',
     NOT_ALLOWED: '허용 안 됨',
     WATCH_ONLY: '모니터링 전용',
     READ_ONLY: '읽기 전용',
@@ -3331,6 +3340,58 @@ function buildBaselineTsv2026(rows: OfficialDataReadinessBaselineRow2026[]) {
   ].join('\n')
 }
 
+function formatOfficialWriteGuardReasonKo2026(reason: string) {
+  const labels: Record<string, string> = {
+    SCHEMA_BOUNDARY_NOT_APPLIED: 'schema boundary migration 미적용',
+    STAGING_REHEARSAL_NOT_COMPLETE: 'staging/preview DB rehearsal 미완료',
+    PRODUCTION_MIGRATION_NOT_APPROVED: 'production migration 순서 미승인',
+    HR_APPROVAL_MISSING: 'HR 승인 미확인',
+    MBO_COVERAGE_INSUFFICIENT: 'MBO/KPI coverage 부족',
+    CONFIRMED_KPI_COVERAGE_INSUFFICIENT: '확정 KPI coverage 부족',
+    POLICY_CATEGORY_MISSING: 'policyCategory 미분류 남음',
+    TEAM_KPI_PENDING: 'Team KPI pending/discussion 남음',
+    EVALUATOR_ROUTING_BLOCKED: '평가자 배정 blocker 남음',
+    SCORE_POLICY_BLOCKED: '점수 정책 blocker 남음',
+    GRADE_POLICY_BLOCKED: '등급 정책 blocker 남음',
+    LEADER_EVALUATION_BLOCKED: '리더 평가 blocker 남음',
+    FINALIZATION_CEO_BLOCKED: '최종/CEO blocker 남음',
+    OFFICIAL_GATE_BLOCKED: '공식 전환 차단 조건 남음',
+    AI_SCORE_SEPARATION_NOT_CONFIRMED: 'AI Pass/Fail 점수 분리 미확인',
+    DB_BACKUP_NOT_CONFIRMED: 'DB backup 미확인',
+    WRITE_ROUTE_NOT_APPROVED: '공식 write route 미승인',
+    UNKNOWN: '확인 필요',
+  }
+  return labels[reason] ?? reason
+}
+
+function getOfficialWriteGuardDecisionRows2026(
+  summary: EvaluationActivationReadiness2026ApiData['officialWriteGuardSummary']
+): OfficialWriteGuardDisplayRow2026[] {
+  const rows = [
+    ['officialPopulation', '공식 평가 생성', summary.officialPopulation],
+    ['selfStageSave', '자기평가/단계 저장', summary.selfStageSave],
+    ['reviewerStageSave', '평가자 단계 저장', summary.reviewerStageSave],
+    ['scoreWrite', '공식 점수 반영', summary.scoreWrite],
+    ['gradeWrite', '공식 등급 반영', summary.gradeWrite],
+    ['finalization', '최종 확정', summary.finalization],
+  ] as const
+
+  return rows.map(([key, label, decision]) => ({
+    key,
+    label,
+    status: decision.status,
+    reasons: decision.reasons.map(formatOfficialWriteGuardReasonKo2026),
+    nextAction: decision.nextActions[0] ?? '현재 차단 조건을 계속 모니터링합니다.',
+  }))
+}
+
+function getOfficialWriteGuardStatusTone2026(status: string): 'success' | 'warn' | 'error' | 'neutral' {
+  if (status === 'ALLOW') return 'success'
+  if (status === 'NEEDS_APPROVAL' || status === 'READY_LATER') return 'warn'
+  if (status === 'BLOCK') return 'error'
+  return 'neutral'
+}
+
 function buildOfficialDataReadinessBaselineExport2026(
   activation: EvaluationActivationReadiness2026ApiData
 ): OfficialDataReadinessBaselineExport2026 {
@@ -3403,6 +3464,17 @@ function buildOfficialDataReadinessBaselineExport2026(
   ]
   const officialPopulationReadiness: OfficialDataReadinessBaselineExport2026['officialPopulationReadiness'] =
     requiredBlockerValues.every((value) => value === 0) ? 'READY' : 'NOT_READY'
+  const officialWriteGuardRows = getOfficialWriteGuardDecisionRows2026(activation.officialWriteGuardSummary)
+  const officialWriteGuardBaselineRows: OfficialDataReadinessBaselineRow2026[] = officialWriteGuardRows.map((row) => ({
+    item: `공식 저장 차단 상태 - ${row.label}`,
+    currentCountStatus: formatReadinessUiStatus2026(row.status),
+    requiredState: '허용 조건 충족',
+    owner: 'HR/인사 + 개발/모니터링',
+    route: '/admin/evaluation-readiness',
+    canBeSolvedNow: 'no',
+    officialWriteNeeded: 'yes',
+    nextAction: row.nextAction,
+  }))
   const baselineRows: OfficialDataReadinessBaselineRow2026[] = [
     {
       item: 'active employees',
@@ -3544,6 +3616,7 @@ function buildOfficialDataReadinessBaselineExport2026(
       officialWriteNeeded: 'no',
       nextAction: '공식 전환 차단 조건과 승인 증빙을 정리합니다.',
     },
+    ...officialWriteGuardBaselineRows,
     {
       item: 'blocked until schema/save-flow',
       currentCountStatus: 'official Evaluation/EvaluationItem creation, totalScore write, gradeId write',
@@ -3597,6 +3670,8 @@ function buildOfficialDataReadinessBaselineExport2026(
     `official gate blockers: ${formatBaselineCount2026(counts.officialGateBlockers)}`,
     `Go/No-Go status: ${formatReadinessUiStatus2026(activation.dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO')}`,
     `apply status: ${formatReadinessUiStatus2026(activation.dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED')}`,
+    '공식 저장 차단 상태:',
+    ...officialWriteGuardRows.map((row) => `- ${row.label}: ${formatReadinessUiStatus2026(row.status)} (${row.reasons.slice(0, 3).join(', ') || '사유 없음'})`),
   ]
   const markdown = [
     '# 2026 Official Data Readiness Baseline v1',
@@ -3638,6 +3713,13 @@ function buildOfficialDataReadinessBaselineExport2026(
     `- official gate blockers: ${formatBaselineCount2026(counts.officialGateBlockers)}`,
     `- Go/No-Go status: ${formatReadinessUiStatus2026(activation.dryRunGoNoGoFreezePack?.decision.currentDecision ?? 'NO_GO')}`,
     `- apply status: ${formatReadinessUiStatus2026(activation.dryRunGoNoGoFreezePack?.decision.applyStatus ?? 'NOT_ALLOWED')}`,
+    '',
+    '## 공식 저장 차단 상태',
+    ...officialWriteGuardRows.flatMap((row) => [
+      `- ${row.label}: ${formatReadinessUiStatus2026(row.status)}`,
+      `  - 주요 사유: ${row.reasons.slice(0, 5).join(', ') || '사유 없음'}`,
+      `  - 다음 액션: ${row.nextAction}`,
+    ]),
     '',
     '## HR-resolvable blockers',
     '- MBO missing / confirmed KPI shortage',
@@ -4293,6 +4375,10 @@ function PolicyActivationReadiness2026Panel(props: {
     () => (activation ? buildOfficialDataReadinessBaselineExport2026(activation) : null),
     [activation]
   )
+  const officialWriteGuardRows = useMemo(
+    () => (activation ? getOfficialWriteGuardDecisionRows2026(activation.officialWriteGuardSummary) : []),
+    [activation]
+  )
   const gatesReady = gates.length > 0 && gates.every((gate) => gate.status === 'READY' || gate.status === 'NOT_APPLICABLE')
   const isPerformanceDashboardMode = props.presentationMode === 'performance-dashboard'
   const isReadinessAdminMode = props.presentationMode === 'readiness-admin'
@@ -4559,6 +4645,44 @@ function PolicyActivationReadiness2026Panel(props: {
                 >
                   Baseline 요약 보기
                 </button>
+              </div>
+            </div>
+          ) : null}
+
+          {isReadinessAdminMode && activation?.officialWriteGuardSummary ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone="error">공식 저장 차단</Badge>
+                    <Badge tone={getOfficialWriteGuardStatusTone2026(activation.officialWriteGuardSummary.overall.status)}>
+                      {formatReadinessUiStatus2026(activation.officialWriteGuardSummary.overall.status)}
+                    </Badge>
+                    <Badge tone="neutral">읽기 전용</Badge>
+                  </div>
+                  <h4 className="mt-3 text-lg font-semibold text-rose-950">공식 저장 차단 상태</h4>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-rose-900">
+                    공식 평가 생성, 단계 저장, 점수 반영, 등급 반영, 최종 확정이 왜 아직 차단되어 있는지 읽기 전용으로 보여줍니다.
+                    이 화면에서는 저장, 제출, 점수 반영, 등급 반영을 실행하지 않습니다.
+                  </p>
+                </div>
+                <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800">
+                  공식 write API 연결 없음
+                </div>
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                {officialWriteGuardRows.map((row) => (
+                  <div key={row.key} className="rounded-xl border border-rose-100 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-900">{row.label}</p>
+                      <Badge tone={getOfficialWriteGuardStatusTone2026(row.status)}>{formatReadinessUiStatus2026(row.status)}</Badge>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-600">
+                      주요 사유: {row.reasons.slice(0, 3).join(', ') || '사유 없음'}
+                    </p>
+                    <p className="mt-2 text-xs leading-5 text-rose-800">다음 액션: {row.nextAction}</p>
+                  </div>
+                ))}
               </div>
             </div>
           ) : null}

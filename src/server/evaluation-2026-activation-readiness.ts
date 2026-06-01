@@ -76,6 +76,12 @@ import {
   buildEvaluation2026EndToEndPilot,
   type Evaluation2026EndToEndPilot,
 } from '@/server/evaluation-2026-end-to-end-pilot'
+import {
+  summarizeOfficialWriteHold,
+  type OfficialEvaluationReadinessInput,
+  type OfficialWriteGuardReason,
+  type OfficialWriteGuardSummary,
+} from '@/server/evaluation-2026-official-write-guards'
 
 type Evaluation2026ActivationDb = Pick<typeof prisma, 'evaluation' | 'aiCompetencyGateAssignment'> & Partial<Pick<typeof prisma, 'evalCycle' | 'department' | 'employee' | 'evaluationAssignment' | 'multiFeedbackRound' | 'wordCloud360Cycle'>> & {
   $queryRawUnsafe?: typeof prisma.$queryRawUnsafe
@@ -221,6 +227,7 @@ export type Evaluation2026ActivationReadinessResult = {
   finalizationCeoReadiness: Evaluation2026ReadinessPopulationDryRun['finalizationCeoReadiness'] | null
   officialActivationGates: Evaluation2026OfficialActivationGate[]
   officialActivationRunbook: Evaluation2026OfficialActivationRunbook
+  officialWriteGuardSummary: Evaluation2026OfficialWriteGuardReadinessSummary
   integratedReadinessSnapshot: Evaluation2026IntegratedReadinessSnapshot
   readinessActionPlan: Evaluation2026ReadinessActionPlan
   readinessExecutionBoard: Evaluation2026ReadinessExecutionBoard
@@ -237,6 +244,27 @@ export type Evaluation2026ActivationReadinessResult = {
   populationDryRunError: string | null
   blockers: Evaluation2026ActivationReadinessItem[]
   warnings: Evaluation2026ActivationReadinessItem[]
+}
+
+export type Evaluation2026OfficialWriteGuardReadinessSummary = OfficialWriteGuardSummary & {
+  blockedReasons: OfficialWriteGuardReason[]
+  nextActions: string[]
+  safety: {
+    readOnly: true
+    dbWritesPerformed: false
+    schemaChanged: false
+    migrationsRun: false
+    dryRunExecuted: false
+    backfillExecuted: false
+    officialScoringActivated: false
+    officialGradeActivated: false
+    aiScoreExclusionActivated: false
+    totalScoreChanged: false
+    gradeIdChanged: false
+    evaluationsCreated: 0
+    evaluationItemsCreated: 0
+    featureFlagsChanged: false
+  }
 }
 
 const PHASE0_MIGRATION_NAME = '20260514_phase0_2026_policy_prep'
@@ -757,6 +785,115 @@ function salesClassificationMissingCount(params: {
     params.readiness.missingOrgMasterDivisionSalesMappingCount +
     (params.populationDryRun?.divisionSalesMappingCoverage.unmappedDivisions ?? 0)
   )
+}
+
+function optionalOfficialWriteGuardNumber(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function buildEvaluation2026OfficialWriteGuardInput(params: {
+  flags: Evaluation2026FeatureFlags
+  readiness: EvaluationPreviewReadinessSummary2026
+  gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult | null
+  evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null
+  populationDryRun: Evaluation2026ReadinessPopulationDryRun | null
+  officialActivationGates: Evaluation2026OfficialActivationGate[]
+}): OfficialEvaluationReadinessInput {
+  const {
+    flags,
+    readiness,
+    gradePolicyReadiness,
+    evaluatorRoutingReadiness,
+    feedbackLeadershipReadiness,
+    populationDryRun,
+    officialActivationGates,
+  } = params
+  const activeEmployees =
+    populationDryRun?.activeEmployeeCount ??
+    evaluatorRoutingReadiness?.summary.activeEmployeeCount
+  const confirmedKpiCount = populationDryRun?.employeesWithConfirmedPersonalKpiCount
+  const confirmedKpiCoverageRate =
+    activeEmployees && confirmedKpiCount != null
+      ? Number(((confirmedKpiCount / activeEmployees) * 100).toFixed(1))
+      : undefined
+  const teamKpiPending = teamKpiBlockerCount(populationDryRun)
+  const officialGateBlockers = officialActivationGates.reduce((sum, gate) => {
+    if (gate.status === 'READY' || gate.status === 'NOT_APPLICABLE') return sum
+    return sum + Math.max(gate.currentBlockerCount, 1)
+  }, 0)
+  const aiPolicySeparateFromAnnualScore = true
+
+  return {
+    // PR #64 schema boundary migration is intentionally reverted from runtime until DB sequencing is approved.
+    schemaBoundaryApplied: false,
+    stagingRehearsalComplete: false,
+    productionMigrationApproved: false,
+    hrApprovalCollected: false,
+    dbBackupConfirmed: false,
+    writeRouteApproved: false,
+    ceoApprovalCollected: false,
+    priorStagesComplete: false,
+    scoreWriteComplete: false,
+    gradeWriteComplete: false,
+    scoreCalculated: false,
+    gradeCalculated: false,
+    activeEmployees: optionalOfficialWriteGuardNumber(activeEmployees),
+    confirmedKpiCount: optionalOfficialWriteGuardNumber(confirmedKpiCount),
+    confirmedKpiCoverageRate: optionalOfficialWriteGuardNumber(confirmedKpiCoverageRate),
+    mboMissing: optionalOfficialWriteGuardNumber(
+      populationDryRun?.mboSetupCoverage?.employeesMissingAnyPersonalKpiCount ??
+        populationDryRun?.employeesMissingConfirmedPersonalKpiCount
+    ),
+    confirmedKpiShortage: optionalOfficialWriteGuardNumber(populationDryRun?.employeesMissingConfirmedPersonalKpiCount),
+    teamKpiPending: optionalOfficialWriteGuardNumber(teamKpiPending),
+    policyCategoryMissing: optionalOfficialWriteGuardNumber(
+      populationDryRun?.policyCategoryMissingCount ?? readiness.missingPolicyCategoryCount
+    ),
+    evaluatorRoutingBlockers: optionalOfficialWriteGuardNumber(evaluatorRoutingReadiness?.summary.blockerCount),
+    scorePolicyBlockers: optionalOfficialWriteGuardNumber(scorePolicyViolationCount(populationDryRun)),
+    gradePolicyBlockers: optionalOfficialWriteGuardNumber(gradePolicyBlockerCount(gradePolicyReadiness)),
+    leaderEvaluationBlockers: optionalOfficialWriteGuardNumber(leaderEvaluationBlockerCount(populationDryRun)),
+    finalizationCeoBlockers: optionalOfficialWriteGuardNumber(finalizationCeoBlockerCount(populationDryRun)),
+    leadership360Blockers: optionalOfficialWriteGuardNumber(feedbackLeadershipBlockerCount(feedbackLeadershipReadiness)),
+    officialGateBlockers: optionalOfficialWriteGuardNumber(officialGateBlockers),
+    aiPassFailBlockers: optionalOfficialWriteGuardNumber(readiness.aiInsufficientDataCount),
+    aiAnnualScoreExcluded: aiPolicySeparateFromAnnualScore && !flags.aiScoreExclusionEnabled,
+  }
+}
+
+function buildEvaluation2026OfficialWriteGuardSummary(params: {
+  flags: Evaluation2026FeatureFlags
+  readiness: EvaluationPreviewReadinessSummary2026
+  gradePolicyReadiness: Evaluation2026GradePolicyReadinessResult | null
+  evaluatorRoutingReadiness: Evaluation2026EvaluatorRoutingReadinessResult | null
+  feedbackLeadershipReadiness: Evaluation2026FeedbackLeadershipReadinessResult | null
+  populationDryRun: Evaluation2026ReadinessPopulationDryRun | null
+  officialActivationGates: Evaluation2026OfficialActivationGate[]
+}): Evaluation2026OfficialWriteGuardReadinessSummary {
+  const summary = summarizeOfficialWriteHold(buildEvaluation2026OfficialWriteGuardInput(params))
+
+  return {
+    ...summary,
+    blockedReasons: summary.overall.reasons,
+    nextActions: summary.overall.nextActions,
+    safety: {
+      readOnly: true,
+      dbWritesPerformed: false,
+      schemaChanged: false,
+      migrationsRun: false,
+      dryRunExecuted: false,
+      backfillExecuted: false,
+      officialScoringActivated: false,
+      officialGradeActivated: false,
+      aiScoreExclusionActivated: false,
+      totalScoreChanged: false,
+      gradeIdChanged: false,
+      evaluationsCreated: 0,
+      evaluationItemsCreated: 0,
+      featureFlagsChanged: false,
+    },
+  }
 }
 
 function buildEvaluation2026OfficialActivationGates(params: {
@@ -1627,6 +1764,15 @@ export async function getEvaluation2026ActivationReadiness(params: {
     flags,
     officialActivationGates,
   })
+  const officialWriteGuardSummary = buildEvaluation2026OfficialWriteGuardSummary({
+    flags,
+    readiness,
+    gradePolicyReadiness,
+    evaluatorRoutingReadiness,
+    feedbackLeadershipReadiness,
+    populationDryRun,
+    officialActivationGates,
+  })
   const integratedReadinessSnapshot = buildEvaluation2026IntegratedReadinessSnapshot({
     flags,
     readiness,
@@ -1723,6 +1869,7 @@ export async function getEvaluation2026ActivationReadiness(params: {
     finalizationCeoReadiness: populationDryRun?.finalizationCeoReadiness ?? null,
     officialActivationGates,
     officialActivationRunbook,
+    officialWriteGuardSummary,
     integratedReadinessSnapshot,
     readinessActionPlan,
     readinessExecutionBoard,
