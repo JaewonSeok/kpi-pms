@@ -51,11 +51,13 @@ import {
 import {
   buildOrgKpiEffectiveDepartmentIds,
   buildOrgKpiFilterContextLabel,
+  expandTeamScopeWithDivisionSubtreeFallback,
   getOrgKpiDivisionOptions,
   getOrgKpiSectionOptions,
   getOrgKpiTeamOptions,
   resolveOrgKpiFilterContext,
 } from '@/lib/org-kpi-filters'
+import { countOrgKpisByScopeForDivision } from '@/lib/org-kpi-card-counts'
 import { formatCountWithUnit, formatExplicitRatio } from '@/lib/metric-copy'
 import { CreateOrgKpiSchema, UpdateOrgKpiSchema } from '@/lib/validations'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
@@ -578,17 +580,24 @@ export function OrgKpiManagementClient({
   )
   const effectiveDepartmentIds = useMemo(
     () =>
-      buildOrgKpiEffectiveDepartmentIds({
+      expandTeamScopeWithDivisionSubtreeFallback({
+        baseEffectiveIds: buildOrgKpiEffectiveDepartmentIds({
+          scope: pageData.selectedScope,
+          divisionId: selectedDivisionId,
+          sectionId: selectedSectionId,
+          teamId: selectedTeamId,
+          divisionOptions,
+          sectionOptions,
+          teamOptions,
+        }),
         scope: pageData.selectedScope,
         divisionId: selectedDivisionId,
         sectionId: selectedSectionId,
-        teamId: selectedTeamId,
-        divisionOptions,
-        sectionOptions,
-        teamOptions,
+        departments: hierarchyDepartments,
       }),
     [
       divisionOptions,
+      hierarchyDepartments,
       pageData.selectedScope,
       sectionOptions,
       selectedDivisionId,
@@ -704,6 +713,17 @@ export function OrgKpiManagementClient({
   const selectedDivisionName = useMemo(
     () => divisionOptions.find((department) => department.id === selectedDivisionId)?.name ?? null,
     [divisionOptions, selectedDivisionId]
+  )
+  // 카드 카운트: 선택 본부 기준 derive (서버 슬림 인덱스 + 클라 부모-chain walk).
+  // selectedDivisionId === null이면 helper가 전체 합계 fallback 반환.
+  const cardCountsByScope = useMemo(
+    () =>
+      countOrgKpisByScopeForDivision({
+        kpiDepartmentIdsByScope: pageData.kpiDepartmentIdsByScope,
+        departments: hierarchyDepartments,
+        selectedDivisionId,
+      }),
+    [hierarchyDepartments, pageData.kpiDepartmentIdsByScope, selectedDivisionId]
   )
   const selectedSectionName = useMemo(
     () => sectionOptions.find((department) => department.id === selectedSectionId)?.name ?? null,
@@ -1642,7 +1662,7 @@ export function OrgKpiManagementClient({
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0 break-keep text-sm font-semibold leading-tight">{scopeTab.label}</div>
                       <div className={cls('shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold leading-none', scopeTab.key === pageData.selectedScope ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-700')}>
-                        {scopeTab.totalCount}개
+                        {cardCountsByScope[scopeTab.key]}개
                       </div>
                     </div>
                     <p className={cls('mt-2 break-keep text-xs leading-5', scopeTab.key === pageData.selectedScope ? 'text-slate-200' : 'text-slate-500')}>

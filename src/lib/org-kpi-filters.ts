@@ -147,6 +147,39 @@ export function buildOrgKpiEffectiveDepartmentIds(params: {
   )
 }
 
+// scope='team' + 본부만 선택 + 직접 자식 팀 0건일 때만 발동하는 폴백.
+// 그 본부 subtree의 모든 team-scope 부서를 effective 집합으로 채운다.
+// 기존 buildOrgKpiEffectiveDepartmentIds의 동작/시그니처를 보존하기 위해 별도 후처리 함수로 분리.
+//
+// ★ 일관성 보장: 본부 subtree 매칭 판정에 카드 카운트(src/lib/org-kpi-card-counts.ts)와
+// 동일한 resolveOrgKpiFilterContext를 사용. 같은 트리 + 같은 함수 → 같은 집합.
+// → "카드 N 건인데 목록 M 건" 불일치 구조적으로 안 생긴다.
+export function expandTeamScopeWithDivisionSubtreeFallback(params: {
+  baseEffectiveIds: Set<string>
+  scope: OrgKpiScope
+  divisionId: string | null
+  sectionId: string | null
+  departments: OrgKpiHierarchyDepartmentOption[]
+}): Set<string> {
+  // 폴백 조건 4가지 AND — 미충족이면 base 그대로 반환 (no-op).
+  if (params.scope !== 'team') return params.baseEffectiveIds
+  if (!params.divisionId) return params.baseEffectiveIds
+  if (params.sectionId) return params.baseEffectiveIds
+  if (params.baseEffectiveIds.size > 0) return params.baseEffectiveIds
+
+  // 본부 subtree의 모든 team scope 부서 — 카드 helper의 ancestor walk와 동일 판정.
+  const targetDivisionId = params.divisionId
+  const result = new Set<string>()
+  for (const department of params.departments) {
+    if (department.scope !== 'team') continue
+    const context = resolveOrgKpiFilterContext(department.id, params.departments)
+    if (context.divisionId === targetDivisionId) {
+      result.add(department.id)
+    }
+  }
+  return result
+}
+
 export function buildOrgKpiFilterContextLabel(params: {
   scopeLabel: string
   divisionName?: string | null
