@@ -178,6 +178,10 @@ export type OrgKpiPageData = {
   }>
   selectedScope: OrgKpiScope
   scopeTabs: OrgKpiScopeTab[]
+  // 슬림 cross-scope 인덱스 — 카드 카운트 클라 derive용. 각 scope KPI들의 departmentId
+  // 멀티셋 배열. selectedDivisionId 변경 시 클라가 부모-chain walk로 본부 필터링.
+  // scopeTabs[].totalCount는 selectedDivisionId=null일 때의 fallback 전체 합계.
+  kpiDepartmentIdsByScope: Record<OrgKpiScope, string[]>
   selectedYear: number
   selectedDepartmentId: string
   departments: OrgKpiScopeOption[]
@@ -768,6 +772,7 @@ export async function getOrgKpiPageData(params: {
         selectedScope: fallbackScope,
         scopeTabs: emptyScopeTabs,
         message: '조직 정보가 아직 준비되지 않았습니다.',
+        kpiDepartmentIdsByScope: { division: [], section: [], team: [] },
         selectedYear: new Date().getFullYear(),
         selectedDepartmentId: params.deptId,
         departments: [],
@@ -1187,6 +1192,19 @@ export async function getOrgKpiPageData(params: {
         team: 0,
       }
     )
+    // 카드 카운트 클라 derive용 슬림 cross-scope 인덱스. departmentId 멀티셋(중복 허용)
+    // — 각 KPI 한 건당 한 entry. 같은 부서에 KPI 여러 개면 그 개수만큼 등장.
+    const kpiDepartmentIdsByScope = mappedListAll.reduce<Record<OrgKpiScope, string[]>>(
+      (acc, item) => {
+        acc[item.scope].push(item.departmentId)
+        return acc
+      },
+      {
+        division: [],
+        section: [],
+        team: [],
+      }
+    )
     const mappedById = new Map(mappedList.map((item) => [item.id, item]))
     const kpisByDepartment = new Map<string, OrgKpiViewModel[]>()
     mappedList.forEach((kpi) => {
@@ -1316,6 +1334,7 @@ export async function getOrgKpiPageData(params: {
         totalCount: scopeCounts[scope],
         departmentCount: accessibleDepartmentsByScope[scope].length,
       })),
+      kpiDepartmentIdsByScope,
       message: totalCount ? undefined : '해당 범위에 등록된 조직 KPI가 없습니다. 올해 목표부터 정리해 보세요.',
       selectedYear,
       selectedDepartmentId,
@@ -1360,6 +1379,7 @@ export async function getOrgKpiPageData(params: {
       selectedScope: fallbackScope,
       scopeTabs: emptyScopeTabs,
       message: '조직 KPI 화면을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      kpiDepartmentIdsByScope: { division: [], section: [], team: [] },
       selectedYear: new Date().getFullYear(),
       selectedDepartmentId: params.deptId,
       departments: [],
