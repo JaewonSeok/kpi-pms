@@ -129,6 +129,16 @@ export const EVALUATION_POLICY_2026 = {
     exceptionScore: 80,
     cycleYear: 2026,
   },
+  // III-5 일상업무(DAILY_WORK) 점수 게이트 — PPT 슬라이드 14·15.
+  // (a) 점수 상한 80, (b) 팀장(평가자) 재량 부여, (c) 자기평가(SELF) 종료 후 단계에서만.
+  // 가감점 stage 게이트 + 가중치(weight-cap) per-item severity의 하이브리드 패턴.
+  // active=false 동안 어떤 라우트에도 wiring 안 됨 — dormant. cutover 시 active=true로 flip.
+  dailyWorkScoringRule: {
+    active: false,
+    maxScore: 80,
+    allowedStages: ['FIRST', 'SECOND', 'FINAL'],
+    cycleYear: 2026,
+  },
   finalScoreFormula: {
     organizationPerformanceWeight: 30,
     personalPerformanceWeight: 70,

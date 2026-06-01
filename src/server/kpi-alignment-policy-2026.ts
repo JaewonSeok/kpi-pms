@@ -38,6 +38,8 @@ export type MboPolicyIssueCode2026 =
   | 'WEIGHT_CATEGORY_ITEM_CAP_EXCEEDED'
   | 'WEIGHT_CATEGORY_SUM_CAP_EXCEEDED'
   | 'WEIGHT_TOTAL_SUM_INVALID'
+  | 'DAILY_WORK_SCORE_CAP_EXCEEDED'
+  | 'DAILY_WORK_STAGE_NOT_ALLOWED'
 
 export type MboPolicyIssue2026 = {
   code: MboPolicyIssueCode2026
@@ -919,6 +921,121 @@ export function validatePersonalKpiWeightAggregate2026(params: {
         message: `전체 가중치 합계는 정확히 ${totalSumExpected}%여야 합니다. (현재 ${totalSumRounded}%)`,
         targetField: 'weight',
         suggestedAction: '일상업무 항목 가중치로 잔여 비중을 채워 전체 합을 100%로 맞춰 주세요.',
+      })
+    )
+  }
+
+  return diagnosticFromIssues(issues)
+}
+
+// 2026 일상업무(DAILY_WORK) 점수 게이트 — III-5 PPT 슬라이드 14·15.
+//
+// (a) 점수 상한: dailyWorkScoringRule.maxScore (정책 80)
+// (b) 자기평가(SELF) 종료 후 단계 한정: allowedStages (FIRST/SECOND/FINAL)
+// (c) 팀장(평가자) 재량 부여
+//
+// ★ documented decision (role): 정책 문구의 '팀장 재량'을 stage + canEdit 권한으로 환원함 —
+// 평가자(canEdit 권한자)면 누구든 작성 가능. SECTION_CHIEF/DIV_HEAD가 review stage에서
+// DAILY_WORK 점수를 조정하는 운영 흐름을 보존하기 위해 role-specific 화이트리스트는
+// 의도적으로 두지 않음. 운영상 '팀장 외 작성 불가' 강제가 필요해지면 여기 role
+// allowlist를 추가해 확장.
+//
+// 패턴: 가감점(stage allowlist) + 가중치 cap(per-item severity 토글) 하이브리드.
+// dailyWorkScoringRule.active=false인 동안 호출되어도 issue severity='warning' →
+// diagnostic.canSubmit !== false. 라우트 wiring은 Phase 2 (cutover 전 lead time 두고).
+// 그때까지 submit/draft 저장 경로에 81~100 DAILY_WORK 점수가 schema(0-100)로 통과해
+// 그대로 저장되는 기존 갭 존재.
+
+export type EvaluationStageForDailyWorkRule2026 =
+  | 'SELF'
+  | 'FIRST'
+  | 'SECOND'
+  | 'FINAL'
+  | 'CEO_ADJUST'
+
+export type DailyWorkScoringRuleOverride2026 = {
+  active: boolean
+  maxScore: number
+  allowedStages: readonly EvaluationStageForDailyWorkRule2026[]
+  cycleYear: number
+}
+
+function severityForDailyWorkRule2026(
+  rule: { active: boolean }
+): MboPolicySeverity2026 {
+  return rule.active ? 'blocker' : 'warning'
+}
+
+function resolveDailyWorkRule(
+  override?: DailyWorkScoringRuleOverride2026
+): DailyWorkScoringRuleOverride2026 {
+  if (override) return override
+  // 정책 상수에서 default 가져오기 (테스트는 override로 active=true 주입).
+  const policy = EVALUATION_POLICY_2026.dailyWorkScoringRule
+  return {
+    active: policy.active,
+    maxScore: policy.maxScore,
+    allowedStages: policy.allowedStages,
+    cycleYear: policy.cycleYear,
+  }
+}
+
+export function shouldApplyDailyWorkScoringRule2026(params: {
+  cycleYear: number
+  evalStage: EvaluationStageForDailyWorkRule2026
+  rule?: DailyWorkScoringRuleOverride2026
+}): boolean {
+  const rule = resolveDailyWorkRule(params.rule)
+  if (!rule.active) return false
+  if (params.cycleYear !== rule.cycleYear) return false
+  return rule.allowedStages.includes(params.evalStage)
+}
+
+export function validateDailyWorkScore2026(params: {
+  category: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
+  score: number | null
+  evalStage: EvaluationStageForDailyWorkRule2026
+  cycleYear: number
+  rule?: DailyWorkScoringRuleOverride2026
+  itemTitle?: string | null
+}): MboPolicyDiagnostic2026 {
+  const rule = resolveDailyWorkRule(params.rule)
+
+  // cycleYear !== 2026 → 검증 자체 skip (다른 연도 영향 0)
+  if (params.cycleYear !== rule.cycleYear) {
+    return diagnosticFromIssues([])
+  }
+
+  // category !== DAILY_WORK → skip (이 validator는 DAILY_WORK 전용)
+  if (params.category !== 'DAILY_WORK') {
+    return diagnosticFromIssues([])
+  }
+
+  const severity = severityForDailyWorkRule2026(rule)
+  const issues: MboPolicyIssue2026[] = []
+
+  // (a) 점수 상한 cap
+  if (typeof params.score === 'number' && Number.isFinite(params.score) && params.score > rule.maxScore) {
+    issues.push(
+      issue({
+        code: 'DAILY_WORK_SCORE_CAP_EXCEEDED',
+        severity,
+        message: `일상업무 점수는 ${rule.maxScore}점을 초과할 수 없습니다. (현재 ${params.score}점)`,
+        targetField: 'score',
+        suggestedAction: `일상업무 항목 점수를 ${rule.maxScore}점 이하로 조정해 주세요.`,
+      })
+    )
+  }
+
+  // (c) 자기평가 종료 후 단계만 허용 (allowedStages 미포함 → STAGE_NOT_ALLOWED)
+  if (!rule.allowedStages.includes(params.evalStage)) {
+    issues.push(
+      issue({
+        code: 'DAILY_WORK_STAGE_NOT_ALLOWED',
+        severity,
+        message: `일상업무 점수는 자기평가 종료 후 단계(${rule.allowedStages.join('/')})에서만 작성할 수 있습니다. (현재 단계: ${params.evalStage})`,
+        targetField: 'evalStage',
+        suggestedAction: '자기평가 단계가 완료된 뒤 평가자가 점수를 작성합니다.',
       })
     )
   }
