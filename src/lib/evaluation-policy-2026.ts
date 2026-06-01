@@ -117,6 +117,18 @@ export const EVALUATION_POLICY_2026 = {
     totalSum: 100,
     cycleYear: 2026,
   },
+  // III-3 조직목표 미달성 예외 — PPT 슬라이드 14.
+  // 조직목표(ORG_GOAL)가 미달성이어도, 같은 조직목표에 연결된 본인 PROJECT_T가 Target 이상이면
+  // 해당 ORG_GOAL 항목 점수를 exceptionScore(80)로 override. cutover dormant 패턴.
+  // active=false인 동안 평가 점수 계산에 영향 0.
+  belowTargetExceptionRule: {
+    active: false,
+    appliesTo: 'ORG_GOAL',
+    requiresLinkedItemCategory: 'PROJECT_T',
+    requiresLinkedItemAtOrAboveTarget: true,
+    exceptionScore: 80,
+    cycleYear: 2026,
+  },
   finalScoreFormula: {
     organizationPerformanceWeight: 30,
     personalPerformanceWeight: 70,
