@@ -173,7 +173,12 @@ run('evaluation workbench quality warnings guide without blocking the existing s
 
   assert.equal(file.includes('QualityWarningPanel'), true)
   assert.equal(file.includes('buildEvaluationQualityWarnings'), true)
-  assert.equal(file.includes("disabled={!selected?.permissions.canEdit || isPending}"), true)
+  // save flow의 disable 조건에 canEdit + isPending 두 핵심 토큰이 같은 disabled={...}
+  // 표현 안에 함께 존재해야 한다 (single-line이든 multi-line이든). 추가 조건(가감점의
+  // hasAdjustmentBlockingError 등)이 || 로 붙어도 깨지지 않도록 부분 매치로 검증.
+  // 단일 표현 매칭: `disabled={` 와 그 짝 `}` 사이에 두 토큰이 모두 등장.
+  const saveDisabledPattern = /disabled=\{[^{}]*selected\?\.permissions\.canEdit[^{}]*isPending[^{}]*\}/
+  assert.match(file, saveDisabledPattern)
 })
 
 run('personal KPI create CTA transition opens editor even outside ready state', () => {

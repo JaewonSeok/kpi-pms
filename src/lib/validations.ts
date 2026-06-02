@@ -562,6 +562,39 @@ export const MonthlyRecordAiActionSchema = z.object({
 const EvaluationStageCommentSchema = z.string().trim().max(2000)
 const EvaluationGuidanceSchema = z.string().trim().max(1500)
 
+// 2026 정책 가감점 (±5, Zero-Sum은 cross-person이라 본부검수 단계에서 별도 집계)
+// active 게이트 + EvalStage(=FIRST) 분기는 라우트 핸들러에서 처리.
+export const ADJUSTMENT_REASON_REQUIRED_MESSAGE =
+  '가감점이 0이 아니면 적용 사유를 입력해 주세요.'
+
+// 단일 출처. schema superRefine과 client UX helper가 동일 규칙을 공유한다.
+export function checkAdjustmentReasonRequirement(
+  data: { adjustmentScore?: number | null; adjustmentReason?: string | null }
+): { ok: true } | { ok: false; message: string } {
+  const score = data.adjustmentScore
+  if (typeof score === 'number' && score !== 0) {
+    const reason = (data.adjustmentReason ?? '').trim()
+    if (!reason) {
+      return { ok: false, message: ADJUSTMENT_REASON_REQUIRED_MESSAGE }
+    }
+  }
+  return { ok: true }
+}
+
+function refineAdjustmentReason(
+  data: { adjustmentScore?: number | null; adjustmentReason?: string | null },
+  ctx: z.RefinementCtx
+) {
+  const result = checkAdjustmentReasonRequirement(data)
+  if (!result.ok) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['adjustmentReason'],
+      message: result.message,
+    })
+  }
+}
+
 export const SubmitEvaluationSchema = z.object({
   comment: z.string().min(50, '종합 의견은 최소 50자 이상 입력해 주세요.').max(2000),
   strengthComment: z.string().trim().min(10, '강점 요약은 최소 10자 이상 입력해 주세요.').max(2000),
@@ -572,15 +605,20 @@ export const SubmitEvaluationSchema = z.object({
     .max(2000),
   nextStepGuidance: EvaluationGuidanceSchema.optional(),
   gradeId: z.string().optional(),
-  items: z.array(z.object({
-    personalKpiId: z.string(),
-    quantScore: z.number().min(0).max(100).optional(),
-    planScore: z.number().min(0).max(100).optional(),
-    doScore: z.number().min(0).max(100).optional(),
-    checkScore: z.number().min(0).max(100).optional(),
-    actScore: z.number().min(0).max(100).optional(),
-    itemComment: z.string().max(500).optional(),
-  })),
+  items: z.array(
+    z.object({
+      personalKpiId: z.string(),
+      quantScore: z.number().min(0).max(100).optional(),
+      planScore: z.number().min(0).max(100).optional(),
+      doScore: z.number().min(0).max(100).optional(),
+      checkScore: z.number().min(0).max(100).optional(),
+      actScore: z.number().min(0).max(100).optional(),
+      itemComment: z.string().max(500).optional(),
+      adjustmentScore: z.number().int('가감점은 정수만 허용됩니다.').min(-5).max(5).optional(),
+      adjustmentGroupKey: z.string().trim().max(100).optional(),
+      adjustmentReason: z.string().trim().max(500).optional(),
+    }).superRefine(refineAdjustmentReason)
+  ),
 })
 
 export const SaveEvaluationDraftSchema = z.object({
@@ -589,15 +627,20 @@ export const SaveEvaluationDraftSchema = z.object({
   improvementComment: EvaluationStageCommentSchema.optional(),
   nextStepGuidance: EvaluationGuidanceSchema.optional(),
   gradeId: z.string().nullable().optional(),
-  items: z.array(z.object({
-    personalKpiId: z.string(),
-    quantScore: z.number().min(0).max(100).nullable().optional(),
-    planScore: z.number().min(0).max(100).nullable().optional(),
-    doScore: z.number().min(0).max(100).nullable().optional(),
-    checkScore: z.number().min(0).max(100).nullable().optional(),
-    actScore: z.number().min(0).max(100).nullable().optional(),
-    itemComment: z.string().max(500).optional(),
-  })).default([]),
+  items: z.array(
+    z.object({
+      personalKpiId: z.string(),
+      quantScore: z.number().min(0).max(100).nullable().optional(),
+      planScore: z.number().min(0).max(100).nullable().optional(),
+      doScore: z.number().min(0).max(100).nullable().optional(),
+      checkScore: z.number().min(0).max(100).nullable().optional(),
+      actScore: z.number().min(0).max(100).nullable().optional(),
+      itemComment: z.string().max(500).optional(),
+      adjustmentScore: z.number().int('가감점은 정수만 허용됩니다.').min(-5).max(5).nullable().optional(),
+      adjustmentGroupKey: z.string().trim().max(100).nullable().optional(),
+      adjustmentReason: z.string().trim().max(500).nullable().optional(),
+    }).superRefine(refineAdjustmentReason)
+  ).default([]),
 })
 
 export const RejectEvaluationSchema = z.object({

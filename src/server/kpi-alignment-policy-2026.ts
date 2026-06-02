@@ -1,4 +1,5 @@
 import {
+  EVALUATION_POLICY_2026,
   isEvaluationPolicyItemCategory,
   type EvaluationPolicyItemCategoryCode,
 } from '../lib/evaluation-policy-2026'
@@ -34,6 +35,11 @@ export type MboPolicyIssueCode2026 =
   | 'HR_EXCEPTION_REQUIRED'
   | 'MISSING_MBO_CATEGORY'
   | 'WEIGHT_POLICY_REVIEW_REQUIRED'
+  | 'WEIGHT_CATEGORY_ITEM_CAP_EXCEEDED'
+  | 'WEIGHT_CATEGORY_SUM_CAP_EXCEEDED'
+  | 'WEIGHT_TOTAL_SUM_INVALID'
+  | 'DAILY_WORK_SCORE_CAP_EXCEEDED'
+  | 'DAILY_WORK_STAGE_NOT_ALLOWED'
 
 export type MboPolicyIssue2026 = {
   code: MboPolicyIssueCode2026
@@ -781,6 +787,258 @@ export function summarizeMboPolicyIssues2026(params: {
       orgGoalItems: orgGoalItems.filter((orgGoal) => orgGoal.id !== item.id),
     }).issues
   )
+
+  return diagnosticFromIssues(issues)
+}
+
+// 2026 가중치 정책 — III-2 비중 상한 검증.
+//
+// 정책(슬라이드 14):
+//   - ORG_GOAL: 항목≤10%, 합계≤50%
+//   - PROJECT_T: 항목≤10% (합 cap 없음)
+//   - PROJECT_K: 항목≤5%  (합 cap 없음)
+//   - DAILY_WORK: 잔여 = 100 - (ORG_GOAL + PROJECT_T + PROJECT_K)
+//   - 전체 합 = 100%
+//
+// Cutover gate(EVALUATION_POLICY_2026.weightRule.enforced):
+//   - false (현재, H2 cutover 전): 모든 위반을 severity='warning'으로 surface.
+//     라우트는 저장을 차단하지 않음(레거시 카드 호환).
+//   - true (2026-07-01 flip 후): severity='blocker'. 라우트가 400으로 차단.
+//   - 2026 cycle이 아니면 검증 전체 skip (다른 연도 영향 0).
+
+export type PersonalKpiWeightCapInput2026 = {
+  id?: string | null
+  policyCategory?: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
+  category?: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
+  weight?: number | null
+  kpiName?: string | null
+  title?: string | null
+}
+
+function severityForWeightRule(): MboPolicySeverity2026 {
+  return EVALUATION_POLICY_2026.weightRule.enforced ? 'blocker' : 'warning'
+}
+
+function resolveWeightCategory(
+  item: PersonalKpiWeightCapInput2026
+): EvaluationPolicyItemCategoryCode | null {
+  const raw = item.policyCategory ?? item.category ?? null
+  if (!raw || raw === 'UNKNOWN') return null
+  return isEvaluationPolicyItemCategory(raw) ? raw : null
+}
+
+export function validatePersonalKpiWeightCapItem2026(params: {
+  item: PersonalKpiWeightCapInput2026
+  cycleYear: number
+}): MboPolicyDiagnostic2026 {
+  if (params.cycleYear !== EVALUATION_POLICY_2026.weightRule.cycleYear) {
+    return diagnosticFromIssues([])
+  }
+
+  const category = resolveWeightCategory(params.item)
+  const weight = params.item.weight
+  if (!category || typeof weight !== 'number' || !Number.isFinite(weight)) {
+    return diagnosticFromIssues([])
+  }
+
+  const cap = EVALUATION_POLICY_2026.categories[category].weightCap as
+    | { perItem?: number; sumMax?: number; isRemainder?: boolean }
+    | undefined
+  if (!cap || typeof cap.perItem !== 'number') {
+    return diagnosticFromIssues([])
+  }
+  const perItemCap = cap.perItem
+
+  const issues: MboPolicyIssue2026[] = []
+  if (weight > perItemCap) {
+    const categoryLabel = EVALUATION_POLICY_2026.categories[category].labelKo
+    issues.push(
+      issue({
+        code: 'WEIGHT_CATEGORY_ITEM_CAP_EXCEEDED',
+        severity: severityForWeightRule(),
+        message: `${categoryLabel} 항목 가중치는 최대 ${perItemCap}%까지 허용됩니다. (현재 ${weight}%)`,
+        targetField: 'weight',
+        suggestedAction: `${categoryLabel} 카테고리의 항목별 가중치를 ${perItemCap}% 이하로 조정해 주세요.`,
+      })
+    )
+  }
+
+  return diagnosticFromIssues(issues)
+}
+
+export function validatePersonalKpiWeightAggregate2026(params: {
+  items: PersonalKpiWeightCapInput2026[]
+  cycleYear: number
+}): MboPolicyDiagnostic2026 {
+  if (params.cycleYear !== EVALUATION_POLICY_2026.weightRule.cycleYear) {
+    return diagnosticFromIssues([])
+  }
+
+  const issues: MboPolicyIssue2026[] = []
+  const totalSumExpected = EVALUATION_POLICY_2026.weightRule.totalSum
+  const sumByCategory = new Map<EvaluationPolicyItemCategoryCode, number>()
+  let totalSum = 0
+
+  for (const item of params.items) {
+    const category = resolveWeightCategory(item)
+    const weight = item.weight
+    if (typeof weight !== 'number' || !Number.isFinite(weight)) continue
+    totalSum += weight
+    if (category) {
+      sumByCategory.set(category, (sumByCategory.get(category) ?? 0) + weight)
+    }
+  }
+
+  // 카테고리 합계 cap (현재 ORG_GOAL만 sumMax 50)
+  for (const code of ['ORG_GOAL', 'PROJECT_T', 'PROJECT_K', 'DAILY_WORK'] as const) {
+    const cap = EVALUATION_POLICY_2026.categories[code].weightCap as
+      | { perItem?: number; sumMax?: number; isRemainder?: boolean }
+      | undefined
+    if (!cap || typeof cap.sumMax !== 'number') continue
+    const sumMaxCap = cap.sumMax
+    const actual = sumByCategory.get(code) ?? 0
+    if (actual > sumMaxCap) {
+      const categoryLabel = EVALUATION_POLICY_2026.categories[code].labelKo
+      issues.push(
+        issue({
+          code: 'WEIGHT_CATEGORY_SUM_CAP_EXCEEDED',
+          severity: severityForWeightRule(),
+          message: `${categoryLabel} 가중치 합계는 ${sumMaxCap}%를 초과할 수 없습니다. (현재 ${Math.round(actual * 100) / 100}%)`,
+          targetField: 'weight',
+          suggestedAction: `${categoryLabel} 항목들의 가중치 합을 ${sumMaxCap}% 이하로 조정해 주세요.`,
+        })
+      )
+    }
+  }
+
+  // 전체 합계 정확히 100%
+  const totalSumRounded = Math.round(totalSum * 100) / 100
+  if (totalSumRounded !== totalSumExpected) {
+    issues.push(
+      issue({
+        code: 'WEIGHT_TOTAL_SUM_INVALID',
+        severity: severityForWeightRule(),
+        message: `전체 가중치 합계는 정확히 ${totalSumExpected}%여야 합니다. (현재 ${totalSumRounded}%)`,
+        targetField: 'weight',
+        suggestedAction: '일상업무 항목 가중치로 잔여 비중을 채워 전체 합을 100%로 맞춰 주세요.',
+      })
+    )
+  }
+
+  return diagnosticFromIssues(issues)
+}
+
+// 2026 일상업무(DAILY_WORK) 점수 게이트 — III-5 PPT 슬라이드 14·15.
+//
+// (a) 점수 상한: dailyWorkScoringRule.maxScore (정책 80)
+// (b) 자기평가(SELF) 종료 후 단계 한정: allowedStages (FIRST/SECOND/FINAL)
+// (c) 팀장(평가자) 재량 부여
+//
+// ★ documented decision (role): 정책 문구의 '팀장 재량'을 stage + canEdit 권한으로 환원함 —
+// 평가자(canEdit 권한자)면 누구든 작성 가능. SECTION_CHIEF/DIV_HEAD가 review stage에서
+// DAILY_WORK 점수를 조정하는 운영 흐름을 보존하기 위해 role-specific 화이트리스트는
+// 의도적으로 두지 않음. 운영상 '팀장 외 작성 불가' 강제가 필요해지면 여기 role
+// allowlist를 추가해 확장.
+//
+// 패턴: 가감점(stage allowlist) + 가중치 cap(per-item severity 토글) 하이브리드.
+// dailyWorkScoringRule.active=false인 동안 호출되어도 issue severity='warning' →
+// diagnostic.canSubmit !== false. 라우트 wiring은 Phase 2 (cutover 전 lead time 두고).
+// 그때까지 submit/draft 저장 경로에 81~100 DAILY_WORK 점수가 schema(0-100)로 통과해
+// 그대로 저장되는 기존 갭 존재.
+
+export type EvaluationStageForDailyWorkRule2026 =
+  | 'SELF'
+  | 'FIRST'
+  | 'SECOND'
+  | 'FINAL'
+  | 'CEO_ADJUST'
+
+export type DailyWorkScoringRuleOverride2026 = {
+  active: boolean
+  maxScore: number
+  allowedStages: readonly EvaluationStageForDailyWorkRule2026[]
+  cycleYear: number
+}
+
+function severityForDailyWorkRule2026(
+  rule: { active: boolean }
+): MboPolicySeverity2026 {
+  return rule.active ? 'blocker' : 'warning'
+}
+
+function resolveDailyWorkRule(
+  override?: DailyWorkScoringRuleOverride2026
+): DailyWorkScoringRuleOverride2026 {
+  if (override) return override
+  // 정책 상수에서 default 가져오기 (테스트는 override로 active=true 주입).
+  const policy = EVALUATION_POLICY_2026.dailyWorkScoringRule
+  return {
+    active: policy.active,
+    maxScore: policy.maxScore,
+    allowedStages: policy.allowedStages,
+    cycleYear: policy.cycleYear,
+  }
+}
+
+export function shouldApplyDailyWorkScoringRule2026(params: {
+  cycleYear: number
+  evalStage: EvaluationStageForDailyWorkRule2026
+  rule?: DailyWorkScoringRuleOverride2026
+}): boolean {
+  const rule = resolveDailyWorkRule(params.rule)
+  if (!rule.active) return false
+  if (params.cycleYear !== rule.cycleYear) return false
+  return rule.allowedStages.includes(params.evalStage)
+}
+
+export function validateDailyWorkScore2026(params: {
+  category: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
+  score: number | null
+  evalStage: EvaluationStageForDailyWorkRule2026
+  cycleYear: number
+  rule?: DailyWorkScoringRuleOverride2026
+  itemTitle?: string | null
+}): MboPolicyDiagnostic2026 {
+  const rule = resolveDailyWorkRule(params.rule)
+
+  // cycleYear !== 2026 → 검증 자체 skip (다른 연도 영향 0)
+  if (params.cycleYear !== rule.cycleYear) {
+    return diagnosticFromIssues([])
+  }
+
+  // category !== DAILY_WORK → skip (이 validator는 DAILY_WORK 전용)
+  if (params.category !== 'DAILY_WORK') {
+    return diagnosticFromIssues([])
+  }
+
+  const severity = severityForDailyWorkRule2026(rule)
+  const issues: MboPolicyIssue2026[] = []
+
+  // (a) 점수 상한 cap
+  if (typeof params.score === 'number' && Number.isFinite(params.score) && params.score > rule.maxScore) {
+    issues.push(
+      issue({
+        code: 'DAILY_WORK_SCORE_CAP_EXCEEDED',
+        severity,
+        message: `일상업무 점수는 ${rule.maxScore}점을 초과할 수 없습니다. (현재 ${params.score}점)`,
+        targetField: 'score',
+        suggestedAction: `일상업무 항목 점수를 ${rule.maxScore}점 이하로 조정해 주세요.`,
+      })
+    )
+  }
+
+  // (c) 자기평가 종료 후 단계만 허용 (allowedStages 미포함 → STAGE_NOT_ALLOWED)
+  if (!rule.allowedStages.includes(params.evalStage)) {
+    issues.push(
+      issue({
+        code: 'DAILY_WORK_STAGE_NOT_ALLOWED',
+        severity,
+        message: `일상업무 점수는 자기평가 종료 후 단계(${rule.allowedStages.join('/')})에서만 작성할 수 있습니다. (현재 단계: ${params.evalStage})`,
+        targetField: 'evalStage',
+        suggestedAction: '자기평가 단계가 완료된 뒤 평가자가 점수를 작성합니다.',
+      })
+    )
+  }
 
   return diagnosticFromIssues(issues)
 }

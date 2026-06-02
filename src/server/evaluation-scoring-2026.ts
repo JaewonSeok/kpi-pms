@@ -23,6 +23,7 @@ export type EvaluationScore2026ValidationErrorCode =
   | 'ADJUSTMENT_OUT_OF_RANGE'
   | 'ADJUSTMENT_CATEGORY_NOT_ALLOWED'
   | 'ADJUSTMENT_BELOW_TARGET_NOT_ALLOWED'
+  | 'ADJUSTMENT_PRECONDITION_MISSING'
   | 'ADJUSTMENT_GROUP_REQUIRED'
   | 'ADJUSTMENT_GROUP_NOT_ZERO_SUM'
   | 'MISSING_ORGANIZATION_SCORE'
@@ -57,6 +58,9 @@ export type EvaluationScore2026ItemInput = {
   adjustmentScore?: number | null
   adjustmentGroupKey?: string | null
   weight?: number | null
+  // III-3 조직목표 미달성 예외 매칭 키. 같은 linkedOrgKpiId를 가진 ORG_GOAL ↔ PROJECT_T
+  // 항목이 "같은 조직목표 내" 관계로 식별된다. 미전달이면 예외 미적용으로 떨어져 동작 영향 0.
+  linkedOrgKpiId?: string | null
 }
 
 export type EvaluationScore2026ItemBaseScore = {
@@ -244,9 +248,10 @@ export function calculateItemBaseScore2026(
 export function isBelowTarget2026(params: {
   category: EvaluationPolicyItemCategoryCode
   achievementLevel?: EvaluationScore2026AchievementLevel | null
-  baseScore: number
+  baseScore?: number | null
 }) {
   if (params.achievementLevel === 'BELOW_TARGET') return true
+  if (typeof params.baseScore !== 'number' || !isFiniteNumber(params.baseScore)) return false
 
   const targetScore = getTargetScore2026(params.category)
   return isFiniteNumber(targetScore) && params.baseScore < targetScore
@@ -256,9 +261,13 @@ export function validateAdjustment2026(params: {
   itemId?: string
   category?: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
   achievementLevel?: EvaluationScore2026AchievementLevel | null
-  baseScore: number
+  baseScore?: number | null
   adjustmentScore?: number | null
+  // enforceTargetGate=true(기본): precondition(basePolicyScore/achievementLevel 둘 다 없으면 거부) +
+  // below-target 검사. submit 라우트용. false면 둘 다 건너뜀 — draft 라우트용(작성 중이라 점수/Target 확정 전).
+  enforceTargetGate?: boolean
 }): EvaluationScore2026Result<null> {
+  const enforceTargetGate = params.enforceTargetGate ?? true
   const categoryResult = validateScoringCategory(params.category, params.itemId)
   if (!categoryResult.ok) return categoryResult
 
@@ -288,20 +297,36 @@ export function validateAdjustment2026(params: {
     )
   }
 
-  if (
-    rule.notApplicableBelowTarget &&
-    isBelowTarget2026({
-      category,
-      achievementLevel: params.achievementLevel,
-      baseScore: params.baseScore,
-    })
-  ) {
-    errors.push(
-      validationError('ADJUSTMENT_BELOW_TARGET_NOT_ALLOWED', 'Target 미만 항목에는 2026 조정점수를 적용할 수 없습니다.', {
-        itemId: params.itemId,
+  if (enforceTargetGate) {
+    const hasBaseScore = typeof params.baseScore === 'number' && isFiniteNumber(params.baseScore)
+    const hasAchievementLevel =
+      params.achievementLevel === 'BELOW_TARGET' ||
+      params.achievementLevel === 'TARGET' ||
+      params.achievementLevel === 'EXCELLENT'
+
+    if (!hasBaseScore && !hasAchievementLevel) {
+      errors.push(
+        validationError(
+          'ADJUSTMENT_PRECONDITION_MISSING',
+          '가감점 적용 전에 기본 점수(basePolicyScore) 또는 달성 수준(targetAchievementLevel)이 확정되어야 합니다.',
+          { itemId: params.itemId, category },
+        ),
+      )
+    } else if (
+      rule.notApplicableBelowTarget &&
+      isBelowTarget2026({
         category,
+        achievementLevel: params.achievementLevel,
+        baseScore: params.baseScore,
       })
-    )
+    ) {
+      errors.push(
+        validationError('ADJUSTMENT_BELOW_TARGET_NOT_ALLOWED', 'Target 미만 항목에는 2026 조정점수를 적용할 수 없습니다.', {
+          itemId: params.itemId,
+          category,
+        })
+      )
+    }
   }
 
   return errors.length ? fail(errors) : ok(null)
@@ -330,6 +355,27 @@ export function calculateItemScore2026(
     finalScore: roundToSingle(baseResult.value.baseScore + adjustmentScore),
     weight: normalizeWeight(input.weight),
   })
+}
+
+// 2026 가감점 적용 분기 결정 — submit/draft 라우트가 이 함수로 active/cycle/stage 게이트를 판정한다.
+// 분기 true일 때만 라우트가 항목별 validateAdjustment2026 호출 + 가감점 3필드를 DB에 persist.
+// cross-person zero-sum 총합 검증은 본부검수(HR) 단계에서 별도로 처리한다.
+export type EvaluationAdjustmentStage = 'SELF' | 'FIRST' | 'SECOND' | 'FINAL' | 'CEO_ADJUST'
+
+// 명시적 allowlist. 9단계 확장 시 새 stage가 자동으로 가감점 허용되지 않도록 set 멤버십으로 판정.
+export const ALLOWED_ADJUSTMENT_STAGES_2026: ReadonlySet<EvaluationAdjustmentStage> = new Set([
+  'FIRST',
+  'SECOND',
+  'FINAL',
+])
+
+export function shouldApplyAdjustmentRule2026(params: {
+  cycleYear: number
+  evalStage: EvaluationAdjustmentStage
+}): boolean {
+  if (!EVALUATION_POLICY_2026.adjustmentRule.active) return false
+  if (params.cycleYear !== 2026) return false
+  return ALLOWED_ADJUSTMENT_STAGES_2026.has(params.evalStage)
 }
 
 export function validateAdjustmentGroupZeroSum2026(
@@ -409,8 +455,87 @@ export function calculateFinalPerformanceScore2026(params: EvaluationScore2026Sp
   )
 }
 
+// III-3 조직목표 미달성 예외 — 슬라이드 14.
+// 조직목표(ORG_GOAL)가 BELOW_TARGET이어도, 같은 linkedOrgKpiId를 공유하는 본인 PROJECT_T 항목이
+// Target 이상이면 해당 ORG_GOAL 항목 점수를 exceptionScore(80)로 override. 가중 집계 전에 적용해
+// 조직 점수에 반영되게 한다. cutover dormant: rule.active=false인 동안 itemScores를 변경 없이 반환.
+//
+// 정책 상수를 우회한 테스트 주입을 위해 rule/cycleYear 옵셔널 옵션을 지원한다 (가감점
+// enforceTargetGate 패턴과 유사). 옵션 미전달이면 EVALUATION_POLICY_2026.belowTargetExceptionRule
+// 그대로 사용.
+export type BelowTargetExceptionRuleOverride = {
+  active: boolean
+  exceptionScore: number
+  cycleYear: number
+}
+
+export function shouldApplyBelowTargetException2026(params: {
+  cycleYear: number
+  rule?: BelowTargetExceptionRuleOverride
+}): boolean {
+  const rule = params.rule ?? EVALUATION_POLICY_2026.belowTargetExceptionRule
+  if (!rule.active) return false
+  return params.cycleYear === rule.cycleYear
+}
+
+export function applyBelowTargetOrgGoalException2026(params: {
+  items: EvaluationScore2026ItemInput[]
+  itemScores: EvaluationScore2026ItemScore[]
+  cycleYear: number
+  rule?: BelowTargetExceptionRuleOverride
+}): EvaluationScore2026ItemScore[] {
+  if (!shouldApplyBelowTargetException2026({ cycleYear: params.cycleYear, rule: params.rule })) {
+    return params.itemScores
+  }
+  const exceptionScore = (params.rule ?? EVALUATION_POLICY_2026.belowTargetExceptionRule).exceptionScore
+
+  // items[]에서 linkedOrgKpiId를 itemScores와 매칭하기 위해 id 기반 lookup.
+  const inputById = new Map(params.items.filter((item) => item.id).map((item) => [item.id!, item]))
+
+  // 같은 linkedOrgKpiId를 공유하는 PROJECT_T 항목 중 Target 이상인 항목을 미리 인덱싱.
+  const projectTAtOrAboveByOrgKpiId = new Set<string>()
+  for (const input of params.items) {
+    if (input.category !== 'PROJECT_T') continue
+    const linkedOrgKpiId = input.linkedOrgKpiId
+    if (!linkedOrgKpiId) continue
+    const matchedScore = params.itemScores.find((score) => score.id === input.id)
+    if (!matchedScore) continue
+    const belowTarget = isBelowTarget2026({
+      category: 'PROJECT_T',
+      achievementLevel: matchedScore.achievementLevel,
+      baseScore: matchedScore.baseScore,
+    })
+    if (!belowTarget) {
+      projectTAtOrAboveByOrgKpiId.add(linkedOrgKpiId)
+    }
+  }
+
+  return params.itemScores.map((score) => {
+    if (score.category !== 'ORG_GOAL') return score
+    const belowTarget = isBelowTarget2026({
+      category: 'ORG_GOAL',
+      achievementLevel: score.achievementLevel,
+      baseScore: score.baseScore,
+    })
+    if (!belowTarget) return score
+    const linkedOrgKpiId = score.id ? inputById.get(score.id)?.linkedOrgKpiId ?? null : null
+    if (!linkedOrgKpiId) return score
+    if (!projectTAtOrAboveByOrgKpiId.has(linkedOrgKpiId)) return score
+    // 예외 적용 — baseScore와 finalScore 모두 exceptionScore로 override.
+    // 정책상 below-target은 가감점 금지(ADJUSTMENT_BELOW_TARGET_NOT_ALLOWED)라 adjustmentScore=0 가정.
+    // achievementLevel은 변경하지 않음 — BELOW_TARGET 유지(점수 override만).
+    return {
+      ...score,
+      baseScore: roundToSingle(exceptionScore),
+      finalScore: roundToSingle(exceptionScore + score.adjustmentScore),
+    }
+  })
+}
+
 export function calculateEvaluationScore2026(params: {
   items: EvaluationScore2026ItemInput[]
+  cycleYear?: number
+  belowTargetExceptionRule?: BelowTargetExceptionRuleOverride
 }): EvaluationScore2026Result<EvaluationScore2026EvaluationResult> {
   if (!params.items.length) {
     return fail([validationError('ITEMS_REQUIRED', '2026 평가 점수 계산에는 평가 항목이 필요합니다.')])
@@ -433,8 +558,16 @@ export function calculateEvaluationScore2026(params: {
 
   if (errors.length) return fail(errors)
 
-  const organizationPerformanceScore = calculateOrganizationPerformanceScore2026(itemScores)
-  const personalPerformanceScore = calculatePersonalPerformanceScore2026(itemScores)
+  // III-3 예외 패스: 가중 집계 직전. dormant(rule.active=false)면 itemScores 변경 없음.
+  const adjustedItemScores = applyBelowTargetOrgGoalException2026({
+    items: params.items,
+    itemScores,
+    cycleYear: params.cycleYear ?? EVALUATION_POLICY_2026.belowTargetExceptionRule.cycleYear,
+    rule: params.belowTargetExceptionRule,
+  })
+
+  const organizationPerformanceScore = calculateOrganizationPerformanceScore2026(adjustedItemScores)
+  const personalPerformanceScore = calculatePersonalPerformanceScore2026(adjustedItemScores)
 
   if (organizationPerformanceScore === null || personalPerformanceScore === null) {
     if (organizationPerformanceScore === null) {
@@ -454,7 +587,7 @@ export function calculateEvaluationScore2026(params: {
   return ok({
     ...split,
     finalScore: calculateFinalPerformanceScore2026(split),
-    itemScores,
+    itemScores: adjustedItemScores,
     formulaVersion: EVALUATION_SCORING_2026_FORMULA_VERSION,
   })
 }

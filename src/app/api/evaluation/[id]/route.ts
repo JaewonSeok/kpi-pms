@@ -4,6 +4,12 @@ import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError, calcPdcaScore, calcWeightedScore } from '@/lib/utils'
 import { SaveEvaluationDraftSchema } from '@/lib/validations'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
+import {
+  shouldApplyAdjustmentRule2026,
+  validateAdjustment2026,
+  type EvaluationAdjustmentStage,
+} from '@/server/evaluation-scoring-2026'
+import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
 
 export async function PATCH(
   request: Request,
@@ -22,6 +28,7 @@ export async function PATCH(
             personalKpi: true,
           },
         },
+        evalCycle: true,
       },
     })
 
@@ -57,6 +64,14 @@ export async function PATCH(
     const itemMap = new Map(evaluation.items.map((item) => [item.personalKpiId, item]))
     let totalScore = 0
 
+    // 2026 가감점 분기 — submit 라우트와 동일 게이트지만 draft는 enforceTargetGate=false
+    // (작성 중이라 점수/Target 확정 전이라 below-target/precondition은 submit에 위임).
+    // ±5 범위와 reason 필수는 schema(superRefine)가 이미 보장.
+    const allowAdjustment = shouldApplyAdjustmentRule2026({
+      cycleYear: evaluation.evalCycle.evalYear,
+      evalStage: evaluation.evalStage as EvaluationAdjustmentStage,
+    })
+
     await prisma.$transaction(async (tx) => {
       for (const itemInput of validated.data.items) {
         const currentItem = itemMap.get(itemInput.personalKpiId)
@@ -89,6 +104,47 @@ export async function PATCH(
 
         totalScore += weightedScore ?? 0
 
+        // 가감점 처리 (draft) — 카테고리/±5만 검증, Target/precondition은 submit에 위임.
+        const adjustmentUpdate: {
+          adjustmentScore?: number | null
+          adjustmentGroupKey?: string | null
+          adjustmentReason?: string | null
+        } = {}
+        if (allowAdjustment) {
+          const inputAdjustmentScore =
+            itemInput.adjustmentScore === undefined ? null : itemInput.adjustmentScore
+          if (typeof inputAdjustmentScore === 'number' && inputAdjustmentScore !== 0) {
+            const validation = validateAdjustment2026({
+              itemId: currentItem.id,
+              category: (currentItem.policyCategory ?? null) as
+                | EvaluationPolicyItemCategoryCode
+                | null,
+              achievementLevel: currentItem.targetAchievementLevel as
+                | 'BELOW_TARGET'
+                | 'TARGET'
+                | 'EXCELLENT'
+                | null
+                | undefined,
+              baseScore: currentItem.basePolicyScore,
+              adjustmentScore: inputAdjustmentScore,
+              enforceTargetGate: false,
+            })
+            if (!validation.ok) {
+              const firstError = validation.errors[0]
+              throw new AppError(
+                400,
+                firstError?.code ?? 'ADJUSTMENT_VALIDATION_FAILED',
+                firstError?.message ?? '가감점 검증에 실패했습니다.'
+              )
+            }
+          }
+          adjustmentUpdate.adjustmentScore = inputAdjustmentScore
+          adjustmentUpdate.adjustmentGroupKey =
+            itemInput.adjustmentGroupKey === undefined ? null : itemInput.adjustmentGroupKey
+          adjustmentUpdate.adjustmentReason =
+            itemInput.adjustmentReason === undefined ? null : itemInput.adjustmentReason
+        }
+
         await tx.evaluationItem.update({
           where: { id: currentItem.id },
           data: {
@@ -100,6 +156,7 @@ export async function PATCH(
             qualScore: kpi.kpiType === 'QUALITATIVE' ? normalizedScore : null,
             itemComment: itemInput.itemComment ?? null,
             weightedScore,
+            ...adjustmentUpdate,
           },
         })
       }

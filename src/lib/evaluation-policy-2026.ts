@@ -61,6 +61,7 @@ export const EVALUATION_POLICY_2026 = {
         target: 90,
         excellent: 100,
       },
+      weightCap: { perItem: 10, sumMax: 50 },
     },
     PROJECT_T: {
       code: 'PROJECT_T',
@@ -70,6 +71,7 @@ export const EVALUATION_POLICY_2026 = {
         target: 90,
         excellent: 100,
       },
+      weightCap: { perItem: 10 },
     },
     PROJECT_K: {
       code: 'PROJECT_K',
@@ -79,12 +81,15 @@ export const EVALUATION_POLICY_2026 = {
         target: 80,
         excellent: 90,
       },
+      weightCap: { perItem: 5 },
     },
     DAILY_WORK: {
       code: 'DAILY_WORK',
       labelKo: '일상업무',
       contributionType: 'PERSONAL',
       maxScore: 80,
+      // DAILY_WORK는 잔여 비중 = 100 - (ORG_GOAL + PROJECT_T + PROJECT_K). 별도 cap 없음.
+      weightCap: { isRemainder: true },
     },
   } satisfies Record<
     EvaluationPolicyItemCategoryCode,
@@ -97,8 +102,43 @@ export const EVALUATION_POLICY_2026 = {
         excellent: number
       }
       maxScore?: number
+      weightCap?: {
+        perItem?: number
+        sumMax?: number
+        isRemainder?: boolean
+      }
     }
   >,
+  // 2026 정책 가중치 제약 — cutover flag로 enforcement severity 제어.
+  // enforced=false (cutover 전): 위반은 warning. H2 cutover(2026-07-01) 시 true로 flip하면
+  // 라우트에서 400 blocker로 전환. 가감점 adjustmentRule.active와 동일 dormant 패턴.
+  weightRule: {
+    enforced: false,
+    totalSum: 100,
+    cycleYear: 2026,
+  },
+  // III-3 조직목표 미달성 예외 — PPT 슬라이드 14.
+  // 조직목표(ORG_GOAL)가 미달성이어도, 같은 조직목표에 연결된 본인 PROJECT_T가 Target 이상이면
+  // 해당 ORG_GOAL 항목 점수를 exceptionScore(80)로 override. cutover dormant 패턴.
+  // active=false인 동안 평가 점수 계산에 영향 0.
+  belowTargetExceptionRule: {
+    active: false,
+    appliesTo: 'ORG_GOAL',
+    requiresLinkedItemCategory: 'PROJECT_T',
+    requiresLinkedItemAtOrAboveTarget: true,
+    exceptionScore: 80,
+    cycleYear: 2026,
+  },
+  // III-5 일상업무(DAILY_WORK) 점수 게이트 — PPT 슬라이드 14·15.
+  // (a) 점수 상한 80, (b) 팀장(평가자) 재량 부여, (c) 자기평가(SELF) 종료 후 단계에서만.
+  // 가감점 stage 게이트 + 가중치(weight-cap) per-item severity의 하이브리드 패턴.
+  // active=false 동안 어떤 라우트에도 wiring 안 됨 — dormant. cutover 시 active=true로 flip.
+  dailyWorkScoringRule: {
+    active: false,
+    maxScore: 80,
+    allowedStages: ['FIRST', 'SECOND', 'FINAL'],
+    cycleYear: 2026,
+  },
   finalScoreFormula: {
     organizationPerformanceWeight: 30,
     personalPerformanceWeight: 70,

@@ -21,6 +21,11 @@ import { prisma } from '@/lib/prisma'
 import { getEvaluationStageChain } from '@/server/evaluation-performance-assignments'
 import type { SessionUserClaims } from '@/types/auth'
 import { EVAL_STAGE_LABELS, POSITION_LABELS, formatDate } from '@/lib/utils'
+import {
+  shouldApplyAdjustmentRule2026,
+  type EvaluationAdjustmentStage,
+} from '@/server/evaluation-scoring-2026'
+import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
 
 export type EvaluationWorkbenchState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -171,6 +176,9 @@ export type EvaluationWorkbenchPageData = {
       canReject: boolean
       submitDisabledReason?: string | null
       readOnly: boolean
+      // 2026 정책 가감점 노출 게이트. active 정책 + 허용 stage + canEdit 조합을 서버에서
+      // 단일 진실로 계산해 내려준다. 클라가 정책 상수 import하지 않도록 강제.
+      canAdjustScore: boolean
     }
     gradeOptions: Array<{
       id: string
@@ -183,6 +191,8 @@ export type EvaluationWorkbenchPageData = {
       type: 'QUANTITATIVE' | 'QUALITATIVE'
       weight: number
       linkedOrgKpiTitle?: string | null
+      linkedOrgKpiId?: string | null
+      policyCategory?: EvaluationPolicyItemCategoryCode | null
       targetValue?: number | null
       unit?: string | null
       definition?: string | null
@@ -1448,6 +1458,13 @@ export async function getEvaluationWorkbenchPageData(
           ) ||
           isCeoFinalStage ||
           ['SUBMITTED', 'CONFIRMED'].includes(selectedEvaluation.status),
+        canAdjustScore:
+          canEditSelected &&
+          !isCeoFinalStage &&
+          shouldApplyAdjustmentRule2026({
+            cycleYear: selectedEvaluation.evalCycle.evalYear,
+            evalStage: selectedEvaluation.evalStage as EvaluationAdjustmentStage,
+          }),
       },
       gradeOptions: gradeOptions.map((grade) => ({
         id: grade.id,
@@ -1480,6 +1497,9 @@ export async function getEvaluationWorkbenchPageData(
           type: item.personalKpi.kpiType,
           weight: item.personalKpi.weight,
           linkedOrgKpiTitle: item.personalKpi.linkedOrgKpi?.kpiName ?? null,
+          linkedOrgKpiId: item.personalKpi.linkedOrgKpi?.id ?? null,
+          policyCategory:
+            (item.policyCategory as EvaluationPolicyItemCategoryCode | null | undefined) ?? null,
           targetValue: item.personalKpi.targetValue,
           unit: item.personalKpi.unit,
           definition: item.personalKpi.definition,
