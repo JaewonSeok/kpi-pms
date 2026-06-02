@@ -998,6 +998,12 @@ export function validateDailyWorkScore2026(params: {
   cycleYear: number
   rule?: DailyWorkScoringRuleOverride2026
   itemTitle?: string | null
+  // alwaysEnforceCap=true (default false): score > maxScore 위반의 severity를 rule.active
+  // 무관 항상 'blocker'로 부여한다. 데이터 정합성 영역(submit/draft 저장 경로)에서 사용 —
+  // 81~100 DAILY_WORK 점수의 저장을 dormant 동안에도 즉시 차단해 데이터 구멍을 봉합한다.
+  // stage gate(SELF 등 차단)는 본 옵션과 무관 — 기존대로 rule.active 게이트 따른다.
+  // 정책 활성화(SELF 차단 등 운영 흐름 변화)와 데이터 정합성(80 cap)을 분리하기 위한 옵션.
+  alwaysEnforceCap?: boolean
 }): MboPolicyDiagnostic2026 {
   const rule = resolveDailyWorkRule(params.rule)
 
@@ -1011,15 +1017,16 @@ export function validateDailyWorkScore2026(params: {
     return diagnosticFromIssues([])
   }
 
-  const severity = severityForDailyWorkRule2026(rule)
+  const ruleSeverity = severityForDailyWorkRule2026(rule)
+  const capSeverity: MboPolicySeverity2026 = params.alwaysEnforceCap ? 'blocker' : ruleSeverity
   const issues: MboPolicyIssue2026[] = []
 
-  // (a) 점수 상한 cap
+  // (a) 점수 상한 cap — alwaysEnforceCap=true이면 dormant 무관 항상 blocker
   if (typeof params.score === 'number' && Number.isFinite(params.score) && params.score > rule.maxScore) {
     issues.push(
       issue({
         code: 'DAILY_WORK_SCORE_CAP_EXCEEDED',
-        severity,
+        severity: capSeverity,
         message: `일상업무 점수는 ${rule.maxScore}점을 초과할 수 없습니다. (현재 ${params.score}점)`,
         targetField: 'score',
         suggestedAction: `일상업무 항목 점수를 ${rule.maxScore}점 이하로 조정해 주세요.`,
@@ -1027,12 +1034,12 @@ export function validateDailyWorkScore2026(params: {
     )
   }
 
-  // (c) 자기평가 종료 후 단계만 허용 (allowedStages 미포함 → STAGE_NOT_ALLOWED)
+  // (c) 자기평가 종료 후 단계만 허용 — rule.active 게이트 그대로 (alwaysEnforceCap 무관)
   if (!rule.allowedStages.includes(params.evalStage)) {
     issues.push(
       issue({
         code: 'DAILY_WORK_STAGE_NOT_ALLOWED',
-        severity,
+        severity: ruleSeverity,
         message: `일상업무 점수는 자기평가 종료 후 단계(${rule.allowedStages.join('/')})에서만 작성할 수 있습니다. (현재 단계: ${params.evalStage})`,
         targetField: 'evalStage',
         suggestedAction: '자기평가 단계가 완료된 뒤 평가자가 점수를 작성합니다.',
@@ -1041,4 +1048,30 @@ export function validateDailyWorkScore2026(params: {
   }
 
   return diagnosticFromIssues(issues)
+}
+
+// 라우트(submit/draft 저장 경로) 전용 wrapper — alwaysEnforceCap=true 주입.
+//
+// 80 cap은 데이터 정합성 invariant라 dormant flag(dailyWorkScoringRule.active)와 무관하게
+// 즉시 차단해야 한다. 한편 SELF stage 차단은 정책 활성화(누가 언제 작성)에 해당해
+// dormant flag 게이트 뒤로 둔다 — flip 시 함께 활성.
+//
+// DAILY_WORK는 kpiType 제약이 없어 정량/정성 모두 가능. cap은 단일 normalizedScore
+// (정량=quantScore, 정성=PDCA 가중평균)에 적용 — scoring math의 maxScore 의미와 일관.
+//
+// 호출자는 결과의 canSubmit === false면 400을 throw. helper는 throw하지 않아 테스트가
+// validation 결과를 직접 inspect할 수 있다.
+export function validateDailyWorkScoreForPersistence2026(params: {
+  category: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
+  score: number | null
+  evalStage: EvaluationStageForDailyWorkRule2026
+  cycleYear: number
+}): MboPolicyDiagnostic2026 {
+  return validateDailyWorkScore2026({
+    category: params.category,
+    score: params.score,
+    evalStage: params.evalStage,
+    cycleYear: params.cycleYear,
+    alwaysEnforceCap: true,
+  })
 }

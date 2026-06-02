@@ -9,6 +9,10 @@ import {
   validateAdjustment2026,
   type EvaluationAdjustmentStage,
 } from '@/server/evaluation-scoring-2026'
+import {
+  validateDailyWorkScoreForPersistence2026,
+  type EvaluationStageForDailyWorkRule2026,
+} from '@/server/kpi-alignment-policy-2026'
 import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
 
 export async function PATCH(
@@ -97,6 +101,27 @@ export async function PATCH(
                 itemInput.actScore ?? 0
               )
             : null
+        }
+
+        // 2026 DAILY_WORK 점수 cap 즉시 적용 — dormant flag와 무관하게 데이터 정합성 보호.
+        // 81~100 점수가 schema(0-100)를 통과해 그대로 저장되던 갭을 라우트에서 봉합.
+        // category !== DAILY_WORK 또는 cycleYear !== 2026이면 helper가 즉시 skip.
+        // stage gate(SELF 차단)는 dailyWorkScoringRule.active dormant 게이트 뒤로 분리.
+        const dwValidation = validateDailyWorkScoreForPersistence2026({
+          category: (currentItem.policyCategory ?? null) as
+            | EvaluationPolicyItemCategoryCode
+            | null,
+          score: normalizedScore,
+          evalStage: evaluation.evalStage as EvaluationStageForDailyWorkRule2026,
+          cycleYear: evaluation.evalCycle.evalYear,
+        })
+        if (dwValidation.canSubmit === false) {
+          const blocker = dwValidation.issues.find((iss) => iss.severity === 'blocker')
+          throw new AppError(
+            400,
+            blocker?.code ?? 'DAILY_WORK_VALIDATION_FAILED',
+            blocker?.message ?? '일상업무 점수 검증에 실패했습니다.'
+          )
         }
 
         const weightedScore =

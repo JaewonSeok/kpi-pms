@@ -5,6 +5,7 @@ import { EVALUATION_POLICY_2026 } from '../src/lib/evaluation-policy-2026'
 import {
   shouldApplyDailyWorkScoringRule2026,
   validateDailyWorkScore2026,
+  validateDailyWorkScoreForPersistence2026,
   type DailyWorkScoringRuleOverride2026,
   type EvaluationStageForDailyWorkRule2026,
 } from '../src/server/kpi-alignment-policy-2026'
@@ -286,6 +287,168 @@ async function main() {
     assert.match(r.issues[0].message, /일상업무/)
     assert.match(r.issues[0].message, /80/)
     assert.match(r.issues[0].message, /90/)
+  })
+
+  // ────────────────────────────────────────────
+  // alwaysEnforceCap 옵션 — cap은 dormant 무관 즉시 blocker, stage는 기존 dormant 게이트
+  // ────────────────────────────────────────────
+  await run('alwaysEnforceCap=true: dormant + score 81 + FIRST → 1 blocker(cap), canSubmit=false', () => {
+    // rule 미주입 = 현재 정책 dormant 사용 (active=false)
+    const r = validateDailyWorkScore2026({
+      category: 'DAILY_WORK',
+      score: 81,
+      evalStage: 'FIRST', // 허용 stage
+      cycleYear: 2026,
+      alwaysEnforceCap: true,
+    })
+    assert.equal(r.issues.length, 1)
+    assert.equal(r.issues[0].code, 'DAILY_WORK_SCORE_CAP_EXCEEDED')
+    assert.equal(r.issues[0].severity, 'blocker')
+    assert.equal(r.canSubmit, false)
+  })
+
+  await run('alwaysEnforceCap=true: dormant + score 50 + SELF → 0 blocker + 1 warning(stage)', () => {
+    const r = validateDailyWorkScore2026({
+      category: 'DAILY_WORK',
+      score: 50,
+      evalStage: 'SELF', // 차단 stage
+      cycleYear: 2026,
+      alwaysEnforceCap: true,
+    })
+    // cap 위반 없음(50≤80), stage는 dormant라 warning
+    assert.equal(r.issues.length, 1)
+    assert.equal(r.issues[0].code, 'DAILY_WORK_STAGE_NOT_ALLOWED')
+    assert.equal(r.issues[0].severity, 'warning') // dormant → warning
+    assert.notEqual(r.canSubmit, false) // warning만 → null
+  })
+
+  await run('alwaysEnforceCap=true: dormant + score 81 + SELF → 1 blocker(cap) + 1 warning(stage), canSubmit=false', () => {
+    const r = validateDailyWorkScore2026({
+      category: 'DAILY_WORK',
+      score: 81,
+      evalStage: 'SELF',
+      cycleYear: 2026,
+      alwaysEnforceCap: true,
+    })
+    assert.equal(r.issues.length, 2)
+    const capIssue = r.issues.find((i) => i.code === 'DAILY_WORK_SCORE_CAP_EXCEEDED')!
+    const stageIssue = r.issues.find((i) => i.code === 'DAILY_WORK_STAGE_NOT_ALLOWED')!
+    assert.equal(capIssue.severity, 'blocker') // alwaysEnforceCap
+    assert.equal(stageIssue.severity, 'warning') // dormant
+    assert.equal(r.canSubmit, false) // cap blocker로 차단
+  })
+
+  await run('alwaysEnforceCap=true + active rule + 81 + SELF → cap+stage 둘 다 blocker', () => {
+    const r = validateDailyWorkScore2026({
+      category: 'DAILY_WORK',
+      score: 81,
+      evalStage: 'SELF',
+      cycleYear: 2026,
+      rule: ACTIVE_RULE, // active
+      alwaysEnforceCap: true,
+    })
+    assert.equal(r.issues.length, 2)
+    assert.ok(r.issues.every((i) => i.severity === 'blocker'))
+    assert.equal(r.canSubmit, false)
+  })
+
+  await run('alwaysEnforceCap=true + cycleYear=2025 → 모두 skip', () => {
+    const r = validateDailyWorkScore2026({
+      category: 'DAILY_WORK',
+      score: 95, // 80 초과
+      evalStage: 'SELF',
+      cycleYear: 2025, // 비2026
+      alwaysEnforceCap: true,
+    })
+    assert.equal(r.issues.length, 0)
+  })
+
+  await run('alwaysEnforceCap=true + category=ORG_GOAL → skip (DAILY_WORK 전용)', () => {
+    const r = validateDailyWorkScore2026({
+      category: 'ORG_GOAL',
+      score: 95,
+      evalStage: 'SELF',
+      cycleYear: 2026,
+      alwaysEnforceCap: true,
+    })
+    assert.equal(r.issues.length, 0)
+  })
+
+  await run('alwaysEnforceCap=true + score 80 (경계값) + FIRST → 통과 (cap 위반 아님)', () => {
+    const r = validateDailyWorkScore2026({
+      category: 'DAILY_WORK',
+      score: 80,
+      evalStage: 'FIRST',
+      cycleYear: 2026,
+      alwaysEnforceCap: true,
+    })
+    assert.equal(r.issues.length, 0)
+  })
+
+  // ────────────────────────────────────────────
+  // validateDailyWorkScoreForPersistence2026 helper — alwaysEnforceCap=true 주입 confirm
+  // ────────────────────────────────────────────
+  await run('persistence helper: dormant + score 81 + FIRST → blocker (cap 즉시 enforce)', () => {
+    const r = validateDailyWorkScoreForPersistence2026({
+      category: 'DAILY_WORK',
+      score: 81,
+      evalStage: 'FIRST',
+      cycleYear: 2026,
+    })
+    assert.equal(r.canSubmit, false)
+    assert.equal(r.issues[0].code, 'DAILY_WORK_SCORE_CAP_EXCEEDED')
+    assert.equal(r.issues[0].severity, 'blocker')
+  })
+
+  await run('persistence helper: dormant + score 50 + SELF → warning만 (stage gate dormant)', () => {
+    const r = validateDailyWorkScoreForPersistence2026({
+      category: 'DAILY_WORK',
+      score: 50,
+      evalStage: 'SELF',
+      cycleYear: 2026,
+    })
+    assert.notEqual(r.canSubmit, false) // warning만 → 차단 안 함
+    assert.equal(r.issues[0].severity, 'warning')
+  })
+
+  await run('persistence helper: 비DAILY_WORK + 95 → skip (cap 무관)', () => {
+    const r = validateDailyWorkScoreForPersistence2026({
+      category: 'PROJECT_T',
+      score: 95,
+      evalStage: 'FIRST',
+      cycleYear: 2026,
+    })
+    assert.equal(r.issues.length, 0)
+  })
+
+  await run('persistence helper: score=null → cap 검증 skip (입력 미완)', () => {
+    const r = validateDailyWorkScoreForPersistence2026({
+      category: 'DAILY_WORK',
+      score: null,
+      evalStage: 'FIRST',
+      cycleYear: 2026,
+    })
+    assert.equal(r.issues.length, 0)
+  })
+
+  await run('persistence helper: cycleYear=2025 → skip', () => {
+    const r = validateDailyWorkScoreForPersistence2026({
+      category: 'DAILY_WORK',
+      score: 95,
+      evalStage: 'FIRST',
+      cycleYear: 2025,
+    })
+    assert.equal(r.issues.length, 0)
+  })
+
+  await run('persistence helper: category=null → skip', () => {
+    const r = validateDailyWorkScoreForPersistence2026({
+      category: null,
+      score: 95,
+      evalStage: 'FIRST',
+      cycleYear: 2026,
+    })
+    assert.equal(r.issues.length, 0)
   })
 }
 
