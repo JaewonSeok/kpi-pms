@@ -1825,31 +1825,106 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
 
   return (
     <div className="space-y-5">
-      {/* Unified header — replaces the previous duplicate PageHeader + giant summary card. */}
+      {/* Unified header — title row + 2-column body (left: action items, right: controls). */}
       <section className="rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0 space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-500">
-              성과평가 운영
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">성과평가</h1>
-              <Badge tone={toneFromCount(actionRequiredCount)}>
-                {labelFromCount(actionRequiredCount)}
+        <div className="min-w-0 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-500">
+            성과평가 운영
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">성과평가</h1>
+            <Badge tone={toneFromCount(actionRequiredCount)}>
+              {labelFromCount(actionRequiredCount)}
+            </Badge>
+            {selected ? (
+              <Badge tone={statusTone(selected.status)}>
+                {`${selected.stageLabel} · ${selected.statusLabel}`}
               </Badge>
-              {selected ? (
-                <Badge tone={statusTone(selected.status)}>
-                  {`${selected.stageLabel} · ${selected.statusLabel}`}
-                </Badge>
-              ) : null}
+            ) : null}
+          </div>
+          <p className="text-sm text-slate-500">
+            이번 주기 평가 진행 상황과 처리해야 할 항목을 한 화면에서 확인하세요.
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+          {/* Left: action items — surfaced from props.evaluations. */}
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-900">지금 처리해야 할 평가</h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  평가자/피평가자 관점에서 작성 또는 검토가 필요한 항목입니다.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {actionItems.length}건
+              </span>
             </div>
-            <p className="text-sm text-slate-500">
-              이번 주기 평가 진행 상황과 처리해야 할 항목을 한 화면에서 확인하세요.
-            </p>
+            {actionItems.length ? (
+              <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
+                {actionItemPreview.map((item) => (
+                  <li
+                    key={item.id}
+                    className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="truncate text-sm font-semibold text-slate-900">
+                          {item.targetName}
+                        </span>
+                        <span className="text-xs text-slate-400">·</span>
+                        <span className="text-xs text-slate-500">{item.targetDepartment}</span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                          {item.stageLabel}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            item.status === 'REJECTED'
+                              ? 'bg-rose-100 text-rose-700'
+                              : item.status === 'IN_PROGRESS'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {item.statusLabel}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {item.isEvaluator ? '검토 필요' : '내 작성'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => moveToEvaluation(item.id)}
+                      className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                    >
+                      이동
+                      <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+                {actionItems.length > actionItemPreview.length ? (
+                  <li className="bg-slate-50 px-3 py-2 text-center text-[11px] text-slate-500">
+                    외 {actionItems.length - actionItemPreview.length}건 — 아래 평가 목록에서 확인
+                  </li>
+                ) : null}
+              </ul>
+            ) : (
+              <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 px-4 py-5 text-center">
+                <div className="text-sm font-semibold text-emerald-800">✓ 모든 평가를 완료했습니다</div>
+                <p className="mt-1 text-xs text-emerald-700">
+                  이번 주기 처리해야 할 평가가 없습니다.
+                </p>
+              </div>
+            )}
           </div>
 
-          <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-[440px]">
-            <label className="space-y-2">
+          {/* Right: controls. */}
+          <div className="space-y-3">
+            <label className="block space-y-2">
               <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">평가 주기</span>
               <select
                 value={props.selectedCycleId}
@@ -1888,7 +1963,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                 </Link>
               ) : null}
             </div>
-            <div className="grid gap-3 sm:col-span-2 sm:grid-cols-3">
+            <div className="h-px bg-slate-200" aria-hidden="true" />
+            <div className="grid gap-3 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() =>
@@ -1992,81 +2068,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
         <Banner tone="warn" message={`${resultWritingScheduleGuidance2026.message} 이 안내는 미리보기 참고이며 Evaluation/EvaluationItem을 생성하지 않습니다.`} />
       ) : null}
 
-      {/* A. My Action Items — actionable evaluations surfaced from props.evaluations. */}
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">지금 처리해야 할 평가</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              평가자/피평가자 관점에서 작성 또는 검토가 필요한 항목입니다.
-            </p>
-          </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-            {actionItems.length}건
-          </span>
-        </div>
-        {actionItems.length ? (
-          <ul className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200">
-            {actionItemPreview.map((item) => (
-              <li
-                key={item.id}
-                className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-sm font-semibold text-slate-900">
-                      {item.targetName}
-                    </span>
-                    <span className="text-xs text-slate-400">·</span>
-                    <span className="text-xs text-slate-500">{item.targetDepartment}</span>
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                      {item.stageLabel}
-                    </span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        item.status === 'REJECTED'
-                          ? 'bg-rose-100 text-rose-700'
-                          : item.status === 'IN_PROGRESS'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-amber-100 text-amber-700'
-                      }`}
-                    >
-                      {item.statusLabel}
-                    </span>
-                    <span className="text-[11px] text-slate-400">
-                      {item.isEvaluator ? '검토 필요' : '내 작성'}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => moveToEvaluation(item.id)}
-                  className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                >
-                  이동
-                  <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                </button>
-              </li>
-            ))}
-            {actionItems.length > actionItemPreview.length ? (
-              <li className="bg-slate-50 px-3 py-2 text-center text-[11px] text-slate-500">
-                외 {actionItems.length - actionItemPreview.length}건 — 아래 평가 목록에서 확인
-              </li>
-            ) : null}
-          </ul>
-        ) : (
-          <div className="mt-3 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/60 px-4 py-5 text-center">
-            <div className="text-sm font-semibold text-emerald-800">✓ 모든 평가를 완료했습니다</div>
-            <p className="mt-1 text-xs text-emerald-700">
-              이번 주기 처리해야 할 평가가 없습니다.
-            </p>
-          </div>
-        )}
-      </section>
-
-      {/* B. 처리 현황 요약 — compact 4-stat strip. 0건은 muted, 반려는 amber. */}
+      {/* 처리 현황 요약 — compact 4-stat strip. 0건은 muted, 반려는 amber. */}
       <section aria-label="처리 현황 요약" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryStat
           label="작성/검토 필요 평가"
