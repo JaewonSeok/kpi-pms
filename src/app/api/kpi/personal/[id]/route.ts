@@ -19,6 +19,7 @@ import {
 import { canAccessEmployee } from '@/server/auth/authorize'
 import { validatePersonalOrgLink } from '@/server/goal-alignment'
 import { deletePersonalKpiRecord } from '@/server/personal-kpi-delete'
+import { validatePersonalKpiWeightCapForPersistence2026 } from '@/server/kpi-alignment-policy-2026'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -229,7 +230,12 @@ export async function PATCH(request: Request, context: RouteContext) {
           id: { not: id },
           status: { not: 'ARCHIVED' },
         },
-        select: { weight: true },
+        select: {
+          id: true,
+          kpiName: true,
+          weight: true,
+          policyCategory: true,
+        },
       })
 
       const totalWeight = related.reduce((sum, item) => sum + item.weight, 0) + nextWeight
@@ -238,6 +244,27 @@ export async function PATCH(request: Request, context: RouteContext) {
           400,
           'WEIGHT_EXCEEDED',
           `가중치 합계가 100을 초과합니다. 변경 후 ${Math.round(totalWeight * 10) / 10}`
+        )
+      }
+
+      // 2026 weight-cap wiring — weightRule.enforced dormant 게이트 따름. POST와 동일.
+      // 변경된 KPI는 DB의 current.policyCategory 유지 + 새 weight로 검증.
+      const weightCapDiagnostic = validatePersonalKpiWeightCapForPersistence2026({
+        existingItems: related,
+        newOrChangedItem: {
+          id: current.id,
+          kpiName: data.kpiName ?? current.kpiName,
+          weight: nextWeight,
+          policyCategory: current.policyCategory,
+        },
+        cycleYear: nextEvalYear,
+      })
+      if (weightCapDiagnostic.canSubmit === false) {
+        const blocker = weightCapDiagnostic.issues.find((iss) => iss.severity === 'blocker')
+        throw new AppError(
+          400,
+          blocker?.code ?? 'WEIGHT_CAP_VALIDATION_FAILED',
+          blocker?.message ?? '가중치 정책 검증에 실패했습니다.'
         )
       }
     }

@@ -815,8 +815,24 @@ export type PersonalKpiWeightCapInput2026 = {
   title?: string | null
 }
 
-function severityForWeightRule(): MboPolicySeverity2026 {
-  return EVALUATION_POLICY_2026.weightRule.enforced ? 'blocker' : 'warning'
+export type WeightRuleOverride2026 = {
+  enforced: boolean
+  totalSum: number
+  cycleYear: number
+}
+
+function resolveWeightRule(override?: WeightRuleOverride2026): WeightRuleOverride2026 {
+  if (override) return override
+  const policy = EVALUATION_POLICY_2026.weightRule
+  return {
+    enforced: policy.enforced,
+    totalSum: policy.totalSum,
+    cycleYear: policy.cycleYear,
+  }
+}
+
+function severityForWeightRule(rule: WeightRuleOverride2026): MboPolicySeverity2026 {
+  return rule.enforced ? 'blocker' : 'warning'
 }
 
 function resolveWeightCategory(
@@ -830,8 +846,10 @@ function resolveWeightCategory(
 export function validatePersonalKpiWeightCapItem2026(params: {
   item: PersonalKpiWeightCapInput2026
   cycleYear: number
+  rule?: WeightRuleOverride2026
 }): MboPolicyDiagnostic2026 {
-  if (params.cycleYear !== EVALUATION_POLICY_2026.weightRule.cycleYear) {
+  const rule = resolveWeightRule(params.rule)
+  if (params.cycleYear !== rule.cycleYear) {
     return diagnosticFromIssues([])
   }
 
@@ -855,7 +873,7 @@ export function validatePersonalKpiWeightCapItem2026(params: {
     issues.push(
       issue({
         code: 'WEIGHT_CATEGORY_ITEM_CAP_EXCEEDED',
-        severity: severityForWeightRule(),
+        severity: severityForWeightRule(rule),
         message: `${categoryLabel} 항목 가중치는 최대 ${perItemCap}%까지 허용됩니다. (현재 ${weight}%)`,
         targetField: 'weight',
         suggestedAction: `${categoryLabel} 카테고리의 항목별 가중치를 ${perItemCap}% 이하로 조정해 주세요.`,
@@ -869,13 +887,15 @@ export function validatePersonalKpiWeightCapItem2026(params: {
 export function validatePersonalKpiWeightAggregate2026(params: {
   items: PersonalKpiWeightCapInput2026[]
   cycleYear: number
+  rule?: WeightRuleOverride2026
 }): MboPolicyDiagnostic2026 {
-  if (params.cycleYear !== EVALUATION_POLICY_2026.weightRule.cycleYear) {
+  const rule = resolveWeightRule(params.rule)
+  if (params.cycleYear !== rule.cycleYear) {
     return diagnosticFromIssues([])
   }
 
   const issues: MboPolicyIssue2026[] = []
-  const totalSumExpected = EVALUATION_POLICY_2026.weightRule.totalSum
+  const totalSumExpected = rule.totalSum
   const sumByCategory = new Map<EvaluationPolicyItemCategoryCode, number>()
   let totalSum = 0
 
@@ -902,7 +922,7 @@ export function validatePersonalKpiWeightAggregate2026(params: {
       issues.push(
         issue({
           code: 'WEIGHT_CATEGORY_SUM_CAP_EXCEEDED',
-          severity: severityForWeightRule(),
+          severity: severityForWeightRule(rule),
           message: `${categoryLabel} 가중치 합계는 ${sumMaxCap}%를 초과할 수 없습니다. (현재 ${Math.round(actual * 100) / 100}%)`,
           targetField: 'weight',
           suggestedAction: `${categoryLabel} 항목들의 가중치 합을 ${sumMaxCap}% 이하로 조정해 주세요.`,
@@ -917,7 +937,7 @@ export function validatePersonalKpiWeightAggregate2026(params: {
     issues.push(
       issue({
         code: 'WEIGHT_TOTAL_SUM_INVALID',
-        severity: severityForWeightRule(),
+        severity: severityForWeightRule(rule),
         message: `전체 가중치 합계는 정확히 ${totalSumExpected}%여야 합니다. (현재 ${totalSumRounded}%)`,
         targetField: 'weight',
         suggestedAction: '일상업무 항목 가중치로 잔여 비중을 채워 전체 합을 100%로 맞춰 주세요.',
@@ -1074,4 +1094,35 @@ export function validateDailyWorkScoreForPersistence2026(params: {
     cycleYear: params.cycleYear,
     alwaysEnforceCap: true,
   })
+}
+
+// 라우트(personal-kpi POST/PATCH 저장 경로) 전용 wrapper — weight-cap 정책 일괄 검증.
+//
+// daily-work와 달리 alwaysEnforceCap 같은 옵션 도입 안 함. weight-cap 위반은 데이터
+// invariant가 아니라 운영 데이터의 비최적 상태(weight는 계산에 쓰이는 값으로 재조정
+// 가능)라 dormant 게이트(weightRule.enforced) 그대로 따른다. cutover 전엔 severity
+// 'warning' → canSubmit !== false → 라우트 통과(영향 0). cutover flip 시 자동 'blocker'.
+//
+// 기존 라우트의 WEIGHT_EXCEEDED(합>100) 가드는 이 helper와 별개로 유지된다 — 총합 정합성은
+// cutover와 무관하게 즉시 enforce 가치 있음.
+//
+// 호출자는 결과의 canSubmit === false면 400을 throw. helper는 throw하지 않아 테스트가
+// validation 결과를 직접 inspect할 수 있다.
+export function validatePersonalKpiWeightCapForPersistence2026(params: {
+  existingItems: PersonalKpiWeightCapInput2026[]
+  newOrChangedItem: PersonalKpiWeightCapInput2026
+  cycleYear: number
+  rule?: WeightRuleOverride2026
+}): MboPolicyDiagnostic2026 {
+  const itemDiagnostic = validatePersonalKpiWeightCapItem2026({
+    item: params.newOrChangedItem,
+    cycleYear: params.cycleYear,
+    rule: params.rule,
+  })
+  const aggregateDiagnostic = validatePersonalKpiWeightAggregate2026({
+    items: [...params.existingItems, params.newOrChangedItem],
+    cycleYear: params.cycleYear,
+    rule: params.rule,
+  })
+  return diagnosticFromIssues([...itemDiagnostic.issues, ...aggregateDiagnostic.issues])
 }

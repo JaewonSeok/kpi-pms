@@ -9,6 +9,7 @@ import { canAccessEmployee } from '@/server/auth/authorize'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { validatePersonalOrgLink } from '@/server/goal-alignment'
 import { resolvePersonalKpiTargetValues } from '@/lib/personal-kpi-target-values'
+import { validatePersonalKpiWeightCapForPersistence2026 } from '@/server/kpi-alignment-policy-2026'
 
 export async function GET(request: Request) {
   try {
@@ -136,7 +137,10 @@ export async function POST(request: Request) {
         status: { not: 'ARCHIVED' },
       },
       select: {
+        id: true,
+        kpiName: true,
         weight: true,
+        policyCategory: true,
       },
     })
 
@@ -146,6 +150,30 @@ export async function POST(request: Request) {
         400,
         'WEIGHT_EXCEEDED',
         `가중치 합계가 100을 초과합니다. 현재 ${Math.round((totalWeight - data.weight) * 10) / 10}, 추가 ${data.weight}`
+      )
+    }
+
+    // 2026 weight-cap wiring — weightRule.enforced dormant 게이트 따름.
+    // cutover 전(enforced=false): severity 'warning' → canSubmit 통과 → 차단 X.
+    // cutover 후(enforced=true): perItem/sumMax/총합=100 위반 시 'blocker' → 400.
+    // 신규 KPI는 schema에 policyCategory 없으니 null로 전달 — perItem 검증 자동 skip,
+    // 분류된 다른 KPI의 sumMax/total 검증엔 포함.
+    const weightCapDiagnostic = validatePersonalKpiWeightCapForPersistence2026({
+      existingItems: existingKpis,
+      newOrChangedItem: {
+        id: null,
+        kpiName: data.kpiName,
+        weight: data.weight,
+        policyCategory: null,
+      },
+      cycleYear: data.evalYear,
+    })
+    if (weightCapDiagnostic.canSubmit === false) {
+      const blocker = weightCapDiagnostic.issues.find((iss) => iss.severity === 'blocker')
+      throw new AppError(
+        400,
+        blocker?.code ?? 'WEIGHT_CAP_VALIDATION_FAILED',
+        blocker?.message ?? '가중치 정책 검증에 실패했습니다.'
       )
     }
 
