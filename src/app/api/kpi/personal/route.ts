@@ -10,6 +10,7 @@ import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { validatePersonalOrgLink } from '@/server/goal-alignment'
 import { resolvePersonalKpiTargetValues } from '@/lib/personal-kpi-target-values'
 import { validatePersonalKpiWeightCapForPersistence2026 } from '@/server/kpi-alignment-policy-2026'
+import { buildPolicyCategoryPersistenceAtCreate2026 } from '@/lib/policy-category-sources-2026'
 
 export async function GET(request: Request) {
   try {
@@ -156,15 +157,16 @@ export async function POST(request: Request) {
     // 2026 weight-cap wiring — weightRule.enforced dormant 게이트 따름.
     // cutover 전(enforced=false): severity 'warning' → canSubmit 통과 → 차단 X.
     // cutover 후(enforced=true): perItem/sumMax/총합=100 위반 시 'blocker' → 400.
-    // 신규 KPI는 schema에 policyCategory 없으니 null로 전달 — perItem 검증 자동 skip,
-    // 분류된 다른 KPI의 sumMax/total 검증엔 포함.
+    // 신규 KPI에 작성자가 카테고리를 선택했다면 perItem cap 검증이 자동 발동(dormant이면
+    // warning만, cutover 후 blocker). 미선택(null) 시 perItem skip + 분류된 다른 KPI의
+    // sumMax/total 검증엔 포함.
     const weightCapDiagnostic = validatePersonalKpiWeightCapForPersistence2026({
       existingItems: existingKpis,
       newOrChangedItem: {
         id: null,
         kpiName: data.kpiName,
         weight: data.weight,
-        policyCategory: null,
+        policyCategory: data.policyCategory ?? null,
       },
       cycleYear: data.evalYear,
     })
@@ -196,6 +198,9 @@ export async function POST(request: Request) {
         difficulty: data.difficulty,
         linkedOrgKpiId,
         status: 'DRAFT',
+        // 2026 정책 분류 — 작성자가 등록 폼에서 선택한 카테고리와 메타 5컬럼 set.
+        // 미선택(null)이면 5컬럼 모두 null → HR이 사후에 PolicyMapping2026Panel에서 분류.
+        ...buildPolicyCategoryPersistenceAtCreate2026(data.policyCategory ?? null),
       },
       include: {
         employee: {
