@@ -3,11 +3,13 @@ import './register-path-aliases'
 import assert from 'node:assert/strict'
 import { EVALUATION_POLICY_2026 } from '../src/lib/evaluation-policy-2026'
 import {
+  applyBelowTargetExceptionForPersistence2026,
   applyBelowTargetOrgGoalException2026,
   calculateEvaluationScore2026,
   calculateItemScore2026,
   shouldApplyBelowTargetException2026,
   type BelowTargetExceptionRuleOverride,
+  type BelowTargetPersistenceItem2026,
   type EvaluationScore2026ItemInput,
   type EvaluationScore2026ItemScore,
 } from '../src/server/evaluation-scoring-2026'
@@ -348,6 +350,178 @@ async function main() {
     if (result.ok) {
       assert.equal(result.value.organizationPerformanceScore, 70)
     }
+  })
+
+  // ────────────────────────────────────────────
+  // persistence helper — submit/draft 라우트 wiring 단위 검증
+  // ★ dormant 무영향(=cutover 전 라우트 totalScore 비트단위 동일)이 가장 중요
+  // ────────────────────────────────────────────
+  await run('persistence helper: dormant default(rule 미주입) → Map 값 = 원본 normalizedScore', () => {
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'og-1', category: 'ORG_GOAL', normalizedScore: 70, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'BELOW_TARGET' },
+      { id: 'pt-1', category: 'PROJECT_T', normalizedScore: 95, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'TARGET' },
+      { id: 'dw-1', category: 'DAILY_WORK', normalizedScore: 75, linkedOrgKpiId: null, achievementLevel: 'TARGET' },
+    ]
+    const effective = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+      // rule 미주입 → EVALUATION_POLICY_2026.belowTargetExceptionRule (현재 active=false dormant)
+    })
+    // dormant: 모든 항목의 effective = 원본 그대로
+    assert.equal(effective.get('og-1'), 70, 'dormant이면 ORG_GOAL도 override 안 됨')
+    assert.equal(effective.get('pt-1'), 95)
+    assert.equal(effective.get('dw-1'), 75)
+  })
+
+  await run('persistence helper: active 주입 + ORG_GOAL BELOW_TARGET + PROJECT_T TARGET 매칭 → 80 override', () => {
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'og-1', category: 'ORG_GOAL', normalizedScore: 70, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'BELOW_TARGET' },
+      { id: 'pt-1', category: 'PROJECT_T', normalizedScore: 95, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'TARGET' },
+    ]
+    const effective = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+      rule: ACTIVE_RULE,
+    })
+    assert.equal(effective.get('og-1'), 80, 'active + 매칭 → ORG_GOAL 항목 80 override')
+    assert.equal(effective.get('pt-1'), 95, 'PROJECT_T는 변경 없음')
+  })
+
+  await run('persistence helper: active이지만 PROJECT_T 미달성 → ORG_GOAL override 안 됨', () => {
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'og-1', category: 'ORG_GOAL', normalizedScore: 70, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'BELOW_TARGET' },
+      { id: 'pt-1', category: 'PROJECT_T', normalizedScore: 60, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'BELOW_TARGET' },
+    ]
+    const effective = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+      rule: ACTIVE_RULE,
+    })
+    assert.equal(effective.get('og-1'), 70, '매칭 PROJECT_T가 BELOW_TARGET이면 ORG_GOAL 원본 유지')
+  })
+
+  await run('persistence helper: active이지만 다른 linkedOrgKpiId → override 안 됨', () => {
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'og-1', category: 'ORG_GOAL', normalizedScore: 70, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'BELOW_TARGET' },
+      { id: 'pt-1', category: 'PROJECT_T', normalizedScore: 95, linkedOrgKpiId: 'orgKpi-B', achievementLevel: 'TARGET' },
+    ]
+    const effective = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+      rule: ACTIVE_RULE,
+    })
+    assert.equal(effective.get('og-1'), 70, '다른 OrgKpi 연결이면 매칭 안 됨')
+  })
+
+  await run('persistence helper: cycleYear !== 2026 → 모든 항목 원본 그대로', () => {
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'og-1', category: 'ORG_GOAL', normalizedScore: 70, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'BELOW_TARGET' },
+      { id: 'pt-1', category: 'PROJECT_T', normalizedScore: 95, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'TARGET' },
+    ]
+    const effective = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2025,
+      rule: ACTIVE_RULE, // active이지만 cycleYear gate가 우선
+    })
+    assert.equal(effective.get('og-1'), 70)
+    assert.equal(effective.get('pt-1'), 95)
+  })
+
+  await run('persistence helper: normalizedScore=null → Map에 미포함 (라우트 fallback에서 null 유지)', () => {
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'og-1', category: 'ORG_GOAL', normalizedScore: null, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'BELOW_TARGET' },
+      { id: 'pt-1', category: 'PROJECT_T', normalizedScore: 95, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'TARGET' },
+    ]
+    const effective = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+      rule: ACTIVE_RULE,
+    })
+    assert.equal(effective.has('og-1'), false, 'null score는 helper Map에 안 들어감 → 라우트의 ?? fallback에서 null 유지')
+    assert.equal(effective.get('pt-1'), 95)
+  })
+
+  await run('persistence helper: category=null/UNKNOWN → Map은 원본 그대로(default 등록), override 미발동', () => {
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'unknown-1', category: null, normalizedScore: 50, linkedOrgKpiId: null, achievementLevel: null },
+      { id: 'unknown-2', category: 'UNKNOWN', normalizedScore: 60, linkedOrgKpiId: 'orgKpi-A', achievementLevel: 'BELOW_TARGET' },
+    ]
+    const effective = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+      rule: ACTIVE_RULE,
+    })
+    assert.equal(effective.get('unknown-1'), 50, 'category null도 default Map 등록은 됨 (원본)')
+    assert.equal(effective.get('unknown-2'), 60, 'UNKNOWN도 동일')
+  })
+
+  // ────────────────────────────────────────────
+  // ★ 결정적 검증: dormant에서 라우트 점수 계산 = PR 적용 전과 비트단위 동일
+  // (라우트 직접 테스트는 NextAuth/Prisma 의존성 때문에 단위 회귀로 대체.
+  //  helper Map.get(id) ?? normalizedScore 패턴이 dormant에서 원본 그대로임을 입증)
+  // ────────────────────────────────────────────
+  await run('★ dormant 라우트 회귀: helper로 계산한 effective와 원본이 모든 항목에서 정확히 동일', () => {
+    // 실제 라우트가 보유할 법한 multi-category 시나리오 — 정책 상수 enforced=false 그대로
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'og-1', category: 'ORG_GOAL', normalizedScore: 65, linkedOrgKpiId: 'orgKpi-X', achievementLevel: 'BELOW_TARGET' },
+      { id: 'og-2', category: 'ORG_GOAL', normalizedScore: 85, linkedOrgKpiId: 'orgKpi-Y', achievementLevel: 'TARGET' },
+      { id: 'pt-1', category: 'PROJECT_T', normalizedScore: 92, linkedOrgKpiId: 'orgKpi-X', achievementLevel: 'EXCELLENT' },
+      { id: 'pk-1', category: 'PROJECT_K', normalizedScore: 78, linkedOrgKpiId: null, achievementLevel: 'TARGET' },
+      { id: 'dw-1', category: 'DAILY_WORK', normalizedScore: 73, linkedOrgKpiId: null, achievementLevel: 'TARGET' },
+    ]
+    const effective = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+      // rule 미주입 = 현재 정책 상수(active=false)
+    })
+    // dormant: 모든 effective == 원본. 라우트의 ?? fallback이 무의미할 정도로 Map이 동일.
+    for (const item of items) {
+      assert.equal(
+        effective.get(item.id),
+        item.normalizedScore,
+        `${item.id}: dormant이면 effective=${item.normalizedScore} (PR 적용 전과 동일)`,
+      )
+    }
+  })
+
+  await run('★ dormant 라우트 회귀: weightedScore 합산도 PR 적용 전과 동일 (calcWeightedScore 시뮬레이션)', () => {
+    // 라우트 pass 2의 `effectiveScore = Map.get(id) ?? normalizedScore` 패턴 시뮬레이션
+    const items: BelowTargetPersistenceItem2026[] = [
+      { id: 'a', category: 'ORG_GOAL', normalizedScore: 65, linkedOrgKpiId: 'orgKpi-X', achievementLevel: 'BELOW_TARGET' },
+      { id: 'b', category: 'PROJECT_T', normalizedScore: 92, linkedOrgKpiId: 'orgKpi-X', achievementLevel: 'EXCELLENT' },
+    ]
+    const weights = new Map<string, number>([['a', 50], ['b', 50]])
+
+    // dormant: effective = 원본
+    const effectiveDormant = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+    })
+    let totalDormant = 0
+    for (const item of items) {
+      const effective = effectiveDormant.get(item.id) ?? item.normalizedScore
+      if (effective != null) totalDormant += (effective * (weights.get(item.id) ?? 0)) / 100
+    }
+    // PR 적용 전 totalScore: (65*50 + 92*50)/100 = 78.5
+    assert.equal(totalDormant, 78.5)
+
+    // active 주입: ORG_GOAL 65 → 80으로 override → (80*50 + 92*50)/100 = 86
+    const effectiveActive = applyBelowTargetExceptionForPersistence2026({
+      items,
+      cycleYear: 2026,
+      rule: ACTIVE_RULE,
+    })
+    let totalActive = 0
+    for (const item of items) {
+      const effective = effectiveActive.get(item.id) ?? item.normalizedScore
+      if (effective != null) totalActive += (effective * (weights.get(item.id) ?? 0)) / 100
+    }
+    assert.equal(totalActive, 86, 'active이면 ORG_GOAL이 80으로 override되어 합산 결과 변경')
+    assert.notEqual(totalDormant, totalActive, 'dormant와 active 결과 다름 — wiring이 실제 작동한다는 증거')
+  })
+
+  await run('★ 정책 상수 sanity: belowTargetExceptionRule.active=false (cutover 전 dormant 확인)', () => {
+    assert.equal(EVALUATION_POLICY_2026.belowTargetExceptionRule.active, false)
   })
 }
 

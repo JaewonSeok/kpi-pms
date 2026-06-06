@@ -5,8 +5,10 @@ import { errorResponse, successResponse, AppError, calcPdcaScore, calcWeightedSc
 import { SaveEvaluationDraftSchema } from '@/lib/validations'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import {
+  applyBelowTargetExceptionForPersistence2026,
   shouldApplyAdjustmentRule2026,
   validateAdjustment2026,
+  type BelowTargetPersistenceItem2026,
   type EvaluationAdjustmentStage,
 } from '@/server/evaluation-scoring-2026'
 import {
@@ -77,6 +79,23 @@ export async function PATCH(
     })
 
     await prisma.$transaction(async (tx) => {
+      // 2-pass 구조 — below-target 예외(III-3) wiring을 위해. submit 라우트와 동일 패턴.
+      // pass 1: normalizedScore 계산 + daily-work cap·가감점 검증 + collectedItems 수집
+      // pass 2: helper로 effective score 산출(dormant이면 원본 그대로) → weightedScore +
+      //         totalScore 합산 + EvaluationItem update
+      type CollectedItem = {
+        currentItem: NonNullable<ReturnType<typeof itemMap.get>>
+        kpi: NonNullable<ReturnType<typeof itemMap.get>>['personalKpi']
+        itemInput: (typeof validated.data.items)[number]
+        normalizedScore: number | null
+        adjustmentUpdate: {
+          adjustmentScore?: number | null
+          adjustmentGroupKey?: string | null
+          adjustmentReason?: string | null
+        }
+      }
+      const collectedItems: CollectedItem[] = []
+
       for (const itemInput of validated.data.items) {
         const currentItem = itemMap.get(itemInput.personalKpiId)
         if (!currentItem) continue
@@ -124,11 +143,6 @@ export async function PATCH(
           )
         }
 
-        const weightedScore =
-          normalizedScore == null ? null : calcWeightedScore(normalizedScore, kpi.weight)
-
-        totalScore += weightedScore ?? 0
-
         // 가감점 처리 (draft) — 카테고리/±5만 검증, Target/precondition은 submit에 위임.
         const adjustmentUpdate: {
           adjustmentScore?: number | null
@@ -169,6 +183,38 @@ export async function PATCH(
           adjustmentUpdate.adjustmentReason =
             itemInput.adjustmentReason === undefined ? null : itemInput.adjustmentReason
         }
+
+        collectedItems.push({ currentItem, kpi, itemInput, normalizedScore, adjustmentUpdate })
+      }
+
+      // III-3 below-target 예외 — dormant이면 effective=원본, active이면 ORG_GOAL 매칭만 80.
+      // normalizedScore가 null인 항목은 helper Map에 안 들어가고 fallback으로 그대로 null 유지.
+      const belowTargetItems: BelowTargetPersistenceItem2026[] = collectedItems.map((collected) => ({
+        id: collected.currentItem.id,
+        category: (collected.currentItem.policyCategory ?? null) as
+          | EvaluationPolicyItemCategoryCode
+          | null,
+        normalizedScore: collected.normalizedScore,
+        linkedOrgKpiId: collected.kpi.linkedOrgKpiId,
+        achievementLevel: collected.currentItem.targetAchievementLevel as
+          | 'BELOW_TARGET'
+          | 'TARGET'
+          | 'EXCELLENT'
+          | null,
+      }))
+      const belowTargetEffective = applyBelowTargetExceptionForPersistence2026({
+        items: belowTargetItems,
+        cycleYear: evaluation.evalCycle.evalYear,
+      })
+
+      // pass 2: effective score로 weightedScore + totalScore 합산 + EvaluationItem update.
+      // raw 입력(quantScore/PDCA/qualScore)은 보존, weightedScore만 effective 기반.
+      for (const collected of collectedItems) {
+        const { currentItem, kpi, itemInput, normalizedScore, adjustmentUpdate } = collected
+        const effectiveScore = belowTargetEffective.get(currentItem.id) ?? normalizedScore
+        const weightedScore =
+          effectiveScore == null ? null : calcWeightedScore(effectiveScore, kpi.weight)
+        totalScore += weightedScore ?? 0
 
         await tx.evaluationItem.update({
           where: { id: currentItem.id },
