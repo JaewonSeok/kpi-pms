@@ -592,6 +592,96 @@ export function calculateEvaluationScore2026(params: {
   })
 }
 
+// 라우트(submit/draft 저장 경로) 전용 wrapper — III-3 below-target 예외만 적용.
+//
+// 점수 산출 모델 전체(organization/personal 분리, 30:70 finalScoreFormula 등)는 별개
+// 정책이라 wiring 안 함. 본 helper는 라우트의 normalizedScore 흐름에 below-target
+// override만 끼워 넣는다. submit/draft는 결과 Map의 effective score로 calcWeightedScore +
+// totalScore 합산 — dormant 상태(belowTargetExceptionRule.active=false)에선 Map 값이
+// 원본 normalizedScore와 정확히 동일해 totalScore 비트단위 변화 0.
+//
+// dormant 보장 근거: applyBelowTargetOrgGoalException2026이 active=false면 itemScores
+// 그대로 반환(L487-489 early return) → 본 helper도 effective score = 원본 그대로.
+// cycleYear !== 2026인 경우도 동일 (shouldApplyBelowTargetException2026 false).
+//
+// 호출자(라우트)는 Map.get(id) ?? normalizedScore 패턴으로 fallback — Map에 없는 항목
+// (category=null/UNKNOWN, normalizedScore=null 등)은 원본 그대로 통과.
+
+export type BelowTargetPersistenceItem2026 = {
+  id: string
+  category: EvaluationPolicyItemCategoryCode | 'UNKNOWN' | null
+  normalizedScore: number | null
+  linkedOrgKpiId: string | null
+  achievementLevel: EvaluationScore2026AchievementLevel | null
+}
+
+export function applyBelowTargetExceptionForPersistence2026(params: {
+  items: BelowTargetPersistenceItem2026[]
+  cycleYear: number
+  rule?: BelowTargetExceptionRuleOverride
+}): Map<string, number> {
+  const effectiveById = new Map<string, number>()
+
+  // 원본 normalizedScore를 default로 등록 — dormant / cycleYear gate 통과 시 그대로 사용.
+  for (const item of params.items) {
+    if (typeof item.normalizedScore === 'number' && Number.isFinite(item.normalizedScore)) {
+      effectiveById.set(item.id, item.normalizedScore)
+    }
+  }
+
+  if (!shouldApplyBelowTargetException2026({ cycleYear: params.cycleYear, rule: params.rule })) {
+    return effectiveById
+  }
+
+  // active이면 ItemInput/ItemScore 합성 → applyBelowTargetOrgGoalException2026 호출
+  const itemInputs: EvaluationScore2026ItemInput[] = params.items.map((item) => ({
+    id: item.id,
+    category: item.category,
+    achievementLevel: item.achievementLevel,
+    score: item.normalizedScore,
+    linkedOrgKpiId: item.linkedOrgKpiId,
+  }))
+
+  const itemScores: EvaluationScore2026ItemScore[] = params.items
+    .filter(
+      (item) =>
+        item.category !== null &&
+        item.category !== 'UNKNOWN' &&
+        typeof item.normalizedScore === 'number' &&
+        Number.isFinite(item.normalizedScore)
+    )
+    .map((item) => {
+      const category = item.category as EvaluationPolicyItemCategoryCode
+      const contributionType: EvaluationScore2026ContributionType =
+        category === 'ORG_GOAL' ? 'ORGANIZATION' : 'PERSONAL'
+      const score = item.normalizedScore as number
+      return {
+        id: item.id,
+        category,
+        contributionType,
+        achievementLevel: (item.achievementLevel ?? 'TARGET') as EvaluationScore2026AchievementLevel,
+        baseScore: score,
+        adjustmentScore: 0,
+        finalScore: score,
+      }
+    })
+
+  const adjustedItemScores = applyBelowTargetOrgGoalException2026({
+    items: itemInputs,
+    itemScores,
+    cycleYear: params.cycleYear,
+    rule: params.rule,
+  })
+
+  for (const score of adjustedItemScores) {
+    if (score.id) {
+      effectiveById.set(score.id, score.baseScore)
+    }
+  }
+
+  return effectiveById
+}
+
 export function calculateEvaluationScoreByFormulaVersion(params: {
   formulaVersion?: string | null
   legacyScore: number
