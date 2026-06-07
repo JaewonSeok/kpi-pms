@@ -139,6 +139,7 @@ model Employee {
   midReviewAssignmentsAsTarget      MidReviewAssignment[] @relation("MidReviewTargetEmployee")
   midReviewAssignmentsAsManager     MidReviewAssignment[] @relation("MidReviewManager")
   midReviewActionItems              MidReviewActionItem[] @relation("MidReviewActionOwner")
+  departmentScoreIntakesReceived    DepartmentScoreIntake[] @relation("DepartmentScoreIntakeReceiver")
 
   @@map("employees")
 }
@@ -651,21 +652,19 @@ model DepartmentScoreIntake {
   id           String     @id @default(cuid())
   evalCycleId  String
   evalCycle    EvalCycle  @relation(fields: [evalCycleId], references: [id], onDelete: Cascade)
-  departmentId String
-  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  deptId       String
+  department   Department @relation(fields: [deptId], references: [id], onDelete: Cascade)
   score        Float
-  scaleMin     Float      @default(0)
-  scaleMax     Float      @default(130)
-  source       String?
-  memo         String?
-  createdById  String?
-  updatedById  String?
+  source       String     @default("전략기획팀")
+  note         String?
+  receivedAt   DateTime   @default(now())
+  receivedById String
+  receivedBy   Employee   @relation("DepartmentScoreIntakeReceiver", fields: [receivedById], references: [id], onDelete: Restrict)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  @@unique([evalCycleId, departmentId])
+  @@unique([evalCycleId, deptId])
   @@index([evalCycleId])
-  @@index([departmentId])
   @@map("department_score_intakes")
 }
 
