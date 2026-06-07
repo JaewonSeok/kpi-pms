@@ -56,6 +56,7 @@ model Department {
   teamKpiReviewTargetRuns TeamKpiReviewRun[] @relation("TeamKpiReviewTargetDepartment")
   midReviewScopeCycles MidReviewCycle[] @relation("MidReviewScopeDepartment")
   midReviewAssignments MidReviewAssignment[] @relation("MidReviewTargetDepartment")
+  departmentScoreIntakes DepartmentScoreIntake[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -641,8 +642,31 @@ model EvalCycle {
   teamKpiRecommendationSets TeamKpiRecommendationSet[]
   teamKpiReviewRuns   TeamKpiReviewRun[]
   midReviewCycles     MidReviewCycle[]
+  departmentScoreIntakes DepartmentScoreIntake[]
 
   @@map("eval_cycles")
+}
+
+model DepartmentScoreIntake {
+  id           String     @id @default(cuid())
+  evalCycleId  String
+  evalCycle    EvalCycle  @relation(fields: [evalCycleId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  score        Float
+  scaleMin     Float      @default(0)
+  scaleMax     Float      @default(130)
+  source       String?
+  memo         String?
+  createdById  String?
+  updatedById  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([evalCycleId, departmentId])
+  @@index([evalCycleId])
+  @@index([departmentId])
+  @@map("department_score_intakes")
 }
 
 enum CycleStatus {
