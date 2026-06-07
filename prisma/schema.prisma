@@ -41,6 +41,9 @@ model Department {
   leaderEmployeeId String?
   leaderEmployee   Employee?  @relation("DepartmentLeader", fields: [leaderEmployeeId], references: [id], onDelete: SetNull)
   excludeLeaderFromEvaluatorAutoAssign Boolean @default(false)
+  // 조직 30% 점수(M1) 서브시스템용 — DIVISION(본부)/SECTION(실)/TEAM(팀) 명시.
+  // nullable: 백필 전·미분류 상태를 허용. dormant 상태(읽는 코드 없음)라 production 동작 변화 0.
+  level        DepartmentLevel?
   orgId        String
   organization Organization @relation(fields: [orgId], references: [id])
   employees    Employee[]
@@ -161,6 +164,14 @@ enum EmployeeStatus {
   INACTIVE
   ON_LEAVE
   RESIGNED
+}
+
+// 조직 30% 점수(M1)용 부서 계층 레벨 — 본부/실/팀.
+// 비균일 트리(본부→팀, 본부→실→팀 혼재) 대응 위해 트리 깊이 추론이 아닌 명시 컬럼으로 관리.
+enum DepartmentLevel {
+  DIVISION
+  SECTION
+  TEAM
 }
 
 // ============================================
