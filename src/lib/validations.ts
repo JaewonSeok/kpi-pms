@@ -252,6 +252,10 @@ export const CreatePersonalKpiSchema = z.object({
   weight: z.number().min(0).max(100),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   linkedOrgKpiId: z.string().optional(),
+  // 2026 정책 분류 — 등록 시 작성자가 직접 선택(필수 아님). null/생략은 미분류로 저장되며
+  // HR이 사후에 PolicyMapping2026Panel에서 매핑하는 기존 흐름을 그대로 유지.
+  // ※ UpdatePersonalKpiSchema는 의도적으로 미포함(범위 밖) — 본 PR은 POST 생성만 다룸.
+  policyCategory: z.enum(['ORG_GOAL', 'PROJECT_T', 'PROJECT_K', 'DAILY_WORK']).nullable().optional(),
 }).refine(
   (data) => {
     if (data.targetValueE !== undefined && data.targetValueT > data.targetValueE) {

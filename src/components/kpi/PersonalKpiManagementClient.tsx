@@ -97,6 +97,8 @@ type KpiForm = {
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
   linkedOrgKpiId: string
+  // 2026 정책 분류 — '' 은 "미분류"(payload에서 null로 변환). 등록(create) 모드에서만 편집.
+  policyCategory: '' | 'ORG_GOAL' | 'PROJECT_T' | 'PROJECT_K' | 'DAILY_WORK'
 }
 
 type PersonalCloneForm = {
@@ -475,6 +477,7 @@ function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId 
     weight: '',
     difficulty: 'MEDIUM',
     linkedOrgKpiId: defaultLinkedOrgKpiId,
+    policyCategory: '',
   }
 }
 function buildCloneForm(props: Props, selectedKpi?: PersonalKpiViewModel): PersonalCloneForm {
@@ -525,6 +528,9 @@ function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
     weight: toNumberString(kpi.weight),
     difficulty: (kpi.difficulty ?? 'MEDIUM') as KpiForm['difficulty'],
     linkedOrgKpiId: kpi.orgKpiId ?? '',
+    // 수정(edit) 모드에서는 read-only로 표시만 가능. 본 form state는 표시용 — PATCH
+    // payload에는 포함하지 않음(UpdatePersonalKpiSchema가 policyCategory를 안 받음).
+    policyCategory: ((kpi.policyCategory ?? '') as KpiForm['policyCategory']),
   }
 }
 
@@ -1441,12 +1447,19 @@ export function PersonalKpiManagementClient(props: Props) {
         linkedOrgKpiId: form.linkedOrgKpiId || undefined,
       }
 
+      // 2026 정책 분류는 등록(create)에서만 payload에 포함. '' 은 null로 변환(enum 거부 회피).
+      // PATCH(수정)는 UpdatePersonalKpiSchema가 policyCategory를 받지 않으므로 미포함.
+      const createPayload = {
+        ...payload,
+        policyCategory: form.policyCategory === '' ? null : form.policyCategory,
+      }
+
       const response =
         editorMode === 'create'
           ? await fetch('/api/kpi/personal', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
+              body: JSON.stringify(createPayload),
             })
           : await fetch(`/api/kpi/personal/${selectedKpiId}`, {
               method: 'PATCH',
@@ -4698,8 +4711,50 @@ function EditorModal(props: {
                 {getPersonalOrgKpiReflectionHelper(props.orgKpiOptions.find((option) => option.id === props.form.linkedOrgKpiId))}
               </p>
               <p className="text-xs leading-5 text-slate-500">
-                본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표로 설정할 수 있습니다. 본부 KPI에 포함되지 않은 팀 KPI는
-                기본적으로 일상업무로 분류되며, 조직목표에 포함된 업무는 일상업무로 중복 기재하지 않는 것이 원칙입니다.
+                본부 KPI 또는 HR 반영 완료 팀 KPI는 조직목표(ORG_GOAL)로, 그 외 팀 KPI 기반 업무는 프로젝트 T/K 또는
+                일상업무로 분류합니다. 아래 &lsquo;구분(정책 분류)&rsquo;에서 직접 선택하거나, 미분류로 두면 HR 검수 단계에서 분류됩니다.
+              </p>
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-900">구분 (정책 분류)</span>
+              {props.mode === 'create' ? (
+                <select
+                  value={props.form.policyCategory}
+                  onChange={(event) =>
+                    props.onChange((current) => ({
+                      ...current,
+                      policyCategory: event.target.value as KpiForm['policyCategory'],
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                >
+                  <option value="">미분류 (HR 검수 단계에서 분류)</option>
+                  <option value="ORG_GOAL">조직목표 (ORG_GOAL)</option>
+                  <option value="PROJECT_T">프로젝트 T (PROJECT_T)</option>
+                  <option value="PROJECT_K">프로젝트 K (PROJECT_K)</option>
+                  <option value="DAILY_WORK">일상업무 (DAILY_WORK)</option>
+                </select>
+              ) : (
+                <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  {props.form.policyCategory ? (
+                    <>
+                      {props.form.policyCategory === 'ORG_GOAL' && '조직목표 (ORG_GOAL)'}
+                      {props.form.policyCategory === 'PROJECT_T' && '프로젝트 T (PROJECT_T)'}
+                      {props.form.policyCategory === 'PROJECT_K' && '프로젝트 K (PROJECT_K)'}
+                      {props.form.policyCategory === 'DAILY_WORK' && '일상업무 (DAILY_WORK)'}
+                    </>
+                  ) : (
+                    <span className="text-slate-400">미분류</span>
+                  )}
+                </div>
+              )}
+              <p className="text-xs leading-5 text-slate-500">
+                {props.mode === 'create'
+                  ? '필수 아닙니다. 미선택 시 HR이 사후에 정책 매핑에서 분류합니다.'
+                  : '분류는 등록 시점에 작성자가 선택하거나 HR 정책 매핑에서 갱신합니다. 이 화면에서는 변경할 수 없습니다.'}
               </p>
             </label>
           </div>
