@@ -1903,6 +1903,8 @@ async function main() {
     assert.equal(readinessPageSource.includes("route: '/admin/evaluation-readiness'"), true)
     assert.equal(readinessPageSource.includes('getEvaluationWorkbenchPageData'), true)
     assert.equal(readinessPageSource.includes('presentationMode="readiness-admin"'), true)
+    assert.equal(clientSource.includes('canLoadCycleLevelPolicyReadiness2026'), true)
+    assert.equal(clientSource.includes('isPerformanceDashboardRoute || isReadinessAdminRoute'), true)
     assert.equal(clientSource.includes('PolicyReadiness2026Panel'), true)
     assert.equal(clientSource.includes('공식 준비 상태 대상 주기 지정'), true)
     assert.equal(evaluationOpsPageSource.includes('2026 평가 운영 허브'), true)

@@ -776,10 +776,12 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
   const isDedicatedWorkbenchPilotRoute = props.presentationMode === 'workbench-pilot'
   const isPerformanceDashboardRoute = props.presentationMode === 'performance-dashboard'
   const isReadinessAdminRoute = props.presentationMode === 'readiness-admin'
+  const canLoadCycleLevelPolicyReadiness2026 =
+    isDedicatedWorkbenchPilotRoute || isPerformanceDashboardRoute || isReadinessAdminRoute
   const canViewPolicyPreview2026 = Boolean(
     props.currentUser?.role === 'ROLE_ADMIN' &&
       props.permissions?.canSeeAllInCycle &&
-      (selected || isDedicatedWorkbenchPilotRoute)
+      (Boolean(selected) || canLoadCycleLevelPolicyReadiness2026)
   )
 
   const workspaceEvidence = useMemo<EvaluationAssistEvidenceView>(() => {
