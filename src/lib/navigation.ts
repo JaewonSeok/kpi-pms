@@ -93,6 +93,7 @@ export const NAV_ITEMS: NavigationItem[] = [
       { label: '평가 주기', href: '/admin/eval-cycle', menuKey: 'EVAL_CYCLE' },
       { label: '평가 운영 허브', href: '/admin/evaluation-ops', menuKey: 'EVAL_CYCLE' },
       { label: '공식 전환 준비', href: '/admin/evaluation-readiness', menuKey: 'EVAL_CYCLE' },
+      { label: '조직 점수 입력', href: '/admin/department-score-intake', menuKey: 'DEPARTMENT_SCORE_INTAKE' },
       { label: '평가 배정', href: '/admin/performance-assignments', menuKey: 'EVAL_CYCLE' },
       { label: '성과 관리 일정', href: '/admin/performance-calendar', menuKey: 'EVAL_CYCLE' },
       { label: '성과 체계', href: '/admin/performance-design', menuKey: 'EVAL_CYCLE' },
