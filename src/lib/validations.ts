@@ -3278,4 +3278,13 @@ export const WordCloud360PublishSchema = z.object({
   publish: z.boolean().default(true),
 })
 
+// M1-B2: ADMIN이 cycle×본부/실/팀별 조직 점수를 입력(upsert)할 때 검증.
+// score는 DB CHECK(0..130)와 2중 방어. source는 DB default('전략기획팀') 사용 — schema에서 안 받음.
+// receivedById는 라우트가 session.user.id로 주입하므로 schema 미포함.
+export const CreateDepartmentScoreIntakeSchema = z.object({
+  evalCycleId: z.string().min(1),
+  deptId: z.string().min(1),
+  score: z.number().min(0, '점수는 0 이상이어야 합니다').max(130, '점수는 130 이하여야 합니다'),
+  note: z.string().max(1000).optional(),
+})
 
