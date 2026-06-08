@@ -2444,11 +2444,11 @@ export function PersonalKpiManagementClient(props: Props) {
 function PageHeader() {
   return (
     <div className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Personal KPI Workspace</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">KPI/MBO Workspace</p>
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">개인 KPI</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">내 KPI/MBO</h1>
         <p className="text-sm text-slate-600">
-          조직 목표와 연결된 개인 KPI를 작성하고, 검토와 변경 이력을 한 화면에서 관리합니다.
+          조직 목표와 연결된 KPI/MBO를 작성하고, 제출·리더 검토·월간 실적 준비까지 한 화면에서 관리합니다.
         </p>
       </div>
     </div>
@@ -2586,7 +2586,7 @@ function MineSection(props: {
       <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <EmptyState
           title="아직 작성된 KPI가 없습니다."
-          description="상단의 KPI 추가 버튼으로 첫 개인 KPI를 작성해보세요."
+          description="상단의 KPI 추가 버튼으로 첫 KPI/MBO를 작성해보세요."
         />
         <div className="space-y-6">
           <GoalDetailPanel
@@ -4538,7 +4538,7 @@ function EditorModal(props: {
           <div>
             <h2 className="text-xl font-semibold text-slate-900">{props.mode === 'create' ? '개인 KPI 추가' : '개인 KPI 수정'}</h2>
             <p className="text-sm text-slate-500">
-              조직 KPI 연결, 가중치, 목표값을 입력한 뒤 월간 실적과 검토 흐름으로 이어가세요.
+              조직 KPI 연결, 정책 카테고리, 가중치, 목표값을 입력한 뒤 월간 실적과 리더 검토 흐름으로 이어가세요.
             </p>
           </div>
           <button type="button" onClick={props.onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">

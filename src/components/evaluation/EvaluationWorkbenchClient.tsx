@@ -4511,15 +4511,18 @@ function PolicyActivationReadiness2026Panel(props: {
   const isPerformanceDashboardMode = props.presentationMode === 'performance-dashboard'
   const isReadinessAdminMode = props.presentationMode === 'readiness-admin'
   const panelTitle = isReadinessAdminMode
-    ? '2026 공식 전환 준비'
+    ? '2026 공식 데이터 준비'
     : isPerformanceDashboardMode
-      ? '2026 평가 운영 대시보드'
+      ? '2026 MBO/KPI 운영 대시보드'
       : '2026 공식 전환 차단 조건'
   const panelDescription = isReadinessAdminMode
-    ? '공식 전환 차단 조건, 준비 상태 상세, 사전 실행 검토 도구, 진행 가능 여부, 해제 계획을 한 곳에서 확인합니다. 이 화면은 읽기 전용이며 공식 점수/등급/기존 데이터 채우기를 실행하지 않습니다.'
+    ? 'Baseline 내보내기, policyCategory 정리, 공식 저장 차단 상태를 읽기 전용으로 확인합니다. 세부 사전 실행 검토와 runbook은 아래 고급 상세 영역에서 확인하세요.'
     : isPerformanceDashboardMode
-      ? 'HR/인사 관리자가 매일 확인할 평가 운영 항목만 간결하게 보여줍니다. 상세 공식 전환 진단과 사전 실행 검토 도구는 고급 전환 준비 화면에서 확인하세요.'
+      ? 'HR/인사 관리자가 매일 확인할 MBO/KPI 운영 항목만 간결하게 보여줍니다. 공식 점수/등급 확정은 별도 안전 절차 전까지 차단됩니다.'
       : '이 화면은 공식 전환 가능 여부를 읽기 전용으로 점검합니다. 여기서는 기존 데이터 채우기, 점수, 등급, 기능 활성화 스위치를 실행하지 않습니다.'
+  const refreshButtonLabel = isPerformanceDashboardMode
+    ? activation ? '운영 상태 다시 확인' : '운영 상태 확인'
+    : activation ? '공식 전환 상태 다시 확인' : '공식 전환 상태 확인'
   const [copiedRunbookKey, setCopiedRunbookKey] = useState<string | null>(null)
   const [exportPreview, setExportPreview] = useState<ReadinessExportPreview | null>(null)
   const [exportPreviewCopied, setExportPreviewCopied] = useState(false)
@@ -4707,7 +4710,7 @@ function PolicyActivationReadiness2026Panel(props: {
           disabled={loading}
           className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300"
         >
-          {loading ? '확인 중...' : activation ? '공식 전환 상태 다시 확인' : '공식 전환 상태 확인'}
+          {loading ? '확인 중...' : refreshButtonLabel}
         </button>
       </div>
 
@@ -4778,23 +4781,23 @@ function PolicyActivationReadiness2026Panel(props: {
           ) : null}
 
           {isReadinessAdminMode && activation?.officialWriteGuardSummary ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="error">공식 저장 차단</Badge>
+                    <Badge tone="warn">안전 잠금</Badge>
                     <Badge tone={getOfficialWriteGuardStatusTone2026(activation.officialWriteGuardSummary.overall.status)}>
                       {formatReadinessUiStatus2026(activation.officialWriteGuardSummary.overall.status)}
                     </Badge>
                     <Badge tone="neutral">읽기 전용</Badge>
                   </div>
-                  <h4 className="mt-3 text-lg font-semibold text-rose-950">공식 저장 차단 상태</h4>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-rose-900">
+                  <h4 className="mt-3 text-lg font-semibold text-amber-950">공식 저장 차단 상태</h4>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-amber-900">
                     공식 평가 생성, 단계 저장, 점수 반영, 등급 반영, 최종 확정이 왜 아직 차단되어 있는지 읽기 전용으로 보여줍니다.
                     이 화면에서는 저장, 제출, 점수 반영, 등급 반영을 실행하지 않습니다.
                   </p>
                 </div>
-                <div className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800">
+                <div className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-800">
                   공식 write API 연결 없음
                 </div>
               </div>
@@ -4897,11 +4900,14 @@ function PolicyActivationReadiness2026Panel(props: {
                   <Link href="/kpi/personal" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
                     MBO 작성/제출 요청
                   </Link>
-                  <Link href="/kpi/monthly" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                  <Link href="/admin/evaluation-readiness" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
                     Team KPI 검토
                   </Link>
-                  <Link href="/evaluation/performance" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                  <Link href="/admin/evaluation-readiness" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
                     policyCategory 확정
+                  </Link>
+                  <Link href="/kpi/monthly" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                    월간 실적 준비
                   </Link>
                   <Link href="/admin/performance-assignments" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
                     평가자 배정 확인
@@ -4964,7 +4970,7 @@ function PolicyActivationReadiness2026Panel(props: {
                   전용 평가 워크벤치 열기
                 </Link>
                 <Link href="/admin/evaluation-readiness" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100">
-                  공식 전환 준비 열기
+                  Baseline / 정책 분류 열기
                 </Link>
                 <Link href="/admin/evaluation-ops" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100">
                   평가 운영 허브 열기
@@ -11811,7 +11817,7 @@ function PolicyReadinessPopulation2026Panel(props: {
                       </select>
                     </label>
                     <label className="text-xs font-semibold text-slate-600">
-                      MBO status
+                      MBO 상태
                       <select
                         value={followUpStatusFilter}
                         onChange={(event) => setFollowUpStatusFilter(event.target.value as MboFollowUpStatusFilter2026 | 'ALL')}
@@ -14256,7 +14262,7 @@ function PolicyMapping2026Panel(props: {
                   </select>
                 </label>
                 <label className="text-xs font-semibold text-slate-600">
-                  MBO status
+                  MBO 상태
                   <select value={categoryMboStatusFilter} onChange={(event) => setCategoryMboStatusFilter(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700">
                     <option value="ALL">전체</option>
                     <option value="DRAFT">초안</option>

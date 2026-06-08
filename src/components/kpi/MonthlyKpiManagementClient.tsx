@@ -315,7 +315,7 @@ function buildAiActionState(params: {
       }
       return hasContent
         ? { disabled: false }
-        : { disabled: true, reason: '?대쾲 ???ㅼ쟻 ?낅젰?대굹 洹쇨굅媛 ?덉뼱??AI 珥덉븞???앹꽦?????덉뒿?덈떎.' }
+        : { disabled: true, reason: '이번 달 실적 입력이나 근거가 있어야 AI 초안을 생성할 수 있습니다.' }
     case 'generate-retrospective':
     case 'summarize-evaluation-evidence':
       return hasContent
@@ -1080,7 +1080,7 @@ export function MonthlyKpiManagementClient({
       }
 
       setAiPreview(null)
-      setBanner({ tone: 'success', message: 'AI preview를 현재 입력 내용에 반영했습니다.' })
+      setBanner({ tone: 'success', message: 'AI 미리보기를 현재 입력 내용에 반영했습니다.' })
       router.refresh()
     } catch (error) {
       setBanner({
@@ -1584,7 +1584,7 @@ export function MonthlyKpiManagementClient({
             ['/kpi/personal', '개인 KPI'],
             ['/checkin', '체크인'],
             ['/evaluation/results', '평가 결과'],
-            ['/evaluation/workbench', 'AI 보조 작성'],
+            ['/evaluation/workbench', '평가 워크벤치 미리보기'],
             ['/notifications', '알림'],
           ].map(([href, label]) => (
             <Link
@@ -2064,7 +2064,7 @@ function EntryTab({
                   disabled={busy !== null || generateSummaryActionState.disabled}
                   title={generateSummaryActionState.reason}
                 >
-                  AI preview
+                  AI 미리보기
                 </Button>
               ) : null}
               <Link
@@ -2382,8 +2382,8 @@ function AiTab({
                   fallbackReason: aiPreview.fallbackReason,
                   result: aiPreview.result,
                 }}
-                emptyTitle="AI preview가 아직 없습니다."
-                emptyDescription="AI 보조 기능을 실행하면 이 영역에 preview가 표시됩니다."
+                emptyTitle="AI 미리보기가 아직 없습니다."
+                emptyDescription="AI 보조 기능을 실행하면 이 영역에 미리보기가 표시됩니다."
                 onApprove={onApprove}
                 onReject={onReject}
                 approveLabel="미리보기 적용"
@@ -2402,7 +2402,7 @@ function AiTab({
           </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-slate-900">AI preview가 아직 없습니다.</p>
+            <p className="text-sm font-semibold text-slate-900">AI 미리보기가 아직 없습니다.</p>
           </div>
         )}
       </section>
