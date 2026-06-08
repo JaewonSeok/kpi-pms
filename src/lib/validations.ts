@@ -3288,3 +3288,52 @@ export const CreateDepartmentScoreIntakeSchema = z.object({
   note: z.string().max(1000).optional(),
 })
 
+// M1-C: 조직 30% 점수 내부 가중치 — EvalCycle.performanceDesignConfig.policy2026OrganizationWeights에 저장.
+// 30:70 자체는 고정(personal=0.70), 조직 30%의 내부 분배(본부/실/팀)만 커스텀.
+// withSection: 부서 lineage에 실(SECTION)이 있는 직원용. withoutSection: 본부 직속 팀 직원용.
+// 부동소수점 허용 오차 0.001.
+export const OrganizationWeightsSchema = z
+  .object({
+    withSection: z.object({
+      division: z.number().min(0).max(1),
+      section: z.number().min(0).max(1),
+      team: z.number().min(0).max(1),
+    }),
+    withoutSection: z.object({
+      division: z.number().min(0).max(1),
+      team: z.number().min(0).max(1),
+    }),
+    personal: z.number().min(0).max(1),
+  })
+  .superRefine((data, ctx) => {
+    const TOLERANCE = 0.001
+    const withSectionOrgSum =
+      data.withSection.division + data.withSection.section + data.withSection.team
+    const withoutSectionOrgSum = data.withoutSection.division + data.withoutSection.team
+
+    if (Math.abs(withSectionOrgSum - 0.30) > TOLERANCE) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['withSection'],
+        message: 'withSection의 division+section+team 합은 0.30이어야 합니다.',
+      })
+    }
+
+    if (Math.abs(withoutSectionOrgSum - 0.30) > TOLERANCE) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['withoutSection'],
+        message: 'withoutSection의 division+team 합은 0.30이어야 합니다.',
+      })
+    }
+
+    if (Math.abs(data.personal - 0.70) > TOLERANCE) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['personal'],
+        message: 'personal은 정확히 0.70이어야 합니다 (30:70 고정).',
+      })
+    }
+  })
+
+export type OrganizationWeights2026 = z.infer<typeof OrganizationWeightsSchema>
