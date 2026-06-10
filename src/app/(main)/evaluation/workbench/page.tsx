@@ -1,4 +1,5 @@
 import { EvaluationWorkbenchClient } from '@/components/evaluation/EvaluationWorkbenchClient'
+import { EvaluationProcessPreviewGuide2026 } from '@/components/evaluation/EvaluationProcessPreviewGuide2026'
 import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { getEvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 
@@ -24,5 +25,10 @@ export default async function EvaluationWorkbenchPage({ searchParams }: PageProp
     evaluationId: resolvedSearchParams.evaluationId,
   })
 
-  return <EvaluationWorkbenchClient {...data} presentationMode="workbench-pilot" />
+  return (
+    <div className="space-y-5">
+      <EvaluationProcessPreviewGuide2026 />
+      <EvaluationWorkbenchClient {...data} presentationMode="workbench-pilot" />
+    </div>
+  )
 }
