@@ -31,9 +31,9 @@ const openingLinks = [
     description: '월간 결과, 증빙, 코멘트 준비 상태를 확인합니다.',
   },
   {
-    title: '평가 워크벤치 미리보기',
+    title: '평가 과정 미리보기',
     href: '/evaluation/workbench',
-    description: '향후 평가 흐름을 데모/리허설용 미리보기로 확인합니다.',
+    description: '평가 워크벤치에서 자기평가, 1차평가, 본부검수, 최종평가, 점수·등급 preview를 확인합니다.',
   },
 ]
 
