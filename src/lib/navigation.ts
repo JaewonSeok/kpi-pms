@@ -67,14 +67,6 @@ export const NAV_ITEMS: NavigationItem[] = [
     children: [{ label: '체크인 일정', href: '/checkin', menuKey: 'CHECKIN' }],
   },
   {
-    label: '보상',
-    href: '/compensation',
-    children: [
-      { label: '시나리오 관리', href: '/compensation/manage', menuKey: 'COMPENSATION_MANAGE' },
-      { label: '내 보상 결과', href: '/compensation/my', menuKey: 'COMPENSATION_SELF' },
-    ],
-  },
-  {
     label: '알림',
     href: '/notifications',
     menuKey: 'NOTIFICATIONS',
