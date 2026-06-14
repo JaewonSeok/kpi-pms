@@ -89,6 +89,7 @@ export const NAV_ITEMS: NavigationItem[] = [
       { label: '조직 점수 입력(고급)', href: '/admin/department-score-intake', menuKey: 'DEPARTMENT_SCORE_INTAKE' },
       { label: '등급 설정(고급)', href: '/admin/grades', menuKey: 'GRADE_SETTING' },
       { label: '성과 체계(고급)', href: '/admin/performance-design', menuKey: 'EVAL_CYCLE' },
+      { label: '미리보기 — 2026 자동등급', href: '/admin/preview-2026-grade', menuKey: 'PREVIEW_2026_GRADE' },
       { label: '성과 얼라인먼트(고급)', href: '/admin/goal-alignment', menuKey: 'EVAL_CYCLE' },
       { label: 'Google 계정 등록', href: '/admin/google-access', menuKey: 'SYSTEM_SETTING' },
       { label: '알림 운영', href: '/admin/notifications', menuKey: 'SYSTEM_SETTING' },

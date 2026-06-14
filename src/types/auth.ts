@@ -41,6 +41,7 @@ export const MENU_KEYS = [
   'PERFORMANCE_EVALUATION',
   'AI_COMPETENCY',
   'DEPARTMENT_SCORE_INTAKE',
+  'PREVIEW_2026_GRADE',
 ] as const
 
 export type MenuKey = (typeof MENU_KEYS)[number]
