@@ -121,6 +121,7 @@ export const MENU_PERMISSIONS: Record<MenuKey, AuthRole[]> = {
     'ROLE_MEMBER',
   ],
   DEPARTMENT_SCORE_INTAKE: ['ROLE_ADMIN'],
+  PREVIEW_2026_GRADE: ['ROLE_ADMIN'],
 }
 
 const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
@@ -132,6 +133,7 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/admin/evaluation-readiness', menuKey: 'EVAL_CYCLE' },
   { prefix: '/admin/department-score-intake', menuKey: 'DEPARTMENT_SCORE_INTAKE' },
   { prefix: '/api/admin/department-score-intake', menuKey: 'DEPARTMENT_SCORE_INTAKE' },
+  { prefix: '/admin/preview-2026-grade', menuKey: 'PREVIEW_2026_GRADE' },
   { prefix: '/admin/evaluation-ops', menuKey: 'EVAL_CYCLE' },
   { prefix: '/admin/performance-calendar', menuKey: 'EVAL_CYCLE' },
   { prefix: '/admin/performance-design', menuKey: 'EVAL_CYCLE' },
