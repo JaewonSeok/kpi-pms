@@ -4,7 +4,11 @@ import { useMemo, useState } from 'react'
 import { calculateOrganizationPerformanceFromIntake2026 } from '@/lib/preview-2026-organization-score'
 import { calculateAbsoluteGrade2026 } from '@/server/evaluation-grade-2026'
 import { EVALUATION_POLICY_2026 } from '@/lib/evaluation-policy-2026'
-import type { EvaluationPolicyGradeCode, ScoreBand } from '@/lib/evaluation-policy-2026'
+import type {
+  EvaluationPolicyGradeCode,
+  EvaluationPolicyThresholdGroupCode,
+  ScoreBand,
+} from '@/lib/evaluation-policy-2026'
 import type { Preview2026Persona } from '@/lib/preview-2026-personas'
 import type { Preview2026GradePageViewModel } from '@/server/preview-2026-grade-page'
 
@@ -26,6 +30,15 @@ const GRADE_BADGE_CLASS: Record<EvaluationPolicyGradeCode, string> = {
   GOOD: 'bg-orange-100 text-orange-800 border-orange-300',
   NEED_IMPROVEMENT: 'bg-red-100 text-red-800 border-red-300',
   UNSATISFACTORY: 'bg-gray-200 text-gray-800 border-gray-300',
+}
+
+// 시연 가독 우선 — 임계그룹 영문 코드를 한국어 역할군 라벨로 매핑(고정).
+const THRESHOLD_GROUP_KO_LABEL: Record<EvaluationPolicyThresholdGroupCode, string> = {
+  DIVISION_HEAD: '본부장 · 비영업',
+  TEAM_SECTION_LEADER_SALES: '팀·실장 · 영업',
+  TEAM_SECTION_LEADER_NON_SALES: '팀·실장 · 비영업',
+  TEAM_MEMBER_NON_SALES: '팀원 · 비영업',
+  TEAM_MEMBER_SALES: '팀원 · 영업',
 }
 
 function formatWeightPct(value: number): string {
@@ -155,8 +168,26 @@ export function Preview2026GradeAdminClient({ viewModel, personas }: Props) {
         </dl>
       </section>
 
-      {/* 페르소나 카드 5장 */}
-      <section className="grid gap-3 md:grid-cols-2">
+      {/* 6등급 색 범례 strip — 시연 이해 보조 */}
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            등급 범례
+          </span>
+          {EVALUATION_POLICY_2026.grades.map((g) => (
+            <span
+              key={g.code}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${GRADE_BADGE_CLASS[g.code]}`}
+            >
+              <span>{g.label}</span>
+              <span className="opacity-70">({g.code})</span>
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* 페르소나 카드 5장 — lg 이상에서 한 줄(5열)로 펼쳐 등급 스펙트럼 한눈 스캔 */}
+      <section className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
         {personas.map((persona, idx) => {
           const state = scoreStates[idx]
           const { previewScore, grade } = computed[idx]
@@ -176,9 +207,12 @@ export function Preview2026GradeAdminClient({ viewModel, personas }: Props) {
               className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    {persona.thresholdGroup} · {persona.salesGroup}
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-700">
+                    {THRESHOLD_GROUP_KO_LABEL[persona.thresholdGroup]}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-wide text-slate-400">
+                    {persona.thresholdGroup}
                   </div>
                   <h2 className="mt-1 text-lg font-bold text-slate-900">{persona.label}</h2>
                 </div>
@@ -219,7 +253,7 @@ export function Preview2026GradeAdminClient({ viewModel, personas }: Props) {
               </div>
 
               {/* 산식 풀이 */}
-              <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <div className="mt-3 break-words rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600 tabular-nums">
                 {isDivisionHead ? (
                   <div>
                     산식: {state.parentScore} × 30% + {state.personalScore} × 70% ={' '}
@@ -245,7 +279,7 @@ export function Preview2026GradeAdminClient({ viewModel, personas }: Props) {
               <div className="mt-3 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs text-slate-500">최종 점수</div>
-                  <div className="text-2xl font-bold text-slate-900">
+                  <div className="text-3xl font-bold text-slate-900 tabular-nums sm:text-4xl">
                     {previewScore.finalScore.toFixed(1)}
                   </div>
                 </div>
@@ -257,7 +291,7 @@ export function Preview2026GradeAdminClient({ viewModel, personas }: Props) {
                   ) : finalGradeCode ? (
                     <>
                       <span
-                        className={`inline-block rounded-full border px-3 py-1 text-sm font-bold ${GRADE_BADGE_CLASS[finalGradeCode]}`}
+                        className={`inline-block rounded-full border px-4 py-1.5 text-lg font-bold ${GRADE_BADGE_CLASS[finalGradeCode]}`}
                       >
                         {finalGradeLabel} ({finalGradeCode})
                       </span>
@@ -346,8 +380,8 @@ function ScoreRow({ label, value, min, max, onChange }: ScoreRowProps) {
     return v
   }
   return (
-    <div className="flex items-center gap-3">
-      <label className="w-16 shrink-0 text-xs font-medium text-slate-600">{label}</label>
+    <div className="flex items-center gap-2">
+      <label className="w-14 shrink-0 text-sm font-medium text-slate-700">{label}</label>
       <input
         type="range"
         min={min}
@@ -355,7 +389,7 @@ function ScoreRow({ label, value, min, max, onChange }: ScoreRowProps) {
         step={1}
         value={value}
         onChange={(e) => onChange(clamp(Number(e.target.value)))}
-        className="flex-1 accent-emerald-600"
+        className="min-w-0 flex-1 accent-emerald-600"
       />
       <input
         type="number"
@@ -364,9 +398,9 @@ function ScoreRow({ label, value, min, max, onChange }: ScoreRowProps) {
         step={1}
         value={value}
         onChange={(e) => onChange(clamp(Number(e.target.value)))}
-        className="w-16 rounded border border-slate-300 px-2 py-1 text-right text-sm tabular-nums"
+        className="w-14 rounded border border-slate-300 px-2 py-1 text-right text-sm tabular-nums"
       />
-      <span className="w-12 text-right text-[10px] text-slate-400">
+      <span className="hidden w-12 text-right text-[10px] text-slate-400 xl:inline">
         {min}–{max}
       </span>
     </div>
