@@ -220,18 +220,13 @@ export const EVALUATION_POLICY_2026 = {
       salesGroup: 'SALES',
       roleGroup: 'TEAM_MEMBER',
       thresholds: {
-        SUPER: { minInclusive: 110 },
-        OUTSTANDING: {
-          minInclusive: 110,
-          note: 'PPT 표기상 Super 구간과 중첩되어 Phase 1에서 HR 확정 필요',
-          requiresPolicyConfirmation: true,
-        },
+        OUTSTANDING: { minInclusive: 110 },
         EXCELLENT: { minInclusive: 100, maxExclusive: 110 },
         GOOD: { minInclusive: 90, maxExclusive: 100 },
         NEED_IMPROVEMENT: { minInclusive: 80, maxExclusive: 90 },
         UNSATISFACTORY: { maxExclusive: 80 },
       },
-      notes: ['Outstanding/Super 경계는 정책 담당자 확인 후 Phase 1에서 확정'],
+      notes: ['Super는 팀원 영업 기준에서 별도 점수 구간으로 운영하지 않음'],
     },
     {
       group: 'TEAM_SECTION_LEADER_SALES',
