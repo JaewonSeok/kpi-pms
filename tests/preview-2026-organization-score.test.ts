@@ -281,7 +281,7 @@ async function main() {
   })
 
   await run(
-    'edge: #5 TEAM_MEMBER_SALES를 110.0까지 올리면 calculateAbsoluteGrade2026이 AMBIGUOUS_THRESHOLD_MATCH 반환',
+    'edge: #5 TEAM_MEMBER_SALES 110.0 → OUTSTANDING 단일 매칭 (PPT 정합 — Super 밴드 없음)',
     () => {
       // 팀=110, 본부=110, 개인=110 → 22.0 + 11.0 + 77.0 = 110.0
       const result = calculateOrganizationPerformanceFromIntake2026({
@@ -297,30 +297,36 @@ async function main() {
         score: result.finalScore,
         roleGroup: 'TEAM_MEMBER',
         salesGroup: 'SALES',
-        // teamMemberSalesThresholdDecision 미전달 → SUPER(≥110)·OUTSTANDING(≥110) 중첩 → fail
+        // PPT 정합 후 SUPER 밴드 없음. ≥110 = OUTSTANDING(최상위) 단일 매칭. ambiguity 미발생.
       })
-      assert.equal(grade.ok, false)
-      if (!grade.ok) {
-        assert.ok(
-          grade.errors.some((e) => e.code === 'AMBIGUOUS_THRESHOLD_MATCH'),
-          'AMBIGUOUS_THRESHOLD_MATCH 에러 코드 포함'
-        )
+      assert.equal(grade.ok, true)
+      if (grade.ok) {
+        assert.equal(grade.value.finalGrade.code, 'OUTSTANDING')
+        assert.equal(grade.value.requiresPolicyConfirmation, false)
       }
     }
   )
 
   await run(
-    'edge: #5 110.0 + teamMemberSalesThresholdDecision=SUPER_PRIORITY → SUPER 단일 매칭',
+    'edge: #5 110.0 + teamMemberSalesThresholdDecision 값과 무관하게 OUTSTANDING (PPT 정합 후 decision metadata는 등급 산정에 영향 없음)',
     () => {
-      const grade = calculateAbsoluteGrade2026({
+      const gradeWithSuperPriority = calculateAbsoluteGrade2026({
         score: 110.0,
         roleGroup: 'TEAM_MEMBER',
         salesGroup: 'SALES',
         teamMemberSalesThresholdDecision: 'SUPER_PRIORITY',
       })
-      assert.equal(grade.ok, true)
-      if (grade.ok) {
-        assert.equal(grade.value.finalGrade.code, 'SUPER')
+      const gradeWithOutstandingPriority = calculateAbsoluteGrade2026({
+        score: 110.0,
+        roleGroup: 'TEAM_MEMBER',
+        salesGroup: 'SALES',
+        teamMemberSalesThresholdDecision: 'OUTSTANDING_PRIORITY',
+      })
+      assert.equal(gradeWithSuperPriority.ok, true)
+      assert.equal(gradeWithOutstandingPriority.ok, true)
+      if (gradeWithSuperPriority.ok && gradeWithOutstandingPriority.ok) {
+        assert.equal(gradeWithSuperPriority.value.finalGrade.code, 'OUTSTANDING')
+        assert.equal(gradeWithOutstandingPriority.value.finalGrade.code, 'OUTSTANDING')
       }
     }
   )

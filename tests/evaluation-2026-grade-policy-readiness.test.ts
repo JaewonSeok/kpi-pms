@@ -275,7 +275,9 @@ async function main() {
     assert.equal(fake.counts.forbiddenWrites, 0)
   })
 
-  await run('stored PPT baseline is complete but unresolved TEAM_MEMBER_SALES ambiguity remains a blocker', async () => {
+  await run('stored PPT baseline aligns with PPT-정합 policy — TEAM_MEMBER_SALES ambiguity 자동 해소', async () => {
+    // PPT 정합 후 TEAM_MEMBER_SALES Super 밴드가 정책에서 제거됨 → readiness가 ambiguity 미발생으로 산출.
+    // 이전엔 stored baseline이 완전해도 unresolved ambiguity가 blocker로 남았으나, 이제 자동 해소.
     const fake = makeDb({
       storedRows: makeStoredRows(),
     })
@@ -288,14 +290,14 @@ async function main() {
     assert.equal(readiness.gradePolicyExists, true)
     assert.equal(readiness.gradePolicyGroupsComplete, true)
     assert.equal(readiness.differsFromPptCount, 0)
-    assert.equal(readiness.teamMemberSalesAmbiguity.requiresDecision, true)
+    assert.equal(readiness.teamMemberSalesAmbiguity.requiresDecision, false)
     assert.equal(
       readiness.blockers.some((blocker) => blocker.code === 'TEAM_MEMBER_SALES_THRESHOLD_AMBIGUITY'),
-      true
+      false
     )
     assert.equal(
       readiness.groups.find((group) => group.group === 'TEAM_MEMBER_SALES')?.requiresHrConfirmation,
-      true
+      false
     )
   })
 
@@ -355,14 +357,16 @@ async function main() {
     assert.equal(readiness.safety.officialGradeEnabled, false)
   })
 
-  await run('HR decision resolves TEAM_MEMBER_SALES ambiguity while preserving metadata-only safety', async () => {
+  await run('HR decision metadata는 PPT 정합 후에도 안전하게 보존 (등급 산정엔 무영향, ambiguity는 자동 해소)', async () => {
+    // PPT 정합 후 ambiguity 자체가 정책에서 제거됨. HR decision metadata는 기존 cycle config에 저장된
+    // 값이 남아있더라도 readiness/등급 산정에 영향 0. 단순 storage 보존 안전성만 검증.
     const fake = makeDb({
       cycle: {
         performanceDesignConfig: {
           policy2026PreviewMappings: {
             teamMemberSalesThresholdDecision: {
               decision: 'SUPER_PRIORITY',
-              note: 'HR confirmed Super priority for 110+',
+              note: 'legacy metadata — PPT 정합 후 사용 안 됨',
             },
           },
         },

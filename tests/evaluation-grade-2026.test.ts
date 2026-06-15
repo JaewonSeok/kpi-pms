@@ -139,19 +139,22 @@ run('missing threshold group returns safe error', () => {
   )
 })
 
-run('ambiguous threshold group is surfaced safely and not guessed', () => {
-  const result = calculateAbsoluteGrade2026({
-    score: 110,
-    thresholdGroup: 'TEAM_MEMBER_SALES',
-  })
-  expectError(result, 'AMBIGUOUS_THRESHOLD_MATCH')
-  if (!result.ok) {
-    assert.equal(result.errors.some((error) => error.requiresPolicyConfirmation), true)
-    assert.equal(result.warnings.some((warning) => warning.code === 'POLICY_CONFIRMATION_REQUIRED'), true)
-  }
+run('PPT 정합 후 TEAM_MEMBER_SALES 110 → OUTSTANDING 단일 매칭 (이전 ambiguous 해소)', () => {
+  // PPT 슬라이드 6 기준 — 팀원(영업)은 SUPER 별도 구간 없음. ≥110 = OUTSTANDING(최상위).
+  // 이전엔 SUPER(≥110) + OUTSTANDING(≥110, requiresPolicyConfirmation) 중첩으로 AMBIGUOUS였음.
+  const result = expectOk(
+    calculateAbsoluteGrade2026({
+      score: 110,
+      thresholdGroup: 'TEAM_MEMBER_SALES',
+    })
+  )
+  assert.equal(result.finalGrade.code, 'OUTSTANDING')
+  assert.equal(result.requiresPolicyConfirmation, false)
 
+  // validateGradeThresholds2026 — TEAM_MEMBER_SALES OUTSTANDING의 requiresPolicyConfirmation 제거로 false.
+  // selectionOnly grades(TEAM_MEMBER_NON_SALES OUTSTANDING/NEED_IMPROVEMENT)는 그대로 유지.
   const validation = expectOk(validateGradeThresholds2026())
-  assert.equal(validation.requiresPolicyConfirmation, true)
+  assert.equal(validation.requiresPolicyConfirmation, false)
   assert.equal(validation.selectionOnlyGrades.some((row) => row.group === 'TEAM_MEMBER_NON_SALES'), true)
 })
 
