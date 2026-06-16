@@ -27,12 +27,6 @@ export const NAV_ITEMS: NavigationItem[] = [
     children: [
       { label: '조직 KPI', href: '/kpi/org', menuKey: 'ORG_KPI_UPLOAD' },
       { label: '내 KPI/MBO', href: '/kpi/personal', menuKey: 'KPI_SETTING' },
-      {
-        label: '팀원 KPI 검토',
-        href: '/kpi/personal?tab=review',
-        menuKey: 'KPI_SETTING',
-        roles: ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'],
-      },
       { label: '월간 실적', href: '/kpi/monthly', menuKey: 'MONTHLY_INPUT' },
     ],
   },
