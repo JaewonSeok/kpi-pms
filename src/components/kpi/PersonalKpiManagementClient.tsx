@@ -891,6 +891,13 @@ export function PersonalKpiManagementClient(props: Props) {
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const defaultLinkedOrgKpiId = props.orgKpiOptions[0]?.id ?? ''
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
+  // URL ?tab=… 변경(메뉴 클릭 등 외부 네비게이션) 시 server가 전달하는 props.initialTab을 state로 동기.
+  // 페이지 내부 <Tabs> 클릭은 setActiveTab → router.replace로 같은 initialTab을 다시 받지만
+  // functional update의 early-return으로 setState 호출 안 됨(re-render 안 일으킴).
+  useEffect(() => {
+    if (!isTabKey(props.initialTab)) return
+    setActiveTabState((prev) => (prev !== props.initialTab ? (props.initialTab as PersonalKpiTabKey) : prev))
+  }, [props.initialTab])
   const [mineItems, setMineItems] = useState(props.mine)
   const [selectedKpiId, setSelectedKpiId] = useState(props.initialKpiId ?? props.mine[0]?.id ?? '')
   const [selectedReviewId, setSelectedReviewId] = useState(props.reviewQueue[0]?.id ?? '')
