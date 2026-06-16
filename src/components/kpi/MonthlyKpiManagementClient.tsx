@@ -120,6 +120,8 @@ const AI_LABELS: Record<AiAction, string> = {
   'summarize-evaluation-evidence': '평가 근거 초안',
 }
 
+const LEADER_ONLY_MONTHLY_AI_ACTION_IDS = new Set<AiAction>(['generate-summary', 'generate-review'])
+
 const DEFAULT_FILTERS: FilterState = {
   status: 'ALL',
   risk: 'ALL',
@@ -649,7 +651,7 @@ export function MonthlyKpiManagementClient({
     ])
   ) as Record<AiAction, ActionState>
   const visibleAiActions = (Object.keys(AI_LABELS) as AiAction[]).filter(
-    (action) => action !== 'generate-summary' || canUseMonthlyCommentDraft
+    (action) => !LEADER_ONLY_MONTHLY_AI_ACTION_IDS.has(action) || canUseMonthlyCommentDraft
   )
   const copyPreviousReason =
     !selected

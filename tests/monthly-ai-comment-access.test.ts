@@ -34,7 +34,12 @@ async function main() {
     const routeSource = read('src/app/api/kpi/monthly-record/ai/route.ts')
 
     assert.equal(clientSource.includes('const canUseMonthlyCommentDraft = pageData.permissions.canReview'), true)
-    assert.equal(clientSource.includes("action !== 'generate-summary' || canUseMonthlyCommentDraft"), true)
+    assert.equal(clientSource.includes('LEADER_ONLY_MONTHLY_AI_ACTION_IDS'), true)
+    assert.equal(clientSource.includes("['generate-summary', 'generate-review']"), true)
+    assert.equal(
+      clientSource.includes('!LEADER_ONLY_MONTHLY_AI_ACTION_IDS.has(action) || canUseMonthlyCommentDraft'),
+      true
+    )
     assert.equal(clientSource.includes('showGenerateSummaryAction={canUseMonthlyCommentDraft}'), true)
     assert.equal(clientSource.includes('visibleActions={visibleAiActions}'), true)
     assert.equal(routeSource.includes('LEADER_ONLY_MONTHLY_AI_ACTIONS'), true)
