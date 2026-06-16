@@ -14,6 +14,15 @@ import {
   summarizeMonthlyEvidence,
 } from '@/server/ai/monthly-kpi'
 
+const LEADER_ONLY_MONTHLY_AI_ACTIONS = [
+  'generate-summary',
+  'generate-review',
+] as const
+
+function isLeaderOnlyMonthlyAiAction(action: string) {
+  return (LEADER_ONLY_MONTHLY_AI_ACTIONS as readonly string[]).includes(action)
+}
+
 async function resolveMonthlyAiTargetEmployee(sourceId: string) {
   const monthlyRecord = await prisma.monthlyRecord.findUnique({
     where: { id: sourceId },
@@ -54,6 +63,35 @@ async function resolveMonthlyAiTargetEmployee(sourceId: string) {
   return personalKpi?.employee ?? null
 }
 
+async function assertManagedMonthlyAiAccess(params: {
+  action: string
+  sourceId?: string
+  sessionUserId: string
+  sessionRole: Parameters<typeof canAccessManagedEmployeeContext>[1]
+}) {
+  if (!isLeaderOnlyMonthlyAiAction(params.action)) {
+    return
+  }
+
+  const sourceId = params.sourceId?.trim()
+  if (!sourceId) {
+    throw new AppError(400, 'MONTHLY_AI_TARGET_REQUIRED', '월간 실적 AI 리뷰 대상 KPI를 먼저 선택해 주세요.')
+  }
+
+  const targetEmployee = await resolveMonthlyAiTargetEmployee(sourceId)
+  if (!targetEmployee) {
+    throw new AppError(404, 'MONTHLY_AI_TARGET_NOT_FOUND', '월간 실적 AI 리뷰 대상을 찾을 수 없습니다.')
+  }
+
+  if (!canAccessManagedEmployeeContext(params.sessionUserId, params.sessionRole, targetEmployee)) {
+    throw new AppError(
+      403,
+      'FORBIDDEN',
+      '팀장·실장·본부장 등 관리 범위가 있는 직책자만 월간 실적 리뷰 AI를 사용할 수 있습니다.'
+    )
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
@@ -73,25 +111,12 @@ export async function POST(request: Request) {
       payload: validated.data.payload,
     }
 
-    if (validated.data.action === 'generate-summary') {
-      const sourceId = validated.data.sourceId?.trim()
-      if (!sourceId) {
-        throw new AppError(400, 'MONTHLY_AI_TARGET_REQUIRED', '월간 실적 코멘트 초안 대상 KPI를 먼저 선택해 주세요.')
-      }
-
-      const targetEmployee = await resolveMonthlyAiTargetEmployee(sourceId)
-      if (!targetEmployee) {
-        throw new AppError(404, 'MONTHLY_AI_TARGET_NOT_FOUND', '월간 실적 코멘트 초안 대상을 찾을 수 없습니다.')
-      }
-
-      if (!canAccessManagedEmployeeContext(session.user.id, session.user.role, targetEmployee)) {
-        throw new AppError(
-          403,
-          'FORBIDDEN',
-          '팀장·실장·본부장 등 리뷰 권한이 있는 화면에서만 월간 실적 코멘트 초안을 사용할 수 있습니다.'
-        )
-      }
-    }
+    await assertManagedMonthlyAiAccess({
+      action: validated.data.action,
+      sourceId: validated.data.sourceId,
+      sessionUserId: session.user.id,
+      sessionRole: session.user.role,
+    })
 
     const result = await (async () => {
       switch (validated.data.action) {

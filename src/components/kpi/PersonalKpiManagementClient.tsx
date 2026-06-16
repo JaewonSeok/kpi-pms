@@ -2193,7 +2193,7 @@ export function PersonalKpiManagementClient(props: Props) {
     })
     setBanner({
       tone: 'success',
-      message: 'AI 업데이트 문안을 증빙 코멘트에 안전하게 추가했습니다. 저장 후 반영됩니다.',
+      message: 'AI 업데이트 문안을 저장 전 화면 초안에만 추가했습니다. 최종 저장은 사용자가 직접 진행해야 합니다.',
     })
   }
 
@@ -3195,7 +3195,7 @@ function AiSection(props: {
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
-      <SectionCard title="AI 보조" description="초안 생성부터 SMART 점검, 검토 포인트 생성까지 현재 문맥에서 바로 실행할 수 있습니다.">
+      <SectionCard title="AI 보조" description="개인 KPI 작성과 표현 정리를 돕는 보조 기능입니다. 작성자가 검토한 뒤 필요한 초안만 화면에 반영합니다.">
         {!props.canUseAi ? (
           <EmptyState
             title="AI 보조를 사용할 수 없습니다."
@@ -3789,7 +3789,7 @@ function PersonalKpiMidcheckCoachCard(props: {
     return (
       <SectionCard
         title="AI 중간 점검 코치"
-        description="현재 입력된 KPI/진행 현황/증빙 정보를 바탕으로 보완 포인트와 다음 액션을 제안합니다."
+        description="팀장/실장/본부장 등 직책자가 구성원의 KPI 진행 상황을 점검하고, 보완 질문과 증빙 확인 포인트를 준비하는 도구입니다. 공식 평가 점수나 등급을 산정하지 않습니다."
       >
         <EmptyInline text="KPI를 선택하면 AI 중간 점검 코치를 바로 사용할 수 있습니다." />
       </SectionCard>
@@ -3804,7 +3804,7 @@ function PersonalKpiMidcheckCoachCard(props: {
   return (
     <SectionCard
       title="AI 중간 점검 코치"
-      description="현재 입력된 KPI/진행 현황/증빙 정보를 바탕으로 보완 포인트와 다음 액션을 제안합니다."
+      description="팀장/실장/본부장 등 직책자가 구성원의 KPI 진행 상황을 점검하고, 보완 질문과 증빙 확인 포인트를 준비하는 도구입니다. 공식 평가 점수나 등급을 산정하지 않습니다."
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3831,7 +3831,7 @@ function PersonalKpiMidcheckCoachCard(props: {
                   variant="secondary"
                   onClick={props.onApplyDraft}
                 >
-                  업데이트 문안 반영
+                  화면 초안에 반영
                 </ActionButton>
                 <ActionButton
                   icon={<Copy className="h-4 w-4" />}
@@ -3848,6 +3848,11 @@ function PersonalKpiMidcheckCoachCard(props: {
         {props.errorMessage ? (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {props.errorMessage || 'AI 코칭을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'}
+          </div>
+        ) : null}
+        {preview ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+            화면 초안에만 반영됩니다. 최종 저장은 사용자가 직접 진행해야 합니다.
           </div>
         ) : null}
 

@@ -29,7 +29,7 @@ async function main() {
     assert.equal(accessSource.includes('employee.divisionHeadId === sessionUserId'), true)
   })
 
-  await run('monthly comment draft UI and route are both leadership-scoped', () => {
+  await run('monthly leader AI actions UI and route are both leadership-scoped', () => {
     const clientSource = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
     const routeSource = read('src/app/api/kpi/monthly-record/ai/route.ts')
 
@@ -37,12 +37,15 @@ async function main() {
     assert.equal(clientSource.includes("action !== 'generate-summary' || canUseMonthlyCommentDraft"), true)
     assert.equal(clientSource.includes('showGenerateSummaryAction={canUseMonthlyCommentDraft}'), true)
     assert.equal(clientSource.includes('visibleActions={visibleAiActions}'), true)
+    assert.equal(routeSource.includes('LEADER_ONLY_MONTHLY_AI_ACTIONS'), true)
+    assert.equal(routeSource.includes("'generate-review'"), true)
+    assert.equal(routeSource.includes('assertManagedMonthlyAiAccess'), true)
     assert.equal(
-      routeSource.includes('canAccessManagedEmployeeContext(session.user.id, session.user.role, targetEmployee)'),
+      routeSource.includes('canAccessManagedEmployeeContext(params.sessionUserId, params.sessionRole, targetEmployee)'),
       true
     )
     assert.equal(
-      routeSource.includes('팀장·실장·본부장 등 리뷰 권한이 있는 화면에서만 월간 실적 코멘트 초안을 사용할 수 있습니다.'),
+      routeSource.includes('팀장·실장·본부장 등 관리 범위가 있는 직책자만 월간 실적 리뷰 AI를 사용할 수 있습니다.'),
       true
     )
   })
