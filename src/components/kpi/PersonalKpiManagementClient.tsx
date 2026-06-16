@@ -2705,57 +2705,71 @@ function MboPolicySummaryPanel(props: { summary: Props['summary']['mboPolicy'] }
 }
 
 function MboSetupGuidePanel() {
+  // 기본 접힘. <details>의 group-open:rotate-180으로 chevron 회전. 영속 0 (브라우저 메모리만).
   return (
-    <section className="rounded-2xl border border-cyan-100 bg-cyan-50/70 px-4 py-3 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="rounded-xl bg-white p-2 text-cyan-700">
-            <ClipboardList className="h-4 w-4" />
-          </span>
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">2026 MBO 설정 안내</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              현재 화면은 2026 MBO 작성/정렬 준비 단계입니다. 공식 평가 점수나 등급을 계산하지 않으며, 작성 품질과 정책 카테고리 검토를 돕는 안내만 표시합니다.
-            </p>
+    <details className="group rounded-2xl border border-cyan-100 bg-cyan-50/70 shadow-sm">
+      <summary className="flex cursor-pointer items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+        <span className="rounded-xl bg-white p-2 text-cyan-700">
+          <ClipboardList className="h-4 w-4" />
+        </span>
+        <h2 className="text-sm font-semibold text-slate-900">2026 MBO 설정 안내</h2>
+        <span
+          aria-hidden
+          className="ml-auto text-xs text-slate-500 transition-transform group-open:rotate-180"
+        >
+          ▾
+        </span>
+      </summary>
+      <div className="border-t border-cyan-100 px-4 py-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <p className="text-xs leading-5 text-slate-600 lg:max-w-md">
+            현재 화면은 2026 MBO 작성/정렬 준비 단계입니다. 공식 평가 점수나 등급을 계산하지 않으며, 작성 품질과 정책 카테고리 검토를 돕는 안내만 표시합니다.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:max-w-3xl xl:grid-cols-4">
+            {MBO_CATEGORY_GUIDE_2026.map((item) => (
+              <div key={item.code} className="rounded-2xl border border-cyan-100 bg-white px-3 py-2">
+                <div className="text-xs font-semibold text-cyan-800">{item.label}</div>
+                <div className="mt-1 text-[11px] leading-4 text-slate-500">{item.description}</div>
+              </div>
+            ))}
           </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:max-w-3xl xl:grid-cols-4">
-          {MBO_CATEGORY_GUIDE_2026.map((item) => (
-            <div key={item.code} className="rounded-2xl border border-cyan-100 bg-white px-3 py-2">
-              <div className="text-xs font-semibold text-cyan-800">{item.label}</div>
-              <div className="mt-1 text-[11px] leading-4 text-slate-500">{item.description}</div>
-            </div>
-          ))}
-        </div>
       </div>
-    </section>
+    </details>
   )
 }
 
 function ResultWritingGuidePanel() {
+  // 기본 접힘. MboSetupGuidePanel과 동일 패턴.
   return (
-    <section className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex items-start gap-3">
-          <span className="rounded-xl bg-white p-2 text-emerald-700">
-            <ClipboardList className="h-4 w-4" />
-          </span>
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 준비 안내</h2>
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다. 이 안내는 read-only이며 저장/제출/점수 계산을 변경하지 않습니다.
-            </p>
-          </div>
+    <details className="group rounded-2xl border border-emerald-100 bg-emerald-50/70 shadow-sm">
+      <summary className="flex cursor-pointer items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+        <span className="rounded-xl bg-white p-2 text-emerald-700">
+          <ClipboardList className="h-4 w-4" />
+        </span>
+        <h2 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 준비 안내</h2>
+        <span
+          aria-hidden
+          className="ml-auto text-xs text-slate-500 transition-transform group-open:rotate-180"
+        >
+          ▾
+        </span>
+      </summary>
+      <div className="border-t border-emerald-100 px-4 py-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <p className="text-xs leading-5 text-slate-600 lg:max-w-md">
+            수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다. 이 안내는 read-only이며 저장/제출/점수 계산을 변경하지 않습니다.
+          </p>
+          <ul className="grid gap-2 text-[11px] leading-4 text-slate-600 sm:grid-cols-2 lg:max-w-3xl">
+            {RESULT_WRITING_GUIDE_2026.map((item) => (
+              <li key={item} className="rounded-2xl border border-emerald-100 bg-white px-3 py-2">
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
-        <ul className="grid gap-2 text-[11px] leading-4 text-slate-600 sm:grid-cols-2 lg:max-w-3xl">
-          {RESULT_WRITING_GUIDE_2026.map((item) => (
-            <li key={item} className="rounded-2xl border border-emerald-100 bg-white px-3 py-2">
-              {item}
-            </li>
-          ))}
-        </ul>
       </div>
-    </section>
+    </details>
   )
 }
 
