@@ -4,18 +4,31 @@ import Link from 'next/link'
 import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  AlertTriangle,
+  BarChart3,
   Bot,
+  CalendarDays,
   CheckCircle2,
+  ClipboardList,
   FileDown,
   FilePlus2,
   History,
   Link2,
+  ListChecks,
+  MessageSquare,
   Paperclip,
   Save,
   Sparkles,
 } from 'lucide-react'
 import { KpiAiPreviewPanel } from '@/components/kpi/KpiAiPreviewPanel'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
+import {
+  PmsActionCard as NextActionCard,
+  PmsEmptyIllustration as MonthlyEmptyIllustration,
+  PmsMetricRail,
+  PmsProgressRing as MonthlyProgressRing,
+  PmsWorkspaceSection,
+} from '@/components/pms-ui'
 import {
   createEvidenceLinkAttachment,
   downloadEvidenceAttachment,
@@ -58,6 +71,7 @@ type FilterState = {
   risk: string
   type: string
   review: string
+  search: string
 }
 type Draft = {
   actualValue: string
@@ -86,13 +100,21 @@ type AiPreview = {
   result: Record<string, unknown>
 }
 
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: 'entry', label: '입력' },
-  { key: 'trend', label: '누적 추이' },
-  { key: 'review', label: '리뷰/피드백' },
-  { key: 'evidence', label: '증빙 항목' },
-  { key: 'ai', label: 'AI 보조' },
+const TABS: Array<{ key: TabKey; label: string; description: string }> = [
+  { key: 'entry', label: '입력', description: 'KPI별 이번 달 진행 상황과 필요한 근거만 빠르게 정리합니다.' },
+  { key: 'trend', label: '누적 추이', description: '최근 흐름을 보며 이번 달 상태가 좋아졌는지 확인합니다.' },
+  { key: 'review', label: '리뷰/피드백', description: '상사 리뷰와 보완 요청, 제출 이력을 한 곳에서 확인합니다.' },
+  { key: 'evidence', label: '증빙 항목', description: '파일과 링크 근거를 모아 평가 시점에 다시 찾기 쉽게 합니다.' },
+  { key: 'ai', label: 'AI 보조', description: 'AI는 초안과 요약을 돕습니다. 저장과 제출은 사용자가 직접 결정합니다.' },
 ]
+
+const TAB_ICONS: Record<TabKey, ReactNode> = {
+  entry: <ClipboardList className="h-4 w-4" />,
+  trend: <BarChart3 className="h-4 w-4" />,
+  review: <MessageSquare className="h-4 w-4" />,
+  evidence: <Paperclip className="h-4 w-4" />,
+  ai: <Sparkles className="h-4 w-4" />,
+}
 
 const STATUS_LABELS: Record<MonthlyRecordViewModel['status'], string> = {
   NOT_STARTED: '미시작',
@@ -120,6 +142,16 @@ const AI_LABELS: Record<AiAction, string> = {
   'summarize-evaluation-evidence': '평가 근거 초안',
 }
 
+const AI_DESCRIPTIONS: Record<AiAction, string> = {
+  'generate-summary': '리더가 관리 범위 구성원의 월간 실적 코멘트 초안을 준비할 때 사용합니다.',
+  'explain-risk': '위험 신호나 이슈 메모를 더 이해하기 쉬운 표현으로 정리합니다.',
+  'generate-review': '제출된 월간 실적에 대한 상사 리뷰 초안을 준비합니다.',
+  'summarize-evidence': '첨부된 증빙과 링크 내용을 월간 기록 관점으로 요약합니다.',
+  'generate-retrospective': '이번 달 강점, 리스크, 다음 달 우선순위를 회고 형태로 정리합니다.',
+  'suggest-checkin-agenda': '다음 체크인에서 확인할 질문과 논의 안건을 제안합니다.',
+  'summarize-evaluation-evidence': '직책자가 평가 전 근거를 검토할 때 쓰는 요약 초안입니다.',
+}
+
 const LEADER_ONLY_MONTHLY_AI_ACTION_IDS = new Set<AiAction>([
   'generate-summary',
   'generate-review',
@@ -131,6 +163,7 @@ const DEFAULT_FILTERS: FilterState = {
   risk: 'ALL',
   type: 'ALL',
   review: 'ALL',
+  search: '',
 }
 
 function parseYearMonth(selectedYear: number, selectedMonth: string) {
@@ -367,10 +400,6 @@ function formatPercent(value?: number) {
   return typeof value === 'number' ? `${Math.round(value * 10) / 10}%` : '-'
 }
 
-function toRecord(value: unknown) {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null
-}
-
 function getString(value: unknown, fallback = '') {
   return typeof value === 'string' ? value : fallback
 }
@@ -470,6 +499,397 @@ function StatePanel({ tone, title, message }: { tone: 'neutral' | 'danger'; titl
       <h2 className="text-lg font-semibold">{title}</h2>
       <p className="mt-2 text-sm leading-6">{message}</p>
     </section>
+  )
+}
+
+function DetailMetricBox({ label, value, helper }: { label: string; value: string; helper?: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="text-xs font-semibold text-slate-500">{label}</div>
+      <div className="mt-1 text-base font-bold text-slate-950">{value || '-'}</div>
+      {helper ? <div className="mt-1 text-[11px] leading-4 text-slate-500">{helper}</div> : null}
+    </div>
+  )
+}
+
+function RelatedInfoCard({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: ReactNode
+  label: string
+  value: string
+  helper: string
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+      <div className="flex items-start gap-2">
+        <span className="rounded-xl bg-white p-2 text-slate-600 shadow-sm">{icon}</span>
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-slate-500">{label}</div>
+          <div className="mt-0.5 text-sm font-bold text-slate-950">{value}</div>
+          <div className="mt-1 text-[11px] leading-4 text-slate-500">{helper}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MonthlyWorkspaceTabs({
+  tab,
+  setTab,
+}: {
+  tab: TabKey
+  setTab: Dispatch<SetStateAction<TabKey>>
+}) {
+  const activeTab = TABS.find((item) => item.key === tab)
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4">
+      <div className="overflow-x-auto">
+        <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-sm">
+          {TABS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setTab(item.key)}
+              className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition ${
+                tab === item.key
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              {TAB_ICONS[item.key]}
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {activeTab ? (
+        <p className="mt-2 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-slate-500">
+          {activeTab.description}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function MonthlyWorkspaceHeader({
+  monthContext,
+  pageData,
+  canChangeTargetScope,
+  targetContextLabel,
+  advancedFiltersOpen,
+  setAdvancedFiltersOpen,
+  submitValidationSummary,
+  submitRecommendationReasons,
+  midCheckScheduleGuidance,
+  tab,
+  setTab,
+  setFilters,
+  handleRouteSelection,
+}: {
+  monthContext: ReturnType<typeof parseYearMonth>
+  pageData: MonthlyPageData
+  canChangeTargetScope: boolean
+  targetContextLabel: string
+  advancedFiltersOpen: boolean
+  setAdvancedFiltersOpen: Dispatch<SetStateAction<boolean>>
+  submitValidationSummary?: string
+  submitRecommendationReasons: string[]
+  midCheckScheduleGuidance: ReturnType<typeof getMonthlyMidCheckScheduleGuidance>
+  tab: TabKey
+  setTab: Dispatch<SetStateAction<TabKey>>
+  setFilters: Dispatch<SetStateAction<FilterState>>
+  handleRouteSelection: (next: {
+    year?: number
+    month?: string
+    scope?: string
+    employeeId?: string
+    tab?: TabKey
+    recordId?: string
+  }) => void
+}) {
+  const totalCount = pageData.records.length
+  const completedCount = pageData.records.filter((record) => ['SUBMITTED', 'REVIEWED', 'LOCKED'].includes(record.status)).length
+  const inputNeededCount = pageData.summary.missingCount
+  const riskCount = pageData.summary.riskyCount
+  const reviewPendingCount = pageData.summary.reviewPendingCount
+
+  return (
+    <PmsWorkspaceSection
+      eyebrow={
+        <p className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm">
+          <ClipboardList className="h-4 w-4" />
+          월간 KPI 작업 영역
+        </p>
+      }
+      title={`${monthContext.fullLabel} 월간 실적`}
+      description="먼저 이번 달 해야 할 일을 확인하고, 필요한 KPI만 선택해 짧게 기록하세요."
+      actions={
+        <>
+            <button
+              type="button"
+              onClick={() => setFilters((current) => ({ ...current, status: 'NOT_STARTED' }))}
+              className="rounded-full border border-blue-100 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50"
+            >
+              입력 필요만 보기
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilters((current) => ({ ...current, risk: 'RISK' }))}
+              className="rounded-full border border-rose-100 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50"
+            >
+              위험 KPI만 보기
+            </button>
+        </>
+      }
+    >
+
+        <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 p-3 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  {monthContext.fullLabel}
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                    pageData.summary.overallStatus === 'MIXED'
+                      ? 'bg-slate-100 text-slate-700'
+                      : STATUS_CLASS[pageData.summary.overallStatus]
+                  }`}
+                >
+                  {pageData.summary.overallStatus === 'MIXED'
+                    ? '혼합 상태'
+                    : STATUS_LABELS[pageData.summary.overallStatus]}
+                </span>
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                  {canChangeTargetScope ? `대상: ${targetContextLabel}` : `내 실적 · ${targetContextLabel}`}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                  리뷰 대기 {formatCountWithUnit(reviewPendingCount, '개')}
+                </span>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                    submitValidationSummary ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                  }`}
+                >
+                  {submitValidationSummary ? '제출 전 확인 필요' : '제출 가능 상태'}
+                </span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                일반 입력 화면은 단순하게 유지하고, 월/대상 설정은 필요할 때만 펼칩니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAdvancedFiltersOpen((value) => !value)}
+              aria-expanded={advancedFiltersOpen}
+              className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              {advancedFiltersOpen ? '월/대상 설정 닫기' : '월/대상 설정'}
+            </button>
+          </div>
+
+          <div className="mt-3">
+            <MonthQuickSwitch
+              selectedYear={pageData.selectedYear}
+              selectedMonth={pageData.selectedMonth}
+              onChange={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
+            />
+          </div>
+
+          {advancedFiltersOpen ? (
+            <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">연도</span>
+                <select
+                  value={String(pageData.selectedYear)}
+                  onChange={(event) => handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })}
+                  className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+                >
+                  {pageData.availableYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}년
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="space-y-1">
+                <span className="text-[11px] font-medium text-slate-500">월</span>
+                <select
+                  value={pageData.selectedMonth}
+                  onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}
+                  className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+                >
+                  {Array.from({ length: 12 }, (_, index) => {
+                    const value = `${pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
+                    return (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+
+              {canChangeTargetScope ? (
+                <>
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-slate-500">대상 범위</span>
+                    <select
+                      value={pageData.selectedScope}
+                      onChange={(event) => handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })}
+                      className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+                    >
+                      <option value="self">내 실적</option>
+                      <option value="team">우리 팀</option>
+                      <option value="employee">특정 구성원</option>
+                    </select>
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-slate-500">대상자</span>
+                    <select
+                      value={pageData.selectedEmployeeId}
+                      onChange={(event) =>
+                        handleRouteSelection({
+                          scope: 'employee',
+                          employeeId: event.target.value,
+                          tab: 'entry',
+                          recordId: '',
+                        })
+                      }
+                      disabled={pageData.selectedScope === 'self'}
+                      className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:bg-slate-50"
+                    >
+                      {pageData.employeeOptions.map((employee) => (
+                        <option key={employee.id} value={employee.id}>
+                          {employee.name} / {employee.departmentName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : (
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 sm:col-span-2">
+                  내 실적 · {targetContextLabel}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {submitValidationSummary ? (
+            <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">
+              <span className="font-semibold">제출 차단:</span> {submitValidationSummary}
+            </p>
+          ) : null}
+          {submitRecommendationReasons.length ? (
+            <p className="mt-2 text-[11px] leading-5 text-slate-500">
+              {submitRecommendationReasons.join(' ')}
+            </p>
+          ) : null}
+
+          <details className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+            <summary className="cursor-pointer font-semibold text-slate-700">
+              2026 중간 점검 schedule guidance
+            </summary>
+            <p className="mt-2 leading-5">{midCheckScheduleGuidance.message}</p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {midCheckScheduleGuidance.window.plannedRangeLabel} · 저장/제출을 강제하지 않는 안내입니다.
+            </p>
+          </details>
+        </div>
+
+        <div className="mt-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-950">이번 달 먼저 할 일</h3>
+              <p className="text-xs text-slate-500">긴 보고서보다 필요한 KPI부터 짧게 정리합니다.</p>
+            </div>
+            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 shadow-sm">
+              핵심 행동 4개
+            </span>
+          </div>
+          <div className="grid gap-2 md:grid-cols-4">
+            <NextActionCard
+              icon={<ClipboardList className="h-4 w-4" />}
+              label="미입력 KPI 채우기"
+              description="한 줄 진행 요약부터 남깁니다."
+              done={inputNeededCount === 0}
+              tone={inputNeededCount > 0 ? 'danger' : 'neutral'}
+              onClick={() => setFilters((current) => ({ ...current, status: 'NOT_STARTED' }))}
+            />
+            <NextActionCard
+              icon={<AlertTriangle className="h-4 w-4" />}
+              label="위험 KPI 보완"
+              description="리스크 원인과 대응만 정리합니다."
+              done={riskCount === 0}
+              tone={riskCount > 0 ? 'danger' : 'neutral'}
+              onClick={() => setFilters((current) => ({ ...current, risk: 'RISK' }))}
+            />
+            <NextActionCard
+              icon={<Paperclip className="h-4 w-4" />}
+              label="증빙 추가"
+              description="링크나 짧은 메모부터 연결합니다."
+              done={pageData.summary.attachmentCount > 0}
+              onClick={() => setTab('evidence')}
+            />
+            <NextActionCard
+              icon={<MessageSquare className="h-4 w-4" />}
+              label="상사 리뷰 확인"
+              description="리뷰 대기와 보완 요청을 확인합니다."
+              done={reviewPendingCount === 0}
+              tone={reviewPendingCount > 0 ? 'warning' : 'neutral'}
+              onClick={() => setTab('review')}
+            />
+          </div>
+        </div>
+
+        <PmsMetricRail
+          className="mt-3"
+          items={[
+            {
+              icon: <ClipboardList className="h-5 w-5" />,
+              label: '전체 KPI',
+              value: formatCountWithUnit(totalCount, '개'),
+              helper: '이번 달 기록 대상 KPI',
+              chip: '전체',
+            },
+            {
+              icon: <CheckCircle2 className="h-5 w-5" />,
+              label: '입력 완료',
+              value: formatCountWithUnit(completedCount, '개'),
+              helper: `${pageData.summary.submissionRate}% 제출 기준`,
+              chip: '진행',
+              tone: completedCount > 0 ? 'good' : 'neutral',
+            },
+            {
+              icon: <ListChecks className="h-5 w-5" />,
+              label: '입력 필요',
+              value: formatCountWithUnit(inputNeededCount, '개'),
+              helper: '한 줄 요약부터 작성',
+              chip: inputNeededCount ? '확인 필요' : '완료',
+              tone: inputNeededCount ? 'warning' : 'good',
+            },
+            {
+              icon: <AlertTriangle className="h-5 w-5" />,
+              label: '위험 KPI',
+              value: formatCountWithUnit(riskCount, '개'),
+              helper: '원인과 대응만 짧게 보완',
+              chip: riskCount ? '리스크' : '안정',
+              tone: riskCount ? 'danger' : 'good',
+            },
+          ]}
+        />
+
+      <MonthlyWorkspaceTabs tab={tab} setTab={setTab} />
+    </PmsWorkspaceSection>
   )
 }
 
@@ -666,6 +1086,16 @@ export function MonthlyKpiManagementClient({
   const uploadDisabledReason = editDisabledReason
 
   const visibleRecords = pageData.records.filter((record) => {
+    const searchTerm = filters.search.trim().toLowerCase()
+    if (
+      searchTerm &&
+      ![record.kpiTitle, record.orgKpiTitle ?? '', record.type === 'QUANTITATIVE' ? '정량' : '정성']
+        .join(' ')
+        .toLowerCase()
+        .includes(searchTerm)
+    ) {
+      return false
+    }
     if (filters.status !== 'ALL' && record.status !== filters.status) return false
     if (filters.risk === 'RISK' && record.riskFlags.length === 0) return false
     if (filters.risk === 'SAFE' && record.riskFlags.length > 0) return false
@@ -1086,7 +1516,7 @@ export function MonthlyKpiManagementClient({
       }
 
       setAiPreview(null)
-      setBanner({ tone: 'success', message: 'AI 미리보기를 현재 입력 내용에 반영했습니다.' })
+      setBanner({ tone: 'success', message: 'AI 미리보기를 화면 초안에 반영했습니다. 저장은 사용자가 직접 진행해야 합니다.' })
       router.refresh()
     } catch (error) {
       setBanner({
@@ -1189,244 +1619,6 @@ export function MonthlyKpiManagementClient({
 
       {loadAlerts}
 
-      {/* Compact monthly work toolbar — replaces the previous oversized header card, filter card, and right-rail 월간 작업 panel. */}
-      <section
-        aria-label="월간 작업 툴바"
-        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-5"
-      >
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-blue-500">
-              Monthly Performance Operations
-            </p>
-            <h1 className="mt-0.5 text-xl font-bold text-slate-900 sm:text-2xl">{monthContext.screenTitle}</h1>
-            <p className="mt-1 text-xs text-slate-500">
-              {canChangeTargetScope ? (
-                <>대상: {targetContextLabel}</>
-              ) : (
-                <>내 실적 · {targetContextLabel}</>
-              )}
-              <span className="px-1.5 text-slate-300">·</span>
-              <span>현재 선택 월: {monthContext.fullLabel}</span>
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="월간 작업">
-            <Button
-              size="sm"
-              icon={<Save className="h-3.5 w-3.5" />}
-              onClick={() => void saveRecord('draft')}
-              disabled={!selected || busy !== null || Boolean(editDisabledReason)}
-              title={editDisabledReason}
-            >
-              임시저장
-            </Button>
-            <Button
-              size="sm"
-              icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-              variant="primary"
-              onClick={() => void saveRecord('submit')}
-              disabled={!selected || busy !== null || Boolean(submitDisabledReason)}
-              title={submitDisabledReason}
-            >
-              제출
-            </Button>
-            <Button
-              size="sm"
-              icon={<History className="h-3.5 w-3.5" />}
-              onClick={handleCopyPreviousMonth}
-              disabled={busy !== null || Boolean(copyPreviousReason)}
-              title={copyPreviousReason}
-            >
-              이전월 값 불러오기
-            </Button>
-            <Button
-              size="sm"
-              icon={<Paperclip className="h-3.5 w-3.5" />}
-              onClick={() => {
-                if (!canEdit) {
-                  setBanner({ tone: 'info', message: '현재 상태에서는 증빙을 추가할 수 없습니다.' })
-                  return
-                }
-                fileInputRef.current?.click()
-              }}
-              disabled={!selected || busy !== null || Boolean(uploadDisabledReason)}
-              title={uploadDisabledReason}
-            >
-              증빙 첨부
-            </Button>
-            <Button
-              size="sm"
-              icon={<History className="h-3.5 w-3.5" />}
-              onClick={() => setTab('review')}
-              disabled={busy !== null}
-            >
-              이력 보기
-            </Button>
-          </div>
-        </div>
-
-        <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="sr-only">월 선택</p>
-            <MonthQuickSwitch
-              selectedYear={pageData.selectedYear}
-              selectedMonth={pageData.selectedMonth}
-              onChange={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                pageData.summary.overallStatus === 'MIXED'
-                  ? 'bg-slate-100 text-slate-700'
-                  : STATUS_CLASS[pageData.summary.overallStatus]
-              }`}
-            >
-              {pageData.summary.overallStatus === 'MIXED'
-                ? '혼합 상태'
-                : STATUS_LABELS[pageData.summary.overallStatus]}
-            </span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-700">
-              제출 완료 {pageData.summary.submissionRate}%
-            </span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-700">
-              평균 {formatPercent(pageData.summary.averageAchievementRate)}
-            </span>
-            <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-medium text-rose-700">
-              위험 {formatCountWithUnit(pageData.summary.riskyCount, '개')}
-            </span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-700">
-              증빙 {formatCountWithUnit(pageData.summary.attachmentCount, '건')}
-            </span>
-            <button
-              type="button"
-              onClick={() => setAdvancedFiltersOpen((value) => !value)}
-              aria-expanded={advancedFiltersOpen}
-              className="rounded-full border border-slate-200 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 transition hover:bg-slate-50"
-            >
-              {advancedFiltersOpen ? '상세 필터 닫기' : '상세 필터'}
-            </button>
-          </div>
-        </div>
-
-        {advancedFiltersOpen ? (
-          <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="space-y-1">
-              <span className="text-[11px] font-medium text-slate-500">연도</span>
-              <select
-                value={String(pageData.selectedYear)}
-                onChange={(event) => handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })}
-                className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
-              >
-                {pageData.availableYears.map((year) => (
-                  <option key={year} value={year}>
-                    {year}년
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-[11px] font-medium text-slate-500">월</span>
-              <select
-                value={pageData.selectedMonth}
-                onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}
-                className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
-              >
-                {Array.from({ length: 12 }, (_, index) => {
-                  const value = `${pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
-                  return (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  )
-                })}
-              </select>
-            </label>
-
-            {canChangeTargetScope ? (
-              <>
-                <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-slate-500">대상 범위</span>
-                  <select
-                    value={pageData.selectedScope}
-                    onChange={(event) => handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })}
-                    className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
-                  >
-                    <option value="self">내 실적</option>
-                    <option value="team">우리 팀</option>
-                    <option value="employee">특정 구성원</option>
-                  </select>
-                </label>
-
-                <label className="space-y-1">
-                  <span className="text-[11px] font-medium text-slate-500">대상자</span>
-                  <select
-                    value={pageData.selectedEmployeeId}
-                    onChange={(event) =>
-                      handleRouteSelection({
-                        scope: 'employee',
-                        employeeId: event.target.value,
-                        tab: 'entry',
-                        recordId: '',
-                      })
-                    }
-                    disabled={pageData.selectedScope === 'self'}
-                    className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:bg-slate-50"
-                  >
-                    {pageData.employeeOptions.map((employee) => (
-                      <option key={employee.id} value={employee.id}>
-                        {employee.name} / {employee.departmentName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            ) : (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 sm:col-span-2">
-                내 실적 · {targetContextLabel}
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {submitValidation.summary ? (
-          <div
-            role="alert"
-            className="mt-3 flex flex-wrap items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800"
-          >
-            <span className="font-semibold">제출 차단</span>
-            <span>{submitValidation.summary}</span>
-          </div>
-        ) : null}
-        {submitValidation.recommendationReasons.length ? (
-          <p className="mt-2 text-[11px] text-slate-500">
-            {submitValidation.recommendationReasons.join(' ')}
-          </p>
-        ) : null}
-      </section>
-
-      <section
-        className={`rounded-2xl border px-4 py-3 text-sm ${
-          midCheckScheduleGuidance2026.isActive
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            : 'border-slate-200 bg-slate-50 text-slate-700'
-        }`}
-      >
-        <div className="flex items-start gap-2">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p className="font-semibold">2026 중간 점검 schedule guidance</p>
-            <p className="mt-1 leading-6">{midCheckScheduleGuidance2026.message}</p>
-            <p className="mt-1 text-xs opacity-80">
-              {midCheckScheduleGuidance2026.window.plannedRangeLabel} · 저장/제출을 강제하지 않는 안내입니다.
-            </p>
-          </div>
-        </div>
-      </section>
-
       {banner ? (
         <div
           className={`rounded-2xl border px-4 py-3 text-sm ${
@@ -1441,71 +1633,35 @@ export function MonthlyKpiManagementClient({
         </div>
       ) : null}
 
-      <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="text-sm font-semibold text-blue-900">다음 행동</div>
-            <p className="mt-1 text-sm text-blue-800/80">
-              제출 차단 사유를 해소하고 {monthContext.fullLabel} 입력을 마무리하는 데 필요한 항목만 바로 확인하세요.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <CompactActionChip
-              label="미입력 KPI"
-              value={formatCountWithUnit(pageData.summary.missingCount, '개')}
-              tone={pageData.summary.missingCount > 0 ? 'danger' : 'neutral'}
-            />
-            <CompactActionChip
-              label="위험 신호 KPI"
-              value={formatCountWithUnit(pageData.summary.riskyCount, '개')}
-              tone={pageData.summary.riskyCount > 0 ? 'danger' : 'neutral'}
-            />
-            <CompactActionChip
-              label="상사 리뷰 대기 KPI"
-              value={formatCountWithUnit(pageData.summary.reviewPendingCount, '개')}
-              tone={pageData.summary.reviewPendingCount > 0 ? 'warning' : 'neutral'}
-            />
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <ActionRow label="미입력 KPI 채우기" done={pageData.summary.missingCount === 0} onClick={() => setTab('entry')} />
-          <ActionRow label="위험 KPI 코멘트 보완" done={pageData.summary.riskyCount === 0} onClick={() => setTab('entry')} />
-          <ActionRow label="증빙 항목 추가" done={pageData.summary.attachmentCount > 0} onClick={() => setTab('evidence')} />
-          <ActionRow label="상사 리뷰 확인" done={pageData.summary.reviewPendingCount === 0} onClick={() => setTab('review')} />
-        </div>
-      </section>
-
-      {selected?.personalKpiId ? (
-        <MidReviewReferencePanel
-          kind="personal-kpi"
-          targetId={selected.personalKpiId}
-          title="중간 점검"
-          helper="이 KPI와 연결된 최근 중간 점검 판단, 기대 상태, 다음 기간 계획을 함께 확인합니다."
-        />
-      ) : null}
-
-      <div className="overflow-x-auto">
-        <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-          {TABS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setTab(item.key)}
-              className={`min-h-11 rounded-xl px-4 py-2 text-sm font-medium transition ${
-                tab === item.key
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <MonthlyWorkspaceHeader
+        monthContext={monthContext}
+        pageData={pageData}
+        canChangeTargetScope={canChangeTargetScope}
+        targetContextLabel={targetContextLabel}
+        advancedFiltersOpen={advancedFiltersOpen}
+        setAdvancedFiltersOpen={setAdvancedFiltersOpen}
+        submitValidationSummary={submitValidation.summary}
+        submitRecommendationReasons={submitValidation.recommendationReasons}
+        midCheckScheduleGuidance={midCheckScheduleGuidance2026}
+        tab={tab}
+        setTab={setTab}
+        setFilters={setFilters}
+        handleRouteSelection={handleRouteSelection}
+      />
 
       {tab === 'entry' ? (
         <EntryTab
           monthContext={monthContext}
+          pageData={pageData}
+          canChangeTargetScope={canChangeTargetScope}
+          targetContextLabel={targetContextLabel}
+          advancedFiltersOpen={advancedFiltersOpen}
+          setAdvancedFiltersOpen={setAdvancedFiltersOpen}
+          submitValidationSummary={submitValidation.summary}
+          submitRecommendationReasons={submitValidation.recommendationReasons}
+          midCheckScheduleGuidance={midCheckScheduleGuidance2026}
+          allRecords={pageData.records}
+          summary={pageData.summary}
           visibleRecords={visibleRecords}
           filters={filters}
           setFilters={setFilters}
@@ -1513,7 +1669,6 @@ export function MonthlyKpiManagementClient({
           setSelectedId={setSelectedId}
           selectedDraft={selectedDraft}
           canEdit={canEdit}
-          canSubmit={canSubmit}
           editDisabledReason={editDisabledReason}
           submitDisabledReason={submitDisabledReason}
           reviewActionState={reviewActionState}
@@ -1530,6 +1685,9 @@ export function MonthlyKpiManagementClient({
           onSubmit={() => void saveRecord('submit')}
           onReview={() => void handleReview('REVIEW')}
           onRequestUpdate={() => void handleReview('REQUEST_UPDATE')}
+          onCopyPreviousMonth={handleCopyPreviousMonth}
+          copyPreviousReason={copyPreviousReason}
+          handleRouteSelection={handleRouteSelection}
           onAddLinkAttachment={() => handleLinkAttachmentCreate()}
           onUploadClick={() => {
             if (!canEdit) {
@@ -1547,6 +1705,8 @@ export function MonthlyKpiManagementClient({
             })
           }
           onRunAi={() => void runAi('generate-summary')}
+          onShowEvidence={() => setTab('evidence')}
+          onShowHistory={() => setTab('review')}
         />
       ) : null}
 
@@ -1609,6 +1769,16 @@ export function MonthlyKpiManagementClient({
 
 function EntryTab({
   monthContext,
+  pageData,
+  canChangeTargetScope,
+  targetContextLabel,
+  advancedFiltersOpen,
+  setAdvancedFiltersOpen,
+  submitValidationSummary,
+  submitRecommendationReasons,
+  midCheckScheduleGuidance,
+  allRecords,
+  summary,
   visibleRecords,
   filters,
   setFilters,
@@ -1616,7 +1786,6 @@ function EntryTab({
   setSelectedId,
   selectedDraft,
   canEdit,
-  canSubmit,
   editDisabledReason,
   submitDisabledReason,
   reviewActionState,
@@ -1633,21 +1802,35 @@ function EntryTab({
   onSubmit,
   onReview,
   onRequestUpdate,
+  onCopyPreviousMonth,
+  copyPreviousReason,
+  handleRouteSelection,
   onAddLinkAttachment,
   onUploadClick,
   onAttachmentDownload,
   onAttachmentRemove,
   onRunAi,
+  onShowEvidence,
+  onShowHistory,
 }: {
   monthContext: ReturnType<typeof parseYearMonth>
+  pageData: MonthlyPageData
+  canChangeTargetScope: boolean
+  targetContextLabel: string
+  advancedFiltersOpen: boolean
+  setAdvancedFiltersOpen: Dispatch<SetStateAction<boolean>>
+  submitValidationSummary?: string
+  submitRecommendationReasons: string[]
+  midCheckScheduleGuidance: ReturnType<typeof getMonthlyMidCheckScheduleGuidance>
+  allRecords: MonthlyRecordViewModel[]
+  summary: MonthlyPageData['summary']
   visibleRecords: MonthlyRecordViewModel[]
-  filters: { status: string; risk: string; type: string; review: string }
-  setFilters: Dispatch<SetStateAction<{ status: string; risk: string; type: string; review: string }>>
+  filters: FilterState
+  setFilters: Dispatch<SetStateAction<FilterState>>
   selected: MonthlyRecordViewModel | null
   setSelectedId: (id: string) => void
   selectedDraft: Draft | null
   canEdit: boolean
-  canSubmit: boolean
   editDisabledReason?: string
   submitDisabledReason?: string
   reviewActionState: ActionState
@@ -1664,218 +1847,656 @@ function EntryTab({
   onSubmit: () => void
   onReview: () => void
   onRequestUpdate: () => void
+  onCopyPreviousMonth: () => void
+  copyPreviousReason?: string
+  handleRouteSelection: (next: {
+    year?: number
+    month?: string
+    scope?: string
+    employeeId?: string
+    tab?: TabKey
+    recordId?: string
+  }) => void
   onAddLinkAttachment: () => void
   onUploadClick: () => void
   onAttachmentDownload: (attachment: MonthlyAttachmentViewModel) => void
   onAttachmentRemove: (attachmentId: string) => void
   onRunAi: () => void
+  onShowEvidence: () => void
+  onShowHistory: () => void
 }) {
+  const totalCount = allRecords.length
+  const completedCount = allRecords.filter((record) => ['SUBMITTED', 'REVIEWED', 'LOCKED'].includes(record.status)).length
+  const inputNeededCount = summary.missingCount
+  const riskCount = summary.riskyCount
+  const reviewPendingCount = summary.reviewPendingCount
+  const selectedProgress = Math.min(100, Math.max(0, selected?.achievementRate ?? 0))
+  const selectedTone: 'good' | 'warning' | 'danger' = selected?.riskFlags.length
+    ? 'danger'
+    : selectedProgress >= 80
+      ? 'good'
+      : 'warning'
+  const selectedActualValue =
+    selectedDraft?.actualValue.trim() ||
+    (typeof selected?.actualValue === 'number' || typeof selected?.actualValue === 'string' ? String(selected.actualValue) : '-')
+  const [detailedFiltersOpen, setDetailedFiltersOpen] = useState(false)
+  const detailedFiltersDefaultVisible = canReview || totalCount >= 8
+  const showDetailedFilters = detailedFiltersDefaultVisible || detailedFiltersOpen
+  const hasDetailedFilters =
+    filters.search.trim().length > 0 ||
+    filters.status !== 'ALL' ||
+    filters.risk !== 'ALL' ||
+    filters.type !== 'ALL' ||
+    filters.review !== 'ALL'
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
-        <div className="mb-5">
-          <h2 className="text-lg font-semibold text-slate-900">{monthContext.fullLabel} KPI별 월간 입력</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            선택한 {monthContext.fullLabel} 기준 KPI 상태와 위험 신호를 확인하고 상세 입력으로 이동하세요.
-          </p>
-        </div>
-
-        <div className="mb-5 grid gap-3 md:grid-cols-5">
-          <FilterSelect
-            label="상태"
-            value={filters.status}
-            onChange={(value) => setFilters((current) => ({ ...current, status: value }))}
-            options={[
-              ['ALL', '전체'],
-              ['NOT_STARTED', '미시작'],
-              ['DRAFT', '임시저장'],
-              ['SUBMITTED', '제출됨'],
-              ['REVIEWED', '리뷰 완료'],
-              ['LOCKED', '잠금'],
-            ]}
-          />
-          <FilterSelect
-            label="위험 여부"
-            value={filters.risk}
-            onChange={(value) => setFilters((current) => ({ ...current, risk: value }))}
-            options={[
-              ['ALL', '전체'],
-              ['RISK', '위험만'],
-              ['SAFE', '안정만'],
-            ]}
-          />
-          <FilterSelect
-            label="KPI 유형"
-            value={filters.type}
-            onChange={(value) => setFilters((current) => ({ ...current, type: value }))}
-            options={[
-              ['ALL', '전체'],
-              ['QUANTITATIVE', '정량'],
-              ['QUALITATIVE', '정성'],
-            ]}
-          />
-          <FilterSelect
-            label="리뷰 여부"
-            value={filters.review}
-            onChange={(value) => setFilters((current) => ({ ...current, review: value }))}
-            options={[
-              ['ALL', '전체'],
-              ['PENDING', '리뷰 대기'],
-              ['REVIEWED', '리뷰 있음'],
-            ]}
-          />
-          <div className="flex items-end">
-            <Button
-              onClick={() =>
-                setFilters({ ...DEFAULT_FILTERS })
-              }
-            >
-              초기화
-            </Button>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          {visibleRecords.length ? (
-            visibleRecords.map((record) => (
-              <button
-                key={record.id}
-                type="button"
-                onClick={() => setSelectedId(record.id)}
-                className={`w-full rounded-2xl border p-4 text-left transition ${
-                  record.id === selected?.id
-                    ? 'border-blue-300 bg-blue-50'
-                    : 'border-slate-200 bg-slate-50 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900">{record.kpiTitle}</p>
-                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">
-                        {record.type === 'QUANTITATIVE' ? '정량' : '정성'}
-                      </span>
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_CLASS[record.status]}`}>
-                        {STATUS_LABELS[record.status]}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-500">최근 달성률 {formatPercent(record.achievementRate)}</p>
-                    {record.orgKpiTitle ? (
-                      <div className="mt-2 inline-flex items-center gap-1 text-xs text-blue-700">
-                        <Link2 className="h-3.5 w-3.5" />
-                        {record.orgKpiTitle}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {record.riskFlags.length ? (
-                      record.riskFlags.slice(0, 2).map((flag) => (
-                        <span
-                          key={flag}
-                          className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700"
-                        >
-                          {flag}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                        안정
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </button>
-            ))
-          ) : (
-            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-              <p className="text-sm font-semibold text-slate-900">{monthContext.fullLabel} 기준 조건에 맞는 월간 실적이 없습니다.</p>
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(380px,0.95fr)] xl:items-start">
+      <section className="space-y-3">
+        <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
+          <div className="hidden border-b border-slate-100 bg-gradient-to-br from-white via-blue-50/60 to-slate-50 px-5 py-5 lg:px-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm">
+                  <ClipboardList className="h-4 w-4" />
+                  월간 KPI 작업 영역
+                </p>
+                <h2 className="mt-3 text-xl font-bold tracking-tight text-slate-950">{monthContext.fullLabel} 월간 실적</h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                  먼저 상태를 훑고, 입력이 필요한 KPI만 선택해 한 줄 진행 요약부터 남기세요.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFilters((current) => ({ ...current, status: 'NOT_STARTED' }))}
+                  className="rounded-full border border-blue-100 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50"
+                >
+                  입력 필요만 보기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilters((current) => ({ ...current, risk: 'RISK' }))}
+                  className="rounded-full border border-rose-100 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50"
+                >
+                  위험 KPI만 보기
+                </button>
+              </div>
             </div>
-          )}
+
+            <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 p-3 shadow-sm">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      {monthContext.fullLabel}
+                    </span>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        pageData.summary.overallStatus === 'MIXED'
+                          ? 'bg-slate-100 text-slate-700'
+                          : STATUS_CLASS[pageData.summary.overallStatus]
+                      }`}
+                    >
+                      {pageData.summary.overallStatus === 'MIXED'
+                        ? '혼합 상태'
+                        : STATUS_LABELS[pageData.summary.overallStatus]}
+                    </span>
+                    <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                      {canChangeTargetScope ? `대상: ${targetContextLabel}` : `내 실적 · ${targetContextLabel}`}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                      리뷰 대기 {formatCountWithUnit(reviewPendingCount, '개')}
+                    </span>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                        submitValidationSummary ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}
+                    >
+                      {submitValidationSummary ? '제출 전 확인 필요' : '제출 가능 상태'}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    월과 대상은 여기서 바꾸고, 세부 조건은 필요할 때만 펼쳐 확인합니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdvancedFiltersOpen((value) => !value)}
+                  aria-expanded={advancedFiltersOpen}
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                >
+                  {advancedFiltersOpen ? '월/대상 설정 닫기' : '월/대상 설정'}
+                </button>
+              </div>
+
+              <div className="mt-3">
+                <MonthQuickSwitch
+                  selectedYear={pageData.selectedYear}
+                  selectedMonth={pageData.selectedMonth}
+                  onChange={(month) => handleRouteSelection({ month, tab: 'entry', recordId: '' })}
+                />
+              </div>
+
+              {advancedFiltersOpen ? (
+                <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-slate-500">연도</span>
+                    <select
+                      value={String(pageData.selectedYear)}
+                      onChange={(event) => handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })}
+                      className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+                    >
+                      {pageData.availableYears.map((year) => (
+                        <option key={year} value={year}>
+                          {year}년
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-medium text-slate-500">월</span>
+                    <select
+                      value={pageData.selectedMonth}
+                      onChange={(event) => handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })}
+                      className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+                    >
+                      {Array.from({ length: 12 }, (_, index) => {
+                        const value = `${pageData.selectedYear}-${String(index + 1).padStart(2, '0')}`
+                        return (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        )
+                      })}
+                    </select>
+                  </label>
+
+                  {canChangeTargetScope ? (
+                    <>
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-medium text-slate-500">대상 범위</span>
+                        <select
+                          value={pageData.selectedScope}
+                          onChange={(event) => handleRouteSelection({ scope: event.target.value, tab: 'entry', recordId: '' })}
+                          className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900"
+                        >
+                          <option value="self">내 실적</option>
+                          <option value="team">우리 팀</option>
+                          <option value="employee">특정 구성원</option>
+                        </select>
+                      </label>
+
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-medium text-slate-500">대상자</span>
+                        <select
+                          value={pageData.selectedEmployeeId}
+                          onChange={(event) =>
+                            handleRouteSelection({
+                              scope: 'employee',
+                              employeeId: event.target.value,
+                              tab: 'entry',
+                              recordId: '',
+                            })
+                          }
+                          disabled={pageData.selectedScope === 'self'}
+                          className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:bg-slate-50"
+                        >
+                          {pageData.employeeOptions.map((employee) => (
+                            <option key={employee.id} value={employee.id}>
+                              {employee.name} / {employee.departmentName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  ) : (
+                    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 sm:col-span-2">
+                      내 실적 · {targetContextLabel}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {submitValidationSummary ? (
+                <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">
+                  <span className="font-semibold">제출 차단:</span> {submitValidationSummary}
+                </p>
+              ) : null}
+              {submitRecommendationReasons.length ? (
+                <p className="mt-2 text-[11px] leading-5 text-slate-500">
+                  {submitRecommendationReasons.join(' ')}
+                </p>
+              ) : null}
+
+              <details className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                <summary className="cursor-pointer font-semibold text-slate-700">
+                  2026 중간 점검 schedule guidance
+                </summary>
+                <p className="mt-2 leading-5">{midCheckScheduleGuidance.message}</p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {midCheckScheduleGuidance.window.plannedRangeLabel} · 저장/제출을 강제하지 않는 안내입니다.
+                </p>
+              </details>
+            </div>
+
+            <div className="mt-4">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-950">이번 달 먼저 할 일</h3>
+                  <p className="text-xs text-slate-500">긴 보고서보다 필요한 KPI부터 짧게 정리합니다.</p>
+                </div>
+                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 shadow-sm">
+                  핵심 행동 4개
+                </span>
+              </div>
+              <div className="grid gap-2 md:grid-cols-4">
+                <NextActionCard
+                  icon={<ClipboardList className="h-4 w-4" />}
+                  label="미입력 KPI 채우기"
+                  description="한 줄 진행 요약부터 남깁니다."
+                  done={inputNeededCount === 0}
+                  tone={inputNeededCount > 0 ? 'danger' : 'neutral'}
+                  onClick={() => setFilters((current) => ({ ...current, status: 'NOT_STARTED' }))}
+                />
+                <NextActionCard
+                  icon={<AlertTriangle className="h-4 w-4" />}
+                  label="위험 KPI 보완"
+                  description="리스크 원인과 대응만 정리합니다."
+                  done={riskCount === 0}
+                  tone={riskCount > 0 ? 'danger' : 'neutral'}
+                  onClick={() => setFilters((current) => ({ ...current, risk: 'RISK' }))}
+                />
+                <NextActionCard
+                  icon={<Paperclip className="h-4 w-4" />}
+                  label="증빙 추가"
+                  description="링크나 짧은 메모부터 연결합니다."
+                  done={summary.attachmentCount > 0}
+                  onClick={onShowEvidence}
+                />
+                <NextActionCard
+                  icon={<MessageSquare className="h-4 w-4" />}
+                  label="상사 리뷰 확인"
+                  description="리뷰 대기와 보완 요청을 확인합니다."
+                  done={reviewPendingCount === 0}
+                  tone={reviewPendingCount > 0 ? 'warning' : 'neutral'}
+                  onClick={onShowHistory}
+                />
+              </div>
+            </div>
+
+            <PmsMetricRail
+              className="mt-4"
+              items={[
+                {
+                  icon: <ClipboardList className="h-5 w-5" />,
+                  label: '전체 KPI',
+                  value: formatCountWithUnit(totalCount, '개'),
+                  helper: '이번 달 기록 대상 KPI',
+                  chip: '전체',
+                },
+                {
+                  icon: <CheckCircle2 className="h-5 w-5" />,
+                  label: '입력 완료',
+                  value: formatCountWithUnit(completedCount, '개'),
+                  helper: `${summary.submissionRate}% 제출 기준`,
+                  chip: '진행',
+                  tone: completedCount > 0 ? 'good' : 'neutral',
+                },
+                {
+                  icon: <ListChecks className="h-5 w-5" />,
+                  label: '입력 필요',
+                  value: formatCountWithUnit(inputNeededCount, '개'),
+                  helper: '한 줄 요약부터 작성',
+                  chip: inputNeededCount ? '확인 필요' : '완료',
+                  tone: inputNeededCount ? 'warning' : 'good',
+                },
+                {
+                  icon: <AlertTriangle className="h-5 w-5" />,
+                  label: '위험 KPI',
+                  value: formatCountWithUnit(riskCount, '개'),
+                  helper: '원인과 대응만 짧게 보완',
+                  chip: riskCount ? '리스크' : '안정',
+                  tone: riskCount ? 'danger' : 'good',
+                },
+              ]}
+            />
+          </div>
+
+          {showDetailedFilters ? (
+          <div className="border-b border-slate-100 bg-white px-5 py-4 lg:px-6">
+            <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.2fr)_repeat(4,minmax(120px,0.7fr))_auto] lg:items-end">
+              <label className="space-y-2">
+                <span className="text-xs font-semibold text-slate-500">검색</span>
+                <input
+                  value={filters.search}
+                  onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+                  placeholder="KPI명, 연결 조직 KPI, 유형 검색"
+                  className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400"
+                />
+              </label>
+              <FilterSelect
+                label="상태"
+                value={filters.status}
+                onChange={(value) => setFilters((current) => ({ ...current, status: value }))}
+                options={[
+                  ['ALL', '전체'],
+                  ['NOT_STARTED', '미시작'],
+                  ['DRAFT', '임시저장'],
+                  ['SUBMITTED', '제출됨'],
+                  ['REVIEWED', '리뷰 완료'],
+                  ['LOCKED', '잠금'],
+                ]}
+              />
+              <FilterSelect
+                label="위험"
+                value={filters.risk}
+                onChange={(value) => setFilters((current) => ({ ...current, risk: value }))}
+                options={[
+                  ['ALL', '전체'],
+                  ['RISK', '위험만'],
+                  ['SAFE', '안정만'],
+                ]}
+              />
+              <FilterSelect
+                label="유형"
+                value={filters.type}
+                onChange={(value) => setFilters((current) => ({ ...current, type: value }))}
+                options={[
+                  ['ALL', '전체'],
+                  ['QUANTITATIVE', '정량'],
+                  ['QUALITATIVE', '정성'],
+                ]}
+              />
+              <FilterSelect
+                label="리뷰"
+                value={filters.review}
+                onChange={(value) => setFilters((current) => ({ ...current, review: value }))}
+                options={[
+                  ['ALL', '전체'],
+                  ['PENDING', '리뷰 대기'],
+                  ['REVIEWED', '리뷰 있음'],
+                ]}
+              />
+              <Button onClick={() => setFilters({ ...DEFAULT_FILTERS })}>초기화</Button>
+            </div>
+          </div>
+          ) : null}
+
+          <div className="px-5 py-4 lg:px-6">
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-bold text-slate-950">월간 KPI 입력 카드</p>
+                <p className="text-xs text-slate-500">
+                  선택된 KPI는 오른쪽 상세 패널에 바로 표시됩니다.
+                  {!detailedFiltersDefaultVisible ? ' 상세 필터는 필요할 때만 펼쳐 사용하세요.' : ''}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {hasDetailedFilters ? (
+                  <button
+                    type="button"
+                    onClick={() => setFilters({ ...DEFAULT_FILTERS })}
+                    className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                  >
+                    필터 초기화
+                  </button>
+                ) : null}
+                {!detailedFiltersDefaultVisible ? (
+                  <button
+                    type="button"
+                    onClick={() => setDetailedFiltersOpen((value) => !value)}
+                    className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                  >
+                    {detailedFiltersOpen ? '상세 필터 닫기' : '상세 필터'}
+                  </button>
+                ) : null}
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  표시 {formatCountWithUnit(visibleRecords.length, '개')}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              {visibleRecords.length ? (
+                visibleRecords.map((record) => {
+                  const isSelected = record.id === selected?.id
+                  const progress = Math.min(100, Math.max(0, record.achievementRate ?? 0))
+                  return (
+                    <button
+                      key={record.id}
+                      type="button"
+                      onClick={() => setSelectedId(record.id)}
+                      className={`w-full rounded-2xl border p-4 text-left transition ${
+                        isSelected
+                          ? 'border-blue-300 bg-blue-50/80 shadow-sm ring-2 ring-blue-100'
+                          : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px_120px] lg:items-center">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_CLASS[record.status]}`}>
+                              {STATUS_LABELS[record.status]}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                              {record.type === 'QUANTITATIVE' ? '정량' : '정성'}
+                            </span>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                record.riskFlags.length ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                              }`}
+                            >
+                              {record.riskFlags.length ? '위험 KPI' : '안정'}
+                            </span>
+                          </div>
+                          <div className="mt-2 truncate text-sm font-bold text-slate-950">{record.kpiTitle}</div>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                            <span>목표 {`${record.targetValue ?? '-'} ${record.unit ?? ''}`.trim()}</span>
+                            {record.orgKpiTitle ? (
+                              <span className="inline-flex items-center gap-1 text-blue-700">
+                                <Link2 className="h-3.5 w-3.5" />
+                                {record.orgKpiTitle}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                            <span>달성률</span>
+                            <span className="text-slate-700">{formatPercent(record.achievementRate)}</span>
+                          </div>
+                          <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full rounded-full ${
+                                record.riskFlags.length ? 'bg-rose-400' : progress >= 80 ? 'bg-emerald-400' : 'bg-blue-400'
+                              }`}
+                              style={{ width: `${Math.max(3, progress)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 lg:justify-end">
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                            증빙 {formatCountWithUnit(record.attachments.length, '건')}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              record.reviewComment ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {record.reviewComment ? '리뷰 있음' : '리뷰 대기'}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })
+              ) : (
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-12 text-center">
+                  <MonthlyEmptyIllustration />
+                  <p className="mt-3 text-sm font-semibold text-slate-900">{monthContext.fullLabel} 기준 조건에 맞는 월간 실적이 없습니다.</p>
+                  <p className="mt-1 text-xs text-slate-500">필터를 초기화하거나 다른 월을 선택해 주세요.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:grid-cols-4">
+              {[
+                ['입력 완료', `${completedCount}개`, 'bg-emerald-100 text-emerald-700'],
+                ['입력 필요', `${inputNeededCount}개`, 'bg-amber-100 text-amber-800'],
+                ['위험 KPI', `${riskCount}개`, 'bg-rose-100 text-rose-700'],
+                ['리뷰 대기', `${reviewPendingCount}개`, 'bg-slate-200 text-slate-700'],
+              ].map(([label, value, className]) => (
+                <div key={label} className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-xs shadow-sm">
+                  <span className="font-semibold text-slate-500">{label}</span>
+                  <span className={`rounded-full px-2 py-0.5 font-bold ${className}`}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
-        <div className="mb-5">
-          <h2 className="text-lg font-semibold text-slate-900">
-            {selected ? `${selected.kpiTitle} · ${monthContext.fullLabel} 입력 상세` : `${monthContext.fullLabel} 입력 상세`}
+      <aside className="overflow-hidden rounded-[32px] border border-blue-100 bg-white shadow-lg shadow-blue-100/40 xl:sticky xl:top-3">
+        <div className="border-b border-blue-100 bg-gradient-to-br from-blue-50 via-white to-slate-50 px-5 py-5 lg:px-6">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm">
+            <MessageSquare className="h-4 w-4" />
+            선택 KPI 월간 입력 상세
+          </div>
+          <h2 className="mt-3 text-xl font-bold text-slate-950">
+            {selected ? selected.kpiTitle : `${monthContext.fullLabel} 입력 상세`}
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {monthContext.fullLabel} 기준 정량 KPI는 숫자 입력과 자동 계산, 정성 KPI는 메모 중심으로 기록합니다.
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            핵심 입력은 한 줄 진행 요약입니다. 장애요인, 극복 노력, 증빙은 필요한 경우에만 보완하세요.
           </p>
         </div>
 
         {selected && selectedDraft ? (
-          <div className="space-y-5">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-              <div className="font-semibold text-slate-900">KPI 개요</div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <MetaLine label="목표값" value={`${selected.targetValue ?? '-'} ${selected.unit ?? ''}`.trim()} />
-                <MetaLine label="상태" value={STATUS_LABELS[selected.status]} />
-                {selected.previousRecord ? (
-                  <MetaLine
-                    label="지난달 값"
-                    value={`${selected.previousRecord.yearMonth} / ${formatPercent(selected.previousRecord.achievementRate)}`}
-                  />
+          <div className="space-y-4 p-5 lg:p-5">
+            <div className="grid gap-4 md:grid-cols-[132px_minmax(0,1fr)] md:items-center xl:grid-cols-1 2xl:grid-cols-[132px_minmax(0,1fr)]">
+              <MonthlyProgressRing value={selected.achievementRate} label="달성률" tone={selectedTone} />
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_CLASS[selected.status]}`}>
+                    {STATUS_LABELS[selected.status]}
+                  </span>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      selected.riskFlags.length ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {selected.riskFlags.length ? '위험 확인' : '안정'}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    {selected.type === 'QUANTITATIVE' ? '정량 KPI' : '정성 KPI'}
+                  </span>
+                </div>
+                <div className="text-sm leading-6 text-slate-600">
+                  {selected.employeeName} / {selected.departmentName} / {monthContext.fullLabel}
+                </div>
+                {selected.orgKpiTitle ? (
+                  <div className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                    <Link2 className="h-3.5 w-3.5" />
+                    {selected.orgKpiTitle}
+                  </div>
                 ) : null}
-                <MetaLine label="최근 리뷰" value={selected.reviewComment ? '있음' : '없음'} />
               </div>
             </div>
 
-            {selected.type === 'QUANTITATIVE' ? (
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 실적값</span>
-                <input
-                  value={selectedDraft.actualValue}
-                  onChange={(event) => updateDraft({ actualValue: event.target.value })}
-                  disabled={!canEdit}
-                  inputMode="decimal"
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
-                />
-              </label>
-            ) : null}
-
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">
-                {selected.type === 'QUANTITATIVE' ? `${monthContext.shortLabel} 활동 내용` : `${monthContext.shortLabel} 진행 수준 메모`}
-              </span>
-              <textarea
-                value={selectedDraft.activityNote}
-                onChange={(event) => updateDraft({ activityNote: event.target.value })}
-                disabled={!canEdit}
-                rows={4}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
-              />
-            </label>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 장애요인</span>
-                <textarea
-                  value={selectedDraft.blockerNote}
-                  onChange={(event) => updateDraft({ blockerNote: event.target.value })}
-                  disabled={!canEdit}
-                  rows={4}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 극복 노력</span>
-                <textarea
-                  value={selectedDraft.effortNote}
-                  onChange={(event) => updateDraft({ effortNote: event.target.value })}
-                  disabled={!canEdit}
-                  rows={4}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
-                />
-              </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DetailMetricBox label="목표값" value={`${selected.targetValue ?? '-'} ${selected.unit ?? ''}`.trim()} helper="월간 기록 기준" />
+              <DetailMetricBox label="실적값" value={`${selectedActualValue} ${selected.unit ?? ''}`.trim()} helper="저장 전 초안 포함" />
+              <DetailMetricBox label="가중치" value="KPI 기준" helper="개인 KPI 설정에서 관리" />
+              <DetailMetricBox label="증빙" value={formatCountWithUnit(selectedDraft.attachments.length, '건')} helper="파일/링크 포함" />
             </div>
 
-            <div className="rounded-2xl border border-slate-200 p-4">
+            <div className="rounded-3xl border border-blue-100 bg-blue-50/70 p-4">
+              <div className="flex items-start gap-3">
+                <span className="rounded-2xl bg-white p-2 text-blue-700 shadow-sm">
+                  <ClipboardList className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-blue-950">핵심 입력</p>
+                  <p className="mt-1 text-xs leading-5 text-blue-900/70">
+                    먼저 이번 달 진행 상황을 한 줄로 남겨보세요. 숫자와 핵심 요약만 있어도 초안으로 충분합니다.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 space-y-4">
+                {selected.type === 'QUANTITATIVE' ? (
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 실적값</span>
+                    <input
+                      value={selectedDraft.actualValue}
+                      onChange={(event) => updateDraft({ actualValue: event.target.value })}
+                      disabled={!canEdit}
+                      inputMode="decimal"
+                      className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
+                    />
+                  </label>
+                ) : null}
+
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-700">
+                    {selected.type === 'QUANTITATIVE' ? `${monthContext.shortLabel} 한 줄 진행 요약` : `${monthContext.shortLabel} 진행 수준 메모`}
+                  </span>
+                  <textarea
+                    value={selectedDraft.activityNote}
+                    onChange={(event) => updateDraft({ activityNote: event.target.value })}
+                    disabled={!canEdit}
+                    rows={3}
+                    placeholder="예: 주요 고객사 자동화 시나리오 1차 검증을 마쳤고, 다음 달 적용 범위를 확정할 예정입니다."
+                    className="w-full rounded-2xl border border-blue-200 bg-white px-3 py-3 text-sm text-slate-900 placeholder:text-slate-400 disabled:bg-slate-50"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex items-start gap-3">
+                <span className="rounded-2xl bg-white p-2 text-slate-600 shadow-sm">
+                  <MessageSquare className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-slate-950">선택 보완</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    장애요인과 지원 요청은 필요한 경우에만 보완하세요. 증빙은 링크나 짧은 메모부터 추가해도 됩니다.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 장애요인</span>
+                  <textarea
+                    value={selectedDraft.blockerNote}
+                    onChange={(event) => updateDraft({ blockerNote: event.target.value })}
+                    disabled={!canEdit}
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 극복 노력</span>
+                  <textarea
+                    value={selectedDraft.effortNote}
+                    onChange={(event) => updateDraft({ effortNote: event.target.value })}
+                    disabled={!canEdit}
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">증빙 첨부</p>
+                  <p className="text-sm font-bold text-slate-950">증빙 첨부</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {monthContext.shortLabel} 증빙 변경 사항은 임시저장 또는 제출 시 반영됩니다.
+                    증빙은 링크나 짧은 설명부터 추가해도 됩니다. 증빙 변경 사항은 임시저장 또는 제출 시 반영됩니다.
                   </p>
                 </div>
                 <Button
@@ -1899,7 +2520,7 @@ function EntryTab({
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-100"
                 />
               </label>
-              <div className="mt-4 grid gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[1.3fr_1fr_auto]">
+              <div className="mt-4 grid gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 md:grid-cols-[1.3fr_1fr_auto] xl:grid-cols-1 2xl:grid-cols-[1.3fr_1fr_auto]">
                 <label className="space-y-2">
                   <span className="text-xs font-semibold text-slate-600">구글 드라이브 링크</span>
                   <input
@@ -2002,12 +2623,57 @@ function EntryTab({
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-                    <p className="text-sm font-semibold text-slate-900">{monthContext.fullLabel}에 등록된 증빙 항목이 없습니다.</p>
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center">
+                    <Paperclip className="mx-auto h-6 w-6 text-slate-300" />
+                    <p className="mt-3 text-sm font-semibold text-slate-900">아직 등록된 증빙이 없습니다.</p>
+                    <p className="mt-1 text-xs text-slate-500">파일이나 링크를 나중에 추가해도 됩니다.</p>
                   </div>
                 )}
               </div>
             </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <RelatedInfoCard
+                icon={<MessageSquare className="h-4 w-4" />}
+                label="최근 리뷰"
+                value={selected.reviewComment ? '있음' : '없음'}
+                helper={selected.reviewComment ? '아래 리뷰 코멘트를 확인하세요.' : '제출 후 리뷰가 쌓입니다.'}
+              />
+              <RelatedInfoCard
+                icon={<Paperclip className="h-4 w-4" />}
+                label="증빙 항목"
+                value={formatCountWithUnit(selectedDraft.attachments.length, '건')}
+                helper="파일/링크 근거를 한 곳에 모읍니다."
+              />
+              <RelatedInfoCard
+                icon={<Sparkles className="h-4 w-4" />}
+                label="AI 보조"
+                value="초안 보조"
+                helper="공식 점수/등급 산정이 아닙니다."
+              />
+              <RelatedInfoCard
+                icon={<ListChecks className="h-4 w-4" />}
+                label="체크인"
+                value={formatCountWithUnit(selected.linkedCheckins.length, '건')}
+                helper="중간 점검 근거와 연결됩니다."
+              />
+            </div>
+
+            {selected.personalKpiId ? (
+              <details className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-sm">
+                <summary className="cursor-pointer font-semibold text-slate-800">
+                  중간 점검 참고 접어보기
+                </summary>
+                <div className="mt-3">
+                  <MidReviewReferencePanel
+                    kind="personal-kpi"
+                    targetId={selected.personalKpiId}
+                    title="중간 점검"
+                    helper="이 KPI와 연결된 최근 중간 점검 판단, 기대 상태, 다음 기간 계획을 함께 확인합니다."
+                  />
+                </div>
+              </details>
+            ) : null}
 
             {selected.reviewComment ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -2045,53 +2711,87 @@ function EntryTab({
               </div>
             ) : null}
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Button
-                icon={<Save className="h-4 w-4" />}
-                onClick={onSaveDraft}
-                disabled={!canEdit || busy !== null}
-                title={editDisabledReason}
-              >
-                임시저장
-              </Button>
-              <Button
-                icon={<CheckCircle2 className="h-4 w-4" />}
-                variant="primary"
-                onClick={onSubmit}
-                disabled={busy !== null || Boolean(submitDisabledReason)}
-                title={submitDisabledReason}
-              >
-                제출
-              </Button>
-              {showGenerateSummaryAction ? (
+            <div className="sticky bottom-4 z-10 rounded-3xl border border-slate-200 bg-white/95 p-3 shadow-xl shadow-slate-200/70 backdrop-blur">
+              <div className="grid gap-2 sm:grid-cols-2">
                 <Button
-                  icon={<Sparkles className="h-4 w-4" />}
-                  onClick={onRunAi}
-                  disabled={busy !== null || generateSummaryActionState.disabled}
-                  title={generateSummaryActionState.reason}
+                  icon={<Save className="h-4 w-4" />}
+                  onClick={onSaveDraft}
+                  disabled={!canEdit || busy !== null}
+                  title={editDisabledReason}
                 >
-                  AI 미리보기
+                  임시저장
                 </Button>
-              ) : null}
-              <Link
-                href="/checkin"
-                className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                체크인으로 이동
-              </Link>
-            </div>
-            {submitDisabledReason ? (
-              <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-                {submitDisabledReason}
+                <Button
+                  icon={<CheckCircle2 className="h-4 w-4" />}
+                  variant="primary"
+                  onClick={onSubmit}
+                  disabled={busy !== null || Boolean(submitDisabledReason)}
+                  title={submitDisabledReason}
+                >
+                  제출
+                </Button>
+                <Button
+                  icon={<History className="h-4 w-4" />}
+                  onClick={onCopyPreviousMonth}
+                  disabled={busy !== null || Boolean(copyPreviousReason)}
+                  title={copyPreviousReason}
+                >
+                  이전월 값
+                </Button>
+                <Button
+                  icon={<FilePlus2 className="h-4 w-4" />}
+                  onClick={onUploadClick}
+                  disabled={!canEdit}
+                  title={uploadDisabledReason}
+                >
+                  증빙 첨부
+                </Button>
+                <Button icon={<History className="h-4 w-4" />} onClick={onShowHistory}>
+                  이력 보기
+                </Button>
+                {showGenerateSummaryAction ? (
+                  <Button
+                    icon={<Sparkles className="h-4 w-4" />}
+                    onClick={onRunAi}
+                    disabled={busy !== null || generateSummaryActionState.disabled}
+                    title={generateSummaryActionState.reason}
+                  >
+                    AI 미리보기
+                  </Button>
+                ) : (
+                  <Link
+                    href="/checkin"
+                    className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    체크인으로 이동
+                  </Link>
+                )}
               </div>
-            ) : null}
+              {showGenerateSummaryAction ? (
+                <Link
+                  href="/checkin"
+                  className="mt-2 inline-flex min-h-10 w-full items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  체크인으로 이동
+                </Link>
+              ) : null}
+              {submitDisabledReason ? (
+                <p className="mt-2 text-xs leading-5 text-rose-700">
+                  <span className="font-semibold">제출 차단:</span> {submitDisabledReason}
+                </p>
+              ) : null}
+            </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-slate-900">{monthContext.fullLabel}에 입력할 KPI를 선택해 주세요.</p>
+          <div className="p-5 lg:p-6">
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-12 text-center">
+              <MonthlyEmptyIllustration />
+              <p className="mt-3 text-sm font-semibold text-slate-900">{monthContext.fullLabel}에 입력할 KPI를 선택해 주세요.</p>
+              <p className="mt-1 text-xs text-slate-500">왼쪽 KPI 카드에서 항목을 선택하면 상세 입력 패널이 열립니다.</p>
+            </div>
           </div>
         )}
-      </section>
+      </aside>
     </div>
   )
 }
@@ -2317,31 +3017,55 @@ function AiTab({
   onReject: () => void
 }) {
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
+    <div className="grid gap-6 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+      <section className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
         <div className="mb-5">
-          <h2 className="text-lg font-semibold text-slate-900">월간 실적 AI 보조</h2>
-          <p className="mt-1 text-sm text-slate-500">초안 생성과 요약은 AI가 돕고, 적용 여부는 사람이 직접 결정합니다.</p>
+          <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-800">
+            <Sparkles className="h-4 w-4" />
+            월간 실적 AI 보조
+          </div>
+          <h2 className="mt-3 text-lg font-semibold text-slate-900">필요한 초안만 선택하세요</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            구성원에게는 요약과 체크인 준비 중심으로, 직책자에게는 관리 범위 리뷰 보조만 노출됩니다.
+            AI 결과는 저장 전 초안이며 공식 평가 점수나 등급을 산정하지 않습니다.
+          </p>
         </div>
-        <div className="space-y-3">
-          {visibleActions.map((action) => (
-            <button
-              key={action}
-              type="button"
-              onClick={() => onRunAi(action)}
-              disabled={busy !== null || actionStates[action]?.disabled}
-              title={actionStates[action]?.reason}
-              className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-left transition hover:bg-slate-50 disabled:opacity-60"
-            >
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <Bot className="h-4 w-4 text-slate-500" />
-                {AI_LABELS[action]}
-              </div>
-              {actionStates[action]?.reason ? (
-                <p className="mt-2 text-xs text-slate-500">{actionStates[action]?.reason}</p>
-              ) : null}
-            </button>
-          ))}
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          {visibleActions.map((action) => {
+            const leaderOnly = LEADER_ONLY_MONTHLY_AI_ACTION_IDS.has(action)
+            return (
+              <button
+                key={action}
+                type="button"
+                onClick={() => onRunAi(action)}
+                disabled={busy !== null || actionStates[action]?.disabled}
+                title={actionStates[action]?.reason}
+                className="w-full rounded-3xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md disabled:translate-y-0 disabled:opacity-60 disabled:shadow-sm"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="rounded-xl bg-blue-50 p-2 text-blue-700">
+                    <Bot className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-900">{AI_LABELS[action]}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          leaderOnly ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'
+                        }`}
+                      >
+                        {leaderOnly ? '직책자용' : '구성원용'}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">{AI_DESCRIPTIONS[action]}</span>
+                    {actionStates[action]?.reason ? (
+                      <span className="mt-2 block text-xs text-slate-500">{actionStates[action]?.reason}</span>
+                    ) : null}
+                  </span>
+                </div>
+              </button>
+            )
+          })}
         </div>
 
         <div className="mt-6 space-y-3">
@@ -2356,17 +3080,23 @@ function AiTab({
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-              <p className="text-sm font-semibold text-slate-900">AI 사용 이력이 없습니다.</p>
-            </div>
-          )}
-        </div>
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center">
+            <Sparkles className="mx-auto h-6 w-6 text-slate-300" />
+            <p className="mt-3 text-sm font-semibold text-slate-900">AI 사용 이력이 없습니다.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">필요할 때만 초안을 생성하고, 저장 여부는 사용자가 직접 결정합니다.</p>
+          </div>
+        )}
+      </div>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:p-6">
+      <section className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-sm lg:p-6 xl:sticky xl:top-4">
         <div className="mb-5">
-          <h2 className="text-lg font-semibold text-slate-900">AI 미리보기</h2>
-          <p className="mt-1 text-sm text-slate-500">결과를 확인한 뒤 적용하거나 반려할 수 있습니다.</p>
+          <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+            <Sparkles className="h-4 w-4" />
+            저장 전 초안
+          </div>
+          <h2 className="mt-3 text-lg font-semibold text-slate-900">AI 미리보기</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">결과를 확인한 뒤 화면 초안에 반영하거나 반려할 수 있습니다.</p>
         </div>
         {aiPreview ? (
           <div className="space-y-4">
@@ -2392,7 +3122,7 @@ function AiTab({
                 emptyDescription="AI 보조 기능을 실행하면 이 영역에 미리보기가 표시됩니다."
                 onApprove={onApprove}
                 onReject={onReject}
-                approveLabel="미리보기 적용"
+                approveLabel="화면 초안에 반영"
                 rejectLabel="반려"
                 decisionBusy={busy === 'ai-decision'}
               />
@@ -2402,13 +3132,17 @@ function AiTab({
                 반려
               </Button>
               <Button variant="primary" onClick={onApprove} disabled={busy === 'ai-decision'}>
-                preview 적용
+                화면 초안에 반영
               </Button>
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center">
-            <p className="text-sm font-semibold text-slate-900">AI 미리보기가 아직 없습니다.</p>
+          <div className="rounded-3xl border border-dashed border-blue-200 bg-gradient-to-br from-blue-50 via-white to-emerald-50 px-4 py-10 text-center">
+            <MonthlyEmptyIllustration />
+            <p className="mt-4 text-sm font-semibold text-slate-900">아직 생성된 AI 미리보기가 없습니다.</p>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+              왼쪽에서 필요한 보조 기능을 선택하면 초안을 확인할 수 있습니다. 실제 저장과 제출은 사용자가 직접 진행합니다.
+            </p>
           </div>
         )}
       </section>
@@ -2445,111 +3179,3 @@ function FilterSelect({
   )
 }
 
-function CompactActionChip({
-  label,
-  value,
-  tone,
-}: {
-  label: string
-  value: string
-  tone: 'neutral' | 'warning' | 'danger'
-}) {
-  const toneClass =
-    tone === 'danger'
-      ? 'border-rose-200 bg-rose-100 text-rose-800'
-      : tone === 'warning'
-        ? 'border-amber-200 bg-amber-100 text-amber-800'
-        : 'border-slate-200 bg-white text-slate-700'
-
-  return (
-    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${toneClass}`}>
-      <span>{label}</span>
-      <span>{value}</span>
-    </div>
-  )
-}
-
-function ActionRow({
-  label,
-  done,
-  onClick,
-}: {
-  label: string
-  done: boolean
-  onClick: () => void
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-white/80 px-3 py-3">
-      <div className="font-medium text-blue-900">{label}</div>
-      <button
-        type="button"
-        onClick={onClick}
-        className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700"
-      >
-        {done ? '완료' : '이동'}
-      </button>
-    </div>
-  )
-}
-
-function MetaLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-slate-500">{label}</span>
-      <span className="font-medium text-slate-900">{value || '-'}</span>
-    </div>
-  )
-}
-
-function AiPreviewBlock({
-  action,
-  result,
-}: {
-  action: AiAction
-  result: Record<string, unknown>
-}) {
-  const record = toRecord(result) ?? {}
-  const lines: string[] = []
-
-  switch (action) {
-    case 'generate-summary':
-      lines.push(`요약: ${getString(record.summary, '-')}`)
-      getStringArray(record.highlights).forEach((item) => lines.push(`강점: ${item}`))
-      getStringArray(record.risks).forEach((item) => lines.push(`리스크: ${item}`))
-      getStringArray(record.nextActions).forEach((item) => lines.push(`다음 액션: ${item}`))
-      break
-    case 'explain-risk':
-      lines.push(`위험 수준: ${getString(record.riskLevel, '-')}`)
-      lines.push(`원인 요약: ${getString(record.causeSummary, '-')}`)
-      getStringArray(record.responsePoints).forEach((item) => lines.push(`대응 포인트: ${item}`))
-      break
-    case 'generate-review':
-      lines.push(`리뷰 초안: ${getString(record.comment, '-')}`)
-      getStringArray(record.strengths).forEach((item) => lines.push(`강점: ${item}`))
-      getStringArray(record.requests).forEach((item) => lines.push(`요청 사항: ${item}`))
-      break
-    case 'summarize-evidence':
-      lines.push(`증빙 요약: ${getString(record.summary, '-')}`)
-      getStringArray(record.evidenceHighlights).forEach((item) => lines.push(`근거: ${item}`))
-      getStringArray(record.missingEvidence).forEach((item) => lines.push(`보완 필요: ${item}`))
-      break
-    case 'generate-retrospective':
-      getStringArray(record.strengths).forEach((item) => lines.push(`강점: ${item}`))
-      getStringArray(record.risks).forEach((item) => lines.push(`리스크: ${item}`))
-      getStringArray(record.nextMonthPriorities).forEach((item) => lines.push(`다음달 우선순위: ${item}`))
-      lines.push(`요약: ${getString(record.summary, '-')}`)
-      break
-    case 'suggest-checkin-agenda':
-      getStringArray(record.agenda).forEach((item) => lines.push(`아젠다: ${item}`))
-      getStringArray(record.leaderPrep).forEach((item) => lines.push(`리더 준비 포인트: ${item}`))
-      getStringArray(record.memberPrep).forEach((item) => lines.push(`구성원 준비 포인트: ${item}`))
-      break
-    case 'summarize-evaluation-evidence':
-      lines.push(`평가 근거 요약: ${getString(record.summary, '-')}`)
-      getStringArray(record.evaluationPoints).forEach((item) => lines.push(`평가 포인트: ${item}`))
-      getStringArray(record.watchouts).forEach((item) => lines.push(`주의 포인트: ${item}`))
-      break
-  }
-
-  return <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-slate-700">{lines.join('\n')}</pre>
-}
