@@ -15,6 +15,35 @@ export type PersonalKpiAiAccess = {
   message?: string
 }
 
+export type PersonalKpiAiAccessReasonCode =
+  | 'available'
+  | 'permission-denied'
+  | 'feature-disabled'
+  | 'configuration-missing'
+  | 'provider-unavailable'
+  | 'not-self-scope'
+  | 'setup-required'
+  | 'page-error'
+
+export type PersonalKpiAiAccessView = {
+  enabled: boolean
+  canUse: boolean
+  reasonCode: PersonalKpiAiAccessReasonCode
+  message: string
+}
+
+export const PERSONAL_KPI_AI_AVAILABLE_MESSAGE =
+  'AI는 개인 KPI 작성과 표현 정리를 돕는 보조 기능입니다. 결과는 저장 전 초안이며 사용자가 직접 확인해야 합니다.'
+
+export const PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE =
+  '현재 계정에는 개인 KPI AI 작성 보조 권한이 없습니다.'
+
+export const PERSONAL_KPI_AI_FEATURE_DISABLED_MESSAGE =
+  '서버 AI 작성 보조 기능이 꺼져 있어 초안 생성을 사용할 수 없습니다.'
+
+export const PERSONAL_KPI_AI_CONFIGURATION_MISSING_MESSAGE =
+  'AI provider 설정이 완료되지 않아 초안 생성을 사용할 수 없습니다. 관리자에게 설정 확인을 요청하세요.'
+
 export const PERSONAL_KPI_MANAGE_ROLES: SystemRole[] = [
   'ROLE_ADMIN',
   'ROLE_CEO',
@@ -119,7 +148,7 @@ export function resolvePersonalKpiAiAccess(params: {
     return {
       allowed: false,
       reason: 'role',
-      message: '현재 계정은 개인 KPI AI 보조를 사용할 권한이 없습니다.',
+      message: PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE,
     }
   }
 
@@ -128,7 +157,7 @@ export function resolvePersonalKpiAiAccess(params: {
     return {
       allowed: false,
       reason: 'feature-disabled',
-      message: 'AI 기능이 비활성화되어 있어 개인 KPI AI 보조를 사용할 수 없습니다.',
+      message: PERSONAL_KPI_AI_FEATURE_DISABLED_MESSAGE,
     }
   }
 
@@ -136,13 +165,49 @@ export function resolvePersonalKpiAiAccess(params: {
     return {
       allowed: false,
       reason: 'configuration-missing',
-      message: 'OPENAI_API_KEY가 설정되지 않아 개인 KPI AI 보조를 현재 사용할 수 없습니다.',
+      message: PERSONAL_KPI_AI_CONFIGURATION_MISSING_MESSAGE,
     }
   }
 
   return {
     allowed: true,
     reason: null,
+  }
+}
+
+export function toPersonalKpiAiAccessView(access: PersonalKpiAiAccess): PersonalKpiAiAccessView {
+  if (access.allowed) {
+    return {
+      enabled: true,
+      canUse: true,
+      reasonCode: 'available',
+      message: access.message ?? PERSONAL_KPI_AI_AVAILABLE_MESSAGE,
+    }
+  }
+
+  if (access.reason === 'feature-disabled') {
+    return {
+      enabled: false,
+      canUse: false,
+      reasonCode: 'feature-disabled',
+      message: access.message ?? PERSONAL_KPI_AI_FEATURE_DISABLED_MESSAGE,
+    }
+  }
+
+  if (access.reason === 'configuration-missing') {
+    return {
+      enabled: true,
+      canUse: false,
+      reasonCode: 'configuration-missing',
+      message: access.message ?? PERSONAL_KPI_AI_CONFIGURATION_MISSING_MESSAGE,
+    }
+  }
+
+  return {
+    enabled: true,
+    canUse: false,
+    reasonCode: 'permission-denied',
+    message: access.message ?? PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE,
   }
 }
 

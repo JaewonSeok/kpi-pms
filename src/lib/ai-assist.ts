@@ -2940,6 +2940,7 @@ async function callOpenAIResponsesApi(
     },
     body: JSON.stringify({
       model,
+      store: false,
       input: [
         {
           role: 'system',
