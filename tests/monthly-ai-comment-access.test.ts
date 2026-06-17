@@ -35,7 +35,9 @@ async function main() {
 
     assert.equal(clientSource.includes('const canUseMonthlyCommentDraft = pageData.permissions.canReview'), true)
     assert.equal(clientSource.includes('LEADER_ONLY_MONTHLY_AI_ACTION_IDS'), true)
-    assert.equal(clientSource.includes("['generate-summary', 'generate-review']"), true)
+    assert.equal(clientSource.includes("'generate-summary'"), true)
+    assert.equal(clientSource.includes("'generate-review'"), true)
+    assert.equal(clientSource.includes("'summarize-evaluation-evidence'"), true)
     assert.equal(
       clientSource.includes('!LEADER_ONLY_MONTHLY_AI_ACTION_IDS.has(action) || canUseMonthlyCommentDraft'),
       true
@@ -44,6 +46,7 @@ async function main() {
     assert.equal(clientSource.includes('visibleActions={visibleAiActions}'), true)
     assert.equal(routeSource.includes('LEADER_ONLY_MONTHLY_AI_ACTIONS'), true)
     assert.equal(routeSource.includes("'generate-review'"), true)
+    assert.equal(routeSource.includes("'summarize-evaluation-evidence'"), true)
     assert.equal(routeSource.includes('assertManagedMonthlyAiAccess'), true)
     assert.equal(
       routeSource.includes('canAccessManagedEmployeeContext(params.sessionUserId, params.sessionRole, targetEmployee)'),
