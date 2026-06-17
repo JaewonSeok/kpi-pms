@@ -17,6 +17,7 @@ import {
 const LEADER_ONLY_MONTHLY_AI_ACTIONS = [
   'generate-summary',
   'generate-review',
+  'summarize-evaluation-evidence',
 ] as const
 
 function isLeaderOnlyMonthlyAiAction(action: string) {

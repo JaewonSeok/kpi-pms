@@ -120,7 +120,11 @@ const AI_LABELS: Record<AiAction, string> = {
   'summarize-evaluation-evidence': '평가 근거 초안',
 }
 
-const LEADER_ONLY_MONTHLY_AI_ACTION_IDS = new Set<AiAction>(['generate-summary', 'generate-review'])
+const LEADER_ONLY_MONTHLY_AI_ACTION_IDS = new Set<AiAction>([
+  'generate-summary',
+  'generate-review',
+  'summarize-evaluation-evidence',
+])
 
 const DEFAULT_FILTERS: FilterState = {
   status: 'ALL',
