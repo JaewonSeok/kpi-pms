@@ -5,15 +5,21 @@ import { useRouter } from 'next/navigation'
 import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Archive,
+  CheckCircle2,
+  CircleAlert,
   Copy,
   FilePenLine,
   FileUp,
   GitBranchPlus,
   Link2,
+  ListChecks,
+  Network,
   Plus,
   Send,
   ShieldCheck,
+  Target,
   Trash2,
+  Workflow,
   X,
 } from 'lucide-react'
 import type {
@@ -62,6 +68,17 @@ import { formatCountWithUnit, formatExplicitRatio } from '@/lib/metric-copy'
 import { CreateOrgKpiSchema, UpdateOrgKpiSchema } from '@/lib/validations'
 import { OrgKpiBulkUploadModal } from './OrgKpiBulkUploadModal'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
+import {
+  PmsEmptyIllustration,
+  PmsMetricRail,
+  PmsProgressRing,
+  PmsSignalChip,
+  PmsTrafficLight,
+  PmsWorkspaceSection,
+  type PmsMetricRailItem,
+  type PmsSignal,
+  type PmsTone,
+} from '@/components/pms-ui'
 
 type Props = OrgKpiPageData & {
   initialTab?: string
@@ -171,6 +188,115 @@ function getOrgKpiDirectCreateMessage(scope: OrgKpiScope) {
     case 'team':
     default:
       return '직접 팀 KPI를 작성하는 편집 모드입니다.'
+  }
+}
+
+function getOrgKpiStatusTone(status: OrgKpiViewModel['status']): PmsTone {
+  switch (status) {
+    case 'CONFIRMED':
+    case 'LOCKED':
+      return 'success'
+    case 'SUBMITTED':
+      return 'info'
+    case 'ARCHIVED':
+      return 'neutral'
+    case 'DRAFT':
+    default:
+      return 'warning'
+  }
+}
+
+function getOrgKpiWorkspaceSignal(params: {
+  totalCount: number
+  confirmedCount: number
+  connectionNeedCount: number
+}): { signal: PmsSignal; label: string; description: string } {
+  if (!params.totalCount) {
+    return {
+      signal: 'gray',
+      label: 'KPI 없음',
+      description: '현재 조건에 표시할 조직 KPI가 없습니다.',
+    }
+  }
+
+  if (params.connectionNeedCount > 0) {
+    return {
+      signal: 'amber',
+      label: '정렬 확인 필요',
+      description: `상위/하위 연결을 확인할 KPI ${params.connectionNeedCount}개`,
+    }
+  }
+
+  if (params.confirmedCount === params.totalCount) {
+    return {
+      signal: 'green',
+      label: '확정 완료',
+      description: '현재 목록의 조직 KPI가 모두 확정 상태입니다.',
+    }
+  }
+
+  return {
+    signal: 'amber',
+    label: '확정 전 점검',
+    description: `미확정 KPI ${params.totalCount - params.confirmedCount}개`,
+  }
+}
+
+function getOrgKpiConnectionMetrics(kpi: OrgKpiViewModel | null): {
+  childLinkedCount: number
+  suggestedChildCount: number
+  personalLinkedCount: number
+  completionRate: number | null
+  signal: PmsSignal
+  label: string
+  description: string
+} {
+  if (!kpi) {
+    return {
+      childLinkedCount: 0,
+      suggestedChildCount: 0,
+      personalLinkedCount: 0,
+      completionRate: null,
+      signal: 'gray',
+      label: 'KPI 미선택',
+      description: '목표를 선택하면 연결 상태를 확인할 수 있습니다.',
+    }
+  }
+
+  const childLinkedCount = Math.max(kpi.childOrgKpiCount, kpi.childReferences.length)
+  const suggestedChildCount = kpi.suggestedChildren.length
+  const personalLinkedCount = kpi.linkedPersonalKpiCount
+  const denominator = childLinkedCount + suggestedChildCount
+  const completionRate = denominator > 0 ? (childLinkedCount / denominator) * 100 : null
+  const signal: PmsSignal =
+    suggestedChildCount > 0
+      ? 'amber'
+      : childLinkedCount > 0 || personalLinkedCount > 0 || kpi.parentOrgKpiTitle
+        ? 'green'
+        : isOrgKpiTopLevelDivisionGoal(kpi)
+          ? 'green'
+          : 'gray'
+
+  return {
+    childLinkedCount,
+    suggestedChildCount,
+    personalLinkedCount,
+    completionRate,
+    signal,
+    label:
+      signal === 'green'
+        ? '연결 정상'
+        : signal === 'amber'
+          ? '연결 후보 확인'
+          : '연결 정보 없음',
+    description:
+      suggestedChildCount > 0
+        ? `추천 하위 KPI ${suggestedChildCount}개를 확인하세요.`
+        : childLinkedCount > 0
+          ? `하위 KPI ${childLinkedCount}개가 연결되어 있습니다.`
+          : personalLinkedCount > 0
+            ? `개인 KPI ${personalLinkedCount}건이 연결되어 있습니다.`
+            : '상위/하위 연결 데이터가 아직 없습니다.',
   }
 }
 
@@ -958,6 +1084,74 @@ export function OrgKpiManagementClient({
   const goalEditLocked =
     pageData.alerts?.some((alert) => alert.title.includes('읽기 전용 모드')) ?? false
   const canManageHrException = pageData.actor.role === 'ROLE_ADMIN'
+  const workspaceSummary = useMemo(() => {
+    const totalCount = filteredList.length
+    const confirmedCount = filteredList.filter((item) => item.status === 'CONFIRMED').length
+    const linkedSignalCount = filteredList.filter((item) =>
+      Boolean(item.parentOrgKpiTitle) ||
+      item.childOrgKpiCount > 0 ||
+      item.linkedPersonalKpiCount > 0 ||
+      isOrgKpiTopLevelDivisionGoal(item)
+    ).length
+    const connectionNeedCount = filteredList.filter((item) =>
+      !isOrgKpiTopLevelDivisionGoal(item) &&
+      !item.parentOrgKpiTitle &&
+      item.childOrgKpiCount === 0 &&
+      item.linkedPersonalKpiCount === 0
+    ).length
+    const unconfirmedCount = filteredList.filter((item) => !['CONFIRMED', 'ARCHIVED'].includes(item.status)).length
+
+    return {
+      totalCount,
+      confirmedCount,
+      linkedSignalCount,
+      connectionNeedCount,
+      unconfirmedCount,
+      confirmedRate: totalCount > 0 ? (confirmedCount / totalCount) * 100 : null,
+    }
+  }, [filteredList])
+  const workspaceSignal = useMemo(
+    () =>
+      getOrgKpiWorkspaceSignal({
+        totalCount: workspaceSummary.totalCount,
+        confirmedCount: workspaceSummary.confirmedCount,
+        connectionNeedCount: workspaceSummary.connectionNeedCount,
+      }),
+    [workspaceSummary.confirmedCount, workspaceSummary.connectionNeedCount, workspaceSummary.totalCount]
+  )
+  const workspaceMetricItems = useMemo<PmsMetricRailItem[]>(
+    () => [
+      {
+        icon: <Target className="h-4 w-4" />,
+        label: '현재 목록',
+        value: formatCountWithUnit(workspaceSummary.totalCount, '개'),
+        helper: `${selectedContextLabel} 기준 표시 KPI`,
+        tone: 'info',
+      },
+      {
+        icon: <CheckCircle2 className="h-4 w-4" />,
+        label: '확정',
+        value: formatCountWithUnit(workspaceSummary.confirmedCount, '개'),
+        helper: `확정률 ${formatPercent(workspaceSummary.confirmedRate)}`,
+        tone: workspaceSummary.totalCount > 0 && workspaceSummary.confirmedCount === workspaceSummary.totalCount ? 'success' : 'neutral',
+      },
+      {
+        icon: <Network className="h-4 w-4" />,
+        label: '연결 신호',
+        value: formatCountWithUnit(workspaceSummary.linkedSignalCount, '개'),
+        helper: '상위/하위/개인 KPI 연결 데이터가 있는 KPI',
+        tone: 'success',
+      },
+      {
+        icon: <CircleAlert className="h-4 w-4" />,
+        label: '정렬 확인',
+        value: formatCountWithUnit(workspaceSummary.connectionNeedCount, '개'),
+        helper: '연결 데이터가 없어 확인이 필요한 KPI',
+        tone: workspaceSummary.connectionNeedCount > 0 ? 'warning' : 'neutral',
+      },
+    ],
+    [selectedContextLabel, workspaceSummary]
+  )
 
   useEffect(() => {
     setHrExceptionReason(selectedKpi?.hrReflection?.exceptionReason ?? '')
@@ -1622,38 +1816,140 @@ export function OrgKpiManagementClient({
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold leading-none text-blue-700">Goal Alignment</span>
-              <span className="shrink-0 whitespace-nowrap rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold leading-none text-white">{scopeLabel}</span>
-              {isReadOnlyScopeView ? (
-                <span
-                  data-testid="org-kpi-readonly-badge"
-                  className="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold leading-none text-emerald-700"
-                >
-                  현재 범위 조회 전용
-                </span>
-              ) : null}
-              <span className={cls('shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold leading-none', STATUS_CLASS[pageData.summary.confirmedRate === 100 ? 'CONFIRMED' : pageData.summary.confirmedCount > 0 ? 'SUBMITTED' : 'DRAFT'])}>
-                {pageData.summary.confirmedRate === 100 ? '확정' : pageData.summary.confirmedCount > 0 ? '제출됨' : '초안'}
+      <PmsWorkspaceSection
+        eyebrow={
+          <div className="flex flex-wrap items-center gap-2">
+            <PmsSignalChip tone="info" icon={<Workflow className="h-3.5 w-3.5" />}>Goal Alignment</PmsSignalChip>
+            <PmsSignalChip tone="neutral">{scopeLabel}</PmsSignalChip>
+            {isReadOnlyScopeView ? (
+              <span data-testid="org-kpi-readonly-badge">
+                <PmsSignalChip tone="success">현재 범위 조회 전용</PmsSignalChip>
               </span>
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">조직 KPI</h1>
-              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">{scopeDescription}</p>
+            ) : null}
+            <PmsSignalChip tone={pageData.summary.confirmedRate === 100 ? 'success' : pageData.summary.confirmedCount > 0 ? 'info' : 'warning'}>
+              {pageData.summary.confirmedRate === 100 ? '확정' : pageData.summary.confirmedCount > 0 ? '제출됨' : '초안'}
+            </PmsSignalChip>
+          </div>
+        }
+        title="조직 KPI 작업 영역"
+        description={
+          <>
+            {scopeDescription}
+            <span className="mt-1 block text-xs font-medium text-slate-500">
+              HR 일괄 업로드와 직책자 점검 흐름을 모두 고려해 상위·하위 목표 정렬 상태를 먼저 보여줍니다.
+            </span>
+          </>
+        }
+        actions={
+          !isReadOnlyScopeView ? (
+            <>
+              <ActionButton label={scopeCreateLabel} icon={<Plus className="h-4 w-4" />} onClick={openDirectKpiCreate} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
+              <ActionButton label={scopeBulkUploadLabel} icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
+              <ActionButton label="엑셀 다운로드" icon={<Archive className="h-4 w-4" />} onClick={handleOpenExport} disabled={Boolean(exportDisabledReason) || busy} />
+              <ActionButton label="확정" icon={<ShieldCheck className="h-4 w-4" />} onClick={() => void changeStatus('CONFIRMED')} disabled={!selectedKpi || !pageData.permissions.canConfirm || busy} />
+            </>
+          ) : null
+        }
+        className="border-blue-100"
+      >
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0 space-y-3">
+            <PmsMetricRail items={workspaceMetricItems} />
+
+            <div className="rounded-2xl border border-slate-200 bg-white/90 px-3 py-3 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2">
+              {!isReadOnlyScopeView && pageData.permissions.canCreate ? (
+                <ActionButton label={scopeCreateLabel} icon={<Plus className="h-4 w-4" />} onClick={openDirectKpiCreate} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
+              ) : null}
+              {!isReadOnlyScopeView && pageData.permissions.canCreate ? (
+                <ActionButton label="HR 일괄 업로드" icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
+              ) : null}
+              <ActionButton
+                label="연결 구조 확인"
+                icon={<Network className="h-4 w-4" />}
+                onClick={() => selectedKpi ? handleViewLinkage(selectedKpi.id) : setBanner({ tone: 'error', message: '먼저 조직 KPI를 선택해 주세요.' })}
+                disabled={!selectedKpi}
+              />
+              {!isReadOnlyScopeView ? (
+                <ActionButton
+                  label="확정"
+                  icon={<ShieldCheck className="h-4 w-4" />}
+                  onClick={() => void changeStatus('CONFIRMED')}
+                  disabled={!selectedKpi || !pageData.permissions.canConfirm || busy || ['CONFIRMED', 'LOCKED'].includes(selectedKpi.status)}
+                />
+              ) : null}
+              <span className="text-xs leading-5 text-slate-500">목표 일괄 수정은 오른쪽 고급 작업에 접어 두었습니다.</span>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2">
-                <div className={cls('grid gap-2', pageData.scopeTabs.length >= 3 ? 'md:grid-cols-3' : 'sm:grid-cols-2')}>
-                  {pageData.scopeTabs.map((scopeTab) => (
+            </div>
+
+            <div className="mt-5 border-t border-slate-200 pt-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap gap-2">
+                  {visibleTabs.map((tabKey) => (
+                    <button key={tabKey} type="button" onClick={() => setTab(tabKey)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === tabKey ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>
+                      {TAB_LABELS[tabKey]}
+                    </button>
+                  ))}
+                </div>
+                {tab === 'map' || tab === 'list' ? (
+                  <div className="w-full lg:w-80 xl:w-96">
+                    <OrgKpiSearchField
+                      value={search}
+                      onChange={setSearch}
+                      searchTargetLabel={searchTargetLabel}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <div className="mt-4">
+                <OrgHierarchyFilterBar
+                  scope={pageData.selectedScope}
+                  divisionOptions={divisionOptions}
+                  sectionOptions={sectionOptions}
+                  teamOptions={teamOptions}
+                  selectedDivisionId={selectedDivisionId}
+                  selectedSectionId={selectedSectionId}
+                  selectedTeamId={selectedTeamId}
+                  contextLabel={selectedContextLabel}
+                  onDivisionChange={(value) => {
+                    setSelectedDivisionId(value)
+                    setSelectedSectionId(null)
+                    setSelectedTeamId(null)
+                  }}
+                  onSectionChange={(value) => {
+                    setSelectedSectionId(value)
+                    setSelectedTeamId(null)
+                  }}
+                  onTeamChange={(value) => {
+                    setSelectedTeamId(value)
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 shadow-sm xl:self-start">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">현재 범위</div>
+                <div className="mt-1 text-sm font-semibold text-slate-950">{selectedContextLabel}</div>
+              </div>
+              <PmsTrafficLight
+                signal={workspaceSignal.signal}
+                label={workspaceSignal.label}
+                description={workspaceSignal.description}
+              />
+            </div>
+            <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-2">
+              <div className="grid gap-1.5">
+                {pageData.scopeTabs.map((scopeTab) => (
                   <button
                     key={scopeTab.key}
                     type="button"
                     onClick={() => handleScopeSwitch(scopeTab.key)}
                     title={scopeTab.label}
                     className={cls(
-                      'min-w-0 rounded-2xl border px-4 py-4 text-left transition',
+                      'min-w-0 rounded-xl border px-3 py-2 text-left transition',
                       scopeTab.key === pageData.selectedScope
                         ? 'border-slate-900 bg-slate-900 text-white'
                         : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
@@ -1665,82 +1961,45 @@ export function OrgKpiManagementClient({
                         {cardCountsByScope[scopeTab.key]}개
                       </div>
                     </div>
-                    <p className={cls('mt-2 break-keep text-xs leading-5', scopeTab.key === pageData.selectedScope ? 'text-slate-200' : 'text-slate-500')}>
-                      {scopeTab.description}
-                    </p>
                   </button>
                 ))}
               </div>
             </div>
-          </div>
-
-          {!isReadOnlyScopeView ? (
-            <div className="grid gap-3 sm:grid-cols-2 xl:w-[360px]">
-            <ActionButton label={scopeCreateLabel} icon={<Plus className="h-4 w-4" />} onClick={openDirectKpiCreate} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
-            <ActionButton label={scopeBulkUploadLabel} icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
-            <ActionButton label="목표 일괄 수정" icon={<FilePenLine className="h-4 w-4" />} onClick={handleOpenBulkEdit} disabled={Boolean(bulkEditDisabledReason) || busy} />
-            <ActionButton label="엑셀 다운로드" icon={<Archive className="h-4 w-4" />} onClick={handleOpenExport} disabled={Boolean(exportDisabledReason) || busy} />
-            <ActionButton label="제출" icon={<Send className="h-4 w-4" />} onClick={() => void runWorkflow('SUBMIT')} disabled={!selectedKpi || !pageData.permissions.canManage || busy} />
-            <ActionButton label="확정" icon={<ShieldCheck className="h-4 w-4" />} onClick={() => void changeStatus('CONFIRMED')} disabled={!selectedKpi || !pageData.permissions.canConfirm || busy} />
-          </div>
-          ) : null}
-        </div>
-        <div className="mt-5 border-t border-slate-200 pt-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
-              {visibleTabs.map((tabKey) => (
-                <button key={tabKey} type="button" onClick={() => setTab(tabKey)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === tabKey ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>
-                  {TAB_LABELS[tabKey]}
-                </button>
-              ))}
-            </div>
-            {tab === 'map' || tab === 'list' ? (
-              <div className="w-full lg:w-80 xl:w-96">
-                <OrgKpiSearchField
-                  value={search}
-                  onChange={setSearch}
-                  searchTargetLabel={searchTargetLabel}
-                />
-              </div>
+            {!isReadOnlyScopeView ? (
+              <details className="mt-3 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-600">고급 작업</summary>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                  <ActionButton label="목표 일괄 수정" icon={<FilePenLine className="h-4 w-4" />} onClick={handleOpenBulkEdit} disabled={Boolean(bulkEditDisabledReason) || busy} />
+                  <ActionButton label="제출" icon={<Send className="h-4 w-4" />} onClick={() => void runWorkflow('SUBMIT')} disabled={!selectedKpi || !pageData.permissions.canManage || busy} />
+                </div>
+              </details>
             ) : null}
           </div>
-          <div className="mt-4">
-            <OrgHierarchyFilterBar
-              scope={pageData.selectedScope}
-              divisionOptions={divisionOptions}
-              sectionOptions={sectionOptions}
-              teamOptions={teamOptions}
-              selectedDivisionId={selectedDivisionId}
-              selectedSectionId={selectedSectionId}
-              selectedTeamId={selectedTeamId}
-              contextLabel={selectedContextLabel}
-              onDivisionChange={(value) => {
-                setSelectedDivisionId(value)
-                setSelectedSectionId(null)
-                setSelectedTeamId(null)
-              }}
-              onSectionChange={(value) => {
-                setSelectedSectionId(value)
-                setSelectedTeamId(null)
-              }}
-              onTeamChange={(value) => {
-                setSelectedTeamId(value)
-              }}
-            />
-          </div>
         </div>
-      </section>
+
+      </PmsWorkspaceSection>
 
       {loadAlerts}
       {banner ? <BannerBox tone={banner.tone} message={banner.message} /> : null}
 
       {tab === 'map' ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-4">
-            <h2 className="text-base font-semibold text-slate-900">{scopeMapTitle}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              {getOrgKpiMapDescription(pageData.selectedScope, hasSectionScope)}
-            </p>
+        <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
+          <div className="mb-4 flex flex-col gap-3 rounded-[24px] border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-slate-50 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <PmsSignalChip tone="info" icon={<Network className="h-3.5 w-3.5" />}>목표맵</PmsSignalChip>
+                <PmsSignalChip tone="neutral">{selectedContextLabel}</PmsSignalChip>
+              </div>
+              <h2 className="mt-3 text-base font-semibold text-slate-900">{scopeMapTitle}</h2>
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-600">
+                {getOrgKpiMapDescription(pageData.selectedScope, hasSectionScope)}
+              </p>
+            </div>
+            <PmsTrafficLight
+              signal={workspaceSignal.signal}
+              label={workspaceSignal.label}
+              description={workspaceSignal.description}
+            />
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
             <div className="space-y-4">
@@ -1791,13 +2050,23 @@ export function OrgKpiManagementClient({
       ) : null}
 
       {tab === 'list' ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <h2 className="text-base font-semibold text-slate-900">{scopeListTitle}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              {getOrgKpiListDescription(pageData.selectedScope, hasSectionScope)}
-            </p>
-            <p className="mt-2 text-xs font-medium text-slate-500">{selectedContextLabel}</p>
+        <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm lg:p-5">
+          <div className="mb-4 flex flex-col gap-3 rounded-[24px] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-blue-50/40 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <PmsSignalChip tone="info" icon={<ListChecks className="h-3.5 w-3.5" />}>목록</PmsSignalChip>
+                <PmsSignalChip tone="neutral">{selectedContextLabel}</PmsSignalChip>
+              </div>
+              <h2 className="mt-3 text-base font-semibold text-slate-900">{scopeListTitle}</h2>
+              <p className="mt-1.5 max-w-3xl text-sm leading-6 text-slate-600">
+                {getOrgKpiListDescription(pageData.selectedScope, hasSectionScope)}
+              </p>
+            </div>
+            <PmsTrafficLight
+              signal={workspaceSignal.signal}
+              label={workspaceSignal.label}
+              description={workspaceSignal.description}
+            />
           </div>
           <div className="mb-5">
             <WeightStatusPanel
@@ -2001,7 +2270,15 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function EmptyState({ title, description, compact = false }: { title: string; description: string; compact?: boolean }) {
-  return <div className={cls('rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center text-slate-500', compact ? 'px-4 py-6' : 'px-4 py-10')}><div className="text-sm font-semibold text-slate-900">{title}</div><p className="mt-2 text-sm leading-6">{description}</p></div>
+  return (
+    <div className={cls('rounded-2xl border border-dashed border-slate-200 bg-slate-50 text-center text-slate-500', compact ? 'px-4 py-6' : 'px-4 py-10')}>
+      <PmsEmptyIllustration
+        message={title}
+        description={description}
+        className={compact ? '[&>svg]:hidden' : ''}
+      />
+    </div>
+  )
 }
 
 function WeightStatusPanel(props: {
@@ -2014,18 +2291,18 @@ function WeightStatusPanel(props: {
   const statusToneClass = formatWeightStatusTone(props.summary.status)
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h3 className="text-base font-semibold text-slate-900">가중치 현황</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-600">{props.contextLabel}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{props.contextLabel}</p>
         </div>
         <span className={cls('inline-flex shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold leading-none', statusToneClass)}>
           {statusLabel}
         </span>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
         <InfoPill label="총 가중치" value={formatOrgKpiWeight(props.summary.totalWeight)} />
         <InfoPill
           label={props.summary.status === 'over' ? '초과 가중치' : '남은 가중치'}
@@ -2041,22 +2318,18 @@ function WeightStatusPanel(props: {
         />
       </div>
 
-      <div className={cls('mt-4 rounded-2xl border px-4 py-3 text-sm leading-6', statusToneClass)}>
+      <div className={cls('mt-3 rounded-xl border px-3 py-2 text-xs leading-5', statusToneClass)}>
         {statusMessage}
       </div>
 
-      <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-sm font-semibold text-slate-900">가중치 구성 KPI</div>
-          <div className="text-xs text-slate-500">현재 목록 기준</div>
-        </div>
-
+      <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <summary className="cursor-pointer text-xs font-semibold text-slate-600">가중치 구성 KPI 보기</summary>
         {props.items.length ? (
-          <div className="mt-3 space-y-2">
+          <div className="mt-2 space-y-2">
             {props.items.map((item) => (
               <div
                 key={item.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-3 py-2.5 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-sm"
               >
                 <div className="min-w-0 flex-1">
                   <div className="break-keep font-medium text-slate-900">{item.title}</div>
@@ -2071,11 +2344,11 @@ function WeightStatusPanel(props: {
             ))}
           </div>
         ) : (
-          <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-500">
+          <div className="mt-2 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">
             집계할 KPI가 없습니다.
           </div>
         )}
-      </div>
+      </details>
     </section>
   )
 }
@@ -2221,6 +2494,7 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
   onSelect: (kpiId: string) => void
 }) {
   const structureSummary = useMemo(() => buildOrgKpiStructureSummary(props.kpi), [props.kpi])
+  const connectionMetrics = useMemo(() => getOrgKpiConnectionMetrics(props.kpi), [props.kpi])
   const hasChildren = props.kpi.childOrgKpiCount > 0
 
   return (
@@ -2228,13 +2502,16 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
       type="button"
       onClick={() => props.onSelect(props.kpi.id)}
       className={cls(
-        'w-full rounded-2xl border px-4 py-4 text-left transition',
-        props.isSelected ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
+        'w-full rounded-[24px] border px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
+        props.isSelected ? 'border-blue-300 bg-blue-50 ring-1 ring-blue-100' : 'border-slate-200 bg-white hover:bg-slate-50'
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="font-semibold text-slate-900">{props.kpi.title}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="font-semibold text-slate-900">{props.kpi.title}</div>
+            <PmsSignalChip tone={getOrgKpiStatusTone(props.kpi.status)}>{STATUS_LABELS[props.kpi.status] ?? props.kpi.status}</PmsSignalChip>
+          </div>
           <p className="mt-1 text-sm text-slate-500">
             {props.kpi.departmentName} · {props.kpi.category ?? '카테고리 미지정'} · {formatOrgKpiHrReflectionSummary(props.kpi)}
           </p>
@@ -2252,6 +2529,30 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
           </div>
           <div className="mt-1">가중치 {formatOrgKpiWeight(props.kpi.weight)}</div>
         </div>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <PmsTrafficLight
+          signal={connectionMetrics.signal}
+          label={connectionMetrics.label}
+          description={connectionMetrics.description}
+        />
+        {typeof connectionMetrics.completionRate === 'number' ? (
+          <div className="min-w-[160px] flex-1 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+            <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+              <span>하위 목표 연결</span>
+              <span>{formatPercent(connectionMetrics.completionRate)}</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+              <div
+                className={cls(
+                  'h-full rounded-full',
+                  connectionMetrics.signal === 'green' ? 'bg-emerald-500' : 'bg-amber-500'
+                )}
+                style={{ width: `${Math.min(100, Math.max(0, connectionMetrics.completionRate))}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
       <div className="mt-4 grid gap-3 text-xs text-slate-500 sm:grid-cols-3">
         <HierarchySummaryField label="담당자" value={formatOrgKpiOwnerSummary(props.kpi.owner)} />
@@ -2732,6 +3033,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
   const { kpi } = props
   const goalEditLocked = props.goalEditLocked ?? false
   const isReadOnly = props.readOnly ?? false
+  const connectionMetrics = useMemo(() => getOrgKpiConnectionMetrics(kpi), [kpi])
 
   if (!kpi) {
     return (
@@ -2778,7 +3080,7 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
       role="region"
       aria-label={`${kpi.title} KPI 상세`}
       tabIndex={0}
-      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 xl:min-h-0 xl:self-start xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto xl:overscroll-y-contain"
+      className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 xl:min-h-0 xl:self-start xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto xl:overscroll-y-contain"
     >
       <div className="space-y-5">
         <div
@@ -2788,7 +3090,8 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <PmsSignalChip tone="neutral">{ORG_KPI_SCOPE_LABELS[kpi.scope]}</PmsSignalChip>
                   <span className="text-xl font-semibold text-slate-900">{kpi.title}</span>
                   <StatusBadge status={kpi.status} />
                 </div>
@@ -2796,9 +3099,24 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                   {kpi.departmentName} · {kpi.category ?? '카테고리 미지정'}
                 </p>
               </div>
-              <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
-                <div className="text-xs text-slate-500">담당자</div>
-                <div className="text-sm font-semibold text-slate-900">{formatOrgKpiOwnerSummary(kpi.owner)}</div>
+              <div className="flex items-center gap-3">
+                <PmsProgressRing
+                  value={connectionMetrics.completionRate}
+                  label="연결"
+                  valueLabel={
+                    typeof connectionMetrics.completionRate === 'number'
+                      ? formatPercent(connectionMetrics.completionRate)
+                      : connectionMetrics.childLinkedCount > 0
+                        ? `${connectionMetrics.childLinkedCount}개`
+                        : '-'
+                  }
+                  tone={connectionMetrics.signal === 'green' ? 'success' : connectionMetrics.signal === 'amber' ? 'warning' : 'neutral'}
+                  size="sm"
+                />
+                <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
+                  <div className="text-xs text-slate-500">담당자</div>
+                  <div className="text-sm font-semibold text-slate-900">{formatOrgKpiOwnerSummary(kpi.owner)}</div>
+                </div>
               </div>
             </div>
 
@@ -2817,6 +3135,22 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
               <InfoPill label="HR 반영 상태" value={formatOrgKpiHrReflectionSummary(kpi)} />
               <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
               <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <PmsTrafficLight
+                signal={connectionMetrics.signal}
+                label={connectionMetrics.label}
+                description={connectionMetrics.description}
+              />
+              <PmsSignalChip tone={getOrgKpiStatusTone(kpi.status)}>
+                {STATUS_LABELS[kpi.status] ?? kpi.status}
+              </PmsSignalChip>
+              <PmsSignalChip tone="info">
+                하위 {formatCountWithUnit(connectionMetrics.childLinkedCount, '개')}
+              </PmsSignalChip>
+              <PmsSignalChip tone={connectionMetrics.suggestedChildCount > 0 ? 'warning' : 'neutral'}>
+                추천 {formatCountWithUnit(connectionMetrics.suggestedChildCount, '개')}
+              </PmsSignalChip>
             </div>
             {kpi.hrReflection?.exceptionReason ? (
               <p className="text-xs font-medium text-emerald-700">
