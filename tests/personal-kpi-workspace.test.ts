@@ -1256,8 +1256,13 @@ async function main() {
 
     assert.equal(featureOff.allowed, false)
     assert.equal(featureOff.reason, 'feature-disabled')
+    assert.equal(featureOff.message, '서버 AI 작성 보조 기능이 꺼져 있어 초안 생성을 사용할 수 없습니다.')
     assert.equal(missingApiKey.allowed, false)
     assert.equal(missingApiKey.reason, 'configuration-missing')
+    assert.equal(
+      missingApiKey.message,
+      'AI provider 설정이 완료되지 않아 초안 생성을 사용할 수 없습니다. 관리자에게 설정 확인을 요청하세요.'
+    )
   })
 
   await run('scoped employees still get department labels from department lookup even without embedded relation data', async () => {
@@ -1562,11 +1567,17 @@ async function main() {
 
     assert.equal(source.includes('disabled={Boolean(props.createDisabledReason)}'), true)
     assert.equal(source.includes('disabled={Boolean(props.aiDisabledReason)}'), true)
+    assert.equal(source.includes('aiHelperText={aiHeroHelperText}'), true)
+    assert.equal(source.includes('const aiHeroHelperText ='), true)
+    assert.equal(source.includes("aiActionStates['generate-draft']?.reason"), true)
+    assert.equal(source.includes('<p className="px-1 text-xs leading-5 text-slate-500">{props.aiHelperText}</p>'), true)
     assert.equal(source.includes("const createDisabledReason ="), true)
-    assert.equal(source.includes("const aiDisabledReason ="), true)
     assert.equal(source.includes('const resolvedAiDisabledReason ='), true)
-    assert.equal(source.includes('본인 개인 KPI에서만 AI 초안 생성을 사용할 수 있습니다.'), true)
-    assert.equal(source.includes("description={props.unavailableReason ?? '권한이 없거나 현재 환경에서 AI 기능이 비활성화되어 있습니다. 기본 작성 가이드를 참고해주세요.'}"), true)
+    assert.equal(source.includes('개인 KPI AI 작성 보조는 본인 KPI 작성 화면에서 사용할 수 있습니다.'), true)
+    assert.equal(source.includes('서버 AI 작성 보조 기능이 꺼져 있어 초안 생성을 사용할 수 없습니다.'), false)
+    assert.equal(source.includes('props.aiAccess.message'), true)
+    assert.equal(source.includes("description={props.unavailableReason ?? PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE}"), true)
+    assert.equal(source.includes('AI 기능이 비활성화되어 있거나 현재 계정 권한으로는 사용할 수 없습니다.'), false)
     assert.equal(source.includes('일부 운영 정보를 불러오지 못해 기본 화면으로 표시 중입니다.'), true)
   })
 
@@ -1585,7 +1596,44 @@ async function main() {
     assert.equal(routeSource.includes('resolvePersonalKpiAiAccess'), true)
     assert.equal(routeSource.includes('canAccessPersonalKpiTarget'), true)
     assert.equal(routeSource.includes("throw new AppError(403, 'FORBIDDEN', aiAccess.message"), true)
-    assert.equal(routeSource.includes('본인 개인 KPI에서만 AI 초안 생성을 사용할 수 있습니다.'), true)
+    assert.equal(routeSource.includes('개인 KPI AI 작성 보조는 본인 KPI 작성 화면에서 사용할 수 있습니다.'), true)
+  })
+
+  await run('personal KPI AI access view and UI copy separate configuration, scope, and official score safety reasons', () => {
+    const accessSource = read('src/lib/personal-kpi-access.ts')
+    const loaderSource = read('src/server/personal-kpi-page.ts')
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+    assert.equal(accessSource.includes('export type PersonalKpiAiAccessView'), true)
+    assert.equal(accessSource.includes('toPersonalKpiAiAccessView'), true)
+    assert.equal(loaderSource.includes('aiAccess: PersonalKpiAiAccessView'), true)
+    assert.equal(loaderSource.includes('aiAccess: aiAccessView'), true)
+    assert.equal(source.includes('function getPersonalKpiAiUnavailableReason(props: Props)'), true)
+    assert.equal(source.includes('현재 계정에는 개인 KPI AI 작성 보조 권한이 없습니다.'), true)
+    assert.equal(source.includes('개인 KPI AI 작성 보조는 본인 KPI 작성 화면에서 사용할 수 있습니다.'), true)
+    assert.equal(source.includes('AI 초안 생성을 위해 먼저 연계할 조직 KPI를 선택하세요.'), true)
+    assert.equal(source.includes('AI는 개인 KPI 작성과 표현 정리를 돕는 보조 기능입니다. 결과는 저장 전 초안이며 사용자가 직접 확인해야 합니다.'), true)
+    assert.equal(source.includes('공식 평가 점수나 등급을 산정하지 않습니다.'), true)
+  })
+
+  await run('personal KPI AI hides leader-only actions from members in UI and API', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const routeSource = read('src/app/api/kpi/personal/ai/route.ts')
+
+    assert.equal(source.includes('MEMBER_ALLOWED_PERSONAL_KPI_AI_ACTIONS'), true)
+    assert.equal(source.includes('LEADER_ONLY_PERSONAL_KPI_AI_ACTIONS'), true)
+    assert.equal(source.includes('getVisiblePersonalKpiAiActions(props.permissions.canReview)'), true)
+    assert.equal(source.includes('MEMBER_ALLOWED_PERSONAL_KPI_AI_ACTIONS.has(item.action)'), true)
+    assert.equal(source.includes("new Set<AiAction>(['summarize-review-risks'])"), true)
+    assert.equal(routeSource.includes('canReviewPersonalKpi'), true)
+    assert.equal(routeSource.includes('LEADER_ONLY_PERSONAL_KPI_AI_ACTIONS'), true)
+    assert.equal(routeSource.includes('현재 계정에는 리더/검토용 개인 KPI AI 보조 권한이 없습니다.'), true)
+  })
+
+  await run('shared AI assist responses request opts out of provider-side storage', () => {
+    const source = read('src/lib/ai-assist.ts')
+
+    assert.equal(source.includes('store: false'), true)
   })
 
   await run('personal KPI AI route masks raw structured-output failures with a Korean fallback message', () => {
@@ -1770,7 +1818,7 @@ async function main() {
     assert.equal(previewSource.includes('연계 조직 KPI'), true)
     assert.equal(previewSource.includes('본부 KPI'), true)
     assert.equal(previewSource.includes('팀 KPI'), true)
-    assert.equal(previewSource.includes('이 초안 적용'), true)
+    assert.equal(previewSource.includes('화면 초안에 반영'), true)
     assert.equal(source.includes('다른 관점으로 다시 생성'), true)
   })
 

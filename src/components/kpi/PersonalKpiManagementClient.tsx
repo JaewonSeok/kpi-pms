@@ -237,8 +237,37 @@ const AI_ACTIONS: Array<{ action: AiAction; title: string; description: string }
   { action: 'draft-monthly-comment', title: '월간 실적 코멘트 초안', description: '월간 실적과 이어질 코멘트 초안을 제안합니다.' },
 ]
 
+const MEMBER_ALLOWED_PERSONAL_KPI_AI_ACTIONS = new Set<AiAction>([
+  'generate-draft',
+  'improve-wording',
+  'smart-check',
+  'suggest-weight',
+  'suggest-org-alignment',
+  'detect-duplicates',
+  'draft-monthly-comment',
+])
+
+const LEADER_ONLY_PERSONAL_KPI_AI_ACTIONS = new Set<AiAction>(['summarize-review-risks'])
+
 const PERSONAL_KPI_AI_PREVIEW_ERROR_MESSAGE =
   'AI 초안 생성 중 설정 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의해 주세요.'
+
+const PERSONAL_KPI_AI_READY_MESSAGE =
+  'AI는 개인 KPI 작성과 표현 정리를 돕는 보조 기능입니다. 결과는 저장 전 초안이며 사용자가 직접 확인해야 합니다.'
+const PERSONAL_KPI_AI_OFFICIAL_SAFETY_MESSAGE =
+  'AI 보조는 공식 평가 점수나 등급을 산정하지 않습니다.'
+const PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE =
+  '현재 계정에는 개인 KPI AI 작성 보조 권한이 없습니다.'
+const PERSONAL_KPI_AI_NOT_SELF_SCOPE_MESSAGE =
+  '개인 KPI AI 작성 보조는 본인 KPI 작성 화면에서 사용할 수 있습니다.'
+const PERSONAL_KPI_AI_PAGE_ERROR_MESSAGE =
+  '개인 KPI 데이터를 아직 불러오지 못해 AI 보조를 시작할 수 없습니다.'
+const PERSONAL_KPI_AI_TARGET_REQUIRED_MESSAGE =
+  '대상자를 먼저 선택해야 AI 초안 생성을 사용할 수 있습니다.'
+const PERSONAL_KPI_AI_SETUP_REQUIRED_MESSAGE =
+  '조회 가능한 대상자나 운영 설정이 없어 AI 보조를 사용할 수 없습니다.'
+const PERSONAL_KPI_AI_LINKED_ORG_REQUIRED_MESSAGE =
+  'AI 초안 생성을 위해 먼저 연계할 조직 KPI를 선택하세요.'
 
 const MIDCHECK_STATUS_LABELS: Record<MidcheckCoachStatus, string> = {
   on_track: '순항',
@@ -700,9 +729,31 @@ function isDraftStatus(status?: PersonalKpiViewModel['status']) {
   return status === 'DRAFT'
 }
 
+function isLeaderOnlyPersonalKpiAiAction(action: AiAction) {
+  return LEADER_ONLY_PERSONAL_KPI_AI_ACTIONS.has(action)
+}
+
+function getVisiblePersonalKpiAiActions(canReview: boolean) {
+  if (canReview) return AI_ACTIONS
+  return AI_ACTIONS.filter((item) => MEMBER_ALLOWED_PERSONAL_KPI_AI_ACTIONS.has(item.action))
+}
+
+function getPersonalKpiAiUnavailableReason(props: Props) {
+  if (props.state === 'error') return PERSONAL_KPI_AI_PAGE_ERROR_MESSAGE
+  if (props.state === 'no-target') return PERSONAL_KPI_AI_TARGET_REQUIRED_MESSAGE
+  if (props.state === 'setup-required') return PERSONAL_KPI_AI_SETUP_REQUIRED_MESSAGE
+  if (props.actor.role === 'ROLE_MEMBER' && props.actor.id !== props.selectedEmployeeId) {
+    return PERSONAL_KPI_AI_NOT_SELF_SCOPE_MESSAGE
+  }
+  if (!props.aiAccess.canUse) return props.aiAccess.message
+  if (!props.permissions.canUseAi) return PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE
+  return undefined
+}
+
 function buildAiActionState(params: {
   action: AiAction
   canUseAi: boolean
+  aiUnavailableReason?: string
   selectedKpi?: PersonalKpiViewModel
   linkedOrgKpiId?: string
   reviewQueueCount: number
@@ -711,7 +762,7 @@ function buildAiActionState(params: {
   if (!params.canUseAi) {
     return {
       disabled: true,
-      reason: '현재 조건에서는 AI 보조를 사용할 수 없습니다.',
+      reason: params.aiUnavailableReason ?? PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE,
     }
     }
 
@@ -721,7 +772,7 @@ function buildAiActionState(params: {
         ? { disabled: false }
         : {
             disabled: true,
-            reason: '연계된 조직 KPI를 선택한 뒤 AI 초안 생성을 실행해 주세요.',
+            reason: PERSONAL_KPI_AI_LINKED_ORG_REQUIRED_MESSAGE,
           }
     case 'detect-duplicates':
       return params.totalKpiCount > 0
@@ -1058,12 +1109,15 @@ export function PersonalKpiManagementClient(props: Props) {
             : !props.permissions.canCreate
               ? '현재 범위에서는 KPI를 복제할 권한이 없습니다.'
               : undefined
+  const resolvedAiDisabledReason = getPersonalKpiAiUnavailableReason(props)
+  const visibleAiActions = getVisiblePersonalKpiAiActions(props.permissions.canReview)
   const aiActionStates = Object.fromEntries(
     AI_ACTIONS.map((item) => [
       item.action,
       buildAiActionState({
         action: item.action,
         canUseAi: props.permissions.canUseAi,
+        aiUnavailableReason: resolvedAiDisabledReason,
         selectedKpi,
         linkedOrgKpiId: form.linkedOrgKpiId,
         reviewQueueCount: props.reviewQueue.length,
@@ -1071,6 +1125,10 @@ export function PersonalKpiManagementClient(props: Props) {
       }),
     ])
   ) as Record<AiAction, AiActionState>
+  const aiHeroHelperText =
+    resolvedAiDisabledReason ??
+    aiActionStates['generate-draft']?.reason ??
+    PERSONAL_KPI_AI_READY_MESSAGE
   const goalEditLocked =
     props.alerts?.some((alert) => alert.title.includes('읽기 전용 모드')) ?? false
   const aiPreviewRecommendations = useMemo(
@@ -1152,26 +1210,6 @@ export function PersonalKpiManagementClient(props: Props) {
       : props.state === 'permission-denied' || !props.permissions.canCreate
         ? '현재 범위에서는 개인 KPI를 추가할 권한이 없습니다.'
         : undefined
-  const aiAccessDeniedReason =
-    props.actor.role === 'ROLE_MEMBER' && props.actor.id !== props.selectedEmployeeId
-      ? '본인 개인 KPI에서만 AI 초안 생성을 사용할 수 있습니다.'
-      : 'AI 기능이 비활성화되어 있거나 현재 계정 권한으로는 사용할 수 없습니다.'
-  const aiDisabledReason =
-    props.state === 'error'
-      ? '개인 KPI 데이터를 아직 불러오지 못해 AI 보조를 시작할 수 없습니다.'
-      : props.state === 'no-target'
-        ? '대상자를 먼저 선택해야 AI 초안 생성을 사용할 수 있습니다.'
-        : props.state === 'setup-required'
-          ? '조회 가능한 대상자나 운영 설정이 없어 AI 보조를 사용할 수 없습니다.'
-      : !props.permissions.canUseAi
-        ? 'AI 기능이 비활성화되어 있거나 현재 계정 권한으로는 사용할 수 없습니다.'
-        : undefined
-  const resolvedAiDisabledReason =
-    props.state === 'ready' || props.state === 'empty'
-      ? !props.permissions.canUseAi
-        ? aiAccessDeniedReason
-        : undefined
-      : aiDisabledReason
   const reviewDisabledReason =
     props.state === 'error'
       ? '페이지 상태를 복구한 뒤 검토 대기열을 확인해 주세요.'
@@ -1712,6 +1750,14 @@ export function PersonalKpiManagementClient(props: Props) {
   }
 
   async function handleRunAi(action: AiAction) {
+    if (isLeaderOnlyPersonalKpiAiAction(action) && !props.permissions.canReview) {
+      setBanner({
+        tone: 'info',
+        message: PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE,
+      })
+      return
+    }
+
     const actionState = aiActionStates[action]
     if (actionState?.disabled) {
       setBanner({
@@ -1732,7 +1778,7 @@ export function PersonalKpiManagementClient(props: Props) {
       setShowAiRecommendationSwitchConfirm(false)
       setBanner({
         tone: 'info',
-        message: aiAccessDeniedReason,
+        message: resolvedAiDisabledReason ?? PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE,
       })
       setBusyAction(null)
       return
@@ -2223,6 +2269,7 @@ export function PersonalKpiManagementClient(props: Props) {
         createDisabledReason={createDisabledReason}
         bulkEditDisabledReason={bulkEditDisabledReason}
         aiDisabledReason={resolvedAiDisabledReason}
+        aiHelperText={aiHeroHelperText}
         reviewDisabledReason={reviewDisabledReason}
         historyDisabledReason={historyDisabledReason}
         onOpenCreate={handleOpenCreate}
@@ -2328,7 +2375,7 @@ export function PersonalKpiManagementClient(props: Props) {
             <AiSection
               canUseAi={props.permissions.canUseAi}
               unavailableReason={resolvedAiDisabledReason}
-              actions={AI_ACTIONS}
+              actions={visibleAiActions}
               busy={busyAction === 'ai'}
               preview={aiPreview}
               previewComparisons={buildPersonalAiPreviewComparisons({ preview: aiPreview, selectedKpi, form })}
@@ -2370,7 +2417,7 @@ export function PersonalKpiManagementClient(props: Props) {
             <AiSection
               canUseAi={props.permissions.canUseAi}
               unavailableReason={resolvedAiDisabledReason}
-              actions={AI_ACTIONS}
+              actions={visibleAiActions}
               busy={busyAction === 'ai'}
               preview={aiPreview}
               previewComparisons={buildPersonalAiPreviewComparisons({ preview: aiPreview, selectedKpi, form })}
@@ -2469,6 +2516,7 @@ function HeroSection(props: {
   createDisabledReason?: string
   bulkEditDisabledReason?: string
   aiDisabledReason?: string
+  aiHelperText?: string
   reviewDisabledReason?: string
   historyDisabledReason?: string
   onOpenCreate: () => void
@@ -2499,15 +2547,20 @@ function HeroSection(props: {
           >
             목표 일괄 수정
           </ActionButton>
-          <ActionButton
-            icon={<Sparkles className="h-4 w-4" />}
-            variant="secondary"
-            onClick={props.onOpenAiDraft}
-            disabled={Boolean(props.aiDisabledReason)}
-            title={props.aiDisabledReason}
-          >
-            AI 초안 생성
-          </ActionButton>
+          <div className="space-y-1">
+            <ActionButton
+              icon={<Sparkles className="h-4 w-4" />}
+              variant="secondary"
+              onClick={props.onOpenAiDraft}
+              disabled={Boolean(props.aiDisabledReason)}
+              title={props.aiDisabledReason}
+            >
+              AI 초안 생성
+            </ActionButton>
+            {props.aiHelperText ? (
+              <p className="px-1 text-xs leading-5 text-slate-500">{props.aiHelperText}</p>
+            ) : null}
+          </div>
           <ActionButton
             icon={<ClipboardList className="h-4 w-4" />}
             variant="secondary"
@@ -3195,38 +3248,46 @@ function AiSection(props: {
 }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
-      <SectionCard title="AI 보조" description="개인 KPI 작성과 표현 정리를 돕는 보조 기능입니다. 작성자가 검토한 뒤 필요한 초안만 화면에 반영합니다.">
+      <SectionCard
+        title="AI 보조"
+        description={`${PERSONAL_KPI_AI_READY_MESSAGE} ${PERSONAL_KPI_AI_OFFICIAL_SAFETY_MESSAGE}`}
+      >
         {!props.canUseAi ? (
           <EmptyState
             title="AI 보조를 사용할 수 없습니다."
-            description={props.unavailableReason ?? '권한이 없거나 현재 환경에서 AI 기능이 비활성화되어 있습니다. 기본 작성 가이드를 참고해주세요.'}
+            description={props.unavailableReason ?? PERSONAL_KPI_AI_PERMISSION_DENIED_MESSAGE}
           />
         ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {props.actions.map((item) => (
-              <button
-                key={item.action}
-                type="button"
-                onClick={() => props.onRun(item.action)}
-                disabled={props.busy || props.actionStates[item.action]?.disabled}
-                title={props.actionStates[item.action]?.reason}
-                className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                  <Bot className="h-4 w-4 text-slate-500" />
-                  {item.title}
-                </div>
-                <p className="mt-2 text-sm text-slate-600">{item.description}</p>
-                {props.actionStates[item.action]?.reason ? (
-                  <p className="mt-2 text-xs text-slate-500">{props.actionStates[item.action]?.reason}</p>
-                ) : null}
-              </button>
-            ))}
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-800">
+              AI 결과는 저장 전 화면 초안이며 사용자가 직접 확인해야 합니다. 공식 평가 점수나 등급을 산정하지 않습니다.
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {props.actions.map((item) => (
+                <button
+                  key={item.action}
+                  type="button"
+                  onClick={() => props.onRun(item.action)}
+                  disabled={props.busy || props.actionStates[item.action]?.disabled}
+                  title={props.actionStates[item.action]?.reason}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                    <Bot className="h-4 w-4 text-slate-500" />
+                    {item.title}
+                  </div>
+                  <p className="mt-2 text-sm text-slate-600">{item.description}</p>
+                  {props.actionStates[item.action]?.reason ? (
+                    <p className="mt-2 text-xs text-slate-500">{props.actionStates[item.action]?.reason}</p>
+                  ) : null}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </SectionCard>
 
-      <SectionCard title="AI 미리보기" description="제안을 바로 적용하지 않고, 검토 후 반영 여부를 결정합니다.">
+      <SectionCard title="AI 미리보기" description="제안을 바로 저장하지 않고, 화면 초안에 반영할지 먼저 검토합니다.">
         {props.preview ? (
           <>
           <KpiAiPreviewPanel
@@ -3242,14 +3303,14 @@ function AiSection(props: {
             emptyDescription="왼쪽에서 AI 기능을 실행하면 이 영역에 preview가 표시됩니다."
             onApprove={props.onApprove}
             onReject={props.onReject}
-            approveLabel="선택한 초안 적용"
+            approveLabel="화면 초안에 반영"
             rejectLabel="제안 반려"
             onRetry={props.preview.action === 'generate-draft' ? () => props.onRun('generate-draft') : undefined}
             retryLabel={props.preview.action === 'generate-draft' ? '다른 관점으로 다시 생성' : '다시 시도'}
             decisionBusy={props.decisionBusy}
             onSelectRecommendation={props.preview.action === 'generate-draft' ? props.onSelectRecommendation : undefined}
             selectedRecommendationIndex={props.selectedRecommendationIndex}
-            recommendationActionLabel="이 초안 적용"
+            recommendationActionLabel="화면 초안에 반영"
             isRecommendationDraftOpen={props.isRecommendationDraftOpen}
           />
           {props.preview ? <div className="hidden space-y-4">

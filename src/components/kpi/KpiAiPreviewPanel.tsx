@@ -441,7 +441,7 @@ function renderSection(
                         item.draftAngleLabel || item.alignmentSummary || item.divisionKpiTitle || item.teamKpiTitle,
                       )
                       const buttonLabel = isPersonalDraftOption
-                        ? recommendationUi.recommendationActionLabel ?? '이 초안 적용'
+                        ? recommendationUi.recommendationActionLabel ?? '화면 초안에 반영'
                         : isCurrentRecommendation
                           ? recommendationUi.isRecommendationDraftOpen
                             ? '현재 초안에 반영됨'
@@ -549,7 +549,7 @@ export function KpiAiPreviewPanel(props: Props) {
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-xs text-slate-500">적용 방식</div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">미리보기 확인 후 수동 적용</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">저장 전 화면 초안에만 반영</div>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-xs text-slate-500">검토 포인트</div>
@@ -609,7 +609,9 @@ export function KpiAiPreviewPanel(props: Props) {
                 <Sparkles className="h-4 w-4 text-slate-500" />
                 적용 전 마지막 확인
               </div>
-              <p className="text-sm text-slate-500">현재 미리보기 내용을 검토한 뒤 적용하거나 반려할 수 있습니다.</p>
+              <p className="text-sm text-slate-500">
+                현재 미리보기 내용은 저장 전 화면 초안에만 반영됩니다. 공식 평가 점수나 등급을 산정하지 않습니다.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               {props.onReject ? (

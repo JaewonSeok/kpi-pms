@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import {
   canAccessPersonalKpiTarget,
+  canReviewPersonalKpi,
   resolvePersonalKpiAiAccess,
 } from '@/lib/personal-kpi-access'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -19,6 +20,12 @@ import {
 
 const PERSONAL_KPI_AI_PUBLIC_ERROR_MESSAGE =
   'AI 초안 생성 중 설정 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 관리자에게 문의해 주세요.'
+
+const LEADER_ONLY_PERSONAL_KPI_AI_ACTIONS = new Set(['summarize-review-risks'])
+
+function isLeaderOnlyPersonalKpiAiAction(action: string) {
+  return LEADER_ONLY_PERSONAL_KPI_AI_ACTIONS.has(action)
+}
 
 function shouldMaskPersonalKpiAiError(error: unknown): error is AppError {
   if (!(error instanceof AppError)) {
@@ -70,7 +77,15 @@ export async function POST(request: Request) {
       throw new AppError(
         403,
         'FORBIDDEN',
-        '본인 개인 KPI에서만 AI 초안 생성을 사용할 수 있습니다.'
+        '개인 KPI AI 작성 보조는 본인 KPI 작성 화면에서 사용할 수 있습니다.'
+      )
+    }
+
+    if (isLeaderOnlyPersonalKpiAiAction(validated.data.action) && !canReviewPersonalKpi(session.user.role)) {
+      throw new AppError(
+        403,
+        'FORBIDDEN',
+        '현재 계정에는 리더/검토용 개인 KPI AI 보조 권한이 없습니다.'
       )
     }
 

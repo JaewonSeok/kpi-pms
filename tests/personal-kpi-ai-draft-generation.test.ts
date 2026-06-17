@@ -576,7 +576,7 @@ void (async () => {
         onReject: () => undefined,
         onSelectRecommendation: () => undefined,
         selectedRecommendationIndex: 0,
-        recommendationActionLabel: '이 초안 적용',
+        recommendationActionLabel: '화면 초안에 반영',
         isRecommendationDraftOpen: false,
       }),
     )
@@ -587,6 +587,6 @@ void (async () => {
     assert.equal(html.includes('연계 조직 KPI'), true)
     assert.equal(html.includes('본부 KPI'), true)
     assert.equal(html.includes('팀 KPI'), true)
-    assert.equal(html.includes('이 초안 적용'), true)
+    assert.equal(html.includes('화면 초안에 반영'), true)
   })
 })()

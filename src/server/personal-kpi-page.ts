@@ -19,6 +19,8 @@ import {
   canManagePersonalKpi,
   getPersonalKpiScopeDepartmentIds,
   resolvePersonalKpiAiAccess,
+  toPersonalKpiAiAccessView,
+  type PersonalKpiAiAccessView,
 } from '@/lib/personal-kpi-access'
 import {
   EVALUATION_POLICY_2026,
@@ -309,6 +311,7 @@ export type PersonalKpiPageData = {
     canUseMidcheckCoach: boolean
     canOverride: boolean
   }
+  aiAccess: PersonalKpiAiAccessView
   actor: {
     id: string
     role: SystemRole
@@ -1242,6 +1245,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
   const aiAccess = resolvePersonalKpiAiAccess({
     role: params.session.user.role,
   })
+  const aiAccessView = toPersonalKpiAiAccessView(aiAccess)
   const emptySummary: PersonalKpiPageData['summary'] = {
     totalCount: 0,
     totalWeight: 0,
@@ -1375,6 +1379,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           pageState: 'no-target',
           aiAccess,
         }),
+        aiAccess: aiAccessView,
         actor,
       }
     }
@@ -1409,6 +1414,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           pageState,
           aiAccess,
         }),
+        aiAccess: aiAccessView,
         actor,
       }
     }
@@ -2000,6 +2006,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         canEdit: goalEditLocked ? false : basePermissions.canEdit,
         canSubmit: goalEditLocked ? false : basePermissions.canSubmit,
       },
+      aiAccess: aiAccessView,
       actor,
     }
   } catch (error) {
@@ -2052,6 +2059,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           pageState,
           aiAccess,
         }),
+        aiAccess: aiAccessView,
         actor,
       }
     }
@@ -2079,6 +2087,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         pageState: 'error',
         aiAccess,
       }),
+      aiAccess: aiAccessView,
       actor,
     }
   }
