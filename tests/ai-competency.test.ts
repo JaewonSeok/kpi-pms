@@ -95,13 +95,35 @@ run('the actions route exposes only the gate workflow actions', () => {
 })
 
 run('employee, admin, and reviewer UI shells expose Korean gate-oriented copy', () => {
-  assert.equal(employeeClientSource.includes('AI 역량평가'), true)
+  assert.equal(employeeClientSource.includes('AI 활용 제출'), true)
+  assert.equal(employeeClientSource.includes('AI 역량평가'), false)
+  assert.equal(employeeClientSource.includes('업무에서 활용한 AI 사례'), true)
+  assert.equal(employeeClientSource.includes('공식 평가 점수나 등급을 자동 산정하지 않습니다'), true)
+  assert.equal(employeeClientSource.includes('제출 상태'), true)
+  assert.equal(employeeClientSource.includes('증빙'), true)
+  assert.equal(employeeClientSource.includes('임시저장'), true)
+  assert.equal(employeeClientSource.includes('Evaluation.totalScore / gradeId 저장 없음'), true)
+  assert.equal(employeeClientSource.includes('AI가 평가 점수를 산정'), false)
+  assert.equal(employeeClientSource.includes('AI 등급 산정'), false)
+  assert.equal(employeeClientSource.includes('자동 등급 반영'), false)
+  assert.equal(employeeClientSource.includes('공식 점수 반영'), false)
+  assert.equal(
+    navigationItems.some(
+      (item) => item.href === '/evaluation/ai-competency' && item.label === 'AI 활용 제출'
+    ),
+    true
+  )
+  assert.equal(
+    navigationItems.some(
+      (item) => item.href === '/evaluation/ai-competency' && item.label === 'AI 역량평가'
+    ),
+    false
+  )
   assert.equal(gateConfigSource.includes('AI 기반 프로젝트 수행 T/K'), true)
   assert.equal(gateConfigSource.includes('조직 기여 AI 활용 사례'), true)
   assert.equal(gateConfigSource.includes('AI 실무 역량 인증'), true)
   assert.equal(employeeClientSource.includes('단순 교육 이수나 도구 사용 경험만으로는 인정되지 않습니다.'), true)
-  assert.equal(employeeClientSource.includes('제출서 작성'), true)
-  assert.equal(employeeClientSource.includes('증빙 자료'), true)
+  assert.equal(employeeClientSource.includes('사례 작성'), true)
   assert.equal(employeeClientSource.includes('이력 / 결정 내역'), true)
 
   assert.equal(adminPanelSource.includes('AI 역량평가 운영'), true)

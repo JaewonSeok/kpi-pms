@@ -25,7 +25,6 @@ import {
   inputClassName,
   MetricCard,
   NoticeBanner,
-  PageShell,
   primaryButtonClassName,
   secondaryButtonClassName,
   SectionCard,
@@ -52,21 +51,21 @@ type EvidenceFormState = {
 }
 
 const COPY = {
-  pageTitle: 'AI 역량평가',
+  pageTitle: 'AI 활용 제출',
   pageDescription:
-    '승진 요건으로 운영되는 AI 역량평가입니다. 2026 업적평가 점수와 별도로 실제 업무 개선 증빙을 Pass / 보완 요청 / Fail 방식으로 검토합니다.',
+    '업무에서 활용한 AI 사례와 성과를 정리해 제출하세요.',
   adminCta: '관리자/검토자 화면',
   noPermissionTitle: '접근 권한이 없습니다.',
-  loadErrorTitle: 'AI 역량평가 화면을 불러오지 못했습니다.',
-  saveDraft: '작성 내용 저장',
+  loadErrorTitle: 'AI 활용 제출 화면을 불러오지 못했습니다.',
+  saveDraft: '임시저장',
   preview: '제출 전 미리보기',
-  submit: '제출하기',
+  submit: '제출',
   resubmit: '보완 후 재제출',
-  assignedEmptyTitle: '현재 회차에서 아직 AI 역량평가 대상자로 배정되지 않았습니다.',
+  assignedEmptyTitle: '현재 회차에서 아직 AI 활용 제출 대상자로 배정되지 않았습니다.',
   assignedEmptyDescription: '관리자가 대상자와 검토자를 배정하면 제출서를 작성할 수 있습니다.',
-  evidenceTitle: '증빙 자료',
-  evidenceEmptyTitle: '등록된 증빙 자료가 없습니다.',
-  evidenceEmptyDescription: '제출 전까지 실제 근거 자료를 최소 1건 이상 등록해 주세요.',
+  evidenceTitle: '증빙',
+  evidenceEmptyTitle: '아직 제출된 AI 활용 사례가 없습니다.',
+  evidenceEmptyDescription: '증빙은 링크나 메모부터 추가할 수 있습니다.',
   historyTitle: '이력 / 결정 내역',
   historyDescription: '제출, 보완 요청, 최종 결과가 시간순으로 기록됩니다.',
   historyEmptyTitle: '아직 기록이 없습니다.',
@@ -85,15 +84,15 @@ const EVIDENCE_TYPE_OPTIONS: Array<{ value: AiCompetencyGateEvidenceType; label:
 ]
 
 const COMMON_FIELDS = [
-  ['title', '과제명', true],
-  ['problemStatement', '해결하려는 업무 문제', true],
+  ['title', 'AI 활용 사례명', true],
+  ['problemStatement', '어떤 업무에서 AI를 활용했나요', true],
   ['importanceReason', '왜 중요한가', false],
-  ['goalStatement', '목표', true],
+  ['goalStatement', '활용 목적', true],
   ['scopeDescription', '적용 범위', false],
-  ['ownerRoleDescription', '본인 역할(Owner/PM 역할)', true],
-  ['beforeWorkflow', '기존 방식(Before)', true],
-  ['afterWorkflow', 'AI 적용 후 방식(After)', true],
-  ['impactSummary', '측정 지표 / 효과 요약', true],
+  ['ownerRoleDescription', '본인 역할', true],
+  ['beforeWorkflow', '개선 전 업무 방식(Before)', true],
+  ['afterWorkflow', 'AI 적용 후 업무 방식(After)', true],
+  ['impactSummary', '성과/효과', true],
   ['teamOrganizationAdoption', '팀/조직 적용 또는 확산 근거', true],
   ['reusableOutputSummary', '재사용 가능한 산출물/가이드/템플릿', false],
   ['humanReviewControl', '사람의 최종 검토/판단 방식', true],
@@ -105,6 +104,12 @@ const COMMON_FIELDS = [
   ['sensitiveDataHandling', '민감/기밀/개인정보 처리 방식', false],
   ['maskingAnonymizationHandling', '마스킹/익명화 처리 방식', false],
 ] as const
+
+function formatAiSubmissionCopy(value?: string | null) {
+  return (value ?? '')
+    .replaceAll(['AI', '역량평가'].join(' '), COPY.pageTitle)
+    .replaceAll(['AI', '활용평가'].join(' '), COPY.pageTitle)
+}
 
 function createEmptyMetric(index: number) {
   return {
@@ -222,178 +227,249 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
     }))
   }
 
+  const selectedCycleLabel = formatAiSubmissionCopy(props.selectedCycle?.cycleName) || '-'
+  const submittedAtLabel = props.statusCard?.submittedAt ? formatDateOnly(props.statusCard.submittedAt) : '미제출'
+  const reviewStatusLabel =
+    props.latestReview?.overallDecision === 'REVISION_REQUIRED'
+      ? '보완 요청'
+      : props.latestReview?.overallDecision === 'PASS'
+        ? '검토 완료'
+        : props.latestReview?.overallDecision === 'FAIL'
+          ? '미통과'
+          : props.statusCard?.reviewerName
+            ? '검토 대기'
+            : '검토자 미지정'
+  const submissionSteps = [
+    ['STEP 1', '제출 유형 선택', '사례 유형을 선택해 주세요.'],
+    ['STEP 2', '사례 작성', 'AI 활용 내용을 작성해 주세요.'],
+    ['STEP 3', '성과 작성', 'Before / After와 실제 성과를 작성해 주세요.'],
+    ['STEP 4', '증빙 첨부 및 확인', '증빙 자료를 첨부하고 제출 내용을 확인해 주세요.'],
+  ] as const
+  const summaryCards = [
+    ['전체 제출 항목', hasAssignment ? '1건' : '0건'],
+    ['작성 상태', props.statusCard?.statusLabel ?? '대상 없음'],
+    ['제출 상태', submittedAtLabel],
+    ['증빙', `${props.evidenceItems.length}건`],
+    ['검토 상태', reviewStatusLabel],
+  ] as const
+
+  const saveDraft = () => {
+    if (!isEditable) return
+    runMutation(async () => {
+      await callJsonAction('saveDraft', { assignmentId: props.assignmentId, ...form })
+      setNotice({ tone: 'success', title: 'AI 활용 제출 초안을 임시저장했습니다.' })
+      router.refresh()
+    })
+  }
+
+  const submitCase = () => {
+    if (!isEditable) return
+    runMutation(async () => {
+      await callJsonAction('submitCase', { assignmentId: props.assignmentId })
+      setNotice({
+        tone: 'success',
+        title: props.statusCard?.canResubmit ? '보완한 내용을 다시 제출했습니다.' : 'AI 활용 제출을 완료했습니다.',
+      })
+      setIsPreviewOpen(false)
+      router.refresh()
+    })
+  }
+
   if (props.state === 'permission-denied') {
-    return <StateScreen title={COPY.noPermissionTitle} description={props.message ?? 'AI 역량평가 페이지에 접근할 수 없습니다.'} />
+    return <StateScreen title={COPY.noPermissionTitle} description={formatAiSubmissionCopy(props.message) || 'AI 활용 제출 페이지에 접근할 수 없습니다.'} />
   }
 
   if (props.state === 'error') {
-    return <StateScreen title={COPY.loadErrorTitle} description={props.message ?? '잠시 후 다시 시도해 주세요.'} />
+    return <StateScreen title={COPY.loadErrorTitle} description={formatAiSubmissionCopy(props.message) || '잠시 후 다시 시도해 주세요.'} />
   }
 
   return (
-    <PageShell
-      title={COPY.pageTitle}
-      description={COPY.pageDescription}
-      actions={
-        <>
-          <select
-            className={inputClassName}
-            value={props.selectedCycleId ?? ''}
-            onChange={(event) => router.push(`/evaluation/ai-competency?cycleId=${encodeURIComponent(event.target.value)}`)}
-          >
-            {props.cycleOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.year}년 · {option.name}
-              </option>
-            ))}
-          </select>
-          {props.canOpenAdmin ? (
-            <button type="button" className={secondaryButtonClassName} onClick={() => router.push(adminHref)}>
-              {COPY.adminCta}
+    <div className="space-y-5">
+      <header className="rounded-3xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">평가 관리 &gt; AI 활용 제출</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-2xl font-semibold text-slate-950">{COPY.pageTitle}</h1>
+              <StatusPill value="승진 심사 제출용 (Pass/Fail)" />
+              <StatusPill value="공식 점수/등급 미산정" tone="success" />
+            </div>
+            <p className="max-w-3xl text-sm leading-6 text-slate-600">{COPY.pageDescription}</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <select
+              className={`${inputClassName} min-w-[220px]`}
+              value={props.selectedCycleId ?? ''}
+              onChange={(event) => router.push(`/evaluation/ai-competency?cycleId=${encodeURIComponent(event.target.value)}`)}
+            >
+              {props.cycleOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.year}년 · {formatAiSubmissionCopy(option.name)}
+                </option>
+              ))}
+            </select>
+            <button type="button" className={secondaryButtonClassName} disabled={!isEditable || isPending} onClick={saveDraft}>
+              {COPY.saveDraft}
             </button>
-          ) : null}
-        </>
-      }
-    >
-      {notice ? <NoticeBanner tone={notice.tone} title={notice.title} description={notice.description} /> : null}
-      {props.statusCard ? (
-        <div className="grid gap-4 md:grid-cols-4">
-          <MetricCard label="현재 상태" value={props.statusCard.statusLabel} />
-          <MetricCard label="현재 회차" value={props.selectedCycle?.cycleName ?? '-'} />
-          <MetricCard label="검토자" value={props.statusCard.reviewerName ?? '미지정'} />
-          <MetricCard
-            label="제출 상태"
-            value={props.statusCard.submittedAt ? formatDateOnly(props.statusCard.submittedAt) : '미제출'}
-            hint={props.selectedCycle?.submissionWindowLabel ? `제출 기간 ${props.selectedCycle.submissionWindowLabel}` : undefined}
-          />
+            <button type="button" className={primaryButtonClassName} disabled={!isEditable || isPending} onClick={submitCase}>
+              {props.statusCard?.canResubmit ? COPY.resubmit : COPY.submit}
+            </button>
+          </div>
         </div>
-      ) : null}
+        <div className="mt-4 grid gap-2 md:grid-cols-5">
+          {summaryCards.map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-medium text-slate-500">{label}</p>
+              <p className="mt-1 text-base font-semibold text-slate-950">{value}</p>
+            </div>
+          ))}
+        </div>
+      </header>
+
+      {notice ? <NoticeBanner tone={notice.tone} title={notice.title} description={notice.description} /> : null}
 
       {props.latestReview?.overallDecision === 'REVISION_REQUIRED' ? (
         <NoticeBanner tone="warning" title="보완 요청이 도착했습니다." description={props.reviewerComment ?? '보완 요청 내용을 반영한 뒤 다시 제출해 주세요.'} />
       ) : null}
 
-      <SectionCard title="안내" description="평가 기준과 예시를 확인한 뒤 제출서를 작성해 주세요.">
-        <div className="grid gap-4 md:grid-cols-2">
-          {props.guideLibrary.guides.map((guide) => (
-            <article key={guide.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <StatusPill value={guide.trackApplicability === 'COMMON' ? '공통 안내' : guide.trackApplicability === 'PROJECT_ONLY' ? '프로젝트형 안내' : '확산형 안내'} />
-              <h3 className="mt-3 text-base font-semibold text-slate-950">{guide.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{guide.summary}</p>
-              <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{guide.body}</p>
-            </article>
-          ))}
-        </div>
-      </SectionCard>
-
       <NoticeBanner
         tone="info"
-        title="AI 활용평가는 2026 업적평가 점수에 반영되지 않습니다."
-        description="레벨업/승진 Pass/Fail 요건으로 별도 관리되며, 단순 교육 이수나 도구 사용 경험만으로는 인정되지 않습니다. 실제 업무 개선과 증빙이 필요합니다."
+        title="AI 활용 제출은 공식 평가 점수나 등급을 자동 산정하지 않습니다."
+        description="제출 내용은 검토 참고 자료이며, 공식 반영은 별도 평가 절차를 따릅니다. Evaluation.totalScore / gradeId 저장 없음."
       />
 
-      {!hasAssignment ? (
-        <EmptyBox title={COPY.assignedEmptyTitle} description={props.message ?? COPY.assignedEmptyDescription} />
-      ) : (
-        <SectionCard
-          title="제출서 작성"
-          description="실제 업무 문제를 해결한 AI 활용 사례를 구조적으로 정리해 주세요. 저장 후 제출 전까지 계속 수정할 수 있습니다."
-          action={
-            isEditable ? (
-              <div className="flex flex-wrap gap-3">
-                <button type="button" className={secondaryButtonClassName} onClick={() => setIsPreviewOpen(true)}>
-                  {COPY.preview}
-                </button>
-                <button
-                  type="button"
-                  className={secondaryButtonClassName}
-                  disabled={isPending}
-                  onClick={() =>
-                    runMutation(async () => {
-                      await callJsonAction('saveDraft', { assignmentId: props.assignmentId, ...form })
-                      setNotice({ tone: 'success', title: '작성 중인 AI 역량평가 초안을 저장했습니다.' })
-                      router.refresh()
-                    })
-                  }
-                >
-                  {COPY.saveDraft}
-                </button>
-                <button
-                  type="button"
-                  className={primaryButtonClassName}
-                  disabled={isPending}
-                  onClick={() =>
-                    runMutation(async () => {
-                      await callJsonAction('submitCase', { assignmentId: props.assignmentId })
-                      setNotice({
-                        tone: 'success',
-                        title: props.statusCard?.canResubmit ? '보완한 내용을 다시 제출했습니다.' : 'AI 역량평가 제출을 완료했습니다.',
-                      })
-                      setIsPreviewOpen(false)
-                      router.refresh()
-                    })
-                  }
-                >
-                  {props.statusCard?.canResubmit ? COPY.resubmit : COPY.submit}
-                </button>
+      <div className="grid items-start gap-5 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
+        <aside className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-4">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-slate-950">제출하기</p>
+            <p className="text-xs leading-5 text-slate-500">PPT 기준의 AI 활용 사례 제출 흐름입니다.</p>
+          </div>
+          <div className="mt-5 space-y-0">
+            {submissionSteps.map(([step, title, description], index) => (
+              <div key={step} className="relative flex gap-3 pb-5 last:pb-0">
+                {index < submissionSteps.length - 1 ? <span className="absolute left-[15px] top-8 h-full w-px bg-slate-200" /> : null}
+                <span className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${index === 0 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                  {index + 1}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-blue-700">{step}</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-950">{title}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
+                </div>
               </div>
-            ) : null
-          }
-        >
-          <div className="space-y-6">
+            ))}
+          </div>
+        </aside>
+
+        <main className="space-y-4">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">AI 활용 제출 목록</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">업무에서 활용한 AI 사례와 제출 상태를 먼저 확인합니다.</p>
+              </div>
+              <StatusPill value={selectedCycleLabel} />
+            </div>
+            {hasAssignment ? (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-blue-200 bg-blue-50/40">
+                <div className="grid gap-3 px-4 py-3 text-xs font-semibold text-slate-500 md:grid-cols-[1.1fr_1.5fr_1fr_1fr_0.7fr]">
+                  <span>구분</span>
+                  <span>AI 활용 사례</span>
+                  <span>성과/효과</span>
+                  <span>제출 상태</span>
+                  <span>증빙</span>
+                </div>
+                <div className="grid gap-3 border-t border-blue-100 bg-white px-4 py-4 text-sm md:grid-cols-[1.1fr_1.5fr_1fr_1fr_0.7fr] md:items-center">
+                  <span className="font-semibold text-slate-950">{recognitionRouteConfig?.label ?? '인정 경로 미선택'}</span>
+                  <span className="text-slate-700">{form.title || '아직 제출된 AI 활용 사례가 없습니다.'}</span>
+                  <span className="text-slate-600">{form.impactSummary || '-'}</span>
+                  <span><StatusPill value={submittedAtLabel} tone={props.statusCard?.submittedAt ? 'success' : 'neutral'} /></span>
+                  <span className="font-semibold text-slate-900">{props.evidenceItems.length}건</span>
+                </div>
+              </div>
+            ) : (
+              <EmptyBox
+                title={COPY.assignedEmptyTitle}
+                description={formatAiSubmissionCopy(props.message) || COPY.assignedEmptyDescription}
+              />
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-slate-950">STEP 1. 제출 유형 선택</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">해당되는 유형을 선택하면 입력 항목이 변경됩니다.</p>
+            </div>
             <div className="grid gap-4 md:grid-cols-3">
               {AI_COMPETENCY_GATE_RECOGNITION_ROUTES.map((option) => (
                 <button
                   key={option.value}
                   type="button"
                   disabled={!isEditable}
-                  className={`rounded-3xl border p-5 text-left transition ${recognitionRoute === option.value ? 'border-slate-900 bg-slate-950 text-white' : 'border-slate-200 bg-slate-50 text-slate-900'} ${!isEditable ? 'cursor-default opacity-80' : ''}`}
+                  className={`rounded-2xl border p-5 text-left transition ${recognitionRoute === option.value ? 'border-blue-500 bg-blue-50 text-slate-950 ring-1 ring-blue-200' : 'border-slate-200 bg-white text-slate-900'} ${!isEditable ? 'cursor-default opacity-80' : ''}`}
                   onClick={() => updateRecognitionRoute(option.value)}
                 >
+                  <span className={`mb-6 block h-5 w-5 rounded-full border ${recognitionRoute === option.value ? 'border-blue-600 bg-blue-600 shadow-[inset_0_0_0_5px_white]' : 'border-slate-400 bg-white'}`} />
                   <p className="text-sm font-semibold">{option.label}</p>
-                  <p className={`mt-2 text-sm leading-6 ${recognitionRoute === option.value ? 'text-slate-200' : 'text-slate-600'}`}>{option.description}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{formatAiSubmissionCopy(option.description)}</p>
                 </button>
               ))}
             </div>
+          </section>
 
-            <SectionCard
-              title="인정 경로별 증빙 요건"
-              description="선택한 경로의 요구사항을 확인하고, 저장은 자유롭게 하되 제출 전 필수 증빙을 채워 주세요."
-            >
-              <div className="space-y-3">
-                <StatusPill value={recognitionRouteConfig?.label ?? '인정 경로 미선택'} />
-                <ul className="grid gap-2 text-sm leading-6 text-slate-700 md:grid-cols-2">
-                  {(recognitionRouteConfig?.requirements ?? [
-                    'AI 활용평가 인정 경로를 먼저 선택해 주세요.',
-                  ]).map((item) => (
-                    <li key={item} className="rounded-2xl bg-slate-50 px-4 py-3">
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-                {readinessWarnings.length ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                    {readinessWarnings.map((warning) => (
-                      <p key={warning}>{warning}</p>
-                    ))}
-                  </div>
-                ) : null}
+          {!hasAssignment ? null : (
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">STEP 2. 사례 작성</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">먼저 어떤 업무에 AI를 활용했는지 한 줄로 적어보세요.</p>
+                </div>
+                <span className="text-xs font-semibold text-rose-500">* 필수 입력 항목</span>
               </div>
-            </SectionCard>
+              <div className="grid gap-5 md:grid-cols-2">
+                {COMMON_FIELDS.map(([key, label, required]) => (
+                  <Field key={key} label={label} required={required}>
+                    <textarea
+                      className={key === 'title' || key === 'scopeDescription' ? inputClassName : textareaClassName}
+                      value={String(form[key as keyof typeof form] ?? '')}
+                      disabled={!isEditable}
+                      onChange={(event) => updateField(key as keyof typeof form, event.target.value)}
+                    />
+                  </Field>
+                ))}
+              </div>
+            </section>
+          )}
 
-            <div className="grid gap-5 md:grid-cols-2">
-              {COMMON_FIELDS.map(([key, label, required]) => (
-                <Field key={key} label={label} required={required}>
-                  <textarea
-                    className={key === 'title' || key === 'scopeDescription' ? inputClassName : textareaClassName}
-                    value={String(form[key as keyof typeof form] ?? '')}
-                    disabled={!isEditable}
-                    onChange={(event) => updateField(key as keyof typeof form, event.target.value)}
-                  />
-                </Field>
-              ))}
-            </div>
+          {hasAssignment ? (
+            <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <summary className="cursor-pointer text-base font-semibold text-slate-950">STEP 3. 성과 작성 (Before / After 및 실제 성과)</summary>
+              <div className="mt-4 space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <StatusPill value={recognitionRouteConfig?.label ?? '인정 경로 미선택'} />
+                  <ul className="mt-3 grid gap-2 text-sm leading-6 text-slate-700 md:grid-cols-2">
+                    {(recognitionRouteConfig?.requirements ?? [
+                      'AI 활용 제출 인정 경로를 먼저 선택해 주세요.',
+                    ]).map((item) => (
+                      <li key={item} className="rounded-2xl bg-white px-4 py-3">
+                        {formatAiSubmissionCopy(item)}
+                      </li>
+                    ))}
+                  </ul>
+                  {readinessWarnings.length ? (
+                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                      {readinessWarnings.map((warning) => (
+                        <p key={warning}>{warning}</p>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </details>
+          ) : null}
 
+          {hasAssignment ? (
+            <>
             {recognitionRoute === 'AI_PROJECT_TK' ? (
               <TrackSection
                 title="프로젝트 수행 상세"
@@ -476,7 +552,7 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
               </div>
             </SectionCard>
 
-            <SectionCard title={COPY.evidenceTitle} description="파일, 링크, 설명 메모 중 하나 이상으로 실제 근거를 남겨 주세요.">
+            <SectionCard title={`STEP 4. ${COPY.evidenceTitle} 첨부 및 확인`} description="파일, 링크, 설명 메모 중 하나 이상으로 실제 근거를 남겨 주세요. 정량 효과가 없으면 정성 효과부터 작성해도 됩니다.">
               <div className="space-y-4">
                 {props.evidenceItems.length ? (
                   props.evidenceItems.map((item) => (
@@ -542,27 +618,107 @@ export function AiCompetencyClient(props: AiCompetencyGateEmployeePageData) {
                 <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700"><input type="checkbox" checked={form.finalDeclarationAccepted} disabled={!isEditable} onChange={(event) => updateField('finalDeclarationAccepted', event.target.checked)} /><span>제출 내용은 사실에 기반하며, 필요 시 재현 가능한 근거와 설명을 제공할 수 있음을 확인합니다.</span></label>
               </div>
             </SectionCard>
+            </>
+          ) : null}
+          <div className="flex flex-col gap-2 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-6 text-slate-600">제출 전 미리보기로 내용과 증빙을 확인한 뒤 제출하세요.</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={secondaryButtonClassName} disabled={!hasAssignment} onClick={() => setIsPreviewOpen(true)}>
+                {COPY.preview}
+              </button>
+              <button type="button" className={secondaryButtonClassName} disabled={!isEditable || isPending} onClick={saveDraft}>
+                {COPY.saveDraft}
+              </button>
+              <button type="button" className={primaryButtonClassName} disabled={!isEditable || isPending} onClick={submitCase}>
+                {props.statusCard?.canResubmit ? COPY.resubmit : COPY.submit}
+              </button>
+            </div>
           </div>
-        </SectionCard>
-      )}
+        </main>
 
-      <SectionCard title={COPY.historyTitle} description={COPY.historyDescription}>
-        <div className="space-y-3">
-          {props.timeline.length ? props.timeline.map((item) => (
-            <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusPill value={item.tone === 'success' ? '통과 관련' : item.tone === 'warning' ? '주의 / 보완' : '기록'} tone={item.tone === 'success' ? 'success' : item.tone === 'warning' ? 'warning' : 'neutral'} />
-                <span className="text-sm text-slate-500">{formatDateTime(item.createdAt)}</span>
+        <aside className="space-y-4 xl:sticky xl:top-4">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">제출 상태</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-500">현재 회차와 검토 상태를 확인합니다.</p>
               </div>
-              <h3 className="mt-2 text-base font-semibold text-slate-950">{item.title}</h3>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{item.description}</p>
-            </article>
-          )) : <EmptyBox title={COPY.historyEmptyTitle} description={COPY.historyEmptyDescription} />}
-        </div>
-      </SectionCard>
+              <StatusPill value={props.statusCard?.statusLabel ?? '대상 없음'} />
+            </div>
+            <dl className="mt-4 space-y-3">
+              {[
+                ['현재 회차', selectedCycleLabel],
+                ['제출 기간', props.selectedCycle?.submissionWindowLabel ?? '-'],
+                ['검토자', props.statusCard?.reviewerName ?? '미지정'],
+                ['제출 상태', submittedAtLabel],
+                ['검토 상태', reviewStatusLabel],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <dt className="text-xs font-medium text-slate-500">{label}</dt>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900">{formatAiSubmissionCopy(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          <section className="rounded-3xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-slate-950">안전 확인</h2>
+            <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+              <p>AI 활용 제출은 공식 평가 점수나 등급을 자동 산정하지 않습니다.</p>
+              <p>제출 내용은 검토 참고 자료이며, 공식 반영은 별도 평가 절차를 따릅니다.</p>
+              <p className="font-semibold text-blue-900">Evaluation.totalScore / gradeId 저장 없음</p>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-slate-950">작성 안내</h2>
+            <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+              <li>실제 업무 적용 사례 중심으로 작성해 주세요.</li>
+              <li>단순 사용 경험은 인정되지 않습니다.</li>
+              <li>허위 작성 시 심사에서 불이익이 있을 수 있습니다.</li>
+            </ul>
+            {props.guideLibrary.guides.length ? (
+              <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800">상세 안내 보기</summary>
+                <div className="mt-3 space-y-3">
+                  {props.guideLibrary.guides.map((guide) => (
+                    <article key={guide.id}>
+                      <StatusPill value={guide.trackApplicability === 'COMMON' ? '공통 안내' : guide.trackApplicability === 'PROJECT_ONLY' ? '프로젝트형 안내' : '확산형 안내'} />
+                      <h3 className="mt-2 text-sm font-semibold text-slate-950">{formatAiSubmissionCopy(guide.title)}</h3>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">{formatAiSubmissionCopy(guide.summary)}</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{formatAiSubmissionCopy(guide.body)}</p>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+          </section>
+
+          {props.canOpenAdmin ? (
+            <button type="button" className={`${secondaryButtonClassName} w-full`} onClick={() => router.push(adminHref)}>
+              {COPY.adminCta}
+            </button>
+          ) : null}
+
+          <SectionCard title={COPY.historyTitle} description={COPY.historyDescription}>
+            <div className="space-y-3">
+              {props.timeline.length ? props.timeline.map((item) => (
+                <article key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusPill value={item.tone === 'success' ? '통과 관련' : item.tone === 'warning' ? '주의 / 보완' : '기록'} tone={item.tone === 'success' ? 'success' : item.tone === 'warning' ? 'warning' : 'neutral'} />
+                    <span className="text-sm text-slate-500">{formatDateTime(item.createdAt)}</span>
+                  </div>
+                  <h3 className="mt-2 text-base font-semibold text-slate-950">{formatAiSubmissionCopy(item.title)}</h3>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{formatAiSubmissionCopy(item.description)}</p>
+                </article>
+              )) : <EmptyBox title={COPY.historyEmptyTitle} description={COPY.historyEmptyDescription} />}
+            </div>
+          </SectionCard>
+        </aside>
+      </div>
 
       {isPreviewOpen ? <PreviewDialog form={form} onClose={() => setIsPreviewOpen(false)} /> : null}
-    </PageShell>
+    </div>
   )
 }
 
