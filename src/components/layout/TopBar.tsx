@@ -7,6 +7,10 @@ import { useQuery } from '@tanstack/react-query'
 import { Bell, ChevronDown, LogOut, Menu } from 'lucide-react'
 import { useState } from 'react'
 import { ROLE_LABELS } from '@/lib/utils'
+import {
+  createEmptyNotificationsUnreadQueryData,
+  fetchNotificationsUnreadQueryData,
+} from '@/lib/notifications-query'
 
 type TopBarProps = {
   session: {
@@ -27,11 +31,8 @@ export function TopBar({ session, onMenuClick }: TopBarProps) {
 
   const { data: notifData } = useQuery({
     queryKey: ['notifications', 'unread'],
-    queryFn: async () => {
-      const res = await fetch('/api/notifications?unreadOnly=true&pageSize=5')
-      const json = await res.json()
-      return json.data
-    },
+    queryFn: () => fetchNotificationsUnreadQueryData(),
+    initialData: createEmptyNotificationsUnreadQueryData,
     refetchInterval: 30000,
   })
 
