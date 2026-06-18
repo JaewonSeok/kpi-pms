@@ -4,18 +4,25 @@ import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  Activity,
   AlertTriangle,
+  BadgeCheck,
   Bot,
   CheckCircle2,
+  ChevronRight,
   ClipboardList,
   Copy,
   FileDown,
   FilePlus2,
+  Gauge,
   History,
   Link2,
+  ListChecks,
   Plus,
   Send,
+  ShieldCheck,
   Sparkles,
+  Target,
   Trash2,
   X,
 } from 'lucide-react'
@@ -58,6 +65,14 @@ import {
 } from '@/lib/personal-kpi-target-values'
 import { joinInlineParts } from '@/lib/metric-copy'
 import { getPersonalKpiScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
+import {
+  PmsEmptyIllustration,
+  PmsMetricRail,
+  PmsSignalChip,
+  type PmsMetricRailItem,
+  type PmsSignal,
+  type PmsTone,
+} from '@/components/pms-ui'
 
 type Props = PersonalKpiPageData & {
   initialTab?: string
@@ -844,6 +859,112 @@ function derivePersonalSummary(items: PersonalKpiViewModel[], reviewPendingCount
   }
 }
 
+function getWeightSignal(totalWeight: number): PmsSignal {
+  if (totalWeight === 100) return 'green'
+  if (totalWeight > 100) return 'red'
+  return totalWeight >= 80 ? 'amber' : 'gray'
+}
+
+function getWeightTone(totalWeight: number): PmsTone | 'good' {
+  if (totalWeight === 100) return 'good'
+  if (totalWeight > 100) return 'danger'
+  return totalWeight >= 80 ? 'warning' : 'neutral'
+}
+
+function getStatusTone(status?: string): PmsTone {
+  if (status === 'CONFIRMED') return 'success'
+  if (status === 'SUBMITTED' || status === 'MANAGER_REVIEW') return 'info'
+  if (status === 'LOCKED') return 'locked'
+  if (status === 'ARCHIVED') return 'neutral'
+  return 'warning'
+}
+
+function getCompletionCount(items: PersonalKpiViewModel[]) {
+  return items.filter((item) => item.status === 'SUBMITTED' || item.status === 'MANAGER_REVIEW' || item.status === 'CONFIRMED' || item.status === 'LOCKED').length
+}
+
+function getSupplementNeededCount(items: PersonalKpiViewModel[]) {
+  return items.filter(
+    (item) =>
+      item.hasRejectedRevision ||
+      !item.policyCategory ||
+      !item.orgKpiId ||
+      item.mboPolicy.issues.length > 0 ||
+      buildMboQualityChecklist(item).some((check) => !check.done)
+  ).length
+}
+
+function getPersonalKpiReadiness(item?: PersonalKpiViewModel) {
+  if (!item) {
+    return {
+      done: 0,
+      total: 0,
+      value: null as number | null,
+      signal: 'gray' as PmsSignal,
+      tone: 'neutral' as PmsTone,
+    }
+  }
+
+  const checklist = buildMboQualityChecklist(item)
+  const done = checklist.filter((check) => check.done).length
+  const value = checklist.length ? Math.round((done / checklist.length) * 100) : null
+  const signal: PmsSignal = value == null ? 'gray' : value >= 85 ? 'green' : value >= 60 ? 'amber' : 'red'
+  const tone: PmsTone = signal === 'green' ? 'success' : signal === 'amber' ? 'warning' : signal === 'red' ? 'danger' : 'neutral'
+
+  return {
+    done,
+    total: checklist.length,
+    value,
+    signal,
+    tone,
+  }
+}
+
+function buildPersonalCockpitMetrics(items: PersonalKpiViewModel[], summary: Props['summary']): PmsMetricRailItem[] {
+  const completedCount = getCompletionCount(items)
+  const draftCount = items.filter((item) => item.status === 'DRAFT').length
+  const supplementNeededCount = getSupplementNeededCount(items)
+
+  return [
+    {
+      icon: <ListChecks className="h-4 w-4" />,
+      label: '전체 KPI',
+      value: `${summary.totalCount}개`,
+      helper: summary.totalCount ? '작성 중인 개인 KPI' : '아직 작성 전',
+      tone: 'info',
+    },
+    {
+      icon: <BadgeCheck className="h-4 w-4" />,
+      label: '작성 완료',
+      value: `${completedCount}개`,
+      helper: '제출/검토/확정 포함',
+      tone: completedCount === summary.totalCount && summary.totalCount > 0 ? 'good' : 'neutral',
+    },
+    {
+      icon: <ClipboardList className="h-4 w-4" />,
+      label: '작성 중',
+      value: `${draftCount}개`,
+      helper: '임시저장 또는 작성 단계',
+      tone: draftCount ? 'warning' : 'neutral',
+    },
+    {
+      icon: <Gauge className="h-4 w-4" />,
+      label: '가중치 합계',
+      value: `${summary.totalWeight}%`,
+      helper: summary.totalWeight === 100 ? '100% 정렬 완료' : `남은 가중치 ${summary.remainingWeight}%`,
+      chip: summary.totalWeight > 100 ? '초과' : summary.totalWeight === 100 ? '정상' : '점검',
+      tone: getWeightTone(summary.totalWeight),
+    },
+    {
+      icon: <AlertTriangle className="h-4 w-4" />,
+      label: '보완 필요',
+      value: `${supplementNeededCount + summary.reviewPendingCount}개`,
+      helper: `보완 ${supplementNeededCount} · 검토 ${summary.reviewPendingCount}`,
+      tone: supplementNeededCount ? 'warning' : 'success',
+    },
+  ]
+}
+
 function getReviewActionState(
   status: PersonalKpiReviewQueueItem['status'],
   action: 'START_REVIEW' | 'APPROVE' | 'REJECT' | 'REOPEN'
@@ -1060,6 +1181,10 @@ export function PersonalKpiManagementClient(props: Props) {
   const derivedSummary = useMemo(
     () => derivePersonalSummary(mineItems, props.summary.reviewPendingCount),
     [mineItems, props.summary.reviewPendingCount]
+  )
+  const cockpitMetricItems = useMemo(
+    () => buildPersonalCockpitMetrics(mineItems, derivedSummary),
+    [mineItems, derivedSummary]
   )
   const deleteActionState = getPersonalKpiDeleteActionState({
     kpi: selectedKpi
@@ -2261,8 +2386,9 @@ export function PersonalKpiManagementClient(props: Props) {
 
   return (
     <div className="space-y-6">
-      <PageHeader />
       <HeroSection
+        summary={derivedSummary}
+        metricItems={cockpitMetricItems}
         rejectedCount={derivedSummary.rejectedCount}
         submitState={submitCtaState}
         submitLabel={submitLabel}
@@ -2299,139 +2425,143 @@ export function PersonalKpiManagementClient(props: Props) {
 
       {props.state === 'ready' ? (
         <>
-          <MboSetupGuidePanel />
-          <ResultWritingGuidePanel />
-          <MboPolicySummaryPanel summary={derivedSummary.mboPolicy} />
-          <Tabs activeTab={activeTab} onChange={setActiveTab} />
-          {activeTab === 'mine' ? (
-            <MineSection
-              items={mineItems}
-              selectedId={selectedKpiId}
-              onSelect={handleSelectKpi}
-              onEdit={handleEditKpi}
-              onClone={handleOpenClone}
-              onDelete={() => setShowDeleteConfirm(true)}
-              selectedKpi={selectedKpi}
-              canEdit={canEditSelectedKpi}
-              editDisabledReason={selectedKpiEditReason}
-              cloneDisabledReason={cloneDisabledReason}
-              deleteActionState={deleteActionState}
-              detailChildren={
-                <>
-                  <PersonalKpiEvidencePanel
-                    selectedKpi={selectedKpi}
-                    draft={selectedEvidenceDraft}
-                    canEdit={canEditSelectedEvidence}
-                    editDisabledReason={selectedEvidenceEditReason}
-                    busy={busyAction === 'evidence-save' || busyAction === 'evidence-upload'}
-                    onDraftChange={updateSelectedEvidenceDraft}
-                    onUploadFiles={handleEvidenceFileUpload}
-                    onAddLink={handleAddEvidenceLink}
-                    onRemoveAttachment={(attachmentId) =>
-                      updateSelectedEvidenceDraft({
-                        attachments: (selectedEvidenceDraft?.attachments ?? []).filter((item) => item.id !== attachmentId),
-                      })
-                    }
-                    onSave={handleSaveEvidence}
-                    onDownload={(attachment) =>
-                      downloadEvidenceAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
-                    }
-                    onOpenLink={openEvidenceLink}
-                  />
-                  {props.permissions.canUseMidcheckCoach ? (
-                    <PersonalKpiMidcheckCoachCard
+          <PersonalKpiWorkspaceShell activeTab={activeTab} onTabChange={setActiveTab}>
+            {activeTab === 'mine' ? (
+              <MineSection
+                items={mineItems}
+                selectedId={selectedKpiId}
+                onSelect={handleSelectKpi}
+                onEdit={handleEditKpi}
+                onClone={handleOpenClone}
+                onDelete={() => setShowDeleteConfirm(true)}
+                selectedKpi={selectedKpi}
+                canEdit={canEditSelectedKpi}
+                editDisabledReason={selectedKpiEditReason}
+                cloneDisabledReason={cloneDisabledReason}
+                deleteActionState={deleteActionState}
+                detailChildren={
+                  <>
+                    <PersonalKpiEvidencePanel
                       selectedKpi={selectedKpi}
                       draft={selectedEvidenceDraft}
-                      preview={selectedMidcheckCoachPreview}
-                      errorMessage={selectedMidcheckCoachError}
-                      busy={busyAction === 'midcheck-coach'}
-                      canRun={Boolean(selectedKpi)}
-                      onRun={handleRunMidcheckCoach}
-                      onApplyDraft={handleApplyCoachDraft}
-                      onCopyManagerShare={handleCopyManagerShareDraft}
+                      canEdit={canEditSelectedEvidence}
+                      editDisabledReason={selectedEvidenceEditReason}
+                      busy={busyAction === 'evidence-save' || busyAction === 'evidence-upload'}
+                      onDraftChange={updateSelectedEvidenceDraft}
+                      onUploadFiles={handleEvidenceFileUpload}
+                      onAddLink={handleAddEvidenceLink}
+                      onRemoveAttachment={(attachmentId) =>
+                        updateSelectedEvidenceDraft({
+                          attachments: (selectedEvidenceDraft?.attachments ?? []).filter((item) => item.id !== attachmentId),
+                        })
+                      }
+                      onSave={handleSaveEvidence}
+                      onDownload={(attachment) =>
+                        downloadEvidenceAttachment(attachment, (message) => setBanner({ tone: 'info', message }))
+                      }
+                      onOpenLink={openEvidenceLink}
                     />
-                  ) : null}
-                </>
-              }
-            />
-          ) : null}
-          {activeTab === 'review' ? (
-            <GoalReviewQueueSection
-              items={props.reviewQueue}
-              selectedId={selectedReviewId}
-              onSelect={setSelectedReviewId}
-              selectedItem={selectedReview}
-              canReview={props.permissions.canReview}
-              busy={busyAction === 'workflow'}
-              reviewNote={reviewNote}
-              onReviewNoteChange={setReviewNote}
-              onAction={handleReviewWorkflow}
-            />
-          ) : null}
-          {activeTab === 'history' ? (
-            <HistorySection history={props.history} aiLogs={props.aiLogs} />
-          ) : null}
-          {activeTab === 'ai' ? (
-            <AiSection
-              canUseAi={props.permissions.canUseAi}
-              unavailableReason={resolvedAiDisabledReason}
-              actions={visibleAiActions}
-              busy={busyAction === 'ai'}
-              preview={aiPreview}
-              previewComparisons={buildPersonalAiPreviewComparisons({ preview: aiPreview, selectedKpi, form })}
-              logs={props.aiLogs}
-              actionStates={aiActionStates}
-              onRun={handleRunAi}
-              onApprove={handleApproveAiPreview}
-              onReject={handleRejectAiPreview}
-              onSelectRecommendation={handleSelectAiRecommendation}
-              selectedRecommendationIndex={selectedAiRecommendationIndex}
-              isRecommendationDraftOpen={editorOpen}
-              decisionBusy={busyAction === 'ai-decision'}
-            />
-          ) : null}
+                    {props.permissions.canUseMidcheckCoach ? (
+                      <PersonalKpiMidcheckCoachCard
+                        selectedKpi={selectedKpi}
+                        draft={selectedEvidenceDraft}
+                        preview={selectedMidcheckCoachPreview}
+                        errorMessage={selectedMidcheckCoachError}
+                        busy={busyAction === 'midcheck-coach'}
+                        canRun={Boolean(selectedKpi)}
+                        onRun={handleRunMidcheckCoach}
+                        onApplyDraft={handleApplyCoachDraft}
+                        onCopyManagerShare={handleCopyManagerShareDraft}
+                      />
+                    ) : null}
+                  </>
+                }
+              />
+            ) : null}
+            {activeTab === 'review' ? (
+              <GoalReviewQueueSection
+                items={props.reviewQueue}
+                selectedId={selectedReviewId}
+                onSelect={setSelectedReviewId}
+                selectedItem={selectedReview}
+                canReview={props.permissions.canReview}
+                busy={busyAction === 'workflow'}
+                reviewNote={reviewNote}
+                onReviewNoteChange={setReviewNote}
+                onAction={handleReviewWorkflow}
+              />
+            ) : null}
+            {activeTab === 'history' ? (
+              <HistorySection history={props.history} aiLogs={props.aiLogs} />
+            ) : null}
+            {activeTab === 'ai' ? (
+              <AiSection
+                canUseAi={props.permissions.canUseAi}
+                unavailableReason={resolvedAiDisabledReason}
+                actions={visibleAiActions}
+                busy={busyAction === 'ai'}
+                preview={aiPreview}
+                previewComparisons={buildPersonalAiPreviewComparisons({ preview: aiPreview, selectedKpi, form })}
+                logs={props.aiLogs}
+                actionStates={aiActionStates}
+                onRun={handleRunAi}
+                onApprove={handleApproveAiPreview}
+                onReject={handleRejectAiPreview}
+                onSelectRecommendation={handleSelectAiRecommendation}
+                selectedRecommendationIndex={selectedAiRecommendationIndex}
+                isRecommendationDraftOpen={editorOpen}
+                decisionBusy={busyAction === 'ai-decision'}
+              />
+            ) : null}
+          </PersonalKpiWorkspaceShell>
+          <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
+            <MboSetupGuidePanel />
+            <ResultWritingGuidePanel />
+          </div>
+          <MboPolicySummaryPanel summary={derivedSummary.mboPolicy} />
         </>
       ) : (
         <>
           <MboSetupGuidePanel />
           <ResultWritingGuidePanel />
           <StatePanel state={props.state} message={props.message} />
-          <Tabs activeTab={activeTab} onChange={setActiveTab} />
-          {activeTab === 'review' ? (
-            <GoalReviewQueueSection
-              items={props.reviewQueue}
-              selectedId={selectedReviewId}
-              onSelect={setSelectedReviewId}
-              selectedItem={selectedReview}
-              canReview={props.permissions.canReview}
-              busy={busyAction === 'workflow'}
-              reviewNote={reviewNote}
-              onReviewNoteChange={setReviewNote}
-              onAction={handleReviewWorkflow}
-            />
-          ) : null}
-          {activeTab === 'history' ? (
-            <HistorySection history={props.history} aiLogs={props.aiLogs} />
-          ) : null}
-          {activeTab === 'ai' ? (
-            <AiSection
-              canUseAi={props.permissions.canUseAi}
-              unavailableReason={resolvedAiDisabledReason}
-              actions={visibleAiActions}
-              busy={busyAction === 'ai'}
-              preview={aiPreview}
-              previewComparisons={buildPersonalAiPreviewComparisons({ preview: aiPreview, selectedKpi, form })}
-              logs={props.aiLogs}
-              actionStates={aiActionStates}
-              onRun={handleRunAi}
-              onApprove={handleApproveAiPreview}
-              onReject={handleRejectAiPreview}
-              onSelectRecommendation={handleSelectAiRecommendation}
-              selectedRecommendationIndex={selectedAiRecommendationIndex}
-              isRecommendationDraftOpen={editorOpen}
-              decisionBusy={busyAction === 'ai-decision'}
-            />
-          ) : null}
+          <PersonalKpiWorkspaceShell activeTab={activeTab} onTabChange={setActiveTab}>
+            {activeTab === 'review' ? (
+              <GoalReviewQueueSection
+                items={props.reviewQueue}
+                selectedId={selectedReviewId}
+                onSelect={setSelectedReviewId}
+                selectedItem={selectedReview}
+                canReview={props.permissions.canReview}
+                busy={busyAction === 'workflow'}
+                reviewNote={reviewNote}
+                onReviewNoteChange={setReviewNote}
+                onAction={handleReviewWorkflow}
+              />
+            ) : null}
+            {activeTab === 'history' ? (
+              <HistorySection history={props.history} aiLogs={props.aiLogs} />
+            ) : null}
+            {activeTab === 'ai' ? (
+              <AiSection
+                canUseAi={props.permissions.canUseAi}
+                unavailableReason={resolvedAiDisabledReason}
+                actions={visibleAiActions}
+                busy={busyAction === 'ai'}
+                preview={aiPreview}
+                previewComparisons={buildPersonalAiPreviewComparisons({ preview: aiPreview, selectedKpi, form })}
+                logs={props.aiLogs}
+                actionStates={aiActionStates}
+                onRun={handleRunAi}
+                onApprove={handleApproveAiPreview}
+                onReject={handleRejectAiPreview}
+                onSelectRecommendation={handleSelectAiRecommendation}
+                selectedRecommendationIndex={selectedAiRecommendationIndex}
+                isRecommendationDraftOpen={editorOpen}
+                decisionBusy={busyAction === 'ai-decision'}
+              />
+            ) : null}
+          </PersonalKpiWorkspaceShell>
         </>
       )}
 
@@ -2495,21 +2625,9 @@ export function PersonalKpiManagementClient(props: Props) {
   )
 }
 
-function PageHeader() {
-  return (
-    <div className="space-y-2">
-      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">KPI/MBO Workspace</p>
-      <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">내 KPI/MBO</h1>
-        <p className="text-sm text-slate-600">
-          조직 목표와 연결된 KPI/MBO를 작성하고, 제출·리더 검토·월간 실적 준비까지 한 화면에서 관리합니다.
-        </p>
-      </div>
-    </div>
-  )
-}
-
 function HeroSection(props: {
+  summary: Props['summary']
+  metricItems: PmsMetricRailItem[]
   rejectedCount: number
   submitState: PersonalKpiSubmitCtaState
   submitLabel: string
@@ -2526,71 +2644,99 @@ function HeroSection(props: {
   onOpenReview: () => void
   onSubmit: () => void
 }) {
+  const aiTone: PmsTone = props.aiDisabledReason ? 'warning' : 'ai'
+  const editTone: PmsTone = props.createDisabledReason ? 'locked' : 'success'
+  const orgLinkRate = props.summary.totalCount
+    ? Math.round((props.summary.linkedOrgKpiCount / props.summary.totalCount) * 100)
+    : 0
+
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <ActionButton
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="grid gap-3 border-b border-slate-100 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">2026 MBO/KPI</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">내 KPI/MBO</h1>
+          <p className="mt-1 text-sm leading-5 text-slate-600">
+            조직 목표와 연결된 개인 KPI를 작성하고, AI 도움으로 표현을 다듬어보세요.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-1.5 lg:justify-end">
+          <PmsSignalChip tone={editTone} icon={<Target className="h-3.5 w-3.5" />}>
+            {props.createDisabledReason ? '작성 잠금' : '작성 가능'}
+          </PmsSignalChip>
+          <PmsSignalChip tone={props.submitState.disabled ? 'warning' : 'success'} icon={<Send className="h-3.5 w-3.5" />}>
+            {props.submitState.disabled ? '제출 점검' : '제출 가능'}
+          </PmsSignalChip>
+          <PmsSignalChip tone={aiTone} icon={<Sparkles className="h-3.5 w-3.5" />}>
+            {props.aiDisabledReason ? 'AI 확인' : 'AI 작성 보조'}
+          </PmsSignalChip>
+          <PmsSignalChip tone={orgLinkRate >= 80 ? 'success' : orgLinkRate > 0 ? 'warning' : 'neutral'} icon={<Link2 className="h-3.5 w-3.5" />}>
+            조직 KPI {props.summary.linkedOrgKpiCount}/{props.summary.totalCount}
+          </PmsSignalChip>
+          <PmsSignalChip tone="locked" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+            공식 평가 미산정
+          </PmsSignalChip>
+        </div>
+      </div>
+
+      <div className="space-y-3 px-4 py-3">
+        <PmsMetricRail items={props.metricItems} className="xl:grid-cols-5" />
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+          <CompactActionButton
             icon={<Plus className="h-4 w-4" />}
             onClick={props.onOpenCreate}
             disabled={Boolean(props.createDisabledReason)}
             title={props.createDisabledReason}
           >
             KPI 추가
-          </ActionButton>
-          <ActionButton
+          </CompactActionButton>
+          <CompactActionButton
+            icon={<Sparkles className="h-4 w-4" />}
+            onClick={props.onOpenAiDraft}
+            disabled={Boolean(props.aiDisabledReason)}
+            title={props.aiDisabledReason}
+            variant="primary"
+          >
+            AI 초안 생성
+          </CompactActionButton>
+          <CompactActionButton
+            icon={<Send className="h-4 w-4" />}
+            onClick={props.onSubmit}
+            disabled={props.submitState.disabled}
+            title={props.submitState.reason}
+            variant="primary"
+          >
+            {props.submitLabel}
+          </CompactActionButton>
+          <CompactActionButton
             icon={<ClipboardList className="h-4 w-4" />}
-            variant="secondary"
+            onClick={props.onOpenReview}
+            disabled={Boolean(props.reviewDisabledReason)}
+            title={props.reviewDisabledReason || PERSONAL_KPI_REVIEW_CTA_LABEL}
+          >
+            검토 대기 보기
+          </CompactActionButton>
+          <CompactActionButton
+            icon={<ClipboardList className="h-4 w-4" />}
             onClick={props.onOpenBulkEdit}
             disabled={Boolean(props.bulkEditDisabledReason)}
             title={props.bulkEditDisabledReason}
           >
             목표 일괄 수정
-          </ActionButton>
-          <div className="space-y-1">
-            <ActionButton
-              icon={<Sparkles className="h-4 w-4" />}
-              variant="secondary"
-              onClick={props.onOpenAiDraft}
-              disabled={Boolean(props.aiDisabledReason)}
-              title={props.aiDisabledReason}
-            >
-              AI 초안 생성
-            </ActionButton>
-            {props.aiHelperText ? (
-              <p className="px-1 text-xs leading-5 text-slate-500">{props.aiHelperText}</p>
-            ) : null}
-          </div>
-          <ActionButton
-            icon={<ClipboardList className="h-4 w-4" />}
-            variant="secondary"
-            onClick={props.onOpenReview}
-            title={props.reviewDisabledReason || PERSONAL_KPI_REVIEW_CTA_LABEL}
-            disabled={Boolean(props.reviewDisabledReason)}
-          >
-            검토 대기 보기
-          </ActionButton>
-          <ActionButton
+          </CompactActionButton>
+          <CompactActionButton
             icon={<History className="h-4 w-4" />}
-            variant="secondary"
             onClick={props.onOpenHistory}
             disabled={Boolean(props.historyDisabledReason)}
             title={props.historyDisabledReason}
           >
             이력 보기
-          </ActionButton>
-          <ActionButton
-            icon={<Send className="h-4 w-4" />}
-            onClick={props.onSubmit}
-            disabled={props.submitState.disabled}
-            title={props.submitState.reason}
-          >
-            승인 요청
-          </ActionButton>
+          </CompactActionButton>
+          <div className="min-w-[220px] flex-1 text-xs leading-5 text-slate-500">
+            <p data-testid="personal-kpi-submit-helper">{props.submitState.reason}</p>
+            {props.aiHelperText ? <p>{props.aiHelperText}</p> : null}
+          </div>
         </div>
-        <p data-testid="personal-kpi-submit-helper" className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          {props.submitState.reason}
-        </p>
         {props.rejectedCount > 0 ? (
           <p
             data-testid="personal-kpi-rejected-count"
@@ -2604,19 +2750,74 @@ function HeroSection(props: {
   )
 }
 
+function CompactActionButton(props: {
+  children: ReactNode
+  icon?: ReactNode
+  onClick?: () => void
+  disabled?: boolean
+  title?: string
+  variant?: 'primary' | 'secondary'
+}) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      title={props.title}
+      className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition ${
+        props.variant === 'primary'
+          ? 'bg-blue-600 text-white hover:bg-blue-700'
+          : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+      } disabled:cursor-not-allowed disabled:opacity-50`}
+    >
+      {props.icon}
+      {props.children}
+    </button>
+  )
+}
+
+function PersonalKpiWorkspaceShell(props: {
+  activeTab: PersonalKpiTabKey
+  onTabChange: (tab: PersonalKpiTabKey) => void
+  children: ReactNode
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Personal KPI workspace</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-950">개인 KPI 작업 영역</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              왼쪽에서 KPI를 고르고, 오른쪽 상세 패널에서 작성 품질·증빙·AI 도움 상태를 함께 확인합니다.
+            </p>
+          </div>
+          <PmsSignalChip tone="ai" icon={<Sparkles className="h-3.5 w-3.5" />}>
+            AI는 저장 전 초안 보조
+          </PmsSignalChip>
+        </div>
+        <div className="mt-3">
+          <Tabs activeTab={props.activeTab} onChange={props.onTabChange} />
+        </div>
+      </div>
+      <div className="p-3 sm:p-4">{props.children}</div>
+    </section>
+  )
+}
+
 function Tabs(props: { activeTab: PersonalKpiTabKey; onChange: (tab: PersonalKpiTabKey) => void }) {
   return (
     <div className="overflow-x-auto">
-      <div className="inline-flex min-w-full gap-2 rounded-2xl border border-slate-200 bg-white p-2">
+      <div className="inline-flex min-w-full gap-1 border-b border-slate-200 bg-white">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             onClick={() => props.onChange(tab.key)}
-            className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
+            className={`border-b-2 px-4 py-2 text-sm font-semibold transition ${
               props.activeTab === tab.key
-                ? 'bg-slate-900 text-white'
-                : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                ? 'border-blue-600 text-blue-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             {tab.label}
@@ -2643,12 +2844,14 @@ function MineSection(props: {
 }) {
   if (!props.items.length) {
     return (
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <EmptyState
-          title="아직 작성된 KPI가 없습니다."
-          description="상단의 KPI 추가 버튼으로 첫 KPI/MBO를 작성해보세요."
-        />
-        <div className="space-y-6">
+      <div className="grid items-start gap-5 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(540px,620px)]">
+        <section className="h-fit self-start rounded-[28px] border border-dashed border-blue-200 bg-gradient-to-br from-blue-50 via-white to-emerald-50/60 p-6">
+          <PmsEmptyIllustration
+            message="아직 작성된 KPI가 없습니다."
+            description="상단의 KPI 추가 또는 AI 초안 생성을 통해 첫 KPI/MBO를 준비해보세요."
+          />
+        </section>
+        <div className="min-w-0 space-y-6">
           <GoalDetailPanel
             selectedKpi={props.selectedKpi}
             canEdit={props.canEdit}
@@ -2667,52 +2870,51 @@ function MineSection(props: {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-      <SectionCard title="내 KPI" description="조직 KPI 연결 여부와 최근 달성 흐름을 함께 확인하세요.">
-        <div className="space-y-3">
+    <div className="grid items-start gap-4 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(540px,620px)]">
+      <section className="h-fit self-start rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5">
+          <div>
+            <h3 className="text-sm font-bold text-slate-950">개인목표 목록</h3>
+            <p className="mt-0.5 text-xs text-slate-500">선택한 KPI는 오른쪽 상세 패널에서 이어서 확인합니다.</p>
+          </div>
+          <PmsSignalChip tone="info" icon={<Activity className="h-3.5 w-3.5" />}>
+            {props.items.length}개 KPI
+          </PmsSignalChip>
+        </div>
+        <div className="hidden border-b border-slate-100 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-500 md:grid md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_minmax(96px,0.65fr)_56px_76px_78px_28px] md:items-center md:gap-2">
+          <span>구분</span>
+          <span>개인목표</span>
+          <span>수행 계획</span>
+          <span>목표 T/E/S</span>
+          <span>비중</span>
+          <span>증빙</span>
+          <span>상태</span>
+          <span />
+        </div>
+        <div className="divide-y divide-slate-100">
           {props.items.map((item) => (
-            <button
+            <PersonalKpiListCard
               key={item.id}
-              type="button"
-              onClick={() => props.onSelect(item.id)}
-              className={`w-full rounded-2xl border p-4 text-left transition ${
-                props.selectedId === item.id
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-200 bg-white text-slate-900 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold">{item.title}</span>
-                    <StatusBadge status={item.status} />
-                    <InfoPill>{KPI_TYPE_LABELS[item.type]}</InfoPill>
-                  </div>
-                  {item.tags.length ? (
-                    <div className="flex flex-wrap gap-2">
-                      {item.tags.map((tag) => (
-                        <InfoPill key={tag}>{tag}</InfoPill>
-                      ))}
-                    </div>
-                  ) : null}
-                  <p className={`text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
-                    {item.orgKpiTitle ? `상위 목표: ${item.orgKpiTitle}` : '연결된 조직 KPI 없음'}
-                  </p>
-                  <p className={`text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
-                    {item.mboPolicy.guidanceLabel} · {item.mboPolicy.guidanceMessage}
-                  </p>
-                </div>
-                <div className={`text-right text-xs ${props.selectedId === item.id ? 'text-slate-200' : 'text-slate-500'}`}>
-                  <div>가중치 {item.weight}%</div>
-                  <div>최근 달성률 {formatPercent(item.monthlyAchievementRate)}</div>
-                </div>
-              </div>
-            </button>
+              item={item}
+              selected={props.selectedId === item.id}
+              onSelect={() => props.onSelect(item.id)}
+            />
           ))}
         </div>
-      </SectionCard>
+        {props.items.length <= 3 ? (
+          <div className="border-t border-slate-100 bg-slate-50/80 px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+              <span>목표가 적은 경우 상단 KPI 추가 또는 AI 초안 생성으로 보완할 수 있습니다.</span>
+              <div className="flex flex-wrap gap-1.5">
+                <PmsSignalChip tone="neutral">선택 row는 파란색</PmsSignalChip>
+                <PmsSignalChip tone="info">증빙은 월간 실적에서 관리</PmsSignalChip>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-5">
         <GoalDetailPanel
           selectedKpi={props.selectedKpi}
           canEdit={props.canEdit}
@@ -2727,6 +2929,68 @@ function MineSection(props: {
         {props.detailChildren}
       </div>
     </div>
+  )
+}
+
+function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: boolean; onSelect: () => void }) {
+  const readiness = getPersonalKpiReadiness(props.item)
+  const monthlyStatus = props.item.linkedMonthlyCount > 0 ? `${props.item.linkedMonthlyCount}건` : '월간 기록 없음'
+  const targetValues = formatTargetValuesForDisplay(props.item)
+  const planPreview = props.item.definition || props.item.formula || '-'
+  const evidenceStatus = props.item.evidenceRecord.attachments.length
+    ? `${props.item.evidenceRecord.attachments.length}개`
+    : props.item.evidenceRecord.evidenceComment
+      ? '코멘트'
+      : '-'
+  const selectedClass = props.selected
+    ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-200'
+    : 'bg-white hover:bg-slate-50'
+
+  return (
+    <button
+      type="button"
+      onClick={props.onSelect}
+      className={`w-full px-3 py-2 text-left transition ${selectedClass}`}
+    >
+      <div className="grid gap-2 md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_minmax(96px,0.65fr)_56px_76px_78px_28px] md:items-center">
+        <PmsSignalChip tone="neutral" className="justify-center">
+          {KPI_TYPE_LABELS[props.item.type]}
+        </PmsSignalChip>
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="truncate text-sm font-bold text-slate-950">{props.item.title}</span>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+              {monthlyStatus}
+            </span>
+          </div>
+          <p className="mt-0.5 truncate text-[11px] text-slate-500">
+            {props.item.orgKpiTitle ? props.item.orgKpiTitle : '연결 조직 KPI 없음'}
+          </p>
+        </div>
+        <span className="truncate text-xs leading-5 text-slate-600">{planPreview}</span>
+        <span className="truncate text-xs text-slate-600">{targetValues}</span>
+        <span className="text-xs font-bold text-slate-900">{props.item.weight}%</span>
+        <span className="text-xs font-semibold text-slate-600">{evidenceStatus}</span>
+        <div className="space-y-1">
+          <StatusBadge status={props.item.status} />
+          <div className="h-1 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={`h-full rounded-full ${
+                readiness.signal === 'green'
+                  ? 'bg-emerald-400'
+                  : readiness.signal === 'amber'
+                    ? 'bg-amber-400'
+                    : readiness.signal === 'red'
+                      ? 'bg-rose-400'
+                      : 'bg-slate-300'
+              }`}
+              style={{ width: `${readiness.value ?? 0}%` }}
+            />
+          </div>
+        </div>
+        <ChevronRight className="h-4 w-4 text-slate-400 md:justify-self-end" />
+      </div>
+    </button>
   )
 }
 
@@ -2922,33 +3186,39 @@ function MboQualityChecklistBlock(props: { item: PersonalKpiViewModel }) {
   const openItems = checklist.filter((item) => !item.done)
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <details className="group rounded-2xl border border-slate-200 bg-white">
+      <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-3 py-2.5 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
         <div>
           <h4 className="text-sm font-semibold text-slate-900">작성 품질 체크</h4>
-          <p className="mt-1 text-xs text-slate-500">저장/수정 차단이 아니라 제출 전 점검을 돕는 안내입니다.</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            저장/수정 차단이 아니라 제출 전 점검을 돕는 안내입니다.
+          </p>
         </div>
-        <InfoPill>{checklist.length - openItems.length}/{checklist.length} 확인</InfoPill>
-      </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {checklist.map((item) => (
-          <div key={item.key} className="flex items-start gap-2 rounded-2xl bg-slate-50 px-3 py-2">
-            {item.done ? (
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-            ) : (
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            )}
-            <div>
-              <div className="text-xs font-semibold text-slate-800">{item.label}</div>
-              {!item.done ? <div className="mt-1 text-[11px] leading-4 text-slate-500">{item.help}</div> : null}
+        <div className="flex items-center gap-2">
+          <InfoPill>{checklist.length - openItems.length}/{checklist.length} 확인</InfoPill>
+          <span aria-hidden className="text-xs text-slate-400 transition-transform group-open:rotate-180">▾</span>
+        </div>
+      </summary>
+      <div className="border-t border-slate-100 px-3 py-2">
+        <div className="grid gap-1.5">
+          {checklist.map((item) => (
+            <div key={item.key} className="flex items-start gap-2 rounded-xl bg-slate-50 px-2.5 py-2">
+              {item.done ? (
+                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+              )}
+              <div>
+                <div className="text-xs font-semibold text-slate-800">{item.label}</div>
+                {!item.done ? <div className="mt-0.5 text-[11px] leading-4 text-slate-500">{item.help}</div> : null}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </div>
+    </details>
   )
 }
-
 function DetailPanel(props: {
   selectedKpi?: PersonalKpiViewModel
   canEdit: boolean
@@ -3533,12 +3803,10 @@ function CloneKpiModal(props: {
 
 function QuickLinks() {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+    <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
         <Link2 className="h-4 w-4 text-slate-500" />
         빠른 이동
-      </div>
-      <div className="mt-4 flex flex-wrap gap-2">
         {[
           { href: '/kpi/org', label: '조직 KPI' },
           { href: '/kpi/monthly', label: '월간 실적' },
@@ -3549,7 +3817,7 @@ function QuickLinks() {
           <Link
             key={item.href}
             href={item.href}
-            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+            className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
           >
             {item.label}
           </Link>
@@ -4074,134 +4342,220 @@ function GoalDetailPanel(props: {
 }) {
   if (!props.selectedKpi) {
     return (
-      <SectionCard title="KPI 상세" description="선택한 KPI의 정의와 최근 실적, 작업 버튼을 확인합니다.">
-        <div className="space-y-4">
-          <EmptyState title="선택된 KPI가 없습니다." description="왼쪽 목록에서 KPI를 선택하면 상세 정보가 표시됩니다." />
-          <div className="space-y-3 border-t border-slate-100 pt-4">
-            <ActionButton
-              label="삭제"
-              icon={<Trash2 className="h-4 w-4" />}
-              onClick={props.onDelete}
-              disabled
-              variant="destructive"
-              title={props.deleteActionState.reason}
-              testId="personal-kpi-delete-button"
-            />
-            <p data-testid="personal-kpi-delete-helper" className="text-xs text-slate-500">
-              {props.deleteActionState.reason ?? '삭제할 개인 KPI를 먼저 선택해 주세요.'}
-            </p>
-          </div>
+      <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4">
+        <div className="border-b border-slate-100 px-5 py-4">
+          <h2 className="text-xl font-bold text-slate-950">개인목표 상세</h2>
+          <p className="mt-1 text-sm text-slate-500">왼쪽 목록에서 KPI를 선택하면 입력 항목과 관련 상태를 확인합니다.</p>
         </div>
-      </SectionCard>
+        <div className="p-5">
+          <PmsEmptyIllustration
+            message="선택된 KPI가 없습니다."
+            description="개인 KPI 목록에서 하나를 선택해 상세 정보를 확인하세요."
+          />
+        </div>
+        <div className="border-t border-slate-100 bg-white px-5 py-4">
+          <ActionButton
+            label="삭제"
+            icon={<Trash2 className="h-4 w-4" />}
+            onClick={props.onDelete}
+            disabled
+            variant="destructive"
+            title={props.deleteActionState.reason}
+            testId="personal-kpi-delete-button"
+          />
+          <p data-testid="personal-kpi-delete-helper" className="text-xs text-slate-500">
+            {props.deleteActionState.reason ?? '삭제할 개인 KPI를 먼저 선택해 주세요.'}
+          </p>
+        </div>
+      </aside>
     )
   }
 
   const item = props.selectedKpi
+  const readiness = getPersonalKpiReadiness(item)
+  const planText = item.definition || item.formula || '수행 계획이 아직 작성되지 않았습니다.'
+  const evidenceText = item.evidenceRecord.attachments.length
+    ? `${item.evidenceRecord.attachments.length}개 첨부`
+    : item.evidenceRecord.evidenceComment
+      ? '증빙 코멘트 있음'
+      : '월간 실적/증빙에서 관리'
+  const policyLabel = getPolicyCategoryDisplayLabel(item.policyCategory ?? item.mboPolicy.suggestedCategory)
+  const editGuide = props.canEdit
+    ? '수정 버튼으로 기존 입력 화면을 열어 저장하세요. 저장은 사용자가 직접 진행합니다.'
+    : props.editDisabledReason ?? '입력 항목은 현재 목표 수립 기간에만 수정할 수 있습니다.'
 
   return (
-    <SectionCard title="KPI 상세" description="정의, 승인 맥락, 최근 월간 실적을 함께 확인합니다.">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">{item.title}</h3>
-            <p className="text-sm text-slate-500">{item.departmentName}</p>
+    <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4">
+      <div className="border-b border-slate-100 px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold text-slate-950">개인목표 상세</h2>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <PmsSignalChip tone={getStatusTone(item.status)}>{STATUS_LABELS[item.status] || item.status}</PmsSignalChip>
+              <PmsSignalChip tone="neutral">{policyLabel}</PmsSignalChip>
+              <PmsSignalChip tone={item.orgKpiId ? 'success' : 'warning'}>
+                {item.orgKpiId ? '조직 KPI 연결' : '조직 KPI 미연결'}
+              </PmsSignalChip>
+            </div>
           </div>
+          <PmsSignalChip tone={readiness.tone} icon={<CheckCircle2 className="h-3.5 w-3.5" />}>
+            작성 품질 {readiness.done}/{readiness.total}
+          </PmsSignalChip>
+        </div>
+      </div>
+
+      <div className="space-y-4 p-5">
+        <div className="grid gap-3">
+          <ReadOnlyGoalField
+            label="개인목표"
+            value={item.title}
+            required
+            characterCount={`${item.title.length}/100`}
+          />
+          <ReadOnlyGoalField
+            label="수행 계획"
+            value={planText}
+            required
+            multiline
+            characterCount={`${planText.length}/500`}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ReadOnlyGoalField label="비중(%)" value={`${item.weight}%`} required />
+            <ReadOnlyGoalField
+              label="목표값 T/E/S"
+              value={formatTargetValuesForDisplay(item)}
+              helper={item.unit ? `단위: ${item.unit}` : undefined}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ReadOnlyGoalField
+              label="업무수행 직접 역량레벨"
+              value={item.difficulty ? DIFFICULTY_LABELS[item.difficulty as KpiForm['difficulty']] : '현재 사용 안 함'}
+              helper="연말 평가 항목은 별도 기간에 활성화됩니다."
+              muted={!item.difficulty}
+            />
+            <ReadOnlyGoalField
+              label="최근 달성률"
+              value={formatPercent(item.monthlyAchievementRate)}
+              helper={item.linkedMonthlyCount > 0 ? `월간 기록 ${item.linkedMonthlyCount}건` : '월간 기록 없음'}
+            />
+          </div>
+          <ReadOnlyGoalField
+            label="연결 조직 KPI"
+            value={item.orgKpiTitle ?? '미연결'}
+            helper={item.orgLineage.length ? item.orgLineage.map((segment) => segment.departmentName).join(' > ') : '기존 연결 UI에서 관리합니다.'}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ReadOnlyGoalField
+              label="진행 프로젝트명"
+              value="현재 사용 안 함"
+              helper="별도 개인 KPI 필드가 없어 월간 실적에서 관리합니다."
+              muted
+            />
+            <ReadOnlyGoalField
+              label="증빙자료(링크)"
+              value={evidenceText}
+              helper={`${item.evidenceRecord.yearMonth} 월간 실적 기준`}
+            />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-3 py-2.5">
           <div className="flex gap-2">
-            <StatusBadge status={item.status} />
-            {props.canEdit ? (
-              <ActionButton variant="secondary" onClick={() => props.onEdit(item)}>
-                수정
-              </ActionButton>
-            ) : props.editDisabledReason ? (
-              <InfoPill>{props.editDisabledReason}</InfoPill>
-            ) : null}
-            <ActionButton
-              icon={<Copy className="h-4 w-4" />}
-              variant="secondary"
-              onClick={props.onClone}
-              disabled={!props.canClone}
-              title={props.cloneDisabledReason}
-            >
-              복제
-            </ActionButton>
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-700" />
+            <p className="text-xs leading-5 text-blue-800">{editGuide}</p>
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
-          <Field label="KPI 유형" value={KPI_TYPE_LABELS[item.type]} />
-          <Field label="가중치" value={`${item.weight}%`} />
-          <Field label="난이도" value={item.difficulty ? DIFFICULTY_LABELS[item.difficulty as KpiForm['difficulty']] : '-'} />
-          <Field label="최근 달성률" value={formatPercent(item.monthlyAchievementRate)} />
-          <Field label="목표값" value={formatTargetValuesForDisplay(item)} />
-          <Field label="조직 KPI 연결" value={item.orgKpiTitle ?? '미연결'} />
+        <div className="rounded-2xl border border-blue-100 bg-white px-3 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-semibold text-blue-950">AI 작성 보조</h4>
+              <p className="mt-1 text-xs leading-5 text-blue-700">
+                AI는 개인 KPI 작성과 표현 정리를 돕는 보조 기능입니다. 공식 평가 점수나 등급을 산정하지 않습니다.
+              </p>
+            </div>
+            <PmsSignalChip tone="ai" icon={<Sparkles className="h-3.5 w-3.5" />}>
+              저장 전 초안
+            </PmsSignalChip>
+          </div>
         </div>
 
-        <MboPolicyGuidanceBlock item={item} />
+        <details className="group rounded-2xl border border-slate-200 bg-white">
+          <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold text-slate-900 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+            정책/조직 KPI 안내
+            <span aria-hidden className="text-xs text-slate-400 transition-transform group-open:rotate-180">▾</span>
+          </summary>
+          <div className="space-y-3 border-t border-slate-100 p-3">
+            <MboPolicyGuidanceBlock item={item} />
+            {item.orgLineage.length ? (
+              <Block title="목표 정렬 경로">
+                <div className="flex flex-wrap gap-2">
+                  {item.orgLineage.map((segment) => (
+                    <span key={segment.id} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                      {joinInlineParts([segment.departmentName, segment.title])}
+                    </span>
+                  ))}
+                </div>
+              </Block>
+            ) : null}
+            <WeightApprovalSummaryCard approval={item.weightApproval} weight={item.weight} orgLineage={item.orgLineage} />
+          </div>
+        </details>
+
         <MboQualityChecklistBlock item={item} />
+        <PersonalKpiRelatedItems item={item} readiness={readiness} />
+
+        <details className="group rounded-2xl border border-slate-200 bg-white">
+          <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold text-slate-900 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+            월간 실적/검토 메모
+            <span aria-hidden className="text-xs text-slate-400 transition-transform group-open:rotate-180">▾</span>
+          </summary>
+          <div className="space-y-3 border-t border-slate-100 p-3">
+            <MidReviewReferencePanel
+              kind="personal-kpi"
+              targetId={item.id}
+              title="중간 점검"
+              helper="최근 중간 점검에서 합의한 목표 유지 여부, 기대 상태, 다음 계획을 확인합니다."
+            />
+            <Block title="검토 코멘트">{item.reviewComment || '검토 코멘트가 아직 없습니다.'}</Block>
+            {item.recentMonthlyRecords.length ? (
+              <div className="space-y-2">
+                {item.recentMonthlyRecords.map((record) => (
+                  <div key={record.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-900">{record.month}</span>
+                      <span className="text-slate-600">{formatPercent(record.achievementRate)}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">{record.activities || record.obstacles || '요약 메모 없음'}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyInline text="최근 월간 실적이 아직 없습니다." />
+            )}
+          </div>
+        </details>
 
         {item.tags.length ? (
-          <Block title="목표 태그">
-            <div className="flex flex-wrap gap-2">
-              {item.tags.map((tag) => (
-                <span key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </Block>
+          <div className="flex flex-wrap gap-2">
+            {item.tags.map((tag) => (
+              <span key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                {tag}
+              </span>
+            ))}
+          </div>
         ) : null}
-
-        {item.orgLineage.length ? (
-          <Block title="목표 정렬 경로">
-            <div className="flex flex-wrap gap-2">
-              {item.orgLineage.map((segment) => (
-                <span key={segment.id} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">
-                  {joinInlineParts([segment.departmentName, segment.title])}
-                </span>
-              ))}
-            </div>
-          </Block>
-        ) : null}
-
-        <MidReviewReferencePanel
-          kind="personal-kpi"
-          targetId={item.id}
-          title="중간 점검"
-          helper="최근 중간 점검에서 합의한 목표 유지 여부, 기대 상태, 다음 계획을 확인합니다."
-        />
-
-        <WeightApprovalSummaryCard approval={item.weightApproval} weight={item.weight} orgLineage={item.orgLineage} />
-
-        <Block title="정의">{item.definition || '정의가 아직 작성되지 않았습니다.'}</Block>
-        <Block title="산식">{item.formula || '산식이 아직 작성되지 않았습니다.'}</Block>
-        <Block title="검토 코멘트">{item.reviewComment || '검토 코멘트가 아직 없습니다.'}</Block>
 
         {item.cloneInfo ? (
           <Block title="복제 정보">
             {`${item.cloneInfo.sourceOwnerName ?? '원본'}의 "${item.cloneInfo.sourceTitle}"에서 복제되었습니다. 진행 snapshot ${item.cloneInfo.progressEntryCount}건, 체크인 snapshot ${item.cloneInfo.checkinEntryCount}건을 포함했습니다.`}
           </Block>
         ) : null}
+      </div>
 
-        <div className="space-y-2">
-          <h4 className="text-sm font-semibold text-slate-900">최근 월간 실적</h4>
-          {item.recentMonthlyRecords.length ? (
-            <div className="space-y-2">
-              {item.recentMonthlyRecords.map((record) => (
-                <div key={record.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium text-slate-900">{record.month}</span>
-                    <span className="text-slate-600">{formatPercent(record.achievementRate)}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-500">{record.activities || record.obstacles || '요약 메모 없음'}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyInline text="최근 월간 실적이 아직 없습니다." />
-          )}
-        </div>
-
-        <div className="space-y-3 border-t border-slate-100 pt-4">
+      <div className="border-t border-slate-100 bg-white px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <ActionButton
             label="삭제"
             icon={<Trash2 className="h-4 w-4" />}
@@ -4211,14 +4565,133 @@ function GoalDetailPanel(props: {
             title={props.deleteActionState.reason}
             testId="personal-kpi-delete-button"
           />
-          {props.deleteActionState.reason ? (
-            <p data-testid="personal-kpi-delete-helper" className="text-xs text-slate-500">
-              {props.deleteActionState.reason}
-            </p>
-          ) : null}
+          <div className="flex flex-wrap gap-2">
+            <ActionButton
+              icon={<Copy className="h-4 w-4" />}
+              variant="secondary"
+              onClick={props.onClone}
+              disabled={!props.canClone}
+              title={props.cloneDisabledReason}
+            >
+              복제
+            </ActionButton>
+            {props.canEdit ? (
+              <ActionButton variant="secondary" onClick={() => props.onEdit(item)}>
+                수정
+              </ActionButton>
+            ) : props.editDisabledReason ? (
+              <div className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-500">{props.editDisabledReason}</div>
+            ) : null}
+          </div>
         </div>
+        {props.deleteActionState.reason ? (
+          <p data-testid="personal-kpi-delete-helper" className="mt-2 text-xs text-slate-500">
+            {props.deleteActionState.reason}
+          </p>
+        ) : null}
       </div>
-    </SectionCard>
+    </aside>
+  )
+}
+
+function getPolicyCategoryDisplayLabel(category?: PersonalKpiViewModel['policyCategory'] | PersonalKpiViewModel['mboPolicy']['suggestedCategory']) {
+  switch (category) {
+    case 'ORG_GOAL':
+      return '조직목표'
+    case 'PROJECT_T':
+      return '프로젝트T'
+    case 'PROJECT_K':
+      return '프로젝트K'
+    case 'DAILY_WORK':
+      return '일상업무'
+    default:
+      return '평가 구분 미정'
+  }
+}
+
+function ReadOnlyGoalField(props: {
+  label: string
+  value: string
+  required?: boolean
+  multiline?: boolean
+  characterCount?: string
+  helper?: string
+  muted?: boolean
+}) {
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
+        <span>
+          {props.label}
+          {props.required ? <span className="ml-1 text-rose-500">*</span> : null}
+        </span>
+        {props.characterCount ? <span className="font-medium text-slate-400">{props.characterCount}</span> : null}
+      </div>
+      <div
+        className={`rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 shadow-[inset_0_1px_0_rgba(15,23,42,0.02)] ${
+          props.multiline ? 'min-h-[92px] whitespace-pre-line' : ''
+        } ${props.muted ? 'text-slate-500' : ''}`}
+      >
+        {props.value || '-'}
+      </div>
+      {props.helper ? <p className="mt-1.5 text-xs leading-5 text-slate-500">{props.helper}</p> : null}
+    </div>
+  )
+}
+
+function PersonalKpiRelatedItems(props: {
+  item: PersonalKpiViewModel
+  readiness: ReturnType<typeof getPersonalKpiReadiness>
+}) {
+  const rows = [
+    {
+      label: '월간 기록',
+      value: props.item.linkedMonthlyCount > 0 ? `${props.item.linkedMonthlyCount}건` : '아직 없음',
+      tone: props.item.linkedMonthlyCount > 0 ? 'success' : 'neutral',
+    },
+    {
+      label: '증빙',
+      value: props.item.evidenceRecord.attachments.length
+        ? `${props.item.evidenceRecord.attachments.length}개`
+        : props.item.evidenceRecord.evidenceComment
+          ? '코멘트 있음'
+          : '준비 전',
+      tone: props.item.evidenceRecord.attachments.length || props.item.evidenceRecord.evidenceComment ? 'success' : 'neutral',
+    },
+    {
+      label: '검토 이력',
+      value: props.item.reviewComment ? '코멘트 있음' : props.item.weightApproval.label,
+      tone: props.item.hasRejectedRevision ? 'warning' : 'neutral',
+    },
+    {
+      label: 'AI 보조',
+      value: '저장 전 초안',
+      tone: 'ai',
+    },
+    {
+      label: '변경 이력',
+      value: props.item.cloneInfo ? '복제 이력 있음' : '일반 작성',
+      tone: props.item.cloneInfo ? 'info' : 'neutral',
+    },
+    {
+      label: '작성 품질',
+      value: `${props.readiness.done}/${props.readiness.total}`,
+      tone: props.readiness.tone,
+    },
+  ] as const
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 px-3 py-2 text-sm font-semibold text-slate-900">관련 항목</div>
+      <div className="divide-y divide-slate-100">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+            <span className="text-slate-500">{row.label}</span>
+            <PmsSignalChip tone={row.tone}>{row.value}</PmsSignalChip>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

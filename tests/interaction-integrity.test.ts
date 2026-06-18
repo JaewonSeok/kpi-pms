@@ -209,7 +209,7 @@ run('personal KPI history and review CTAs stay usable in non-ready states', () =
   assert.equal(file.includes("activeTab === 'review' ? ("), true)
   assert.equal(file.includes("activeTab === 'history' ? ("), true)
   assert.equal(file.includes('<StatePanel state={props.state} message={props.message} />'), true)
-  assert.equal(file.includes('<Tabs activeTab={activeTab} onChange={setActiveTab} />'), true)
+  assert.equal(file.includes('<PersonalKpiWorkspaceShell activeTab={activeTab} onTabChange={setActiveTab}>'), true)
 })
 
 run('personal KPI submit CTA explains disabled reasons and enables only for draft selection', () => {
