@@ -1,3 +1,4 @@
+import { PerformanceExecutiveAdjustmentWorkspace } from '@/components/evaluation/performance/PerformanceExecutiveAdjustmentWorkspace'
 import { PerformanceMemberInputWorkspace } from '@/components/evaluation/performance/PerformanceMemberInputWorkspace'
 import { PerformanceLeaderReviewWorkspace } from '@/components/evaluation/performance/PerformanceLeaderReviewWorkspace'
 import { requireProtectedPageSession } from '@/server/auth/protected-page'
@@ -13,7 +14,7 @@ type PageProps = {
   }>
 }
 
-type WorkbenchView = 'member' | 'leader'
+type WorkbenchView = 'member' | 'leader' | 'executive'
 
 const LEADER_REVIEW_PREVIEW_ROLES = new Set<string>([
   'ROLE_TEAM_LEADER',
@@ -21,6 +22,13 @@ const LEADER_REVIEW_PREVIEW_ROLES = new Set<string>([
   'ROLE_DIV_HEAD',
   'ROLE_ADMIN',
   'ROLE_CEO',
+  'ROLE_MASTER',
+])
+
+const EXECUTIVE_ADJUSTMENT_PREVIEW_ROLES = new Set<string>([
+  'ROLE_DIV_HEAD',
+  'ROLE_CEO',
+  'ROLE_ADMIN',
   'ROLE_MASTER',
 ])
 
@@ -38,19 +46,28 @@ export default async function EvaluationWorkbenchPage({ searchParams }: PageProp
   })
 
   const canPreviewLeaderReview = LEADER_REVIEW_PREVIEW_ROLES.has(session.user.role)
+  const canPreviewExecutiveAdjustment = EXECUTIVE_ADJUSTMENT_PREVIEW_ROLES.has(session.user.role)
   const requestedView = resolveWorkbenchView(resolvedSearchParams.view)
-  const defaultView: WorkbenchView = canPreviewLeaderReview ? 'leader' : 'member'
-  const activeView = requestedView === 'leader' && !canPreviewLeaderReview ? 'member' : (requestedView ?? defaultView)
+  const defaultView: WorkbenchView = canPreviewExecutiveAdjustment ? 'executive' : canPreviewLeaderReview ? 'leader' : 'member'
+  const activeView =
+    requestedView === 'executive' && !canPreviewExecutiveAdjustment
+      ? defaultView
+      : requestedView === 'leader' && !canPreviewLeaderReview
+        ? 'member'
+        : (requestedView ?? defaultView)
 
   return (
     <div className="space-y-4">
       <PerformanceWorkbenchRoleSwitch
         activeView={activeView}
         canPreviewLeaderReview={canPreviewLeaderReview}
+        canPreviewExecutiveAdjustment={canPreviewExecutiveAdjustment}
         cycleId={resolvedSearchParams.cycleId}
         evaluationId={resolvedSearchParams.evaluationId}
       />
-      {activeView === 'leader' ? (
+      {activeView === 'executive' ? (
+        <PerformanceExecutiveAdjustmentWorkspace data={data} />
+      ) : activeView === 'leader' ? (
         <PerformanceLeaderReviewWorkspace data={data} />
       ) : (
         <PerformanceMemberInputWorkspace data={data} />
@@ -60,7 +77,7 @@ export default async function EvaluationWorkbenchPage({ searchParams }: PageProp
 }
 
 function resolveWorkbenchView(value?: string): WorkbenchView | null {
-  if (value === 'member' || value === 'leader') return value
+  if (value === 'member' || value === 'leader' || value === 'executive') return value
   return null
 }
 
@@ -79,11 +96,13 @@ function buildWorkbenchViewHref(params: {
 function PerformanceWorkbenchRoleSwitch({
   activeView,
   canPreviewLeaderReview,
+  canPreviewExecutiveAdjustment,
   cycleId,
   evaluationId,
 }: {
   activeView: WorkbenchView
   canPreviewLeaderReview: boolean
+  canPreviewExecutiveAdjustment: boolean
   cycleId?: string
   evaluationId?: string
 }) {
@@ -117,9 +136,18 @@ function PerformanceWorkbenchRoleSwitch({
           팀장 평가 화면 · 권한 필요
         </span>
       )}
-      <span className={`${itemClass} ${disabledClass}`} aria-disabled="true">
-        본부장 평가 현황 · 아직 구현 전
-      </span>
+      {canPreviewExecutiveAdjustment ? (
+        <a
+          href={buildWorkbenchViewHref({ view: 'executive', cycleId, evaluationId })}
+          className={`${itemClass} ${activeView === 'executive' ? activeClass : inactiveClass}`}
+        >
+          본부장 평가 현황
+        </a>
+      ) : (
+        <span className={`${itemClass} ${disabledClass}`} aria-disabled="true">
+          본부장 평가 현황 · 권한 필요
+        </span>
+      )}
       <span className="ml-auto text-xs font-medium text-slate-500">
         preview only · 공식 저장 없음
       </span>
