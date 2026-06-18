@@ -151,12 +151,11 @@ run('legacy evaluation assistant route is redirect-only and points to the canoni
   assert.doesNotMatch(assistantRedirectSource, /\/api\/ai\/assist/)
 })
 
-run('evaluation workbench route renders the dedicated 2026 pilot shell with the canonical loader', () => {
+run('evaluation workbench route renders the member performance input workspace with the canonical loader', () => {
   assert.match(workbenchPageSource, /export const dynamic = 'force-dynamic'/)
   assert.match(workbenchPageSource, /requireProtectedPageSession/)
   assert.match(workbenchPageSource, /getEvaluationWorkbenchPageData/)
-  assert.match(workbenchPageSource, /presentationMode="workbench-pilot"/)
-  assert.match(workbenchPageSource, /EvaluationWorkbenchClient/)
+  assert.match(workbenchPageSource, /PerformanceMemberInputWorkspace/)
   assert.doesNotMatch(workbenchPageSource, /redirect\(/)
 })
 
@@ -178,7 +177,7 @@ run('performance detail route exists for direct evaluation deep links', () => {
 })
 
 run('evaluation assistant surface keeps the workbench pilot separate from the legacy assistant path', () => {
-  assert.match(workbenchPageSource, /presentationMode="workbench-pilot"/)
+  assert.match(workbenchPageSource, /PerformanceMemberInputWorkspace/)
   assert.match(workbenchPageSource, /getEvaluationWorkbenchPageData/)
   assert.doesNotMatch(workbenchPageSource, /\/api\/ai\/assist/)
 })

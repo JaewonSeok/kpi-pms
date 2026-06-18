@@ -151,7 +151,7 @@ async function main() {
     const evaluationWorkbenchPage = read('src/app/(main)/evaluation/workbench/page.tsx')
     assert.equal(evaluationWorkbenchPage.includes('requireProtectedPageSession'), true)
     assert.equal(evaluationWorkbenchPage.includes('getEvaluationWorkbenchPageData'), true)
-    assert.equal(evaluationWorkbenchPage.includes('presentationMode="workbench-pilot"'), true)
+    assert.equal(evaluationWorkbenchPage.includes('PerformanceMemberInputWorkspace'), true)
     assert.equal(evaluationWorkbenchPage.includes('redirect('), false)
 
     const evaluationReadinessPage = read('src/app/(main)/admin/evaluation-readiness/page.tsx')
