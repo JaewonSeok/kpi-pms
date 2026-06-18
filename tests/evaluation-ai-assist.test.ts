@@ -162,8 +162,8 @@ run('evaluation workbench route renders the member performance input workspace w
 run('canonical performance page owns the compact HR operations dashboard', () => {
   assert.match(performancePageSource, /requireProtectedPageSession/)
   assert.match(performancePageSource, /import \{ getEvaluationWorkbenchPageData \} from '@\/server\/evaluation-workbench'/)
-  assert.match(performancePageSource, /import \{ EvaluationWorkbenchClient \} from '@\/components\/evaluation\/EvaluationWorkbenchClient'/)
-  assert.match(performancePageSource, /presentationMode="performance-dashboard"/)
+  assert.match(performancePageSource, /import \{ PerformanceHrOpsDashboard \} from '@\/components\/evaluation\/performance\/PerformanceHrOpsDashboard'/)
+  assert.match(performancePageSource, /<PerformanceHrOpsDashboard data=\{data\} \/>/)
   assert.match(performancePageSource, /export const dynamic = 'force-dynamic'/)
   assert.doesNotMatch(performancePageSource, /^'use client'$/m)
 })
