@@ -22,7 +22,7 @@ async function main() {
   await run('/evaluation/workbench exposes member and leader performance views', () => {
     assert.equal(workbenchPageSource.includes('PerformanceMemberInputWorkspace'), true)
     assert.equal(workbenchPageSource.includes('PerformanceLeaderReviewWorkspace'), true)
-    assert.equal(workbenchPageSource.includes("type WorkbenchView = 'member' | 'leader'"), true)
+    assert.equal(workbenchPageSource.includes("type WorkbenchView = 'member' | 'leader' | 'executive'"), true)
     assert.equal(workbenchPageSource.includes('LEADER_REVIEW_PREVIEW_ROLES'), true)
     assert.equal(workbenchPageSource.includes("'ROLE_TEAM_LEADER'"), true)
     assert.equal(workbenchPageSource.includes("'ROLE_SECTION_CHIEF'"), true)
