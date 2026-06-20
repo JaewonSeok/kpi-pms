@@ -18,6 +18,7 @@ import {
 } from '@/lib/validations'
 import {
   buildUpwardSuggestions,
+  DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS,
   parseUpwardReviewSettings,
   serializeUpwardReviewSettings,
   validateUpwardAssignment,
@@ -50,14 +51,14 @@ async function getActor() {
 
 async function ensureCanManageTemplates(actor: Awaited<ReturnType<typeof getActor>>) {
   if (!actor.access.canManageAllRounds) {
-    throw new AppError(403, 'FORBIDDEN', '상향 평가 템플릿을 관리할 권한이 없습니다.')
+    throw new AppError(403, 'FORBIDDEN', '리더십 진단 문항 세트를 관리할 권한이 없습니다.')
   }
 }
 
 async function ensureCanManageRound(actor: Awaited<ReturnType<typeof getActor>>, roundId: string) {
   if (actor.access.canManageAllRounds) return
   if (!actor.access.canManageCollaboratorRounds) {
-    throw new AppError(403, 'FORBIDDEN', '이 상향 평가 라운드를 관리할 권한이 없습니다.')
+    throw new AppError(403, 'FORBIDDEN', '이 리더십 진단 기간을 관리할 권한이 없습니다.')
   }
 
   const collaboratorRoundIds = await getCollaboratorRoundIds({
@@ -65,7 +66,7 @@ async function ensureCanManageRound(actor: Awaited<ReturnType<typeof getActor>>,
     roundIds: [roundId],
   })
   if (!collaboratorRoundIds.has(roundId)) {
-    throw new AppError(403, 'FORBIDDEN', '공동 작업자로 지정된 라운드만 관리할 수 있습니다.')
+    throw new AppError(403, 'FORBIDDEN', '공동 작업자로 지정된 진단 기간만 관리할 수 있습니다.')
   }
 }
 
@@ -109,7 +110,7 @@ export async function POST(request: Request) {
       await ensureCanManageTemplates(actor)
       const parsed = UpwardReviewTemplateSchema.safeParse(payload)
       if (!parsed.success) {
-        throw new AppError(400, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? '템플릿 정보를 확인해 주세요.')
+        throw new AppError(400, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? '문항 세트 정보를 확인해 주세요.')
       }
 
       const data = parsed.data
@@ -128,6 +129,20 @@ export async function POST(request: Request) {
             defaultSettings: nextSettings,
             createdById: actor.employee.id,
             updatedById: actor.employee.id,
+            questions: {
+              create: DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS.map((question, index) => ({
+                category: question.category,
+                questionText: question.questionText,
+                description: '1점(매우 그렇지 않다)부터 6점(매우 그렇다)까지 선택해 주세요.',
+                questionType: 'RATING_SCALE',
+                scaleMin: 1,
+                scaleMax: 6,
+                isRequired: true,
+                isActive: true,
+                choiceOptions: [],
+                sortOrder: index + 1,
+              })),
+            },
           },
         })
 
@@ -143,7 +158,7 @@ export async function POST(request: Request) {
 
         return successResponse({
           templateId: template.id,
-          message: '상향 평가 템플릿이 생성되었습니다.',
+          message: '리더십 진단 문항 세트가 생성되었습니다. 기본 문항 24개가 함께 추가되었습니다.',
         })
       }
 
@@ -156,7 +171,7 @@ export async function POST(request: Request) {
       })
 
       if (!existingTemplate) {
-        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '수정할 템플릿을 찾을 수 없습니다.')
+        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '수정할 문항 세트를 찾을 수 없습니다.')
       }
 
       await prisma.upwardReviewTemplate.update({
@@ -190,7 +205,7 @@ export async function POST(request: Request) {
 
       return successResponse({
         templateId: existingTemplate.id,
-        message: '상향 평가 템플릿이 저장되었습니다.',
+        message: '리더십 진단 문항 세트가 저장되었습니다.',
       })
     }
 
@@ -210,7 +225,7 @@ export async function POST(request: Request) {
       })
 
       if (!template) {
-        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '복사할 템플릿을 찾을 수 없습니다.')
+        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '복사할 문항 세트를 찾을 수 없습니다.')
       }
 
       const duplicated = await prisma.upwardReviewTemplate.create({
@@ -255,7 +270,7 @@ export async function POST(request: Request) {
 
       return successResponse({
         templateId: duplicated.id,
-        message: '상향 평가 템플릿이 복사되었습니다.',
+        message: '리더십 진단 문항 세트가 복사되었습니다.',
       })
     }
 
@@ -270,7 +285,7 @@ export async function POST(request: Request) {
       })
 
       if (!template) {
-        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '삭제할 템플릿을 찾을 수 없습니다.')
+        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '삭제할 문항 세트를 찾을 수 없습니다.')
       }
 
       await prisma.upwardReviewTemplate.delete({
@@ -291,7 +306,73 @@ export async function POST(request: Request) {
 
       return successResponse({
         templateId: template.id,
-        message: '상향 평가 템플릿이 삭제되었습니다.',
+        message: '리더십 진단 문항 세트가 삭제되었습니다.',
+      })
+    }
+
+    if (action === 'seedDefaultQuestions') {
+      await ensureCanManageTemplates(actor)
+      const templateId = typeof payload?.templateId === 'string' ? payload.templateId : ''
+      const template = await prisma.upwardReviewTemplate.findFirst({
+        where: {
+          id: templateId,
+          orgId: actor.employee.department.orgId,
+        },
+        include: {
+          questions: {
+            select: { id: true },
+          },
+        },
+      })
+
+      if (!template) {
+        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '기본 문항을 추가할 문항 세트를 찾을 수 없습니다.')
+      }
+
+      if (template.questions.length > 0) {
+        return successResponse({
+          templateId: template.id,
+          createdCount: 0,
+          message: '이미 등록된 문항이 있어 기본 문항을 다시 추가하지 않았습니다.',
+        })
+      }
+
+      const createdQuestions = await prisma.$transaction(
+        DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS.map((question, index) =>
+          prisma.upwardReviewTemplateQuestion.create({
+            data: {
+              templateId: template.id,
+              category: question.category,
+              questionText: question.questionText,
+              description: '1점(매우 그렇지 않다)부터 6점(매우 그렇다)까지 선택해 주세요.',
+              questionType: 'RATING_SCALE',
+              scaleMin: 1,
+              scaleMax: 6,
+              isRequired: true,
+              isActive: true,
+              choiceOptions: [],
+              sortOrder: index + 1,
+            },
+          })
+        )
+      )
+
+      await createAuditLog({
+        userId: actor.employee.id,
+        action: 'UPWARD_REVIEW_QUESTION_CREATED',
+        entityType: 'UpwardReviewTemplate',
+        entityId: template.id,
+        newValue: {
+          seededDefaultQuestionCount: createdQuestions.length,
+        },
+        ipAddress: clientInfo.ipAddress,
+        userAgent: clientInfo.userAgent,
+      })
+
+      return successResponse({
+        templateId: template.id,
+        createdCount: createdQuestions.length,
+        message: `기본 리더십 진단 문항 ${createdQuestions.length}개를 추가했습니다.`,
       })
     }
 
@@ -316,7 +397,7 @@ export async function POST(request: Request) {
       })
 
       if (!template) {
-        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '문항을 저장할 템플릿을 찾을 수 없습니다.')
+        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '문항을 저장할 문항 세트를 찾을 수 없습니다.')
       }
 
       if (data.questionId) {
@@ -333,7 +414,7 @@ export async function POST(request: Request) {
             description: data.description,
             questionType: data.questionType,
             scaleMin: data.questionType === 'RATING_SCALE' ? data.scaleMin ?? 1 : null,
-            scaleMax: data.questionType === 'RATING_SCALE' ? data.scaleMax ?? 5 : null,
+            scaleMax: data.questionType === 'RATING_SCALE' ? data.scaleMax ?? 6 : null,
             isRequired: data.isRequired,
             isActive: data.isActive,
             choiceOptions: data.questionType === 'MULTIPLE_CHOICE' ? data.choiceOptions : [],
@@ -369,7 +450,7 @@ export async function POST(request: Request) {
           description: data.description,
           questionType: data.questionType,
           scaleMin: data.questionType === 'RATING_SCALE' ? data.scaleMin ?? 1 : null,
-          scaleMax: data.questionType === 'RATING_SCALE' ? data.scaleMax ?? 5 : null,
+          scaleMax: data.questionType === 'RATING_SCALE' ? data.scaleMax ?? 6 : null,
           isRequired: data.isRequired,
           isActive: data.isActive,
           choiceOptions: data.questionType === 'MULTIPLE_CHOICE' ? data.choiceOptions : [],
@@ -453,7 +534,7 @@ export async function POST(request: Request) {
       })
 
       if (!template) {
-        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '문항 순서를 변경할 템플릿을 찾을 수 없습니다.')
+        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '문항 순서를 변경할 문항 세트를 찾을 수 없습니다.')
       }
 
       const currentIndex = template.questions.findIndex((question) => question.id === questionId)
@@ -504,7 +585,7 @@ export async function POST(request: Request) {
     if (action === 'saveRound') {
       const parsed = UpwardReviewRoundSchema.safeParse(payload)
       if (!parsed.success) {
-        throw new AppError(400, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? '라운드 설정을 확인해 주세요.')
+        throw new AppError(400, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? '진단 기간 설정을 확인해 주세요.')
       }
 
       const data = parsed.data
@@ -521,7 +602,7 @@ export async function POST(request: Request) {
       })
 
       if (!template) {
-        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '선택한 템플릿을 찾을 수 없습니다.')
+        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '선택한 문항 세트를 찾을 수 없습니다.')
       }
 
       const evalCycle = await prisma.evalCycle.findFirst({
@@ -548,7 +629,7 @@ export async function POST(request: Request) {
         })
 
         if (!existingRound) {
-          throw new AppError(404, 'ROUND_NOT_FOUND', '수정할 상향 평가 라운드를 찾을 수 없습니다.')
+          throw new AppError(404, 'ROUND_NOT_FOUND', '수정할 리더십 진단 기간을 찾을 수 없습니다.')
         }
 
         const currentSettings = parseUpwardReviewSettings(existingRound.documentSettings)
@@ -587,7 +668,7 @@ export async function POST(request: Request) {
 
         return successResponse({
           roundId: existingRound.id,
-          message: '상향 평가 라운드가 저장되었습니다.',
+          message: '리더십 진단 기간이 저장되었습니다.',
         })
       }
 
@@ -631,7 +712,7 @@ export async function POST(request: Request) {
 
       return successResponse({
         roundId: round.id,
-        message: '상향 평가 라운드가 생성되었습니다.',
+        message: '리더십 진단 기간이 생성되었습니다.',
       })
     }
 
@@ -653,7 +734,7 @@ export async function POST(request: Request) {
       })
 
       if (!round) {
-        throw new AppError(404, 'ROUND_NOT_FOUND', '동기화할 라운드를 찾을 수 없습니다.')
+        throw new AppError(404, 'ROUND_NOT_FOUND', '문항을 적용할 진단 기간을 찾을 수 없습니다.')
       }
 
       if (round.status !== 'DRAFT') {
@@ -661,12 +742,12 @@ export async function POST(request: Request) {
       }
 
       if (round.feedbacks.some((feedback) => feedback.status !== 'PENDING')) {
-        throw new AppError(400, 'ROUND_ALREADY_STARTED', '응답이 시작된 라운드는 문항을 다시 동기화할 수 없습니다.')
+        throw new AppError(400, 'ROUND_ALREADY_STARTED', '응답이 시작된 진단 기간은 문항을 다시 적용할 수 없습니다.')
       }
 
       const settings = parseUpwardReviewSettings(round.documentSettings)
       if (!settings.templateId) {
-        throw new AppError(400, 'TEMPLATE_NOT_SELECTED', '라운드에 연결된 템플릿이 없습니다.')
+        throw new AppError(400, 'TEMPLATE_NOT_SELECTED', '진단 기간에 연결된 문항 세트가 없습니다.')
       }
 
       const template = await prisma.upwardReviewTemplate.findFirst({
@@ -682,7 +763,7 @@ export async function POST(request: Request) {
       })
 
       if (!template) {
-        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '연결된 템플릿을 찾을 수 없습니다.')
+        throw new AppError(404, 'TEMPLATE_NOT_FOUND', '연결된 문항 세트를 찾을 수 없습니다.')
       }
 
       await prisma.$transaction([
@@ -705,14 +786,14 @@ export async function POST(request: Request) {
 
       return successResponse({
         roundId: round.id,
-        message: '라운드 문항이 템플릿 기준으로 다시 동기화되었습니다.',
+        message: '진단 기간 문항이 문항 세트 기준으로 다시 적용되었습니다.',
       })
     }
 
     if (action === 'updateRoundStatus') {
       const parsed = UpwardReviewRoundWorkflowSchema.safeParse(payload)
       if (!parsed.success) {
-        throw new AppError(400, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? '라운드 상태 변경 정보를 확인해 주세요.')
+        throw new AppError(400, 'VALIDATION_ERROR', parsed.error.issues[0]?.message ?? '진단 기간 상태 변경 정보를 확인해 주세요.')
       }
 
       const data = parsed.data
@@ -726,7 +807,7 @@ export async function POST(request: Request) {
       })
 
       if (!round) {
-        throw new AppError(404, 'ROUND_NOT_FOUND', '상향 평가 라운드를 찾을 수 없습니다.')
+        throw new AppError(404, 'ROUND_NOT_FOUND', '리더십 진단 기간을 찾을 수 없습니다.')
       }
 
       const nextStatus =
@@ -754,10 +835,10 @@ export async function POST(request: Request) {
         roundId: round.id,
         message:
           data.action === 'START'
-            ? '상향 평가 라운드가 시작되었습니다.'
+            ? '리더십 진단 기간이 시작되었습니다.'
             : data.action === 'CLOSE'
-              ? '상향 평가 라운드가 마감되었습니다.'
-              : '상향 평가 라운드가 다시 열렸습니다.',
+              ? '리더십 진단 기간이 마감되었습니다.'
+              : '리더십 진단 기간이 다시 열렸습니다.',
       })
     }
 
@@ -778,7 +859,7 @@ export async function POST(request: Request) {
       })
 
       if (!round) {
-        throw new AppError(404, 'ROUND_NOT_FOUND', '상향 평가 라운드를 찾을 수 없습니다.')
+        throw new AppError(404, 'ROUND_NOT_FOUND', '리더십 진단 기간을 찾을 수 없습니다.')
       }
 
       const settings = parseUpwardReviewSettings(round.documentSettings)
@@ -807,7 +888,7 @@ export async function POST(request: Request) {
 
       return successResponse({
         roundId: round.id,
-        message: data.released ? '상향 평가 결과가 공개되었습니다.' : '상향 평가 결과 공개가 해제되었습니다.',
+        message: data.released ? '리더십 진단 결과가 공개되었습니다.' : '리더십 진단 결과 공개가 해제되었습니다.',
       })
     }
 
@@ -837,6 +918,9 @@ export async function POST(request: Request) {
           select: {
             id: true,
             empName: true,
+            role: true,
+            jobTitle: true,
+            teamName: true,
             teamLeaderId: true,
             sectionChiefId: true,
             divisionHeadId: true,
@@ -851,6 +935,12 @@ export async function POST(request: Request) {
           select: {
             id: true,
             empName: true,
+            role: true,
+            jobTitle: true,
+            teamName: true,
+            teamLeaderId: true,
+            sectionChiefId: true,
+            divisionHeadId: true,
           },
         }),
         prisma.multiFeedback.findUnique({
@@ -865,13 +955,13 @@ export async function POST(request: Request) {
       ])
 
       if (!round) {
-        throw new AppError(404, 'ROUND_NOT_FOUND', '라운드를 찾을 수 없습니다.')
+        throw new AppError(404, 'ROUND_NOT_FOUND', '진단 기간을 찾을 수 없습니다.')
       }
       if (!evaluator || !evaluatee) {
-        throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '평가자 또는 피평가자를 찾을 수 없습니다.')
+        throw new AppError(404, 'EMPLOYEE_NOT_FOUND', '평가자 또는 진단 대상자를 찾을 수 없습니다.')
       }
       if (existingAssignment) {
-        throw new AppError(400, 'DUPLICATE_ASSIGNMENT', '이미 같은 평가자-피평가자 매핑이 존재합니다.')
+        throw new AppError(400, 'DUPLICATE_ASSIGNMENT', '이미 같은 평가자-진단 대상자 매핑이 존재합니다.')
       }
 
       const validationMessage = validateUpwardAssignment({
@@ -905,7 +995,7 @@ export async function POST(request: Request) {
 
       return successResponse({
         assignmentId: assignment.id,
-        message: '평가자-피평가자 매핑이 추가되었습니다.',
+        message: '평가자-진단 대상자 매핑이 추가되었습니다.',
       })
     }
 
@@ -934,7 +1024,7 @@ export async function POST(request: Request) {
       })
 
       if (!round) {
-        throw new AppError(404, 'ROUND_NOT_FOUND', '라운드를 찾을 수 없습니다.')
+        throw new AppError(404, 'ROUND_NOT_FOUND', '진단 기간을 찾을 수 없습니다.')
       }
 
       const settings = parseUpwardReviewSettings(round.documentSettings)

@@ -732,26 +732,26 @@ export const UpwardReviewTemplateQuestionSchema = z.object({
 
 export const UpwardReviewTemplateSchema = z.object({
   templateId: z.string().optional(),
-  name: z.string().trim().min(1, '템플릿 이름을 입력해 주세요.').max(100),
+  name: z.string().trim().min(1, '문항 세트 이름을 입력해 주세요.').max(100),
   description: z.string().trim().max(500).optional(),
   isActive: z.boolean().default(true),
   defaultMinResponses: z.number().int().min(1).max(10).default(3),
   defaultTargetTypes: z
     .array(z.enum(['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM', 'CUSTOM']))
-    .min(1, '최소 한 가지 이상의 평가 대상 유형을 선택해 주세요.'),
+    .min(1, '최소 한 가지 이상의 진단 대상 유형을 선택해 주세요.'),
 })
 
 export const UpwardReviewRoundSchema = z.object({
   roundId: z.string().optional(),
   evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
-  roundName: z.string().trim().min(1, '라운드명을 입력해 주세요.').max(100),
-  templateId: z.string().min(1, '질문 템플릿을 선택해 주세요.'),
+  roundName: z.string().trim().min(1, '진단 기간명을 입력해 주세요.').max(100),
+  templateId: z.string().min(1, '문항 세트를 선택해 주세요.'),
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
   minRaters: z.number().int().min(1).max(10).default(3),
   targetTypes: z
     .array(z.enum(['TEAM_LEADER', 'SECTION_CHIEF', 'DIVISION_HEAD', 'PM', 'CUSTOM']))
-    .min(1, '최소 한 가지 이상의 평가 대상 유형을 선택해 주세요.'),
+    .min(1, '최소 한 가지 이상의 진단 대상 유형을 선택해 주세요.'),
   resultViewerMode: z.enum(['TARGET_ONLY', 'TARGET_AND_PRIMARY_MANAGER']).default('TARGET_ONLY'),
   rawResponsePolicy: z.enum(['ADMIN_ONLY', 'REVIEW_ADMIN_CONTENT']).default('ADMIN_ONLY'),
 })
@@ -759,13 +759,13 @@ export const UpwardReviewRoundSchema = z.object({
 export const UpwardReviewAssignmentSchema = z.object({
   roundId: z.string().min(1),
   evaluatorId: z.string().min(1, '평가자를 선택해 주세요.'),
-  evaluateeId: z.string().min(1, '피평가자를 선택해 주세요.'),
+  evaluateeId: z.string().min(1, '진단 대상자를 선택해 주세요.'),
   relationship: z.enum(['SUBORDINATE', 'PEER', 'CROSS_DEPT']).default('SUBORDINATE'),
 })
 
 export const UpwardReviewSuggestionSchema = z.object({
   roundId: z.string().min(1),
-  evaluateeId: z.string().min(1, '추천을 생성할 피평가자를 선택해 주세요.').optional(),
+  evaluateeId: z.string().min(1, '추천을 생성할 진단 대상자를 선택해 주세요.').optional(),
 })
 
 export const UpwardReviewResponseSchema = z.object({

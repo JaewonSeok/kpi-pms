@@ -67,6 +67,146 @@ export const UPWARD_ROUND_STATUS_LABELS: Record<FeedbackRoundStatus, string> = {
   CANCELLED: '취소',
 }
 
+export type UpwardRoundResponseGateReason =
+  | 'OPEN'
+  | 'ROUND_NOT_STARTED'
+  | 'ROUND_ENDED'
+  | 'ROUND_CLOSED'
+  | 'ROUND_NOT_ACTIVE'
+
+export function getUpwardRoundResponseGate(
+  round: {
+    status: FeedbackRoundStatus
+    startDate: Date | string
+    endDate: Date | string
+  },
+  now = new Date()
+): { open: boolean; reason: UpwardRoundResponseGateReason } {
+  const startDate = round.startDate instanceof Date ? round.startDate : new Date(round.startDate)
+  const endDate = round.endDate instanceof Date ? round.endDate : new Date(round.endDate)
+
+  if (['COMPLETED', 'CLOSED', 'CANCELLED'].includes(round.status)) {
+    return { open: false, reason: 'ROUND_CLOSED' }
+  }
+
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+    return { open: false, reason: 'ROUND_NOT_ACTIVE' }
+  }
+
+  if (now > endDate) {
+    return { open: false, reason: 'ROUND_ENDED' }
+  }
+
+  if (round.status === 'IN_PROGRESS') {
+    return { open: true, reason: 'OPEN' }
+  }
+
+  if (now < startDate) {
+    return { open: false, reason: 'ROUND_NOT_STARTED' }
+  }
+
+  return { open: true, reason: 'OPEN' }
+}
+
+export const DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS = [
+  {
+    category: '바른생각 (커뮤니케이션)',
+    questionText: '나의 리더는 목표와 요구사항에 대해 명확하고 구체적으로 설명한다.',
+  },
+  {
+    category: '바른생각 (커뮤니케이션)',
+    questionText: '나의 리더는 구성원이 자유롭게 의견을 제시할 수 있는 분위기를 조성한다.',
+  },
+  {
+    category: '바른생각 (커뮤니케이션)',
+    questionText: '나의 리더는 조직원으로부터 신뢰와 존중을 받고 있다.',
+  },
+  {
+    category: '바른생각 (커뮤니케이션)',
+    questionText: '나의 리더는 관심 있는 태도로 구성원의 이야기를 경청한다.',
+  },
+  {
+    category: '바른생각 (커뮤니케이션)',
+    questionText: '나의 리더는 필요한 정보를 적시에 공유한다.',
+  },
+  {
+    category: '바른생각 (커뮤니케이션)',
+    questionText: '나의 리더는 피드백을 구체적인 행동 기준으로 전달한다.',
+  },
+  {
+    category: '창의도전 (변화주도)',
+    questionText: '나의 리더는 새로운 시도를 장려하고 실패에서 학습하도록 돕는다.',
+  },
+  {
+    category: '창의도전 (변화주도)',
+    questionText: '나의 리더는 변화가 필요한 이유와 기대 효과를 설득력 있게 설명한다.',
+  },
+  {
+    category: '창의도전 (변화주도)',
+    questionText: '나의 리더는 기존 방식에 머무르지 않고 개선 기회를 찾는다.',
+  },
+  {
+    category: '창의도전 (변화주도)',
+    questionText: '나의 리더는 구성원이 주도적으로 문제를 해결하도록 권한을 부여한다.',
+  },
+  {
+    category: '창의도전 (변화주도)',
+    questionText: '나의 리더는 도전적인 목표를 현실적인 실행 계획으로 연결한다.',
+  },
+  {
+    category: '창의도전 (변화주도)',
+    questionText: '나의 리더는 변화 과정에서 발생하는 장애물을 빠르게 조정한다.',
+  },
+  {
+    category: '비전공유 (조직관리)',
+    questionText: '나의 리더는 팀의 방향성과 우선순위를 명확하게 제시한다.',
+  },
+  {
+    category: '비전공유 (조직관리)',
+    questionText: '나의 리더는 개인의 업무가 조직 목표와 어떻게 연결되는지 설명한다.',
+  },
+  {
+    category: '비전공유 (조직관리)',
+    questionText: '나의 리더는 구성원의 역할과 책임을 명확히 정리한다.',
+  },
+  {
+    category: '비전공유 (조직관리)',
+    questionText: '나의 리더는 업무 배분과 의사결정 기준을 공정하게 운영한다.',
+  },
+  {
+    category: '비전공유 (조직관리)',
+    questionText: '나의 리더는 팀의 협업 이슈를 방치하지 않고 조율한다.',
+  },
+  {
+    category: '비전공유 (조직관리)',
+    questionText: '나의 리더는 구성원의 성장과 역량 개발에 관심을 가진다.',
+  },
+  {
+    category: '전략적 사고',
+    questionText: '나의 리더는 중요한 의사결정에서 장기적 영향과 리스크를 함께 고려한다.',
+  },
+  {
+    category: '전략적 사고',
+    questionText: '나의 리더는 데이터를 근거로 문제를 분석하고 우선순위를 정한다.',
+  },
+  {
+    category: '전략적 사고',
+    questionText: '나의 리더는 복잡한 상황에서도 핵심 과제를 명확히 구분한다.',
+  },
+  {
+    category: '혁신',
+    questionText: '나의 리더는 더 나은 성과를 위해 새로운 방법을 탐색한다.',
+  },
+  {
+    category: '혁신',
+    questionText: '나의 리더는 구성원이 개선 아이디어를 제안하고 실험하도록 지원한다.',
+  },
+  {
+    category: '혁신',
+    questionText: '나의 리더는 실행 결과를 점검하고 다음 개선으로 연결한다.',
+  },
+] as const
+
 export const UPWARD_RELATIONSHIP_OPTIONS: Array<{
   value: Extract<RaterRelationship, 'SUBORDINATE' | 'PEER' | 'CROSS_DEPT'>
   label: string
@@ -74,17 +214,17 @@ export const UPWARD_RELATIONSHIP_OPTIONS: Array<{
 }> = [
   {
     value: 'SUBORDINATE',
-    label: '상향 평가',
-    description: '구성원이 현재 리더를 평가하는 일반적인 상향 평가입니다.',
+    label: '리더십 진단',
+    description: '구성원이 현재 리더의 리더십을 진단하는 기본 관계입니다.',
   },
   {
     value: 'PEER',
-    label: '동료 리더 평가',
+    label: '동료 리더 진단',
     description: '프로젝트성 리더십이나 PM 운영을 동료 관점에서 평가합니다.',
   },
   {
     value: 'CROSS_DEPT',
-    label: '교차 조직 평가',
+    label: '교차 조직 진단',
     description: '협업 부서 관점에서 리더십을 평가합니다.',
   },
 ]
@@ -182,24 +322,99 @@ export function getPrimaryLeaderId(employee: Pick<UpwardDirectoryEmployee, 'team
   return employee.teamLeaderId ?? employee.sectionChiefId ?? employee.divisionHeadId ?? null
 }
 
+export function isLeadershipPmLike(employee: Pick<UpwardDirectoryEmployee, 'jobTitle'>) {
+  return typeof employee.jobTitle === 'string' && /(^|\s)pm(\s|$)|프로덕트 매니저|프로젝트 매니저/i.test(employee.jobTitle)
+}
+
+export function getLeadershipEvaluateeIdsForEvaluator(
+  evaluator: Pick<
+    UpwardDirectoryEmployee,
+    'id' | 'role' | 'teamName' | 'teamLeaderId' | 'sectionChiefId' | 'divisionHeadId'
+  >,
+  employees: Array<Pick<UpwardDirectoryEmployee, 'id' | 'jobTitle' | 'teamName'>> = []
+) {
+  const evaluateeIds = new Set<string>()
+
+  if (evaluator.role === 'ROLE_TEAM_LEADER') {
+    const nextLeaderId = evaluator.sectionChiefId ?? evaluator.divisionHeadId
+    if (nextLeaderId && nextLeaderId !== evaluator.id) evaluateeIds.add(nextLeaderId)
+    return evaluateeIds
+  }
+
+  if (evaluator.role === 'ROLE_SECTION_CHIEF') {
+    if (evaluator.divisionHeadId && evaluator.divisionHeadId !== evaluator.id) {
+      evaluateeIds.add(evaluator.divisionHeadId)
+    }
+    return evaluateeIds
+  }
+
+  if (evaluator.teamLeaderId && evaluator.teamLeaderId !== evaluator.id) {
+    evaluateeIds.add(evaluator.teamLeaderId)
+  }
+
+  if (evaluator.teamName) {
+    for (const employee of employees) {
+      if (employee.id === evaluator.id) continue
+      if (employee.teamName !== evaluator.teamName) continue
+      if (isLeadershipPmLike(employee)) evaluateeIds.add(employee.id)
+    }
+  }
+
+  return evaluateeIds
+}
+
+export function getLeadershipResultViewerIds(
+  target: Pick<UpwardDirectoryEmployee, 'id' | 'teamLeaderId' | 'sectionChiefId' | 'divisionHeadId'>
+) {
+  return Array.from(
+    new Set(
+      [target.teamLeaderId, target.sectionChiefId, target.divisionHeadId].filter(
+        (item): item is string => Boolean(item) && item !== target.id
+      )
+    )
+  )
+}
+
 export function validateUpwardAssignment(params: {
-  evaluator: Pick<UpwardDirectoryEmployee, 'id' | 'empName' | 'teamLeaderId' | 'sectionChiefId' | 'divisionHeadId'>
-  evaluatee: Pick<UpwardDirectoryEmployee, 'id' | 'empName'>
+  evaluator: Pick<UpwardDirectoryEmployee, 'id' | 'empName' | 'teamLeaderId' | 'sectionChiefId' | 'divisionHeadId'> &
+    Partial<Pick<UpwardDirectoryEmployee, 'role' | 'jobTitle' | 'teamName'>>
+  evaluatee: Pick<UpwardDirectoryEmployee, 'id' | 'empName'> &
+    Partial<Pick<UpwardDirectoryEmployee, 'role' | 'jobTitle' | 'teamName' | 'teamLeaderId' | 'sectionChiefId' | 'divisionHeadId'>>
   relationship: Extract<RaterRelationship, 'SUBORDINATE' | 'PEER' | 'CROSS_DEPT'>
 }) {
   if (params.evaluator.id === params.evaluatee.id) {
-    return '자기 자신을 상향 평가 대상으로 지정할 수 없습니다.'
+    return '자기 자신을 리더십 진단 대상으로 지정할 수 없습니다.'
   }
 
   if (params.relationship === 'SUBORDINATE') {
-    const leaderIds = [
-      params.evaluator.teamLeaderId,
-      params.evaluator.sectionChiefId,
-      params.evaluator.divisionHeadId,
-    ].filter((item): item is string => Boolean(item))
+    const leaderIds = params.evaluator.role
+      ? Array.from(
+          getLeadershipEvaluateeIdsForEvaluator(
+            {
+              id: params.evaluator.id,
+              role: params.evaluator.role,
+              teamName: params.evaluator.teamName,
+              teamLeaderId: params.evaluator.teamLeaderId,
+              sectionChiefId: params.evaluator.sectionChiefId,
+              divisionHeadId: params.evaluator.divisionHeadId,
+            },
+            [
+              {
+                id: params.evaluatee.id,
+                jobTitle: params.evaluatee.jobTitle,
+                teamName: params.evaluatee.teamName,
+              },
+            ]
+          )
+        )
+      : [
+          params.evaluator.teamLeaderId,
+          params.evaluator.sectionChiefId,
+          params.evaluator.divisionHeadId,
+        ].filter((item): item is string => Boolean(item))
 
     if (!leaderIds.includes(params.evaluatee.id)) {
-      return '상향 평가 관계에서는 평가자의 현재 리더만 대상으로 지정할 수 있습니다. PM 또는 교차 조직 평가는 다른 관계 유형을 선택해 주세요.'
+      return '리더십 진단 관계에서는 조직도상 진단 가능한 리더만 대상으로 지정할 수 있습니다. PM 진단은 동료 리더 진단 관계를 선택해 주세요.'
     }
   }
 
@@ -251,8 +466,8 @@ export function buildUpwardSuggestions(params: {
         continue
       }
 
-      const directLeaderIds = [evaluator.teamLeaderId, evaluator.sectionChiefId, evaluator.divisionHeadId]
-      if (directLeaderIds.includes(evaluatee.id) && !existingPairKeys.has(`${evaluator.id}:${evaluatee.id}`)) {
+      const leadershipEvaluateeIds = getLeadershipEvaluateeIdsForEvaluator(evaluator, params.employees)
+      if (leadershipEvaluateeIds.has(evaluatee.id) && !existingPairKeys.has(`${evaluator.id}:${evaluatee.id}`)) {
         const relationshipLevel =
           evaluator.teamLeaderId === evaluatee.id
             ? '팀장'
@@ -426,6 +641,7 @@ export function canViewUpwardResults(params: {
   actorRole: SystemRole
   targetId: string
   targetPrimaryLeaderId?: string | null
+  targetViewerIds?: string[]
   settings: UpwardReviewSettings
   thresholdMet: boolean
   canManage: boolean
@@ -440,6 +656,10 @@ export function canViewUpwardResults(params: {
   }
 
   if (params.actorId === params.targetId) {
+    return true
+  }
+
+  if (params.targetViewerIds?.includes(params.actorId)) {
     return true
   }
 

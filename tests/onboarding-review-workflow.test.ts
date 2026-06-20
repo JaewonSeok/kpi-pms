@@ -277,7 +277,7 @@ async function main() {
     )
   })
 
-  await run('workflow run schema and admin panel expose onboarding workflow controls and generated review list', () => {
+  await run('workflow run schema remains valid and 360 admin no longer exposes onboarding workflow controls', () => {
     const runSchema = OnboardingReviewWorkflowRunSchema.safeParse({
       cycleId: 'cycle-1',
       workflowId: 'workflow-1',
@@ -285,13 +285,19 @@ async function main() {
     const panelSource = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
 
     assert.equal(runSchema.success, true)
-    assert.equal(panelSource.includes('/api/feedback/onboarding-workflows'), true)
-    assert.equal(panelSource.includes('/api/feedback/onboarding-workflows/run'), true)
-    assert.equal(panelSource.includes('selectedWorkflowId'), true)
-    assert.equal(panelSource.includes('generatedReviewSearch'), true)
-    assert.equal(panelSource.includes('generatedReviewStatusFilter'), true)
-    assert.equal(panelSource.includes('generatedReviewSort'), true)
-    assert.equal(panelSource.includes('handleRunOnboardingWorkflow'), true)
+    for (const forbidden of [
+      '/api/feedback/onboarding-workflows',
+      '/api/feedback/onboarding-workflows/run',
+      'selectedWorkflowId',
+      'generatedReviewSearch',
+      'generatedReviewStatusFilter',
+      'generatedReviewSort',
+      'handleRunOnboardingWorkflow',
+      '온보딩 리뷰 워크플로우',
+      '자동 생성된 온보딩 리뷰',
+    ]) {
+      assert.equal(panelSource.includes(forbidden), false, `${forbidden} should not be exposed in 360 admin`)
+    }
   })
 
   await run('onboarding workflow routes exist for config save, manual run, and scheduled generation', () => {

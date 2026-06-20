@@ -9,18 +9,74 @@ type MultiRaterCycleHeaderProps = {
   data: Feedback360PageData
 }
 
+type Feedback360Quarter = 'Q1' | 'Q2' | 'Q3' | 'Q4'
+
 const MODE_LABELS: Record<Feedback360RouteMode, string> = {
   overview: '360 개요',
-  nomination: '리뷰어 nomination',
+  nomination: '평가자 매핑',
   results: '360 결과',
   admin: '운영 관리',
   respond: '응답 작성',
+}
+
+const DEFAULT_360_HEADER_DESCRIPTION =
+  '평가자 매핑, 응답 진행률, 익명 기준, 강점/개선 테마, 성장 계획까지 하나의 운영 흐름으로 연결합니다.'
+
+const FEEDBACK_360_QUARTER_OPTIONS = [
+  { value: 'Q1', label: '1분기', months: [1, 2, 3] },
+  { value: 'Q2', label: '2분기', months: [4, 5, 6] },
+  { value: 'Q3', label: '3분기', months: [7, 8, 9] },
+  { value: 'Q4', label: '4분기', months: [10, 11, 12] },
+] as const satisfies Array<{ value: Feedback360Quarter; label: string; months: readonly number[] }>
+
+function getMonthFromDateText(value?: string | null) {
+  if (!value) return null
+
+  const normalized = value.trim()
+  const explicitMatch = normalized.match(/(?:\d{4})[.\-/년\s]+(\d{1,2})(?:[.\-/월\s]|$)/)
+  if (explicitMatch) {
+    const month = Number(explicitMatch[1])
+    return month >= 1 && month <= 12 ? month : null
+  }
+
+  const parsed = Date.parse(normalized)
+  if (Number.isNaN(parsed)) return null
+  return new Date(parsed).getMonth() + 1
+}
+
+function getQuarterFromMonth(month: number): Feedback360Quarter | null {
+  const matched = FEEDBACK_360_QUARTER_OPTIONS.find((option) =>
+    (option.months as readonly number[]).includes(month)
+  )
+  return matched?.value ?? null
+}
+
+function getRoundQuarter(round: Feedback360PageData['availableRounds'][number]) {
+  const roundText = `${round.roundName} ${round.startDate} ${round.endDate}`.toUpperCase()
+  const quarterMatch = roundText.match(/\bQ([1-4])\b|([1-4])\s*분기|([1-4])\s*Q/)
+  const matchedQuarterNumber = quarterMatch?.[1] ?? quarterMatch?.[2] ?? quarterMatch?.[3]
+  if (matchedQuarterNumber) return `Q${matchedQuarterNumber}` as Feedback360Quarter
+
+  const startMonth = getMonthFromDateText(round.startDate)
+  if (startMonth) return getQuarterFromMonth(startMonth)
+
+  const endMonth = getMonthFromDateText(round.endDate)
+  if (endMonth) return getQuarterFromMonth(endMonth)
+
+  return null
 }
 
 export function MultiRaterCycleHeader(props: MultiRaterCycleHeaderProps) {
   const router = useRouter()
   const selectedCycleId = props.data.selectedCycleId ?? props.data.availableCycles[0]?.id ?? ''
   const selectedRoundId = props.data.selectedRoundId ?? props.data.availableRounds[0]?.id ?? ''
+  const selectedRound =
+    props.data.availableRounds.find((round) => round.id === selectedRoundId) ?? props.data.availableRounds[0]
+  const selectedQuarter = selectedRound ? getRoundQuarter(selectedRound) ?? 'Q1' : 'Q1'
+  const headerDescription =
+    props.data.mode === 'respond'
+      ? '함께 일한 동료의 협업 경험을 해시태그와 짧은 의견으로 남겨주세요.'
+      : DEFAULT_360_HEADER_DESCRIPTION
 
   function buildHref(mode: Exclude<Feedback360RouteMode, 'respond'>) {
     const params = new URLSearchParams()
@@ -37,7 +93,7 @@ export function MultiRaterCycleHeader(props: MultiRaterCycleHeaderProps) {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
-              360 Feedback
+              360 다면평가
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
               {MODE_LABELS[props.data.mode]}
@@ -46,7 +102,7 @@ export function MultiRaterCycleHeader(props: MultiRaterCycleHeaderProps) {
           <div>
             <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">360 다면평가</h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
-              리뷰어 nomination, 응답 진행률, 익명 기준, 강점/개선 테마, 성장 계획까지 하나의 운영 흐름으로 연결합니다.
+              {headerDescription}
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -60,7 +116,7 @@ export function MultiRaterCycleHeader(props: MultiRaterCycleHeaderProps) {
 
         <div className="grid gap-3 md:grid-cols-2 xl:w-[440px]">
           <label className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Cycle</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">평가 주기</div>
             <select
               value={selectedCycleId}
               onChange={(event) => router.push(`/evaluation/360?cycleId=${encodeURIComponent(event.target.value)}`)}
@@ -74,13 +130,17 @@ export function MultiRaterCycleHeader(props: MultiRaterCycleHeaderProps) {
             </select>
           </label>
           <label className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Round</div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">평가 분기</div>
             <select
-              value={selectedRoundId}
+              value={selectedQuarter}
               onChange={(event) => {
+                const quarter = event.target.value as Feedback360Quarter
+                const nextRound =
+                  props.data.availableRounds.find((round) => getRoundQuarter(round) === quarter) ??
+                  props.data.availableRounds[0]
                 const params = new URLSearchParams()
                 if (selectedCycleId) params.set('cycleId', selectedCycleId)
-                params.set('roundId', event.target.value)
+                if (nextRound) params.set('roundId', nextRound.id)
                 router.push(
                   props.data.mode === 'overview'
                     ? `/evaluation/360?${params.toString()}`
@@ -89,16 +149,16 @@ export function MultiRaterCycleHeader(props: MultiRaterCycleHeaderProps) {
               }}
               className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900"
             >
-              {props.data.availableRounds.map((round) => (
-                <option key={round.id} value={round.id}>
-                  {round.roundName} · {round.roundType}
+              {FEEDBACK_360_QUARTER_OPTIONS.map((quarter) => (
+                <option key={quarter.value} value={quarter.value}>
+                  {quarter.label}
                 </option>
               ))}
             </select>
           </label>
           <div className="md:col-span-2 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
             <HeaderTab href={buildHref('overview')} label="개요" active={props.data.mode === 'overview'} />
-            <HeaderTab href={buildHref('nomination')} label="nomination" active={props.data.mode === 'nomination'} />
+            <HeaderTab href={buildHref('nomination')} label="평가자 매핑" active={props.data.mode === 'nomination'} />
             <HeaderTab href={buildHref('results')} label="결과" active={props.data.mode === 'results'} />
             <HeaderTab href={buildHref('admin')} label="운영" active={props.data.mode === 'admin'} />
           </div>

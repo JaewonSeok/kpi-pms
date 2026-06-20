@@ -123,7 +123,7 @@ export function getManagerEffectivenessReviewerSummary(
   if (settings.reviewerCombination.self) summary.push('자기평가')
   if (settings.reviewerCombination.supervisor) summary.push('상위 리더')
   if (settings.reviewerCombination.peer) summary.push('동료 리더')
-  if (settings.reviewerCombination.subordinate) summary.push('직속부하')
+  if (settings.reviewerCombination.subordinate) summary.push('직속 팀원')
   return summary
 }
 

@@ -86,6 +86,7 @@ export async function POST(request: Request, context: RouteContext) {
       select: {
         id: true,
         roundName: true,
+        roundType: true,
         evalCycle: {
           select: {
             orgId: true,
@@ -290,6 +291,17 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     for (const recipient of recipients) {
+      const notificationLink =
+        round.roundType === 'UPWARD'
+          ? validated.data.action === 'send-result-share'
+            ? `/evaluation/upward/results?roundId=${encodeURIComponent(round.id)}&empId=${encodeURIComponent(recipient.targetId)}`
+            : `/evaluation/upward/respond?roundId=${encodeURIComponent(round.id)}`
+          : validated.data.action === 'send-peer-selection-reminder'
+            ? `/evaluation/360/nomination?roundId=${encodeURIComponent(round.id)}`
+            : validated.data.action === 'send-result-share'
+              ? `/evaluation/360/results?roundId=${encodeURIComponent(round.id)}&empId=${encodeURIComponent(recipient.targetId)}`
+              : `/evaluation/360?roundId=${encodeURIComponent(round.id)}`
+
       const result = await queueNotification({
         recipientId: recipient.recipientId,
         type,
@@ -302,12 +314,7 @@ export async function POST(request: Request, context: RouteContext) {
           employeeName: recipient.recipientName,
           roundName: round.roundName,
           cycleName: round.roundName,
-          link:
-            validated.data.action === 'send-peer-selection-reminder'
-              ? `/evaluation/360/nomination?roundId=${encodeURIComponent(round.id)}`
-              : validated.data.action === 'send-result-share'
-                ? `/evaluation/360/results?roundId=${encodeURIComponent(round.id)}&empId=${encodeURIComponent(recipient.targetId)}`
-                : `/evaluation/360?roundId=${encodeURIComponent(round.id)}`,
+          link: notificationLink,
         },
       })
 

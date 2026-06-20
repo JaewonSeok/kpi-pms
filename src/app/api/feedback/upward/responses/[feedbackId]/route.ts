@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
+import { getUpwardRoundResponseGate } from '@/lib/upward-review'
 import { UpwardReviewResponseSchema } from '@/lib/validations'
 
 async function getActor() {
@@ -54,10 +55,25 @@ async function loadFeedback(feedbackId: string, actorId: string, orgId: string) 
   })
 
   if (!feedback) {
-    throw new AppError(404, 'FEEDBACK_NOT_FOUND', '상향 평가 응답을 찾을 수 없습니다.')
+    throw new AppError(404, 'FEEDBACK_NOT_FOUND', '리더십 진단 응답을 찾을 수 없습니다.')
   }
 
   return feedback
+}
+
+function assertRoundAcceptsResponses(round: Awaited<ReturnType<typeof loadFeedback>>['round']) {
+  const responseGate = getUpwardRoundResponseGate(round)
+  if (responseGate.open) return
+
+  if (responseGate.reason === 'ROUND_NOT_STARTED') {
+    throw new AppError(400, 'ROUND_NOT_STARTED', '진단 시작일 전이라 아직 응답할 수 없습니다.')
+  }
+
+  if (responseGate.reason === 'ROUND_ENDED' || responseGate.reason === 'ROUND_CLOSED') {
+    throw new AppError(400, 'ROUND_ENDED', '진단 기간이 마감되어 응답할 수 없습니다.')
+  }
+
+  throw new AppError(400, 'ROUND_NOT_ACTIVE', '진단 기간 설정을 확인해 주세요.')
 }
 
 async function persistResponses(params: {
@@ -135,11 +151,9 @@ export async function PATCH(
 
     const feedback = await loadFeedback(feedbackId, actor.employee.id, actor.employee.department.orgId)
     if (feedback.status === 'SUBMITTED') {
-      throw new AppError(400, 'READ_ONLY', '최종 제출된 상향 평가는 수정할 수 없습니다.')
+      throw new AppError(400, 'READ_ONLY', '최종 제출된 리더십 진단은 수정할 수 없습니다.')
     }
-    if (feedback.round.status !== 'IN_PROGRESS') {
-      throw new AppError(400, 'ROUND_NOT_ACTIVE', '현재 응답 가능한 상향 평가 라운드가 아닙니다.')
-    }
+    assertRoundAcceptsResponses(feedback.round)
 
     await persistResponses({
       feedbackId: feedback.id,
@@ -170,7 +184,7 @@ export async function PATCH(
     })
 
     return successResponse({
-      message: '상향 평가 초안이 저장되었습니다.',
+      message: '리더십 진단 임시 저장이 완료되었습니다.',
     })
   } catch (error) {
     return errorResponse(error)
@@ -196,11 +210,9 @@ export async function POST(
 
     const feedback = await loadFeedback(feedbackId, actor.employee.id, actor.employee.department.orgId)
     if (feedback.status === 'SUBMITTED') {
-      throw new AppError(400, 'READ_ONLY', '이미 제출이 완료된 상향 평가입니다.')
+      throw new AppError(400, 'READ_ONLY', '이미 제출이 완료된 리더십 진단입니다.')
     }
-    if (feedback.round.status !== 'IN_PROGRESS') {
-      throw new AppError(400, 'ROUND_NOT_ACTIVE', '현재 응답 가능한 상향 평가 라운드가 아닙니다.')
-    }
+    assertRoundAcceptsResponses(feedback.round)
 
     for (const question of feedback.round.questions.filter((item) => item.isRequired && item.isActive)) {
       const answer = parsed.data.responses.find((item) => item.questionId === question.id)
@@ -253,7 +265,7 @@ export async function POST(
     })
 
     return successResponse({
-      message: '상향 평가가 최종 제출되었습니다.',
+      message: '리더십 진단이 제출되었습니다.',
     })
   } catch (error) {
     return errorResponse(error)

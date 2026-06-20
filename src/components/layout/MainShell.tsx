@@ -1,6 +1,7 @@
 'use client'
 
 import { type ReactNode, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { MasterLoginBanner } from '@/components/layout/MasterLoginBanner'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { TopBar } from '@/components/layout/TopBar'
@@ -36,6 +37,13 @@ type MainShellProps = {
 
 export function MainShell({ session, children }: MainShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const pathname = usePathname()
+  const usePageNativeHeader = pathname?.startsWith('/evaluation/upward') ?? false
+  const useWideEvaluationCanvas =
+    pathname?.startsWith('/evaluation/360') || pathname?.startsWith('/evaluation/upward')
+  const mainClassName = useWideEvaluationCanvas
+    ? 'flex-1 px-2 pb-24 pt-3 sm:px-4 lg:px-5 lg:pb-8'
+    : 'flex-1 px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-8'
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -61,8 +69,14 @@ export function MainShell({ session, children }: MainShellProps) {
         ) : null}
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-          <TopBar session={session} onMenuClick={() => setMobileSidebarOpen(true)} />
-          <main className="flex-1 px-4 pb-24 pt-4 sm:px-6 lg:px-8 lg:pb-8">{children}</main>
+          {usePageNativeHeader ? (
+            <div className="lg:hidden">
+              <TopBar session={session} onMenuClick={() => setMobileSidebarOpen(true)} />
+            </div>
+          ) : (
+            <TopBar session={session} onMenuClick={() => setMobileSidebarOpen(true)} />
+          )}
+          <main className={mainClassName}>{children}</main>
         </div>
       </div>
     </div>

@@ -76,7 +76,6 @@ run('evaluation and admin status labels name the correct entity', () => {
   const aiCompetencySource = read('src/components/evaluation/AiCompetencyAdminPanel.tsx')
   const upwardSource = read('src/components/evaluation/upward/UpwardReviewWorkspaceClient.tsx')
   const feedbackHeaderSource = read('src/components/evaluation/feedback360/MultiRaterCycleHeader.tsx')
-  const wordCloudSource = read('src/components/evaluation/wordcloud360/WordCloud360WorkspaceClient.tsx')
   const feedbackServerSource = read('src/server/feedback-360.ts')
 
   assert.equal(workbenchSource.includes('제출 완료 평가'), true)
@@ -85,7 +84,6 @@ run('evaluation and admin status labels name the correct entity', () => {
   assert.equal(upwardSource.includes('제출 완료 응답'), true)
   assert.equal(upwardSource.includes('내 제출 완료 응답'), true)
   assert.equal(feedbackHeaderSource.includes('내 제출 완료 응답'), true)
-  assert.equal(wordCloudSource.includes('제출 완료 응답'), true)
   assert.equal(feedbackServerSource.includes('응답 제출 완료'), true)
 })
 

@@ -41,7 +41,7 @@ export async function GET(
     }
 
     if (!canManageFeedbackTarget(session.user.id, session.user.role, target)) {
-      throw new AppError(403, 'FORBIDDEN', 'nomination 정보를 볼 권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '평가자 매핑 정보를 볼 권한이 없습니다.')
     }
 
     const nominations = await prisma.feedbackNomination.findMany({
@@ -132,7 +132,7 @@ export async function POST(
     }
 
     if (!['DRAFT', 'RATER_SELECTION'].includes(round.status)) {
-      throw new AppError(400, 'ROUND_LOCKED', '현재 라운드는 nomination draft를 수정할 수 없습니다.')
+      throw new AppError(400, 'ROUND_LOCKED', '현재 라운드는 평가자 매핑 초안을 수정할 수 없습니다.')
     }
 
     const target = await prisma.employee.findUnique({
@@ -152,7 +152,7 @@ export async function POST(
     }
 
     if (!canManageFeedbackTarget(session.user.id, session.user.role, target)) {
-      throw new AppError(403, 'FORBIDDEN', '이 대상자의 nomination을 수정할 권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '이 대상자의 평가자 매핑을 수정할 권한이 없습니다.')
     }
 
     if (validated.data.reviewers.length > round.maxRaters) {
@@ -251,7 +251,7 @@ export async function POST(
     })
 
     return successResponse({
-      message: 'reviewer nomination draft를 저장했습니다.',
+      message: '평가자 매핑 초안을 저장했습니다.',
       savedCount: validated.data.reviewers.length,
       workflowStatus: 'DRAFT',
     })

@@ -62,7 +62,7 @@ run('member sidebar hides admin-only and restricted KPI routes', () => {
   assert.equal(memberHrefs.includes('/evaluation/360'), true)
   assert.equal(memberHrefs.includes('/evaluation/upward/respond'), true)
   assert.equal(memberHrefs.includes('/evaluation/upward/admin'), false)
-  assert.equal(memberHrefs.includes('/evaluation/word-cloud-360'), true)
+  assert.equal(memberHrefs.includes('/evaluation/word-cloud-360'), false)
   assert.equal(memberHrefs.includes('/statistics'), false)
 })
 
@@ -72,7 +72,7 @@ run('ceo sidebar excludes monthly and compensation routes but keeps ceo-specific
   assert.equal(ceoHrefs.includes('/kpi/monthly'), false)
   assert.equal(ceoHrefs.includes('/evaluation/performance'), true)
   assert.equal(ceoHrefs.includes('/evaluation/ai-competency'), true)
-  assert.equal(ceoHrefs.includes('/evaluation/word-cloud-360'), true)
+  assert.equal(ceoHrefs.includes('/evaluation/word-cloud-360'), false)
   assert.equal(ceoHrefs.includes('/evaluation/ceo-adjust'), true)
   assert.equal(ceoHrefs.includes('/compensation/manage'), false)
   assert.equal(ceoHrefs.includes('/compensation/my'), false)
@@ -90,7 +90,6 @@ run('admin sidebar exposes every admin and setup route', () => {
     '/evaluation/360',
     '/evaluation/upward/respond',
     '/evaluation/upward/admin',
-    '/evaluation/word-cloud-360',
     '/evaluation/results',
     '/evaluation/appeal',
     '/evaluation/ceo-adjust',

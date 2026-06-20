@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       throw new AppError(
         400,
         'UPWARD_REVIEW_ROUTE_REQUIRED',
-        '상향 평가는 상향 평가 응답 화면에서 제출해 주세요.'
+        '리더십 진단은 리더십 진단 응답 화면에서 제출해 주세요.'
       )
     }
     if (round.status !== 'IN_PROGRESS') {
