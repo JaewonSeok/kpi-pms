@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { FolderPlus, Mail, Play, Plus, Settings2, Trash2, X } from 'lucide-react'
+import { FolderPlus, Mail, Plus, Settings2, Trash2, X } from 'lucide-react'
 import type { Feedback360PageData } from '@/server/feedback-360'
 import {
   DEFAULT_FEEDBACK_RESULT_PRESENTATION_SETTINGS,
@@ -37,26 +37,30 @@ import {
   buildFeedbackRatingScaleEntries,
   parseFeedbackRatingGuideSettings,
   type FeedbackRatingGuideRule,
-  type FeedbackRatingGuideScaleEntry,
   type FeedbackRatingGuideSettings,
 } from '@/lib/feedback-rating-guide'
-import {
-  ONBOARDING_REVIEW_DEFAULT_TEMPLATE,
-  POSITION_LABELS_KO,
-  buildOnboardingReviewNamePreview,
-  formatScheduleHourLabel,
-  sortOnboardingGeneratedReviews,
-  type OnboardingGeneratedReviewSort,
-} from '@/lib/onboarding-review-workflow'
 import { reviewEmailHtmlToText } from '@/lib/review-email-editor'
 import { MultiRaterTimeline } from './MultiRaterTimeline'
 import { ResponseRateCard } from './ResponseRateCard'
 import { RichTextEmailEditor } from './RichTextEmailEditor'
+import { Feedback360MailDiagnosticsPanel } from './ppt/Feedback360MailDiagnosticsPanel'
+import { Feedback360VisibilitySettings } from './ppt/Feedback360VisibilitySettings'
 // Personal report and analysis settings
 
 type Banner = {
   tone: 'success' | 'error' | 'info'
   message: string
+}
+
+type MailDeliveryResult = {
+  tone: 'success' | 'error' | 'info'
+  title: string
+  recipientsLabel: string
+  channelLabel: string
+  providerStatus: string
+  message: string
+  failureReason?: string
+  retryMode: 'test' | 'send'
 }
 
 type ReminderAction =
@@ -68,11 +72,12 @@ type VisibilityLevel = 'FULL' | 'ANONYMOUS' | 'PRIVATE'
 
 type ReminderTarget = NonNullable<Feedback360PageData['admin']>['reminderTargets'][number]
 type ResultShareSummary = NonNullable<NonNullable<Feedback360PageData['admin']>['resultShare']>
-type OnboardingAdmin = NonNullable<NonNullable<Feedback360PageData['admin']>['onboarding']>
 type AnytimeReviewAdminState = NonNullable<NonNullable<Feedback360PageData['admin']>['anytimeReview']>
 type AnytimeReviewDocument = AnytimeReviewAdminState['documents'][number]
-type OnboardingWorkflow = OnboardingAdmin['workflows'][number]
-type OnboardingCondition = OnboardingWorkflow['targetConditions'][number]
+type AnytimeReviewEmployeeOption = AnytimeReviewAdminState['employeeOptions'][number]
+type AnytimeCreateField = 'cycle' | 'roundName' | 'reviewer' | 'target' | 'dueDate' | 'reason' | 'submit'
+type AnytimeCreateErrors = Partial<Record<AnytimeCreateField, string>>
+type AnytimeDocumentStatusFilter = 'ALL' | 'ACTIVE' | 'PENDING' | 'SUBMITTED' | 'OVERDUE' | 'UNCATEGORIZED'
 type ReviewAdminState = NonNullable<NonNullable<Feedback360PageData['admin']>['reviewAdmin']>
 type ReviewAdminGroup = ReviewAdminState['groups'][number]
 type ReviewAdminCandidate = ReviewAdminState['candidateMembers'][number]
@@ -80,27 +85,6 @@ type ReviewAdminScope = ReviewAdminGroup['reviewScope']
 type ManagerEffectivenessAdminState = NonNullable<
   NonNullable<Feedback360PageData['admin']>['managerEffectiveness']
 >
-type RoundQuestion = Feedback360PageData['availableRounds'][number]['questions'][number]
-type RatingGuideDisplayEntry = ReturnType<typeof annotateFeedbackRatingScaleEntries>[number]
-
-type OnboardingWorkflowDraft = {
-  id?: string
-  evalCycleId: string
-  workflowName: string
-  isActive: boolean
-  scheduleHourKst: number
-  targetConditions: OnboardingCondition[]
-  steps: Array<{
-    id: string
-    stepOrder: number
-    stepName: string
-    triggerDaysAfterJoin: number
-    durationDays: number
-    reviewNameTemplate: string
-    includeEmployeeNameInName: boolean
-    includeHireDateInName: boolean
-  }>
-}
 
 const REVIEW_ADMIN_SCOPE_OPTIONS: Array<{
   value: ReviewAdminScope
@@ -145,13 +129,15 @@ const DEFAULT_SELECTION_SETTINGS = {
 }
 
 const DEFAULT_VISIBILITY_SETTINGS: Record<string, VisibilityLevel> = {
-  SELF: 'FULL',
-  SUPERVISOR: 'FULL',
+  SELF: 'ANONYMOUS',
+  SUPERVISOR: 'ANONYMOUS',
   PEER: 'ANONYMOUS',
   SUBORDINATE: 'ANONYMOUS',
   CROSS_TEAM_PEER: 'ANONYMOUS',
   CROSS_DEPT: 'ANONYMOUS',
 }
+
+const VISIBILITY_SETTING_OPTIONS: VisibilityLevel[] = ['ANONYMOUS', 'FULL']
 
 const VISIBILITY_LABELS: Record<VisibilityLevel, string> = {
   FULL: '작성자 정보 포함',
@@ -159,13 +145,25 @@ const VISIBILITY_LABELS: Record<VisibilityLevel, string> = {
   PRIVATE: '운영자만 조회',
 }
 
+const VISIBILITY_SETTING_SELECT_OPTIONS = VISIBILITY_SETTING_OPTIONS.map((option) => ({
+  value: option,
+  label: VISIBILITY_LABELS[option],
+}))
+
 const REVIEWER_TYPE_LABELS: Record<string, string> = {
   SELF: '셀프',
   SUPERVISOR: '상향 / 리더',
   PEER: '동료',
-  SUBORDINATE: '하향',
+  SUBORDINATE: '팀원',
   CROSS_TEAM_PEER: '타 팀 동료',
   CROSS_DEPT: '타 부서',
+}
+
+function getAdminVisibilitySummary(settings: Record<string, VisibilityLevel>) {
+  const values = Object.keys(DEFAULT_VISIBILITY_SETTINGS).map((key) => settings[key] ?? 'ANONYMOUS')
+  if (values.every((value) => value !== 'FULL')) return '공개 범위: 전체 익명'
+  if (values.every((value) => value === 'FULL')) return '공개 범위: 전체 기명'
+  return '공개 범위: 일부 기명 포함'
 }
 
 function createLocalId(prefix: string) {
@@ -173,6 +171,183 @@ function createLocalId(prefix: string) {
     return `${prefix}-${crypto.randomUUID()}`
   }
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function buildFeedback360AdminRowKey(parts: Array<string | number | null | undefined>) {
+  return parts
+    .map((part) => String(part ?? 'none').trim() || 'none')
+    .join(':')
+}
+
+function normalizeAdminSearchText(value?: string | null) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function getAnytimeDivisionLabel(employee: AnytimeReviewEmployeeOption) {
+  const departmentName = employee.departmentName.trim()
+  if (!departmentName) return '미지정 본부'
+
+  const divisionMatch = departmentName.match(/^(.+?본부)/)
+  return divisionMatch?.[1] ?? departmentName
+}
+
+function getAnytimeTeamLabel(employee: AnytimeReviewEmployeeOption) {
+  const departmentName = employee.departmentName.trim()
+  if (!departmentName) return '미지정 팀'
+
+  const normalized = departmentName.replace(/^.+?본부\s*[>/·-]?\s*/, '').trim()
+  return normalized || departmentName
+}
+
+function getAnytimeCreateErrorMessage(message: string) {
+  if (/too small|>=\s*5|at least 5|5\s*characters/i.test(message)) {
+    return '리뷰 이름은 5자 이상 입력해 주세요.'
+  }
+
+  return message || '수시 리뷰를 등록하지 못했습니다.'
+}
+
+function getFeedback360MailErrorMessage(message: string) {
+  if (/SMTP|emailDelivery|SMTP_HOST|SMTP_USER|SMTP_PASS|transport|provider/i.test(message)) {
+    return '이메일 발송 설정이 완료되지 않았습니다. 앱 알림만 발송됩니다.'
+  }
+
+  if (/NO_RECIPIENTS|recipient|target|대상자|공유할 결과 대상자|발송 대상을|발송할 수 없는/i.test(message)) {
+    return '발송 대상자가 없습니다.'
+  }
+
+  if (/FORBIDDEN|권한|관리할 수 없는|permission/i.test(message)) {
+    return '메일 발송 권한이 없습니다.'
+  }
+
+  if (/VALIDATION|too small|invalid/i.test(message)) {
+    return '메일 제목, 본문, 발송 대상을 확인해 주세요.'
+  }
+
+  return message || '메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+}
+
+function buildAnytimeDocumentDedupeKey(document: AnytimeReviewDocument) {
+  return [
+    document.roundId || 'round-none',
+    document.targetName || 'target-none',
+    document.targetDepartmentName || 'department-none',
+    document.reviewerName || 'reviewer-none',
+    document.documentKind || 'kind-none',
+  ].join(':')
+}
+
+function dedupeAnytimeReviewDocuments(documents: AnytimeReviewDocument[]) {
+  const map = new Map<string, AnytimeReviewDocument>()
+
+  for (const document of documents) {
+    const stableId = document.roundId || buildAnytimeDocumentDedupeKey(document)
+    const existing = map.get(stableId)
+    if (!existing) {
+      map.set(stableId, document)
+      continue
+    }
+
+    const existingSubmitted = existing.feedbackStatus === 'SUBMITTED'
+    const nextSubmitted = document.feedbackStatus === 'SUBMITTED'
+    if (nextSubmitted && !existingSubmitted) {
+      map.set(stableId, document)
+    }
+  }
+
+  return Array.from(map.values())
+}
+
+function matchesAnytimeDocumentStatusFilter(document: AnytimeReviewDocument, filter: AnytimeDocumentStatusFilter) {
+  const isOverdue =
+    document.lifecycleState === 'ACTIVE' &&
+    document.endDate &&
+    Date.parse(document.endDate) < Date.now()
+
+  switch (filter) {
+    case 'ACTIVE':
+      return document.lifecycleState === 'ACTIVE'
+    case 'PENDING':
+      return document.feedbackStatus !== 'SUBMITTED'
+    case 'SUBMITTED':
+      return document.feedbackStatus === 'SUBMITTED'
+    case 'OVERDUE':
+      return Boolean(isOverdue)
+    case 'UNCATEGORIZED':
+      return !document.templateRoundName && !document.projectName
+    default:
+      return true
+  }
+}
+
+function getAnytimeDocumentStatusFilterLabel(filter: AnytimeDocumentStatusFilter) {
+  switch (filter) {
+    case 'ACTIVE':
+      return '진행 중'
+    case 'PENDING':
+      return '미응답'
+    case 'SUBMITTED':
+      return '제출 완료'
+    case 'OVERDUE':
+      return '기한 초과'
+    case 'UNCATEGORIZED':
+      return '미분류'
+    default:
+      return '전체'
+  }
+}
+
+function canDeleteAnytimeDocument(document: AnytimeReviewDocument) {
+  return document.lifecycleState === 'ACTIVE' && document.feedbackStatus !== 'SUBMITTED'
+}
+
+function getFeedbackRoundTypeLabel(roundType?: string | null) {
+  switch (roundType) {
+    case 'ANYTIME':
+      return '수시 리뷰'
+    case 'FULL_360':
+      return '360 다면평가'
+    case 'PEER':
+      return '동료 평가'
+    case 'UPWARD':
+      return '상향 평가'
+    case 'CROSS_DEPT':
+      return '타부서 평가'
+    default:
+      return '다면평가'
+  }
+}
+
+function getFeedbackRoundStatusLabel(status?: string | null) {
+  switch (status) {
+    case 'DRAFT':
+      return '준비 중'
+    case 'RATER_SELECTION':
+      return '평가자 선정'
+    case 'IN_PROGRESS':
+      return '진행 중'
+    case 'COMPLETED':
+      return '완료'
+    case 'CLOSED':
+      return '종료'
+    case 'CANCELLED':
+      return '취소됨'
+    default:
+      return status || '상태 미정'
+  }
+}
+
+function getFeedbackStatusLabel(status?: string | null) {
+  switch (status) {
+    case 'PENDING':
+      return '미응답'
+    case 'IN_PROGRESS':
+      return '작성 중'
+    case 'SUBMITTED':
+      return '제출 완료'
+    default:
+      return '미응답'
+  }
 }
 
 function createEmptyRatingGuideRule(): FeedbackRatingGuideRule {
@@ -278,74 +453,6 @@ const REPORT_ANALYSIS_WORDING_FIELDS: Array<{
   },
 ]
 
-function createEmptyCondition(field: 'JOIN_DATE' | 'POSITION'): OnboardingCondition {
-  if (field === 'POSITION') {
-    return {
-      id: createLocalId('position'),
-      field: 'POSITION',
-      operator: 'IN',
-      values: ['MEMBER'],
-    }
-  }
-
-  return {
-    id: createLocalId('join-date'),
-    field: 'JOIN_DATE',
-    operator: 'ON_OR_AFTER',
-    value: new Date().toISOString().slice(0, 10),
-    valueTo: null,
-  }
-}
-
-function createEmptyStep(stepOrder: number): OnboardingWorkflowDraft['steps'][number] {
-  return {
-    id: createLocalId(`step-${stepOrder}`),
-    stepOrder,
-    stepName: `${stepOrder}단계`,
-    triggerDaysAfterJoin: stepOrder === 1 ? 7 : stepOrder * 30,
-    durationDays: 14,
-    reviewNameTemplate: ONBOARDING_REVIEW_DEFAULT_TEMPLATE,
-    includeEmployeeNameInName: true,
-    includeHireDateInName: false,
-  }
-}
-
-function createEmptyWorkflowDraft(evalCycleId: string): OnboardingWorkflowDraft {
-  return {
-    evalCycleId,
-    workflowName: '',
-    isActive: true,
-    scheduleHourKst: 8,
-    targetConditions: [createEmptyCondition('JOIN_DATE')],
-    steps: [createEmptyStep(1)],
-  }
-}
-
-function hydrateWorkflowDraft(evalCycleId: string, workflow?: OnboardingWorkflow | null): OnboardingWorkflowDraft {
-  if (!workflow) {
-    return createEmptyWorkflowDraft(evalCycleId)
-  }
-
-  return {
-    id: workflow.id,
-    evalCycleId,
-    workflowName: workflow.workflowName,
-    isActive: workflow.isActive,
-    scheduleHourKst: workflow.scheduleHourKst,
-    targetConditions: workflow.targetConditions.map((condition) => ({ ...condition })),
-    steps: workflow.steps.map((step) => ({
-      id: step.id,
-      stepOrder: step.stepOrder,
-      stepName: step.stepName,
-      triggerDaysAfterJoin: step.triggerDaysAfterJoin,
-      durationDays: step.durationDays,
-      reviewNameTemplate: step.reviewNameTemplate,
-      includeEmployeeNameInName: step.includeEmployeeNameInName,
-      includeHireDateInName: step.includeHireDateInName,
-    })),
-  }
-}
-
 function getReminderKind(action: ReminderAction) {
   if (action === 'send-peer-selection-reminder') return 'peer-selection-reminder'
   if (action === 'send-result-share') return 'result-share'
@@ -355,8 +462,8 @@ function getReminderKind(action: ReminderAction) {
 function getReminderTemplate(roundName: string, action: ReminderAction) {
   if (action === 'send-peer-selection-reminder') {
     return {
-      subject: `[360 리뷰] ${roundName} 동료 선택 / 승인 확인 요청`,
-      body: `안녕하세요.\n\n${roundName}의 동료 선택 또는 승인 단계가 아직 완료되지 않았습니다.\n현재 구성을 확인하고 필요한 수정 또는 승인을 진행해 주세요.\n\n감사합니다.`,
+      subject: `[360 리뷰] ${roundName} 평가자 매핑 / 승인 확인 요청`,
+      body: `안녕하세요.\n\n${roundName}의 평가자 매핑 또는 승인 단계가 아직 완료되지 않았습니다.\n현재 구성을 확인하고 필요한 수정 또는 승인을 진행해 주세요.\n\n감사합니다.`,
     }
   }
 
@@ -376,13 +483,10 @@ function getReminderTemplate(roundName: string, action: ReminderAction) {
 export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const router = useRouter()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
+  const anytimeCreateCardRef = useRef<HTMLDivElement | null>(null)
+  const anytimeRoundNameInputRef = useRef<HTMLInputElement | null>(null)
   const rounds = props.data.availableRounds
   const admin = props.data.admin
-  const onboarding = admin?.onboarding
-  const selectedCycle =
-    props.data.availableCycles.find((cycle) => cycle.id === props.data.selectedCycleId) ??
-    props.data.availableCycles[0] ??
-    null
 
   const [banner, setBanner] = useState<Banner | null>(null)
   const [folderFilter, setFolderFilter] = useState<'ALL' | 'UNCATEGORIZED' | string>('ALL')
@@ -417,6 +521,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const [reminderSubject, setReminderSubject] = useState('')
   const [reminderBody, setReminderBody] = useState('')
   const [testEmail, setTestEmail] = useState('')
+  const [mailDeliveryResult, setMailDeliveryResult] = useState<MailDeliveryResult | null>(null)
   const [selectionSettings, setSelectionSettings] = useState(DEFAULT_SELECTION_SETTINGS)
   const [visibilitySettings, setVisibilitySettings] = useState<Record<string, VisibilityLevel>>(DEFAULT_VISIBILITY_SETTINGS)
   const [resultPresentationSettings, setResultPresentationSettings] = useState<FeedbackResultPresentationSettings>(
@@ -433,14 +538,6 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const [selectedResultShareTargetIds, setSelectedResultShareTargetIds] = useState<string[]>([])
   const [pendingReminderPrefillIds, setPendingReminderPrefillIds] = useState<string[] | null>(null)
   const [questionDrafts, setQuestionDrafts] = useState<Array<{ id: string; category: string; questionText: string }>>([])
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string>('new')
-  const [workflowDraft, setWorkflowDraft] = useState<OnboardingWorkflowDraft>(
-    createEmptyWorkflowDraft(props.data.selectedCycleId ?? '')
-  )
-  const [generatedReviewSearch, setGeneratedReviewSearch] = useState('')
-  const [generatedReviewStatusFilter, setGeneratedReviewStatusFilter] = useState<'ALL' | string>('ALL')
-  const [generatedReviewSort, setGeneratedReviewSort] =
-    useState<OnboardingGeneratedReviewSort>('CREATED_DESC')
   const [anytimeDocumentKind, setAnytimeDocumentKind] = useState<FeedbackAnytimeDocumentKind>('ANYTIME')
   const [anytimeRoundName, setAnytimeRoundName] = useState('')
   const [anytimeReviewerId, setAnytimeReviewerId] = useState('')
@@ -458,26 +555,31 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const [pipMidReview, setPipMidReview] = useState('')
   const [pipEndJudgement, setPipEndJudgement] = useState('')
   const [anytimeSearch, setAnytimeSearch] = useState('')
+  const [anytimeStatusFilter, setAnytimeStatusFilter] = useState<AnytimeDocumentStatusFilter>('ALL')
   const [selectedAnytimeRoundIds, setSelectedAnytimeRoundIds] = useState<string[]>([])
   const [anytimeBulkReviewerId, setAnytimeBulkReviewerId] = useState('')
   const [anytimeBulkDueDate, setAnytimeBulkDueDate] = useState('')
   const [anytimeBulkReason, setAnytimeBulkReason] = useState('')
+  const [anytimeTargetDivision, setAnytimeTargetDivision] = useState('')
+  const [anytimeTargetTeam, setAnytimeTargetTeam] = useState('')
+  const [anytimeTargetSearch, setAnytimeTargetSearch] = useState('')
+  const [anytimeCreateErrors, setAnytimeCreateErrors] = useState<AnytimeCreateErrors>({})
+  const [anytimeCreateNotice, setAnytimeCreateNotice] = useState('')
+  const [anytimeBulkNotice, setAnytimeBulkNotice] = useState('')
+  const [anytimeBulkError, setAnytimeBulkError] = useState('')
+  const [anytimeDeleteConfirmOpen, setAnytimeDeleteConfirmOpen] = useState(false)
 
   const selectedRound = rounds.find((round) => round.id === selectedRoundId) ?? rounds[0] ?? null
   const reviewAdmin = admin?.reviewAdmin
   const anytimeReview = admin?.anytimeReview
   const selectedReminderKind = getReminderKind(reminderAction)
   const hasReminderBodyContent = reviewEmailHtmlToText(reminderBody).trim().length > 0
-  const selectedWorkflow =
-    onboarding?.workflows.find((workflow) => workflow.id === selectedWorkflowId) ?? null
   const resultShare = admin?.resultShare
   const managerEffectivenessAdmin = admin?.managerEffectiveness
   const resultShareRows = resultShare?.rows ?? []
   const currentUserRole = props.data.currentUser?.role ?? 'ROLE_MEMBER'
   const canManageAllReviewRounds =
     reviewAdmin?.currentAccess.canManageAllRounds ?? currentUserRole === 'ROLE_ADMIN'
-  const canManageCollaboratorReviewRounds =
-    reviewAdmin?.currentAccess.canManageCollaboratorRounds ?? canManageAllReviewRounds
   const canEditReviewAdminGroups = currentUserRole === 'ROLE_ADMIN'
   const canManageFolders = canManageAllReviewRounds
   const ratingQuestionOptions = useMemo(() => getRatingQuestionOptions(selectedRound), [selectedRound])
@@ -496,6 +598,16 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const folderCards = useMemo(
     () => [
       { id: 'ALL', name: '전체 라운드', count: rounds.length },
+      {
+        id: 'REGULAR_360',
+        name: '정기 다면평가',
+        count: rounds.filter((round) => round.roundType !== 'ANYTIME').length,
+      },
+      {
+        id: 'ANYTIME',
+        name: '수시 리뷰',
+        count: rounds.filter((round) => round.roundType === 'ANYTIME').length,
+      },
       { id: 'UNCATEGORIZED', name: '미분류', count: rounds.filter((round) => !round.folderId).length },
       ...(admin?.folders ?? []).map((folder) => ({
         id: folder.id,
@@ -553,6 +665,8 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     () =>
       rounds.filter((round) => {
         if (folderFilter === 'ALL') return true
+        if (folderFilter === 'REGULAR_360') return round.roundType !== 'ANYTIME'
+        if (folderFilter === 'ANYTIME') return round.roundType === 'ANYTIME'
         if (folderFilter === 'UNCATEGORIZED') return !round.folderId
         return round.folderId === folderFilter
       }),
@@ -635,57 +749,104 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     }
   }, [admin?.roundHealth])
 
-  const generatedReviewStatusOptions = useMemo(
-    () =>
-      Array.from(
-        new Set((onboarding?.generatedReviews ?? []).map((review) => review.status))
-      ).sort(),
-    [onboarding?.generatedReviews]
-  )
-
-  const filteredGeneratedReviews = useMemo(() => {
-    const filtered = (onboarding?.generatedReviews ?? []).filter((review) => {
-      if (generatedReviewStatusFilter !== 'ALL' && review.status !== generatedReviewStatusFilter) {
-        return false
-      }
-
-      if (!generatedReviewSearch.trim()) return true
-      const keyword = generatedReviewSearch.trim()
-      return (
-        review.roundName.includes(keyword) ||
-        review.targetName.includes(keyword) ||
-        review.targetDepartment.includes(keyword) ||
-        review.workflowName.includes(keyword) ||
-        review.stepName.includes(keyword)
-      )
-    })
-
-    return sortOnboardingGeneratedReviews(filtered, generatedReviewSort)
-  }, [generatedReviewSearch, generatedReviewSort, generatedReviewStatusFilter, onboarding?.generatedReviews])
-
   const filteredAnytimeDocuments = useMemo(() => {
-    const source = anytimeReview?.documents ?? []
-    if (!anytimeSearch.trim()) return source
+    const source = dedupeAnytimeReviewDocuments(anytimeReview?.documents ?? [])
     const keyword = anytimeSearch.trim()
-    return source.filter((document) =>
-      [
-        document.roundName,
-        document.documentKindLabel,
-        document.targetName,
-        document.targetDepartmentName,
-        document.reviewerName,
-        document.reason,
-        document.projectName ?? '',
-        document.templateRoundName ?? '',
-      ].some((value) => value.includes(keyword))
-    )
-  }, [anytimeReview?.documents, anytimeSearch])
-  const anytimeEmployeeOptions = anytimeReview?.employeeOptions ?? []
+    return source.filter((document) => {
+      if (!matchesAnytimeDocumentStatusFilter(document, anytimeStatusFilter)) return false
+      if (!keyword) return true
+      return [
+          document.roundName,
+          document.documentKindLabel,
+          document.targetName,
+          document.targetDepartmentName,
+          document.reviewerName,
+          document.reason,
+          document.projectName ?? '',
+          document.templateRoundName ?? '',
+        ].some((value) => value.includes(keyword))
+    })
+  }, [anytimeReview?.documents, anytimeSearch, anytimeStatusFilter])
+  const anytimeEmployeeOptions = useMemo(() => anytimeReview?.employeeOptions ?? [], [anytimeReview?.employeeOptions])
   const anytimeTemplateOptions = anytimeReview?.templateOptions ?? []
   const anytimeFolderOptions = admin?.folders ?? []
+  const anytimeDocumentStatusTabs = useMemo(() => {
+    const source = dedupeAnytimeReviewDocuments(anytimeReview?.documents ?? [])
+    const filters: AnytimeDocumentStatusFilter[] = ['ALL', 'ACTIVE', 'PENDING', 'SUBMITTED', 'OVERDUE', 'UNCATEGORIZED']
+
+    return filters.map((filter) => ({
+      filter,
+      label: getAnytimeDocumentStatusFilterLabel(filter),
+      count: source.filter((document) => matchesAnytimeDocumentStatusFilter(document, filter)).length,
+    }))
+  }, [anytimeReview?.documents])
+  const anytimeTargetDivisionOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const employee of anytimeEmployeeOptions) {
+      const division = getAnytimeDivisionLabel(employee)
+      counts.set(division, (counts.get(division) ?? 0) + 1)
+    }
+
+    return Array.from(counts.entries())
+      .map(([division, count]) => ({ division, count }))
+      .sort((left, right) => left.division.localeCompare(right.division, 'ko-KR'))
+  }, [anytimeEmployeeOptions])
+  const anytimeTargetTeamOptions = useMemo(() => {
+    if (!anytimeTargetDivision) return []
+
+    const counts = new Map<string, number>()
+    for (const employee of anytimeEmployeeOptions) {
+      if (getAnytimeDivisionLabel(employee) !== anytimeTargetDivision) continue
+      const team = getAnytimeTeamLabel(employee)
+      counts.set(team, (counts.get(team) ?? 0) + 1)
+    }
+
+    return Array.from(counts.entries())
+      .map(([team, count]) => ({ team, count }))
+      .sort((left, right) => left.team.localeCompare(right.team, 'ko-KR'))
+  }, [anytimeEmployeeOptions, anytimeTargetDivision])
+  const filteredAnytimeTargetOptions = useMemo(() => {
+    const keyword = normalizeAdminSearchText(anytimeTargetSearch)
+    const hasCriteria = Boolean(anytimeTargetDivision || anytimeTargetTeam || keyword)
+    if (!hasCriteria) return []
+
+    return anytimeEmployeeOptions.filter((employee) => {
+      const division = getAnytimeDivisionLabel(employee)
+      const team = getAnytimeTeamLabel(employee)
+      const matchesDivision = !anytimeTargetDivision || division === anytimeTargetDivision
+      const matchesTeam = !anytimeTargetTeam || team === anytimeTargetTeam
+      const matchesKeyword =
+        !keyword ||
+        [employee.name, employee.departmentName, employee.position, employee.email]
+          .some((value) => normalizeAdminSearchText(value).includes(keyword))
+
+      return matchesDivision && matchesTeam && matchesKeyword
+    })
+  }, [anytimeEmployeeOptions, anytimeTargetDivision, anytimeTargetSearch, anytimeTargetTeam])
+  const selectedAnytimeTargets = useMemo(() => {
+    const employeeMap = new Map(anytimeEmployeeOptions.map((employee) => [employee.employeeId, employee] as const))
+    return anytimeTargetIds
+      .map((employeeId) => employeeMap.get(employeeId))
+      .filter((employee): employee is AnytimeReviewEmployeeOption => Boolean(employee))
+  }, [anytimeEmployeeOptions, anytimeTargetIds])
   const allAnytimeRoundsSelected =
     filteredAnytimeDocuments.length > 0 &&
     filteredAnytimeDocuments.every((document) => selectedAnytimeRoundIds.includes(document.roundId))
+  const selectedAnytimeDocuments = useMemo(() => {
+    const documentMap = new Map(filteredAnytimeDocuments.map((document) => [document.roundId, document] as const))
+    return selectedAnytimeRoundIds
+      .map((roundId) => documentMap.get(roundId))
+      .filter((document): document is AnytimeReviewDocument => Boolean(document))
+  }, [filteredAnytimeDocuments, selectedAnytimeRoundIds])
+  const deleteBlockedDocument = selectedAnytimeDocuments.find((document) => !canDeleteAnytimeDocument(document))
+  const canDeleteSelectedAnytimeDocuments =
+    selectedAnytimeDocuments.length > 0 && selectedAnytimeDocuments.every(canDeleteAnytimeDocument)
+  const anytimeDeleteBlockedReason =
+    selectedAnytimeRoundIds.length === 0
+      ? '삭제할 수시 리뷰를 먼저 선택해 주세요.'
+      : deleteBlockedDocument
+        ? '응답이 시작된 라운드는 삭제할 수 없습니다.'
+        : ''
 
   useEffect(() => {
     setBanner(null)
@@ -696,9 +857,6 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     setGroupSearch('')
     setCollaboratorSearch('')
     setCollaboratorIds([])
-    setGeneratedReviewSearch('')
-    setGeneratedReviewStatusFilter('ALL')
-    setGeneratedReviewSort('CREATED_DESC')
     setAnytimeDocumentKind('ANYTIME')
     setAnytimeRoundName('')
     setAnytimeReviewerId('')
@@ -716,10 +874,18 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     setPipMidReview('')
     setPipEndJudgement('')
     setAnytimeSearch('')
+    setAnytimeStatusFilter('ALL')
     setSelectedAnytimeRoundIds([])
     setAnytimeBulkReviewerId('')
     setAnytimeBulkDueDate('')
     setAnytimeBulkReason('')
+    setAnytimeTargetDivision('')
+    setAnytimeTargetTeam('')
+    setAnytimeTargetSearch('')
+    setAnytimeCreateErrors({})
+    setAnytimeBulkNotice('')
+    setAnytimeBulkError('')
+    setAnytimeDeleteConfirmOpen(false)
     setSelectedRoundId(props.data.selectedRoundId ?? rounds[0]?.id ?? '')
   }, [props.data.selectedCycleId, props.data.selectedRoundId, rounds])
 
@@ -800,6 +966,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     setReminderStatusFilter('ALL')
     setSelectedTargetIds([])
     setShareAudience('REVIEWEE')
+    setMailDeliveryResult(null)
   }, [selectedRoundId, reminderAction])
 
   useEffect(() => {
@@ -815,22 +982,6 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     setSelectedTargetIds(pendingReminderPrefillIds)
     setPendingReminderPrefillIds(null)
   }, [pendingReminderPrefillIds, reminderAction, reminderDialogOpen])
-
-  useEffect(() => {
-    setSelectedWorkflowId('new')
-    setWorkflowDraft(createEmptyWorkflowDraft(props.data.selectedCycleId ?? ''))
-    setGeneratedReviewSearch('')
-    setGeneratedReviewStatusFilter('ALL')
-  }, [props.data.selectedCycleId])
-
-  useEffect(() => {
-    if (!selectedWorkflow) {
-      setWorkflowDraft(createEmptyWorkflowDraft(props.data.selectedCycleId ?? ''))
-      return
-    }
-
-    setWorkflowDraft(hydrateWorkflowDraft(props.data.selectedCycleId ?? '', selectedWorkflow))
-  }, [props.data.selectedCycleId, selectedWorkflow])
 
   function selectAllMatchingTargets() {
     setSelectedTargetIds(visibleReminderRecipientIds)
@@ -904,6 +1055,35 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     )
   }
 
+  function toggleAnytimeDivisionTargets() {
+    if (!anytimeTargetDivision) return
+
+    const divisionEmployeeIds = filteredAnytimeTargetOptions.map((employee) => employee.employeeId)
+    const allSelected =
+      divisionEmployeeIds.length > 0 && divisionEmployeeIds.every((employeeId) => anytimeTargetIds.includes(employeeId))
+
+    setAnytimeTargetIds((current) =>
+      allSelected
+        ? current.filter((employeeId) => !divisionEmployeeIds.includes(employeeId))
+        : Array.from(new Set([...current, ...divisionEmployeeIds]))
+    )
+  }
+
+  function focusAnytimeCreateError(field: AnytimeCreateField) {
+    requestAnimationFrame(() => {
+      anytimeCreateCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      if (field === 'roundName') {
+        anytimeRoundNameInputRef.current?.focus()
+      }
+    })
+  }
+
+  function focusAnytimeDocumentList() {
+    requestAnimationFrame(() => {
+      document.getElementById('feedback360-anytime-document-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
   function toggleAnytimeRoundSelection(roundId: string) {
     setSelectedAnytimeRoundIds((current) =>
       current.includes(roundId)
@@ -922,34 +1102,62 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     )
   }
 
-  async function handleCreateAnytimeReview() {
-    if (!props.data.selectedCycleId) {
-      setBanner({ tone: 'error', message: '먼저 평가 주기를 선택해 주세요.' })
+  function openAnytimeDeleteConfirm() {
+    setAnytimeBulkNotice('')
+    setAnytimeBulkError('')
+
+    if (!canDeleteSelectedAnytimeDocuments) {
+      const message = anytimeDeleteBlockedReason || '삭제 가능 상태가 아닙니다.'
+      setAnytimeBulkError(message)
+      setBanner({ tone: 'error', message })
+      focusAnytimeDocumentList()
       return
     }
 
-    if (!anytimeRoundName.trim()) {
-      setBanner({ tone: 'error', message: '수시 리뷰 문서 이름을 입력해 주세요.' })
+    setAnytimeDeleteConfirmOpen(true)
+  }
+
+  async function handleCreateAnytimeReview() {
+    setAnytimeCreateErrors({})
+    setAnytimeCreateNotice('')
+
+    if (!props.data.selectedCycleId) {
+      const message = '먼저 평가 주기를 선택해 주세요.'
+      setAnytimeCreateErrors({ cycle: message })
+      setBanner({ tone: 'error', message })
+      focusAnytimeCreateError('cycle')
       return
+    }
+
+    const validationErrors: AnytimeCreateErrors = {}
+    if (anytimeRoundName.trim().length < 5) {
+      validationErrors.roundName = '리뷰 이름은 5자 이상 입력해 주세요.'
     }
 
     if (!anytimeReviewerId) {
-      setBanner({ tone: 'error', message: '리뷰어를 선택해 주세요.' })
-      return
+      validationErrors.reviewer = '평가자를 선택해 주세요.'
     }
 
     if (!anytimeTargetIds.length) {
-      setBanner({ tone: 'error', message: '리뷰 대상자를 한 명 이상 선택해 주세요.' })
-      return
+      validationErrors.target = '리뷰 대상자를 한 명 이상 선택해 주세요.'
     }
 
     if (!anytimeDueDate) {
-      setBanner({ tone: 'error', message: '마감 기한을 입력해 주세요.' })
-      return
+      validationErrors.dueDate = '마감 기한을 입력해 주세요.'
     }
 
     if (!anytimeReason.trim()) {
-      setBanner({ tone: 'error', message: '문서 생성 사유를 입력해 주세요.' })
+      validationErrors.reason = '리뷰 등록 사유를 입력해 주세요.'
+    }
+
+    if (Object.keys(validationErrors).length) {
+      setAnytimeCreateErrors(validationErrors)
+      const firstField =
+        (['roundName', 'reviewer', 'target', 'dueDate', 'reason'] as AnytimeCreateField[])
+          .find((field) => validationErrors[field]) ?? 'submit'
+      const message = validationErrors[firstField] ?? '입력값을 확인해 주세요.'
+      setBanner({ tone: 'error', message })
+      focusAnytimeCreateError(firstField)
       return
     }
 
@@ -988,10 +1196,11 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
 
       const payload = await response.json()
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error?.message || '수시 리뷰 문서를 생성하지 못했습니다.')
+        throw new Error(payload.error?.message || '수시 리뷰를 등록하지 못했습니다.')
       }
 
-      setBanner({ tone: 'success', message: payload.data.message || '수시 리뷰 문서를 생성했습니다.' })
+      setAnytimeCreateNotice('리뷰가 등록되었습니다.')
+      setBanner({ tone: 'success', message: payload.data.message || '리뷰가 등록되었습니다.' })
       setAnytimeRoundName('')
       setAnytimeReviewerId('')
       setAnytimeTargetIds([])
@@ -1007,37 +1216,61 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
       setPipCheckpointsText('')
       setPipMidReview('')
       setPipEndJudgement('')
+      setAnytimeTargetDivision('')
+      setAnytimeTargetTeam('')
+      setAnytimeTargetSearch('')
       router.refresh()
     } catch (error) {
+      const message = getAnytimeCreateErrorMessage(
+        error instanceof Error ? error.message : '수시 리뷰를 등록하지 못했습니다.'
+      )
+      setAnytimeCreateErrors({ submit: message })
       setBanner({
         tone: 'error',
-        message: error instanceof Error ? error.message : '수시 리뷰 문서를 생성하지 못했습니다.',
+        message,
       })
+      focusAnytimeCreateError('submit')
     } finally {
       setBusy(false)
     }
   }
 
   async function handleAnytimeBulkAction(
-    action: 'change-due-date' | 'transfer-reviewer' | 'cancel' | 'close' | 'reopen'
+    action: 'change-due-date' | 'transfer-reviewer' | 'cancel' | 'close' | 'reopen',
+    options?: { successMessage?: string }
   ) {
+    setAnytimeBulkNotice('')
+    setAnytimeBulkError('')
+
     if (!selectedAnytimeRoundIds.length) {
-      setBanner({ tone: 'error', message: '처리할 수시 리뷰 문서를 먼저 선택해 주세요.' })
+      const message = '처리할 수시 리뷰를 먼저 선택해 주세요.'
+      setAnytimeBulkError(message)
+      setBanner({ tone: 'error', message })
+      focusAnytimeDocumentList()
       return
     }
 
     if (action === 'change-due-date' && !anytimeBulkDueDate) {
-      setBanner({ tone: 'error', message: '변경할 기한을 입력해 주세요.' })
+      const message = '필수 항목을 입력해 주세요.'
+      setAnytimeBulkError('변경할 기한을 입력해 주세요.')
+      setBanner({ tone: 'error', message })
+      focusAnytimeDocumentList()
       return
     }
 
     if (action === 'transfer-reviewer' && !anytimeBulkReviewerId) {
-      setBanner({ tone: 'error', message: '이관할 리뷰어를 선택해 주세요.' })
+      const message = '필수 항목을 입력해 주세요.'
+      setAnytimeBulkError('이관할 평가자를 선택해 주세요.')
+      setBanner({ tone: 'error', message })
+      focusAnytimeDocumentList()
       return
     }
 
     if (!anytimeBulkReason.trim()) {
-      setBanner({ tone: 'error', message: '일괄 작업 사유를 입력해 주세요.' })
+      const message = '필수 항목을 입력해 주세요.'
+      setAnytimeBulkError('일괄 작업 사유를 입력해 주세요.')
+      setBanner({ tone: 'error', message })
+      focusAnytimeDocumentList()
       return
     }
 
@@ -1059,158 +1292,41 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
 
       const payload = await response.json()
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error?.message || '수시 리뷰 문서 일괄 작업을 완료하지 못했습니다.')
+        throw new Error(payload.error?.message || '수시 리뷰 일괄 작업을 완료하지 못했습니다.')
       }
 
       const failureCount = payload.data.failureCount ?? 0
+      const message =
+        options?.successMessage ??
+        payload.data.message ??
+        '수시 리뷰 일괄 작업을 완료했습니다.'
+      setAnytimeBulkNotice(failureCount > 0 ? payload.data.message || message : message)
       setBanner({
         tone: failureCount > 0 ? 'info' : 'success',
-        message: payload.data.message || '수시 리뷰 문서 일괄 작업을 완료했습니다.',
+        message,
       })
       if (failureCount === 0) {
         setSelectedAnytimeRoundIds([])
       }
       setAnytimeBulkReason('')
+      setAnytimeDeleteConfirmOpen(false)
       router.refresh()
     } catch (error) {
+      const message = error instanceof Error ? getAnytimeCreateErrorMessage(error.message) : '수시 리뷰 일괄 작업을 완료하지 못했습니다.'
+      setAnytimeBulkError(message)
       setBanner({
         tone: 'error',
-        message: error instanceof Error ? error.message : '수시 리뷰 문서 일괄 작업을 완료하지 못했습니다.',
+        message,
       })
+      focusAnytimeDocumentList()
     } finally {
       setBusy(false)
     }
-  }
-
-  function updateWorkflowCondition(conditionId: string, nextValue: Partial<OnboardingCondition>) {
-    setWorkflowDraft((current) => ({
-      ...current,
-      targetConditions: current.targetConditions.map((condition) =>
-        condition.id === conditionId ? ({ ...condition, ...nextValue } as OnboardingCondition) : condition
-      ),
-    }))
-  }
-
-  function updateWorkflowStep(
-    stepId: string,
-    nextValue: Partial<OnboardingWorkflowDraft['steps'][number]>
-  ) {
-    setWorkflowDraft((current) => ({
-      ...current,
-      steps: current.steps.map((step) =>
-        step.id === stepId ? { ...step, ...nextValue } : step
-      ),
-    }))
-  }
-
-  function addWorkflowCondition(field: 'JOIN_DATE' | 'POSITION') {
-    setWorkflowDraft((current) => ({
-      ...current,
-      targetConditions: [...current.targetConditions, createEmptyCondition(field)],
-    }))
-  }
-
-  function removeWorkflowCondition(conditionId: string) {
-    setWorkflowDraft((current) => ({
-      ...current,
-      targetConditions:
-        current.targetConditions.length > 1
-          ? current.targetConditions.filter((condition) => condition.id !== conditionId)
-          : current.targetConditions,
-    }))
-  }
-
-  function addWorkflowStep() {
-    setWorkflowDraft((current) => ({
-      ...current,
-      steps: [
-        ...current.steps,
-        createEmptyStep(
-          Math.max(
-            0,
-            ...current.steps.map((step) => step.stepOrder)
-          ) + 1
-        ),
-      ],
-    }))
-  }
-
-  function removeWorkflowStep(stepId: string) {
-    setWorkflowDraft((current) => ({
-      ...current,
-      steps:
-        current.steps.length > 1
-          ? current.steps.filter((step) => step.id !== stepId)
-          : current.steps,
-    }))
   }
 
   async function refreshWithMessage(message: string) {
     setBanner({ tone: 'success', message })
     router.refresh()
-  }
-
-  async function handleSaveOnboardingWorkflow() {
-    setBusy(true)
-    try {
-      const normalizedSteps = workflowDraft.steps
-        .map((step, index) => ({
-          ...step,
-          stepOrder: index + 1,
-          reviewNameTemplate: step.reviewNameTemplate.trim() || ONBOARDING_REVIEW_DEFAULT_TEMPLATE,
-        }))
-      const response = await fetch('/api/feedback/onboarding-workflows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...workflowDraft,
-          steps: normalizedSteps,
-        }),
-      })
-      const json = await response.json()
-      if (!json.success) {
-        throw new Error(json.error?.message || '온보딩 리뷰 워크플로우를 저장하지 못했습니다.')
-      }
-      if (json.data?.id) {
-        setSelectedWorkflowId(json.data.id)
-      }
-      await refreshWithMessage(json.data?.message ?? '온보딩 리뷰 워크플로우를 저장했습니다.')
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message: error instanceof Error ? error.message : '온보딩 리뷰 워크플로우를 저장하지 못했습니다.',
-      })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleRunOnboardingWorkflow() {
-    if (!props.data.selectedCycleId) return
-
-    setBusy(true)
-    try {
-      const response = await fetch('/api/feedback/onboarding-workflows/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cycleId: props.data.selectedCycleId,
-          workflowId: workflowDraft.id,
-        }),
-      })
-      const json = await response.json()
-      if (!json.success) {
-        throw new Error(json.error?.message || '온보딩 리뷰 자동 생성을 실행하지 못했습니다.')
-      }
-      await refreshWithMessage(json.data?.message ?? '온보딩 리뷰 자동 생성을 실행했습니다.')
-    } catch (error) {
-      setBanner({
-        tone: 'error',
-        message: error instanceof Error ? error.message : '온보딩 리뷰 자동 생성을 실행하지 못했습니다.',
-      })
-    } finally {
-      setBusy(false)
-    }
   }
 
   async function handleAssignFolder(roundId: string, folderId: string) {
@@ -1422,7 +1538,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         throw new Error(json.error?.message || '라운드 설정을 저장하지 못했습니다.')
       }
       setSettingsDialogOpen(false)
-      await refreshWithMessage('동료 선택 규칙, 익명 공개 범위, 결과지 버전 설정, 리뷰 문항 수정을 저장했습니다.')
+      await refreshWithMessage('평가자 선정 규칙, 익명 공개 범위, 결과지 버전 설정, 리뷰 문항 수정을 저장했습니다.')
     } catch (error) {
       setBanner({
         tone: 'error',
@@ -1437,6 +1553,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     if (!selectedRound) return
 
     setBusy(true)
+    setMailDeliveryResult(null)
     try {
       let riskHeaders: HeadersInit | undefined
       if (mode === 'send' && reminderAction === 'send-result-share') {
@@ -1472,19 +1589,61 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
       if (!json.success) {
         throw new Error(json.error?.message || '리마인드를 발송하지 못했습니다.')
       }
+      const targetCount =
+        mode === 'test'
+          ? 1
+          : selectedTargetIds.length || visibleReminderRecipientIds.length
+      const resultTitle =
+        mode === 'test'
+          ? '테스트 메일 발송 결과'
+          : reminderAction === 'send-result-share'
+            ? '결과 공유 메일 발송 결과'
+            : '리마인드 메일 발송 결과'
+      const successMessage =
+        json.data?.message ??
+        (mode === 'test' ? '테스트 발송이 완료되었습니다.' : '메일 발송을 예약했습니다.')
+      setMailDeliveryResult({
+        tone: 'success',
+        title: resultTitle,
+        recipientsLabel:
+          mode === 'test'
+            ? `테스트 수신자 ${testEmail || '1명'}`
+            : `발송 대상 ${targetCount}명`,
+        channelLabel: mode === 'test' ? '이메일 테스트' : '이메일 + 앱 알림',
+        providerStatus: '기존 360 알림 발송 경로로 요청했습니다. provider 세부 결과는 알림 운영 화면에서 확인합니다.',
+        message: successMessage,
+        retryMode: mode,
+      })
       if (mode === 'test') {
         setBanner({ tone: 'info', message: '테스트 발송을 완료했습니다.' })
       } else {
         if (reminderAction === 'send-result-share') {
           setSelectedResultShareTargetIds([])
         }
-        setReminderDialogOpen(false)
-        await refreshWithMessage(json.data?.message ?? '리마인드 발송을 예약했습니다.')
+        await refreshWithMessage(successMessage)
       }
     } catch (error) {
+      const message = getFeedback360MailErrorMessage(
+        error instanceof Error ? error.message : '메일 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+      )
+      setMailDeliveryResult({
+        tone: 'error',
+        title: reminderAction === 'send-result-share' ? '결과 공유 메일 발송 실패' : '리마인드 메일 발송 실패',
+        recipientsLabel:
+          mode === 'test'
+            ? `테스트 수신자 ${testEmail || '미입력'}`
+            : `발송 대상 ${selectedTargetIds.length || visibleReminderRecipientIds.length}명`,
+        channelLabel: /이메일 발송 설정/.test(message) ? '앱 알림 / 이메일 설정 확인' : '이메일 + 앱 알림',
+        providerStatus: /이메일 발송 설정/.test(message)
+          ? '이메일 provider 설정이 비활성 또는 미완료 상태입니다.'
+          : '기존 360 알림 발송 경로가 오류를 반환했습니다.',
+        message,
+        failureReason: message,
+        retryMode: mode,
+      })
       setBanner({
         tone: 'error',
-        message: error instanceof Error ? error.message : '리마인드를 발송하지 못했습니다.',
+        message,
       })
     } finally {
       setBusy(false)
@@ -1494,6 +1653,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   return (
     <div className="space-y-6">
       {banner ? <BannerBox banner={banner} onClose={() => setBanner(null)} /> : null}
+      {banner ? <FloatingToast banner={banner} onClose={() => setBanner(null)} /> : null}
 
       {/*
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1805,23 +1965,23 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
 
       {anytimeReview ? (
         <Panel
-          title="수시 리뷰 문서"
-          description="연간·반기 리뷰와 별도로 프로젝트 종료 평가, 역할 변경 평가, 수습 평가, PIP 문서를 생성하고 기한 변경·리뷰어 이관·종료 처리를 한 화면에서 관리합니다."
+          title="수시 리뷰 운영"
+          description="연간·반기 리뷰와 별도로 프로젝트 종료 평가, 역할 변경 평가, 수습 평가, PIP 리뷰를 등록하고 기한 변경·평가자 이관·종료 처리를 한 화면에서 관리합니다."
         >
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <MetricCard label="전체 문서" value={`${anytimeReview.summary.totalCount}건`} tone="slate" />
+            <MetricCard label="전체 리뷰" value={`${anytimeReview.summary.totalCount}건`} tone="slate" />
             <MetricCard label="진행 중" value={`${anytimeReview.summary.activeCount}건`} tone="blue" />
             <MetricCard label="기한 초과" value={`${anytimeReview.summary.overdueCount}건`} tone="rose" />
-            <MetricCard label="PIP 문서" value={`${anytimeReview.summary.pipCount}건`} tone="amber" />
+            <MetricCard label="PIP 리뷰" value={`${anytimeReview.summary.pipCount}건`} tone="amber" />
             <MetricCard label="프로젝트 리뷰" value={`${anytimeReview.summary.projectCount}건`} tone="emerald" />
           </div>
 
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+          <div ref={anytimeCreateCardRef} className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-base font-semibold text-slate-900">수시 리뷰 문서 생성</div>
+                <div className="text-base font-semibold text-slate-900">수시 리뷰 등록</div>
                 <p className="mt-1 text-sm leading-6 text-slate-500">
-                  사유를 남기고 템플릿을 바인딩해 개별 또는 대량으로 문서를 생성합니다. 생성 즉시 리뷰어와 공동 작업자 권한이 반영됩니다.
+                  사유를 남기고 템플릿을 바인딩해 개별 또는 대량으로 리뷰를 등록합니다. 등록 즉시 평가자와 공동 작업자 권한이 반영됩니다.
                 </p>
               </div>
               <button
@@ -1831,13 +1991,13 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                 className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 <Plus className="h-4 w-4" />
-                문서 생성
+                리뷰 등록
               </button>
             </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <label className="space-y-2 text-sm">
-                <span className="font-medium text-slate-700">문서 유형</span>
+                <span className="font-medium text-slate-700">리뷰 유형</span>
                 <select
                   value={anytimeDocumentKind}
                   onChange={(event) => setAnytimeDocumentKind(event.target.value as FeedbackAnytimeDocumentKind)}
@@ -1851,37 +2011,62 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                 </select>
               </label>
               <label className="space-y-2 text-sm md:col-span-2">
-                <span className="font-medium text-slate-700">문서 이름</span>
+                <span className="font-medium text-slate-700">리뷰 이름</span>
                 <input
+                  ref={anytimeRoundNameInputRef}
                   value={anytimeRoundName}
-                  onChange={(event) => setAnytimeRoundName(event.target.value)}
+                  onChange={(event) => {
+                    setAnytimeRoundName(event.target.value)
+                    setAnytimeCreateErrors((current) => ({ ...current, roundName: undefined }))
+                  }}
                   placeholder="예: 2분기 프로젝트 종료 리뷰"
-                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
+                  className={`h-11 w-full rounded-xl border bg-white px-3 text-sm text-slate-700 ${
+                    anytimeCreateErrors.roundName ? 'border-rose-300 ring-2 ring-rose-100' : 'border-slate-300'
+                  }`}
                 />
+                {anytimeCreateErrors.roundName ? (
+                  <p className="text-xs font-semibold text-rose-600">{anytimeCreateErrors.roundName}</p>
+                ) : null}
               </label>
               <label className="space-y-2 text-sm">
                 <span className="font-medium text-slate-700">마감 기한</span>
                 <input
                   type="date"
                   value={anytimeDueDate}
-                  onChange={(event) => setAnytimeDueDate(event.target.value)}
-                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
+                  onChange={(event) => {
+                    setAnytimeDueDate(event.target.value)
+                    setAnytimeCreateErrors((current) => ({ ...current, dueDate: undefined }))
+                  }}
+                  className={`h-11 w-full rounded-xl border bg-white px-3 text-sm text-slate-700 ${
+                    anytimeCreateErrors.dueDate ? 'border-rose-300 ring-2 ring-rose-100' : 'border-slate-300'
+                  }`}
                 />
+                {anytimeCreateErrors.dueDate ? (
+                  <p className="text-xs font-semibold text-rose-600">{anytimeCreateErrors.dueDate}</p>
+                ) : null}
               </label>
               <label className="space-y-2 text-sm">
-                <span className="font-medium text-slate-700">리뷰어</span>
+                <span className="font-medium text-slate-700">평가자</span>
                 <select
                   value={anytimeReviewerId}
-                  onChange={(event) => setAnytimeReviewerId(event.target.value)}
-                  className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
+                  onChange={(event) => {
+                    setAnytimeReviewerId(event.target.value)
+                    setAnytimeCreateErrors((current) => ({ ...current, reviewer: undefined }))
+                  }}
+                  className={`h-11 w-full rounded-xl border bg-white px-3 text-sm text-slate-700 ${
+                    anytimeCreateErrors.reviewer ? 'border-rose-300 ring-2 ring-rose-100' : 'border-slate-300'
+                  }`}
                 >
-                  <option value="">리뷰어를 선택해 주세요</option>
+                  <option value="">평가자를 선택해 주세요</option>
                   {anytimeEmployeeOptions.map((employee) => (
                     <option key={employee.employeeId} value={employee.employeeId}>
                       {employee.name} · {employee.departmentName} · {employee.position}
                     </option>
                   ))}
                 </select>
+                {anytimeCreateErrors.reviewer ? (
+                  <p className="text-xs font-semibold text-rose-600">{anytimeCreateErrors.reviewer}</p>
+                ) : null}
               </label>
               <label className="space-y-2 text-sm">
                 <span className="font-medium text-slate-700">템플릿 바인딩</span>
@@ -1914,16 +2099,51 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                 </select>
               </label>
               <label className="space-y-2 text-sm xl:col-span-4">
-                <span className="font-medium text-slate-700">생성 사유</span>
+                <span className="font-medium text-slate-700">등록 사유</span>
                 <textarea
                   value={anytimeReason}
-                  onChange={(event) => setAnytimeReason(event.target.value)}
+                  onChange={(event) => {
+                    setAnytimeReason(event.target.value)
+                    setAnytimeCreateErrors((current) => ({ ...current, reason: undefined }))
+                  }}
                   rows={3}
                   placeholder="예: 프로젝트 종료 후 협업 피드백 수집, 수습 종료 판단, 역할 변경 후 60일 리뷰"
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-700"
+                  className={`w-full rounded-2xl border bg-white px-3 py-3 text-sm text-slate-700 ${
+                    anytimeCreateErrors.reason ? 'border-rose-300 ring-2 ring-rose-100' : 'border-slate-300'
+                  }`}
                 />
+                {anytimeCreateErrors.reason ? (
+                  <p className="text-xs font-semibold text-rose-600">{anytimeCreateErrors.reason}</p>
+                ) : null}
               </label>
             </div>
+
+            {anytimeCreateErrors.cycle || anytimeCreateErrors.target || anytimeCreateErrors.submit ? (
+              <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-800">
+                {anytimeCreateErrors.cycle ?? anytimeCreateErrors.target ?? anytimeCreateErrors.submit}
+              </div>
+            ) : null}
+            {anytimeCreateNotice ? (
+              <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">
+                <div className="font-semibold">{anytimeCreateNotice}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById('feedback360-anytime-document-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 text-xs font-semibold text-emerald-800"
+                  >
+                    등록된 리뷰 보기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAnytimeCreateNotice('')}
+                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 text-xs font-semibold text-emerald-800"
+                  >
+                    다음 리뷰 등록
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {anytimeDocumentKind === 'PROJECT' ? (
               <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -2003,54 +2223,179 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
               </div>
             ) : null}
 
-            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="min-h-[520px] rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-slate-900">대상자 선택</div>
-                    <p className="mt-1 text-sm text-slate-500">여러 명을 선택하면 같은 템플릿으로 개별 문서를 일괄 생성합니다.</p>
+                    <p className="mt-1 text-sm text-slate-500">본부를 선택하거나 이름으로 검색하세요. 여러 명을 선택하면 같은 템플릿으로 개별 리뷰를 일괄 등록합니다.</p>
                   </div>
                   <Badge tone="blue">{anytimeTargetIds.length}명 선택</Badge>
                 </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {anytimeEmployeeOptions.map((employee) => {
-                    const selected = anytimeTargetIds.includes(employee.employeeId)
-                    return (
-                      <button
-                        key={employee.employeeId}
-                        type="button"
-                        onClick={() => toggleAnytimeTarget(employee.employeeId)}
-                        className={`rounded-2xl border px-4 py-3 text-left transition ${
-                          selected
-                            ? 'border-slate-900 bg-slate-900 text-white'
-                            : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'
-                        }`}
-                      >
-                        <div className="text-sm font-semibold">{employee.name}</div>
-                        <div className={`mt-1 text-xs ${selected ? 'text-white/80' : 'text-slate-500'}`}>
-                          {employee.departmentName} · {employee.position}
-                        </div>
-                      </button>
-                    )
-                  })}
+                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium text-slate-700">본부별 선택</span>
+                    <select
+                      value={anytimeTargetDivision}
+                      onChange={(event) => {
+                        setAnytimeTargetDivision(event.target.value)
+                        setAnytimeTargetTeam('')
+                        setAnytimeCreateErrors((current) => ({ ...current, target: undefined }))
+                      }}
+                      className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
+                    >
+                      <option value="">본부 선택</option>
+                      {anytimeTargetDivisionOptions.map((option) => (
+                        <option key={option.division} value={option.division}>
+                          {option.division} {option.count}명
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium text-slate-700">부서/팀 선택</span>
+                    <select
+                      value={anytimeTargetTeam}
+                      onChange={(event) => setAnytimeTargetTeam(event.target.value)}
+                      disabled={!anytimeTargetDivision}
+                      className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
+                    >
+                      <option value="">전체 부서/팀</option>
+                      {anytimeTargetTeamOptions.map((option) => (
+                        <option key={option.team} value={option.team}>
+                          {option.team} {option.count}명
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-2 text-sm">
+                    <span className="font-medium text-slate-700">이름 검색</span>
+                    <input
+                      value={anytimeTargetSearch}
+                      onChange={(event) => {
+                        setAnytimeTargetSearch(event.target.value)
+                        setAnytimeCreateErrors((current) => ({ ...current, target: undefined }))
+                      }}
+                      placeholder="이름, 팀, 이메일로 검색"
+                      className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
+                    />
+                  </label>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {anytimeTargetDivisionOptions.slice(0, 6).map((option) => (
+                    <span key={`target-division-count:${option.division}`} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                      {option.division} {option.count}명
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleAnytimeDivisionTargets}
+                    disabled={!anytimeTargetDivision || !filteredAnytimeTargetOptions.length}
+                    className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    본부 단위 선택
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnytimeTargetIds([])
+                      setAnytimeCreateErrors((current) => ({ ...current, target: undefined }))
+                    }}
+                    className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    선택 초기화
+                  </button>
+                </div>
+                {anytimeCreateErrors.target ? (
+                  <p className="mt-3 text-xs font-semibold text-rose-600">{anytimeCreateErrors.target}</p>
+                ) : null}
+                <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.72fr)]">
+                  <div className="min-h-[250px] rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">검색 결과</div>
+                    <div className="mt-3 max-h-[300px] space-y-2 overflow-y-auto pr-1">
+                      {filteredAnytimeTargetOptions.length ? (
+                        filteredAnytimeTargetOptions.map((employee) => {
+                          const selected = anytimeTargetIds.includes(employee.employeeId)
+                          return (
+                            <button
+                              key={employee.employeeId}
+                              type="button"
+                              onClick={() => {
+                                toggleAnytimeTarget(employee.employeeId)
+                                setAnytimeCreateErrors((current) => ({ ...current, target: undefined }))
+                              }}
+                              className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                                selected
+                                  ? 'border-slate-900 bg-slate-900 text-white'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50'
+                              }`}
+                            >
+                              <div className="truncate text-sm font-semibold">{employee.name}</div>
+                              <div className={`mt-1 truncate text-xs ${selected ? 'text-white/80' : 'text-slate-500'}`}>
+                                {employee.departmentName} · {employee.position} · {employee.email}
+                              </div>
+                            </button>
+                          )
+                        })
+                      ) : (
+                        <EmptyBlock message="본부를 선택하거나 이름으로 검색하세요. 검색 전 전체 직원 목록은 표시하지 않습니다." />
+                      )}
+                    </div>
+                  </div>
+                  <div className="min-h-[250px] rounded-2xl border border-blue-100 bg-blue-50 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-500">선택된 대상자</div>
+                      <Badge tone="blue">{selectedAnytimeTargets.length}명</Badge>
+                    </div>
+                    <div className="mt-3 max-h-[300px] space-y-2 overflow-y-auto pr-1">
+                      {selectedAnytimeTargets.length ? (
+                        selectedAnytimeTargets.map((employee) => (
+                          <div key={`selected-target:${employee.employeeId}`} className="flex items-start justify-between gap-3 rounded-2xl border border-blue-100 bg-white px-3 py-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-slate-900">{employee.name}</div>
+                              <div className="mt-1 truncate text-xs text-slate-500">
+                                {employee.departmentName} · {employee.position} · {employee.email}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleAnytimeTarget(employee.employeeId)}
+                              className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600"
+                            >
+                              제거
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <EmptyBlock message="선택된 대상자가 없습니다. 본부별 선택 또는 이름 검색으로 대상자를 추가해 주세요." />
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="min-h-[520px] rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-slate-900">공동 작업자</div>
-                    <p className="mt-1 text-sm text-slate-500">문서를 함께 관리할 리뷰 관리자 또는 공동 작업자를 지정합니다.</p>
+                    <p className="mt-1 text-sm text-slate-500">리뷰를 함께 관리할 평가 관리자 또는 공동 작업자를 지정합니다.</p>
                   </div>
                   <Badge>{anytimeCollaboratorIds.length}명</Badge>
                 </div>
-                <input
-                  value={collaboratorSearch}
-                  onChange={(event) => setCollaboratorSearch(event.target.value)}
-                  placeholder="이름, 조직, 역할 검색"
-                  className="mt-4 h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
-                />
-                <div className="mt-4 max-h-72 space-y-2 overflow-y-auto">
+                <div className="sticky top-0 z-10 mt-4 bg-white pb-3">
+                  <input
+                    value={collaboratorSearch}
+                    onChange={(event) => setCollaboratorSearch(event.target.value)}
+                    placeholder="이름, 조직, 역할 검색"
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
+                  />
+                  <div className="mt-2 text-xs font-semibold text-slate-500">
+                    선택된 공동 작업자 {anytimeCollaboratorIds.length}명 / 검색 결과 {filteredCollaboratorCandidates.length}명
+                  </div>
+                </div>
+                <div className="mt-1 max-h-[410px] space-y-2 overflow-y-auto pr-1">
                   {filteredCollaboratorCandidates.map((candidate) => {
                     const selected = anytimeCollaboratorIds.includes(candidate.employeeId)
                     return (
@@ -2075,22 +2420,25 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                       </label>
                     )
                   })}
+                  {!filteredCollaboratorCandidates.length ? (
+                    <EmptyBlock message="조건에 맞는 공동 작업자가 없습니다. 이름이나 조직 검색어를 다시 확인해 주세요." />
+                  ) : null}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+          <div id="feedback360-anytime-document-list" className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-base font-semibold text-slate-900">수시 리뷰 문서 목록</div>
-                <p className="mt-1 text-sm text-slate-500">기한 변경, 리뷰어 이관, 취소, 종료, 재오픈을 안전하게 일괄 처리할 수 있습니다.</p>
+                <div className="text-base font-semibold text-slate-900">수시 리뷰 목록</div>
+                <p className="mt-1 text-sm text-slate-500">기한 변경, 평가자 이관, 취소, 종료, 재오픈을 안전하게 일괄 처리할 수 있습니다.</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <input
                   value={anytimeSearch}
                   onChange={(event) => setAnytimeSearch(event.target.value)}
-                  placeholder="문서명, 대상자, 리뷰어, 사유 검색"
+                  placeholder="리뷰명, 대상자, 평가자, 사유 검색"
                   className="h-11 min-w-[280px] rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
                 />
                 <button
@@ -2103,15 +2451,35 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
               </div>
             </div>
 
+            <div className="mt-4 flex flex-wrap gap-2">
+              {anytimeDocumentStatusTabs.map((tab) => (
+                <button
+                  key={tab.filter}
+                  type="button"
+                  onClick={() => setAnytimeStatusFilter(tab.filter)}
+                  className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition ${
+                    anytimeStatusFilter === tab.filter
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span className={anytimeStatusFilter === tab.filter ? 'text-white/75' : 'text-slate-400'}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
             <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-[1.1fr_1fr_auto_auto_auto]">
               <label className="space-y-2 text-sm">
-                <span className="font-medium text-slate-700">리뷰어 이관</span>
+                <span className="font-medium text-slate-700">평가자 이관</span>
                 <select
                   value={anytimeBulkReviewerId}
                   onChange={(event) => setAnytimeBulkReviewerId(event.target.value)}
                   className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700"
                 >
-                  <option value="">새 리뷰어 선택</option>
+                  <option value="">새 평가자 선택</option>
                   {anytimeEmployeeOptions.map((employee) => (
                     <option key={employee.employeeId} value={employee.employeeId}>
                       {employee.name} · {employee.departmentName}
@@ -2144,7 +2512,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                   disabled={busy}
                   className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
                 >
-                  리뷰어 이관
+                  평가자 이관
                 </button>
                 <button
                   type="button"
@@ -2178,8 +2546,28 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                 >
                   취소
                 </button>
+                <button
+                  type="button"
+                  onClick={openAnytimeDeleteConfirm}
+                  disabled={busy}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-300 px-4 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  삭제
+                </button>
               </div>
             </div>
+
+            {anytimeBulkError ? (
+              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {anytimeBulkError}
+              </div>
+            ) : null}
+            {anytimeBulkNotice ? (
+              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                {anytimeBulkNotice}
+              </div>
+            ) : null}
 
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full text-sm">
@@ -2193,9 +2581,9 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                         className="h-4 w-4 rounded border-slate-300 text-slate-900"
                       />
                     </th>
-                    <th className="px-3 py-3 font-medium">문서</th>
+                    <th className="px-3 py-3 font-medium">리뷰</th>
                     <th className="px-3 py-3 font-medium">대상자</th>
-                    <th className="px-3 py-3 font-medium">리뷰어</th>
+                    <th className="px-3 py-3 font-medium">평가자</th>
                     <th className="px-3 py-3 font-medium">상태</th>
                     <th className="px-3 py-3 font-medium">마감 기한</th>
                     <th className="px-3 py-3 font-medium">사유 / 이력</th>
@@ -2204,7 +2592,10 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                 <tbody>
                   {filteredAnytimeDocuments.length ? (
                     filteredAnytimeDocuments.map((document) => (
-                      <tr key={document.roundId} className="border-b border-slate-100 align-top text-slate-700">
+                      <tr
+                        key={buildAnytimeDocumentDedupeKey(document)}
+                        className="border-b border-slate-100 align-top text-slate-700"
+                      >
                         <td className="px-3 py-4">
                           <input
                             type="checkbox"
@@ -2242,9 +2633,9 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                                     : 'emerald'
                               }
                             >
-                              {document.status}
+                              {getFeedbackRoundStatusLabel(document.status)}
                             </Badge>
-                            <Badge tone="slate">{document.feedbackStatus}</Badge>
+                            <Badge tone="slate">{getFeedbackStatusLabel(document.feedbackStatus)}</Badge>
                           </div>
                         </td>
                         <td className="px-3 py-4">
@@ -2270,7 +2661,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                   ) : (
                     <tr>
                       <td colSpan={7} className="px-3 py-8">
-                        <EmptyBlock message="조건에 맞는 수시 리뷰 문서가 없습니다." />
+                        <EmptyBlock message="조건에 맞는 수시 리뷰가 없습니다." />
                       </td>
                     </tr>
                   )}
@@ -2525,8 +2916,8 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                       >
                         {round.roundName}
                       </button>
-                      <Badge>{round.roundType}</Badge>
-                      <Badge tone={round.status === 'IN_PROGRESS' ? 'emerald' : 'slate'}>{round.status}</Badge>
+                      <Badge>{getFeedbackRoundTypeLabel(round.roundType)}</Badge>
+                      <Badge tone={round.status === 'IN_PROGRESS' ? 'emerald' : 'slate'}>{getFeedbackRoundStatusLabel(round.status)}</Badge>
                       {round.collaborators.length ? <Badge tone="blue">공동 작업자 {round.collaborators.length}명</Badge> : null}
                       {round.folderName ? <Badge tone="blue">{round.folderName}</Badge> : <Badge>미분류</Badge>}
                     </div>
@@ -2591,486 +2982,10 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         )}
       </Panel>
 
-      <Panel
-        title="온보딩 리뷰 워크플로우"
-        description="입사일과 직군 조건에 맞는 구성원에게 다단계 온보딩 리뷰를 자동 생성합니다. 실제 반영은 저장 후 수동 실행 또는 스케줄러 실행으로 처리됩니다."
-        action={!canManageFolders ? null : (
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedWorkflowId('new')}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              <Plus className="h-4 w-4" />
-              새 워크플로우
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleRunOnboardingWorkflow()}
-              disabled={busy || !props.data.selectedCycleId}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-            >
-              <Play className="h-4 w-4" />
-              지금 생성 실행
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSaveOnboardingWorkflow()}
-              disabled={busy || !workflowDraft.workflowName.trim()}
-              className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
-            >
-              워크플로우 저장
-            </button>
-          </div>
-        )}
-      >
-        {selectedCycle ? (
-          <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                <div className="font-semibold text-slate-900">{onboarding?.scheduleInfo ?? formatScheduleHourLabel(workflowDraft.scheduleHourKst)}</div>
-                <p className="mt-2">
-                  현재 주기 기준으로 저장된 활성 워크플로우를 훑고, 이미 생성된 단계는 중복 없이 건너뜁니다.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedWorkflowId('new')}
-                className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-                  selectedWorkflowId === 'new'
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <div className="text-sm font-semibold">새 워크플로우</div>
-                <div className="mt-2 text-xs opacity-80">현재 주기 {selectedCycle.year} / {selectedCycle.name}</div>
-              </button>
-              {(onboarding?.workflows ?? []).map((workflow) => (
-                <button
-                  key={workflow.id}
-                  type="button"
-                  onClick={() => setSelectedWorkflowId(workflow.id)}
-                  className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
-                    selectedWorkflowId === workflow.id
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold">{workflow.workflowName}</div>
-                    <Badge tone={workflow.isActive ? 'emerald' : 'slate'}>
-                      {workflow.isActive ? '활성' : '중지'}
-                    </Badge>
-                  </div>
-                  <div className="mt-2 text-xs opacity-80">
-                    대상 {workflow.eligibleTargetCount}명 · 생성 {workflow.generatedCount}건
-                  </div>
-                  <div className="mt-1 text-xs opacity-80">{workflow.scheduleInfo}</div>
-                </button>
-              ))}
-            </div>
-
-            <div className="space-y-6">
-              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px_140px]">
-                <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">워크플로우 이름</span>
-                  <input
-                    value={workflowDraft.workflowName}
-                    onChange={(event) =>
-                      setWorkflowDraft((current) => ({ ...current, workflowName: event.target.value }))
-                    }
-                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                    placeholder="예: 입사 30일 온보딩 리뷰"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">생성 시각</span>
-                  <select
-                    value={workflowDraft.scheduleHourKst}
-                    onChange={(event) =>
-                      setWorkflowDraft((current) => ({
-                        ...current,
-                        scheduleHourKst: Number(event.target.value),
-                      }))
-                    }
-                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                  >
-                    {Array.from({ length: 24 }, (_, hour) => (
-                      <option key={hour} value={hour}>
-                        {formatScheduleHourLabel(hour)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex min-h-11 items-end gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={workflowDraft.isActive}
-                    onChange={(event) =>
-                      setWorkflowDraft((current) => ({ ...current, isActive: event.target.checked }))
-                    }
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300"
-                  />
-                  <span>활성 상태로 유지</span>
-                </label>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">리뷰 대상자 조건</div>
-                    <p className="mt-1 text-sm text-slate-500">입사일과 직군 조건을 조합해 자동 생성 대상을 정합니다.</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => addWorkflowCondition('JOIN_DATE')}
-                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-white"
-                    >
-                      입사일 조건 추가
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => addWorkflowCondition('POSITION')}
-                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-white"
-                    >
-                      직군 조건 추가
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-3">
-                  {workflowDraft.targetConditions.map((condition) => (
-                    <div key={condition.id} className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="text-sm font-semibold text-slate-900">
-                          {condition.field === 'JOIN_DATE' ? '입사일 조건' : '직군 조건'}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeWorkflowCondition(condition.id)}
-                          className="text-xs font-semibold text-slate-500 transition hover:text-slate-700"
-                        >
-                          제거
-                        </button>
-                      </div>
-
-                      {condition.field === 'JOIN_DATE' ? (
-                        <div className="mt-3 grid gap-3 md:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)]">
-                          <select
-                            value={condition.operator}
-                            onChange={(event) =>
-                              updateWorkflowCondition(condition.id, {
-                                operator: event.target.value as Extract<typeof condition.operator, string>,
-                              })
-                            }
-                            className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                          >
-                            <option value="ON_OR_AFTER">입사일 이후(당일 포함)</option>
-                            <option value="ON_OR_BEFORE">입사일 이전(당일 포함)</option>
-                            <option value="BETWEEN">입사일 기간 사이</option>
-                          </select>
-                          <input
-                            type="date"
-                            value={condition.value}
-                            onChange={(event) => updateWorkflowCondition(condition.id, { value: event.target.value })}
-                            className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                          />
-                          {condition.operator === 'BETWEEN' ? (
-                            <input
-                              type="date"
-                              value={condition.valueTo ?? ''}
-                              onChange={(event) => updateWorkflowCondition(condition.id, { valueTo: event.target.value })}
-                              className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                            />
-                          ) : (
-                            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-400">
-                              단일 기준일
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                          {(onboarding?.jobFamilyOptions ?? []).map((option) => {
-                            const checked = condition.values.includes(option.value as keyof typeof POSITION_LABELS_KO)
-                            return (
-                              <label
-                                key={option.value}
-                                className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-sm transition ${
-                                  checked
-                                    ? 'border-slate-900 bg-slate-900 text-white'
-                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(event) => {
-                                    const nextValues = event.target.checked
-                                      ? [...condition.values, option.value as keyof typeof POSITION_LABELS_KO]
-                                      : condition.values.filter((value) => value !== option.value)
-                                    updateWorkflowCondition(condition.id, { values: nextValues })
-                                  }}
-                                  className="h-4 w-4 rounded border-slate-300"
-                                />
-                                <span>{option.label}</span>
-                              </label>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">단계별 리뷰 설정</div>
-                    <p className="mt-1 text-sm text-slate-500">단계별 생성 시점과 리뷰 이름 규칙을 함께 관리합니다.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={addWorkflowStep}
-                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    단계 추가
-                  </button>
-                </div>
-
-                <div className="mt-4 space-y-4">
-                  {workflowDraft.steps
-                    .slice()
-                    .sort((left, right) => left.stepOrder - right.stepOrder)
-                    .map((step, index) => {
-                      const previewName = buildOnboardingReviewNamePreview({
-                        step,
-                        evalYear: selectedCycle.year,
-                        cycleName: selectedCycle.name,
-                        employeeName: '입사자 이름',
-                        hireDate: new Date('2026-01-02T00:00:00+09:00'),
-                      })
-
-                      return (
-                        <div key={step.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="text-sm font-semibold text-slate-900">{index + 1}단계</div>
-                            <button
-                              type="button"
-                              onClick={() => removeWorkflowStep(step.id)}
-                              className="text-xs font-semibold text-slate-500 transition hover:text-slate-700"
-                            >
-                              단계 제거
-                            </button>
-                          </div>
-
-                          <div className="mt-3 grid gap-3 md:grid-cols-[120px_minmax(0,1fr)_160px_160px]">
-                            <input
-                              type="number"
-                              min={1}
-                              value={step.stepOrder}
-                              onChange={(event) =>
-                                updateWorkflowStep(step.id, { stepOrder: Number(event.target.value) || index + 1 })
-                              }
-                              className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                            />
-                            <input
-                              value={step.stepName}
-                              onChange={(event) => updateWorkflowStep(step.id, { stepName: event.target.value })}
-                              className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                              placeholder="예: 1차 온보딩 리뷰"
-                            />
-                            <input
-                              type="number"
-                              min={0}
-                              value={step.triggerDaysAfterJoin}
-                              onChange={(event) =>
-                                updateWorkflowStep(step.id, {
-                                  triggerDaysAfterJoin: Number(event.target.value) || 0,
-                                })
-                              }
-                              className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                              placeholder="생성 시점"
-                            />
-                            <input
-                              type="number"
-                              min={1}
-                              value={step.durationDays}
-                              onChange={(event) =>
-                                updateWorkflowStep(step.id, { durationDays: Number(event.target.value) || 1 })
-                              }
-                              className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                              placeholder="마감 기간"
-                            />
-                          </div>
-
-                          <label className="mt-3 block">
-                            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">리뷰 이름 템플릿</span>
-                            <input
-                              value={step.reviewNameTemplate}
-                              onChange={(event) =>
-                                updateWorkflowStep(step.id, { reviewNameTemplate: event.target.value })
-                              }
-                              className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-                              placeholder="{{evalYear}} {{cycleName}} {{stepName}}"
-                            />
-                          </label>
-
-                          <div className="mt-3 flex flex-wrap gap-3">
-                            <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                              <input
-                                type="checkbox"
-                                checked={step.includeHireDateInName}
-                                onChange={(event) =>
-                                  updateWorkflowStep(step.id, { includeHireDateInName: event.target.checked })
-                                }
-                                className="h-4 w-4 rounded border-slate-300"
-                              />
-                              입사일 포함
-                            </label>
-                            <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                              <input
-                                type="checkbox"
-                                checked={step.includeEmployeeNameInName}
-                                onChange={(event) =>
-                                  updateWorkflowStep(step.id, { includeEmployeeNameInName: event.target.checked })
-                                }
-                                className="h-4 w-4 rounded border-slate-300"
-                              />
-                              입사자 이름 추가
-                            </label>
-                          </div>
-
-                          <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white p-4">
-                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">리뷰 이름 preview</div>
-                            <div className="mt-2 text-sm font-semibold text-slate-900">{previewName}</div>
-                            <div className="mt-2 text-xs text-slate-500">
-                              입사 후 {step.triggerDaysAfterJoin}일째 생성 · 생성 후 {step.durationDays}일 동안 응답 받기
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <EmptyBlock message="온보딩 리뷰 워크플로우를 설정할 평가 주기를 먼저 선택해 주세요." />
-        )}
-      </Panel>
-
-      <Panel
-        title="자동 생성된 온보딩 리뷰"
-        description="자동으로 생성된 리뷰 이름, 대상자, 상태, 생성일을 바로 확인하고 필요한 경우 기존 360 관리 흐름으로 이어갈 수 있습니다."
-      >
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="text-sm text-slate-600">
-            현재 표시 <span className="font-semibold text-slate-900">{filteredGeneratedReviews.length}</span>건 · 전체{' '}
-            <span className="font-semibold text-slate-900">{onboarding?.generatedReviews.length ?? 0}</span>건
-          </div>
-          <div className="flex flex-col gap-3 md:flex-row">
-            {/* legacy search input removed during RC recovery
-            {/* normalized generated review search input
-            <input
-              value={generatedReviewSearch}
-              onChange={(event) => setGeneratedReviewSearch(event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900 md:w-72"
-              placeholder="리뷰 이름, 대상자, 조직 검색"
-            />
-            */}
-            {/* corrupted duplicate input removed during RC recovery
-            <input
-              value={generatedReviewSearch}
-              onChange={(event) => setGeneratedReviewSearch(event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900 md:w-72"
-              placeholder="리뷰 이름, 대상자, 조직 검색"
-            />
-            */}
-            <input
-              value={generatedReviewSearch}
-              onChange={(event) => setGeneratedReviewSearch(event.target.value)}
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-4 text-sm text-slate-900 md:w-72"
-              placeholder={'\uB9AC\uBDF0 \uC774\uB984, \uB300\uC0C1\uC790, \uC870\uC9C1 \uAC80\uC0C9'}
-            />
-            <select
-              value={generatedReviewStatusFilter}
-              onChange={(event) => setGeneratedReviewStatusFilter(event.target.value)}
-              className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-            >
-              <option value="ALL">상태 전체</option>
-              {generatedReviewStatusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="mt-2 flex justify-end">
-          <select
-            value={generatedReviewSort}
-            onChange={(event) => setGeneratedReviewSort(event.target.value as OnboardingGeneratedReviewSort)}
-            className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm text-slate-900"
-          >
-            <option value="CREATED_DESC">생성일 최신순</option>
-            <option value="CREATED_ASC">생성일 오래된순</option>
-            <option value="TARGET_ASC">대상자 이름순</option>
-            <option value="STATUS_ASC">상태순</option>
-          </select>
-        </div>
-
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-white">
-          {filteredGeneratedReviews.length ? (
-            <>
-              <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_140px_140px_140px] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                <span>리뷰 이름</span>
-                <span>대상자</span>
-                <span>라운드 상태</span>
-                <span>응답 상태</span>
-                <span>생성일</span>
-              </div>
-              <div className="max-h-80 overflow-y-auto">
-                {filteredGeneratedReviews.map((review) => (
-                  <div
-                    key={review.id}
-                    className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_140px_140px_140px] gap-3 border-b border-slate-100 px-4 py-3 text-sm text-slate-700 last:border-b-0"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-semibold text-slate-900">{review.roundName}</div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {review.workflowName} · {review.stepName} · 기준일 {review.scheduledDateKey}
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate font-semibold text-slate-900">{review.targetName}</div>
-                      <div className="mt-1 text-xs text-slate-500">{review.targetDepartment}</div>
-                    </div>
-                    <div>
-                      <Badge tone={review.status === 'IN_PROGRESS' ? 'emerald' : 'slate'}>{review.status}</Badge>
-                    </div>
-                    <div>
-                      <Badge tone={review.feedbackStatus === 'SUBMITTED' ? 'blue' : 'slate'}>{review.feedbackStatus}</Badge>
-                    </div>
-                    <div className="text-xs text-slate-500">{review.createdDateLabel}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="p-4">
-              <EmptyBlock message="현재 조건에 맞는 자동 생성 리뷰가 없습니다. 워크플로우를 저장하고 수동 실행하거나, 스케줄러가 다음 실행 시점에 생성합니다." />
-            </div>
-          )}
-        </div>
-      </Panel>
-
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Panel
           title="승인 대기 / 결과 공유 대기"
-          description="동료 선택 승인, 결과 공유, 미응답 리마인드 대상을 같은 운영 패널 안에서 빠르게 확인합니다."
+          description="평가자 매핑 승인, 결과 공유, 미응답 리마인드 대상을 같은 운영 패널 안에서 빠르게 확인합니다."
         >
           <div className="space-y-3">
             {admin?.nominationQueue?.length ? (
@@ -3081,12 +2996,12 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                     <Badge>{item.status}</Badge>
                   </div>
                   <div className="mt-2 text-sm text-slate-500">
-                    {item.roundName} · 승인 {item.approvedCount}/{item.totalCount} · 발행 {item.publishedCount}
+                    {item.roundName} · 승인 {item.approvedCount}/{item.totalCount} · 응답 요청 {item.publishedCount}
                   </div>
                 </div>
               ))
             ) : (
-              <EmptyBlock message="현재 별도로 확인할 nomination 대기 건이 없습니다." />
+              <EmptyBlock message="현재 별도로 확인할 평가자 매핑 대기 건이 없습니다." />
             )}
           </div>
         </Panel>
@@ -3097,8 +3012,11 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         >
           <div className="space-y-3">
             {admin?.alerts?.length ? (
-              admin.alerts.map((alert) => (
-                <div key={alert} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              admin.alerts.map((alert, index) => (
+                <div
+                  key={buildFeedback360AdminRowKey(['admin-alert', alert, index])}
+                  className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                >
                   {alert}
                 </div>
               ))
@@ -3106,8 +3024,8 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
               <EmptyBlock message="현재 별도 경고 없이 운영 중입니다." />
             )}
             <div className="grid gap-3">
-              <ActionLink href="/evaluation/results" label="평가 결과 확인" />
-              <ActionLink href="/evaluation/workbench" label="평가 워크벤치로 이동" />
+              <ActionLink href="/evaluation/360?tab=results" label="360 결과 탭" />
+              <ActionLink href="/evaluation/360?tab=operations" label="360 운영 탭" />
               <ActionLink href="/admin/notifications" label="알림 운영 화면" />
             </div>
           </div>
@@ -3561,7 +3479,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
         <ModalFrame title={`${selectedRound.roundName} 설정`} onClose={() => setSettingsDialogOpen(false)}>
           <div className="space-y-6">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-sm font-semibold text-slate-900">동료 선택 방식</div>
+              <div className="text-sm font-semibold text-slate-900">평가자 선정 방식</div>
               <div className="mt-4 space-y-3">
                 <ToggleLine
                   label="리더의 승인 필요"
@@ -3572,7 +3490,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                   }
                 />
                 <ToggleLine
-                  label="리뷰를 써주고 싶은 동료 선택 가능"
+                  label="함께 일한 평가자 후보 직접 선택 가능"
                   description="대상자가 협업 빈도가 높은 동료를 직접 추천할 수 있게 합니다."
                   checked={selectionSettings.allowPreferredPeers}
                   onChange={(checked) =>
@@ -3973,7 +3891,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="text-sm font-semibold text-slate-900">리더 효과성 / 리더 코칭 리뷰</div>
               <p className="mt-1 text-sm text-slate-500">
-                리더를 별도 평가 대상으로 설정하고, 자기/상사/동료/직속 부하 조합을 운영합니다.
+                리더를 별도 평가 대상으로 설정하고, 자기/상사/동료/직속 팀원 조합을 운영합니다.
               </p>
 
               <div className="mt-4 space-y-3">
@@ -4086,7 +4004,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                   }
                 />
                 <ToggleLine
-                  label="직속 부하 평가 포함"
+                  label="직속 팀원 평가 포함"
                   description="직접 함께 일하는 팀원의 반응과 체감 품질을 수집합니다."
                   checked={selectionSettings.managerEffectiveness.reviewerCombination.subordinate}
                   onChange={(checked) =>
@@ -4107,8 +4025,8 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
               <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">현재 수집 조합</div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {getManagerEffectivenessReviewerSummary(selectionSettings.managerEffectiveness).map((item) => (
-                    <Badge key={item} tone="blue">
+                  {getManagerEffectivenessReviewerSummary(selectionSettings.managerEffectiveness).map((item, index) => (
+                    <Badge key={buildFeedback360AdminRowKey(['settings-reviewer-summary', item, index])} tone="blue">
                       {item}
                     </Badge>
                   ))}
@@ -4611,37 +4529,24 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="text-sm font-semibold text-slate-900">진행 중 익명 / 공개 범위</div>
-              <p className="mt-1 text-sm text-slate-500">
-                리뷰가 진행 중이어도 reviewer type별로 공개 범위를 즉시 조정할 수 있습니다.
-              </p>
-              <div className="mt-4 space-y-4">
-                {Object.entries(visibilitySettings).map(([relationship, value]) => (
-                  <div key={relationship} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-sm font-semibold text-slate-900">
-                      {REVIEWER_TYPE_LABELS[relationship] ?? relationship}
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(Object.keys(VISIBILITY_LABELS) as VisibilityLevel[]).map((option) => (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() =>
-                            setVisibilitySettings((current) => ({ ...current, [relationship]: option }))
-                          }
-                          className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
-                            value === option
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          {VISIBILITY_LABELS[option]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <Feedback360VisibilitySettings
+                title="진행 중 익명 / 공개 범위"
+                summary={getAdminVisibilitySummary(visibilitySettings)}
+                description="리뷰가 진행 중이어도 관계별 공개 범위를 익명 또는 기명으로 조정하고 기존 설정 저장 버튼으로 반영할 수 있습니다."
+                rows={Object.keys(DEFAULT_VISIBILITY_SETTINGS).map((relationship) => ({
+                  key: relationship,
+                  label: REVIEWER_TYPE_LABELS[relationship] ?? relationship,
+                  value: visibilitySettings[relationship] === 'FULL' ? 'FULL' : 'ANONYMOUS',
+                }))}
+                options={VISIBILITY_SETTING_SELECT_OPTIONS}
+                onChange={(relationship, value) =>
+                  setVisibilitySettings((current) => ({
+                    ...current,
+                    [relationship]: value as VisibilityLevel,
+                  }))
+                }
+                footnote="동료/팀원/타 본부 피드백은 기본 익명 운영을 권장합니다. 기명 전환은 운영 정책과 사전 안내가 필요합니다."
+              />
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -4938,7 +4843,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
             <div className="flex flex-wrap gap-2">
               {([
                 ['send-review-reminder', '미제출자 리마인드'],
-                ['send-peer-selection-reminder', '동료 선택 / 승인 리마인드'],
+                ['send-peer-selection-reminder', '평가자 매핑 / 승인 리마인드'],
                 ['send-result-share', '결과 공유'],
               ] as Array<[ReminderAction, string]>).map(([action, label]) => (
                 <button
@@ -4955,6 +4860,19 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
                 </button>
               ))}
             </div>
+
+            {mailDeliveryResult ? (
+              <Feedback360MailDiagnosticsPanel
+                result={mailDeliveryResult}
+                busy={busy}
+                onRetry={() => void handleReminder(mailDeliveryResult.retryMode)}
+                onClose={() => setMailDeliveryResult(null)}
+              />
+            ) : (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
+                메일은 기존 360 알림 발송 경로로 예약됩니다. 발송 채널은 이메일 + 앱 알림이며, provider 상태와 발송 결과는 이 화면에 남고 사용자가 닫기 전까지 사라지지 않습니다.
+              </div>
+            )}
 
             {reminderAction === 'send-result-share' ? (
               <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
@@ -5180,6 +5098,58 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
           </div>
         </ModalFrame>
       ) : null}
+      {anytimeDeleteConfirmOpen ? (
+        <ModalFrame title="수시 리뷰 삭제" onClose={() => setAnytimeDeleteConfirmOpen(false)}>
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-800">
+              <div className="font-semibold">정말 삭제하시겠습니까?</div>
+              <div className="mt-1">삭제하면 되돌릴 수 없습니다.</div>
+              <div className="mt-1">응답이 시작된 라운드는 삭제할 수 없습니다.</div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-slate-900">삭제 대상</div>
+              <div className="mt-3 space-y-2">
+                {selectedAnytimeDocuments.map((document) => (
+                  <div
+                    key={buildAnytimeDocumentDedupeKey(document)}
+                    className="flex flex-col gap-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span className="font-semibold text-slate-900">{document.roundName}</span>
+                    <span className="text-xs text-slate-500">
+                      {document.targetName} · {document.reviewerName} · {getFeedbackRoundStatusLabel(document.status)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {anytimeDeleteBlockedReason ? (
+                <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                  {anytimeDeleteBlockedReason}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setAnytimeDeleteConfirmOpen(false)}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleAnytimeBulkAction('cancel', { successMessage: '삭제되었습니다.' })}
+                disabled={busy || !canDeleteSelectedAnytimeDocuments}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                <Trash2 className="h-4 w-4" />
+                삭제
+              </button>
+            </div>
+          </div>
+        </ModalFrame>
+      ) : null}
       {riskDialog}
     </div>
   )
@@ -5394,13 +5364,13 @@ function ManagerEffectivenessDashboard(props: {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {managerEffectivenessAdmin.reviewerSummary.map((item) => (
-          <Badge key={item} tone="blue">
+        {managerEffectivenessAdmin.reviewerSummary.map((item, index) => (
+          <Badge key={buildFeedback360AdminRowKey(['manager-reviewer-summary', item, index])} tone="blue">
             {item}
           </Badge>
         ))}
-        {managerEffectivenessAdmin.competencyLabels.map((item) => (
-          <Badge key={item} tone="slate">
+        {managerEffectivenessAdmin.competencyLabels.map((item, index) => (
+          <Badge key={buildFeedback360AdminRowKey(['manager-competency', item, index])} tone="slate">
             {item}
           </Badge>
         ))}
@@ -5491,8 +5461,8 @@ function ManagerEffectivenessDashboard(props: {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {leader.strengths.length ? (
-                      leader.strengths.map((item) => (
-                        <Badge key={item} tone="emerald">
+                      leader.strengths.map((item, index) => (
+                        <Badge key={buildFeedback360AdminRowKey(['leader-strength', leader.employeeId, item, index])} tone="emerald">
                           {item}
                         </Badge>
                       ))
@@ -5509,8 +5479,8 @@ function ManagerEffectivenessDashboard(props: {
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {leader.improvements.length ? (
-                      leader.improvements.map((item) => (
-                        <Badge key={item} tone="amber">
+                      leader.improvements.map((item, index) => (
+                        <Badge key={buildFeedback360AdminRowKey(['leader-improvement', leader.employeeId, item, index])} tone="amber">
                           {item}
                         </Badge>
                       ))
@@ -5529,8 +5499,8 @@ function ManagerEffectivenessDashboard(props: {
                     {'\uCF54\uCE6D \uD3EC\uC778\uD2B8'}
                   </div>
                   <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                    {leader.coachingPack.coachingPoints.map((item) => (
-                      <li key={item}>{`\u2022 ${item}`}</li>
+                    {leader.coachingPack.coachingPoints.map((item, index) => (
+                      <li key={buildFeedback360AdminRowKey(['leader-coaching-point', leader.employeeId, item, index])}>{`\u2022 ${item}`}</li>
                     ))}
                   </ul>
                 </div>
@@ -5539,8 +5509,8 @@ function ManagerEffectivenessDashboard(props: {
                     {'\uB2E4\uC74C 1:1 \uC9C8\uBB38'}
                   </div>
                   <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                    {leader.coachingPack.nextOneOnOneQuestions.map((item) => (
-                      <li key={item}>{`\u2022 ${item}`}</li>
+                    {leader.coachingPack.nextOneOnOneQuestions.map((item, index) => (
+                      <li key={buildFeedback360AdminRowKey(['leader-next-one-on-one', leader.employeeId, item, index])}>{`\u2022 ${item}`}</li>
                     ))}
                   </ul>
                 </div>
@@ -5551,8 +5521,8 @@ function ManagerEffectivenessDashboard(props: {
                   {'\uC131\uC7A5 \uC561\uC158'}
                 </div>
                 <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                  {leader.coachingPack.growthActions.map((item) => (
-                    <li key={item}>{`\u2022 ${item}`}</li>
+                  {leader.coachingPack.growthActions.map((item, index) => (
+                    <li key={buildFeedback360AdminRowKey(['leader-growth-action', leader.employeeId, item, index])}>{`\u2022 ${item}`}</li>
                   ))}
                 </ul>
                 <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
@@ -5614,6 +5584,27 @@ function BannerBox(props: { banner: Banner; onClose: () => void }) {
     <div className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm ${toneClass}`}>
       <div>{props.banner.message}</div>
       <button type="button" onClick={props.onClose} className="shrink-0">
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+function FloatingToast(props: { banner: Banner; onClose: () => void }) {
+  const toneClass =
+    props.banner.tone === 'error'
+      ? 'border-rose-200 bg-rose-50 text-rose-800 shadow-rose-100'
+      : props.banner.tone === 'success'
+        ? 'border-emerald-200 bg-emerald-50 text-emerald-800 shadow-emerald-100'
+        : 'border-blue-200 bg-blue-50 text-blue-800 shadow-blue-100'
+
+  return (
+    <div
+      data-min-duration-ms={8000}
+      className={`fixed bottom-6 right-6 z-40 flex max-w-md items-start gap-3 rounded-2xl border px-4 py-3 text-sm shadow-xl ${toneClass}`}
+    >
+      <div className="min-w-0 leading-6">{props.banner.message}</div>
+      <button type="button" onClick={props.onClose} className="shrink-0 rounded-full p-1 transition hover:bg-white/70" aria-label="메시지 닫기">
         <X className="h-4 w-4" />
       </button>
     </div>

@@ -2421,7 +2421,7 @@ export function buildFallbackResult(
         .slice(0, limit)
         .map((reviewer) => ({
           employeeId: String(reviewer.employeeId ?? ''),
-          name: String(reviewer.name ?? '由щ럭???꾨낫'),
+          name: String(reviewer.name ?? '평가자 후보'),
           relationship: String(reviewer.relationship ?? record.key ?? 'PEER'),
         }))
     })
@@ -2429,10 +2429,10 @@ export function buildFallbackResult(
     return {
       recommendations,
       rationale:
-        summary || '?듬챸 湲곗?怨?reviewer fatigue瑜??④퍡 怨좊젮???곸궗 1紐? ?숇즺 2紐? 遺???먮뒗 ?묒뾽 由щ럭??1~2紐낆쓣 ?곗꽑 異붿쿇?덉뒿?덈떎.',
+        summary || '익명 기준과 평가자 부담을 함께 고려해 상사, 동료, 팀원 후보를 균형 있게 추천합니다.',
       watchouts: [
-        '?뚯닔 議곗쭅? ?숈씪 議고빀??諛섎났?섎㈃ ?듬챸?깆씠 ?쏀빐吏????덉뒿?덈떎.',
-        '理쒓렐 ?ㅼ젣 ?묒뾽???놁뿀??由щ럭?대뒗 ?곗꽑?쒖쐞瑜???텛???몄씠 醫뗭뒿?덈떎.',
+        '소수 조직에서 같은 평가자 조합이 반복되면 익명성이 약해질 수 있습니다.',
+        '최근 함께 일한 기록이 부족한 후보는 우선순위를 낮춰 검토하는 것이 좋습니다.',
       ],
     }
   }

@@ -129,6 +129,7 @@ export type Feedback360PageData = {
     name: string
     role: SystemRole
     department: string
+    profileImageUrl?: string | null
   }
   permissions?: {
     canManageRounds: boolean
@@ -203,10 +204,16 @@ export type Feedback360PageData = {
     roundId: string
     roundName: string
     receiverId: string
+    receiverEmployeeId?: string
+    receiverEmail?: string | null
     receiverName: string
+    receiverDepartmentName?: string
+    receiverTeamName?: string | null
+    receiverProfileImageUrl?: string | null
     relationship: string
     dueDate: string
     href: string
+    status?: string
   }>
   nomination?: {
     targetEmployee: {
@@ -214,6 +221,7 @@ export type Feedback360PageData = {
       name: string
       department: string
       position: string
+      profileImageUrl?: string | null
     }
     savedDraftCount: number
     selectionSettings: {
@@ -236,6 +244,7 @@ export type Feedback360PageData = {
         name: string
         department: string
         relationship: RaterRelationship | 'SELF'
+        profileImageUrl?: string | null
         selectable?: boolean
         disabledReason?: string | null
       }>
@@ -265,6 +274,7 @@ export type Feedback360PageData = {
       name: string
       department: string
       position: string
+      profileImageUrl?: string | null
     }
     recipientProfile: FeedbackResultRecipientProfile
     availableProfiles: Array<{
@@ -633,6 +643,7 @@ export type Feedback360PageData = {
     roundName: string
     receiverId: string
     receiverName: string
+    receiverProfileImageUrl?: string | null
     relationship: string
     status: FeedbackStatus
     questionCount: number
@@ -1433,6 +1444,7 @@ export async function getFeedback360PageData(
           name: employee.empName,
           role: employee.role,
           department: employee.department.deptName,
+          profileImageUrl: employee.profileImageUrl,
         },
         permissions: {
           canManageRounds:
@@ -1477,7 +1489,10 @@ export async function getFeedback360PageData(
               select: {
                 id: true,
                 empName: true,
+                gwsEmail: true,
+                profileImageUrl: true,
                 position: true,
+                teamName: true,
                 teamLeaderId: true,
                 sectionChiefId: true,
                 divisionHeadId: true,
@@ -1591,6 +1606,7 @@ export async function getFeedback360PageData(
       name: employee.empName,
       role: employee.role,
       department: employee.department.deptName,
+      profileImageUrl: employee.profileImageUrl,
     }
 
     if (
@@ -1992,7 +2008,7 @@ export async function getFeedback360PageData(
       }
     }
 
-    const pendingRequests = scopedRounds
+    const pendingRequestsRaw = scopedRounds
       .flatMap((round) =>
         round.feedbacks
           .filter(
@@ -2005,20 +2021,45 @@ export async function getFeedback360PageData(
             roundId: round.id,
             roundName: round.roundName,
             receiverId: feedback.receiverId,
+            receiverEmployeeId: feedback.receiverId,
+            receiverEmail: feedback.receiver.gwsEmail,
             receiverName: feedback.receiver.empName,
+            receiverDepartmentName: feedback.receiver.department.deptName,
+            receiverTeamName: feedback.receiver.teamName,
+            receiverProfileImageUrl: feedback.receiver.profileImageUrl,
             relationship: feedback.relationship,
             dueDate: formatDate(round.endDate),
             href: `/evaluation/360/respond/${encodeURIComponent(feedback.id)}?cycleId=${encodeURIComponent(
               selectedCycle.id
             )}&roundId=${encodeURIComponent(round.id)}`,
+            status: feedback.status,
           }))
       )
-      .slice(0, 8)
+    const pendingRequestMap = new Map<string, (typeof pendingRequestsRaw)[number]>()
+
+    for (const request of pendingRequestsRaw) {
+      const key = [
+        request.roundId,
+        request.receiverId || request.receiverEmployeeId || request.receiverName,
+        request.receiverDepartmentName ?? '',
+        request.receiverTeamName ?? '',
+        request.relationship,
+      ].join(':')
+      const existing = pendingRequestMap.get(key)
+
+      if (!existing || (existing.status !== 'IN_PROGRESS' && request.status === 'IN_PROGRESS')) {
+        pendingRequestMap.set(key, request)
+      }
+    }
+
+    const pendingRequests = Array.from(pendingRequestMap.values())
 
     const baseData: Feedback360PageData = {
       mode: params.mode,
       state: scopedRounds.length ? 'ready' : 'empty',
-      message: rounds.length ? undefined : '새로운 라운드를 생성하거나 기존 평가 워크벤치, 평가 결과, 체크인 일정을 확인해 주세요.',
+      message: rounds.length
+        ? undefined
+        : '선택한 분기에 진행 중인 360 다면평가가 없습니다. HR 운영 탭에서 해당 분기 평가자 매핑 상태를 확인할 수 있습니다.',
       currentUser,
       ...(rounds.length && params.mode === 'admin' && !scopedRounds.length
         ? { message: '공동 작업자로 지정된 리뷰만 관리할 수 있습니다. 현재 열람 가능한 리뷰가 없습니다.' }
@@ -2182,6 +2223,7 @@ export async function getFeedback360PageData(
         select: {
           id: true,
           empName: true,
+          profileImageUrl: true,
           department: { select: { deptName: true } },
         },
         orderBy: { empName: 'asc' },
@@ -2200,6 +2242,7 @@ export async function getFeedback360PageData(
         select: {
           id: true,
           empName: true,
+          profileImageUrl: true,
           department: { select: { deptName: true } },
         },
         orderBy: { empName: 'asc' },
@@ -2213,6 +2256,7 @@ export async function getFeedback360PageData(
             select: {
               id: true,
               empName: true,
+              profileImageUrl: true,
               department: { select: { deptName: true } },
             },
           })
@@ -2235,6 +2279,7 @@ export async function getFeedback360PageData(
           employeeId: reviewer.id,
           name: reviewer.empName,
           department: reviewer.department.deptName,
+          profileImageUrl: reviewer.profileImageUrl,
           relationship: 'PEER' as const,
           selectable: disabledReason == null,
           disabledReason,
@@ -2258,6 +2303,7 @@ export async function getFeedback360PageData(
             name: target.empName,
             department: target.department.deptName,
             position: getPositionLabel(target.position),
+            profileImageUrl: target.profileImageUrl,
           },
           savedDraftCount: nominationSavedReviewers.length,
           selectionSettings,
@@ -2272,6 +2318,7 @@ export async function getFeedback360PageData(
                   employeeId: target.id,
                   name: target.empName,
                   department: target.department.deptName,
+                  profileImageUrl: target.profileImageUrl,
                   relationship: 'SELF',
                 },
               ],
@@ -2284,6 +2331,7 @@ export async function getFeedback360PageData(
                 employeeId: reviewer.id,
                 name: reviewer.empName,
                 department: reviewer.department.deptName,
+                profileImageUrl: reviewer.profileImageUrl,
                 relationship: 'SUPERVISOR',
               })),
             },
@@ -2296,20 +2344,21 @@ export async function getFeedback360PageData(
             },
             {
               key: 'subordinate',
-              label: '부하',
-              description: '리더 역할을 가진 대상자라면 하향 피드백을 포함합니다.',
+              label: '팀원',
+              description: '리더 역할을 가진 대상자라면 팀원 피드백을 포함합니다.',
               reviewers: subordinateEmployees.map((reviewer) => ({
                 employeeId: reviewer.id,
                 name: reviewer.empName,
                 department: reviewer.department.deptName,
+                profileImageUrl: reviewer.profileImageUrl,
                 relationship: 'SUBORDINATE',
               })),
             },
           ],
           guidance: [
             '기본 anonymity threshold가 3명이며, 기준 미달 시 익명 요약과 텍스트 응답은 비공개 처리됩니다.',
-            '상사 1명, 동료 3명, 부하 3명 기준으로 균형을 맞추고 필요한 경우 HR 예외를 확인합니다.',
-            '이번 1차 구성원 단계에서는 nomination draft를 저장해 운영 검토와 승인 흐름을 연결하는 기반까지 제공합니다.',
+            '상사 1명, 동료 3명, 팀원 3명 기준으로 균형을 맞추고 필요한 경우 HR 예외를 확인합니다.',
+            '이번 1차 구성원 단계에서는 평가자 매핑 초안을 저장해 운영 검토와 승인 흐름을 연결하는 기반까지 제공합니다.',
           ],
           workflowStatus: nominationWorkflowStatus,
           counts: {
@@ -2635,11 +2684,6 @@ export async function getFeedback360PageData(
           href: '/evaluation/results',
           description: '기존 평가 결과 화면과 연결해 결과 안내 흐름으로 이어갑니다.',
         },
-        {
-          label: '360 결과 PDF',
-          href: `/api/feedback/rounds/${encodeURIComponent(selectedRound.id)}/results-export?targetId=${encodeURIComponent(target.id)}&profile=${encodeURIComponent(recipientProfile)}&download=1`,
-          description: '현재 결과지 버전 기준 PDF를 바로 내려받을 수 있습니다.',
-        },
       ],
       questions: selectedRound.questions.map((question) => ({
         id: question.id,
@@ -2695,6 +2739,7 @@ export async function getFeedback360PageData(
             name: target.empName,
             department: target.department.deptName,
             position: getPositionLabel(target.position),
+            profileImageUrl: target.profileImageUrl,
           },
           recipientProfile,
           availableProfiles:
@@ -2828,7 +2873,7 @@ export async function getFeedback360PageData(
             : undefined,
           linkage: [
             {
-              label: '평가 워크벤치로 이동',
+              label: '업적평가 입력으로 이동',
               href: `/evaluation/workbench?cycleId=${encodeURIComponent(selectedCycle.id)}`,
               description: '서면 피드백을 평가 근거로 다시 검토할 수 있습니다.',
             },
@@ -3276,8 +3321,9 @@ export async function getFeedback360PageData(
               },
               receiver: {
                 select: {
-                  empName: true,
-                  deptId: true,
+                empName: true,
+                profileImageUrl: true,
+                deptId: true,
                   role: true,
                   position: true,
                   jobTitle: true,
@@ -3645,6 +3691,7 @@ export async function getFeedback360PageData(
           roundName: feedback.round.roundName,
           receiverId: feedback.receiverId,
           receiverName: feedback.receiver.empName,
+          receiverProfileImageUrl: feedback.receiver.profileImageUrl,
           relationship: feedback.relationship,
           status: feedback.status,
           questionCount: feedback.round.questions.length,

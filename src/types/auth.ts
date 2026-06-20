@@ -28,7 +28,6 @@ export const MENU_KEYS = [
   'EVAL_RESULT',
   'APPEAL',
   'FEEDBACK_360',
-  'WORD_CLOUD_360',
   'DASHBOARD',
   'STATISTICS',
   'AUDIT_LOG',

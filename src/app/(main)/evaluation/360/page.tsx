@@ -8,6 +8,8 @@ type PageProps = {
   searchParams?: Promise<{
     cycleId?: string
     roundId?: string
+    tab?: string
+    quarter?: string
   }>
 }
 

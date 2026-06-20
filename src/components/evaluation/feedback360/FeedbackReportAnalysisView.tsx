@@ -197,7 +197,7 @@ export function FeedbackReportAnalysisView(props: FeedbackReportAnalysisViewProp
             <ReportSection
               id="reviewDetails"
               title={menuByKey.reviewDetails.label}
-              description="리뷰어 관계별 코멘트와 총점을 원문 맥락과 함께 확인할 수 있습니다."
+              description="평가자 관계별 코멘트와 총점을 원문 맥락과 함께 확인할 수 있습니다."
             >
               {props.results.analysis.reviewDetails.length ? (
                 <div className="space-y-3">
@@ -340,14 +340,14 @@ export function FeedbackReportAnalysisView(props: FeedbackReportAnalysisViewProp
             <ReportSection
               id="resultLink"
               title={menuByKey.resultLink.label}
-              description="현재 보고 있는 결과지 버전과 원본 결과 화면, PDF를 같은 흐름에서 이어서 확인할 수 있습니다."
+              description="현재 보고 있는 결과지 버전과 원본 결과 화면을 같은 흐름에서 이어서 확인할 수 있습니다."
             >
               <div className="grid gap-4 lg:grid-cols-2">
                 <InfoCard
                   title="현재 결과지 버전"
                   body={`${props.results.analysis.resultLink.profileLabel} · ${props.results.targetEmployee.name}`}
                 />
-                <InfoCard title="PDF 다운로드" body="현재 결과지 구성을 그대로 PDF로 열거나 내려받을 수 있습니다." />
+                <InfoCard title="화면 리포트" body="결과 리포트는 화면에서 확인합니다. 별도 파일 내보내기는 제공하지 않습니다." />
               </div>
               <div className="mt-4 grid gap-3 lg:grid-cols-2">
                 {props.results.analysis.resultLink.links.map((item) =>
@@ -373,15 +373,6 @@ export function FeedbackReportAnalysisView(props: FeedbackReportAnalysisViewProp
                     </a>
                   )
                 )}
-                <a
-                  href={props.results.analysis.resultLink.pdfHref}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:bg-white"
-                >
-                  <div className="text-sm font-semibold text-slate-900">PDF로 열기</div>
-                  <div className="mt-2 text-sm leading-6 text-slate-600">브라우저에서 현재 결과지를 바로 열어 확인합니다.</div>
-                </a>
               </div>
             </ReportSection>
           ) : null}

@@ -122,10 +122,6 @@ run('server routes enforce impersonation risk validation and execution logging',
     'src/app/api/evaluation/[id]/review/route.ts',
     'src/app/api/feedback/route.ts',
     'src/app/api/kpi/personal/[id]/workflow/route.ts',
-    'src/app/api/evaluation/word-cloud-360/actions/route.ts',
-    'src/app/api/evaluation/word-cloud-360/export/[cycleId]/route.ts',
-    'src/app/api/evaluation/word-cloud-360/targets/upload/route.ts',
-    'src/app/api/evaluation/word-cloud-360/comparison/upload/route.ts',
     'src/app/api/feedback/rounds/[id]/notifications/route.ts',
   ]
 
@@ -142,7 +138,6 @@ run('client surfaces mount the impersonation risk dialog where needed', () => {
     'src/components/evaluation/EvaluationWorkbenchClient.tsx',
     'src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx',
     'src/components/kpi/PersonalKpiManagementClient.tsx',
-    'src/components/evaluation/wordcloud360/WordCloud360WorkspaceClient.tsx',
     'src/components/evaluation/feedback360/Feedback360AdminPanel.tsx',
   ]
 

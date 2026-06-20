@@ -12,7 +12,9 @@ import { formatDate } from '@/lib/utils'
 import {
   buildUpwardSuggestions,
   canViewUpwardResults,
+  getLeadershipResultViewerIds,
   getPrimaryLeaderId,
+  getUpwardRoundResponseGate,
   parseChoiceOptions,
   parseUpwardReviewSettings,
   summarizeUpwardResults,
@@ -46,6 +48,9 @@ export type UpwardReviewPageData = {
     name: string
     role: SystemRole
     department: string
+    position?: string | null
+    profileImageUrl?: string | null
+    email?: string | null
   }
   permissions?: {
     canManageRounds: boolean
@@ -93,6 +98,8 @@ export type UpwardReviewPageData = {
       receiverName: string
       receiverDepartment: string
       receiverPosition: string
+      receiverProfileImageUrl?: string | null
+      receiverEmail?: string | null
       relationship: RaterRelationship
       status: FeedbackStatus
       statusLabel: string
@@ -108,9 +115,15 @@ export type UpwardReviewPageData = {
     receiverName: string
     receiverDepartment: string
     receiverPosition: string
+    receiverProfileImageUrl?: string | null
+    receiverEmail?: string | null
     relationship: RaterRelationship
     status: FeedbackStatus
+    roundStatus: FeedbackRoundStatus
+    roundStatusLabel: string
     readOnly: boolean
+    readOnlyReason?: 'SUBMITTED' | 'ROUND_NOT_STARTED' | 'ROUND_ENDED' | 'ROUND_CLOSED' | 'ROUND_NOT_ACTIVE'
+    readOnlyMessage?: string
     dueDate: string
     guidance: string[]
     overallComment: string
@@ -209,6 +222,8 @@ export type UpwardReviewPageData = {
       name: string
       department: string
       position: string
+      profileImageUrl?: string | null
+      email?: string | null
       feedbackCount: number
       thresholdMet: boolean
       visible: boolean
@@ -218,6 +233,8 @@ export type UpwardReviewPageData = {
       name: string
       department: string
       position: string
+      profileImageUrl?: string | null
+      email?: string | null
     }
     strengths: string[]
     improvements: string[]
@@ -268,6 +285,7 @@ function canAccessUpwardResultShell(params: {
   actorId: string
   targetId: string
   targetPrimaryLeaderId?: string | null
+  targetViewerIds?: string[]
   settings: ReturnType<typeof parseUpwardReviewSettings>
   canManage: boolean
   canReadRaw: boolean
@@ -277,6 +295,10 @@ function canAccessUpwardResultShell(params: {
   }
 
   if (params.actorId === params.targetId) {
+    return true
+  }
+
+  if (params.targetViewerIds?.includes(params.actorId)) {
     return true
   }
 
@@ -387,12 +409,15 @@ export async function getUpwardReviewPageData(
   const selectedCycle = availableCycles.find((cycle) => cycle.id === params.cycleId) ?? availableCycles[0] ?? null
   if (!selectedCycle) {
     return {
-      ...buildEmptyPage(params.mode, '상향 평가를 운영할 평가 주기가 없습니다.'),
+      ...buildEmptyPage(params.mode, '리더십 진단을 운영할 평가 주기가 없습니다. 먼저 평가 주기를 생성해 주세요.'),
       currentUser: {
         id: employee.id,
         name: employee.empName,
         role: employee.role,
         department: employee.department.deptName,
+        position: getPositionLabel(employee.position),
+        profileImageUrl: employee.profileImageUrl,
+        email: employee.gwsEmail,
       },
     }
   }
@@ -418,9 +443,13 @@ export async function getUpwardReviewPageData(
               empName: true,
               role: true,
               position: true,
+              jobTitle: true,
+              teamName: true,
               teamLeaderId: true,
               sectionChiefId: true,
               divisionHeadId: true,
+              gwsEmail: true,
+              profileImageUrl: true,
               department: { select: { deptName: true } },
             },
           },
@@ -531,12 +560,15 @@ export async function getUpwardReviewPageData(
     state: rounds.length ? 'ready' : 'empty',
     message: rounds.length
       ? undefined
-      : '아직 운영 중인 상향 평가 라운드가 없습니다. 관리자 페이지에서 템플릿과 라운드를 먼저 준비해 주세요.',
+      : '아직 운영 중인 리더십 진단 기간이 없습니다. 리더십 진단 운영에서 문항 세트와 진단 기간을 먼저 준비해 주세요.',
     currentUser: {
       id: employee.id,
       name: employee.empName,
       role: employee.role,
       department: employee.department.deptName,
+      position: getPositionLabel(employee.position),
+      profileImageUrl: employee.profileImageUrl,
+      email: employee.gwsEmail,
     },
     permissions: {
       canManageRounds:
@@ -607,6 +639,8 @@ export async function getUpwardReviewPageData(
             id: true,
             empName: true,
             position: true,
+            gwsEmail: true,
+            profileImageUrl: true,
             department: { select: { deptName: true } },
           },
         },
@@ -625,6 +659,8 @@ export async function getUpwardReviewPageData(
           receiverName: feedback.receiver.empName,
           receiverDepartment: feedback.receiver.department.deptName,
           receiverPosition: getPositionLabel(feedback.receiver.position),
+          receiverProfileImageUrl: feedback.receiver.profileImageUrl,
+          receiverEmail: feedback.receiver.gwsEmail,
           relationship: feedback.relationship,
           status: feedback.status,
           statusLabel:
@@ -657,6 +693,8 @@ export async function getUpwardReviewPageData(
                 id: true,
                 empName: true,
                 position: true,
+                gwsEmail: true,
+                profileImageUrl: true,
                 department: { select: { deptName: true } },
               },
             },
@@ -669,7 +707,7 @@ export async function getUpwardReviewPageData(
       return {
         ...baseData,
         state: 'permission-denied',
-        message: '상향 평가 응답을 찾을 수 없습니다.',
+        message: '리더십 진단 응답을 찾을 수 없습니다.',
       }
     }
 
@@ -677,7 +715,7 @@ export async function getUpwardReviewPageData(
       return {
         ...baseData,
         state: 'permission-denied',
-        message: '이 상향 평가 응답을 작성할 권한이 없습니다.',
+        message: '이 리더십 진단 응답을 작성할 권한이 없습니다.',
       }
     }
 
@@ -697,6 +735,16 @@ export async function getUpwardReviewPageData(
         ratingValue: responseMap.get(question.id)?.ratingValue ?? null,
         textValue: responseMap.get(question.id)?.textValue ?? null,
       }))
+    const responseGate = getUpwardRoundResponseGate(feedback.round)
+    const readOnlyReason =
+      feedback.status === 'SUBMITTED'
+        ? 'SUBMITTED'
+        : responseGate.open
+          ? undefined
+          : responseGate.reason === 'OPEN'
+            ? undefined
+            : responseGate.reason
+    const roundStatusLabel = UPWARD_ROUND_STATUS_LABELS[feedback.round.status]
 
     return {
       ...baseData,
@@ -709,9 +757,24 @@ export async function getUpwardReviewPageData(
         receiverName: feedback.receiver.empName,
         receiverDepartment: feedback.receiver.department.deptName,
         receiverPosition: getPositionLabel(feedback.receiver.position),
+        receiverProfileImageUrl: feedback.receiver.profileImageUrl,
+        receiverEmail: feedback.receiver.gwsEmail,
         relationship: feedback.relationship,
         status: feedback.status,
-        readOnly: feedback.status === 'SUBMITTED' || feedback.round.status !== 'IN_PROGRESS',
+        roundStatus: feedback.round.status,
+        roundStatusLabel,
+        readOnly: Boolean(readOnlyReason),
+        readOnlyReason,
+        readOnlyMessage:
+          readOnlyReason === 'SUBMITTED'
+            ? '이 리더십 진단은 이미 최종 제출되어 읽기 전용 상태입니다.'
+            : readOnlyReason === 'ROUND_NOT_STARTED'
+              ? `진단 시작일 전이라 아직 응답할 수 없습니다. 시작일: ${formatDate(feedback.round.startDate)}`
+              : readOnlyReason === 'ROUND_ENDED' || readOnlyReason === 'ROUND_CLOSED'
+                ? `진단 기간이 마감되어 응답할 수 없습니다. 종료일: ${formatDate(feedback.round.endDate)}`
+                : readOnlyReason === 'ROUND_NOT_ACTIVE'
+                  ? `진단 기간 설정을 확인해 주세요. 현재 상태: ${roundStatusLabel}`
+                  : undefined,
         dueDate: formatDate(feedback.round.endDate),
         guidance: [
           '이 평가는 리더의 운영 방식과 리더십을 더 잘 이해하고 개선하기 위한 참고 자료로 활용됩니다.',
@@ -730,7 +793,7 @@ export async function getUpwardReviewPageData(
       return {
         ...baseData,
         state: 'permission-denied',
-        message: '상향 평가 관리자 운영 화면을 볼 권한이 없습니다.',
+        message: '리더십 진단 운영 화면을 볼 권한이 없습니다.',
       }
     }
 
@@ -824,8 +887,8 @@ export async function getUpwardReviewPageData(
               targetTypes: (selectedRoundSettings?.targetTypes ?? []).map((type) => UPWARD_TARGET_TYPE_LABELS[type]),
               resultViewerMode:
                 selectedRoundSettings?.resultViewerMode === 'TARGET_AND_PRIMARY_MANAGER'
-                  ? '피평가자 + 1차 리더'
-                  : '피평가자만',
+                  ? '진단 대상자 + 1차 리더'
+                  : '진단 대상자만',
               rawResponsePolicy:
                 selectedRoundSettings?.rawResponsePolicy === 'REVIEW_ADMIN_CONTENT'
                   ? '콘텐츠 열람 권한 운영자'
@@ -895,7 +958,7 @@ export async function getUpwardReviewPageData(
     return {
       ...baseData,
       state: 'empty',
-      message: '확인할 상향 평가 결과가 없습니다.',
+      message: '확인할 리더십 진단 결과가 없습니다.',
     }
   }
 
@@ -918,6 +981,12 @@ export async function getUpwardReviewPageData(
         sectionChiefId: target.sectionChiefId,
         divisionHeadId: target.divisionHeadId,
       }),
+      targetViewerIds: getLeadershipResultViewerIds({
+        id: target.id,
+        teamLeaderId: target.teamLeaderId,
+        sectionChiefId: target.sectionChiefId,
+        divisionHeadId: target.divisionHeadId,
+      }),
       settings: resultSettings,
       canManage: canManageSelectedRound,
       canReadRaw: canReadSelectedRoundContent,
@@ -928,7 +997,7 @@ export async function getUpwardReviewPageData(
     return {
       ...baseData,
       state: 'permission-denied',
-      message: '현재 열람할 수 있는 상향 평가 결과가 없습니다.',
+      message: '현재 열람할 수 있는 리더십 진단 결과가 없습니다.',
     }
   }
 
@@ -946,6 +1015,12 @@ export async function getUpwardReviewPageData(
     actorRole: employee.role,
     targetId: selectedTarget.id,
     targetPrimaryLeaderId: getPrimaryLeaderId({
+      teamLeaderId: selectedTarget.teamLeaderId,
+      sectionChiefId: selectedTarget.sectionChiefId,
+      divisionHeadId: selectedTarget.divisionHeadId,
+    }),
+    targetViewerIds: getLeadershipResultViewerIds({
+      id: selectedTarget.id,
       teamLeaderId: selectedTarget.teamLeaderId,
       sectionChiefId: selectedTarget.sectionChiefId,
       divisionHeadId: selectedTarget.divisionHeadId,
@@ -1034,6 +1109,12 @@ export async function getUpwardReviewPageData(
             sectionChiefId: target.sectionChiefId,
             divisionHeadId: target.divisionHeadId,
           }),
+          targetViewerIds: getLeadershipResultViewerIds({
+            id: target.id,
+            teamLeaderId: target.teamLeaderId,
+            sectionChiefId: target.sectionChiefId,
+            divisionHeadId: target.divisionHeadId,
+          }),
           settings: resultSettings,
           thresholdMet: targetThresholdMet,
           canManage: canManageSelectedRound,
@@ -1044,6 +1125,8 @@ export async function getUpwardReviewPageData(
           name: target.empName,
           department: target.department.deptName,
           position: getPositionLabel(target.position),
+          profileImageUrl: target.profileImageUrl,
+          email: target.gwsEmail,
           feedbackCount,
           thresholdMet: targetThresholdMet,
           visible: targetVisible,
@@ -1054,6 +1137,8 @@ export async function getUpwardReviewPageData(
         name: selectedTarget.empName,
         department: selectedTarget.department.deptName,
         position: getPositionLabel(selectedTarget.position),
+        profileImageUrl: selectedTarget.profileImageUrl,
+        email: selectedTarget.gwsEmail,
       },
       strengths: summarized.strengths,
       improvements: summarized.improvements,
@@ -1078,7 +1163,7 @@ export async function getUpwardReviewPageData(
     return {
       mode: params.mode,
       state: 'error',
-      message: '?곹뼢 ?됯? ?곗씠?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲?? ?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂.',
+      message: '리더십 진단 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
       availableCycles: [],
       availableRounds: [],
       selectedCycleId: params.cycleId,

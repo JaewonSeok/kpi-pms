@@ -198,7 +198,7 @@ const RELATIONSHIP_LABELS: Record<string, string> = {
   SELF: '셀프',
   SUPERVISOR: '상향',
   PEER: '동료',
-  SUBORDINATE: '하향',
+  SUBORDINATE: '팀원',
   CROSS_TEAM_PEER: '타 팀 동료',
   CROSS_DEPT: '타 조직',
 }

@@ -283,6 +283,10 @@ async function main() {
     assert.equal(adminPanel.includes('excludeDirectReportsFromPeerSelection'), true)
     assert.equal(adminPanel.includes('visibilitySettings'), true)
     assert.equal(adminPanel.includes("body: JSON.stringify({ id: folderId })"), true)
+    assert.equal(adminPanel.includes('function buildFeedback360AdminRowKey'), true)
+    assert.equal(adminPanel.includes("key={buildFeedback360AdminRowKey(['admin-alert', alert, index])}"), true)
+    assert.equal(adminPanel.includes('admin.alerts.map((alert) =>'), false)
+    assert.equal(adminPanel.includes('key={alert}'), false)
 
     assert.equal(editorSource.includes("runCommand('bold')"), true)
     assert.equal(editorSource.includes("runCommand('insertUnorderedList')"), true)
@@ -294,17 +298,23 @@ async function main() {
     assert.equal(editorSource.includes("tagName === 'a'"), true)
   })
 
-  await run('feedback 360 admin panel exposes onboarding workflow setup and generated review list controls', () => {
+  await run('feedback 360 admin panel removes onboarding workflow setup while legacy service remains isolated', () => {
     const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
     const serviceSource = read('src/server/onboarding-review-workflow.ts')
 
-    assert.equal(adminPanel.includes('/api/feedback/onboarding-workflows'), true)
-    assert.equal(adminPanel.includes('/api/feedback/onboarding-workflows/run'), true)
-    assert.equal(adminPanel.includes('selectedWorkflowId'), true)
-    assert.equal(adminPanel.includes('generatedReviewSearch'), true)
-    assert.equal(adminPanel.includes('generatedReviewStatusFilter'), true)
-    assert.equal(adminPanel.includes('generatedReviewSort'), true)
-    assert.equal(adminPanel.includes('buildOnboardingReviewNamePreview'), true)
+    for (const forbidden of [
+      '/api/feedback/onboarding-workflows',
+      '/api/feedback/onboarding-workflows/run',
+      'selectedWorkflowId',
+      'generatedReviewSearch',
+      'generatedReviewStatusFilter',
+      'generatedReviewSort',
+      'buildOnboardingReviewNamePreview',
+      '온보딩 리뷰 워크플로우',
+      '자동 생성된 온보딩 리뷰',
+    ]) {
+      assert.equal(adminPanel.includes(forbidden), false, `${forbidden} should not be exposed in 360 admin`)
+    }
     assert.equal(serviceSource.includes('runScheduledOnboardingReviewGeneration'), true)
     assert.equal(serviceSource.includes('OnboardingReviewGeneration'), true)
   })
@@ -332,14 +342,56 @@ async function main() {
     assert.equal(loaderSource.includes('anytimeReview:'), true)
     assert.equal(loaderSource.includes('documentKindLabel'), true)
     assert.equal(loaderSource.includes('parseFeedbackAnytimeDocumentSettings'), true)
-    assert.equal(adminPanel.includes('수시 리뷰 문서'), true)
+    assert.equal(adminPanel.includes('수시 리뷰 운영'), true)
     assert.equal(adminPanel.includes('프로젝트 리뷰'), true)
-    assert.equal(adminPanel.includes('PIP 문서'), true)
-    assert.equal(adminPanel.includes('리뷰어 이관'), true)
+    assert.equal(adminPanel.includes('PIP 리뷰'), true)
+    assert.equal(adminPanel.includes('평가자 이관'), true)
     assert.equal(adminPanel.includes('기한 변경'), true)
     assert.equal(adminPanel.includes('handleCreateAnytimeReview'), true)
     assert.equal(adminPanel.includes('handleAnytimeBulkAction'), true)
     assert.equal(adminPanel.includes("/api/feedback/rounds"), true)
+    for (const text of [
+      '본부를 선택하거나 이름으로 검색하세요.',
+      '선택된 대상자',
+      '본부별 선택',
+      '선택 초기화',
+      '검색 전 전체 직원 목록은 표시하지 않습니다.',
+      '리뷰 이름은 5자 이상 입력해 주세요.',
+      '리뷰가 등록되었습니다.',
+      '등록된 리뷰 보기',
+      '다음 리뷰 등록',
+      'selectedAnytimeTargets',
+      'filteredAnytimeTargetOptions',
+      'getAnytimeCreateErrorMessage',
+      'min-h-[520px]',
+      '선택된 공동 작업자',
+      'anytimeDocumentStatusTabs',
+      'dedupeAnytimeReviewDocuments',
+      'buildAnytimeDocumentDedupeKey',
+      '전체',
+      '진행 중',
+      '미응답',
+      '제출 완료',
+      '기한 초과',
+      '미분류',
+      'anytimeBulkNotice',
+      'anytimeBulkError',
+      'FloatingToast',
+      '메시지 닫기',
+      '정말 삭제하시겠습니까?',
+      '삭제하면 되돌릴 수 없습니다.',
+      '응답이 시작된 라운드는 삭제할 수 없습니다.',
+      '삭제 가능 상태가 아닙니다.',
+      "handleAnytimeBulkAction('cancel', { successMessage: '삭제되었습니다.' })",
+      'canDeleteAnytimeDocument',
+      '정기 다면평가',
+      '수시 리뷰',
+      "folderFilter === 'ANYTIME'",
+      "folderFilter === 'REGULAR_360'",
+    ]) {
+      assert.equal(adminPanel.includes(text), true, `missing phase 6g anytime review operations text ${text}`)
+    }
+    assert.equal(adminPanel.includes('anytimeEmployeeOptions.map((employee) => {'), false)
   })
 
   await run('feedback review admin source wires collaborator-scoped permissions through schema, UI, and routes', () => {
@@ -406,6 +458,55 @@ async function main() {
     assert.equal(resultViewRoute.includes('getFeedbackResultRecipientRole'), true)
   })
 
+  await run('feedback 360 mail result UX stays visible and maps delivery failures to Korean guidance', () => {
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const notificationsRoute = read('src/app/api/feedback/rounds/[id]/notifications/route.ts')
+
+    for (const text of [
+      'getFeedback360MailErrorMessage',
+      '이메일 발송 설정이 완료되지 않았습니다. 앱 알림만 발송됩니다.',
+      '발송 대상자가 없습니다.',
+      '메일 발송 권한이 없습니다.',
+      '메일 제목, 본문, 발송 대상을 확인해 주세요.',
+      'Feedback360MailDiagnosticsPanel',
+      '메일은 기존 360 알림 발송 경로로 예약됩니다.',
+      '발송 채널',
+      'provider 상태',
+      '이메일 + 앱 알림',
+      'provider 세부 결과는 알림 운영 화면에서 확인합니다.',
+      '사용자가 닫기 전까지 사라지지 않습니다.',
+      '다시 시도',
+      'data-min-duration-ms={8000}',
+    ]) {
+      assert.equal(adminPanel.includes(text), true, `missing mail UX text ${text}`)
+    }
+
+    assert.equal(notificationsRoute.includes('send-result-share'), true)
+    assert.equal(notificationsRoute.includes('send-peer-selection-reminder'), true)
+    assert.equal(notificationsRoute.includes('test-send'), true)
+  })
+
+  await run('feedback 360 visibility settings use editable Korean dropdowns and existing settings save', () => {
+    const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
+    const visibilityPanel = read('src/components/evaluation/feedback360/ppt/Feedback360VisibilitySettings.tsx')
+
+    for (const text of [
+      'Feedback360VisibilitySettings',
+      'getAdminVisibilitySummary',
+      '공개 범위: 전체 익명',
+      '공개 범위: 일부 기명 포함',
+      '동료/팀원/타 본부 피드백은 기본 익명 운영을 권장합니다.',
+      '<select',
+      '익명',
+      '기명',
+      'onChange={(relationship, value)',
+      'handleSaveSettings',
+      '/settings',
+    ]) {
+      assert.equal(`${adminPanel}\n${visibilityPanel}`.includes(text), true, `missing visibility dropdown text ${text}`)
+    }
+  })
+
   await run('feedback 360 admin and workspace surfaces expose share audience, read receipts, and result-view tracking', () => {
     const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
     const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
@@ -428,6 +529,7 @@ async function main() {
   await run('feedback result presentation settings are saved and rendered through admin and result workspace flows', () => {
     const adminPanel = read('src/components/evaluation/feedback360/Feedback360AdminPanel.tsx')
     const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
+    const resultsPpt = read('src/components/evaluation/feedback360/ppt/Feedback360ResultsPpt.tsx')
     const settingsRoute = read('src/app/api/feedback/rounds/[id]/settings/route.ts')
     const exportRoute = read('src/app/api/feedback/rounds/[id]/results-export/route.ts')
 
@@ -435,7 +537,9 @@ async function main() {
     assert.equal(adminPanel.includes('resultPresentationSettings'), true)
     assert.equal(adminPanel.includes('selectedResultShareTargetIds'), true)
     assert.equal(workspace.includes('buildResultVersionHref'), true)
-    assert.equal(workspace.includes('pdfHref'), true)
+    assert.equal(`${workspace}\n${resultsPpt}`.includes('결과 리포트는 화면에서 확인합니다. 별도 파일 내보내기는 제공하지 않습니다.'), true)
+    assert.equal(workspace.includes('PDF 열기'), false)
+    assert.equal(workspace.includes('PDF 다운로드'), false)
     assert.equal(workspace.includes('FEEDBACK_RESULT_PROFILE_LABELS'), true)
     assert.equal(settingsRoute.includes('resultPresentationSettings'), true)
     assert.equal(exportRoute.includes('buildFeedback360ResultPdf'), true)

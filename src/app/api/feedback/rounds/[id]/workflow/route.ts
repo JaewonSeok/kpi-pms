@@ -91,7 +91,7 @@ export async function POST(
     })
 
     if (!nominations.length) {
-      throw new AppError(400, 'NOMINATION_EMPTY', '발행할 리뷰어 nomination 초안이 없습니다.')
+      throw new AppError(400, 'NOMINATION_EMPTY', '응답을 시작할 평가자 매핑 초안이 없습니다.')
     }
 
     const action = validated.data.action
@@ -118,7 +118,7 @@ export async function POST(
 
     if (action === 'submit') {
       if (!canManageFeedbackTarget(session.user.id, session.user.role, target)) {
-        throw new AppError(403, 'FORBIDDEN', 'nomination 제출 권한이 없습니다.')
+        throw new AppError(403, 'FORBIDDEN', '평가자 매핑 제출 권한이 없습니다.')
       }
 
       await prisma.$transaction([
@@ -157,13 +157,13 @@ export async function POST(
       ])
 
       return successResponse({
-        message: 'nomination을 승인 요청 상태로 제출했습니다.',
+        message: '평가자 매핑을 승인 요청 상태로 제출했습니다.',
         workflowStatus: 'SUBMITTED',
       })
     }
 
     if (!canApproveFeedbackTarget(session.user.id, session.user.role, target)) {
-      throw new AppError(403, 'FORBIDDEN', '이 nomination을 승인하거나 반려할 권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '이 평가자 매핑을 승인하거나 반려할 권한이 없습니다.')
     }
 
     if (action === 'approve') {
@@ -197,7 +197,7 @@ export async function POST(
       ])
 
       return successResponse({
-        message: 'nomination을 승인했습니다.',
+        message: '평가자 매핑을 승인했습니다.',
         workflowStatus: 'APPROVED',
       })
     }
@@ -232,7 +232,7 @@ export async function POST(
       ])
 
       return successResponse({
-        message: 'nomination을 반려했습니다.',
+        message: '평가자 매핑을 반려했습니다.',
         workflowStatus: 'REJECTED',
       })
     }
@@ -249,7 +249,7 @@ export async function POST(
     })
 
     if (!canPublishRound) {
-      throw new AppError(403, 'FORBIDDEN', '해당 리뷰 라운드를 발행할 권한이 없습니다.')
+      throw new AppError(403, 'FORBIDDEN', '해당 리뷰 라운드의 응답을 시작할 권한이 없습니다.')
     }
 
     const approvedNominations = nominations.filter(
@@ -275,7 +275,7 @@ export async function POST(
       throw new AppError(
         400,
         'MIN_RATERS_NOT_MET',
-        `발행 전 승인된 리뷰어가 anonymity threshold ${round.minRaters}명 이상이어야 합니다.`
+        `응답 시작 전 승인된 평가자가 익명 기준 ${round.minRaters}명 이상이어야 합니다.`
       )
     }
 
@@ -335,7 +335,7 @@ export async function POST(
     })
 
     return successResponse({
-      message: '승인된 nomination을 발행하고 리뷰 요청을 생성했습니다.',
+      message: '승인된 평가자 매핑으로 응답 요청을 생성했습니다.',
       workflowStatus: 'PUBLISHED',
     })
   } catch (error) {

@@ -117,8 +117,8 @@ export function FeedbackThemesSection(props: FeedbackThemesSectionProps) {
               <div className="text-sm font-semibold text-slate-900">AI preview</div>
               <div className="mt-1 text-xs text-slate-500">
                 {preview.source === 'ai'
-                  ? 'OpenAI 응답 미리보기'
-                  : `Fallback preview${preview.fallbackReason ? ` · ${preview.fallbackReason}` : ''}`}
+                  ? 'AI 요약 미리보기'
+                  : 'AI 기능이 꺼져 있어 기본 요약 기준으로 미리보기를 표시합니다.'}
               </div>
             </div>
             <button

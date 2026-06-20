@@ -87,24 +87,46 @@ async function main() {
 
     assertContainsAll(header, [
       '360 다면평가',
-      '리뷰어 nomination, 응답 진행률, 익명 기준, 강점/개선 테마, 성장 계획까지 하나의 운영 흐름으로 연결합니다.',
+      '평가자 매핑, 응답 진행률, 익명 기준, 강점/개선 테마, 성장 계획까지 하나의 운영 흐름으로 연결합니다.',
     ])
     assertContainsAll(workspace, [
-      '아직 360 다면평가 라운드가 없습니다.',
-      '평가 워크벤치',
-      '평가 결과',
-      '체크인 일정',
+      '현재 진행 중인 360 평가가 없습니다.',
+      '360 다면평가 허브',
+      '360 결과',
+      '360 운영 관리',
     ])
     assertContainsAll(server, [
-      '새로운 라운드를 생성하거나 기존 평가 워크벤치, 평가 결과, 체크인 일정을 확인해 주세요.',
+      '선택한 분기에 진행 중인 360 다면평가가 없습니다. HR 운영 탭에서 해당 분기 평가자 매핑 상태를 확인할 수 있습니다.',
       '응답 화면에 접근할 권한이 없습니다.',
-      '360 결과 PDF',
     ])
 
     assertNoBrokenKorean(header)
     assertNoBrokenKorean(workspace)
     assertNoBrokenKorean(server)
     assertNoBrokenKorean(adminPanel)
+  })
+
+  await run('feedback 360 reviewer recommendation fallback copy stays readable', () => {
+    const aiAssist = read('src/lib/ai-assist.ts')
+    const nominationPanel = read('src/components/evaluation/feedback360/ReviewerNominationPanel.tsx')
+    const recommendationBlock = aiAssist.slice(
+      aiAssist.indexOf("sourceType === 'Feedback360ReviewerRecommendation'"),
+      aiAssist.indexOf("sourceType === 'Feedback360ThemeSummary'")
+    )
+
+    assertContainsAll(`${recommendationBlock}\n${nominationPanel}`, [
+      '평가자 후보',
+      '익명 기준과 평가자 부담을 함께 고려해 상사, 동료, 팀원 후보를 균형 있게 추천합니다.',
+      '소수 조직에서 같은 평가자 조합이 반복되면 익명성이 약해질 수 있습니다.',
+      '평가자 추천 후보',
+      '평가자 추천 미리보기',
+      'AI 기능이 꺼져 있어 기본 추천 기준으로 후보를 표시합니다.',
+    ])
+
+    assertNoBrokenKorean(recommendationBlock)
+    assert.equal(nominationPanel.includes('AI reviewer recommendation preview'), false)
+    assert.equal(nominationPanel.includes('Fallback preview'), false)
+    assert.equal(nominationPanel.includes('�'), false)
   })
 
   await run('appeal and evaluation results copy sources stay readable', () => {
@@ -144,24 +166,12 @@ async function main() {
     assertNoBrokenKorean(resultsServer)
   })
 
-  await run('word cloud, performance design, KPI org, and calibration copy stay readable', () => {
-    const wordCloudWorkspace = read('src/components/evaluation/wordcloud360/WordCloud360WorkspaceClient.tsx')
-    const wordCloudServer = read('src/server/word-cloud-360.ts')
+  await run('performance design, KPI org, and calibration copy stay readable', () => {
     const performanceDesignClient = read('src/components/admin/PerformanceDesignClient.tsx')
     const performanceDesignServer = read('src/server/admin/performance-design.ts')
     const orgKpiClient = read('src/components/kpi/OrgKpiManagementClient.tsx')
     const calibrationRoute = read('src/app/api/evaluation/calibration/route.ts')
 
-    assertContainsAll(wordCloudWorkspace, [
-      '시작일과 종료일 형식을 확인해 주세요.',
-      '대상자 일괄 업로드는 주기를 생성하거나 선택한 뒤에만 사용할 수 있습니다.',
-      '비교 리포트는 현재 주기를 생성하거나 선택한 뒤에만 생성할 수 있습니다.',
-    ])
-    assertContainsAll(wordCloudServer, [
-      '복원할 응답을 찾을 수 없습니다.',
-      '복원할 이력 시점을 찾을 수 없습니다.',
-      '선택한 이력은 복원할 수 없습니다.',
-    ])
     assertContainsAll(performanceDesignClient, [
       '성과 설계',
       '평가군, KPI Pool, SMART 진단, 비계량 지표, 협업 BP 사례, 건강도 이상 징후를 설계합니다.',
@@ -177,16 +187,14 @@ async function main() {
     assertContainsAll(orgKpiClient, [
       '선택한 KPI가 없습니다',
       '조직 KPI 복제',
-      '개인 KPI 보기',
+      '개인 KPI',
     ])
     assertContainsAll(calibrationRoute, [
       '팔로우업 변경 내용을 확인해 주세요.',
       '공유용 코멘트가 없습니다. 팔로우업에서 공유 코멘트를 입력해 주세요.',
-      '등급 조정 대상자를 찾지 못했습니다.',
+      '대표이사 확정 대상자를 찾지 못했습니다.',
     ])
 
-    assertNoBrokenKorean(wordCloudWorkspace)
-    assertNoBrokenKorean(wordCloudServer)
     assertNoBrokenKorean(performanceDesignClient)
     assertNoBrokenKorean(performanceDesignServer)
     assertNoBrokenKorean(orgKpiClient)

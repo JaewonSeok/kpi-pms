@@ -262,7 +262,7 @@ export function DevelopmentPlanPreview(props: DevelopmentPlanPreviewProps) {
               <div className="mt-1 text-xs text-slate-500">
                 {preview.source === 'ai'
                   ? 'AI가 만든 초안입니다.'
-                  : `Fallback preview${preview.fallbackReason ? ` · ${preview.fallbackReason}` : ''}`}
+                  : 'AI 기능이 꺼져 있어 기본 추천 기준으로 초안을 표시합니다.'}
               </div>
             </div>
             <button
