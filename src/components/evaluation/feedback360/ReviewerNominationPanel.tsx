@@ -154,7 +154,7 @@ const RELATIONSHIP_TEMPLATE_SAMPLE_ROW = [
   '4',
   '2',
   '3',
-  '="2026-06-01"',
+  '2026-06-01',
   '82',
   '최근 협업 이력이 많아 추천 근거로 활용',
 ] as const
@@ -314,7 +314,7 @@ function getRecommendationFit(reviewer: ReviewerDraft) {
 
 function getPreviewSourceMessage(preview: AiPreview) {
   if (preview.source === 'ai') return '추천 모델 기준으로 후보를 정리했습니다.'
-  if (preview.source === 'disabled') return 'AI 기능이 꺼져 있어 기본 추천 기준으로 후보를 표시합니다.'
+  if (preview.source === 'disabled') return 'AI 기능이 꺼져 있어 관계 점수 기준으로 추천 후보를 표시합니다.'
   return '기본 추천 기준으로 후보를 표시합니다.'
 }
 
@@ -611,6 +611,8 @@ function matchesReviewerSearchFilter(
 type ReviewerNominationPanelProps = {
   roundId: string
   nomination: NominationData
+  quarterLabel?: string | null
+  roundLabel?: string | null
 }
 
 export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
@@ -634,6 +636,8 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
   const [relationshipUploadRows, setRelationshipUploadRows] = useState<RelationshipUploadRow[]>([])
   const [relationshipUploadErrors, setRelationshipUploadErrors] = useState<string[]>([])
   const [relationshipUploadFileName, setRelationshipUploadFileName] = useState('')
+  const [visibilityDraft, setVisibilityDraft] = useState<Record<string, string>>(props.nomination.visibilitySettings)
+  const [mailDiagnosticOpen, setMailDiagnosticOpen] = useState(true)
 
   useEffect(() => {
     setSelectedIds(initialSelection)
@@ -645,7 +649,9 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
     setRelationshipUploadRows([])
     setRelationshipUploadErrors([])
     setRelationshipUploadFileName('')
-  }, [initialSelection, props.nomination.targetEmployee.id, props.roundId])
+    setVisibilityDraft(props.nomination.visibilitySettings)
+    setMailDiagnosticOpen(true)
+  }, [initialSelection, props.nomination.targetEmployee.id, props.nomination.visibilitySettings, props.roundId])
 
   const reviewerDirectory = useMemo(() => {
     const directory = new Map<string, ReviewerCandidateSummary>()
@@ -662,6 +668,7 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
           name: reviewer.name,
           relationship: reviewer.relationship,
           department: reviewer.department,
+          profileImageUrl: reviewer.profileImageUrl,
           groupKey: group.key,
           groupLabel: group.label,
           selectable: reviewer.selectable !== false,
@@ -742,6 +749,8 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
       ...group,
       reviewers: group.reviewers.filter((reviewer) => {
         if (seenReviewerIds.has(reviewer.employeeId)) return false
+        if (reviewer.employeeId === props.nomination.targetEmployee.id || reviewer.relationship === 'SELF') return false
+        if (group.key === 'peer' && reviewer.relationship === 'SUPERVISOR') return false
         const scoredReviewer = scoredReviewerDirectory.get(reviewer.employeeId)
         const searchText = normalizeReviewerSearchText(
           [
@@ -766,6 +775,7 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
   }, [
     props.nomination.reviewerGroups,
     props.nomination.targetEmployee.department,
+    props.nomination.targetEmployee.id,
     reviewerFilter,
     reviewerSearchQuery,
     scoredReviewerDirectory,
@@ -944,35 +954,60 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
     }
   }
 
-  async function handleRecommend() {
+  async function handleSaveVisibilitySettings() {
     setBusy(true)
     setNotice('')
     setErrorNotice('')
 
     try {
-      const response = await fetch('/api/feedback/360/ai', {
-        method: 'POST',
+      const response = await fetch(`/api/feedback/rounds/${encodeURIComponent(props.roundId)}/settings`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'recommend-reviewers',
-          payload: {
-            targetEmployee: props.nomination.targetEmployee,
-            reviewerGroups: props.nomination.reviewerGroups,
-            savedDraftCount: props.nomination.savedDraftCount,
-            anonymityThreshold: 3,
-          },
+          visibilitySettings: visibilityDraft,
         }),
       })
       const json = await response.json()
       if (!json.success) {
-        throw new Error(json.error?.message || '평가자 추천 후보를 생성하지 못했습니다.')
+        throw new Error(json.error?.message || '공개 범위 설정을 저장하지 못했습니다.')
       }
-      setPreview(json.data)
+      setNotice('공개 범위 설정을 저장했습니다. 관계별 익명/기명 기준을 다시 확인해 주세요.')
+      router.refresh()
     } catch (error) {
-      setErrorNotice(error instanceof Error ? error.message : '평가자 추천 후보 생성에 실패했습니다.')
+      setErrorNotice(error instanceof Error ? error.message : '공개 범위 설정을 저장하지 못했습니다.')
     } finally {
       setBusy(false)
     }
+  }
+
+  function handleRecommend() {
+    setNotice('')
+    setErrorNotice('')
+
+    const recommendations = recommendationSlots
+      .map((slot) => slot.reviewer)
+      .filter((reviewer): reviewer is ScoredReviewerCandidate => Boolean(reviewer))
+      .map((reviewer) => ({
+        employeeId: reviewer.employeeId,
+        name: reviewer.name,
+        relationship: reviewer.relationship,
+        profileImageUrl: reviewer.profileImageUrl,
+        rationale: reviewer.relationshipRationale,
+        fitScore: reviewer.relationshipScore,
+      }))
+    const shortageMessages = recommendationSlots
+      .filter((slot) => !slot.reviewer)
+      .map((slot) => slot.shortageLabel)
+
+    setPreview({
+      source: 'disabled',
+      result: {
+        recommendations,
+        rationale:
+          'AI 기능이 꺼져 있어 관계 점수 기준으로 추천 후보를 표시합니다. 데이터 출처: 조직 정보, 프로젝트/KPI, 최근 협업, 업로드 관계 데이터',
+        watchouts: shortageMessages,
+      },
+    })
   }
 
   function handleDownloadRelationshipTemplate() {
@@ -1024,7 +1059,7 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
   }
 
   const visibilitySettingRows = VISIBILITY_ROWS.map(([relationship, label]) => {
-    const value = props.nomination.visibilitySettings[relationship] === 'FULL' ? 'FULL' : 'ANONYMOUS'
+    const value = visibilityDraft[relationship] === 'FULL' ? 'FULL' : 'ANONYMOUS'
     return {
       key: relationship,
       label,
@@ -1051,8 +1086,9 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 flex-1 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center">
           <Feedback360Avatar
             person={{
               name: props.nomination.targetEmployee.name,
@@ -1060,30 +1096,34 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
             }}
             size="lg"
           />
-          <div className="min-w-0">
-            <h3 className="text-base font-semibold text-slate-900">평가자 매핑 관리</h3>
-            <p className="mt-1 truncate text-sm text-slate-500">
-              대상자 {props.nomination.targetEmployee.name} · {props.nomination.targetEmployee.department} ·{' '}
-              {props.nomination.targetEmployee.position}
-            </p>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-              상태: {getWorkflowStatusLabel(props.nomination.workflowStatus)}
-            </span>
-            {props.nomination.counts ? (
-              <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
-                승인 {props.nomination.counts.approved}/{props.nomination.counts.total}
-              </span>
-            ) : null}
-            {props.nomination.counts?.published ? (
-              <span className="rounded-full bg-emerald-100 px-3 py-1 font-medium text-emerald-700">
-                응답 요청 {props.nomination.counts.published}
-              </span>
-            ) : null}
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-blue-700">평가자 매핑 관리</div>
+              <h3 className="mt-1 text-xl font-bold text-slate-950">{props.nomination.targetEmployee.name}</h3>
+              <div className="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2 xl:grid-cols-4">
+                <MappingSummaryRow label="본부/실/팀" value={props.nomination.targetEmployee.department || '소속 확인 필요'} />
+                <MappingSummaryRow label="직책" value={props.nomination.targetEmployee.position || '직책 확인 필요'} />
+                <MappingSummaryRow label="평가 분기" value={props.quarterLabel ?? '분기 확인 필요'} />
+                <MappingSummaryRow label="운영 건" value={props.roundLabel ?? '운영 건 확인 필요'} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full bg-white px-3 py-1 font-semibold text-slate-700">
+                  매핑 상태: {getWorkflowStatusLabel(props.nomination.workflowStatus)}
+                </span>
+                {props.nomination.counts ? (
+                  <span className="rounded-full bg-white px-3 py-1 font-semibold text-slate-700">
+                    승인 {props.nomination.counts.approved}/{props.nomination.counts.total}
+                  </span>
+                ) : null}
+                {props.nomination.counts?.published ? (
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 font-semibold text-emerald-700">
+                    응답 요청 {props.nomination.counts.published}
+                  </span>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 xl:max-w-[560px] xl:justify-end">
           <button
             type="button"
             onClick={handleRecommend}
@@ -1164,15 +1204,30 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
             <RuleChip active={props.nomination.selectionSettings.excludeDirectReportsFromPeerSelection} label="팀원 제외" />
           </div>
         </div>
-        <Feedback360VisibilitySettings
-          title="평가자별 공개 범위 설정"
-          summary={getVisibilitySummary(props.nomination.visibilitySettings)}
-          description="기본은 익명 응답으로 운영합니다. 평가자별 기명/익명 전환은 상세 설정에서 확인합니다."
-          rows={visibilitySettingRows}
-          options={VISIBILITY_OPTIONS}
-          disabled
-          footnote="현재 화면에서는 설정을 확인만 합니다. 변경은 승인된 운영 설정 화면에서 진행합니다."
-        />
+        <div className="space-y-2">
+          <Feedback360VisibilitySettings
+            title="공개 범위 설정"
+            summary={getVisibilitySummary(visibilityDraft)}
+            description="평가자별 공개 범위 설정입니다. 기본 운영 방식: 전체 익명 / 일부 기명 포함 / 전체 기명. 관계별 공개 범위는 이 화면에서 미리 조정해 볼 수 있습니다."
+            rows={visibilitySettingRows}
+            options={VISIBILITY_OPTIONS}
+            onChange={(key, value) =>
+              setVisibilityDraft((current) => ({
+                ...current,
+                [key]: value,
+              }))
+            }
+            footnote="저장하면 기존 360 운영 설정의 관계별 익명/기명 기준에 반영됩니다."
+          />
+          <button
+            type="button"
+            onClick={handleSaveVisibilitySettings}
+            disabled={busy}
+            className="inline-flex min-h-10 w-full items-center justify-center rounded-xl border border-blue-200 bg-white px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-wait disabled:text-blue-300"
+          >
+            공개 범위 저장
+          </button>
+        </div>
       </div>
 
       <Feedback360RelationshipTemplatePanel
@@ -1185,15 +1240,76 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
         onUpload={handleRelationshipUpload}
       />
 
+      {mailDiagnosticOpen ? (
+        <section className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-emerald-950">메일/알림 진단</div>
+              <p className="mt-1 text-sm leading-6 text-emerald-900">
+                운영자가 리마인드와 결과 공유 준비 상태를 확인하는 영역입니다. 실제 메일 발송은 실행하지 않습니다.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ['채널 상태', '이메일 + 앱 알림'],
+                  ['provider 상태', '확인 불가'],
+                  ['발송 대상자 수', `${selectedReviewers.length}명`],
+                  ['이메일 주소 보유', '확인 필요'],
+                  ['앱 알림 가능', '확인 가능'],
+                  ['스킵 대상', '대상자별 확인'],
+                ].map(([label, value]) => (
+                  <MappingSummaryRow key={label} label={label} value={value} />
+                ))}
+              </div>
+              <div className="mt-3 grid gap-2 text-xs font-semibold text-emerald-900 sm:grid-cols-2">
+                <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2">이메일 발송 설정이 완료되지 않았습니다</div>
+                <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2">발송 대상자가 없습니다</div>
+                <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2">메일 발송 권한이 없습니다</div>
+                <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2">현재는 앱 알림만 발송됩니다</div>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2">
+              <button
+                type="button"
+                disabled
+                className="inline-flex min-h-10 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
+              >
+                리마인드 알림 준비
+              </button>
+              <button
+                type="button"
+                disabled
+                className="inline-flex min-h-10 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
+              >
+                결과 공유 준비
+              </button>
+              <button
+                type="button"
+                disabled
+                className="inline-flex min-h-10 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
+              >
+                다시 시도
+              </button>
+              <button
+                type="button"
+                onClick={() => setMailDiagnosticOpen(false)}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {preview ? (
         <div
           className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4"
           role="dialog"
-          aria-label="AI 추천 결과 패널"
+          aria-label="관계 점수 추천 결과 패널"
         >
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="text-sm font-semibold text-slate-900">AI 추천 결과 패널</div>
+              <div className="text-sm font-semibold text-slate-900">관계 점수 추천 결과 패널</div>
               <div className="mt-1 text-sm font-semibold text-slate-900">평가자 추천 후보</div>
               <div className="mt-1 text-xs text-slate-500">평가자 추천 미리보기 · {getPreviewSourceMessage(preview)}</div>
             </div>
@@ -1250,7 +1366,7 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
                       익명/기명 설정
                     </summary>
                     <div className="mt-2 text-sm text-slate-600">
-                      기본값은 {getVisibilityValueLabel(props.nomination.visibilitySettings[reviewer.relationship])}입니다.
+                      기본값은 {getVisibilityValueLabel(visibilityDraft[reviewer.relationship])}입니다.
                     </div>
                   </details>
                 </div>
@@ -1440,6 +1556,10 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
                           {reviewer.department} · {getRelationshipLabel(reviewer.relationship)}
                           {scoredReviewer ? ` · 관계 점수 ${scoredReviewer.relationshipScore}점` : ''}
                         </span>
+                        <span className="mt-1 block text-xs text-slate-400">
+                          사번 {reviewer.employeeId}
+                          {checked ? ' · 이미 선택됨' : ''}
+                        </span>
                         {scoredReviewer ? (
                           <span className="mt-2 block text-xs leading-5 text-slate-600">
                             추천 근거: {scoredReviewer.relationshipRationale}
@@ -1521,5 +1641,14 @@ function RuleChip(props: { active: boolean; label: string }) {
     >
       {props.label}
     </span>
+  )
+}
+
+function MappingSummaryRow(props: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-blue-100 bg-white px-3 py-2">
+      <div className="text-[11px] font-semibold text-slate-400">{props.label}</div>
+      <div className="mt-1 truncate text-sm font-semibold text-slate-900">{props.value}</div>
+    </div>
   )
 }

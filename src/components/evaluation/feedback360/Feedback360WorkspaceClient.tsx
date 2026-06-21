@@ -161,6 +161,28 @@ function getWorkflowStatusLabel(status?: string | null) {
   }
 }
 
+function getFeedback360RoundStatusLabel(status?: string | null) {
+  switch (status) {
+    case 'DRAFT':
+      return '초안'
+    case 'RATER_SELECTION':
+      return '평가자 매핑'
+    case 'IN_PROGRESS':
+      return '응답 진행'
+    case 'CLOSED':
+      return '종료'
+    case 'ARCHIVED':
+      return '보관'
+    default:
+      return '상태 확인 필요'
+  }
+}
+
+function getFeedback360ResultShareStatusLabel(round?: Feedback360PageData['availableRounds'][number]) {
+  if (!round) return '결과 공유 대기'
+  return round.submittedCount >= round.minRaters ? '결과 공유 준비' : '익명 기준 확인 중'
+}
+
 function getFeedback360ResponseProgress(status?: string | null) {
   switch (status) {
     case 'SUBMITTED':
@@ -567,13 +589,6 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
           roundId: selectedHubRound.id,
         }).toString()}`
       : ''
-  const selectedHubAdminHref =
-    selectedHubRound
-      ? `/evaluation/360/admin?${new URLSearchParams({
-          ...(selectedHubCycleId ? { cycleId: selectedHubCycleId } : {}),
-          roundId: selectedHubRound.id,
-        }).toString()}`
-      : '/evaluation/360/admin'
   const hubRoundSearchParams = new URLSearchParams()
   if (selectedHubCycleId) {
     hubRoundSearchParams.set('cycleId', selectedHubCycleId)
@@ -593,6 +608,33 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   const averageHubResponseRate = quarterRounds.length
     ? Math.round(quarterRounds.reduce((sum, round) => sum + round.responseRate, 0) / quarterRounds.length)
     : 0
+  const selectedHubRoundStatusLabel = selectedHubRound
+    ? getFeedback360RoundStatusLabel(selectedHubRound.status)
+    : '진행 중 라운드 없음'
+  const selectedHubResultShareStatusLabel = getFeedback360ResultShareStatusLabel(selectedHubRound)
+  const selectedHubRoundMappingLabel = selectedHubRound
+    ? selectedHubRound.status === 'DRAFT'
+      ? '매핑 필요'
+      : '상세 확인'
+    : '대기'
+  const selectedHubRoundMailReadinessLabel = selectedHubRound
+    ? selectedHubRound.targetCount > 0
+      ? '준비 상태 확인'
+      : '대상자 없음'
+    : '라운드 필요'
+  const selectedHubRoundCacheStatusLabel =
+    selectedHubRound && selectedHubRound.submittedCount >= selectedHubRound.minRaters
+      ? '결과 탭에서 확인'
+      : '응답 기준 대기'
+  const operationsSummaryMetrics = [
+    { label: '전체 대상자', value: `${totalHubTargetCount}명`, tone: undefined },
+    { label: '평가자 매핑 완료', value: quarterRounds.length ? '상세 확인' : '대기', tone: undefined },
+    { label: '매핑 필요', value: quarterRounds.length ? selectedHubRoundMappingLabel : '대기', tone: 'amber' as const },
+    { label: '응답 완료', value: `${totalHubSubmittedCount}건`, tone: undefined },
+    { label: '미응답', value: `${totalHubPendingTargetCount}건`, tone: 'amber' as const },
+    { label: '익명 기준 충족', value: `${quarterAnonymityReadyCount}건`, tone: undefined },
+    { label: '결과 공개 준비', value: quarterAnonymityReadyCount ? '준비' : '대기', tone: undefined },
+  ]
   const visibleTagPreviewCategories = FEEDBACK_360_RESPONSE_TAG_CATEGORIES.filter(
     (category) => category.audience !== 'leader'
   )
@@ -1298,6 +1340,9 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                               <GuideBadge tone={selectedHubRound ? 'emerald' : 'slate'}>
                                 {selectedHubRound ? `${selectedQuarterLabel} 라운드 진행 중` : '진행 중 라운드 없음'}
                               </GuideBadge>
+                              <GuideBadge tone={selectedHubRound && selectedHubRound.submittedCount >= selectedHubRound.minRaters ? 'emerald' : 'slate'}>
+                                {selectedHubResultShareStatusLabel}
+                              </GuideBadge>
                             </div>
                             <h2 className="mt-3 text-lg font-semibold text-slate-950">
                               {selectedQuarterLabel} 운영 준비
@@ -1409,43 +1454,126 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                         </div>
                       </div>
 
-                      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-                        <Feedback360MetricPill label="전체 대상자" value={`${totalHubTargetCount}명`} compact />
-                        <Feedback360MetricPill label="평가자 매핑 완료" value={quarterRounds.length ? '분기 기준 확인' : '확인 필요'} compact />
-                        <Feedback360MetricPill label="매핑 필요" value={quarterRounds.length ? '대상자별 확인' : '데이터 없음'} compact tone="amber" />
-                        <Feedback360MetricPill label="응답 완료" value={`${totalHubSubmittedCount}건`} compact />
-                        <Feedback360MetricPill label="익명 기준 충족" value={`${quarterAnonymityReadyCount}건`} compact />
-                        <Feedback360MetricPill label="결과 공개 준비" value={quarterAnonymityReadyCount ? '확인 가능' : '대기'} compact />
+                      <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-7">
+                        {operationsSummaryMetrics.map((metric) => (
+                          <Feedback360MetricPill
+                            key={metric.label}
+                            label={metric.label}
+                            value={metric.value}
+                            compact
+                            tone={metric.tone}
+                          />
+                        ))}
                       </div>
 
-                      <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
-                        <div className="grid bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-500 md:grid-cols-[minmax(0,1.5fr)_120px_100px_110px_110px_120px]">
-                          <span>평가 분기/운영 건</span>
-                          <span>기간</span>
-                          <span>대상자</span>
-                          <span>평가자 매핑</span>
-                          <span>응답 완료</span>
-                          <span>익명 기준</span>
-                        </div>
-                        {quarterRounds.length ? (
-                          quarterRounds.map((round) => (
-                            <div
-                              key={round.id}
-                              className="grid gap-2 border-t border-slate-100 px-4 py-3 text-sm md:grid-cols-[minmax(0,1.5fr)_120px_100px_110px_110px_120px]"
-                            >
-                              <span className="font-semibold text-slate-900">{selectedQuarterLabel} · {round.roundName}</span>
-                              <span className="text-slate-600">{round.startDate} ~ {round.endDate}</span>
-                              <span className="text-slate-600">{round.targetCount}명</span>
-                              <span className="text-slate-600">평가자 매핑 화면에서 설정</span>
-                              <span className="text-slate-600">{round.submittedCount}건</span>
-                              <span className={round.submittedCount >= round.minRaters ? 'font-semibold text-emerald-700' : 'font-semibold text-amber-700'}>
-                                {round.submittedCount >= round.minRaters ? '충족' : '미달'}
-                              </span>
+                      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,65fr)_minmax(320px,35fr)]">
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                          <div className="grid bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-500 lg:grid-cols-[minmax(180px,1.4fr)_minmax(132px,0.9fr)_minmax(74px,0.5fr)_minmax(112px,0.75fr)_minmax(84px,0.55fr)_minmax(86px,0.6fr)_minmax(84px,0.6fr)_minmax(112px,0.75fr)]">
+                            <span>운영 건</span>
+                            <span>기간</span>
+                            <span>대상자 수</span>
+                            <span>평가자 매핑</span>
+                            <span>응답 완료</span>
+                            <span>익명 기준</span>
+                            <span>상태</span>
+                            <span>작업</span>
+                          </div>
+                          {quarterRounds.length ? (
+                            quarterRounds.map((round) => {
+                              const anonymityMet = round.submittedCount >= round.minRaters
+                              const mappingHref = `/evaluation/360/nomination?${new URLSearchParams({
+                                ...(selectedHubCycleId ? { cycleId: selectedHubCycleId } : {}),
+                                roundId: round.id,
+                              }).toString()}`
+
+                              return (
+                                <div
+                                  key={round.id}
+                                  className="grid gap-2 border-t border-slate-100 px-4 py-3 text-sm lg:grid-cols-[minmax(180px,1.4fr)_minmax(132px,0.9fr)_minmax(74px,0.5fr)_minmax(112px,0.75fr)_minmax(84px,0.55fr)_minmax(86px,0.6fr)_minmax(84px,0.6fr)_minmax(112px,0.75fr)] lg:items-center"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="truncate font-semibold text-slate-900">{selectedQuarterLabel} · {round.roundName}</div>
+                                    <div className="mt-1 text-xs font-semibold text-slate-400">선택 분기 운영 건</div>
+                                  </div>
+                                  <span className="text-slate-600">{round.startDate} ~ {round.endDate}</span>
+                                  <span className="text-slate-600">{round.targetCount}명</span>
+                                  <span className="text-slate-600">평가자 매핑 화면에서 설정</span>
+                                  <span className="text-slate-600">{round.submittedCount}건</span>
+                                  <span className={anonymityMet ? 'font-semibold text-emerald-700' : 'font-semibold text-amber-700'}>
+                                    {anonymityMet ? '충족' : '미달'}
+                                  </span>
+                                  <span className="font-semibold text-slate-700">{getFeedback360RoundStatusLabel(round.status)}</span>
+                                  <Link
+                                    href={mappingHref}
+                                    className="inline-flex min-h-9 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                                  >
+                                    평가자 매핑
+                                  </Link>
+                                </div>
+                              )
+                            })
+                          ) : (
+                            <div className="p-4">
+                              <EmptyBlock message="선택한 분기에 진행 중인 360 다면평가가 없습니다. HR 운영 탭에서 해당 분기 평가자 매핑 상태를 확인할 수 있습니다." />
                             </div>
-                          ))
-                        ) : (
-                          <EmptyBlock message="선택한 분기에 진행 중인 360 다면평가가 없습니다. HR 운영 탭에서 해당 분기 평가자 매핑 상태를 확인할 수 있습니다." />
-                        )}
+                          )}
+                        </div>
+
+                        <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <h2 className="text-base font-semibold text-slate-900">선택 라운드 상세</h2>
+                              <p className="mt-1 text-xs leading-5 text-slate-500">
+                                선택된 분기의 운영 준비 상태를 한눈에 확인합니다.
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                              {selectedHubRoundStatusLabel}
+                            </span>
+                          </div>
+                          <div className="mt-4 space-y-3 text-sm">
+                            <SummaryRow label="라운드 생성 상태" value={selectedHubRound ? '생성 완료' : '생성 필요'} />
+                            <SummaryRow label="평가자 매핑 현황" value={selectedHubRoundMappingLabel} />
+                            <SummaryRow label="메일/알림 상태" value={selectedHubRoundMailReadinessLabel} />
+                            <SummaryRow label="공개 범위" value="공개 범위: 전체 익명" />
+                            <SummaryRow label="결과 공유" value={selectedHubResultShareStatusLabel} />
+                            <SummaryRow label="리포트 캐시 상태" value={selectedHubRoundCacheStatusLabel} />
+                          </div>
+                          <div className="mt-4 space-y-2">
+                            {!selectedHubRound ? (
+                              <button
+                                type="button"
+                                disabled={roundCreateBusy}
+                                onClick={handleCreateQuarterRound}
+                                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-wait disabled:bg-blue-300"
+                              >
+                                {roundCreateBusy ? '생성 중' : '라운드 생성'}
+                              </button>
+                            ) : (
+                              <Link
+                                href={selectedHubNominationHref}
+                                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800"
+                              >
+                                평가자 매핑 화면 열기
+                                <ArrowRight className="h-4 w-4" />
+                              </Link>
+                            )}
+                            <button
+                              type="button"
+                              disabled
+                              className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-400"
+                            >
+                              리마인드 알림 준비
+                            </button>
+                            <button
+                              type="button"
+                              disabled
+                              className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-400"
+                            >
+                              결과 공유 준비
+                            </button>
+                          </div>
+                        </aside>
                       </div>
                     </Panel>
 
@@ -1520,20 +1648,47 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                           </p>
                         </div>
                         <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                             <div>
-                              <div className="font-semibold">메일 발송</div>
+                              <div className="font-semibold">메일/알림 진단</div>
                               <p className="mt-1">
-                                미제출자 리마인드, 평가자 매핑/승인 리마인드, 결과 공유 메일은 기존 360 알림 발송 화면에서 보냅니다.
+                                리마인드와 결과 공유는 발송 준비 상태만 확인합니다. 실제 발송은 이 화면에서 실행하지 않습니다.
                               </p>
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                {[
+                                  ['채널 상태', '이메일 + 앱 알림'],
+                                  ['provider 상태', '확인 불가'],
+                                  ['대상자 수', `${selectedHubRound?.targetCount ?? 0}명`],
+                                  ['이메일 주소 보유', '확인 필요'],
+                                  ['앱 알림 가능', '확인 가능'],
+                                  ['스킵 대상', selectedHubRound ? '대상자별 확인' : '없음'],
+                                ].map(([label, value]) => (
+                                  <SummaryRow key={label} label={label} value={value} />
+                                ))}
+                              </div>
+                              <div className="mt-3 space-y-1 text-xs font-semibold text-emerald-900">
+                                <div>이메일 발송 설정이 완료되지 않았습니다</div>
+                                <div>발송 대상자가 없습니다</div>
+                                <div>메일 발송 권한이 없습니다</div>
+                                <div>현재는 앱 알림만 발송됩니다</div>
+                              </div>
                             </div>
-                            <Link
-                              href={selectedHubAdminHref}
-                              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
-                            >
-                              메일 발송 화면 열기
-                              <ArrowRight className="h-4 w-4" />
-                            </Link>
+                            <div className="flex shrink-0 flex-col gap-2">
+                              <button
+                                type="button"
+                                disabled
+                                className="inline-flex min-h-11 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
+                              >
+                                리마인드 알림 준비
+                              </button>
+                              <button
+                                type="button"
+                                disabled
+                                className="inline-flex min-h-11 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
+                              >
+                                결과 공유 준비
+                              </button>
+                            </div>
                           </div>
                         </div>
                         <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
@@ -1750,7 +1905,12 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
           reportHref={buildHubHref('results')}
           sectionHrefs={pptSectionHrefs}
         >
-          <ReviewerNominationPanel roundId={props.data.selectedRoundId} nomination={props.data.nomination} />
+          <ReviewerNominationPanel
+            roundId={props.data.selectedRoundId}
+            nomination={props.data.nomination}
+            quarterLabel={selectedQuarterLabel}
+            roundLabel={selectedHubRound?.roundName ?? null}
+          />
         </Feedback360PptAppShell>
       ) : null}
 

@@ -177,7 +177,7 @@ async function main() {
       '운영 작업',
       '평가자 매핑 화면 열기',
       '평가자 매핑 관리',
-      '메일 발송 화면 열기',
+      '메일/알림 진단',
     ]) {
       assert.equal(pptLayer.includes(text), true, `missing phase 6m ppt content text ${text}`)
     }
@@ -290,6 +290,7 @@ async function main() {
   await run('feedback 360 phase 6e end-to-end cycle scenarios stay connected', () => {
     const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
     const nominationPanel = read('src/components/evaluation/feedback360/ReviewerNominationPanel.tsx')
+    const relationshipTemplatePanel = read('src/components/evaluation/feedback360/ppt/Feedback360RelationshipTemplatePanel.tsx')
     const tagPool = read('src/components/evaluation/feedback360/feedback360-response-tag-pool.ts')
     const route = read('src/app/api/feedback/rounds/quarterly/route.ts')
     const server = read('src/server/feedback-360.ts')
@@ -305,6 +306,15 @@ async function main() {
       '공개 범위: 전체 익명',
       '평가자별 공개 범위 설정',
       '추천 가능한 평가자가 없습니다',
+      '전체 대상자',
+      '평가자 매핑 완료',
+      '매핑 필요',
+      '미응답',
+      '결과 공개 준비',
+      '선택 라운드 상세',
+      '라운드 생성 상태',
+      '메일/알림 상태',
+      '리포트 캐시 상태',
     ]) {
       assert.equal(`${workspace}\n${nominationPanel}`.includes(text), true, `missing scenario 1 text ${text}`)
     }
@@ -331,8 +341,14 @@ async function main() {
       '프로젝트/KPI 접점',
       '최근 협업',
       '타 본부 추천 후보 부족',
+      '성명',
+      '본부',
+      '팀',
+      '협업자',
+      '관계유형',
+      '검증 상태',
     ]) {
-      assert.equal(`${workspace}\n${nominationPanel}`.includes(text), true, `missing scenario 2 text ${text}`)
+      assert.equal(`${workspace}\n${nominationPanel}\n${relationshipTemplatePanel}`.includes(text), true, `missing scenario 2 text ${text}`)
     }
 
     for (const text of [
@@ -520,7 +536,7 @@ async function main() {
       '평가자별 공개 범위 설정',
       '평가자 추천 후보',
       '평가자 추천 미리보기',
-      'AI 추천 결과 패널',
+      '관계 점수 추천 결과 패널',
       'AI/관계 점수 추천',
       '관계 데이터 양식 다운로드',
       '관계 데이터 업로드 미리보기',
@@ -549,10 +565,17 @@ async function main() {
       '타 본부 추천 후보 부족',
       '추천 후보 적용',
       '응답 시작',
-      'AI 기능이 꺼져 있어 기본 추천 기준으로 후보를 표시합니다.',
+      'AI 기능이 꺼져 있어 관계 점수 기준으로 추천 후보를 표시합니다.',
+      '공개 범위 저장',
+      '메일/알림 진단',
+      '리마인드 알림 준비',
+      '결과 공유 준비',
+      '검증 상태',
     ]) {
       assert.equal(nominationSurfaces.includes(text), true, `missing ${text}`)
     }
+
+    assert.equal(nominationPanel.includes("/api/feedback/360/ai"), false, 'nomination recommendations must not call the AI API')
 
     for (const forbidden of [
       'AI reviewer recommendation preview',
