@@ -140,7 +140,10 @@ run('evaluation workbench clears stale notices when cycle or evaluation context 
 })
 
 run('evaluation workbench renders goal-linked context with safe link handling and stale reset', () => {
-  const file = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
+  const file = [
+    read('src/components/evaluation/EvaluationWorkbenchClient.tsx'),
+    read('src/components/evaluation/workbench/EvaluationWorkbenchEvidencePanel.tsx'),
+  ].join('\n')
   const loader = read('src/server/evaluation-workbench.ts')
 
   assert.equal(file.includes('GoalContextBlock'), true)
