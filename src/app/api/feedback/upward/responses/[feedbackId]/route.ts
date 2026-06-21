@@ -111,24 +111,49 @@ async function persistResponses(params: {
       continue
     }
 
-    await prisma.feedbackResponse.upsert({
+    const updated = await prisma.feedbackResponse.updateMany({
       where: {
-        feedbackId_questionId: {
-          feedbackId: params.feedbackId,
-          questionId: response.questionId,
-        },
-      },
-      create: {
         feedbackId: params.feedbackId,
         questionId: response.questionId,
-        ratingValue: hasRating ? response.ratingValue : null,
-        textValue: hasText ? response.textValue?.trim() : null,
       },
-      update: {
+      data: {
         ratingValue: hasRating ? response.ratingValue : null,
         textValue: hasText ? response.textValue?.trim() : null,
       },
     })
+
+    if (updated.count === 0) {
+      await prisma.feedbackResponse.create({
+        data: {
+          feedbackId: params.feedbackId,
+          questionId: response.questionId,
+          ratingValue: hasRating ? response.ratingValue : null,
+          textValue: hasText ? response.textValue?.trim() : null,
+        },
+      })
+      continue
+    }
+
+    if (updated.count > 1) {
+      const [canonicalResponse] = await prisma.feedbackResponse.findMany({
+        where: {
+          feedbackId: params.feedbackId,
+          questionId: response.questionId,
+        },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        take: 1,
+      })
+
+      if (canonicalResponse) {
+        await prisma.feedbackResponse.deleteMany({
+          where: {
+            feedbackId: params.feedbackId,
+            questionId: response.questionId,
+            id: { not: canonicalResponse.id },
+          },
+        })
+      }
+    }
   }
 }
 

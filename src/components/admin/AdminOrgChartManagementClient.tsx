@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { buildAdminGoogleAccessHref } from '@/lib/admin-google-access-tabs'
+import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import { OrgMemberManagementPanel } from './OrgMemberManagementPanel'
 
 type OrgKpiScope = 'division' | 'section' | 'team'
@@ -215,7 +216,7 @@ function OrgChartTree({
               <div className="mt-1 break-keep text-xs leading-snug text-slate-500 sm:text-sm">
                 {node.employee.departmentName}
                 {node.employee.teamName ? ` / ${node.employee.teamName}` : ''}
-                {node.employee.jobTitle ? ` / ${node.employee.jobTitle}` : ''}
+                {` / ${resolveEmployeePositionLabel({ role: node.employee.role, jobTitle: node.employee.jobTitle })}`}
               </div>
               <div className="mt-1 break-keep text-xs leading-snug text-slate-500 sm:text-sm">
                 {ROLE_LABELS[node.employee.role]} · {STATUS_LABELS[node.employee.employmentStatus]}

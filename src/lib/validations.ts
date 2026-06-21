@@ -1947,6 +1947,12 @@ export const EvaluationAIAssistRequestSchema = z.object({
   items: z.array(EvaluationAssistItemSchema).max(50).default([]),
 })
 
+export const UpwardReviewAICoachingRequestSchema = z.object({
+  cycleId: z.string().max(100).optional(),
+  roundId: z.string().max(100).optional(),
+  empId: z.string().max(100).optional(),
+})
+
 export const EvaluationPerformanceBriefingRequestSchema = z.object({
   evaluationId: z.string().min(1).max(100),
 })

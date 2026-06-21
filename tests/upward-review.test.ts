@@ -4,6 +4,7 @@ import path from 'node:path'
 import './register-path-aliases'
 import { resolveMenuFromPath } from '../src/lib/auth/permissions'
 import { flattenNavigationItems, filterNavigationItemsByRole, NAV_ITEMS } from '../src/lib/navigation'
+import { resolveEmployeePositionLabel } from '../src/lib/employee-position-label'
 import {
   buildUpwardSuggestions,
   canViewUpwardResults,
@@ -15,7 +16,10 @@ import {
   summarizeUpwardResults,
   validateUpwardAssignment,
 } from '../src/lib/upward-review'
-import { UpwardReviewResponseSchema } from '../src/lib/validations'
+import {
+  UpwardReviewAICoachingRequestSchema,
+  UpwardReviewResponseSchema,
+} from '../src/lib/validations'
 
 async function run(name: string, fn: () => void | Promise<void>) {
   try {
@@ -65,6 +69,21 @@ async function main() {
     assert.equal(resolveMenuFromPath('/api/feedback/upward/responses/feedback-1'), 'FEEDBACK_360')
   })
 
+  await run('leadership diagnosis position labels use personal Korean titles', () => {
+    const loader = read('src/server/upward-review.ts')
+
+    assert.equal(
+      resolveEmployeePositionLabel({ role: 'ROLE_TEAM_LEADER', position: 'MEMBER', jobTitle: '팀원' }),
+      '팀장',
+    )
+    assert.equal(resolveEmployeePositionLabel({ role: 'ROLE_SECTION_CHIEF', position: 'MEMBER' }), '실장')
+    assert.equal(resolveEmployeePositionLabel({ role: 'ROLE_DIV_HEAD', position: 'MEMBER' }), '본부장')
+    assert.equal(resolveEmployeePositionLabel({ role: 'ROLE_MEMBER', position: 'MEMBER' }), '팀원')
+    assert.equal(loader.includes('resolveEmployeePositionLabel(employee)'), true)
+    assert.equal(loader.includes('receiverPosition: getPositionLabel(feedback.receiver)'), true)
+    assert.equal(loader.includes('position: getPositionLabel(selectedTarget)'), true)
+  })
+
   await run('leadership response page source includes list, draft, submit, and read-only flow', () => {
     const client = read('src/components/evaluation/upward/UpwardReviewWorkspaceClient.tsx')
     const loader = read('src/server/upward-review.ts')
@@ -96,6 +115,8 @@ async function main() {
     assert.equal(client.includes('isLeadershipQuestionAnswered(question, questionState[question.id])'), true)
     assert.equal(client.includes('responseQuestionTotal'), true)
     assert.equal(client.includes('previous = current[question.id] ?? currentState'), true)
+    assert.equal(client.includes('min-h-14 cursor-pointer'), true)
+    assert.equal(client.includes('h-5 w-5 cursor-pointer accent-blue-600'), true)
   })
 
   await run('response api route supports draft save and final submit with assignment ownership guard', () => {
@@ -114,8 +135,42 @@ async function main() {
     assert.equal(route.includes('진단 시작일 전이라 아직 응답할 수 없습니다.'), true)
     assert.equal(route.includes('진단 기간이 마감되어 응답할 수 없습니다.'), true)
     assert.equal(route.includes('필수 문항에 응답해 주세요.'), true)
+    assert.equal(route.includes('prisma.feedbackResponse.updateMany'), true)
+    assert.equal(route.includes('prisma.feedbackResponse.create'), true)
+    assert.equal(route.includes('feedbackId_questionId'), false)
     assert.equal(feedbackRoute.includes('리더십 진단은 리더십 진단 응답 화면에서 제출해 주세요.'), true)
     assert.equal(loader.includes('if (feedback.giverId !== employee.id)'), true)
+  })
+
+  await run('leadership results page exposes detailed AI coaching without schema changes', () => {
+    const client = read('src/components/evaluation/upward/UpwardReviewWorkspaceClient.tsx')
+    const route = read('src/app/api/feedback/upward/results/ai-coaching/route.ts')
+    const server = read('src/server/ai/upward-review-coaching.ts')
+    const aiLib = read('src/lib/upward-review-ai-coaching.ts')
+    const valid = UpwardReviewAICoachingRequestSchema.safeParse({
+      cycleId: 'cycle-1',
+      roundId: 'round-1',
+      empId: 'emp-1',
+    })
+
+    assert.equal(valid.success, true)
+    assert.equal(client.includes('AI 상세 코칭'), true)
+    assert.equal(client.includes('/api/feedback/upward/results/ai-coaching'), true)
+    assert.equal(client.includes('handleGenerateLeadershipAiCoaching'), true)
+    assert.equal(client.includes('30/60/90일 코칭 실행 계획'), true)
+    assert.equal(client.includes('1:1 코칭 대화 가이드'), true)
+    assert.equal(client.includes('바로 쓸 수 있는 말하기 예시'), true)
+    assert.equal(route.includes('UpwardReviewAICoachingRequestSchema'), true)
+    assert.equal(route.includes('generateUpwardReviewAiCoaching'), true)
+    assert.equal(server.includes('requestType: AIRequestType.GROWTH_PLAN'), true)
+    assert.equal(server.includes("sourceType: 'LeadershipDiagnosisCoaching'"), true)
+    assert.equal(server.includes('getUpwardReviewPageData'), true)
+    assert.equal(server.includes('Do not produce official score, grade'), true)
+    assert.equal(server.includes('AIRequestStatus.DISABLED'), true)
+    assert.equal(server.includes('AIRequestStatus.FALLBACK'), true)
+    assert.equal(aiLib.includes('UpwardReviewAICoachingResultSchema'), true)
+    assert.equal(aiLib.includes('coachingPlan'), true)
+    assert.equal(aiLib.includes('communicationScripts'), true)
   })
 
   await run('results page source includes visibility guidance and audit logging', () => {

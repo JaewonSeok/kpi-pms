@@ -7,6 +7,7 @@ import type {
 } from '@prisma/client'
 import type { Session } from 'next-auth'
 import { createAuditLog } from '@/lib/audit'
+import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import { prisma } from '@/lib/prisma'
 import { formatDate } from '@/lib/utils'
 import {
@@ -321,8 +322,12 @@ function formatDateTime(value: Date | string | null | undefined) {
   })
 }
 
-function getPositionLabel(value: string | null | undefined) {
-  return value?.trim() || '-'
+function getPositionLabel(employee: {
+  role?: SystemRole | null
+  position?: string | null
+  jobTitle?: string | null
+}) {
+  return resolveEmployeePositionLabel(employee)
 }
 
 function buildEmptyPage(mode: UpwardReviewRouteMode, message: string): UpwardReviewPageData {
@@ -358,7 +363,7 @@ function buildDirectoryEmployee(employee: {
     id: employee.id,
     empName: employee.empName,
     role: employee.role,
-    position: employee.position,
+    position: getPositionLabel(employee),
     deptId: employee.deptId,
     deptName: employee.department.deptName,
     jobTitle: employee.jobTitle,
@@ -415,7 +420,7 @@ export async function getUpwardReviewPageData(
         name: employee.empName,
         role: employee.role,
         department: employee.department.deptName,
-        position: getPositionLabel(employee.position),
+        position: getPositionLabel(employee),
         profileImageUrl: employee.profileImageUrl,
         email: employee.gwsEmail,
       },
@@ -566,7 +571,7 @@ export async function getUpwardReviewPageData(
       name: employee.empName,
       role: employee.role,
       department: employee.department.deptName,
-      position: getPositionLabel(employee.position),
+      position: getPositionLabel(employee),
       profileImageUrl: employee.profileImageUrl,
       email: employee.gwsEmail,
     },
@@ -638,7 +643,9 @@ export async function getUpwardReviewPageData(
           select: {
             id: true,
             empName: true,
+            role: true,
             position: true,
+            jobTitle: true,
             gwsEmail: true,
             profileImageUrl: true,
             department: { select: { deptName: true } },
@@ -658,7 +665,7 @@ export async function getUpwardReviewPageData(
           receiverId: feedback.receiverId,
           receiverName: feedback.receiver.empName,
           receiverDepartment: feedback.receiver.department.deptName,
-          receiverPosition: getPositionLabel(feedback.receiver.position),
+          receiverPosition: getPositionLabel(feedback.receiver),
           receiverProfileImageUrl: feedback.receiver.profileImageUrl,
           receiverEmail: feedback.receiver.gwsEmail,
           relationship: feedback.relationship,
@@ -692,7 +699,9 @@ export async function getUpwardReviewPageData(
               select: {
                 id: true,
                 empName: true,
+                role: true,
                 position: true,
+                jobTitle: true,
                 gwsEmail: true,
                 profileImageUrl: true,
                 department: { select: { deptName: true } },
@@ -756,7 +765,7 @@ export async function getUpwardReviewPageData(
         receiverId: feedback.receiverId,
         receiverName: feedback.receiver.empName,
         receiverDepartment: feedback.receiver.department.deptName,
-        receiverPosition: getPositionLabel(feedback.receiver.position),
+        receiverPosition: getPositionLabel(feedback.receiver),
         receiverProfileImageUrl: feedback.receiver.profileImageUrl,
         receiverEmail: feedback.receiver.gwsEmail,
         relationship: feedback.relationship,
@@ -1124,7 +1133,7 @@ export async function getUpwardReviewPageData(
           id: target.id,
           name: target.empName,
           department: target.department.deptName,
-          position: getPositionLabel(target.position),
+          position: getPositionLabel(target),
           profileImageUrl: target.profileImageUrl,
           email: target.gwsEmail,
           feedbackCount,
@@ -1136,7 +1145,7 @@ export async function getUpwardReviewPageData(
         id: selectedTarget.id,
         name: selectedTarget.empName,
         department: selectedTarget.department.deptName,
-        position: getPositionLabel(selectedTarget.position),
+        position: getPositionLabel(selectedTarget),
         profileImageUrl: selectedTarget.profileImageUrl,
         email: selectedTarget.gwsEmail,
       },

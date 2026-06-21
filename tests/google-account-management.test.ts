@@ -9,6 +9,7 @@ import {
   buildAdminGoogleAccessHref,
   resolveAdminGoogleAccessTab,
 } from '../src/lib/admin-google-access-tabs'
+import { resolveEmployeePositionLabel } from '../src/lib/employee-position-label'
 import { isNavigationHrefActive } from '../src/lib/navigation'
 import {
   AdminDepartmentRecordSchema,
@@ -1344,6 +1345,64 @@ run('admin employee save path syncs section leader authority through real depart
   assert.match(serverSource, /teamName: null/)
   assert.match(serverSource, /leaderEmployeeId: params\.employeeId|leaderEmployeeId: employeeId/)
   assert.match(serverSource, /SECTION_CHIEF_SCOPE_INVALID/)
+})
+
+run('admin employee position displays resolve personal leadership titles', () => {
+  const registrationClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/GoogleAccountRegistrationClient.tsx'),
+    'utf8',
+  )
+  const orgChartClientSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/AdminOrgChartManagementClient.tsx'),
+    'utf8',
+  )
+  const orgMemberPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/OrgMemberManagementPanel.tsx'),
+    'utf8',
+  )
+  const masterLoginPanelSource = readFileSync(
+    path.resolve(process.cwd(), 'src/components/admin/MasterLoginAdminPanel.tsx'),
+    'utf8',
+  )
+
+  assert.equal(
+    resolveEmployeePositionLabel({ role: 'ROLE_TEAM_LEADER', position: 'MEMBER', jobTitle: '팀원' }),
+    '팀장',
+  )
+  assert.equal(resolveEmployeePositionLabel({ role: 'ROLE_SECTION_CHIEF', position: 'MEMBER' }), '실장')
+  assert.equal(resolveEmployeePositionLabel({ role: 'ROLE_DIV_HEAD', position: 'MEMBER' }), '본부장')
+  assert.equal(resolveEmployeePositionLabel({ role: 'ROLE_MEMBER', position: 'MEMBER' }), '팀원')
+
+  assert.equal(
+    registrationClientSource.includes(
+      'resolveEmployeePositionLabel({ role: employee.role, jobTitle: employee.jobTitle })',
+    ),
+    true,
+  )
+  assert.equal(
+    registrationClientSource.includes(
+      'resolveEmployeePositionLabel({ role: node.employee.role, jobTitle: node.employee.jobTitle })',
+    ),
+    true,
+  )
+  assert.equal(
+    orgChartClientSource.includes(
+      'resolveEmployeePositionLabel({ role: node.employee.role, jobTitle: node.employee.jobTitle })',
+    ),
+    true,
+  )
+  assert.equal(
+    orgMemberPanelSource.includes(
+      'resolveEmployeePositionLabel({ role: employee.role, jobTitle: employee.jobTitle })',
+    ),
+    true,
+  )
+  assert.equal(
+    masterLoginPanelSource.includes(
+      'resolveEmployeePositionLabel({ role: employee.role, jobTitle: employee.jobTitle })',
+    ),
+    true,
+  )
 })
 
 console.log('Google account management tests completed')
