@@ -27,6 +27,7 @@ async function main() {
     const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
     const pptShell = read('src/components/evaluation/feedback360/ppt/Feedback360PptShell.tsx')
     const resultsPpt = read('src/components/evaluation/feedback360/ppt/Feedback360ResultsPpt.tsx')
+    const hubResultsPpt = read('src/components/evaluation/feedback360/ppt/Feedback360HubResultsPpt.tsx')
     const server = read('src/server/feedback-360.ts')
     const tagPool = read('src/components/evaluation/feedback360/feedback360-response-tag-pool.ts')
 
@@ -51,10 +52,12 @@ async function main() {
       '해시태그',
       '해시태그로 동료 협업 경험 남기기',
       '평가 대상자를 선택한 뒤 긍정 태그와 보완 태그를 골라 주세요',
-      '해시태그 예시 미리보기',
+      '해시태그 카테고리 선택',
+      '카테고리 선택',
       '긍정 태그',
       '보완 태그',
       '선택한 태그',
+      '임시 저장',
       '공식 평가 점수나 등급을 자동 산정하지 않습니다',
       '360 다면평가 운영',
       '운영 준비',
@@ -96,12 +99,11 @@ async function main() {
       '리더/HR 참고 메모',
       '결과 공개 준비 상태',
       '익명 기준 충족 여부',
-      '현재 배정된 응답 대상자가 없습니다. 라운드가 열리면 이곳에서 동료를 선택하고 해시태그로 응답할 수 있습니다.',
-      '해당 분기에 배정된 응답이 없습니다',
+      '현재 배정된 응답 대상자가 없습니다. 평가 기간이 열리면 이곳에서 평가할 사람을 확인할 수 있습니다.',
       '선택한 분기에 진행 중인 360 다면평가가 없습니다',
       'HR 운영 탭에서 해당 분기 평가자 매핑 상태를 확인할 수 있습니다',
     ]) {
-      assert.equal(`${workspace}\n${pptShell}\n${resultsPpt}\n${server}\n${tagPool}`.includes(text), true, `missing ${text}`)
+      assert.equal(`${workspace}\n${pptShell}\n${resultsPpt}\n${hubResultsPpt}\n${server}\n${tagPool}`.includes(text), true, `missing ${text}`)
     }
 
     assert.equal(pptShell.includes('role="tablist"'), true)
@@ -139,7 +141,8 @@ async function main() {
       'src/components/evaluation/feedback360/ppt/Feedback360PptEmptyState.tsx',
       'src/components/evaluation/feedback360/ppt/Feedback360PptToastDialog.tsx',
     ].map(read).join('\n')
-    const pptLayer = `${workspace}\n${server}\n${appShell}\n${avatar}\n${responseList}\n${responseForm}\n${operations}\n${mapping}\n${wrappers}`
+    const hubResultsPpt = read('src/components/evaluation/feedback360/ppt/Feedback360HubResultsPpt.tsx')
+    const pptLayer = `${workspace}\n${server}\n${appShell}\n${avatar}\n${responseList}\n${responseForm}\n${operations}\n${mapping}\n${hubResultsPpt}\n${wrappers}`
 
     for (const text of [
       'Feedback360PptAppShell',
@@ -347,6 +350,8 @@ async function main() {
     }
     assert.equal(tagPool.includes("FEEDBACK_360_TAG_SUMMARY_HEADING = '[선택 태그 요약]'"), true)
 
+    const hubResultsPpt = read('src/components/evaluation/feedback360/ppt/Feedback360HubResultsPpt.tsx')
+
     for (const text of [
       '태그 분포 / 결과 요약',
       '아직 결과를 표시할 수 없습니다.',
@@ -361,7 +366,7 @@ async function main() {
       '결과 공개 준비 상태',
       '임의 점수, 임의 순위, 임의 태그 분포는 표시하지 않습니다.',
     ]) {
-      assert.equal(workspace.includes(text), true, `missing scenario 4 text ${text}`)
+      assert.equal(`${workspace}\n${hubResultsPpt}`.includes(text), true, `missing scenario 4 text ${text}`)
     }
 
     assert.equal(navigation.includes('/evaluation/word-cloud-360'), false)
@@ -566,12 +571,18 @@ async function main() {
       'function buildNominationRowKey',
       "key={buildVisibilityRowKey(['visibility-setting'",
       "key={buildRelationshipPreviewKey(['relationship-upload-error'",
-      "key={buildNominationRowKey([\n                    'recommendation'",
-      "key={buildNominationRowKey([\n                        'reviewer'",
-      "key={buildNominationRowKey([\n                  'selected'",
       "key={buildNominationRowKey(['guidance'",
     ]) {
       assert.equal(`${nominationPanel}\n${relationshipTemplatePanel}\n${visibilitySettingsPanel}`.includes(text), true, `missing unique nomination key pattern ${text}`)
+    }
+
+    const nominationKeySurface = `${nominationPanel}\n${relationshipTemplatePanel}\n${visibilitySettingsPanel}`
+    for (const pattern of [
+      /key=\{buildNominationRowKey\(\[\s*'recommendation'/,
+      /key=\{buildNominationRowKey\(\[\s*'reviewer'/,
+      /key=\{buildNominationRowKey\(\[\s*'selected'/,
+    ]) {
+      assert.match(nominationKeySurface, pattern)
     }
 
     for (const riskyKeyPattern of [
@@ -592,7 +603,8 @@ async function main() {
     const responseListPpt = read('src/components/evaluation/feedback360/ppt/Feedback360ResponseListPpt.tsx')
     const responseFormPpt = read('src/components/evaluation/feedback360/ppt/Feedback360ResponseFormPpt.tsx')
     const resultsPpt = read('src/components/evaluation/feedback360/ppt/Feedback360ResultsPpt.tsx')
-    const workspaceAndResultsPpt = `${workspace}\n${appShell}\n${primitives}\n${responseListPpt}\n${responseFormPpt}\n${resultsPpt}`
+    const hubResultsPpt = read('src/components/evaluation/feedback360/ppt/Feedback360HubResultsPpt.tsx')
+    const workspaceAndResultsPpt = `${workspace}\n${appShell}\n${primitives}\n${responseListPpt}\n${responseFormPpt}\n${resultsPpt}\n${hubResultsPpt}`
 
     for (const text of [
       '내가 평가할 사람',
@@ -645,8 +657,8 @@ async function main() {
       'overflow-hidden',
       'w-full max-w-full overflow-x-hidden',
       'truncate whitespace-nowrap',
-      '표시 대상 {finalFilteredResponseRows.length}명',
-      '같은 피평가자는 렌더링 직전 한 번 더 병합됩니다.',
+      '전체 {responseRows.length}명',
+      '평가하기를 눌러 해시태그 평가를 시작하세요.',
       '리포트 캐시가 준비되었습니다.',
       '리포트 보기',
       '결과 탭으로 이동',
@@ -654,6 +666,13 @@ async function main() {
     ]) {
       assert.equal(`${workspace}\n${appShell}\n${responseListPpt}`.includes(phase6GText), true, `missing phase 6g response layout text ${phase6GText}`)
     }
+
+    const responseTabSection = workspace.slice(
+      workspace.indexOf("{activeHubTab === 'respond'"),
+      workspace.indexOf("{activeHubTab === 'operations'")
+    )
+    assert.equal(responseTabSection.includes('해시태그 예시 미리보기'), false, 'response list should not show tag preview chips')
+    assert.equal(responseTabSection.includes('선택한 태그</h2>'), false, 'response list should not show selected-tag summary card')
 
     assert.equal(workspace.includes('break-all'), false, 'response workspace should not use break-all text layout')
     assert.equal(workspace.includes('min-w-[980px] xl:min-w-full'), false, 'response table should not depend on a forced horizontal scroll width')

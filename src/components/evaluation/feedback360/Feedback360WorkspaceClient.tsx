@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ArrowRight,
   BadgeCheck,
-  BarChart3,
   CheckCircle2,
   CircleDotDashed,
   ClipboardCheck,
@@ -55,9 +54,9 @@ import {
 import { Feedback360PptShellTabs } from './ppt/Feedback360PptShell'
 import {
   Feedback360PptResultReport,
-  Feedback360RadarChart,
   buildFeedback360ResultVisualModel,
 } from './ppt/Feedback360ResultsPpt'
+import { Feedback360HubResultsPpt } from './ppt/Feedback360HubResultsPpt'
 import { Feedback360Avatar } from './ppt/Feedback360Avatar'
 import {
   Feedback360PptAppShell,
@@ -375,6 +374,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   const [selectedResponseTags, setSelectedResponseTags] = useState<SelectedResponseTags>(
     parsedRespondOverallComment.selectedTags
   )
+  const [activeResponseTagCategoryId, setActiveResponseTagCategoryId] = useState('')
 
   useEffect(() => {
     setResultsNotice('')
@@ -398,6 +398,26 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
     () => getVisibleFeedback360ResponseTagCategories(respondData?.targetProfile),
     [respondData?.targetProfile]
   )
+  useEffect(() => {
+    if (!visibleResponseTagCategories.length) {
+      setActiveResponseTagCategoryId('')
+      return
+    }
+
+    setActiveResponseTagCategoryId((current) => {
+      if (visibleResponseTagCategories.some((category) => category.id === current)) {
+        return current
+      }
+
+      const firstUnselectedCategory =
+        visibleResponseTagCategories.find((category) => {
+          const selectedCategoryTags = selectedResponseTags[category.id]
+          return !selectedCategoryTags?.positive?.length && !selectedCategoryTags?.improvement?.length
+        }) ?? visibleResponseTagCategories[0]
+
+      return firstUnselectedCategory.id
+    })
+  }, [respondFeedbackId, selectedResponseTags, visibleResponseTagCategories])
   const selectedResponseTagLabels = useMemo(
     () => getSelectedFeedback360ResponseTagLabels(selectedResponseTags, visibleResponseTagCategories),
     [selectedResponseTags, visibleResponseTagCategories]
@@ -428,6 +448,9 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
     const selectedCategoryTags = selectedResponseTags[category.id]
     return Boolean(selectedCategoryTags?.positive?.length || selectedCategoryTags?.improvement?.length)
   }).length
+  const activeResponseTagCategory =
+    visibleResponseTagCategories.find((category) => category.id === activeResponseTagCategoryId) ??
+    visibleResponseTagCategories[0]
   const answeredRespondQuestionCount = countAnsweredRespondQuestions(questionState)
   const respondProgressRate = respondData?.questionCount
     ? Math.min(100, Math.round((answeredRespondQuestionCount / respondData.questionCount) * 100))
@@ -573,7 +596,6 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   const visibleTagPreviewCategories = FEEDBACK_360_RESPONSE_TAG_CATEGORIES.filter(
     (category) => category.audience !== 'leader'
   )
-  const sampleTagCategory = visibleTagPreviewCategories[0]
 
   function buildHubHref(tab: Feedback360HubTab = activeHubTab, overrides?: { cycleId?: string; quarter?: Feedback360Quarter }) {
     const params = new URLSearchParams()
@@ -1247,10 +1269,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                           <EmptyBlock message="검색/필터 조건에 맞는 응답 대상자가 없습니다. 전체 상태와 전체 팀/본부 필터를 다시 확인해 주세요." />
                         ) : (
                           <div className="p-5">
-                            <EmptyBlock message="현재 배정된 응답 대상자가 없습니다. 라운드가 열리면 이곳에서 동료를 선택하고 해시태그로 응답할 수 있습니다." />
-                            <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
-                              해당 분기에 배정된 응답이 없습니다. 아래 해시태그 예시를 통해 응답 방식을 미리 확인할 수 있습니다.
-                            </div>
+                            <EmptyBlock message="현재 배정된 응답 대상자가 없습니다. 평가 기간이 열리면 이곳에서 평가할 사람을 확인할 수 있습니다." />
                           </div>
                         )}
                           </div>
@@ -1258,77 +1277,10 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-slate-500">
-                      <span>표시 대상 {finalFilteredResponseRows.length}명 / 전체 {responseRows.length}명</span>
-                      <span>같은 피평가자는 렌더링 직전 한 번 더 병합됩니다.</span>
-                    </div>
-
-                    <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                        <Hash className="h-4 w-4 text-blue-600" />
-                        해시태그 예시 미리보기
-                      </div>
-                      <p className="mt-1 text-sm text-slate-500">
-                        실제 저장/제출은 응답 대상자를 열어 기존 제출 화면에서만 진행합니다. 선택한 태그는 응답 작성 화면의 제출 요약에서 다시 확인합니다.
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {visibleTagPreviewCategories.map((category) => (
-                          <span
-                            key={category.id}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600"
-                          >
-                            {category.category}
-                          </span>
-                        ))}
-                      </div>
-                      {sampleTagCategory ? (
-                        <div className="mt-4 grid gap-3 md:grid-cols-2">
-                          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
-                            <div className="text-sm font-semibold text-emerald-800">긍정 태그</div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {sampleTagCategory.positiveTags.slice(0, 4).map((tag) => (
-                                <span
-                                  key={tag.id}
-                                  className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700"
-                                >
-                                  {tag.label}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3">
-                            <div className="text-sm font-semibold text-amber-800">보완 태그</div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {sampleTagCategory.improvementTags.slice(0, 4).map((tag) => (
-                                <span
-                                  key={tag.id}
-                                  className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700"
-                                >
-                                  {tag.label}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
+                      <span>전체 {responseRows.length}명</span>
+                      <span>평가하기를 눌러 해시태그 평가를 시작하세요.</span>
                     </div>
                   </Panel>
-
-                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <h2 className="text-base font-semibold text-slate-900">선택한 태그</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">
-                      실제 응답 대상자는 평가하기 버튼으로 들어가 긍정 태그와 보완 태그를 선택합니다.
-                    </p>
-                    <div className="mt-4 space-y-3 text-sm">
-                      <SummaryRow label="선택한 태그" value={responseRows.length ? '응답 화면에서 확인' : '예시 미리보기'} />
-                      <SummaryRow label="긍정 태그 수" value={responseRows.length ? '응답별 표시' : '0개'} />
-                      <SummaryRow label="보완 태그 수" value={responseRows.length ? '응답별 표시' : '0개'} />
-                      <SummaryRow label="코멘트 작성 상태" value={responseRows.length ? '응답 화면에서 작성' : '대기'} />
-                      <SummaryRow label="제출 상태" value={responseRows.length ? '미응답/작성 중' : '대상자 없음'} />
-                    </div>
-                    <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-800">
-                      선택 태그는 기존 종합 의견 필드의 {FEEDBACK_360_TAG_SUMMARY_HEADING} 섹션으로 함께 반영됩니다. 공식 평가 점수나 등급을 자동 산정하지 않습니다.
-                    </div>
-                  </section>
                 </section>
                 ) : null}
 
@@ -1761,124 +1713,25 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                 ) : null}
 
                 {activeHubTab === 'results' ? (
-                <section id="feedback360-results" className="space-y-4">
-                  <Panel
-                    title="결과"
-                    description="익명 기준 충족 후 360 결과 리포트와 해시태그 분포를 확인합니다."
-                  >
-                    {selectedHubRound ? (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="font-semibold text-slate-900">{selectedQuarterLabel} · {selectedHubRound.roundName}</div>
-                        <div className="mt-2 text-sm text-slate-600">
-                          결과 리포트 준비 상태: {selectedHubRound.submittedCount >= selectedHubRound.minRaters ? '익명 기준 충족' : '익명 기준 대기'}
-                        </div>
-                        {selectedHubRound.submittedCount < selectedHubRound.minRaters ? (
-                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
-                            아직 결과를 표시할 수 없습니다. 응답 수와 익명 기준이 충족되면 태그 분포와 반복 패턴이 표시됩니다.
-                          </div>
-                        ) : null}
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <ActionLink
-                            href={`/evaluation/360/results${hubRoundSearchSuffix ? `?${hubRoundSearchSuffix}` : ''}`}
-                            label="내 리포트 보기"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <EmptyBlock message="선택한 분기의 결과 데이터가 없습니다. 익명 기준을 충족하면 결과 탭에서 확인할 수 있습니다." />
-                    )}
-
-                    <div className="mt-4 grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
-                      <Feedback360RadarChart scores={[]} />
-                      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                          <BarChart3 className="h-4 w-4 text-blue-600" />
-                          카테고리별 bar chart
-                        </div>
-                        <div className="mt-3 space-y-3">
-                          {visibleTagPreviewCategories.slice(0, 5).map((category) => (
-                            <div key={`hub-result-bar:${category.id}`} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                              <div className="flex items-center justify-between gap-3 text-sm">
-                                <span className="font-semibold text-slate-800">{category.category}</span>
-                                <span className="text-xs font-semibold text-slate-500">태그 분포: 대기</span>
-                              </div>
-                              <div className="mt-2 grid grid-cols-2 gap-2">
-                                <ProgressBar value={0} label="강점 0" />
-                                <ProgressBar value={0} label="보완 0" />
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 md:grid-cols-3">
-                      {[
-                        ['강점 Top 3', '대기', 'border-emerald-200 bg-emerald-50 text-emerald-800'],
-                        ['보완 Top 3', '대기', 'border-amber-200 bg-amber-50 text-amber-800'],
-                        ['데이터 없음 상태 안내', '응답 수와 익명 기준이 충족되면 태그 분포와 반복 패턴이 표시됩니다.', 'border-slate-200 bg-slate-50 text-slate-700'],
-                      ].map(([title, body, className]) => (
-                        <div key={title} className={`rounded-2xl border p-4 ${className}`}>
-                          <div className="text-sm font-semibold">{title}</div>
-                          <p className="mt-2 text-sm leading-6">{body}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                        <Hash className="h-4 w-4 text-blue-600" />
-                        태그 분포 / 결과 요약
-                      </div>
-                      <p className="mt-2 text-sm leading-6 text-slate-500">
-                        해시태그 선택과 정성 의견이 충분히 모이면 결과 리포트 안에서 긍정 태그, 보완 태그, 관계별 응답 신호를 함께 확인합니다.
-                        임의 차트나 가짜 분포는 만들지 않습니다.
-                      </p>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                        <SummaryRow label="태그 카테고리" value={`${FEEDBACK_360_RESPONSE_TAG_POOL_STATS.categoryCount}개`} />
-                        <SummaryRow label="긍정 태그" value={`${FEEDBACK_360_RESPONSE_TAG_POOL_STATS.positiveTagCount}개`} />
-                        <SummaryRow label="보완 태그" value={`${FEEDBACK_360_RESPONSE_TAG_POOL_STATS.improvementTagCount}개`} />
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      {[
-                        ['반복 관찰된 강점 태그', '긍정 태그와 정성 의견에서 반복적으로 확인된 행동만 정리합니다.'],
-                        ['반복 관찰된 보완 태그', '보완 태그와 구체적 사례가 충분할 때 개선 테마를 표시합니다.'],
-                        ['상위 카테고리', '팀워크, 소통, 책임감처럼 반복 선택된 카테고리를 실제 응답 기준으로 보여줍니다.'],
-                        ['협업 강점', '업무 맥락에서 관찰 가능한 행동 기준으로 강점을 요약합니다.'],
-                        ['보완 필요 행동', '다음 협업에서 바꿔볼 수 있는 짧은 행동 단위로 정리합니다.'],
-                        ['후속 액션', '리더가 다음 체크인에서 실행할 수 있는 짧은 행동만 결과 리포트에서 확인합니다.'],
-                        ['리더/HR 참고 메모', '익명성이 깨지지 않는 범위에서 운영자가 참고할 요약만 제공합니다.'],
-                      ].map(([title, body]) => (
-                        <div key={title} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                          <div className="text-sm font-semibold text-slate-900">{title}</div>
-                          <p className="mt-2 text-sm leading-6 text-slate-600">{body}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </Panel>
-
-                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <h2 className="text-base font-semibold text-slate-900">결과 공개 준비 상태</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-500">
-                      임의 점수, 임의 순위, 임의 태그 분포는 표시하지 않습니다. 실제 제출 데이터와 익명 기준이 있을 때만 결과 화면으로 연결합니다.
-                    </p>
-                    <div className="mt-4 space-y-3 text-sm">
-                      <SummaryRow
-                        label="익명 기준 충족 여부"
-                        value={
-                          selectedHubRound
-                            ? selectedHubRound.submittedCount >= selectedHubRound.minRaters
-                              ? '충족'
-                              : '대기'
-                            : '결과 데이터 없음'
-                        }
-                      />
-                      <SummaryRow label="결과 공개 준비 상태" value={quarterAnonymityReadyCount ? '준비 확인 가능' : '대기'} />
-                    </div>
-                  </section>
-                </section>
+                  <Feedback360HubResultsPpt
+                    profile={pptUser}
+                    quarterLabel={selectedQuarterLabel}
+                    roundName={selectedHubRound?.roundName ?? null}
+                    detailHref={`/evaluation/360/results${hubRoundSearchSuffix ? `?${hubRoundSearchSuffix}` : ''}`}
+                    targetCount={selectedHubRound?.targetCount ?? totalHubTargetCount}
+                    submittedCount={selectedHubRound?.submittedCount ?? totalHubSubmittedCount}
+                    responseRate={selectedHubRound?.responseRate ?? averageHubResponseRate}
+                    minRaters={selectedHubRound?.minRaters ?? 0}
+                    anonymityMet={Boolean(selectedHubRound && selectedHubRound.submittedCount >= selectedHubRound.minRaters)}
+                    anonymityReadyCount={quarterAnonymityReadyCount}
+                    categoryCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.categoryCount}
+                    positiveTagCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.positiveTagCount}
+                    improvementTagCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.improvementTagCount}
+                    categories={visibleTagPreviewCategories.map((category) => ({
+                      id: category.id,
+                      label: category.category,
+                    }))}
+                  />
                 ) : null}
           </div>
         </Feedback360PptAppShell>
@@ -2562,14 +2415,49 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                     </div>
                   </div>
 
-                  {visibleResponseTagCategories.map((category) => (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <div className="mb-2 text-xs font-semibold text-slate-500">카테고리 선택</div>
+                    <div className="flex flex-wrap gap-2" aria-label="해시태그 카테고리 선택">
+                      {visibleResponseTagCategories.map((category) => {
+                        const selectedCategoryTags = selectedResponseTags[category.id]
+                        const positiveSelectedCount = selectedCategoryTags?.positive?.length ?? 0
+                        const improvementSelectedCount = selectedCategoryTags?.improvement?.length ?? 0
+                        const active = activeResponseTagCategory?.id === category.id
+
+                        return (
+                          <button
+                            key={category.id}
+                            type="button"
+                            onClick={() => setActiveResponseTagCategoryId(category.id)}
+                            className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-3 text-sm font-semibold transition ${
+                              active
+                                ? 'border-blue-600 bg-blue-600 text-white shadow-sm'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50'
+                            }`}
+                            aria-pressed={active}
+                          >
+                            <span>{category.category}</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] ${
+                                active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                              }`}
+                            >
+                              긍정 {positiveSelectedCount} / 보완 {improvementSelectedCount}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {activeResponseTagCategory ? (
                     <Feedback360TagCategoryCard
-                      key={category.id}
-                      category={category}
+                      key={activeResponseTagCategory.id}
+                      category={activeResponseTagCategory}
                       selectedTags={selectedResponseTags}
                       onToggle={toggleResponseTag}
                     />
-                  ))}
+                  ) : null}
                 </section>
 
                 {respondData.priorScoreSummary || respondData.ratingGuide ? (
@@ -2842,6 +2730,14 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                   </div>
 
                   <div className="mt-5 flex flex-col gap-3">
+                    <button
+                      type="button"
+                      disabled
+                      title="임시 저장 기능은 현재 응답 작성 중에만 사용할 수 있습니다."
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-slate-100 px-5 text-sm font-semibold text-slate-400"
+                    >
+                      임시 저장
+                    </button>
                     <button
                       type="button"
                       onClick={handleSubmitResponse}
