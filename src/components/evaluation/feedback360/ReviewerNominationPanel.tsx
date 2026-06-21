@@ -7,6 +7,8 @@ import type { Feedback360PageData } from '@/server/feedback-360'
 import { Feedback360RelationshipTemplatePanel } from './ppt/Feedback360RelationshipTemplatePanel'
 import { Feedback360VisibilitySettings } from './ppt/Feedback360VisibilitySettings'
 import { Feedback360Avatar } from './ppt/Feedback360Avatar'
+import { Feedback360MailReadinessPanel } from './ppt/Feedback360MailReadinessPanel'
+import { buildFeedback360MailReadiness } from './ppt/feedback360MailReadiness'
 
 type NominationData = NonNullable<Feedback360PageData['nomination']>
 
@@ -638,6 +640,8 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
   const [relationshipUploadFileName, setRelationshipUploadFileName] = useState('')
   const [visibilityDraft, setVisibilityDraft] = useState<Record<string, string>>(props.nomination.visibilitySettings)
   const [mailDiagnosticOpen, setMailDiagnosticOpen] = useState(true)
+  const [mailPreviewOpen, setMailPreviewOpen] = useState(false)
+  const [mailResultOpen, setMailResultOpen] = useState(false)
 
   useEffect(() => {
     setSelectedIds(initialSelection)
@@ -692,6 +696,19 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
       groupLabel: reviewer.groupLabel,
       selectable: reviewer.selectable,
     }))
+  const mailReadiness = buildFeedback360MailReadiness({
+    contextLabel: `${props.quarterLabel} 평가자 매핑`,
+    alertType: '평가자 매핑 완료 안내',
+    targetCount: selectedReviewers.length,
+    emailRecipientCount: 0,
+    appRecipientCount: selectedReviewers.length,
+    missingEmailCount: selectedReviewers.length,
+    canManage: Boolean(props.nomination.canApprove || props.nomination.canPublish),
+    providerConfigured: 'unknown',
+    preferredChannel: 'EMAIL_AND_APP',
+    previewSubject: `[360 다면평가] ${props.roundLabel ?? props.quarterLabel} 평가자 매핑 안내`,
+    previewBody: `${props.roundLabel ?? props.quarterLabel} 평가자 매핑 상태와 응답 요청 알림을 선택된 평가자에게 안내합니다.`,
+  })
 
   const selectableReviewerIds = useMemo(
     () =>
@@ -1241,64 +1258,20 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
       />
 
       {mailDiagnosticOpen ? (
-        <section className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-emerald-950">메일/알림 진단</div>
-              <p className="mt-1 text-sm leading-6 text-emerald-900">
-                운영자가 리마인드와 결과 공유 준비 상태를 확인하는 영역입니다. 실제 메일 발송은 실행하지 않습니다.
-              </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                {[
-                  ['채널 상태', '이메일 + 앱 알림'],
-                  ['provider 상태', '확인 불가'],
-                  ['발송 대상자 수', `${selectedReviewers.length}명`],
-                  ['이메일 주소 보유', '확인 필요'],
-                  ['앱 알림 가능', '확인 가능'],
-                  ['스킵 대상', '대상자별 확인'],
-                ].map(([label, value]) => (
-                  <MappingSummaryRow key={label} label={label} value={value} />
-                ))}
-              </div>
-              <div className="mt-3 grid gap-2 text-xs font-semibold text-emerald-900 sm:grid-cols-2">
-                <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2">이메일 발송 설정이 완료되지 않았습니다</div>
-                <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2">발송 대상자가 없습니다</div>
-                <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2">메일 발송 권한이 없습니다</div>
-                <div className="rounded-xl border border-emerald-100 bg-white px-3 py-2">현재는 앱 알림만 발송됩니다</div>
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-col gap-2">
-              <button
-                type="button"
-                disabled
-                className="inline-flex min-h-10 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
-              >
-                리마인드 알림 준비
-              </button>
-              <button
-                type="button"
-                disabled
-                className="inline-flex min-h-10 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
-              >
-                결과 공유 준비
-              </button>
-              <button
-                type="button"
-                disabled
-                className="inline-flex min-h-10 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
-              >
-                다시 시도
-              </button>
-              <button
-                type="button"
-                onClick={() => setMailDiagnosticOpen(false)}
-                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100"
-              >
-                닫기
-              </button>
-            </div>
-          </div>
-        </section>
+        <div className="mt-4">
+          <Feedback360MailReadinessPanel
+            model={mailReadiness}
+            previewOpen={mailPreviewOpen}
+            resultOpen={mailResultOpen}
+            onOpenPreview={() => setMailPreviewOpen(true)}
+            onClosePreview={() => setMailPreviewOpen(false)}
+            onOpenResult={() => setMailResultOpen(true)}
+            onCloseResult={() => {
+              setMailResultOpen(false)
+              setMailDiagnosticOpen(false)
+            }}
+          />
+        </div>
       ) : null}
 
       {preview ? (

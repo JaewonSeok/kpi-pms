@@ -138,6 +138,8 @@ async function main() {
       'src/components/evaluation/feedback360/ppt/Feedback360VisibilitySettingsPpt.tsx',
       'src/components/evaluation/feedback360/ppt/Feedback360RelationshipTemplatePpt.tsx',
       'src/components/evaluation/feedback360/ppt/Feedback360MailDiagnosticsPpt.tsx',
+      'src/components/evaluation/feedback360/ppt/Feedback360MailReadinessPanel.tsx',
+      'src/components/evaluation/feedback360/ppt/feedback360MailReadiness.ts',
       'src/components/evaluation/feedback360/ppt/Feedback360PptEmptyState.tsx',
       'src/components/evaluation/feedback360/ppt/Feedback360PptToastDialog.tsx',
     ].map(read).join('\n')
@@ -177,7 +179,9 @@ async function main() {
       '운영 작업',
       '평가자 매핑 화면 열기',
       '평가자 매핑 관리',
-      '메일/알림 진단',
+      '메일/알림 준비 상태',
+      'Feedback360MailReadinessPanel',
+      'buildFeedback360MailReadiness',
     ]) {
       assert.equal(pptLayer.includes(text), true, `missing phase 6m ppt content text ${text}`)
     }
@@ -527,9 +531,11 @@ async function main() {
     const nominationPanel = read('src/components/evaluation/feedback360/ReviewerNominationPanel.tsx')
     const relationshipTemplatePanel = read('src/components/evaluation/feedback360/ppt/Feedback360RelationshipTemplatePanel.tsx')
     const visibilitySettingsPanel = read('src/components/evaluation/feedback360/ppt/Feedback360VisibilitySettings.tsx')
+    const mailReadinessPanel = read('src/components/evaluation/feedback360/ppt/Feedback360MailReadinessPanel.tsx')
+    const mailReadiness = read('src/components/evaluation/feedback360/ppt/feedback360MailReadiness.ts')
     const aiAssist = read('src/lib/ai-assist.ts')
     const analysisView = read('src/components/evaluation/feedback360/FeedbackReportAnalysisView.tsx')
-    const nominationSurfaces = `${nominationPanel}\n${relationshipTemplatePanel}\n${visibilitySettingsPanel}\n${aiAssist}`
+    const nominationSurfaces = `${nominationPanel}\n${relationshipTemplatePanel}\n${visibilitySettingsPanel}\n${mailReadinessPanel}\n${mailReadiness}\n${aiAssist}`
 
     for (const text of [
       '공개 범위: 전체 익명',
@@ -567,9 +573,13 @@ async function main() {
       '응답 시작',
       'AI 기능이 꺼져 있어 관계 점수 기준으로 추천 후보를 표시합니다.',
       '공개 범위 저장',
-      '메일/알림 진단',
+      '메일/알림 준비 상태',
       '리마인드 알림 준비',
       '결과 공유 준비',
+      '발송 미리보기',
+      '발송 결과',
+      '이메일 발송 설정이 완료되지 않았습니다.',
+      '현재는 앱 알림만 발송할 수 있습니다.',
       '검증 상태',
     ]) {
       assert.equal(nominationSurfaces.includes(text), true, `missing ${text}`)
@@ -616,6 +626,89 @@ async function main() {
       '-PEER',
     ]) {
       assert.equal(nominationPanel.includes(riskyKeyPattern), false, `${riskyKeyPattern} should not be used as a React key`)
+    }
+  })
+
+  await run('feedback 360 mail readiness uses safe preview-only diagnostics', () => {
+    const workspace = read('src/components/evaluation/feedback360/Feedback360WorkspaceClient.tsx')
+    const nominationPanel = read('src/components/evaluation/feedback360/ReviewerNominationPanel.tsx')
+    const mailPanel = read('src/components/evaluation/feedback360/ppt/Feedback360MailReadinessPanel.tsx')
+    const mailReadiness = read('src/components/evaluation/feedback360/ppt/feedback360MailReadiness.ts')
+    const mailSurface = `${workspace}\n${nominationPanel}\n${mailPanel}\n${mailReadiness}`
+
+    for (const text of [
+      '평가자 매핑 완료 안내',
+      '응답 요청 알림',
+      '미응답 리마인드',
+      '결과 공개 안내',
+      '결과 공유 메일 준비',
+      '앱 알림',
+      '이메일',
+      '이메일 + 앱 알림',
+      '준비 가능',
+      '설정 필요',
+      '대상자 없음',
+      '권한 없음',
+      '일부 스킵',
+      '실패',
+      '완료',
+      '메일/알림 준비 상태',
+      '발송 미리보기',
+      '공유 미리보기',
+      '공유 대상 확인',
+      '발송 결과',
+      '채널 상태',
+      '대상자 진단',
+      '전체 대상자',
+      '이메일 가능',
+      '앱 알림 가능',
+      '이메일 누락',
+      '스킵',
+      '이메일 발송 설정이 완료되지 않았습니다.',
+      '현재는 앱 알림만 발송할 수 있습니다.',
+      '알림 발송 결과를 확인해 주세요.',
+      '실제 발송은 승인된 운영 환경에서만 진행하세요.',
+      'canRunActualSend: false',
+      "providerConfigured: 'unknown'",
+    ]) {
+      assert.equal(mailSurface.includes(text), true, `missing mail readiness text ${text}`)
+    }
+
+    const mappingSection = workspace.slice(
+      workspace.indexOf("{activeHubTab === 'mapping'"),
+      workspace.indexOf("{activeHubTab === 'results'")
+    )
+    for (const text of [
+      'mappingMailReadiness',
+      'mappingMailPreviewOpen',
+      'mappingMailResultOpen',
+      'Feedback360MailReadinessPanel',
+    ]) {
+      assert.equal(mappingSection.includes(text), true, `mapping hub should include mail readiness ${text}`)
+    }
+
+    for (const forbidden of [
+      'fetch(',
+      'prisma',
+      'OpenAI',
+      'openai',
+      '/api/feedback/rounds',
+      '/api/feedback/360/ai',
+      'SMTP_PASS',
+      'SMTP_USER',
+      'SMTP_HOST',
+      'RESEND',
+      'SENDGRID',
+      'MAILGUN',
+      'POSTMARK',
+      'sent successfully',
+      'fake success',
+      'NEEDS_BACKEND_FOLLOWUP',
+      'backend',
+      'callback',
+      'API 연결 필요',
+    ]) {
+      assert.equal(`${mailPanel}\n${mailReadiness}`.includes(forbidden), false, `mail readiness must not directly use ${forbidden}`)
     }
   })
 

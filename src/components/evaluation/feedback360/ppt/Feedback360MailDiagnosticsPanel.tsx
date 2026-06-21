@@ -59,7 +59,7 @@ export function Feedback360MailDiagnosticsPanel(props: Feedback360MailDiagnostic
           <span className="ml-2">{props.result.channelLabel}</span>
         </div>
         <div className="rounded-xl bg-white/70 px-3 py-2">
-          <span className="font-semibold">provider 상태</span>
+          <span className="font-semibold">발송 설정</span>
           <span className="ml-2">{props.result.providerStatus}</span>
         </div>
       </div>

@@ -58,6 +58,8 @@ import {
 } from './ppt/Feedback360ResultsPpt'
 import { Feedback360HubResultsPpt } from './ppt/Feedback360HubResultsPpt'
 import { Feedback360Avatar } from './ppt/Feedback360Avatar'
+import { Feedback360MailReadinessPanel } from './ppt/Feedback360MailReadinessPanel'
+import { buildFeedback360MailReadiness } from './ppt/feedback360MailReadiness'
 import {
   Feedback360PptAppShell,
   type Feedback360PptControl,
@@ -384,6 +386,12 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   const [responseStatusFilter, setResponseStatusFilter] = useState('ALL')
   const [responseOrgFilter, setResponseOrgFilter] = useState('ALL')
   const [responseSortMode, setResponseSortMode] = useState('DUE_ASC')
+  const [operationsMailPreviewOpen, setOperationsMailPreviewOpen] = useState(false)
+  const [operationsMailResultOpen, setOperationsMailResultOpen] = useState(false)
+  const [mappingMailPreviewOpen, setMappingMailPreviewOpen] = useState(false)
+  const [mappingMailResultOpen, setMappingMailResultOpen] = useState(false)
+  const [resultsMailPreviewOpen, setResultsMailPreviewOpen] = useState(false)
+  const [resultsMailResultOpen, setResultsMailResultOpen] = useState(false)
   const respondData = props.data.mode === 'respond' ? props.data.respond : undefined
   const respondFeedbackId = respondData?.feedbackId ?? ''
   const respondOverallComment = respondData?.overallComment ?? ''
@@ -617,11 +625,57 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
       ? '매핑 필요'
       : '상세 확인'
     : '대기'
-  const selectedHubRoundMailReadinessLabel = selectedHubRound
-    ? selectedHubRound.targetCount > 0
-      ? '준비 상태 확인'
-      : '대상자 없음'
-    : '라운드 필요'
+  const selectedHubRoundTargetCount = selectedHubRound?.targetCount ?? totalHubTargetCount
+  const selectedHubMailRequests = selectedHubRound
+    ? quarterPendingRequests.filter((request) => request.roundId === selectedHubRound.id)
+    : quarterPendingRequests
+  const selectedHubEmailRecipientCount = new Set(
+    selectedHubMailRequests
+      .map((request) => request.receiverEmail?.trim().toLowerCase())
+      .filter(Boolean)
+  ).size
+  const selectedHubAppRecipientCount = selectedHubRoundTargetCount
+  const selectedHubMissingEmailCount = Math.max(selectedHubRoundTargetCount - selectedHubEmailRecipientCount, 0)
+  const operationsMailReadiness = buildFeedback360MailReadiness({
+    contextLabel: `${selectedQuarterLabel} 360 운영`,
+    alertType: '미응답 리마인드',
+    targetCount: selectedHubRoundTargetCount,
+    emailRecipientCount: selectedHubEmailRecipientCount,
+    appRecipientCount: selectedHubAppRecipientCount,
+    missingEmailCount: selectedHubMissingEmailCount,
+    canManage: canViewFeedback360Operations,
+    providerConfigured: 'unknown',
+    preferredChannel: 'EMAIL_AND_APP',
+    previewSubject: `[360 다면평가] ${selectedQuarterLabel} 응답 요청 알림`,
+    previewBody: `${selectedQuarterLabel} 다면평가 응답이 필요한 구성원에게 응답 요청과 마감일을 안내합니다.`,
+  })
+  const mappingMailReadiness = buildFeedback360MailReadiness({
+    contextLabel: `${selectedQuarterLabel} 평가자 매핑`,
+    alertType: '평가자 매핑 완료 안내',
+    targetCount: selectedHubRoundTargetCount,
+    emailRecipientCount: selectedHubEmailRecipientCount,
+    appRecipientCount: selectedHubAppRecipientCount,
+    missingEmailCount: selectedHubMissingEmailCount,
+    canManage: canViewFeedback360Operations,
+    providerConfigured: 'unknown',
+    preferredChannel: 'EMAIL_AND_APP',
+    previewSubject: `[360 다면평가] ${selectedQuarterLabel} 평가자 매핑 안내`,
+    previewBody: `${selectedQuarterLabel} 평가자 매핑 완료 안내와 미응답 리마인드 준비 상태를 확인합니다.`,
+  })
+  const resultsMailReadiness = buildFeedback360MailReadiness({
+    contextLabel: `${selectedQuarterLabel} 360 결과`,
+    alertType: '결과 공유 메일 준비',
+    targetCount: quarterAnonymityReadyCount ? selectedHubRoundTargetCount : 0,
+    emailRecipientCount: quarterAnonymityReadyCount ? selectedHubEmailRecipientCount : 0,
+    appRecipientCount: quarterAnonymityReadyCount ? selectedHubAppRecipientCount : 0,
+    missingEmailCount: quarterAnonymityReadyCount ? selectedHubMissingEmailCount : 0,
+    canManage: canViewFeedback360Operations,
+    providerConfigured: 'unknown',
+    preferredChannel: 'EMAIL_AND_APP',
+    previewSubject: `[360 다면평가] ${selectedQuarterLabel} 결과 공유 안내`,
+    previewBody: `${selectedQuarterLabel} 다면평가 결과 공개 안내와 공유 메일 준비 상태를 확인합니다.`,
+  })
+  const selectedHubRoundMailReadinessLabel = selectedHubRound ? operationsMailReadiness.statusLabel : '라운드 필요'
   const selectedHubRoundCacheStatusLabel =
     selectedHubRound && selectedHubRound.submittedCount >= selectedHubRound.minRaters
       ? '결과 탭에서 확인'
@@ -1647,49 +1701,16 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                             직접 추가/삭제/저장은 제공하지 않습니다.
                           </p>
                         </div>
-                        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div>
-                              <div className="font-semibold">메일/알림 진단</div>
-                              <p className="mt-1">
-                                리마인드와 결과 공유는 발송 준비 상태만 확인합니다. 실제 발송은 이 화면에서 실행하지 않습니다.
-                              </p>
-                              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                                {[
-                                  ['채널 상태', '이메일 + 앱 알림'],
-                                  ['provider 상태', '확인 불가'],
-                                  ['대상자 수', `${selectedHubRound?.targetCount ?? 0}명`],
-                                  ['이메일 주소 보유', '확인 필요'],
-                                  ['앱 알림 가능', '확인 가능'],
-                                  ['스킵 대상', selectedHubRound ? '대상자별 확인' : '없음'],
-                                ].map(([label, value]) => (
-                                  <SummaryRow key={label} label={label} value={value} />
-                                ))}
-                              </div>
-                              <div className="mt-3 space-y-1 text-xs font-semibold text-emerald-900">
-                                <div>이메일 발송 설정이 완료되지 않았습니다</div>
-                                <div>발송 대상자가 없습니다</div>
-                                <div>메일 발송 권한이 없습니다</div>
-                                <div>현재는 앱 알림만 발송됩니다</div>
-                              </div>
-                            </div>
-                            <div className="flex shrink-0 flex-col gap-2">
-                              <button
-                                type="button"
-                                disabled
-                                className="inline-flex min-h-11 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
-                              >
-                                리마인드 알림 준비
-                              </button>
-                              <button
-                                type="button"
-                                disabled
-                                className="inline-flex min-h-11 cursor-not-allowed items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 text-sm font-semibold text-emerald-300"
-                              >
-                                결과 공유 준비
-                              </button>
-                            </div>
-                          </div>
+                        <div className="mt-3">
+                          <Feedback360MailReadinessPanel
+                            model={operationsMailReadiness}
+                            previewOpen={operationsMailPreviewOpen}
+                            resultOpen={operationsMailResultOpen}
+                            onOpenPreview={() => setOperationsMailPreviewOpen(true)}
+                            onClosePreview={() => setOperationsMailPreviewOpen(false)}
+                            onOpenResult={() => setOperationsMailResultOpen(true)}
+                            onCloseResult={() => setOperationsMailResultOpen(false)}
+                          />
                         </div>
                         <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
                           <div className="font-semibold">AI 평가자 추천</div>
@@ -1782,6 +1803,18 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                         ) : null}
                       </div>
 
+                      <div className="mt-4">
+                        <Feedback360MailReadinessPanel
+                          model={mappingMailReadiness}
+                          previewOpen={mappingMailPreviewOpen}
+                          resultOpen={mappingMailResultOpen}
+                          onOpenPreview={() => setMappingMailPreviewOpen(true)}
+                          onClosePreview={() => setMappingMailPreviewOpen(false)}
+                          onOpenResult={() => setMappingMailResultOpen(true)}
+                          onCloseResult={() => setMappingMailResultOpen(false)}
+                        />
+                      </div>
+
                       <div className="mt-4 grid gap-3 md:grid-cols-3">
                         <Feedback360MetricPill label="전체 대상자" value={`${totalHubTargetCount}명`} compact />
                         <Feedback360MetricPill label="평가자 매핑 완료" value={quarterRounds.length ? '상세 화면 확인' : '대기'} compact />
@@ -1868,25 +1901,37 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                 ) : null}
 
                 {activeHubTab === 'results' ? (
-                  <Feedback360HubResultsPpt
-                    profile={pptUser}
-                    quarterLabel={selectedQuarterLabel}
-                    roundName={selectedHubRound?.roundName ?? null}
-                    detailHref={`/evaluation/360/results${hubRoundSearchSuffix ? `?${hubRoundSearchSuffix}` : ''}`}
-                    targetCount={selectedHubRound?.targetCount ?? totalHubTargetCount}
-                    submittedCount={selectedHubRound?.submittedCount ?? totalHubSubmittedCount}
-                    responseRate={selectedHubRound?.responseRate ?? averageHubResponseRate}
-                    minRaters={selectedHubRound?.minRaters ?? 0}
-                    anonymityMet={Boolean(selectedHubRound && selectedHubRound.submittedCount >= selectedHubRound.minRaters)}
-                    anonymityReadyCount={quarterAnonymityReadyCount}
-                    categoryCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.categoryCount}
-                    positiveTagCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.positiveTagCount}
-                    improvementTagCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.improvementTagCount}
-                    categories={visibleTagPreviewCategories.map((category) => ({
-                      id: category.id,
-                      label: category.category,
-                    }))}
-                  />
+                  <div className="space-y-5">
+                    <Feedback360HubResultsPpt
+                      profile={pptUser}
+                      quarterLabel={selectedQuarterLabel}
+                      roundName={selectedHubRound?.roundName ?? null}
+                      detailHref={`/evaluation/360/results${hubRoundSearchSuffix ? `?${hubRoundSearchSuffix}` : ''}`}
+                      targetCount={selectedHubRound?.targetCount ?? totalHubTargetCount}
+                      submittedCount={selectedHubRound?.submittedCount ?? totalHubSubmittedCount}
+                      responseRate={selectedHubRound?.responseRate ?? averageHubResponseRate}
+                      minRaters={selectedHubRound?.minRaters ?? 0}
+                      anonymityMet={Boolean(selectedHubRound && selectedHubRound.submittedCount >= selectedHubRound.minRaters)}
+                      anonymityReadyCount={quarterAnonymityReadyCount}
+                      categoryCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.categoryCount}
+                      positiveTagCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.positiveTagCount}
+                      improvementTagCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.improvementTagCount}
+                      categories={visibleTagPreviewCategories.map((category) => ({
+                        id: category.id,
+                        label: category.category,
+                      }))}
+                    />
+                    <Feedback360MailReadinessPanel
+                      model={resultsMailReadiness}
+                      previewOpen={resultsMailPreviewOpen}
+                      resultOpen={resultsMailResultOpen}
+                      onOpenPreview={() => setResultsMailPreviewOpen(true)}
+                      onClosePreview={() => setResultsMailPreviewOpen(false)}
+                      onOpenResult={() => setResultsMailResultOpen(true)}
+                      onCloseResult={() => setResultsMailResultOpen(false)}
+                      compact
+                    />
+                  </div>
                 ) : null}
           </div>
         </Feedback360PptAppShell>
