@@ -1588,7 +1588,10 @@ async function main() {
 
   await run('activation readiness API and UI are read-only and admin-gated', () => {
     const routeSource = read('src/app/api/evaluation/preview-2026/activation-readiness/route.ts')
-    const clientSource = read('src/components/evaluation/EvaluationWorkbenchClient.tsx')
+    const clientSource = [
+      read('src/components/evaluation/EvaluationWorkbenchClient.tsx'),
+      read('src/components/evaluation/workbench/EvaluationWorkbenchPolicyPanel.tsx'),
+    ].join('\n')
     const processPreviewGuideSource = read('src/components/evaluation/EvaluationProcessPreviewGuide2026.tsx')
     const performancePageSource = read('src/app/(main)/evaluation/performance/page.tsx')
     const workbenchPageSource = read('src/app/(main)/evaluation/workbench/page.tsx')
