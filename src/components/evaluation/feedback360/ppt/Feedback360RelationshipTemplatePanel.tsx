@@ -95,26 +95,35 @@ export function Feedback360RelationshipTemplatePanel(props: Feedback360Relations
         <p className="mt-1 text-xs leading-5 text-slate-500">
           저장 없이 화면에서만 관계 점수와 추천 근거를 확인합니다.
         </p>
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
+          <div className="grid bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500 md:grid-cols-[1fr_0.9fr_0.9fr_0.9fr_0.9fr_0.8fr_0.9fr]">
+            <span>성명</span>
+            <span>본부</span>
+            <span>팀</span>
+            <span>협업자</span>
+            <span>관계유형</span>
+            <span>수동관계점수</span>
+            <span>검증 상태</span>
+          </div>
           {props.previewRows.length ? (
             props.previewRows.slice(0, 5).map((row) => (
               <div
                 key={row.key}
-                className={`rounded-xl border px-3 py-2 text-xs ${
-                  row.errors.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-700'
+                className={`grid gap-1 border-t px-3 py-2 text-xs md:grid-cols-[1fr_0.9fr_0.9fr_0.9fr_0.9fr_0.8fr_0.9fr] ${
+                  row.errors.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-100 bg-white text-slate-700'
                 }`}
               >
-                <div className="font-semibold text-slate-900">
-                  {row.title} · {row.divisionLabel} · {row.teamLabel}
-                </div>
-                <div className="mt-1 leading-5">
-                  협업자 {row.collaboratorLabel} · 관계유형 {row.relationTypeLabel} · 수동관계점수 {row.manualScoreLabel} · 검증 상태 {row.validationLabel}
-                </div>
-                {row.errors.length ? <div className="mt-1">{row.errors.join(', ')}</div> : null}
+                <span className="font-semibold text-slate-900">{row.title}</span>
+                <span>{row.divisionLabel}</span>
+                <span>{row.teamLabel}</span>
+                <span>{row.collaboratorLabel}</span>
+                <span>{row.relationTypeLabel}</span>
+                <span>{row.manualScoreLabel}</span>
+                <span>{row.errors.length ? row.errors.join(', ') : row.validationLabel}</span>
               </div>
             ))
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+            <div className="border-t border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
               업로드된 관계 데이터가 없습니다. 양식을 내려받아 CSV를 선택하면 미리보기가 표시됩니다.
             </div>
           )}

@@ -120,7 +120,7 @@ async function main() {
       '소수 조직에서 같은 평가자 조합이 반복되면 익명성이 약해질 수 있습니다.',
       '평가자 추천 후보',
       '평가자 추천 미리보기',
-      'AI 기능이 꺼져 있어 기본 추천 기준으로 후보를 표시합니다.',
+      'AI 기능이 꺼져 있어 관계 점수 기준으로 추천 후보를 표시합니다.',
     ])
 
     assertNoBrokenKorean(recommendationBlock)
