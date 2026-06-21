@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import type { OrgKpiScope } from '@/lib/org-kpi-scope'
 
 type EmployeeRole =
@@ -772,7 +773,7 @@ export function OrgMemberManagementPanel(props: Props) {
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
                           {employee.teamName || '팀 미지정'}
-                          {employee.jobTitle ? ` · ${employee.jobTitle}` : ''}
+                          {` · ${resolveEmployeePositionLabel({ role: employee.role, jobTitle: employee.jobTitle })}`}
                         </div>
                       </td>
                       <td className="px-3 py-3">

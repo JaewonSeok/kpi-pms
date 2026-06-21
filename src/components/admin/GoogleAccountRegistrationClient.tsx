@@ -11,6 +11,7 @@ import {
   type AdminGoogleAccessTab,
 } from '@/lib/admin-google-access-tabs'
 import { buildDepartmentSelectionState } from '@/lib/admin-department-hierarchy'
+import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import { EvaluatorAssignmentAdminPanel } from './EvaluatorAssignmentAdminPanel'
 import { MasterLoginAdminPanel } from './MasterLoginAdminPanel'
 import { OrgMemberManagementPanel } from './OrgMemberManagementPanel'
@@ -421,7 +422,7 @@ function OrgChartTree({
               <div className="mt-1 break-keep text-xs leading-snug text-slate-500 sm:text-sm">
                 {node.employee.departmentName}
                 {node.employee.teamName ? ` / ${node.employee.teamName}` : ''}
-                {node.employee.jobTitle ? ` / ${node.employee.jobTitle}` : ''}
+                {` / ${resolveEmployeePositionLabel({ role: node.employee.role, jobTitle: node.employee.jobTitle })}`}
               </div>
               <div className="mt-1 break-keep text-xs leading-snug text-slate-500 sm:text-sm">
                 {ROLE_LABELS[node.employee.role]} · {STATUS_LABELS[node.employee.employmentStatus]}
@@ -1145,7 +1146,7 @@ export function GoogleAccountRegistrationClient() {
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
                           입사일 {employee.joinDate}
-                          {employee.jobTitle ? ` · ${employee.jobTitle}` : ''}
+                          {` · ${resolveEmployeePositionLabel({ role: employee.role, jobTitle: employee.jobTitle })}`}
                         </div>
                       </td>
                       <td className="px-3 py-3">

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  AlertTriangle,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -12,12 +13,16 @@ import {
   Download,
   Info,
   Mail,
+  MessageSquare,
   ShieldCheck,
+  Sparkles,
+  Target,
   ThumbsUp,
   UserRound,
 } from 'lucide-react'
 import type { UpwardReviewPageData } from '@/server/upward-review'
 import { DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS } from '@/lib/upward-review'
+import type { UpwardReviewAICoachingPreview } from '@/lib/upward-review-ai-coaching'
 import { Feedback360Avatar } from '../feedback360/ppt/Feedback360Avatar'
 
 type Notice =
@@ -578,6 +583,213 @@ function parseStoredChoiceValue(value?: string | null) {
   return []
 }
 
+function CoachingTextList(props: { items: string[]; tone?: 'blue' | 'emerald' | 'amber' }) {
+  const markerClassName =
+    props.tone === 'emerald'
+      ? 'bg-emerald-100 text-emerald-700'
+      : props.tone === 'amber'
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-blue-100 text-blue-700'
+
+  return (
+    <ul className="space-y-3">
+      {props.items.map((item, index) => (
+        <li key={`${index}:${item}`} className="grid grid-cols-[28px_minmax(0,1fr)] gap-3 text-sm font-semibold leading-6 text-slate-600">
+          <span className={`mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-extrabold ${markerClassName}`}>
+            {index + 1}
+          </span>
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function LeadershipAiCoachingPanel(props: {
+  preview: UpwardReviewAICoachingPreview | null
+  loading: boolean
+  error: string
+  disabled: boolean
+  onGenerate: () => void
+}) {
+  const result = props.preview?.result
+
+  return (
+    <section className="rounded-xl border border-blue-200 bg-gradient-to-br from-white via-blue-50 to-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-white">
+              <Sparkles className="h-5 w-5" />
+            </span>
+            <h3 className="text-lg font-extrabold text-blue-950">AI 상세 코칭</h3>
+            {props.preview ? (
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-extrabold text-blue-700">
+                {props.preview.source === 'ai' ? 'AI 생성' : '근거 기반 초안'}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-3 max-w-4xl text-sm font-semibold leading-6 text-blue-900">
+            리더십 진단 결과를 바탕으로 강점 유지 행동, 보완 리스크, 30/60/90일 실행 계획, 1:1 대화 질문까지 자세히 정리합니다.
+          </p>
+          {props.preview?.fallbackReason ? (
+            <p className="mt-2 text-xs font-semibold text-amber-700">{props.preview.fallbackReason}</p>
+          ) : null}
+          {props.error ? (
+            <p className="mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+              {props.error}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-blue-700 px-5 text-sm font-extrabold text-white transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-blue-200"
+          disabled={props.disabled || props.loading}
+          onClick={props.onGenerate}
+        >
+          <Sparkles className="mr-2 h-4 w-4" />
+          {props.loading ? '코칭 생성 중...' : result ? 'AI 코칭 다시 생성' : 'AI 코칭 생성'}
+        </button>
+      </div>
+
+      {props.disabled ? (
+        <div className="mt-5 rounded-xl border border-dashed border-blue-200 bg-white px-4 py-5 text-sm font-semibold text-slate-500">
+          결과 공개 또는 원문 열람 권한이 있어야 AI 코칭을 생성할 수 있습니다.
+        </div>
+      ) : null}
+
+      {!result && !props.disabled ? (
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          {[
+            ['강점 행동화', '강점을 실제 운영 루틴으로 유지하는 방법을 정리합니다.'],
+            ['보완 리스크', '낮은 영역이 팀 경험에 미치는 영향을 코칭 질문으로 바꿉니다.'],
+            ['실행 계획', '30/60/90일 단위로 바로 실행할 액션을 제안합니다.'],
+          ].map(([title, description]) => (
+            <div key={title} className="rounded-xl border border-blue-100 bg-white p-4">
+              <div className="font-extrabold text-blue-950">{title}</div>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">{description}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {result ? (
+        <div className="mt-6 space-y-5">
+          <div className="grid gap-4 xl:grid-cols-2">
+            <article className="rounded-xl border border-blue-100 bg-white p-5">
+              <div className="flex items-center gap-2 text-sm font-extrabold text-blue-700">
+                <Target className="h-4 w-4" />
+                종합 해석
+              </div>
+              <p className="mt-3 text-sm font-semibold leading-7 text-slate-700">{result.executiveSummary}</p>
+            </article>
+            <article className="rounded-xl border border-blue-100 bg-white p-5">
+              <div className="flex items-center gap-2 text-sm font-extrabold text-blue-700">
+                <MessageSquare className="h-4 w-4" />
+                리더십 패턴
+              </div>
+              <p className="mt-3 text-sm font-semibold leading-7 text-slate-700">{result.leadershipPattern}</p>
+            </article>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <article className="rounded-xl border border-emerald-100 bg-white p-5">
+              <h4 className="text-base font-extrabold text-emerald-800">강점 유지 코칭</h4>
+              <div className="mt-4 space-y-3">
+                {result.strengths.map((item) => (
+                  <div key={item.title} className="rounded-xl bg-emerald-50 p-4 text-sm leading-6">
+                    <div className="font-extrabold text-emerald-900">{item.title}</div>
+                    <p className="mt-2 font-semibold text-emerald-800">{item.evidence}</p>
+                    <p className="mt-2 font-semibold text-slate-600">{item.whyItMatters}</p>
+                    <p className="mt-2 font-extrabold text-slate-800">실행: {item.action}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="rounded-xl border border-amber-100 bg-white p-5">
+              <h4 className="flex items-center gap-2 text-base font-extrabold text-amber-800">
+                <AlertTriangle className="h-4 w-4" />
+                보완 리스크 코칭
+              </h4>
+              <div className="mt-4 space-y-3">
+                {result.risks.map((item) => (
+                  <div key={item.title} className="rounded-xl bg-amber-50 p-4 text-sm leading-6">
+                    <div className="font-extrabold text-amber-900">{item.title}</div>
+                    <p className="mt-2 font-semibold text-amber-800">{item.signal}</p>
+                    <p className="mt-2 font-semibold text-slate-600">{item.potentialImpact}</p>
+                    <p className="mt-2 font-extrabold text-slate-800">질문: {item.coachingQuestion}</p>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </div>
+
+          <article className="rounded-xl border border-slate-200 bg-white p-5">
+            <h4 className="text-base font-extrabold text-blue-950">30/60/90일 코칭 실행 계획</h4>
+            <div className="mt-4 grid gap-4 xl:grid-cols-3">
+              {result.coachingPlan.map((plan) => (
+                <div key={plan.period} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="inline-flex rounded-full bg-blue-600 px-3 py-1 text-xs font-extrabold text-white">{plan.period}</div>
+                  <h5 className="mt-3 font-extrabold text-slate-950">{plan.focus}</h5>
+                  <div className="mt-4 text-xs font-extrabold text-slate-500">실행 액션</div>
+                  <CoachingTextList items={plan.actions} />
+                  <div className="mt-4 text-xs font-extrabold text-slate-500">성공 신호</div>
+                  <CoachingTextList items={plan.successSignals} tone="emerald" />
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h4 className="text-base font-extrabold text-blue-950">1:1 코칭 대화 가이드</h4>
+              <p className="mt-3 rounded-xl bg-blue-50 p-4 text-sm font-semibold leading-7 text-blue-900">
+                {result.oneOnOneGuide.opening}
+              </p>
+              <div className="mt-4 text-xs font-extrabold text-slate-500">대화 질문</div>
+              <CoachingTextList items={result.oneOnOneGuide.questions} />
+              <div className="mt-4 text-xs font-extrabold text-slate-500">합의할 약속</div>
+              <CoachingTextList items={result.oneOnOneGuide.commitments} tone="emerald" />
+            </article>
+
+            <article className="rounded-xl border border-slate-200 bg-white p-5">
+              <h4 className="text-base font-extrabold text-blue-950">팀 운영 제안</h4>
+              <CoachingTextList items={result.teamOperatingSuggestions} />
+              <div className="mt-5 text-xs font-extrabold text-slate-500">주의사항</div>
+              <CoachingTextList items={result.cautions} tone="amber" />
+            </article>
+          </div>
+
+          <article className="rounded-xl border border-slate-200 bg-white p-5">
+            <h4 className="text-base font-extrabold text-blue-950">바로 쓸 수 있는 말하기 예시</h4>
+            <div className="mt-4 grid gap-3 xl:grid-cols-3">
+              {result.communicationScripts.map((script) => (
+                <div key={script.situation} className="rounded-xl bg-slate-50 p-4">
+                  <div className="text-sm font-extrabold text-slate-950">{script.situation}</div>
+                  <p className="mt-2 text-sm font-semibold leading-7 text-slate-600">“{script.script}”</p>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-xl border border-slate-200 bg-white p-5">
+            <h4 className="text-base font-extrabold text-blue-950">다음 리뷰 체크리스트</h4>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {result.nextReviewChecklist.map((item) => (
+                <div key={item} className="flex items-start gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </article>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 async function readApiBody(response: Response) {
   const body = (await response.json()) as {
     success: boolean
@@ -647,6 +859,8 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
   const [suggestionTargetId, setSuggestionTargetId] = useState('')
   const [assignmentFilter, setAssignmentFilter] = useState('')
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<'ALL' | 'PENDING' | 'IN_PROGRESS' | 'SUBMITTED'>('ALL')
+  const [aiCoachingPreview, setAiCoachingPreview] = useState<UpwardReviewAICoachingPreview | null>(null)
+  const [aiCoachingError, setAiCoachingError] = useState('')
   const [sectionCommentState, setSectionCommentState] = useState<Record<string, string>>(() =>
     respondData
       ? parseLeadershipSectionComments(respondData.overallComment, getLeadershipQuestionCategories(respondData.questions))
@@ -666,6 +880,11 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
   useEffect(() => {
     setNotice(null)
   }, [props.data.mode, props.data.selectedCycleId, props.data.selectedRoundId])
+
+  useEffect(() => {
+    setAiCoachingPreview(null)
+    setAiCoachingError('')
+  }, [props.data.mode, props.data.selectedRoundId, resultsData?.selectedTargetId])
 
   useEffect(() => {
     if (!adminData) return
@@ -1149,6 +1368,39 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
     startTransition(() => router.refresh())
   }
 
+  async function handleGenerateLeadershipAiCoaching() {
+    if (!resultsData) return
+    setBusyKey('leadershipAiCoaching')
+    setAiCoachingError('')
+    setNotice(null)
+    try {
+      const preview = (await readApiBody(
+        await fetch('/api/feedback/upward/results/ai-coaching', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cycleId: props.data.selectedCycleId,
+            roundId: resultsData.roundId,
+            empId: resultsData.selectedTargetId,
+          }),
+        })
+      )) as unknown as UpwardReviewAICoachingPreview
+
+      setAiCoachingPreview(preview)
+      setNotice({
+        tone: 'success',
+        message:
+          preview.source === 'ai'
+            ? 'AI 상세 코칭을 생성했습니다.'
+            : '근거 기반 상세 코칭 초안을 생성했습니다.',
+      })
+    } catch (error) {
+      setAiCoachingError(error instanceof Error ? error.message : 'AI 코칭을 생성하지 못했습니다.')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
   const selectedRound = props.data.availableRounds.find((round) => round.id === props.data.selectedRoundId)
   const overviewAssignments = props.data.overview?.assignments ?? []
   const overviewSubmittedCount = overviewAssignments.filter((assignment) => assignment.status === 'SUBMITTED').length
@@ -1428,11 +1680,15 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                                         <div>
                                           <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${getQuestionScaleValues(question).length}, minmax(0, 1fr))` }}>
                                             {getQuestionScaleValues(question).map((value) => (
-                                              <label key={value} className="flex flex-col items-center gap-2 text-xs font-extrabold text-slate-600">
+                                              <label
+                                                key={value}
+                                                className="flex min-h-14 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-transparent px-2 py-2 text-xs font-extrabold text-slate-600 transition hover:border-blue-100 hover:bg-blue-50"
+                                              >
                                                 <span>{value}</span>
                                                 <input
                                                   type="radio"
                                                   name={question.id}
+                                                  className="h-5 w-5 cursor-pointer accent-blue-600"
                                                   checked={currentState.ratingValue === value}
                                                   disabled={respondData.readOnly}
                                                   onChange={() =>
@@ -1628,6 +1884,14 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
               </section>
             ) : (
               <>
+                <LeadershipAiCoachingPanel
+                  preview={aiCoachingPreview}
+                  loading={busyKey === 'leadershipAiCoaching'}
+                  error={aiCoachingError}
+                  disabled={!resultsData.visible && !resultsData.canViewRaw}
+                  onGenerate={handleGenerateLeadershipAiCoaching}
+                />
+
                 <section className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
                   <div className="rounded-xl border border-slate-200 bg-white p-5">
                     <h3 className="text-sm font-extrabold text-slate-950">역량별 점수 비교</h3>

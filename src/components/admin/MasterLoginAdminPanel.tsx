@@ -8,6 +8,7 @@ import {
   createImpersonationSyncPayload,
   IMPERSONATION_SYNC_STORAGE_KEY,
 } from '@/lib/impersonation'
+import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import {
   isFixedMasterLoginAccessSource,
   resolveMasterLoginPermissionManagementState,
@@ -405,7 +406,7 @@ export function MasterLoginAdminPanel({ employees, onFeedback, onRefresh }: Prop
                     <td className="px-3 py-3 text-slate-700">
                       <div>{employee.departmentName}</div>
                       <div className="mt-1 text-xs text-slate-500">
-                        {employee.jobTitle ?? '직책 정보 없음'}
+                        {resolveEmployeePositionLabel({ role: employee.role, jobTitle: employee.jobTitle })}
                       </div>
                     </td>
                     <td className="px-3 py-3">
@@ -507,7 +508,7 @@ export function MasterLoginAdminPanel({ employees, onFeedback, onRefresh }: Prop
                         {employee.name} ({employee.employeeNumber})
                       </div>
                       <div className="mt-1 text-xs text-slate-500">
-                        {employee.jobTitle ? employee.jobTitle : '직책 정보 없음'}
+                        {resolveEmployeePositionLabel({ role: employee.role, jobTitle: employee.jobTitle })}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-slate-700">{employee.googleEmail}</td>
