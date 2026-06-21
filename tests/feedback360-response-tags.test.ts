@@ -61,11 +61,14 @@ async function main() {
       '책임감',
       '존중',
       '긍정적 태도',
+      '카테고리 선택',
+      '해시태그 카테고리 선택',
       '선택한 태그',
       '태그 제출 반영',
       FEEDBACK_360_TAG_SUMMARY_HEADING,
       '구체적 사례',
       '제출 상태',
+      '임시 저장',
       '공식 평가 점수나 등급을 자동 산정하지 않습니다',
       '비정기 다면평가',
     ]) {
@@ -88,6 +91,8 @@ async function main() {
 
     assert.equal(workspace.includes('disabled={submitBusy || distributionLimitExceeded}'), true)
     assert.equal(workspace.includes('onClick={handleSubmitResponse}'), true)
+    assert.equal(workspace.includes('title="임시 저장 기능은 현재 응답 작성 중에만 사용할 수 있습니다."'), true)
+    assert.equal(workspace.includes('onClick={handleSaveResponse}'), false)
   })
 
   await run('feedback 360 selected tags are merged into existing submit comment payload explicitly', () => {
@@ -135,6 +140,7 @@ async function main() {
     for (const text of [
       'selectedTagPreviewLimit = 10',
       'visibleSelectedResponseTagLabels',
+      'activeResponseTagCategoryId',
       '외 N개 더보기',
       '외 ${hiddenSelectedTagCount}개 더보기',
       '카테고리별 선택 현황',
