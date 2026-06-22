@@ -1,5 +1,17 @@
 import type { OrgKpiViewModel } from '@/server/org-kpi-page'
 
+// 직속 자식 중 현재 selectedDepartmentIds/search 필터로 visibleIds에서 빠진 KPI의 요약.
+// 옵션 C6 — 빈 상태에서 사용자가 직접 그 KPI로 이동할 수 있도록 빌더에서 가산적으로 노출.
+// 기존 visibleIds·children 계산엔 영향 없음.
+export type OrgKpiHiddenChildSummary = {
+  id: string
+  title: string
+  departmentId: string
+  departmentName: string
+  scope: OrgKpiViewModel['scope']
+  status: OrgKpiViewModel['status']
+}
+
 export type OrgKpiHierarchyNode = {
   kpi: OrgKpiViewModel
   children: OrgKpiHierarchyNode[]
@@ -7,6 +19,8 @@ export type OrgKpiHierarchyNode = {
   depth: number
   isOrphan: boolean
   isDisconnected: boolean
+  // 가산적 옵셔널 — 필터로 가려진 직속 자식 정보. 외부 호출부 시그니처 영향 0.
+  hiddenChildren?: OrgKpiHiddenChildSummary[]
 }
 
 export type OrgKpiHierarchyView = {
@@ -61,11 +75,22 @@ export function buildOrgKpiHierarchyStructure(params: {
   selectedDepartmentIds?: string[]
   selectedDepartmentId?: string
   search: string
+  // P1-E 가산 옵셔널 — 현재 list(items) 밖의 자식 OrgKpi(scope ≠ selectedScope).
+  // childrenByParentId 구축에만 합쳐 부모 bucket에 들어가게 한다.
+  // ★ visibleIds 산정에는 사용하지 않음(focusItems/itemsById/visibleItems 모두 items만).
+  // 결과: 자식은 childrenByParentId에 있으나 visibleIds 밖 → buildNode가 hiddenChildren에 자동 수집.
+  // 옵션 미전달 시 기존 동작과 100% 동일(옵셔널).
+  extraItems?: OrgKpiViewModel[]
 }): OrgKpiHierarchyStructureView {
   const itemsById = new Map(params.items.map((item) => [item.id, item]))
   const childrenByParentId = new Map<string, OrgKpiViewModel[]>()
 
-  params.items.forEach((item) => {
+  // items + extraItems를 합쳐 childrenByParentId 구축. items만 부모 후보(itemsById에 있는 부모).
+  // extraItems의 자식들도 부모 id로 그룹핑되어 buildNode가 hiddenChildren 수집 시 사용.
+  const childrenSourceItems: OrgKpiViewModel[] = params.extraItems
+    ? [...params.items, ...params.extraItems]
+    : params.items
+  childrenSourceItems.forEach((item) => {
     if (!item.parentOrgKpiId) return
     const bucket = childrenByParentId.get(item.parentOrgKpiId) ?? []
     bucket.push(item)
@@ -125,9 +150,21 @@ export function buildOrgKpiHierarchyStructure(params: {
   const disconnectedIds = new Set(disconnected.map((item) => item.id))
 
   const buildNode = (item: OrgKpiViewModel, depth: number): OrgKpiHierarchyNode => {
-    const children = sortItems(childrenByParentId.get(item.id) ?? [])
+    const rawDirectChildren = sortItems(childrenByParentId.get(item.id) ?? [])
+    const children = rawDirectChildren
       .filter((child) => visibleIds.has(child.id) && !disconnectedIds.has(child.id))
       .map((child) => buildNode(child, depth + 1))
+    // 가산 — 직속 자식 중 visibleIds에서 빠진(필터로 가려진) 자식 요약.
+    const hiddenChildrenSummaries: OrgKpiHiddenChildSummary[] = rawDirectChildren
+      .filter((child) => !visibleIds.has(child.id))
+      .map((child) => ({
+        id: child.id,
+        title: child.title,
+        departmentId: child.departmentId,
+        departmentName: child.departmentName,
+        scope: child.scope,
+        status: child.status,
+      }))
     const subtreeIds = new Set<string>([item.id])
     children.forEach((child) => {
       child.subtreeIds.forEach((subtreeId) => {
@@ -143,6 +180,7 @@ export function buildOrgKpiHierarchyStructure(params: {
       isOrphan: isOrphan(item),
       isDisconnected:
         disconnectedIds.has(item.id) || (!item.parentOrgKpiId && children.length === 0 && item.childOrgKpiCount === 0),
+      hiddenChildren: hiddenChildrenSummaries.length > 0 ? hiddenChildrenSummaries : undefined,
     }
   }
 

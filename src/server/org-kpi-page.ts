@@ -202,6 +202,11 @@ export type OrgKpiPageData = {
   }
   tree: OrgKpiTreeNode[]
   list: OrgKpiViewModel[]
+  // P1-E 가산 — mappedList(=selectedScope KPI)의 자식 OrgKpi 중 scope ≠ selectedScope인 것들.
+  // mappedListAll에서 필터만 — 추가 DB 쿼리 0. status·evalYear 무관 전체 자식. client 빌더의
+  // extraItems로 전달되어 childrenByParentId에는 들어가지만 visibleIds에는 안 들어감 →
+  // 기존 hiddenChildren 수집 로직이 자동으로 잡음. list / 다른 사용처(L1184-1351) 미터치.
+  hiddenChildItems: OrgKpiViewModel[]
   history: OrgKpiTimelineItem[]
   linkage: OrgKpiLinkageItem[]
   permissions: {
@@ -786,6 +791,7 @@ export async function getOrgKpiPageData(params: {
         },
         tree: [],
         list: [],
+        hiddenChildItems: [],
         history: [],
         linkage: [],
         alerts: [],
@@ -1181,6 +1187,15 @@ export async function getOrgKpiPageData(params: {
     })
 
     const mappedList = mappedListAll.filter((item) => item.scope === selectedScope)
+    // P1-E — mappedList(=selectedScope) KPI들의 자식 OrgKpi 중 scope ≠ selectedScope인 것을
+    // mappedListAll에서 별도 array로 추출. mappedList 자체와 기존 반환 필드는 미터치. 추가 DB 쿼리 0.
+    const mappedListIdSet = new Set(mappedList.map((item) => item.id))
+    const hiddenChildItems = mappedListAll.filter(
+      (item) =>
+        item.scope !== selectedScope &&
+        item.parentOrgKpiId != null &&
+        mappedListIdSet.has(item.parentOrgKpiId),
+    )
     const scopeCounts = mappedListAll.reduce<Record<OrgKpiScope, number>>(
       (counts, item) => {
         counts[item.scope] += 1
@@ -1349,6 +1364,7 @@ export async function getOrgKpiPageData(params: {
       },
       tree,
       list: mappedList,
+      hiddenChildItems,
       history,
       linkage,
       alerts,
@@ -1393,6 +1409,7 @@ export async function getOrgKpiPageData(params: {
       },
       tree: [],
       list: [],
+      hiddenChildItems: [],
       history: [],
       linkage: [],
       alerts: [],

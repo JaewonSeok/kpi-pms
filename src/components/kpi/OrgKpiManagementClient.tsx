@@ -44,6 +44,7 @@ import {
   getOrgKpiHierarchyInteractionChangedIds,
   isOrgKpiHierarchyNodeAffected,
   isOrgKpiTopLevelDivisionGoal,
+  type OrgKpiHiddenChildSummary,
   type OrgKpiHierarchyNode,
 } from '@/lib/org-kpi-hierarchy'
 import {
@@ -889,8 +890,10 @@ export function OrgKpiManagementClient({
         items: hasNoScopedDepartmentOptions ? [] : list,
         selectedDepartmentIds: effectiveDepartmentIdArray,
         search,
+        // P1-E — server에서 받은 자식 OrgKpi(scope ≠ selectedScope)를 가산. visibleIds 불변.
+        extraItems: hasNoScopedDepartmentOptions ? [] : pageData.hiddenChildItems,
       }),
-    [effectiveDepartmentIdArray, hasNoScopedDepartmentOptions, list, search]
+    [effectiveDepartmentIdArray, hasNoScopedDepartmentOptions, list, pageData.hiddenChildItems, search]
   )
   const hierarchySelection = useMemo(
     () =>
@@ -1567,6 +1570,28 @@ export function OrgKpiManagementClient({
     },
     [handleSelectKpi]
   )
+  // 옵션 C6 — "하위 목표" 빈 상태에서 필터로 가려진 자식 KPI로 직접 이동.
+  // 자식의 실제 scope·부서로 URL을 재구성해 그 자식이 선택된 상태로 진입.
+  const handleNavigateToHiddenChild = useCallback(
+    (child: OrgKpiHiddenChildSummary) => {
+      const isDivision = child.scope === 'division'
+      const isSection = child.scope === 'section'
+      const isTeam = child.scope === 'team'
+      handleSelectKpi(child.id)
+      router.push(
+        buildOrgKpiHref({
+          scope: child.scope,
+          tab: 'map',
+          kpiId: child.id,
+          departmentId: child.departmentId,
+          divisionId: isDivision ? child.departmentId : null,
+          sectionId: isSection ? child.departmentId : null,
+          teamId: isTeam ? child.departmentId : null,
+        })
+      )
+    },
+    [buildOrgKpiHref, handleSelectKpi, router]
+  )
   const handleWorkflowAction = useCallback(
     (action: 'SUBMIT' | 'REOPEN') => {
       void runWorkflow(action)
@@ -2019,6 +2044,7 @@ export function OrgKpiManagementClient({
                 onCreateChildGoal={handleCreateChildGoal}
                 onEditParentLink={handleEditParentLink}
                 onViewLinkage={handleViewLinkage}
+                onNavigateToHiddenChild={handleNavigateToHiddenChild}
               />
             </div>
 
@@ -2592,6 +2618,7 @@ type OrgKpiHierarchyNodeCardProps = {
   onViewLinkage: (kpiId: string) => void
   onCreateChildGoal: (parentKpi: OrgKpiViewModel) => void
   onEditParentLink: (kpi: OrgKpiViewModel) => void
+  onNavigateToHiddenChild: (child: OrgKpiHiddenChildSummary) => void
   canCreate: boolean
   canManage: boolean
   readOnly: boolean
@@ -2623,6 +2650,7 @@ function areOrgKpiHierarchyNodeCardPropsEqual(
   if (prevProps.onViewLinkage !== nextProps.onViewLinkage) return false
   if (prevProps.onCreateChildGoal !== nextProps.onCreateChildGoal) return false
   if (prevProps.onEditParentLink !== nextProps.onEditParentLink) return false
+  if (prevProps.onNavigateToHiddenChild !== nextProps.onNavigateToHiddenChild) return false
 
   const changedIds = getOrgKpiHierarchyInteractionChangedIds(
     {
@@ -2711,6 +2739,7 @@ function OrgKpiHierarchyPanel(props: {
   onViewLinkage: (kpiId: string) => void
   onCreateChildGoal: (parentKpi: OrgKpiViewModel) => void
   onEditParentLink: (kpi: OrgKpiViewModel) => void
+  onNavigateToHiddenChild: (child: OrgKpiHiddenChildSummary) => void
   canCreate: boolean
   canManage: boolean
   readOnly: boolean
@@ -2748,6 +2777,7 @@ function OrgKpiHierarchyPanel(props: {
               onViewLinkage={props.onViewLinkage}
               onCreateChildGoal={props.onCreateChildGoal}
               onEditParentLink={props.onEditParentLink}
+              onNavigateToHiddenChild={props.onNavigateToHiddenChild}
               canCreate={props.canCreate}
               canManage={props.canManage}
               readOnly={props.readOnly}
@@ -2798,9 +2828,15 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
   const isAncestor = props.ancestorIds.has(node.kpi.id)
   const isDescendant = props.descendantIds.has(node.kpi.id)
   const isExpanded = props.expandedIdSet.has(node.kpi.id)
-  const totalChildCount = Math.max(node.kpi.childOrgKpiCount, node.children.length)
-  const hiddenChildCount = Math.max(totalChildCount - node.children.length, 0)
-  const hasVisibleChildren = node.children.length > 0
+  // P1-E 카운트 정합 — 헤더에 보이는 수 = 화면에 실제 렌더되는 자식 수(정상 children + hiddenChildren).
+  // childOrgKpiCount(server raw count)와 displayedChildCount 중 큰 값으로 둬서 server-client 데이터 차이 안전망.
+  // hidden 표시(hiddenChildCount)는 totalChildCount - visibleChildCount → 인라인 ul 항목 수와 정확히 일치.
+  const visibleChildCount = node.children.length
+  const hiddenChildrenLength = node.hiddenChildren?.length ?? 0
+  const displayedChildCount = visibleChildCount + hiddenChildrenLength
+  const totalChildCount = Math.max(node.kpi.childOrgKpiCount, displayedChildCount)
+  const hiddenChildCount = Math.max(totalChildCount - visibleChildCount, 0)
+  const hasVisibleChildren = visibleChildCount > 0
   const hasChildren = totalChildCount > 0
   const structureSummary = useMemo(
     () =>
@@ -2931,6 +2967,7 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
                         onViewLinkage={props.onViewLinkage}
                         onCreateChildGoal={props.onCreateChildGoal}
                         onEditParentLink={props.onEditParentLink}
+                        onNavigateToHiddenChild={props.onNavigateToHiddenChild}
                         canCreate={props.canCreate}
                         canManage={props.canManage}
                         readOnly={props.readOnly}
@@ -2945,13 +2982,44 @@ const OrgKpiHierarchyNodeCard = memo(function OrgKpiHierarchyNodeCard(props: Org
                 className="mt-4 rounded-2xl border border-dotted border-slate-300 bg-white px-4 py-4"
                 data-testid="org-kpi-filtered-child-hint"
               >
-                <div className="text-sm font-semibold text-slate-900">현재 필터 조건에서 보이는 하위 목표가 없습니다</div>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  검색어나 부서 조건을 조정하면 연결된 하위 목표를 다시 확인할 수 있습니다.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <MapInlineActionButton label="연결 현황 보기" onClick={handleViewLinkage} />
+                <div className="text-sm font-semibold text-slate-900">
+                  다른 범위에 연결된 하위 목표 {hiddenChildCount}개
                 </div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  현재 범위({ORG_KPI_SCOPE_LABELS[node.kpi.scope]}) 밖의 KPI라 위 목록에는 표시되지 않습니다. 아래에서 바로 이동할 수 있습니다.
+                </p>
+                {node.hiddenChildren?.length ? (
+                  <ul className="mt-3 space-y-2" data-testid="org-kpi-hidden-children-list">
+                    {node.hiddenChildren.map((child) => (
+                      <li key={child.id}>
+                        <button
+                          type="button"
+                          onClick={() => props.onNavigateToHiddenChild(child)}
+                          className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left transition hover:border-blue-300 hover:bg-white"
+                          data-testid="org-kpi-hidden-child-link"
+                        >
+                          <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                            {ORG_KPI_SCOPE_LABELS[child.scope]}
+                          </span>
+                          <span
+                            className={
+                              child.status === 'CONFIRMED'
+                                ? 'rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800'
+                                : child.status === 'DRAFT'
+                                  ? 'rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800'
+                                  : 'rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600'
+                            }
+                            data-testid="org-kpi-hidden-child-status"
+                          >
+                            {child.status === 'CONFIRMED' ? '확정' : child.status === 'DRAFT' ? '초안' : '보관'}
+                          </span>
+                          <span className="flex-1 truncate text-sm font-semibold text-slate-900">{child.title}</span>
+                          <span className="shrink-0 text-xs text-slate-500">{child.departmentName}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             ) : (
               <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4">
