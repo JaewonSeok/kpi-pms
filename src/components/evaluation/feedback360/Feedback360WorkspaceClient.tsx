@@ -590,13 +590,55 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   const selectedHubRound =
     quarterRounds.find((round) => round.id === props.data.selectedRoundId) ??
     quarterRounds[0]
+  const buildNominationHref = (roundId: string, empId?: string | null) =>
+    `/evaluation/360/nomination?${new URLSearchParams({
+      ...(selectedHubCycleId ? { cycleId: selectedHubCycleId } : {}),
+      roundId,
+      ...(empId ? { empId } : {}),
+    }).toString()}`
   const selectedHubNominationHref =
     selectedHubRound
-      ? `/evaluation/360/nomination?${new URLSearchParams({
-          ...(selectedHubCycleId ? { cycleId: selectedHubCycleId } : {}),
-          roundId: selectedHubRound.id,
-        }).toString()}`
+      ? buildNominationHref(selectedHubRound.id)
       : ''
+  const nominationQueueByTarget = new Map(
+    (props.data.admin?.nominationQueue ?? []).map((item) => [`${item.roundId}:${item.targetId}`, item] as const)
+  )
+  const responseMappingTargetEntries = quarterResponseTargets.map((target) => {
+    const nominationQueueItem = nominationQueueByTarget.get(`${target.roundId}:${target.receiverId}`)
+    return {
+      key: `${target.roundId}:${target.receiverId}`,
+      href: buildNominationHref(target.roundId, target.receiverId),
+      targetName: target.receiverName,
+      roundName: target.roundName,
+      organizationLabel: getFeedback360OrgLabel(target),
+      candidateCountLabel: '상세 화면에서 계산',
+      mappingCountLabel: nominationQueueItem ? `${nominationQueueItem.totalCount}명` : '0명',
+      recommendationLabel: target.receiverId ? '대상자별 확인 가능' : '후보 데이터 확인',
+      needsMapping: !nominationQueueItem || nominationQueueItem.totalCount === 0,
+    }
+  })
+  const responseMappingEntryKeys = new Set(responseMappingTargetEntries.map((entry) => entry.key))
+  const queueOnlyMappingTargetEntries = (props.data.admin?.nominationQueue ?? [])
+    .filter((item) => quarterRoundIds.has(item.roundId) && !responseMappingEntryKeys.has(`${item.roundId}:${item.targetId}`))
+    .map((item) => ({
+      key: `${item.roundId}:${item.targetId}`,
+      href: buildNominationHref(item.roundId, item.targetId),
+      targetName: item.targetName,
+      roundName: item.roundName,
+      organizationLabel: '대상자별 상세 화면',
+      candidateCountLabel: '상세 화면에서 계산',
+      mappingCountLabel: `${item.totalCount}명`,
+      recommendationLabel: item.totalCount ? '기존 매핑 확인 가능' : '후보 데이터 확인',
+      needsMapping: item.totalCount === 0,
+    }))
+  const mappingTargetEntries = [...responseMappingTargetEntries, ...queueOnlyMappingTargetEntries].slice(0, 8)
+  const primaryMappingEntry = mappingTargetEntries.find((entry) => !entry.needsMapping) ?? mappingTargetEntries[0]
+  const primaryMappingHref = primaryMappingEntry?.href ?? selectedHubNominationHref
+  const primaryMappingCtaLabel = primaryMappingEntry
+    ? '대상자별 후보 확인'
+    : selectedHubRound
+      ? '후보 데이터 확인'
+      : '매핑 데이터 없음'
   const hubRoundSearchParams = new URLSearchParams()
   if (selectedHubCycleId) {
     hubRoundSearchParams.set('cycleId', selectedHubCycleId)
@@ -1605,10 +1647,10 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                               </button>
                             ) : (
                               <Link
-                                href={selectedHubNominationHref}
+                                href={primaryMappingHref}
                                 className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800"
                               >
-                                평가자 매핑 화면 열기
+                                {primaryMappingCtaLabel}
                                 <ArrowRight className="h-4 w-4" />
                               </Link>
                             )}
@@ -1642,10 +1684,10 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                           </div>
                           {selectedHubRound ? (
                             <Link
-                              href={selectedHubNominationHref}
+                              href={primaryMappingHref}
                               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800"
                             >
-                              평가자 매핑 화면 열기
+                              {primaryMappingCtaLabel}
                               <ArrowRight className="h-4 w-4" />
                             </Link>
                           ) : (
@@ -1778,12 +1820,12 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                               공개 범위, 추천 데이터 준비 상태를 한 번에 찾도록 정리한 진입 화면입니다.
                             </p>
                           </div>
-                          {selectedHubRound ? (
+                          {primaryMappingHref ? (
                             <Link
-                              href={selectedHubNominationHref}
+                              href={primaryMappingHref}
                               className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800"
                             >
-                              평가자 매핑 화면 열기
+                              {primaryMappingCtaLabel}
                               <ArrowRight className="h-4 w-4" />
                             </Link>
                           ) : (
@@ -1792,7 +1834,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                               disabled
                               className="inline-flex min-h-11 shrink-0 cursor-not-allowed items-center justify-center rounded-xl border border-blue-200 bg-white/70 px-4 text-sm font-semibold text-blue-300"
                             >
-                              평가자 매핑 화면 열기
+                              매핑 데이터 없음
                             </button>
                           )}
                         </div>
@@ -1819,6 +1861,77 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                         <Feedback360MetricPill label="전체 대상자" value={`${totalHubTargetCount}명`} compact />
                         <Feedback360MetricPill label="평가자 매핑 완료" value={quarterRounds.length ? '상세 화면 확인' : '대기'} compact />
                         <Feedback360MetricPill label="익명 기준 충족" value={`${quarterAnonymityReadyCount}건`} compact />
+                      </div>
+
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">대상자별 진입</div>
+                            <p className="mt-1 text-sm leading-6 text-slate-600">
+                              후보 수와 추천 가능 여부는 대상자별 상세 화면에서 확인합니다. 후보가 있는 대상자를 우선 열고,
+                              후보가 없으면 조직/관계 데이터 또는 CSV 미리보기를 확인합니다.
+                            </p>
+                          </div>
+                          <span className="inline-flex min-h-8 shrink-0 items-center rounded-full border border-blue-100 bg-blue-50 px-3 text-xs font-semibold text-blue-700">
+                            후보 수
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                          {mappingTargetEntries.length ? (
+                            mappingTargetEntries.map((entry) => (
+                              <div
+                                key={entry.key}
+                                className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                              >
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-semibold text-slate-950">{entry.targetName}</div>
+                                    <div className="mt-1 text-xs font-semibold text-slate-500">{entry.organizationLabel}</div>
+                                  </div>
+                                  <span
+                                    className={`inline-flex min-h-7 shrink-0 items-center rounded-full border px-2.5 text-xs font-semibold ${
+                                      entry.needsMapping
+                                        ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                    }`}
+                                  >
+                                    {entry.needsMapping ? '매핑 필요' : '매핑 확인'}
+                                  </span>
+                                </div>
+                                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                                  <SummaryRow label="라운드명" value={entry.roundName} />
+                                  <SummaryRow label="평가 분기" value={selectedQuarterLabel} />
+                                  <SummaryRow label="후보 수" value={entry.candidateCountLabel} />
+                                  <SummaryRow label="현재 매핑" value={entry.mappingCountLabel} />
+                                  <SummaryRow label="추천 가능 여부" value={entry.recommendationLabel} />
+                                  <SummaryRow label="매핑 필요 여부" value={entry.needsMapping ? '후보 부족/검토 필요' : '확인 가능'} />
+                                </div>
+                                <Link
+                                  href={entry.href}
+                                  className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-white px-3 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
+                                >
+                                  {entry.needsMapping ? '후보 데이터 확인' : '대상자별 후보 확인'}
+                                  <ArrowRight className="h-4 w-4" />
+                                </Link>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600 lg:col-span-2">
+                              <div className="font-semibold text-slate-900">대상자별 매핑 데이터가 없습니다.</div>
+                              <p className="mt-1">
+                                선택한 분기에 연결된 대상자가 없어서 후보 수를 계산할 수 없습니다. 라운드와 대상자 배정이 준비되면
+                                대상자별 후보 확인으로 이동할 수 있습니다.
+                              </p>
+                              <button
+                                type="button"
+                                disabled
+                                className="mt-3 inline-flex min-h-10 cursor-not-allowed items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-400"
+                              >
+                                매핑 데이터 없음
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <div className="mt-4 grid gap-4 lg:grid-cols-2">

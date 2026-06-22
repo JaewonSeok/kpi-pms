@@ -9,6 +9,22 @@ import { Feedback360VisibilitySettings } from './ppt/Feedback360VisibilitySettin
 import { Feedback360Avatar } from './ppt/Feedback360Avatar'
 import { Feedback360MailReadinessPanel } from './ppt/Feedback360MailReadinessPanel'
 import { buildFeedback360MailReadiness } from './ppt/feedback360MailReadiness'
+import {
+  REVIEWER_SEARCH_FILTERS,
+  buildFeedback360RecommendationSlots,
+  buildRelationshipTemplateCsv,
+  getRelationshipLabel,
+  getRelationshipPriority,
+  getUploadRelationTypeLabel,
+  matchesReviewerSearchFilter,
+  normalizeReviewerSearchText,
+  parseRelationshipUploadCsv,
+  scoreReviewerCandidates,
+  type Feedback360RelationshipUploadRow as RelationshipUploadRow,
+  type Feedback360ReviewerCandidate as ReviewerCandidateSummary,
+  type Feedback360ReviewerSearchFilter as ReviewerSearchFilter,
+  type Feedback360ScoredReviewerCandidate as ScoredReviewerCandidate,
+} from './ppt/feedback360RelationshipScoring'
 
 type NominationData = NonNullable<Feedback360PageData['nomination']>
 
@@ -21,24 +37,6 @@ type ReviewerDraft = {
   fitScore?: number
 }
 
-type ReviewerCandidateSummary = {
-  employeeId: string
-  name: string
-  relationship: string
-  department: string
-  profileImageUrl?: string | null
-  groupKey: string
-  groupLabel: string
-  selectable: boolean
-  disabledReason?: string | null
-}
-
-type ScoredReviewerCandidate = ReviewerCandidateSummary & {
-  relationshipScore: number
-  relationshipScoreSources: string[]
-  relationshipRationale: string
-}
-
 type AiPreview = {
   source: 'ai' | 'fallback' | 'disabled'
   fallbackReason?: string | null
@@ -47,163 +45,6 @@ type AiPreview = {
     rationale?: string
     watchouts?: string[]
   }
-}
-
-type ReviewerSearchFilter =
-  | 'ALL'
-  | 'SAME_TEAM'
-  | 'SAME_DIVISION'
-  | 'CROSS_DIVISION'
-  | 'KPI_TOUCHPOINT'
-  | 'RECENT_COLLABORATION'
-
-type RelationshipUploadRow = {
-  rowNumber: number
-  employeeId: string
-  name: string
-  division: string
-  department: string
-  team: string
-  title: string
-  managerEmployeeId: string
-  collaboratorEmployeeId: string
-  relationType: string
-  projectCode: string
-  kpiCode: string
-  collaborationCount: number | null
-  checkinCount: number | null
-  monthlyWorkCount: number | null
-  lastWorkedAt: string
-  manualRelationScore: number | null
-  note: string
-  errors: string[]
-}
-
-const RELATIONSHIP_TEMPLATE_FIELD_KEYS = [
-  'employeeId',
-  'name',
-  'division',
-  'department',
-  'team',
-  'title',
-  'managerEmployeeId',
-  'collaboratorEmployeeId',
-  'relationType',
-  'projectCode',
-  'kpiCode',
-  'collaborationCount',
-  'checkinCount',
-  'monthlyWorkCount',
-  'lastWorkedAt',
-  'manualRelationScore',
-  'note',
-] as const
-
-type RelationshipTemplateFieldKey = (typeof RELATIONSHIP_TEMPLATE_FIELD_KEYS)[number]
-
-const RELATIONSHIP_TEMPLATE_COLUMNS = [
-  '사번',
-  '성명',
-  '본부',
-  '실/부서',
-  '팀',
-  '직책',
-  '상위관리자사번',
-  '협업자사번',
-  '관계유형',
-  '프로젝트코드',
-  'KPI코드',
-  '협업횟수',
-  '체크인횟수',
-  '월간업무건수',
-  '최근협업일',
-  '수동관계점수',
-  '비고',
-] as const
-
-const RELATIONSHIP_UPLOAD_HEADER_ALIASES: Record<RelationshipTemplateFieldKey, readonly string[]> = {
-  employeeId: ['사번', 'employeeId'],
-  name: ['성명', 'name'],
-  division: ['본부', 'division'],
-  department: ['실/부서', 'department'],
-  team: ['팀', 'team'],
-  title: ['직책', 'title'],
-  managerEmployeeId: ['상위관리자사번', 'managerEmployeeId'],
-  collaboratorEmployeeId: ['협업자사번', 'collaboratorEmployeeId'],
-  relationType: ['관계유형', 'relationType'],
-  projectCode: ['프로젝트코드', 'projectCode'],
-  kpiCode: ['KPI코드', 'kpiCode'],
-  collaborationCount: ['협업횟수', 'collaborationCount'],
-  checkinCount: ['체크인횟수', 'checkinCount'],
-  monthlyWorkCount: ['월간업무건수', 'monthlyWorkCount'],
-  lastWorkedAt: ['최근협업일', 'lastWorkedAt'],
-  manualRelationScore: ['수동관계점수', 'manualRelationScore'],
-  note: ['비고', 'note'],
-}
-
-const RELATIONSHIP_TEMPLATE_SAMPLE_ROW = [
-  'EMP001',
-  '홍길동',
-  '경영지원본부',
-  '인사팀',
-  '인사기획팀',
-  '구성원',
-  'EMP010',
-  'EMP020',
-  '프로젝트',
-  'PRJ-EXAMPLE',
-  'KPI-EXAMPLE',
-  '4',
-  '2',
-  '3',
-  '2026-06-01',
-  '82',
-  '최근 협업 이력이 많아 추천 근거로 활용',
-] as const
-
-const RELATIONSHIP_UPLOAD_ALLOWED_TYPES = new Set([
-  'TEAM',
-  'DIVISION',
-  'OTHER_DIVISION',
-  'PROJECT',
-  'KPI',
-  'RECENT_COLLAB',
-])
-
-const RELATIONSHIP_UPLOAD_KOREAN_TYPES: Record<string, string> = {
-  '같은 팀': 'TEAM',
-  '같은팀': 'TEAM',
-  '팀': 'TEAM',
-  '같은 본부': 'DIVISION',
-  '같은본부': 'DIVISION',
-  '본부': 'DIVISION',
-  '타 본부': 'OTHER_DIVISION',
-  '타본부': 'OTHER_DIVISION',
-  '다른 본부': 'OTHER_DIVISION',
-  '프로젝트': 'PROJECT',
-  '프로젝트 접점': 'PROJECT',
-  'KPI': 'KPI',
-  'KPI 접점': 'KPI',
-  '최근 협업': 'RECENT_COLLAB',
-  '최근협업': 'RECENT_COLLAB',
-}
-
-const REVIEWER_SEARCH_FILTERS: Array<{ value: ReviewerSearchFilter; label: string }> = [
-  { value: 'ALL', label: '전체' },
-  { value: 'SAME_TEAM', label: '같은 팀' },
-  { value: 'SAME_DIVISION', label: '같은 본부' },
-  { value: 'CROSS_DIVISION', label: '타 본부' },
-  { value: 'KPI_TOUCHPOINT', label: '프로젝트/KPI 접점' },
-  { value: 'RECENT_COLLABORATION', label: '최근 협업' },
-]
-
-const RELATIONSHIP_LABELS: Record<string, string> = {
-  SELF: '본인',
-  SUPERVISOR: '상사',
-  PEER: '동료',
-  SUBORDINATE: '팀원',
-  CROSS_TEAM_PEER: '타팀 동료',
-  CROSS_DEPT: '타부서',
 }
 
 const VISIBILITY_LABELS: Record<string, string> = {
@@ -234,10 +75,6 @@ const WORKFLOW_STATUS_LABELS: Record<string, string> = {
   PUBLISHED: '응답 시작',
 }
 
-function getRelationshipLabel(relationship: string) {
-  return RELATIONSHIP_LABELS[relationship] ?? relationship
-}
-
 function getWorkflowStatusLabel(status?: string | null) {
   if (!status) return '초안'
   return WORKFLOW_STATUS_LABELS[status] ?? status
@@ -245,25 +82,6 @@ function getWorkflowStatusLabel(status?: string | null) {
 
 function getVisibilityValueLabel(value?: string | null) {
   return VISIBILITY_LABELS[value ?? 'ANONYMOUS'] ?? '익명'
-}
-
-function getUploadRelationTypeLabel(value?: string | null) {
-  switch (value) {
-    case 'TEAM':
-      return '같은 팀'
-    case 'DIVISION':
-      return '같은 본부'
-    case 'OTHER_DIVISION':
-      return '타 본부'
-    case 'PROJECT':
-      return '프로젝트 접점'
-    case 'KPI':
-      return 'KPI 접점'
-    case 'RECENT_COLLAB':
-      return '최근 협업'
-    default:
-      return '관계 유형 확인'
-  }
 }
 
 function buildNominationRowKey(parts: Array<string | number | null | undefined>) {
@@ -318,296 +136,6 @@ function getPreviewSourceMessage(preview: AiPreview) {
   if (preview.source === 'ai') return '추천 모델 기준으로 후보를 정리했습니다.'
   if (preview.source === 'disabled') return 'AI 기능이 꺼져 있어 관계 점수 기준으로 추천 후보를 표시합니다.'
   return '기본 추천 기준으로 후보를 표시합니다.'
-}
-
-function normalizeReviewerSearchText(value?: string | null) {
-  return String(value ?? '').trim().toLowerCase()
-}
-
-function getRelationshipPriority(relationship: string) {
-  switch (relationship) {
-    case 'SELF':
-      return 0
-    case 'SUPERVISOR':
-      return 1
-    case 'SUBORDINATE':
-      return 2
-    case 'PEER':
-      return 3
-    case 'CROSS_TEAM_PEER':
-      return 4
-    case 'CROSS_DEPT':
-      return 5
-    default:
-      return 9
-  }
-}
-
-function escapeCsvValue(value: string) {
-  if (!/[",\r\n]/.test(value)) return value
-  return `"${value.replace(/"/g, '""')}"`
-}
-
-function buildRelationshipTemplateCsv() {
-  return `\uFEFF${[
-    RELATIONSHIP_TEMPLATE_COLUMNS.join(','),
-    RELATIONSHIP_TEMPLATE_SAMPLE_ROW.map(escapeCsvValue).join(','),
-  ].join('\r\n')}`
-}
-
-function splitCsvLine(line: string) {
-  const values: string[] = []
-  let current = ''
-  let inQuotes = false
-
-  for (let index = 0; index < line.length; index += 1) {
-    const char = line[index]
-    const nextChar = line[index + 1]
-
-    if (char === '"' && inQuotes && nextChar === '"') {
-      current += '"'
-      index += 1
-      continue
-    }
-
-    if (char === '"') {
-      inQuotes = !inQuotes
-      continue
-    }
-
-    if (char === ',' && !inQuotes) {
-      values.push(current.trim())
-      current = ''
-      continue
-    }
-
-    current += char
-  }
-
-  values.push(current.trim())
-  return values
-}
-
-function parseOptionalNumber(value: string) {
-  const normalized = value.trim()
-  if (!normalized) return null
-  const parsed = Number(normalized)
-  return Number.isFinite(parsed) ? parsed : Number.NaN
-}
-
-function getRelationshipUploadCell(data: Record<string, string>, key: RelationshipTemplateFieldKey) {
-  for (const alias of RELATIONSHIP_UPLOAD_HEADER_ALIASES[key]) {
-    const value = data[alias]
-    if (value != null) return String(value).trim()
-  }
-  return ''
-}
-
-function normalizeRelationshipUploadType(value: string) {
-  const normalized = value.trim()
-  if (!normalized) return ''
-  const upper = normalized.toUpperCase()
-  if (RELATIONSHIP_UPLOAD_ALLOWED_TYPES.has(upper)) return upper
-  return RELATIONSHIP_UPLOAD_KOREAN_TYPES[normalized] ?? RELATIONSHIP_UPLOAD_KOREAN_TYPES[normalized.replace(/\s+/g, '')] ?? upper
-}
-
-function normalizeRelationshipUploadDate(value: string) {
-  const trimmed = value.trim()
-  const formulaMatch = trimmed.match(/^="?([^"]+)"?$/)
-  return formulaMatch?.[1] ?? trimmed
-}
-
-function parseRelationshipUploadCsv(text: string) {
-  const lines = text
-    .replace(/^\uFEFF/, '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-  if (!lines.length) {
-    return { rows: [] as RelationshipUploadRow[], errors: ['업로드할 CSV 행이 없습니다.'] }
-  }
-
-  const headers = splitCsvLine(lines[0])
-  const missingColumns = RELATIONSHIP_TEMPLATE_FIELD_KEYS.filter((key) =>
-    RELATIONSHIP_UPLOAD_HEADER_ALIASES[key].every((alias) => !headers.includes(alias))
-  ).map((key) => RELATIONSHIP_UPLOAD_HEADER_ALIASES[key][0])
-  const globalErrors = missingColumns.length
-    ? [`필수 컬럼이 없습니다: ${missingColumns.join(', ')}`]
-    : []
-  const rows = lines.slice(1).map((line, rowIndex) => {
-    const values = splitCsvLine(line)
-    const data = Object.fromEntries(headers.map((header, index) => [header, values[index] ?? '']))
-    const employeeId = getRelationshipUploadCell(data, 'employeeId')
-    const managerEmployeeId = getRelationshipUploadCell(data, 'managerEmployeeId')
-    const collaboratorEmployeeId = getRelationshipUploadCell(data, 'collaboratorEmployeeId')
-    const manualRelationScore = parseOptionalNumber(getRelationshipUploadCell(data, 'manualRelationScore'))
-    const collaborationCount = parseOptionalNumber(getRelationshipUploadCell(data, 'collaborationCount'))
-    const checkinCount = parseOptionalNumber(getRelationshipUploadCell(data, 'checkinCount'))
-    const monthlyWorkCount = parseOptionalNumber(getRelationshipUploadCell(data, 'monthlyWorkCount'))
-    const relationType = normalizeRelationshipUploadType(getRelationshipUploadCell(data, 'relationType'))
-    const errors: string[] = []
-
-    if (!employeeId) errors.push('사번 필수')
-    if (!collaboratorEmployeeId && !managerEmployeeId) {
-      errors.push('협업자사번 또는 상위관리자사번 필요')
-    }
-    if (relationType && !RELATIONSHIP_UPLOAD_ALLOWED_TYPES.has(relationType)) {
-      errors.push('관계유형 허용값 확인')
-    }
-    if (Number.isNaN(manualRelationScore) || (manualRelationScore != null && (manualRelationScore < 0 || manualRelationScore > 100))) {
-      errors.push('수동관계점수는 0~100 숫자')
-    }
-
-    return {
-      rowNumber: rowIndex + 2,
-      employeeId,
-      name: getRelationshipUploadCell(data, 'name'),
-      division: getRelationshipUploadCell(data, 'division'),
-      department: getRelationshipUploadCell(data, 'department'),
-      team: getRelationshipUploadCell(data, 'team'),
-      title: getRelationshipUploadCell(data, 'title'),
-      managerEmployeeId,
-      collaboratorEmployeeId,
-      relationType,
-      projectCode: getRelationshipUploadCell(data, 'projectCode'),
-      kpiCode: getRelationshipUploadCell(data, 'kpiCode'),
-      collaborationCount: Number.isNaN(collaborationCount) ? null : collaborationCount,
-      checkinCount: Number.isNaN(checkinCount) ? null : checkinCount,
-      monthlyWorkCount: Number.isNaN(monthlyWorkCount) ? null : monthlyWorkCount,
-      lastWorkedAt: normalizeRelationshipUploadDate(getRelationshipUploadCell(data, 'lastWorkedAt')),
-      manualRelationScore: Number.isNaN(manualRelationScore) ? null : manualRelationScore,
-      note: getRelationshipUploadCell(data, 'note'),
-      errors,
-    }
-  })
-
-  return { rows, errors: globalErrors }
-}
-
-function getRelationshipUploadEvidence(
-  reviewer: ReviewerCandidateSummary,
-  targetEmployeeId: string,
-  rows: RelationshipUploadRow[]
-) {
-  return rows.filter((row) => {
-    if (row.errors.length) return false
-
-    const rowEmployeeIds = [row.employeeId, row.collaboratorEmployeeId, row.managerEmployeeId].filter(Boolean)
-    return rowEmployeeIds.includes(reviewer.employeeId) && rowEmployeeIds.includes(targetEmployeeId)
-  })
-}
-
-function scoreReviewerCandidate(
-  reviewer: ReviewerCandidateSummary,
-  target: { id: string; department: string },
-  relationshipRows: RelationshipUploadRow[]
-): ScoredReviewerCandidate {
-  let score = 0
-  const sources: string[] = []
-  const sameDepartment = reviewer.department === target.department
-  const evidenceRows = getRelationshipUploadEvidence(reviewer, target.id, relationshipRows)
-
-  if (reviewer.relationship === 'SELF') {
-    score = 0
-    sources.push('본인 응답 기준')
-  } else if (sameDepartment && reviewer.relationship === 'PEER') {
-    score += 35
-    sources.push('조직 정보: 같은 팀')
-  } else if (sameDepartment) {
-    score += 20
-    sources.push('조직 정보: 같은 본부')
-  } else {
-    score += 15
-    sources.push('조직 정보: 타 본부 협업 가능')
-  }
-
-  if (reviewer.relationship === 'SUPERVISOR') {
-    score += 30
-    sources.push('관리 관계')
-  }
-  if (reviewer.relationship === 'SUBORDINATE') {
-    score += 25
-    sources.push('팀원 관계')
-  }
-
-  for (const row of evidenceRows) {
-    if (row.relationType === 'PROJECT') {
-      score += 25
-      sources.push('프로젝트/KPI 접점')
-    }
-    if (row.relationType === 'KPI') {
-      score += 25
-      sources.push('프로젝트/KPI 접점')
-    }
-    if (row.relationType === 'RECENT_COLLAB') {
-      score += 20
-      sources.push('최근 협업 기록')
-    }
-    if (row.relationType === 'TEAM') {
-      score += 15
-      sources.push('업로드 관계 데이터: 같은 팀')
-    }
-    if (row.relationType === 'DIVISION') {
-      score += 10
-      sources.push('업로드 관계 데이터: 같은 본부')
-    }
-    if (row.relationType === 'OTHER_DIVISION') {
-      score += 10
-      sources.push('업로드 관계 데이터: 타 본부')
-    }
-    if (row.manualRelationScore != null) {
-      score += row.manualRelationScore * 0.4
-      sources.push('업로드 관계 데이터: 수동 관계 점수')
-    }
-    if ((row.collaborationCount ?? 0) > 0 || (row.checkinCount ?? 0) > 0 || (row.monthlyWorkCount ?? 0) > 0) {
-      score += Math.min(20, (row.collaborationCount ?? 0) * 2 + (row.checkinCount ?? 0) * 3 + (row.monthlyWorkCount ?? 0) * 2)
-      sources.push('최근 협업 기록')
-    }
-  }
-
-  const relationshipScore = Math.max(0, Math.min(100, Math.round(score)))
-  const uniqueSources = Array.from(new Set(sources))
-  const relationshipRationale = uniqueSources.length
-    ? `${uniqueSources.slice(0, 3).join(', ')} 기준으로 산정했습니다.`
-    : '실제 후보 데이터가 부족해 기본 조직 정보만 확인했습니다.'
-
-  return {
-    ...reviewer,
-    relationshipScore,
-    relationshipScoreSources: uniqueSources,
-    relationshipRationale,
-  }
-}
-
-function matchesReviewerSearchFilter(
-  reviewer: {
-    relationship: string
-    department: string
-    relationshipScoreSources?: string[]
-  },
-  filter: ReviewerSearchFilter,
-  targetDepartment: string
-) {
-  const sameDepartment = reviewer.department === targetDepartment
-
-  switch (filter) {
-    case 'SAME_TEAM':
-      return reviewer.relationship === 'PEER' && sameDepartment
-    case 'SAME_DIVISION':
-      return sameDepartment && reviewer.relationship !== 'SELF'
-    case 'CROSS_DIVISION':
-      return (
-        reviewer.relationship === 'CROSS_TEAM_PEER' ||
-        reviewer.relationship === 'CROSS_DEPT' ||
-        (!sameDepartment && reviewer.relationship !== 'SELF')
-      )
-    case 'KPI_TOUCHPOINT':
-      return reviewer.relationshipScoreSources?.some((source) => source.includes('프로젝트/KPI')) ?? false
-    case 'RECENT_COLLABORATION':
-      return reviewer.relationshipScoreSources?.some((source) => source.includes('최근 협업')) ?? false
-    default:
-      return true
-  }
 }
 
 type ReviewerNominationPanelProps = {
@@ -747,10 +275,13 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
 
   const scoredReviewerCandidates = useMemo(
     () =>
-      allReviewerCandidates
-        .map((reviewer) => scoreReviewerCandidate(reviewer, props.nomination.targetEmployee, relationshipUploadRows))
-        .sort((left, right) => right.relationshipScore - left.relationshipScore),
-    [allReviewerCandidates, props.nomination.targetEmployee, relationshipUploadRows]
+      scoreReviewerCandidates({
+        reviewers: allReviewerCandidates,
+        target: props.nomination.targetEmployee,
+        relationshipRows: relationshipUploadRows,
+        selectedReviewerIds: new Set(selectedIds),
+      }),
+    [allReviewerCandidates, props.nomination.targetEmployee, relationshipUploadRows, selectedIds]
   )
 
   const scoredReviewerDirectory = useMemo(
@@ -769,20 +300,22 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
         if (reviewer.employeeId === props.nomination.targetEmployee.id || reviewer.relationship === 'SELF') return false
         if (group.key === 'peer' && reviewer.relationship === 'SUPERVISOR') return false
         const scoredReviewer = scoredReviewerDirectory.get(reviewer.employeeId)
+        if (!scoredReviewer) return false
         const searchText = normalizeReviewerSearchText(
           [
-            reviewer.name,
-            reviewer.department,
-            getRelationshipLabel(reviewer.relationship),
+            scoredReviewer.name,
+            scoredReviewer.division,
+            scoredReviewer.department,
+            scoredReviewer.team,
+            scoredReviewer.title,
+            scoredReviewer.email,
+            scoredReviewer.employeeId,
+            getRelationshipLabel(scoredReviewer.relationship),
             group.label,
           ].join(' ')
         )
         const matchesSearch = !query || searchText.includes(query)
-        const matchesFilter = matchesReviewerSearchFilter(
-          scoredReviewer ?? reviewer,
-          reviewerFilter,
-          props.nomination.targetEmployee.department
-        )
+        const matchesFilter = matchesReviewerSearchFilter(scoredReviewer, reviewerFilter)
 
         if (!matchesSearch || !matchesFilter) return false
         seenReviewerIds.add(reviewer.employeeId)
@@ -791,7 +324,6 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
     }))
   }, [
     props.nomination.reviewerGroups,
-    props.nomination.targetEmployee.department,
     props.nomination.targetEmployee.id,
     reviewerFilter,
     reviewerSearchQuery,
@@ -805,98 +337,23 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
       const count = scoredReviewerCandidates.filter(
         (reviewer) =>
           reviewer.selectable &&
-          matchesReviewerSearchFilter(reviewer, filter.value, props.nomination.targetEmployee.department)
+          matchesReviewerSearchFilter(reviewer, filter.value)
       ).length
       counts.set(filter.value, count)
     }
 
     return counts
-  }, [scoredReviewerCandidates, props.nomination.targetEmployee.department])
+  }, [scoredReviewerCandidates])
 
   const recommendationSlots = useMemo(() => {
-    const usedReviewerIds = new Set<string>()
     const selectedScoredReviewers = selectedReviewers
       .map((reviewer) => scoredReviewerDirectory.get(reviewer.employeeId))
       .filter((reviewer): reviewer is ScoredReviewerCandidate => Boolean(reviewer))
-    const selectedByRule = (predicate: (reviewer: ScoredReviewerCandidate) => boolean) =>
-      selectedScoredReviewers.find((reviewer) => !usedReviewerIds.has(reviewer.employeeId) && predicate(reviewer))
-    const candidateByRule = (predicate: (reviewer: ScoredReviewerCandidate) => boolean) =>
-      scoredReviewerCandidates.find(
-        (reviewer) =>
-          reviewer.selectable &&
-          !usedReviewerIds.has(reviewer.employeeId) &&
-          reviewer.relationship !== 'SELF' &&
-          predicate(reviewer)
-      )
-    const pickSlot = (
-      key: string,
-      label: string,
-      shortageLabel: string,
-      predicate: (reviewer: ScoredReviewerCandidate) => boolean
-    ) => {
-      const selected = selectedByRule(predicate)
-      const reviewer = selected ?? candidateByRule(predicate)
-      if (reviewer) usedReviewerIds.add(reviewer.employeeId)
-
-      return {
-        key,
-        label,
-        shortageLabel,
-        reviewer,
-        selected: Boolean(selected),
-      }
-    }
-
-    return [
-      pickSlot(
-        'same-team-1',
-        '같은 팀 1명',
-        '같은 팀 추천 후보 부족',
-        (reviewer) =>
-          reviewer.relationship === 'PEER' &&
-          reviewer.department === props.nomination.targetEmployee.department
-      ),
-      pickSlot(
-        'same-division-1',
-        '같은 본부 1명',
-        '같은 본부 추천 후보 부족',
-        (reviewer) =>
-          reviewer.department === props.nomination.targetEmployee.department &&
-          reviewer.relationship !== 'SELF'
-      ),
-      pickSlot(
-        'same-division-2',
-        '같은 본부 2명',
-        '같은 본부 추천 후보 부족',
-        (reviewer) =>
-          reviewer.department === props.nomination.targetEmployee.department &&
-          reviewer.relationship !== 'SELF'
-      ),
-      pickSlot(
-        'cross-division-1',
-        '타 본부 1명',
-        '타 본부 추천 후보 부족',
-        (reviewer) =>
-          reviewer.relationship === 'CROSS_TEAM_PEER' ||
-          reviewer.relationship === 'CROSS_DEPT' ||
-          reviewer.department !== props.nomination.targetEmployee.department
-      ),
-      pickSlot(
-        'cross-division-2',
-        '타 본부 2명',
-        '타 본부 추천 후보 부족',
-        (reviewer) =>
-          reviewer.relationship === 'CROSS_TEAM_PEER' ||
-          reviewer.relationship === 'CROSS_DEPT' ||
-          reviewer.department !== props.nomination.targetEmployee.department
-      ),
-    ]
-  }, [
-    props.nomination.targetEmployee.department,
-    scoredReviewerCandidates,
-    scoredReviewerDirectory,
-    selectedReviewers,
-  ])
+    return buildFeedback360RecommendationSlots({
+      scoredReviewers: scoredReviewerCandidates,
+      selectedReviewers: selectedScoredReviewers,
+    })
+  }, [scoredReviewerCandidates, scoredReviewerDirectory, selectedReviewers])
 
   function toggleReviewer(employeeId: string, selectable = true) {
     if (!selectable) return
@@ -937,6 +394,14 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
   }
 
   async function handleWorkflow(action: 'submit' | 'approve' | 'reject' | 'publish') {
+    const confirmationMessages: Record<typeof action, string> = {
+      submit: '현재 평가자 매핑을 승인 요청 상태로 전환할까요?',
+      approve: '선택된 평가자 매핑을 승인할까요?',
+      reject: '선택된 평가자 매핑을 반려할까요?',
+      publish: '승인된 평가자 매핑으로 응답을 시작할까요?',
+    }
+    if (!window.confirm(confirmationMessages[action])) return
+
     setBusy(true)
     setNotice('')
     setErrorNotice('')
@@ -1097,9 +562,20 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
     collaboratorLabel: row.collaboratorEmployeeId || '없음',
     relationTypeLabel: getUploadRelationTypeLabel(row.relationType),
     manualScoreLabel: row.manualRelationScore == null ? '미입력' : String(row.manualRelationScore),
-    validationLabel: row.errors.length ? '확인 필요' : '정상',
+    validationLabel:
+      row.validationStatus === 'error'
+        ? '오류'
+        : row.validationStatus === 'needs_review'
+          ? '검토 필요'
+          : '정상',
+    validationStatus: row.validationStatus,
+    warnings: row.warnings,
     errors: row.errors,
   }))
+  const relationshipUploadValidCount = relationshipUploadRows.filter((row) => row.validationStatus === 'valid').length
+  const relationshipUploadNeedsReviewCount = relationshipUploadRows.filter((row) => row.validationStatus === 'needs_review').length
+  const relationshipUploadErrorCount = relationshipUploadRows.filter((row) => row.validationStatus === 'error').length
+  const availableReviewerCandidateCount = scoredReviewerCandidates.filter((reviewer) => !reviewer.isSelf).length
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1210,6 +686,15 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
           {errorNotice}
         </div>
       ) : null}
+      {!availableReviewerCandidateCount ? (
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+          <div className="font-semibold">이 라운드에는 추천 가능한 평가자 후보가 없습니다.</div>
+          <p className="mt-1">
+            조직/관계 데이터 또는 CSV 미리보기를 확인해 주세요. 운영 표에서 대상자별 라운드를 선택하면 후보가 있는
+            매핑 화면으로 이동할 수 있습니다.
+          </p>
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1249,7 +734,9 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
 
       <Feedback360RelationshipTemplatePanel
         fileName={relationshipUploadFileName}
-        validCount={relationshipUploadRows.filter((row) => !row.errors.length).length}
+        validCount={relationshipUploadValidCount}
+        needsReviewCount={relationshipUploadNeedsReviewCount}
+        errorCount={relationshipUploadErrorCount}
         totalCount={relationshipUploadRows.length}
         errors={relationshipUploadErrors}
         previewRows={relationshipUploadPreviewRows}
@@ -1409,6 +896,11 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
               후보를 임의로 만들지 않고 실제 후보 데이터가 있을 때만 표시합니다.
             </div>
           ) : null}
+          {reviewerFilter === 'NEEDS_REVIEW' ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+              후보 부족/검토 필요 필터는 선택 불가 후보, 관계 점수가 낮은 후보, 근거 데이터가 부족한 후보를 모아 보여줍니다.
+            </div>
+          ) : null}
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -1454,7 +946,16 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
                       <div className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
                         <div className="font-semibold text-slate-800">관계 점수 {slot.reviewer.relationshipScore}점</div>
                         <div>{slot.reviewer.relationshipRationale}</div>
-                        <div>사용된 데이터: {slot.reviewer.relationshipScoreSources.join(', ') || '조직 정보'}</div>
+                        <div className="flex flex-wrap gap-1">
+                          {(slot.reviewer.sourceChips.length ? slot.reviewer.sourceChips : ['조직 정보']).map((source, index) => (
+                            <span
+                              key={buildNominationRowKey(['slot-source', slot.key, slot.reviewer?.employeeId, source, index])}
+                              className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                            >
+                              {source}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -1536,8 +1037,21 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
                         {scoredReviewer ? (
                           <span className="mt-2 block text-xs leading-5 text-slate-600">
                             추천 근거: {scoredReviewer.relationshipRationale}
-                            <br />
-                            사용된 데이터: {scoredReviewer.relationshipScoreSources.join(', ') || '조직 정보'}
+                            <span className="mt-2 flex flex-wrap gap-1">
+                              {(scoredReviewer.sourceChips.length ? scoredReviewer.sourceChips : ['조직 정보']).map((source, index) => (
+                                <span
+                                  key={buildNominationRowKey([
+                                    'candidate-source',
+                                    reviewer.employeeId,
+                                    source,
+                                    index,
+                                  ])}
+                                  className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                >
+                                  {source}
+                                </span>
+                              ))}
+                            </span>
                           </span>
                         ) : null}
                         {reviewer.disabledReason ? (
@@ -1557,7 +1071,11 @@ export function ReviewerNominationPanel(props: ReviewerNominationPanelProps) {
                       ? '같은 본부 추천 후보 부족'
                       : reviewerFilter === 'CROSS_DIVISION'
                         ? '타 본부 추천 후보 부족'
-                        : '추천 가능한 평가자가 없습니다.'}
+                        : reviewerFilter === 'SELECTED'
+                          ? '이미 선택된 평가자가 없습니다.'
+                          : reviewerFilter === 'NEEDS_REVIEW'
+                            ? '검토가 필요한 후보가 없습니다.'
+                            : '추천 가능한 평가자가 없습니다.'}
                 </div>
               )}
             </div>
