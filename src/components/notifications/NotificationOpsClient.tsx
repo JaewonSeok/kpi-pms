@@ -1,7 +1,7 @@
 ﻿'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 type Tab = 'templates' | 'executions' | 'failures' | 'tools' | 'ai'
@@ -56,6 +56,10 @@ type QueueSummary = {
   suppressed: number
 }
 
+const EMPTY_TEMPLATES: Template[] = []
+const EMPTY_EXECUTIONS: JobExecution[] = []
+const EMPTY_QUEUE: QueueSummary = { queued: 0, retryPending: 0, deadLetter: 0, suppressed: 0 }
+
 type DeadLetter = {
   id: string
   type: string
@@ -76,6 +80,8 @@ type DeadLetter = {
     createdAt?: string | null
   }
 }
+
+const EMPTY_FAILURES: DeadLetter[] = []
 
 type AiLog = {
   id: string
@@ -164,46 +170,26 @@ export function NotificationOpsClient() {
     queryFn: async () => parseJson<AiLog[]>(await (await fetch('/api/admin/notifications/ai', { cache: 'no-store' })).json()),
   })
 
-  const templates = templatesQuery.data ?? []
-  const executions = executionsQuery.data?.executions ?? []
-  const queue = executionsQuery.data?.queue ?? { queued: 0, retryPending: 0, deadLetter: 0, suppressed: 0 }
-  const failures = failuresQuery.data ?? []
-
-  useEffect(() => {
-    if (!templates.length) return
-    setTemplateDrafts((current) => {
-      const next = { ...current }
-      let changed = false
-      for (const template of templates) {
-        if (!next[template.code]) {
-          next[template.code] = toDraft(template)
-          changed = true
-        }
-      }
-      return changed ? next : current
-    })
-  }, [templates])
-
-  useEffect(() => {
-    if (!selectedTemplateCode && templates[0]) setSelectedTemplateCode(templates[0].code)
-  }, [selectedTemplateCode, templates])
-
-  useEffect(() => {
-    if (!selectedExecutionId && executions[0]) setSelectedExecutionId(executions[0].id)
-  }, [executions, selectedExecutionId])
-
-  useEffect(() => {
-    if (!selectedFailureId && failures[0]) setSelectedFailureId(failures[0].id)
-  }, [failures, selectedFailureId])
+  const templates = templatesQuery.data ?? EMPTY_TEMPLATES
+  const executions = executionsQuery.data?.executions ?? EMPTY_EXECUTIONS
+  const queue = executionsQuery.data?.queue ?? EMPTY_QUEUE
+  const failures = failuresQuery.data ?? EMPTY_FAILURES
 
   const filteredTemplates = useMemo(() => templates.filter((item) => channel === 'ALL' || item.channel === channel), [channel, templates])
   const filteredExecutions = useMemo(() => executions.filter((item) => matchesPeriod(item.startedAt, period)), [executions, period])
   const filteredFailures = useMemo(() => failures.filter((item) => matchesPeriod(item.createdAt, period) && (channel === 'ALL' || item.channel === channel)), [channel, failures, period])
+  const defaultTemplateDrafts = useMemo(
+    () => Object.fromEntries(templates.map((template) => [template.code, toDraft(template)])),
+    [templates]
+  )
 
-  const currentTemplate = filteredTemplates.find((item) => item.code === selectedTemplateCode) ?? filteredTemplates[0] ?? null
-  const currentDraft = currentTemplate ? templateDrafts[currentTemplate.code] ?? toDraft(currentTemplate) : null
-  const currentExecution = filteredExecutions.find((item) => item.id === selectedExecutionId) ?? filteredExecutions[0] ?? null
-  const currentFailure = filteredFailures.find((item) => item.id === selectedFailureId) ?? filteredFailures[0] ?? null
+  const effectiveTemplateCode = selectedTemplateCode ?? filteredTemplates[0]?.code ?? null
+  const effectiveExecutionId = selectedExecutionId ?? filteredExecutions[0]?.id ?? null
+  const effectiveFailureId = selectedFailureId ?? filteredFailures[0]?.id ?? null
+  const currentTemplate = filteredTemplates.find((item) => item.code === effectiveTemplateCode) ?? filteredTemplates[0] ?? null
+  const currentDraft = currentTemplate ? templateDrafts[currentTemplate.code] ?? defaultTemplateDrafts[currentTemplate.code] : null
+  const currentExecution = filteredExecutions.find((item) => item.id === effectiveExecutionId) ?? filteredExecutions[0] ?? null
+  const currentFailure = filteredFailures.find((item) => item.id === effectiveFailureId) ?? filteredFailures[0] ?? null
 
   const previewJsonValid = useMemo(() => {
     try {
@@ -243,7 +229,7 @@ export function NotificationOpsClient() {
   }, [executions, filteredExecutions, filteredFailures.length, queue.queued, queue.retryPending])
 
   const saveMutation = useMutation({
-    mutationFn: async () => parseJson<Template[]>(await (await fetch('/api/admin/notification-templates', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templates: templates.map((template) => ({ code: template.code, name: template.name, type: template.type, channel: template.channel, ...templateDrafts[template.code] })) }) })).json()),
+    mutationFn: async () => parseJson<Template[]>(await (await fetch('/api/admin/notification-templates', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ templates: templates.map((template) => ({ code: template.code, name: template.name, type: template.type, channel: template.channel, ...(templateDrafts[template.code] ?? defaultTemplateDrafts[template.code] ?? toDraft(template)) })) }) })).json()),
     onSuccess: (data) => {
       setTemplateDrafts(Object.fromEntries(data.map((template) => [template.code, toDraft(template)])))
       setBanner({ tone: 'success', message: '템플릿을 저장했습니다.' })
