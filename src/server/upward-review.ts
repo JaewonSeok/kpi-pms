@@ -7,6 +7,7 @@ import type {
 } from '@prisma/client'
 import type { Session } from 'next-auth'
 import { createAuditLog } from '@/lib/audit'
+import { readAiAssistEnv } from '@/lib/ai-env'
 import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import { prisma } from '@/lib/prisma'
 import { formatDate } from '@/lib/utils'
@@ -59,6 +60,10 @@ export type UpwardReviewPageData = {
     canViewResults: boolean
     canViewAdmin: boolean
     canViewRaw: boolean
+  }
+  aiCoachingReadiness?: {
+    providerConfigured: boolean
+    disabledReason?: string | null
   }
   availableCycles: Array<{
     id: string
@@ -280,6 +285,7 @@ type GetUpwardReviewPageDataParams = {
   roundId?: string
   feedbackId?: string
   empId?: string
+  skipResultsAuditLog?: boolean
 }
 
 function canAccessUpwardResultShell(params: {
@@ -560,6 +566,9 @@ export async function getUpwardReviewPageData(
     }
   })
 
+  const aiCoachingEnv = readAiAssistEnv()
+  const aiCoachingProviderConfigured = aiCoachingEnv.enabled && Boolean(aiCoachingEnv.apiKey)
+
   const baseData: UpwardReviewPageData = {
     mode: params.mode,
     state: rounds.length ? 'ready' : 'empty',
@@ -583,6 +592,12 @@ export async function getUpwardReviewPageData(
       canViewAdmin:
         reviewAdminAccess.canManageAllRounds || reviewAdminAccess.canManageCollaboratorRounds,
       canViewRaw: canReadSelectedRoundContent || reviewAdminAccess.isGlobalAdmin,
+    },
+    aiCoachingReadiness: {
+      providerConfigured: aiCoachingProviderConfigured,
+      disabledReason: aiCoachingProviderConfigured
+        ? null
+        : 'AI 코칭 설정이 완료되지 않아 현재는 결과 요약과 후속 액션만 확인할 수 있습니다.',
     },
     availableCycles: availableCycles.map((cycle) => ({
       id: cycle.id,
@@ -1074,17 +1089,19 @@ export async function getUpwardReviewPageData(
       ? reviewAdminAccess.isGlobalAdmin
       : canReadSelectedRoundContent || canManageSelectedRound
 
-  await createAuditLog({
-    userId: employee.id,
-    action: 'UPWARD_REVIEW_RESULTS_VIEWED',
-    entityType: 'MultiFeedbackRound',
-    entityId: resultsRound.id,
-    newValue: {
-      roundId: resultsRound.id,
-      targetRevieweeId: selectedTarget.id,
-      visibilityMode: rawResponsePolicyAllows ? 'ADMIN_RAW' : visible ? 'AGGREGATED' : 'HIDDEN',
-    },
-  })
+  if (!params.skipResultsAuditLog) {
+    await createAuditLog({
+      userId: employee.id,
+      action: 'UPWARD_REVIEW_RESULTS_VIEWED',
+      entityType: 'MultiFeedbackRound',
+      entityId: resultsRound.id,
+      newValue: {
+        roundId: resultsRound.id,
+        targetRevieweeId: selectedTarget.id,
+        visibilityMode: rawResponsePolicyAllows ? 'ADMIN_RAW' : visible ? 'AGGREGATED' : 'HIDDEN',
+      },
+    })
+  }
 
   return {
     ...baseData,

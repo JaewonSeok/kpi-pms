@@ -1951,6 +1951,7 @@ export const UpwardReviewAICoachingRequestSchema = z.object({
   cycleId: z.string().max(100).optional(),
   roundId: z.string().max(100).optional(),
   empId: z.string().max(100).optional(),
+  mode: z.enum(['SELF', 'MANAGER', 'HR']).default('SELF'),
 })
 
 export const EvaluationPerformanceBriefingRequestSchema = z.object({

@@ -28,10 +28,11 @@ export async function POST(request: Request) {
       cycleId: validated.data.cycleId,
       roundId: validated.data.roundId,
       empId: validated.data.empId,
+      mode: validated.data.mode,
     })
 
     return successResponse(preview)
   } catch (error) {
-    return errorResponse(error)
+    return errorResponse(error, 'AI 코칭 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.')
   }
 }
