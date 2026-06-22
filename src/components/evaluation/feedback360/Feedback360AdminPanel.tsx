@@ -1610,7 +1610,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
             ? `테스트 수신자 ${testEmail || '1명'}`
             : `발송 대상 ${targetCount}명`,
         channelLabel: mode === 'test' ? '이메일 테스트' : '이메일 + 앱 알림',
-        providerStatus: '기존 360 알림 발송 경로로 요청했습니다. provider 세부 결과는 알림 운영 화면에서 확인합니다.',
+        providerStatus: '기존 360 알림 발송 경로로 요청했습니다. 발송 설정 세부 결과는 알림 운영 화면에서 확인합니다.',
         message: successMessage,
         retryMode: mode,
       })
@@ -4870,7 +4870,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
               />
             ) : (
               <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
-                메일은 기존 360 알림 발송 경로로 예약됩니다. 발송 채널은 이메일 + 앱 알림이며, provider 상태와 발송 결과는 이 화면에 남고 사용자가 닫기 전까지 사라지지 않습니다.
+                메일은 기존 360 알림 발송 경로로 예약됩니다. 발송 채널은 이메일 + 앱 알림이며, 발송 설정과 발송 결과는 이 화면에 남고 사용자가 닫기 전까지 사라지지 않습니다.
               </div>
             )}
 
