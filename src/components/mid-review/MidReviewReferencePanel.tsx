@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { LoaderCircle } from 'lucide-react'
 
 type MidReviewSummary = {
@@ -36,43 +36,29 @@ export function MidReviewReferencePanel({
   helper?: string
   compact?: boolean
 }) {
-  const [summary, setSummary] = useState<MidReviewSummary>(null)
-  const [loading, setLoading] = useState(false)
-  const [errorNotice, setErrorNotice] = useState('')
+  const summaryQuery = useQuery({
+    queryKey: ['mid-review-summary', kind, targetId],
+    enabled: Boolean(targetId),
+    queryFn: async () => {
+      if (!targetId) return null
 
-  useEffect(() => {
-    if (!targetId) {
-      setSummary(null)
-      return
-    }
+      const response = await fetch(`/api/mid-review/summary?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(targetId)}`)
+      const json = await response.json()
+      if (!response.ok || !json.success) {
+        throw new Error(json?.error?.message ?? '중간 점검 요약을 불러오지 못했습니다.')
+      }
 
-    let active = true
-    setLoading(true)
-    setErrorNotice('')
-
-    fetch(`/api/mid-review/summary?kind=${encodeURIComponent(kind)}&id=${encodeURIComponent(targetId)}`)
-      .then(async (response) => {
-        const json = await response.json()
-        if (!response.ok || !json.success) {
-          throw new Error(json?.error?.message ?? '중간 점검 요약을 불러오지 못했습니다.')
-        }
-        if (!active) return
-        setSummary(json.data ?? null)
-      })
-      .catch((error) => {
-        if (!active) return
-        setErrorNotice(error instanceof Error ? error.message : '중간 점검 요약을 불러오지 못했습니다.')
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false)
-        }
-      })
-
-    return () => {
-      active = false
-    }
-  }, [kind, targetId])
+      return (json.data ?? null) as MidReviewSummary
+    },
+  })
+  const summary = targetId ? summaryQuery.data ?? null : null
+  const loading = Boolean(targetId) && summaryQuery.isFetching
+  const errorNotice =
+    summaryQuery.error instanceof Error
+      ? summaryQuery.error.message
+      : summaryQuery.isError
+        ? '중간 점검 요약을 불러오지 못했습니다.'
+        : ''
 
   return (
     <div className={`rounded-2xl border border-slate-200 bg-white ${compact ? 'p-4' : 'p-5'} shadow-sm`}>
