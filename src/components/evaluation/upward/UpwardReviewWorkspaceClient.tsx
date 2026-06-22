@@ -23,6 +23,7 @@ import type { UpwardReviewPageData } from '@/server/upward-review'
 import { DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS } from '@/lib/upward-review'
 import type { UpwardReviewAICoachingPreview } from '@/lib/upward-review-ai-coaching'
 import { Feedback360Avatar } from '../feedback360/ppt/Feedback360Avatar'
+import { LeadershipDiagnosisOpsDashboard } from './LeadershipDiagnosisOpsDashboard'
 
 type Notice =
   | {
@@ -2052,7 +2053,7 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
       <section className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-emerald-50 p-6 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">Leadership Review</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">리더십 진단</p>
             <h1 className="text-3xl font-semibold text-slate-950">
               {props.data.mode === 'admin'
                 ? '리더십 진단 운영'
@@ -2110,6 +2111,7 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
 
       {props.data.mode === 'admin' && adminData ? (
         <div className="space-y-6">
+          <LeadershipDiagnosisOpsDashboard data={props.data} admin={adminData} />
           <section className="grid gap-4 md:grid-cols-4">
             {adminData.selectedRound?.summaryCards.map((card) => (
               <StatCard key={card.label} label={card.label} value={card.value} />
