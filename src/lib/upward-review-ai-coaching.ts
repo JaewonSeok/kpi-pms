@@ -1,53 +1,67 @@
 import { z } from 'zod'
 
-export const UpwardReviewAICoachingItemSchema = z.object({
-  title: z.string().min(1),
-  evidence: z.string().min(1),
-  whyItMatters: z.string().min(1),
-  action: z.string().min(1),
-})
-
-export const UpwardReviewAICoachingRiskSchema = z.object({
-  title: z.string().min(1),
-  signal: z.string().min(1),
-  potentialImpact: z.string().min(1),
-  coachingQuestion: z.string().min(1),
-})
-
-export const UpwardReviewAICoachingPlanSchema = z.object({
-  period: z.string().min(1),
-  focus: z.string().min(1),
-  actions: z.array(z.string().min(1)).min(1),
-  successSignals: z.array(z.string().min(1)).min(1),
-})
-
 export const UpwardReviewAICoachingResultSchema = z.object({
-  executiveSummary: z.string().min(1),
-  leadershipPattern: z.string().min(1),
-  strengths: z.array(UpwardReviewAICoachingItemSchema).min(1),
-  risks: z.array(UpwardReviewAICoachingRiskSchema).min(1),
-  coachingPlan: z.array(UpwardReviewAICoachingPlanSchema).min(1),
-  oneOnOneGuide: z.object({
-    opening: z.string().min(1),
-    questions: z.array(z.string().min(1)).min(1),
-    commitments: z.array(z.string().min(1)).min(1),
-  }),
-  teamOperatingSuggestions: z.array(z.string().min(1)).min(1),
-  communicationScripts: z.array(
+  summary: z.string().min(1),
+  confidenceLevel: z.enum(['HIGH', 'MEDIUM', 'LOW']),
+  dataLimitations: z.array(z.string().min(1)).default([]),
+  leadershipStrengths: z.array(
     z.object({
-      situation: z.string().min(1),
-      script: z.string().min(1),
+      title: z.string().min(1),
+      category: z.string().min(1),
+      observedBehavior: z.string().min(1),
+      evidence: z.array(z.string().min(1)).default([]),
+      keepDoing: z.array(z.string().min(1)).default([]),
+      teamImpact: z.string().min(1),
     })
-  ).min(1),
-  cautions: z.array(z.string().min(1)).min(1),
-  nextReviewChecklist: z.array(z.string().min(1)).min(1),
+  ).default([]),
+  developmentAreas: z.array(
+    z.object({
+      title: z.string().min(1),
+      category: z.string().min(1),
+      observedPattern: z.string().min(1),
+      impact: z.string().min(1),
+      recommendedActions: z.array(z.string().min(1)).default([]),
+    })
+  ).default([]),
+  blindSpots: z.array(
+    z.object({
+      title: z.string().min(1),
+      whyItMatters: z.string().min(1),
+      signals: z.array(z.string().min(1)).default([]),
+      suggestedCheck: z.string().min(1),
+    })
+  ).default([]),
+  actionPlan30Days: z.array(z.string().min(1)).default([]),
+  actionPlan60Days: z.array(z.string().min(1)).default([]),
+  actionPlan90Days: z.array(z.string().min(1)).default([]),
+  coachingQuestions: z.object({
+    selfReflection: z.array(z.string().min(1)).default([]),
+    teamConversation: z.array(z.string().min(1)).default([]),
+    nextCheckIn: z.array(z.string().min(1)).default([]),
+  }),
+  managerHrGuide: z.object({
+    recognize: z.array(z.string().min(1)).default([]),
+    ask: z.array(z.string().min(1)).default([]),
+    agree: z.array(z.string().min(1)).default([]),
+    followUp: z.array(z.string().min(1)).default([]),
+  }),
+  safetyNote: z.string().min(1),
 })
 
 export type UpwardReviewAICoachingResult = z.infer<typeof UpwardReviewAICoachingResultSchema>
 
+export type UpwardReviewAICoachingRole = 'SELF' | 'MANAGER' | 'HR'
+
 export type UpwardReviewAICoachingPreview = {
-  requestLogId: string
-  source: 'ai' | 'disabled' | 'fallback'
-  fallbackReason?: string | null
+  generatedAt: string
+  mode: UpwardReviewAICoachingRole
   result: UpwardReviewAICoachingResult
+  source: {
+    responseCount: number
+    anonymityThreshold: number
+    anonymitySatisfied: boolean
+    categoryCount: number
+    commentSummaryCount: number
+  }
+  disclaimer: string
 }
