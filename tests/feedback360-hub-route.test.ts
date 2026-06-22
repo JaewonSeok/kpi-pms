@@ -6,6 +6,13 @@ import {
   buildFeedback360ResponseTargetDedupeKey,
   dedupeFeedback360ResponseTargets,
 } from '../src/components/evaluation/feedback360/feedback360-response-targets'
+import {
+  buildFeedback360RecommendationSlots,
+  matchesReviewerSearchFilter,
+  parseRelationshipUploadCsv,
+  scoreReviewerCandidates,
+  type Feedback360ReviewerCandidate,
+} from '../src/components/evaluation/feedback360/ppt/feedback360RelationshipScoring'
 
 async function run(name: string, fn: () => void | Promise<void>) {
   try {
@@ -68,6 +75,13 @@ async function main() {
       '평가자 매핑 현황',
       '실제 매핑 설정은 평가자 매핑 화면에서 진행합니다',
       '평가자 매핑 화면 열기',
+      '대상자별 진입',
+      '대상자별 후보 확인',
+      '후보 데이터 확인',
+      '매핑 데이터 없음',
+      '후보 수',
+      '추천 가능 여부',
+      '대상자별 매핑 데이터가 없습니다.',
       'AI 평가자 추천',
       'AI/관계 점수 추천',
       '관계 데이터 양식 다운로드',
@@ -140,6 +154,7 @@ async function main() {
       'src/components/evaluation/feedback360/ppt/Feedback360MailDiagnosticsPpt.tsx',
       'src/components/evaluation/feedback360/ppt/Feedback360MailReadinessPanel.tsx',
       'src/components/evaluation/feedback360/ppt/feedback360MailReadiness.ts',
+      'src/components/evaluation/feedback360/ppt/feedback360RelationshipScoring.ts',
       'src/components/evaluation/feedback360/ppt/Feedback360PptEmptyState.tsx',
       'src/components/evaluation/feedback360/ppt/Feedback360PptToastDialog.tsx',
     ].map(read).join('\n')
@@ -533,9 +548,10 @@ async function main() {
     const visibilitySettingsPanel = read('src/components/evaluation/feedback360/ppt/Feedback360VisibilitySettings.tsx')
     const mailReadinessPanel = read('src/components/evaluation/feedback360/ppt/Feedback360MailReadinessPanel.tsx')
     const mailReadiness = read('src/components/evaluation/feedback360/ppt/feedback360MailReadiness.ts')
+    const relationshipScoring = read('src/components/evaluation/feedback360/ppt/feedback360RelationshipScoring.ts')
     const aiAssist = read('src/lib/ai-assist.ts')
     const analysisView = read('src/components/evaluation/feedback360/FeedbackReportAnalysisView.tsx')
-    const nominationSurfaces = `${nominationPanel}\n${relationshipTemplatePanel}\n${visibilitySettingsPanel}\n${mailReadinessPanel}\n${mailReadiness}\n${aiAssist}`
+    const nominationSurfaces = `${nominationPanel}\n${relationshipTemplatePanel}\n${visibilitySettingsPanel}\n${mailReadinessPanel}\n${mailReadiness}\n${relationshipScoring}\n${aiAssist}`
 
     for (const text of [
       '공개 범위: 전체 익명',
@@ -547,7 +563,17 @@ async function main() {
       '관계 데이터 양식 다운로드',
       '관계 데이터 업로드 미리보기',
       '업로드된 관계 데이터가 없습니다.',
-      '수동관계점수는 0~100 숫자',
+      '정상',
+      '검토 필요',
+      '오류',
+      '사번 누락',
+      '협업자사번 누락',
+      '상위관리자사번 또는 협업자사번 둘 다 누락',
+      '수동관계점수 범위 오류',
+      '알 수 없는 관계유형',
+      '관계유형 확인 필요',
+      '최근협업일 형식 확인 필요',
+      '조직 매칭 확인 필요',
       'RELATIONSHIP_TEMPLATE_COLUMNS',
       'RELATIONSHIP_UPLOAD_HEADER_ALIASES',
       'RELATIONSHIP_UPLOAD_ALLOWED_TYPES',
@@ -566,6 +592,8 @@ async function main() {
       '추천 가능한 평가자가 없습니다',
       'reviewerFilterCounts',
       '{filter.label} {reviewerFilterCounts.get(filter.value) ?? 0}',
+      '이미 선택됨',
+      '후보 부족/검토 필요',
       '같은 팀 추천 후보 부족',
       '같은 본부 추천 후보 부족',
       '타 본부 추천 후보 부족',
@@ -581,6 +609,12 @@ async function main() {
       '이메일 발송 설정이 완료되지 않았습니다.',
       '현재는 앱 알림만 발송할 수 있습니다.',
       '검증 상태',
+      'validationStatus',
+      'needsReviewCount',
+      'errorCount',
+      'warnings',
+      '이 라운드에는 추천 가능한 평가자 후보가 없습니다.',
+      '조직/관계 데이터 또는 CSV 미리보기를 확인해 주세요.',
     ]) {
       assert.equal(nominationSurfaces.includes(text), true, `missing ${text}`)
     }
@@ -627,6 +661,143 @@ async function main() {
     ]) {
       assert.equal(nominationPanel.includes(riskyKeyPattern), false, `${riskyKeyPattern} should not be used as a React key`)
     }
+  })
+
+  await run('feedback 360 relationship scoring helper ranks real candidates and validates CSV preview', () => {
+    const target = {
+      id: 'emp-target',
+      department: '인사팀',
+      team: '인사기획팀',
+    }
+    const candidates: Feedback360ReviewerCandidate[] = [
+      {
+        employeeId: 'emp-target',
+        name: '대상자',
+        relationship: 'SELF',
+        department: '인사팀',
+        team: '인사기획팀',
+        groupKey: 'self',
+        groupLabel: '본인',
+        selectable: true,
+      },
+      {
+        employeeId: 'emp-peer-team',
+        name: '같은팀동료',
+        relationship: 'PEER',
+        department: '인사팀',
+        team: '인사기획팀',
+        groupKey: 'peer',
+        groupLabel: '동료',
+        selectable: true,
+      },
+      {
+        employeeId: 'emp-peer-division',
+        name: '같은본부동료',
+        relationship: 'PEER',
+        department: '인사팀',
+        team: '인사운영팀',
+        groupKey: 'peer',
+        groupLabel: '동료',
+        selectable: true,
+      },
+      {
+        employeeId: 'emp-peer-division-2',
+        name: '같은본부동료2',
+        relationship: 'PEER',
+        department: '인사팀',
+        team: '인사보상팀',
+        groupKey: 'peer',
+        groupLabel: '동료',
+        selectable: true,
+      },
+      {
+        employeeId: 'emp-cross-1',
+        name: '타본부협업자1',
+        relationship: 'CROSS_DEPT',
+        department: '전략팀',
+        team: '전략기획팀',
+        groupKey: 'peer',
+        groupLabel: '동료',
+        selectable: true,
+      },
+      {
+        employeeId: 'emp-cross-2',
+        name: '타본부협업자2',
+        relationship: 'CROSS_DEPT',
+        department: '재무팀',
+        team: '회계팀',
+        groupKey: 'peer',
+        groupLabel: '동료',
+        selectable: true,
+      },
+      {
+        employeeId: 'emp-manager',
+        name: '상위관리자',
+        relationship: 'SUPERVISOR',
+        department: '인사팀',
+        team: '인사기획팀',
+        groupKey: 'supervisor',
+        groupLabel: '상사',
+        selectable: true,
+      },
+    ]
+    const csv = [
+      '사번,성명,본부,실/부서,팀,직책,상위관리자사번,협업자사번,관계유형,프로젝트코드,KPI코드,협업횟수,체크인횟수,월간업무건수,최근협업일,수동관계점수,비고',
+      'emp-target,대상자,경영지원본부,인사팀,인사기획팀,구성원,,emp-cross-1,프로젝트,PRJ-1,,4,1,2,2026-06-01,90,프로젝트 협업',
+      'emp-target,대상자,경영지원본부,인사팀,인사기획팀,구성원,,emp-cross-2,KPI,,KPI-1,2,0,1,2026-06-02,70,KPI 협업',
+      'emp-target,검토행,,,,구성원,,emp-peer-team,,PRJ-2,,1,0,1,날짜확인,80,검토 필요',
+      ',누락행,경영지원본부,인사팀,인사기획팀,구성원,,,UNKNOWN,,,,,,2026-06-03,101,오류',
+    ].join('\n')
+    const parsed = parseRelationshipUploadCsv(csv)
+    assert.equal(parsed.rows.length, 4)
+    assert.equal(parsed.rows[0].validationStatus, 'valid')
+    assert.equal(parsed.rows[2].validationStatus, 'needs_review')
+    assert.deepEqual(parsed.rows[2].warnings, [
+      '관계유형 확인 필요',
+      '최근협업일 형식 확인 필요',
+      '조직 매칭 확인 필요',
+    ])
+    assert.equal(parsed.rows[3].validationStatus, 'error')
+    assert.deepEqual(parsed.rows[3].errors, [
+      '사번 누락',
+      '협업자사번 누락',
+      '상위관리자사번 또는 협업자사번 둘 다 누락',
+      '알 수 없는 관계유형',
+      '수동관계점수 범위 오류',
+    ])
+
+    const scored = scoreReviewerCandidates({
+      reviewers: candidates,
+      target,
+      relationshipRows: parsed.rows,
+      selectedReviewerIds: new Set(['emp-peer-team']),
+    })
+    const byId = new Map(scored.map((candidate) => [candidate.employeeId, candidate]))
+    assert.equal(byId.get('emp-target')?.isExcluded, true)
+    assert.equal(byId.get('emp-target')?.relationLabel, '본인')
+    assert.equal(byId.get('emp-peer-team')?.slotRecommendation, 'SAME_TEAM')
+    assert.equal(byId.get('emp-peer-team')?.isAlreadySelected, true)
+    assert.equal(byId.get('emp-peer-division')?.slotRecommendation, 'SAME_DIVISION')
+    assert.equal(byId.get('emp-manager')?.slotRecommendation, 'NEEDS_REVIEW')
+    assert.equal(byId.get('emp-cross-1')?.slotRecommendation, 'CROSS_DIVISION')
+    assert.equal(byId.get('emp-cross-1')?.relationshipScoreSources.includes('프로젝트/KPI 접점'), true)
+    assert.equal(byId.get('emp-cross-1')?.relationshipScoreSources.includes('최근 협업'), true)
+    assert.equal(matchesReviewerSearchFilter(byId.get('emp-peer-team')!, 'SELECTED'), true)
+    assert.equal(matchesReviewerSearchFilter(byId.get('emp-cross-1')!, 'KPI_TOUCHPOINT'), true)
+    assert.equal(matchesReviewerSearchFilter(byId.get('emp-cross-1')!, 'RECENT_COLLABORATION'), true)
+
+    const slots = buildFeedback360RecommendationSlots({
+      scoredReviewers: scored,
+      selectedReviewers: scored.filter((candidate) => candidate.isAlreadySelected),
+    })
+    assert.equal(slots.length, 5)
+    assert.equal(slots[0].reviewer?.employeeId, 'emp-peer-team')
+    assert.equal(slots[1].reviewer?.employeeId, 'emp-peer-division')
+    assert.equal(slots[2].reviewer?.employeeId, 'emp-peer-division-2')
+    assert.equal(slots[3].reviewer?.employeeId, 'emp-cross-1')
+    assert.equal(slots[4].reviewer?.employeeId, 'emp-cross-2')
+    assert.equal(slots.some((slot) => slot.reviewer?.employeeId === 'emp-manager'), false)
+    assert.equal(new Set(slots.map((slot) => slot.reviewer?.employeeId).filter(Boolean)).size, 5)
   })
 
   await run('feedback 360 mail readiness uses safe preview-only diagnostics', () => {
