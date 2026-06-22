@@ -76,6 +76,7 @@ import {
   type DevelopmentPlanLinkedEvidence,
 } from '@/lib/development-plan'
 import { formatGoalWeightLabel } from '@/lib/goal-display'
+import { readAiAssistEnv } from '@/lib/ai-env'
 import { prisma } from '@/lib/prisma'
 import { formatDate } from '@/lib/utils'
 import {
@@ -137,6 +138,9 @@ export type Feedback360PageData = {
     canViewAdmin: boolean
     canViewResults: boolean
     canRespond: boolean
+  }
+  aiCoachingReadiness?: {
+    providerConfigured: boolean
   }
   availableCycles: Array<{
     id: string
@@ -347,6 +351,11 @@ export type Feedback360PageData = {
     }
     roleGuide?: FeedbackRoleGuideViewModel
     growthCopilot?: FeedbackGrowthCopilotViewModel
+    aiCoaching?: {
+      enabled: boolean
+      providerConfigured: boolean
+      disabledReason?: string | null
+    }
     linkage: Array<{
       label: string
       href: string
@@ -2054,6 +2063,7 @@ export async function getFeedback360PageData(
 
     const pendingRequests = Array.from(pendingRequestMap.values())
 
+    const baseAiCoachingEnv = readAiAssistEnv()
     const baseData: Feedback360PageData = {
       mode: params.mode,
       state: scopedRounds.length ? 'ready' : 'empty',
@@ -2072,6 +2082,9 @@ export async function getFeedback360PageData(
           reviewAdminAccess.canManageAllRounds || reviewAdminAccess.canManageCollaboratorRounds,
         canViewResults: true,
         canRespond: true,
+      },
+      aiCoachingReadiness: {
+        providerConfigured: baseAiCoachingEnv.enabled && Boolean(baseAiCoachingEnv.apiKey),
       },
       availableCycles: availableCycles.map((cycle) => ({
         id: cycle.id,
@@ -2637,6 +2650,13 @@ export async function getFeedback360PageData(
               }
             : undefined
         : undefined
+    const aiCoachingEnv = readAiAssistEnv()
+    const aiCoachingProviderConfigured = aiCoachingEnv.enabled && Boolean(aiCoachingEnv.apiKey)
+    const aiCoachingDisabledReason = !aiCoachingProviderConfigured
+      ? 'AI 코칭을 사용하려면 AI 설정이 필요합니다.'
+      : !thresholdMet || submittedTargetFeedbacks.length < selectedRound.minRaters
+        ? '응답 수와 익명 기준이 충족되면 AI 코칭을 생성할 수 있습니다.'
+        : null
     const summaryCards = [
       {
         id: 'LEADER_REVIEW' as const,
@@ -2871,6 +2891,11 @@ export async function getFeedback360PageData(
                 },
               }
             : undefined,
+          aiCoaching: {
+            enabled: aiCoachingProviderConfigured && !aiCoachingDisabledReason,
+            providerConfigured: aiCoachingProviderConfigured,
+            disabledReason: aiCoachingDisabledReason,
+          },
           linkage: [
             {
               label: '업적평가 입력으로 이동',

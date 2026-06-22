@@ -58,6 +58,7 @@ import {
 } from './ppt/Feedback360ResultsPpt'
 import { Feedback360HubResultsPpt } from './ppt/Feedback360HubResultsPpt'
 import { Feedback360Avatar } from './ppt/Feedback360Avatar'
+import { Feedback360AiCoachingPanel } from './ppt/Feedback360AiCoachingPanel'
 import { Feedback360MailReadinessPanel } from './ppt/Feedback360MailReadinessPanel'
 import { buildFeedback360MailReadiness } from './ppt/feedback360MailReadiness'
 import {
@@ -2034,6 +2035,20 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                         label: category.category,
                       }))}
                     />
+                    <Feedback360AiCoachingPanel
+                      cycleId={selectedHubCycleId}
+                      roundId={selectedHubRound?.id ?? null}
+                      targetEmployeeId={null}
+                      providerConfigured={props.data.aiCoachingReadiness?.providerConfigured ?? false}
+                      canUseAi={false}
+                      disabledReason="개별 결과 리포트에서 대상자를 선택하면 AI 코칭을 생성할 수 있습니다."
+                      anonymitySatisfied={Boolean(selectedHubRound && selectedHubRound.submittedCount >= selectedHubRound.minRaters)}
+                      responseCount={selectedHubRound?.submittedCount ?? 0}
+                      anonymityThreshold={selectedHubRound?.minRaters ?? 0}
+                      mode={canViewFeedback360Operations ? 'HR' : 'SELF'}
+                      showManagerGuide={canViewFeedback360Operations}
+                      compact
+                    />
                     <Feedback360MailReadinessPanel
                       model={resultsMailReadiness}
                       previewOpen={resultsMailPreviewOpen}
@@ -2104,6 +2119,33 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
               canGenerateReport={Boolean(props.data.selectedRoundId)}
             />
           ) : null}
+
+          <Feedback360AiCoachingPanel
+            cycleId={props.data.selectedCycleId}
+            roundId={props.data.selectedRoundId}
+            targetEmployeeId={props.data.results.targetEmployee.id}
+            providerConfigured={
+              props.data.results.aiCoaching?.providerConfigured ??
+              props.data.aiCoachingReadiness?.providerConfigured ??
+              false
+            }
+            canUseAi={props.data.results.aiCoaching?.enabled ?? false}
+            disabledReason={props.data.results.aiCoaching?.disabledReason ?? null}
+            anonymitySatisfied={props.data.results.thresholdMet}
+            responseCount={props.data.results.feedbackCount}
+            anonymityThreshold={props.data.results.anonymityThreshold}
+            mode={
+              canViewFeedback360Operations
+                ? 'HR'
+                : props.data.currentUser?.id && props.data.currentUser.id !== props.data.results.targetEmployee.id
+                  ? 'MANAGER'
+                  : 'SELF'
+            }
+            showManagerGuide={
+              canViewFeedback360Operations ||
+              Boolean(props.data.currentUser?.id && props.data.currentUser.id !== props.data.results.targetEmployee.id)
+            }
+          />
 
           <div className="hidden" aria-hidden="true">
           <Panel
