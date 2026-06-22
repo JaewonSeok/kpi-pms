@@ -102,6 +102,10 @@ type EmployeeDirectoryResponse = {
   employees: EmployeeListItem[]
 }
 
+const EMPTY_DEPARTMENT_OPTIONS: DepartmentOption[] = []
+const EMPTY_MANAGER_OPTIONS: ManagerOption[] = []
+const EMPTY_EMPLOYEES: EmployeeListItem[] = []
+
 type SaveEmployeeResponse = {
   employee: EmployeeListItem
   hierarchyUpdatedCount: number
@@ -675,9 +679,9 @@ export function GoogleAccountRegistrationClient() {
 
   const directoryData =
     activeTab === 'org-chart' ? orgMemberDirectoryQuery.data ?? directoryQuery.data : directoryQuery.data
-  const departmentOptions = directoryData?.departments ?? []
-  const managerOptions = directoryData?.managerOptions ?? []
-  const employees = directoryData?.employees ?? []
+  const departmentOptions = directoryData?.departments ?? EMPTY_DEPARTMENT_OPTIONS
+  const managerOptions = directoryData?.managerOptions ?? EMPTY_MANAGER_OPTIONS
+  const employees = directoryData?.employees ?? EMPTY_EMPLOYEES
   const summary = directoryData?.summary
   const departmentSelection = useMemo(
     () => buildDepartmentSelectionState(departmentOptions, form.deptId),
