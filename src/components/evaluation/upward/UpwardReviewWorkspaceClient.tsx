@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
-  Download,
   Info,
   Mail,
   MessageSquare,
@@ -227,12 +226,10 @@ function getLeadershipAverageScore(results: NonNullable<UpwardReviewPageData['re
   return Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 100) / 100
 }
 
-function getLeadershipScoreLevel(score: number | null) {
-  if (score == null) return '데이터 없음'
-  if (score >= 4.2) return '높음'
-  if (score >= 3.6) return '보통 이상'
-  if (score >= 3) return '보통'
-  return '개선 필요'
+function getLeadershipResultCategories(results: NonNullable<UpwardReviewPageData['results']>) {
+  return results.questionSummaries
+    .filter((question) => question.averageScore != null)
+    .sort((a, b) => (b.averageScore ?? 0) - (a.averageScore ?? 0))
 }
 
 function resolveTargetTypeFromLabel(label: string) {
@@ -299,6 +296,14 @@ function LeadershipPptShell(props: {
                 ) : null}
               </div>
               {props.subtitle ? <p className="mt-3 text-sm font-bold text-slate-500">{props.subtitle}</p> : null}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-extrabold text-blue-700">
+                  공식 평가 점수/등급을 자동 산정하지 않습니다
+                </span>
+                <span className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-extrabold text-slate-600">
+                  성장 피드백 참고 자료
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -311,12 +316,6 @@ function LeadershipPptShell(props: {
                 <div className="text-xs font-extrabold text-blue-950">종료일</div>
                 <div className="mt-1 font-extrabold text-rose-600">{props.dueLabel ?? '마감일 확인'}</div>
               </div>
-              {props.activeItem === 'report' ? (
-                <button type="button" className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-extrabold text-blue-950">
-                  <Download className="h-4 w-4" />
-                  PDF 다운로드
-                </button>
-              ) : null}
             </div>
           </header>
 
@@ -1433,6 +1432,19 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
   const leadershipResultSubmittedRate = resultsData?.feedbackCount
     ? getLeadershipProgress({ total: Math.max(resultsData.feedbackCount, resultsData.minRaters), answered: resultsData.feedbackCount })
     : 0
+  const leadershipResultCategories = resultsData ? getLeadershipResultCategories(resultsData) : []
+  const leadershipStrengthTop3 = resultsData?.strengths.slice(0, 3) ?? []
+  const leadershipImprovementTop3 = resultsData?.improvements.slice(0, 3) ?? []
+  const leadershipCheckInQuestions = [
+    '최근 한 달 동안 구성원이 가장 자주 막힌 지점은 무엇이었나요?',
+    '강점 행동을 팀 운영 루틴으로 유지하려면 어떤 약속이 필요할까요?',
+    '보완 영역을 개선하기 위해 다음 체크인 전까지 관찰할 행동은 무엇인가요?',
+  ]
+  const leadershipGrowthActions = [
+    '가장 낮게 나타난 영역을 한 가지 행동 기준으로 바꿔 팀과 공유합니다.',
+    '강점 영역은 회의, 1:1, 업무 배분 중 반복 가능한 루틴으로 고정합니다.',
+    '다음 체크인에서 구성원이 체감한 변화와 추가 지원 요청을 함께 확인합니다.',
+  ]
 
   if (props.data.mode !== 'admin') {
     return (
@@ -1638,6 +1650,43 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                 </div>
               </section>
 
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-base font-extrabold text-blue-950">문항 카테고리</h2>
+                    <p className="mt-1 text-sm font-semibold text-slate-500">카테고리를 선택하면 해당 문항 묶음으로 바로 이동합니다.</p>
+                  </div>
+                  <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-extrabold text-blue-700">
+                    {answeredQuestionCount}/{responseQuestionTotal} 응답 완료
+                  </span>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {activeResponseQuestionGroups.map(([category, questions]) => {
+                    const answeredInCategory = questions.filter((question) =>
+                      isLeadershipQuestionAnswered(question, questionState[question.id])
+                    ).length
+                    const active = openLeadershipCategory === category
+                    return (
+                      <button
+                        key={category}
+                        type="button"
+                        className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-4 text-sm font-extrabold transition ${
+                          active
+                            ? 'border-blue-600 bg-blue-600 text-white'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700'
+                        }`}
+                        onClick={() => setOpenLeadershipCategory(category)}
+                      >
+                        <span>{category}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                          {answeredInCategory}/{questions.length}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+
               <section className="space-y-3">
                 {activeResponseQuestionGroups.map(([category, questions], groupIndex) => {
                   const open = openLeadershipCategory === category
@@ -1807,6 +1856,20 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                 </div>
               </section>
               <section className="rounded-xl border border-slate-200 bg-white p-5">
+                <h3 className="text-base font-extrabold text-slate-950">제출 요약</h3>
+                <div className="mt-4 space-y-3 text-sm">
+                  <SummaryLine label="전체 문항" value={`${responseQuestionTotal}개`} />
+                  <SummaryLine label="응답 완료" value={`${answeredQuestionCount}개`} />
+                  <SummaryLine label="미응답" value={`${Math.max(0, responseQuestionTotal - answeredQuestionCount)}개`} />
+                </div>
+                <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-blue-600" style={{ width: `${responseProgress}%` }} />
+                </div>
+                <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">
+                  임시 저장은 작성 중인 응답을 보관하고, 제출 후에는 읽기 전용으로 전환됩니다.
+                </p>
+              </section>
+              <section className="rounded-xl border border-slate-200 bg-white p-5">
                 <h3 className="text-base font-extrabold text-slate-950">진단 안내</h3>
                 <ul className="mt-4 list-disc space-y-3 pl-5 text-sm font-semibold leading-6 text-slate-600">
                   {respondData.guidance.map((item) => (
@@ -1836,43 +1899,57 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                 <Info className="h-5 w-5 text-blue-600" />
                 <div className="space-y-1">
                   <p>본 보고서는 다수의 평가자가 참여한 리더십 진단 결과를 기반으로 작성되었습니다.</p>
-                  <p>리더십 진단은 리더의 운영 방식과 개선 방향을 이해하기 위한 참고 자료입니다. 집계 결과만 제공되며, 개별 평가자 정보는 공개되지 않습니다.</p>
+                  <p>리더십 진단은 리더의 운영 방식과 개선 방향을 이해하기 위한 참고 자료입니다. 공식 평가 점수나 등급을 자동 산정하지 않으며, 개별 평가자 정보는 공개되지 않습니다.</p>
                 </div>
               </div>
             </section>
 
-            <section className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_260px_300px]">
+            <section className="grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.35fr)_260px]">
               <div className="rounded-xl border border-slate-200 bg-white p-5">
-                <h3 className="text-sm font-extrabold text-slate-950">종합 점수 (5점 만점)</h3>
-                <div className="mt-10 text-center">
-                  <div className="text-5xl font-extrabold text-blue-950">{leadershipResultAverage?.toFixed(2) ?? '-'}</div>
-                  <div className="mt-4 text-lg font-extrabold text-blue-800">{getLeadershipScoreLevel(leadershipResultAverage)}</div>
-                  <div className="mt-3 text-sm font-semibold text-slate-500">비교 그룹: 직책자 전체</div>
+                <div className="flex items-center gap-4">
+                  <Feedback360Avatar
+                    person={{ name: resultsData.targetEmployee.name, profileImageUrl: resultsData.targetEmployee.profileImageUrl }}
+                    size="lg"
+                  />
+                  <div className="min-w-0">
+                    <h3 className="text-xl font-extrabold text-blue-950">{resultsData.targetEmployee.name}</h3>
+                    <p className="mt-1 text-sm font-semibold text-slate-500">
+                      {resultsData.targetEmployee.department} · {resultsData.targetEmployee.position}
+                    </p>
+                    <span className="mt-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-700">
+                      공식 평가 점수/등급 미산정
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-5 space-y-3 text-sm">
+                  <SummaryLine label="진단 기간" value={selectedRound ? `${selectedRound.startDate} ~ ${selectedRound.endDate}` : resultsData.roundName} />
+                  <SummaryLine label="참여 현황" value={`${resultsData.feedbackCount}명 참여`} />
+                  <SummaryLine label="익명 기준" value={resultsData.thresholdMet ? '충족' : `${resultsData.minRaters}명 필요`} />
                 </div>
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-5">
-                <h3 className="text-sm font-extrabold text-slate-950">역량별 평균 점수</h3>
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-950">카테고리별 응답 요약</h3>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">공식 점수가 아닌 리더십 행동 관찰 요약입니다.</p>
+                  </div>
+                  <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-xs font-extrabold text-blue-700">
+                    참고 평균 {leadershipResultAverage?.toFixed(2) ?? '-'}
+                  </span>
+                </div>
                 <LeadershipRadarLikeChart questions={resultsData.questionSummaries} />
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-5 text-center">
-                <h3 className="text-left text-sm font-extrabold text-slate-950">응답 현황</h3>
+                <h3 className="text-left text-sm font-extrabold text-slate-950">참여/공개 상태</h3>
                 <div className="mx-auto mt-8 flex h-32 w-32 items-center justify-center rounded-full border-[12px] border-emerald-500 text-2xl font-extrabold text-emerald-700">
                   {formatPercent(resultsData.thresholdMet ? 100 : leadershipResultSubmittedRate)}
                 </div>
-                <div className="mt-6 text-sm font-semibold text-slate-500">참여 평가자</div>
+                <div className="mt-6 text-sm font-semibold text-slate-500">응답 참여</div>
                 <div className="mt-1 text-lg font-extrabold text-slate-950">{resultsData.feedbackCount}명</div>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-white p-5">
-                <h3 className="text-sm font-extrabold text-slate-950">평가 개요</h3>
-                <div className="mt-5 space-y-4 text-sm">
-                  <SummaryLine label="진단 대상" value={resultsData.targetEmployee.name} />
-                  <SummaryLine label="소속" value={resultsData.targetEmployee.department} />
-                  <SummaryLine label="직책" value={resultsData.targetEmployee.position} />
-                  <SummaryLine label="진단 기간" value={selectedRound ? `${selectedRound.startDate} ~ ${selectedRound.endDate}` : resultsData.roundName} />
-                  <SummaryLine label="참여 평가자" value={`${resultsData.feedbackCount}명`} />
+                <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs font-extrabold text-slate-600">
+                  {resultsData.visible ? '결과 열람 가능' : '익명 기준 확인 필요'}
                 </div>
               </div>
             </section>
@@ -1884,6 +1961,45 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
               </section>
             ) : (
               <>
+                <section className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-sm font-extrabold text-slate-950">카테고리별 응답 분포</h3>
+                    <div className="mt-5 space-y-4">
+                      {leadershipResultCategories.slice(0, 8).map((question) => (
+                        <div key={question.questionId} className="grid grid-cols-[140px_minmax(0,1fr)_54px] items-center gap-3 text-sm">
+                          <span className="truncate font-bold text-slate-700">{question.category}</span>
+                          <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.min(100, ((question.averageScore ?? 0) / 6) * 100)}%` }} />
+                          </div>
+                          <span className="text-right font-extrabold text-blue-700">{question.averageScore?.toFixed(2)}</span>
+                        </div>
+                      ))}
+                      {!leadershipResultCategories.length ? (
+                        <div className="rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm font-semibold text-slate-500">
+                          표시할 카테고리 응답 데이터가 없습니다.
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-5">
+                    <h3 className="text-sm font-extrabold text-slate-950">강점 Top 3 / 보완 Top 3</h3>
+                    <div className="mt-4 space-y-4">
+                      <div className="rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
+                        <div className="mb-2 flex items-center gap-2 font-extrabold"><ThumbsUp className="h-4 w-4" />강점 Top 3</div>
+                        {(leadershipStrengthTop3.length ? leadershipStrengthTop3 : ['리더십 강점 데이터가 충분히 쌓이면 표시됩니다.']).map((item) => (
+                          <p key={item} className="mt-2">{item}</p>
+                        ))}
+                      </div>
+                      <div className="rounded-xl bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+                        <div className="mb-2 font-extrabold">보완 Top 3</div>
+                        {(leadershipImprovementTop3.length ? leadershipImprovementTop3 : ['보완 영역 데이터가 충분히 쌓이면 표시됩니다.']).map((item) => (
+                          <p key={item} className="mt-2">{item}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
                 <LeadershipAiCoachingPanel
                   preview={aiCoachingPreview}
                   loading={busyKey === 'leadershipAiCoaching'}
@@ -1892,43 +2008,9 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                   onGenerate={handleGenerateLeadershipAiCoaching}
                 />
 
-                <section className="grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
-                  <div className="rounded-xl border border-slate-200 bg-white p-5">
-                    <h3 className="text-sm font-extrabold text-slate-950">역량별 점수 비교</h3>
-                    <div className="mt-5 space-y-4">
-                      {resultsData.questionSummaries.filter((question) => question.averageScore != null).slice(0, 6).map((question) => (
-                        <div key={question.questionId} className="grid grid-cols-[140px_minmax(0,1fr)_54px] items-center gap-3 text-sm">
-                          <span className="truncate font-bold text-slate-700">{question.category}</span>
-                          <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                            <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.min(100, ((question.averageScore ?? 0) / 5) * 100)}%` }} />
-                          </div>
-                          <span className="text-right font-extrabold text-blue-700">{question.averageScore?.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-5">
-                    <h3 className="text-sm font-extrabold text-slate-950">종합 강점 및 보완 영역</h3>
-                    <div className="mt-4 space-y-4">
-                      <div className="rounded-xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
-                        <div className="mb-2 flex items-center gap-2 font-extrabold"><ThumbsUp className="h-4 w-4" />강점 영역</div>
-                        {(resultsData.strengths.length ? resultsData.strengths : ['리더십 강점 데이터가 충분히 쌓이면 표시됩니다.']).map((item) => (
-                          <p key={item} className="mt-2">{item}</p>
-                        ))}
-                      </div>
-                      <div className="rounded-xl bg-amber-50 p-4 text-sm font-semibold text-amber-800">
-                        <div className="mb-2 font-extrabold">보완 영역</div>
-                        {(resultsData.improvements.length ? resultsData.improvements : ['보완 영역 데이터가 충분히 쌓이면 표시됩니다.']).map((item) => (
-                          <p key={item} className="mt-2">{item}</p>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
                 <section className="grid gap-5 xl:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-white p-5">
-                    <h3 className="text-sm font-extrabold text-slate-950">종합 코멘트</h3>
+                    <h3 className="text-sm font-extrabold text-slate-950">리더십 행동 요약</h3>
                     <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-slate-600">
                       {(resultsData.rawResponses.flatMap((response) => response.overallComment ? [response.overallComment] : []).slice(0, 3).length
                         ? resultsData.rawResponses.flatMap((response) => response.overallComment ? [response.overallComment] : []).slice(0, 3)
@@ -1939,12 +2021,22 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                     </div>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white p-5">
-                    <h3 className="text-sm font-extrabold text-slate-950">개발 제안</h3>
-                    <ul className="mt-4 space-y-3 text-sm font-semibold leading-6 text-slate-600">
-                      <li>구성원이 변화를 주도적으로 실행할 수 있도록 명확한 방향성과 자율성을 부여해보세요.</li>
-                      <li>다양한 아이디어가 실제 과제로 이어질 수 있도록 실험과 실패에 대한 경험을 장려해보세요.</li>
-                      <li>변화 추진 과정에서 구성원과의 지속적인 피드백을 통해 실행력을 높여보세요.</li>
-                    </ul>
+                    <h3 className="text-sm font-extrabold text-slate-950">다음 체크인 질문</h3>
+                    <CoachingTextList items={leadershipCheckInQuestions} />
+                  </div>
+                </section>
+
+                <section className="rounded-xl border border-slate-200 bg-white p-5">
+                  <h3 className="text-sm font-extrabold text-slate-950">성장 액션 / 후속 액션</h3>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                    {leadershipGrowthActions.map((action, index) => (
+                      <div key={action} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-700">
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-xs font-extrabold text-white">
+                          {index + 1}
+                        </span>
+                        <p className="mt-3">{action}</p>
+                      </div>
+                    ))}
                   </div>
                 </section>
               </>
