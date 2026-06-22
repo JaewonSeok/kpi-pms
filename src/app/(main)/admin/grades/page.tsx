@@ -23,7 +23,7 @@ export default function GradesPage() {
   const [overlapError, setOverlapError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey: ['grades', year],
     queryFn: async () => {
       const res = await fetch(`/api/admin/grades/${year}`)

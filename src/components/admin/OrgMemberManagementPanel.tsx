@@ -376,9 +376,6 @@ export function OrgMemberManagementPanel(props: Props) {
     ? departmentNodeById.get(editingDepartment.id) ?? null
     : null
   const editingDepartmentChildCount = editingDepartmentNode?.children.length ?? 0
-  const editingDepartmentDescendantIds = editingDepartmentNode
-    ? new Set(collectChildDepartmentIds(editingDepartmentNode))
-    : new Set<string>()
   const departmentDeleteBlockers = editingDepartment
     ? [
         editingDepartmentChildCount > 0 ? `하위 조직 ${editingDepartmentChildCount}개` : null,
@@ -391,6 +388,10 @@ export function OrgMemberManagementPanel(props: Props) {
     : null
 
   const allowedParentOptions = useMemo(() => {
+    const editingDepartmentDescendantIds = editingDepartmentNode
+      ? new Set(collectChildDepartmentIds(editingDepartmentNode))
+      : new Set<string>()
+
     return props.departments.filter((department) => {
       if (department.id === departmentForm.departmentId) return false
       if (editingDepartmentDescendantIds.has(department.id)) return false
@@ -405,7 +406,7 @@ export function OrgMemberManagementPanel(props: Props) {
 
       return department.scope === 'division' || department.scope === 'section'
     })
-  }, [departmentForm.departmentId, departmentForm.departmentType, editingDepartmentDescendantIds, props.departments])
+  }, [departmentForm.departmentId, departmentForm.departmentType, editingDepartmentNode, props.departments])
 
   const selectedParentLabel = departmentForm.parentDeptId
     ? props.departments.find((department) => department.id === departmentForm.parentDeptId)?.deptName ?? null
