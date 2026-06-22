@@ -85,6 +85,11 @@ type ReviewAdminScope = ReviewAdminGroup['reviewScope']
 type ManagerEffectivenessAdminState = NonNullable<
   NonNullable<Feedback360PageData['admin']>['managerEffectiveness']
 >
+type ResultShareRow = ResultShareSummary['rows'][number]
+
+const EMPTY_RESULT_SHARE_ROWS: ResultShareRow[] = []
+const EMPTY_REVIEW_ADMIN_CANDIDATES: ReviewAdminCandidate[] = []
+const EMPTY_COLLABORATOR_IDS: string[] = []
 
 const REVIEW_ADMIN_SCOPE_OPTIONS: Array<{
   value: ReviewAdminScope
@@ -576,7 +581,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
   const hasReminderBodyContent = reviewEmailHtmlToText(reminderBody).trim().length > 0
   const resultShare = admin?.resultShare
   const managerEffectivenessAdmin = admin?.managerEffectiveness
-  const resultShareRows = resultShare?.rows ?? []
+  const resultShareRows = resultShare?.rows ?? EMPTY_RESULT_SHARE_ROWS
   const currentUserRole = props.data.currentUser?.role ?? 'ROLE_MEMBER'
   const canManageAllReviewRounds =
     reviewAdmin?.currentAccess.canManageAllRounds ?? currentUserRole === 'ROLE_ADMIN'
@@ -618,7 +623,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     [admin?.folders, rounds]
   )
 
-  const reviewAdminCandidates = reviewAdmin?.candidateMembers ?? []
+  const reviewAdminCandidates = reviewAdmin?.candidateMembers ?? EMPTY_REVIEW_ADMIN_CANDIDATES
   const filteredReviewAdminCandidates = useMemo(() => {
     const keyword = groupSearch.trim()
     if (!keyword) return reviewAdminCandidates
@@ -917,7 +922,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     const nextCollaboratorIds =
       selectedRound?.collaborators.map((collaborator) => collaborator.employeeId) ??
       admin?.settings?.collaboratorIds ??
-      []
+      EMPTY_COLLABORATOR_IDS
     setSelectionSettings(nextSelection)
     setVisibilitySettings(nextVisibility)
     setResultPresentationSettings(nextPresentation)
@@ -937,6 +942,7 @@ export function Feedback360AdminPanel(props: { data: Feedback360PageData }) {
     admin?.settings?.ratingGuideSettings,
     admin?.settings?.selectionSettings,
     admin?.settings?.visibilitySettings,
+    admin?.settings?.collaboratorIds,
     selectedRound,
   ])
 
