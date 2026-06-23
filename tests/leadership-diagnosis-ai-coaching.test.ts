@@ -118,6 +118,55 @@ async function main() {
     assert.equal(LEADERSHIP_DIAGNOSIS_AI_COACHING_SYSTEM_PROMPT.includes('JSON'), true)
   })
 
+  await run('prompt input sends five unique category summaries instead of repeated question rows', () => {
+    const categoryPlan = [
+      ['바른생각 (커뮤니케이션)', 6, 5.2],
+      ['창의도전 (변화주도)', 6, 4.8],
+      ['비전공유 (조직관리)', 6, 3.8],
+      ['전략적 사고', 3, 4.3],
+      ['혁신', 3, 3.2],
+    ] as const
+    const questionSummaries: ResultsData['questionSummaries'] = categoryPlan.flatMap(([category, count, score]) =>
+      Array.from({ length: count }, (_, index) => ({
+        questionId: `${category}:${index + 1}`,
+        category,
+        questionText: `${category} 문항 ${index + 1}`,
+        questionType: 'RATING_SCALE',
+        averageScore: score,
+        responseCount: 4,
+        textResponses: [],
+        choiceCounts: [],
+      }))
+    )
+    const input = buildLeadershipDiagnosisAiCoachingPromptInput(
+      buildResults({
+        questionSummaries,
+        strengths: [],
+        improvements: [],
+      })
+    )
+
+    assert.equal(input.categorySummary.length, 5)
+    assert.equal(new Set(input.categorySummary.map((item) => item.category)).size, 5)
+    assert.deepEqual(input.categorySummary.map((item) => item.category), [
+      '바른생각 (커뮤니케이션)',
+      '창의도전 (변화주도)',
+      '비전공유 (조직관리)',
+      '전략적 사고',
+      '혁신',
+    ])
+    assert.deepEqual(input.strengthCategories.slice(0, 3), [
+      '바른생각 (커뮤니케이션)',
+      '창의도전 (변화주도)',
+      '전략적 사고',
+    ])
+    assert.deepEqual(input.developmentCategories.slice(0, 3), [
+      '혁신',
+      '비전공유 (조직관리)',
+      '전략적 사고',
+    ])
+  })
+
   await run('result schema accepts coaching structure without score or grade fields', () => {
     const parsed = validateLeadershipDiagnosisAiCoachingResult({
       summary: '반복적으로 관찰된 강점과 보완점을 바탕으로 실행 계획을 제안합니다.',
