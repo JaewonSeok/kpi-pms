@@ -10,6 +10,7 @@ import {
   validateImpersonationRiskRequest,
   type ValidatedImpersonationRiskContext,
 } from '@/server/impersonation'
+import { persistFeedback360Report } from '@/server/feedback-360-workflow'
 
 export async function GET(request: Request) {
   try {
@@ -242,6 +243,21 @@ export async function POST(request: Request) {
           },
         })
       }
+    }
+
+    try {
+      await persistFeedback360Report({
+        roundId,
+        targetId: receiverId,
+        generatedById: session.user.id,
+      })
+    } catch (cacheErr) {
+      // 캐시 재생성 실패는 제출 성공에 영향 주지 않는다 (격리)
+      console.error('[feedback] 360 report cache refresh failed', {
+        roundId,
+        receiverId,
+        error: cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
+      })
     }
 
     await logImpersonationRiskExecution({
