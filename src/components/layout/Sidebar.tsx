@@ -151,7 +151,6 @@ function getNavIcon(href: string): ReactNode {
     '/evaluation/performance': <ClipboardCheck className={iconClassName} />,
     '/evaluation/workbench': <Bot className={iconClassName} />,
     '/checkin': <CalendarClock className={iconClassName} />,
-    '/compensation': <BriefcaseBusiness className={iconClassName} />,
     '/notifications': <Bell className={iconClassName} />,
     '/admin': <Settings className={iconClassName} />,
     '/admin/performance-assignments': <Settings className={iconClassName} />,

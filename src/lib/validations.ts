@@ -1863,49 +1863,6 @@ export const PerformanceDesignRolloverSchema = z.object({
 })
 
 // ============================================
-// Compensation
-// ============================================
-
-export const CompensationRuleSchema = z.object({
-  gradeName: z.string().min(1).max(20),
-  bonusRate: z.number().min(0).max(100),
-  salaryIncreaseRate: z.number().min(0).max(100),
-  description: z.string().max(200).optional(),
-})
-
-export const UpdateCompensationRulesSchema = z.object({
-  changeReason: z.string().max(200).optional(),
-  rules: z.array(CompensationRuleSchema).min(1),
-})
-
-export const CreateCompensationScenarioSchema = z.object({
-  evalCycleId: z.string().min(1),
-  scenarioName: z.string().min(1).max(100),
-  budgetLimit: z.number().positive(),
-  ruleSetId: z.string().optional(),
-  cloneFromScenarioId: z.string().optional(),
-})
-
-export const UpdateCompensationScenarioSchema = z.object({
-  scenarioName: z.string().min(1).max(100).optional(),
-  budgetLimit: z.number().positive().optional(),
-  ruleSetId: z.string().optional(),
-})
-
-export const CompensationWorkflowSchema = z.object({
-  action: z.enum([
-    'SUBMIT',
-    'REVIEW_APPROVE',
-    'FINAL_APPROVE',
-    'PUBLISH',
-    'REJECT',
-    'LOCK',
-    'RECALCULATE',
-  ]),
-  comment: z.string().min(3).max(500).optional(),
-})
-
-// ============================================
 // AI Assist
 // ============================================
 

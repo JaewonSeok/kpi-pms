@@ -134,7 +134,7 @@ const DEFAULT_NOTIFICATION_TEMPLATES: TemplateSeed[] = [
     channel: NotificationDeliveryChannel.IN_APP,
     subjectTemplate: '{{cycleName}} 캘리브레이션 준비',
     bodyTemplate: '{{employeeName}}님, {{cycleName}} 캘리브레이션 일정이 곧 시작됩니다.',
-    defaultLink: '/compensation/manage',
+    defaultLink: '/evaluation/calibration',
   },
   {
     code: 'calibration-reminder-email',
@@ -143,7 +143,7 @@ const DEFAULT_NOTIFICATION_TEMPLATES: TemplateSeed[] = [
     channel: NotificationDeliveryChannel.EMAIL,
     subjectTemplate: '[성과관리] {{cycleName}} 캘리브레이션 준비',
     bodyTemplate: '{{employeeName}}님,\n\n{{cycleName}} 캘리브레이션/등급 조정 일정이 곧 시작됩니다.\n\n{{link}}',
-    defaultLink: '/compensation/manage',
+    defaultLink: '/evaluation/calibration',
   },
   {
     code: 'result-confirmation-reminder-in-app',
@@ -1141,7 +1141,7 @@ export async function enqueueLifecycleReminders(
             dedupeToken: `calibration:${cycle.ceoAdjustStart.toISOString().slice(0, 10)}`,
             payload: {
               cycleName: cycle.cycleName,
-              link: '/compensation/manage',
+              link: '/evaluation/calibration',
             },
           },
           db

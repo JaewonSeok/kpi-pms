@@ -1,7 +1,6 @@
 export type FeatureFlagKey =
   | 'aiAssist'
   | 'notificationsScheduler'
-  | 'compensationPlanning'
   | 'opsDashboard'
   | 'pwaShell'
   | 'emailDelivery'
@@ -31,12 +30,6 @@ const FEATURE_FLAG_DEFINITIONS: FeatureFlagDefinition[] = [
     key: 'notificationsScheduler',
     envKey: 'FEATURE_NOTIFICATIONS_SCHEDULER',
     description: 'Controls scheduled reminders and notification dispatch jobs.',
-    defaultValue: true,
-  },
-  {
-    key: 'compensationPlanning',
-    envKey: 'FEATURE_COMPENSATION_PLANNING',
-    description: 'Controls compensation rule/scenario management features.',
     defaultValue: true,
   },
   {

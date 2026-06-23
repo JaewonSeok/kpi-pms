@@ -109,7 +109,3 @@ export function suggestGrowthCopilot(params: BaseParams) {
 export function summarizeCalibrationRisk(params: BaseParams) {
   return kpiAssist(params.requesterId, 'CalibrationRiskSummary', params.sourceId, params.payload)
 }
-
-export function explainCompensationDecision(params: BaseParams) {
-  return kpiAssist(params.requesterId, 'CompensationDecisionExplanation', params.sourceId, params.payload)
-}

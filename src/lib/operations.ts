@@ -41,7 +41,6 @@ type MetricsInput = {
   failedJobs24h: number
   notificationDeadLetters: number
   aiFallback24h: number
-  overBudgetScenarios: number
   queueBacklog: number
   loginUnavailableAccounts: number
   activeEvalCycles: number
@@ -170,8 +169,7 @@ function determineOpsStatus(metrics: MetricsInput): {
 } {
   if (
     metrics.failedJobs24h > 3 ||
-    metrics.notificationDeadLetters > 0 ||
-    metrics.overBudgetScenarios > 0
+    metrics.notificationDeadLetters > 0
   ) {
     return { label: '장애', tone: 'error' }
   }
@@ -317,14 +315,6 @@ function buildRunbooks() {
       docUrl: 'docs/product/performance-management-prd.md',
     },
     {
-      id: 'compensation-publish',
-      title: '보상 공개 이슈',
-      description: '예산 초과 시나리오와 공개 전 체크리스트를 점검합니다.',
-      severity: 'HIGH',
-      relatedUrl: '/compensation/manage',
-      docUrl: 'docs/operations/release-readiness.md',
-    },
-    {
       id: 'ai-fallback',
       title: 'AI 대체 응답 급증 대응',
       description: 'OpenAI 설정, feature flag, fallback 증가 패턴을 점검합니다.',
@@ -350,7 +340,7 @@ export async function buildOperationsSummary(db: PrismaClient = prisma) {
     allowedDomain = null
   }
 
-  const [employeeCount, activeEmployees, notificationDeadLetters, failedJobs24h, aiFallback24h, aiDisabled24h, aiSuccess24h, overBudgetScenarios, operationalErrors24h, recentEvents, queueSummary, inactiveTemplates, evalCycles, monthlyWorkflowLogs] = await Promise.all([
+  const [employeeCount, activeEmployees, notificationDeadLetters, failedJobs24h, aiFallback24h, aiDisabled24h, aiSuccess24h, operationalErrors24h, recentEvents, queueSummary, inactiveTemplates, evalCycles, monthlyWorkflowLogs] = await Promise.all([
     db.employee.count(),
     db.employee.findMany({
       where: { status: 'ACTIVE' },
@@ -380,9 +370,6 @@ export async function buildOperationsSummary(db: PrismaClient = prisma) {
         createdAt: { gte: twentyFourHoursAgo },
         requestStatus: 'SUCCESS',
       },
-    }),
-    db.compensationScenario.count({
-      where: { isOverBudget: true },
     }),
     db.operationalEvent.count({
       where: {
@@ -496,14 +483,6 @@ export async function buildOperationsSummary(db: PrismaClient = prisma) {
       description: '캘리브레이션 단계에 머물러 있는 평가 주기입니다.',
     },
     {
-      id: 'over-budget',
-      label: '예산 초과 보상 시나리오',
-      count: overBudgetScenarios,
-      severity: overBudgetScenarios > 0 ? 'HIGH' : 'LOW',
-      relatedUrl: '/compensation/manage',
-      description: '예산 한도를 초과한 보상 시뮬레이션 시나리오입니다.',
-    },
-    {
       id: 'dead-letters',
       label: '실패함 알림',
       count: notificationDeadLetters,
@@ -533,9 +512,7 @@ export async function buildOperationsSummary(db: PrismaClient = prisma) {
         ? '/admin/notifications'
         : event.component === 'google-access'
           ? '/admin/google-access'
-          : event.component === 'compensation'
-            ? '/compensation/manage'
-            : event.component === 'evaluation'
+          : event.component === 'evaluation'
               ? '/evaluation/ceo-adjust'
               : undefined,
   })), ...derivedEvents]
@@ -561,7 +538,6 @@ export async function buildOperationsSummary(db: PrismaClient = prisma) {
       aiFallback24h,
       aiDisabled24h,
       aiSuccess24h,
-      overBudgetScenarios,
       operationalErrors24h,
       loginUnavailableAccounts,
       activeEvalCycles,
@@ -575,7 +551,6 @@ export async function buildOperationsSummary(db: PrismaClient = prisma) {
       failedJobs24h,
       notificationDeadLetters,
       aiFallback24h,
-      overBudgetScenarios,
       queueBacklog,
       loginUnavailableAccounts,
       activeEvalCycles,

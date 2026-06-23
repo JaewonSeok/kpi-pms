@@ -41,7 +41,6 @@ const gateServerSource = readProjectFile('src/server/ai-competency-gate.ts')
 const validationsSource = readProjectFile('src/lib/validations.ts')
 const resultsSource = readProjectFile('src/server/evaluation-results.ts')
 const calibrationSource = readProjectFile('src/server/evaluation-calibration.ts')
-const compensationSource = readProjectFile('src/server/compensation-manage.ts')
 const calendarSource = readProjectFile('src/server/admin/performance-calendar.ts')
 const promotionHelperSource = readProjectFile('src/server/ai-competency-gate-promotion.ts')
 const navigationItems = flattenNavigationItems(NAV_ITEMS)
@@ -170,7 +169,7 @@ run('AI evidence readiness stays separate from annual performance totals and gra
   assert.equal(reviewPageClientSource.includes('Fail'), true)
 })
 
-run('evaluation, calibration, compensation, and calendar integrations use the gate status instead of a numeric AI score for gate cycles', () => {
+run('evaluation, calibration, and calendar integrations use the gate status instead of a numeric AI score for gate cycles', () => {
   assert.match(resultsSource, /loadAiCompetencyGatePromotionStatuses/)
   assert.equal(resultsSource.includes('aiCompetencyGateStatusLabel'), true)
   assert.equal(resultsSource.includes('aiCompetencyGateSatisfied'), true)
@@ -179,7 +178,6 @@ run('evaluation, calibration, compensation, and calendar integrations use the ga
   assert.equal(calibrationSource.includes('aiCompetencyGateStatusLabel'), true)
   assert.equal(calibrationSource.includes('aiCompetencyGateSatisfied'), true)
 
-  assert.match(compensationSource, /aiCompetencyGateCycle/)
   assert.match(calendarSource, /aiCompetencyGateCycle/)
   assert.match(promotionHelperSource, /isSatisfied: assignment.status === 'PASSED'/)
 })

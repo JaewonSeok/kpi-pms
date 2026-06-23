@@ -239,11 +239,9 @@ async function main() {
   await run('workbench and cross-links point to the CEO final workspace', () => {
     const workbenchSource = read('src/server/evaluation-workbench.ts')
     const adminOpsSource = read('src/components/ops/AdminOpsClient.tsx')
-    const compensationSource = read('src/components/compensation/CompensationManageClient.tsx')
 
     assert.equal(workbenchSource.includes(CEO_REDIRECT_MESSAGE), true)
     assert.equal(adminOpsSource.includes(CEO_PAGE_LABEL), true)
-    assert.equal(compensationSource.includes(CEO_PAGE_LABEL), true)
   })
 
   console.log('Evaluation CEO final workflow tests completed')

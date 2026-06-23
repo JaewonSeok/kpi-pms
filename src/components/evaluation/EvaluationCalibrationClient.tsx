@@ -3495,7 +3495,6 @@ function CalibrationLockSection({
 
           <div className="grid gap-3">
             <ActionLink icon={<FileSearch className="h-4 w-4" />} label="평가 결과 보기" href="/evaluation/results" description="조정 반영 이후 결과 리포트를 다시 확인합니다." />
-            <ActionLink icon={<Sparkles className="h-4 w-4" />} label="보상 시뮬레이션 확인" href="/compensation/manage" description="조정 등급이 보상 시뮬레이션에 미치는 영향을 확인합니다." />
           </div>
         </div>
       </SectionCard>
@@ -4167,7 +4166,6 @@ function RelatedLinks() {
     { href: '/evaluation/results', label: '평가 결과' },
     { href: '/admin/grades', label: '등급 설정' },
     { href: '/admin/eval-cycle', label: '평가 주기' },
-    { href: '/compensation/manage', label: '보상 시뮬레이션' },
   ]
 
   return (

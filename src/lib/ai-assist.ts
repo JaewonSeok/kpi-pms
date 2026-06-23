@@ -1070,20 +1070,6 @@ const CALIBRATION_RISK_SUMMARY_SCHEMA = {
   },
 } satisfies JsonRecord
 
-const COMPENSATION_DECISION_EXPLANATION_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['summary', 'drivers', 'employeeFacingNote'],
-  properties: {
-    summary: { type: 'string' },
-    drivers: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    employeeFacingNote: { type: 'string' },
-  },
-} satisfies JsonRecord
-
 const NOTIFICATION_OPS_SUMMARY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -1638,12 +1624,6 @@ const SOURCE_SCOPED_AI_CONFIGS: Record<SourceScopedAiConfigKey, AiConfig> = {
     schema: CALIBRATION_RISK_SUMMARY_SCHEMA,
     systemPrompt:
       'You are a calibration risk assistant. Reply in Korean. Summarize distribution and fairness risks in a calibration session and suggest the next action for HR or executives.',
-  },
-  'KPI_ASSIST:CompensationDecisionExplanation': {
-    schemaName: 'compensation_decision_explanation',
-    schema: COMPENSATION_DECISION_EXPLANATION_SCHEMA,
-    systemPrompt:
-      'You are a compensation explanation assistant. Reply in Korean. Explain the main drivers of a compensation decision in concise, employee-friendly language without exposing internal-only details.',
   },
   'MID_REVIEW_ASSIST:evidence-summary': {
     schemaName: 'mid_review_evidence_summary',
@@ -2522,15 +2502,6 @@ export function buildFallbackResult(
         '遺꾪룷 ?몄감媛 ??議곗쭅遺???꾨낫? 議곗젙 ?ъ쑀瑜??ㅼ떆 寃?좏븯?몄슂.',
         '?덉쇅 議곗쭅? 蹂꾨룄 ?뺤콉 硫붾え瑜??④꺼 媛먯궗 媛?μ꽦???뺣낫?섏꽭??',
       ],
-    }
-  }
-
-  if (requestType === AIRequestType.KPI_ASSIST && sourceType === 'CompensationDecisionExplanation') {
-    return {
-      summary: summary || '?됯? 寃곌낵, ?깃툒 洹쒖튃, ?쒕굹由ъ삤 ?덉궛 踰붿쐞瑜?湲곗??쇰줈 蹂댁긽 寃곗젙 諛곌꼍???ㅻ챸?섎뒗 珥덉븞?낅땲??',
-      drivers: ['理쒖쥌 ?됯? ?깃툒', '?쒕??덉씠??洹쒖튃', '?덉궛 ?쒕룄 諛??덉쇅 ?뱀씤 ?щ?'],
-      employeeFacingNote:
-        '?대쾲 蹂댁긽 寃곗젙? ?됯? 寃곌낵? ?곸슜??蹂댁긽 洹쒖튃??湲곗??쇰줈 ?곗젙?섏뿀?쇰ŉ, 怨듦컻 ??理쒖쥌 ?뱀씤怨??덉궛 寃?좊? 嫄곗낀?듬땲??',
     }
   }
 

@@ -186,7 +186,7 @@ async function main() {
           )
 
           assert.equal(data.role, 'ROLE_ADMIN')
-          assert.equal(data.summary.length, 4)
+          assert.equal(data.summary.length, 3)
           assert.equal(data.alerts.some((item) => item.title === '운영 요약 일부 생략'), true)
           assert.equal(data.statusTone, 'warn')
         } finally {
@@ -215,9 +215,9 @@ async function main() {
             })
           )
 
-          assert.equal(data.summary.length, 4)
+          assert.equal(data.summary.length, 3)
           assert.equal(data.notifications.length, 0)
-          assert.equal(data.actions.length, 6)
+          assert.equal(data.actions.length, 5)
           assert.equal(data.actions.some((item) => item.href === '/admin/performance-calendar'), true)
           assert.equal(data.actions.some((item) => item.href === '/admin/goal-alignment'), true)
           assert.equal(data.alerts.some((item) => item.title === '알림 위젯 일부 생략'), true)
