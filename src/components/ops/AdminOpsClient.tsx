@@ -303,7 +303,6 @@ export function AdminOpsClient() {
             <Link href="/admin/notifications" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">실패 작업 확인</Link>
             <Link href="/admin/notifications" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">실패함 재처리</Link>
             <Link href="/admin/google-access" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">로그인 이슈 계정 점검</Link>
-            <Link href="/compensation/manage" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">예산 초과 시나리오 확인</Link>
           </div>
         </div>
       </section>
@@ -375,7 +374,6 @@ export function AdminOpsClient() {
                 <Link href="/admin/google-access" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">Google 계정 등록</Link>
                 <Link href="/admin/notifications" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">알림 운영</Link>
                 <Link href="/evaluation/ceo-adjust" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">대표이사 확정</Link>
-                <Link href="/compensation/manage" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">시뮬레이션 관리</Link>
                 <Link href="/kpi/monthly" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">월간 실적</Link>
                 <Link href="/notifications" className="rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">알림 센터</Link>
               </div>

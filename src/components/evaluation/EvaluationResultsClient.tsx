@@ -664,7 +664,7 @@ function InfoGridCard({ label, value }: { label: string; value: string }) { retu
 function EmptyCard({ title, description }: { title: string; description: string }) { return <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center"><div className="font-semibold text-slate-900">{title}</div><p className="mt-2 text-sm leading-6 text-slate-500">{description}</p></div> }
 
 function RelatedActionLinks() {
-  const links = [{ href: '/evaluation/appeal', label: '이의 신청' }, { href: '/evaluation/workbench', label: 'AI 보조 작성' }, { href: '/evaluation/360/results', label: '360 다면평가' }, { href: '/kpi/personal', label: '개인 KPI' }, { href: '/kpi/monthly', label: '월간 실적' }, { href: '/checkin', label: '체크인 일정' }, { href: '/compensation/my', label: '내 보상 결과' }]
+  const links = [{ href: '/evaluation/appeal', label: '이의 신청' }, { href: '/evaluation/workbench', label: 'AI 보조 작성' }, { href: '/evaluation/360/results', label: '360 다면평가' }, { href: '/kpi/personal', label: '개인 KPI' }, { href: '/kpi/monthly', label: '월간 실적' }, { href: '/checkin', label: '체크인 일정' }]
   return <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"><div className="mb-3 text-lg font-semibold text-slate-900">다음으로 이동할 수 있는 화면</div><div className="flex flex-wrap gap-3">{links.map((link) => <Link key={link.href} href={link.href} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">{link.label}</Link>)}</div></section>
 }
 

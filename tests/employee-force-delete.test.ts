@@ -179,9 +179,6 @@ function createEmployeeForceDeletePrismaMock(options?: {
     appeal: {
       deleteMany: createDeleteManyDelegate(calls, 'appeal', 1),
     },
-    compensationScenarioEmployee: {
-      deleteMany: createDeleteManyDelegate(calls, 'compensationScenarioEmployee', 1),
-    },
     notificationPreference: {
       deleteMany: createDeleteManyDelegate(calls, 'notificationPreference', 1),
     },

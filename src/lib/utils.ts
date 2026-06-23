@@ -157,14 +157,6 @@ export const CHECKIN_TYPE_LABELS: Record<string, string> = {
   QUARTERLY: '분기 리뷰',
 }
 
-export const COMPENSATION_STATUS_LABELS: Record<string, string> = {
-  DRAFT: '작성 중',
-  UNDER_REVIEW: '검토 중',
-  REVIEW_APPROVED: '검토 승인',
-  REJECTED: '반려',
-  FINAL_APPROVED: '최종 승인',
-}
-
 export function formatCurrency(value: number) {
   return new Intl.NumberFormat('ko-KR', {
     style: 'currency',

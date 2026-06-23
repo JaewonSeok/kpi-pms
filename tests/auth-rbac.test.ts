@@ -25,14 +25,8 @@ run('menu permissions keep admin-only pages restricted', () => {
   assert.equal(canAccessMenu('ROLE_CEO', 'GRADE_ADJUST'), true)
 })
 
-run('accessible menu list includes compensation manage only for configured roles', () => {
-  assert.equal(getAccessibleMenus('ROLE_MEMBER').includes('COMPENSATION_MANAGE'), false)
-  assert.equal(getAccessibleMenus('ROLE_DIV_HEAD').includes('COMPENSATION_MANAGE'), true)
-})
-
 run('path resolution maps protected routes to menu keys', () => {
   assert.equal(resolveMenuFromPath('/admin/grades'), 'GRADE_SETTING')
-  assert.equal(resolveMenuFromPath('/compensation/manage'), 'COMPENSATION_MANAGE')
   assert.equal(resolveMenuFromPath('/unknown/path'), null)
 })
 

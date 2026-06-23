@@ -2524,7 +2524,6 @@ export async function safeDeleteEmployeeRecord(
         deletedDevelopmentPlanCount: 0,
         deletedWordCloudAssignmentCount: 0,
         deletedWordCloudResponseCount: 0,
-        deletedCompensationSnapshotCount: 0,
         deletedNotificationCount: 0,
         deletedNotificationPreferenceCount: 0,
         deletedNotificationJobCount: 0,
@@ -2891,14 +2890,6 @@ export async function safeDeleteEmployeeRecord(
         await withDeleteStep(
           'deletePersonalKpis',
           () => tx.personalKpi.deleteMany({ where: { employeeId } }),
-          (result) => ({ affectedCount: result.count })
-        )
-      ).count
-
-      cleanupSummary.deletedCompensationSnapshotCount = (
-        await withDeleteStep(
-          'deleteCompensationSnapshots',
-          () => tx.compensationScenarioEmployee.deleteMany({ where: { employeeId } }),
           (result) => ({ affectedCount: result.count })
         )
       ).count

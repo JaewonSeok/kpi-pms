@@ -631,13 +631,6 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
           href: '/admin/notifications',
         },
         {
-          label: '예산 초과 시나리오',
-          value: String(opsSummary?.metrics.overBudgetScenarios ?? 0),
-          description: '보상 시뮬레이션 초과 건',
-          tone: toTone(opsSummary?.metrics.overBudgetScenarios ?? 0, 1, 1),
-          href: '/compensation/manage',
-        },
-        {
           label: '진행 중 평가 주기',
           value: String(opsSummary?.metrics.activeEvalCycles ?? 0),
           description: '현재 종료되지 않은 주기',
@@ -649,7 +642,6 @@ export async function getDashboardPageData(session: Session): Promise<DashboardP
         { label: '운영 관제 보기', description: '시스템 상태와 이벤트 로그 확인', href: '/admin/ops' },
         { label: '알림 운영', description: '실패함과 재처리 현황 확인', href: '/admin/notifications' },
         { label: 'Google 계정 등록', description: '로그인 계정 매핑과 허용 상태 관리', href: '/admin/google-access' },
-        { label: '보상 시뮬레이션', description: '예산 초과와 승인 상태 확인', href: '/compensation/manage' },
         { label: '성과 관리 일정', description: '리뷰, 목표, 서베이, 캘리브레이션, 입사일 일정을 한 화면에서 확인', href: '/admin/performance-calendar' },
         { label: '성과 얼라인먼트', description: '조직별 개인 목표 수립 비율, 조직 KPI 연결 비율, 미연결 목표를 운영 화면에서 확인', href: '/admin/goal-alignment' },
       ],
