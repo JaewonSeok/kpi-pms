@@ -1,11 +1,13 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { AlertCircle, CheckCircle2, Copy, Loader2, Sparkles } from 'lucide-react'
 import type {
   UpwardReviewAICoachingPreview,
   UpwardReviewAICoachingRole,
 } from '@/lib/upward-review-ai-coaching'
+import { isCeoDemoMode, useCeoDemoLocalState } from '@/lib/demo/ceo-demo-mode'
 
 type Props = {
   cycleId?: string | null
@@ -135,13 +137,92 @@ function toSafeAiCoachingErrorMessage(error: unknown) {
   return fallback
 }
 
+function buildDemoLeadershipCoachingPreview(props: Props): UpwardReviewAICoachingPreview {
+  return {
+    generatedAt: new Date().toISOString(),
+    mode: props.mode,
+    disclaimer: 'AI 코칭은 참고용 성장 인사이트이며 공식 평가 점수나 등급을 자동 산정하지 않습니다.',
+    source: {
+      responseCount: Math.max(props.responseCount, props.anonymityThreshold),
+      anonymityThreshold: props.anonymityThreshold,
+      anonymitySatisfied: true,
+      categoryCount: 5,
+      commentSummaryCount: 3,
+    },
+    result: {
+      summary: '구성원이 체감하는 리더십 경험을 바탕으로 실행 중심의 성장 코칭 방향을 정리했습니다.',
+      confidenceLevel: 'MEDIUM',
+      dataLimitations: ['시연 환경에서는 운영 데이터에 반영되지 않습니다.'],
+      leadershipStrengths: [
+        {
+          title: '목표와 우선순위 정렬',
+          category: '바른생각 (커뮤니케이션)',
+          observedBehavior: '팀 목표를 짧고 명확한 실행 단위로 설명합니다.',
+          evidence: ['목표 설명과 정보 공유 관련 긍정 응답'],
+          keepDoing: ['회의 시작 시 이번 주 우선순위를 한 문장으로 확인합니다.'],
+          teamImpact: '구성원이 같은 기준으로 업무를 선택할 수 있습니다.',
+        },
+        {
+          title: '실행 과정 점검',
+          category: '전략적 사고',
+          observedBehavior: '중요한 결정에서 리스크와 우선순위를 함께 확인합니다.',
+          evidence: ['실행 관리와 의사결정 관련 응답'],
+          keepDoing: ['주요 과제마다 다음 점검 시점을 먼저 정합니다.'],
+          teamImpact: '진행 중 이슈를 늦기 전에 드러내고 조정할 수 있습니다.',
+        },
+      ],
+      developmentAreas: [
+        {
+          title: '피드백 루틴 강화',
+          category: '피드백/코칭',
+          observedPattern: '성과 피드백이 특정 시점에 몰리면 구성원이 개선 방향을 늦게 파악할 수 있습니다.',
+          impact: '팀원이 스스로 조정할 시간이 줄어듭니다.',
+          recommendedActions: ['매주 1회 짧은 피드백 체크인을 고정합니다.', '칭찬과 개선 요청을 각각 한 문장으로 분리합니다.'],
+        },
+      ],
+      blindSpots: [
+        {
+          title: '조용한 구성원의 신호',
+          whyItMatters: '회의에서 말수가 적은 구성원의 막힘이 늦게 발견될 수 있습니다.',
+          signals: ['질문이 줄어드는 경우', '마감 직전에 이슈가 드러나는 경우'],
+          suggestedCheck: '다음 1:1에서 가장 막히는 업무 하나를 먼저 묻습니다.',
+        },
+      ],
+      actionPlan30Days: ['팀 목표와 우선순위를 한 페이지로 정리해 공유합니다.', '주간 체크인 질문 2개를 고정합니다.'],
+      actionPlan60Days: ['피드백 후 실제 행동 변화가 있었는지 다시 확인합니다.', '반복 이슈를 팀 운영 룰로 바꿉니다.'],
+      actionPlan90Days: ['구성원별 성장 목표와 업무 배분을 다시 맞춥니다.', '다음 진단 전 변화 사례를 수집합니다.'],
+      coachingQuestions: {
+        selfReflection: ['내가 가장 자주 미루는 피드백은 무엇인가요?'],
+        teamConversation: ['팀이 더 빨리 도움을 요청하려면 어떤 신호가 필요할까요?'],
+        nextCheckIn: ['다음 30일 동안 관찰할 리더십 행동 하나는 무엇인가요?'],
+      },
+      managerHrGuide: {
+        recognize: ['목표를 명확히 설명하는 행동을 구체적으로 인정합니다.'],
+        ask: ['구성원이 체감하는 지원 부족 지점을 묻습니다.'],
+        agree: ['다음 체크인 전까지 실행할 행동 1개를 합의합니다.'],
+        followUp: ['30일 후 같은 질문으로 변화 여부를 확인합니다.'],
+      },
+      safetyNote: '시연 환경에서는 운영 데이터에 반영되지 않으며 공식 평가 점수나 등급을 산정하지 않습니다.',
+    },
+  }
+}
+
 export function LeadershipDiagnosisAiCoachingPanel(props: Props) {
+  const searchParams = useSearchParams()
+  const ceoDemoMode = isCeoDemoMode(searchParams)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<UpwardReviewAICoachingPreview | null>(null)
   const [copied, setCopied] = useState<'all' | 'plan' | ''>('')
+  const [, setDemoCoachingState] = useCeoDemoLocalState('ceo-demo-leadership-ai-coaching', {
+    status: '대기',
+    updatedAt: '',
+  })
 
   const disabledReason = useMemo(() => {
+    if (ceoDemoMode) {
+      return ''
+    }
     if (!props.providerConfigured) {
       return 'AI 코칭 설정이 완료되지 않아 현재는 결과 요약과 후속 액션만 확인할 수 있습니다.'
     }
@@ -160,6 +241,7 @@ export function LeadershipDiagnosisAiCoachingPanel(props: Props) {
     props.providerConfigured,
     props.roundId,
     props.targetEmployeeId,
+    ceoDemoMode,
   ])
   const canGenerate = !disabledReason
 
@@ -171,6 +253,12 @@ export function LeadershipDiagnosisAiCoachingPanel(props: Props) {
     setCopied('')
 
     try {
+      if (ceoDemoMode) {
+        setPreview(buildDemoLeadershipCoachingPreview(props))
+        setDemoCoachingState({ status: '생성완료', updatedAt: new Date().toISOString() })
+        return
+      }
+
       const response = await fetch('/api/feedback/upward/results/ai-coaching', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

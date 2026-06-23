@@ -23,7 +23,14 @@ import {
 } from 'lucide-react'
 import type { Feedback360PageData } from '@/server/feedback-360'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
+import { CeoDemoBanner } from '@/components/demo/CeoDemoBanner'
+import { CeoDemoToast } from '@/components/demo/CeoDemoToast'
 import { FEEDBACK_RESULT_PROFILE_LABELS } from '@/lib/feedback-result-presentation'
+import {
+  createDemoToastMessage,
+  isCeoDemoMode,
+  useCeoDemoLocalState,
+} from '@/lib/demo/ceo-demo-mode'
 import { MultiRaterCycleHeader } from './MultiRaterCycleHeader'
 import { ReviewerNominationPanel } from './ReviewerNominationPanel'
 import { FeedbackThemesSection } from './FeedbackThemesSection'
@@ -369,6 +376,7 @@ function countAnsweredRespondQuestions(questionState: Record<string, { ratingVal
 export function Feedback360WorkspaceClient(props: { data: Feedback360PageData }) {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const ceoDemoMode = isCeoDemoMode(searchParams)
   const [, startTransition] = useTransition()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const [submitBusy, setSubmitBusy] = useState(false)
@@ -393,6 +401,11 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   const [mappingMailResultOpen, setMappingMailResultOpen] = useState(false)
   const [resultsMailPreviewOpen, setResultsMailPreviewOpen] = useState(false)
   const [resultsMailResultOpen, setResultsMailResultOpen] = useState(false)
+  const [demoToast, setDemoToast] = useState('')
+  const [, setFeedback360DemoState] = useCeoDemoLocalState('ceo-demo-feedback360', {
+    status: '대기',
+    updatedAt: '',
+  })
   const respondData = props.data.mode === 'respond' ? props.data.respond : undefined
   const respondFeedbackId = respondData?.feedbackId ?? ''
   const respondOverallComment = respondData?.overallComment ?? ''
@@ -808,6 +821,14 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   async function handleCreateQuarterRound() {
     if (!selectedHubCycleId || !canViewFeedback360Operations || selectedHubRound) return
 
+    if (ceoDemoMode) {
+      const message = '라운드 생성 준비가 완료되었습니다.'
+      setFeedback360DemoState({ status: '라운드 준비', updatedAt: new Date().toISOString() })
+      setDemoToast(message)
+      setOperationsNotice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+      return
+    }
+
     setRoundCreateBusy(true)
     setOperationsNotice('')
     setOperationsError('')
@@ -856,6 +877,9 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
       : ''
 
   useEffect(() => {
+    if (ceoDemoMode) {
+      return
+    }
     if (!resultViewContextKey || recordedResultViewKey === resultViewContextKey) {
       return
     }
@@ -895,6 +919,7 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
     resultTargetId,
     resultViewContextKey,
     props.data.selectedRoundId,
+    ceoDemoMode,
   ])
 
   const resultsAiPayload = useMemo(() => {
@@ -912,6 +937,14 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
 
   async function handleGenerateReportCache() {
     if (!props.data.results || !props.data.selectedRoundId) return
+    if (ceoDemoMode) {
+      const message = createDemoToastMessage('prepare-result-share')
+      setFeedback360DemoState({ status: '결과 준비', updatedAt: new Date().toISOString() })
+      setDemoToast(message)
+      setResultsNotice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+      setResultsError('')
+      return
+    }
     setReportBusy(true)
     setResultsNotice('')
     setResultsError('')
@@ -1015,6 +1048,16 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
       return
     }
 
+    if (ceoDemoMode) {
+      const message = createDemoToastMessage('submit')
+      setFeedback360DemoState({ status: '제출완료', updatedAt: new Date().toISOString() })
+      setDemoToast(message)
+      setRespondNotice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+      setRespondError('')
+      setQuestionErrorMessages({})
+      return
+    }
+
     setSubmitBusy(true)
     setRespondNotice('')
     setRespondError('')
@@ -1099,6 +1142,8 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
   if (props.data.state !== 'ready' && props.data.mode !== 'overview') {
     return (
       <div className="w-full max-w-full overflow-x-hidden space-y-6">
+        {ceoDemoMode ? <CeoDemoBanner /> : null}
+        <CeoDemoToast message={demoToast} onClose={() => setDemoToast('')} />
         <MultiRaterCycleHeader data={props.data} />
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-500">
@@ -1126,6 +1171,8 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
 
   return (
     <div className="w-full max-w-full overflow-x-hidden space-y-6">
+      {ceoDemoMode ? <CeoDemoBanner /> : null}
+      <CeoDemoToast message={demoToast} onClose={() => setDemoToast('')} />
       {props.data.mode === 'overview' ? (
         <Feedback360PptAppShell
           user={pptUser}
@@ -1657,15 +1704,29 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                             )}
                             <button
                               type="button"
-                              disabled
-                              className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-400"
+                              disabled={!ceoDemoMode}
+                              onClick={() => {
+                                if (!ceoDemoMode) return
+                                const message = createDemoToastMessage('prepare-reminder')
+                                setFeedback360DemoState({ status: '리마인드 준비', updatedAt: new Date().toISOString() })
+                                setDemoToast(message)
+                                setOperationsNotice(`${message} 시연 환경에서는 실제 메일/알림을 발송하지 않습니다.`)
+                              }}
+                              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
                             >
                               리마인드 알림 준비
                             </button>
                             <button
                               type="button"
-                              disabled
-                              className="inline-flex min-h-11 w-full cursor-not-allowed items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-400"
+                              disabled={!ceoDemoMode}
+                              onClick={() => {
+                                if (!ceoDemoMode) return
+                                const message = createDemoToastMessage('prepare-result-share')
+                                setFeedback360DemoState({ status: '결과 공유 준비', updatedAt: new Date().toISOString() })
+                                setDemoToast(message)
+                                setOperationsNotice(`${message} 시연 환경에서는 실제 메일/알림을 발송하지 않습니다.`)
+                              }}
+                              className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
                             >
                               결과 공유 준비
                             </button>

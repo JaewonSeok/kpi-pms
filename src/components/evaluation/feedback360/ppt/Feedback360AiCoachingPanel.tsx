@@ -1,11 +1,13 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { AlertCircle, CheckCircle2, Copy, Loader2, Sparkles } from 'lucide-react'
 import type {
   Feedback360AiCoachingResult,
   Feedback360AiCoachingRole,
 } from './feedback360AiCoachingPrompt'
+import { isCeoDemoMode, useCeoDemoLocalState } from '@/lib/demo/ceo-demo-mode'
 
 type Feedback360AiCoachingPreview = {
   generatedAt: string
@@ -133,13 +135,86 @@ function toSafeAiCoachingErrorMessage(error: unknown) {
   return fallback
 }
 
+function buildDemoFeedback360CoachingPreview(props: Props): Feedback360AiCoachingPreview {
+  return {
+    generatedAt: new Date().toISOString(),
+    mode: props.mode,
+    disclaimer: 'AI 코칭은 참고용 성장 인사이트이며 공식 평가 점수나 등급을 자동 산정하지 않습니다.',
+    source: {
+      responseCount: Math.max(props.responseCount, props.anonymityThreshold),
+      anonymityThreshold: props.anonymityThreshold,
+      anonymitySatisfied: true,
+      categoryCount: 5,
+      positiveTagCount: 8,
+      improvementTagCount: 4,
+    },
+    result: {
+      summary: '다면평가 태그와 의견 흐름을 바탕으로 협업 강점과 다음 실행 계획을 정리했습니다.',
+      confidenceLevel: 'MEDIUM',
+      dataLimitations: ['시연 환경에서는 운영 데이터에 반영되지 않습니다.'],
+      strengths: [
+        {
+          title: '협업 요청에 빠르게 대응',
+          evidence: ['빠른 대응', '정보 공유'],
+          coaching: '협업 요청을 받은 뒤 필요한 맥락을 빠르게 정리해 팀의 대기 시간을 줄입니다.',
+          keepDoing: ['요청 접수 후 다음 액션과 예상 시점을 바로 공유합니다.'],
+        },
+        {
+          title: '책임감 있는 마무리',
+          evidence: ['책임감', '실행력'],
+          coaching: '맡은 과제를 끝까지 챙기는 행동이 반복적으로 관찰됩니다.',
+          keepDoing: ['마감 전 리스크를 먼저 공유하고 필요한 지원을 요청합니다.'],
+        },
+      ],
+      developmentAreas: [
+        {
+          title: '의사결정 근거 공유 강화',
+          evidence: ['결정 배경 부족', '정보 비대칭'],
+          impact: '결정 배경이 늦게 공유되면 협업자가 우선순위를 재조정하기 어렵습니다.',
+          recommendedActions: ['결정사항마다 이유와 다음 액션을 함께 남깁니다.', '변경이 생기면 영향받는 사람을 먼저 확인합니다.'],
+        },
+      ],
+      blindSpots: [
+        {
+          title: '바쁜 시기의 커뮤니케이션 간격',
+          whyItMatters: '일정이 촘촘할수록 주변 동료가 진행 상황을 추측하게 될 수 있습니다.',
+          signals: ['문의가 반복되는 경우', '마감 직전 확인 요청이 늘어나는 경우'],
+          suggestedCheck: '주요 협업 과제에는 중간 공유 시점을 하나 더 둡니다.',
+        },
+      ],
+      actionPlan30Days: ['협업 요청마다 응답 시점과 처리 방향을 한 문장으로 공유합니다.'],
+      actionPlan60Days: ['반복 문의가 생기는 업무를 체크리스트로 정리합니다.'],
+      actionPlan90Days: ['협업자가 체감한 변화 사례를 모아 다음 다면평가 전 점검합니다.'],
+      coachingQuestions: {
+        selfReflection: ['최근 협업자가 내 진행 상황을 기다리게 만든 순간은 언제였나요?'],
+        managerConversation: ['우선순위 충돌이 생길 때 어떤 기준으로 조정하면 좋을까요?'],
+        nextCheckIn: ['다음 30일 동안 커뮤니케이션 간격을 줄일 행동은 무엇인가요?'],
+      },
+      managerGuide: {
+        recognize: ['빠른 대응과 책임감 있는 마무리 행동을 구체적으로 인정합니다.'],
+        ask: ['정보 공유가 늦어지는 상황과 원인을 함께 확인합니다.'],
+        agree: ['중간 공유 시점과 공유 채널을 합의합니다.'],
+        followUp: ['다음 체크인에서 반복 문의가 줄었는지 확인합니다.'],
+      },
+      safetyNote: '시연 환경에서는 운영 데이터에 반영되지 않으며 공식 평가 점수나 등급을 산정하지 않습니다.',
+    },
+  }
+}
+
 export function Feedback360AiCoachingPanel(props: Props) {
+  const searchParams = useSearchParams()
+  const ceoDemoMode = isCeoDemoMode(searchParams)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<Feedback360AiCoachingPreview | null>(null)
   const [copied, setCopied] = useState(false)
+  const [, setDemoCoachingState] = useCeoDemoLocalState('ceo-demo-feedback360-ai-coaching', {
+    status: '대기',
+    updatedAt: '',
+  })
 
   const disabledReason = useMemo(() => {
+    if (ceoDemoMode) return ''
     if (!props.providerConfigured) return 'AI 코칭을 사용하려면 AI 설정이 필요합니다.'
     if (!props.roundId || !props.targetEmployeeId) return '결과 리포트 데이터가 준비되면 AI 코칭을 생성할 수 있습니다.'
     if (!props.anonymitySatisfied || !props.canUseAi) {
@@ -153,6 +228,7 @@ export function Feedback360AiCoachingPanel(props: Props) {
     props.providerConfigured,
     props.roundId,
     props.targetEmployeeId,
+    ceoDemoMode,
   ])
   const canGenerate = !disabledReason
 
@@ -164,6 +240,12 @@ export function Feedback360AiCoachingPanel(props: Props) {
     setCopied(false)
 
     try {
+      if (ceoDemoMode) {
+        setPreview(buildDemoFeedback360CoachingPreview(props))
+        setDemoCoachingState({ status: '생성완료', updatedAt: new Date().toISOString() })
+        return
+      }
+
       const response = await fetch('/api/feedback/360/ai-coaching', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -208,6 +290,9 @@ export function Feedback360AiCoachingPanel(props: Props) {
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-600">
             공식 평가 점수나 등급을 자동 산정하지 않습니다.
+          </p>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            개별 리뷰어를 추정하거나 공개하지 않습니다.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

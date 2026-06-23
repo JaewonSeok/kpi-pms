@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState, useTransition, type ReactNode } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   CalendarDays,
   CheckCircle2,
@@ -20,6 +20,13 @@ import { DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS } from '@/lib/upward-review'
 import { Feedback360Avatar } from '../feedback360/ppt/Feedback360Avatar'
 import { LeadershipDiagnosisAiCoachingPanel } from './LeadershipDiagnosisAiCoachingPanel'
 import { LeadershipDiagnosisOpsDashboard } from './LeadershipDiagnosisOpsDashboard'
+import { CeoDemoBanner } from '@/components/demo/CeoDemoBanner'
+import { CeoDemoToast } from '@/components/demo/CeoDemoToast'
+import {
+  createDemoToastMessage,
+  isCeoDemoMode,
+  useCeoDemoLocalState,
+} from '@/lib/demo/ceo-demo-mode'
 
 type Notice =
   | {
@@ -617,14 +624,22 @@ async function readApiBody(response: Response) {
 
 export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const ceoDemoMode = isCeoDemoMode(searchParams)
   const [, startTransition] = useTransition()
   const [notice, setNotice] = useState<Notice>(null)
+  const [demoToast, setDemoToast] = useState('')
+  const [, setLeadershipDemoState] = useCeoDemoLocalState('ceo-demo-leadership-diagnosis', {
+    status: '대기',
+    updatedAt: '',
+  })
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [openLeadershipCategory, setOpenLeadershipCategory] = useState(LEADERSHIP_DEFAULT_CATEGORIES[0])
 
   const adminData = props.data.admin
   const respondData = props.data.respond
   const resultsData = props.data.results
+  const respondReadOnly = Boolean(respondData?.readOnly && !ceoDemoMode)
 
   const [selectedTemplateId, setSelectedTemplateId] = useState(adminData?.selectedTemplateId ?? adminData?.templates[0]?.id ?? NEW_TEMPLATE_ID)
   const [templateDraft, setTemplateDraft] = useState({
@@ -848,6 +863,14 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
   }
 
   async function runAdminAction(action: string, payload: unknown, successMessage?: string) {
+    if (ceoDemoMode) {
+      const message = successMessage ?? createDemoToastMessage('save-draft')
+      setLeadershipDemoState({ status: action, updatedAt: new Date().toISOString() })
+      setDemoToast(message)
+      setNotice({ tone: 'success', message: `${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.` })
+      return null
+    }
+
     setBusyKey(action)
     setNotice(null)
     try {
@@ -1023,6 +1046,13 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
       setNotice({ tone: 'error', message: '섹션 의견은 저장 형식 포함 1000자 이내로 작성해 주세요.' })
       return
     }
+    if (ceoDemoMode) {
+      const message = createDemoToastMessage('save-draft')
+      setLeadershipDemoState({ status: '작성중', updatedAt: new Date().toISOString() })
+      setDemoToast(message)
+      setNotice({ tone: 'success', message: `${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.` })
+      return
+    }
     setBusyKey('draft')
     setNotice(null)
     try {
@@ -1080,6 +1110,13 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
       setNotice({ tone: 'error', message: '섹션 의견은 저장 형식 포함 1000자 이내로 작성해 주세요.' })
       return
     }
+    if (ceoDemoMode) {
+      const message = createDemoToastMessage('submit')
+      setLeadershipDemoState({ status: '제출완료', updatedAt: new Date().toISOString() })
+      setDemoToast(message)
+      setNotice({ tone: 'success', message: `${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.` })
+      return
+    }
     setBusyKey('submit')
     setNotice(null)
     try {
@@ -1124,6 +1161,13 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
 
     if (!targetIds.length) {
       setNotice({ tone: 'success', message: '메일을 보낼 미제출자가 없습니다.' })
+      return
+    }
+
+    if (ceoDemoMode) {
+      const message = createDemoToastMessage('prepare-reminder')
+      setDemoToast(message)
+      setNotice({ tone: 'success', message: `${message} 시연 환경에서는 실제 메일/알림을 발송하지 않습니다.` })
       return
     }
 
@@ -1245,6 +1289,8 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
         roundLabel={selectedRound?.roundName ?? getLeadershipRoundName(props.data, props.data.selectedRoundId)}
         dueLabel={respondData ? getLeadershipRoundDueLabel(selectedRound, respondData.dueDate) : getLeadershipRoundDueLabel(selectedRound)}
       >
+        {ceoDemoMode ? <CeoDemoBanner /> : null}
+        <CeoDemoToast message={demoToast} onClose={() => setDemoToast('')} />
         {notice ? (
           <div
             className={`mb-5 rounded-xl border px-4 py-3 text-sm font-semibold ${
@@ -1381,7 +1427,7 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                     <div className="text-sm font-extrabold text-blue-700">{formatPercent(responseProgress)} ({answeredQuestionCount}/{responseQuestionTotal})</div>
                     <div className="text-sm font-bold text-slate-500">총 문항 {respondData.questions.length}개</div>
                   </div>
-                  {!respondData.readOnly ? (
+                  {!respondReadOnly ? (
                     <div className="flex gap-2">
                       <button type="button" className="inline-flex min-h-11 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-extrabold text-blue-700" disabled={busyKey != null} onClick={handleSaveDraft}>
                         {busyKey === 'draft' ? '저장 중...' : '임시 저장'}
@@ -1511,7 +1557,7 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                                                   name={question.id}
                                                   className="h-5 w-5 cursor-pointer accent-blue-600"
                                                   checked={currentState.ratingValue === value}
-                                                  disabled={respondData.readOnly}
+                                                  disabled={respondReadOnly}
                                                   onChange={() =>
                                                     setQuestionState((current) => {
                                                       const previous = current[question.id] ?? currentState
@@ -1549,7 +1595,7 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                                           }
                                         })
                                       }
-                                      disabled={respondData.readOnly}
+                                      disabled={respondReadOnly}
                                       placeholder="의견을 입력해 주세요."
                                     />
                                   ) : null}
@@ -1562,7 +1608,7 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                                             <input
                                               type="checkbox"
                                               checked={checked}
-                                              disabled={respondData.readOnly}
+                                              disabled={respondReadOnly}
                                               onChange={(event) =>
                                                 setQuestionState((current) => {
                                                   const previous = current[question.id] ?? currentState
@@ -1600,7 +1646,7 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                                   [category]: event.target.value,
                                 }))
                               }
-                              disabled={respondData.readOnly}
+                              disabled={respondReadOnly}
                               placeholder="의견을 입력해 주세요."
                             />
                             <span className="mt-1 block text-right text-xs text-slate-400">{sectionComment.length}자</span>
@@ -1828,6 +1874,8 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
 
   return (
     <div className="space-y-6">
+      {ceoDemoMode ? <CeoDemoBanner /> : null}
+      <CeoDemoToast message={demoToast} onClose={() => setDemoToast('')} />
       <section className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-emerald-50 p-6 shadow-sm">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="space-y-2">

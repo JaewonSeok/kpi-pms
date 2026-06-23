@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertTriangle,
   Bot,
@@ -86,6 +86,13 @@ import {
   statusTone,
   toneFromCount,
 } from '@/components/evaluation/workbench/evaluationWorkbenchUtils'
+import { CeoDemoBanner } from '@/components/demo/CeoDemoBanner'
+import { CeoDemoToast } from '@/components/demo/CeoDemoToast'
+import {
+  createDemoToastMessage,
+  isCeoDemoMode,
+  useCeoDemoLocalState,
+} from '@/lib/demo/ceo-demo-mode'
 import type {
   DepartmentOverrideFilter2026,
   DraftItemState,
@@ -135,6 +142,8 @@ import type {
 import { TAB_LABELS } from '@/components/evaluation/workbench/EvaluationWorkbenchTypes'
 export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const ceoDemoMode = isCeoDemoMode(searchParams)
   const [isPending, startTransition] = useTransition()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
   const [activeTab, setActiveTab] = useState<WorkbenchTab>('workbench')
@@ -193,6 +202,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
   const [policyOfficialCycle2026Saving, setPolicyOfficialCycle2026Saving] = useState(false)
   const [policyOfficialCycle2026Error, setPolicyOfficialCycle2026Error] = useState('')
   const [policyOfficialCycle2026Notice, setPolicyOfficialCycle2026Notice] = useState('')
+  const [demoToast, setDemoToast] = useState('')
+  const [, setDemoWorkbenchState] = useCeoDemoLocalState('ceo-demo-evaluation-workbench', {
+    status: '대기',
+    updatedAt: '',
+  })
   const [policyCategoryWorkbenchDrafts2026, setPolicyCategoryWorkbenchDrafts2026] =
     useState<Record<string, PolicyCategoryWorkbenchDraft2026>>({})
   const [divisionSalesGroupDrafts2026, setDivisionSalesGroupDrafts2026] = useState<Record<string, SalesGroupDraft2026>>({})
@@ -205,6 +219,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
   const guideViewRequestRef = useRef<string | null>(null)
 
   const selected = props.selected
+  const selectedReadOnly = Boolean(selected?.permissions.readOnly && !ceoDemoMode)
   const displaySettings = props.displaySettings ?? {
     showQuestionWeight: true,
     showScoreSummary: true,
@@ -537,6 +552,19 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
   const persistGuideAction = useCallback(async (action: 'view' | 'confirm', options?: { silent?: boolean }) => {
     if (!selected) return
 
+    if (ceoDemoMode) {
+      setGuideStatus((current) => ({
+        viewed: current.viewed || action === 'view' || action === 'confirm',
+        confirmed: current.confirmed || action === 'confirm',
+      }))
+      if (!options?.silent) {
+        const message = action === 'confirm' ? '평가 가이드 확인 상태를 기록했습니다.' : '평가 가이드 열람 상태를 기록했습니다.'
+        setDemoToast(message)
+        setNotice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+      }
+      return
+    }
+
     if (action === 'confirm') {
       setGuideBusy(true)
     }
@@ -576,7 +604,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
         setGuideBusy(false)
       }
     }
-  }, [selected])
+  }, [ceoDemoMode, selected])
 
   useEffect(() => {
     if (
@@ -721,6 +749,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
 
   async function savePolicyGradeReadiness2026() {
     if (!canViewPolicyPreview2026 || !props.selectedCycleId) return
+    if (ceoDemoMode) {
+      const message = '2026 등급 기준 metadata 저장 준비가 완료되었습니다.'
+      setDemoToast(message)
+      setPolicyGradeReadiness2026Notice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+      setPolicyGradeReadiness2026Error('')
+      return
+    }
     setPolicyGradeReadiness2026Saving(true)
     setPolicyGradeReadiness2026Error('')
     setPolicyGradeReadiness2026Notice('')
@@ -763,6 +798,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
     ambiguityResolution: GradePolicyTeamMemberSalesResolutionPayload2026
   ) {
     if (!canViewPolicyPreview2026 || !props.selectedCycleId) return
+    if (ceoDemoMode) {
+      const message = 'TEAM_MEMBER_SALES 기준 확인 준비가 완료되었습니다.'
+      setDemoToast(message)
+      setPolicyGradeReadiness2026Notice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+      setPolicyGradeReadiness2026Error('')
+      return
+    }
     setPolicyGradeReadiness2026Saving(true)
     setPolicyGradeReadiness2026Error('')
     setPolicyGradeReadiness2026Notice('')
@@ -846,6 +888,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
     if (!canViewPolicyPreview2026) return
     if (!props.selectedCycleId) {
       setPolicyOfficialCycle2026Error('먼저 평가 주기를 선택해 주세요.')
+      return
+    }
+
+    if (ceoDemoMode) {
+      const message = enabled ? '공식 준비 상태 대상 주기 지정 준비가 완료되었습니다.' : '공식 준비 상태 대상 지정 해제 준비가 완료되었습니다.'
+      setDemoToast(message)
+      setPolicyOfficialCycle2026Notice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+      setPolicyOfficialCycle2026Error('')
       return
     }
 
@@ -993,6 +1043,14 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
       return
     }
 
+    if (ceoDemoMode) {
+      const message = '2026 정책 metadata 저장 준비가 완료되었습니다.'
+      setDemoToast(message)
+      setPolicyMapping2026Notice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+      setPolicyMapping2026Error('')
+      return
+    }
+
     setPolicyMapping2026Saving(true)
     setPolicyMapping2026Error('')
     setPolicyMapping2026Notice('')
@@ -1042,6 +1100,24 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
     setErrorNotice('')
 
     try {
+      if (ceoDemoMode) {
+        const message =
+          action === 'createSelf'
+            ? '자기평가 초안이 준비되었습니다.'
+            : action === 'saveDraft'
+              ? createDemoToastMessage('save-draft')
+              : action === 'submit'
+                ? createDemoToastMessage(selected?.permissions.canFinalize ? 'adjust-grade' : 'submit')
+                : '반려 요청이 기록되었습니다.'
+        setDemoWorkbenchState({
+          status: action === 'submit' ? '제출완료' : action === 'reject' ? '반려 요청' : '작성중',
+          updatedAt: new Date().toISOString(),
+        })
+        setDemoToast(message)
+        setNotice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+        return
+      }
+
       if (action === 'createSelf') {
         const response = await fetch('/api/evaluation', {
           method: 'POST',
@@ -1126,6 +1202,29 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
     setAssistLoadingMode(mode)
 
     try {
+      if (ceoDemoMode) {
+        const result = normalizeEvaluationAssistResult({
+          draftText: '시연용 AI 제안입니다. 핵심 성과와 다음 실행 계획을 간결하게 정리했습니다.',
+          strengths: ['목표 정렬과 실행 지속성이 반복적으로 확인됩니다.'],
+          concerns: ['우선순위 조정과 근거 기록을 더 촘촘하게 남길 필요가 있습니다.'],
+          coachingPoints: ['핵심 목표 1개를 먼저 합의하고 중간 점검 일정을 고정합니다.'],
+          nextStep: '다음 주기 실행 계획을 한 문장으로 정리하고 저장 전 검토',
+        })
+        setPreview({
+          requestLogId: 'ceo-demo-local',
+          source: 'disabled',
+          fallbackReason: 'CEO demo local preview',
+          mode,
+          result,
+          evidence: normalizeEvaluationAssistEvidenceView(workspaceEvidence),
+        })
+        setActiveTab('ai')
+        const message = createDemoToastMessage('ai-coaching')
+        setDemoToast(message)
+        setNotice(`${message} 시연 환경에서는 실제 AI 호출을 실행하지 않습니다.`)
+        return
+      }
+
       const response = await fetch('/api/ai/evaluation-assist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1179,6 +1278,18 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
     setBriefingBusy(true)
 
     try {
+      if (ceoDemoMode) {
+        const latest = selected.briefing.latestSnapshot
+        if (latest) {
+          setBriefing(latest)
+        }
+        setActiveTab('briefing')
+        const message = createDemoToastMessage('ai-coaching')
+        setDemoToast(message)
+        setNotice(`${message} 시연 환경에서는 실제 AI 브리핑 호출을 실행하지 않습니다.`)
+        return
+      }
+
       const response = await fetch('/api/ai/evaluation-briefing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1230,6 +1341,24 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
     setDecisionBusy(true)
 
     try {
+      if (ceoDemoMode) {
+        if (action === 'approve') {
+          const applied = applyEvaluationAssistResult(preview.mode, preview.result)
+
+          if (typeof applied.draftComment === 'string') setDraftComment(applied.draftComment)
+          if (typeof applied.strengthComment === 'string') setDraftStrengthComment(applied.strengthComment)
+          if (typeof applied.improvementComment === 'string') setDraftImprovementComment(applied.improvementComment)
+          if (typeof applied.nextStepGuidance === 'string') setDraftNextStepGuidance(applied.nextStepGuidance)
+          if (typeof applied.growthMemo === 'string') setGrowthMemo(applied.growthMemo)
+        }
+        setCopiedPreviewMode(null)
+        setPreview(null)
+        const message = action === 'approve' ? 'AI 제안을 반영했습니다.' : 'AI 제안을 반려했습니다.'
+        setDemoToast(message)
+        setNotice(`${message} 시연 환경에서는 운영 데이터에 반영되지 않습니다.`)
+        return
+      }
+
       const response = await fetch(`/api/ai/request-logs/${preview.requestLogId}/decision`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -1511,6 +1640,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
 
   return (
     <div className="space-y-5">
+      {ceoDemoMode ? <CeoDemoBanner /> : null}
+      <CeoDemoToast message={demoToast} onClose={() => setDemoToast('')} />
       {/* Unified header — title row + 2-column body (left: action items, right: controls). */}
       <section className="rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6 sm:py-5">
         <div className="min-w-0 space-y-2">
@@ -1628,7 +1759,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
               <button
                 type="button"
                 onClick={() => runMutation('createSelf')}
-                disabled={!props.permissions?.canCreateSelfEvaluation || isPending}
+                disabled={(!ceoDemoMode && !props.permissions?.canCreateSelfEvaluation) || isPending}
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
               >
                 <Sparkles className="mr-2 h-4 w-4" />
@@ -1683,7 +1814,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                   })
                 }
                 disabled={
-                  !selected?.permissions.canEdit || isPending || hasAdjustmentBlockingError
+                  (!ceoDemoMode && !selected?.permissions.canEdit) || isPending || hasAdjustmentBlockingError
                 }
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
               >
@@ -1721,7 +1852,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                   })
                 }
                 disabled={
-                  !selected?.permissions.canSubmit || isPending || hasAdjustmentBlockingError
+                  (!ceoDemoMode && !selected?.permissions.canSubmit) || isPending || hasAdjustmentBlockingError
                 }
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
               >
@@ -1731,7 +1862,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
               <button
                 type="button"
                 onClick={() => runMutation('reject', { rejectionReason: rejectReason })}
-                disabled={!selected?.permissions.canReject || !rejectReason.trim() || isPending}
+                disabled={!selected || (!ceoDemoMode && (!selected.permissions.canReject || !rejectReason.trim())) || isPending}
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
               >
                 <Undo2 className="mr-2 h-4 w-4" />
@@ -2235,7 +2366,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                         <select
                           value={draftGradeId}
                           onChange={(event) => setDraftGradeId(event.target.value)}
-                          disabled={selected.permissions.readOnly}
+                          disabled={selectedReadOnly}
                           className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                         >
                           <option value="">등급 선택 안 함</option>
@@ -2251,7 +2382,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                         <textarea
                           value={draftComment}
                           onChange={(event) => setDraftComment(event.target.value)}
-                          disabled={selected.permissions.readOnly}
+                          disabled={selectedReadOnly}
                           className="min-h-32 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                           placeholder="강점, 보완점, 근거를 포함해 작성하세요."
                         />
@@ -2263,7 +2394,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                         <textarea
                           value={draftStrengthComment}
                           onChange={(event) => setDraftStrengthComment(event.target.value)}
-                          disabled={selected.permissions.readOnly}
+                          disabled={selectedReadOnly}
                           className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                           placeholder="이번 단계에서 확인한 강점과 핵심 성과를 정리하세요."
                         />
@@ -2273,7 +2404,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                         <textarea
                           value={draftImprovementComment}
                           onChange={(event) => setDraftImprovementComment(event.target.value)}
-                          disabled={selected.permissions.readOnly}
+                          disabled={selectedReadOnly}
                           className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                           placeholder="추가 확인이 필요한 점이나 보완 포인트를 정리하세요."
                         />
@@ -2283,7 +2414,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                         <textarea
                           value={draftNextStepGuidance}
                           onChange={(event) => setDraftNextStepGuidance(event.target.value)}
-                          disabled={selected.permissions.readOnly}
+                          disabled={selectedReadOnly}
                           className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                           placeholder="다음 리뷰 단계나 코칭 대화에서 확인할 포인트를 남기세요."
                         />
@@ -2346,7 +2477,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                                   max={100}
                                   value={item.draft.quantScore ?? ''}
                                   onChange={(event) => updateItemField(item.personalKpiId, 'quantScore', event.target.value === '' ? null : Number(event.target.value))}
-                                  disabled={selected.permissions.readOnly}
+                                  disabled={selectedReadOnly}
                                   className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                                 />
                               </label>
@@ -2355,7 +2486,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                                 <textarea
                                   value={item.draft.itemComment ?? ''}
                                   onChange={(event) => updateItemField(item.personalKpiId, 'itemComment', event.target.value)}
-                                  disabled={selected.permissions.readOnly}
+                                  disabled={selectedReadOnly}
                                   className="min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                                 />
                               </label>
@@ -2376,7 +2507,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                                     max={100}
                                     value={item.draft[field] ?? ''}
                                     onChange={(event) => updateItemField(item.personalKpiId, field, event.target.value === '' ? null : Number(event.target.value))}
-                                    disabled={selected.permissions.readOnly}
+                                    disabled={selectedReadOnly}
                                     className="h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                                   />
                                 </label>
@@ -2386,7 +2517,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                                 <textarea
                                   value={item.draft.itemComment ?? ''}
                                   onChange={(event) => updateItemField(item.personalKpiId, 'itemComment', event.target.value)}
-                                  disabled={selected.permissions.readOnly}
+                                  disabled={selectedReadOnly}
                                   className="min-h-24 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                                 />
                               </label>
@@ -2418,7 +2549,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                                         event.target.value === '' ? null : Number(event.target.value)
                                       )
                                     }
-                                    disabled={selected.permissions.readOnly}
+                                    disabled={selectedReadOnly}
                                     className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
                                   />
                                 </label>
@@ -2435,7 +2566,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                                         event.target.value
                                       )
                                     }
-                                    disabled={selected.permissions.readOnly}
+                                    disabled={selectedReadOnly}
                                     maxLength={500}
                                     placeholder="가감점이 0이 아니면 사유는 필수입니다."
                                     className="min-h-20 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
