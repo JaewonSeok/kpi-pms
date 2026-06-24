@@ -1,6 +1,6 @@
 # AI Database Model Context
 
-Last updated: 2026-06-05
+Last updated: 2026-06-24
 
 Source of truth: `prisma/schema.prisma`.
 
@@ -13,7 +13,7 @@ Source of truth: `prisma/schema.prisma`.
 | Evaluation | `EvalCycle`, `Evaluation`, `EvaluationItem`, `EvaluationAssignment`, `EvaluationGradePolicy`, `Appeal` |
 | 360 / leadership | `MultiFeedbackRound`, `MultiFeedback`, `FeedbackResponse`, nomination/report/cache models, word-cloud 360 models |
 | AI competency | AI competency cycles, questions, attempts, assignments, gate cases, reviews, evidence, results |
-| Compensation | `CompensationRuleSet`, `CompensationRule`, `CompensationScenario`, scenario employee/approval models |
+| Compensation | `CompensationRuleSet`, `CompensationRule`, `CompensationScenario`, scenario employee/approval models — **코드 제거됨(PR #126). DB 테이블은 schema에 유지, 앱 라우트/컴포넌트 없음.** |
 | Ops | `AuditLog`, notifications, job execution, AI request logs, upload history, impersonation sessions |
 | Auth | NextAuth `Account`, `Session`, `VerificationToken` |
 

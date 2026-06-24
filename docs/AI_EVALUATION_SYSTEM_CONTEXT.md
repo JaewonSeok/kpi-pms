@@ -1,10 +1,10 @@
 # AI Evaluation System Context
 
-Last updated: 2026-06-05
+Last updated: 2026-06-24
 
 ## Overview
 
-The evaluation system combines existing evaluation records with 2026 readiness work. Current official 2026 writes remain blocked. The project currently supports preview/readiness reporting, policy mapping metadata, score policy validation, and pure guard summaries, but not official 2026 population or save-flow activation.
+The evaluation system combines existing evaluation records with 2026 readiness work. Current official 2026 score/grade writes remain blocked at the route level. The project supports preview/readiness reporting, policy mapping metadata, score policy validation, guard summaries, and — as of 2026-06-24 — a complete production scoring engine (`calculateEvaluationScore2026`) that is implemented but not yet wired to submit/draft routes.
 
 ## Existing Evaluation Flow
 
@@ -107,20 +107,54 @@ Current operational next step: HR should resolve `policyCategory missing: 1 -> 0
 
 ## Score Policy Readiness Flow
 
-Recent score policy work includes DAILY_WORK score gate validators, DAILY_WORK 80-point cap enforcement, below-target ORG_GOAL exception scoring, MBO weight-cap policy validators, and adjustment input/scoring preview UI.
+Completed score policy work: DAILY_WORK score gate validators, DAILY_WORK 80-point cap enforcement, below-target ORG_GOAL exception scoring, MBO weight-cap policy validators, and adjustment input/scoring preview UI.
 
 These are still readiness/guarded policy surfaces. They do not authorize official score writes.
 
+## 2026 Production Scoring Engine (2026-06-24 추가)
+
+`src/server/evaluation-scoring-2026.ts` 에 다음 함수들이 완성돼 있음:
+
+- `calculateOrganizationPerformanceScore2026()` — ORG_GOAL 항목 기반 조직성과 점수
+- `calculatePersonalPerformanceScore2026()` — PERSONAL 항목 기반 개인성과 점수
+- `calculateFinalPerformanceScore2026()` — 30:70 합산 최종점수
+- `calculateEvaluationScore2026()` — 통합 진입점 (위 세 함수 + belowTarget 예외 포함)
+
+현재 submit/draft 라우트(`src/app/api/evaluation/[id]/submit/route.ts`)는
+`applyBelowTargetExceptionForPersistence2026`만 사용하며
+`calculateEvaluationScore2026` / 30:70 finalScoreFormula는 **미연결(dormant)**.
+
+Preview 엔진(`src/lib/preview-2026-organization-score.ts`의 `calculateOrganizationPerformanceFromIntake2026`)은
+intake(수기 입력) 기반 별개 코드. Production 엔진과 코드 공유 없음.
+
+## Dormant Flag 현황 (2026-06-24 확인)
+
+```
+adjustmentRule.active           = false  (dormant)
+weightRule.enforced             = false  (dormant)
+belowTargetExceptionRule.active = false  (wiring 완료, active flip 한 번으로 즉시 활성화 가능)
+dailyWorkScoringRule.active     = false  (dormant)
+finalScoreFormula.active        = false  (dormant)
+```
+
+## 다음 본 작업
+
+1. **M1-B wiring (1순위)**: `calculateEvaluationScore2026()`을 submit/draft 라우트에 연결.
+   ⚠️ production 점수 계산 방식 변경 — **shadow 검증(read-only 시뮬레이션) 선행 필수.**
+2. **belowTargetExceptionRule flip (2순위)**: wiring 완료, `active=true` flip 하나.
+3. **M1-D intake 통합 (3순위)**: Preview 엔진을 production에 연결하는 더 큰 작업.
+
+## Data Corrections Completed (2026-06-24)
+
+production DB 교정으로 본 작업 전제조건 충족:
+- position/role: 289명 전원 정합 (MEMBER 233/TEAM_LEADER 42/SECTION_CHIEF 7/DIV_HEAD 7)
+  → `resolveRoleGroup2026` 실데이터 정상 작동 보장
+- 부서: 고아 12개 제거, deptName 중복 0, 영업1·2본부 SECTION 교정
+  → M1-D `parentLevel` 파라미터 오분류 없음
+
 ## Current Cycle 1 Status
 
-Cycle 1 is an HR-operational cleanup cycle, not scoring or grading.
+Cycle 1 HR 운영 정리는 완료됨. 현재는 2026 평가 엔진 wiring 단계.
 
-P0 priorities:
-
-1. MBO/KPI coverage
-2. Evaluator routing blockers
-3. Team KPI pending/discussion
-4. `policyCategory` missing
-
-Official population readiness remains `NOT_READY` unless blockers are cleared or approved exceptions are documented.
+Official population readiness 상태는 `/admin/evaluation-readiness`에서 확인.
 
