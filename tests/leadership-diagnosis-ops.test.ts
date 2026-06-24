@@ -52,8 +52,9 @@ async function main() {
       '직책',
       '응답 현황',
       '카테고리 현황',
-      '리마인드 준비',
-      '결과 공유 준비',
+      '운영 조건 점검',
+      '알림 조건 점검',
+      '결과 조건 점검',
       '결과 보기',
     ]) {
       assert.equal(source.includes(text), true, `${text} should be present`)
@@ -62,18 +63,25 @@ async function main() {
 
   await run('leadership diagnosis operations dashboard keeps official-score and readiness safety copy', () => {
     const source = read('src/components/evaluation/upward/LeadershipDiagnosisOpsDashboard.tsx')
+    const client = read('src/components/evaluation/upward/UpwardReviewWorkspaceClient.tsx')
 
     assert.equal(source.includes('공식 평가 점수나 등급을 자동 산정하지 않습니다.'), true)
     assert.equal(source.includes('AI 코칭/결과 요약은 참고용이며 공식 반영은 별도 절차가 필요합니다.'), true)
-    assert.equal(source.includes('실제 메일 발송이나 결과 공개 없이'), true)
-    assert.equal(source.includes('운영 설정과 실제 발송은 승인된 운영 절차에서만 진행합니다.'), true)
+    assert.equal(source.includes('실행 버튼 없이, 운영자가 대상과 조건을 확인하는 참고 영역입니다.'), true)
+    assert.equal(source.includes('운영 절차 실행은 이 현황 화면에서 제공하지 않습니다.'), true)
     assert.equal(source.includes('응답 기준 충족 후 결과를 확인할 수 있습니다.'), true)
+    assert.equal(client.includes('대상자, 제출 현황, 결과 준비 상태를 확인하는 읽기 전용 운영 화면입니다.'), true)
   })
 
   await run('leadership diagnosis operations dashboard avoids unsafe user-facing copy and direct side effects', () => {
     const source = read('src/components/evaluation/upward/LeadershipDiagnosisOpsDashboard.tsx')
 
     for (const forbidden of [
+      '결과 공개',
+      '미제출자 메일 발송',
+      '문항 세트 저장',
+      '진단 기간 저장',
+      '발행',
       'Upward Review',
       'leadership diagnosis',
       'Reviewer Nomination',
