@@ -1,9 +1,12 @@
 import Link from 'next/link'
 import { AlertTriangle, ArrowRight, Bell, ClipboardList, ShieldCheck, TrendingUp } from 'lucide-react'
 import { MonthlyTrendChart } from './DashboardCharts'
+import { buildEvaluationNextActionHub } from '@/lib/evaluation-next-action-hub'
 import type { DashboardPageData, DashboardTone } from '@/server/dashboard-page'
 
 export function DashboardPageShell({ data }: { data: DashboardPageData }) {
+  const evaluationNextActionHub = buildEvaluationNextActionHub(data.role)
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -58,6 +61,55 @@ export function DashboardPageShell({ data }: { data: DashboardPageData }) {
             </div>
           </Link>
         ))}
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">Evaluation Next Actions</p>
+            <h2 className="mt-1 text-xl font-bold text-slate-900">평가 진행 홈</h2>
+            <p className="mt-1 text-sm text-slate-500">지금 해야 할 평가 작업을 한 화면에서 확인하세요.</p>
+          </div>
+          <div className="inline-flex w-fit items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            화면 이동 전용
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {evaluationNextActionHub.summary.map((item) => (
+            <div key={item.label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-500">{item.label}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">{item.value}</div>
+              <div className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${toneClass(item.tone)}`}>
+                {item.description}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {evaluationNextActionHub.actions.map((action) => (
+            <Link
+              key={`${action.title}-${action.href}`}
+              href={action.href}
+              className="group rounded-2xl border border-slate-200 p-4 transition hover:border-blue-200 hover:bg-blue-50/40"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">{action.title}</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{action.description}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${actionBadgeClass(action.kind)}`}>
+                  {action.badge}
+                </span>
+              </div>
+              <div className="mt-3 inline-flex items-center text-xs font-semibold text-blue-700">
+                화면 열기
+                <ArrowRight className="ml-1 h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+              </div>
+            </Link>
+          ))}
+        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
@@ -204,4 +256,11 @@ function toneClass(tone: DashboardTone) {
   if (tone === 'warn') return 'bg-amber-100 text-amber-700'
   if (tone === 'error') return 'bg-rose-100 text-rose-700'
   return 'bg-slate-100 text-slate-600'
+}
+
+function actionBadgeClass(kind: 'write' | 'review' | 'result' | 'admin') {
+  if (kind === 'write') return 'bg-blue-100 text-blue-700'
+  if (kind === 'review') return 'bg-amber-100 text-amber-700'
+  if (kind === 'result') return 'bg-emerald-100 text-emerald-700'
+  return 'bg-slate-100 text-slate-700'
 }
