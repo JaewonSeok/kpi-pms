@@ -1835,6 +1835,61 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
     )
   }
 
+  if (props.data.mode === 'admin' && adminData) {
+    return (
+      <div className="space-y-6">
+        <section className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-emerald-50 p-6 shadow-sm">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">리더십 진단</p>
+              <h1 className="text-3xl font-semibold text-slate-950">리더십 진단 운영</h1>
+              <p className="max-w-3xl text-sm leading-6 text-slate-600">
+                대상자, 제출 현황, 결과 준비 상태를 확인하는 읽기 전용 운영 화면입니다.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <ActionLink
+                href={`/evaluation/upward/respond?${updateSearch({ roundId: undefined, empId: undefined })}`}
+                label="내 리더십 진단"
+                active={false}
+              />
+              <ActionLink
+                href={`/evaluation/upward/admin?${updateSearch({})}`}
+                label="리더십 진단 운영"
+                active
+              />
+            </div>
+          </div>
+        </section>
+
+        {notice ? (
+          <div
+            className={`rounded-2xl border px-4 py-3 text-sm ${
+              notice.tone === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-rose-200 bg-rose-50 text-rose-700'
+            }`}
+          >
+            {notice.message}
+          </div>
+        ) : null}
+
+        {props.data.state !== 'ready' ? (
+          <SectionCard title="상태 안내" description={props.data.message}>
+            <div className="grid gap-4 md:grid-cols-4">
+              <StatCard label="진행 중 진단 기간" value={`${props.data.summary.activeRounds}개`} />
+              <StatCard label="미제출 응답" value={`${props.data.summary.pendingAssignments}건`} />
+              <StatCard label="제출 완료 응답" value={`${props.data.summary.submittedAssignments}건`} />
+              <StatCard label="공개 가능 대상자" value={`${props.data.summary.releasedTargets}명`} />
+            </div>
+          </SectionCard>
+        ) : null}
+
+        <LeadershipDiagnosisOpsDashboard data={props.data} admin={adminData} />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <section className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-emerald-50 p-6 shadow-sm">

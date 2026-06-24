@@ -236,9 +236,9 @@ function ReadinessCard(props: { targetRows: TargetRow[]; canManage: boolean }) {
           <Bell className="h-5 w-5" />
         </span>
         <div>
-          <h3 className="text-base font-black text-blue-950">리마인드/공유 준비 상태</h3>
+          <h3 className="text-base font-black text-blue-950">운영 조건 점검</h3>
           <p className="mt-2 text-sm font-semibold leading-6 text-blue-900">
-            실제 메일 발송이나 결과 공개 없이, 운영자가 대상과 조건을 확인하는 참고 영역입니다.
+            실행 버튼 없이, 운영자가 대상과 조건을 확인하는 참고 영역입니다.
           </p>
         </div>
       </div>
@@ -256,17 +256,17 @@ function ReadinessCard(props: { targetRows: TargetRow[]; canManage: boolean }) {
         ))}
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <button type="button" className="min-h-11 rounded-xl border border-blue-200 bg-white px-4 text-sm font-extrabold text-blue-700 disabled:cursor-not-allowed disabled:text-slate-400" disabled>
-          리마인드 준비
-        </button>
-        <button type="button" className="min-h-11 rounded-xl border border-blue-200 bg-white px-4 text-sm font-extrabold text-blue-700 disabled:cursor-not-allowed disabled:text-slate-400" disabled>
-          결과 공유 준비
-        </button>
+        <div className="min-h-11 rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm font-extrabold text-blue-700">
+          알림 조건 점검
+        </div>
+        <div className="min-h-11 rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm font-extrabold text-blue-700">
+          결과 조건 점검
+        </div>
       </div>
       <p className="mt-3 text-xs font-semibold leading-5 text-blue-800">
         {props.canManage
-          ? '운영 설정과 실제 발송은 승인된 운영 절차에서만 진행합니다.'
-          : '운영 권한이 있는 사용자만 실제 운영 설정을 변경할 수 있습니다.'}
+          ? '운영 절차 실행은 이 현황 화면에서 제공하지 않습니다.'
+          : '운영 권한이 있는 사용자만 별도 절차에서 설정을 변경할 수 있습니다.'}
       </p>
     </aside>
   )
@@ -361,12 +361,12 @@ function TargetDetailPanel(props: {
             응답 기준 충족 후 결과를 확인할 수 있습니다.
           </button>
         )}
-        <button type="button" className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-400" disabled>
-          리마인드 준비
-        </button>
-        <button type="button" className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-400" disabled>
-          결과 공유 준비
-        </button>
+        <div className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-sm font-black text-slate-500">
+          알림 조건 점검
+        </div>
+        <div className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-sm font-black text-slate-500">
+          결과 조건 점검
+        </div>
       </div>
     </aside>
   )
