@@ -3,6 +3,11 @@ import {
   UpwardReviewAICoachingResultSchema,
   type UpwardReviewAICoachingResult,
 } from '@/lib/upward-review-ai-coaching'
+import {
+  buildLeadershipDiagnosisCategorySummaries,
+  getLeadershipDiagnosisDevelopmentCategories,
+  getLeadershipDiagnosisStrengthCategories,
+} from './leadershipDiagnosisResultUtils'
 
 type ResultsData = NonNullable<UpwardReviewPageData['results']>
 type JsonRecord = Record<string, unknown>
@@ -150,42 +155,26 @@ function uniqueStrings(values: string[], limit: number) {
   return Array.from(new Set(values.map(normalizeText).filter(Boolean))).slice(0, limit)
 }
 
-function sortByAverage(
-  questions: ResultsData['questionSummaries'],
-  direction: 'asc' | 'desc'
-) {
-  return questions
-    .filter((question) => typeof question.averageScore === 'number')
-    .sort((left, right) =>
-      direction === 'asc'
-        ? (left.averageScore ?? 0) - (right.averageScore ?? 0)
-        : (right.averageScore ?? 0) - (left.averageScore ?? 0)
-    )
-}
-
 export function buildLeadershipDiagnosisAiCoachingPromptInput(
   results: ResultsData
 ): LeadershipDiagnosisAiCoachingPromptInput {
-  const categorySummary = results.questionSummaries.slice(0, 24).map((question) => ({
-    category: question.category,
-    averageSignal: question.averageScore,
-    responseCount: question.responseCount,
+  const leadershipCategorySummaries = buildLeadershipDiagnosisCategorySummaries(results.questionSummaries)
+  const categorySummary = leadershipCategorySummaries.map((category) => ({
+    category: category.category,
+    averageSignal: category.averageScore,
+    responseCount: category.responseCount,
   }))
   const strengthCategories = uniqueStrings(
     [
       ...results.strengths,
-      ...sortByAverage(results.questionSummaries, 'desc')
-        .slice(0, 5)
-        .map((question) => question.category),
+      ...getLeadershipDiagnosisStrengthCategories(leadershipCategorySummaries, 5),
     ],
     8
   )
   const developmentCategories = uniqueStrings(
     [
       ...results.improvements,
-      ...sortByAverage(results.questionSummaries, 'asc')
-        .slice(0, 5)
-        .map((question) => question.category),
+      ...getLeadershipDiagnosisDevelopmentCategories(leadershipCategorySummaries, 5),
     ],
     8
   )

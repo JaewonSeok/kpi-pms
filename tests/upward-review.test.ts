@@ -20,6 +20,12 @@ import {
   UpwardReviewAICoachingRequestSchema,
   UpwardReviewResponseSchema,
 } from '../src/lib/validations'
+import {
+  buildLeadershipDiagnosisCategorySummaries,
+  getLeadershipDiagnosisDevelopmentCategories,
+  getLeadershipDiagnosisStrengthCategories,
+  LEADERSHIP_DIAGNOSIS_CATEGORY_ORDER,
+} from '../src/components/evaluation/upward/leadershipDiagnosisResultUtils'
 
 async function run(name: string, fn: () => void | Promise<void>) {
   try {
@@ -204,6 +210,45 @@ async function main() {
     assert.equal(loader.includes('UPWARD_REVIEW_RESULTS_VIEWED'), true)
     assert.equal(loader.includes("visibilityMode: rawResponsePolicyAllows ? 'ADMIN_RAW' : visible ? 'AGGREGATED' : 'HIDDEN'"), true)
     assert.equal(loader.includes('targets: accessibleTargets.map((target) => {'), true)
+  })
+
+  await run('leadership diagnosis result categories aggregate question rows into five unique categories', () => {
+    const categoryPlan = [
+      ['바른생각 (커뮤니케이션)', 6, 5.4],
+      ['창의도전 (변화주도)', 6, 4.8],
+      ['비전공유 (조직관리)', 6, 3.9],
+      ['전략적 사고', 3, 4.3],
+      ['혁신', 3, 3.4],
+    ] as const
+    const questionSummaries = categoryPlan.flatMap(([category, count, score]) =>
+      Array.from({ length: count }, (_, index) => ({
+        questionId: `${category}:${index + 1}`,
+        category,
+        averageScore: score,
+        responseCount: 7,
+        textResponses: [`${category} 의견 ${index + 1}`],
+      }))
+    )
+
+    const categorySummaries = buildLeadershipDiagnosisCategorySummaries(questionSummaries)
+    const categories = categorySummaries.map((item) => item.category)
+
+    assert.deepEqual(categories, LEADERSHIP_DIAGNOSIS_CATEGORY_ORDER)
+    assert.equal(new Set(categories).size, 5)
+    assert.deepEqual(categorySummaries.map((item) => item.totalQuestionCount), [6, 6, 6, 3, 3])
+    assert.deepEqual(categorySummaries.map((item) => item.answeredQuestionCount), [6, 6, 6, 3, 3])
+    assert.equal(categories.filter((category) => category === '바른생각 (커뮤니케이션)').length, 1)
+    assert.equal(categories.filter((category) => category === '비전공유 (조직관리)').length, 1)
+    assert.deepEqual(getLeadershipDiagnosisStrengthCategories(categorySummaries, 3), [
+      '바른생각 (커뮤니케이션)',
+      '창의도전 (변화주도)',
+      '전략적 사고',
+    ])
+    assert.deepEqual(getLeadershipDiagnosisDevelopmentCategories(categorySummaries, 3), [
+      '혁신',
+      '비전공유 (조직관리)',
+      '전략적 사고',
+    ])
   })
 
   await run('response validation schema uses korean messages and accepts draft payloads', () => {

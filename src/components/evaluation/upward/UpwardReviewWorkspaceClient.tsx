@@ -20,6 +20,13 @@ import { DEFAULT_LEADERSHIP_DIAGNOSIS_QUESTIONS } from '@/lib/upward-review'
 import { Feedback360Avatar } from '../feedback360/ppt/Feedback360Avatar'
 import { LeadershipDiagnosisAiCoachingPanel } from './LeadershipDiagnosisAiCoachingPanel'
 import { LeadershipDiagnosisOpsDashboard } from './LeadershipDiagnosisOpsDashboard'
+import {
+  buildLeadershipDiagnosisCategorySummaries,
+  getLeadershipDiagnosisDevelopmentCategories,
+  getLeadershipDiagnosisStrengthCategories,
+  LEADERSHIP_DIAGNOSIS_CATEGORY_ORDER,
+  type LeadershipDiagnosisCategorySummary,
+} from './leadershipDiagnosisResultUtils'
 
 type Notice =
   | {
@@ -54,13 +61,7 @@ const LEADERSHIP_SCALE_LABELS: Record<number, string> = {
   6: '매우 그렇다',
 }
 
-const LEADERSHIP_DEFAULT_CATEGORIES = [
-  '바른생각 (커뮤니케이션)',
-  '창의도전 (변화주도)',
-  '비전공유 (조직관리)',
-  '전략적 사고',
-  '혁신',
-]
+const LEADERSHIP_DEFAULT_CATEGORIES = LEADERSHIP_DIAGNOSIS_CATEGORY_ORDER
 
 function getLeadershipRelationshipLabel(relationship?: string | null) {
   switch (relationship) {
@@ -224,9 +225,9 @@ function getLeadershipAverageScore(results: NonNullable<UpwardReviewPageData['re
 }
 
 function getLeadershipResultCategories(results: NonNullable<UpwardReviewPageData['results']>) {
-  return results.questionSummaries
-    .filter((question) => question.averageScore != null)
-    .sort((a, b) => (b.averageScore ?? 0) - (a.averageScore ?? 0))
+  return buildLeadershipDiagnosisCategorySummaries(results.questionSummaries).filter(
+    (category) => category.averageScore != null
+  )
 }
 
 function resolveTargetTypeFromLabel(label: string) {
@@ -397,9 +398,9 @@ function SummaryLine(props: { label: string; value: string }) {
 }
 
 function LeadershipRadarLikeChart(props: {
-  questions: NonNullable<UpwardReviewPageData['results']>['questionSummaries']
+  categories: LeadershipDiagnosisCategorySummary[]
 }) {
-  const items = props.questions.filter((question) => question.averageScore != null).slice(0, 5)
+  const items = props.categories.filter((category) => category.averageScore != null).slice(0, 5)
 
   if (!items.length) {
     return (
@@ -411,10 +412,10 @@ function LeadershipRadarLikeChart(props: {
 
   return (
     <div className="mt-5 grid gap-3 md:grid-cols-5">
-      {items.map((question) => (
-        <div key={question.questionId} className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-4 text-center">
-          <div className="text-sm font-extrabold text-blue-950">{question.averageScore?.toFixed(2)}</div>
-          <div className="mt-2 line-clamp-2 text-xs font-bold text-blue-700">{question.category}</div>
+      {items.map((category) => (
+        <div key={category.category} className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-4 text-center">
+          <div className="text-sm font-extrabold text-blue-950">{category.averageScore?.toFixed(2)}</div>
+          <div className="mt-2 line-clamp-2 text-xs font-bold text-blue-700">{category.category}</div>
         </div>
       ))}
     </div>
@@ -1205,8 +1206,16 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
     ? getLeadershipProgress({ total: Math.max(resultsData.feedbackCount, resultsData.minRaters), answered: resultsData.feedbackCount })
     : 0
   const leadershipResultCategories = resultsData ? getLeadershipResultCategories(resultsData) : []
-  const leadershipStrengthTop3 = resultsData?.strengths.slice(0, 3) ?? []
-  const leadershipImprovementTop3 = resultsData?.improvements.slice(0, 3) ?? []
+  const leadershipStrengthTop3 = resultsData
+    ? getLeadershipDiagnosisStrengthCategories(leadershipResultCategories, 3).map(
+        (category) => `${category} 항목이 상대적 강점으로 나타났습니다.`
+      )
+    : []
+  const leadershipImprovementTop3 = resultsData
+    ? getLeadershipDiagnosisDevelopmentCategories(leadershipResultCategories, 3).map(
+        (category) => `${category} 항목은 추가 개선이 필요한 신호가 보입니다.`
+      )
+    : []
   const leadershipCheckInQuestions = [
     '최근 한 달 동안 구성원이 가장 자주 막힌 지점은 무엇이었나요?',
     '강점 행동을 팀 운영 루틴으로 유지하려면 어떤 약속이 필요할까요?',
@@ -1710,7 +1719,7 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                     참고 평균 {leadershipResultAverage?.toFixed(2) ?? '-'}
                   </span>
                 </div>
-                <LeadershipRadarLikeChart questions={resultsData.questionSummaries} />
+                <LeadershipRadarLikeChart categories={leadershipResultCategories} />
               </div>
 
               <div className="rounded-xl border border-slate-200 bg-white p-5 text-center">
@@ -1737,13 +1746,13 @@ export function UpwardReviewWorkspaceClient(props: { data: UpwardReviewPageData 
                   <div className="rounded-xl border border-slate-200 bg-white p-5">
                     <h3 className="text-sm font-extrabold text-slate-950">카테고리별 응답 분포</h3>
                     <div className="mt-5 space-y-4">
-                      {leadershipResultCategories.slice(0, 8).map((question) => (
-                        <div key={question.questionId} className="grid grid-cols-[140px_minmax(0,1fr)_54px] items-center gap-3 text-sm">
-                          <span className="truncate font-bold text-slate-700">{question.category}</span>
+                      {leadershipResultCategories.map((category) => (
+                        <div key={category.category} className="grid grid-cols-[140px_minmax(0,1fr)_54px] items-center gap-3 text-sm">
+                          <span className="truncate font-bold text-slate-700">{category.category}</span>
                           <div className="h-3 overflow-hidden rounded-full bg-slate-100">
-                            <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.min(100, ((question.averageScore ?? 0) / 6) * 100)}%` }} />
+                            <div className="h-full rounded-full bg-blue-600" style={{ width: `${category.percent}%` }} />
                           </div>
-                          <span className="text-right font-extrabold text-blue-700">{question.averageScore?.toFixed(2)}</span>
+                          <span className="text-right font-extrabold text-blue-700">{category.averageScore?.toFixed(2)}</span>
                         </div>
                       ))}
                       {!leadershipResultCategories.length ? (
