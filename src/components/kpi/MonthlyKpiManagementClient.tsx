@@ -517,14 +517,21 @@ function RelatedInfoCard({
   label,
   value,
   helper,
+  onClick,
 }: {
   icon: ReactNode
   label: string
   value: string
   helper: string
+  onClick?: () => void
 }) {
+  const Tag = onClick ? 'button' : 'div'
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`rounded-2xl border border-slate-200 bg-slate-50/70 p-3 text-left w-full${onClick ? ' cursor-pointer transition-colors hover:bg-slate-100 hover:border-slate-300' : ''}`}
+    >
       <div className="flex items-start gap-2">
         <span className="rounded-xl bg-white p-2 text-slate-600 shadow-sm">{icon}</span>
         <div className="min-w-0">
@@ -533,7 +540,7 @@ function RelatedInfoCard({
           <div className="mt-1 text-[11px] leading-4 text-slate-500">{helper}</div>
         </div>
       </div>
-    </div>
+    </Tag>
   )
 }
 
@@ -1707,6 +1714,7 @@ export function MonthlyKpiManagementClient({
           onRunAi={() => void runAi('generate-summary')}
           onShowEvidence={() => setTab('evidence')}
           onShowHistory={() => setTab('review')}
+          onShowAi={() => setTab('ai')}
         />
       ) : null}
 
@@ -1812,6 +1820,7 @@ function EntryTab({
   onRunAi,
   onShowEvidence,
   onShowHistory,
+  onShowAi,
 }: {
   monthContext: ReturnType<typeof parseYearMonth>
   pageData: MonthlyPageData
@@ -1864,6 +1873,7 @@ function EntryTab({
   onRunAi: () => void
   onShowEvidence: () => void
   onShowHistory: () => void
+  onShowAi: () => void
 }) {
   const totalCount = allRecords.length
   const completedCount = allRecords.filter((record) => ['SUBMITTED', 'REVIEWED', 'LOCKED'].includes(record.status)).length
@@ -2649,7 +2659,8 @@ function EntryTab({
                 icon={<Sparkles className="h-4 w-4" />}
                 label="AI 보조"
                 value="초안 보조"
-                helper="공식 점수/등급 산정이 아닙니다."
+                helper="AI 탭에서 초안을 생성할 수 있습니다."
+                onClick={onShowAi}
               />
               <RelatedInfoCard
                 icon={<ListChecks className="h-4 w-4" />}
