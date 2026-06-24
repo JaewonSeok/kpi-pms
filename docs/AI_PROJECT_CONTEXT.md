@@ -1,10 +1,12 @@
 # AI Project Context
 
-Last updated: 2026-06-05
+Last updated: 2026-06-24
 
 ## Purpose
 
-KPI PMS is an internal performance management system for Rsupport. It supports organization KPI planning, personal MBO/KPI setup, monthly results, multi-stage evaluation, 360 feedback, AI competency evaluation, calibration, compensation planning, admin operations, and 2026 official evaluation readiness.
+KPI PMS is an internal performance management system for Rsupport. It supports organization KPI planning, personal MBO/KPI setup, monthly results, multi-stage evaluation, 360 feedback, AI competency evaluation, calibration, admin operations, and 2026 official evaluation readiness.
+
+Note: Compensation planning module was fully removed from code (PR #126, 2026-06-24). DB tables preserved pending deletion decision.
 
 The system is production-sensitive. Future AI agents must treat evaluation scoring, grade writing, migrations, feature flags, and backfill workflows as high-risk operations.
 
