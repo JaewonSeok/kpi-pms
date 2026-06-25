@@ -162,7 +162,7 @@ export function Feedback360RadarChart(props: { scores: ResultsData['categoryScor
   const radius = 68
   const points = scores.map((score, index) => {
     const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(scores.length, 1)
-    const normalized = Math.max(0, Math.min(1, score.average / 100))
+    const normalized = Math.max(0, Math.min(1, score.average / 5))
     const x = center + Math.cos(angle) * radius * normalized
     const y = center + Math.sin(angle) * radius * normalized
     return `${x},${y}`
