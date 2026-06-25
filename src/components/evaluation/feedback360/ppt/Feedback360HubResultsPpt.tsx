@@ -114,30 +114,59 @@ function EmptyResultNotice(props: { minRaters: number; submittedCount: number })
   )
 }
 
-function PentagonSkeleton() {
-  const outer = '86,14 154,63 128,144 44,144 18,63'
-  const middle = '86,38 130,70 113,122 59,122 42,70'
-  const inner = '86,62 106,77 98,102 74,102 66,77'
+function HubRadarChart(props: { categories: Feedback360HubResultsCategory[] }) {
+  const entries = props.categories.slice(0, 6)
+  const center = 86
+  const radius = 68
+  const n = Math.max(entries.length, 1)
+
+  const getRatio = (c: Feedback360HubResultsCategory) => {
+    const total = (c.positiveCount ?? 0) + (c.improvementCount ?? 0)
+    return total === 0 ? 0 : (c.positiveCount ?? 0) / total
+  }
+
+  const hasData = entries.some((c) => (c.positiveCount ?? 0) + (c.improvementCount ?? 0) > 0)
+
+  const dataPoints = entries.map((c, i) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * i) / n
+    const r = getRatio(c)
+    return `${center + Math.cos(angle) * radius * r},${center + Math.sin(angle) * radius * r}`
+  })
+
+  const guidePoints = entries.map((_, i) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * i) / n
+    return `${center + Math.cos(angle) * radius},${center + Math.sin(angle) * radius}`
+  })
 
   return (
     <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
       <svg viewBox="0 0 172 172" className="h-52 w-full">
-        <polygon points={outer} fill="white" stroke="#cbd5e1" strokeWidth="1.2" />
-        <polygon points={middle} fill="#eff6ff" stroke="#bfdbfe" strokeWidth="1.1" />
-        <polygon points={inner} fill="#dbeafe" stroke="#93c5fd" strokeWidth="1.1" />
-        {[outer, middle, inner].map((points) =>
-          points.split(' ').map((point) => {
-            const [x, y] = point.split(',')
-            return <line key={`${points}:${point}`} x1="86" y1="86" x2={x} y2={y} stroke="#e2e8f0" strokeWidth="0.8" />
-          })
+        <polygon points={guidePoints.join(' ')} fill="white" stroke="#cbd5e1" strokeWidth="1.2" />
+        {hasData && (
+          <polygon points={dataPoints.join(' ')} fill="rgba(37, 99, 235, 0.18)" stroke="#2563eb" strokeWidth="2" />
         )}
+        {entries.map((c, i) => {
+          const angle = -Math.PI / 2 + (Math.PI * 2 * i) / n
+          const x = center + Math.cos(angle) * (radius + 10)
+          const y = center + Math.sin(angle) * (radius + 10)
+          return (
+            <text key={c.id} x={x} y={y} textAnchor="middle" className="fill-slate-500 text-[9px]">
+              {c.label.slice(0, 5)}
+            </text>
+          )
+        })}
       </svg>
       <div className="space-y-3">
-        {['팀워크', '소통', '책임감', '문제해결', '피드백 수용'].map((label) => (
-          <div key={label} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
-            <ProgressBar value={0} label={`${label} · 데이터 대기`} />
-          </div>
-        ))}
+        {entries.map((c) => {
+          const ratio = getRatio(c)
+          const total = (c.positiveCount ?? 0) + (c.improvementCount ?? 0)
+          const label = total > 0 ? `${c.label} ${Math.round(ratio * 100)}%` : `${c.label} · 데이터 대기`
+          return (
+            <div key={c.id} className="rounded-xl border border-slate-100 bg-white px-3 py-2">
+              <ProgressBar value={ratio * 100} label={label} />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -228,12 +257,12 @@ export function Feedback360HubResultsPpt(props: Feedback360HubResultsPptProps) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-base font-extrabold text-slate-950">종합 요약</div>
-              <p className="mt-1 text-sm font-semibold text-slate-500">익명 기준 충족 후 실제 응답 패턴으로 채워집니다.</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">강점 비율 기반(태그 선택 집계) · 개별 결과 탭의 평균 점수와 구분됩니다.</p>
             </div>
             <GuideBadge tone="blue">공식 점수 아님</GuideBadge>
           </div>
           <div className="mt-5">
-            <PentagonSkeleton />
+            <HubRadarChart categories={props.categories} />
           </div>
         </section>
 
