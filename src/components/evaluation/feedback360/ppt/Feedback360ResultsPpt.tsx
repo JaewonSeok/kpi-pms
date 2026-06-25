@@ -182,31 +182,48 @@ export function Feedback360RadarChart(props: { scores: ResultsData['categoryScor
         <GuideBadge tone="slate">공식 점수 아님</GuideBadge>
       </div>
       {hasScores ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
-          <svg viewBox="0 0 172 172" className="h-44 w-full">
-            <polygon points={guidePoints.join(' ')} fill="white" stroke="#cbd5e1" strokeWidth="1" />
-            <polygon points={points.join(' ')} fill="rgba(37, 99, 235, 0.18)" stroke="#2563eb" strokeWidth="2" />
-            {scores.map((score, index) => {
-              const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(scores.length, 1)
-              const x = center + Math.cos(angle) * (radius + 10)
-              const y = center + Math.sin(angle) * (radius + 10)
-              return (
-                <text key={score.category} x={x} y={y} textAnchor="middle" className="fill-slate-500 text-[9px]">
-                  {score.category.slice(0, 6)}
-                </text>
-              )
-            })}
-          </svg>
-          <div className="space-y-2">
-            {scores.map((score) => (
-              <SummaryRow
-                key={score.category}
-                label={score.category}
-                value={`응답 ${score.count}건 · 평균 ${score.average}`}
-              />
-            ))}
+        scores.length >= 3 ? (
+          <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
+            <svg viewBox="0 0 172 172" className="h-44 w-full">
+              <polygon points={guidePoints.join(' ')} fill="white" stroke="#cbd5e1" strokeWidth="1" />
+              <polygon points={points.join(' ')} fill="rgba(37, 99, 235, 0.18)" stroke="#2563eb" strokeWidth="2" />
+              {scores.map((score, index) => {
+                const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(scores.length, 1)
+                const x = center + Math.cos(angle) * (radius + 10)
+                const y = center + Math.sin(angle) * (radius + 10)
+                return (
+                  <text key={score.category} x={x} y={y} textAnchor="middle" className="fill-slate-500 text-[9px]">
+                    {score.category.slice(0, 6)}
+                  </text>
+                )
+              })}
+            </svg>
+            <div className="space-y-2">
+              {scores.map((score) => (
+                <SummaryRow
+                  key={score.category}
+                  label={score.category}
+                  value={`응답 ${score.count}건 · 평균 ${score.average}`}
+                />
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+              레이더 차트는 평가 카테고리 3개 이상일 때 표시됩니다. (현재 {scores.length}개)
+            </div>
+            <div className="space-y-2">
+              {scores.map((score) => (
+                <SummaryRow
+                  key={score.category}
+                  label={score.category}
+                  value={`응답 ${score.count}건 · 평균 ${score.average}`}
+                />
+              ))}
+            </div>
+          </div>
+        )
       ) : (
         <Feedback360ResultSkeleton label="radar chart 대기" />
       )}
