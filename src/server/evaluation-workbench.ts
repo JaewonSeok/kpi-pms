@@ -116,6 +116,8 @@ export type EvaluationWorkbenchPageData = {
     status: EvalStatus
     statusLabel: string
     totalScore?: number | null
+    organizationPerformanceScore?: number | null
+    personalPerformanceScore?: number | null
     comment?: string | null
     strengthComment?: string | null
     improvementComment?: string | null
@@ -1417,6 +1419,8 @@ export async function getEvaluationWorkbenchPageData(
       status: selectedEvaluation.status,
       statusLabel: STATUS_LABELS[selectedEvaluation.status],
       totalScore: selectedEvaluation.totalScore,
+      organizationPerformanceScore: selectedEvaluation.organizationPerformanceScore,
+      personalPerformanceScore: selectedEvaluation.personalPerformanceScore,
       comment: selectedEvaluation.comment,
       strengthComment: selectedEvaluation.strengthComment,
       improvementComment: selectedEvaluation.improvementComment,
