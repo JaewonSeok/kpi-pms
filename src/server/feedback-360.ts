@@ -321,7 +321,7 @@ export type Feedback360PageData = {
         textValue?: string | null
       }>
     }>
-    overallTagSummaries: Array<{
+    overallTagSummaries?: Array<{
       tagLabels: string[]
     }>
     warnings: string[]

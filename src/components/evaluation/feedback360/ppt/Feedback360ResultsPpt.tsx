@@ -76,7 +76,7 @@ export function buildFeedback360ResultVisualModel(results: ResultsData) {
     categoryMap.set(tag.category, category)
   }
 
-  for (const summary of results.overallTagSummaries) {
+  for (const summary of (results.overallTagSummaries ?? [])) {
     const selectedTags = buildFeedback360ResponseTagsFromLabels(summary.tagLabels)
     const tags = getSelectedFeedback360ResponseTagLabels(selectedTags)
     for (const tag of tags) {
