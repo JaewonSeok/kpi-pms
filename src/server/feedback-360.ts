@@ -94,6 +94,7 @@ import {
 } from './feedback-360-workflow'
 import { resolveFeedbackResultPrimaryLeaderId } from './feedback-360-admin'
 import { getOnboardingReviewAdminSnapshot } from './onboarding-review-workflow'
+import { FEEDBACK_360_RESPONSE_TAG_CATEGORIES } from '@/components/evaluation/feedback360/feedback360-response-tag-pool'
 
 export type Feedback360RouteMode = 'overview' | 'nomination' | 'results' | 'admin' | 'respond'
 
@@ -193,6 +194,11 @@ export type Feedback360PageData = {
       name: string
       departmentName: string
       canReadContent: boolean
+    }>
+    categoryTagCounts: Array<{
+      categoryId: string
+      positive: number
+      improvement: number
     }>
   }>
   selectedRoundId?: string
@@ -1713,6 +1719,29 @@ export async function getFeedback360PageData(
           }))
       )
 
+      const submittedFeedbacksForHub = round.feedbacks.filter((f) => f.status === 'SUBMITTED')
+      const hubCategoryCountMap = new Map<string, { positive: number; improvement: number }>()
+      for (const feedback of submittedFeedbacksForHub) {
+        const labelSet = new Set(extractTagLabelsFromOverallComment(feedback.overallComment))
+        for (const cat of FEEDBACK_360_RESPONSE_TAG_CATEGORIES) {
+          const entry = hubCategoryCountMap.get(cat.id) ?? { positive: 0, improvement: 0 }
+          for (const tag of cat.positiveTags) {
+            if (labelSet.has(tag.label)) entry.positive += 1
+          }
+          for (const tag of cat.improvementTags) {
+            if (labelSet.has(tag.label)) entry.improvement += 1
+          }
+          hubCategoryCountMap.set(cat.id, entry)
+        }
+      }
+      const categoryTagCounts = FEEDBACK_360_RESPONSE_TAG_CATEGORIES
+        .filter((c) => c.audience !== 'leader')
+        .map((c) => ({
+          categoryId: c.id,
+          positive: hubCategoryCountMap.get(c.id)?.positive ?? 0,
+          improvement: hubCategoryCountMap.get(c.id)?.improvement ?? 0,
+        }))
+
       return {
         id: round.id,
         roundName: round.roundName,
@@ -1763,6 +1792,7 @@ export async function getFeedback360PageData(
             canReadContent,
           }
         }),
+        categoryTagCounts,
       }
     })
 

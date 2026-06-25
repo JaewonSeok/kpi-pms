@@ -2030,10 +2030,17 @@ export function Feedback360WorkspaceClient(props: { data: Feedback360PageData })
                       categoryCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.categoryCount}
                       positiveTagCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.positiveTagCount}
                       improvementTagCount={FEEDBACK_360_RESPONSE_TAG_POOL_STATS.improvementTagCount}
-                      categories={visibleTagPreviewCategories.map((category) => ({
-                        id: category.id,
-                        label: category.category,
-                      }))}
+                      categories={visibleTagPreviewCategories.map((category) => {
+                        const counts = selectedHubRound?.categoryTagCounts?.find(
+                          (c) => c.categoryId === category.id
+                        )
+                        return {
+                          id: category.id,
+                          label: category.category,
+                          positiveCount: counts?.positive ?? 0,
+                          improvementCount: counts?.improvement ?? 0,
+                        }
+                      })}
                     />
                     <Feedback360AiCoachingPanel
                       cycleId={selectedHubCycleId}

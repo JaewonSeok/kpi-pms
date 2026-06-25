@@ -148,6 +148,10 @@ export function Feedback360HubResultsPpt(props: Feedback360HubResultsPptProps) {
   const responseRate = clampPercent(props.responseRate)
   const remainingForAnonymity = Math.max(props.minRaters - props.submittedCount, 0)
   const resultReadyLabel = props.anonymityMet ? '익명 기준 충족' : '익명 기준 대기'
+  const maxCategoryCount = Math.max(
+    1,
+    ...props.categories.map((c) => (c.positiveCount ?? 0) + (c.improvementCount ?? 0))
+  )
 
   return (
     <section id="feedback360-results" className="space-y-5">
@@ -249,8 +253,8 @@ export function Feedback360HubResultsPpt(props: Feedback360HubResultsPptProps) {
                   </span>
                 </div>
                 <div className="grid gap-2 md:grid-cols-2">
-                  <ProgressBar value={0} label={`강점 ${category.positiveCount ?? 0}`} />
-                  <ProgressBar value={0} label={`보완 ${category.improvementCount ?? 0}`} />
+                  <ProgressBar value={((category.positiveCount ?? 0) / maxCategoryCount) * 100} label={`강점 ${category.positiveCount ?? 0}`} />
+                  <ProgressBar value={((category.improvementCount ?? 0) / maxCategoryCount) * 100} label={`보완 ${category.improvementCount ?? 0}`} />
                 </div>
               </div>
             ))}
