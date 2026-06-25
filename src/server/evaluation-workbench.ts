@@ -1375,7 +1375,7 @@ export async function getEvaluationWorkbenchPageData(
         : null
     const canViewBriefing =
       (sessionUser.role === 'ROLE_ADMIN' || selectedEvaluation.evaluator.id === sessionUser.id) &&
-      ['SECOND', 'FINAL', 'CEO_ADJUST'].includes(selectedEvaluation.evalStage)
+      ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'].includes(selectedEvaluation.evalStage)
     const canManageSelected =
       selectedEvaluation.evaluator.id === sessionUser.id || sessionUser.role === 'ROLE_ADMIN'
     const canEditSelected =

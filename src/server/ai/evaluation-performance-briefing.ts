@@ -405,7 +405,7 @@ function buildExecutivePerformanceBriefingInput(params: {
   const missingEvidenceAreas = uniqueStrings([
     coverage.monthlyRecordCount < 4 ? '최근 12개월 월간 실적 기록이 충분하지 않습니다.' : null,
     coverage.checkinCount < 2 ? '체크인 근거가 부족합니다.' : null,
-    coverage.feedbackRoundCount < 1 ? '다면 피드백 근거가 부족합니다.' : null,
+    evaluation.evalStage !== 'FIRST' && coverage.feedbackRoundCount < 1 ? '다면 피드백 근거가 부족합니다.' : null,
     previousEvaluations.length < 1 ? '이전 평가 비교 이력이 부족합니다.' : null,
     managerCommentSupported ? null : '팀장 코멘트가 구체적 근거와 직접 연결되지 않습니다.',
     evidenceScore === null ? '근거 기반 성과 수준을 수치로 비교하기 어렵습니다.' : null,
@@ -521,7 +521,7 @@ async function loadEvaluationPerformanceBriefingContext(
     params.actorRole === 'ROLE_ADMIN' ||
     (
       evaluation.evaluatorId === params.actorId &&
-      ['SECOND', 'FINAL', 'CEO_ADJUST'].includes(evaluation.evalStage)
+      ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST'].includes(evaluation.evalStage)
     )
 
   if (!canUseBriefing) {
@@ -566,32 +566,34 @@ async function loadEvaluationPerformanceBriefingContext(
         ownerNotes: true,
       },
     }),
-    db.multiFeedbackRound.findMany({
-      where: {
-        endDate: { gte: oneYearAgo },
-      },
-      orderBy: { endDate: 'desc' },
-      take: 6,
-      include: {
-        feedbacks: {
+    evaluation.evalStage === 'FIRST'
+      ? Promise.resolve([])
+      : db.multiFeedbackRound.findMany({
           where: {
-            receiverId: evaluation.targetId,
-            status: 'SUBMITTED',
+            endDate: { gte: oneYearAgo },
           },
+          orderBy: { endDate: 'desc' },
+          take: 6,
           include: {
-            responses: {
+            feedbacks: {
+              where: {
+                receiverId: evaluation.targetId,
+                status: 'SUBMITTED',
+              },
               include: {
-                question: {
-                  select: {
-                    questionType: true,
+                responses: {
+                  include: {
+                    question: {
+                      select: {
+                        questionType: true,
+                      },
+                    },
                   },
                 },
               },
             },
           },
-        },
-      },
-    }),
+        }),
     db.evaluation.findMany({
       where: {
         targetId: evaluation.targetId,

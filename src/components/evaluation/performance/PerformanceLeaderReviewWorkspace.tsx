@@ -17,6 +17,11 @@ import {
 } from 'lucide-react'
 import { PmsDetailPanel, PmsProgressRing, PmsSignalChip } from '@/components/pms-ui'
 import type { PmsTone } from '@/components/pms-ui'
+import {
+  normalizeEvaluationPerformanceBriefingSnapshot,
+  type EvaluationPerformanceBriefingSnapshot,
+} from '@/lib/evaluation-performance-briefing'
+import { EvaluationPerformanceBriefingPanel } from '@/components/evaluation/EvaluationPerformanceBriefingPanel'
 
 type PerformanceLeaderReviewWorkspaceData = {
   currentUser?: {
@@ -67,6 +72,10 @@ type SelectedEvaluation = {
   updatedAt: string
   submittedAt?: string | null
   items: EvaluationItem[]
+  briefing?: {
+    canView: boolean
+    latestSnapshot?: EvaluationPerformanceBriefingSnapshot | null
+  } | null
 }
 
 type EvaluationItem = {
@@ -154,6 +163,31 @@ export function PerformanceLeaderReviewWorkspace({ data }: { data: unknown }) {
   const selectedRow = rows.find((row) => row.isSelected) ?? rows[0] ?? null
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
+  const [briefing, setBriefing] = useState<EvaluationPerformanceBriefingSnapshot | null>(
+    workspaceData.selected?.briefing?.latestSnapshot ?? null
+  )
+  const [briefingBusy, setBriefingBusy] = useState(false)
+
+  async function handleGenerateBriefing() {
+    if (!selected?.briefing?.canView) return
+    setBriefingBusy(true)
+    try {
+      const response = await fetch('/api/ai/evaluation-briefing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ evaluationId: selected.id }),
+      })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? 'AI 성과 브리핑을 생성하지 못했습니다.')
+      }
+      const nextBriefing = normalizeEvaluationPerformanceBriefingSnapshot(json.data)
+      if (!nextBriefing) throw new Error('AI 성과 브리핑 결과 형식을 확인하지 못했습니다.')
+      setBriefing(nextBriefing)
+    } finally {
+      setBriefingBusy(false)
+    }
+  }
   const normalizedQuery = query.trim().toLowerCase()
   const filteredRows = rows.filter((row) => {
     const matchesQuery =
@@ -318,7 +352,14 @@ export function PerformanceLeaderReviewWorkspace({ data }: { data: unknown }) {
           </div>
         </div>
 
-        <LeaderDetailPanel selected={selected} selectedRow={selectedRow} progress={progress} />
+        <LeaderDetailPanel
+          selected={selected}
+          selectedRow={selectedRow}
+          progress={progress}
+          briefing={briefing}
+          briefingBusy={briefingBusy}
+          onGenerateBriefing={() => void handleGenerateBriefing()}
+        />
       </div>
     </section>
   )
@@ -328,10 +369,16 @@ function LeaderDetailPanel({
   selected,
   selectedRow,
   progress,
+  briefing,
+  briefingBusy,
+  onGenerateBriefing,
 }: {
   selected: SelectedEvaluation | null
   selectedRow: LeaderRow | null
   progress: number
+  briefing: EvaluationPerformanceBriefingSnapshot | null
+  briefingBusy: boolean
+  onGenerateBriefing: () => void
 }) {
   const [tab, setTab] = useState<LeaderTab>('ORG')
   const orgItems = useMemo(() => (selected?.items ?? []).filter(isOrgLinkedItem), [selected])
@@ -429,6 +476,14 @@ function LeaderDetailPanel({
         )}
 
         <LeaderFeedbackPreview selected={selected} />
+
+        <EvaluationPerformanceBriefingPanel
+          targetName={selected?.target.name ?? ''}
+          snapshot={briefing}
+          busy={briefingBusy}
+          canGenerate={selected?.briefing?.canView ?? false}
+          onGenerate={onGenerateBriefing}
+        />
 
         <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs leading-5 text-violet-800">
           팀장 평가는 preview-only입니다. 공식 점수 반영, 등급 산정, 확정 처리는 이 화면에서 수행하지 않습니다.
