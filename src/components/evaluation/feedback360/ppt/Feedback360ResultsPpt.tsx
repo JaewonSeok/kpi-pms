@@ -157,7 +157,14 @@ function Feedback360RatingDistChart(props: {
   scores: ResultsData['categoryScores']
   thresholdMet: boolean
 }) {
-  const STARS = [1, 2, 3, 4, 5] as const
+  const STARS_DESC = [5, 4, 3, 2, 1] as const
+  const STAR_FILL: Record<number, string> = {
+    5: 'bg-blue-600',
+    4: 'bg-blue-400',
+    3: 'bg-blue-300',
+    2: 'bg-slate-400',
+    1: 'bg-slate-300',
+  }
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -173,30 +180,31 @@ function Feedback360RatingDistChart(props: {
           <Feedback360ResultSkeleton label={props.thresholdMet ? '별점 데이터 대기' : '익명 기준 대기'} />
         </div>
       ) : (
-        <div className="mt-4 space-y-4">
+        <div className="mt-4 space-y-5">
           {props.scores.map((score) => {
             const dist = score.distribution
-            const maxCount = dist ? Math.max(1, ...STARS.map((s) => dist[s] ?? 0)) : 1
+            const maxCount = dist ? Math.max(1, ...STARS_DESC.map((s) => dist[s] ?? 0)) : 1
             return (
               <div key={score.category}>
-                <div className="mb-1.5 flex items-baseline justify-between text-xs">
+                <div className="mb-2 flex items-baseline justify-between text-xs">
                   <span className="font-semibold text-slate-800">{score.category}</span>
                   <span className="text-slate-500">평균 {score.average} · {score.count}건</span>
                 </div>
                 {dist ? (
-                  <div className="flex gap-1">
-                    {STARS.map((star) => {
+                  <div className="space-y-5">
+                    {STARS_DESC.map((star) => {
                       const count = dist[star] ?? 0
                       const pct = Math.round((count / maxCount) * 100)
                       return (
-                        <div key={star} className="flex flex-1 flex-col items-center gap-0.5">
-                          <div className="flex h-8 w-full items-end">
+                        <div key={star} className="flex items-center gap-2">
+                          <span className="w-5 shrink-0 text-right text-[10px] font-semibold text-slate-500">{star}★</span>
+                          <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-slate-200">
                             <div
-                              className="w-full rounded-t bg-blue-400"
-                              style={{ height: `${count > 0 ? Math.max(pct, 8) : 0}%` }}
+                              className={`absolute inset-y-0 left-0 rounded-full ${count > 0 ? STAR_FILL[star] : 'bg-slate-300'}`}
+                              style={{ width: count > 0 ? `${Math.max(pct, 4)}%` : '3px' }}
                             />
                           </div>
-                          <span className="text-[9px] text-slate-400">{star}★</span>
+                          <span className="w-7 shrink-0 text-[10px] text-slate-500">{count}명</span>
                         </div>
                       )
                     })}
