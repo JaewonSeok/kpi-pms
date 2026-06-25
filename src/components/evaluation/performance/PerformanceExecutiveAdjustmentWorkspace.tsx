@@ -60,6 +60,8 @@ type SelectedEvaluation = {
   statusLabel: string
   totalScore?: number | null
   gradeId?: string | null
+  organizationPerformanceScore?: number | null
+  personalPerformanceScore?: number | null
   updatedAt: string
   previousStageEvaluation?: {
     stageLabel: string
@@ -96,6 +98,7 @@ type EvaluationItem = {
   linkedOrgKpiTitle?: string | null
   linkedOrgKpiId?: string | null
   policyCategory?: string | null
+  recentAchievementRate?: number | null
   weightedScore?: number | null
   itemComment?: string | null
   goalContext: {

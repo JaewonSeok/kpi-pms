@@ -73,6 +73,8 @@ export const EvaluationPerformanceBriefingSnapshotSchema = z.object({
   questions: z.array(z.string().min(1).max(300)).min(2).max(5),
   evidenceCoverage: EvaluationPerformanceBriefingCoverageSchema,
   evidence: z.array(EvaluationPerformanceBriefingEvidenceItemSchema).min(1).max(32),
+  managerScore: z.number().nullable().optional(),
+  evidenceScore: z.number().nullable().optional(),
 })
 
 export type EvaluationPerformanceBriefingAlignmentStatus = z.infer<

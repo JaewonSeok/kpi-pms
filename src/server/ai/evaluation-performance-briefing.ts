@@ -804,6 +804,8 @@ function buildFallbackSnapshot(
     questions,
     evidenceCoverage: coverage,
     evidence: evidenceSeeds.slice(0, 32),
+    managerScore,
+    evidenceScore,
   })
 }
 
@@ -1178,6 +1180,8 @@ function buildSnapshotFromAiResult(params: {
     ),
     evidenceCoverage: params.context.coverage,
     evidence: params.context.evidenceSeeds.slice(0, 32),
+    managerScore: params.context.managerScore,
+    evidenceScore: params.context.evidenceScore,
   })
 }
 
