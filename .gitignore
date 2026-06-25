@@ -44,3 +44,7 @@ next-env.d.ts
 
 .devserver.err.log
 .devserver.out.log
+
+# local exports / large binaries
+claude_activity_*.csv
+docs/reference/
