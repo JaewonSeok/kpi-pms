@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ClipboardCheck,
   Download,
+  FileText,
   Filter,
   Save,
   Search,
@@ -21,6 +22,7 @@ import {
   type EvaluationPerformanceBriefingSnapshot,
 } from '@/lib/evaluation-performance-briefing'
 import { EvaluationPerformanceBriefingPanel } from '@/components/evaluation/EvaluationPerformanceBriefingPanel'
+import { ExecutiveBriefingA4Modal } from '@/components/evaluation/performance/ExecutiveBriefingA4Modal'
 
 type ExecutiveWorkbenchData = {
   currentUser?: {
@@ -394,6 +396,8 @@ function ExecutiveDetailPanel({
   briefingBusy: boolean
   onGenerateBriefing: () => void
 }) {
+  const [showA4, setShowA4] = useState(false)
+
   return (
     <PmsDetailPanel
       sticky
@@ -500,10 +504,29 @@ function ExecutiveDetailPanel({
           onGenerate={onGenerateBriefing}
         />
 
+        {briefing && selected && (
+          <button
+            type="button"
+            onClick={() => setShowA4(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 active:bg-indigo-200"
+          >
+            <FileText className="h-4 w-4" />
+            A4 리포트 보기
+          </button>
+        )}
+
         <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs leading-5 text-violet-800">
           preview only / 공식 저장 없음. 등급 조정은 본부장 검토 화면에서만 확인하며 공식 반영은 수행하지 않습니다.
         </div>
       </div>
+
+      {showA4 && briefing && selected && (
+        <ExecutiveBriefingA4Modal
+          selected={selected}
+          snapshot={briefing}
+          onClose={() => setShowA4(false)}
+        />
+      )}
     </PmsDetailPanel>
   )
 }
