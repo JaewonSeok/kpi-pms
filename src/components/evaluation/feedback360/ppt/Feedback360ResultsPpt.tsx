@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { BarChart3, Hash, Target, TrendingUp } from 'lucide-react'
 import type { Feedback360PageData } from '@/server/feedback-360'
 import {
+  buildFeedback360ResponseTagsFromLabels,
   FEEDBACK_360_RESPONSE_TAG_CATEGORIES,
   FEEDBACK_360_TAG_SUMMARY_HEADING,
   getSelectedFeedback360ResponseTagLabels,
@@ -75,21 +76,18 @@ export function buildFeedback360ResultVisualModel(results: ResultsData) {
     categoryMap.set(tag.category, category)
   }
 
+  for (const summary of results.overallTagSummaries) {
+    const selectedTags = buildFeedback360ResponseTagsFromLabels(summary.tagLabels)
+    const tags = getSelectedFeedback360ResponseTagLabels(selectedTags)
+    for (const tag of tags) {
+      registerTag({ ...tag, count: 1 })
+    }
+  }
+
   for (const group of results.groupedResponses) {
     for (const answer of group.answers) {
       const originalText = answer.textValue?.trim() ?? ''
       const parsed = parseFeedback360TagSummaryFromComment(originalText)
-      const tags = getSelectedFeedback360ResponseTagLabels(parsed.selectedTags)
-      const positiveTags = tags
-        .filter((tag) => tag.tone === 'positive')
-        .map((tag) => ({ ...tag, count: 1 }))
-      const improvementTags = tags
-        .filter((tag) => tag.tone === 'improvement')
-        .map((tag) => ({ ...tag, count: 1 }))
-
-      for (const tag of [...positiveTags, ...improvementTags]) {
-        registerTag(tag)
-      }
 
       if (originalText || typeof answer.ratingValue === 'number') {
         reviewCards.push({
@@ -100,8 +98,8 @@ export function buildFeedback360ResultVisualModel(results: ResultsData) {
           authorLabel: answer.authorLabel,
           submittedAtLabel: '제출일은 운영 데이터 기준',
           ratingValue: answer.ratingValue,
-          positiveTags,
-          improvementTags,
+          positiveTags: [],
+          improvementTags: [],
           comment: parsed.comment.trim(),
           originalText,
         })

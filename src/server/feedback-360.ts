@@ -321,6 +321,9 @@ export type Feedback360PageData = {
         textValue?: string | null
       }>
     }>
+    overallTagSummaries: Array<{
+      tagLabels: string[]
+    }>
     warnings: string[]
     developmentPlan: {
       focusArea: string
@@ -910,6 +913,19 @@ function buildGroupedResponses(params: {
   }
 
   return [...questionMap.values()]
+}
+
+function extractTagLabelsFromOverallComment(comment: string | null | undefined): string[] {
+  const text = comment ?? ''
+  const lines = text.split(/\r?\n/)
+  const headingIdx = lines.findIndex((l) => l.trim() === '[선택 태그 요약]')
+  if (headingIdx < 0) return []
+  const result: string[] = []
+  for (let i = headingIdx + 1; i < lines.length && lines[i].trim().length > 0; i++) {
+    const line = lines[i].trim().replace(/^(긍정|보완)\s*:\s*/, '')
+    result.push(...line.split(',').map((s) => s.trim()).filter(Boolean))
+  }
+  return result
 }
 
 function buildResultWarnings(params: {
@@ -2499,6 +2515,10 @@ export async function getFeedback360PageData(
       thresholdMet,
       visibilitySettings: parseFeedbackVisibilitySettings(selectedRound.visibilitySettings),
     })
+    const visibilitySettings = parseFeedbackVisibilitySettings(selectedRound.visibilitySettings)
+    const overallTagSummaries = submittedTargetFeedbacks
+      .filter((f) => (visibilitySettings[f.relationship] ?? 'ANONYMOUS') !== 'PRIVATE')
+      .map((f) => ({ tagLabels: extractTagLabelsFromOverallComment(f.overallComment) }))
     const warnings = buildResultWarnings({
       thresholdMet,
       feedbackCount: submittedTargetFeedbacks.length,
@@ -2788,6 +2808,7 @@ export async function getFeedback360PageData(
             : `현재 응답 수는 ${submittedTargetFeedbacks.length}건이며 익명 요약 공개 기준 ${selectedRound.minRaters}건에 아직 미달합니다.`,
           textHighlights: persistedTextHighlights,
           groupedResponses,
+          overallTagSummaries,
           warnings,
           developmentPlan: {
             focusArea: resolvedDevelopmentPlan?.focusArea ?? `${developmentFocus} 성장 강화`,
