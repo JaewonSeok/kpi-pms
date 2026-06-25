@@ -153,79 +153,61 @@ function Feedback360TagBadge(props: { tag: Feedback360ResultTagCount; compact?: 
   )
 }
 
-export function Feedback360RadarChart(props: { scores: ResultsData['categoryScores'] }) {
-  const scores = props.scores.slice(0, 6)
-  const hasScores = scores.length > 0
-  const center = 86
-  const radius = 68
-  const points = scores.map((score, index) => {
-    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(scores.length, 1)
-    const normalized = Math.max(0, Math.min(1, score.average / 5))
-    const x = center + Math.cos(angle) * radius * normalized
-    const y = center + Math.sin(angle) * radius * normalized
-    return `${x},${y}`
-  })
-  const guidePoints = scores.map((_, index) => {
-    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(scores.length, 1)
-    const x = center + Math.cos(angle) * radius
-    const y = center + Math.sin(angle) * radius
-    return `${x},${y}`
-  })
+function Feedback360RatingDistChart(props: {
+  scores: ResultsData['categoryScores']
+  thresholdMet: boolean
+}) {
+  const STARS = [1, 2, 3, 4, 5] as const
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-950">radar chart / 카테고리 밀도</div>
-          <div className="mt-1 text-xs text-slate-500">실제 응답 집계가 있을 때만 표시합니다.</div>
+          <div className="text-sm font-semibold text-slate-950">별점 분포</div>
+          <div className="mt-1 text-xs text-slate-500">카테고리별 평가자 별점 분포입니다.</div>
         </div>
         <GuideBadge tone="slate">공식 점수 아님</GuideBadge>
       </div>
-      {hasScores ? (
-        scores.length >= 3 ? (
-          <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)] md:items-center">
-            <svg viewBox="0 0 172 172" className="h-44 w-full">
-              <polygon points={guidePoints.join(' ')} fill="white" stroke="#cbd5e1" strokeWidth="1" />
-              <polygon points={points.join(' ')} fill="rgba(37, 99, 235, 0.18)" stroke="#2563eb" strokeWidth="2" />
-              {scores.map((score, index) => {
-                const angle = -Math.PI / 2 + (Math.PI * 2 * index) / Math.max(scores.length, 1)
-                const x = center + Math.cos(angle) * (radius + 10)
-                const y = center + Math.sin(angle) * (radius + 10)
-                return (
-                  <text key={score.category} x={x} y={y} textAnchor="middle" className="fill-slate-500 text-[9px]">
-                    {score.category.slice(0, 6)}
-                  </text>
-                )
-              })}
-            </svg>
-            <div className="space-y-2">
-              {scores.map((score) => (
-                <SummaryRow
-                  key={score.category}
-                  label={score.category}
-                  value={`응답 ${score.count}건 · 평균 ${score.average}`}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="mt-4 space-y-3">
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
-              레이더 차트는 평가 카테고리 3개 이상일 때 표시됩니다. (현재 {scores.length}개)
-            </div>
-            <div className="space-y-2">
-              {scores.map((score) => (
-                <SummaryRow
-                  key={score.category}
-                  label={score.category}
-                  value={`응답 ${score.count}건 · 평균 ${score.average}`}
-                />
-              ))}
-            </div>
-          </div>
-        )
+      {!props.thresholdMet || props.scores.length === 0 ? (
+        <div className="mt-4">
+          <Feedback360ResultSkeleton label={props.thresholdMet ? '별점 데이터 대기' : '익명 기준 대기'} />
+        </div>
       ) : (
-        <Feedback360ResultSkeleton label="radar chart 대기" />
+        <div className="mt-4 space-y-4">
+          {props.scores.map((score) => {
+            const dist = score.distribution
+            const maxCount = dist ? Math.max(1, ...STARS.map((s) => dist[s] ?? 0)) : 1
+            return (
+              <div key={score.category}>
+                <div className="mb-1.5 flex items-baseline justify-between text-xs">
+                  <span className="font-semibold text-slate-800">{score.category}</span>
+                  <span className="text-slate-500">평균 {score.average} · {score.count}건</span>
+                </div>
+                {dist ? (
+                  <div className="flex gap-1">
+                    {STARS.map((star) => {
+                      const count = dist[star] ?? 0
+                      const pct = Math.round((count / maxCount) * 100)
+                      return (
+                        <div key={star} className="flex flex-1 flex-col items-center gap-0.5">
+                          <div className="flex h-8 w-full items-end">
+                            <div
+                              className="w-full rounded-t bg-blue-400"
+                              style={{ height: `${count > 0 ? Math.max(pct, 8) : 0}%` }}
+                            />
+                          </div>
+                          <span className="text-[9px] text-slate-400">{star}★</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-400">분포 데이터 없음 (이전 집계)</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       )}
     </div>
   )
@@ -329,7 +311,7 @@ export function Feedback360PptResultReport(props: {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <Feedback360RadarChart scores={props.results.categoryScores} />
+        <Feedback360RatingDistChart scores={props.results.categoryScores} thresholdMet={props.results.thresholdMet} />
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
             <BarChart3 className="h-4 w-4 text-blue-600" />

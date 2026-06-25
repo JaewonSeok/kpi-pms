@@ -200,11 +200,14 @@ export async function persistFeedback360Report(params: {
   }
 
   const categoryScores = [...categoryMap.entries()]
-    .map(([category, values]) => ({
-      category,
-      average: average(values),
-      count: values.length,
-    }))
+    .map(([category, values]) => {
+      const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+      for (const v of values) {
+        const k = Math.round(v)
+        if (k >= 1 && k <= 5) distribution[k] = (distribution[k] ?? 0) + 1
+      }
+      return { category, average: average(values), count: values.length, distribution }
+    })
     .sort((a, b) => b.average - a.average)
 
   const strengths = categoryScores.slice(0, 3).map((item) => `${item.category} 영역이 상대적 강점입니다.`)

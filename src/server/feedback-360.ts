@@ -310,6 +310,7 @@ export type Feedback360PageData = {
       category: string
       average: number
       count: number
+      distribution?: Record<number, number>
     }>
     strengths: string[]
     improvements: string[]
@@ -2465,12 +2466,19 @@ export async function getFeedback360PageData(
       }
     }
 
-    const categoryScores = [...categoryMap.entries()].map(([category, values]) => ({
-      category,
-      average: Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10,
-      count: values.length,
-    }))
-      .sort((a, b) => b.average - a.average)
+    const categoryScores = [...categoryMap.entries()].map(([category, values]) => {
+      const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+      for (const v of values) {
+        const k = Math.round(v)
+        if (k >= 1 && k <= 5) distribution[k] = (distribution[k] ?? 0) + 1
+      }
+      return {
+        category,
+        average: Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10,
+        count: values.length,
+        distribution,
+      }
+    }).sort((a, b) => b.average - a.average)
 
     const strengths = categoryScores
       .slice(0, 3)
@@ -2484,7 +2492,7 @@ export async function getFeedback360PageData(
 
     const persistedPayload = parsePersistedReportPayload(reportCache?.reportPayload)
     const persistedCategoryScores = Array.isArray(persistedPayload?.categoryScores)
-      ? (persistedPayload.categoryScores as Array<{ category: string; average: number; count: number }>)
+      ? (persistedPayload.categoryScores as Array<{ category: string; average: number; count: number; distribution?: Record<number, number> }>)
       : categoryScores
     const persistedStrengths = Array.isArray(persistedPayload?.strengths)
       ? (persistedPayload.strengths as string[])
