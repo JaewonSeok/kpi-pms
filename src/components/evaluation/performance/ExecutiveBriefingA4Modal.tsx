@@ -130,6 +130,7 @@ export function ExecutiveBriefingA4Modal({ selected, snapshot, onClose }: Props)
     { name: '다면피드백', value: snapshot.evidenceCoverage.feedbackRoundCount, color: COVERAGE_COLORS[3] },
     { name: '이전평가', value: snapshot.evidenceCoverage.evaluationHistoryCount, color: COVERAGE_COLORS[4] },
   ].filter((d) => d.value > 0)
+  const coverageTotal = coverageSlices.reduce((sum, d) => sum + d.value, 0)
 
   const alignmentTone = getEvaluationPerformanceBriefingAlignmentTone(snapshot.alignment.status)
   const alignmentLabel = getEvaluationPerformanceBriefingAlignmentLabel(snapshot.alignment.status)
@@ -368,7 +369,7 @@ export function ExecutiveBriefingA4Modal({ selected, snapshot, onClose }: Props)
                     {evidenceLevelLabel}
                   </span>
                   <span className="text-[10px] text-slate-400">
-                    근거 {snapshot.evidenceCoverage.evidenceCount}건
+                    근거 {coverageTotal}건
                   </span>
                 </div>
               </div>
