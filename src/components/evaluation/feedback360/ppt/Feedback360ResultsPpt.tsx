@@ -84,9 +84,13 @@ export function buildFeedback360ResultVisualModel(results: ResultsData) {
       registerTag({ ...tag, count: 1 })
     }
     if (summary.feedbackId) {
+      const dedupeByLabel = (items: Feedback360ResultTagCount[]) => {
+        const seen = new Set<string>()
+        return items.filter((t) => (seen.has(t.label) ? false : (seen.add(t.label), true)))
+      }
       feedbackTagMap.set(summary.feedbackId, {
-        positive: tags.filter((t) => t.tone === 'positive').map((t) => ({ ...t, count: 1 })),
-        improvement: tags.filter((t) => t.tone === 'improvement').map((t) => ({ ...t, count: 1 })),
+        positive: dedupeByLabel(tags.filter((t) => t.tone === 'positive').map((t) => ({ ...t, count: 1 }))),
+        improvement: dedupeByLabel(tags.filter((t) => t.tone === 'improvement').map((t) => ({ ...t, count: 1 }))),
       })
     }
   }
