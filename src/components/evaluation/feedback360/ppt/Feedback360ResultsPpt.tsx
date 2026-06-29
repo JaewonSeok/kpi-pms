@@ -76,11 +76,22 @@ export function buildFeedback360ResultVisualModel(results: ResultsData) {
     categoryMap.set(tag.category, category)
   }
 
+  const feedbackTagMap = new Map<string, { positive: Feedback360ResultTagCount[]; improvement: Feedback360ResultTagCount[] }>()
   for (const summary of (results.overallTagSummaries ?? [])) {
     const selectedTags = buildFeedback360ResponseTagsFromLabels(summary.tagLabels)
     const tags = getSelectedFeedback360ResponseTagLabels(selectedTags)
     for (const tag of tags) {
       registerTag({ ...tag, count: 1 })
+    }
+    if (summary.feedbackId) {
+      const dedupeByLabel = (items: Feedback360ResultTagCount[]) => {
+        const seen = new Set<string>()
+        return items.filter((t) => (seen.has(t.label) ? false : (seen.add(t.label), true)))
+      }
+      feedbackTagMap.set(summary.feedbackId, {
+        positive: dedupeByLabel(tags.filter((t) => t.tone === 'positive').map((t) => ({ ...t, count: 1 }))),
+        improvement: dedupeByLabel(tags.filter((t) => t.tone === 'improvement').map((t) => ({ ...t, count: 1 }))),
+      })
     }
   }
 
@@ -88,6 +99,7 @@ export function buildFeedback360ResultVisualModel(results: ResultsData) {
     for (const answer of group.answers) {
       const originalText = answer.textValue?.trim() ?? ''
       const parsed = parseFeedback360TagSummaryFromComment(originalText)
+      const cardTags = feedbackTagMap.get(answer.feedbackId)
 
       if (originalText || typeof answer.ratingValue === 'number') {
         reviewCards.push({
@@ -98,8 +110,8 @@ export function buildFeedback360ResultVisualModel(results: ResultsData) {
           authorLabel: answer.authorLabel,
           submittedAtLabel: '제출일은 운영 데이터 기준',
           ratingValue: answer.ratingValue,
-          positiveTags: [],
-          improvementTags: [],
+          positiveTags: cardTags?.positive ?? [],
+          improvementTags: cardTags?.improvement ?? [],
           comment: parsed.comment.trim(),
           originalText,
         })

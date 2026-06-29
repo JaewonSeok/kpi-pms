@@ -329,6 +329,7 @@ export type Feedback360PageData = {
       }>
     }>
     overallTagSummaries?: Array<{
+      feedbackId?: string
       tagLabels: string[]
     }>
     warnings: string[]
@@ -2556,7 +2557,7 @@ export async function getFeedback360PageData(
     const visibilitySettings = parseFeedbackVisibilitySettings(selectedRound.visibilitySettings)
     const overallTagSummaries = submittedTargetFeedbacks
       .filter((f) => (visibilitySettings[f.relationship] ?? 'ANONYMOUS') !== 'PRIVATE')
-      .map((f) => ({ tagLabels: extractTagLabelsFromOverallComment(f.overallComment) }))
+      .map((f) => ({ feedbackId: f.id, tagLabels: extractTagLabelsFromOverallComment(f.overallComment) }))
     const warnings = buildResultWarnings({
       thresholdMet,
       feedbackCount: submittedTargetFeedbacks.length,
