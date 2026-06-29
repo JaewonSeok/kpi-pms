@@ -101,7 +101,7 @@ export function buildFeedback360ResultVisualModel(results: ResultsData) {
       const parsed = parseFeedback360TagSummaryFromComment(originalText)
       const cardTags = feedbackTagMap.get(answer.feedbackId)
 
-      if (originalText || typeof answer.ratingValue === 'number') {
+      if (originalText) {
         reviewCards.push({
           key: `${group.questionId}:${answer.feedbackId}`,
           category: group.category,
@@ -412,52 +412,71 @@ export function Feedback360PptResultReport(props: {
             {props.visualModel.reviewCards.length}건
           </div>
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          {props.visualModel.reviewCards.length ? (
-            props.visualModel.reviewCards.slice(0, 8).map((card) => (
-              <article key={card.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <GuideBadge tone="blue">{card.relationshipLabel}</GuideBadge>
-                  <GuideBadge tone="slate">{card.submittedAtLabel}</GuideBadge>
-                  {typeof card.ratingValue === 'number' ? <GuideBadge tone="slate">참고 점수 {card.ratingValue}</GuideBadge> : null}
+        {(() => {
+          const sectionMap = new Map<string, { questionText: string; cards: typeof props.visualModel.reviewCards }>()
+          for (const card of props.visualModel.reviewCards) {
+            const key = card.category || '기타'
+            if (!sectionMap.has(key)) sectionMap.set(key, { questionText: card.questionText, cards: [] })
+            sectionMap.get(key)!.cards.push(card)
+          }
+          const sections = [...sectionMap.entries()]
+          return sections.length ? (
+            <div className="mt-4 space-y-8">
+              {sections.map(([category, { questionText, cards }]) => (
+                <div key={category}>
+                  <div className="mb-3 border-b border-slate-100 pb-2">
+                    <h3 className="text-sm font-semibold text-slate-800">{category}</h3>
+                    <p className="mt-0.5 text-xs text-slate-500">{questionText}</p>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {cards.map((card) => (
+                      <article key={card.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <GuideBadge tone="blue">{card.relationshipLabel}</GuideBadge>
+                          <GuideBadge tone="slate">{card.submittedAtLabel}</GuideBadge>
+                          {typeof card.ratingValue === 'number' ? <GuideBadge tone="slate">참고 점수 {card.ratingValue}</GuideBadge> : null}
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          <div className="flex flex-wrap gap-2">
+                            {card.positiveTags.length ? (
+                              card.positiveTags.map((tag) => <Feedback360TagBadge key={`${card.key}:positive:${tag.label}`} tag={tag} compact />)
+                            ) : (
+                              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500">강점 태그 없음</span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {card.improvementTags.length ? (
+                              card.improvementTags.map((tag) => <Feedback360TagBadge key={`${card.key}:improvement:${tag.label}`} tag={tag} compact />)
+                            ) : (
+                              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500">보완 태그 없음</span>
+                            )}
+                          </div>
+                        </div>
+                        {card.comment ? (
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-700">
+                            {card.comment}
+                          </div>
+                        ) : null}
+                        {card.originalText ? (
+                          <details className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                            <summary className="cursor-pointer text-xs font-semibold text-slate-600">원문 보기</summary>
+                            <pre className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">
+                              {card.originalText}
+                            </pre>
+                          </details>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
                 </div>
-                <div className="mt-3 text-sm font-semibold text-slate-900">{card.category}</div>
-                <p className="mt-1 text-sm leading-6 text-slate-600">{card.questionText}</p>
-                <div className="mt-3 space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {card.positiveTags.length ? (
-                      card.positiveTags.map((tag) => <Feedback360TagBadge key={`${card.key}:positive:${tag.label}`} tag={tag} compact />)
-                    ) : (
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500">강점 태그 없음</span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {card.improvementTags.length ? (
-                      card.improvementTags.map((tag) => <Feedback360TagBadge key={`${card.key}:improvement:${tag.label}`} tag={tag} compact />)
-                    ) : (
-                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500">보완 태그 없음</span>
-                    )}
-                  </div>
-                </div>
-                {card.comment ? (
-                  <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-700">
-                    {card.comment}
-                  </div>
-                ) : null}
-                {card.originalText ? (
-                  <details className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                    <summary className="cursor-pointer text-xs font-semibold text-slate-600">원문 보기</summary>
-                    <pre className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-slate-500">
-                      {card.originalText}
-                    </pre>
-                  </details>
-                ) : null}
-              </article>
-            ))
+              ))}
+            </div>
           ) : (
-            <Feedback360ResultSkeleton label="리뷰 상세 내역 대기" />
-          )}
-        </div>
+            <div className="mt-4">
+              <Feedback360ResultSkeleton label="리뷰 상세 내역 대기" />
+            </div>
+          )
+        })()}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
