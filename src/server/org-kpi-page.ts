@@ -219,6 +219,7 @@ export type OrgKpiPageData = {
     role: SystemRole
     name: string
     departmentName: string
+    deptId: string
   }
   scopeContext?: {
     departmentId: string
@@ -805,6 +806,7 @@ export async function getOrgKpiPageData(params: {
           role: params.role,
           name: params.userName,
           departmentName: params.deptName,
+          deptId: params.deptId,
         },
         hasSectionScope: false,
       }
@@ -1378,6 +1380,7 @@ export async function getOrgKpiPageData(params: {
         role: params.role,
         name: params.userName,
         departmentName: params.deptName,
+        deptId: params.deptId,
       },
       scopeContext: scopeContextDepartmentId
         ? {
@@ -1423,6 +1426,7 @@ export async function getOrgKpiPageData(params: {
         role: params.role,
         name: params.userName,
         departmentName: params.deptName,
+        deptId: params.deptId,
       },
       scopeContext: null,
       hasSectionScope: false,

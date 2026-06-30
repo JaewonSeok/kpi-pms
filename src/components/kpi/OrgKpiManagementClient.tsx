@@ -566,6 +566,17 @@ function formatWeightStatusTone(status: ReturnType<typeof calculateOrgKpiWeightS
   return 'border-red-200 bg-red-50 text-red-700'
 }
 
+type ExceptionRequestRecord = {
+  id: string
+  status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  reason: string
+  reviewNote?: string | null
+  createdAt: string
+  resolvedAt?: string | null
+  requester: { id: string; empName: string }
+  reviewer?: { id: string; empName: string } | null
+}
+
 async function fetchJson<T>(input: RequestInfo, init?: RequestInit) {
   const response = await fetch(input, init)
   const json = (await response.json()) as {
@@ -763,6 +774,8 @@ export function OrgKpiManagementClient({
   const [banner, setBanner] = useState<Banner | null>(null)
   const [busy, setBusy] = useState(false)
   const [hrExceptionReason, setHrExceptionReason] = useState('')
+  const [exceptionRequestReason, setExceptionRequestReason] = useState('')
+  const [exceptionRequestRecord, setExceptionRequestRecord] = useState<ExceptionRequestRecord | null | 'loading'>(null)
   const [expandedMapNodeIds, setExpandedMapNodeIds] = useState<string[]>([])
   const loadAlerts = pageData.alerts?.length ? <LoadAlerts alerts={pageData.alerts} /> : null
   const serverListSignature = useMemo(() => buildOrgKpiServerListSignature(pageData.list), [pageData.list])
@@ -1087,6 +1100,7 @@ export function OrgKpiManagementClient({
   const goalEditLocked =
     pageData.alerts?.some((alert) => alert.title.includes('읽기 전용 모드')) ?? false
   const canManageHrException = pageData.actor.role === 'ROLE_ADMIN'
+  const canRequestHrException = pageData.actor.role === 'ROLE_TEAM_LEADER'
   const workspaceSummary = useMemo(() => {
     const totalCount = filteredList.length
     const confirmedCount = filteredList.filter((item) => item.status === 'CONFIRMED').length
@@ -1159,6 +1173,23 @@ export function OrgKpiManagementClient({
   useEffect(() => {
     setHrExceptionReason(selectedKpi?.hrReflection?.exceptionReason ?? '')
   }, [selectedKpi?.id, selectedKpi?.hrReflection?.exceptionReason])
+
+  useEffect(() => {
+    const kpiId = selectedKpi?.id
+    const scope = selectedKpi?.scope
+    const deptId = selectedKpi?.departmentId
+    if (!canRequestHrException || !kpiId || scope !== 'team' || deptId !== pageData.actor.deptId) {
+      setExceptionRequestRecord(null)
+      setExceptionRequestReason('')
+      return
+    }
+    let cancelled = false
+    setExceptionRequestRecord('loading')
+    fetchJson<{ request: ExceptionRequestRecord | null }>(`/api/kpi/org/${kpiId}/exception-request`)
+      .then((data) => { if (!cancelled) setExceptionRequestRecord(data.request) })
+      .catch(() => { if (!cancelled) setExceptionRequestRecord(null) })
+    return () => { cancelled = true }
+  }, [canRequestHrException, selectedKpi?.id, selectedKpi?.scope, selectedKpi?.departmentId, pageData.actor.deptId])
 
   useEffect(() => {
     if (!selectedKpiId) return
@@ -1434,6 +1465,37 @@ export function OrgKpiManagementClient({
       setBusy(false)
     }
   }, [hrExceptionReason, router, selectedKpi])
+
+  const submitExceptionRequest = useCallback(async () => {
+    if (!selectedKpi) return
+    setBusy(true)
+    try {
+      const result = await fetchJson<{ id: string; status: 'PENDING'; reason: string; createdAt: string }>(
+        `/api/kpi/org/${selectedKpi.id}/exception-request`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: exceptionRequestReason.trim() }),
+        }
+      )
+      setExceptionRequestRecord({
+        id: result.id,
+        status: 'PENDING',
+        reason: result.reason,
+        createdAt: result.createdAt,
+        requester: { id: '', empName: pageData.actor.name },
+      })
+      setExceptionRequestReason('')
+      setBanner({ tone: 'success', message: '예외 승인 신청이 접수되었습니다. HR 검토 후 결과를 안내드립니다.' })
+    } catch (error) {
+      setBanner({
+        tone: 'error',
+        message: error instanceof Error ? error.message : '예외 승인 신청에 실패했습니다.',
+      })
+    } finally {
+      setBusy(false)
+    }
+  }, [exceptionRequestReason, pageData.actor.name, selectedKpi])
 
   const handleOpenClone = useCallback(() => {
     if (cloneDisabledReason || !selectedKpi) {
@@ -2058,6 +2120,10 @@ export function OrgKpiManagementClient({
               busy={busy}
               canManageHrException={canManageHrException}
               hrExceptionReason={hrExceptionReason}
+              canRequestHrException={canRequestHrException}
+              actorDeptId={pageData.actor.deptId}
+              exceptionRequestReason={exceptionRequestReason}
+              exceptionRequestRecord={exceptionRequestRecord}
               cloneDisabledReason={cloneDisabledReason}
               deleteActionState={deleteActionState}
               onEdit={handleEditKpi}
@@ -2067,6 +2133,8 @@ export function OrgKpiManagementClient({
               onStatus={handleStatusChange}
               onHrExceptionReasonChange={setHrExceptionReason}
               onSaveHrException={saveHrException}
+              onExceptionRequestReasonChange={setExceptionRequestReason}
+              onSubmitExceptionRequest={submitExceptionRequest}
               onSelectRelatedKpi={handleOpenRelatedReference}
               onCreateChildGoal={handleCreateChildGoal}
               onViewLinkage={handleViewLinkage}
@@ -2123,6 +2191,10 @@ export function OrgKpiManagementClient({
               busy={busy}
               canManageHrException={canManageHrException}
               hrExceptionReason={hrExceptionReason}
+              canRequestHrException={canRequestHrException}
+              actorDeptId={pageData.actor.deptId}
+              exceptionRequestReason={exceptionRequestReason}
+              exceptionRequestRecord={exceptionRequestRecord}
               cloneDisabledReason={cloneDisabledReason}
               deleteActionState={deleteActionState}
               onEdit={handleEditKpi}
@@ -2132,6 +2204,8 @@ export function OrgKpiManagementClient({
               onStatus={handleStatusChange}
               onHrExceptionReasonChange={setHrExceptionReason}
               onSaveHrException={saveHrException}
+              onExceptionRequestReasonChange={setExceptionRequestReason}
+              onSubmitExceptionRequest={submitExceptionRequest}
               onSelectRelatedKpi={handleOpenRelatedReference}
               onCreateChildGoal={handleCreateChildGoal}
               onViewLinkage={handleViewLinkage}
@@ -3083,6 +3157,10 @@ type KpiDetailCardProps = {
   busy: boolean
   canManageHrException?: boolean
   hrExceptionReason: string
+  canRequestHrException?: boolean
+  actorDeptId?: string
+  exceptionRequestReason: string
+  exceptionRequestRecord: ExceptionRequestRecord | null | 'loading'
   cloneDisabledReason?: string
   deleteActionState: ReturnType<typeof getOrgKpiDeleteActionState>
   onEdit: (kpi: OrgKpiViewModel) => void
@@ -3092,6 +3170,8 @@ type KpiDetailCardProps = {
   onStatus: (status: 'DRAFT' | 'CONFIRMED' | 'ARCHIVED') => void
   onHrExceptionReasonChange: (value: string) => void
   onSaveHrException: (exceptionApproved: boolean) => void
+  onExceptionRequestReasonChange: (value: string) => void
+  onSubmitExceptionRequest: () => void
   onSelectRelatedKpi?: (reference: OrgKpiRelationReference) => void
   onCreateChildGoal?: (parentKpi: OrgKpiViewModel) => void
   onViewLinkage?: (kpiId: string) => void
@@ -3275,6 +3355,105 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                     예외 승인 취소
                   </button>
                 </div>
+              </div>
+            ) : null}
+
+            {!props.canManageHrException && props.canRequestHrException && kpi.scope === 'team' && kpi.departmentId === props.actorDeptId ? (
+              <div
+                data-testid="org-kpi-exception-request-panel"
+                className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4"
+              >
+                <div className="text-sm font-semibold text-blue-900">예외 승인 신청</div>
+                <p className="mt-1 text-xs leading-5 text-blue-800">
+                  HR에 반영되지 않은 팀 KPI를 개인 MBO 조직목표 후보로 사용하려면 예외 승인을 신청하세요.
+                  HR 검토 후 결과를 안내받습니다.
+                </p>
+
+                {props.exceptionRequestRecord === 'loading' ? (
+                  <p className="mt-3 text-xs text-blue-600">조회 중...</p>
+                ) : props.exceptionRequestRecord?.status === 'PENDING' ? (
+                  <div className="mt-3 rounded-xl border border-blue-200 bg-white p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                        검토 대기 중
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {new Date(props.exceptionRequestRecord.createdAt).toLocaleDateString('ko-KR')}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reason}</p>
+                  </div>
+                ) : props.exceptionRequestRecord?.status === 'APPROVED' ? (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                      승인 완료
+                    </span>
+                    {props.exceptionRequestRecord.reviewNote ? (
+                      <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reviewNote}</p>
+                    ) : null}
+                  </div>
+                ) : props.exceptionRequestRecord?.status === 'REJECTED' ? (
+                  <div className="mt-3 space-y-3">
+                    <div className="rounded-xl border border-red-200 bg-white p-3">
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
+                        반려
+                      </span>
+                      {props.exceptionRequestRecord.reviewNote ? (
+                        <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reviewNote}</p>
+                      ) : null}
+                      <p className="mt-2 text-xs text-slate-400">새로운 사유로 다시 신청할 수 있습니다.</p>
+                    </div>
+                    <label className="block text-xs font-semibold text-blue-900" htmlFor="org-kpi-exception-reason">
+                      재신청 사유
+                    </label>
+                    <textarea
+                      id="org-kpi-exception-reason"
+                      value={props.exceptionRequestReason}
+                      onChange={(event) => props.onExceptionRequestReasonChange(event.target.value)}
+                      rows={3}
+                      maxLength={1000}
+                      className="mt-2 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      placeholder="재신청 사유를 10자 이상 입력해 주세요."
+                    />
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-slate-400">{props.exceptionRequestReason.length}/1000</p>
+                      <button
+                        type="button"
+                        onClick={props.onSubmitExceptionRequest}
+                        disabled={props.busy || props.exceptionRequestReason.trim().length < 10}
+                        className="inline-flex min-h-9 items-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        재신청
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-blue-900" htmlFor="org-kpi-exception-reason">
+                      신청 사유
+                    </label>
+                    <textarea
+                      id="org-kpi-exception-reason"
+                      value={props.exceptionRequestReason}
+                      onChange={(event) => props.onExceptionRequestReasonChange(event.target.value)}
+                      rows={3}
+                      maxLength={1000}
+                      className="mt-2 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      placeholder="신청 사유를 10자 이상 입력해 주세요."
+                    />
+                    <div className="mt-2 flex items-center justify-between">
+                      <p className="text-xs text-slate-400">{props.exceptionRequestReason.length}/1000</p>
+                      <button
+                        type="button"
+                        onClick={props.onSubmitExceptionRequest}
+                        disabled={props.busy || props.exceptionRequestReason.trim().length < 10}
+                        className="inline-flex min-h-9 items-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        예외 승인 신청
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
