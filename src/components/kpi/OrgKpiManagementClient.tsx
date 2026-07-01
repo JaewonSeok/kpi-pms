@@ -2088,7 +2088,7 @@ export function OrgKpiManagementClient({
               description={workspaceSignal.description}
             />
           </div>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_560px]">
             <div className="space-y-4">
               <OrgKpiHierarchyPanel
                 roots={hierarchyView.roots}
@@ -2169,7 +2169,7 @@ export function OrgKpiManagementClient({
               items={filteredList}
             />
           </div>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_560px]">
             <div className="space-y-3">
               {filteredList.length ? filteredList.map((kpi) => (
                 <OrgKpiListItemCard
@@ -3230,245 +3230,242 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
       role="region"
       aria-label={`${kpi.title} KPI 상세`}
       tabIndex={0}
-      className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 xl:min-h-0 xl:self-start xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto xl:overscroll-y-contain"
+      className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 xl:min-h-0 xl:self-start"
     >
       <div className="space-y-5">
         <div
           data-testid="org-kpi-detail-sticky-header"
-          className="xl:sticky xl:top-0 xl:z-10 xl:-mx-5 xl:-mt-5 xl:border-b xl:border-slate-200 xl:bg-white/95 xl:px-5 xl:pt-5 xl:pb-4 xl:backdrop-blur"
+          className="xl:sticky xl:top-16 xl:z-10 xl:-mx-5 xl:-mt-5 xl:border-b xl:border-slate-200 xl:bg-white/95 xl:px-5 xl:pt-3 xl:pb-3 xl:backdrop-blur"
         >
-          <div className="space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <PmsSignalChip tone="neutral">{ORG_KPI_SCOPE_LABELS[kpi.scope]}</PmsSignalChip>
-                  <span className="text-xl font-semibold text-slate-900">{kpi.title}</span>
-                  <StatusBadge status={kpi.status} />
-                </div>
-                <p className="mt-1 text-sm text-slate-500">
-                  {kpi.departmentName} · {kpi.category ?? '카테고리 미지정'}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <PmsProgressRing
-                  value={connectionMetrics.completionRate}
-                  label="연결"
-                  valueLabel={
-                    typeof connectionMetrics.completionRate === 'number'
-                      ? formatPercent(connectionMetrics.completionRate)
-                      : connectionMetrics.childLinkedCount > 0
-                        ? `${connectionMetrics.childLinkedCount}개`
-                        : '-'
-                  }
-                  tone={connectionMetrics.signal === 'green' ? 'success' : connectionMetrics.signal === 'amber' ? 'warning' : 'neutral'}
-                  size="sm"
-                />
-                <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
-                  <div className="text-xs text-slate-500">담당자</div>
-                  <div className="text-sm font-semibold text-slate-900">{formatOrgKpiOwnerSummary(kpi.owner)}</div>
-                </div>
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <PmsSignalChip tone="neutral">{ORG_KPI_SCOPE_LABELS[kpi.scope]}</PmsSignalChip>
+            <span className="text-xl font-semibold text-slate-900">{kpi.title}</span>
+            <StatusBadge status={kpi.status} />
+          </div>
+          <p className="mt-0.5 text-sm text-slate-500">
+            {kpi.departmentName} · {kpi.category ?? '카테고리 미지정'}
+          </p>
+        </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <InfoPill
-                label="목표값"
-                value={formatOrgKpiTargetValues({
-                  targetValue: kpi.targetValue,
-                  targetValueT: kpi.targetValueT,
-                  targetValueE: kpi.targetValueE,
-                  targetValueS: kpi.targetValueS,
-                  unit: kpi.unit,
-                })}
-              />
-              <InfoPill label="가중치" value={formatOrgKpiWeight(kpi.weight)} />
-              <InfoPill label="HR 반영 상태" value={formatOrgKpiHrReflectionSummary(kpi)} />
-              <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
-              <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-              <PmsTrafficLight
-                signal={connectionMetrics.signal}
-                label={connectionMetrics.label}
-                description={connectionMetrics.description}
-                onClick={
-                  kpi != null &&
-                  kpi.linkedPersonalKpis.length > 0 &&
-                  connectionMetrics.childLinkedCount === 0 &&
-                  connectionMetrics.suggestedChildCount === 0
-                    ? () => setExpandedPersonalKpis((v) => !v)
-                    : undefined
-                }
-                expanded={expandedPersonalKpis}
-              />
-              <PmsSignalChip tone={getOrgKpiStatusTone(kpi.status)}>
-                {STATUS_LABELS[kpi.status] ?? kpi.status}
-              </PmsSignalChip>
-              <PmsSignalChip tone="info">
-                하위 {formatCountWithUnit(connectionMetrics.childLinkedCount, '개')}
-              </PmsSignalChip>
-              <PmsSignalChip tone={connectionMetrics.suggestedChildCount > 0 ? 'warning' : 'neutral'}>
-                추천 {formatCountWithUnit(connectionMetrics.suggestedChildCount, '개')}
-              </PmsSignalChip>
-            </div>
-            {kpi.hrReflection?.exceptionReason ? (
-              <p className="text-xs font-medium text-emerald-700">
-                예외 승인 사유: {kpi.hrReflection.exceptionReason}
-              </p>
-            ) : null}
-
-            {props.canManageHrException && kpi.scope === 'team' ? (
-              <div
-                data-testid="org-kpi-hr-exception-panel"
-                className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-emerald-900">예외 승인</div>
-                    <p className="mt-1 text-xs leading-5 text-emerald-800">
-                      HR 반영되지 않은 팀 KPI를 개인 MBO 조직목표 후보로 다룰 때만 사유를 남깁니다.
-                      공식 점수에는 아직 반영되지 않습니다.
-                    </p>
-                  </div>
-                  {kpi.hrReflection?.state === 'EXCEPTION_APPROVED' ? (
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700">
-                      예외 승인 완료
-                    </span>
-                  ) : null}
-                </div>
-                <label className="mt-3 block text-xs font-semibold text-emerald-900" htmlFor="org-kpi-hr-exception-reason">
-                  예외 승인 사유
-                </label>
-                <textarea
-                  id="org-kpi-hr-exception-reason"
-                  value={props.hrExceptionReason}
-                  onChange={(event) => props.onHrExceptionReasonChange(event.target.value)}
-                  rows={3}
-                  maxLength={1000}
-                  className="mt-2 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                  placeholder="예외 승인 사유를 입력해 주세요."
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => props.onSaveHrException(true)}
-                    disabled={props.busy || props.hrExceptionReason.trim().length < 5}
-                    className="inline-flex min-h-9 items-center rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    예외 승인 저장
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => props.onSaveHrException(false)}
-                    disabled={props.busy || kpi.hrReflection?.state !== 'EXCEPTION_APPROVED'}
-                    className="inline-flex min-h-9 items-center rounded-xl border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    예외 승인 취소
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {!props.canManageHrException && props.canRequestHrException && kpi.scope === 'team' && kpi.departmentId === props.actorDeptId ? (
-              <div
-                data-testid="org-kpi-exception-request-panel"
-                className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4"
-              >
-                <div className="text-sm font-semibold text-blue-900">예외 승인 신청</div>
-                <p className="mt-1 text-xs leading-5 text-blue-800">
-                  HR에 반영되지 않은 팀 KPI를 개인 MBO 조직목표 후보로 사용하려면 예외 승인을 신청하세요.
-                  HR 검토 후 결과를 안내받습니다.
-                </p>
-
-                {props.exceptionRequestRecord === 'loading' ? (
-                  <p className="mt-3 text-xs text-blue-600">조회 중...</p>
-                ) : props.exceptionRequestRecord?.status === 'PENDING' ? (
-                  <div className="mt-3 rounded-xl border border-blue-200 bg-white p-3">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                        검토 대기 중
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        {new Date(props.exceptionRequestRecord.createdAt).toLocaleDateString('ko-KR')}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reason}</p>
-                  </div>
-                ) : props.exceptionRequestRecord?.status === 'APPROVED' ? (
-                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
-                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
-                      승인 완료
-                    </span>
-                    {props.exceptionRequestRecord.reviewNote ? (
-                      <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reviewNote}</p>
-                    ) : null}
-                  </div>
-                ) : props.exceptionRequestRecord?.status === 'REJECTED' ? (
-                  <div className="mt-3 space-y-3">
-                    <div className="rounded-xl border border-red-200 bg-white p-3">
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
-                        반려
-                      </span>
-                      {props.exceptionRequestRecord.reviewNote ? (
-                        <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reviewNote}</p>
-                      ) : null}
-                      <p className="mt-2 text-xs text-slate-400">새로운 사유로 다시 신청할 수 있습니다.</p>
-                    </div>
-                    <label className="block text-xs font-semibold text-blue-900" htmlFor="org-kpi-exception-reason">
-                      재신청 사유
-                    </label>
-                    <textarea
-                      id="org-kpi-exception-reason"
-                      value={props.exceptionRequestReason}
-                      onChange={(event) => props.onExceptionRequestReasonChange(event.target.value)}
-                      rows={3}
-                      maxLength={1000}
-                      className="mt-2 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                      placeholder="재신청 사유를 10자 이상 입력해 주세요."
-                    />
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-slate-400">{props.exceptionRequestReason.length}/1000</p>
-                      <button
-                        type="button"
-                        onClick={props.onSubmitExceptionRequest}
-                        disabled={props.busy || props.exceptionRequestReason.trim().length < 10}
-                        className="inline-flex min-h-9 items-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        재신청
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-3">
-                    <label className="block text-xs font-semibold text-blue-900" htmlFor="org-kpi-exception-reason">
-                      신청 사유
-                    </label>
-                    <textarea
-                      id="org-kpi-exception-reason"
-                      value={props.exceptionRequestReason}
-                      onChange={(event) => props.onExceptionRequestReasonChange(event.target.value)}
-                      rows={3}
-                      maxLength={1000}
-                      className="mt-2 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                      placeholder="신청 사유를 10자 이상 입력해 주세요."
-                    />
-                    <div className="mt-2 flex items-center justify-between">
-                      <p className="text-xs text-slate-400">{props.exceptionRequestReason.length}/1000</p>
-                      <button
-                        type="button"
-                        onClick={props.onSubmitExceptionRequest}
-                        disabled={props.busy || props.exceptionRequestReason.trim().length < 10}
-                        className="inline-flex min-h-9 items-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        예외 승인 신청
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : null}
+        <div className="flex items-center gap-3">
+          <PmsProgressRing
+            value={connectionMetrics.completionRate}
+            label="연결"
+            valueLabel={
+              typeof connectionMetrics.completionRate === 'number'
+                ? formatPercent(connectionMetrics.completionRate)
+                : connectionMetrics.childLinkedCount > 0
+                  ? `${connectionMetrics.childLinkedCount}개`
+                  : '-'
+            }
+            tone={connectionMetrics.signal === 'green' ? 'success' : connectionMetrics.signal === 'amber' ? 'warning' : 'neutral'}
+            size="sm"
+          />
+          <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
+            <div className="text-xs text-slate-500">담당자</div>
+            <div className="text-sm font-semibold text-slate-900">{formatOrgKpiOwnerSummary(kpi.owner)}</div>
           </div>
         </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <InfoPill
+            label="목표값"
+            value={formatOrgKpiTargetValues({
+              targetValue: kpi.targetValue,
+              targetValueT: kpi.targetValueT,
+              targetValueE: kpi.targetValueE,
+              targetValueS: kpi.targetValueS,
+              unit: kpi.unit,
+            })}
+          />
+          <InfoPill label="가중치" value={formatOrgKpiWeight(kpi.weight)} />
+          <InfoPill label="HR 반영 상태" value={formatOrgKpiHrReflectionSummary(kpi)} />
+          <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
+          <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <PmsTrafficLight
+            signal={connectionMetrics.signal}
+            label={connectionMetrics.label}
+            description={connectionMetrics.description}
+            onClick={
+              kpi != null &&
+              kpi.linkedPersonalKpis.length > 0 &&
+              connectionMetrics.childLinkedCount === 0 &&
+              connectionMetrics.suggestedChildCount === 0
+                ? () => setExpandedPersonalKpis((v) => !v)
+                : undefined
+            }
+            expanded={expandedPersonalKpis}
+          />
+          <PmsSignalChip tone={getOrgKpiStatusTone(kpi.status)}>
+            {STATUS_LABELS[kpi.status] ?? kpi.status}
+          </PmsSignalChip>
+          <PmsSignalChip tone="info">
+            하위 {formatCountWithUnit(connectionMetrics.childLinkedCount, '개')}
+          </PmsSignalChip>
+          <PmsSignalChip tone={connectionMetrics.suggestedChildCount > 0 ? 'warning' : 'neutral'}>
+            추천 {formatCountWithUnit(connectionMetrics.suggestedChildCount, '개')}
+          </PmsSignalChip>
+        </div>
+
+        {kpi.hrReflection?.exceptionReason ? (
+          <p className="text-xs font-medium text-emerald-700">
+            예외 승인 사유: {kpi.hrReflection.exceptionReason}
+          </p>
+        ) : null}
+
+        {props.canManageHrException && kpi.scope === 'team' ? (
+          <div
+            data-testid="org-kpi-hr-exception-panel"
+            className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-emerald-900">예외 승인</div>
+                <p className="mt-1 text-xs leading-5 text-emerald-800">
+                  HR 반영되지 않은 팀 KPI를 개인 MBO 조직목표 후보로 다룰 때만 사유를 남깁니다.
+                  공식 점수에는 아직 반영되지 않습니다.
+                </p>
+              </div>
+              {kpi.hrReflection?.state === 'EXCEPTION_APPROVED' ? (
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700">
+                  예외 승인 완료
+                </span>
+              ) : null}
+            </div>
+            <label className="mt-3 block text-xs font-semibold text-emerald-900" htmlFor="org-kpi-hr-exception-reason">
+              예외 승인 사유
+            </label>
+            <textarea
+              id="org-kpi-hr-exception-reason"
+              value={props.hrExceptionReason}
+              onChange={(event) => props.onHrExceptionReasonChange(event.target.value)}
+              rows={3}
+              maxLength={1000}
+              className="mt-2 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+              placeholder="예외 승인 사유를 입력해 주세요."
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => props.onSaveHrException(true)}
+                disabled={props.busy || props.hrExceptionReason.trim().length < 5}
+                className="inline-flex min-h-9 items-center rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                예외 승인 저장
+              </button>
+              <button
+                type="button"
+                onClick={() => props.onSaveHrException(false)}
+                disabled={props.busy || kpi.hrReflection?.state !== 'EXCEPTION_APPROVED'}
+                className="inline-flex min-h-9 items-center rounded-xl border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                예외 승인 취소
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {!props.canManageHrException && props.canRequestHrException && kpi.scope === 'team' && kpi.departmentId === props.actorDeptId ? (
+          <div
+            data-testid="org-kpi-exception-request-panel"
+            className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4"
+          >
+            <div className="text-sm font-semibold text-blue-900">예외 승인 신청</div>
+            <p className="mt-1 text-xs leading-5 text-blue-800">
+              HR에 반영되지 않은 팀 KPI를 개인 MBO 조직목표 후보로 사용하려면 예외 승인을 신청하세요.
+              HR 검토 후 결과를 안내받습니다.
+            </p>
+
+            {props.exceptionRequestRecord === 'loading' ? (
+              <p className="mt-3 text-xs text-blue-600">조회 중...</p>
+            ) : props.exceptionRequestRecord?.status === 'PENDING' ? (
+              <div className="mt-3 rounded-xl border border-blue-200 bg-white p-3">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    검토 대기 중
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {new Date(props.exceptionRequestRecord.createdAt).toLocaleDateString('ko-KR')}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reason}</p>
+              </div>
+            ) : props.exceptionRequestRecord?.status === 'APPROVED' ? (
+              <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                  승인 완료
+                </span>
+                {props.exceptionRequestRecord.reviewNote ? (
+                  <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reviewNote}</p>
+                ) : null}
+              </div>
+            ) : props.exceptionRequestRecord?.status === 'REJECTED' ? (
+              <div className="mt-3 space-y-3">
+                <div className="rounded-xl border border-red-200 bg-white p-3">
+                  <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
+                    반려
+                  </span>
+                  {props.exceptionRequestRecord.reviewNote ? (
+                    <p className="mt-2 text-xs text-slate-600">{props.exceptionRequestRecord.reviewNote}</p>
+                  ) : null}
+                  <p className="mt-2 text-xs text-slate-400">새로운 사유로 다시 신청할 수 있습니다.</p>
+                </div>
+                <label className="block text-xs font-semibold text-blue-900" htmlFor="org-kpi-exception-reason">
+                  재신청 사유
+                </label>
+                <textarea
+                  id="org-kpi-exception-reason"
+                  value={props.exceptionRequestReason}
+                  onChange={(event) => props.onExceptionRequestReasonChange(event.target.value)}
+                  rows={3}
+                  maxLength={1000}
+                  className="mt-2 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  placeholder="재신청 사유를 10자 이상 입력해 주세요."
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-400">{props.exceptionRequestReason.length}/1000</p>
+                  <button
+                    type="button"
+                    onClick={props.onSubmitExceptionRequest}
+                    disabled={props.busy || props.exceptionRequestReason.trim().length < 10}
+                    className="inline-flex min-h-9 items-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    재신청
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3">
+                <label className="block text-xs font-semibold text-blue-900" htmlFor="org-kpi-exception-reason">
+                  신청 사유
+                </label>
+                <textarea
+                  id="org-kpi-exception-reason"
+                  value={props.exceptionRequestReason}
+                  onChange={(event) => props.onExceptionRequestReasonChange(event.target.value)}
+                  rows={3}
+                  maxLength={1000}
+                  className="mt-2 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  placeholder="신청 사유를 10자 이상 입력해 주세요."
+                />
+                <div className="mt-2 flex items-center justify-between">
+                  <p className="text-xs text-slate-400">{props.exceptionRequestReason.length}/1000</p>
+                  <button
+                    type="button"
+                    onClick={props.onSubmitExceptionRequest}
+                    disabled={props.busy || props.exceptionRequestReason.trim().length < 10}
+                    className="inline-flex min-h-9 items-center rounded-xl bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    예외 승인 신청
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {expandedPersonalKpis && kpi != null && kpi.linkedPersonalKpis.length > 0 ? (
           <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
