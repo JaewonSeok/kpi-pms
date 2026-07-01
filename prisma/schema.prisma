@@ -140,6 +140,8 @@ model Employee {
   midReviewAssignmentsAsManager     MidReviewAssignment[] @relation("MidReviewManager")
   midReviewActionItems              MidReviewActionItem[] @relation("MidReviewActionOwner")
   departmentScoreIntakesReceived    DepartmentScoreIntake[] @relation("DepartmentScoreIntakeReceiver")
+  orgKpiExceptionRequestsSubmitted  OrgKpiExceptionRequest[] @relation("ExceptionRequestSubmitter")
+  orgKpiExceptionRequestsReviewed   OrgKpiExceptionRequest[] @relation("ExceptionRequestReviewer")
 
   @@map("employees")
 }
@@ -284,6 +286,7 @@ model OrgKpi {
   adoptedRecommendationItems TeamKpiRecommendationItem[]
   teamKpiReviewItems TeamKpiReviewItem[]
   midReviewGoalReviews MidReviewGoalReview[]
+  exceptionRequests  OrgKpiExceptionRequest[]
 
   @@index([evalYear, parentOrgKpiId])
   @@index([evalYear, mboExceptionApproved])
@@ -3088,4 +3091,34 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verification_tokens")
+}
+
+// ============================================
+// 12. KPI 예외 승인 요청
+// ============================================
+
+model OrgKpiExceptionRequest {
+  id          String                  @id @default(cuid())
+  orgKpiId    String
+  orgKpi      OrgKpi                  @relation(fields: [orgKpiId], references: [id])
+  requesterId String
+  requester   Employee                @relation("ExceptionRequestSubmitter", fields: [requesterId], references: [id])
+  reason      String
+  status      OrgKpiExceptionStatus   @default(PENDING)
+  reviewNote  String?
+  reviewerId  String?
+  reviewer    Employee?               @relation("ExceptionRequestReviewer", fields: [reviewerId], references: [id])
+  resolvedAt  DateTime?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([orgKpiId, status])
+  @@index([status, createdAt])
+  @@map("org_kpi_exception_requests")
+}
+
+enum OrgKpiExceptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
