@@ -111,7 +111,6 @@ type FormState = {
   targetValueT: string
   targetValueE: string
   targetValueS: string
-  unit: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
 }
@@ -470,7 +469,6 @@ function buildEmptyForm(year: number, departmentId: string): FormState {
     targetValueT: '',
     targetValueE: '',
     targetValueS: '',
-    unit: '',
     weight: '',
     difficulty: 'MEDIUM',
   }
@@ -497,7 +495,6 @@ function buildFormFromKpi(kpi: OrgKpiViewModel): FormState {
     targetValueT: resolvedTargetValues.targetValueT !== undefined ? resolvedTargetValues.targetValueT : '',
     targetValueE: resolvedTargetValues.targetValueE !== undefined ? resolvedTargetValues.targetValueE : '',
     targetValueS: resolvedTargetValues.targetValueS !== undefined ? resolvedTargetValues.targetValueS : '',
-    unit: kpi.unit ?? '',
     weight: typeof kpi.weight === 'number' ? String(kpi.weight) : '',
     difficulty: (kpi.difficulty ?? 'MEDIUM') as FormState['difficulty'],
   }
@@ -1309,7 +1306,6 @@ export function OrgKpiManagementClient({
       targetValueT: form.targetValueT.trim(),
       ...(editingKpiId || form.targetValueE.trim() ? { targetValueE: form.targetValueE.trim() || null } : {}),
       ...(editingKpiId || form.targetValueS.trim() ? { targetValueS: form.targetValueS.trim() || null } : {}),
-      unit: form.unit.trim() || undefined,
       weight: parsedWeight,
       difficulty: form.difficulty,
     }
@@ -4376,10 +4372,7 @@ function EditorModal({
           </Field>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <Field label="단위">
-            <input value={form.unit} onChange={(event) => onChange({ ...form, unit: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
-          </Field>
+        <div className="mt-4">
           <Field label="가중치">
             <input value={form.weight} onChange={(event) => onChange({ ...form, weight: event.target.value })} placeholder="예: 10 또는 10%" className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
           </Field>

@@ -132,7 +132,6 @@ export async function POST(request: Request) {
                 targetValueS: row.targetValue,
               })
             : {}),
-          unit: row.unit,
           weight: row.weight,
           difficulty: row.difficulty,
           status: 'DRAFT',

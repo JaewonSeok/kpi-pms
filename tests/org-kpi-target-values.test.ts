@@ -112,21 +112,9 @@ async function main() {
         targetValueT: '외부감사 적정의견',
         targetValueE: '우수',
         targetValueS: '탁월',
-        unit: '점',
       }).success,
       true
     )
-
-    const blankUnit = CreateOrgKpiSchema.safeParse({
-      ...base,
-      targetValueT: '90',
-      unit: '   ',
-    })
-
-    assert.equal(blankUnit.success, true)
-    if (blankUnit.success) {
-      assert.equal(blankUnit.data.unit, undefined)
-    }
   })
 
   await run('update schema allows text targets, blank optional E/S, and still requires T when editing targets', () => {
@@ -155,48 +143,13 @@ async function main() {
     assert.equal(missingT.error?.issues[0]?.message.includes('T 목표값'), true)
   })
 
-  await run('org KPI unit schema accepts Korean and common business units while rejecting overly long values', () => {
-    for (const unit of ['점', '%', '건', '시간']) {
-      const parsed = CreateOrgKpiSchema.safeParse({
-        deptId: 'dept-hr',
-        evalYear: 2026,
-        kpiType: 'QUANTITATIVE',
-        kpiCategory: '인사',
-        kpiName: `단위 검증 ${unit}`,
-        targetValueT: '적정',
-        unit,
-        weight: 20,
-        difficulty: 'MEDIUM',
-      })
-
-      assert.equal(parsed.success, true)
-      if (parsed.success) {
-        assert.equal(parsed.data.unit, unit)
-      }
-    }
-
-    const tooLong = CreateOrgKpiSchema.safeParse({
-      deptId: 'dept-hr',
-      evalYear: 2026,
-      kpiType: 'QUANTITATIVE',
-      kpiCategory: '인사',
-      kpiName: '긴 단위 검증',
-      targetValueT: '적정',
-      unit: '가'.repeat(21),
-      weight: 20,
-      difficulty: 'MEDIUM',
-    })
-
-    assert.equal(tooLong.success, false)
-  })
-
-  await run('org KPI client form uses text inputs for targets and blank unit defaults', () => {
+  await run('org KPI client form uses text inputs for targets', () => {
     const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
     const recommendationDraftSource = read('src/lib/org-kpi-ai-recommendation-draft.ts')
     const aiAssistSource = read('src/lib/ai-assist.ts')
 
     assert.equal(clientSource.includes("unit: '%'"), false)
-    assert.equal(clientSource.includes("unit: ''"), true)
+    assert.equal(clientSource.includes("unit: ''"), false)
     assert.equal(clientSource.includes("const message = 'T 목표값은 숫자로 입력해 주세요.'"), false)
     assert.equal(clientSource.includes("const message = 'E 목표값은 숫자로 입력해 주세요.'"), false)
     assert.equal(clientSource.includes("const message = 'S 목표값은 숫자로 입력해 주세요.'"), false)

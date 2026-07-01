@@ -212,7 +212,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.targetValueT !== undefined ||
       data.targetValueE !== undefined ||
       data.targetValueS !== undefined ||
-      data.unit !== undefined ||
       data.weight !== undefined ||
       data.difficulty !== undefined ||
       data.tags !== undefined
@@ -336,7 +335,6 @@ export async function PATCH(request: Request, context: RouteContext) {
               targetValueS: data.targetValueS,
             })
           : {}),
-        ...(data.unit !== undefined ? { unit: data.unit || null } : {}),
         ...(data.weight !== undefined ? { weight: data.weight } : {}),
         ...(data.difficulty !== undefined ? { difficulty: data.difficulty } : {}),
         ...(data.tags !== undefined ? { tags: data.tags } : {}),

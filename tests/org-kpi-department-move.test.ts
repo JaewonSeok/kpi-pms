@@ -140,7 +140,6 @@ async function main() {
         targetValueT: '10',
         targetValueE: '12',
         targetValueS: '14',
-        unit: '건',
         weight: '35',
         difficulty: 'HIGH',
       },

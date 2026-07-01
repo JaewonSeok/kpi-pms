@@ -108,7 +108,6 @@ type KpiForm = {
   targetValueT: string
   targetValueE: string
   targetValueS: string
-  unit: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
   linkedOrgKpiId: string
@@ -401,12 +400,11 @@ function formatTargetValuesForDisplay(input: {
   return formatPersonalKpiTargetValues(input)
 }
 
-function formatTargetValuesForForm(form: Pick<KpiForm, 'targetValueT' | 'targetValueE' | 'targetValueS' | 'unit'>) {
+function formatTargetValuesForForm(form: Pick<KpiForm, 'targetValueT' | 'targetValueE' | 'targetValueS'>) {
   return formatPersonalKpiTargetValues({
     targetValueT: toNumberOrUndefined(form.targetValueT),
     targetValueE: toNumberOrUndefined(form.targetValueE),
     targetValueS: toNumberOrUndefined(form.targetValueS),
-    unit: form.unit.trim() || undefined,
   })
 }
 
@@ -517,7 +515,6 @@ function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId 
     targetValueT: '',
     targetValueE: '',
     targetValueS: '',
-    unit: '%',
     weight: '',
     difficulty: 'MEDIUM',
     linkedOrgKpiId: defaultLinkedOrgKpiId,
@@ -568,7 +565,6 @@ function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
     targetValueT: toNumberString(targetValues.targetValueT),
     targetValueE: toNumberString(targetValues.targetValueE),
     targetValueS: toNumberString(targetValues.targetValueS),
-    unit: kpi.unit ?? '',
     weight: toNumberString(kpi.weight),
     difficulty: (kpi.difficulty ?? 'MEDIUM') as KpiForm['difficulty'],
     linkedOrgKpiId: kpi.orgKpiId ?? '',
@@ -637,7 +633,6 @@ function buildAiPayload(
     definition: selectedKpi?.definition ?? form.definition,
     formula: selectedKpi?.formula ?? form.formula,
     targetValue: currentTargetValue,
-    unit: selectedKpi?.unit ?? form.unit,
     weight: selectedKpi?.weight ?? toNumberOrUndefined(form.weight) ?? form.weight,
     kpiType: selectedKpi?.type ?? form.kpiType,
     linkedOrgKpiId,
@@ -657,7 +652,6 @@ function buildAiPayload(
       formula: selectedKpi?.formula ?? form.formula,
       targetValue: currentTargetValue,
       ...currentTargetValues,
-      unit: selectedKpi?.unit ?? form.unit,
       weight: selectedKpi?.weight ?? toNumberOrUndefined(form.weight) ?? form.weight,
       difficulty: selectedKpi?.difficulty ?? form.difficulty,
       category: selectedKpi?.orgKpiCategory ?? linkedOrgKpi?.category ?? null,
@@ -687,7 +681,6 @@ function normalizeKpiForm(form: KpiForm) {
     targetValueT: form.targetValueT.trim(),
     targetValueE: form.targetValueE.trim(),
     targetValueS: form.targetValueS.trim(),
-    unit: form.unit.trim(),
     weight: form.weight.trim(),
     difficulty: form.difficulty,
     linkedOrgKpiId: form.linkedOrgKpiId.trim(),
@@ -709,7 +702,6 @@ function applyPreviewToForm(form: KpiForm, preview: Record<string, unknown>) {
     definition: toStringValue(preview.definition || preview.improvedDefinition, form.definition),
     formula: toStringValue(preview.formula, form.formula),
     targetValueT: toStringValue(preview.targetValueSuggestion, form.targetValueT),
-    unit: toStringValue(preview.unit || preview.unitSuggestion, form.unit),
     weight: preview.weightSuggestion ? String(preview.weightSuggestion) : form.weight,
     difficulty: nextDifficulty,
   }
@@ -731,7 +723,6 @@ function applyRecommendationToForm(
     targetValueT: toStringValue(recommendation.targetValueT ?? recommendation.targetText, form.targetValueT),
     targetValueE: toStringValue(recommendation.targetValueE, form.targetValueE),
     targetValueS: toStringValue(recommendation.targetValueS, form.targetValueS),
-    unit: toStringValue(recommendation.unit, form.unit),
     weight: toStringValue(recommendation.weightSuggestion, form.weight),
     difficulty: nextDifficulty,
     linkedOrgKpiId:
@@ -1611,7 +1602,6 @@ export function PersonalKpiManagementClient(props: Props) {
         targetValueT: Number(form.targetValueT),
         targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : undefined,
         targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : undefined,
-        unit: form.unit.trim() || undefined,
         weight: Number(form.weight),
         difficulty: form.difficulty,
         linkedOrgKpiId: form.linkedOrgKpiId || undefined,
@@ -5134,7 +5124,6 @@ function EditorModal(props: {
                     ...current,
                     kpiType: event.target.value as KpiForm['kpiType'],
                     formula: event.target.value === 'QUALITATIVE' ? '' : current.formula,
-                    unit: event.target.value === 'QUALITATIVE' ? '건' : current.unit,
                   }))
                 }
                 className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
@@ -5213,27 +5202,15 @@ function EditorModal(props: {
                 </label>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-900">단위</span>
-                  <input
-                    value={props.form.unit}
-                    onChange={(event) => props.onChange((current) => ({ ...current, unit: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                    placeholder="예: %, 건, 점"
-                  />
-                </label>
-
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-900">가중치</span>
-                  <input
-                    value={props.form.weight}
-                    onChange={(event) => props.onChange((current) => ({ ...current, weight: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                    placeholder="예: 25"
-                  />
-                </label>
-              </div>
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-900">가중치</span>
+                <input
+                  value={props.form.weight}
+                  onChange={(event) => props.onChange((current) => ({ ...current, weight: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                  placeholder="예: 25"
+                />
+              </label>
             </div>
           </div>
 
