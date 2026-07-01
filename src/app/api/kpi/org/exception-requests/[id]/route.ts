@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
+import { queueNotification } from '@/lib/notification-service'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 
 type RouteContext = {
@@ -89,6 +90,25 @@ export async function PATCH(request: Request, context: RouteContext) {
         ...client,
       })
 
+      // 트랜잭션 완료 후 알림 — 실패해도 200 응답 유지
+      try {
+        await queueNotification({
+          recipientId: exceptionRequest.requester.id,
+          type: 'SYSTEM',
+          sourceType: 'OrgKpiExceptionRequest',
+          sourceId: exceptionRequest.id,
+          dedupeToken: `exception-request-resolved:${exceptionRequest.id}:approve`,
+          payload: {
+            title: '예외 승인이 완료됐습니다.',
+            body: `'${exceptionRequest.orgKpi.kpiName}' KPI 예외 승인 신청이 승인되었습니다.`,
+            link: '/kpi/org',
+          },
+          channels: ['IN_APP'],
+        })
+      } catch (notifError) {
+        console.error('[exception-request] 알림 큐 실패 (무시):', notifError)
+      }
+
       return successResponse({ id, status: 'APPROVED', orgKpiId: exceptionRequest.orgKpiId })
     }
 
@@ -118,6 +138,25 @@ export async function PATCH(request: Request, context: RouteContext) {
       },
       ...client,
     })
+
+    // 거절 완료 후 알림 — 실패해도 200 응답 유지
+    try {
+      await queueNotification({
+        recipientId: exceptionRequest.requester.id,
+        type: 'SYSTEM',
+        sourceType: 'OrgKpiExceptionRequest',
+        sourceId: exceptionRequest.id,
+        dedupeToken: `exception-request-resolved:${exceptionRequest.id}:reject`,
+        payload: {
+          title: '예외 승인이 반려됐습니다.',
+          body: `'${exceptionRequest.orgKpi.kpiName}' KPI 예외 승인 신청이 반려됐습니다. 사유: ${reviewNote}`,
+          link: '/kpi/org',
+        },
+        channels: ['IN_APP'],
+      })
+    } catch (notifError) {
+      console.error('[exception-request] 알림 큐 실패 (무시):', notifError)
+    }
 
     return successResponse({ id, status: 'REJECTED', orgKpiId: exceptionRequest.orgKpiId })
   } catch (error) {

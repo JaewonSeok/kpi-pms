@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiScopeFromDepartmentId } from '@/lib/org-kpi-scope'
+import { queueNotification } from '@/lib/notification-service'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 
 type RouteContext = {
@@ -99,6 +100,33 @@ export async function POST(request: Request, context: RouteContext) {
       },
       ...getClientInfo(request),
     })
+
+    // 주 로직(PENDING row 생성 + AuditLog) 완료 후 알림 — 실패해도 200 응답 유지
+    try {
+      const admins = await prisma.employee.findMany({
+        where: { role: 'ROLE_ADMIN', status: 'ACTIVE' },
+        select: { id: true },
+      })
+      const teamDept = departments.find((d) => d.id === orgKpi.deptId)
+      const teamName = teamDept?.deptName ?? ''
+      for (const admin of admins) {
+        await queueNotification({
+          recipientId: admin.id,
+          type: 'SYSTEM',
+          sourceType: 'OrgKpiExceptionRequest',
+          sourceId: exceptionRequest.id,
+          dedupeToken: `exception-request-submit:${exceptionRequest.id}`,
+          payload: {
+            title: '예외 승인 신청이 도착했습니다.',
+            body: `${session.user.name ?? ''}님이 ${teamName} '${orgKpi.kpiName}' KPI 예외 승인을 신청했습니다.`,
+            link: '/admin/kpi/exception-requests',
+          },
+          channels: ['IN_APP'],
+        })
+      }
+    } catch (notifError) {
+      console.error('[exception-request] 알림 큐 실패 (무시):', notifError)
+    }
 
     return successResponse({
       id: exceptionRequest.id,
