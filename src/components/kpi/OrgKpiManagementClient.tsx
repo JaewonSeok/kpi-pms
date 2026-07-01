@@ -2088,7 +2088,7 @@ export function OrgKpiManagementClient({
               description={workspaceSignal.description}
             />
           </div>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_560px]">
             <div className="space-y-4">
               <OrgKpiHierarchyPanel
                 roots={hierarchyView.roots}
@@ -2169,7 +2169,7 @@ export function OrgKpiManagementClient({
               items={filteredList}
             />
           </div>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_560px]">
             <div className="space-y-3">
               {filteredList.length ? filteredList.map((kpi) => (
                 <OrgKpiListItemCard
@@ -3230,12 +3230,12 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
       role="region"
       aria-label={`${kpi.title} KPI 상세`}
       tabIndex={0}
-      className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 xl:min-h-0 xl:self-start xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto xl:overscroll-y-contain"
+      className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 xl:min-h-0 xl:self-start"
     >
       <div className="space-y-5">
         <div
           data-testid="org-kpi-detail-sticky-header"
-          className="xl:sticky xl:top-0 xl:z-10 xl:-mx-5 xl:-mt-5 xl:border-b xl:border-slate-200 xl:bg-white/95 xl:px-5 xl:pt-5 xl:pb-4 xl:backdrop-blur"
+          className="xl:sticky xl:top-16 xl:z-10 xl:-mx-5 xl:-mt-5 xl:border-b xl:border-slate-200 xl:bg-white/95 xl:px-5 xl:pt-5 xl:pb-4 xl:backdrop-blur"
         >
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
