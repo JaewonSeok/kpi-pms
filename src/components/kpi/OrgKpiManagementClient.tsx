@@ -3182,6 +3182,8 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
   const goalEditLocked = props.goalEditLocked ?? false
   const isReadOnly = props.readOnly ?? false
   const connectionMetrics = useMemo(() => getOrgKpiConnectionMetrics(kpi), [kpi])
+  const [expandedPersonalKpis, setExpandedPersonalKpis] = useState(false)
+  useEffect(() => { setExpandedPersonalKpis(false) }, [kpi?.id])
 
   if (!kpi) {
     return (
@@ -3289,6 +3291,15 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
                 signal={connectionMetrics.signal}
                 label={connectionMetrics.label}
                 description={connectionMetrics.description}
+                onClick={
+                  kpi != null &&
+                  kpi.linkedPersonalKpis.length > 0 &&
+                  connectionMetrics.childLinkedCount === 0 &&
+                  connectionMetrics.suggestedChildCount === 0
+                    ? () => setExpandedPersonalKpis((v) => !v)
+                    : undefined
+                }
+                expanded={expandedPersonalKpis}
               />
               <PmsSignalChip tone={getOrgKpiStatusTone(kpi.status)}>
                 {STATUS_LABELS[kpi.status] ?? kpi.status}
@@ -3458,6 +3469,33 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
             ) : null}
           </div>
         </div>
+
+        {expandedPersonalKpis && kpi != null && kpi.linkedPersonalKpis.length > 0 ? (
+          <div className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4">
+            <div className="mb-3 text-xs font-semibold text-blue-900">연결된 개인 KPI</div>
+            <div className="space-y-2">
+              {kpi.linkedPersonalKpis.map((personalKpi) => (
+                <div
+                  key={personalKpi.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{personalKpi.title}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {personalKpi.employeeName} · {personalKpi.employeeId}
+                    </div>
+                  </div>
+                  <StatusBadge status={personalKpi.status} />
+                </div>
+              ))}
+              {kpi.linkedPersonalKpiCount > kpi.linkedPersonalKpis.length ? (
+                <p className="pt-1 text-xs text-slate-500">
+                  전체 {kpi.linkedPersonalKpiCount}건 중 {kpi.linkedPersonalKpis.length}건 표시
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {kpi.tags.length ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
