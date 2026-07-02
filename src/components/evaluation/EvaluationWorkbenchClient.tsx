@@ -2316,7 +2316,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                               </div>
                               <p className="mt-2 text-sm text-slate-500">{item.definition ?? '정의가 등록되지 않았습니다.'}</p>
                               <p className="mt-2 text-xs text-slate-500">
-                                연결 조직 KPI: {item.linkedOrgKpiTitle ?? '연결 없음'} · 목표값 {item.targetValue ?? '-'} {item.unit ?? ''}
+                                연결 조직 KPI: {item.linkedOrgKpiTitle ?? '연결 없음'} · 목표값 {item.targetValue ?? '-'}
                               </p>
                               <GoalContextBlock
                                 item={item}

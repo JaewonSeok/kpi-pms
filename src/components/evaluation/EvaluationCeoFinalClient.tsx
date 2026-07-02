@@ -1372,7 +1372,6 @@ function EmployeeDrawer(props: {
                         <div className="font-medium text-slate-900">{item.title}</div>
                         <div className="mt-2 text-sm text-slate-600">
                           목표 {item.target ?? '-'} / 실적 {item.actual ?? '-'}
-                          {item.unit ? ` ${item.unit}` : ''}
                           {typeof item.achievementRate === 'number'
                             ? ` · 달성률 ${item.achievementRate.toFixed(1)}%`
                             : ''}

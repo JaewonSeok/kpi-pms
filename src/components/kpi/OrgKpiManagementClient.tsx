@@ -425,10 +425,10 @@ const formatDateTime = (value?: string | null) =>
         minute: '2-digit',
       })
     : '-'
-const formatValue = (value?: number | string | null, unit?: string | null) =>
+const formatValue = (value?: number | string | null) =>
   value === undefined || value === null || value === ''
     ? '-'
-    : `${typeof value === 'number' ? new Intl.NumberFormat('ko-KR').format(value) : value}${unit ? ` ${unit}` : ''}`
+    : `${typeof value === 'number' ? new Intl.NumberFormat('ko-KR').format(value) : value}`
 
 const parseWeightInput = (value: string) => {
   const normalized = value.trim().replace(/%$/, '').trim()

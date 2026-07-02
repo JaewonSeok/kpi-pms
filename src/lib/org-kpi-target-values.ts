@@ -67,11 +67,10 @@ export function formatOrgKpiTargetValues(input: OrgKpiTargetValueInput & { unit?
     return '-'
   }
 
-  const unitSuffix = input.unit ? `${input.unit}` : ''
   const segments = [
-    resolved.targetValueT !== undefined ? `T ${formatMetric(resolved.targetValueT)}${unitSuffix}` : null,
-    resolved.targetValueE !== undefined ? `E ${formatMetric(resolved.targetValueE)}${unitSuffix}` : null,
-    resolved.targetValueS !== undefined ? `S ${formatMetric(resolved.targetValueS)}${unitSuffix}` : null,
+    resolved.targetValueT !== undefined ? `T ${formatMetric(resolved.targetValueT)}` : null,
+    resolved.targetValueE !== undefined ? `E ${formatMetric(resolved.targetValueE)}` : null,
+    resolved.targetValueS !== undefined ? `S ${formatMetric(resolved.targetValueS)}` : null,
   ].filter((segment): segment is string => Boolean(segment))
 
   return segments.join(' / ')

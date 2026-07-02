@@ -49,7 +49,7 @@ async function main() {
         targetValueE: '93',
         unit: '점',
       }),
-      'T 90점 / E 93점'
+      'T 90 / E 93'
     )
 
     assert.equal(
@@ -184,7 +184,7 @@ async function main() {
     assert.equal(schemaSource.includes('targetValueE String?'), true)
     assert.equal(schemaSource.includes('targetValueS String?'), true)
     assert.equal(helperSource.includes('function normalizeTargetValue'), true)
-    assert.equal(helperSource.includes("const unitSuffix = input.unit ? `${input.unit}` : ''"), true)
+    assert.equal(helperSource.includes("const unitSuffix = input.unit ? `${input.unit}` : ''"), false)
     assert.equal(createRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(updateRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(pageSource.includes('targetValue?: number | string'), true)

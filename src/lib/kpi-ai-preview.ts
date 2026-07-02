@@ -170,7 +170,6 @@ function buildTargetMetrics(record: JsonRecord): KpiAiPreviewMetric[] {
   const targetT = toNumberString(record.targetValueT)
   const targetE = toNumberString(record.targetValueE ?? record.targetValueSuggestion)
   const targetS = toNumberString(record.targetValueS)
-  const unit = toStringValue(record.unit ?? record.unitSuggestion)
   const weight = toNumberString(record.weightSuggestion)
   const difficulty = toStringValue(record.difficultySuggestion)
 
@@ -182,7 +181,6 @@ function buildTargetMetrics(record: JsonRecord): KpiAiPreviewMetric[] {
     if (targetValue) items.push({ label: '목표값', value: targetValue })
   }
 
-  if (unit) items.push({ label: '단위', value: unit })
   if (weight) items.push({ label: '권장 가중치', value: `${weight}%` })
   if (difficulty) items.push({ label: '난이도', value: difficulty })
 

@@ -4414,7 +4414,6 @@ function GoalDetailPanel(props: {
             <ReadOnlyGoalField
               label="목표값 T/E/S"
               value={formatTargetValuesForDisplay(item)}
-              helper={item.unit ? `단위: ${item.unit}` : undefined}
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
