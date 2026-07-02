@@ -117,66 +117,150 @@ function LoginContent() {
 
   return (
     <div
-      className="relative flex min-h-screen overflow-x-hidden bg-slate-950 px-4 py-8 text-white sm:px-6 lg:px-10"
+      className="relative flex min-h-screen overflow-x-hidden bg-slate-950 px-4 py-7 text-white sm:px-6 lg:px-12"
       style={{
         backgroundImage:
-          'radial-gradient(circle at 18% 18%, rgba(96, 165, 250, 0.38), transparent 28rem), radial-gradient(circle at 82% 12%, rgba(129, 140, 248, 0.28), transparent 26rem), linear-gradient(135deg, #081a4a 0%, #123c96 40%, #312e81 72%, #4c1d95 100%)',
+          'radial-gradient(circle at 16% 14%, rgba(125, 211, 252, 0.38), transparent 25rem), radial-gradient(circle at 78% 14%, rgba(167, 139, 250, 0.36), transparent 28rem), radial-gradient(circle at 45% 92%, rgba(59, 130, 246, 0.28), transparent 32rem), linear-gradient(135deg, #061333 0%, #0f2f7a 34%, #312e81 66%, #581c87 100%)',
       }}
     >
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.16]"
+        className="pointer-events-none absolute inset-0 opacity-[0.18]"
         aria-hidden="true"
         style={{
           backgroundImage:
-            'linear-gradient(rgba(255,255,255,0.34) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.34) 1px, transparent 1px)',
-          backgroundSize: '64px 64px',
-          maskImage: 'linear-gradient(to bottom, black, transparent 78%)',
+            'linear-gradient(rgba(255,255,255,0.38) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.38) 1px, transparent 1px)',
+          backgroundSize: '72px 72px',
+          maskImage: 'linear-gradient(to bottom, black, transparent 82%)',
         }}
       />
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-white/10 to-transparent" aria-hidden="true" />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.11]"
+        aria-hidden="true"
+        style={{
+          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.9) 1px, transparent 1px)',
+          backgroundSize: '22px 22px',
+          maskImage: 'linear-gradient(140deg, transparent 0%, black 35%, transparent 78%)',
+        }}
+      />
+      <div className="pointer-events-none absolute -left-24 top-16 h-72 w-72 rounded-full bg-cyan-300/20 blur-3xl motion-safe:animate-pulse" aria-hidden="true" />
+      <div className="pointer-events-none absolute -right-20 bottom-10 h-96 w-96 rounded-full bg-violet-300/20 blur-3xl motion-safe:animate-pulse" aria-hidden="true" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-white/12 to-transparent" aria-hidden="true" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-slate-950/50 to-transparent" aria-hidden="true" />
 
-      <main className="relative z-10 mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl items-center gap-10 lg:grid-cols-[1.05fr_0.95fr]">
+      <main className="relative z-10 mx-auto grid min-h-[calc(100vh-3.5rem)] w-full max-w-7xl items-center gap-10 lg:grid-cols-[1.15fr_0.85fr] xl:gap-14">
         <section className="hidden lg:block">
-          <div className="max-w-xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-medium text-blue-100 shadow-2xl backdrop-blur">
+          <div className="max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.18] bg-white/[0.12] px-4 py-2 text-sm font-semibold text-blue-50 shadow-2xl shadow-blue-950/20 backdrop-blur-xl">
               <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(110,231,183,0.95)]" />
               사내 성과관리 포털
             </div>
-            <h1 className="mt-8 text-5xl font-bold leading-tight tracking-tight text-white xl:text-6xl">
+            <h1 className="mt-8 text-6xl font-bold leading-[1.02] tracking-tight text-white xl:text-7xl">
               KPI 성과관리
             </h1>
-            <p className="mt-5 max-w-lg text-lg leading-8 text-blue-100/[0.88]">
-              목표, 실행, 피드백이 자연스럽게 이어지는 성과관리 경험을 제공합니다.
+            <p className="mt-6 max-w-xl text-xl leading-9 text-blue-100/[0.9]">
+              목표 · 실행 · 피드백이 하나의 흐름으로 이어지는 엔터프라이즈 성과관리 경험.
             </p>
 
-            <div className="mt-12 grid max-w-lg grid-cols-2 gap-4" aria-hidden="true">
-              <div className="rounded-[1.5rem] border border-white/15 bg-white/[0.12] p-5 shadow-2xl shadow-blue-950/25 backdrop-blur-xl">
-                <div className="flex items-center justify-between text-xs font-medium text-blue-100">
-                  <span>진행률</span>
-                  <span>82%</span>
+            <div className="mt-7 flex flex-wrap gap-3" aria-hidden="true">
+              {['목표', '실행', '피드백', '성장'].map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full border border-white/[0.16] bg-white/10 px-4 py-2 text-sm font-semibold text-blue-50 shadow-lg shadow-blue-950/20 backdrop-blur"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+
+            <div className="relative mt-12 h-[380px] max-w-[650px]" aria-hidden="true">
+              <div className="absolute -left-6 top-8 h-64 w-64 rounded-full border border-cyan-200/[0.18]" />
+              <div className="absolute left-10 top-16 h-44 w-44 rounded-full border border-blue-200/15" />
+              <div className="absolute right-8 top-2 h-20 w-20 rounded-full bg-cyan-200/15 blur-xl" />
+
+              <div className="absolute left-0 top-0 w-[31rem] rounded-[2rem] border border-white/[0.18] bg-white/[0.13] p-5 shadow-[0_34px_100px_rgba(8,18,54,0.38)] backdrop-blur-2xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-cyan-200/80" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-blue-200/70" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-violet-200/70" />
+                  </div>
+                  <span className="rounded-full bg-white/[0.12] px-3 py-1 text-xs font-semibold text-blue-50">Performance loop</span>
                 </div>
-                <div className="mt-5 h-2 rounded-full bg-white/15">
-                  <div className="h-2 w-4/5 rounded-full bg-gradient-to-r from-cyan-300 to-blue-300" />
+
+                <div className="mt-6 grid grid-cols-[1.2fr_0.8fr] gap-4">
+                  <div className="rounded-[1.4rem] border border-white/[0.14] bg-slate-950/[0.18] p-4">
+                    <div className="flex items-center justify-between text-xs font-semibold text-blue-50">
+                      <span>성과 흐름</span>
+                      <span className="text-cyan-100">연결됨</span>
+                    </div>
+                    <div className="relative mt-6 h-24">
+                      <div className="absolute left-3 right-3 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-cyan-200/30 via-blue-100/80 to-violet-200/30" />
+                      {['목표', '실행', '피드백', '성장'].map((item, index) => (
+                        <div
+                          key={item}
+                          className="absolute top-1/2 flex -translate-y-1/2 flex-col items-center gap-2"
+                          style={{ left: `${index * 31 + 3}%` }}
+                        >
+                          <span className="h-4 w-4 rounded-full border border-white/50 bg-white shadow-[0_0_24px_rgba(125,211,252,0.75)]" />
+                          <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-blue-50">{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.4rem] border border-white/[0.14] bg-white/10 p-4">
+                    <div className="text-xs font-semibold text-blue-50">인사이트</div>
+                    <div className="mt-4 flex h-24 items-end gap-2">
+                      <span className="h-9 flex-1 rounded-t-xl bg-cyan-200/75" />
+                      <span className="h-16 flex-1 rounded-t-xl bg-blue-200/75" />
+                      <span className="h-24 flex-1 rounded-t-xl bg-indigo-200/75" />
+                      <span className="h-14 flex-1 rounded-t-xl bg-violet-200/75" />
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-6 space-y-2">
-                  <div className="h-2 w-24 rounded-full bg-white/25" />
-                  <div className="h-2 w-32 rounded-full bg-white/15" />
+
+                <div className="mt-4 grid grid-cols-3 gap-3">
+                  {[
+                    ['KPI', '정렬'],
+                    ['Review', '준비'],
+                    ['Growth', '연결'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-2xl border border-white/[0.12] bg-white/10 px-4 py-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-100/70">{label}</div>
+                      <div className="mt-1 text-sm font-bold text-white">{value}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="mt-8 rounded-[1.5rem] border border-white/15 bg-white/10 p-5 shadow-2xl shadow-indigo-950/25 backdrop-blur-xl">
-                <div className="flex h-28 items-end gap-2">
-                  <span className="h-10 flex-1 rounded-t-xl bg-cyan-200/75" />
-                  <span className="h-16 flex-1 rounded-t-xl bg-blue-200/75" />
-                  <span className="h-24 flex-1 rounded-t-xl bg-indigo-200/75" />
-                  <span className="h-14 flex-1 rounded-t-xl bg-violet-200/75" />
+
+              <div className="absolute bottom-4 right-0 w-60 rounded-[1.6rem] border border-white/[0.18] bg-white/[0.16] p-4 shadow-2xl shadow-indigo-950/30 backdrop-blur-2xl">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-blue-700 shadow-lg shadow-blue-950/20">
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 13.5 9 18l11-12" />
+                    </svg>
+                  </span>
+                  <div>
+                    <div className="text-sm font-bold text-white">다음 액션</div>
+                    <div className="text-xs text-blue-100/80">한눈에 이어지는 업무 흐름</div>
+                  </div>
                 </div>
+                <div className="mt-4 space-y-2">
+                  <div className="h-2 rounded-full bg-white/30" />
+                  <div className="h-2 w-3/4 rounded-full bg-white/18" />
+                </div>
+              </div>
+
+              <div className="absolute bottom-12 left-12 flex items-center gap-2 rounded-full border border-white/[0.16] bg-slate-950/[0.24] px-4 py-2 text-xs font-semibold text-blue-50 shadow-2xl backdrop-blur-xl">
+                <span className="h-2 w-2 rounded-full bg-cyan-200 shadow-[0_0_16px_rgba(125,211,252,0.9)]" />
+                평가 · 피드백 · 리더십 진단
               </div>
             </div>
           </div>
         </section>
 
-        <section className="mx-auto flex w-full max-w-[29rem] flex-col">
-          <div className="mb-8 text-center lg:hidden">
+        <section className="mx-auto flex w-full max-w-[30rem] flex-col">
+          <div className="mb-7 text-center lg:hidden">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl border border-white/30 bg-white/95 shadow-2xl shadow-blue-950/30">
               <svg className="h-9 w-9 text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path
@@ -191,17 +275,22 @@ function LoginContent() {
             <p className="mt-2 text-sm font-medium text-blue-100">Continuous Performance Management</p>
           </div>
 
-          <div className="rounded-[2rem] border border-white/55 bg-white/[0.92] p-6 text-slate-900 shadow-[0_34px_100px_rgba(15,23,42,0.32)] backdrop-blur-2xl sm:p-8">
+          <div className="relative rounded-[2.25rem] border border-white/60 bg-white/[0.94] p-6 text-slate-900 shadow-[0_42px_120px_rgba(8,18,54,0.42)] backdrop-blur-2xl sm:p-8">
+            <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-blue-300/80 to-transparent" aria-hidden="true" />
+            <div className="pointer-events-none absolute -inset-px rounded-[2.25rem] ring-1 ring-white/70" aria-hidden="true" />
+
             <div className="hidden text-center lg:block">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-white to-blue-50 shadow-xl shadow-blue-900/15 ring-1 ring-blue-100">
-                <svg className="h-9 w-9 text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                  />
-                </svg>
+              <div className="mx-auto mb-5 flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.7rem] bg-gradient-to-br from-white via-blue-50 to-indigo-100 shadow-[0_24px_55px_rgba(37,99,235,0.22)] ring-1 ring-blue-100">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-700 to-indigo-700 text-white shadow-lg shadow-blue-900/25">
+                  <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                    />
+                  </svg>
+                </div>
               </div>
               <h1 className="text-3xl font-bold tracking-tight text-slate-950">KPI 성과관리</h1>
               <p className="mt-2 text-sm font-medium text-slate-500">Continuous Performance Management</p>
