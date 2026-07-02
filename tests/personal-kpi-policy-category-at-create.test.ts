@@ -25,7 +25,6 @@ const BASE_VALID_KPI = {
   kpiType: 'QUANTITATIVE' as const,
   kpiName: '테스트 KPI',
   targetValueT: 100,
-  unit: '건',
   weight: 10,
   difficulty: 'MEDIUM' as const,
 }

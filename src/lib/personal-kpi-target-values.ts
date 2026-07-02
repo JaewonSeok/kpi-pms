@@ -76,7 +76,7 @@ function formatMetric(value?: number) {
   return Number.isInteger(value) ? new Intl.NumberFormat('ko-KR').format(value) : `${value}`
 }
 
-export function formatPersonalKpiTargetValues(input: PersonalKpiTargetValueInput & { unit?: string | null }) {
+export function formatPersonalKpiTargetValues(input: PersonalKpiTargetValueInput) {
   const resolved = resolvePersonalKpiTargetValues(input)
 
   if (

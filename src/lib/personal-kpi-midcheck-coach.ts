@@ -73,7 +73,6 @@ export type PersonalKpiMidcheckCoachInput = {
     definition?: string
     formula?: string
     targetValue?: number | string
-    unit?: string
     orgKpiTitle?: string | null
     reviewComment?: string
     monthlyAchievementRate?: number
@@ -205,7 +204,6 @@ export function normalizePersonalKpiMidcheckCoachInput(input: PersonalKpiMidchec
       definition: input.kpi.definition ?? null,
       formula: input.kpi.formula ?? null,
       target_value: input.kpi.targetValue ?? null,
-      unit: input.kpi.unit ?? null,
       linked_org_kpi: input.kpi.orgKpiTitle ?? null,
       review_comment: input.kpi.reviewComment ?? null,
       latest_achievement_rate: input.kpi.monthlyAchievementRate ?? null,

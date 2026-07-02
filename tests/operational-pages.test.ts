@@ -360,7 +360,6 @@ async function main() {
             weight: 40,
             kpiType: 'QUALITATIVE',
             targetValue: null,
-            unit: null,
             linkedOrgKpiId: null,
             employee: {
               empName: '홍길동',
@@ -595,7 +594,6 @@ async function main() {
               definition: '핵심 고객 유지율을 높입니다.',
               formula: null,
               targetValue: null,
-              unit: '%',
               weight: 40,
               difficulty: 'MEDIUM',
               status: 'DRAFT',
@@ -671,7 +669,6 @@ async function main() {
               targetValueT: null,
               targetValueE: null,
               targetValueS: null,
-              unit: '%',
               weight: 40,
               difficulty: 'MEDIUM',
               status: 'DRAFT',

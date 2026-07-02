@@ -49,7 +49,6 @@ void (async () => {
         category: '',
         definition: '',
         formula: '',
-        unit: '%',
         weight: null,
         difficulty: 'MEDIUM',
       },
@@ -95,7 +94,6 @@ void (async () => {
         targetT: 92,
         targetE: 95,
         targetS: 97,
-        unit: '%',
         difficultyLevel: 'HIGH',
         linkedParentKpiId: 'parent-1',
         linkedParentKpiTitle: '핵심 인재 유지율 개선',
@@ -145,7 +143,6 @@ void (async () => {
         targetValueT: 92,
         targetValueE: 95,
         targetValueS: 97,
-        unit: '%',
         recommendations: [
           {
             recommendedTitle: '인사팀 핵심 인재 유지율',
@@ -155,7 +152,6 @@ void (async () => {
             targetT: 92,
             targetE: 95,
             targetS: 97,
-            unit: '%',
             difficultyLevel: 'HIGH',
             linkedParentKpiTitle: '핵심 인재 유지율 개선',
             linkageReason: '본부 KPI 달성에 직접 기여한다.',

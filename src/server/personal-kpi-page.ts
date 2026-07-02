@@ -188,7 +188,6 @@ export type PersonalKpiViewModel = {
   targetValueT?: number
   targetValueE?: number
   targetValueS?: number
-  unit?: string
   weight: number
   difficulty?: Difficulty
   status: PersonalKpiOperationalStatus
@@ -452,7 +451,6 @@ type LeadershipBootstrapOrgKpi = Prisma.OrgKpiGetPayload<{
     targetValueT: true
     targetValueE: true
     targetValueS: true
-    unit: true
     weight: true
     difficulty: true
     status: true
@@ -611,7 +609,6 @@ function buildPersonalKpiBootstrapPayloadFromOrgKpi(params: {
           copyMetadata: metadata,
         })
       : { copyMetadata: metadata }),
-    unit: params.orgKpi.unit,
     weight: params.orgKpi.weight,
     difficulty: params.orgKpi.difficulty,
     linkedOrgKpiId: params.orgKpi.id,
@@ -654,7 +651,6 @@ async function autoBootstrapLeadershipPersonalKpis(params: {
       targetValueT: true,
       targetValueE: true,
       targetValueS: true,
-      unit: true,
       weight: true,
       difficulty: true,
       status: true,
@@ -812,7 +808,6 @@ function buildSummaryText(record: Record<string, unknown> | null) {
     targetValueE: typeof record.targetValueE === 'number' ? record.targetValueE : undefined,
     targetValueS: typeof record.targetValueS === 'number' ? record.targetValueS : undefined,
     copyMetadata: record.copyMetadata,
-    unit: typeof record.unit === 'string' ? record.unit : undefined,
   })
   return [title, targetValue, weight].filter(Boolean).join(' · ')
 }
@@ -1827,7 +1822,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           targetValueT: resolvedTargetValues.targetValueT,
           targetValueE: resolvedTargetValues.targetValueE,
           targetValueS: resolvedTargetValues.targetValueS,
-          unit: kpi.unit ?? undefined,
           weight: kpi.weight,
           difficulty: kpi.difficulty,
           status,

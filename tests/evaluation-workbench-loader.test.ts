@@ -79,7 +79,6 @@ function buildEvaluationListRow(params?: Partial<any>) {
             status: 'CONFIRMED',
             weight: 40,
             targetValue: 100,
-            unit: '%',
             definition: '매출 성장률 달성',
             linkedOrgKpi: {
               id: 'org-kpi-1',

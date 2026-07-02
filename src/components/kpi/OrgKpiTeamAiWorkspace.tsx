@@ -310,7 +310,6 @@ function RecommendationCard(props: {
             targetValueT: props.item.targetValueT,
             targetValueE: props.item.targetValueE,
             targetValueS: props.item.targetValueS,
-            unit: props.item.unit,
           })}
         </div>
       </div>

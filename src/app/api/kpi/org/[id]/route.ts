@@ -150,7 +150,6 @@ export async function PATCH(request: Request, context: RouteContext) {
         targetValueT: true,
         targetValueE: true,
         targetValueS: true,
-        unit: true,
         difficulty: true,
         tags: true,
         personalKpis: {
@@ -392,7 +391,6 @@ export async function PATCH(request: Request, context: RouteContext) {
         targetValueT: current.targetValueT,
         targetValueE: current.targetValueE,
         targetValueS: current.targetValueS,
-        unit: current.unit,
         difficulty: current.difficulty,
         tags: current.tags,
       },
@@ -411,7 +409,6 @@ export async function PATCH(request: Request, context: RouteContext) {
         targetValueT: kpi.targetValueT,
         targetValueE: kpi.targetValueE,
         targetValueS: kpi.targetValueS,
-        unit: kpi.unit,
         difficulty: kpi.difficulty,
         tags: kpi.tags,
       },

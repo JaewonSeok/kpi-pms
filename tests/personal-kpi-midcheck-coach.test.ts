@@ -74,7 +74,6 @@ async function main() {
         definition: '핵심 고객 유지',
         formula: '재계약 고객 수 / 전체 고객 수',
         targetValue: 95,
-        unit: '%',
         orgKpiTitle: '전사 고객 유지율 개선',
         reviewComment: '핵심 지표 추적 중',
         monthlyAchievementRate: 84,

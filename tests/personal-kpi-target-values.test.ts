@@ -30,10 +30,9 @@ run('personal KPI target formatter prints T/E/S with optional blanks', () => {
     targetValueT: 90,
     targetValueE: 95,
     targetValueS: undefined,
-    unit: '%',
   })
 
-  assert.equal(formatted, 'T 90 % / E 95 % / S - %')
+  assert.equal(formatted, 'T 90 / E 95 / S -')
 })
 
 run('create personal KPI schema accepts T only and full T/E/S payloads', () => {
@@ -45,7 +44,6 @@ run('create personal KPI schema accepts T only and full T/E/S payloads', () => {
     definition: '정의',
     formula: '산식',
     targetValueT: 90,
-    unit: '%',
     weight: 25,
     difficulty: 'MEDIUM',
   })
@@ -59,7 +57,6 @@ run('create personal KPI schema accepts T only and full T/E/S payloads', () => {
     targetValueT: 90,
     targetValueE: 95,
     targetValueS: 98,
-    unit: '%',
     weight: 25,
     difficulty: 'MEDIUM',
   })
@@ -75,7 +72,6 @@ run('create personal KPI schema rejects missing T and out-of-order target values
     kpiType: 'QUANTITATIVE',
     kpiName: '응대 속도 개선',
     targetValueE: 95,
-    unit: '%',
     weight: 25,
     difficulty: 'MEDIUM',
   })
@@ -86,7 +82,6 @@ run('create personal KPI schema rejects missing T and out-of-order target values
     kpiName: '응대 속도 개선',
     targetValueT: 96,
     targetValueE: 95,
-    unit: '%',
     weight: 25,
     difficulty: 'MEDIUM',
   })

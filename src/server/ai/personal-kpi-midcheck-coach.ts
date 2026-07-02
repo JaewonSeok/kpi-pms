@@ -57,7 +57,6 @@ export type PersonalKpiMidcheckCoachContext = {
     definition?: string
     formula?: string
     targetValue?: number | string
-    unit?: string
     orgKpiTitle?: string | null
     reviewComment?: string
     monthlyAchievementRate?: number
@@ -165,7 +164,6 @@ export async function loadPersonalKpiMidcheckCoachContext(
       definition: kpi.definition ?? undefined,
       formula: kpi.formula ?? undefined,
       targetValue: kpi.targetValue ?? undefined,
-      unit: kpi.unit ?? undefined,
       orgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
       reviewComment: undefined,
       monthlyAchievementRate: latestRecord?.achievementRate ?? undefined,

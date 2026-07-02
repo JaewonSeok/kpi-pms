@@ -196,7 +196,6 @@ export type EvaluationWorkbenchPageData = {
       linkedOrgKpiId?: string | null
       policyCategory?: EvaluationPolicyItemCategoryCode | null
       targetValue?: number | null
-      unit?: string | null
       definition?: string | null
       recentAchievementRate?: number | null
       latestMonthlyComment?: string | null
@@ -1505,7 +1504,6 @@ export async function getEvaluationWorkbenchPageData(
           policyCategory:
             (item.policyCategory as EvaluationPolicyItemCategoryCode | null | undefined) ?? null,
           targetValue: item.personalKpi.targetValue,
-          unit: item.personalKpi.unit,
           definition: item.personalKpi.definition,
           recentAchievementRate: latestRecord?.achievementRate ?? null,
           latestMonthlyComment: latestRecord?.activities ?? latestRecord?.obstacles ?? null,

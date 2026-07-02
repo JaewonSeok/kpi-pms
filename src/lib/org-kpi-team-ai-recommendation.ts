@@ -65,7 +65,6 @@ export type TeamRecommendationPayload = {
     category: string
     definition: string
     formula: string
-    unit: string
     weight: number | null
     difficulty: string
   }
@@ -143,7 +142,6 @@ export type SanitizedTeamRecommendationItem = {
   targetValueT: number | null
   targetValueE: number | null
   targetValueS: number | null
-  unit: string | null
   weightSuggestion: number | null
   difficultySuggestion: Difficulty | null
   sourceOrgKpiId: string | null
@@ -395,7 +393,6 @@ export function buildDualTrackTeamRecommendationPayload(
       category: '',
       definition: '',
       formula: '',
-      unit: '',
       weight: null,
       difficulty: 'MEDIUM',
     },
@@ -540,7 +537,6 @@ export function sanitizeAndRankTeamRecommendationItem(params: SanitizeParams): S
     toTrimmedString(params.item.recommendedDefinition) ?? toTrimmedString(params.item.definition)
   const formula = toTrimmedString(params.item.formula)
   const metricSource = toTrimmedString(params.item.metricSource)
-  const unit = toTrimmedString(params.item.unit)
   const difficultySuggestion =
     resolveDifficulty(params.item.difficultyLevel) ?? resolveDifficulty(params.item.difficultySuggestion)
   const linkageExplanation =
@@ -602,7 +598,6 @@ export function sanitizeAndRankTeamRecommendationItem(params: SanitizeParams): S
     targetValueT: toOptionalNumber(params.item.targetT ?? params.item.targetValueT),
     targetValueE: toOptionalNumber(params.item.targetE ?? params.item.targetValueE),
     targetValueS: toOptionalNumber(params.item.targetS ?? params.item.targetValueS),
-    unit,
     weightSuggestion: toOptionalNumber(params.item.weightSuggestion),
     difficultySuggestion,
     sourceOrgKpiId:

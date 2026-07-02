@@ -107,7 +107,6 @@ type OrgKpiLite = {
   definition: string | null
   formula: string | null
   targetValue: number | string | null
-  unit: string | null
   weight: number
   department: {
     deptName: string
@@ -123,7 +122,6 @@ type PersonalKpiLite = {
   definition: string | null
   formula: string | null
   targetValue: number | null
-  unit: string | null
   weight: number
   linkedOrgKpiId: string | null
   employee: {
@@ -186,7 +184,6 @@ function createDeps(): PerformanceDesignDeps {
           definition: true,
           formula: true,
           targetValue: true,
-          unit: true,
           weight: true,
           department: { select: { deptName: true } },
         },
@@ -203,7 +200,6 @@ function createDeps(): PerformanceDesignDeps {
           definition: true,
           formula: true,
           targetValue: true,
-          unit: true,
           weight: true,
           linkedOrgKpiId: true,
           employee: {
@@ -285,7 +281,6 @@ function buildBaseIndicatorFromOrgKpi(
       definition: kpi.definition,
       formula: kpi.formula,
       targetValue: kpi.targetValue,
-      unit: kpi.unit,
       weight: kpi.weight,
       hasDeadline: true,
     })
@@ -338,7 +333,6 @@ function buildBaseIndicatorFromPersonalKpi(
       definition: kpi.definition,
       formula: kpi.formula,
       targetValue: kpi.targetValue,
-      unit: kpi.unit,
       weight: kpi.weight,
       hasDeadline: true,
     })

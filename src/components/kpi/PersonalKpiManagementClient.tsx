@@ -395,7 +395,6 @@ function formatTargetValuesForDisplay(input: {
   targetValueT?: number | string | null
   targetValueE?: number | string | null
   targetValueS?: number | string | null
-  unit?: string | null
 }) {
   return formatPersonalKpiTargetValues(input)
 }

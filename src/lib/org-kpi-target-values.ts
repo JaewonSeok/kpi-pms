@@ -56,7 +56,7 @@ function formatMetric(value?: string) {
   return value
 }
 
-export function formatOrgKpiTargetValues(input: OrgKpiTargetValueInput & { unit?: string | null }) {
+export function formatOrgKpiTargetValues(input: OrgKpiTargetValueInput) {
   const resolved = resolveOrgKpiTargetValues(input)
 
   if (

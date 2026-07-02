@@ -2620,7 +2620,6 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
               targetValueT: props.kpi.targetValueT,
               targetValueE: props.kpi.targetValueE,
               targetValueS: props.kpi.targetValueS,
-              unit: props.kpi.unit,
             })}
           </div>
           <div className="mt-1">가중치 {formatOrgKpiWeight(props.kpi.weight)}</div>
@@ -3271,7 +3270,6 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
               targetValueT: kpi.targetValueT,
               targetValueE: kpi.targetValueE,
               targetValueS: kpi.targetValueS,
-              unit: kpi.unit,
             })}
           />
           <InfoPill label="가중치" value={formatOrgKpiWeight(kpi.weight)} />

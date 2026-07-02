@@ -9,7 +9,6 @@ const PERSONAL_KPI_DRAFT_ANGLE_CATALOG = [
     category: '운영 실행',
     titleSuffix: '핵심 실행률 관리',
     formula: '완료한 핵심 실행 과제 수 / 계획한 핵심 실행 과제 수 x 100',
-    unit: '%',
     metricSource: '주간 실행 현황과 월간 실적 기록 기준',
     whyThisOption: '상위 KPI를 실제 실행 일정과 완료율로 직접 연결하는 방식입니다.',
     controllabilityNote: '개인이 직접 관리할 수 있는 실행 과제 범위에 집중해 통제 가능성이 높습니다.',
@@ -20,7 +19,6 @@ const PERSONAL_KPI_DRAFT_ANGLE_CATALOG = [
     category: '프로세스 개선',
     titleSuffix: '프로세스 개선 성과',
     formula: '개선 완료한 프로세스 과제 수 / 선정한 프로세스 과제 수 x 100',
-    unit: '%',
     metricSource: '업무 개선 과제 관리표와 전후 비교 기록 기준',
     whyThisOption: '반복 업무 구조를 개선해 팀 KPI 달성의 기반을 강화하는 방식입니다.',
     controllabilityNote: '개인이 주도하는 업무 흐름이나 담당 절차에 한정하면 개선 범위를 스스로 통제하기 쉽습니다.',
@@ -31,7 +29,6 @@ const PERSONAL_KPI_DRAFT_ANGLE_CATALOG = [
     category: '협업 정렬',
     titleSuffix: '협업 정렬 이슈 해소',
     formula: '정렬이 필요한 협업 이슈 해결 건수 / 합의한 협업 이슈 건수 x 100',
-    unit: '%',
     metricSource: '협업 이슈 로그와 후속 조치 완료 기록 기준',
     whyThisOption: '본부 KPI 방향을 팀 간 협업과 우선순위 정렬로 풀어내는 방식입니다.',
     controllabilityNote: '담당자가 조정해야 하는 이해관계자와 이슈 범위를 명확히 두면 실행 책임이 분명해집니다.',
@@ -42,7 +39,6 @@ const PERSONAL_KPI_DRAFT_ANGLE_CATALOG = [
     category: '지표 개선',
     titleSuffix: '선행지표 개선',
     formula: '개선한 선행지표 실적 / 목표 선행지표 값 x 100',
-    unit: '%',
     metricSource: '대시보드 지표와 월간 실적 입력값 기준',
     whyThisOption: '상위 KPI의 결과를 움직이는 선행지표를 개인 책임 범위에서 직접 관리하는 방식입니다.',
     controllabilityNote: '결과지표보다 선행지표를 택해 개인이 행동을 바꾸고 바로 추적하기 쉽습니다.',
@@ -53,7 +49,6 @@ const PERSONAL_KPI_DRAFT_ANGLE_CATALOG = [
     category: '리스크 관리',
     titleSuffix: '리스크 예방 관리',
     formula: '기한 내 해소한 주요 리스크 수 / 식별한 주요 리스크 수 x 100',
-    unit: '%',
     metricSource: '리스크 로그와 조치 완료 기록 기준',
     whyThisOption: '성과 저해 요소를 미리 줄여 상위 KPI 달성 가능성을 높이는 방식입니다.',
     controllabilityNote: '담당 영역의 리스크 식별과 후속 조치는 개인이 주도적으로 관리할 수 있습니다.',
@@ -64,7 +59,6 @@ const PERSONAL_KPI_DRAFT_ANGLE_CATALOG = [
     category: '자동화 효율화',
     titleSuffix: '업무 자동화 효율화',
     formula: '절감한 업무 시간 / 자동화 대상 업무 시간 x 100',
-    unit: '%',
     metricSource: '업무 시간 산정표와 자동화 적용 전후 비교 기준',
     whyThisOption: '같은 인력으로 더 높은 실행력을 확보하도록 효율을 끌어올리는 방식입니다.',
     controllabilityNote: '개인이 반복 수행하는 업무를 대상으로 잡으면 설계와 실행을 직접 통제하기 좋습니다.',
@@ -75,7 +69,6 @@ const PERSONAL_KPI_DRAFT_ANGLE_CATALOG = [
     category: '고객 품질',
     titleSuffix: '고객/품질 개선',
     formula: '개선한 고객·품질 지표 값 / 목표 고객·품질 지표 값 x 100',
-    unit: '%',
     metricSource: '고객 피드백, 품질 점검 결과, 월간 실적 기록 기준',
     whyThisOption: '최종 사용자 경험과 산출물 품질을 통해 상위 KPI를 뒷받침하는 방식입니다.',
     controllabilityNote: '담당 프로세스의 품질 기준과 고객 접점을 명확히 하면 개인 기여를 설명하기 쉽습니다.',
@@ -150,8 +143,8 @@ function resolveTargetNumber(value: unknown, fallback: number) {
   return Math.round(parsed * 100) / 100
 }
 
-function formatTargetSuggestion(targetT: number, targetE: number, targetS: number, unit: string) {
-  return `T ${targetT}${unit} / E ${targetE}${unit} / S ${targetS}${unit}`
+function formatTargetSuggestion(targetT: number, targetE: number, targetS: number) {
+  return `T ${targetT} / E ${targetE} / S ${targetS}`
 }
 
 function buildSafeTitle(baseTitle: string, titleSuffix: string) {
@@ -193,7 +186,6 @@ function buildAlignmentKey(params: {
 
 function hasSameTargetShape(left: PersonalKpiDraftRecommendation, right: PersonalKpiDraftRecommendation) {
   return (
-    normalizeText(left.unit) === normalizeText(right.unit) &&
     left.targetT === right.targetT &&
     left.targetE === right.targetE &&
     left.targetS === right.targetS
@@ -309,10 +301,9 @@ function buildContextDefaults(payload: JsonRecord) {
     divisionTitle ??
     toTrimmedString(payload.goal) ??
     '개인 기여'
-  const unit = toTrimmedString(currentDraft?.unit) ?? '%'
-  const targetE = resolveTargetNumber(currentDraft?.targetValue, unit === '%' ? 100 : 1)
-  const targetT = resolveTargetNumber(linkedGoal?.targetValueT, unit === '%' ? Math.max(70, targetE - 10) : targetE)
-  const targetS = resolveTargetNumber(linkedGoal?.targetValueS, unit === '%' ? Math.min(130, targetE + 10) : targetE)
+  const targetE = resolveTargetNumber(currentDraft?.targetValue, 100)
+  const targetT = resolveTargetNumber(linkedGoal?.targetValueT, Math.max(70, targetE - 10))
+  const targetS = resolveTargetNumber(linkedGoal?.targetValueS, Math.min(130, targetE + 10))
   const weight = resolveTargetNumber(currentDraft?.weight, 20)
   const difficulty = resolveDifficulty(currentDraft?.difficulty)
   const category =
@@ -334,7 +325,6 @@ function buildContextDefaults(payload: JsonRecord) {
     teamTitle,
     baseTitle,
     category,
-    unit,
     weight,
     difficulty,
     targetT,
@@ -379,8 +369,7 @@ function buildFallbackRecommendation(
     targetT: defaults.targetT,
     targetE: defaults.targetE,
     targetS: defaults.targetS,
-    targetValueSuggestion: formatTargetSuggestion(defaults.targetT, defaults.targetE, defaults.targetS, defaults.unit),
-    unit: defaults.unit,
+    targetValueSuggestion: formatTargetSuggestion(defaults.targetT, defaults.targetE, defaults.targetS),
     weightSuggestion: defaults.weight,
     difficultyLevel: defaults.difficulty,
     linkedParentKpiId: defaults.primaryId,
@@ -468,7 +457,6 @@ function buildRecommendationFromRecord(
     toTrimmedString(item.primaryLinkedOrgKpiId) ??
     defaults.primaryId
 
-  const unit = toTrimmedString(item.unit) ?? defaults.unit
   const targetT = resolveTargetNumber(item.targetT ?? item.targetValueT, defaults.targetT)
   const targetE = resolveTargetNumber(item.targetE ?? item.targetValueE, defaults.targetE)
   const targetS = resolveTargetNumber(item.targetS ?? item.targetValueS, defaults.targetS)
@@ -493,8 +481,7 @@ function buildRecommendationFromRecord(
     targetE,
     targetS,
     targetValueSuggestion:
-      toTrimmedString(item.targetValueSuggestion) ?? formatTargetSuggestion(targetT, targetE, targetS, unit),
-    unit,
+      toTrimmedString(item.targetValueSuggestion) ?? formatTargetSuggestion(targetT, targetE, targetS),
     weightSuggestion: Math.max(1, Math.min(100, Math.round(resolveTargetNumber(item.weightSuggestion, defaults.weight)))),
     difficultyLevel: resolveDifficulty(item.difficultyLevel ?? item.difficultySuggestion, defaults.difficulty),
     linkedParentKpiId,
@@ -569,7 +556,6 @@ function buildTopLevelFields(
     definition: recommendation.recommendedDefinition,
     formula: recommendation.formula,
     targetValueSuggestion: recommendation.targetValueSuggestion,
-    unit: recommendation.unit,
     weightSuggestion: recommendation.weightSuggestion,
     difficultySuggestion: recommendation.difficultyLevel,
     evaluationCriteria: [
@@ -606,7 +592,6 @@ export const PersonalKpiDraftRecommendationSchema = z.object({
   targetE: z.number().finite(),
   targetS: z.number().finite(),
   targetValueSuggestion: z.string().trim().min(1).max(500),
-  unit: z.string().trim().min(1).max(50),
   weightSuggestion: z.number().finite().min(1).max(100),
   difficultyLevel: z.enum(PERSONAL_KPI_DRAFT_DIFFICULTY_VALUES),
   linkedParentKpiId: z.string().trim().min(1).nullable(),
@@ -638,7 +623,6 @@ export const PersonalKpiDraftResultSchema = z.object({
   definition: z.string().trim().min(1).max(4000),
   formula: z.string().trim().min(1).max(2000),
   targetValueSuggestion: z.string().trim().min(1).max(500),
-  unit: z.string().trim().min(1).max(50),
   weightSuggestion: z.number().finite().min(1).max(100),
   difficultySuggestion: z.enum(PERSONAL_KPI_DRAFT_DIFFICULTY_VALUES),
   evaluationCriteria: z.array(z.string().trim().min(1).max(500)).min(2).max(6),

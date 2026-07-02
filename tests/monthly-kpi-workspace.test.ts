@@ -129,7 +129,6 @@ function makePersonalKpi(params: {
     kpiName: params.name,
     kpiType: 'QUANTITATIVE',
     targetValue: 100,
-    unit: '%',
     weight: 40,
     status: 'ACTIVE',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),

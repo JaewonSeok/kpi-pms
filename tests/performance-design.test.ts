@@ -122,7 +122,6 @@ async function main() {
             definition: '연간 예산 절감 목표 달성',
             formula: '절감액 / 계획 예산',
             targetValue: 100,
-            unit: '%',
             weight: 35,
             department: { deptName: '경영관리팀' },
           },
@@ -135,7 +134,6 @@ async function main() {
             definition: '내부 고객 만족도 향상',
             formula: null,
             targetValue: null,
-            unit: null,
             weight: 20,
             department: { deptName: '사업지원팀' },
           },
@@ -150,7 +148,6 @@ async function main() {
             definition: '예산 대비 집행 오차 최소화',
             formula: '1 - 오차율',
             targetValue: 95,
-            unit: '%',
             weight: 20,
             linkedOrgKpiId: 'org-kpi-1',
             employee: {
@@ -168,7 +165,6 @@ async function main() {
             definition: '현장 지원 프로세스 개선 주도',
             formula: null,
             targetValue: null,
-            unit: null,
             weight: 20,
             linkedOrgKpiId: 'org-kpi-2',
             employee: {

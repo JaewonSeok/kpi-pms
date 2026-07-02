@@ -38,7 +38,6 @@ async function main() {
     assert.equal(
       formatOrgKpiTargetValues({
         targetValueT: '적정',
-        unit: '',
       }),
       'T 적정'
     )
@@ -47,7 +46,6 @@ async function main() {
       formatOrgKpiTargetValues({
         targetValueT: '90',
         targetValueE: '93',
-        unit: '점',
       }),
       'T 90 / E 93'
     )
@@ -168,7 +166,7 @@ async function main() {
     assert.equal(clientSource.includes("targetValueT: form.targetValueT.trim()"), true)
     assert.equal(clientSource.includes("{ targetValueE: form.targetValueE.trim() || null }"), true)
     assert.equal(clientSource.includes("{ targetValueS: form.targetValueS.trim() || null }"), true)
-    assert.equal(recommendationDraftSource.includes("item.unit?.trim() || ''"), true)
+    assert.equal(recommendationDraftSource.includes("item.unit?.trim() || ''"), false)
     assert.equal(aiAssistSource.includes("payload.unit ?? '%'"), false)
   })
 

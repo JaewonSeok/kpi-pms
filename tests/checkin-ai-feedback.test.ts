@@ -63,7 +63,6 @@ function makeContext(overrides: Partial<CheckinAiFeedbackContext> = {}): Checkin
         weight: 25,
         type: 'QUANTITATIVE',
         targetValue: 10,
-        unit: '일',
         linkedOrgKpiTitle: '핵심 인재 확보',
         latestAchievementRate: 72,
         riskFlags: ['최근 달성률이 80% 미만입니다.'],
@@ -158,7 +157,6 @@ function makeDb(overrides: Record<string, unknown> = {}) {
           weight: 25,
           kpiType: 'QUANTITATIVE',
           targetValue: 10,
-          unit: '일',
           linkedOrgKpi: {
             kpiName: '핵심 인재 확보',
           },

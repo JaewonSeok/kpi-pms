@@ -16,7 +16,6 @@ type UploadRow = {
   definition?: string
   formula?: string
   targetValue?: number | null
-  unit?: string
   weight: number
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
 }
@@ -92,7 +91,6 @@ function buildTemplateWorkbook(params: {
       definition: `${params.scopeLabel}에서 집중 관리할 핵심 고객군의 매출 성장률을 추적합니다.`,
       formula: '(당월 매출 - 전년동월 매출) / 전년동월 매출 * 100',
       targetValue: 12,
-      unit: '%',
       weight: 25,
       difficulty: 'MEDIUM',
     },

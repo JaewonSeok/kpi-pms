@@ -103,7 +103,6 @@ export type OrgKpiViewModel = {
   targetValueT?: number | string
   targetValueE?: number | string
   targetValueS?: number | string
-  unit?: string
   weight?: number
   difficulty?: Difficulty
   status: OrgKpiOperationalStatus
@@ -1137,7 +1136,6 @@ export async function getOrgKpiPageData(params: {
         targetValueT: resolvedTargetValues.targetValueT,
         targetValueE: resolvedTargetValues.targetValueE,
         targetValueS: resolvedTargetValues.targetValueS,
-        unit: kpi.unit ?? undefined,
         weight: Number(kpi.weight),
         difficulty: kpi.difficulty,
         status: resolveOrgKpiOperationalStatus({

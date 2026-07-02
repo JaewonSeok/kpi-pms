@@ -48,7 +48,6 @@ function makeKpi(overrides: Partial<OrgKpiViewModel> = {}): OrgKpiViewModel {
     targetValueT: 8,
     targetValueE: 10,
     targetValueS: 12,
-    unit: '%',
     weight: 40,
     difficulty: 'MEDIUM',
     status: 'DRAFT',

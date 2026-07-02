@@ -149,7 +149,6 @@ async function main() {
       definition: '정의',
       formula: '계산식',
       targetValue: 95,
-      unit: '%',
       weight: 30,
       difficulty: 'MEDIUM',
       linkedOrgKpiId: 'org-1',
@@ -256,7 +255,6 @@ async function main() {
           definition: null,
           formula: null,
           targetValue: 95,
-          unit: '%',
           weight: 30,
           difficulty: 'MEDIUM',
           linkedOrgKpiId: null,
@@ -305,7 +303,6 @@ async function main() {
           definition: '정의',
           formula: '수식',
           targetValue: 100,
-          unit: '%',
           weight: 40,
           difficulty: 'HIGH',
           department: {

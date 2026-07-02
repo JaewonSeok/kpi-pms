@@ -642,7 +642,6 @@ export function diagnoseSmartIndicator(params: {
   definition?: string | null
   formula?: string | null
   targetValue?: number | string | null
-  unit?: string | null
   weight?: number | null
   hasDeadline?: boolean
 }): IndicatorSmartDiagnosis {
@@ -651,7 +650,7 @@ export function diagnoseSmartIndicator(params: {
   const formulaLength = (params.formula ?? '').trim().length
 
   const specific = boundedScore(nameLength > 10 ? 4 + (definitionLength > 30 ? 1 : 0) : 2)
-  const measurable = boundedScore((params.targetValue != null ? 2 : 0) + (params.unit ? 2 : 0) + (formulaLength > 0 ? 1 : 0))
+  const measurable = boundedScore((params.targetValue != null ? 2 : 0) + (formulaLength > 0 ? 1 : 0))
   const achievable = boundedScore((params.weight != null && params.weight <= 60 ? 3 : 2) + (params.targetValue != null ? 1 : 0))
   const relevant = boundedScore((definitionLength > 20 ? 3 : 2) + (nameLength > 6 ? 1 : 0) + (params.weight != null ? 1 : 0))
   const timeBound = boundedScore((params.hasDeadline ? 3 : 1) + (params.targetValue != null ? 1 : 0) + (formulaLength > 0 ? 1 : 0))

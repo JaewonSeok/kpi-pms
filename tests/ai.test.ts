@@ -169,7 +169,6 @@ async function main() {
         title: '고객 문의 응답 고도화',
         definition: '고객 문의 응답 흐름을 개선합니다.',
         formula: '기한 내 처리 건수 / 전체 처리 건수 x 100',
-        unit: '%',
         weight: 20,
         difficulty: 'MEDIUM',
         category: '운영 실행',

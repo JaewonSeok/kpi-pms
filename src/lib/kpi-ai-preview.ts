@@ -46,7 +46,6 @@ export type KpiAiPreviewRecommendation = {
   targetValueE?: string
   targetValueS?: string
   targetText: string
-  unit?: string
   weightSuggestion?: string
   whyThisIsHighQuality: string
   controllabilityNote: string
@@ -248,13 +247,11 @@ function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendati
       const targetT = toNumberString(item.targetT ?? item.targetValueT)
       const targetE = toNumberString(item.targetE ?? item.targetValueE)
       const targetS = toNumberString(item.targetS ?? item.targetValueS)
-      const unit = toStringValue(item.unit)
       const weightSuggestion = toNumberString(item.weightSuggestion)
       const targetParts = [
         targetT ? `T ${targetT}` : null,
         targetE ? `E ${targetE}` : null,
         targetS ? `S ${targetS}` : null,
-        unit ? unit : null,
       ].filter((part): part is string => Boolean(part))
       const targetText = targetParts.join(' / ')
 
@@ -286,7 +283,6 @@ function buildRecommendationCards(items: JsonRecord[]): KpiAiPreviewRecommendati
         targetValueE: targetE ?? undefined,
         targetValueS: targetS ?? undefined,
         targetText: targetText || '-',
-        unit: unit ?? undefined,
         weightSuggestion: weightSuggestion ?? undefined,
         whyThisIsHighQuality,
         controllabilityNote,
@@ -433,8 +429,6 @@ export function buildKpiAiPreviewSections(_action: string, result: Record<string
     consumed.add('targetValueT')
     consumed.add('targetValueE')
     consumed.add('targetValueS')
-    consumed.add('unit')
-    consumed.add('unitSuggestion')
     consumed.add('weightSuggestion')
     consumed.add('difficultySuggestion')
     sections.push({ kind: 'metrics', key: 'suggested-metrics', title: '제안된 목표값', items: targetMetrics })
