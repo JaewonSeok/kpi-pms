@@ -16,7 +16,6 @@ type UploadRow = {
   definition?: string
   formula?: string
   targetValue?: number | null
-  unit?: string
   weight: number
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
 }
@@ -92,7 +91,6 @@ function buildTemplateWorkbook(params: {
       definition: `${params.scopeLabel}에서 집중 관리할 핵심 고객군의 매출 성장률을 추적합니다.`,
       formula: '(당월 매출 - 전년동월 매출) / 전년동월 매출 * 100',
       targetValue: 12,
-      unit: '%',
       weight: 25,
       difficulty: 'MEDIUM',
     },
@@ -107,7 +105,6 @@ function buildTemplateWorkbook(params: {
     { column: 'definition', description: 'KPI 정의를 입력합니다.' },
     { column: 'formula', description: '정량 KPI의 산식을 입력합니다.' },
     { column: 'targetValue', description: '숫자 목표값입니다. 비워 두면 목표값 없이 등록합니다.' },
-    { column: 'unit', description: '%, 건, 시간 등 단위를 입력합니다.' },
     { column: 'weight', description: '같은 조직과 연도의 가중치 합은 100을 넘을 수 없습니다.' },
     { column: 'difficulty', description: 'HIGH, MEDIUM, LOW 중 하나를 입력합니다.' },
   ]
@@ -208,7 +205,6 @@ async function parseWorkbook(file: File, departments: OrgKpiScopeOption[], selec
           : Number.isFinite(numericTargetValue)
             ? numericTargetValue
             : null,
-      unit: String(row.unit ?? '').trim() || undefined,
       weight,
       difficulty: normalizeEnum(String(row.difficulty ?? ''), 'MEDIUM', [
         'HIGH',

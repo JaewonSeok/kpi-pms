@@ -76,7 +76,7 @@ function formatMetric(value?: number) {
   return Number.isInteger(value) ? new Intl.NumberFormat('ko-KR').format(value) : `${value}`
 }
 
-export function formatPersonalKpiTargetValues(input: PersonalKpiTargetValueInput & { unit?: string | null }) {
+export function formatPersonalKpiTargetValues(input: PersonalKpiTargetValueInput) {
   const resolved = resolvePersonalKpiTargetValues(input)
 
   if (
@@ -87,12 +87,10 @@ export function formatPersonalKpiTargetValues(input: PersonalKpiTargetValueInput
     return '-'
   }
 
-  const unitSuffix = input.unit ? ` ${input.unit}` : ''
-
   return [
-    `T ${formatMetric(resolved.targetValueT)}${unitSuffix}`,
-    `E ${formatMetric(resolved.targetValueE)}${unitSuffix}`,
-    `S ${formatMetric(resolved.targetValueS)}${unitSuffix}`,
+    `T ${formatMetric(resolved.targetValueT)}`,
+    `E ${formatMetric(resolved.targetValueE)}`,
+    `S ${formatMetric(resolved.targetValueS)}`,
   ].join(' / ')
 }
 

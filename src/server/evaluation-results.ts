@@ -121,7 +121,6 @@ export type EvaluationResultViewModel = {
       target?: number
       actual?: number
       achievementRate?: number
-      unit?: string
       status?: string
     }>
     monthlyRecords: Array<{
@@ -1090,7 +1089,6 @@ function buildEvaluationResultViewModel(params: {
           target: kpi.targetValue ?? undefined,
           actual: latestRecord?.actualValue ?? undefined,
           achievementRate: latestRecord?.achievementRate ?? undefined,
-          unit: kpi.unit ?? undefined,
           status: kpi.status,
         }
       }),

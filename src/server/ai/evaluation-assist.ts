@@ -62,7 +62,6 @@ type ItemSummary = {
   weight: number
   definition: string | null
   targetValue: number | null
-  unit: string | null
   linkedOrgKpi: string | null
   draftScore: number | null
   draftComment: string
@@ -89,7 +88,6 @@ type LoadedEvaluationItem = {
     weight: number
     definition: string | null
     targetValue: number | null
-    unit: string | null
     linkedOrgKpi: {
       department: {
         deptName: string
@@ -366,7 +364,6 @@ function buildItemSummaries(evaluationItems: LoadedEvaluationItem[], items: Draf
       weight: item.personalKpi.weight,
       definition: item.personalKpi.definition,
       targetValue: item.personalKpi.targetValue,
-      unit: item.personalKpi.unit,
       linkedOrgKpi: item.personalKpi.linkedOrgKpi
         ? `${item.personalKpi.linkedOrgKpi.department.deptName} / ${item.personalKpi.linkedOrgKpi.kpiName}`
         : null,

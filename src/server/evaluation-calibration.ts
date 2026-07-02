@@ -95,7 +95,6 @@ export type CalibrationCandidate = {
     target?: number
     actual?: number
     achievementRate?: number
-    unit?: string
   }>
   checkins: Array<{
     date: string
@@ -2226,7 +2225,6 @@ function buildKpiSummary(evaluation: EvaluationRecord | null) {
       target: item.personalKpi.targetValue ?? undefined,
       actual: latestRecord?.actualValue ?? undefined,
       achievementRate: latestRecord?.achievementRate ?? undefined,
-      unit: item.personalKpi.unit ?? undefined,
     }
   })
 }

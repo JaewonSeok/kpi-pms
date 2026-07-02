@@ -54,7 +54,6 @@ function makeKpi(
     targetValueT: params.targetValueT ?? 90,
     targetValueE: params.targetValueE ?? 100,
     targetValueS: params.targetValueS ?? 110,
-    unit: params.unit ?? '%',
     weight: params.weight ?? 20,
     difficulty: params.difficulty ?? 'MEDIUM',
     status: params.status ?? 'DRAFT',

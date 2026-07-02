@@ -13,7 +13,6 @@ export type OrgKpiAiRecommendationFormSeed = {
   targetValueT: string
   targetValueE: string
   targetValueS: string
-  unit: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
 }
@@ -46,7 +45,6 @@ export function buildOrgKpiFormFromAiRecommendation(
     targetValueT: item.targetValueT ?? '',
     targetValueE: item.targetValueE ?? '',
     targetValueS: item.targetValueS ?? '',
-    unit: item.unit?.trim() || '',
     weight: item.weightSuggestion ?? '20',
     difficulty: normalizeDifficulty(item.difficultyLevel),
   }
@@ -88,7 +86,6 @@ export function isOrgKpiAiRecommendationDraftDirty(
     targetValueT: normalizeSeedValue(current.targetValueT),
     targetValueE: normalizeSeedValue(current.targetValueE),
     targetValueS: normalizeSeedValue(current.targetValueS),
-    unit: normalizeSeedValue(current.unit),
     weight: normalizeSeedValue(current.weight),
   }
   const normalizedBaseline = {
@@ -104,7 +101,6 @@ export function isOrgKpiAiRecommendationDraftDirty(
     targetValueT: normalizeSeedValue(baseline.targetValueT),
     targetValueE: normalizeSeedValue(baseline.targetValueE),
     targetValueS: normalizeSeedValue(baseline.targetValueS),
-    unit: normalizeSeedValue(baseline.unit),
     weight: normalizeSeedValue(baseline.weight),
   }
 

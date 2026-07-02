@@ -67,7 +67,6 @@ export type MonthlyRecordViewModel = {
   type: KpiType
   targetValue?: number | string
   actualValue?: number | string
-  unit?: string
   achievementRate?: number
   activityNote?: string
   blockerNote?: string
@@ -857,7 +856,6 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         type: kpi.kpiType,
         targetValue: kpi.targetValue ?? undefined,
         actualValue: currentRecord?.actualValue ?? undefined,
-        unit: kpi.unit ?? undefined,
         achievementRate: currentRecord?.achievementRate ?? undefined,
         activityNote: currentRecord?.activities ?? undefined,
         blockerNote: currentRecord?.obstacles ?? undefined,

@@ -65,7 +65,6 @@ type OrgKpiDraftInput = {
   targetValueT: number
   targetValueE?: number
   targetValueS?: number
-  unit?: string
   weight: number
   difficulty: Difficulty
   tags?: string[]
@@ -115,7 +114,6 @@ export type OrgKpiTeamRecommendationItemView = {
   targetValueT?: number
   targetValueE?: number
   targetValueS?: number
-  unit?: string
   weightSuggestion?: number
   difficultySuggestion?: Difficulty
   sourceOrgKpiId?: string | null
@@ -336,7 +334,6 @@ function mapRecommendationSet(
         targetValueT: item.targetValueT ?? undefined,
         targetValueE: item.targetValueE ?? undefined,
         targetValueS: item.targetValueS ?? undefined,
-        unit: item.unit ?? undefined,
         weightSuggestion: item.weightSuggestion ?? undefined,
         difficultySuggestion: item.difficultySuggestion ?? undefined,
         sourceOrgKpiId: item.sourceOrgKpiId,
@@ -625,7 +622,6 @@ export async function loadOrgKpiTeamAiContext(
               targetValueT: true,
               targetValueE: true,
               targetValueS: true,
-              unit: true,
               weight: true,
               difficulty: true,
             },
@@ -705,7 +701,6 @@ export async function loadOrgKpiTeamAiContext(
             targetValueE: kpi.targetValueE ?? undefined,
             targetValueS: kpi.targetValueS ?? undefined,
           }),
-          unit: kpi.unit ?? undefined,
         }),
         weight: Number(kpi.weight),
         difficulty: kpi.difficulty,
@@ -1026,7 +1021,6 @@ type RecommendationGenerationContext = {
     targetValueT: number | null
     targetValueE: number | null
     targetValueS: number | null
-    unit: string | null
     weight: number
     difficulty: Difficulty
   }>
@@ -1107,7 +1101,6 @@ async function loadRecommendationGenerationContext(params: LoadContextParams): P
         targetValueT: true,
         targetValueE: true,
         targetValueS: true,
-        unit: true,
         weight: true,
         difficulty: true,
       },
@@ -1185,7 +1178,6 @@ function sanitizeRecommendationItem(
           targetValueE: candidate.targetValueE ?? undefined,
           targetValueS: candidate.targetValueS ?? undefined,
         }),
-        unit: candidate.unit ?? undefined,
       }),
     })),
     existingTeamKpis,
@@ -1217,7 +1209,6 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
           targetValueE: kpi.targetValueE ?? undefined,
           targetValueS: kpi.targetValueS ?? undefined,
         }),
-        unit: kpi.unit ?? undefined,
       }),
       weight: kpi.weight,
       difficulty: kpi.difficulty,
@@ -1342,7 +1333,6 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
           targetValueE: kpi.targetValueE ?? undefined,
           targetValueS: kpi.targetValueS ?? undefined,
         }),
-        unit: kpi.unit ?? undefined,
       }),
       weight: kpi.weight,
       difficulty: kpi.difficulty,
@@ -1459,7 +1449,6 @@ function buildDraftFromRecommendationItem(
     targetValueT: item.targetValueT ?? 0,
     targetValueE: item.targetValueE ?? 0,
     targetValueS: item.targetValueS ?? 0,
-    unit: item.unit ?? undefined,
     weight: item.weightSuggestion ?? 20,
     difficulty: item.difficultySuggestion ?? 'MEDIUM',
     tags: ['AI추천'],
@@ -1593,7 +1582,6 @@ export async function applyTeamKpiRecommendationDecision(params: ApplyRecommenda
             targetValueE: draft.targetValueE,
             targetValueS: draft.targetValueS,
           }),
-          unit: draft.unit ?? null,
           weight: draft.weight,
           difficulty: draft.difficulty,
           tags: draft.tags ?? [],
@@ -1707,7 +1695,6 @@ type ReviewGenerationContext = {
     targetValueT: number | null
     targetValueE: number | null
     targetValueS: number | null
-    unit: string | null
     weight: number
     difficulty: Difficulty
     parentOrgKpiId: string | null
@@ -1739,7 +1726,6 @@ async function loadReviewGenerationContext(params: ReviewGenerationParams): Prom
       targetValueT: true,
       targetValueE: true,
       targetValueS: true,
-      unit: true,
       weight: true,
       difficulty: true,
       parentOrgKpiId: true,
@@ -1884,7 +1870,6 @@ export async function generateTeamKpiReviewRun(params: ReviewGenerationParams) {
           targetValueE: kpi.targetValueE ?? undefined,
           targetValueS: kpi.targetValueS ?? undefined,
         }),
-        unit: kpi.unit ?? undefined,
       }),
       weight: kpi.weight,
       difficulty: kpi.difficulty,
@@ -1902,7 +1887,6 @@ export async function generateTeamKpiReviewRun(params: ReviewGenerationParams) {
           targetValueE: kpi.targetValueE ?? undefined,
           targetValueS: kpi.targetValueS ?? undefined,
         }),
-        unit: kpi.unit ?? undefined,
       }),
       weight: kpi.weight,
       difficulty: kpi.difficulty,

@@ -38,7 +38,6 @@ async function main() {
     assert.equal(
       formatOrgKpiTargetValues({
         targetValueT: '적정',
-        unit: '',
       }),
       'T 적정'
     )
@@ -47,9 +46,8 @@ async function main() {
       formatOrgKpiTargetValues({
         targetValueT: '90',
         targetValueE: '93',
-        unit: '점',
       }),
-      'T 90점 / E 93점'
+      'T 90 / E 93'
     )
 
     assert.equal(
@@ -112,21 +110,9 @@ async function main() {
         targetValueT: '외부감사 적정의견',
         targetValueE: '우수',
         targetValueS: '탁월',
-        unit: '점',
       }).success,
       true
     )
-
-    const blankUnit = CreateOrgKpiSchema.safeParse({
-      ...base,
-      targetValueT: '90',
-      unit: '   ',
-    })
-
-    assert.equal(blankUnit.success, true)
-    if (blankUnit.success) {
-      assert.equal(blankUnit.data.unit, undefined)
-    }
   })
 
   await run('update schema allows text targets, blank optional E/S, and still requires T when editing targets', () => {
@@ -155,48 +141,13 @@ async function main() {
     assert.equal(missingT.error?.issues[0]?.message.includes('T 목표값'), true)
   })
 
-  await run('org KPI unit schema accepts Korean and common business units while rejecting overly long values', () => {
-    for (const unit of ['점', '%', '건', '시간']) {
-      const parsed = CreateOrgKpiSchema.safeParse({
-        deptId: 'dept-hr',
-        evalYear: 2026,
-        kpiType: 'QUANTITATIVE',
-        kpiCategory: '인사',
-        kpiName: `단위 검증 ${unit}`,
-        targetValueT: '적정',
-        unit,
-        weight: 20,
-        difficulty: 'MEDIUM',
-      })
-
-      assert.equal(parsed.success, true)
-      if (parsed.success) {
-        assert.equal(parsed.data.unit, unit)
-      }
-    }
-
-    const tooLong = CreateOrgKpiSchema.safeParse({
-      deptId: 'dept-hr',
-      evalYear: 2026,
-      kpiType: 'QUANTITATIVE',
-      kpiCategory: '인사',
-      kpiName: '긴 단위 검증',
-      targetValueT: '적정',
-      unit: '가'.repeat(21),
-      weight: 20,
-      difficulty: 'MEDIUM',
-    })
-
-    assert.equal(tooLong.success, false)
-  })
-
-  await run('org KPI client form uses text inputs for targets and blank unit defaults', () => {
+  await run('org KPI client form uses text inputs for targets', () => {
     const clientSource = read('src/components/kpi/OrgKpiManagementClient.tsx')
     const recommendationDraftSource = read('src/lib/org-kpi-ai-recommendation-draft.ts')
     const aiAssistSource = read('src/lib/ai-assist.ts')
 
     assert.equal(clientSource.includes("unit: '%'"), false)
-    assert.equal(clientSource.includes("unit: ''"), true)
+    assert.equal(clientSource.includes("unit: ''"), false)
     assert.equal(clientSource.includes("const message = 'T 목표값은 숫자로 입력해 주세요.'"), false)
     assert.equal(clientSource.includes("const message = 'E 목표값은 숫자로 입력해 주세요.'"), false)
     assert.equal(clientSource.includes("const message = 'S 목표값은 숫자로 입력해 주세요.'"), false)
@@ -215,7 +166,7 @@ async function main() {
     assert.equal(clientSource.includes("targetValueT: form.targetValueT.trim()"), true)
     assert.equal(clientSource.includes("{ targetValueE: form.targetValueE.trim() || null }"), true)
     assert.equal(clientSource.includes("{ targetValueS: form.targetValueS.trim() || null }"), true)
-    assert.equal(recommendationDraftSource.includes("item.unit?.trim() || ''"), true)
+    assert.equal(recommendationDraftSource.includes("item.unit?.trim() || ''"), false)
     assert.equal(aiAssistSource.includes("payload.unit ?? '%'"), false)
   })
 
@@ -231,7 +182,7 @@ async function main() {
     assert.equal(schemaSource.includes('targetValueE String?'), true)
     assert.equal(schemaSource.includes('targetValueS String?'), true)
     assert.equal(helperSource.includes('function normalizeTargetValue'), true)
-    assert.equal(helperSource.includes("const unitSuffix = input.unit ? `${input.unit}` : ''"), true)
+    assert.equal(helperSource.includes("const unitSuffix = input.unit ? `${input.unit}` : ''"), false)
     assert.equal(createRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(updateRouteSource.includes('buildOrgKpiTargetValuePersistence'), true)
     assert.equal(pageSource.includes('targetValue?: number | string'), true)

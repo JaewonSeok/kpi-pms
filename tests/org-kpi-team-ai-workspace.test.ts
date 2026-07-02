@@ -96,7 +96,6 @@ void (async () => {
         targetT: 10,
         targetE: 15,
         targetS: 20,
-        unit: '일',
         difficultyLevel: 'HIGH',
         recommendationReason: '팀 고유 운영 KPI가 필요하다.',
         whyThisIsHighQuality: '측정 기준과 데이터 출처가 분명하다.',

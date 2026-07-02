@@ -69,7 +69,6 @@ export type CheckinAiFeedbackContext = {
     weight?: number | null
     type?: string | null
     targetValue?: number | string | null
-    unit?: string | null
     linkedOrgKpiTitle?: string | null
     latestAchievementRate?: number | null
     riskFlags: string[]
@@ -216,7 +215,6 @@ export function normalizeCheckinAiFeedbackInput(context: CheckinAiFeedbackContex
       weight: typeof kpi.weight === 'number' ? kpi.weight : null,
       kpi_type: kpi.type ?? null,
       target_value: kpi.targetValue ?? null,
-      unit: kpi.unit ?? null,
       linked_org_kpi: clipText(kpi.linkedOrgKpiTitle ?? null, 220),
       latest_achievement_rate: normalizeRate(kpi.latestAchievementRate),
       risk_flags: kpi.riskFlags.slice(0, 5).map((item) => clipText(item, 220)).filter(Boolean),

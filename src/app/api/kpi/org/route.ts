@@ -257,7 +257,6 @@ export async function POST(request: Request) {
           targetValueE: data.targetValueE,
           targetValueS: data.targetValueS,
         }),
-        unit: data.unit,
         weight: data.weight,
         difficulty: data.difficulty,
         tags: data.tags ?? [],

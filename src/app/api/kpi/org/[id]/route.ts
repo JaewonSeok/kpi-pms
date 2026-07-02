@@ -150,7 +150,6 @@ export async function PATCH(request: Request, context: RouteContext) {
         targetValueT: true,
         targetValueE: true,
         targetValueS: true,
-        unit: true,
         difficulty: true,
         tags: true,
         personalKpis: {
@@ -212,7 +211,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.targetValueT !== undefined ||
       data.targetValueE !== undefined ||
       data.targetValueS !== undefined ||
-      data.unit !== undefined ||
       data.weight !== undefined ||
       data.difficulty !== undefined ||
       data.tags !== undefined
@@ -336,7 +334,6 @@ export async function PATCH(request: Request, context: RouteContext) {
               targetValueS: data.targetValueS,
             })
           : {}),
-        ...(data.unit !== undefined ? { unit: data.unit || null } : {}),
         ...(data.weight !== undefined ? { weight: data.weight } : {}),
         ...(data.difficulty !== undefined ? { difficulty: data.difficulty } : {}),
         ...(data.tags !== undefined ? { tags: data.tags } : {}),
@@ -394,7 +391,6 @@ export async function PATCH(request: Request, context: RouteContext) {
         targetValueT: current.targetValueT,
         targetValueE: current.targetValueE,
         targetValueS: current.targetValueS,
-        unit: current.unit,
         difficulty: current.difficulty,
         tags: current.tags,
       },
@@ -413,7 +409,6 @@ export async function PATCH(request: Request, context: RouteContext) {
         targetValueT: kpi.targetValueT,
         targetValueE: kpi.targetValueE,
         targetValueS: kpi.targetValueS,
-        unit: kpi.unit,
         difficulty: kpi.difficulty,
         tags: kpi.tags,
       },

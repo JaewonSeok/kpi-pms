@@ -230,7 +230,6 @@ async function withStubbedResultsData(
         kpiName: '고객 전환율 개선',
         kpiType: 'QUANTITATIVE',
         targetValue: 100,
-        unit: '%',
         weight: 40,
         status: 'APPROVED',
         monthlyRecords: [

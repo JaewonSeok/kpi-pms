@@ -321,7 +321,6 @@ export async function loadCheckinAiFeedbackContext(
         weight: kpi.weight,
         type: kpi.kpiType,
         targetValue: kpi.targetValue ?? null,
-        unit: kpi.unit ?? null,
         linkedOrgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
         latestAchievementRate: latestMonthly?.achievementRate ?? null,
         riskFlags: buildRiskFlags({

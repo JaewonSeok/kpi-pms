@@ -55,7 +55,6 @@ function makePersonalKpiRecord(overrides?: Record<string, unknown>) {
     definition: '응답 고객 비율을 높이는 KPI',
     formula: '응답 고객 수 / 전체 고객 수',
     targetValue: 95,
-    unit: '%',
     linkedOrgKpiId: 'org-1',
     linkedOrgKpi: {
       kpiName: '고객 경험 개선',

@@ -47,7 +47,6 @@ type OrgKpiCascadeNode = {
   targetValueT: number | string | null
   targetValueE: number | string | null
   targetValueS: number | string | null
-  unit: string | null
   weight: number
   difficulty: Difficulty
   deptId: string
@@ -135,7 +134,6 @@ async function loadOrgKpiCascade(orgKpiId: string, db: PrismaClient) {
       targetValueT: number | string | null
       targetValueE: number | string | null
       targetValueS: number | string | null
-      unit: string | null
       weight: number
       difficulty: Difficulty
       deptId: string
@@ -153,7 +151,6 @@ async function loadOrgKpiCascade(orgKpiId: string, db: PrismaClient) {
         targetValueT: true,
         targetValueE: true,
         targetValueS: true,
-        unit: true,
         weight: true,
         difficulty: true,
         deptId: true,
@@ -178,7 +175,6 @@ async function loadOrgKpiCascade(orgKpiId: string, db: PrismaClient) {
       targetValueT: orgKpi.targetValueT,
       targetValueE: orgKpi.targetValueE,
       targetValueS: orgKpi.targetValueS,
-      unit: orgKpi.unit,
       weight: orgKpi.weight,
       difficulty: orgKpi.difficulty,
       deptId: orgKpi.deptId,
@@ -205,7 +201,6 @@ function buildOrgKpiSnapshot(
         targetValueT: number | string | null
         targetValueE: number | string | null
         targetValueS: number | string | null
-        unit: string | null
         departmentName: string
       }
     | null
@@ -222,7 +217,6 @@ function buildOrgKpiSnapshot(
     targetValueT: goal.targetValueT,
     targetValueE: goal.targetValueE,
     targetValueS: goal.targetValueS,
-    unit: goal.unit,
     departmentLabel: goal.departmentName,
   }
 }
@@ -484,7 +478,6 @@ export async function loadPersonalKpiDraftContext(
           definition: sourceKpi.definition ?? null,
           formula: sourceKpi.formula ?? null,
           targetValue: sourceKpi.targetValue ?? null,
-          unit: sourceKpi.unit ?? null,
           weight: sourceKpi.weight,
           difficulty: sourceKpi.difficulty,
           linkedOrgKpiId: sourceKpi.linkedOrgKpiId ?? null,
@@ -499,7 +492,6 @@ export async function loadPersonalKpiDraftContext(
         sourceKpi?.targetValue ??
         toNumberValue(currentDraft?.targetValue) ??
         null,
-      unit: toStringValue(params.payload.unit) ?? sourceKpi?.unit ?? toStringValue(currentDraft?.unit) ?? '',
       weight:
         toNumberValue(params.payload.weight) ??
         sourceKpi?.weight ??

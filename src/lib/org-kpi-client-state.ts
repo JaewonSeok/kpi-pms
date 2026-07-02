@@ -17,7 +17,6 @@ export type OrgKpiEditorFormSnapshot = {
   targetValueT: string
   targetValueE: string
   targetValueS: string
-  unit: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
 }
@@ -104,7 +103,6 @@ export function applySavedOrgKpiToList(params: {
     targetValueT: resolvedTargetValues.targetValueT ?? undefined,
     targetValueE: resolvedTargetValues.targetValueE ?? undefined,
     targetValueS: resolvedTargetValues.targetValueS ?? undefined,
-    unit: params.form.unit.trim() || undefined,
     weight: Number(params.form.weight),
     difficulty: params.form.difficulty,
     status: 'DRAFT',

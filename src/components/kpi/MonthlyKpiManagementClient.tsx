@@ -2303,7 +2303,7 @@ function EntryTab({
                           </div>
                           <div className="mt-2 truncate text-sm font-bold text-slate-950">{record.kpiTitle}</div>
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span>목표 {`${record.targetValue ?? '-'} ${record.unit ?? ''}`.trim()}</span>
+                            <span>목표 {record.targetValue ?? '-'}</span>
                             {record.orgKpiTitle ? (
                               <span className="inline-flex items-center gap-1 text-blue-700">
                                 <Link2 className="h-3.5 w-3.5" />
@@ -2417,8 +2417,8 @@ function EntryTab({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <DetailMetricBox label="목표값" value={`${selected.targetValue ?? '-'} ${selected.unit ?? ''}`.trim()} helper="월간 기록 기준" />
-              <DetailMetricBox label="실적값" value={`${selectedActualValue} ${selected.unit ?? ''}`.trim()} helper="저장 전 초안 포함" />
+              <DetailMetricBox label="목표값" value={`${selected.targetValue ?? '-'}`} helper="월간 기록 기준" />
+              <DetailMetricBox label="실적값" value={`${selectedActualValue}`} helper="저장 전 초안 포함" />
               <DetailMetricBox label="가중치" value="KPI 기준" helper="개인 KPI 설정에서 관리" />
               <DetailMetricBox label="증빙" value={formatCountWithUnit(selectedDraft.attachments.length, '건')} helper="파일/링크 포함" />
             </div>

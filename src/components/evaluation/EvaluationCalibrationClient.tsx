@@ -2865,8 +2865,8 @@ function CandidateDetailPanel({
                     <div key={kpi.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                       <div className="font-semibold text-slate-900">{kpi.title}</div>
                       <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
-                        <MiniMetric label="목표" value={formatMetric(kpi.target, kpi.unit)} />
-                        <MiniMetric label="실적" value={formatMetric(kpi.actual, kpi.unit)} />
+                        <MiniMetric label="목표" value={formatMetric(kpi.target)} />
+                        <MiniMetric label="실적" value={formatMetric(kpi.actual)} />
                         <MiniMetric label="달성률" value={kpi.achievementRate !== undefined ? `${kpi.achievementRate.toFixed(1)}%` : '-'} />
                       </div>
                     </div>
@@ -4542,9 +4542,9 @@ function formatDateTime(value?: string) {
   })
 }
 
-function formatMetric(value?: number, unit?: string) {
+function formatMetric(value?: number) {
   if (value === undefined || value === null) return '-'
-  return `${value}${unit ? ` ${unit}` : ''}`
+  return `${value}`
 }
 
 async function assertJsonSuccess(response: Response) {
