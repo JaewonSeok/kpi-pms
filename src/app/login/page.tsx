@@ -172,23 +172,23 @@ function LoginContent() {
               ))}
             </div>
 
-            <div className="relative mt-12 h-[380px] max-w-[650px]" aria-hidden="true">
-              <div className="absolute -left-6 top-8 h-64 w-64 rounded-full border border-cyan-200/[0.18]" />
-              <div className="absolute left-10 top-16 h-44 w-44 rounded-full border border-blue-200/15" />
-              <div className="absolute right-8 top-2 h-20 w-20 rounded-full bg-cyan-200/15 blur-xl" />
+            <div className="relative mt-12 max-w-[650px]" aria-hidden="true">
+              <div className="absolute -left-8 top-8 h-64 w-64 rounded-full border border-cyan-200/[0.18]" />
+              <div className="absolute right-8 top-4 h-24 w-24 rounded-full bg-cyan-200/15 blur-xl" />
 
-              <div className="absolute left-0 top-0 w-[31rem] rounded-[2rem] border border-white/[0.18] bg-white/[0.13] p-5 shadow-[0_34px_100px_rgba(8,18,54,0.38)] backdrop-blur-2xl">
-                <div className="flex items-center justify-between">
+              <div className="relative rounded-[2rem] border border-white/[0.2] bg-white/[0.14] p-5 shadow-[0_34px_100px_rgba(8,18,54,0.42)] backdrop-blur-2xl">
+                <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-cyan-200/80 to-transparent" />
+                <div className="flex items-center justify-between gap-6">
                   <div className="flex gap-2">
                     <span className="h-2.5 w-2.5 rounded-full bg-cyan-200/80" />
                     <span className="h-2.5 w-2.5 rounded-full bg-blue-200/70" />
                     <span className="h-2.5 w-2.5 rounded-full bg-violet-200/70" />
                   </div>
-                  <span className="rounded-full bg-white/[0.12] px-3 py-1 text-xs font-semibold text-blue-50">Performance loop</span>
+                  <span className="rounded-full bg-white/[0.12] px-3 py-1 text-xs font-semibold text-blue-50">성과관리 Command Center</span>
                 </div>
 
                 <div className="mt-6 grid grid-cols-[1.2fr_0.8fr] gap-4">
-                  <div className="rounded-[1.4rem] border border-white/[0.14] bg-slate-950/[0.18] p-4">
+                  <div className="rounded-[1.4rem] border border-white/[0.14] bg-slate-950/[0.2] p-4">
                     <div className="flex items-center justify-between text-xs font-semibold text-blue-50">
                       <span>성과 흐름</span>
                       <span className="text-cyan-100">연결됨</span>
@@ -222,8 +222,8 @@ function LoginContent() {
                 <div className="mt-4 grid grid-cols-3 gap-3">
                   {[
                     ['KPI', '정렬'],
-                    ['Review', '준비'],
-                    ['Growth', '연결'],
+                    ['리뷰', '준비'],
+                    ['성장', '연결'],
                   ].map(([label, value]) => (
                     <div key={label} className="rounded-2xl border border-white/[0.12] bg-white/10 px-4 py-3">
                       <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-100/70">{label}</div>
@@ -231,35 +231,37 @@ function LoginContent() {
                     </div>
                   ))}
                 </div>
-              </div>
 
-              <div className="absolute bottom-4 right-0 w-60 rounded-[1.6rem] border border-white/[0.18] bg-white/[0.16] p-4 shadow-2xl shadow-indigo-950/30 backdrop-blur-2xl">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-blue-700 shadow-lg shadow-blue-950/20">
-                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 13.5 9 18l11-12" />
-                    </svg>
-                  </span>
-                  <div>
-                    <div className="text-sm font-bold text-white">다음 액션</div>
-                    <div className="text-xs text-blue-100/80">한눈에 이어지는 업무 흐름</div>
+                <div className="mt-4 rounded-[1.4rem] border border-white/[0.14] bg-white/[0.12] p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-blue-700 shadow-lg shadow-blue-950/20">
+                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 13.5 9 18l11-12" />
+                        </svg>
+                      </span>
+                      <div>
+                        <div className="text-sm font-bold text-white">다음 액션</div>
+                        <div className="text-xs text-blue-100/80">한눈에 이어지는 업무 흐름</div>
+                      </div>
+                    </div>
+                    <div className="hidden items-center gap-2 rounded-full border border-white/[0.16] bg-slate-950/[0.24] px-4 py-2 text-xs font-semibold text-blue-50 xl:flex">
+                      <span className="h-2 w-2 rounded-full bg-cyan-200 shadow-[0_0_16px_rgba(125,211,252,0.9)]" />
+                      평가 · 피드백 · 리더십 진단
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-[1fr_0.75fr] gap-3">
+                    <div className="h-2 rounded-full bg-gradient-to-r from-cyan-200/80 via-blue-200/70 to-violet-200/60" />
+                    <div className="h-2 rounded-full bg-white/[0.22]" />
                   </div>
                 </div>
-                <div className="mt-4 space-y-2">
-                  <div className="h-2 rounded-full bg-white/30" />
-                  <div className="h-2 w-3/4 rounded-full bg-white/18" />
-                </div>
-              </div>
-
-              <div className="absolute bottom-12 left-12 flex items-center gap-2 rounded-full border border-white/[0.16] bg-slate-950/[0.24] px-4 py-2 text-xs font-semibold text-blue-50 shadow-2xl backdrop-blur-xl">
-                <span className="h-2 w-2 rounded-full bg-cyan-200 shadow-[0_0_16px_rgba(125,211,252,0.9)]" />
-                평가 · 피드백 · 리더십 진단
               </div>
             </div>
           </div>
         </section>
 
-        <section className="mx-auto flex w-full max-w-[30rem] flex-col">
+        <section className="relative mx-auto flex w-full max-w-[30rem] flex-col">
+          <div className="pointer-events-none absolute -inset-8 rounded-[3rem] bg-blue-200/10 blur-3xl" aria-hidden="true" />
           <div className="mb-7 text-center lg:hidden">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl border border-white/30 bg-white/95 shadow-2xl shadow-blue-950/30">
               <svg className="h-9 w-9 text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
