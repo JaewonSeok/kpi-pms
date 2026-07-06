@@ -235,7 +235,14 @@ export const CreatePersonalKpiSchema = z.object({
   kpiName: z.string().min(1).max(100),
   definition: z.string().max(500).optional(),
   formula: z.string().max(500).optional(),
-  targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.'),
+  goalType: z.enum(['GENERAL', 'SALES_REVENUE']).default('GENERAL'),
+  // 프론트엔드에서 BigInt를 JSON으로 직접 전송할 수 없으므로 숫자 문자열로 받아 BigInt로 변환.
+  targetAmount: z
+    .string()
+    .regex(/^\d+$/, 'targetAmount는 0 이상의 정수를 문자열로 입력해 주세요.')
+    .transform((v) => BigInt(v))
+    .optional(),
+  targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.').optional(),
   targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.').optional(),
   targetValueS: z.number().min(0, 'S 목표값은 0 이상이어야 합니다.').optional(),
   weight: z.number().min(0).max(100),
@@ -243,29 +250,37 @@ export const CreatePersonalKpiSchema = z.object({
   linkedOrgKpiId: z.string().optional(),
   // 2026 정책 분류 — 등록 시 작성자가 직접 선택(필수 아님). null/생략은 미분류로 저장되며
   // HR이 사후에 PolicyMapping2026Panel에서 매핑하는 기존 흐름을 그대로 유지.
-  // ※ UpdatePersonalKpiSchema는 의도적으로 미포함(범위 밖) — 본 PR은 POST 생성만 다룸.
   policyCategory: z.enum(['ORG_GOAL', 'PROJECT_T', 'PROJECT_K', 'DAILY_WORK']).nullable().optional(),
-}).refine(
-  (data) => {
+}).superRefine((data, ctx) => {
+  if (data.goalType === 'SALES_REVENUE') {
+    if (data.targetAmount === undefined) {
+      ctx.addIssue({ code: 'custom', message: 'SALES_REVENUE 목표에는 targetAmount가 필수입니다.', path: ['targetAmount'] })
+    } else if (data.targetAmount <= BigInt(0)) {
+      ctx.addIssue({ code: 'custom', message: 'targetAmount는 양수여야 합니다.', path: ['targetAmount'] })
+    }
+    if (data.targetValueT !== undefined || data.targetValueE !== undefined || data.targetValueS !== undefined) {
+      ctx.addIssue({ code: 'custom', message: 'SALES_REVENUE 목표에는 targetValueT/E/S를 입력하지 마세요.', path: ['targetValueT'] })
+    }
+  } else {
+    // GENERAL
+    if (data.targetAmount !== undefined) {
+      ctx.addIssue({ code: 'custom', message: 'GENERAL 목표에는 targetAmount를 사용하지 마세요.', path: ['targetAmount'] })
+    }
+    if (data.targetValueT === undefined) {
+      ctx.addIssue({ code: 'custom', message: 'T 목표값은 0 이상이어야 합니다.', path: ['targetValueT'] })
+      return
+    }
     if (data.targetValueE !== undefined && data.targetValueT > data.targetValueE) {
-      return false
+      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
     }
-
-    if (data.targetValueS !== undefined && data.targetValueE !== undefined) {
-      return data.targetValueE <= data.targetValueS
+    if (data.targetValueE !== undefined && data.targetValueS !== undefined && data.targetValueE > data.targetValueS) {
+      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
     }
-
-    if (data.targetValueS !== undefined) {
-      return data.targetValueT <= data.targetValueS
+    if (data.targetValueE === undefined && data.targetValueS !== undefined && data.targetValueT > data.targetValueS) {
+      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
     }
-
-    return true
-  },
-  {
-    message: '목표값은 T <= E <= S 순서를 유지해 주세요.',
-    path: ['targetValueT'],
   }
-)
+})
 
 export const UpdatePersonalKpiSchema = z.object({
   employeeId: z.string().min(1).optional(),
@@ -274,6 +289,12 @@ export const UpdatePersonalKpiSchema = z.object({
   kpiName: z.string().min(1).max(100).optional(),
   definition: z.string().max(500).optional(),
   formula: z.string().max(500).optional(),
+  goalType: z.enum(['GENERAL', 'SALES_REVENUE']).optional(),
+  targetAmount: z
+    .string()
+    .regex(/^\d+$/, 'targetAmount는 0 이상의 정수를 문자열로 입력해 주세요.')
+    .transform((v) => BigInt(v))
+    .optional(),
   targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.').nullable().optional(),
   targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.').nullable().optional(),
   targetValueS: z.number().min(0, 'S 목표값은 0 이상이어야 합니다.').nullable().optional(),
@@ -281,48 +302,41 @@ export const UpdatePersonalKpiSchema = z.object({
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   linkedOrgKpiId: z.string().nullable().optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
+}).superRefine((data, ctx) => {
+  if (data.goalType === 'SALES_REVENUE') {
+    if (data.targetAmount !== undefined && data.targetAmount <= BigInt(0)) {
+      ctx.addIssue({ code: 'custom', message: 'targetAmount는 양수여야 합니다.', path: ['targetAmount'] })
+    }
+    if (data.targetValueT !== undefined || data.targetValueE !== undefined || data.targetValueS !== undefined) {
+      ctx.addIssue({ code: 'custom', message: 'SALES_REVENUE 목표에는 targetValueT/E/S를 입력하지 마세요.', path: ['targetValueT'] })
+    }
+  }
+  if (data.goalType === 'GENERAL' && data.targetAmount !== undefined) {
+    ctx.addIssue({ code: 'custom', message: 'GENERAL 목표에는 targetAmount를 사용하지 마세요.', path: ['targetAmount'] })
+  }
+  // goalType 미지정이면 페이로드 내 T/E/S 순서만 검증 (서버가 현재 goalType으로 판단)
+  if (data.goalType !== 'SALES_REVENUE') {
+    const usesTargetValues =
+      data.targetValueT !== undefined || data.targetValueE !== undefined || data.targetValueS !== undefined
+    if (!usesTargetValues) return
+    if (data.targetValueT === undefined || data.targetValueT === null) {
+      ctx.addIssue({ code: 'custom', message: 'T 목표값을 입력해 주세요.', path: ['targetValueT'] })
+      return
+    }
+    const tvT = data.targetValueT
+    const tvE = data.targetValueE ?? undefined
+    const tvS = data.targetValueS ?? undefined
+    if (tvE !== undefined && tvE !== null && tvT > tvE) {
+      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
+    }
+    if (tvE !== undefined && tvE !== null && tvS !== undefined && tvS !== null && tvE > tvS) {
+      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
+    }
+    if ((tvE === undefined || tvE === null) && tvS !== undefined && tvS !== null && tvT > tvS) {
+      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
+    }
+  }
 })
-  .refine(
-    (data) => {
-      const usesTargetValues =
-        data.targetValueT !== undefined || data.targetValueE !== undefined || data.targetValueS !== undefined
-
-      if (!usesTargetValues) {
-        return true
-      }
-
-      return data.targetValueT !== undefined && data.targetValueT !== null
-    },
-    {
-      message: 'T 목표값을 입력해 주세요.',
-      path: ['targetValueT'],
-    }
-  )
-  .refine(
-    (data) => {
-      const targetValueT = data.targetValueT ?? undefined
-      const targetValueE = data.targetValueE ?? undefined
-      const targetValueS = data.targetValueS ?? undefined
-
-      if (targetValueT !== undefined && targetValueE !== undefined && targetValueT > targetValueE) {
-        return false
-      }
-
-      if (targetValueE !== undefined && targetValueS !== undefined) {
-        return targetValueE <= targetValueS
-      }
-
-      if (targetValueT !== undefined && targetValueS !== undefined) {
-        return targetValueT <= targetValueS
-      }
-
-      return true
-    },
-    {
-      message: '목표값은 T <= E <= S 순서를 유지해 주세요.',
-      path: ['targetValueT'],
-    }
-  )
 
 export const DeletePersonalKpiSchema = z
   .object({

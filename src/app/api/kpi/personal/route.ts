@@ -131,6 +131,24 @@ export async function POST(request: Request) {
       targetEmployeeDeptId,
     })
 
+    // SALES_REVENUE 목표: 직군 확인 + 중복 방지
+    if (data.goalType === 'SALES_REVENUE') {
+      const empJobCategory = await prisma.employee.findUnique({
+        where: { id: data.employeeId },
+        select: { jobCategory: true },
+      })
+      if (empJobCategory?.jobCategory !== 'SALES') {
+        throw new AppError(400, 'NOT_SALES_EMPLOYEE', '영업 직군(SALES)이 아닌 직원에게는 SALES_REVENUE 목표를 생성할 수 없습니다.')
+      }
+      const existingSalesKpi = await prisma.personalKpi.findFirst({
+        where: { employeeId: data.employeeId, evalYear: data.evalYear, goalType: 'SALES_REVENUE', status: { not: 'ARCHIVED' } },
+        select: { id: true },
+      })
+      if (existingSalesKpi) {
+        throw new AppError(400, 'SALES_KPI_ALREADY_EXISTS', '같은 평가 연도에 이미 SALES_REVENUE 목표가 등록되어 있습니다.')
+      }
+    }
+
     const existingKpis = await prisma.personalKpi.findMany({
       where: {
         employeeId: data.employeeId,
@@ -183,16 +201,21 @@ export async function POST(request: Request) {
       data: {
         employeeId: data.employeeId,
         evalYear: data.evalYear,
-        kpiType: data.kpiType,
+        // SALES_REVENUE는 서버에서 QUANTITATIVE로 고정.
+        kpiType: data.goalType === 'SALES_REVENUE' ? 'QUANTITATIVE' : data.kpiType,
         kpiName: data.kpiName,
         definition: data.definition,
         formula: data.formula,
-        ...buildPersonalKpiTargetValuePersistence({
-          targetValueT: data.targetValueT,
-          targetValueE: data.targetValueE,
-          targetValueS: data.targetValueS,
-          copyMetadata: null,
-        }),
+        goalType: data.goalType,
+        ...(data.goalType === 'SALES_REVENUE'
+          ? { targetAmount: data.targetAmount!, targetValue: null }
+          : buildPersonalKpiTargetValuePersistence({
+              targetValueT: data.targetValueT!,
+              targetValueE: data.targetValueE,
+              targetValueS: data.targetValueS,
+              copyMetadata: null,
+            })
+        ),
         weight: data.weight,
         difficulty: data.difficulty,
         linkedOrgKpiId,
@@ -227,6 +250,8 @@ export async function POST(request: Request) {
         evalYear: kpi.evalYear,
         kpiName: kpi.kpiName,
         kpiType: kpi.kpiType,
+        goalType: kpi.goalType,
+        targetAmount: kpi.targetAmount !== null ? kpi.targetAmount.toString() : null,
         targetValue: resolvedTargetValues.targetValue,
         targetValueT: resolvedTargetValues.targetValueT,
         targetValueE: resolvedTargetValues.targetValueE,
