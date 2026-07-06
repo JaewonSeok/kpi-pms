@@ -85,6 +85,7 @@ model Employee {
   masterLoginPermissionGranted Boolean      @default(false)
   currentSalary   Float          @default(0)
   status          EmployeeStatus @default(ACTIVE)
+  jobCategory     JobCategory    @default(GENERAL)
   profileImageUrl String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -152,6 +153,11 @@ enum Position {
   SECTION_CHIEF
   DIV_HEAD
   CEO
+}
+
+enum JobCategory {
+  GENERAL
+  SALES
 }
 
 enum SystemRole {
@@ -490,6 +496,8 @@ model PersonalKpi {
   linkedOrgKpiId String?
   linkedOrgKpi   OrgKpi?     @relation(fields: [linkedOrgKpiId], references: [id])
   status         KpiStatus   @default(DRAFT)
+  goalType       GoalType    @default(GENERAL)
+  targetAmount   BigInt?
   tags           Json?
   copiedFromPersonalKpiId String?
   copiedFromPersonalKpi   PersonalKpi?  @relation("PersonalKpiCloneSource", fields: [copiedFromPersonalKpiId], references: [id])
@@ -534,6 +542,11 @@ enum KpiStatus {
   DRAFT
   CONFIRMED
   ARCHIVED
+}
+
+enum GoalType {
+  GENERAL
+  SALES_REVENUE
 }
 
 enum BusinessPlanSourceType {
