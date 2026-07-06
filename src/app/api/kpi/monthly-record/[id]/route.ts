@@ -68,19 +68,27 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     let achievementRate = current.achievementRate ?? undefined
-    const nextActualValue = validated.data.actualValue === undefined ? current.actualValue : validated.data.actualValue
-    if (
-      current.personalKpi.kpiType === 'QUANTITATIVE' &&
-      typeof nextActualValue === 'number' &&
-      current.personalKpi.targetValue
-    ) {
-      achievementRate = calcAchievementRate(nextActualValue, current.personalKpi.targetValue)
+    if (current.personalKpi.goalType === 'SALES_REVENUE') {
+      const nextActualAmount = validated.data.actualAmount !== undefined ? validated.data.actualAmount : current.actualAmount
+      if (nextActualAmount !== null && nextActualAmount !== undefined && current.personalKpi.targetAmount !== null && current.personalKpi.targetAmount > BigInt(0)) {
+        achievementRate = Number((nextActualAmount * BigInt(10000)) / current.personalKpi.targetAmount) / 100
+      }
+    } else {
+      const nextActualValue = validated.data.actualValue === undefined ? current.actualValue : validated.data.actualValue
+      if (
+        current.personalKpi.kpiType === 'QUANTITATIVE' &&
+        typeof nextActualValue === 'number' &&
+        current.personalKpi.targetValue
+      ) {
+        achievementRate = calcAchievementRate(nextActualValue, current.personalKpi.targetValue)
+      }
     }
 
     const updated = await prisma.monthlyRecord.update({
       where: { id },
       data: {
         ...(validated.data.actualValue !== undefined ? { actualValue: validated.data.actualValue } : {}),
+        ...(validated.data.actualAmount !== undefined ? { actualAmount: validated.data.actualAmount } : {}),
         ...(validated.data.activities !== undefined ? { activities: validated.data.activities } : {}),
         ...(validated.data.obstacles !== undefined ? { obstacles: validated.data.obstacles } : {}),
         ...(validated.data.efforts !== undefined ? { efforts: validated.data.efforts } : {}),

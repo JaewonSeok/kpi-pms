@@ -524,6 +524,7 @@ export const MonthlyRecordSchema = z.object({
   personalKpiId: z.string().min(1),
   yearMonth: z.string().regex(/^\d{4}-\d{2}$/, 'YYYY-MM 형식으로 입력해 주세요.'),
   actualValue: z.number().optional(),
+  actualAmount: z.string().regex(/^\d+$/, '매출 실적액은 숫자만 입력해 주세요.').transform(BigInt).optional(),
   activities: z.string().max(1000).optional(),
   obstacles: z.string().max(500).optional(),
   efforts: z.string().max(500).optional(),
@@ -534,6 +535,7 @@ export const MonthlyRecordSchema = z.object({
 
 export const UpdateMonthlyRecordSchema = z.object({
   actualValue: z.number().nullable().optional(),
+  actualAmount: z.string().regex(/^\d+$/, '매출 실적액은 숫자만 입력해 주세요.').transform(BigInt).optional(),
   activities: z.string().max(1000).optional(),
   obstacles: z.string().max(500).optional(),
   efforts: z.string().max(500).optional(),

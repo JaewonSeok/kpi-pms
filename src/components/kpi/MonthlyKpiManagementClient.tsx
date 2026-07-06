@@ -41,6 +41,7 @@ import {
 } from '@/lib/monthly-submit-validation'
 import { isAllowedMonthlyEvidenceUrl } from '@/lib/monthly-attachments'
 import { formatCountWithUnit } from '@/lib/metric-copy'
+import { calcSalesScore } from '@/lib/sales-score-policy-2026'
 import { getMonthlyMidCheckScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 import type {
   MonthlyAttachmentViewModel,
@@ -75,6 +76,7 @@ type FilterState = {
 }
 type Draft = {
   actualValue: string
+  actualAmount: string
   activityNote: string
   blockerNote: string
   effortNote: string
@@ -281,12 +283,18 @@ function getSubmitValidationResult(
   canSubmit: boolean,
   draft: Draft | null
 ): MonthlySubmitValidationResult {
+  const isSalesRevenue = record?.goalType === 'SALES_REVENUE'
+  // SALES_REVENUE는 actualAmount로 실적을 입력. evaluateMonthlySubmit의 QUANTITATIVE actualValue
+  // 존재 체크에 sentinel(1)로 "값 있음"을 표시. 달성률 재계산·0 체크 등 부작용 없음.
+  const actualValueForValidation = isSalesRevenue
+    ? (draft?.actualAmount.trim() ? 1 : undefined)
+    : (draft?.actualValue ?? record?.actualValue)
   return evaluateMonthlySubmit({
     hasSelection: Boolean(record),
     hasSubmitPermission: canSubmit,
     status: record?.status,
     type: record?.type,
-    actualValue: draft?.actualValue ?? record?.actualValue,
+    actualValue: actualValueForValidation,
     activityNote: draft?.activityNote ?? record?.activityNote,
     blockerNote: draft?.blockerNote ?? record?.blockerNote,
     effortNote: draft?.effortNote ?? record?.effortNote,
@@ -410,12 +418,19 @@ function getStringArray(value: unknown) {
     : []
 }
 
+function formatActualAmount(raw: string): string {
+  const digits = raw.replace(/[^0-9]/g, '')
+  if (!digits) return ''
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
 function createDraft(record: MonthlyRecordViewModel): Draft {
   return {
     actualValue:
       typeof record.actualValue === 'number' || typeof record.actualValue === 'string'
         ? String(record.actualValue)
         : '',
+    actualAmount: record.actualAmount ? formatActualAmount(record.actualAmount) : '',
     activityNote: record.activityNote ?? '',
     blockerNote: record.blockerNote ?? '',
     effortNote: record.effortNote ?? '',
@@ -1273,12 +1288,18 @@ export function MonthlyKpiManagementClient({
 
     setBusy(mode === 'draft' ? 'save' : 'submit')
     try {
+      const isSalesRevenue = selected.goalType === 'SALES_REVENUE'
       const actualValue =
-        selected.type === 'QUANTITATIVE' && selectedDraft.actualValue.trim()
+        !isSalesRevenue && selected.type === 'QUANTITATIVE' && selectedDraft.actualValue.trim()
           ? Number(selectedDraft.actualValue)
           : undefined
+      const actualAmountRaw = isSalesRevenue
+        ? selectedDraft.actualAmount.replace(/,/g, '').trim()
+        : undefined
+      const actualAmount = actualAmountRaw || undefined
 
       if (
+        !isSalesRevenue &&
         selected.type === 'QUANTITATIVE' &&
         selectedDraft.actualValue.trim() &&
         !Number.isFinite(actualValue)
@@ -1288,6 +1309,7 @@ export function MonthlyKpiManagementClient({
 
       const payload = {
         actualValue,
+        actualAmount,
         activities: selectedDraft.activityNote.trim() || undefined,
         obstacles: selectedDraft.blockerNote.trim() || undefined,
         efforts: selectedDraft.effortNote.trim() || undefined,
@@ -2437,16 +2459,51 @@ function EntryTab({
               </div>
               <div className="mt-4 space-y-4">
                 {selected.type === 'QUANTITATIVE' ? (
-                  <label className="space-y-2">
-                    <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 실적값</span>
-                    <input
-                      value={selectedDraft.actualValue}
-                      onChange={(event) => updateDraft({ actualValue: event.target.value })}
-                      disabled={!canEdit}
-                      inputMode="decimal"
-                      className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
-                    />
-                  </label>
+                  selected.goalType === 'SALES_REVENUE' ? (
+                    <div className="space-y-2">
+                      <label className="space-y-2">
+                        <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 누적 매출액(원)</span>
+                        <input
+                          value={selectedDraft.actualAmount}
+                          onChange={(event) => updateDraft({ actualAmount: formatActualAmount(event.target.value) })}
+                          disabled={!canEdit}
+                          inputMode="numeric"
+                          placeholder="예: 150,000,000"
+                          className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
+                        />
+                      </label>
+                      {(() => {
+                        const raw = selectedDraft.actualAmount.replace(/,/g, '').trim()
+                        const target = selected.targetAmount
+                        if (!raw || !target || target === '0') return null
+                        try {
+                          const actualBig = BigInt(raw)
+                          const targetBig = BigInt(target)
+                          if (targetBig <= BigInt(0)) return null
+                          const rate = Number((actualBig * BigInt(10000)) / targetBig) / 100
+                          const score = calcSalesScore(targetBig, actualBig)
+                          return (
+                            <p className="text-xs text-slate-600">
+                              달성률 {rate.toFixed(1)}% · 현재 페이스 점수 {score}점
+                            </p>
+                          )
+                        } catch {
+                          return null
+                        }
+                      })()}
+                    </div>
+                  ) : (
+                    <label className="space-y-2">
+                      <span className="text-sm font-medium text-slate-700">{monthContext.shortLabel} 실적값</span>
+                      <input
+                        value={selectedDraft.actualValue}
+                        onChange={(event) => updateDraft({ actualValue: event.target.value })}
+                        disabled={!canEdit}
+                        inputMode="decimal"
+                        className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm text-slate-900 disabled:bg-slate-50"
+                      />
+                    </label>
+                  )
                 ) : null}
 
                 <label className="space-y-2">

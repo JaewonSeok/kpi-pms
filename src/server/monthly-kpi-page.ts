@@ -65,8 +65,11 @@ export type MonthlyRecordViewModel = {
   kpiTitle: string
   orgKpiTitle?: string | null
   type: KpiType
+  goalType: 'GENERAL' | 'SALES_REVENUE'
   targetValue?: number | string
+  targetAmount: string | null
   actualValue?: number | string
+  actualAmount: string | null
   achievementRate?: number
   activityNote?: string
   blockerNote?: string
@@ -854,8 +857,11 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         kpiTitle: kpi.kpiName,
         orgKpiTitle: kpi.linkedOrgKpi?.kpiName ?? null,
         type: kpi.kpiType,
+        goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
         targetValue: kpi.targetValue ?? undefined,
+        targetAmount: kpi.targetAmount !== null ? kpi.targetAmount.toString() : null,
         actualValue: currentRecord?.actualValue ?? undefined,
+        actualAmount: currentRecord?.actualAmount !== null && currentRecord?.actualAmount !== undefined ? currentRecord.actualAmount.toString() : null,
         achievementRate: currentRecord?.achievementRate ?? undefined,
         activityNote: currentRecord?.activities ?? undefined,
         blockerNote: currentRecord?.obstacles ?? undefined,
