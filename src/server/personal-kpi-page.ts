@@ -1272,11 +1272,15 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     const alerts: PersonalKpiPageAlert[] = []
     shellAlerts = alerts
 
-    const actorEmployee = await prisma.employee.findUnique({
-      where: { id: params.session.user.id },
-      select: { jobCategory: true },
-    })
-    actor.jobCategory = (actorEmployee?.jobCategory ?? 'GENERAL') as 'GENERAL' | 'SALES'
+    try {
+      const actorEmployee = await prisma.employee.findUnique({
+        where: { id: params.session.user.id },
+        select: { jobCategory: true },
+      })
+      actor.jobCategory = (actorEmployee?.jobCategory ?? 'GENERAL') as 'GENERAL' | 'SALES'
+    } catch (jobCategoryError) {
+      console.warn('[personal-kpi] actorEmployee.jobCategory 조회 실패, 기본값 GENERAL 유지:', jobCategoryError instanceof Error ? jobCategoryError.message : jobCategoryError)
+    }
 
     const scopeDepartmentIds = getPersonalKpiScopeDepartmentIds({
       role: params.session.user.role,
@@ -2023,6 +2027,8 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       requestedEmployeeId: params.employeeId ?? null,
       employeeOptionCount: shellEmployeeOptions.length,
       hasTargetEmployee: Boolean(shellTargetEmployee),
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
       error,
     })
 
