@@ -65,6 +65,7 @@ import {
 } from '@/lib/personal-kpi-target-values'
 import { joinInlineParts } from '@/lib/metric-copy'
 import { getPersonalKpiScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
+import { SALES_SCORE_BANDS_2026 } from '@/lib/sales-score-policy-2026'
 import {
   PmsEmptyIllustration,
   PmsMetricRail,
@@ -101,10 +102,12 @@ type BusyAction =
 type KpiForm = {
   employeeId: string
   evalYear: number
+  goalType: 'GENERAL' | 'SALES_REVENUE'
   kpiType: 'QUANTITATIVE' | 'QUALITATIVE'
   kpiName: string
   definition: string
   formula: string
+  targetAmount: string
   targetValueT: string
   targetValueE: string
   targetValueS: string
@@ -503,14 +506,17 @@ function formatPercent(value?: number) {
   return `${Math.round(value * 10) / 10}%`
 }
 
-function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = ''): KpiForm {
+function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = '', jobCategory: 'GENERAL' | 'SALES' = 'GENERAL'): KpiForm {
+  const isSalesActor = jobCategory === 'SALES'
   return {
     employeeId,
     evalYear: year,
+    goalType: isSalesActor ? 'SALES_REVENUE' : 'GENERAL',
     kpiType: 'QUANTITATIVE',
-    kpiName: '',
+    kpiName: isSalesActor ? '개인 매출목표 달성' : '',
     definition: '',
     formula: '',
+    targetAmount: '',
     targetValueT: '',
     targetValueE: '',
     targetValueS: '',
@@ -557,10 +563,12 @@ function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
   return {
     employeeId: kpi.employeeId,
     evalYear: new Date(kpi.updatedAt ?? Date.now()).getFullYear(),
+    goalType: kpi.goalType,
     kpiType: kpi.type,
     kpiName: kpi.title,
     definition: kpi.definition ?? '',
     formula: kpi.formula ?? '',
+    targetAmount: kpi.targetAmount ?? '',
     targetValueT: toNumberString(targetValues.targetValueT),
     targetValueE: toNumberString(targetValues.targetValueE),
     targetValueS: toNumberString(targetValues.targetValueS),
@@ -673,10 +681,12 @@ function normalizeKpiForm(form: KpiForm) {
   return {
     employeeId: form.employeeId.trim(),
     evalYear: form.evalYear,
+    goalType: form.goalType,
     kpiType: form.kpiType,
     kpiName: form.kpiName.trim(),
     definition: form.definition.trim(),
     formula: form.formula.trim(),
+    targetAmount: form.targetAmount.replace(/,/g, '').trim(),
     targetValueT: form.targetValueT.trim(),
     targetValueE: form.targetValueE.trim(),
     targetValueS: form.targetValueS.trim(),
@@ -994,43 +1004,50 @@ function validateKpiForm(form: KpiForm) {
     return 'KPI명을 입력해 주세요.'
   }
 
-  if (!form.targetValueT.trim()) {
-    return 'T 목표값을 입력해 주세요.'
-  }
-
-  const targetValueT = Number(form.targetValueT)
-  if (!Number.isFinite(targetValueT) || targetValueT < 0) {
-    return 'T 목표값은 0 이상의 숫자로 입력해 주세요.'
-  }
-
-  const targetValueERaw = form.targetValueE.trim()
-  let targetValueE: number | undefined
-  if (targetValueERaw) {
-    targetValueE = Number(targetValueERaw)
-    if (!Number.isFinite(targetValueE) || targetValueE < 0) {
-      return 'E 목표값은 0 이상의 숫자로 입력해 주세요.'
+  if (form.goalType === 'SALES_REVENUE') {
+    const raw = form.targetAmount.replace(/,/g, '').trim()
+    if (!raw) return '매출 목표액을 입력해 주세요.'
+    if (!/^\d+$/.test(raw)) return '매출 목표액은 숫자로만 입력해 주세요.'
+    if (BigInt(raw) <= BigInt(0)) return '매출 목표액은 1 이상이어야 합니다.'
+  } else {
+    if (!form.targetValueT.trim()) {
+      return 'T 목표값을 입력해 주세요.'
     }
-  }
 
-  const targetValueSRaw = form.targetValueS.trim()
-  let targetValueS: number | undefined
-  if (targetValueSRaw) {
-    targetValueS = Number(targetValueSRaw)
-    if (!Number.isFinite(targetValueS) || targetValueS < 0) {
-      return 'S 목표값은 0 이상의 숫자로 입력해 주세요.'
+    const targetValueT = Number(form.targetValueT)
+    if (!Number.isFinite(targetValueT) || targetValueT < 0) {
+      return 'T 목표값은 0 이상의 숫자로 입력해 주세요.'
     }
-  }
 
-  if (targetValueE !== undefined && targetValueT > targetValueE) {
-    return '목표값은 T <= E <= S 순서를 유지해 주세요.'
-  }
+    const targetValueERaw = form.targetValueE.trim()
+    let targetValueE: number | undefined
+    if (targetValueERaw) {
+      targetValueE = Number(targetValueERaw)
+      if (!Number.isFinite(targetValueE) || targetValueE < 0) {
+        return 'E 목표값은 0 이상의 숫자로 입력해 주세요.'
+      }
+    }
 
-  if (targetValueE !== undefined && targetValueS !== undefined && targetValueE > targetValueS) {
-    return '목표값은 T <= E <= S 순서를 유지해 주세요.'
-  }
+    const targetValueSRaw = form.targetValueS.trim()
+    let targetValueS: number | undefined
+    if (targetValueSRaw) {
+      targetValueS = Number(targetValueSRaw)
+      if (!Number.isFinite(targetValueS) || targetValueS < 0) {
+        return 'S 목표값은 0 이상의 숫자로 입력해 주세요.'
+      }
+    }
 
-  if (targetValueE === undefined && targetValueS !== undefined && targetValueT > targetValueS) {
-    return '목표값은 T <= E <= S 순서를 유지해 주세요.'
+    if (targetValueE !== undefined && targetValueT > targetValueE) {
+      return '목표값은 T <= E <= S 순서를 유지해 주세요.'
+    }
+
+    if (targetValueE !== undefined && targetValueS !== undefined && targetValueE > targetValueS) {
+      return '목표값은 T <= E <= S 순서를 유지해 주세요.'
+    }
+
+    if (targetValueE === undefined && targetValueS !== undefined && targetValueT > targetValueS) {
+      return '목표값은 T <= E <= S 순서를 유지해 주세요.'
+    }
   }
 
   if (!form.weight.trim()) {
@@ -1065,8 +1082,8 @@ export function PersonalKpiManagementClient(props: Props) {
   const [selectedReviewId, setSelectedReviewId] = useState(props.reviewQueue[0]?.id ?? '')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorMode, setEditorMode] = useState<EditorMode>('create')
-  const [form, setForm] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId))
-  const [formBaseline, setFormBaseline] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId))
+  const [form, setForm] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory))
+  const [formBaseline, setFormBaseline] = useState<KpiForm>(buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory))
   const [cloneOpen, setCloneOpen] = useState(false)
   const [cloneForm, setCloneForm] = useState<PersonalCloneForm>(buildCloneForm(props))
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
@@ -1400,7 +1417,7 @@ export function PersonalKpiManagementClient(props: Props) {
 
     const transition = getPersonalKpiHeroCtaTransition('create')
     setActiveTab(transition.nextTab)
-    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId))
+    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory))
     setAiPreview(null)
     setSelectedAiRecommendationIndex(null)
     setPendingAiRecommendationIndex(null)
@@ -1591,16 +1608,24 @@ export function PersonalKpiManagementClient(props: Props) {
     setBanner(null)
 
     try {
+      const isSalesRevenue = form.goalType === 'SALES_REVENUE'
+      const targetAmountRaw = isSalesRevenue ? form.targetAmount.replace(/,/g, '').trim() : undefined
+
       const payload = {
         employeeId: form.employeeId,
         evalYear: props.selectedYear,
-        kpiType: form.kpiType,
+        goalType: form.goalType,
+        kpiType: isSalesRevenue ? ('QUANTITATIVE' as const) : form.kpiType,
         kpiName: form.kpiName.trim(),
         definition: form.definition.trim() || undefined,
         formula: form.formula.trim() || undefined,
-        targetValueT: Number(form.targetValueT),
-        targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : undefined,
-        targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : undefined,
+        ...(isSalesRevenue
+          ? { targetAmount: targetAmountRaw }
+          : {
+              targetValueT: Number(form.targetValueT),
+              targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : undefined,
+              targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : undefined,
+            }),
         weight: Number(form.weight),
         difficulty: form.difficulty,
         linkedOrgKpiId: form.linkedOrgKpiId || undefined,
@@ -1625,8 +1650,10 @@ export function PersonalKpiManagementClient(props: Props) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 ...payload,
-                targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : null,
-                targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : null,
+                ...(!isSalesRevenue ? {
+                  targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : null,
+                  targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : null,
+                } : {}),
                 linkedOrgKpiId: form.linkedOrgKpiId || null,
               }),
             })
@@ -2565,6 +2592,10 @@ export function PersonalKpiManagementClient(props: Props) {
           onChange={setForm}
           onClose={() => setEditorOpen(false)}
           onSave={handleSaveForm}
+          actor={props.actor}
+          hasSalesKpiForYear={mineItems.some(
+            (item) => item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED'
+          )}
         />
       ) : null}
       {cloneOpen ? (
@@ -5070,6 +5101,12 @@ function BulkEditPersonalKpiModal(props: {
   )
 }
 
+function formatTargetAmount(raw: string): string {
+  const digits = raw.replace(/[^0-9]/g, '')
+  if (!digits) return ''
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
 function EditorModal(props: {
   mode: EditorMode
   form: KpiForm
@@ -5078,7 +5115,12 @@ function EditorModal(props: {
   onChange: (next: KpiForm | ((current: KpiForm) => KpiForm)) => void
   onClose: () => void
   onSave: () => void
+  actor: Props['actor']
+  hasSalesKpiForYear: boolean
 }) {
+  const isSalesActor = props.actor.jobCategory === 'SALES'
+  const isSalesRevenue = props.form.goalType === 'SALES_REVENUE'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
@@ -5102,34 +5144,90 @@ function EditorModal(props: {
             </p>
           </div>
 
+          {isSalesActor ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <span className="text-sm font-medium text-slate-900">목표 구분</span>
+              <div className="mt-2 flex gap-6">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="goalType"
+                    value="SALES_REVENUE"
+                    checked={isSalesRevenue}
+                    disabled={props.hasSalesKpiForYear && !isSalesRevenue}
+                    onChange={() =>
+                      props.onChange((c) => ({
+                        ...c,
+                        goalType: 'SALES_REVENUE',
+                        kpiName: '개인 매출목표 달성',
+                        kpiType: 'QUANTITATIVE',
+                        targetValueT: '',
+                        targetValueE: '',
+                        targetValueS: '',
+                      }))
+                    }
+                    className="accent-emerald-600"
+                  />
+                  <span className="text-sm">매출목표</span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    type="radio"
+                    name="goalType"
+                    value="GENERAL"
+                    checked={!isSalesRevenue}
+                    onChange={() =>
+                      props.onChange((c) => ({ ...c, goalType: 'GENERAL', targetAmount: '' }))
+                    }
+                    className="accent-emerald-600"
+                  />
+                  <span className="text-sm">일반 목표</span>
+                </label>
+              </div>
+              {props.hasSalesKpiForYear && !isSalesRevenue ? (
+                <p className="mt-2 text-xs text-amber-600">이미 이 연도에 매출목표가 등록되어 있어 매출목표 선택이 제한됩니다.</p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-900">KPI명</span>
               <input
                 value={props.form.kpiName}
                 onChange={(event) => props.onChange((current) => ({ ...current, kpiName: event.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                disabled={isSalesRevenue}
+                className={`w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm ${isSalesRevenue ? 'bg-slate-50 text-slate-500' : ''}`}
                 placeholder="예: 주요 고객 이슈 해결 리드타임 개선"
               />
             </label>
 
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-900">KPI 유형</span>
-              <select
-                value={props.form.kpiType}
-                onChange={(event) =>
-                  props.onChange((current) => ({
-                    ...current,
-                    kpiType: event.target.value as KpiForm['kpiType'],
-                    formula: event.target.value === 'QUALITATIVE' ? '' : current.formula,
-                  }))
-                }
-                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-              >
-                <option value="QUANTITATIVE">정량 KPI</option>
-                <option value="QUALITATIVE">정성 KPI</option>
-              </select>
-            </label>
+            {isSalesRevenue ? (
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-900">KPI 유형</span>
+                <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                  정량 KPI (고정)
+                </div>
+              </label>
+            ) : (
+              <label className="space-y-2">
+                <span className="text-sm font-medium text-slate-900">KPI 유형</span>
+                <select
+                  value={props.form.kpiType}
+                  onChange={(event) =>
+                    props.onChange((current) => ({
+                      ...current,
+                      kpiType: event.target.value as KpiForm['kpiType'],
+                      formula: event.target.value === 'QUALITATIVE' ? '' : current.formula,
+                    }))
+                  }
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                >
+                  <option value="QUANTITATIVE">정량 KPI</option>
+                  <option value="QUALITATIVE">정성 KPI</option>
+                </select>
+              </label>
+            )}
           </div>
 
           <label className="space-y-2">
@@ -5159,57 +5257,114 @@ function EditorModal(props: {
               />
             </label>
 
-            <div className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-slate-900">목표값</span>
-                  <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">T 필수</span>
+            {isSalesRevenue ? (
+              <div className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-slate-900">매출 목표액</div>
+                  <p className="text-xs text-slate-500">연간 매출 목표액을 원(₩) 단위로 입력하세요.</p>
                 </div>
-                <p className="text-xs text-slate-500">T는 필수이며 E와 S는 필요할 때만 입력하세요.</p>
+
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-900">
+                    목표액 <span className="text-rose-600">*</span>
+                  </span>
+                  <input
+                    value={formatTargetAmount(props.form.targetAmount)}
+                    onChange={(event) => {
+                      const raw = event.target.value.replace(/[^0-9]/g, '')
+                      props.onChange((c) => ({ ...c, targetAmount: raw }))
+                    }}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder="예: 500,000,000"
+                  />
+                </label>
+
+                <label className="space-y-2">
+                  <span className="text-sm font-medium text-slate-900">가중치</span>
+                  <input
+                    value={props.form.weight}
+                    onChange={(event) => props.onChange((current) => ({ ...current, weight: event.target.value }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    placeholder="예: 25"
+                  />
+                </label>
+
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                  <div className="mb-2 text-xs font-semibold text-emerald-800">매출 평가 기준 (2026)</div>
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {SALES_SCORE_BANDS_2026.map((band, idx) => {
+                        const prev = SALES_SCORE_BANDS_2026[idx - 1]
+                        const rangLabel =
+                          idx === 0
+                            ? `달성률 ≥ ${band.minBp / 100}%`
+                            : prev
+                            ? `${band.minBp / 100}% ≤ 달성률 < ${prev.minBp / 100}%`
+                            : `달성률 < ${SALES_SCORE_BANDS_2026[idx - 1]?.minBp / 100}%`
+                        return (
+                          <tr key={band.score} className="border-t border-emerald-100 first:border-t-0">
+                            <td className="py-1 pr-3 font-semibold text-emerald-700">{band.score}점</td>
+                            <td className="py-1 text-slate-600">{rangLabel}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+            ) : (
+              <div className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-900">목표값</span>
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">T 필수</span>
+                  </div>
+                  <p className="text-xs text-slate-500">T는 필수이며 E와 S는 필요할 때만 입력하세요.</p>
+                </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-900">T <span className="text-rose-600">*</span></span>
-                  <input
-                    value={props.form.targetValueT}
-                    onChange={(event) => props.onChange((current) => ({ ...current, targetValueT: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                    placeholder={props.form.kpiType === 'QUANTITATIVE' ? '예: 95' : '예: 4'}
-                  />
-                </label>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-900">T <span className="text-rose-600">*</span></span>
+                    <input
+                      value={props.form.targetValueT}
+                      onChange={(event) => props.onChange((current) => ({ ...current, targetValueT: event.target.value }))}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                      placeholder={props.form.kpiType === 'QUANTITATIVE' ? '예: 95' : '예: 4'}
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-900">E</span>
+                    <input
+                      value={props.form.targetValueE}
+                      onChange={(event) => props.onChange((current) => ({ ...current, targetValueE: event.target.value }))}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                      placeholder="선택 입력"
+                    />
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-slate-900">S</span>
+                    <input
+                      value={props.form.targetValueS}
+                      onChange={(event) => props.onChange((current) => ({ ...current, targetValueS: event.target.value }))}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                      placeholder="선택 입력"
+                    />
+                  </label>
+                </div>
 
                 <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-900">E</span>
+                  <span className="text-sm font-medium text-slate-900">가중치</span>
                   <input
-                    value={props.form.targetValueE}
-                    onChange={(event) => props.onChange((current) => ({ ...current, targetValueE: event.target.value }))}
+                    value={props.form.weight}
+                    onChange={(event) => props.onChange((current) => ({ ...current, weight: event.target.value }))}
                     className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                    placeholder="선택 입력"
-                  />
-                </label>
-
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-900">S</span>
-                  <input
-                    value={props.form.targetValueS}
-                    onChange={(event) => props.onChange((current) => ({ ...current, targetValueS: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                    placeholder="선택 입력"
+                    placeholder="예: 25"
                   />
                 </label>
               </div>
-
-              <label className="space-y-2">
-                <span className="text-sm font-medium text-slate-900">가중치</span>
-                <input
-                  value={props.form.weight}
-                  onChange={(event) => props.onChange((current) => ({ ...current, weight: event.target.value }))}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                  placeholder="예: 25"
-                />
-              </label>
-            </div>
+            )}
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">

@@ -222,6 +222,8 @@ export type PersonalKpiViewModel = {
     obstacles?: string | null
     evidenceComment?: string | null
   }>
+  goalType: 'GENERAL' | 'SALES_REVENUE'
+  targetAmount: string | null
   evidenceRecord: {
     recordId?: string
     yearMonth: string
@@ -316,6 +318,7 @@ export type PersonalKpiPageData = {
     role: SystemRole
     name: string
     departmentName: string
+    jobCategory: 'GENERAL' | 'SALES'
   }
 }
 
@@ -1236,6 +1239,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     role: params.session.user.role,
     name: params.session.user.name,
     departmentName: params.session.user.deptName,
+    jobCategory: 'GENERAL' as 'GENERAL' | 'SALES',
   }
   const aiAccess = resolvePersonalKpiAiAccess({
     role: params.session.user.role,
@@ -1267,6 +1271,12 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
   try {
     const alerts: PersonalKpiPageAlert[] = []
     shellAlerts = alerts
+
+    const actorEmployee = await prisma.employee.findUnique({
+      where: { id: params.session.user.id },
+      select: { jobCategory: true },
+    })
+    actor.jobCategory = (actorEmployee?.jobCategory ?? 'GENERAL') as 'GENERAL' | 'SALES'
 
     const scopeDepartmentIds = getPersonalKpiScopeDepartmentIds({
       role: params.session.user.role,
@@ -1843,6 +1853,8 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
             obstacles: record.obstacles,
             evidenceComment: record.evidenceComment,
           })),
+          goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
+          targetAmount: kpi.targetAmount !== null ? kpi.targetAmount.toString() : null,
           evidenceRecord: {
             recordId: evidenceRecord?.id,
             yearMonth: evidenceYearMonth,
