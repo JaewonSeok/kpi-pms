@@ -1909,8 +1909,16 @@ function EntryTab({
       ? 'good'
       : 'warning'
   const selectedActualValue =
-    selectedDraft?.actualValue.trim() ||
-    (typeof selected?.actualValue === 'number' || typeof selected?.actualValue === 'string' ? String(selected.actualValue) : '-')
+    selected?.goalType === 'SALES_REVENUE'
+      ? (() => {
+          const draftAmt = selectedDraft?.actualAmount.trim()
+          if (draftAmt) return draftAmt + ' 원'
+          return selected?.actualAmount ? formatActualAmount(selected.actualAmount) + ' 원' : '-'
+        })()
+      : selectedDraft?.actualValue.trim() ||
+        (typeof selected?.actualValue === 'number' || typeof selected?.actualValue === 'string'
+          ? String(selected.actualValue)
+          : '-')
   const [detailedFiltersOpen, setDetailedFiltersOpen] = useState(false)
   const detailedFiltersDefaultVisible = canReview || totalCount >= 8
   const showDetailedFilters = detailedFiltersDefaultVisible || detailedFiltersOpen
@@ -2325,7 +2333,10 @@ function EntryTab({
                           </div>
                           <div className="mt-2 truncate text-sm font-bold text-slate-950">{record.kpiTitle}</div>
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                            <span>목표 {record.targetValue ?? '-'}</span>
+                            <span>목표 {record.goalType === 'SALES_REVENUE'
+                              ? (record.targetAmount ? formatActualAmount(record.targetAmount) + ' 원' : '-')
+                              : (record.targetValue ?? '-')
+                            }</span>
                             {record.orgKpiTitle ? (
                               <span className="inline-flex items-center gap-1 text-blue-700">
                                 <Link2 className="h-3.5 w-3.5" />
@@ -2439,7 +2450,15 @@ function EntryTab({
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <DetailMetricBox label="목표값" value={`${selected.targetValue ?? '-'}`} helper="월간 기록 기준" />
+              <DetailMetricBox
+                label="목표값"
+                value={
+                  selected.goalType === 'SALES_REVENUE'
+                    ? (selected.targetAmount ? formatActualAmount(selected.targetAmount) + ' 원' : '-')
+                    : `${selected.targetValue ?? '-'}`
+                }
+                helper="월간 기록 기준"
+              />
               <DetailMetricBox label="실적값" value={`${selectedActualValue}`} helper="저장 전 초안 포함" />
               <DetailMetricBox label="가중치" value="KPI 기준" helper="개인 KPI 설정에서 관리" />
               <DetailMetricBox label="증빙" value={formatCountWithUnit(selectedDraft.attachments.length, '건')} helper="파일/링크 포함" />
