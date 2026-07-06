@@ -596,6 +596,7 @@ model MonthlyRecord {
   employee        Employee    @relation(fields: [employeeId], references: [id])
   yearMonth       String
   actualValue     Float?
+  actualAmount    BigInt?
   achievementRate Float?
   activities      String?
   obstacles       String?
