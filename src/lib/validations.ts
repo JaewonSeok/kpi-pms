@@ -158,6 +158,11 @@ export const CreateOrgKpiSchema = z.object({
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   parentOrgKpiId: z.string().nullable().optional(),
+  targetAmount: z.string()
+    .regex(/^\d+$/, 'targetAmount는 0 이상의 정수를 문자열로 입력해 주세요.')
+    .transform((v) => BigInt(v))
+    .refine((v) => v > BigInt(0), 'targetAmount는 양수여야 합니다.')
+    .optional(),
 })
 
 export const UpdateOrgKpiSchema = z.object({
@@ -177,6 +182,13 @@ export const UpdateOrgKpiSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
   parentOrgKpiId: z.string().nullable().optional(),
+  targetAmount: z.union([
+    z.string()
+      .regex(/^\d+$/, 'targetAmount는 0 이상의 정수를 문자열로 입력해 주세요.')
+      .transform((v) => BigInt(v))
+      .refine((v) => v > BigInt(0), 'targetAmount는 양수여야 합니다.'),
+    z.null(),
+  ]).optional(),
 })
   .refine(
     (data) => {

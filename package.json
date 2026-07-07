@@ -52,7 +52,8 @@
     "test:ops": "ts-node -P tsconfig.seed.json tests/ops.test.ts",
     "test:pwa": "ts-node -P tsconfig.seed.json tests/pwa-cache-safety.test.ts",
     "test:resolve-target-amount": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/resolve-target-amount.test.ts",
-    "test:validate-sales-target-source": "ts-node -P tsconfig.seed.json tests/validate-sales-target-source.test.ts"
+    "test:validate-sales-target-source": "ts-node -P tsconfig.seed.json tests/validate-sales-target-source.test.ts",
+    "test:org-kpi-target-amount": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/org-kpi-target-amount.test.ts"
   },
   "prisma": {
     "seed": "ts-node -P tsconfig.seed.json prisma/seed.ts"

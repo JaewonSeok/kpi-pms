@@ -113,8 +113,10 @@ export type OrgKpiViewModel = {
     name: string
     position: string
   }
+  targetAmount?: string | null
   linkedPersonalKpiCount: number
   linkedConfirmedPersonalKpiCount: number
+  linkedReferenceSalesPersonalKpiCount: number
   monthlyAchievementRate?: number
   updatedAt?: string
   coverageRate: number
@@ -1074,6 +1076,9 @@ export async function getOrgKpiPageData(params: {
       const linkedConfirmedPersonalKpiCount = kpi.personalKpis.filter(
         (personalKpi) => personalKpi.status === 'CONFIRMED'
       ).length
+      const linkedReferenceSalesPersonalKpiCount = kpi.personalKpis.filter(
+        (personalKpi) => personalKpi.goalType === 'SALES_REVENUE' && personalKpi.targetAmount === null
+      ).length
       const monthlyAchievementRate = getRecentMonthlyRate(kpi)
       const targetPopulationCount = (employeesByDept.get(kpi.deptId) ?? []).filter(
         (employee) => employee.status === 'ACTIVE'
@@ -1154,8 +1159,10 @@ export async function getOrgKpiPageData(params: {
               position: owner.position,
             }
           : undefined,
+        targetAmount: kpi.targetAmount != null ? kpi.targetAmount.toString() : null,
         linkedPersonalKpiCount: kpi._count.personalKpis,
         linkedConfirmedPersonalKpiCount,
+        linkedReferenceSalesPersonalKpiCount,
         monthlyAchievementRate,
         updatedAt: kpi.updatedAt.toISOString(),
         coverageRate,

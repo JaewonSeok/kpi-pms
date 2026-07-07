@@ -13,6 +13,7 @@ import { validateOrgParentLink } from '@/server/goal-alignment'
 import { deleteOrgKpiRecord } from '@/server/org-kpi-delete'
 import {
   canManageOrgKpiWriteScope,
+  canSetOrgKpiTargetAmount,
   resolveEditableOrgKpiDepartmentIds,
   resolveReadableOrgKpiDepartmentIds,
 } from '@/server/org-kpi-access'
@@ -132,6 +133,10 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const data = validated.data
 
+    if (data.targetAmount !== undefined && !canSetOrgKpiTargetAmount(session.user.role)) {
+      throw new AppError(403, 'FORBIDDEN', '매출 목표액은 관리자(ADMIN/CEO)만 설정할 수 있습니다.')
+    }
+
     const current = await prisma.orgKpi.findUnique({
       where: { id },
       select: {
@@ -213,7 +218,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.targetValueS !== undefined ||
       data.weight !== undefined ||
       data.difficulty !== undefined ||
-      data.tags !== undefined
+      data.tags !== undefined ||
+      data.targetAmount !== undefined
 
     const targetDepartment = await prisma.department.findUnique({
       where: { id: targetDeptId },
@@ -341,6 +347,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           ? { parentOrgKpiId: validatedParentOrgKpiId }
           : {}),
         ...(data.status !== undefined ? { status: data.status } : {}),
+        ...(data.targetAmount !== undefined ? { targetAmount: data.targetAmount } : {}),
       },
       include: {
         department: {
