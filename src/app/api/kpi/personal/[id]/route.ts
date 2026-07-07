@@ -20,6 +20,7 @@ import { canAccessEmployee } from '@/server/auth/authorize'
 import { validatePersonalOrgLink } from '@/server/goal-alignment'
 import { deletePersonalKpiRecord } from '@/server/personal-kpi-delete'
 import { validatePersonalKpiWeightCapForPersistence2026 } from '@/server/kpi-alignment-policy-2026'
+import { checkSalesKpiTargetSource } from '@/lib/validate-sales-target-source'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -239,6 +240,26 @@ export async function PATCH(request: Request, context: RouteContext) {
       })
       if (existingSalesKpi) {
         throw new AppError(400, 'SALES_KPI_ALREADY_EXISTS', '같은 평가 연도에 이미 SALES_REVENUE 목표가 등록되어 있습니다.')
+      }
+    }
+
+    // 참조형/직접형 목표액 유효성 — nextGoalType이 SALES_REVENUE인 모든 저장 경로를 커버.
+    if (nextGoalType === 'SALES_REVENUE') {
+      const nextTargetAmount = data.targetAmount !== undefined ? data.targetAmount : current.targetAmount
+      if (nextTargetAmount === null) {
+        if (!linkedOrgKpiId) {
+          throw new AppError(400, 'SALES_KPI_NO_TARGET', '매출 목표액을 직접 입력하거나, 매출 목표가 설정된 조직 KPI를 연결해야 합니다.')
+        }
+        const orgKpi = await prisma.orgKpi.findUnique({
+          where: { id: linkedOrgKpiId },
+          select: { targetAmount: true },
+        })
+        const check = checkSalesKpiTargetSource({
+          personalTargetAmount: null,
+          linkedOrgKpiId,
+          orgKpiTargetAmount: orgKpi?.targetAmount ?? null,
+        })
+        if (!check.valid) throw new AppError(400, check.code, check.message)
       }
     }
 
