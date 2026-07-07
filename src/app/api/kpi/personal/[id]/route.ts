@@ -150,6 +150,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.kpiName !== undefined ||
       data.definition !== undefined ||
       data.formula !== undefined ||
+      data.goalType !== undefined ||
+      data.targetAmount !== undefined ||
       data.targetValueT !== undefined ||
       data.targetValueE !== undefined ||
       data.targetValueS !== undefined ||
@@ -221,6 +223,25 @@ export async function PATCH(request: Request, context: RouteContext) {
       )
     }
 
+    // goalType=SALES_REVENUE로 변경 또는 기존 SALES_REVENUE KPI 수정 시 검증
+    const nextGoalType = data.goalType ?? current.goalType
+    if (data.goalType === 'SALES_REVENUE') {
+      const empJobCategory = await prisma.employee.findUnique({
+        where: { id: nextEmployeeId },
+        select: { jobCategory: true },
+      })
+      if (empJobCategory?.jobCategory !== 'SALES') {
+        throw new AppError(400, 'NOT_SALES_EMPLOYEE', '영업 직군(SALES)이 아닌 직원에게는 SALES_REVENUE 목표를 적용할 수 없습니다.')
+      }
+      const existingSalesKpi = await prisma.personalKpi.findFirst({
+        where: { employeeId: nextEmployeeId, evalYear: nextEvalYear, goalType: 'SALES_REVENUE', status: { not: 'ARCHIVED' }, id: { not: id } },
+        select: { id: true },
+      })
+      if (existingSalesKpi) {
+        throw new AppError(400, 'SALES_KPI_ALREADY_EXISTS', '같은 평가 연도에 이미 SALES_REVENUE 목표가 등록되어 있습니다.')
+      }
+    }
+
     if (hasFieldUpdates || data.employeeId !== undefined || data.evalYear !== undefined || data.weight !== undefined) {
       const related = await prisma.personalKpi.findMany({
         where: {
@@ -281,11 +302,18 @@ export async function PATCH(request: Request, context: RouteContext) {
       data: {
         ...(data.employeeId !== undefined ? { employeeId: data.employeeId } : {}),
         ...(data.evalYear !== undefined ? { evalYear: data.evalYear } : {}),
-        ...(data.kpiType !== undefined ? { kpiType: data.kpiType } : {}),
+        // SALES_REVENUE로 변경 시 kpiType을 QUANTITATIVE로 고정.
+        ...(data.goalType === 'SALES_REVENUE'
+          ? { kpiType: 'QUANTITATIVE' }
+          : data.kpiType !== undefined
+          ? { kpiType: data.kpiType }
+          : {}),
         ...(data.kpiName !== undefined ? { kpiName: data.kpiName } : {}),
         ...(data.definition !== undefined ? { definition: data.definition || null } : {}),
         ...(data.formula !== undefined ? { formula: data.formula || null } : {}),
-        ...(data.targetValueT !== undefined && data.targetValueT !== null
+        ...(data.goalType !== undefined ? { goalType: data.goalType } : {}),
+        ...(data.targetAmount !== undefined ? { targetAmount: data.targetAmount } : {}),
+        ...(nextGoalType !== 'SALES_REVENUE' && data.targetValueT !== undefined && data.targetValueT !== null
           ? buildPersonalKpiTargetValuePersistence({
               targetValueT: data.targetValueT,
               targetValueE: data.targetValueE ?? null,
@@ -333,6 +361,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         kpiName: current.kpiName,
         definition: current.definition,
         formula: current.formula,
+        goalType: current.goalType,
+        targetAmount: current.targetAmount !== null ? current.targetAmount.toString() : null,
         targetValue: resolvedCurrentTargetValues.targetValue,
         targetValueT: resolvedCurrentTargetValues.targetValueT,
         targetValueE: resolvedCurrentTargetValues.targetValueE,
@@ -350,6 +380,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         kpiName: updated.kpiName,
         definition: updated.definition,
         formula: updated.formula,
+        goalType: updated.goalType,
+        targetAmount: updated.targetAmount !== null ? updated.targetAmount.toString() : null,
         targetValue: resolvedUpdatedTargetValues.targetValue,
         targetValueT: resolvedUpdatedTargetValues.targetValueT,
         targetValueE: resolvedUpdatedTargetValues.targetValueE,

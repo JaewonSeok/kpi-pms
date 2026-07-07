@@ -34,8 +34,15 @@ export class AppError extends Error {
   }
 }
 
+function bigintReplacer(_key: string, value: unknown) {
+  return typeof value === 'bigint' ? value.toString() : value
+}
+
 export function successResponse<T>(data: T, pagination?: ApiResponse<T>['pagination']) {
-  return Response.json({ success: true, data, pagination })
+  return new Response(
+    JSON.stringify({ success: true, data, pagination }, bigintReplacer),
+    { headers: { 'Content-Type': 'application/json' } },
+  )
 }
 
 export function errorResponse(

@@ -189,7 +189,7 @@ run('personal KPI create CTA transition opens editor even outside ready state', 
   const file = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
   assert.deepEqual(transition, { nextTab: 'mine', openEditor: true })
-  assert.equal(file.includes("openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId))"), true)
+  assert.equal(file.includes("openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory))"), true)
   assert.equal(file.includes('setAiPreview(null)'), true)
   assert.equal(file.includes('setEditorOpen(true)'), true)
 })

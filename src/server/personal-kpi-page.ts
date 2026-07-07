@@ -222,6 +222,8 @@ export type PersonalKpiViewModel = {
     obstacles?: string | null
     evidenceComment?: string | null
   }>
+  goalType: 'GENERAL' | 'SALES_REVENUE'
+  targetAmount: string | null
   evidenceRecord: {
     recordId?: string
     yearMonth: string
@@ -316,6 +318,7 @@ export type PersonalKpiPageData = {
     role: SystemRole
     name: string
     departmentName: string
+    jobCategory: 'GENERAL' | 'SALES'
   }
 }
 
@@ -426,6 +429,7 @@ type EmployeeLite = Prisma.EmployeeGetPayload<{
     teamLeaderId: true
     sectionChiefId: true
     divisionHeadId: true
+    jobCategory: true
   }
 }>
 
@@ -1236,6 +1240,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     role: params.session.user.role,
     name: params.session.user.name,
     departmentName: params.session.user.deptName,
+    jobCategory: 'GENERAL' as 'GENERAL' | 'SALES',
   }
   const aiAccess = resolvePersonalKpiAiAccess({
     role: params.session.user.role,
@@ -1288,6 +1293,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         teamLeaderId: true,
         sectionChiefId: true,
         divisionHeadId: true,
+        jobCategory: true,
       },
       orderBy: [{ deptId: 'asc' }, { empName: 'asc' }],
     })
@@ -1351,6 +1357,9 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       (canManagePersonalKpi(params.session.user.role) ? employees[0] : undefined)
     const targetEmployee = requestedEmployee ?? defaultTargetEmployee
     shellTargetEmployee = targetEmployee
+
+    // KPI 대상자(화면 주인)의 직군. viewer가 아님. 임퍼소네이션 시 대상자 기준.
+    actor.jobCategory = (targetEmployee?.jobCategory ?? 'GENERAL') as 'GENERAL' | 'SALES'
 
     if (requestedEmployeeId && !requestedEmployee) {
       return {
@@ -1843,6 +1852,8 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
             obstacles: record.obstacles,
             evidenceComment: record.evidenceComment,
           })),
+          goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
+          targetAmount: kpi.targetAmount != null ? kpi.targetAmount.toString() : null,
           evidenceRecord: {
             recordId: evidenceRecord?.id,
             yearMonth: evidenceYearMonth,
@@ -2011,6 +2022,8 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       requestedEmployeeId: params.employeeId ?? null,
       employeeOptionCount: shellEmployeeOptions.length,
       hasTargetEmployee: Boolean(shellTargetEmployee),
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorMessage: error instanceof Error ? error.message : String(error),
       error,
     })
 

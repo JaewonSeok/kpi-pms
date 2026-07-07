@@ -34,6 +34,7 @@ import {
   type EvaluationStageForDailyWorkRule2026,
 } from '@/server/kpi-alignment-policy-2026'
 import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
+import { resolveItemScore } from '@/lib/evaluation-item-score'
 
 type NextStageEntry = {
   stage: EvalStage
@@ -144,15 +145,40 @@ export async function PATCH(
         }
 
         const kpi = evaluationItem.personalKpi
-        const normalizedScore =
-          kpi.kpiType === 'QUANTITATIVE'
-            ? itemInput.quantScore || 0
-            : calcPdcaScore(
-                itemInput.planScore || 0,
-                itemInput.doScore || 0,
-                itemInput.checkScore || 0,
-                itemInput.actScore || 0
-              )
+
+        // SALES_REVENUE: look up the latest confirmed monthly record that has an actualAmount.
+        // actualAmount: { not: null } filters in WHERE but Prisma still types the field as bigint|null
+        // after the query — null-check below narrows it for calcSalesScore.
+        const salesRecord =
+          kpi.goalType === 'SALES_REVENUE'
+            ? await tx.monthlyRecord.findFirst({
+                where: {
+                  personalKpiId: kpi.id,
+                  isDraft: false,
+                  actualAmount: { not: null },
+                },
+                orderBy: { yearMonth: 'desc' },
+                select: { actualAmount: true },
+              })
+            : null
+
+        const scoreResult = resolveItemScore({
+          goalType: kpi.goalType,
+          kpiType: kpi.kpiType,
+          targetAmount: kpi.targetAmount ?? null,
+          salesActualAmount: salesRecord?.actualAmount ?? null,
+          quantScore: itemInput.quantScore,
+          planScore: itemInput.planScore,
+          doScore: itemInput.doScore,
+          checkScore: itemInput.checkScore,
+          actScore: itemInput.actScore,
+        })
+
+        if (!scoreResult.ok) {
+          throw new AppError(409, scoreResult.code, scoreResult.message)
+        }
+
+        const normalizedScore = scoreResult.score
 
         // 2026 DAILY_WORK 점수 cap 즉시 적용 — dormant flag와 무관하게 데이터 정합성 보호.
         // 81~100 점수가 schema(0-100)를 통과해 그대로 저장되던 갭을 라우트에서 봉합.

@@ -47,4 +47,7 @@ next-env.d.ts
 
 # local exports / large binaries
 claude_activity_*.csv
+
+# local stash docs
+_stash_docs/
 docs/reference/

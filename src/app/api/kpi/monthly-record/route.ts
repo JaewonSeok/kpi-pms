@@ -98,7 +98,9 @@ export async function POST(request: Request) {
     }
 
     let achievementRate: number | undefined
-    if (kpi.kpiType === 'QUANTITATIVE' && data.actualValue !== undefined && kpi.targetValue) {
+    if (kpi.goalType === 'SALES_REVENUE' && data.actualAmount !== undefined && kpi.targetAmount !== null && kpi.targetAmount > BigInt(0)) {
+      achievementRate = Number((data.actualAmount * BigInt(10000)) / kpi.targetAmount) / 100
+    } else if (kpi.kpiType === 'QUANTITATIVE' && data.actualValue !== undefined && kpi.targetValue) {
       achievementRate = calcAchievementRate(data.actualValue, kpi.targetValue)
     }
 
@@ -108,7 +110,12 @@ export async function POST(request: Request) {
         hasSubmitPermission: true,
         status: 'DRAFT',
         type: kpi.kpiType,
-        actualValue: data.actualValue,
+        // SALES_REVENUE는 actualAmount로 실적을 입력하므로 evaluateMonthlySubmit의
+        // QUANTITATIVE actualValue 존재 체크에 sentinel(1)로 "값 있음"을 표시.
+        // evaluateMonthlySubmit 내부에서 actualValue로 달성률 재계산이나 0 체크는 하지 않아 부작용 없음.
+        actualValue: kpi.goalType === 'SALES_REVENUE'
+          ? (data.actualAmount !== undefined ? 1 : undefined)
+          : data.actualValue,
         activityNote: data.activities,
         blockerNote: data.obstacles,
         effortNote: data.efforts,
@@ -148,6 +155,7 @@ export async function POST(request: Request) {
         employeeId: kpi.employeeId,
         yearMonth: data.yearMonth,
         actualValue: data.actualValue,
+        actualAmount: data.actualAmount,
         achievementRate,
         activities: data.activities,
         obstacles: data.obstacles,
@@ -159,6 +167,7 @@ export async function POST(request: Request) {
       },
       update: {
         actualValue: data.actualValue,
+        actualAmount: data.actualAmount,
         achievementRate,
         activities: data.activities,
         obstacles: data.obstacles,
