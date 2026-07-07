@@ -45,6 +45,7 @@ import {
   type OrgKpiPersonalMboClassification2026,
   type PersonalMboItemInput2026,
 } from './kpi-alignment-policy-2026'
+import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 
 export type PersonalKpiPageState =
   | 'ready'
@@ -1853,7 +1854,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
             evidenceComment: record.evidenceComment,
           })),
           goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
-          targetAmount: kpi.targetAmount != null ? kpi.targetAmount.toString() : null,
+          targetAmount: resolveTargetAmount(kpi)?.toString() ?? null,
           evidenceRecord: {
             recordId: evidenceRecord?.id,
             yearMonth: evidenceYearMonth,

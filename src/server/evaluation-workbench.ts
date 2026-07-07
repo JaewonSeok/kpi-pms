@@ -26,6 +26,7 @@ import {
   type EvaluationAdjustmentStage,
 } from '@/server/evaluation-scoring-2026'
 import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
+import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 
 export type EvaluationWorkbenchState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -1518,10 +1519,7 @@ export async function getEvaluationWorkbenchPageData(
           weightedScore: item.weightedScore,
           itemComment: item.itemComment,
           goalType: item.personalKpi.goalType as 'GENERAL' | 'SALES_REVENUE',
-          targetAmount:
-            item.personalKpi.targetAmount != null
-              ? String(item.personalKpi.targetAmount)
-              : null,
+          targetAmount: resolveTargetAmount(item.personalKpi)?.toString() ?? null,
           latestConfirmedActualAmount: (() => {
             const confirmed = item.personalKpi.monthlyRecords.find(
               (r) => !r.isDraft && r.actualAmount != null

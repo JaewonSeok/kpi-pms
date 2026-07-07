@@ -50,7 +50,8 @@
     "test:ai-competency-seeded": "ts-node -P tsconfig.seed.json tests/ai-competency-seeded-runtime.test.ts",
     "test:notifications": "ts-node -P tsconfig.seed.json tests/notifications.test.ts",
     "test:ops": "ts-node -P tsconfig.seed.json tests/ops.test.ts",
-    "test:pwa": "ts-node -P tsconfig.seed.json tests/pwa-cache-safety.test.ts"
+    "test:pwa": "ts-node -P tsconfig.seed.json tests/pwa-cache-safety.test.ts",
+    "test:resolve-target-amount": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/resolve-target-amount.test.ts"
   },
   "prisma": {
     "seed": "ts-node -P tsconfig.seed.json prisma/seed.ts"

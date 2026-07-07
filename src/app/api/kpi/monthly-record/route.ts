@@ -7,6 +7,7 @@ import { evaluateMonthlySubmit } from '@/lib/monthly-submit-validation'
 import { AppError, calcAchievementRate, errorResponse, successResponse } from '@/lib/utils'
 import { MonthlyRecordSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
+import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 
 function canManage(role: string) {
   return ['ROLE_ADMIN', 'ROLE_CEO', 'ROLE_DIV_HEAD', 'ROLE_SECTION_CHIEF', 'ROLE_TEAM_LEADER'].includes(role)
@@ -82,6 +83,7 @@ export async function POST(request: Request) {
             deptId: true,
           },
         },
+        linkedOrgKpi: { select: { targetAmount: true } },
       },
     })
 
@@ -98,8 +100,9 @@ export async function POST(request: Request) {
     }
 
     let achievementRate: number | undefined
-    if (kpi.goalType === 'SALES_REVENUE' && data.actualAmount !== undefined && kpi.targetAmount !== null && kpi.targetAmount > BigInt(0)) {
-      achievementRate = Number((data.actualAmount * BigInt(10000)) / kpi.targetAmount) / 100
+    const effectiveTargetAmount = resolveTargetAmount(kpi)
+    if (kpi.goalType === 'SALES_REVENUE' && data.actualAmount !== undefined && effectiveTargetAmount !== null && effectiveTargetAmount > BigInt(0)) {
+      achievementRate = Number((data.actualAmount * BigInt(10000)) / effectiveTargetAmount) / 100
     } else if (kpi.kpiType === 'QUANTITATIVE' && data.actualValue !== undefined && kpi.targetValue) {
       achievementRate = calcAchievementRate(data.actualValue, kpi.targetValue)
     }

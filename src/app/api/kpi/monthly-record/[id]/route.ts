@@ -7,6 +7,7 @@ import { AppError, calcAchievementRate, errorResponse, successResponse } from '@
 import { UpdateMonthlyRecordSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
 import { resolveMonthlyOperationalStatus } from '@/server/monthly-kpi-workflow'
+import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -30,6 +31,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         personalKpi: {
           include: {
             employee: true,
+            linkedOrgKpi: { select: { targetAmount: true } },
           },
         },
       },
@@ -70,8 +72,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     let achievementRate = current.achievementRate ?? undefined
     if (current.personalKpi.goalType === 'SALES_REVENUE') {
       const nextActualAmount = validated.data.actualAmount !== undefined ? validated.data.actualAmount : current.actualAmount
-      if (nextActualAmount !== null && nextActualAmount !== undefined && current.personalKpi.targetAmount !== null && current.personalKpi.targetAmount > BigInt(0)) {
-        achievementRate = Number((nextActualAmount * BigInt(10000)) / current.personalKpi.targetAmount) / 100
+      const effectiveTargetAmount = resolveTargetAmount(current.personalKpi)
+      if (nextActualAmount !== null && nextActualAmount !== undefined && effectiveTargetAmount !== null && effectiveTargetAmount > BigInt(0)) {
+        achievementRate = Number((nextActualAmount * BigInt(10000)) / effectiveTargetAmount) / 100
       }
     } else {
       const nextActualValue = validated.data.actualValue === undefined ? current.actualValue : validated.data.actualValue
