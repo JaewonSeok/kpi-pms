@@ -35,6 +35,7 @@ import {
   type EvaluationPerformanceBriefingSnapshot,
 } from '@/lib/evaluation-performance-briefing'
 import { getResultWritingScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
+import { calcSalesScore } from '@/lib/sales-score-policy-2026'
 import { EvaluationPerformanceBriefingPanel } from '@/components/evaluation/EvaluationPerformanceBriefingPanel'
 import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewReferencePanel'
 import { useImpersonationRiskAction } from '@/components/security/useImpersonationRiskAction'
@@ -2336,7 +2337,39 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                             ) : null}
                           </div>
 
-                          {item.type === 'QUANTITATIVE' ? (
+                          {item.goalType === 'SALES_REVENUE' ? (
+                            <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3">
+                              {(() => {
+                                const targetAmt = item.targetAmount
+                                const actualAmt = item.latestConfirmedActualAmount
+                                if (!targetAmt || !actualAmt) {
+                                  return (
+                                    <p className="text-sm font-semibold text-amber-600">
+                                      매출 실적 미입력 — 제출 불가
+                                    </p>
+                                  )
+                                }
+                                try {
+                                  const score = calcSalesScore(BigInt(targetAmt), BigInt(actualAmt))
+                                  const rate =
+                                    Number((BigInt(actualAmt) * BigInt(10000)) / BigInt(targetAmt)) / 100
+                                  return (
+                                    <p className="text-sm text-slate-700">
+                                      자동 산정:{' '}
+                                      <span className="font-semibold">{score}점</span>
+                                      {' '}(달성률 {rate.toFixed(1)}%)
+                                    </p>
+                                  )
+                                } catch {
+                                  return (
+                                    <p className="text-sm font-semibold text-red-600">
+                                      점수 산정 오류 — 실적 금액을 확인해 주세요
+                                    </p>
+                                  )
+                                }
+                              })()}
+                            </div>
+                          ) : item.type === 'QUANTITATIVE' ? (
                             <div className="mt-4 grid gap-4 md:grid-cols-[140px_minmax(0,1fr)]">
                               <label className="space-y-2">
                                 <span className="text-sm font-semibold text-slate-700">점수</span>

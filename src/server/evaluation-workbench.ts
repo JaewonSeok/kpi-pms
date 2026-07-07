@@ -206,6 +206,9 @@ export type EvaluationWorkbenchPageData = {
       actScore?: number | null
       weightedScore?: number | null
       itemComment?: string | null
+      goalType?: 'GENERAL' | 'SALES_REVENUE' | null
+      targetAmount?: string | null
+      latestConfirmedActualAmount?: string | null
       goalContext: {
         periodLabel: string
         collaborators: string[]
@@ -1514,6 +1517,17 @@ export async function getEvaluationWorkbenchPageData(
           actScore: item.actScore,
           weightedScore: item.weightedScore,
           itemComment: item.itemComment,
+          goalType: item.personalKpi.goalType as 'GENERAL' | 'SALES_REVENUE',
+          targetAmount:
+            item.personalKpi.targetAmount != null
+              ? String(item.personalKpi.targetAmount)
+              : null,
+          latestConfirmedActualAmount: (() => {
+            const confirmed = item.personalKpi.monthlyRecords.find(
+              (r) => !r.isDraft && r.actualAmount != null
+            )
+            return confirmed?.actualAmount != null ? String(confirmed.actualAmount) : null
+          })(),
           goalContext: {
             periodLabel: buildGoalContextPeriodLabel({
               cycleYear: selectedEvaluation.evalCycle.evalYear,

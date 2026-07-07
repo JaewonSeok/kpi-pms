@@ -41,6 +41,7 @@
     "test:sales-score-policy": "ts-node -P tsconfig.seed.json tests/sales-score-policy-2026.test.ts",
     "test:personal-kpi-sales": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/personal-kpi-sales-schema.test.ts",
     "test:monthly-record-sales": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/monthly-record-sales.test.ts",
+    "test:evaluation-submit-sales-score": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/evaluation-submit-sales-score.test.ts",
     "test:google-workspace": "ts-node -P tsconfig.seed.json tests/google-workspace.test.ts",
     "test:auth": "ts-node -P tsconfig.seed.json tests/auth-rbac.test.ts && ts-node -P tsconfig.seed.json tests/google-auth-flow.test.ts",
     "test:master-login": "ts-node -P tsconfig.seed.json tests/master-login.test.ts && ts-node -P tsconfig.seed.json tests/master-login-permission-service.test.ts && ts-node -P tsconfig.seed.json tests/impersonation-risk.test.ts",
