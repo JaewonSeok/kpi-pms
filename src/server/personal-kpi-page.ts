@@ -1853,7 +1853,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
             evidenceComment: record.evidenceComment,
           })),
           goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
-          targetAmount: kpi.targetAmount !== null ? kpi.targetAmount.toString() : null,
+          targetAmount: kpi.targetAmount != null ? kpi.targetAmount.toString() : null,
           evidenceRecord: {
             recordId: evidenceRecord?.id,
             yearMonth: evidenceYearMonth,

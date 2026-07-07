@@ -638,6 +638,8 @@ async function main() {
             data.forEach((item, index) => {
               personalKpis.push({
                 id: `boot-${createdCount}-${index}`,
+                goalType: 'GENERAL',
+                targetAmount: null,
                 ...item,
                 employee: {
                   empName:
@@ -1578,7 +1580,7 @@ async function main() {
   await run('personal KPI AI draft generation keeps a default linked org KPI in zero-KPI self-service context', () => {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
-    assert.equal(source.includes("function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = '')"), true)
+    assert.equal(source.includes("function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = '', jobCategory: 'GENERAL' | 'SALES' = 'GENERAL')"), true)
     assert.equal(source.includes('const defaultLinkedOrgKpiId = props.orgKpiOptions[0]?.id ?? \'\''), true)
     assert.equal(source.includes('linkedOrgKpiId: defaultLinkedOrgKpiId,'), true)
     assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), true)

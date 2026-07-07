@@ -859,7 +859,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         type: kpi.kpiType,
         goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
         targetValue: kpi.targetValue ?? undefined,
-        targetAmount: kpi.targetAmount !== null ? kpi.targetAmount.toString() : null,
+        targetAmount: kpi.targetAmount != null ? kpi.targetAmount.toString() : null,
         actualValue: currentRecord?.actualValue ?? undefined,
         actualAmount: currentRecord?.actualAmount !== null && currentRecord?.actualAmount !== undefined ? currentRecord.actualAmount.toString() : null,
         achievementRate: currentRecord?.achievementRate ?? undefined,
