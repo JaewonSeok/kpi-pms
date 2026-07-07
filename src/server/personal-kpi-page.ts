@@ -429,6 +429,7 @@ type EmployeeLite = Prisma.EmployeeGetPayload<{
     teamLeaderId: true
     sectionChiefId: true
     divisionHeadId: true
+    jobCategory: true
   }
 }>
 
@@ -1272,16 +1273,6 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     const alerts: PersonalKpiPageAlert[] = []
     shellAlerts = alerts
 
-    try {
-      const actorEmployee = await prisma.employee.findUnique({
-        where: { id: params.session.user.id },
-        select: { jobCategory: true },
-      })
-      actor.jobCategory = (actorEmployee?.jobCategory ?? 'GENERAL') as 'GENERAL' | 'SALES'
-    } catch (jobCategoryError) {
-      console.warn('[personal-kpi] actorEmployee.jobCategory 조회 실패, 기본값 GENERAL 유지:', jobCategoryError instanceof Error ? jobCategoryError.message : jobCategoryError)
-    }
-
     const scopeDepartmentIds = getPersonalKpiScopeDepartmentIds({
       role: params.session.user.role,
       deptId: params.session.user.deptId,
@@ -1302,6 +1293,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         teamLeaderId: true,
         sectionChiefId: true,
         divisionHeadId: true,
+        jobCategory: true,
       },
       orderBy: [{ deptId: 'asc' }, { empName: 'asc' }],
     })
@@ -1365,6 +1357,9 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       (canManagePersonalKpi(params.session.user.role) ? employees[0] : undefined)
     const targetEmployee = requestedEmployee ?? defaultTargetEmployee
     shellTargetEmployee = targetEmployee
+
+    // KPI 대상자(화면 주인)의 직군. viewer가 아님. 임퍼소네이션 시 대상자 기준.
+    actor.jobCategory = (targetEmployee?.jobCategory ?? 'GENERAL') as 'GENERAL' | 'SALES'
 
     if (requestedEmployeeId && !requestedEmployee) {
       return {
