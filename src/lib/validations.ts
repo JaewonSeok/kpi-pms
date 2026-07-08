@@ -247,7 +247,7 @@ export const CreatePersonalKpiSchema = z.object({
   kpiName: z.string().min(1).max(100),
   definition: z.string().max(500).optional(),
   formula: z.string().max(500).optional(),
-  goalType: z.enum(['GENERAL', 'SALES_REVENUE']).default('GENERAL'),
+  goalType: z.enum(['GENERAL', 'SALES_REVENUE']),
   // 프론트엔드에서 BigInt를 JSON으로 직접 전송할 수 없으므로 숫자 문자열로 받아 BigInt로 변환.
   targetAmount: z
     .string()

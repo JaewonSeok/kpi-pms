@@ -1583,7 +1583,46 @@ async function main() {
     assert.equal(source.includes("function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = '', jobCategory: 'GENERAL' | 'SALES' = 'GENERAL')"), true)
     assert.equal(source.includes('props.orgKpiOptions.find((o) => o.targetAmount)?.id ??'), true)
     assert.equal(source.includes('linkedOrgKpiId: defaultLinkedOrgKpiId,'), true)
-    assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), true)
+    // Must pass jobCategory in every call site — 3-arg form omits it and was the root cause of GENERAL saves for SALES employees
+    assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), false)
+    assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory)'), true)
+  })
+
+  await run('useEffect employee-switch reset passes actor jobCategory so SALES form stays SALES_REVENUE', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const effectStart = source.indexOf('setSelectedReviewId(props.reviewQueue[0]?.id')
+    const effectEnd = source.indexOf('}, [props.selectedEmployeeId, props.selectedYear', effectStart)
+    const effectBlock = source.slice(effectStart, effectEnd)
+
+    assert.notEqual(effectStart, -1)
+    assert.notEqual(effectEnd, -1)
+    // The effect must NOT call buildEmptyForm with only 3 args (missing jobCategory)
+    assert.equal(effectBlock.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), false)
+    // The effect must use all 4 args including jobCategory
+    assert.equal(effectBlock.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory)'), true)
+  })
+
+  await run('CreatePersonalKpiSchema goalType has no default — missing goalType must fail validation not silently become GENERAL', () => {
+    const source = read('src/lib/validations.ts')
+
+    // Silent default was the server-side path that turned missing goalType into GENERAL
+    assert.equal(source.includes("goalType: z.enum(['GENERAL', 'SALES_REVENUE']).default('GENERAL')"), false)
+    // Required (no default) so any payload that omits goalType returns 400 instead of creating a GENERAL KPI
+    assert.equal(source.includes("goalType: z.enum(['GENERAL', 'SALES_REVENUE'])"), true)
+  })
+
+  await run('handleSaveForm always puts goalType in the POST payload unconditionally', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const saveStart = source.indexOf('async function handleSaveForm()')
+    const payloadStart = source.indexOf('const payload = {', saveStart)
+    const payloadEnd = source.indexOf('const createPayload = {', payloadStart)
+    const payloadBlock = source.slice(payloadStart, payloadEnd)
+
+    assert.notEqual(saveStart, -1)
+    assert.notEqual(payloadStart, -1)
+    assert.notEqual(payloadEnd, -1)
+    // goalType must be an unconditional key in the payload object (not inside a conditional spread)
+    assert.equal(payloadBlock.includes('goalType: form.goalType,'), true)
   })
 
   await run('personal KPI AI route now uses the same access resolver as the page', () => {

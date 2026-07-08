@@ -103,13 +103,13 @@ run('CREATE GENERAL 정상: goalType 명시, targetValueT 있음 → pass', () =
   assert.equal(result.data?.goalType, 'GENERAL')
 })
 
-run('CREATE GENERAL goalType 생략 → default GENERAL, targetValueT 필수', () => {
+run('CREATE goalType 생략 → fail (silent GENERAL default 없음)', () => {
   const result = CreatePersonalKpiSchema.safeParse({
     ...BASE_CREATE,
     targetValueT: 50,
   })
-  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
-  assert.equal(result.data?.goalType, 'GENERAL')
+  assert.ok(!result.success, 'goalType 없이 통과되어선 안 됨')
+  assert.ok(result.error.issues.some((i) => i.path.includes('goalType')), '에러 경로에 goalType 포함 필요')
 })
 
 run('CREATE GENERAL + targetAmount 포함 → fail', () => {

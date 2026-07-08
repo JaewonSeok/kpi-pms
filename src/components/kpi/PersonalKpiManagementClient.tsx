@@ -1156,7 +1156,7 @@ export function PersonalKpiManagementClient(props: Props) {
         : props.mine[0]?.id ?? ''
     )
     setSelectedReviewId(props.reviewQueue[0]?.id ?? '')
-    const emptyForm = buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)
+    const emptyForm = buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory)
     setForm(emptyForm)
     setFormBaseline(emptyForm)
     setEditorOpen(false)
