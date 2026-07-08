@@ -13,3 +13,8 @@ run('validate 비숫자 -> 에러', () => { const r = validateSalesKpiTargetAmou
 run('validate 0 -> 에러', () => { const r = validateSalesKpiTargetAmount({ formTargetAmount: '0', orgKpiTargetAmount: null }); assert.ok(typeof r === 'string'); assert.match(r, /1 이상/) })
 run('validate 콤마 포함 -> 통과', () => { assert.equal(validateSalesKpiTargetAmount({ formTargetAmount: '500,000,000', orgKpiTargetAmount: null }), undefined) })
 run('validate 직접 0 orgKpi 있어도 -> 에러', () => { const r = validateSalesKpiTargetAmount({ formTargetAmount: '0', orgKpiTargetAmount: '500000000' }); assert.ok(typeof r === 'string') })
+// 왕복 시나리오: SALES_REVENUE → GENERAL → SALES_REVENUE 복귀
+// 핸들러가 targetAmount를 빈 문자열로 초기화하면 orgKpiTargetAmount 존재 시 auto 복귀해야 함
+run('왕복 복귀: targetAmount 초기화 + orgKpi 있음 -> auto', () => { assert.equal(resolveSalesTargetMode({ goalType: 'SALES_REVENUE', formTargetAmount: '', orgKpiTargetAmount: '1000000000' }), 'auto') })
+// 핸들러가 targetAmount를 초기화하지 않으면 직전 입력값이 잔류 -> manual (초기화 없을 때 발생하는 버그)
+run('왕복 버그: targetAmount 잔류 시 orgKpi 있어도 manual', () => { assert.equal(resolveSalesTargetMode({ goalType: 'SALES_REVENUE', formTargetAmount: '1000000000', orgKpiTargetAmount: '1000000000' }), 'manual') })

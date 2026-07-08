@@ -1581,7 +1581,7 @@ async function main() {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
     assert.equal(source.includes("function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = '', jobCategory: 'GENERAL' | 'SALES' = 'GENERAL')"), true)
-    assert.equal(source.includes('const defaultLinkedOrgKpiId = props.orgKpiOptions[0]?.id ?? \'\''), true)
+    assert.equal(source.includes('props.orgKpiOptions.find((o) => o.targetAmount)?.id ??'), true)
     assert.equal(source.includes('linkedOrgKpiId: defaultLinkedOrgKpiId,'), true)
     assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), true)
   })

@@ -1070,7 +1070,10 @@ function validateKpiForm(form: KpiForm, orgKpiTargetAmount?: string | null) {
 export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
-  const defaultLinkedOrgKpiId = props.orgKpiOptions[0]?.id ?? ''
+  const defaultLinkedOrgKpiId =
+    props.orgKpiOptions.find((o) => o.targetAmount)?.id ??
+    props.orgKpiOptions[0]?.id ??
+    ''
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
   // URL ?tab=… 변경(메뉴 클릭 등 외부 네비게이션) 시 server가 전달하는 props.initialTab을 state로 동기.
   // 페이지 내부 <Tabs> 클릭은 setActiveTab → router.replace로 같은 initialTab을 다시 받지만
@@ -5134,6 +5137,11 @@ function EditorModal(props: {
   const isSalesActor = props.actor.jobCategory === 'SALES'
   const isSalesRevenue = props.form.goalType === 'SALES_REVENUE'
 
+  const salesDefaultLinkedOrgKpiId =
+    props.orgKpiOptions.find((o) => o.targetAmount)?.id ??
+    props.orgKpiOptions[0]?.id ??
+    ''
+
   const linkedOrgKpiOption = props.orgKpiOptions.find((o) => o.id === props.form.linkedOrgKpiId)
   const orgKpiTargetAmount = (isSalesRevenue ? (linkedOrgKpiOption?.targetAmount ?? null) : null)
   const salesTargetMode = resolveSalesTargetMode({
@@ -5183,6 +5191,8 @@ function EditorModal(props: {
                         goalType: 'SALES_REVENUE',
                         kpiName: '개인 매출목표 달성',
                         kpiType: 'QUANTITATIVE',
+                        targetAmount: '',
+                        linkedOrgKpiId: c.linkedOrgKpiId || salesDefaultLinkedOrgKpiId,
                         targetValueT: '',
                         targetValueE: '',
                         targetValueS: '',
