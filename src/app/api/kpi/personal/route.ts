@@ -11,6 +11,7 @@ import { validatePersonalOrgLink } from '@/server/goal-alignment'
 import { resolvePersonalKpiTargetValues } from '@/lib/personal-kpi-target-values'
 import { validatePersonalKpiWeightCapForPersistence2026 } from '@/server/kpi-alignment-policy-2026'
 import { buildPolicyCategoryPersistenceAtCreate2026 } from '@/lib/policy-category-sources-2026'
+import { checkSalesKpiTargetSource } from '@/lib/validate-sales-target-source'
 
 export async function GET(request: Request) {
   try {
@@ -147,6 +148,19 @@ export async function POST(request: Request) {
       if (existingSalesKpi) {
         throw new AppError(400, 'SALES_KPI_ALREADY_EXISTS', '같은 평가 연도에 이미 SALES_REVENUE 목표가 등록되어 있습니다.')
       }
+
+      // 참조형: 조직 KPI targetAmount 존재 확인
+      if (data.targetAmount === undefined) {
+        const orgKpi = linkedOrgKpiId
+          ? await prisma.orgKpi.findUnique({ where: { id: linkedOrgKpiId }, select: { targetAmount: true } })
+          : null
+        const check = checkSalesKpiTargetSource({
+          personalTargetAmount: null,
+          linkedOrgKpiId: linkedOrgKpiId ?? null,
+          orgKpiTargetAmount: orgKpi?.targetAmount ?? null,
+        })
+        if (!check.valid) throw new AppError(400, check.code, check.message)
+      }
     }
 
     const existingKpis = await prisma.personalKpi.findMany({
@@ -208,7 +222,7 @@ export async function POST(request: Request) {
         formula: data.formula,
         goalType: data.goalType,
         ...(data.goalType === 'SALES_REVENUE'
-          ? { targetAmount: data.targetAmount!, targetValue: null }
+          ? { targetAmount: data.targetAmount ?? null, targetValue: null }
           : buildPersonalKpiTargetValuePersistence({
               targetValueT: data.targetValueT!,
               targetValueE: data.targetValueE,
@@ -266,6 +280,17 @@ export async function POST(request: Request) {
 
     return successResponse(kpi)
   } catch (error) {
+    // P2002: unique constraint on (employeeId, evalYear, kpiName) — surface as 409 not 500.
+    if (
+      error != null &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code: unknown }).code === 'P2002'
+    ) {
+      return errorResponse(
+        new AppError(409, 'DUPLICATE_KPI_NAME', '같은 연도에 동일한 KPI 이름이 이미 존재합니다. 다른 이름을 사용해 주세요.')
+      )
+    }
     return errorResponse(error)
   }
 }

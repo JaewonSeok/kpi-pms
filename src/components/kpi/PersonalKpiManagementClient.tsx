@@ -66,6 +66,7 @@ import {
 import { joinInlineParts } from '@/lib/metric-copy'
 import { getPersonalKpiScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 import { SALES_SCORE_BANDS_2026 } from '@/lib/sales-score-policy-2026'
+import { resolveSalesTargetMode, validateSalesKpiTargetAmount } from '@/lib/personal-kpi-sales-target'
 import {
   PmsEmptyIllustration,
   PmsMetricRail,
@@ -568,7 +569,7 @@ function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
     kpiName: kpi.title,
     definition: kpi.definition ?? '',
     formula: kpi.formula ?? '',
-    targetAmount: kpi.targetAmount ?? '',
+    targetAmount: kpi.isReferenceSalesTarget ? '' : (kpi.targetAmount ?? ''),
     targetValueT: toNumberString(targetValues.targetValueT),
     targetValueE: toNumberString(targetValues.targetValueE),
     targetValueS: toNumberString(targetValues.targetValueS),
@@ -995,7 +996,7 @@ function getReviewActionState(
       }
 }
 
-function validateKpiForm(form: KpiForm) {
+function validateKpiForm(form: KpiForm, orgKpiTargetAmount?: string | null) {
   if (!form.employeeId.trim()) {
     return 'KPI 대상자를 먼저 선택해 주세요.'
   }
@@ -1005,10 +1006,11 @@ function validateKpiForm(form: KpiForm) {
   }
 
   if (form.goalType === 'SALES_REVENUE') {
-    const raw = form.targetAmount.replace(/,/g, '').trim()
-    if (!raw) return '매출 목표액을 입력해 주세요.'
-    if (!/^\d+$/.test(raw)) return '매출 목표액은 숫자로만 입력해 주세요.'
-    if (BigInt(raw) <= BigInt(0)) return '매출 목표액은 1 이상이어야 합니다.'
+    const error = validateSalesKpiTargetAmount({
+      formTargetAmount: form.targetAmount,
+      orgKpiTargetAmount: orgKpiTargetAmount ?? null,
+    })
+    if (error) return error
   } else {
     if (!form.targetValueT.trim()) {
       return 'T 목표값을 입력해 주세요.'
@@ -1068,7 +1070,10 @@ function validateKpiForm(form: KpiForm) {
 export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
-  const defaultLinkedOrgKpiId = props.orgKpiOptions[0]?.id ?? ''
+  const defaultLinkedOrgKpiId =
+    props.orgKpiOptions.find((o) => o.targetAmount)?.id ??
+    props.orgKpiOptions[0]?.id ??
+    ''
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
   // URL ?tab=… 변경(메뉴 클릭 등 외부 네비게이션) 시 server가 전달하는 props.initialTab을 state로 동기.
   // 페이지 내부 <Tabs> 클릭은 setActiveTab → router.replace로 같은 initialTab을 다시 받지만
@@ -1151,7 +1156,7 @@ export function PersonalKpiManagementClient(props: Props) {
         : props.mine[0]?.id ?? ''
     )
     setSelectedReviewId(props.reviewQueue[0]?.id ?? '')
-    const emptyForm = buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)
+    const emptyForm = buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory)
     setForm(emptyForm)
     setFormBaseline(emptyForm)
     setEditorOpen(false)
@@ -1417,7 +1422,13 @@ export function PersonalKpiManagementClient(props: Props) {
 
     const transition = getPersonalKpiHeroCtaTransition('create')
     setActiveTab(transition.nextTab)
-    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory))
+    // SALES 직군이지만 해당 연도에 이미 SALES_REVENUE KPI가 있으면 GENERAL로 초기화
+    const initialJobCategory: 'GENERAL' | 'SALES' =
+      props.actor.jobCategory === 'SALES' &&
+      mineItems.some((item) => item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED')
+        ? 'GENERAL'
+        : props.actor.jobCategory
+    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, initialJobCategory))
     setAiPreview(null)
     setSelectedAiRecommendationIndex(null)
     setPendingAiRecommendationIndex(null)
@@ -1593,7 +1604,13 @@ export function PersonalKpiManagementClient(props: Props) {
       return
     }
 
-    const validationMessage = validateKpiForm(form)
+    const isSalesRevenue = form.goalType === 'SALES_REVENUE'
+    const linkedOrgKpiOption = isSalesRevenue
+      ? props.orgKpiOptions.find((o) => o.id === form.linkedOrgKpiId)
+      : undefined
+    const orgKpiTargetAmount = linkedOrgKpiOption?.targetAmount ?? null
+
+    const validationMessage = validateKpiForm(form, orgKpiTargetAmount)
     if (validationMessage) {
       setBanner({ tone: 'error', message: validationMessage })
       return
@@ -1608,8 +1625,12 @@ export function PersonalKpiManagementClient(props: Props) {
     setBanner(null)
 
     try {
-      const isSalesRevenue = form.goalType === 'SALES_REVENUE'
       const targetAmountRaw = isSalesRevenue ? form.targetAmount.replace(/,/g, '').trim() : undefined
+      const isAutoMode = resolveSalesTargetMode({
+        goalType: form.goalType,
+        formTargetAmount: form.targetAmount,
+        orgKpiTargetAmount,
+      }) === 'auto'
 
       const payload = {
         employeeId: form.employeeId,
@@ -1620,7 +1641,7 @@ export function PersonalKpiManagementClient(props: Props) {
         definition: form.definition.trim() || undefined,
         formula: form.formula.trim() || undefined,
         ...(isSalesRevenue
-          ? { targetAmount: targetAmountRaw }
+          ? (!isAutoMode ? { targetAmount: targetAmountRaw || null } : {})
           : {
               targetValueT: Number(form.targetValueT),
               targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : undefined,
@@ -1650,6 +1671,7 @@ export function PersonalKpiManagementClient(props: Props) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 ...payload,
+                ...(isSalesRevenue && isAutoMode ? { targetAmount: null } : {}),
                 ...(!isSalesRevenue ? {
                   targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : null,
                   targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : null,
@@ -5121,6 +5143,20 @@ function EditorModal(props: {
   const isSalesActor = props.actor.jobCategory === 'SALES'
   const isSalesRevenue = props.form.goalType === 'SALES_REVENUE'
 
+  const salesDefaultLinkedOrgKpiId =
+    props.orgKpiOptions.find((o) => o.targetAmount)?.id ??
+    props.orgKpiOptions[0]?.id ??
+    ''
+
+  const linkedOrgKpiOption = props.orgKpiOptions.find((o) => o.id === props.form.linkedOrgKpiId)
+  const orgKpiTargetAmount = (isSalesRevenue ? (linkedOrgKpiOption?.targetAmount ?? null) : null)
+  const salesTargetMode = resolveSalesTargetMode({
+    goalType: props.form.goalType,
+    formTargetAmount: props.form.targetAmount,
+    orgKpiTargetAmount,
+  })
+  const isAutoMode = salesTargetMode === 'auto'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
@@ -5161,6 +5197,8 @@ function EditorModal(props: {
                         goalType: 'SALES_REVENUE',
                         kpiName: '개인 매출목표 달성',
                         kpiType: 'QUANTITATIVE',
+                        targetAmount: '',
+                        linkedOrgKpiId: c.linkedOrgKpiId || salesDefaultLinkedOrgKpiId,
                         targetValueT: '',
                         targetValueE: '',
                         targetValueS: '',
@@ -5264,20 +5302,50 @@ function EditorModal(props: {
                   <p className="text-xs text-slate-500">연간 매출 목표액을 원(₩) 단위로 입력하세요.</p>
                 </div>
 
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-slate-900">
-                    목표액 <span className="text-rose-600">*</span>
-                  </span>
-                  <input
-                    value={formatTargetAmount(props.form.targetAmount)}
-                    onChange={(event) => {
-                      const raw = event.target.value.replace(/[^0-9]/g, '')
-                      props.onChange((c) => ({ ...c, targetAmount: raw }))
-                    }}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                    placeholder="예: 500,000,000"
-                  />
-                </label>
+                {isAutoMode ? (
+                  <div className="space-y-1">
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                      <div className="text-xs font-semibold text-emerald-700">팀 목표 자동 적용</div>
+                      <div className="mt-0.5 text-sm font-bold text-slate-900">
+                        {Number(orgKpiTargetAmount).toLocaleString('ko-KR')}원
+                      </div>
+                      <div className="mt-0.5 text-xs text-slate-500">연결 조직 KPI 기준 — 팀 목표가 변경되면 자동 반영됩니다</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => props.onChange((c) => ({ ...c, targetAmount: orgKpiTargetAmount ?? '' }))}
+                      className="text-xs text-slate-500 underline hover:text-slate-700"
+                    >
+                      직접 입력으로 전환
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="block space-y-2">
+                      <span className="text-sm font-medium text-slate-900">
+                        목표액 <span className="text-rose-600">*</span>
+                      </span>
+                      <input
+                        value={formatTargetAmount(props.form.targetAmount)}
+                        onChange={(event) => {
+                          const raw = event.target.value.replace(/[^0-9]/g, '')
+                          props.onChange((c) => ({ ...c, targetAmount: raw }))
+                        }}
+                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                        placeholder="예: 500,000,000"
+                      />
+                    </label>
+                    {orgKpiTargetAmount ? (
+                      <button
+                        type="button"
+                        onClick={() => props.onChange((c) => ({ ...c, targetAmount: '' }))}
+                        className="text-xs text-emerald-600 underline hover:text-emerald-800"
+                      >
+                        팀 목표 자동 적용으로 전환 ({Number(orgKpiTargetAmount).toLocaleString('ko-KR')}원)
+                      </button>
+                    ) : null}
+                  </div>
+                )}
 
                 <label className="space-y-2">
                   <span className="text-sm font-medium text-slate-900">가중치</span>

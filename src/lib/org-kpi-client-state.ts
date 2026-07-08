@@ -19,6 +19,7 @@ export type OrgKpiEditorFormSnapshot = {
   targetValueS: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
+  targetAmount: string
 }
 
 function parseTagInput(value: string) {
@@ -47,6 +48,7 @@ export function buildOrgKpiServerListSignature(items: OrgKpiViewModel[]) {
         item.targetValueT ?? '',
         item.targetValueE ?? '',
         item.targetValueS ?? '',
+        item.targetAmount ?? '',
       ].join(':')
     )
     .join('|')
@@ -107,8 +109,10 @@ export function applySavedOrgKpiToList(params: {
     difficulty: params.form.difficulty,
     status: 'DRAFT',
     persistedStatus: 'DRAFT',
+    targetAmount: params.form.targetAmount.replace(/,/g, '').trim() || null,
     linkedPersonalKpiCount: 0,
     linkedConfirmedPersonalKpiCount: 0,
+    linkedReferenceSalesPersonalKpiCount: 0,
     coverageRate: 0,
     targetPopulationCount: 0,
     suggestedParent: null,

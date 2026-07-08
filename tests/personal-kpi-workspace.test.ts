@@ -1581,9 +1581,111 @@ async function main() {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
     assert.equal(source.includes("function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = '', jobCategory: 'GENERAL' | 'SALES' = 'GENERAL')"), true)
-    assert.equal(source.includes('const defaultLinkedOrgKpiId = props.orgKpiOptions[0]?.id ?? \'\''), true)
+    assert.equal(source.includes('props.orgKpiOptions.find((o) => o.targetAmount)?.id ??'), true)
     assert.equal(source.includes('linkedOrgKpiId: defaultLinkedOrgKpiId,'), true)
-    assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), true)
+    // Must pass jobCategory in every call site — 3-arg form omits it and was the root cause of GENERAL saves for SALES employees
+    assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), false)
+    assert.equal(source.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory)'), true)
+  })
+
+  await run('useEffect employee-switch reset passes actor jobCategory so SALES form stays SALES_REVENUE', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const effectStart = source.indexOf('setSelectedReviewId(props.reviewQueue[0]?.id')
+    const effectEnd = source.indexOf('}, [props.selectedEmployeeId, props.selectedYear', effectStart)
+    const effectBlock = source.slice(effectStart, effectEnd)
+
+    assert.notEqual(effectStart, -1)
+    assert.notEqual(effectEnd, -1)
+    // The effect must NOT call buildEmptyForm with only 3 args (missing jobCategory)
+    assert.equal(effectBlock.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId)'), false)
+    // The effect must use all 4 args including jobCategory
+    assert.equal(effectBlock.includes('buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory)'), true)
+  })
+
+  await run('CreatePersonalKpiSchema goalType has no default — missing goalType must fail validation not silently become GENERAL', () => {
+    const source = read('src/lib/validations.ts')
+
+    // Silent default was the server-side path that turned missing goalType into GENERAL
+    assert.equal(source.includes("goalType: z.enum(['GENERAL', 'SALES_REVENUE']).default('GENERAL')"), false)
+    // Required (no default) so any payload that omits goalType returns 400 instead of creating a GENERAL KPI
+    assert.equal(source.includes("goalType: z.enum(['GENERAL', 'SALES_REVENUE'])"), true)
+  })
+
+  await run('handleSaveForm always puts goalType in the POST payload unconditionally', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const saveStart = source.indexOf('async function handleSaveForm()')
+    const payloadStart = source.indexOf('const payload = {', saveStart)
+    const payloadEnd = source.indexOf('const createPayload = {', payloadStart)
+    const payloadBlock = source.slice(payloadStart, payloadEnd)
+
+    assert.notEqual(saveStart, -1)
+    assert.notEqual(payloadStart, -1)
+    assert.notEqual(payloadEnd, -1)
+    // goalType must be an unconditional key in the payload object (not inside a conditional spread)
+    assert.equal(payloadBlock.includes('goalType: form.goalType,'), true)
+  })
+
+  await run('handleOpenCreate falls back to GENERAL when SALES actor already has SALES_REVENUE KPI — prevents server duplicate error', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const createStart = source.indexOf('function handleOpenCreate()')
+    const createEnd = source.indexOf('\n  }', createStart) + 3
+    const createBlock = source.slice(createStart, createEnd)
+
+    assert.notEqual(createStart, -1)
+    // Must detect existing SALES_REVENUE KPI via mineItems
+    assert.ok(
+      createBlock.includes("item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED'"),
+      'handleOpenCreate checks mineItems for existing SALES_REVENUE KPI'
+    )
+    // Must use initialJobCategory (not hard-coded jobCategory) in buildEmptyForm
+    assert.ok(
+      createBlock.includes('initialJobCategory'),
+      'handleOpenCreate passes initialJobCategory to buildEmptyForm'
+    )
+    // When duplicate exists: initialJobCategory should be 'GENERAL'
+    assert.ok(
+      createBlock.includes("? 'GENERAL'"),
+      "falls back to 'GENERAL' for duplicate SALES_REVENUE scenario"
+    )
+  })
+
+  await run('POST /api/kpi/personal 참조형 SALES_REVENUE CREATE: route 코드 구조 — orgKpi.targetAmount 조회 + checkSalesKpiTargetSource + P2002 래핑 존재', () => {
+    const routeSource = read('src/app/api/kpi/personal/route.ts')
+
+    // 참조형(targetAmount undefined, linkedOrgKpiId 있음) 경로 게이트
+    assert.ok(
+      routeSource.includes("if (data.targetAmount === undefined)"),
+      'reference-mode gate: data.targetAmount === undefined 분기 존재'
+    )
+    // 조직 KPI targetAmount 조회
+    assert.ok(
+      routeSource.includes("select: { targetAmount: true }"),
+      'orgKpi.findUnique select targetAmount 존재'
+    )
+    // checkSalesKpiTargetSource 호출 확인
+    assert.ok(
+      routeSource.includes('checkSalesKpiTargetSource('),
+      'checkSalesKpiTargetSource 호출 존재'
+    )
+    // 참조형 성공 시 personalKpi.create에서 targetAmount ?? null 처리
+    assert.ok(
+      routeSource.includes('targetAmount: data.targetAmount ?? null'),
+      'create data: targetAmount nullable 처리(참조형 = null) 존재'
+    )
+    // 성공 경로: successResponse 반환
+    assert.ok(
+      routeSource.includes('return successResponse(kpi)'),
+      'successResponse(kpi) 반환 존재'
+    )
+    // P2002 unique constraint → 500이 아닌 409 AppError로 래핑
+    assert.ok(
+      routeSource.includes("code === 'P2002'"),
+      "P2002 unique-constraint → AppError 409 래핑 존재"
+    )
+    assert.ok(
+      routeSource.includes('DUPLICATE_KPI_NAME'),
+      'DUPLICATE_KPI_NAME 코드 존재'
+    )
   })
 
   await run('personal KPI AI route now uses the same access resolver as the page', () => {

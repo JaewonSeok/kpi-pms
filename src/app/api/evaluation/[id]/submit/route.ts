@@ -35,6 +35,7 @@ import {
 } from '@/server/kpi-alignment-policy-2026'
 import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
 import { resolveItemScore } from '@/lib/evaluation-item-score'
+import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 
 type NextStageEntry = {
   stage: EvalStage
@@ -61,7 +62,7 @@ export async function PATCH(
       include: {
         items: {
           include: {
-            personalKpi: true,
+            personalKpi: { include: { linkedOrgKpi: { select: { targetAmount: true } } } },
           },
         },
         evalCycle: true,
@@ -165,7 +166,7 @@ export async function PATCH(
         const scoreResult = resolveItemScore({
           goalType: kpi.goalType,
           kpiType: kpi.kpiType,
-          targetAmount: kpi.targetAmount ?? null,
+          targetAmount: resolveTargetAmount(kpi),
           salesActualAmount: salesRecord?.actualAmount ?? null,
           quantScore: itemInput.quantScore,
           planScore: itemInput.planScore,

@@ -281,6 +281,7 @@ model OrgKpi {
   parentOrgKpiId String?
   parentOrgKpi   OrgKpi?    @relation("OrgKpiAlignment", fields: [parentOrgKpiId], references: [id])
   childOrgKpis   OrgKpi[]   @relation("OrgKpiAlignment")
+  targetAmount       BigInt?
   copiedFromOrgKpiId String?
   copiedFromOrgKpi   OrgKpi?    @relation("OrgKpiCloneSource", fields: [copiedFromOrgKpiId], references: [id])
   clonedOrgKpis      OrgKpi[]   @relation("OrgKpiCloneSource")

@@ -113,6 +113,7 @@ type FormState = {
   targetValueS: string
   weight: string
   difficulty: 'HIGH' | 'MEDIUM' | 'LOW'
+  targetAmount: string
 }
 type OrgCloneForm = {
   targetDeptId: string
@@ -471,6 +472,7 @@ function buildEmptyForm(year: number, departmentId: string): FormState {
     targetValueS: '',
     weight: '',
     difficulty: 'MEDIUM',
+    targetAmount: '',
   }
 }
 
@@ -497,6 +499,7 @@ function buildFormFromKpi(kpi: OrgKpiViewModel): FormState {
     targetValueS: resolvedTargetValues.targetValueS !== undefined ? resolvedTargetValues.targetValueS : '',
     weight: typeof kpi.weight === 'number' ? String(kpi.weight) : '',
     difficulty: (kpi.difficulty ?? 'MEDIUM') as FormState['difficulty'],
+    targetAmount: kpi.targetAmount != null ? kpi.targetAmount : '',
   }
 }
 
@@ -1292,6 +1295,9 @@ export function OrgKpiManagementClient({
       return
     }
 
+    const isAdminActor = pageData.actor.role === 'ROLE_ADMIN' || pageData.actor.role === 'ROLE_CEO'
+    const rawTargetAmount = form.targetAmount.replace(/,/g, '').trim()
+
     const draftPayload = {
       scope: pageData.selectedScope,
       deptId: form.deptId,
@@ -1308,6 +1314,13 @@ export function OrgKpiManagementClient({
       ...(editingKpiId || form.targetValueS.trim() ? { targetValueS: form.targetValueS.trim() || null } : {}),
       weight: parsedWeight,
       difficulty: form.difficulty,
+      ...(isAdminActor
+        ? rawTargetAmount
+          ? { targetAmount: rawTargetAmount }
+          : editingKpiId
+            ? { targetAmount: null }
+            : {}
+        : {}),
     }
 
     const validatedDraft = (editingKpiId ? UpdateOrgKpiSchema : CreateOrgKpiSchema).safeParse(draftPayload)
@@ -2274,6 +2287,8 @@ export function OrgKpiManagementClient({
             onSubmit={() => void saveKpi()}
             busy={busy}
             editing={Boolean(editingKpiId)}
+            actorRole={pageData.actor.role}
+            linkedReferenceSalesCount={selectedKpi?.linkedReferenceSalesPersonalKpiCount ?? 0}
           />
       ) : null}
       {showBulkUpload ? <OrgKpiBulkUploadModal scope={pageData.selectedScope} scopeLabel={scopeLabel} departments={pageData.departments} selectedYear={pageData.selectedYear} defaultDepartmentId={activeScopeDepartmentId} onClose={() => setShowBulkUpload(false)} onUploaded={(message, tone = 'success') => { setBanner({ tone, message }); router.refresh() }} /> : null}
@@ -3273,6 +3288,9 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
             })}
           />
           <InfoPill label="가중치" value={formatOrgKpiWeight(kpi.weight)} />
+          {kpi.targetAmount != null ? (
+            <InfoPill label="매출 목표액(원)" value={Number(kpi.targetAmount).toLocaleString('ko-KR')} />
+          ) : null}
           <InfoPill label="HR 반영 상태" value={formatOrgKpiHrReflectionSummary(kpi)} />
           <InfoPill label="연결된 개인 KPI" value={formatCountWithUnit(kpi.linkedPersonalKpiCount, '건')} />
           <InfoPill label="최근 달성률" value={formatPercent(kpi.monthlyAchievementRate)} />
@@ -4250,6 +4268,8 @@ function EditorModal({
   editing,
   parentGoalOptions,
   editingKpiId,
+  actorRole,
+  linkedReferenceSalesCount = 0,
 }: {
   scope: OrgKpiScope
   scopeLabel: string
@@ -4265,6 +4285,8 @@ function EditorModal({
   editing: boolean
   parentGoalOptions: OrgKpiPageData['parentGoalOptions']
   editingKpiId?: string | null
+  actorRole: string
+  linkedReferenceSalesCount?: number
 }) {
   const filteredParentOptions = parentGoalOptions.filter(
     (option) => {
@@ -4291,6 +4313,24 @@ function EditorModal({
             닫기
           </button>
         </div>
+
+        {errorMessage ? (
+          <div
+            role="alert"
+            className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"
+          >
+            <p>{errorMessage}</p>
+            {errorFieldErrors && Object.keys(errorFieldErrors).length ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-rose-700">
+                {Object.entries(errorFieldErrors).map(([field, message]) => (
+                  <li key={`${field}-${message}`}>
+                    {message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <Field label={getOrgKpiDepartmentFieldLabel(scope)}>
@@ -4377,20 +4417,25 @@ function EditorModal({
         </div>
         <p className="mt-2 text-xs leading-5 text-slate-500">가중치는 숫자로 저장되고 화면에서는 자동으로 %와 함께 표시됩니다.</p>
 
-        {errorMessage ? (
-          <div
-            role="alert"
-            className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"
-          >
-            <p>{errorMessage}</p>
-            {errorFieldErrors && Object.keys(errorFieldErrors).length ? (
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-rose-700">
-                {Object.entries(errorFieldErrors).map(([field, message]) => (
-                  <li key={`${field}-${message}`}>
-                    {message}
-                  </li>
-                ))}
-              </ul>
+        {(actorRole === 'ROLE_ADMIN' || actorRole === 'ROLE_CEO') ? (
+          <div className="mt-4">
+            <Field label="매출 목표액(원)">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={form.targetAmount ? Number(form.targetAmount.replace(/,/g, '')).toLocaleString('ko-KR') : ''}
+                onChange={(event) => {
+                  const raw = event.target.value.replace(/,/g, '')
+                  if (raw === '' || /^\d+$/.test(raw)) onChange({ ...form, targetAmount: raw })
+                }}
+                placeholder="예: 1000000000 (SALES_REVENUE KPI 참조용)"
+                className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm"
+              />
+            </Field>
+            {editing && !form.targetAmount && linkedReferenceSalesCount > 0 ? (
+              <p className="mt-1.5 text-xs text-amber-600">
+                ⚠️ 이 조직 KPI를 참조하는 개인 매출목표가 {linkedReferenceSalesCount}건 있습니다. 클리어 시 해당 KPI 평가 제출이 거부됩니다.
+              </p>
             ) : null}
           </div>
         ) : null}

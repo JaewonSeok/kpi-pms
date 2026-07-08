@@ -9,6 +9,7 @@ import { CreateOrgKpiSchema } from '@/lib/validations'
 import { validateOrgParentLink } from '@/server/goal-alignment'
 import {
   canManageOrgKpiWriteScope,
+  canSetOrgKpiTargetAmount,
   resolveEditableOrgKpiDepartmentIds,
   resolveReadableOrgKpiDepartmentIds,
 } from '@/server/org-kpi-access'
@@ -176,6 +177,10 @@ export async function POST(request: Request) {
 
     const data = validated.data
 
+    if (data.targetAmount !== undefined && !canSetOrgKpiTargetAmount(session.user.role)) {
+      throw new AppError(403, 'FORBIDDEN', '매출 목표액은 관리자(ADMIN/CEO)만 설정할 수 있습니다.')
+    }
+
     failureStep = 'resolve-editable-scope'
     const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
       userId: session.user.id,
@@ -262,6 +267,7 @@ export async function POST(request: Request) {
         tags: data.tags ?? [],
         parentOrgKpiId,
         status: 'DRAFT',
+        ...(data.targetAmount !== undefined ? { targetAmount: data.targetAmount } : {}),
       },
       include: {
         department: {

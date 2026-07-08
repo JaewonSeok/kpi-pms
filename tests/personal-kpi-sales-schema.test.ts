@@ -33,13 +33,13 @@ run('CREATE SALES_REVENUE 정상: targetAmount 있고 T/E/S 없음 → pass', ()
   assert.equal(result.data?.targetAmount, BigInt(100_000_000))
 })
 
-run('CREATE SALES_REVENUE targetAmount 누락 → fail', () => {
+run('CREATE SALES_REVENUE targetAmount 누락, linkedOrgKpiId도 없음 → fail (둘 다 없음)', () => {
   const result = CreatePersonalKpiSchema.safeParse({
     ...BASE_CREATE,
     goalType: 'SALES_REVENUE',
   })
   assert.ok(!result.success)
-  assert.match(result.error.issues[0].message, /targetAmount/)
+  assert.match(result.error.issues[0].message, /조직 KPI/)
 })
 
 run('CREATE SALES_REVENUE targetAmount="0" → fail (양수 아님)', () => {
@@ -103,13 +103,13 @@ run('CREATE GENERAL 정상: goalType 명시, targetValueT 있음 → pass', () =
   assert.equal(result.data?.goalType, 'GENERAL')
 })
 
-run('CREATE GENERAL goalType 생략 → default GENERAL, targetValueT 필수', () => {
+run('CREATE goalType 생략 → fail (silent GENERAL default 없음)', () => {
   const result = CreatePersonalKpiSchema.safeParse({
     ...BASE_CREATE,
     targetValueT: 50,
   })
-  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
-  assert.equal(result.data?.goalType, 'GENERAL')
+  assert.ok(!result.success, 'goalType 없이 통과되어선 안 됨')
+  assert.ok(result.error.issues.some((i) => i.path.includes('goalType')), '에러 경로에 goalType 포함 필요')
 })
 
 run('CREATE GENERAL + targetAmount 포함 → fail', () => {
@@ -214,6 +214,61 @@ run('UPDATE goalType 미지정 + targetAmount만 → pass (서버가 현재 goal
 run('UPDATE weight만 변경 → pass (기존 호환성)', () => {
   const result = UpdatePersonalKpiSchema.safeParse({ weight: 40 })
   assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
+})
+
+// ── P3: 참조형 KPI — Create ───────────────────────────────────────────────────
+
+run('CREATE SALES_REVENUE 참조형: targetAmount 없음 + linkedOrgKpiId 있음 → pass', () => {
+  const result = CreatePersonalKpiSchema.safeParse({
+    ...BASE_CREATE,
+    goalType: 'SALES_REVENUE',
+    linkedOrgKpiId: 'org-kpi-001',
+  })
+  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
+  assert.equal(result.data?.targetAmount, undefined)
+  assert.equal(result.data?.linkedOrgKpiId, 'org-kpi-001')
+})
+
+run('CREATE SALES_REVENUE 직접형: targetAmount 있음 + linkedOrgKpiId 있음 → pass (직접 입력 우선)', () => {
+  const result = CreatePersonalKpiSchema.safeParse({
+    ...BASE_CREATE,
+    goalType: 'SALES_REVENUE',
+    targetAmount: '50000000',
+    linkedOrgKpiId: 'org-kpi-001',
+  })
+  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
+  assert.equal(result.data?.targetAmount, BigInt(50_000_000))
+})
+
+// ── P3: 참조형 KPI — Update ───────────────────────────────────────────────────
+
+run('UPDATE SALES_REVENUE targetAmount=null + linkedOrgKpiId 있음 → pass (직접→참조 전환)', () => {
+  const result = UpdatePersonalKpiSchema.safeParse({
+    goalType: 'SALES_REVENUE',
+    targetAmount: null,
+    linkedOrgKpiId: 'org-kpi-001',
+  })
+  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
+  assert.equal(result.data?.targetAmount, null)
+})
+
+run('UPDATE SALES_REVENUE targetAmount=null + linkedOrgKpiId=null → fail (둘 다 null)', () => {
+  const result = UpdatePersonalKpiSchema.safeParse({
+    goalType: 'SALES_REVENUE',
+    targetAmount: null,
+    linkedOrgKpiId: null,
+  })
+  assert.ok(!result.success)
+  assert.match(result.error.issues[0].message, /조직 KPI/)
+})
+
+run('UPDATE SALES_REVENUE targetAmount=null, linkedOrgKpiId 미전송 → pass (route가 DB 상태로 결정)', () => {
+  const result = UpdatePersonalKpiSchema.safeParse({
+    goalType: 'SALES_REVENUE',
+    targetAmount: null,
+  })
+  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
+  assert.equal(result.data?.targetAmount, null)
 })
 
 run('UPDATE GENERAL T/E/S 순서 정상 → pass', () => {

@@ -69,7 +69,22 @@ export function errorResponse(
     )
   }
 
-  console.error(error)
+  // Prisma errors have `code` (P2xxx) and `meta` properties that help diagnose
+  // DB-level failures (column not found, unique constraint, FK violation, etc.).
+  const prismaCode =
+    error != null && typeof error === 'object' && 'code' in error
+      ? (error as { code: unknown }).code
+      : undefined
+  const prismaMeta =
+    error != null && typeof error === 'object' && 'meta' in error
+      ? (error as { meta: unknown }).meta
+      : undefined
+  console.error('[api] Unhandled exception', {
+    message: error instanceof Error ? error.message : String(error),
+    ...(prismaCode !== undefined ? { prismaCode } : {}),
+    ...(prismaMeta !== undefined ? { prismaMeta } : {}),
+    stack: error instanceof Error ? error.stack : undefined,
+  })
 
   return Response.json(
     { success: false, error: { code: 'INTERNAL_ERROR', message: defaultMessage } },

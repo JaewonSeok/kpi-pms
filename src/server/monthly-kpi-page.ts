@@ -17,6 +17,7 @@ import {
   resolveMonthlyOperationalStatus,
   type MonthlyRecordOperationalStatus,
 } from './monthly-kpi-workflow'
+import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 
 export type MonthlyPageState =
   | 'ready'
@@ -859,7 +860,7 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         type: kpi.kpiType,
         goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
         targetValue: kpi.targetValue ?? undefined,
-        targetAmount: kpi.targetAmount != null ? kpi.targetAmount.toString() : null,
+        targetAmount: resolveTargetAmount(kpi)?.toString() ?? null,
         actualValue: currentRecord?.actualValue ?? undefined,
         actualAmount: currentRecord?.actualAmount !== null && currentRecord?.actualAmount !== undefined ? currentRecord.actualAmount.toString() : null,
         achievementRate: currentRecord?.achievementRate ?? undefined,

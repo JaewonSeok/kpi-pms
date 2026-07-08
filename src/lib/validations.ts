@@ -158,6 +158,11 @@ export const CreateOrgKpiSchema = z.object({
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']),
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   parentOrgKpiId: z.string().nullable().optional(),
+  targetAmount: z.string()
+    .regex(/^\d+$/, 'targetAmount는 0 이상의 정수를 문자열로 입력해 주세요.')
+    .transform((v) => BigInt(v))
+    .refine((v) => v > BigInt(0), 'targetAmount는 양수여야 합니다.')
+    .optional(),
 })
 
 export const UpdateOrgKpiSchema = z.object({
@@ -177,6 +182,13 @@ export const UpdateOrgKpiSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(50)).max(10).optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
   parentOrgKpiId: z.string().nullable().optional(),
+  targetAmount: z.union([
+    z.string()
+      .regex(/^\d+$/, 'targetAmount는 0 이상의 정수를 문자열로 입력해 주세요.')
+      .transform((v) => BigInt(v))
+      .refine((v) => v > BigInt(0), 'targetAmount는 양수여야 합니다.'),
+    z.null(),
+  ]).optional(),
 })
   .refine(
     (data) => {
@@ -235,7 +247,7 @@ export const CreatePersonalKpiSchema = z.object({
   kpiName: z.string().min(1).max(100),
   definition: z.string().max(500).optional(),
   formula: z.string().max(500).optional(),
-  goalType: z.enum(['GENERAL', 'SALES_REVENUE']).default('GENERAL'),
+  goalType: z.enum(['GENERAL', 'SALES_REVENUE']),
   // 프론트엔드에서 BigInt를 JSON으로 직접 전송할 수 없으므로 숫자 문자열로 받아 BigInt로 변환.
   targetAmount: z
     .string()
@@ -253,10 +265,12 @@ export const CreatePersonalKpiSchema = z.object({
   policyCategory: z.enum(['ORG_GOAL', 'PROJECT_T', 'PROJECT_K', 'DAILY_WORK']).nullable().optional(),
 }).superRefine((data, ctx) => {
   if (data.goalType === 'SALES_REVENUE') {
-    if (data.targetAmount === undefined) {
-      ctx.addIssue({ code: 'custom', message: 'SALES_REVENUE 목표에는 targetAmount가 필수입니다.', path: ['targetAmount'] })
-    } else if (data.targetAmount <= BigInt(0)) {
-      ctx.addIssue({ code: 'custom', message: 'targetAmount는 양수여야 합니다.', path: ['targetAmount'] })
+    if (data.targetAmount !== undefined) {
+      if (data.targetAmount <= BigInt(0)) {
+        ctx.addIssue({ code: 'custom', message: 'targetAmount는 양수여야 합니다.', path: ['targetAmount'] })
+      }
+    } else if (!data.linkedOrgKpiId) {
+      ctx.addIssue({ code: 'custom', message: '매출 목표액을 직접 입력하거나, 매출 목표가 설정된 조직 KPI를 연결해야 합니다.', path: ['targetAmount'] })
     }
     if (data.targetValueT !== undefined || data.targetValueE !== undefined || data.targetValueS !== undefined) {
       ctx.addIssue({ code: 'custom', message: 'SALES_REVENUE 목표에는 targetValueT/E/S를 입력하지 마세요.', path: ['targetValueT'] })
@@ -291,9 +305,10 @@ export const UpdatePersonalKpiSchema = z.object({
   formula: z.string().max(500).optional(),
   goalType: z.enum(['GENERAL', 'SALES_REVENUE']).optional(),
   targetAmount: z
-    .string()
-    .regex(/^\d+$/, 'targetAmount는 0 이상의 정수를 문자열로 입력해 주세요.')
-    .transform((v) => BigInt(v))
+    .union([
+      z.string().regex(/^\d+$/, 'targetAmount는 0 이상의 정수를 문자열로 입력해 주세요.').transform((v) => BigInt(v)),
+      z.null(),
+    ])
     .optional(),
   targetValueT: z.number().min(0, 'T 목표값은 0 이상이어야 합니다.').nullable().optional(),
   targetValueE: z.number().min(0, 'E 목표값은 0 이상이어야 합니다.').nullable().optional(),
@@ -304,8 +319,13 @@ export const UpdatePersonalKpiSchema = z.object({
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
 }).superRefine((data, ctx) => {
   if (data.goalType === 'SALES_REVENUE') {
-    if (data.targetAmount !== undefined && data.targetAmount <= BigInt(0)) {
+    if (typeof data.targetAmount === 'bigint' && data.targetAmount <= BigInt(0)) {
       ctx.addIssue({ code: 'custom', message: 'targetAmount는 양수여야 합니다.', path: ['targetAmount'] })
+    }
+    // 둘 다 명시적 null — Zod 수준에서 잡을 수 있는 케이스만 차단.
+    // targetAmount=null + linkedOrgKpiId=undefined(미전송) 케이스는 DB 상태 의존이므로 route가 처리.
+    if (data.targetAmount === null && data.linkedOrgKpiId === null) {
+      ctx.addIssue({ code: 'custom', message: '매출 목표액을 직접 입력하거나, 매출 목표가 설정된 조직 KPI를 연결해야 합니다.', path: ['targetAmount'] })
     }
     if (data.targetValueT !== undefined || data.targetValueE !== undefined || data.targetValueS !== undefined) {
       ctx.addIssue({ code: 'custom', message: 'SALES_REVENUE 목표에는 targetValueT/E/S를 입력하지 마세요.', path: ['targetValueT'] })

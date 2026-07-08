@@ -55,6 +55,8 @@ function makeKpi(overrides: Partial<OrgKpiViewModel> = {}): OrgKpiViewModel {
     owner: undefined,
     linkedPersonalKpiCount: 0,
     linkedConfirmedPersonalKpiCount: 0,
+    linkedReferenceSalesPersonalKpiCount: 0,
+    targetAmount: null,
     monthlyAchievementRate: undefined,
     updatedAt: '2026-04-15T00:00:00.000Z',
     coverageRate: 0,
@@ -141,6 +143,7 @@ async function main() {
         targetValueS: '14',
         weight: '35',
         difficulty: 'HIGH',
+        targetAmount: '',
       },
     })
 

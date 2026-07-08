@@ -159,3 +159,7 @@ export function canManageOrgKpiWriteScope(params: {
   const editableDepartmentIds = resolveEditableOrgKpiDepartmentIds(params)
   return editableDepartmentIds === null || editableDepartmentIds.length > 0
 }
+
+export function canSetOrgKpiTargetAmount(role: string): boolean {
+  return role === 'ROLE_ADMIN' || role === 'ROLE_CEO'
+}
