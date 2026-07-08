@@ -33,5 +33,5 @@ export default async function EvaluationCeoAdjustPage({
     scopeId: resolvedSearchParams.scope,
   })
 
-  return <EvaluationCeoFinalClient {...pageData} />
+  return <EvaluationCeoFinalClient {...pageData} canViewPerformanceDetail={session.user.role === 'ROLE_ADMIN'} />
 }

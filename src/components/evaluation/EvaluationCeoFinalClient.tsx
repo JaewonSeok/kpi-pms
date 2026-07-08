@@ -34,7 +34,7 @@ import type {
   CeoFinalViewModel,
 } from '@/server/evaluation-ceo-final-page'
 
-type EvaluationCeoFinalClientProps = CeoFinalPageData
+type EvaluationCeoFinalClientProps = CeoFinalPageData & { canViewPerformanceDetail?: boolean }
 
 type BannerState = {
   tone: 'success' | 'error' | 'info'
@@ -1191,6 +1191,7 @@ export function EvaluationCeoFinalClient(props: EvaluationCeoFinalClientProps) {
         onClose={() => setSelectedEmployeeId(null)}
         onSave={() => void handleSave()}
         onClear={() => void handleClear()}
+        canViewPerformanceDetail={props.canViewPerformanceDetail}
       />
     </div>
   )
@@ -1212,6 +1213,7 @@ function EmployeeDrawer(props: {
   onClose: () => void
   onSave: () => void
   onClear: () => void
+  canViewPerformanceDetail?: boolean
 }) {
   if (!props.employee) return null
 
@@ -1468,7 +1470,7 @@ function EmployeeDrawer(props: {
               ) : (
                 <InlineEmpty>저장된 AI 성과 브리핑이 없습니다. 아래 상세 화면에서 근거를 직접 확인해 주세요.</InlineEmpty>
               )}
-              {props.employee.detail.performanceDetailHref ? (
+              {props.employee.detail.performanceDetailHref && props.canViewPerformanceDetail ? (
                 <div className="mt-4">
                   <Link
                     href={props.employee.detail.performanceDetailHref}
