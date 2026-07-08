@@ -280,6 +280,17 @@ export async function POST(request: Request) {
 
     return successResponse(kpi)
   } catch (error) {
+    // P2002: unique constraint on (employeeId, evalYear, kpiName) — surface as 409 not 500.
+    if (
+      error != null &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as { code: unknown }).code === 'P2002'
+    ) {
+      return errorResponse(
+        new AppError(409, 'DUPLICATE_KPI_NAME', '같은 연도에 동일한 KPI 이름이 이미 존재합니다. 다른 이름을 사용해 주세요.')
+      )
+    }
     return errorResponse(error)
   }
 }

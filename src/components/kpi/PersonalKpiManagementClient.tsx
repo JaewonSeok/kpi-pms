@@ -1422,7 +1422,13 @@ export function PersonalKpiManagementClient(props: Props) {
 
     const transition = getPersonalKpiHeroCtaTransition('create')
     setActiveTab(transition.nextTab)
-    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory))
+    // SALES 직군이지만 해당 연도에 이미 SALES_REVENUE KPI가 있으면 GENERAL로 초기화
+    const initialJobCategory: 'GENERAL' | 'SALES' =
+      props.actor.jobCategory === 'SALES' &&
+      mineItems.some((item) => item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED')
+        ? 'GENERAL'
+        : props.actor.jobCategory
+    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, initialJobCategory))
     setAiPreview(null)
     setSelectedAiRecommendationIndex(null)
     setPendingAiRecommendationIndex(null)

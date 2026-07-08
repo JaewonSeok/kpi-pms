@@ -1625,6 +1625,69 @@ async function main() {
     assert.equal(payloadBlock.includes('goalType: form.goalType,'), true)
   })
 
+  await run('handleOpenCreate falls back to GENERAL when SALES actor already has SALES_REVENUE KPI — prevents server duplicate error', () => {
+    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+    const createStart = source.indexOf('function handleOpenCreate()')
+    const createEnd = source.indexOf('\n  }', createStart) + 3
+    const createBlock = source.slice(createStart, createEnd)
+
+    assert.notEqual(createStart, -1)
+    // Must detect existing SALES_REVENUE KPI via mineItems
+    assert.ok(
+      createBlock.includes("item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED'"),
+      'handleOpenCreate checks mineItems for existing SALES_REVENUE KPI'
+    )
+    // Must use initialJobCategory (not hard-coded jobCategory) in buildEmptyForm
+    assert.ok(
+      createBlock.includes('initialJobCategory'),
+      'handleOpenCreate passes initialJobCategory to buildEmptyForm'
+    )
+    // When duplicate exists: initialJobCategory should be 'GENERAL'
+    assert.ok(
+      createBlock.includes("? 'GENERAL'"),
+      "falls back to 'GENERAL' for duplicate SALES_REVENUE scenario"
+    )
+  })
+
+  await run('POST /api/kpi/personal 참조형 SALES_REVENUE CREATE: route 코드 구조 — orgKpi.targetAmount 조회 + checkSalesKpiTargetSource + P2002 래핑 존재', () => {
+    const routeSource = read('src/app/api/kpi/personal/route.ts')
+
+    // 참조형(targetAmount undefined, linkedOrgKpiId 있음) 경로 게이트
+    assert.ok(
+      routeSource.includes("if (data.targetAmount === undefined)"),
+      'reference-mode gate: data.targetAmount === undefined 분기 존재'
+    )
+    // 조직 KPI targetAmount 조회
+    assert.ok(
+      routeSource.includes("select: { targetAmount: true }"),
+      'orgKpi.findUnique select targetAmount 존재'
+    )
+    // checkSalesKpiTargetSource 호출 확인
+    assert.ok(
+      routeSource.includes('checkSalesKpiTargetSource('),
+      'checkSalesKpiTargetSource 호출 존재'
+    )
+    // 참조형 성공 시 personalKpi.create에서 targetAmount ?? null 처리
+    assert.ok(
+      routeSource.includes('targetAmount: data.targetAmount ?? null'),
+      'create data: targetAmount nullable 처리(참조형 = null) 존재'
+    )
+    // 성공 경로: successResponse 반환
+    assert.ok(
+      routeSource.includes('return successResponse(kpi)'),
+      'successResponse(kpi) 반환 존재'
+    )
+    // P2002 unique constraint → 500이 아닌 409 AppError로 래핑
+    assert.ok(
+      routeSource.includes("code === 'P2002'"),
+      "P2002 unique-constraint → AppError 409 래핑 존재"
+    )
+    assert.ok(
+      routeSource.includes('DUPLICATE_KPI_NAME'),
+      'DUPLICATE_KPI_NAME 코드 존재'
+    )
+  })
+
   await run('personal KPI AI route now uses the same access resolver as the page', () => {
     const routeSource = read('src/app/api/kpi/personal/ai/route.ts')
 

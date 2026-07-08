@@ -189,7 +189,9 @@ run('personal KPI create CTA transition opens editor even outside ready state', 
   const file = read('src/components/kpi/PersonalKpiManagementClient.tsx')
 
   assert.deepEqual(transition, { nextTab: 'mine', openEditor: true })
-  assert.equal(file.includes("openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory))"), true)
+  // After fix: handleOpenCreate uses initialJobCategory (not directly props.actor.jobCategory)
+  // to fall back to GENERAL when SALES actor already has a SALES_REVENUE KPI
+  assert.equal(file.includes("openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, initialJobCategory))"), true)
   assert.equal(file.includes('setAiPreview(null)'), true)
   assert.equal(file.includes('setEditorOpen(true)'), true)
 })
