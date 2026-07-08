@@ -53,6 +53,8 @@ function makeKpi(
     owner: params.owner,
     linkedPersonalKpiCount: params.linkedPersonalKpiCount ?? 1,
     linkedConfirmedPersonalKpiCount: params.linkedConfirmedPersonalKpiCount ?? 1,
+    linkedReferenceSalesPersonalKpiCount: params.linkedReferenceSalesPersonalKpiCount ?? 0,
+    targetAmount: params.targetAmount ?? null,
     monthlyAchievementRate: params.monthlyAchievementRate ?? 95,
     updatedAt: params.updatedAt,
     coverageRate: params.coverageRate ?? 75,

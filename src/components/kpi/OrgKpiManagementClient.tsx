@@ -4314,6 +4314,24 @@ function EditorModal({
           </button>
         </div>
 
+        {errorMessage ? (
+          <div
+            role="alert"
+            className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"
+          >
+            <p>{errorMessage}</p>
+            {errorFieldErrors && Object.keys(errorFieldErrors).length ? (
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-rose-700">
+                {Object.entries(errorFieldErrors).map(([field, message]) => (
+                  <li key={`${field}-${message}`}>
+                    {message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <Field label={getOrgKpiDepartmentFieldLabel(scope)}>
             <select value={form.deptId} onChange={(event) => onChange({ ...form, deptId: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
@@ -4418,24 +4436,6 @@ function EditorModal({
               <p className="mt-1.5 text-xs text-amber-600">
                 ⚠️ 이 조직 KPI를 참조하는 개인 매출목표가 {linkedReferenceSalesCount}건 있습니다. 클리어 시 해당 KPI 평가 제출이 거부됩니다.
               </p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {errorMessage ? (
-          <div
-            role="alert"
-            className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-700"
-          >
-            <p>{errorMessage}</p>
-            {errorFieldErrors && Object.keys(errorFieldErrors).length ? (
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-rose-700">
-                {Object.entries(errorFieldErrors).map(([field, message]) => (
-                  <li key={`${field}-${message}`}>
-                    {message}
-                  </li>
-                ))}
-              </ul>
             ) : null}
           </div>
         ) : null}
