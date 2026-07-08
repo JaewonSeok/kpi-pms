@@ -225,6 +225,7 @@ export type PersonalKpiViewModel = {
   }>
   goalType: 'GENERAL' | 'SALES_REVENUE'
   targetAmount: string | null
+  isReferenceSalesTarget: boolean
   evidenceRecord: {
     recordId?: string
     yearMonth: string
@@ -264,6 +265,7 @@ export type OrgKpiOption = {
   category?: string
   departmentName: string
   description?: string | null
+  targetAmount: string | null
   mboReflection?: {
     state: KpiAlignmentHrReflectionState2026
     label: string
@@ -1855,6 +1857,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           })),
           goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
           targetAmount: resolveTargetAmount(kpi)?.toString() ?? null,
+          isReferenceSalesTarget: kpi.goalType === 'SALES_REVENUE' && kpi.targetAmount === null,
           evidenceRecord: {
             recordId: evidenceRecord?.id,
             yearMonth: evidenceYearMonth,
@@ -1989,6 +1992,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         category: item.kpiCategory,
         departmentName: resolveDepartmentLabel(item.department),
         description: item.definition,
+        targetAmount: item.targetAmount != null ? item.targetAmount.toString() : null,
         mboReflection: buildPersonalOrgKpiOptionMboReflection2026(item, orgKpiById),
       })),
       summary: {
