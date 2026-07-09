@@ -65,6 +65,7 @@ import {
 } from '@/lib/personal-kpi-target-values'
 import { joinInlineParts } from '@/lib/metric-copy'
 import { getPersonalKpiScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
+import { shouldShowSalesBanner, findSalesLinkedOrgKpiId } from '@/lib/personal-kpi-sales-banner'
 import { SALES_SCORE_BANDS_2026 } from '@/lib/sales-score-policy-2026'
 import { resolveSalesTargetMode, validateSalesKpiTargetAmount } from '@/lib/personal-kpi-sales-target'
 import {
@@ -1095,6 +1096,7 @@ export function PersonalKpiManagementClient(props: Props) {
   const [bulkEditForm, setBulkEditForm] = useState<PersonalBulkEditForm>(buildBulkEditForm(props))
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [banner, setBanner] = useState<Banner | null>(null)
+  const [editorFormError, setEditorFormError] = useState<string | undefined>()
   const [busyAction, setBusyAction] = useState<BusyAction>(null)
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
   const [selectedAiRecommendationIndex, setSelectedAiRecommendationIndex] = useState<number | null>(null)
@@ -1277,6 +1279,7 @@ export function PersonalKpiManagementClient(props: Props) {
     setEditorMode(mode)
     setForm(nextForm)
     setFormBaseline(nextForm)
+    setEditorFormError(undefined)
     setEditorOpen(true)
   }
 
@@ -1347,6 +1350,16 @@ export function PersonalKpiManagementClient(props: Props) {
       : props.state === 'permission-denied' || !props.permissions.canCreate
         ? '현재 범위에서는 개인 KPI를 추가할 권한이 없습니다.'
         : undefined
+  const showSalesBanner = useMemo(
+    () =>
+      shouldShowSalesBanner({
+        jobCategory: props.actor.jobCategory,
+        createDisabledReason,
+        mineItems,
+        orgKpiOptions: props.orgKpiOptions,
+      }),
+    [props.actor.jobCategory, createDisabledReason, mineItems, props.orgKpiOptions]
+  )
   const reviewDisabledReason =
     props.state === 'error'
       ? '페이지 상태를 복구한 뒤 검토 대기열을 확인해 주세요.'
@@ -1433,6 +1446,18 @@ export function PersonalKpiManagementClient(props: Props) {
     setSelectedAiRecommendationIndex(null)
     setPendingAiRecommendationIndex(null)
     setShowAiRecommendationSwitchConfirm(false)
+  }
+
+  function handleOpenCreateSales() {
+    openEditorWithForm(
+      'create',
+      buildEmptyForm(props.selectedYear, props.selectedEmployeeId, findSalesLinkedOrgKpiId(props.orgKpiOptions, props.actor.deptId), 'SALES')
+    )
+    setAiPreview(null)
+    setSelectedAiRecommendationIndex(null)
+    setPendingAiRecommendationIndex(null)
+    setShowAiRecommendationSwitchConfirm(false)
+    setBanner(null)
   }
 
   function handleOpenClone() {
@@ -1612,9 +1637,11 @@ export function PersonalKpiManagementClient(props: Props) {
 
     const validationMessage = validateKpiForm(form, orgKpiTargetAmount)
     if (validationMessage) {
+      setEditorFormError(validationMessage)
       setBanner({ tone: 'error', message: validationMessage })
       return
     }
+    setEditorFormError(undefined)
 
     if (editorMode === 'edit' && selectedKpi && !isDraftStatus(selectedKpi.status)) {
       setBanner({ tone: 'error', message: '초안 상태 KPI만 수정할 수 있습니다.' })
@@ -1695,7 +1722,9 @@ export function PersonalKpiManagementClient(props: Props) {
       })
       router.refresh()
     } catch (error) {
-      setBanner({ tone: 'error', message: error instanceof Error ? error.message : 'KPI 저장에 실패했습니다.' })
+      const msg = error instanceof Error ? error.message : 'KPI 저장에 실패했습니다.'
+      setEditorFormError(msg)
+      setBanner({ tone: 'error', message: msg })
     } finally {
       setBusyAction(null)
     }
@@ -2002,6 +2031,7 @@ export function PersonalKpiManagementClient(props: Props) {
       if (aiPreview.action === 'generate-draft' || aiPreview.action === 'improve-wording') {
         setEditorMode(selectedKpi ? 'edit' : 'create')
         setForm((current) => applyPreviewToForm(current, aiPreview.result))
+        setEditorFormError(undefined)
         setEditorOpen(true)
       }
 
@@ -2445,6 +2475,7 @@ export function PersonalKpiManagementClient(props: Props) {
       />
 
       {props.alerts?.length ? <LoadAlerts alerts={props.alerts} /> : null}
+      {showSalesBanner ? <SalesKpiBannerSection onOpenCreate={handleOpenCreateSales} /> : null}
       {banner ? <BannerMessage tone={banner.tone} message={banner.message} /> : null}
       {scheduleGateGuidance2026.warningMessage ? (
         <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -2612,12 +2643,13 @@ export function PersonalKpiManagementClient(props: Props) {
           orgKpiOptions={props.orgKpiOptions}
           busy={busyAction === 'save-form'}
           onChange={setForm}
-          onClose={() => setEditorOpen(false)}
+          onClose={() => { setEditorOpen(false); setEditorFormError(undefined) }}
           onSave={handleSaveForm}
           actor={props.actor}
           hasSalesKpiForYear={mineItems.some(
             (item) => item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED'
           )}
+          formError={editorFormError}
         />
       ) : null}
       {cloneOpen ? (
@@ -5139,14 +5171,12 @@ function EditorModal(props: {
   onSave: () => void
   actor: Props['actor']
   hasSalesKpiForYear: boolean
+  formError?: string
 }) {
   const isSalesActor = props.actor.jobCategory === 'SALES'
   const isSalesRevenue = props.form.goalType === 'SALES_REVENUE'
 
-  const salesDefaultLinkedOrgKpiId =
-    props.orgKpiOptions.find((o) => o.targetAmount)?.id ??
-    props.orgKpiOptions[0]?.id ??
-    ''
+  const salesDefaultLinkedOrgKpiId = findSalesLinkedOrgKpiId(props.orgKpiOptions, props.actor.deptId)
 
   const linkedOrgKpiOption = props.orgKpiOptions.find((o) => o.id === props.form.linkedOrgKpiId)
   const orgKpiTargetAmount = (isSalesRevenue ? (linkedOrgKpiOption?.targetAmount ?? null) : null)
@@ -5460,7 +5490,11 @@ function EditorModal(props: {
               >
                 <option value="">연결 안 함</option>
                 {props.orgKpiOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
+                  <option
+                    key={option.id}
+                    value={option.id}
+                    disabled={isSalesRevenue && (option.targetAmount == null || Number(option.targetAmount) <= 0)}
+                  >
                     {formatPersonalOrgKpiOptionLabel(option)}
                   </option>
                 ))}
@@ -5518,6 +5552,13 @@ function EditorModal(props: {
           </div>
         </div>
 
+        {props.formError ? (
+          <div className="px-6 pb-2">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+              {props.formError}
+            </div>
+          </div>
+        ) : null}
         <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-6 py-4">
           <ActionButton variant="secondary" onClick={props.onClose}>
             취소
@@ -5608,6 +5649,29 @@ function BannerMessage(props: Banner) {
         : 'border-sky-200 bg-sky-50 text-sky-700'
 
   return <div className={`rounded-2xl border px-4 py-3 text-sm ${toneClass}`}>{props.message}</div>
+}
+
+function SalesKpiBannerSection(props: { onOpenCreate: () => void }) {
+  return (
+    <section className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+      <div className="flex items-start gap-3">
+        <Target className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+        <div className="flex-1">
+          <p className="font-semibold">영업 직군 매출목표 KPI 등록 안내</p>
+          <p className="mt-1 leading-6">
+            영업 직군은 개인 매출목표 KPI 등록이 필요합니다. 팀 조직 KPI 목표액을 참조해 바로 만들 수 있어요.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={props.onOpenCreate}
+          className="shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
+        >
+          매출목표 KPI 만들기
+        </button>
+      </div>
+    </section>
+  )
 }
 
 function LoadAlerts(props: {
