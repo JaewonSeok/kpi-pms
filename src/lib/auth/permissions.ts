@@ -95,6 +95,7 @@ export const MENU_PERMISSIONS: Record<MenuKey, AuthRole[]> = {
     'ROLE_TEAM_LEADER',
     'ROLE_MEMBER',
   ],
+  PERFORMANCE_OPS: ['ROLE_ADMIN'],
   AI_COMPETENCY: [
     'ROLE_ADMIN',
     'ROLE_CEO',
@@ -134,7 +135,7 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/statistics', menuKey: 'STATISTICS' },
   { prefix: '/checkin', menuKey: 'CHECKIN' },
   { prefix: '/api/checkin', menuKey: 'CHECKIN' },
-  { prefix: '/evaluation/performance', menuKey: 'PERFORMANCE_EVALUATION' },
+  { prefix: '/evaluation/performance', menuKey: 'PERFORMANCE_OPS' },
   { prefix: '/evaluation/workbench', menuKey: 'PERFORMANCE_EVALUATION' },
   { prefix: '/evaluation/assistant', menuKey: 'PERFORMANCE_EVALUATION' },
   { prefix: '/evaluation/ai-competency', menuKey: 'AI_COMPETENCY' },

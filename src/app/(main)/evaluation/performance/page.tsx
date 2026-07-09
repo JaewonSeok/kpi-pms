@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { PerformanceHrOpsDashboard } from '@/components/evaluation/performance/PerformanceHrOpsDashboard'
 import { requireProtectedPageSession } from '@/server/auth/protected-page'
 import { getEvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
@@ -16,6 +17,10 @@ export default async function PerformanceEvaluationPage({ searchParams }: PagePr
     route: '/evaluation/performance',
     pathname: '/evaluation/performance',
   })
+
+  if (session.user.role !== 'ROLE_ADMIN') {
+    redirect('/403')
+  }
 
   const resolvedSearchParams = (await searchParams) ?? {}
   const data = await getEvaluationWorkbenchPageData({

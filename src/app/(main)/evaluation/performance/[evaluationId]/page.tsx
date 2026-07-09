@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { EvaluationWorkbenchClient } from '@/components/evaluation/EvaluationWorkbenchClient'
 import { prisma } from '@/lib/prisma'
 import { requireProtectedPageSession } from '@/server/auth/protected-page'
@@ -22,6 +23,10 @@ export default async function PerformanceEvaluationDetailPage({
     route: '/evaluation/performance',
     pathname: '/evaluation/performance',
   })
+
+  if (session.user.role !== 'ROLE_ADMIN') {
+    redirect('/403')
+  }
 
   const { evaluationId } = await params
   const resolvedSearchParams = (await searchParams) ?? {}
