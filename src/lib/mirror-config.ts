@@ -1,4 +1,6 @@
 // orgKpiId → carrier personalKpiId 명시 매핑.
-// 값은 seed(한상준 KPI 생성) 이후 실제 id로 채운다.
-// 빈 맵일 때 mirror 달성률은 기록 0건과 동일 동작(UI: '-').
-export const CARRIER_KPI_IDS: Record<string, string> = {}
+// 캐리어: 한상준(cmpev9i04000x04jst5idpj33)의 '국내 영업 매출 달성 (본부 공통)'
+// seed-mirror-kpi.ts 실행 결과 반영 (2026-07-10).
+export const CARRIER_KPI_IDS: Record<string, string> = {
+  'cmr0ab87u000004jpeddn6nic': 'cmref3eig0000hguu6i76jm6e',
+}
