@@ -46,6 +46,7 @@ import {
   type PersonalMboItemInput2026,
 } from './kpi-alignment-policy-2026'
 import { resolveTargetAmount } from '@/lib/resolve-target-amount'
+import { buildCarrierRecordsMap } from '@/lib/resolve-carrier-record'
 
 export type PersonalKpiPageState =
   | 'ready'
@@ -224,6 +225,7 @@ export type PersonalKpiViewModel = {
     evidenceComment?: string | null
   }>
   goalType: 'GENERAL' | 'SALES_REVENUE'
+  isMirror: boolean
   targetAmount: string | null
   isReferenceSalesTarget: boolean
   evidenceRecord: {
@@ -1777,6 +1779,8 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       .join(' / ')
 
     failureStage = 'mine-mapping'
+    const mirrorKpisForBatch = mine.filter(k => k.isMirror && k.linkedOrgKpiId)
+    const carrierRecordsByKpiId = await buildCarrierRecordsMap(prisma, mirrorKpisForBatch)
     const mappedMine = mapPersonalKpiSection({
       alerts,
       title: '개인 KPI 화면 정보를 구성하지 못한 항목이 있습니다.',
@@ -1799,7 +1803,10 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         })
         const weightApproval = buildWeightApprovalSummary(logs, employeesById)
         const hasRejectedRevision = hasRejectedRevisionPending(logs)
-        const latestRecord = kpi.monthlyRecords[0]
+        const effectiveMonthlyRecords = kpi.isMirror
+          ? (carrierRecordsByKpiId.get(kpi.id) ?? [])
+          : kpi.monthlyRecords
+        const latestRecord = effectiveMonthlyRecords[0]
         const evidenceYearMonth = resolvePersonalKpiEvidenceYearMonth(selectedYear, kpi.monthlyRecords)
         const evidenceRecord = kpi.monthlyRecords.find((record) => record.yearMonth === evidenceYearMonth)
 
@@ -1851,7 +1858,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
           linkedMonthlyCount: kpi.monthlyRecords.length,
           riskFlags: deriveRiskFlags(kpi, hasRejectedRevision),
           cloneInfo: parseCloneInfo(kpi),
-          recentMonthlyRecords: kpi.monthlyRecords.map((record) => ({
+          recentMonthlyRecords: effectiveMonthlyRecords.map((record) => ({
             id: record.id,
             month: record.yearMonth,
             achievementRate: record.achievementRate ?? undefined,
@@ -1860,6 +1867,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
             evidenceComment: record.evidenceComment,
           })),
           goalType: kpi.goalType as 'GENERAL' | 'SALES_REVENUE',
+          isMirror: kpi.isMirror,
           targetAmount: resolveTargetAmount(kpi)?.toString() ?? null,
           isReferenceSalesTarget: kpi.goalType === 'SALES_REVENUE' && kpi.targetAmount === null,
           evidenceRecord: {

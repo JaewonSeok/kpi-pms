@@ -91,6 +91,14 @@ export async function POST(request: Request) {
       throw new AppError(404, 'KPI_NOT_FOUND', '개인 KPI를 찾을 수 없습니다.')
     }
 
+    if (kpi.isMirror) {
+      throw new AppError(
+        400,
+        'MIRROR_KPI_NO_DIRECT_INPUT',
+        '공통 배포 KPI는 직접 실적 입력이 불가합니다. 캐리어 KPI의 실적이 자동 반영됩니다.'
+      )
+    }
+
     const canWrite =
       kpi.employeeId === session.user.id ||
       (session.user.role === 'ROLE_ADMIN' && canAccessEmployee(session, kpi.employee))

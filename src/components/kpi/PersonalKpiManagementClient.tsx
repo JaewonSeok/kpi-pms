@@ -2338,6 +2338,14 @@ export function PersonalKpiManagementClient(props: Props) {
       return
     }
 
+    if (selectedKpi.isMirror) {
+      setBanner({
+        tone: 'info',
+        message: '공통 배포 KPI는 직접 실적 입력이 불가합니다. 캐리어 KPI의 실적이 자동 반영됩니다.',
+      })
+      return
+    }
+
     setBusyAction('evidence-save')
     setBanner(null)
 
