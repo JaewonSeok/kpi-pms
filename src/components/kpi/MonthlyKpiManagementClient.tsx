@@ -255,6 +255,7 @@ function hasMeaningfulMonthlyContent(record: MonthlyRecordViewModel | null, draf
 
 function getEditBlockedReason(record: MonthlyRecordViewModel | null, canEdit: boolean) {
   if (!record) return '입력할 KPI를 먼저 선택하세요.'
+  if (record.isMirror) return '공통 배포 KPI는 직접 실적 입력이 불가합니다. 캐리어 KPI의 실적이 자동 반영됩니다.'
   if (canEdit) return undefined
   if (record.status === 'SUBMITTED') return '제출된 월간 실적은 리뷰 전까지 수정할 수 없습니다.'
   if (record.status === 'REVIEWED') return '리뷰가 완료된 월간 실적은 읽기 전용입니다.'
@@ -1062,7 +1063,8 @@ export function MonthlyKpiManagementClient({
   const canEdit =
     Boolean(selected) &&
     pageData.permissions.canEdit &&
-    ['NOT_STARTED', 'DRAFT'].includes(selected.status)
+    ['NOT_STARTED', 'DRAFT'].includes(selected.status) &&
+    !selected?.isMirror
   const canSubmit =
     Boolean(selected) &&
     pageData.permissions.canSubmit &&

@@ -1,4 +1,5 @@
 import type { EvalStage, Prisma } from '@prisma/client'
+import { resolveCarrierRecord } from '@/lib/resolve-carrier-record'
 import { getServerSession } from 'next-auth'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 import { authOptions } from '@/lib/auth'
@@ -147,20 +148,13 @@ export async function PATCH(
 
         const kpi = evaluationItem.personalKpi
 
-        // SALES_REVENUE: look up the latest confirmed monthly record that has an actualAmount.
+        // SALES_REVENUE: isMirror=true면 캐리어 KPI의 최신 non-draft 실적을 사용.
+        // isMirror=false면 기존과 동일하게 kpi.id 기준 조회.
         // actualAmount: { not: null } filters in WHERE but Prisma still types the field as bigint|null
         // after the query — null-check below narrows it for calcSalesScore.
         const salesRecord =
           kpi.goalType === 'SALES_REVENUE'
-            ? await tx.monthlyRecord.findFirst({
-                where: {
-                  personalKpiId: kpi.id,
-                  isDraft: false,
-                  actualAmount: { not: null },
-                },
-                orderBy: { yearMonth: 'desc' },
-                select: { actualAmount: true },
-              })
+            ? await resolveCarrierRecord(tx, kpi)
             : null
 
         const scoreResult = resolveItemScore({

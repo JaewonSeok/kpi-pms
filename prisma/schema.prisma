@@ -499,6 +499,7 @@ model PersonalKpi {
   status         KpiStatus   @default(DRAFT)
   goalType       GoalType    @default(GENERAL)
   targetAmount   BigInt?
+  isMirror       Boolean     @default(false)
   tags           Json?
   copiedFromPersonalKpiId String?
   copiedFromPersonalKpi   PersonalKpi?  @relation("PersonalKpiCloneSource", fields: [copiedFromPersonalKpiId], references: [id])

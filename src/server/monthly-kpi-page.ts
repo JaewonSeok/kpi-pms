@@ -18,6 +18,7 @@ import {
   type MonthlyRecordOperationalStatus,
 } from './monthly-kpi-workflow'
 import { resolveTargetAmount } from '@/lib/resolve-target-amount'
+import { buildCarrierRecordsMap } from '@/lib/resolve-carrier-record'
 
 export type MonthlyPageState =
   | 'ready'
@@ -95,6 +96,7 @@ export type MonthlyRecordViewModel = {
     summary: string
   }>
   history: MonthlyRecordTimelineItem[]
+  isMirror: boolean
   persistedDraft: boolean
   submittedAt?: string
 }
@@ -821,9 +823,15 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
         }),
     })
 
+    const mirrorKpisForBatch = personalKpis.filter(k => k.isMirror && k.linkedOrgKpiId)
+    const carrierRecordsByKpiId = await buildCarrierRecordsMap(prisma, mirrorKpisForBatch)
+
     const selectedMonthRecords = personalKpis.map((kpi) => {
-      const currentRecord = kpi.monthlyRecords.find((record) => record.yearMonth === selectedMonth)
-      const previousRecord = kpi.monthlyRecords.find((record) => record.yearMonth < selectedMonth)
+      const effectiveMonthlyRecords = kpi.isMirror
+        ? (carrierRecordsByKpiId.get(kpi.id) ?? [])
+        : kpi.monthlyRecords
+      const currentRecord = effectiveMonthlyRecords.find((record) => record.yearMonth === selectedMonth)
+      const previousRecord = effectiveMonthlyRecords.find((record) => record.yearMonth < selectedMonth)
       const logs = currentRecord ? logsByRecordId.get(currentRecord.id) ?? [] : []
       const reviewMeta = parseReviewComment(logs)
       const attachments = parseMonthlyAttachments(currentRecord?.attachments)
@@ -895,15 +903,19 @@ export async function getMonthlyKpiPageData(params: PageParams): Promise<Monthly
           : undefined,
         linkedCheckins,
         history: logs.slice(0, 10).map((log) => mapTimelineItem(log, employeesById)),
+        isMirror: kpi.isMirror,
         persistedDraft: Boolean(currentRecord?.isDraft),
         submittedAt: currentRecord?.submittedAt?.toISOString(),
       } satisfies MonthlyRecordViewModel
     })
 
     const trends: MonthlyTrendViewModel[] = personalKpis.map((kpi) => {
+      const effectiveMonthlyRecords = kpi.isMirror
+        ? (carrierRecordsByKpiId.get(kpi.id) ?? [])
+        : kpi.monthlyRecords
       const months = monthWindow(selectedYear)
       const points = months.map((month) => {
-        const record = kpi.monthlyRecords.find((item) => item.yearMonth === month)
+        const record = effectiveMonthlyRecords.find((item) => item.yearMonth === month)
         return {
           month,
           achievementRate: record?.achievementRate ?? undefined,
