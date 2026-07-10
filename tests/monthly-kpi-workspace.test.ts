@@ -465,7 +465,7 @@ async function main() {
     assert.equal(source.includes('setAiPreview(null)'), true)
     assert.equal(source.includes("handleRouteSelection({ year: Number(event.target.value), tab: 'entry', recordId: '' })"), true)
     assert.equal(source.includes("handleRouteSelection({ month: event.target.value, tab: 'entry', recordId: '' })"), true)
-    assert.equal(source.includes("employeeId: event.target.value,"), true)
+    assert.equal(source.includes("MonthlyEmployeeSearchCombo"), true)
     assert.equal(source.includes("recordId: ''"), true)
   })
 
@@ -508,6 +508,21 @@ async function main() {
     assert.equal(source.includes('openEvidenceLink'), true)
     assert.equal(source.includes('downloadEvidenceAttachment'), true)
     assert.equal(source.includes('증빙 변경 사항은 임시저장 또는 제출 시 반영됩니다.'), true)
+  })
+
+  await run('monthly KPI employee search combo: component present and wired to handleRouteSelection', () => {
+    const source = read('src/components/kpi/MonthlyKpiManagementClient.tsx')
+    // 컴포넌트 정의
+    assert.equal(source.includes('function MonthlyEmployeeSearchCombo('), true)
+    // 필터 로직: 이름·부서 부분일치
+    assert.equal(source.includes('e.name.toLowerCase().includes(q)'), true)
+    assert.equal(source.includes('e.departmentName.toLowerCase().includes(q)'), true)
+    // handleRouteSelection 연결
+    assert.equal(source.includes("scope: 'employee', employeeId, tab: 'entry', recordId: ''"), true)
+    // 권한 게이트: canChangeTargetScope 그대로 유지
+    assert.equal(source.includes('canChangeTargetScope'), true)
+    // disabled 전달: scope=self 시 비활성
+    assert.equal(source.includes("disabled={pageData.selectedScope === 'self'}"), true)
   })
 
   console.log('Monthly KPI workspace tests completed')
