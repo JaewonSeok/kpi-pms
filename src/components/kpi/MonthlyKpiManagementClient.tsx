@@ -778,25 +778,14 @@ function MonthlyWorkspaceHeader({
 
                   <label className="space-y-1">
                     <span className="text-[11px] font-medium text-slate-500">대상자</span>
-                    <select
+                    <MonthlyEmployeeSearchCombo
+                      options={pageData.employeeOptions}
                       value={pageData.selectedEmployeeId}
-                      onChange={(event) =>
-                        handleRouteSelection({
-                          scope: 'employee',
-                          employeeId: event.target.value,
-                          tab: 'entry',
-                          recordId: '',
-                        })
-                      }
                       disabled={pageData.selectedScope === 'self'}
-                      className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:bg-slate-50"
-                    >
-                      {pageData.employeeOptions.map((employee) => (
-                        <option key={employee.id} value={employee.id}>
-                          {employee.name} / {employee.departmentName}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(employeeId) =>
+                        handleRouteSelection({ scope: 'employee', employeeId, tab: 'entry', recordId: '' })
+                      }
+                    />
                   </label>
                 </>
               ) : (
@@ -1008,6 +997,91 @@ function RecoveryScopeControls(props: {
         </label>
       </div>
     </section>
+  )
+}
+
+function MonthlyEmployeeSearchCombo({
+  options,
+  value,
+  disabled,
+  onChange,
+}: {
+  options: MonthlyPageData['employeeOptions']
+  value: string
+  disabled: boolean
+  onChange: (employeeId: string) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const selected = options.find((e) => e.id === value)
+  const displayLabel = selected ? `${selected.name} / ${selected.departmentName}` : ''
+
+  const { filtered, hasMore } = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const base = q
+      ? options.filter(
+          (e) => e.name.toLowerCase().includes(q) || e.departmentName.toLowerCase().includes(q)
+        )
+      : options
+    return { filtered: base.slice(0, 60), hasMore: base.length > 60 }
+  }, [options, query])
+
+  function handleSelect(id: string) {
+    onChange(id)
+    setOpen(false)
+    setQuery('')
+    inputRef.current?.blur()
+  }
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        disabled={disabled}
+        placeholder={disabled ? '대상 범위를 먼저 선택하세요' : '이름 또는 부서 검색…'}
+        value={open ? query : displayLabel}
+        onFocus={() => {
+          if (!disabled) {
+            setQuery('')
+            setOpen(true)
+          }
+        }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onChange={(e) => setQuery(e.target.value)}
+        className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 disabled:cursor-not-allowed disabled:bg-slate-50"
+      />
+      {open && (
+        <ul className="absolute left-0 right-0 z-20 mt-1 max-h-52 overflow-auto rounded-lg border border-gray-200 bg-white text-sm shadow-lg">
+          {filtered.length === 0 ? (
+            <li className="px-3 py-2 text-slate-400">검색 결과 없음</li>
+          ) : (
+            <>
+              {filtered.map((e) => (
+                <li
+                  key={e.id}
+                  onMouseDown={(evt) => {
+                    evt.preventDefault()
+                    handleSelect(e.id)
+                  }}
+                  className={`cursor-pointer px-3 py-2 hover:bg-slate-50 ${e.id === value ? 'font-semibold text-blue-700' : 'text-slate-800'}`}
+                >
+                  {e.name}
+                  <span className="ml-1 text-xs text-slate-400">/ {e.departmentName}</span>
+                </li>
+              ))}
+              {hasMore && (
+                <li className="border-t border-gray-100 px-3 py-1.5 text-xs text-slate-400">
+                  검색어를 입력하면 더 많은 결과를 볼 수 있습니다
+                </li>
+              )}
+            </>
+          )}
+        </ul>
+      )}
+    </div>
   )
 }
 
@@ -2072,25 +2146,14 @@ function EntryTab({
 
                       <label className="space-y-1">
                         <span className="text-[11px] font-medium text-slate-500">대상자</span>
-                        <select
+                        <MonthlyEmployeeSearchCombo
+                          options={pageData.employeeOptions}
                           value={pageData.selectedEmployeeId}
-                          onChange={(event) =>
-                            handleRouteSelection({
-                              scope: 'employee',
-                              employeeId: event.target.value,
-                              tab: 'entry',
-                              recordId: '',
-                            })
-                          }
                           disabled={pageData.selectedScope === 'self'}
-                          className="min-h-9 w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-slate-900 disabled:bg-slate-50"
-                        >
-                          {pageData.employeeOptions.map((employee) => (
-                            <option key={employee.id} value={employee.id}>
-                              {employee.name} / {employee.departmentName}
-                            </option>
-                          ))}
-                        </select>
+                          onChange={(employeeId) =>
+                            handleRouteSelection({ scope: 'employee', employeeId, tab: 'entry', recordId: '' })
+                          }
+                        />
                       </label>
                     </>
                   ) : (
