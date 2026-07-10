@@ -261,6 +261,7 @@ export type PersonalKpiReviewQueueItem = {
 
 export type OrgKpiOption = {
   id: string
+  deptId: string
   title: string
   category?: string
   departmentName: string
@@ -318,6 +319,7 @@ export type PersonalKpiPageData = {
   aiAccess: PersonalKpiAiAccessView
   actor: {
     id: string
+    deptId: string
     role: SystemRole
     name: string
     departmentName: string
@@ -1240,6 +1242,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
   const selectedYear = params.year ?? new Date().getFullYear()
   const actor = {
     id: params.session.user.id,
+    deptId: params.session.user.deptId,
     role: params.session.user.role,
     name: params.session.user.name,
     departmentName: params.session.user.deptName,
@@ -1361,8 +1364,9 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
     const targetEmployee = requestedEmployee ?? defaultTargetEmployee
     shellTargetEmployee = targetEmployee
 
-    // KPI 대상자(화면 주인)의 직군. viewer가 아님. 임퍼소네이션 시 대상자 기준.
+    // KPI 대상자(화면 주인)의 직군·부서. viewer가 아님. 임퍼소네이션 시 대상자 기준.
     actor.jobCategory = (targetEmployee?.jobCategory ?? 'GENERAL') as 'GENERAL' | 'SALES'
+    actor.deptId = targetEmployee?.deptId ?? actor.deptId
 
     if (requestedEmployeeId && !requestedEmployee) {
       return {
@@ -1988,6 +1992,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
       employeeOptions,
       orgKpiOptions: orgKpiRecords.map((item) => ({
         id: item.id,
+        deptId: item.deptId,
         title: item.kpiName,
         category: item.kpiCategory,
         departmentName: resolveDepartmentLabel(item.department),

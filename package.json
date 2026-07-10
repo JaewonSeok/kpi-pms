@@ -39,7 +39,7 @@
     "test:goal-governance": "ts-node -P tsconfig.seed.json tests/goal-governance.test.ts",
     "test:operational-pages": "ts-node -P tsconfig.seed.json tests/operational-pages.test.ts && ts-node -P tsconfig.seed.json tests/protected-page-regression.test.ts",
     "test:sales-score-policy": "ts-node -P tsconfig.seed.json tests/sales-score-policy-2026.test.ts",
-    "test:personal-kpi-sales": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/personal-kpi-sales-schema.test.ts",
+    "test:personal-kpi-sales": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/personal-kpi-sales-schema.test.ts && ts-node -P tsconfig.seed.json tests/personal-kpi-sales-banner.test.ts",
     "test:monthly-record-sales": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/monthly-record-sales.test.ts",
     "test:evaluation-submit-sales-score": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/evaluation-submit-sales-score.test.ts",
     "test:google-workspace": "ts-node -P tsconfig.seed.json tests/google-workspace.test.ts",
