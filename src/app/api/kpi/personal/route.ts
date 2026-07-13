@@ -223,12 +223,14 @@ export async function POST(request: Request) {
         goalType: data.goalType,
         ...(data.goalType === 'SALES_REVENUE'
           ? { targetAmount: data.targetAmount ?? null, targetValue: null }
-          : buildPersonalKpiTargetValuePersistence({
-              targetValueT: data.targetValueT!,
+          : data.targetValueT !== undefined
+          ? buildPersonalKpiTargetValuePersistence({
+              targetValueT: data.targetValueT,
               targetValueE: data.targetValueE,
               targetValueS: data.targetValueS,
               copyMetadata: null,
             })
+          : { targetValue: null }
         ),
         weight: data.weight,
         difficulty: data.difficulty,
