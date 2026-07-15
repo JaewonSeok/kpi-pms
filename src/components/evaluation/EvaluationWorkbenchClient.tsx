@@ -135,6 +135,7 @@ import type {
 } from '@/components/evaluation/workbench/EvaluationWorkbenchTypes'
 import { TAB_LABELS } from '@/components/evaluation/workbench/EvaluationWorkbenchTypes'
 export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps) {
+  const basePath = props.basePath ?? '/evaluation/performance'
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
@@ -1053,8 +1054,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
         if (!json.success) throw new Error(json.error?.message ?? '자기평가를 시작하지 못했습니다.')
         const nextId = json.data?.id as string | undefined
         const nextUrl = nextId
-          ? `/evaluation/performance/${encodeURIComponent(nextId)}?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
-          : `/evaluation/performance?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
+          ? `${basePath}/${encodeURIComponent(nextId)}?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
+          : `${basePath}?cycleId=${encodeURIComponent(props.selectedCycleId ?? '')}`
         startTransition(() => router.push(nextUrl))
         setNotice('자기평가 초안을 생성했습니다.')
         return
@@ -1310,7 +1311,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
   }
 
   function moveToCycle(cycleId: string) {
-    startTransition(() => router.push(`/evaluation/performance?cycleId=${encodeURIComponent(cycleId)}`))
+    startTransition(() => router.push(`${basePath}?cycleId=${encodeURIComponent(cycleId)}`))
   }
 
   function moveToEvaluation(evaluationId: string) {
@@ -1320,8 +1321,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
     startTransition(() =>
       router.push(
         query
-          ? `/evaluation/performance/${encodeURIComponent(evaluationId)}?${query}`
-          : `/evaluation/performance/${encodeURIComponent(evaluationId)}`
+          ? `${basePath}/${encodeURIComponent(evaluationId)}?${query}`
+          : `${basePath}/${encodeURIComponent(evaluationId)}`
       )
     )
   }

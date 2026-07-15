@@ -317,6 +317,7 @@ export type WorkbenchPilotAlignmentStage2026 =
   | 'SAFETY'
 export type EvaluationWorkbenchClientProps = EvaluationWorkbenchPageData & {
   presentationMode?: 'performance' | 'performance-dashboard' | 'readiness-admin' | 'workbench-pilot'
+  basePath?: string
 }
 export type InteractivePilotLocalInputs2026 = {
   selectedKpiId: string
