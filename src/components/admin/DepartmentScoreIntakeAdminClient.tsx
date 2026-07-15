@@ -8,8 +8,8 @@ import type {
   DepartmentScoreIntakePageIntake,
 } from '@/server/admin/department-score-intake-page'
 
-// M1-B2 Round 2 / ADMIN '조직 점수 입력' 화면.
-// 외부 전략기획팀이 채점한 본부/실/팀 점수를 cycle별로 받아 upsert. CEO 시연용.
+// ADMIN '조직 점수 입력' 화면.
+// 외부 전략기획팀이 채점한 본부/실/팀 점수를 cycle별로 받아 upsert.
 // ★ levelTag enum(본부/실/팀)만 사용 — numeric level 헬퍼 사용 금지.
 
 type LevelTag = NonNullable<DepartmentScoreIntakePageDepartment['levelTag']>

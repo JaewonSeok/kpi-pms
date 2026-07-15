@@ -1263,7 +1263,7 @@ run('org-chart entry points resolve to the org-chart tab instead of falling back
   assert.match(registrationClientSource, /resolveAdminGoogleAccessTab\(searchParams\.get\('tab'\)\)/)
   assert.match(registrationClientSource, /buildAdminGoogleAccessHref\(nextTab/)
   assert.doesNotMatch(registrationClientSource, /applyTab\('manage', employee\.departmentId\)/)
-  assert.match(navigationSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
+  assert.doesNotMatch(navigationSource, /buildAdminGoogleAccessHref\('org-chart'\)/) // 사이드바 정리(2026-07)로 nav 진입점 의도 제거 — 재유입 방지 가드
   assert.match(calendarSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
   assert.match(orgChartPageSource, /buildAdminGoogleAccessHref\('org-chart'\)/)
 })

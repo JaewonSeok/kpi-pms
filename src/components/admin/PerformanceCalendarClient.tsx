@@ -240,7 +240,7 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
           <CalendarDays className="h-6 w-6" />
         </div>
         <h1 className="mt-4 text-center text-xl font-semibold text-slate-900">
-          {data.state === 'permission-denied' ? '성과 관리 일정에 접근할 수 없습니다.' : '성과 관리 일정을 불러오지 못했습니다.'}
+          {data.state === 'permission-denied' ? '평가 일정 캘린더에 접근할 수 없습니다.' : '평가 일정 캘린더를 불러오지 못했습니다.'}
         </h1>
         <p className="mt-2 text-center text-sm text-slate-500">{data.message}</p>
       </section>
@@ -253,7 +253,7 @@ export function PerformanceCalendarClient({ data }: { data: PerformanceCalendarP
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-500">Performance Calendar</p>
-            <h1 className="mt-2 text-2xl font-bold text-slate-900">성과 관리 일정</h1>
+            <h1 className="mt-2 text-2xl font-bold text-slate-900">평가 일정 캘린더</h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-500">
               리뷰, 목표, 서베이, 캘리브레이션, 입사일을 한 화면에서 확인하고 바로 관련 관리 화면으로 이동할 수 있습니다.
             </p>
