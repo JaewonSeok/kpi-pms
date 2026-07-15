@@ -1930,7 +1930,7 @@ async function main() {
     assert.equal(evaluationOpsPageSource.includes('고급 / 공식 전환 준비 화면'), true)
     assert.equal(navigationSource.includes('KPI/MBO'), true)
     assert.equal(navigationSource.includes('내 KPI/MBO'), true)
-    assert.equal(navigationSource.includes('업적평가 운영'), true)
+    assert.equal(navigationSource.includes('업적평가 모니터링'), true)
     assert.equal(navigationSource.includes('HR 평가 운영 대시보드'), false)
     assert.equal(navigationSource.includes('업적평가'), true)
     assert.equal(navigationSource.includes('평가 워크벤치 미리보기'), false)

@@ -30,7 +30,7 @@ async function main() {
 
   await run('HR operations dashboard contains PPT parity labels', () => {
     const requiredLabels = [
-      '업적평가 운영 현황',
+      '업적평가 모니터링',
       '전체 대상자',
       '팀원 자기평가 제출',
       '팀장 평가 완료',
@@ -111,7 +111,7 @@ async function main() {
   })
 
   await run('navigation keeps performance labels and hides legacy wording', () => {
-    assert.equal(navigationSource.includes("label: '업적평가 운영'"), true)
+    assert.equal(navigationSource.includes("label: '업적평가 모니터링'"), true)
     assert.equal(navigationSource.includes("href: '/evaluation/performance'"), true)
     assert.equal(navigationSource.includes("label: '업적평가'"), true)
     assert.equal(navigationSource.includes("href: '/evaluation/workbench'"), true)
