@@ -123,13 +123,12 @@ run('CREATE GENERAL + targetAmount 포함 → fail', () => {
   assert.match(result.error.issues[0].message, /GENERAL.*targetAmount/)
 })
 
-run('CREATE GENERAL targetValueT 누락 → fail', () => {
+run('CREATE GENERAL targetValueT 누락 → pass (T/E/S 선택사항)', () => {
   const result = CreatePersonalKpiSchema.safeParse({
     ...BASE_CREATE,
     goalType: 'GENERAL',
   })
-  assert.ok(!result.success)
-  assert.match(result.error.issues[0].message, /T 목표값/)
+  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
 })
 
 run('CREATE GENERAL T <= E <= S 정상 (T=80, E=90, S=110) → pass', () => {
@@ -143,18 +142,17 @@ run('CREATE GENERAL T <= E <= S 정상 (T=80, E=90, S=110) → pass', () => {
   assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
 })
 
-run('CREATE GENERAL T > E 위반 (T=100, E=90) → fail', () => {
+run('CREATE GENERAL T > E (T=100, E=90) → pass (순서검증 제거됨)', () => {
   const result = CreatePersonalKpiSchema.safeParse({
     ...BASE_CREATE,
     goalType: 'GENERAL',
     targetValueT: 100,
     targetValueE: 90,
   })
-  assert.ok(!result.success)
-  assert.match(result.error.issues[0].message, /T <= E <= S/)
+  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
 })
 
-run('CREATE GENERAL E > S 위반 (T=80, E=110, S=100) → fail', () => {
+run('CREATE GENERAL E > S (T=80, E=110, S=100) → pass (순서검증 제거됨)', () => {
   const result = CreatePersonalKpiSchema.safeParse({
     ...BASE_CREATE,
     goalType: 'GENERAL',
@@ -162,8 +160,7 @@ run('CREATE GENERAL E > S 위반 (T=80, E=110, S=100) → fail', () => {
     targetValueE: 110,
     targetValueS: 100,
   })
-  assert.ok(!result.success)
-  assert.match(result.error.issues[0].message, /T <= E <= S/)
+  assert.ok(result.success, result.success ? '' : JSON.stringify(result.error.issues))
 })
 
 // ── UpdatePersonalKpiSchema: SALES_REVENUE ────────────────────────────────────
