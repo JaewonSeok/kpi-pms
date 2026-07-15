@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import type { ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   ClipboardCheck,
   FileText,
@@ -10,6 +11,7 @@ import {
   LockKeyhole,
   Save,
   Send,
+  Sparkles,
   Target,
 } from 'lucide-react'
 import { PmsDetailPanel, PmsProgressRing, PmsSignalChip } from '@/components/pms-ui'
@@ -17,9 +19,19 @@ import type { PmsTone } from '@/components/pms-ui'
 
 export type PerformanceMemberInputWorkspaceData = {
   currentUser?: {
+    id?: string | null
     role?: string | null
   } | null
   selected?: SelectedEvaluation | null
+  selectedCycleId?: string | null
+  permissions?: {
+    canCreateSelfEvaluation?: boolean | null
+  } | null
+  evaluations?: Array<{
+    id: string
+    targetId: string
+    evalStage: string
+  }> | null
 }
 
 type SelectedEvaluation = {
@@ -103,7 +115,38 @@ export function PerformanceMemberInputWorkspace({ data }: { data: unknown }) {
   const workspaceData = data as PerformanceMemberInputWorkspaceData
   const selected = workspaceData.selected ?? null
   const currentRole = workspaceData.currentUser?.role ?? 'ROLE_MEMBER'
+  const currentUserId = workspaceData.currentUser?.id ?? null
   const isPrivilegedPreview = currentRole === 'ROLE_ADMIN' || currentRole === 'ROLE_MASTER'
+  const selectedCycleId = workspaceData.selectedCycleId ?? null
+  const canCreateSelfEvaluation = workspaceData.permissions?.canCreateSelfEvaluation ?? false
+  const existingSelfEvaluation = (workspaceData.evaluations ?? []).find(
+    (ev) => ev.targetId === currentUserId && ev.evalStage === 'SELF'
+  ) ?? null
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const [selfStartError, setSelfStartError] = useState('')
+
+  async function handleStartSelfEvaluation() {
+    setSelfStartError('')
+    try {
+      const response = await fetch('/api/evaluation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ evalCycleId: selectedCycleId }),
+      })
+      const json = await response.json()
+      if (!json.success) throw new Error(json.error?.message ?? '자기평가를 시작하지 못했습니다.')
+      const nextId = json.data?.id as string | undefined
+      if (nextId) {
+        startTransition(() =>
+          router.push(`/evaluation/self/${encodeURIComponent(nextId)}?cycleId=${encodeURIComponent(selectedCycleId ?? '')}`)
+        )
+      }
+    } catch (err) {
+      setSelfStartError(err instanceof Error ? err.message : '자기평가를 시작하지 못했습니다.')
+    }
+  }
+
   const rows = useMemo<MemberEvaluationRow[]>(
     () => (selected?.items ?? []).map((item) => buildMemberEvaluationRow(item, selected)),
     [selected]
@@ -148,7 +191,44 @@ export function PerformanceMemberInputWorkspace({ data }: { data: unknown }) {
             <p className="mt-2 text-xs leading-5 text-slate-500">
               관리자 권한에서는 팀원 입력 화면을 preview-only로 확인합니다. 저장/제출 기능은 열지 않습니다.
             </p>
-          ) : null}
+          ) : (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {existingSelfEvaluation ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    startTransition(() =>
+                      router.push(
+                        `/evaluation/self/${encodeURIComponent(existingSelfEvaluation.id)}${selectedCycleId ? `?cycleId=${encodeURIComponent(selectedCycleId)}` : ''}`
+                      )
+                    )
+                  }
+                  disabled={isPending}
+                  className="inline-flex min-h-9 items-center gap-2 rounded-full border border-blue-300 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  자기평가 이어서 작성
+                </button>
+              ) : canCreateSelfEvaluation ? (
+                <button
+                  type="button"
+                  onClick={() => void handleStartSelfEvaluation()}
+                  disabled={isPending}
+                  className="inline-flex min-h-9 items-center gap-2 rounded-full border border-blue-300 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  자기평가 시작
+                </button>
+              ) : (
+                <span className="text-xs text-slate-500">
+                  확정된 KPI가 없거나 자기평가 기간이 아니어서 자기평가를 시작할 수 없습니다.
+                </span>
+              )}
+              {selfStartError ? (
+                <span className="text-xs text-rose-600">{selfStartError}</span>
+              ) : null}
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
           <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2">

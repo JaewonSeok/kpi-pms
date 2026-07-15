@@ -136,6 +136,7 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/checkin', menuKey: 'CHECKIN' },
   { prefix: '/api/checkin', menuKey: 'CHECKIN' },
   { prefix: '/evaluation/performance', menuKey: 'PERFORMANCE_OPS' },
+  { prefix: '/evaluation/self', menuKey: 'PERFORMANCE_EVALUATION' },
   { prefix: '/evaluation/workbench', menuKey: 'PERFORMANCE_EVALUATION' },
   { prefix: '/evaluation/assistant', menuKey: 'PERFORMANCE_EVALUATION' },
   { prefix: '/evaluation/ai-competency', menuKey: 'AI_COMPETENCY' },
