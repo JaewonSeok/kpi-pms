@@ -1012,45 +1012,6 @@ function validateKpiForm(form: KpiForm, orgKpiTargetAmount?: string | null) {
       orgKpiTargetAmount: orgKpiTargetAmount ?? null,
     })
     if (error) return error
-  } else {
-    if (!form.targetValueT.trim()) {
-      return 'T 목표값을 입력해 주세요.'
-    }
-
-    const targetValueT = Number(form.targetValueT)
-    if (!Number.isFinite(targetValueT) || targetValueT < 0) {
-      return 'T 목표값은 0 이상의 숫자로 입력해 주세요.'
-    }
-
-    const targetValueERaw = form.targetValueE.trim()
-    let targetValueE: number | undefined
-    if (targetValueERaw) {
-      targetValueE = Number(targetValueERaw)
-      if (!Number.isFinite(targetValueE) || targetValueE < 0) {
-        return 'E 목표값은 0 이상의 숫자로 입력해 주세요.'
-      }
-    }
-
-    const targetValueSRaw = form.targetValueS.trim()
-    let targetValueS: number | undefined
-    if (targetValueSRaw) {
-      targetValueS = Number(targetValueSRaw)
-      if (!Number.isFinite(targetValueS) || targetValueS < 0) {
-        return 'S 목표값은 0 이상의 숫자로 입력해 주세요.'
-      }
-    }
-
-    if (targetValueE !== undefined && targetValueT > targetValueE) {
-      return '목표값은 T <= E <= S 순서를 유지해 주세요.'
-    }
-
-    if (targetValueE !== undefined && targetValueS !== undefined && targetValueE > targetValueS) {
-      return '목표값은 T <= E <= S 순서를 유지해 주세요.'
-    }
-
-    if (targetValueE === undefined && targetValueS !== undefined && targetValueT > targetValueS) {
-      return '목표값은 T <= E <= S 순서를 유지해 주세요.'
-    }
   }
 
   if (!form.weight.trim()) {
@@ -1669,11 +1630,7 @@ export function PersonalKpiManagementClient(props: Props) {
         formula: form.formula.trim() || undefined,
         ...(isSalesRevenue
           ? (!isAutoMode ? { targetAmount: targetAmountRaw || null } : {})
-          : {
-              targetValueT: Number(form.targetValueT),
-              targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : undefined,
-              targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : undefined,
-            }),
+          : {}),
         weight: Number(form.weight),
         difficulty: form.difficulty,
         linkedOrgKpiId: form.linkedOrgKpiId || undefined,
@@ -1699,10 +1656,6 @@ export function PersonalKpiManagementClient(props: Props) {
               body: JSON.stringify({
                 ...payload,
                 ...(isSalesRevenue && isAutoMode ? { targetAmount: null } : {}),
-                ...(!isSalesRevenue ? {
-                  targetValueE: form.targetValueE.trim() ? Number(form.targetValueE) : null,
-                  targetValueS: form.targetValueS.trim() ? Number(form.targetValueS) : null,
-                } : {}),
                 linkedOrgKpiId: form.linkedOrgKpiId || null,
               }),
             })
@@ -5420,46 +5373,6 @@ function EditorModal(props: {
               </div>
             ) : (
               <div className="space-y-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-slate-900">목표값</span>
-                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">T 필수</span>
-                  </div>
-                  <p className="text-xs text-slate-500">T는 필수이며 E와 S는 필요할 때만 입력하세요.</p>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="space-y-2">
-                    <span className="text-sm font-medium text-slate-900">T <span className="text-rose-600">*</span></span>
-                    <input
-                      value={props.form.targetValueT}
-                      onChange={(event) => props.onChange((current) => ({ ...current, targetValueT: event.target.value }))}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                      placeholder={props.form.kpiType === 'QUANTITATIVE' ? '예: 95' : '예: 4'}
-                    />
-                  </label>
-
-                  <label className="space-y-2">
-                    <span className="text-sm font-medium text-slate-900">E</span>
-                    <input
-                      value={props.form.targetValueE}
-                      onChange={(event) => props.onChange((current) => ({ ...current, targetValueE: event.target.value }))}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                      placeholder="선택 입력"
-                    />
-                  </label>
-
-                  <label className="space-y-2">
-                    <span className="text-sm font-medium text-slate-900">S</span>
-                    <input
-                      value={props.form.targetValueS}
-                      onChange={(event) => props.onChange((current) => ({ ...current, targetValueS: event.target.value }))}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                      placeholder="선택 입력"
-                    />
-                  </label>
-                </div>
-
                 <label className="space-y-2">
                   <span className="text-sm font-medium text-slate-900">가중치</span>
                   <input

@@ -280,19 +280,6 @@ export const CreatePersonalKpiSchema = z.object({
     if (data.targetAmount !== undefined) {
       ctx.addIssue({ code: 'custom', message: 'GENERAL 목표에는 targetAmount를 사용하지 마세요.', path: ['targetAmount'] })
     }
-    if (data.targetValueT === undefined) {
-      ctx.addIssue({ code: 'custom', message: 'T 목표값은 0 이상이어야 합니다.', path: ['targetValueT'] })
-      return
-    }
-    if (data.targetValueE !== undefined && data.targetValueT > data.targetValueE) {
-      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
-    }
-    if (data.targetValueE !== undefined && data.targetValueS !== undefined && data.targetValueE > data.targetValueS) {
-      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
-    }
-    if (data.targetValueE === undefined && data.targetValueS !== undefined && data.targetValueT > data.targetValueS) {
-      ctx.addIssue({ code: 'custom', message: '목표값은 T <= E <= S 순서를 유지해 주세요.', path: ['targetValueT'] })
-    }
   }
 })
 
