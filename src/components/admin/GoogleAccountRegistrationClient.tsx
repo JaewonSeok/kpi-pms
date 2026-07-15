@@ -796,7 +796,7 @@ export function GoogleAccountRegistrationClient() {
       <section className="rounded-3xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Google 계정 등록 관리</h1>
+            <h1 className="text-2xl font-bold text-slate-900">구성원·조직 관리</h1>
             <p className="mt-2 text-sm text-slate-600">
               관리자 전용 화면입니다. 단건 등록/수정, 일괄 업로드, 조직도 확인을 한 곳에서 처리하며,
               Google 로그인 허용 목록은 재직 상태가 ACTIVE인 직원만 유지됩니다.

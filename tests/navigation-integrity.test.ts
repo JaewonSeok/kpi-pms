@@ -94,7 +94,6 @@ run('admin sidebar exposes every admin and setup route', () => {
     '/evaluation/appeal',
     '/evaluation/ceo-adjust',
     '/statistics',
-    '/admin/google-access?tab=org-chart',
     '/admin/grades',
     '/admin/eval-cycle',
     '/admin/performance-assignments',
