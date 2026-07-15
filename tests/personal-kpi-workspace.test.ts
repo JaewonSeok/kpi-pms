@@ -1803,7 +1803,7 @@ async function main() {
     assert.equal(source.includes('승인 요청'), true)
   })
 
-  await run('personal KPI editor modal removes goal tags and uses explicit T/E/S target inputs', () => {
+  await run('personal KPI editor modal removes goal tags and no longer renders GENERAL T/E/S inputs', () => {
     const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
     const editorStart = source.indexOf('function EditorModal(props: {')
     const editorEnd = source.indexOf('function SectionCard(', editorStart)
@@ -1813,11 +1813,11 @@ async function main() {
     assert.notEqual(editorEnd, -1)
     assert.equal(editorBlock.includes('목표 태그'), false)
     assert.equal(editorBlock.includes('targetValue: event.target.value'), false)
-    assert.equal(editorBlock.includes('targetValueT: event.target.value'), true)
-    assert.equal(editorBlock.includes('targetValueE: event.target.value'), true)
-    assert.equal(editorBlock.includes('targetValueS: event.target.value'), true)
-    assert.equal(editorBlock.includes('T 필수'), true)
-    assert.equal(editorBlock.includes('T는 필수이며 E와 S는 필요할 때만 입력하세요.'), true)
+    assert.equal(editorBlock.includes('targetValueT: event.target.value'), false)
+    assert.equal(editorBlock.includes('targetValueE: event.target.value'), false)
+    assert.equal(editorBlock.includes('targetValueS: event.target.value'), false)
+    assert.equal(editorBlock.includes('T 필수'), false)
+    assert.equal(editorBlock.includes('T는 필수이며 E와 S는 필요할 때만 입력하세요.'), false)
   })
 
   await run('personal KPI review queue cards use a clean middle-dot separator between employee and department', () => {
