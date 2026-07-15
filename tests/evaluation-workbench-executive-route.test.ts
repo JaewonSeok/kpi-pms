@@ -63,7 +63,7 @@ async function main() {
   await run('executive workspace hides HR and leader-only wording', () => {
     const forbiddenLabels = [
       '평가 워크벤치 미리보기',
-      '업적평가 운영 현황',
+      '업적평가 모니터링',
       'HR 점수 입력',
       '팀장 가감점 사유',
       '팀장 피드백',
@@ -102,7 +102,7 @@ async function main() {
   })
 
   await run('navigation labels use 업적평가 운영 and do not expose legacy wording', () => {
-    assert.equal(navigationSource.includes("label: '업적평가 운영'"), true)
+    assert.equal(navigationSource.includes("label: '업적평가 모니터링'"), true)
     assert.equal(navigationSource.includes("href: '/evaluation/performance'"), true)
     assert.equal(navigationSource.includes("label: '업적평가'"), true)
     assert.equal(navigationSource.includes("href: '/evaluation/workbench'"), true)

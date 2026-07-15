@@ -199,9 +199,9 @@ export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
             <span>평가 관리</span>
             <span className="text-slate-300">›</span>
-            <span className="text-slate-900">업적평가 운영</span>
+            <span className="text-slate-900">업적평가 모니터링</span>
           </div>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">업적평가 운영 현황</h1>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">업적평가 모니터링</h1>
           <p className="mt-1 text-sm leading-6 text-slate-600">
             전체 대상자, 자기평가 제출, 팀장 평가 완료, HR 점수 반영, 최종 확정 상태를 한 화면에서 확인합니다.
           </p>

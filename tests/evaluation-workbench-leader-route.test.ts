@@ -67,7 +67,7 @@ async function main() {
   await run('leader workspace is preview-only and does not expose official HR controls', () => {
     const forbiddenLabels = [
       '평가 워크벤치 미리보기',
-      '업적평가 운영 현황',
+      '업적평가 모니터링',
       'HR 점수 입력',
       '등급 조정 저장',
       '최종 확정',

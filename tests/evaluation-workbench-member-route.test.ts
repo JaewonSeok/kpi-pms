@@ -59,7 +59,7 @@ async function main() {
       '팀장 가감점',
       '등급 조정',
       'HR 점수 입력',
-      '업적평가 운영 현황',
+      '업적평가 모니터링',
     ]
 
     for (const label of forbiddenLabels) {
