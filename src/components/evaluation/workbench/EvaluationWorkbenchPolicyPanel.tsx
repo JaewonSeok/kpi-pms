@@ -290,6 +290,14 @@ function formatReadinessUiStatus2026(status: string | null | undefined) {
   if (!status) return '미확인'
   const labels: Record<string, string> = {
     READY: '준비됨',
+    MBO_SETUP_IN_PROGRESS: 'MBO 작성 진행 중',
+    POLICY_MAPPING_IN_PROGRESS: '정책 분류 진행 중',
+    REVIEWER_ASSIGNMENT_IN_PROGRESS: '평가자 배정 진행 중',
+    RESULT_WRITING_NOT_READY: '수행결과 작성 필요',
+    OFFICIAL_ACTIVATION_BLOCKED: '공식 전환 차단 중',
+    READY_FOR_HR_REVIEW: 'HR 검토 준비',
+    READY_FOR_BACKFILL_DRY_RUN_REVIEW: '사전 실행 검토 준비',
+    NOT_APPLICABLE: '해당 없음',
     NOT_READY: '준비 안 됨',
     READY_WITH_APPROVED_EXCEPTIONS: '승인 예외 포함 준비',
     BLOCKED: '차단됨',
@@ -1748,17 +1756,28 @@ export function PolicyActivationReadiness2026Panel(props: {
               </Link>
             </div>
 
+            <div className="mt-4 rounded-2xl border border-emerald-100 bg-white px-4 py-3">
+              <p className="text-sm font-semibold text-emerald-950">
+                2026 연말 평가 · {formatReadinessUiStatus2026(snapshot?.currentStage ?? executionBoard?.summary.currentStage)}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                {gatesReady
+                  ? '공식 전환 준비 조건 충족 — 사전 검토 진행 가능합니다.'
+                  : '공식 전환 차단 조건 있음 — 아래 병목 항목을 먼저 해소하세요.'}
+              </p>
+            </div>
+
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <MetricCard
                 label="현재 단계"
-                value={snapshot?.currentStage ?? executionBoard?.summary.currentStage ?? '미확인'}
+                value={formatReadinessUiStatus2026(snapshot?.currentStage ?? executionBoard?.summary.currentStage)}
                 help="준비 상태"
                 compact
                 variant={snapshot?.overallStatus === 'READY_FOR_REVIEW' || snapshot?.overallStatus === 'READY_LATER' ? 'default' : 'warning'}
               />
               <MetricCard
                 label="전체 준비 상태"
-                value={snapshot?.overallStatus ?? executionBoard?.summary.overallReadinessStatus ?? '미확인'}
+                value={formatReadinessUiStatus2026(snapshot?.overallStatus ?? executionBoard?.summary.overallReadinessStatus)}
                 help="준비 상태 요약"
                 compact
                 variant={snapshot?.overallStatus === 'READY_FOR_REVIEW' || snapshot?.overallStatus === 'READY_LATER' ? 'default' : 'warning'}
@@ -1781,46 +1800,57 @@ export function PolicyActivationReadiness2026Panel(props: {
 
             <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)]">
               <div className="rounded-2xl border border-white/80 bg-white p-4">
-                <h5 className="text-sm font-semibold text-slate-900">Top 3 해소 필요 항목</h5>
+                <h5 className="text-sm font-semibold text-slate-900">주요 병목 항목</h5>
                 {snapshot?.topBlockers.length ? (
-                  <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
-                    {snapshot.topBlockers.slice(0, 3).map((blocker) => (
-                      <li key={blocker.code}>
-                        <span className="font-semibold text-slate-950">{blocker.name}</span> · {blocker.count.toLocaleString()}건
-                      </li>
+                  <div className="mt-3 space-y-2">
+                    <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2">
+                      <p className="text-sm font-semibold text-rose-950">{snapshot.topBlockers[0].name} 다수 미해소</p>
+                    </div>
+                    {snapshot.topBlockers.slice(1, 3).map((blocker) => (
+                      <p key={blocker.code} className="text-xs leading-5 text-slate-600">· {blocker.name}</p>
                     ))}
-                  </ul>
+                  </div>
                 ) : blockers.length ? (
-                  <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
-                    {blockers.slice(0, 3).map((blocker, index) => (
-                      <li key={`${blocker.code}-${index}`}>
-                        <span className="font-semibold text-slate-950">{blocker.code}</span> · {blocker.message}
-                      </li>
+                  <div className="mt-3 space-y-2">
+                    <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2">
+                      <p className="text-sm font-semibold text-rose-950">{blockers[0].code} 미해소</p>
+                    </div>
+                    {blockers.slice(1, 3).map((blocker, index) => (
+                      <p key={`${blocker.code}-${index}`} className="text-xs leading-5 text-slate-600">· {blocker.code}</p>
                     ))}
-                  </ul>
+                  </div>
                 ) : (
                   <p className="mt-3 text-sm leading-6 text-emerald-800">현재 요약 범위에서는 주요 blocker가 없습니다.</p>
                 )}
               </div>
 
               <div className="rounded-2xl border border-white/80 bg-white p-4">
-                <h5 className="text-sm font-semibold text-slate-900">오늘 할 일</h5>
+                <h5 className="text-sm font-semibold text-slate-900">관련 화면 바로가기</h5>
                 <div className="mt-3 grid gap-2 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">조치 필요</p>
                   <Link href="/kpi/personal" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
-                    MBO 작성/제출 요청
-                  </Link>
-                  <Link href="/admin/evaluation-readiness" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
-                    Team KPI 검토
-                  </Link>
-                  <Link href="/admin/evaluation-readiness" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
-                    policyCategory 확정
-                  </Link>
-                  <Link href="/kpi/monthly" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
-                    월간 실적 준비
+                    개인 KPI 작성
                   </Link>
                   <Link href="/admin/performance-assignments" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
-                    평가자 배정 확인
+                    평가자 배정
                   </Link>
+                  <Link href="/kpi/monthly" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                    월간 실적
+                  </Link>
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-xs font-semibold text-slate-500">점검·참조 ▾</summary>
+                    <div className="mt-2 grid gap-2">
+                      <Link href="/evaluation/workbench" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                        전용 평가 워크벤치
+                      </Link>
+                      <Link href="/admin/evaluation-readiness" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                        Baseline / 정책 분류
+                      </Link>
+                      <Link href="/admin/performance-calendar" className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-700 transition hover:bg-slate-50">
+                        평가 일정
+                      </Link>
+                    </div>
+                  </details>
                   <button
                     type="button"
                     onClick={() => snapshot ? void openExportPreview('snapshot-compact-markdown', snapshot.copyPayloads.markdown) : undefined}
@@ -1839,10 +1869,12 @@ export function PolicyActivationReadiness2026Panel(props: {
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">HR</p>
                     <p>{executionBoard?.summary.nextHrAction ?? snapshot?.nextActions.hr[0]?.detail ?? 'MBO, Team KPI, policyCategory, 평가자 배정을 먼저 확인합니다.'}</p>
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">개발/모니터링</p>
-                    <p>{executionBoard?.summary.nextDeveloperWatchAction ?? snapshot?.nextActions.developer[0]?.detail ?? '공식 전환/기능 활성화 스위치는 계속 차단 상태로 감시합니다.'}</p>
-                  </div>
+                  <details>
+                    <summary className="cursor-pointer text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">개발/모니터링 ▾</summary>
+                    <p className="mt-2 text-xs leading-5 text-slate-500">
+                      {executionBoard?.summary.nextDeveloperWatchAction ?? snapshot?.nextActions.developer[0]?.detail ?? '공식 전환/기능 활성화 스위치는 계속 차단 상태로 감시합니다.'}
+                    </p>
+                  </details>
                 </div>
               </div>
             </div>
@@ -1863,40 +1895,6 @@ export function PolicyActivationReadiness2026Panel(props: {
               <p className="mt-3 text-xs leading-5 text-amber-800">
                 이 요약에는 사전 실행 검토 실행, 실제 반영, 기존 데이터 채우기, 공식 점수/등급, 기능 활성화 스위치 변경 버튼이 없습니다.
               </p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900">평가 워크벤치 바로가기</h4>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  실제 평가 흐름은 전용 평가 워크벤치에서 미리보기로 확인합니다. `/evaluation/performance`는 HR 운영 요약과 고급 진단 접근점으로 유지합니다.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Link href="/evaluation/workbench" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-slate-800">
-                  전용 평가 워크벤치 열기
-                </Link>
-                <Link href="/admin/evaluation-readiness" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-800 transition hover:bg-amber-100">
-                  Baseline / 정책 분류 열기
-                </Link>
-                <Link href="/admin/evaluation-ops" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-100">
-                  평가 운영 허브 열기
-                </Link>
-                <Link href="/admin/performance-calendar" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                  평가 일정 보기
-                </Link>
-                <Link href="/admin/performance-assignments" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                  평가자 배정 보기
-                </Link>
-                <Link href="/kpi/personal" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                  개인 KPI 보기
-                </Link>
-                <Link href="/kpi/monthly" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                  월간 실적 보기
-                </Link>
-              </div>
             </div>
           </div>
 
