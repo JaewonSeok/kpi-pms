@@ -73,6 +73,7 @@ import {
   type PmsSignal,
   type PmsTone,
 } from '@/components/pms-ui'
+import { canManagePersonalKpi } from '@/lib/personal-kpi-access'
 
 type Props = PersonalKpiPageData & {
   initialTab?: string
@@ -2373,8 +2374,18 @@ export function PersonalKpiManagementClient(props: Props) {
 
   const scheduleGateGuidance2026 = useMemo(() => getPersonalKpiScheduleGuidance(), [])
 
+  const isAdminProxy = canManagePersonalKpi(props.actor.role) && props.actor.id !== props.selectedEmployeeId
+  const proxyTargetName = props.employeeOptions.find((e) => e.id === props.selectedEmployeeId)?.name
+
   return (
     <div className="space-y-6">
+      {canManagePersonalKpi(props.actor.role) ? (
+        <AdminEmployeePicker
+          employeeOptions={props.employeeOptions}
+          selectedEmployeeId={props.selectedEmployeeId}
+          onSelect={(employeeId) => handleRouteSelection({ employeeId })}
+        />
+      ) : null}
       <HeroSection
         summary={derivedSummary}
         metricItems={cockpitMetricItems}
@@ -2387,6 +2398,8 @@ export function PersonalKpiManagementClient(props: Props) {
         aiHelperText={aiHeroHelperText}
         reviewDisabledReason={reviewDisabledReason}
         historyDisabledReason={historyDisabledReason}
+        isProxy={isAdminProxy}
+        proxyTargetName={proxyTargetName}
         onOpenCreate={handleOpenCreate}
         onOpenBulkEdit={handleOpenBulkEdit}
         onOpenAiDraft={handleOpenAiDraft}
@@ -2614,6 +2627,89 @@ export function PersonalKpiManagementClient(props: Props) {
   )
 }
 
+function AdminEmployeePicker(props: {
+  employeeOptions: Props['employeeOptions']
+  selectedEmployeeId: string
+  onSelect: (employeeId: string) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+
+  const selected = props.employeeOptions.find((e) => e.id === props.selectedEmployeeId)
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return props.employeeOptions
+    return props.employeeOptions.filter(
+      (e) => e.name.toLowerCase().includes(q) || e.departmentName.toLowerCase().includes(q)
+    )
+  }, [query, props.employeeOptions])
+
+  function pick(id: string) {
+    setQuery('')
+    setOpen(false)
+    props.onSelect(id)
+  }
+
+  return (
+    <section className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
+            관리자 · 직원 KPI 대리 입력
+          </p>
+          <p className="mt-0.5 text-xs leading-5 text-blue-600">
+            직원을 검색해 선택하면 해당 직원의 KPI 화면으로 전환됩니다.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">
+          전체 {props.employeeOptions.length}명
+        </span>
+      </div>
+      <div className="relative mt-3">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setOpen(true)
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder={
+            selected ? `${selected.name} · ${selected.departmentName}` : '이름 또는 부서로 검색...'
+          }
+          className="w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm placeholder:text-slate-500 focus:border-blue-400 focus:outline-none"
+        />
+        {open && filtered.length > 0 ? (
+          <ul className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-xl border border-blue-100 bg-white shadow-lg">
+            {filtered.map((emp) => (
+              <li key={emp.id}>
+                <button
+                  type="button"
+                  onMouseDown={() => pick(emp.id)}
+                  className={`w-full px-3 py-2 text-left text-sm transition hover:bg-blue-50 ${
+                    emp.id === props.selectedEmployeeId
+                      ? 'font-semibold text-blue-700'
+                      : 'text-slate-700'
+                  }`}
+                >
+                  {emp.name}
+                  <span className="ml-1.5 text-slate-400">· {emp.departmentName}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : open && filtered.length === 0 ? (
+          <div className="absolute z-20 mt-1 w-full rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm text-slate-400 shadow-lg">
+            검색 결과가 없습니다.
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 function HeroSection(props: {
   summary: Props['summary']
   metricItems: PmsMetricRailItem[]
@@ -2626,6 +2722,8 @@ function HeroSection(props: {
   aiHelperText?: string
   reviewDisabledReason?: string
   historyDisabledReason?: string
+  isProxy?: boolean
+  proxyTargetName?: string
   onOpenCreate: () => void
   onOpenBulkEdit: () => void
   onOpenAiDraft: () => void
@@ -2644,7 +2742,16 @@ function HeroSection(props: {
       <div className="grid gap-3 border-b border-slate-100 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">2026 MBO/KPI</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">내 KPI/MBO</h1>
+          <div className="mt-1 flex items-center gap-2">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-950">
+              {props.isProxy && props.proxyTargetName ? `${props.proxyTargetName} 님의 KPI/MBO` : '내 KPI/MBO'}
+            </h1>
+            {props.isProxy ? (
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                대리 입력 중
+              </span>
+            ) : null}
+          </div>
           <p className="mt-1 text-sm leading-5 text-slate-600">
             조직 목표와 연결된 개인 KPI를 작성하고, AI 도움으로 표현을 다듬어보세요.
           </p>
