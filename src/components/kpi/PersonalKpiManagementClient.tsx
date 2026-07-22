@@ -4572,13 +4572,7 @@ function GoalDetailPanel(props: {
             multiline
             characterCount={`${planText.length}/500`}
           />
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ReadOnlyGoalField label="비중(%)" value={`${item.weight}%`} required />
-            <ReadOnlyGoalField
-              label="목표값 T/E/S"
-              value={formatTargetValuesForDisplay(item)}
-            />
-          </div>
+          <ReadOnlyGoalField label="비중(%)" value={`${item.weight}%`} required />
           <div className="grid gap-3 sm:grid-cols-2">
             <ReadOnlyGoalField
               label="업무수행 직접 역량레벨"
