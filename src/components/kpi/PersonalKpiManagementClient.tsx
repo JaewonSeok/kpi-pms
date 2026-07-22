@@ -3023,11 +3023,10 @@ function MineSection(props: {
             {props.items.length}개 KPI
           </PmsSignalChip>
         </div>
-        <div className="hidden border-b border-slate-100 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-500 md:grid md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_minmax(96px,0.65fr)_56px_76px_78px_28px] md:items-center md:gap-2">
+        <div className="hidden border-b border-slate-100 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-500 md:grid md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_56px_76px_78px_28px] md:items-center md:gap-2">
           <span>구분</span>
           <span>개인목표</span>
           <span>수행 계획</span>
-          <span>목표 T/E/S</span>
           <span>비중</span>
           <span>증빙</span>
           <span>상태</span>
@@ -3077,7 +3076,6 @@ function MineSection(props: {
 function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: boolean; onSelect: () => void }) {
   const readiness = getPersonalKpiReadiness(props.item)
   const monthlyStatus = props.item.linkedMonthlyCount > 0 ? `${props.item.linkedMonthlyCount}건` : '월간 기록 없음'
-  const targetValues = formatTargetValuesForDisplay(props.item)
   const planPreview = props.item.definition || props.item.formula || '-'
   const evidenceStatus = props.item.evidenceRecord.attachments.length
     ? `${props.item.evidenceRecord.attachments.length}개`
@@ -3094,7 +3092,7 @@ function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: bool
       onClick={props.onSelect}
       className={`w-full px-3 py-2 text-left transition ${selectedClass}`}
     >
-      <div className="grid gap-2 md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_minmax(96px,0.65fr)_56px_76px_78px_28px] md:items-center">
+      <div className="grid gap-2 md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_56px_76px_78px_28px] md:items-center">
         <PmsSignalChip tone="neutral" className="justify-center">
           {KPI_TYPE_LABELS[props.item.type]}
         </PmsSignalChip>
@@ -3110,7 +3108,6 @@ function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: bool
           </p>
         </div>
         <span className="truncate text-xs leading-5 text-slate-600">{planPreview}</span>
-        <span className="truncate text-xs text-slate-600">{targetValues}</span>
         <span className="text-xs font-bold text-slate-900">{props.item.weight}%</span>
         <span className="text-xs font-semibold text-slate-600">{evidenceStatus}</span>
         <div className="space-y-1">
