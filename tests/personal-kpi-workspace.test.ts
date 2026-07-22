@@ -1862,7 +1862,7 @@ async function main() {
 
     assert.equal(source.includes('function getReviewActionState('), true)
     assert.equal(source.includes('const aiActionStates = Object.fromEntries('), true)
-    assert.equal(source.includes('if (!isDraftStatus(kpi.status))'), true)
+    assert.equal(source.includes('if (!isDraftStatus(kpi.status) && !canManagePersonalKpi(props.actor.role))'), true)
     assert.equal(source.includes('disabled={!props.canReview || props.busy || startReviewState.disabled}'), true)
     assert.equal(source.includes('disabled={props.busy || props.actionStates[item.action]?.disabled}'), true)
   })

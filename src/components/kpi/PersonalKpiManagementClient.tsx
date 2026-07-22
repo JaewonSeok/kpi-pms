@@ -1175,7 +1175,11 @@ export function PersonalKpiManagementClient(props: Props) {
     goalEditLocked: goalEditLockedFromAlerts,
     busy: busyAction === 'delete',
   })
-  const canEditSelectedKpi = Boolean(selectedKpi && props.permissions.canEdit && isDraftStatus(selectedKpi.status))
+  const canEditSelectedKpi = Boolean(
+    selectedKpi &&
+    props.permissions.canEdit &&
+    (isDraftStatus(selectedKpi.status) || canManagePersonalKpi(props.actor.role))
+  )
   const selectedEvidenceDraft = selectedKpi
     ? evidenceDrafts[selectedKpi.id] ?? createEvidenceDraft(selectedKpi)
     : null
@@ -1195,7 +1199,7 @@ export function PersonalKpiManagementClient(props: Props) {
       ? '수정할 KPI를 먼저 선택해 주세요.'
       : !props.permissions.canEdit
         ? '현재 범위에서는 KPI를 수정할 권한이 없습니다.'
-        : isDraftStatus(selectedKpi.status)
+        : isDraftStatus(selectedKpi.status) || canManagePersonalKpi(props.actor.role)
           ? undefined
           : '초안 상태 KPI만 수정할 수 있습니다.'
   const cloneDisabledReason =
@@ -1605,7 +1609,7 @@ export function PersonalKpiManagementClient(props: Props) {
     }
     setEditorFormError(undefined)
 
-    if (editorMode === 'edit' && selectedKpi && !isDraftStatus(selectedKpi.status)) {
+    if (editorMode === 'edit' && selectedKpi && !isDraftStatus(selectedKpi.status) && !canManagePersonalKpi(props.actor.role)) {
       setBanner({ tone: 'error', message: '초안 상태 KPI만 수정할 수 있습니다.' })
       return
     }
@@ -1654,11 +1658,19 @@ export function PersonalKpiManagementClient(props: Props) {
           : await fetch(`/api/kpi/personal/${selectedKpiId}`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ...payload,
-                ...(isSalesRevenue && isAutoMode ? { targetAmount: null } : {}),
-                linkedOrgKpiId: form.linkedOrgKpiId || null,
-              }),
+              body: JSON.stringify(
+                editorMode === 'edit' && selectedKpi && !isDraftStatus(selectedKpi.status)
+                  ? {
+                      definition: form.definition.trim() || undefined,
+                      formula: form.formula.trim() || undefined,
+                      ...(selectedKpi.isMirror ? {} : { linkedOrgKpiId: form.linkedOrgKpiId || null }),
+                    }
+                  : {
+                      ...payload,
+                      ...(isSalesRevenue && isAutoMode ? { targetAmount: null } : {}),
+                      linkedOrgKpiId: form.linkedOrgKpiId || null,
+                    }
+              ),
             })
 
       const saved = await parseJsonOrThrow<{ id: string; employeeId: string }>(response)
@@ -2152,7 +2164,7 @@ export function PersonalKpiManagementClient(props: Props) {
       setBanner({ tone: 'error', message: '현재 범위에서는 KPI를 수정할 권한이 없습니다.' })
       return
     }
-    if (!isDraftStatus(kpi.status)) {
+    if (!isDraftStatus(kpi.status) && !canManagePersonalKpi(props.actor.role)) {
       setBanner({ tone: 'info', message: '초안 상태 KPI만 수정할 수 있습니다.' })
       return
     }
@@ -2624,6 +2636,8 @@ export function PersonalKpiManagementClient(props: Props) {
             (item) => item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED'
           )}
           formError={editorFormError}
+          isConfirmedEdit={editorMode === 'edit' && !!selectedKpi && !isDraftStatus(selectedKpi.status) && canManagePersonalKpi(props.actor.role)}
+          isMirror={selectedKpi?.isMirror ?? false}
         />
       ) : null}
       {cloneOpen ? (
@@ -5237,9 +5251,12 @@ function EditorModal(props: {
   actor: Props['actor']
   hasSalesKpiForYear: boolean
   formError?: string
+  isConfirmedEdit?: boolean
+  isMirror?: boolean
 }) {
   const isSalesActor = props.actor.jobCategory === 'SALES'
   const isSalesRevenue = props.form.goalType === 'SALES_REVENUE'
+  const lockedByConfirmed = props.isConfirmedEdit === true
 
   const salesDefaultLinkedOrgKpiId = findSalesLinkedOrgKpiId(props.orgKpiOptions, props.actor.deptId)
 
@@ -5268,12 +5285,21 @@ function EditorModal(props: {
         </div>
 
         <div className="space-y-6 px-6 py-5">
-          <div className="rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-3">
-            <div className="text-sm font-semibold text-slate-900">2026 MBO 작성 기준</div>
-            <p className="mt-1 text-xs leading-5 text-slate-600">
-              산출물/성과 중심으로 작성하고, 조직목표·프로젝트 T·프로젝트 K·일상업무 구분을 염두에 두세요. 이 입력은 MBO 설정 단계이며 공식 평가 점수에는 반영되지 않습니다.
-            </p>
-          </div>
+          {lockedByConfirmed ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="text-sm font-semibold text-amber-800">확정 KPI — 제한 편집 모드</div>
+              <p className="mt-1 text-xs leading-5 text-amber-700">
+                관리자 권한으로 확정 KPI를 편집 중입니다. 수행계획(정의)·산식·연결 조직 KPI만 변경할 수 있으며, 점수·목표·가중치·난이도는 잠겨 있습니다.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-3">
+              <div className="text-sm font-semibold text-slate-900">2026 MBO 작성 기준</div>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                산출물/성과 중심으로 작성하고, 조직목표·프로젝트 T·프로젝트 K·일상업무 구분을 염두에 두세요. 이 입력은 MBO 설정 단계이며 공식 평가 점수에는 반영되지 않습니다.
+              </p>
+            </div>
+          )}
 
           {isSalesActor ? (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -5285,7 +5311,7 @@ function EditorModal(props: {
                     name="goalType"
                     value="SALES_REVENUE"
                     checked={isSalesRevenue}
-                    disabled={props.hasSalesKpiForYear && !isSalesRevenue}
+                    disabled={(props.hasSalesKpiForYear && !isSalesRevenue) || lockedByConfirmed}
                     onChange={() =>
                       props.onChange((c) => ({
                         ...c,
@@ -5309,6 +5335,7 @@ function EditorModal(props: {
                     name="goalType"
                     value="GENERAL"
                     checked={!isSalesRevenue}
+                    disabled={lockedByConfirmed}
                     onChange={() =>
                       props.onChange((c) => ({ ...c, goalType: 'GENERAL', targetAmount: '' }))
                     }
@@ -5329,8 +5356,8 @@ function EditorModal(props: {
               <input
                 value={props.form.kpiName}
                 onChange={(event) => props.onChange((current) => ({ ...current, kpiName: event.target.value }))}
-                disabled={isSalesRevenue}
-                className={`w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm ${isSalesRevenue ? 'bg-slate-50 text-slate-500' : ''}`}
+                disabled={isSalesRevenue || lockedByConfirmed}
+                className={`w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm ${isSalesRevenue || lockedByConfirmed ? 'bg-slate-50 text-slate-500' : ''}`}
                 placeholder="예: 주요 고객 이슈 해결 리드타임 개선"
               />
             </label>
@@ -5354,7 +5381,8 @@ function EditorModal(props: {
                       formula: event.target.value === 'QUALITATIVE' ? '' : current.formula,
                     }))
                   }
-                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                  disabled={lockedByConfirmed}
+                  className={`w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm ${lockedByConfirmed ? 'bg-slate-50 text-slate-500' : ''}`}
                 >
                   <option value="QUANTITATIVE">정량 KPI</option>
                   <option value="QUALITATIVE">정성 KPI</option>
@@ -5426,7 +5454,8 @@ function EditorModal(props: {
                           const raw = event.target.value.replace(/[^0-9]/g, '')
                           props.onChange((c) => ({ ...c, targetAmount: raw }))
                         }}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                        disabled={lockedByConfirmed}
+                        className={`w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm ${lockedByConfirmed ? 'opacity-50' : ''}`}
                         placeholder="예: 500,000,000"
                       />
                     </label>
@@ -5447,7 +5476,8 @@ function EditorModal(props: {
                   <input
                     value={props.form.weight}
                     onChange={(event) => props.onChange((current) => ({ ...current, weight: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    disabled={lockedByConfirmed}
+                    className={`w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm ${lockedByConfirmed ? 'opacity-50' : ''}`}
                     placeholder="예: 25"
                   />
                 </label>
@@ -5482,7 +5512,8 @@ function EditorModal(props: {
                   <input
                     value={props.form.weight}
                     onChange={(event) => props.onChange((current) => ({ ...current, weight: event.target.value }))}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    disabled={lockedByConfirmed}
+                    className={`w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm ${lockedByConfirmed ? 'opacity-50' : ''}`}
                     placeholder="예: 25"
                   />
                 </label>
@@ -5498,7 +5529,8 @@ function EditorModal(props: {
                 onChange={(event) =>
                   props.onChange((current) => ({ ...current, difficulty: event.target.value as KpiForm['difficulty'] }))
                 }
-                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                disabled={lockedByConfirmed}
+                className={`w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm ${lockedByConfirmed ? 'bg-slate-50 text-slate-500' : ''}`}
               >
                 <option value="HIGH">높음</option>
                 <option value="MEDIUM">중간</option>
@@ -5511,7 +5543,8 @@ function EditorModal(props: {
               <select
                 value={props.form.linkedOrgKpiId}
                 onChange={(event) => props.onChange((current) => ({ ...current, linkedOrgKpiId: event.target.value }))}
-                className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                disabled={props.isMirror === true}
+                className={`w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm ${props.isMirror === true ? 'bg-slate-50 text-slate-500' : ''}`}
               >
                 <option value="">연결 안 함</option>
                 {props.orgKpiOptions.map((option) => (
@@ -5524,6 +5557,11 @@ function EditorModal(props: {
                   </option>
                 ))}
               </select>
+              {props.isMirror === true ? (
+                <p className="text-xs leading-5 text-amber-600">
+                  미러 KPI의 조직 KPI 연계는 변경할 수 없습니다.
+                </p>
+              ) : null}
               <p className="text-xs leading-5 text-slate-500">
                 {getPersonalOrgKpiReflectionHelper(props.orgKpiOptions.find((option) => option.id === props.form.linkedOrgKpiId))}
               </p>

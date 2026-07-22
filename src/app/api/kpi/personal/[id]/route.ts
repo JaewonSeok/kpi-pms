@@ -144,28 +144,46 @@ export async function PATCH(request: Request, context: RouteContext) {
       logs: workflowLogs,
     })
 
-    const hasFieldUpdates =
+    const hasLockedFieldUpdates =
       data.employeeId !== undefined ||
       data.evalYear !== undefined ||
       data.kpiType !== undefined ||
       data.kpiName !== undefined ||
-      data.definition !== undefined ||
-      data.formula !== undefined ||
       data.goalType !== undefined ||
       data.targetAmount !== undefined ||
       data.targetValueT !== undefined ||
       data.targetValueE !== undefined ||
       data.targetValueS !== undefined ||
       data.weight !== undefined ||
-      data.difficulty !== undefined ||
+      data.difficulty !== undefined
+
+    const hasOpenFieldUpdates =
+      data.definition !== undefined ||
+      data.formula !== undefined ||
       data.linkedOrgKpiId !== undefined
 
-    if (hasFieldUpdates && !canEditPersonalKpiByOperationalStatus(operationalStatus)) {
+    const hasFieldUpdates = hasLockedFieldUpdates || hasOpenFieldUpdates
+
+    if (hasLockedFieldUpdates && !canEditPersonalKpiByOperationalStatus(operationalStatus)) {
       throw new AppError(
         400,
         'PERSONAL_KPI_LOCKED',
         '초안 상태의 개인 KPI만 수정할 수 있습니다. 제출 또는 확정된 KPI는 먼저 재오픈해 주세요.'
       )
+    }
+
+    if (hasOpenFieldUpdates && !canEditPersonalKpiByOperationalStatus(operationalStatus) && !canManagePersonalKpi(session.user.role)) {
+      throw new AppError(
+        400,
+        'PERSONAL_KPI_LOCKED',
+        '초안 상태의 개인 KPI만 수정할 수 있습니다. 제출 또는 확정된 KPI는 먼저 재오픈해 주세요.'
+      )
+    }
+
+    // Mirror KPI의 org KPI 연계는 상태·역할 무관 변경 불가 (캐리어 조회 맵 보호)
+    // 같은 값 재전송(no-op)은 통과, 다른 값·null로의 실제 변경만 차단
+    if (data.linkedOrgKpiId !== undefined && current.isMirror && data.linkedOrgKpiId !== current.linkedOrgKpiId) {
+      throw new AppError(400, 'MIRROR_LINK_LOCKED', '미러 KPI의 상위 연계는 변경할 수 없습니다.')
     }
 
     const nextEmployeeId = data.employeeId ?? current.employeeId
