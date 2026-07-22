@@ -1790,7 +1790,7 @@ async function main() {
     assert.equal(source.includes('h-fit self-start rounded-2xl'), true)
     assert.equal(source.includes('min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(540px,620px)]'), true)
     assert.equal(source.includes('min-[1440px]:sticky min-[1440px]:top-4'), true)
-    assert.equal(source.includes('md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_minmax(96px,0.65fr)_56px_76px_78px_28px]'), true)
+    assert.equal(source.includes('md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_56px_76px_78px_28px]'), true)
     assert.equal(source.includes('목표가 적은 경우 상단 KPI 추가 또는 AI 초안 생성으로 보완할 수 있습니다.'), true)
     assert.equal(source.includes('증빙은 월간 실적에서 관리'), true)
     assert.equal(source.includes('ChevronRight'), true)
