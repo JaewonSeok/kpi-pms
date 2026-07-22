@@ -5402,7 +5402,7 @@ function EditorModal(props: {
               <textarea
                 value={props.form.formula}
                 onChange={(event) => props.onChange((current) => ({ ...current, formula: event.target.value }))}
-                rows={4}
+                rows={8}
                 className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
                 placeholder={
                   props.form.kpiType === 'QUANTITATIVE'
