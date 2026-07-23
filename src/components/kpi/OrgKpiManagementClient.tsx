@@ -2643,14 +2643,11 @@ const OrgKpiListItemCard = memo(function OrgKpiListItemCard(props: {
           <div className="min-w-[160px] flex-1 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
             <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
               <span>하위 목표 연결</span>
-              <span>{formatPercent(connectionMetrics.completionRate)}</span>
+              <span>연결 {connectionMetrics.childLinkedCount}/{connectionMetrics.childLinkedCount + connectionMetrics.suggestedChildCount}</span>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
               <div
-                className={cls(
-                  'h-full rounded-full',
-                  connectionMetrics.signal === 'green' ? 'bg-emerald-500' : 'bg-amber-500'
-                )}
+                className="h-full rounded-full bg-slate-400"
                 style={{ width: `${Math.min(100, Math.max(0, connectionMetrics.completionRate))}%` }}
               />
             </div>
@@ -3253,15 +3250,15 @@ const KpiDetailCard = memo(function KpiDetailCard(props: KpiDetailCardProps) {
         <div className="flex items-center gap-3">
           <PmsProgressRing
             value={connectionMetrics.completionRate}
-            label="연결"
+            label="하위 연결"
             valueLabel={
               typeof connectionMetrics.completionRate === 'number'
-                ? formatPercent(connectionMetrics.completionRate)
+                ? `${connectionMetrics.childLinkedCount}/${connectionMetrics.childLinkedCount + connectionMetrics.suggestedChildCount}`
                 : connectionMetrics.childLinkedCount > 0
                   ? `${connectionMetrics.childLinkedCount}개`
                   : '-'
             }
-            tone={connectionMetrics.signal === 'green' ? 'success' : connectionMetrics.signal === 'amber' ? 'warning' : 'neutral'}
+            tone="neutral"
             size="sm"
           />
           <div className="rounded-2xl bg-slate-100 px-4 py-3 text-right">
