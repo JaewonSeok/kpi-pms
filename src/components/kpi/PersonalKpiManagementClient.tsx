@@ -2859,7 +2859,7 @@ function HeroSection(props: {
             icon={<Sparkles className="h-4 w-4" />}
             onClick={props.onOpenAiDraft}
             disabled={Boolean(props.aiDisabledReason)}
-            title={props.aiDisabledReason}
+            title={props.aiDisabledReason ? 'AI 작성 보조 준비 중' : undefined}
             variant="primary"
           >
             AI 초안 생성
@@ -2993,6 +2993,10 @@ function Tabs(props: { activeTab: PersonalKpiTabKey; onChange: (tab: PersonalKpi
   )
 }
 
+// Shared grid template constants — header and card rows must stay in sync.
+const GRID_COLS_WITH_EVIDENCE = 'md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_56px_76px_78px_28px]'
+const GRID_COLS_NO_EVIDENCE   = 'md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_56px_78px_28px]'
+
 function MineSection(props: {
   items: PersonalKpiViewModel[]
   selectedId: string
@@ -3034,6 +3038,11 @@ function MineSection(props: {
     )
   }
 
+  const showEvidenceColumn = props.items.some(
+    (item) => item.evidenceRecord.attachments.length > 0 || Boolean(item.evidenceRecord.evidenceComment)
+  )
+  const gridCols = showEvidenceColumn ? GRID_COLS_WITH_EVIDENCE : GRID_COLS_NO_EVIDENCE
+
   return (
     <div className="grid items-start gap-4 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(540px,620px)]">
       <section className="h-fit self-start rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -3046,12 +3055,12 @@ function MineSection(props: {
             {props.items.length}개 KPI
           </PmsSignalChip>
         </div>
-        <div className="hidden border-b border-slate-100 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-500 md:grid md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_56px_76px_78px_28px] md:items-center md:gap-2">
+        <div className={`hidden border-b border-slate-100 bg-slate-50 px-3 py-2 text-[11px] font-bold text-slate-500 md:grid ${gridCols} md:items-center md:gap-2`}>
           <span>구분</span>
           <span>개인목표</span>
           <span>수행 계획</span>
           <span>비중</span>
-          <span>증빙</span>
+          {showEvidenceColumn ? <span>증빙</span> : null}
           <span>상태</span>
           <span />
         </div>
@@ -3062,6 +3071,7 @@ function MineSection(props: {
               item={item}
               selected={props.selectedId === item.id}
               onSelect={() => props.onSelect(item.id)}
+              showEvidenceColumn={showEvidenceColumn}
             />
           ))}
         </div>
@@ -3096,9 +3106,8 @@ function MineSection(props: {
   )
 }
 
-function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: boolean; onSelect: () => void }) {
+function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: boolean; onSelect: () => void; showEvidenceColumn: boolean }) {
   const readiness = getPersonalKpiReadiness(props.item)
-  const monthlyStatus = props.item.linkedMonthlyCount > 0 ? `${props.item.linkedMonthlyCount}건` : '월간 기록 없음'
   const planPreview = props.item.definition || props.item.formula || '-'
   const evidenceStatus = props.item.evidenceRecord.attachments.length
     ? `${props.item.evidenceRecord.attachments.length}개`
@@ -3108,6 +3117,7 @@ function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: bool
   const selectedClass = props.selected
     ? 'bg-blue-50/80 ring-1 ring-inset ring-blue-200'
     : 'bg-white hover:bg-slate-50'
+  const gridCols = props.showEvidenceColumn ? GRID_COLS_WITH_EVIDENCE : GRID_COLS_NO_EVIDENCE
 
   return (
     <button
@@ -3115,16 +3125,18 @@ function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: bool
       onClick={props.onSelect}
       className={`w-full px-3 py-2 text-left transition ${selectedClass}`}
     >
-      <div className="grid gap-2 md:grid-cols-[64px_minmax(0,1.05fr)_minmax(120px,0.95fr)_56px_76px_78px_28px] md:items-center">
+      <div className={`grid gap-2 ${gridCols} md:items-center`}>
         <PmsSignalChip tone="neutral" className="justify-center">
           {KPI_TYPE_LABELS[props.item.type]}
         </PmsSignalChip>
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <span className="truncate text-sm font-bold text-slate-950">{props.item.title}</span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-              {monthlyStatus}
-            </span>
+            {props.item.linkedMonthlyCount > 0 ? (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                {props.item.linkedMonthlyCount}건
+              </span>
+            ) : null}
           </div>
           <p className="mt-0.5 truncate text-[11px] text-slate-500">
             {props.item.orgKpiTitle ? props.item.orgKpiTitle : '연결 조직 KPI 없음'}
@@ -3132,7 +3144,7 @@ function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: bool
         </div>
         <span className="truncate text-xs leading-5 text-slate-600">{planPreview}</span>
         <span className="text-xs font-bold text-slate-900">{props.item.weight}%</span>
-        <span className="text-xs font-semibold text-slate-600">{evidenceStatus}</span>
+        {props.showEvidenceColumn ? <span className="text-xs font-semibold text-slate-600">{evidenceStatus}</span> : null}
         <div className="space-y-1">
           <StatusBadge status={props.item.status} />
           <div className="h-1 overflow-hidden rounded-full bg-slate-100">
