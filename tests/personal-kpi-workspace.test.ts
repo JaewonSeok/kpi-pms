@@ -31,6 +31,7 @@ moduleLoader._resolveFilename = function patchedResolveFilename(request, parent,
 const {
   buildPersonalKpiMboPolicyGuidanceList2026,
   getPersonalKpiPageData,
+  isDiv3Department,
 } = require('../src/server/personal-kpi-page') as typeof import('../src/server/personal-kpi-page')
 
 function read(relativePath: string) {
@@ -1938,6 +1939,39 @@ async function main() {
     assert.equal(previewSource.includes('팀 KPI'), true)
     assert.equal(previewSource.includes('화면 초안에 반영'), true)
     assert.equal(source.includes('다른 관점으로 다시 생성'), true)
+  })
+
+  // isDiv3Department 순수함수 단위 테스트
+  await run('isDiv3Department: DIV-3 루트는 제외 대상', () => {
+    assert.equal(isDiv3Department('DIV-3'), true)
+  })
+
+  await run('isDiv3Department: DIV-3 하위 팀은 제외 대상', () => {
+    assert.equal(isDiv3Department('DIV-3-TEAM-1'), true)
+  })
+
+  await run('isDiv3Department: DIV-3 하위 실은 제외 대상', () => {
+    assert.equal(isDiv3Department('DIV-3-SEC-1'), true)
+  })
+
+  await run('isDiv3Department: DIV-1은 제외 대상 아님', () => {
+    assert.equal(isDiv3Department('DIV-1'), false)
+  })
+
+  await run('isDiv3Department: DIV-2 하위 팀은 제외 대상 아님', () => {
+    assert.equal(isDiv3Department('DIV-2-TEAM-1'), false)
+  })
+
+  await run('isDiv3Department: DIV-30(접두사 오매칭 방지)은 제외 대상 아님', () => {
+    assert.equal(isDiv3Department('DIV-30'), false)
+  })
+
+  await run('isDiv3Department: null은 제외 대상 아님', () => {
+    assert.equal(isDiv3Department(null), false)
+  })
+
+  await run('isDiv3Department: undefined는 제외 대상 아님', () => {
+    assert.equal(isDiv3Department(undefined), false)
   })
 
   console.log('Personal KPI workspace tests completed')

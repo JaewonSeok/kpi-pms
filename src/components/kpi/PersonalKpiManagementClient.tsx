@@ -9,6 +9,7 @@ import {
   BadgeCheck,
   Bot,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   ClipboardList,
   Copy,
@@ -352,6 +353,17 @@ function createEvidenceDraft(kpi?: PersonalKpiViewModel): EvidenceDraft {
     linkUrlInput: '',
     linkCommentInput: '',
   }
+}
+
+function isEvidenceDraftDirty(draft: EvidenceDraft, kpi: PersonalKpiViewModel): boolean {
+  const baseline = createEvidenceDraft(kpi)
+  if (draft.evidenceComment !== baseline.evidenceComment) return true
+  if (draft.linkUrlInput.trim().length > 0) return true
+  if (draft.attachments.length !== baseline.attachments.length) return true
+  return draft.attachments.some((a, i) => {
+    const b = baseline.attachments[i]
+    return !b || a.url !== b.url || a.name !== b.name
+  })
 }
 
 function appendCoachDraft(currentValue: string, draft: string) {
@@ -1402,6 +1414,18 @@ export function PersonalKpiManagementClient(props: Props) {
     router.replace(`/kpi/personal?${query}`, { scroll: false })
   }
 
+  function handleEmployeeNavigation(employeeId: string) {
+    const kpiFormDirty = editorOpen && !areKpiFormsEqual(form, formBaseline)
+    const evidenceDirty =
+      selectedKpi && selectedEvidenceDraft
+        ? isEvidenceDraftDirty(selectedEvidenceDraft, selectedKpi)
+        : false
+    if (kpiFormDirty || evidenceDirty) {
+      if (!window.confirm('저장하지 않은 변경이 있습니다. 저장하지 않고 이동할까요? (변경 내용은 사라집니다)')) return
+    }
+    handleRouteSelection({ employeeId })
+  }
+
   function handleOpenCreate() {
     if (createDisabledReason) {
       setBanner({ tone: 'error', message: createDisabledReason })
@@ -2440,11 +2464,18 @@ export function PersonalKpiManagementClient(props: Props) {
 
   return (
     <div className="space-y-6">
+      {isAdminProxy && proxyTargetName ? (
+        <div className="sticky top-0 z-30 flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 shadow-sm">
+          <span className="font-semibold">{proxyTargetName}</span>
+          <span className="text-amber-600">님 대리 입력 중</span>
+        </div>
+      ) : null}
       {canManagePersonalKpi(props.actor.role) ? (
         <AdminEmployeePicker
           employeeOptions={props.employeeOptions}
           selectedEmployeeId={props.selectedEmployeeId}
-          onSelect={(employeeId) => handleRouteSelection({ employeeId })}
+          isProxy={isAdminProxy}
+          onSelect={handleEmployeeNavigation}
         />
       ) : null}
       <HeroSection
@@ -2699,20 +2730,39 @@ export function PersonalKpiManagementClient(props: Props) {
 function AdminEmployeePicker(props: {
   employeeOptions: Props['employeeOptions']
   selectedEmployeeId: string
+  isProxy: boolean
   onSelect: (employeeId: string) => void
 }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
 
-  const selected = props.employeeOptions.find((e) => e.id === props.selectedEmployeeId)
+  // Single sorted source — departmentName asc + name asc (한국어 정렬)
+  const sortedOptions = useMemo(
+    () =>
+      [...props.employeeOptions].sort(
+        (a, b) =>
+          a.departmentName.localeCompare(b.departmentName, 'ko') ||
+          a.name.localeCompare(b.name, 'ko')
+      ),
+    [props.employeeOptions]
+  )
+
+  // ◀▶ 순차 대상: eval-target(≈130명), same sort order
+  const navOptions = useMemo(() => sortedOptions.filter((e) => e.isEvalTarget), [sortedOptions])
+  const navIndex = navOptions.findIndex((e) => e.id === props.selectedEmployeeId)
+  const prevEmployee = navIndex > 0 ? navOptions[navIndex - 1] : null
+  const nextEmployee = navIndex < navOptions.length - 1 ? navOptions[navIndex + 1] : null
+  const navPosition = navIndex >= 0 ? navIndex + 1 : null
+
+  const selected = sortedOptions.find((e) => e.id === props.selectedEmployeeId)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return props.employeeOptions
-    return props.employeeOptions.filter(
+    if (!q) return sortedOptions
+    return sortedOptions.filter(
       (e) => e.name.toLowerCase().includes(q) || e.departmentName.toLowerCase().includes(q)
     )
-  }, [query, props.employeeOptions])
+  }, [query, sortedOptions])
 
   function pick(id: string) {
     setQuery('')
@@ -2731,9 +2781,36 @@ function AdminEmployeePicker(props: {
             직원을 검색해 선택하면 해당 직원의 KPI 화면으로 전환됩니다.
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">
-          전체 {props.employeeOptions.length}명
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {props.isProxy && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={!prevEmployee}
+                onClick={() => prevEmployee && props.onSelect(prevEmployee.id)}
+                title={prevEmployee ? `이전: ${prevEmployee.name}` : undefined}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="min-w-[3rem] text-center text-xs font-semibold tabular-nums text-blue-700">
+                {navPosition !== null ? `${navPosition} / ${navOptions.length}` : `— / ${navOptions.length}`}
+              </span>
+              <button
+                type="button"
+                disabled={!nextEmployee}
+                onClick={() => nextEmployee && props.onSelect(nextEmployee.id)}
+                title={nextEmployee ? `다음: ${nextEmployee.name}` : undefined}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">
+            전체 {props.employeeOptions.length}명
+          </span>
+        </div>
       </div>
       <div className="relative mt-3">
         <input
@@ -2815,11 +2892,6 @@ function HeroSection(props: {
             <h1 className="text-2xl font-bold tracking-tight text-slate-950">
               {props.isProxy && props.proxyTargetName ? `${props.proxyTargetName} 님의 KPI/MBO` : '내 KPI/MBO'}
             </h1>
-            {props.isProxy ? (
-              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                대리 입력 중
-              </span>
-            ) : null}
           </div>
           <p className="mt-1 text-sm leading-5 text-slate-600">
             조직 목표와 연결된 개인 KPI를 작성하고, AI 도움으로 표현을 다듬어보세요.
