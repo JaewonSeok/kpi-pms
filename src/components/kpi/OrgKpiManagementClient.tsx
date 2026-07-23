@@ -1942,7 +1942,6 @@ export function OrgKpiManagementClient({
               <ActionButton label={scopeCreateLabel} icon={<Plus className="h-4 w-4" />} onClick={openDirectKpiCreate} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
               <ActionButton label={scopeBulkUploadLabel} icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
               <ActionButton label="엑셀 다운로드" icon={<Archive className="h-4 w-4" />} onClick={handleOpenExport} disabled={Boolean(exportDisabledReason) || busy} />
-              <ActionButton label="확정" icon={<ShieldCheck className="h-4 w-4" />} onClick={() => void changeStatus('CONFIRMED')} disabled={!selectedKpi || !pageData.permissions.canConfirm || busy} />
             </>
           ) : null
         }
@@ -1954,12 +1953,6 @@ export function OrgKpiManagementClient({
 
             <div className="rounded-2xl border border-slate-200 bg-white/90 px-3 py-3 shadow-sm">
               <div className="flex flex-wrap items-center gap-2">
-              {!isReadOnlyScopeView && pageData.permissions.canCreate ? (
-                <ActionButton label={scopeCreateLabel} icon={<Plus className="h-4 w-4" />} onClick={openDirectKpiCreate} disabled={!pageData.permissions.canCreate || goalEditLocked} primary />
-              ) : null}
-              {!isReadOnlyScopeView && pageData.permissions.canCreate ? (
-                <ActionButton label="HR 일괄 업로드" icon={<FileUp className="h-4 w-4" />} onClick={() => setShowBulkUpload(true)} disabled={!pageData.permissions.canCreate} />
-              ) : null}
               <ActionButton
                 label="연결 구조 확인"
                 icon={<Network className="h-4 w-4" />}
