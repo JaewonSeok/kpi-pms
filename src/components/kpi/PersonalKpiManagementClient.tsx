@@ -18,6 +18,7 @@ import {
   History,
   Link2,
   ListChecks,
+  Minus,
   Plus,
   Send,
   ShieldCheck,
@@ -882,18 +883,25 @@ function getStatusTone(status?: string): PmsTone {
   return 'warning'
 }
 
+// Single source of truth for "작성 완료" statuses.
+// getCompletionCount and getSupplementNeededCount share this set so the two
+// metrics are strictly mutually exclusive.
+const COMPLETION_STATUSES = new Set(['SUBMITTED', 'MANAGER_REVIEW', 'CONFIRMED', 'LOCKED'])
+
 function getCompletionCount(items: PersonalKpiViewModel[]) {
-  return items.filter((item) => item.status === 'SUBMITTED' || item.status === 'MANAGER_REVIEW' || item.status === 'CONFIRMED' || item.status === 'LOCKED').length
+  return items.filter((item) => COMPLETION_STATUSES.has(item.status)).length
 }
 
 function getSupplementNeededCount(items: PersonalKpiViewModel[]) {
   return items.filter(
     (item) =>
-      item.hasRejectedRevision ||
-      !item.policyCategory ||
-      !item.orgKpiId ||
-      item.mboPolicy.issues.length > 0 ||
-      buildMboQualityChecklist(item).some((check) => !check.done)
+      !COMPLETION_STATUSES.has(item.status) && (
+        item.hasRejectedRevision ||
+        !item.policyCategory ||
+        !item.orgKpiId ||
+        item.mboPolicy.issues.length > 0 ||
+        buildMboQualityChecklist(item).some((check) => !check.done)
+      )
   ).length
 }
 
@@ -909,14 +917,15 @@ function getPersonalKpiReadiness(item?: PersonalKpiViewModel) {
   }
 
   const checklist = buildMboQualityChecklist(item)
-  const done = checklist.filter((check) => check.done).length
-  const value = checklist.length ? Math.round((done / checklist.length) * 100) : null
+  const countable = checklist.filter((check) => !check.na)
+  const done = countable.filter((check) => check.done).length
+  const value = countable.length ? Math.round((done / countable.length) * 100) : null
   const signal: PmsSignal = value == null ? 'gray' : value >= 85 ? 'green' : value >= 60 ? 'amber' : 'red'
   const tone: PmsTone = signal === 'green' ? 'success' : signal === 'amber' ? 'warning' : signal === 'red' ? 'danger' : 'neutral'
 
   return {
     done,
-    total: checklist.length,
+    total: countable.length,
     value,
     signal,
     tone,
@@ -3253,12 +3262,14 @@ function ResultWritingGuidePanel() {
 function buildMboQualityChecklist(item: PersonalKpiViewModel) {
   const category = item.policyCategory ?? item.mboPolicy.suggestedCategory
   const hasMeasurableTarget = item.targetValueT != null || item.targetValue != null
-  const hasConcretePlan = Boolean(item.formula?.trim())
-  const hasOwnerContribution = Boolean(item.definition?.trim() && item.definition.trim().length >= 8)
+  // Mirror KPIs are evaluated via monthly sales records — formula/definition are N/A.
+  const hasConcretePlan = item.isMirror || Boolean(item.formula?.trim())
+  const hasOwnerContribution = item.isMirror || Boolean(item.definition?.trim() && item.definition.trim().length >= 8)
   const hasWeight = item.weight > 0
   const hasCategory = Boolean(item.policyCategory)
   const hasLinkedOrgKpiWhenOrgGoal = category !== 'ORG_GOAL' || Boolean(item.orgKpiId)
   const dailyWorkNotDuplicated = category !== 'DAILY_WORK' || (!item.orgKpiId && !item.mboPolicy.duplicateDailyWork)
+  const mirrorNaReason = '미러 KPI는 월간 실적/금액으로 평가합니다.'
 
   return [
     {
@@ -3271,12 +3282,16 @@ function buildMboQualityChecklist(item: PersonalKpiViewModel) {
       key: 'concrete-plan',
       label: '구체적인 산식/실행 기준',
       done: hasConcretePlan,
+      na: item.isMirror,
+      naReason: item.isMirror ? mirrorNaReason : undefined,
       help: '어떻게 측정하고 실행할지 산식 또는 평가 기준에 남겨 주세요.',
     },
     {
       key: 'owner-contribution',
       label: '본인 기여 설명',
       done: hasOwnerContribution,
+      na: item.isMirror,
+      naReason: item.isMirror ? mirrorNaReason : undefined,
       help: '담당자가 통제 가능한 역할과 산출물을 정의에 적어 주세요.',
     },
     {
@@ -3336,7 +3351,8 @@ function MboPolicyGuidanceBlock(props: { item: PersonalKpiViewModel }) {
 
 function MboQualityChecklistBlock(props: { item: PersonalKpiViewModel }) {
   const checklist = buildMboQualityChecklist(props.item)
-  const openItems = checklist.filter((item) => !item.done)
+  const countable = checklist.filter((item) => !item.na)
+  const openItems = countable.filter((item) => !item.done)
 
   return (
     <details className="group rounded-2xl border border-slate-200 bg-white">
@@ -3348,7 +3364,7 @@ function MboQualityChecklistBlock(props: { item: PersonalKpiViewModel }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <InfoPill>{checklist.length - openItems.length}/{checklist.length} 확인</InfoPill>
+          <InfoPill>{countable.length - openItems.length}/{countable.length} 확인</InfoPill>
           <span aria-hidden className="text-xs text-slate-400 transition-transform group-open:rotate-180">▾</span>
         </div>
       </summary>
@@ -3356,14 +3372,20 @@ function MboQualityChecklistBlock(props: { item: PersonalKpiViewModel }) {
         <div className="grid gap-1.5">
           {checklist.map((item) => (
             <div key={item.key} className="flex items-start gap-2 rounded-xl bg-slate-50 px-2.5 py-2">
-              {item.done ? (
+              {item.na ? (
+                <Minus className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+              ) : item.done ? (
                 <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
               ) : (
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
               )}
               <div>
                 <div className="text-xs font-semibold text-slate-800">{item.label}</div>
-                {!item.done ? <div className="mt-0.5 text-[11px] leading-4 text-slate-500">{item.help}</div> : null}
+                {item.na ? (
+                  <div className="mt-0.5 text-[11px] leading-4 text-slate-400">해당 없음 — {item.naReason}</div>
+                ) : !item.done ? (
+                  <div className="mt-0.5 text-[11px] leading-4 text-slate-500">{item.help}</div>
+                ) : null}
               </div>
             </div>
           ))}
