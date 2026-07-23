@@ -66,6 +66,12 @@ export type PersonalKpiScopeOption = {
   name: string
   departmentName: string
   role: SystemRole
+  isEvalTarget: boolean
+}
+
+export function isDiv3Department(deptCode: string | null | undefined): boolean {
+  if (!deptCode) return false
+  return deptCode === 'DIV-3' || deptCode.startsWith('DIV-3-')
 }
 
 export type EvalCycleOption = {
@@ -445,6 +451,7 @@ type DepartmentLite = {
   deptName: string | null
   parentDeptId: string | null
   leaderEmployeeId: string | null
+  deptCode: string | null
 }
 
 type LeadershipBootstrapScope = 'TEAM' | 'SECTION' | 'DIVISION'
@@ -1330,12 +1337,16 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
                 deptName: true,
                 parentDeptId: true,
                 leaderEmployeeId: true,
+                deptCode: true,
               },
             }),
         })
       : []
     const departmentNameMap = new Map(departments.map((department) => [department.id, department.deptName]))
     const departmentsById = new Map(departments.map((department) => [department.id, department]))
+    const div3DeptIds = new Set<string>(
+      departments.filter((d) => isDiv3Department(d.deptCode)).map((d) => d.id)
+    )
     const employeesById = new Map(employees.map((employee) => [employee.id, employee]))
     const collectAncestorDepartmentIds = (deptId: string) => {
       const ids: string[] = []
@@ -1355,6 +1366,7 @@ export async function getPersonalKpiPageData(params: PageParams): Promise<Person
         deptName: departmentNameMap.get(employee.deptId) ?? null,
       }),
       role: employee.role,
+      isEvalTarget: !div3DeptIds.has(employee.deptId ?? ''),
     }))
     shellEmployeeOptions = employeeOptions
 
