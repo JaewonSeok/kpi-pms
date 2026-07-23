@@ -2637,7 +2637,7 @@ export function PersonalKpiManagementClient(props: Props) {
           )}
           formError={editorFormError}
           isConfirmedEdit={editorMode === 'edit' && !!selectedKpi && !isDraftStatus(selectedKpi.status) && canManagePersonalKpi(props.actor.role)}
-          isMirror={selectedKpi?.isMirror ?? false}
+          isMirror={editorMode === 'edit' && (selectedKpi?.isMirror ?? false)}
         />
       ) : null}
       {cloneOpen ? (
