@@ -240,13 +240,18 @@ export const CloneOrgKpiSchema = z.object({
   includeCheckins: z.boolean().default(false),
 })
 
+// Personal KPI long-text limits — kept in sync with PersonalKpiManagementClient.tsx textarea maxLength.
+// AI draft schema (personal-kpi-ai-draft.ts) uses the same values.
+export const PERSONAL_KPI_DEFINITION_MAX = 4_000
+export const PERSONAL_KPI_FORMULA_MAX = 2_000
+
 export const CreatePersonalKpiSchema = z.object({
   employeeId: z.string().min(1),
   evalYear: z.number().int().min(2020).max(2100),
   kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']),
   kpiName: z.string().min(1).max(100),
-  definition: z.string().max(500).optional(),
-  formula: z.string().max(500).optional(),
+  definition: z.string().max(PERSONAL_KPI_DEFINITION_MAX).optional(),
+  formula: z.string().max(PERSONAL_KPI_FORMULA_MAX).optional(),
   goalType: z.enum(['GENERAL', 'SALES_REVENUE']),
   // 프론트엔드에서 BigInt를 JSON으로 직접 전송할 수 없으므로 숫자 문자열로 받아 BigInt로 변환.
   targetAmount: z
@@ -288,8 +293,8 @@ export const UpdatePersonalKpiSchema = z.object({
   evalYear: z.number().int().min(2020).max(2100).optional(),
   kpiType: z.enum(['QUANTITATIVE', 'QUALITATIVE']).optional(),
   kpiName: z.string().min(1).max(100).optional(),
-  definition: z.string().max(500).optional(),
-  formula: z.string().max(500).optional(),
+  definition: z.string().max(PERSONAL_KPI_DEFINITION_MAX).optional(),
+  formula: z.string().max(PERSONAL_KPI_FORMULA_MAX).optional(),
   goalType: z.enum(['GENERAL', 'SALES_REVENUE']).optional(),
   targetAmount: z
     .union([
