@@ -66,6 +66,7 @@ import {
   resolvePersonalKpiTargetValues,
 } from '@/lib/personal-kpi-target-values'
 import { joinInlineParts } from '@/lib/metric-copy'
+import { LinkifiedText } from '@/lib/linkify'
 import { getPersonalKpiScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 import { shouldShowSalesBanner, findSalesLinkedOrgKpiId } from '@/lib/personal-kpi-sales-banner'
 import { SALES_SCORE_BANDS_2026 } from '@/lib/sales-score-policy-2026'
@@ -3560,8 +3561,8 @@ function DetailPanel(props: {
           </Block>
         ) : null}
 
-        <Block title="정의">{item.definition || '정의가 아직 작성되지 않았습니다.'}</Block>
-        <Block title="산식">{item.formula || '산식이 아직 작성되지 않았습니다.'}</Block>
+        <Block title="정의"><LinkifiedText>{item.definition || '정의가 아직 작성되지 않았습니다.'}</LinkifiedText></Block>
+        <Block title="산식"><LinkifiedText>{item.formula || '산식이 아직 작성되지 않았습니다.'}</LinkifiedText></Block>
         <Block title="검토 코멘트">{item.reviewComment || '검토 코멘트가 아직 없습니다.'}</Block>
 
         {item.cloneInfo ? (
@@ -5759,7 +5760,7 @@ function Block(props: { title: string; children: ReactNode }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <h4 className="text-sm font-semibold text-slate-900">{props.title}</h4>
-      <div className="mt-2 text-sm leading-6 text-slate-700">{props.children}</div>
+      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{props.children}</div>
     </div>
   )
 }
