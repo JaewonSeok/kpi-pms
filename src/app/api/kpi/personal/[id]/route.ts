@@ -155,7 +155,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       data.targetValueE !== undefined ||
       data.targetValueS !== undefined ||
       data.weight !== undefined ||
-      data.difficulty !== undefined
+      data.difficulty !== undefined ||
+      data.policyCategory !== undefined
 
     const hasOpenFieldUpdates =
       data.definition !== undefined ||
@@ -365,6 +366,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         ...(data.linkedOrgKpiId !== undefined || data.employeeId !== undefined || data.evalYear !== undefined
           ? { linkedOrgKpiId }
           : {}),
+        ...(data.policyCategory !== undefined ? { policyCategory: data.policyCategory } : {}),
         ...(data.status !== undefined ? { status: data.status } : {}),
       },
       include: {
@@ -409,6 +411,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         weight: current.weight,
         difficulty: current.difficulty,
         linkedOrgKpiId: current.linkedOrgKpiId,
+        policyCategory: current.policyCategory,
         status: current.status,
         workflowStatus: operationalStatus,
       },
@@ -428,6 +431,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         weight: updated.weight,
         difficulty: updated.difficulty,
         linkedOrgKpiId: updated.linkedOrgKpiId,
+        policyCategory: updated.policyCategory,
         status: updated.status,
       },
       ...getClientInfo(request),

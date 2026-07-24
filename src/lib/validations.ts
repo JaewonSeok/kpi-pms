@@ -308,6 +308,7 @@ export const UpdatePersonalKpiSchema = z.object({
   weight: z.number().min(0).max(100).optional(),
   difficulty: z.enum(['HIGH', 'MEDIUM', 'LOW']).optional(),
   linkedOrgKpiId: z.string().nullable().optional(),
+  policyCategory: z.enum(['ORG_GOAL', 'PROJECT_T', 'PROJECT_K', 'DAILY_WORK']).nullable().optional(),
   status: z.enum(['DRAFT', 'CONFIRMED', 'ARCHIVED']).optional(),
 }).superRefine((data, ctx) => {
   if (data.goalType === 'SALES_REVENUE') {

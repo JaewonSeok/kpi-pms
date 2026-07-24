@@ -219,6 +219,39 @@ async function main() {
     // old hard-coded 500 limit must not appear as maxLength
     assert.equal(clientSource.includes('maxLength={500}'), false)
   })
+
+  await run('UpdatePersonalKpiSchema accepts all policyCategory enum values and null', () => {
+    for (const cat of ['ORG_GOAL', 'PROJECT_T', 'PROJECT_K', 'DAILY_WORK'] as const) {
+      const parsed = UpdatePersonalKpiSchema.safeParse({ policyCategory: cat })
+      assert.equal(parsed.success, true, `policyCategory=${cat} should be accepted`)
+    }
+    // null = 미분류 (reset to unclassified)
+    const nullParsed = UpdatePersonalKpiSchema.safeParse({ policyCategory: null })
+    assert.equal(nullParsed.success, true)
+    // unknown value rejected
+    const badParsed = UpdatePersonalKpiSchema.safeParse({ policyCategory: 'UNKNOWN' })
+    assert.equal(badParsed.success, false)
+  })
+
+  await run('DRAFT edit client sends policyCategory in payload; CONFIRMED slim payload omits it', () => {
+    const clientSource = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+    // policyCategoryValue variable must exist (shared by create and DRAFT edit paths)
+    assert.equal(clientSource.includes('policyCategoryValue'), true)
+    // CONFIRMED slim payload must not include policyCategory
+    const confirmedSlimBlock = clientSource.slice(
+      clientSource.indexOf('!isDraftStatus(selectedKpi.status)'),
+      clientSource.indexOf('isDraftStatus(selectedKpi.status)') + 2000
+    )
+    assert.equal(confirmedSlimBlock.includes('policyCategory'), false,
+      'CONFIRMED slim payload must not send policyCategory')
+    // DRAFT edit select is shown when !isConfirmedEdit
+    assert.equal(clientSource.includes("props.mode === 'create' || !props.isConfirmedEdit"), true)
+    // 3-way helper text: DRAFT edit uses "초안 상태에서 변경" wording
+    assert.equal(clientSource.includes('초안 상태에서 변경할 수 있습니다'), true)
+    // CONFIRMED helper text preserved
+    assert.equal(clientSource.includes('확정된 KPI의 분류는 HR 정책 매핑'), true)
+  })
 }
 
 void main()

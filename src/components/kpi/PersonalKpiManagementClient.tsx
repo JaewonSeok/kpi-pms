@@ -1676,11 +1676,12 @@ export function PersonalKpiManagementClient(props: Props) {
         linkedOrgKpiId: form.linkedOrgKpiId || undefined,
       }
 
-      // 2026 정책 분류는 등록(create)에서만 payload에 포함. '' 은 null로 변환(enum 거부 회피).
-      // PATCH(수정)는 UpdatePersonalKpiSchema가 policyCategory를 받지 않으므로 미포함.
+      // 2026 정책 분류: create + DRAFT 편집에서만 payload에 포함. '' 은 null로 변환(enum 거부 회피).
+      // CONFIRMED 편집(슬림 payload)에는 미포함 — 서버도 locked 게이트로 이중 차단.
+      const policyCategoryValue = form.policyCategory === '' ? null : form.policyCategory
       const createPayload = {
         ...payload,
-        policyCategory: form.policyCategory === '' ? null : form.policyCategory,
+        policyCategory: policyCategoryValue,
       }
 
       const response =
@@ -1704,6 +1705,7 @@ export function PersonalKpiManagementClient(props: Props) {
                       ...payload,
                       ...(isSalesRevenue && isAutoMode ? { targetAmount: null } : {}),
                       linkedOrgKpiId: form.linkedOrgKpiId || null,
+                      policyCategory: policyCategoryValue,
                     }
               ),
             })
@@ -5696,7 +5698,7 @@ function EditorModal(props: {
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-900">구분 (정책 분류)</span>
-              {props.mode === 'create' ? (
+              {props.mode === 'create' || !props.isConfirmedEdit ? (
                 <select
                   value={props.form.policyCategory}
                   onChange={(event) =>
@@ -5730,7 +5732,9 @@ function EditorModal(props: {
               <p className="text-xs leading-5 text-slate-500">
                 {props.mode === 'create'
                   ? '필수 아닙니다. 미선택 시 HR이 사후에 정책 매핑에서 분류합니다.'
-                  : '분류는 등록 시점에 작성자가 선택하거나 HR 정책 매핑에서 갱신합니다. 이 화면에서는 변경할 수 없습니다.'}
+                  : props.isConfirmedEdit
+                  ? '확정된 KPI의 분류는 HR 정책 매핑(공식 전환 체크리스트)에서만 변경할 수 있습니다.'
+                  : '초안 상태에서 변경할 수 있습니다. 확정 후에는 HR 정책 매핑에서 관리됩니다.'}
               </p>
             </label>
           </div>
