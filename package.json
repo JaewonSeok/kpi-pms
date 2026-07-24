@@ -52,6 +52,7 @@
     "test:notifications": "ts-node -P tsconfig.seed.json tests/notifications.test.ts",
     "test:ops": "ts-node -P tsconfig.seed.json tests/ops.test.ts",
     "test:pwa": "ts-node -P tsconfig.seed.json tests/pwa-cache-safety.test.ts",
+    "test:linkify": "ts-node -P tsconfig.seed.json tests/linkify.test.ts",
     "test:resolve-target-amount": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/resolve-target-amount.test.ts",
     "test:validate-sales-target-source": "ts-node -P tsconfig.seed.json tests/validate-sales-target-source.test.ts",
     "test:org-kpi-target-amount": "ts-node -r ./tests/register-path-aliases.ts -P tsconfig.seed.json tests/org-kpi-target-amount.test.ts",
