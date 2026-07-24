@@ -4634,7 +4634,6 @@ function GoalDetailPanel(props: {
 
   const item = props.selectedKpi
   const readiness = getPersonalKpiReadiness(item)
-  const planText = item.definition || item.formula || '수행 계획이 아직 작성되지 않았습니다.'
   const evidenceText = item.evidenceRecord.attachments.length
     ? `${item.evidenceRecord.attachments.length}개 첨부`
     : item.evidenceRecord.evidenceComment
@@ -4674,18 +4673,18 @@ function GoalDetailPanel(props: {
             characterCount={`${item.title.length}/100`}
           />
           <ReadOnlyGoalField
-            label="수행 계획"
-            value={planText}
-            content={<LinkifiedText>{planText}</LinkifiedText>}
-            required
+            label="정의"
+            value={item.definition || ''}
+            content={<LinkifiedText>{item.definition || '정의가 아직 작성되지 않았습니다.'}</LinkifiedText>}
             multiline
-            characterCount={
-              item.definition
-                ? `${item.definition.length}/${PERSONAL_KPI_DEFINITION_MAX}`
-                : item.formula
-                  ? `${item.formula.length}/${PERSONAL_KPI_FORMULA_MAX}`
-                  : undefined
-            }
+            characterCount={item.definition ? `${item.definition.length}/${PERSONAL_KPI_DEFINITION_MAX}` : undefined}
+          />
+          <ReadOnlyGoalField
+            label="산식 또는 평가 기준"
+            value={item.formula || ''}
+            content={<LinkifiedText>{item.formula || '산식이 아직 작성되지 않았습니다.'}</LinkifiedText>}
+            multiline
+            characterCount={item.formula ? `${item.formula.length}/${PERSONAL_KPI_FORMULA_MAX}` : undefined}
           />
           <ReadOnlyGoalField label="비중(%)" value={`${item.weight}%`} required />
           <div className="grid gap-3 sm:grid-cols-2">
