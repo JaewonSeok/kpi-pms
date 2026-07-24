@@ -3562,8 +3562,8 @@ function DetailPanel(props: {
           </Block>
         ) : null}
 
-        <Block title="정의"><LinkifiedText>{item.definition || '정의가 아직 작성되지 않았습니다.'}</LinkifiedText></Block>
-        <Block title="산식"><LinkifiedText>{item.formula || '산식이 아직 작성되지 않았습니다.'}</LinkifiedText></Block>
+        <Block title="정의">{item.definition || '정의가 아직 작성되지 않았습니다.'}</Block>
+        <Block title="산식">{item.formula || '산식이 아직 작성되지 않았습니다.'}</Block>
         <Block title="검토 코멘트">{item.reviewComment || '검토 코멘트가 아직 없습니다.'}</Block>
 
         {item.cloneInfo ? (
@@ -4676,6 +4676,7 @@ function GoalDetailPanel(props: {
           <ReadOnlyGoalField
             label="수행 계획"
             value={planText}
+            content={<LinkifiedText>{planText}</LinkifiedText>}
             required
             multiline
             characterCount={
@@ -4872,6 +4873,7 @@ function getPolicyCategoryDisplayLabel(category?: PersonalKpiViewModel['policyCa
 function ReadOnlyGoalField(props: {
   label: string
   value: string
+  content?: ReactNode
   required?: boolean
   multiline?: boolean
   characterCount?: string
@@ -4892,7 +4894,7 @@ function ReadOnlyGoalField(props: {
           props.multiline ? 'min-h-[92px] whitespace-pre-line' : ''
         } ${props.muted ? 'text-slate-500' : ''}`}
       >
-        {props.value || '-'}
+        {props.content ?? props.value ?? '-'}
       </div>
       {props.helper ? <p className="mt-1.5 text-xs leading-5 text-slate-500">{props.helper}</p> : null}
     </div>
