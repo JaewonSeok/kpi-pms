@@ -13,8 +13,12 @@ import {
   BulkOrgKpiRowSchema,
   BusinessPlanDocumentSchema,
   CreateOrgKpiSchema,
+  CreatePersonalKpiSchema,
   TeamKpiRecommendationDecisionSchema,
   UpdateOrgKpiSchema,
+  UpdatePersonalKpiSchema,
+  PERSONAL_KPI_DEFINITION_MAX,
+  PERSONAL_KPI_FORMULA_MAX,
 } from '../src/lib/validations'
 
 function read(relativePath: string) {
@@ -167,6 +171,53 @@ async function main() {
     assert.equal(formSource.includes('maxLength={500}'), false)
     assert.equal(workspaceSource.includes('resize-y'), true)
     assert.equal(formSource.includes('resize-y'), true)
+  })
+
+  await run('personal KPI create and update schemas accept long definition (4000) and formula (2000)', () => {
+    const longDefinition = repeatText('This is a long KPI definition. ', PERSONAL_KPI_DEFINITION_MAX)
+    const longFormula = repeatText('Metric formula with measurable detail. ', PERSONAL_KPI_FORMULA_MAX)
+
+    const createParsed = CreatePersonalKpiSchema.safeParse({
+      employeeId: 'emp-1',
+      evalYear: 2026,
+      kpiType: 'QUALITATIVE',
+      kpiName: 'Quality improvement',
+      definition: longDefinition,
+      formula: longFormula,
+      goalType: 'GENERAL',
+      weight: 20,
+      difficulty: 'MEDIUM',
+    })
+    assert.equal(createParsed.success, true)
+
+    const updateParsed = UpdatePersonalKpiSchema.safeParse({
+      definition: longDefinition,
+      formula: longFormula,
+    })
+    assert.equal(updateParsed.success, true)
+
+    const tooLongDef = CreatePersonalKpiSchema.safeParse({
+      employeeId: 'emp-1',
+      evalYear: 2026,
+      kpiType: 'QUALITATIVE',
+      kpiName: 'Quality improvement',
+      definition: repeatText('A', PERSONAL_KPI_DEFINITION_MAX + 1),
+      goalType: 'GENERAL',
+      weight: 20,
+      difficulty: 'MEDIUM',
+    })
+    assert.equal(tooLongDef.success, false)
+  })
+
+  await run('personal KPI textareas use maxLength constants matching server schema', () => {
+    const clientSource = read('src/components/kpi/PersonalKpiManagementClient.tsx')
+
+    assert.equal(clientSource.includes('PERSONAL_KPI_DEFINITION_MAX'), true)
+    assert.equal(clientSource.includes('PERSONAL_KPI_FORMULA_MAX'), true)
+    assert.equal(clientSource.includes('maxLength={PERSONAL_KPI_DEFINITION_MAX}'), true)
+    assert.equal(clientSource.includes('maxLength={PERSONAL_KPI_FORMULA_MAX}'), true)
+    // old hard-coded 500 limit must not appear as maxLength
+    assert.equal(clientSource.includes('maxLength={500}'), false)
   })
 }
 

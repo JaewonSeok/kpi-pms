@@ -80,6 +80,7 @@ import {
   type PmsTone,
 } from '@/components/pms-ui'
 import { canManagePersonalKpi } from '@/lib/personal-kpi-access'
+import { PERSONAL_KPI_DEFINITION_MAX, PERSONAL_KPI_FORMULA_MAX } from '@/lib/validations'
 
 type Props = PersonalKpiPageData & {
   initialTab?: string
@@ -4677,7 +4678,13 @@ function GoalDetailPanel(props: {
             value={planText}
             required
             multiline
-            characterCount={`${planText.length}/500`}
+            characterCount={
+              item.definition
+                ? `${item.definition.length}/${PERSONAL_KPI_DEFINITION_MAX}`
+                : item.formula
+                  ? `${item.formula.length}/${PERSONAL_KPI_FORMULA_MAX}`
+                  : undefined
+            }
           />
           <ReadOnlyGoalField label="비중(%)" value={`${item.weight}%`} required />
           <div className="grid gap-3 sm:grid-cols-2">
@@ -5493,11 +5500,17 @@ function EditorModal(props: {
           </div>
 
           <label className="space-y-2">
-            <span className="text-sm font-medium text-slate-900">정의</span>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-slate-900">정의</span>
+              <span className={`text-xs ${props.form.definition.length > PERSONAL_KPI_DEFINITION_MAX * 0.9 ? 'text-amber-500' : 'text-slate-400'}`}>
+                {props.form.definition.length}/{PERSONAL_KPI_DEFINITION_MAX}
+              </span>
+            </div>
             <textarea
               value={props.form.definition}
               onChange={(event) => props.onChange((current) => ({ ...current, definition: event.target.value }))}
               rows={4}
+              maxLength={PERSONAL_KPI_DEFINITION_MAX}
               className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
               placeholder="무엇을 달성하려는 KPI인지, 왜 중요한지를 명확하게 적어주세요."
             />
@@ -5505,11 +5518,17 @@ function EditorModal(props: {
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
             <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-900">산식 또는 평가 기준</span>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-slate-900">산식 또는 평가 기준</span>
+                <span className={`text-xs ${props.form.formula.length > PERSONAL_KPI_FORMULA_MAX * 0.9 ? 'text-amber-500' : 'text-slate-400'}`}>
+                  {props.form.formula.length}/{PERSONAL_KPI_FORMULA_MAX}
+                </span>
+              </div>
               <textarea
                 value={props.form.formula}
                 onChange={(event) => props.onChange((current) => ({ ...current, formula: event.target.value }))}
                 rows={8}
+                maxLength={PERSONAL_KPI_FORMULA_MAX}
                 className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
                 placeholder={
                   props.form.kpiType === 'QUANTITATIVE'
