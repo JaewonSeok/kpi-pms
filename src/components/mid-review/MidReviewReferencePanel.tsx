@@ -29,16 +29,19 @@ export function MidReviewReferencePanel({
   title = '중간 점검',
   helper = '최근 중간 점검에서 합의된 목표 방향과 기대 상태를 확인합니다.',
   compact = false,
+  initialData,
 }: {
   kind: 'org-kpi' | 'personal-kpi' | 'employee'
   targetId?: string | null
   title?: string
   helper?: string
   compact?: boolean
+  initialData?: MidReviewSummary
 }) {
+  const skipFetch = initialData !== undefined
   const summaryQuery = useQuery({
     queryKey: ['mid-review-summary', kind, targetId],
-    enabled: Boolean(targetId),
+    enabled: !skipFetch && Boolean(targetId),
     queryFn: async () => {
       if (!targetId) return null
 
@@ -51,8 +54,8 @@ export function MidReviewReferencePanel({
       return (json.data ?? null) as MidReviewSummary
     },
   })
-  const summary = targetId ? summaryQuery.data ?? null : null
-  const loading = Boolean(targetId) && summaryQuery.isFetching
+  const summary = skipFetch ? initialData : (targetId ? summaryQuery.data ?? null : null)
+  const loading = !skipFetch && Boolean(targetId) && summaryQuery.isFetching
   const errorNotice =
     summaryQuery.error instanceof Error
       ? summaryQuery.error.message

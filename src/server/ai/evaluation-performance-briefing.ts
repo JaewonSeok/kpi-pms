@@ -26,6 +26,7 @@ import { recordOperationalEvent } from '@/lib/operations'
 import { prisma } from '@/lib/prisma'
 import { requestExecutivePerformanceBriefingFromOpenAI } from '@/server/ai/executive-performance-briefing-openai'
 import { getPreviousActiveEvaluationStage } from '@/server/evaluation-performance-assignments'
+import { getLatestEmployeeMidReviewSummary } from '@/server/mid-review'
 import { AppError, EVAL_STAGE_LABELS, POSITION_LABELS } from '@/lib/utils'
 
 type GenerateEvaluationPerformanceBriefingParams = {
@@ -550,7 +551,7 @@ async function loadEvaluationPerformanceBriefingContext(
 
   const referenceEvaluationId = referenceEvaluation?.id ?? evaluation.id
 
-  const [checkins, feedbackRounds, previousEvaluations] = await Promise.all([
+  const [checkins, feedbackRounds, previousEvaluations, midReviewData] = await Promise.all([
     db.checkIn.findMany({
       where: {
         ownerId: evaluation.targetId,
@@ -619,6 +620,7 @@ async function loadEvaluationPerformanceBriefingContext(
         },
       },
     }),
+    getLatestEmployeeMidReviewSummary(evaluation.targetId).catch(() => null),
   ])
 
   return {
@@ -656,6 +658,7 @@ async function loadEvaluationPerformanceBriefingContext(
       }
     }),
     previousEvaluations,
+    midReviewData,
   }
 }
 
@@ -812,7 +815,7 @@ function buildFallbackSnapshot(
 function buildBriefingContext(
   loaded: Awaited<ReturnType<typeof loadEvaluationPerformanceBriefingContext>>
 ): BriefingContext {
-  const { evaluation, referenceEvaluation, checkins, feedbackRounds, previousEvaluations } = loaded
+  const { evaluation, referenceEvaluation, checkins, feedbackRounds, previousEvaluations, midReviewData } = loaded
 
   const evidenceSeeds: EvidenceSeed[] = []
   const addEvidence = (item: EvidenceSeed) => {
@@ -987,11 +990,23 @@ function buildBriefingContext(
     alignmentStatus,
   })
 
+  const midReviewPayload = midReviewData
+    ? {
+        reviewTypeLabel: midReviewData.reviewTypeLabel,
+        goalValidityLabel: midReviewData.goalValidityLabel,
+        nextPeriodPlan: midReviewData.nextPeriodPlan,
+        criteriaMeets: midReviewData.criteriaMeets,
+        revisionRequested: midReviewData.revisionRequested,
+        updatedAt: midReviewData.updatedAt,
+      }
+    : undefined
+
   const payload = sanitizeAiPayload({
     promptVersion: PERFORMANCE_BRIEFING_PROMPT_VERSION,
     evaluationId: evaluation.id,
     cycleId: evaluation.evalCycle.id,
     promptInput,
+    ...(midReviewPayload ? { midReviewSummary: midReviewPayload } : {}),
     heuristics: {
       alignmentStatus,
       scoreGap:

@@ -1985,6 +1985,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                 targetId={selected.target.id}
                 title="중간 점검 참고"
                 helper="최근 중간 점검에서 정리한 목표 유효성, 기대 기준, 다음 액션을 평가 전에 참고합니다."
+                initialData={selected.midReviewSummary}
               />
 
               {canViewPolicyPreview2026 ? (

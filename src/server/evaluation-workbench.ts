@@ -27,6 +27,7 @@ import {
 } from '@/server/evaluation-scoring-2026'
 import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
 import { resolveTargetAmount } from '@/lib/resolve-target-amount'
+import { getLatestEmployeeMidReviewSummary, type MidReviewSummaryViewModel } from '@/server/mid-review'
 
 export type EvaluationWorkbenchState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -277,6 +278,7 @@ export type EvaluationWorkbenchPageData = {
       action: string
       detail: string
     }>
+    midReviewSummary?: MidReviewSummaryViewModel | null
   }
 }
 
@@ -1073,6 +1075,7 @@ export async function getEvaluationWorkbenchPageData(
       recentCheckinsResult,
       gradeOptionsResult,
       feedbackRoundsResult,
+      midReviewSummaryResult,
     ] = await Promise.all([
       loadWorkbenchSection({
         title: 'audit logs',
@@ -1252,6 +1255,12 @@ export async function getEvaluationWorkbenchPageData(
             orderBy: { endDate: 'desc' },
           }),
       }),
+      loadWorkbenchSection({
+        title: 'mid-review summary',
+        fallback: null as MidReviewSummaryViewModel | null,
+        alert: '중간 점검 요약을 불러오지 못했지만 평가 작업은 계속 진행할 수 있습니다.',
+        load: () => getLatestEmployeeMidReviewSummary(selectedEvaluation.target.id),
+      }),
     ])
 
     const auditLogs = auditLogsResult.value
@@ -1263,6 +1272,7 @@ export async function getEvaluationWorkbenchPageData(
     const recentCheckins = recentCheckinsResult.value
     const gradeOptions = gradeOptionsResult.value
     const feedbackRounds = feedbackRoundsResult.value
+    const midReviewSummary = midReviewSummaryResult.value
     const guideStatus = getGuideStatusFromAuditLogs(auditLogs, sessionUser.id)
 
     for (const alert of [
@@ -1275,6 +1285,7 @@ export async function getEvaluationWorkbenchPageData(
       recentCheckinsResult.alert,
       gradeOptionsResult.alert,
       feedbackRoundsResult.alert,
+      midReviewSummaryResult.alert,
     ]) {
       if (alert) {
         alerts.push(alert)
@@ -1650,6 +1661,7 @@ export async function getEvaluationWorkbenchPageData(
             ? `총점 ${String((log.newValue as Record<string, unknown>).totalScore ?? '-')}`
             : '상태 또는 코멘트가 갱신되었습니다.',
       })),
+      midReviewSummary: midReviewSummary ?? null,
     }
 
     return pageData
