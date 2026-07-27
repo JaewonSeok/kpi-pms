@@ -3184,7 +3184,7 @@ function MineSection(props: {
 
 function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: boolean; onSelect: () => void; showEvidenceColumn: boolean }) {
   const readiness = getPersonalKpiReadiness(props.item)
-  const planPreview = props.item.definition || props.item.formula || '-'
+  const planPreview = props.item.definition || '-'
   const evidenceStatus = props.item.evidenceRecord.attachments.length
     ? `${props.item.evidenceRecord.attachments.length}개`
     : props.item.evidenceRecord.evidenceComment
@@ -3368,7 +3368,7 @@ function buildMboQualityChecklist(item: PersonalKpiViewModel) {
     },
     {
       key: 'concrete-plan',
-      label: '구체적인 산식/실행 기준',
+      label: '산식 또는 평가 기준',
       done: hasConcretePlan,
       na: item.isMirror,
       naReason: item.isMirror ? mirrorNaReason : undefined,
@@ -3376,7 +3376,7 @@ function buildMboQualityChecklist(item: PersonalKpiViewModel) {
     },
     {
       key: 'owner-contribution',
-      label: '본인 기여 설명',
+      label: '수행 계획 작성',
       done: hasOwnerContribution,
       na: item.isMirror,
       naReason: item.isMirror ? mirrorNaReason : undefined,
@@ -4675,7 +4675,7 @@ function GoalDetailPanel(props: {
             characterCount={`${item.title.length}/100`}
           />
           <ReadOnlyGoalField
-            label="정의"
+            label="수행 계획"
             value={item.definition || ''}
             content={<LinkifiedText>{item.definition || '정의가 아직 작성되지 않았습니다.'}</LinkifiedText>}
             multiline
@@ -5504,7 +5504,7 @@ function EditorModal(props: {
 
           <label className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-slate-900">정의</span>
+              <span className="text-sm font-medium text-slate-900">수행 계획</span>
               <span className={`text-xs ${props.form.definition.length > PERSONAL_KPI_DEFINITION_MAX * 0.9 ? 'text-amber-500' : 'text-slate-400'}`}>
                 {props.form.definition.length}/{PERSONAL_KPI_DEFINITION_MAX}
               </span>
@@ -5515,7 +5515,7 @@ function EditorModal(props: {
               rows={4}
               maxLength={PERSONAL_KPI_DEFINITION_MAX}
               className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
-              placeholder="무엇을 달성하려는 KPI인지, 왜 중요한지를 명확하게 적어주세요."
+              placeholder="이 목표를 어떻게 수행할지 구체적으로 적어주세요."
             />
           </label>
 
