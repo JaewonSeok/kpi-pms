@@ -3660,8 +3660,6 @@ function ReviewQueueSection(props: {
   const startReviewState = selectedItem ? getReviewActionState(selectedItem.status, 'START_REVIEW') : { disabled: true }
   const approveState = selectedItem ? getReviewActionState(selectedItem.status, 'APPROVE') : { disabled: true }
   const rejectState = selectedItem ? getReviewActionState(selectedItem.status, 'REJECT') : { disabled: true }
-  const reopenState = selectedItem ? getReviewActionState(selectedItem.status, 'REOPEN') : { disabled: true }
-  const reopenReasonMissing = props.reviewNote.trim().length < 5
 
   if (!props.items.length) {
     return (
@@ -4654,6 +4652,9 @@ function GoalDetailPanel(props: {
   busy: boolean
   deleteActionState: ReturnType<typeof getPersonalKpiDeleteActionState>
 }) {
+  const [reopenInputVisible, setReopenInputVisible] = useState(false)
+  const [reopenNote, setReopenNote] = useState('')
+
   if (!props.selectedKpi) {
     return (
       <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4">
@@ -4684,9 +4685,6 @@ function GoalDetailPanel(props: {
       </aside>
     )
   }
-
-  const [reopenInputVisible, setReopenInputVisible] = useState(false)
-  const [reopenNote, setReopenNote] = useState('')
 
   const item = props.selectedKpi
   const readiness = getPersonalKpiReadiness(item)
