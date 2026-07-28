@@ -54,6 +54,7 @@ import type {
   PersonalKpiTimelineItem,
   PersonalKpiViewModel,
 } from '@/server/personal-kpi-page'
+import type { PersonalKpiOperationalStatus } from '@/server/personal-kpi-workflow'
 import {
   PERSONAL_KPI_REVIEW_CTA_LABEL,
   getPersonalKpiHeroCtaTransition,
@@ -992,7 +993,7 @@ function buildPersonalCockpitMetrics(items: PersonalKpiViewModel[], summary: Pro
 }
 
 function getReviewActionState(
-  status: PersonalKpiReviewQueueItem['status'],
+  status: PersonalKpiOperationalStatus,
   action: 'START_REVIEW' | 'APPROVE' | 'REJECT' | 'REOPEN'
 ) {
   if (action === 'START_REVIEW') {
@@ -1005,11 +1006,11 @@ function getReviewActionState(
   }
 
   if (action === 'REOPEN') {
-    return status === 'SUBMITTED' || status === 'MANAGER_REVIEW'
+    return status === 'SUBMITTED' || status === 'MANAGER_REVIEW' || status === 'CONFIRMED' || status === 'LOCKED'
       ? { disabled: false }
       : {
           disabled: true,
-          reason: '제출 또는 검토 중 KPI만 초안으로 되돌릴 수 있습니다.',
+          reason: '초안 상태 KPI는 되돌릴 수 없습니다.',
         }
   }
 

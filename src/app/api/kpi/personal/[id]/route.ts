@@ -235,7 +235,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           })
         : current.linkedOrgKpiId
 
-    if ((hasFieldUpdates || data.status === 'ARCHIVED') && targetCycle?.goalEditMode === 'CHECKIN_ONLY') {
+    if (hasFieldUpdates && targetCycle?.goalEditMode === 'CHECKIN_ONLY') {
       throw new AppError(
         400,
         'GOAL_EDIT_LOCKED',
@@ -329,14 +329,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
     }
 
-    if (data.status === 'CONFIRMED' && !canManagePersonalKpi(session.user.role)) {
-      throw new AppError(403, 'FORBIDDEN', '확정 상태로 변경할 권한이 없습니다.')
-    }
-
-    if (data.status === 'ARCHIVED' && !canManagePersonalKpi(session.user.role)) {
-      throw new AppError(403, 'FORBIDDEN', '보관 처리 권한이 없습니다.')
-    }
-
     const updated = await prisma.personalKpi.update({
       where: { id },
       data: {
@@ -367,7 +359,6 @@ export async function PATCH(request: Request, context: RouteContext) {
           ? { linkedOrgKpiId }
           : {}),
         ...(data.policyCategory !== undefined ? { policyCategory: data.policyCategory } : {}),
-        ...(data.status !== undefined ? { status: data.status } : {}),
       },
       include: {
         employee: {
@@ -392,7 +383,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     await createAuditLog({
       userId: session.user.id,
-      action: data.status && data.status !== current.status ? 'PERSONAL_KPI_STATUS_CHANGED' : 'PERSONAL_KPI_UPDATED',
+      action: 'PERSONAL_KPI_UPDATED',
       entityType: 'PersonalKpi',
       entityId: id,
       oldValue: {
