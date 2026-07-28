@@ -457,6 +457,14 @@ function ExecutiveDetailPanel({
           <CompactInfo label="현재 상태" value={selected?.statusLabel ?? '-'} />
           <CompactInfo label="1차 등급" value={firstGrade} />
         </div>
+        {selected?.id && (
+          <a
+            href={`/evaluation/performance/${encodeURIComponent(selected.id)}`}
+            className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+          >
+            공식 평가 화면에서 입력
+          </a>
+        )}
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <div className="text-sm font-bold text-slate-950">등급 조정</div>

@@ -447,6 +447,14 @@ function LeaderDetailPanel({
           <CompactInfo label="평가 기간" value={selected?.cycle.name ?? '-'} />
           <CompactInfo label="제출 상태" value={selected?.statusLabel ?? '-'} />
         </div>
+        {selected?.id && (
+          <a
+            href={`/evaluation/performance/${encodeURIComponent(selected.id)}`}
+            className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+          >
+            공식 평가 화면에서 입력
+          </a>
+        )}
 
         <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-1">
           <button
