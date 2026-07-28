@@ -35,6 +35,7 @@ export type PerformanceMemberInputWorkspaceData = {
 }
 
 type SelectedEvaluation = {
+  id: string
   cycle: {
     name: string
   }
@@ -473,6 +474,14 @@ function MemberDetailPanel({
             <CompactInfo label="평가 주기" value={selected?.cycle.name ?? '-'} />
             <CompactInfo label="최근 업데이트" value={selected?.updatedAt ?? '-'} />
           </div>
+          {selected?.id && (
+            <a
+              href={`/evaluation/performance/${encodeURIComponent(selected.id)}`}
+              className="inline-flex items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              공식 평가 화면에서 입력
+            </a>
+          )}
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
