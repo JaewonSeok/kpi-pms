@@ -25,6 +25,12 @@ const LEADER_REVIEW_PREVIEW_ROLES = new Set<string>([
   'ROLE_MASTER',
 ])
 
+const LEADER_EVALUATOR_ROLES = new Set<string>([
+  'ROLE_TEAM_LEADER',
+  'ROLE_SECTION_CHIEF',
+  'ROLE_DIV_HEAD',
+])
+
 const EXECUTIVE_ADJUSTMENT_PREVIEW_ROLES = new Set<string>([
   'ROLE_DIV_HEAD',
   'ROLE_CEO',
@@ -47,6 +53,7 @@ export default async function EvaluationWorkbenchPage({ searchParams }: PageProp
 
   const canPreviewLeaderReview = LEADER_REVIEW_PREVIEW_ROLES.has(session.user.role)
   const canPreviewExecutiveAdjustment = EXECUTIVE_ADJUSTMENT_PREVIEW_ROLES.has(session.user.role)
+  const isLeaderEvaluatorRole = LEADER_EVALUATOR_ROLES.has(session.user.role)
   const requestedView = resolveWorkbenchView(resolvedSearchParams.view)
   const defaultView: WorkbenchView = canPreviewExecutiveAdjustment ? 'executive' : canPreviewLeaderReview ? 'leader' : 'member'
   const activeView =
@@ -65,6 +72,9 @@ export default async function EvaluationWorkbenchPage({ searchParams }: PageProp
         cycleId={resolvedSearchParams.cycleId}
         evaluationId={resolvedSearchParams.evaluationId}
       />
+      {isLeaderEvaluatorRole && (
+        <EvaluatorTaskPanel evaluations={data.evaluations ?? []} />
+      )}
       {activeView === 'executive' ? (
         <PerformanceExecutiveAdjustmentWorkspace data={data} />
       ) : activeView === 'leader' ? (
@@ -152,5 +162,62 @@ function PerformanceWorkbenchRoleSwitch({
         preview only · 공식 저장 없음
       </span>
     </nav>
+  )
+}
+
+type EvaluatorTask = {
+  id: string
+  stageLabel: string
+  targetName: string
+  targetDepartment: string
+  statusLabel: string
+  isActionRequired: boolean
+  isEvaluator: boolean
+  evalStage: string
+}
+
+function EvaluatorTaskPanel({ evaluations }: { evaluations: EvaluatorTask[] }) {
+  const tasks = evaluations.filter((ev) => ev.isEvaluator && ev.evalStage !== 'SELF')
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-sm font-semibold text-slate-900">내 담당 평가</p>
+      <p className="mt-1 text-sm text-slate-500">
+        공식 평가는 아래 링크에서 진행합니다. 이 화면은 preview 전용이며 저장되지 않습니다.
+      </p>
+      {tasks.length === 0 ? (
+        <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+          배정된 평가 없음
+        </p>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {tasks.map((task) => (
+            <li
+              key={task.id}
+              className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3"
+            >
+              <div className="min-w-0">
+                <span className="text-sm font-semibold text-slate-900">{task.targetName}</span>
+                <span className="ml-2 text-xs text-slate-500">
+                  {task.targetDepartment} · {task.stageLabel}
+                </span>
+                <span className="ml-2 text-xs text-slate-400">{task.statusLabel}</span>
+                {task.isActionRequired && (
+                  <span className="ml-2 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-600">
+                    작성 필요
+                  </span>
+                )}
+              </div>
+              <a
+                href={`/evaluation/performance/${encodeURIComponent(task.id)}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                평가 화면 열기
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }

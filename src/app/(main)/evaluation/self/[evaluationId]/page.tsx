@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { EvaluationWorkbenchClient } from '@/components/evaluation/EvaluationWorkbenchClient'
 import { prisma } from '@/lib/prisma'
 import { requireProtectedPageSession } from '@/server/auth/protected-page'
@@ -29,8 +30,20 @@ export default async function SelfEvaluationDetailPage({
     where: { id: evaluationId },
     select: {
       evalCycleId: true,
+      evaluatorId: true,
+      targetId: true,
+      evalStage: true,
     },
   })
+
+  if (evaluation) {
+    const isOwner =
+      evaluation.evaluatorId === session.user.id ||
+      (evaluation.evalStage === 'SELF' && evaluation.targetId === session.user.id)
+    if (!isOwner) {
+      redirect('/403')
+    }
+  }
 
   const data = await getEvaluationWorkbenchPageData({
     session,

@@ -180,12 +180,6 @@ export function PerformanceMemberInputWorkspace({ data }: { data: unknown }) {
             <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-blue-700">
               팀원 업적평가 입력
             </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-400" aria-disabled="true">
-              팀장 평가 화면 · 아직 구현 전
-            </span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-400" aria-disabled="true">
-              본부장 평가 현황 · 아직 구현 전
-            </span>
           </div>
           {isPrivilegedPreview ? (
             <p className="mt-2 text-xs leading-5 text-slate-500">

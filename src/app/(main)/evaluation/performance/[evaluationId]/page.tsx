@@ -24,18 +24,21 @@ export default async function PerformanceEvaluationDetailPage({
     pathname: '/evaluation/performance',
   })
 
-  if (session.user.role !== 'ROLE_ADMIN') {
-    redirect('/403')
-  }
-
   const { evaluationId } = await params
   const resolvedSearchParams = (await searchParams) ?? {}
   const evaluation = await prisma.evaluation.findUnique({
     where: { id: evaluationId },
     select: {
       evalCycleId: true,
+      evaluatorId: true,
     },
   })
+
+  const isAdmin = session.user.role === 'ROLE_ADMIN'
+  const isAssignedEvaluator = evaluation?.evaluatorId === session.user.id
+  if (!isAdmin && !isAssignedEvaluator) {
+    redirect('/403')
+  }
 
   const data = await getEvaluationWorkbenchPageData({
     session,
