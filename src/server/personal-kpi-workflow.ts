@@ -139,5 +139,5 @@ export function canLockPersonalKpi(status: PersonalKpiOperationalStatus) {
 }
 
 export function canReopenPersonalKpi(status: PersonalKpiOperationalStatus) {
-  return status === 'SUBMITTED' || status === 'MANAGER_REVIEW' || status === 'LOCKED' || status === 'CONFIRMED'
+  return status === 'SUBMITTED' || status === 'MANAGER_REVIEW' || status === 'LOCKED' || status === 'CONFIRMED' || status === 'ARCHIVED'
 }

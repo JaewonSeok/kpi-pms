@@ -1204,6 +1204,12 @@ export function PersonalKpiManagementClient(props: Props) {
     props.permissions.canEdit &&
     (isDraftStatus(selectedKpi.status) || canManagePersonalKpi(props.actor.role))
   )
+  const canReopenFromDetail = Boolean(
+    selectedKpi &&
+    canManagePersonalKpi(props.actor.role) &&
+    !isDraftStatus(selectedKpi.status) &&
+    (selectedKpi.status !== 'ARCHIVED' || props.actor.role === 'ROLE_ADMIN')
+  )
   const selectedEvidenceDraft = selectedKpi
     ? evidenceDrafts[selectedKpi.id] ?? createEvidenceDraft(selectedKpi)
     : null
@@ -1945,6 +1951,35 @@ export function PersonalKpiManagementClient(props: Props) {
     }
   }
 
+  async function handleDirectReopen(kpiId: string, note: string) {
+    setBusyAction('workflow')
+    setBanner(null)
+    try {
+      let riskHeaders: Record<string, string> = {}
+      const confirmed = await requestRiskConfirmation({
+        actionName: 'REOPEN_RECORD',
+        actionLabel: '개인 KPI 초안으로 되돌리기',
+        targetLabel: selectedKpi?.title,
+        detail: '현재 마스터 로그인 상태에서 개인 KPI를 다시 편집 가능한 초안 상태로 되돌립니다.',
+        confirmationText: '되돌리기',
+      })
+      if (confirmed === null) return
+      riskHeaders = confirmed
+      const response = await fetch(`/api/kpi/personal/${kpiId}/workflow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...riskHeaders },
+        body: JSON.stringify({ action: 'REOPEN', note: note.trim() }),
+      })
+      await parseJsonOrThrow(response)
+      setBanner({ tone: 'success', message: 'KPI를 초안으로 되돌렸습니다.' })
+      router.refresh()
+    } catch (error) {
+      setBanner({ tone: 'error', message: error instanceof Error ? error.message : '처리에 실패했습니다.' })
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function handleRunAi(action: AiAction) {
     if (isLeaderOnlyPersonalKpiAiAction(action) && !props.permissions.canReview) {
       setBanner({
@@ -2539,6 +2574,9 @@ export function PersonalKpiManagementClient(props: Props) {
                 editDisabledReason={selectedKpiEditReason}
                 cloneDisabledReason={cloneDisabledReason}
                 deleteActionState={deleteActionState}
+                canReopen={canReopenFromDetail}
+                onReopen={(note) => selectedKpiId && handleDirectReopen(selectedKpiId, note)}
+                busy={busyAction === 'workflow'}
                 detailChildren={
                   <>
                     <PersonalKpiEvidencePanel
@@ -3086,6 +3124,9 @@ function MineSection(props: {
   editDisabledReason?: string
   cloneDisabledReason?: string
   deleteActionState: ReturnType<typeof getPersonalKpiDeleteActionState>
+  canReopen: boolean
+  onReopen: (note: string) => void
+  busy: boolean
   detailChildren?: ReactNode
 }) {
   if (!props.items.length) {
@@ -3108,6 +3149,9 @@ function MineSection(props: {
             onClone={props.onClone}
             onDelete={props.onDelete}
             deleteActionState={props.deleteActionState}
+            canReopen={props.canReopen}
+            onReopen={props.onReopen}
+            busy={props.busy}
           />
           {props.detailChildren}
         </div>
@@ -3176,6 +3220,9 @@ function MineSection(props: {
           onClone={props.onClone}
           onDelete={props.onDelete}
           deleteActionState={props.deleteActionState}
+          canReopen={props.canReopen}
+          onReopen={props.onReopen}
+          busy={props.busy}
         />
         {props.detailChildren}
       </div>
@@ -3613,8 +3660,6 @@ function ReviewQueueSection(props: {
   const startReviewState = selectedItem ? getReviewActionState(selectedItem.status, 'START_REVIEW') : { disabled: true }
   const approveState = selectedItem ? getReviewActionState(selectedItem.status, 'APPROVE') : { disabled: true }
   const rejectState = selectedItem ? getReviewActionState(selectedItem.status, 'REJECT') : { disabled: true }
-  const reopenState = selectedItem ? getReviewActionState(selectedItem.status, 'REOPEN') : { disabled: true }
-  const reopenReasonMissing = props.reviewNote.trim().length < 5
 
   if (!props.items.length) {
     return (
@@ -4602,8 +4647,14 @@ function GoalDetailPanel(props: {
   cloneDisabledReason?: string
   onClone: () => void
   onDelete: () => void
+  canReopen: boolean
+  onReopen: (note: string) => void
+  busy: boolean
   deleteActionState: ReturnType<typeof getPersonalKpiDeleteActionState>
 }) {
+  const [reopenInputVisible, setReopenInputVisible] = useState(false)
+  const [reopenNote, setReopenNote] = useState('')
+
   if (!props.selectedKpi) {
     return (
       <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4">
@@ -4852,6 +4903,46 @@ function GoalDetailPanel(props: {
             {props.deleteActionState.reason}
           </p>
         ) : null}
+        {props.canReopen && (
+          <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+            {reopenInputVisible ? (
+              <>
+                <textarea
+                  value={reopenNote}
+                  onChange={(e) => setReopenNote(e.target.value)}
+                  rows={2}
+                  className="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                  placeholder="초안으로 되돌리는 사유를 입력해 주세요 (5자 이상)"
+                />
+                <div className="flex gap-2">
+                  <ActionButton
+                    disabled={reopenNote.trim().length < 5 || props.busy}
+                    onClick={() => {
+                      props.onReopen(reopenNote)
+                      setReopenInputVisible(false)
+                      setReopenNote('')
+                    }}
+                  >
+                    확인
+                  </ActionButton>
+                  <ActionButton
+                    variant="secondary"
+                    onClick={() => { setReopenInputVisible(false); setReopenNote('') }}
+                  >
+                    취소
+                  </ActionButton>
+                </div>
+              </>
+            ) : (
+              <ActionButton
+                variant="secondary"
+                onClick={() => setReopenInputVisible(true)}
+              >
+                초안으로 되돌리기
+              </ActionButton>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   )

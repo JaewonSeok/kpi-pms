@@ -357,15 +357,21 @@ export async function POST(request: Request, context: RouteContext) {
       throw new AppError(409, 'PERSONAL_KPI_NOT_REOPENABLE', '현재 상태에서는 재오픈할 수 없습니다.')
     }
 
-    if (operationalStatus === 'LOCKED' || operationalStatus === 'CONFIRMED') {
+    if (operationalStatus === 'ARCHIVED') {
+      if (session.user.role !== 'ROLE_ADMIN') {
+        throw new AppError(403, 'FORBIDDEN', '보관된 KPI 재오픈은 관리자만 가능합니다.')
+      }
+      await prisma.personalKpi.update({
+        where: { id },
+        data: { status: 'DRAFT' },
+      })
+    } else if (operationalStatus === 'LOCKED' || operationalStatus === 'CONFIRMED') {
       if (!['ROLE_ADMIN', 'ROLE_TEAM_LEADER', 'ROLE_SECTION_CHIEF', 'ROLE_DIV_HEAD', 'ROLE_CEO'].includes(session.user.role)) {
         throw new AppError(403, 'FORBIDDEN', '확정 또는 잠금 KPI 재오픈 권한이 없습니다.')
       }
       await prisma.personalKpi.update({
         where: { id },
-        data: {
-          status: 'DRAFT',
-        },
+        data: { status: 'DRAFT' },
       })
     }
 
