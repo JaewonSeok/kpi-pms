@@ -46,5 +46,5 @@ export default async function PerformanceEvaluationDetailPage({
     evaluationId,
   })
 
-  return <EvaluationWorkbenchClient {...data} />
+  return <EvaluationWorkbenchClient {...data} mode="evaluate" />
 }
