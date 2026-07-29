@@ -51,5 +51,5 @@ export default async function SelfEvaluationDetailPage({
     evaluationId,
   })
 
-  return <EvaluationWorkbenchClient {...data} basePath="/evaluation/self" />
+  return <EvaluationWorkbenchClient {...data} basePath="/evaluation/self" mode="evaluate" />
 }

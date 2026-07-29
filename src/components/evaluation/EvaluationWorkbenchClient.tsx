@@ -464,6 +464,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
   const isDedicatedWorkbenchPilotRoute = props.presentationMode === 'workbench-pilot'
   const isPerformanceDashboardRoute = props.presentationMode === 'performance-dashboard'
   const isReadinessAdminRoute = props.presentationMode === 'readiness-admin'
+  const isEvaluateMode = props.mode !== 'readiness'
   const canViewPolicyPreview2026 = Boolean(
     props.currentUser?.role === 'ROLE_ADMIN' &&
       props.permissions?.canSeeAllInCycle &&
@@ -1756,7 +1757,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
         <Banner tone="warn" message={`${resultWritingScheduleGuidance2026.message} 이 안내는 미리보기 참고이며 Evaluation/EvaluationItem을 생성하지 않습니다.`} />
       ) : null}
 
-      {/* 처리 현황 요약 — compact 4-stat strip. 0건은 muted, 반려는 amber. */}
+      {/* 처리 현황 요약 — compact 4-stat strip. readiness 모드에서만 표시. */}
+      {!isEvaluateMode && (
       <section aria-label="처리 현황 요약" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryStat
           label="작성/검토 필요 평가"
@@ -1784,6 +1786,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
           emphasized={feedbackRoundCount > 0}
         />
       </section>
+      )}
 
       {/* C. 평가 품질 운영 요약 — admin only, collapsible. 경고성은 amber. */}
       {props.currentUser?.role === 'ROLE_ADMIN' && props.adminSummary ? (
@@ -1988,7 +1991,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                 initialData={selected.midReviewSummary}
               />
 
-              {canViewPolicyPreview2026 ? (
+              {!isEvaluateMode && canViewPolicyPreview2026 ? (
                 <>
                   <PolicyReadiness2026Panel
                     selectedCycleId={props.selectedCycleId ?? null}

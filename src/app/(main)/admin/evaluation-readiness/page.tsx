@@ -28,5 +28,5 @@ export default async function EvaluationReadinessAdminPage({ searchParams }: Pag
     evaluationId: resolvedSearchParams.evaluationId,
   })
 
-  return <EvaluationReadinessClient {...data} presentationMode="readiness-admin" />
+  return <EvaluationReadinessClient {...data} presentationMode="readiness-admin" mode="readiness" />
 }
