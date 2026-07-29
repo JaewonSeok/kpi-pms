@@ -572,6 +572,7 @@ async function loadEvaluationPerformanceBriefingContext(
       : db.multiFeedbackRound.findMany({
           where: {
             endDate: { gte: oneYearAgo },
+            feedbacks: { some: { receiverId: evaluation.targetId } },
           },
           orderBy: { endDate: 'desc' },
           take: 6,

@@ -1236,6 +1236,7 @@ export async function getEvaluationWorkbenchPageData(
           prisma.multiFeedbackRound.findMany({
             where: {
               evalCycleId: selectedEvaluation.evalCycleId,
+              feedbacks: { some: { receiverId: selectedEvaluation.target.id } },
             },
             include: {
               feedbacks: {
