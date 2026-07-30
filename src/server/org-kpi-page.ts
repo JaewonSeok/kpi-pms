@@ -24,6 +24,7 @@ import {
 } from './kpi-alignment-policy-2026'
 import {
   collectDepartmentAncestorIds,
+  collectDepartmentDescendantIds,
   resolveEditableOrgKpiDepartmentIds,
   resolveReadableOrgKpiDepartmentIds,
 } from './org-kpi-access'
@@ -69,6 +70,7 @@ export type OrgKpiLinkageItem = {
   orgKpiId: string
   title: string
   linkedPersonalKpiCount: number
+  linkedEmployeeCount: number
   targetPopulationCount: number
   coverageRate: number
   hasRecentMonthlyRecord: boolean
@@ -1086,9 +1088,10 @@ export async function getOrgKpiPageData(params: {
         (personalKpi) => personalKpi.goalType === 'SALES_REVENUE' && personalKpi.targetAmount === null
       ).length
       const monthlyAchievementRate = getRecentMonthlyRate(kpi)
-      const targetPopulationCount = (employeesByDept.get(kpi.deptId) ?? []).filter(
-        (employee) => employee.status === 'ACTIVE'
-      ).length
+      const subtreeDeptIds = [kpi.deptId, ...collectDepartmentDescendantIds(kpi.deptId, departments)]
+      const targetPopulationCount = subtreeDeptIds.reduce((sum, deptId) => {
+        return sum + (employeesByDept.get(deptId) ?? []).filter((employee) => employee.status === 'ACTIVE').length
+      }, 0)
       const coverageRate = targetPopulationCount
         ? Math.round((kpi._count.personalKpis / targetPopulationCount) * 100)
         : 0
@@ -1241,10 +1244,31 @@ export async function getOrgKpiPageData(params: {
       kpisByDepartment.set(kpi.departmentId, current)
     })
 
+    const orgKpiIds = mappedList.map((item) => item.id)
+    const linkedEmployeeRows = orgKpiIds.length
+      ? await prisma.personalKpi.groupBy({
+          by: ['linkedOrgKpiId', 'employeeId'],
+          where: {
+            linkedOrgKpiId: { in: orgKpiIds },
+            evalYear: selectedYear,
+            status: { not: 'ARCHIVED' },
+          },
+        })
+      : []
+    const linkedEmployeeCountByOrgKpiId = new Map<string, number>()
+    for (const row of linkedEmployeeRows) {
+      if (!row.linkedOrgKpiId) continue
+      linkedEmployeeCountByOrgKpiId.set(
+        row.linkedOrgKpiId,
+        (linkedEmployeeCountByOrgKpiId.get(row.linkedOrgKpiId) ?? 0) + 1
+      )
+    }
+
     const linkage = mappedList.map<OrgKpiLinkageItem>((kpi) => ({
       orgKpiId: kpi.id,
       title: kpi.title,
       linkedPersonalKpiCount: kpi.linkedPersonalKpiCount,
+      linkedEmployeeCount: linkedEmployeeCountByOrgKpiId.get(kpi.id) ?? 0,
       targetPopulationCount: kpi.targetPopulationCount,
       coverageRate: kpi.coverageRate,
       hasRecentMonthlyRecord: kpi.recentMonthlyRecords.length > 0,

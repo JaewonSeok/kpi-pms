@@ -57,6 +57,7 @@ type OperationalSnapshot = {
   orgKpiFindFirst: PrismaDelegateMethod
   orgKpiFindMany: PrismaDelegateMethod
   personalKpiFindMany: PrismaDelegateMethod
+  personalKpiGroupBy: PrismaDelegateMethod
   auditLogFindMany: PrismaDelegateMethod
   aiRequestLogFindMany: PrismaDelegateMethod
   checkInFindMany: PrismaDelegateMethod
@@ -80,6 +81,7 @@ function captureSnapshot(): OperationalSnapshot {
     orgKpiFindFirst: prismaAny.orgKpi.findFirst,
     orgKpiFindMany: prismaAny.orgKpi.findMany,
     personalKpiFindMany: prismaAny.personalKpi.findMany,
+    personalKpiGroupBy: prismaAny.personalKpi.groupBy,
     auditLogFindMany: prismaAny.auditLog.findMany,
     aiRequestLogFindMany: prismaAny.aiRequestLog.findMany,
     checkInFindMany: prismaAny.checkIn.findMany,
@@ -103,6 +105,7 @@ function restoreSnapshot(snapshot: OperationalSnapshot) {
   prismaAny.orgKpi.findFirst = snapshot.orgKpiFindFirst
   prismaAny.orgKpi.findMany = snapshot.orgKpiFindMany
   prismaAny.personalKpi.findMany = snapshot.personalKpiFindMany
+  prismaAny.personalKpi.groupBy = snapshot.personalKpiGroupBy
   prismaAny.auditLog.findMany = snapshot.auditLogFindMany
   prismaAny.aiRequestLog.findMany = snapshot.aiRequestLogFindMany
   prismaAny.checkIn.findMany = snapshot.checkInFindMany
@@ -233,6 +236,8 @@ async function withStubbedOperationalData(
         ? []
         : []
     })
+
+  prismaAny.personalKpi.groupBy = overrides.personalKpiGroupBy ?? (async () => [])
 
   prismaAny.auditLog.findMany = overrides.auditLogFindMany ?? (async () => [])
   prismaAny.aiRequestLog.findMany = overrides.aiRequestLogFindMany ?? (async () => [])

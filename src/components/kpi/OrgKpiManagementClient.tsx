@@ -2215,42 +2215,48 @@ export function OrgKpiManagementClient({
         </div>
       ) : null}
 
-      {tab === 'linkage' ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-4">
-            <h2 className="text-base font-semibold text-slate-900">연결 현황</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              {getOrgKpiLinkageDescription(pageData.selectedScope, hasSectionScope)}
-            </p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {(() => {
-              const visibleLinkage = (
-                effectiveDepartmentIds.size > 0
-                  ? pageData.linkage.filter((item) => effectiveDepartmentIds.has(item.departmentId))
-                  : pageData.linkage
-              ).slice().sort((a, b) => {
-                const aUnlinked = a.linkedPersonalKpiCount === 0 ? 0 : 1
-                const bUnlinked = b.linkedPersonalKpiCount === 0 ? 0 : 1
-                if (aUnlinked !== bUnlinked) return aUnlinked - bUnlinked
-                return a.title.localeCompare(b.title, 'ko')
-              })
-              return visibleLinkage.length ? visibleLinkage.map((item) => (
+      {tab === 'linkage' ? (() => {
+        const visibleLinkage = (
+          effectiveDepartmentIds.size > 0
+            ? pageData.linkage.filter((item) => effectiveDepartmentIds.has(item.departmentId))
+            : pageData.linkage
+        ).slice().sort((a, b) => {
+          const aUnlinked = a.linkedPersonalKpiCount === 0 ? 0 : 1
+          const bUnlinked = b.linkedPersonalKpiCount === 0 ? 0 : 1
+          if (aUnlinked !== bUnlinked) return aUnlinked - bUnlinked
+          return a.title.localeCompare(b.title, 'ko')
+        })
+        const unlinkedCount = visibleLinkage.filter((item) => item.linkedPersonalKpiCount === 0).length
+        return (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-4">
+              <h2 className="text-base font-semibold text-slate-900">연결 현황</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                {getOrgKpiLinkageDescription(pageData.selectedScope, hasSectionScope)}
+              </p>
+              {visibleLinkage.length > 0 && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {selectedContextLabel} {visibleLinkage.length}개 중 개인 연결 0건 {unlinkedCount}개
+                </p>
+              )}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {visibleLinkage.length ? visibleLinkage.map((item) => (
                 <div key={item.orgKpiId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="font-semibold text-slate-900">{item.title}</div>
                   <p className="mt-1 text-xs text-slate-500">{item.departmentName}</p>
                   <div className="mt-4 space-y-2 text-sm text-slate-600">
                     <div>
                       {formatExplicitRatio({
-                        numeratorLabel: '연결된 개인 KPI',
-                        numeratorValue: item.linkedPersonalKpiCount,
-                        numeratorUnit: '건',
-                        denominatorLabel: '대상 인원',
+                        numeratorLabel: '연결 인원',
+                        numeratorValue: item.linkedEmployeeCount,
+                        numeratorUnit: '명',
+                        denominatorLabel: '소속',
                         denominatorValue: item.targetPopulationCount,
                         denominatorUnit: '명',
                       })}
                     </div>
-                    <div>대상 인원 연결률 {formatPercent(item.coverageRate)}</div>
+                    <div>개인 KPI {item.linkedPersonalKpiCount}건</div>
                     <div>최근 월간 실적 {item.hasRecentMonthlyRecord ? '있음' : '없음'}</div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2">
@@ -2258,11 +2264,11 @@ export function OrgKpiManagementClient({
                     <Link href="/kpi/monthly" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">월간 실적</Link>
                   </div>
                 </div>
-              )) : <EmptyState title={`${scopeLabel} 연결 현황이 없습니다`} description="개인 KPI와 월간 실적이 연결되면 연결된 개인 KPI 건수와 대상 인원 연결률을 확인할 수 있습니다." />
-            })()}
+              )) : <EmptyState title={`${scopeLabel} 연결 현황이 없습니다`} description="개인 KPI와 월간 실적이 연결되면 연결 인원과 소속 인원을 확인할 수 있습니다." />}
+            </div>
           </div>
-        </div>
-      ) : null}
+        )
+      })() : null}
 
       {tab === 'history' ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
