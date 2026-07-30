@@ -156,7 +156,8 @@ run('evaluation workbench route renders the member performance input workspace w
   assert.match(workbenchPageSource, /requireProtectedPageSession/)
   assert.match(workbenchPageSource, /getEvaluationWorkbenchPageData/)
   assert.match(workbenchPageSource, /PerformanceMemberInputWorkspace/)
-  assert.doesNotMatch(workbenchPageSource, /redirect\(/)
+  // conditional redirect to /evaluation/self/[id] when SELF eval exists; runs after auth
+  assert.match(workbenchPageSource, /redirect\(/)
 })
 
 run('canonical performance page owns the compact HR operations dashboard', () => {

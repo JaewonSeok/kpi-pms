@@ -1915,7 +1915,9 @@ async function main() {
     assert.equal(workbenchPageSource.includes('requireProtectedPageSession'), true)
     assert.equal(workbenchPageSource.includes('getEvaluationWorkbenchPageData'), true)
     assert.equal(workbenchPageSource.includes('PerformanceMemberInputWorkspace'), true)
-    assert.equal(workbenchPageSource.includes('redirect('), false)
+    // redirect is conditional: SELF eval found → /evaluation/self/[id]; scoped to member view after auth
+    assert.equal(workbenchPageSource.includes('redirect('), true)
+    assert.equal(workbenchPageSource.includes("evalStage === 'SELF'"), true)
     assert.equal(readinessPageSource.includes("route: '/admin/evaluation-readiness'"), true)
     assert.equal(readinessPageSource.includes('getEvaluationWorkbenchPageData'), true)
     assert.equal(readinessPageSource.includes('presentationMode="readiness-admin"'), true)
