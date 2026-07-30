@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { PerformanceExecutiveAdjustmentWorkspace } from '@/components/evaluation/performance/PerformanceExecutiveAdjustmentWorkspace'
 import { PerformanceMemberInputWorkspace } from '@/components/evaluation/performance/PerformanceMemberInputWorkspace'
 import { PerformanceLeaderReviewWorkspace } from '@/components/evaluation/performance/PerformanceLeaderReviewWorkspace'
@@ -56,6 +57,22 @@ export default async function EvaluationWorkbenchPage({ searchParams }: PageProp
       : requestedView === 'leader' && !canPreviewLeaderReview
         ? 'member'
         : (requestedView ?? defaultView)
+
+  if (activeView === 'member' && !canPreviewLeaderReview && !canPreviewExecutiveAdjustment) {
+    const selfEval =
+      (data.evaluations ?? []).find(
+        (ev) =>
+          ev.evalStage === 'SELF' &&
+          ev.targetId === session.user.id &&
+          (!resolvedSearchParams.cycleId || ev.cycleId === resolvedSearchParams.cycleId),
+      ) ?? null
+    if (selfEval) {
+      const qs = resolvedSearchParams.cycleId
+        ? `?cycleId=${encodeURIComponent(resolvedSearchParams.cycleId)}`
+        : ''
+      redirect(`/evaluation/self/${encodeURIComponent(selfEval.id)}${qs}`)
+    }
+  }
 
   return (
     <div className="space-y-4">

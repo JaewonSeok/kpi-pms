@@ -93,8 +93,8 @@ async function main() {
   })
 
   await run('member and leader workspaces remain wired and role-separated', () => {
-    assert.equal(memberSource.includes('업적평가 입력'), true)
-    assert.equal(memberSource.includes('개인목표 상세'), true)
+    assert.equal(memberSource.includes('자기평가 시작'), true)
+    assert.equal(memberSource.includes('관리자 권한에서는 팀원 입력 화면을 preview-only로 확인합니다.'), true)
     assert.equal(memberSource.includes('팀장 가감점'), false)
     assert.equal(leaderSource.includes('팀원 업적평가'), true)
     assert.equal(leaderSource.includes('팀장 피드백'), true)

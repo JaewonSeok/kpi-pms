@@ -152,7 +152,9 @@ async function main() {
     assert.equal(evaluationWorkbenchPage.includes('requireProtectedPageSession'), true)
     assert.equal(evaluationWorkbenchPage.includes('getEvaluationWorkbenchPageData'), true)
     assert.equal(evaluationWorkbenchPage.includes('PerformanceMemberInputWorkspace'), true)
-    assert.equal(evaluationWorkbenchPage.includes('redirect('), false)
+    // redirect is conditional: SELF eval found in cycle → /evaluation/self/[id]; runs after auth
+    assert.equal(evaluationWorkbenchPage.includes('redirect('), true)
+    assert.equal(evaluationWorkbenchPage.includes('/evaluation/self/'), true)
 
     const evaluationReadinessPage = read('src/app/(main)/admin/evaluation-readiness/page.tsx')
     assert.equal(evaluationReadinessPage.includes('presentationMode="readiness-admin"'), true)

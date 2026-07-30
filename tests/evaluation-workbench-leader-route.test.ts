@@ -95,9 +95,8 @@ async function main() {
   })
 
   await run('member workspace remains the team member input screen', () => {
-    assert.equal(memberSource.includes('업적평가 입력'), true)
-    assert.equal(memberSource.includes('개인목표 상세'), true)
-    assert.equal(memberSource.includes('Evaluation.totalScore 및 Evaluation.gradeId 쓰기는 수행하지 않습니다.'), true)
+    assert.equal(memberSource.includes('자기평가 시작'), true)
+    assert.equal(memberSource.includes('관리자 권한에서는 팀원 입력 화면을 preview-only로 확인합니다.'), true)
     assert.equal(memberSource.includes('팀장 가감점'), false)
   })
 
