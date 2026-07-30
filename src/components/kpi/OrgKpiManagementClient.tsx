@@ -2224,30 +2224,42 @@ export function OrgKpiManagementClient({
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {pageData.linkage.length ? pageData.linkage.map((item) => (
-              <div key={item.orgKpiId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="font-semibold text-slate-900">{item.title}</div>
-                <p className="mt-1 text-xs text-slate-500">{item.departmentName}</p>
-                <div className="mt-4 space-y-2 text-sm text-slate-600">
-                  <div>
-                    {formatExplicitRatio({
-                      numeratorLabel: '연결된 개인 KPI',
-                      numeratorValue: item.linkedPersonalKpiCount,
-                      numeratorUnit: '건',
-                      denominatorLabel: '대상 인원',
-                      denominatorValue: item.targetPopulationCount,
-                      denominatorUnit: '명',
-                    })}
+            {(() => {
+              const visibleLinkage = (
+                effectiveDepartmentIds.size > 0
+                  ? pageData.linkage.filter((item) => effectiveDepartmentIds.has(item.departmentId))
+                  : pageData.linkage
+              ).slice().sort((a, b) => {
+                const aUnlinked = a.linkedPersonalKpiCount === 0 ? 0 : 1
+                const bUnlinked = b.linkedPersonalKpiCount === 0 ? 0 : 1
+                if (aUnlinked !== bUnlinked) return aUnlinked - bUnlinked
+                return a.title.localeCompare(b.title, 'ko')
+              })
+              return visibleLinkage.length ? visibleLinkage.map((item) => (
+                <div key={item.orgKpiId} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="font-semibold text-slate-900">{item.title}</div>
+                  <p className="mt-1 text-xs text-slate-500">{item.departmentName}</p>
+                  <div className="mt-4 space-y-2 text-sm text-slate-600">
+                    <div>
+                      {formatExplicitRatio({
+                        numeratorLabel: '연결된 개인 KPI',
+                        numeratorValue: item.linkedPersonalKpiCount,
+                        numeratorUnit: '건',
+                        denominatorLabel: '대상 인원',
+                        denominatorValue: item.targetPopulationCount,
+                        denominatorUnit: '명',
+                      })}
+                    </div>
+                    <div>대상 인원 연결률 {formatPercent(item.coverageRate)}</div>
+                    <div>최근 월간 실적 {item.hasRecentMonthlyRecord ? '있음' : '없음'}</div>
                   </div>
-                  <div>대상 인원 연결률 {formatPercent(item.coverageRate)}</div>
-                  <div>최근 월간 실적 {item.hasRecentMonthlyRecord ? '있음' : '없음'}</div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Link href="/kpi/personal" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">개인 KPI</Link>
+                    <Link href="/kpi/monthly" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">월간 실적</Link>
+                  </div>
                 </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Link href="/kpi/personal" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">개인 KPI</Link>
-                  <Link href="/kpi/monthly" className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">월간 실적</Link>
-                </div>
-              </div>
-            )) : <EmptyState title={`${scopeLabel} 연결 현황이 없습니다`} description="개인 KPI와 월간 실적이 연결되면 연결된 개인 KPI 건수와 대상 인원 연결률을 확인할 수 있습니다." />}
+              )) : <EmptyState title={`${scopeLabel} 연결 현황이 없습니다`} description="개인 KPI와 월간 실적이 연결되면 연결된 개인 KPI 건수와 대상 인원 연결률을 확인할 수 있습니다." />
+            })()}
           </div>
         </div>
       ) : null}

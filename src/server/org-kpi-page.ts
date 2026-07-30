@@ -73,6 +73,7 @@ export type OrgKpiLinkageItem = {
   coverageRate: number
   hasRecentMonthlyRecord: boolean
   departmentName: string
+  departmentId: string
 }
 
 export type OrgKpiViewModel = {
@@ -909,7 +910,12 @@ export async function getOrgKpiPageData(params: {
             },
             _count: {
               select: {
-                personalKpis: true,
+                personalKpis: {
+                  where: {
+                    evalYear: selectedYear,
+                    status: { not: 'ARCHIVED' },
+                  },
+                },
               },
             },
             copiedFromOrgKpi: {
@@ -1243,6 +1249,7 @@ export async function getOrgKpiPageData(params: {
       coverageRate: kpi.coverageRate,
       hasRecentMonthlyRecord: kpi.recentMonthlyRecords.length > 0,
       departmentName: kpi.departmentName,
+      departmentId: kpi.departmentId,
     }))
 
     const totalCount = mappedList.length
