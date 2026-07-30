@@ -106,6 +106,12 @@ async function main() {
     assert.equal(navigationSource.includes('평가 워크벤치 미리보기'), false)
   })
 
+  await run('workbench redirects leader to /evaluation/performance when no view param', () => {
+    assert.equal(workbenchPageSource.includes("redirect('/evaluation/performance')"), true)
+    assert.equal(workbenchPageSource.includes('!requestedView'), true)
+    assert.equal(workbenchPageSource.includes("activeView === 'leader'"), true)
+  })
+
   console.log('Evaluation workbench leader route tests completed')
 }
 

@@ -85,7 +85,6 @@ run('admin sidebar exposes every admin and setup route', () => {
   for (const href of [
     '/kpi/org',
     '/kpi/monthly',
-    '/evaluation/performance',
     '/evaluation/ai-competency',
     '/evaluation/360',
     '/evaluation/upward/respond',
