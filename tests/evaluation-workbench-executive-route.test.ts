@@ -101,13 +101,18 @@ async function main() {
     assert.equal(leaderSource.includes('등급 조정 저장'), false)
   })
 
-  await run('navigation labels use 업적평가 운영 and do not expose legacy wording', () => {
-    assert.equal(navigationSource.includes("label: '업적평가 모니터링'"), true)
-    assert.equal(navigationSource.includes("href: '/evaluation/performance'"), true)
+  await run('navigation labels keep 업적평가 and remove 업적평가 모니터링 nav entry', () => {
+    assert.equal(navigationSource.includes("label: '업적평가 모니터링'"), false)
     assert.equal(navigationSource.includes("label: '업적평가'"), true)
     assert.equal(navigationSource.includes("href: '/evaluation/workbench'"), true)
     assert.equal(navigationSource.includes('HR 평가 운영 대시보드'), false)
     assert.equal(navigationSource.includes('평가 워크벤치 미리보기'), false)
+  })
+
+  await run('workbench redirects executive to /evaluation/performance when no view param', () => {
+    assert.equal(workbenchPageSource.includes("redirect('/evaluation/performance')"), true)
+    assert.equal(workbenchPageSource.includes('!requestedView'), true)
+    assert.equal(workbenchPageSource.includes("activeView === 'executive'"), true)
   })
 
   console.log('Evaluation workbench executive route tests completed')

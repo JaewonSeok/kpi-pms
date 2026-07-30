@@ -167,7 +167,7 @@ const POLICY_CATEGORY_LABELS: Record<string, string> = {
   DAILY_WORK: '일상업무',
 }
 
-export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
+export function PerformanceHrOpsDashboard({ data, canSeeAllInCycle }: { data: unknown; canSeeAllInCycle: boolean }) {
   const dashboardData = data as HrOpsData
   const selectedCycle = dashboardData.availableCycles?.find((cycle) => cycle.id === dashboardData.selectedCycleId) ?? dashboardData.availableCycles?.[0] ?? null
   const targets = useMemo(
@@ -199,11 +199,13 @@ export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
             <span>평가 관리</span>
             <span className="text-slate-300">›</span>
-            <span className="text-slate-900">업적평가 모니터링</span>
+            <span className="text-slate-900">{canSeeAllInCycle ? '업적평가 모니터링' : '업적평가'}</span>
           </div>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">업적평가 모니터링</h1>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950">{canSeeAllInCycle ? '업적평가 모니터링' : '업적평가'}</h1>
           <p className="mt-1 text-sm leading-6 text-slate-600">
-            전체 대상자, 자기평가 제출, 팀장 평가 완료, HR 점수 반영, 최종 확정 상태를 한 화면에서 확인합니다.
+            {canSeeAllInCycle
+              ? '전체 대상자, 자기평가 제출, 팀장 평가 완료, HR 점수 반영, 최종 확정 상태를 한 화면에서 확인합니다.'
+              : '담당 대상자의 평가 진행 상태와 평가 화면으로 이동할 수 있습니다.'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
@@ -215,18 +217,22 @@ export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
             <Building2 className="h-4 w-4 text-slate-500" />
             전체 본부
           </span>
-          <span className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-400" aria-disabled="true">
-            <Download className="h-4 w-4" />
-            엑셀 다운로드 · preview
-          </span>
-          <PmsSignalChip tone="info" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
-            HR 관리자
-          </PmsSignalChip>
+          {canSeeAllInCycle && (
+            <span className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-400" aria-disabled="true">
+              <Download className="h-4 w-4" />
+              엑셀 다운로드 · preview
+            </span>
+          )}
+          {canSeeAllInCycle && (
+            <PmsSignalChip tone="info" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
+              HR 관리자
+            </PmsSignalChip>
+          )}
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <PmsSummaryCard icon={<Users className="h-4 w-4" />} label="전체 대상자" value={`${summary.total}명`} tone="info" chip={percentage(summary.total, summary.total)} />
+        <PmsSummaryCard icon={<Users className="h-4 w-4" />} label={canSeeAllInCycle ? '전체 대상자' : '담당 대상자'} value={`${summary.total}명`} tone="info" chip={percentage(summary.total, summary.total)} />
         <PmsSummaryCard icon={<UserCheck className="h-4 w-4" />} label="팀원 자기평가 제출" value={`${summary.selfSubmitted}명`} tone="success" chip={percentage(summary.selfSubmitted, summary.total)} />
         <PmsSummaryCard icon={<CheckCircle2 className="h-4 w-4" />} label="팀장 평가 완료" value={`${summary.leaderDone}명`} tone="success" chip={percentage(summary.leaderDone, summary.total)} />
         <PmsSummaryCard icon={<FileSpreadsheet className="h-4 w-4" />} label="HR 점수 반영 완료" value={`${summary.hrReflected}명`} tone="warning" chip={percentage(summary.hrReflected, summary.total)} />
@@ -239,8 +245,8 @@ export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
           <div className="rounded-[20px] border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
               <div>
-                <h2 className="text-base font-bold text-slate-950">본부별 현황</h2>
-                <p className="mt-0.5 text-xs text-slate-500">평가 단계별 완료율을 본부 단위로 확인합니다.</p>
+                <h2 className="text-base font-bold text-slate-950">{canSeeAllInCycle ? '본부별 현황' : '담당 조직 현황'}</h2>
+                <p className="mt-0.5 text-xs text-slate-500">{canSeeAllInCycle ? '평가 단계별 완료율을 본부 단위로 확인합니다.' : '담당 인원의 평가 단계별 현황을 확인합니다.'}</p>
               </div>
               <PmsSignalChip tone="locked">read-only</PmsSignalChip>
             </div>
@@ -323,6 +329,7 @@ export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
                     <th className="px-4 py-3 text-center">최종 점수</th>
                     <th className="px-4 py-3 text-center">등급</th>
                     <th className="px-4 py-3 text-center">최종 확정 상태</th>
+                    <th className="px-4 py-3 text-center">평가 화면</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -348,11 +355,12 @@ export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
                         <td className="px-4 py-3 text-center font-semibold text-slate-900">{target.finalScoreLabel}</td>
                         <td className="px-4 py-3 text-center"><GradeChip grade={target.grade} /></td>
                         <td className="px-4 py-3 text-center"><StageChip stage={target.finalStatus} /></td>
+                        <EvalLinkCell target={target} />
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={12} className="px-4 py-10 text-center text-sm text-slate-500">
                         조건에 맞는 대상자 데이터가 없습니다.
                       </td>
                     </tr>
@@ -368,9 +376,9 @@ export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold text-slate-950">단계별 현황</h2>
-                <p className="mt-1 text-xs text-slate-500">전체 대상자 기준</p>
+                <p className="mt-1 text-xs text-slate-500">{canSeeAllInCycle ? '전체 대상자 기준' : '담당 인원 분포'}</p>
               </div>
-              <PmsSignalChip tone="info">전체 {summary.total}명</PmsSignalChip>
+              <PmsSignalChip tone="info">{canSeeAllInCycle ? '전체' : '담당'} {summary.total}명</PmsSignalChip>
             </div>
             <div className="mt-5 grid gap-4 lg:grid-cols-[160px_minmax(0,1fr)] 2xl:grid-cols-1">
               <div className="grid place-items-center">
@@ -435,6 +443,7 @@ export function PerformanceHrOpsDashboard({ data }: { data: unknown }) {
             detail={selectedDetail}
             orgItems={orgItems}
             personalItems={personalItems}
+            canSeeAllInCycle={canSeeAllInCycle}
           />
         </aside>
       </div>
@@ -447,11 +456,13 @@ function TargetDetailPanel({
   detail,
   orgItems,
   personalItems,
+  canSeeAllInCycle,
 }: {
   target: TargetProgress | null
   detail: SelectedEvaluation | null
   orgItems: EvaluationItem[]
   personalItems: EvaluationItem[]
+  canSeeAllInCycle: boolean
 }) {
   const orgScore = sumScore(orgItems)
   const personalScore = sumScore(personalItems)
@@ -501,41 +512,47 @@ function TargetDetailPanel({
         <EvaluationItemTable title="조직목표 평가" items={orgItems} />
         <EvaluationItemTable title="개인목표 평가" items={personalItems} />
 
-        <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4">
-          <div className="text-sm font-bold text-slate-950">계산 결과</div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <MiniMetric label="조직목표 점수" value={orgScore} />
-            <MiniMetric label="개인목표 점수" value={personalScore} />
-            <MiniMetric label="최종 반영 점수" value={target?.finalScoreLabel ?? '확인 필요'} />
-            <MiniMetric label="등급" value={target?.grade ?? '확인 필요'} />
+        {canSeeAllInCycle && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4">
+            <div className="text-sm font-bold text-slate-950">계산 결과</div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <MiniMetric label="조직목표 점수" value={orgScore} />
+              <MiniMetric label="개인목표 점수" value={personalScore} />
+              <MiniMetric label="최종 반영 점수" value={target?.finalScoreLabel ?? '확인 필요'} />
+              <MiniMetric label="등급" value={target?.grade ?? '확인 필요'} />
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <div className="text-sm font-bold text-slate-950">HR 점수 입력</div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <ReadOnlyField label="HR 기준 점수" value={target?.finalScoreLabel ?? '확인 필요'} />
-            <ReadOnlyField label="최종 반영 점수" value={target?.finalScoreLabel ?? '확인 필요'} />
+        {canSeeAllInCycle && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="text-sm font-bold text-slate-950">HR 점수 입력</div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <ReadOnlyField label="HR 기준 점수" value={target?.finalScoreLabel ?? '확인 필요'} />
+              <ReadOnlyField label="최종 반영 점수" value={target?.finalScoreLabel ?? '확인 필요'} />
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              공식 저장 없음. Evaluation.totalScore / gradeId 저장 없음. official scoring/grade activation 없음.
+            </p>
           </div>
-          <p className="mt-3 text-xs leading-5 text-slate-500">
-            공식 저장 없음. Evaluation.totalScore / gradeId 저장 없음. official scoring/grade activation 없음.
-          </p>
-        </div>
+        )}
 
-        <div className="rounded-2xl border border-violet-200 bg-violet-50/80 p-4">
-          <div className="text-sm font-bold text-violet-950">최종 확정 preview</div>
-          <p className="mt-2 text-xs leading-5 text-violet-800">
-            HR 점수 입력과 최종 확정은 preview-only입니다. 실제 임시 저장 / 최종 확정 callback은 연결하지 않았습니다.
-          </p>
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            <button type="button" disabled className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-400">
-              임시 저장
-            </button>
-            <button type="button" disabled className="inline-flex min-h-10 items-center rounded-xl bg-blue-100 px-4 text-sm font-semibold text-blue-400">
-              최종 확정
-            </button>
+        {canSeeAllInCycle && (
+          <div className="rounded-2xl border border-violet-200 bg-violet-50/80 p-4">
+            <div className="text-sm font-bold text-violet-950">최종 확정 preview</div>
+            <p className="mt-2 text-xs leading-5 text-violet-800">
+              HR 점수 입력과 최종 확정은 preview-only입니다. 실제 임시 저장 / 최종 확정 callback은 연결하지 않았습니다.
+            </p>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <button type="button" disabled className="inline-flex min-h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-400">
+                임시 저장
+              </button>
+              <button type="button" disabled className="inline-flex min-h-10 items-center rounded-xl bg-blue-100 px-4 text-sm font-semibold text-blue-400">
+                최종 확정
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {!detail ? (
           <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
@@ -904,5 +921,32 @@ function ReadOnlyField({
       <div className="text-xs font-semibold text-slate-500">{label}</div>
       <div className="mt-2 text-sm leading-6 text-slate-800">{displayText(value)}</div>
     </div>
+  )
+}
+
+function resolveEvalHref(target: TargetProgress): string | null {
+  const selfId = target.selfStatus.source?.id
+  if (selfId) return `/evaluation/self/${encodeURIComponent(selfId)}`
+  const leaderId = target.leaderStatus.source?.id
+  if (leaderId) return `/evaluation/performance/${encodeURIComponent(leaderId)}`
+  const hrId = target.hrStatus.source?.id
+  if (hrId) return `/evaluation/performance/${encodeURIComponent(hrId)}`
+  return null
+}
+
+function EvalLinkCell({ target }: { target: TargetProgress }) {
+  const href = resolveEvalHref(target)
+  return (
+    <td className="px-4 py-3 text-center">
+      {href && (
+        <a
+          href={href}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex min-h-8 items-center rounded-full border border-blue-300 bg-blue-50 px-3 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+        >
+          평가 화면 열기
+        </a>
+      )}
+    </td>
   )
 }

@@ -79,6 +79,18 @@ async function main() {
     assert.equal(navigationSource.includes('평가 워크벤치 미리보기'), false)
   })
 
+  await run('workbench preserves member redirect and adds evaluator redirect without collision', () => {
+    // PR #190: member with no leader/exec capability → /evaluation/self/[id]
+    assert.equal(workbenchPageSource.includes('/evaluation/self/'), true)
+    assert.equal(workbenchPageSource.includes("evalStage === 'SELF'"), true)
+    // PR #191: evaluator with no view param → /evaluation/performance
+    assert.equal(workbenchPageSource.includes("redirect('/evaluation/performance')"), true)
+    assert.equal(workbenchPageSource.includes('!requestedView'), true)
+    // conditions are distinct: member guard checks canPreviewLeaderReview/canPreviewExecutiveAdjustment
+    assert.equal(workbenchPageSource.includes('canPreviewLeaderReview'), true)
+    assert.equal(workbenchPageSource.includes('canPreviewExecutiveAdjustment'), true)
+  })
+
   console.log('Evaluation workbench member route tests completed')
 }
 

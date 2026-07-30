@@ -5,6 +5,14 @@ import { getEvaluationWorkbenchPageData } from '@/server/evaluation-workbench'
 
 export const dynamic = 'force-dynamic'
 
+const PERFORMANCE_OPS_ROLES = new Set([
+  'ROLE_ADMIN',
+  'ROLE_CEO',
+  'ROLE_DIV_HEAD',
+  'ROLE_SECTION_CHIEF',
+  'ROLE_TEAM_LEADER',
+])
+
 type PageProps = {
   searchParams?: Promise<{
     cycleId?: string
@@ -18,7 +26,7 @@ export default async function PerformanceEvaluationPage({ searchParams }: PagePr
     pathname: '/evaluation/performance',
   })
 
-  if (session.user.role !== 'ROLE_ADMIN') {
+  if (!PERFORMANCE_OPS_ROLES.has(session.user.role)) {
     redirect('/403')
   }
 
@@ -29,5 +37,6 @@ export default async function PerformanceEvaluationPage({ searchParams }: PagePr
     evaluationId: resolvedSearchParams.evaluationId,
   })
 
-  return <PerformanceHrOpsDashboard data={data} />
+  const canSeeAllInCycle = session.user.role === 'ROLE_ADMIN'
+  return <PerformanceHrOpsDashboard data={data} canSeeAllInCycle={canSeeAllInCycle} />
 }
