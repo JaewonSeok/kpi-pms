@@ -1870,8 +1870,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{props.summary?.totalCount ?? 0}건</span>
           </div>
           <div className="mt-4 space-y-3">
-            <div className="grid grid-cols-2 gap-x-2 gap-y-2 xl:grid-cols-5 xl:items-end xl:gap-x-3 xl:gap-y-0">
-              <div className="col-span-2 xl:col-span-1">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-2">
+              <div className="col-span-2">
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
