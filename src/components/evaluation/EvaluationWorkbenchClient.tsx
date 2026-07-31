@@ -1870,61 +1870,75 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{props.summary?.totalCount ?? 0}건</span>
           </div>
           <div className="mt-4 space-y-3">
-            <div className="grid gap-3 md:grid-cols-5">
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="이름, 부서, 평가자로 검색"
-                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-              />
-              <select
-                value={scopeFilter}
-                onChange={(event) => setScopeFilter(event.target.value as typeof scopeFilter)}
-                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-              >
-                <option value="ALL">전체 범위</option>
-                <option value="MY_SELF">내 자기평가</option>
-                <option value="MY_REVIEWS">내 검토 건</option>
-                <option value="PENDING_REVIEW">검토 대기</option>
-              </select>
-              <select
-                value={stageFilter}
-                onChange={(event) => setStageFilter(event.target.value as typeof stageFilter)}
-                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-              >
-                <option value="ALL">전체 단계</option>
-                {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.evalStage))].map((stage) => (
-                  <option key={stage} value={stage}>
-                    {(props.evaluations ?? []).find((evaluation) => evaluation.evalStage === stage)?.stageLabel ?? stage}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
-                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-              >
-                <option value="ALL">전체 상태</option>
-                {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.status))].map((status) => (
-                  <option key={status} value={status}>
-                    {(props.evaluations ?? []).find((evaluation) => evaluation.status === status)?.statusLabel ?? status}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={departmentFilter}
-                onChange={(event) => setDepartmentFilter(event.target.value)}
-                className="h-11 rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-              >
-                <option value="ALL">전체 부서</option>
-                {departmentOptions
-                  .filter((department) => department !== 'ALL')
-                  .map((department) => (
-                    <option key={department} value={department}>
-                      {department}
+            <div className="grid grid-cols-2 gap-x-2 gap-y-2">
+              <div className="col-span-2">
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="이름, 부서, 평가자로 검색"
+                  className="h-9 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-slate-400">범위</span>
+                <select
+                  value={scopeFilter}
+                  onChange={(event) => setScopeFilter(event.target.value as typeof scopeFilter)}
+                  className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                >
+                  <option value="ALL">전체</option>
+                  <option value="MY_SELF">내 자기평가</option>
+                  <option value="MY_REVIEWS">내 검토 건</option>
+                  <option value="PENDING_REVIEW">검토 대기</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-slate-400">단계</span>
+                <select
+                  value={stageFilter}
+                  onChange={(event) => setStageFilter(event.target.value as typeof stageFilter)}
+                  className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                >
+                  <option value="ALL">전체</option>
+                  {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.evalStage))].map((stage) => (
+                    <option key={stage} value={stage}>
+                      {(props.evaluations ?? []).find((evaluation) => evaluation.evalStage === stage)?.stageLabel ?? stage}
                     </option>
                   ))}
-              </select>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-slate-400">상태</span>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+                  className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                >
+                  <option value="ALL">전체</option>
+                  {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.status))].map((status) => (
+                    <option key={status} value={status}>
+                      {(props.evaluations ?? []).find((evaluation) => evaluation.status === status)?.statusLabel ?? status}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[11px] font-medium text-slate-400">부서</span>
+                <select
+                  value={departmentFilter}
+                  onChange={(event) => setDepartmentFilter(event.target.value)}
+                  className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                >
+                  <option value="ALL">전체</option>
+                  {departmentOptions
+                    .filter((department) => department !== 'ALL')
+                    .map((department) => (
+                      <option key={department} value={department}>
+                        {department}
+                      </option>
+                    ))}
+                </select>
+              </div>
             </div>
             {filteredEvaluations.length ? (
               filteredEvaluations.map((evaluation) => (
