@@ -103,7 +103,7 @@ run('ops and notification surfaces use Korean metric wording for failures and fa
   assert.equal(adminOpsSource.includes('24시간 실패 작업'), true)
   assert.equal(adminOpsSource.includes('실패함 알림'), true)
   assert.equal(adminOpsSource.includes('AI 대체 응답'), true)
-  assert.equal(adminOpsSource.includes('예산 초과 시나리오'), true)
+  assert.equal(adminOpsSource.includes('예산 초과 시나리오'), false)
   assert.equal(adminOpsSource.includes('실패함 재처리'), true)
   assert.equal(adminOpsSource.includes('dead letter'), false)
 

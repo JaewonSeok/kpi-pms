@@ -42,7 +42,6 @@ type OpsSummary = {
     failedJobs24h: number
     notificationDeadLetters: number
     aiFallback24h: number
-    overBudgetScenarios: number
     loginUnavailableAccounts: number
     activeEvalCycles: number
     delayedEvalCycles: number
@@ -272,11 +271,10 @@ export function AdminOpsClient() {
               </select>
               {staleData ? <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">데이터 갱신 지연</span> : null}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <MetricCard label="24시간 실패 작업" value={`${summary.metrics.failedJobs24h.toLocaleString('ko-KR')}건`} />
               <MetricCard label="실패함 알림" value={`${summary.metrics.notificationDeadLetters.toLocaleString('ko-KR')}건`} />
               <MetricCard label="AI 대체 응답" value={`${summary.metrics.aiFallback24h.toLocaleString('ko-KR')}건`} />
-              <MetricCard label="예산 초과 시나리오" value={`${summary.metrics.overBudgetScenarios.toLocaleString('ko-KR')}건`} />
             </div>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 xl:w-[22rem]">
@@ -294,10 +292,9 @@ export function AdminOpsClient() {
         <MetricCard label="24시간 실패 작업" value={`${summary.metrics.failedJobs24h.toLocaleString('ko-KR')}건`} helper="최근 24시간 기준" />
         <MetricCard label="실패함 알림" value={`${summary.metrics.notificationDeadLetters.toLocaleString('ko-KR')}건`} helper="복구가 필요한 알림" />
         <MetricCard label="AI 대체 응답" value={`${summary.metrics.aiFallback24h.toLocaleString('ko-KR')}건`} helper="품질 또는 안정성 지표" />
-        <MetricCard label="예산 초과 시나리오" value={`${summary.metrics.overBudgetScenarios.toLocaleString('ko-KR')}건`} helper="보상 운영 리스크" />
         <MetricCard label="로그인 준비 불가 계정" value={`${summary.metrics.loginUnavailableAccounts.toLocaleString('ko-KR')}개`} helper="Google 계정 점검 필요" />
         <MetricCard label="진행 중 평가 주기" value={`${summary.metrics.activeEvalCycles.toLocaleString('ko-KR')}개`} helper={`지연 ${summary.metrics.delayedEvalCycles}개`} />
-        <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="sm:col-span-2 xl:col-span-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-sm font-medium text-slate-500">다음 행동</div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Link href="/admin/notifications" className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 hover:bg-slate-100">실패 작업 확인</Link>

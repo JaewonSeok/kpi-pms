@@ -113,7 +113,6 @@ async function withStubbedDashboardData(
       metrics: {
         failedJobs24h: 0,
         notificationDeadLetters: 0,
-        overBudgetScenarios: 0,
         activeEvalCycles: 0,
         delayedEvalCycles: 0,
         loginUnavailableAccounts: 0,
