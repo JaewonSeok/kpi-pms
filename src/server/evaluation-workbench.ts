@@ -28,6 +28,10 @@ import {
 import type { EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
 import { resolveTargetAmount } from '@/lib/resolve-target-amount'
 import { getLatestEmployeeMidReviewSummary, type MidReviewSummaryViewModel } from '@/server/mid-review'
+import {
+  parseFeedback360TagSummaryFromComment,
+  getSelectedFeedback360ResponseTagLabels,
+} from '@/components/evaluation/feedback360/feedback360-response-tag-pool'
 
 export type EvaluationWorkbenchState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
@@ -257,6 +261,9 @@ export type EvaluationWorkbenchPageData = {
         submittedCount: number
         averageRating?: number
         summary: string
+        meetsMinRaters: boolean
+        positiveTags: { label: string; count: number }[]
+        improvementTags: { label: string; count: number }[]
       }>
       highlights: string[]
     }
@@ -309,6 +316,7 @@ type WorkbenchFeedbackRound = {
   roundType: FeedbackRoundType
   minRaters: number
   feedbacks: Array<{
+    overallComment: string | null
     responses: Array<{
       question: {
         questionType: QuestionType
@@ -1610,16 +1618,35 @@ export async function getEvaluationWorkbenchPageData(
               10
             : undefined
 
+          const meetsMinRaters = round.feedbacks.length >= round.minRaters
+
+          const positiveCounts = new Map<string, number>()
+          const improvementCounts = new Map<string, number>()
+          for (const feedback of round.feedbacks) {
+            const { selectedTags } = parseFeedback360TagSummaryFromComment(feedback.overallComment)
+            const tagItems = getSelectedFeedback360ResponseTagLabels(selectedTags)
+            for (const tag of tagItems) {
+              const map = tag.tone === 'positive' ? positiveCounts : improvementCounts
+              map.set(tag.label, (map.get(tag.label) ?? 0) + 1)
+            }
+          }
+          const sortTagCounts = (counts: Map<string, number>) =>
+            [...counts.entries()]
+              .map(([label, count]) => ({ label, count }))
+              .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ko'))
+
           return {
             id: round.id,
             roundName: round.roundName,
             roundType: round.roundType,
             submittedCount: round.feedbacks.length,
             averageRating,
-            summary:
-              round.feedbacks.length >= round.minRaters
-                ? `응답 ${round.feedbacks.length}건이 수집되어 결과를 참고할 수 있습니다.`
-                : `최소 ${round.minRaters}건 기준에 아직 도달하지 않았습니다.`,
+            summary: meetsMinRaters
+              ? `응답 ${round.feedbacks.length}건이 수집되어 결과를 참고할 수 있습니다.`
+              : `최소 ${round.minRaters}건 기준에 아직 도달하지 않았습니다.`,
+            meetsMinRaters,
+            positiveTags: sortTagCounts(positiveCounts),
+            improvementTags: sortTagCounts(improvementCounts),
           }
         }),
         highlights: [

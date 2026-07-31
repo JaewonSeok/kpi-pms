@@ -2623,6 +2623,36 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                           </Badge>
                         </div>
                         <p className="mt-3 text-sm text-slate-700">{round.summary}</p>
+                        {round.meetsMinRaters && (round.positiveTags.length > 0 || round.improvementTags.length > 0) ? (
+                          <div className="mt-3 space-y-2">
+                            {round.positiveTags.length > 0 ? (
+                              <div>
+                                <p className="mb-1.5 text-xs font-semibold text-emerald-700">긍정</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {round.positiveTags.map((tag) => (
+                                    <span key={tag.label} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                                      {tag.label}
+                                      <span className="rounded-full bg-emerald-200 px-1 text-[10px] font-bold text-emerald-900">{tag.count}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                            {round.improvementTags.length > 0 ? (
+                              <div>
+                                <p className="mb-1.5 text-xs font-semibold text-amber-700">보완</p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {round.improvementTags.map((tag) => (
+                                    <span key={tag.label} className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                                      {tag.label}
+                                      <span className="rounded-full bg-amber-200 px-1 text-[10px] font-bold text-amber-900">{tag.count}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     )) : <EmptyBlock message="연결된 다면 피드백 라운드가 없습니다." />}
                   </div>
