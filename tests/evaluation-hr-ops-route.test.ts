@@ -111,8 +111,8 @@ async function main() {
   })
 
   await run('navigation keeps performance labels and hides legacy wording', () => {
-    assert.equal(navigationSource.includes("label: '업적평가 모니터링'"), true)
-    assert.equal(navigationSource.includes("href: '/evaluation/performance'"), true)
+    assert.equal(navigationSource.includes("label: '업적평가 모니터링'"), false)
+    assert.equal(navigationSource.includes("href: '/evaluation/performance'"), false)
     assert.equal(navigationSource.includes("label: '업적평가'"), true)
     assert.equal(navigationSource.includes("href: '/evaluation/workbench'"), true)
     assert.equal(navigationSource.includes('HR 평가 운영 대시보드'), false)
