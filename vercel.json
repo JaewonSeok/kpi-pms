@@ -1,5 +1,4 @@
 {
-  "_comment": "cron schedules are UTC. '0 0 * * 1-5' = Mon–Fri 00:00 UTC = 09:00 KST (UTC+9)",
   "crons": [
     {
       "path": "/api/cron/notifications",
