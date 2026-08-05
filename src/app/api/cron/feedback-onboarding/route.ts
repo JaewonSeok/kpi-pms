@@ -2,13 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { runScheduledOnboardingReviewGeneration } from '@/server/onboarding-review-workflow'
-
-function isAuthorizedCronRequest(request: Request, sessionRole?: string | null) {
-  const secret = process.env.CRON_SECRET
-  const headerSecret = request.headers.get('x-cron-secret')
-  if (secret && headerSecret === secret) return true
-  return sessionRole === 'ROLE_ADMIN'
-}
+import { isAuthorizedCronRequest } from '@/lib/cron-auth'
 
 export async function POST(request: Request) {
   try {

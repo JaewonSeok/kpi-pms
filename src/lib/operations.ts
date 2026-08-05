@@ -110,6 +110,16 @@ function buildSecretChecks() {
       configured: Boolean(process.env.OPENAI_API_KEY),
     },
     {
+      name: 'SMTP_HOST',
+      requiredIn: isFeatureEnabled('emailDelivery') ? ['stage', 'prod'] : [],
+      configured: Boolean(process.env.SMTP_HOST),
+    },
+    {
+      name: 'SMTP_USER',
+      requiredIn: isFeatureEnabled('emailDelivery') ? ['stage', 'prod'] : [],
+      configured: Boolean(process.env.SMTP_USER),
+    },
+    {
       name: 'SMTP_PASS',
       requiredIn: isFeatureEnabled('emailDelivery') ? ['stage', 'prod'] : [],
       configured: Boolean(process.env.SMTP_PASS),
