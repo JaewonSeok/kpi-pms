@@ -328,12 +328,12 @@ export function AdminOpsClient() {
               </div>
             ))}</div> : <Empty message="선택한 조건에 맞는 상태 항목이 없습니다." />}
           </Panel>
-          <Panel title="환경 / 플래그 / 비밀값">
+          <Panel title="환경 / 배포 / 설정 상태">
             <div className="grid gap-3 sm:grid-cols-2">
               <MetricCard label="APP_ENV" value={summary.environment.appEnv} />
               <MetricCard label="NODE_ENV" value={summary.environment.nodeEnv} />
               <MetricCard label="배포 대상" value={summary.environment.deploymentTarget} />
-              <MetricCard label="앱 버전" value={summary.environment.appVersion} />
+              <MetricCard label="앱 버전" value={summary.environment.appVersion?.slice(0, 7) ?? summary.environment.appVersion} />
               <MetricCard label="허용 도메인" value={summary.environment.allowedDomain || '미설정'} />
               <MetricCard label="에러 추적" value={summary.environment.errorTrackingConfigured ? '설정됨' : '미설정'} />
             </div>
