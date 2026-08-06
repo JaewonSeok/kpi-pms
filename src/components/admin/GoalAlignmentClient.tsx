@@ -121,9 +121,15 @@ export function GoalAlignmentClient({ data }: { data: GoalAlignmentPageData }) {
         {actionMessage ? <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">{actionMessage}</p> : null}
 
         <div className="mt-6 grid gap-3 md:grid-cols-4">
+          <MetricCard label="목표 수립 완료" value={`${data.summary.completionRate}%`} helper={`${data.summary.completedEmployeeCount} / ${data.summary.targetEmployeeCount}명`} />
+          <MetricCard label="미착수" value={`${data.summary.notStartedEmployeeCount}명`} helper="레코드 0건" />
+          <MetricCard label="본인 목표 없음" value={`${data.summary.mirrorOnlyEmployeeCount}명`} helper="미러만 보유" variant="warning" />
+          <MetricCard label="조직 목표 미연결" value={`${data.summary.orphanPersonalGoalCount}건`} helper={`개인 목표 ${data.summary.personalGoalCount}건 중`} />
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-4">
           <MetricCard label="조직 목표" value={`${data.summary.orgGoalCount}개`} helper="현재 선택 조건에 포함된 조직 목표 수" />
           <MetricCard label="개인 목표" value={`${data.summary.personalGoalCount}개`} helper="현재 선택 조건에 포함된 개인 목표 수" />
-          <MetricCard label="개인 목표 수립 비율" value={`${data.summary.personalGoalSetupRate}%`} helper={formatRateBaseCopy('대상 인원')} />
+          <MetricCard label="1인당 본인 목표 수" value={`${data.summary.goalsPerEmployee}개`} helper={formatRateBaseCopy('대상 인원')} />
           <MetricCard label="체크인 완료 비율" value={`${data.summary.completedCheckInRate}%`} helper={formatRateBaseCopy('전체 체크인')} />
         </div>
       </section>
@@ -361,8 +367,11 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function MetricCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
-  return <div className="rounded-2xl bg-slate-50 px-4 py-4"><div className="text-xs text-slate-500">{label}</div><div className="mt-2 text-lg font-semibold text-slate-900">{value}</div>{helper ? <div className="mt-2 text-xs text-slate-500">{helper}</div> : null}</div>
+function MetricCard({ label, value, helper, variant = 'default' }: { label: string; value: string; helper?: string; variant?: 'default' | 'warning' }) {
+  const bg = variant === 'warning' ? 'bg-amber-50' : 'bg-slate-50'
+  const labelCls = variant === 'warning' ? 'text-amber-700' : 'text-slate-500'
+  const valueCls = variant === 'warning' ? 'text-amber-900' : 'text-slate-900'
+  return <div className={`rounded-2xl px-4 py-4 ${bg}`}><div className={`text-xs ${labelCls}`}>{label}</div><div className={`mt-2 text-lg font-semibold ${valueCls}`}>{value}</div>{helper ? <div className={`mt-2 text-xs ${labelCls}`}>{helper}</div> : null}</div>
 }
 
 function FilterField({ label, children }: { label: string; children: ReactNode }) {

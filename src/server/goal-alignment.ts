@@ -107,6 +107,13 @@ export type GoalAlignmentPageData = {
     personalGoalSetupRate: number
     completedCheckInRate: number
     averageProgressRate: number
+    targetEmployeeCount: number
+    ownGoalCount: number
+    goalsPerEmployee: number
+    completedEmployeeCount: number
+    notStartedEmployeeCount: number
+    mirrorOnlyEmployeeCount: number
+    completionRate: number
   }
   board: GoalAlignmentOrgNode[]
   orphanPersonalGoals: GoalAlignmentPersonalNode[]
@@ -161,6 +168,8 @@ type PersonalGoalLite = {
   kpiName: string
   status: KpiStatus
   linkedOrgKpiId: string | null
+  weight: number
+  isMirror: boolean
   employee: {
     empName: string
     deptId: string
@@ -176,6 +185,7 @@ type EmployeeLite = {
   empName: string
   deptId: string
   status: string
+  role: string
 }
 
 type CheckInLite = {
@@ -269,6 +279,7 @@ const defaultDeps: GoalAlignmentDeps = {
         empName: true,
         deptId: true,
         status: true,
+        role: true,
       },
       orderBy: [{ deptId: 'asc' }, { empName: 'asc' }],
     }),
@@ -393,6 +404,13 @@ export async function getGoalAlignmentPageData(
         personalGoalSetupRate: 0,
         completedCheckInRate: 0,
         averageProgressRate: 0,
+        targetEmployeeCount: 0,
+        ownGoalCount: 0,
+        goalsPerEmployee: 0,
+        completedEmployeeCount: 0,
+        notStartedEmployeeCount: 0,
+        mirrorOnlyEmployeeCount: 0,
+        completionRate: 0,
       },
       board: [],
       orphanPersonalGoals: [],
@@ -492,7 +510,7 @@ export async function getGoalAlignmentPageData(
       }),
     ])
 
-    const activeEmployees = employees.filter((employee) => employee.status === 'ACTIVE')
+    const activeEmployees = employees.filter((employee) => employee.status === 'ACTIVE' && employee.role !== 'ROLE_CEO')
     const checkIns = await loadSection({
       title: '체크인 현황을 불러오지 못했습니다.',
       description: '체크인 진행률 없이 정렬과 목표 수립 현황만 표시합니다.',
@@ -699,6 +717,38 @@ export async function getGoalAlignmentPageData(
       .sort((left, right) => right.orphanGoalCount - left.orphanGoalCount || left.departmentName.localeCompare(right.departmentName, 'ko'))
 
     const alignedPersonalGoalCount = personalGoals.filter((goal) => Boolean(goal.linkedOrgKpiId && orgGoalById.has(goal.linkedOrgKpiId))).length
+
+    const targetEmployeeCount = activeEmployees.length
+    const ownGoalCount = personalGoals.filter((goal) => !goal.isMirror).length
+    const goalsPerEmployee = targetEmployeeCount ? Math.round((ownGoalCount / targetEmployeeCount) * 10) / 10 : 0
+
+    const personalGoalsByEmployee = new Map<string, PersonalGoalLite[]>()
+    personalGoals.forEach((goal) => {
+      const bucket = personalGoalsByEmployee.get(goal.employeeId) ?? []
+      bucket.push(goal)
+      personalGoalsByEmployee.set(goal.employeeId, bucket)
+    })
+
+    // weight 합산은 미러 포함(미러에도 weight가 배분되는 사례 확인), 건수(ownGoalCount)는 미러 제외
+    let completedEmployeeCount = 0
+    let notStartedEmployeeCount = 0
+    let mirrorOnlyEmployeeCount = 0
+    for (const employee of activeEmployees) {
+      const goals = personalGoalsByEmployee.get(employee.id) ?? []
+      const ownGoals = goals.filter((g) => !g.isMirror)
+      if (goals.length === 0) {
+        notStartedEmployeeCount += 1
+      } else if (ownGoals.length === 0) {
+        mirrorOnlyEmployeeCount += 1
+      } else {
+        const weightSum = goals.reduce((sum, g) => sum + g.weight, 0)
+        if (Math.round(weightSum) === 100) {
+          completedEmployeeCount += 1
+        }
+      }
+    }
+    const completionRate = targetEmployeeCount ? Math.round((completedEmployeeCount / targetEmployeeCount) * 100) : 0
+
     const summary = {
       orgGoalCount: orgGoals.length,
       personalGoalCount: personalGoals.length,
@@ -708,6 +758,13 @@ export async function getGoalAlignmentPageData(
       personalGoalSetupRate: activeEmployees.length ? Math.round((personalGoals.length / activeEmployees.length) * 100) : 0,
       completedCheckInRate: checkIns.length ? Math.round((checkIns.filter((item) => item.status === 'COMPLETED').length / checkIns.length) * 100) : 0,
       averageProgressRate: averageProgress(Array.from(personalNodeById.values()).map((item) => item.progressRate)) ?? 0,
+      targetEmployeeCount,
+      ownGoalCount,
+      goalsPerEmployee,
+      completedEmployeeCount,
+      notStartedEmployeeCount,
+      mirrorOnlyEmployeeCount,
+      completionRate,
     }
 
     const state: GoalAlignmentPageState = orgGoals.length || personalGoals.length ? 'ready' : 'empty'
@@ -764,6 +821,13 @@ export async function getGoalAlignmentPageData(
         personalGoalSetupRate: 0,
         completedCheckInRate: 0,
         averageProgressRate: 0,
+        targetEmployeeCount: 0,
+        ownGoalCount: 0,
+        goalsPerEmployee: 0,
+        completedEmployeeCount: 0,
+        notStartedEmployeeCount: 0,
+        mirrorOnlyEmployeeCount: 0,
+        completionRate: 0,
       },
       board: [],
       orphanPersonalGoals: [],

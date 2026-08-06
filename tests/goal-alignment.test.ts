@@ -157,6 +157,8 @@ async function main() {
               kpiName: '잠재 고객 발굴',
               status: 'DRAFT',
               linkedOrgKpiId: 'org-team',
+              weight: 100,
+              isMirror: false,
               employee: {
                 empName: '구성원1',
                 deptId: 'dept-team',
@@ -171,6 +173,8 @@ async function main() {
               kpiName: '미연결 개인 목표',
               status: 'DRAFT',
               linkedOrgKpiId: null,
+              weight: 100,
+              isMirror: false,
               employee: {
                 empName: '구성원2',
                 deptId: 'dept-team',
@@ -180,8 +184,8 @@ async function main() {
             },
           ],
           loadEmployees: async () => [
-            { id: 'emp-1', empName: '구성원1', deptId: 'dept-team', status: 'ACTIVE' },
-            { id: 'emp-2', empName: '구성원2', deptId: 'dept-team', status: 'ACTIVE' },
+            { id: 'emp-1', empName: '구성원1', deptId: 'dept-team', status: 'ACTIVE', role: 'ROLE_MEMBER' },
+            { id: 'emp-2', empName: '구성원2', deptId: 'dept-team', status: 'ACTIVE', role: 'ROLE_MEMBER' },
           ],
           loadCheckIns: async () => [
             { id: 'checkin-1', ownerId: 'emp-1', status: 'COMPLETED' },
@@ -406,6 +410,13 @@ async function main() {
         personalGoalSetupRate: 100,
         completedCheckInRate: 50,
         averageProgressRate: 30,
+        targetEmployeeCount: 0,
+        ownGoalCount: 0,
+        goalsPerEmployee: 0,
+        completedEmployeeCount: 0,
+        notStartedEmployeeCount: 0,
+        mirrorOnlyEmployeeCount: 0,
+        completionRate: 0,
       },
       board: [
         {
