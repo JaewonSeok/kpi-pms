@@ -129,9 +129,10 @@ export function GoalAlignmentClient({ data }: { data: GoalAlignmentPageData }) {
         <div className="mt-3 grid gap-3 md:grid-cols-4">
           <MetricCard label="조직 목표" value={`${data.summary.orgGoalCount}개`} helper="현재 선택 조건에 포함된 조직 목표 수" />
           <MetricCard label="개인 목표" value={`${data.summary.personalGoalCount}개`} helper="현재 선택 조건에 포함된 개인 목표 수" />
-          <MetricCard label="1인당 본인 목표 수" value={`${data.summary.goalsPerEmployee}개`} helper={formatRateBaseCopy('대상 인원')} />
+          <MetricCard label="1인당 본인 목표 수" value={`${data.summary.goalsPerEmployee}개`} helper="미러 제외" />
           <MetricCard label="체크인 완료 비율" value={`${data.summary.completedCheckInRate}%`} helper={formatRateBaseCopy('전체 체크인')} />
         </div>
+        <SegmentBar summary={data.summary} />
       </section>
 
       {data.alerts.length ? (
@@ -372,6 +373,70 @@ function MetricCard({ label, value, helper, variant = 'default' }: { label: stri
   const labelCls = variant === 'warning' ? 'text-amber-700' : 'text-slate-500'
   const valueCls = variant === 'warning' ? 'text-amber-900' : 'text-slate-900'
   return <div className={`rounded-2xl px-4 py-4 ${bg}`}><div className={`text-xs ${labelCls}`}>{label}</div><div className={`mt-2 text-lg font-semibold ${valueCls}`}>{value}</div>{helper ? <div className={`mt-2 text-xs ${labelCls}`}>{helper}</div> : null}</div>
+}
+
+function SegmentBar({ summary }: { summary: GoalAlignmentPageData['summary'] }) {
+  const total = summary.targetEmployeeCount
+  if (total === 0) return null
+
+  const inProgress = Math.max(0, total - summary.notStartedEmployeeCount - summary.mirrorOnlyEmployeeCount - summary.completedEmployeeCount)
+  const segments = [
+    { key: 'sbar-none', label: '미착수', count: summary.notStartedEmployeeCount, color: '#888780' },
+    { key: 'sbar-mirror', label: '미러만', count: summary.mirrorOnlyEmployeeCount, color: '#EF9F27' },
+    { key: 'sbar-progress', label: '입력중', count: inProgress, color: '#378ADD' },
+    { key: 'sbar-done', label: '완성', count: summary.completedEmployeeCount, color: '#1baf7a' },
+  ]
+  const visible = segments.filter((s) => s.count > 0)
+  const MIN_PCT = 6
+
+  return (
+    <div className="mt-4">
+      <style>{`
+        .sbar-none { color: #56554f; }
+        .sbar-mirror { color: #8b5a00; }
+        .sbar-progress { color: #1d5ea8; }
+        .sbar-done { color: #0a6647; }
+        @media (prefers-color-scheme: dark) {
+          .sbar-none { color: #b8b6b0; }
+          .sbar-mirror { color: #f5c468; }
+          .sbar-progress { color: #7ab8f0; }
+          .sbar-done { color: #5fcba1; }
+        }
+        :root[data-theme="dark"] .sbar-none { color: #b8b6b0; }
+        :root[data-theme="dark"] .sbar-mirror { color: #f5c468; }
+        :root[data-theme="dark"] .sbar-progress { color: #7ab8f0; }
+        :root[data-theme="dark"] .sbar-done { color: #5fcba1; }
+        :root[data-theme="light"] .sbar-none { color: #56554f; }
+        :root[data-theme="light"] .sbar-mirror { color: #8b5a00; }
+        :root[data-theme="light"] .sbar-progress { color: #1d5ea8; }
+        :root[data-theme="light"] .sbar-done { color: #0a6647; }
+      `}</style>
+      <p className="mb-1 text-xs font-medium text-slate-500">대상 {total}명 구성</p>
+      <div className="flex h-8 gap-0.5 overflow-hidden rounded-2xl">
+        {visible.map((seg, i) => {
+          const pct = (seg.count / total) * 100
+          const isLast = i === visible.length - 1
+          return (
+            <div
+              key={seg.key}
+              style={isLast ? { flex: '1 0 0', backgroundColor: seg.color } : { width: `${pct.toFixed(1)}%`, flexShrink: 0, backgroundColor: seg.color }}
+              className="flex items-center justify-center"
+            >
+              {pct >= MIN_PCT && <span className={`${seg.key} text-xs font-semibold tabular-nums`}>{seg.count}</span>}
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-3">
+        {segments.map((seg) => (
+          <span key={seg.key} className="flex items-center gap-1.5 text-xs text-slate-500">
+            <span className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-sm" style={{ backgroundColor: seg.color }} />
+            {seg.label} {seg.count}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function FilterField({ label, children }: { label: string; children: ReactNode }) {
