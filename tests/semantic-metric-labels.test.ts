@@ -44,7 +44,7 @@ run('personal monthly and goal alignment copy explains units and bases', () => {
   assert.equal(alignmentSource.includes('개인 목표 수립 비율'), true)
   assert.equal(alignmentSource.includes('조직 KPI 연결 비율'), true)
   assert.equal(alignmentSource.includes('체크인 완료 비율'), true)
-  assert.equal(alignmentSource.includes("formatRateBaseCopy('대상 인원')"), true)
+  assert.equal(alignmentSource.includes('미러 제외'), true)
   assert.equal(alignmentSource.includes("formatRateBaseCopy('전체 체크인')"), true)
 })
 
