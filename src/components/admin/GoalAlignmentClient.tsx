@@ -154,7 +154,7 @@ export function GoalAlignmentClient({ data }: { data: GoalAlignmentPageData }) {
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-2">
             <FilterField label="연도">
               <select value={String(data.selectedYear)} onChange={(event) => pushFilters({ year: event.target.value })} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
                 {data.availableYears.map((year) => <option key={year} value={year}>{year}년</option>)}
