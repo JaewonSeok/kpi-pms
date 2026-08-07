@@ -3,6 +3,7 @@ import { resolveOrgKpiScopeFromDepartmentId } from '@/lib/org-kpi-scope'
 import { prisma } from '@/lib/prisma'
 import { AppError } from '@/lib/utils'
 import { getDescendantDeptIds } from '@/server/auth/org-scope'
+import { SELF_MANAGED_DIVISION_IDS } from '@/config/evaluation-scope'
 
 type GoalAlignmentSession = {
   user: {
@@ -511,12 +512,21 @@ export async function getGoalAlignmentPageData(
     ])
 
     const activeEmployees = employees.filter((employee) => employee.status === 'ACTIVE' && employee.role !== 'ROLE_CEO')
+
+    // 조직 점수를 본부 단위로 자체 운영하는 본부(SELF_MANAGED_DIVISION_IDS)와
+    // 그 하위 부서 직원은 개인 KPI 수립 대상이 아니므로 분모에서 제외한다.
+    const selfManagedDeptIds = new Set([
+      ...SELF_MANAGED_DIVISION_IDS,
+      ...SELF_MANAGED_DIVISION_IDS.flatMap((id) => getDescendantDeptIds(id, departments)),
+    ])
+    const targetEmployees = activeEmployees.filter((employee) => !selfManagedDeptIds.has(employee.deptId))
+
     const checkIns = await loadSection({
       title: '체크인 현황을 불러오지 못했습니다.',
       description: '체크인 진행률 없이 정렬과 목표 수립 현황만 표시합니다.',
       alerts,
       fallback: [] as CheckInLite[],
-      loader: () => deps.loadCheckIns(selectedYear, activeEmployees.map((employee) => employee.id)),
+      loader: () => deps.loadCheckIns(selectedYear, targetEmployees.map((employee) => employee.id)),
     })
 
     const checkInsByOwnerId = new Map<string, CheckInLite[]>()
@@ -717,7 +727,7 @@ export async function getGoalAlignmentPageData(
 
     const alignedPersonalGoalCount = personalGoals.filter((goal) => Boolean(goal.linkedOrgKpiId && orgGoalById.has(goal.linkedOrgKpiId))).length
 
-    const targetEmployeeCount = activeEmployees.length
+    const targetEmployeeCount = targetEmployees.length
     const ownGoalCount = personalGoals.filter((goal) => !goal.isMirror).length
     const goalsPerEmployee = targetEmployeeCount ? Math.round((ownGoalCount / targetEmployeeCount) * 10) / 10 : 0
 
@@ -732,7 +742,7 @@ export async function getGoalAlignmentPageData(
     let completedEmployeeCount = 0
     let notStartedEmployeeCount = 0
     let mirrorOnlyEmployeeCount = 0
-    for (const employee of activeEmployees) {
+    for (const employee of targetEmployees) {
       const goals = personalGoalsByEmployee.get(employee.id) ?? []
       const ownGoals = goals.filter((g) => !g.isMirror)
       if (goals.length === 0) {
@@ -754,7 +764,7 @@ export async function getGoalAlignmentPageData(
       alignedPersonalGoalCount,
       orphanOrgGoalCount: orgGoals.filter((goal) => Boolean(goal.parentOrgKpiId && !orgGoalById.has(goal.parentOrgKpiId))).length,
       orphanPersonalGoalCount: orphanPersonalGoals.length,
-      personalGoalSetupRate: activeEmployees.length ? Math.round((personalGoals.length / activeEmployees.length) * 100) : 0,
+      personalGoalSetupRate: targetEmployees.length ? Math.round((personalGoals.length / targetEmployees.length) * 100) : 0,
       completedCheckInRate: checkIns.length ? Math.round((checkIns.filter((item) => item.status === 'COMPLETED').length / checkIns.length) * 100) : 0,
       averageProgressRate: averageProgress(Array.from(personalNodeById.values()).map((item) => item.progressRate)) ?? 0,
       targetEmployeeCount,
