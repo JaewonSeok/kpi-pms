@@ -124,10 +124,9 @@ export function GoalAlignmentClient({ data }: { data: GoalAlignmentPageData }) {
           <MetricCard label="목표 수립 완료" value={`${data.summary.completionRate}%`} helper={`${data.summary.completedEmployeeCount} / ${data.summary.targetEmployeeCount}명`} />
           <MetricCard label="미착수" value={`${data.summary.notStartedEmployeeCount}명`} helper="레코드 0건" />
           <MetricCard label="본인 목표 없음" value={`${data.summary.mirrorOnlyEmployeeCount}명`} helper="미러만 보유" variant="warning" />
-          <MetricCard label="조직 목표 미연결" value={`${data.summary.orphanPersonalGoalCount}건`} helper={`개인 목표 ${data.summary.personalGoalCount}건 중`} />
-        </div>
-        <div className="mt-3 grid gap-3 md:grid-cols-4">
           <MetricCard label="조직 목표" value={`${data.summary.orgGoalCount}개`} helper="현재 선택 조건에 포함된 조직 목표 수" />
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
           <MetricCard label="개인 목표" value={`${data.summary.personalGoalCount}개`} helper="현재 선택 조건에 포함된 개인 목표 수" />
           <MetricCard label="1인당 본인 목표 수" value={`${data.summary.goalsPerEmployee}개`} helper="미러 제외" />
           <MetricCard label="체크인 완료 비율" value={`${data.summary.completedCheckInRate}%`} helper={formatRateBaseCopy('전체 체크인')} />
@@ -193,12 +192,9 @@ export function GoalAlignmentClient({ data }: { data: GoalAlignmentPageData }) {
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
           <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">목표 얼라인먼트 보드</h2>
-                <p className="mt-1 text-sm text-slate-500">조직 목표와 연결된 개인 목표를 계층 구조로 정리했습니다.</p>
-              </div>
-              <div className="text-sm text-slate-500">미연결 개인 목표 {data.orphanPersonalGoals.length}개</div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">목표 얼라인먼트 보드</h2>
+              <p className="mt-1 text-sm text-slate-500">조직 목표와 연결된 개인 목표를 계층 구조로 정리했습니다.</p>
             </div>
 
             {data.board.length ? (
@@ -267,21 +263,10 @@ function BoardNode(props: {
       <button
         type="button"
         onClick={() => props.onSelect(props.node.id)}
-        className={`w-full rounded-3xl border px-5 py-4 text-left transition ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}
+        className={`w-full rounded-3xl border px-5 py-3 text-left transition ${isSelected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 hover:border-slate-300'}`}
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-500">{props.node.departmentName}</div>
-            <div className="mt-2 text-lg font-semibold">{props.node.title}</div>
-            <div className={`mt-2 text-sm ${isSelected ? 'text-slate-200' : 'text-slate-500'}`}>
-              {props.node.isOrphan ? '상위 목표 미연결' : props.node.lineage.length ? `${props.node.lineage.at(-1)?.departmentName}와 연결` : '상위 목표 없음'}
-            </div>
-          </div>
-          <div className={`rounded-2xl px-4 py-3 text-right text-sm ${isSelected ? 'bg-white/10 text-white' : 'bg-white text-slate-700'}`}>
-            <div>진척도 {props.node.progressRate ?? '-'}%</div>
-            <div className="mt-1">개인 목표 {props.node.linkedPersonalGoalCount}개</div>
-          </div>
-        </div>
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-500">{props.node.departmentName}</div>
+        <div className="mt-2 text-lg font-semibold">{props.node.title}</div>
         {props.node.riskFlags.length ? <div className={`mt-3 flex flex-wrap gap-2 text-xs ${isSelected ? 'text-slate-200' : 'text-amber-700'}`}>{props.node.riskFlags.map((flag) => <span key={flag} className={`rounded-full px-2.5 py-1 ${isSelected ? 'bg-white/10' : 'bg-amber-100'}`}>{flag}</span>)}</div> : null}
       </button>
 

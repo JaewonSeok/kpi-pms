@@ -565,7 +565,6 @@ export async function getGoalAlignmentPageData(
       const isOrphan = Boolean(goal.parentOrgKpiId && !orgGoalById.has(goal.parentOrgKpiId))
       const riskFlags = [
         ...(isOrphan ? ['상위 목표 연결 확인 필요'] : []),
-        ...(linkedPersonalNodes.length === 0 ? ['연결된 개인 목표 없음'] : []),
         ...(typeof progressRate === 'number' && progressRate < 70 ? ['진척 주의'] : []),
       ]
 
