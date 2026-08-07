@@ -1,6 +1,7 @@
 import type { Session } from 'next-auth'
 import type { DepartmentLevel } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
+import { SELF_MANAGED_DIVISION_IDS } from '@/config/evaluation-scope'
 
 // M1-B2 / 서버 로더 — ADMIN 점수 입력 화면용 read-only data.
 // 화면 라우팅 레벨에서 ROLE_ADMIN 게이트가 보장된다고 가정하고 권한 검증은 본 로더에서 안 한다
@@ -71,13 +72,42 @@ export async function getDepartmentScoreIntakePageData(params: {
     orderBy: [{ deptCode: 'asc' }],
   })
 
-  const departments: DepartmentScoreIntakePageDepartment[] = departmentsRaw.map((row) => ({
-    id: row.id,
-    deptCode: row.deptCode,
-    deptName: row.deptName,
-    parentDeptId: row.parentDeptId,
-    levelTag: row.level,
-  }))
+  // SELF_MANAGED_DIVISION_IDS 소속 본부의 자손 id 집합을 계산한다.
+  // 본부 자신은 제외하고 하위(SECTION·TEAM) 만 수집한다.
+  // 순환 참조 방어: visited 집합으로 재방문 차단.
+  const excludedIds = new Set<string>()
+  const visited = new Set<string>()
+  const queue = departmentsRaw
+    .filter((d) => d.parentDeptId !== null && SELF_MANAGED_DIVISION_IDS.includes(d.parentDeptId))
+    .map((d) => d.id)
+  for (const startId of queue) {
+    if (!visited.has(startId)) {
+      excludedIds.add(startId)
+      visited.add(startId)
+    }
+  }
+  // BFS로 다단계 자손까지 수집
+  const bfsQueue = [...excludedIds]
+  while (bfsQueue.length > 0) {
+    const parentId = bfsQueue.shift()!
+    for (const d of departmentsRaw) {
+      if (d.parentDeptId === parentId && !visited.has(d.id)) {
+        excludedIds.add(d.id)
+        visited.add(d.id)
+        bfsQueue.push(d.id)
+      }
+    }
+  }
+
+  const departments: DepartmentScoreIntakePageDepartment[] = departmentsRaw
+    .filter((row) => !excludedIds.has(row.id))
+    .map((row) => ({
+      id: row.id,
+      deptCode: row.deptCode,
+      deptName: row.deptName,
+      parentDeptId: row.parentDeptId,
+      levelTag: row.level,
+    }))
 
   const intakes: DepartmentScoreIntakePageIntake[] = selectedCycleId
     ? await prisma.departmentScoreIntake.findMany({
