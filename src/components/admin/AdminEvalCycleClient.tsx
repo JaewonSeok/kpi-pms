@@ -131,10 +131,14 @@ const PHASE_FIELDS: Array<{ key: CyclePhaseFieldKey; label: string }> = [
   { key: 'appealDeadline', label: '이의 신청 마감' },
 ]
 
+type ApiError = Error & { code?: string }
+
 function parseResponse<T>(json: unknown): T {
-  const payload = json as { success?: boolean; data?: T; error?: { message?: string } }
+  const payload = json as { success?: boolean; data?: T; error?: { code?: string; message?: string } }
   if (!payload.success) {
-    throw new Error(payload.error?.message || '요청 처리 중 오류가 발생했습니다.')
+    const err: ApiError = new Error(payload.error?.message || '요청 처리 중 오류가 발생했습니다.')
+    err.code = payload.error?.code
+    throw err
   }
   return payload.data as T
 }
@@ -479,9 +483,9 @@ export function AdminEvalCycleClient({
       if (editingCycleId === variables.id) setEditingCycleId(null)
       await queryClient.invalidateQueries({ queryKey: ['admin-eval-cycles'] })
     },
-    onError: (error: Error, variables) => {
+    onError: (error: ApiError, variables) => {
       setFeedback({ tone: 'error', message: error.message })
-      if (error.message.includes('남아 있어 평가 주기를 삭제할 수 없습니다')) {
+      if (error.code === 'EVAL_CYCLE_DELETE_BLOCKED') {
         setDeleteBlockedState({ id: variables.id, cycleName: variables.cycleName })
       }
     },
