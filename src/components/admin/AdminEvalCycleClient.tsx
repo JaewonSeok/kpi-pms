@@ -354,6 +354,7 @@ export function AdminEvalCycleClient({
   const [statusDraft, setStatusDraft] = useState<CycleStatus>(initialCycles[0]?.status ?? 'SETUP')
   const [form, setForm] = useState<CycleFormState>(() => buildDefaultForm(organizations))
   const formSectionRef = useRef<HTMLElement>(null)
+  const [deleteBlockedState, setDeleteBlockedState] = useState<{ id: string; cycleName: string } | null>(null)
 
   const cyclesQuery = useQuery({
     queryKey: ['admin-eval-cycles'],
@@ -467,12 +468,52 @@ export function AdminEvalCycleClient({
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (input: { id: string }) => {
+    mutationFn: async (input: { id: string; cycleName: string }) => {
       const res = await fetch(`/api/admin/eval-cycles/${input.id}`, { method: 'DELETE' })
       return parseResponse<{ id: string }>(await res.json())
     },
     onSuccess: async (_, variables) => {
       setFeedback({ tone: 'success', message: '평가 주기가 삭제되었습니다.' })
+      setDeleteBlockedState(null)
+      if (selectedCycleId === variables.id) setSelectedCycleId(null)
+      if (editingCycleId === variables.id) setEditingCycleId(null)
+      await queryClient.invalidateQueries({ queryKey: ['admin-eval-cycles'] })
+    },
+    onError: (error: Error, variables) => {
+      setFeedback({ tone: 'error', message: error.message })
+      if (error.message.includes('남아 있어 평가 주기를 삭제할 수 없습니다')) {
+        setDeleteBlockedState({ id: variables.id, cycleName: variables.cycleName })
+      }
+    },
+  })
+
+  const forceDeleteMutation = useMutation({
+    mutationFn: async (input: { id: string }) => {
+      const res = await fetch(`/api/admin/eval-cycles/${input.id}?force=true`, { method: 'DELETE' })
+      return parseResponse<{
+        id: string
+        counts: {
+          multiFeedbackRounds: number
+          compensationScenarios: number
+          aiCompetencyResults: number
+          hasAiCompetencyCycle: boolean
+          hasAiCompetencyGateCycle: boolean
+        }
+      }>(await res.json())
+    },
+    onSuccess: async (data, variables) => {
+      const parts: string[] = []
+      if (data.counts.multiFeedbackRounds > 0) parts.push(`360 라운드 ${data.counts.multiFeedbackRounds}건`)
+      if (data.counts.compensationScenarios > 0) parts.push(`보상 시나리오 ${data.counts.compensationScenarios}건`)
+      if (data.counts.aiCompetencyResults > 0) parts.push(`AI 역량 결과 ${data.counts.aiCompetencyResults}건`)
+      if (data.counts.hasAiCompetencyCycle) parts.push('AI 역량 주기')
+      if (data.counts.hasAiCompetencyGateCycle) parts.push('AI 역량 게이트 주기')
+      const message =
+        parts.length > 0
+          ? `평가 주기와 연결 데이터를 삭제했습니다. (${parts.join(', ')})`
+          : '평가 주기가 삭제되었습니다.'
+      setFeedback({ tone: 'success', message })
+      setDeleteBlockedState(null)
       if (selectedCycleId === variables.id) setSelectedCycleId(null)
       if (editingCycleId === variables.id) setEditingCycleId(null)
       await queryClient.invalidateQueries({ queryKey: ['admin-eval-cycles'] })
@@ -736,13 +777,30 @@ export function AdminEvalCycleClient({
                       ) {
                         return
                       }
-                      deleteMutation.mutate({ id: selectedCycle.id })
+                      deleteMutation.mutate({ id: selectedCycle.id, cycleName: selectedCycle.cycleName })
                     }}
                     className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-red-200 px-4 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     주기 삭제
                   </button>
+                  {deleteBlockedState?.id === selectedCycle.id && (
+                    <button
+                      type="button"
+                      disabled={forceDeleteMutation.isPending}
+                      onClick={() => {
+                        const input = window.prompt(
+                          `연결된 데이터까지 모두 삭제합니다. 되돌릴 수 없습니다.\n확인하려면 주기명을 그대로 입력하세요: ${selectedCycle.cycleName}`
+                        )
+                        if (input !== selectedCycle.cycleName) return
+                        forceDeleteMutation.mutate({ id: selectedCycle.id })
+                      }}
+                      className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-red-500 bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      연결 데이터까지 강제 삭제
+                    </button>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
