@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarDays, CircleDot, Clock3, FilePenLine, Flag, Layers3, Plus } from 'lucide-react'
 import {
@@ -353,6 +353,7 @@ export function AdminEvalCycleClient({
   const [editingCycleId, setEditingCycleId] = useState<string | null>(null)
   const [statusDraft, setStatusDraft] = useState<CycleStatus>(initialCycles[0]?.status ?? 'SETUP')
   const [form, setForm] = useState<CycleFormState>(() => buildDefaultForm(organizations))
+  const formSectionRef = useRef<HTMLElement>(null)
 
   const cyclesQuery = useQuery({
     queryKey: ['admin-eval-cycles'],
@@ -484,6 +485,17 @@ export function AdminEvalCycleClient({
   }, [cycleViews, selectedStatus, selectedYear])
 
   const selectedCycle = visibleCycles.find((cycle) => cycle.id === selectedCycleId) ?? visibleCycles[0] ?? null
+
+  // 필터 변경으로 selectedCycle 이 바뀔 때 statusDraft 를 동기화한다.
+  // 의존성에 statusDraft 를 넣지 않아 같은 사이클에 머무는 동안
+  // 사용자가 드롭다운으로 고른 값은 유지된다.
+  useEffect(() => {
+    if (selectedCycle) {
+      setStatusDraft(selectedCycle.status)
+    }
+    // selectedCycle?.id 변경 시에만 실행 — 전체 객체를 넣으면 매 렌더마다 실행된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCycle?.id])
 
   const metrics = useMemo(() => {
     return buildEvalCycleSummaryMetrics(cycleViews, {
@@ -690,6 +702,9 @@ export function AdminEvalCycleClient({
                     onClick={() => {
                       setEditingCycleId(selectedCycle.id)
                       setForm(buildFormFromCycle(selectedCycle))
+                      requestAnimationFrame(() => {
+                        formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      })
                     }}
                     className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
                   >
@@ -722,6 +737,16 @@ export function AdminEvalCycleClient({
                             tone: 'error',
                             message: '공개 전 readiness 체크를 먼저 모두 통과해 주세요.',
                           })
+                          return
+                        }
+
+                        const fromLabel = STATUS_LABELS[selectedCycle.status]
+                        const toLabel = STATUS_LABELS[statusDraft]
+                        if (
+                          !window.confirm(
+                            `${selectedCycle.cycleName}을(를) '${fromLabel}' → '${toLabel}' 로 변경합니다. 계속할까요?`
+                          )
+                        ) {
                           return
                         }
 
@@ -858,7 +883,7 @@ export function AdminEvalCycleClient({
             )}
           </section>
 
-          <section className="touch-card p-6">
+          <section ref={formSectionRef} className="touch-card p-6">
             <div className="flex items-center gap-2">
               {editingCycleId ? <FilePenLine className="h-5 w-5 text-blue-600" /> : <Plus className="h-5 w-5 text-blue-600" />}
               <h2 className="text-lg font-semibold text-slate-900">
