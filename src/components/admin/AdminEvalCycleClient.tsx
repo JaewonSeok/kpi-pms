@@ -358,6 +358,7 @@ export function AdminEvalCycleClient({
   const [statusDraft, setStatusDraft] = useState<CycleStatus>(initialCycles[0]?.status ?? 'SETUP')
   const [form, setForm] = useState<CycleFormState>(() => buildDefaultForm(organizations))
   const formSectionRef = useRef<HTMLElement>(null)
+  const cycleNameInputRef = useRef<HTMLInputElement>(null)
   const [deleteBlockedState, setDeleteBlockedState] = useState<{ id: string; cycleName: string } | null>(null)
 
   const cyclesQuery = useQuery({
@@ -401,8 +402,11 @@ export function AdminEvalCycleClient({
 
       return parseResponse<EvalCycleItem>(await res.json())
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       setFeedback({ tone: 'success', message: '평가 주기가 등록되었습니다.' })
+      setSelectedYear(data.evalYear)
+      setSelectedStatus('ALL')
+      setSelectedCycleId(data.id)
       setForm(buildDefaultForm(organizations))
       setEditingCycleId(null)
       await queryClient.invalidateQueries({ queryKey: ['admin-eval-cycles'] })
@@ -621,38 +625,61 @@ export function AdminEvalCycleClient({
         <section className="touch-card p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">주기 목록</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold text-slate-900">주기 목록</h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingCycleId(null)
+                    setForm(buildDefaultForm(organizations))
+                    requestAnimationFrame(() => {
+                      formSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      cycleNameInputRef.current?.focus()
+                    })
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  새 주기 등록
+                </button>
+              </div>
               <p className="mt-1 text-sm text-slate-500">
                 상태, 공개 일정, 평가 건수를 기준으로 운영 상황을 빠르게 확인합니다.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <select
-                value={selectedYear}
-                onChange={(event) =>
-                  setSelectedYear(event.target.value === 'ALL' ? 'ALL' : Number(event.target.value))
-                }
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              >
-                <option value="ALL">전체 연도</option>
-                {yearOptions.map((year) => (
-                  <option key={year} value={year}>
-                    {year}년
-                  </option>
-                ))}
-              </select>
-              <select
-                value={selectedStatus}
-                onChange={(event) => setSelectedStatus(event.target.value as 'ALL' | CycleStatus)}
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              >
-                <option value="ALL">전체 상태</option>
-                {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              <label className="flex items-center gap-2 text-sm">
+                <span className="font-medium text-slate-600">연도</span>
+                <select
+                  value={selectedYear}
+                  onChange={(event) =>
+                    setSelectedYear(event.target.value === 'ALL' ? 'ALL' : Number(event.target.value))
+                  }
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="ALL">전체 연도</option>
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>
+                      {year}년
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <span className="font-medium text-slate-600">상태</span>
+                <select
+                  value={selectedStatus}
+                  onChange={(event) => setSelectedStatus(event.target.value as 'ALL' | CycleStatus)}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                >
+                  <option value="ALL">전체 상태</option>
+                  {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
 
@@ -1107,6 +1134,7 @@ export function AdminEvalCycleClient({
                 <label className="space-y-2 text-sm text-slate-700">
                   <span className="font-medium">주기명</span>
                   <input
+                    ref={cycleNameInputRef}
                     value={form.cycleName}
                     onChange={(event) => setForm((current) => ({ ...current, cycleName: event.target.value }))}
                     placeholder="예: 2026 상반기 평가"
