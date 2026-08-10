@@ -405,6 +405,7 @@ export function AdminEvalCycleClient({
     onSuccess: async (data) => {
       setFeedback({ tone: 'success', message: '평가 주기가 등록되었습니다.' })
       setSelectedYear(data.evalYear)
+      setSelectedStatus('ALL')
       setSelectedCycleId(data.id)
       setForm(buildDefaultForm(organizations))
       setEditingCycleId(null)
