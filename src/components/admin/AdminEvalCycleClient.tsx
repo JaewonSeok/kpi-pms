@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarDays, CircleDot, Clock3, FilePenLine, Flag, Layers3, Plus } from 'lucide-react'
+import { CalendarDays, CircleDot, Clock3, FilePenLine, Flag, Layers3, Plus, Trash2 } from 'lucide-react'
 import {
   buildEvalCycleSummaryLabel,
   buildEvalCycleSummaryMetrics,
@@ -466,6 +466,20 @@ export function AdminEvalCycleClient({
     onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: async (input: { id: string }) => {
+      const res = await fetch(`/api/admin/eval-cycles/${input.id}`, { method: 'DELETE' })
+      return parseResponse<{ id: string }>(await res.json())
+    },
+    onSuccess: async (_, variables) => {
+      setFeedback({ tone: 'success', message: '평가 주기가 삭제되었습니다.' })
+      if (selectedCycleId === variables.id) setSelectedCycleId(null)
+      if (editingCycleId === variables.id) setEditingCycleId(null)
+      await queryClient.invalidateQueries({ queryKey: ['admin-eval-cycles'] })
+    },
+    onError: (error: Error) => setFeedback({ tone: 'error', message: error.message }),
+  })
+
   const cycles = useMemo(() => cyclesQuery.data ?? [], [cyclesQuery.data])
 
   const cycleViews = useMemo<EvalCycleView[]>(
@@ -710,6 +724,24 @@ export function AdminEvalCycleClient({
                   >
                     <FilePenLine className="mr-2 h-4 w-4" />
                     이 주기 편집
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          `'${selectedCycle.cycleName}' 주기를 삭제합니다. 되돌릴 수 없습니다. 계속할까요?`
+                        )
+                      ) {
+                        return
+                      }
+                      deleteMutation.mutate({ id: selectedCycle.id })
+                    }}
+                    className="inline-flex min-h-11 items-center justify-center rounded-2xl border border-red-200 px-4 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    주기 삭제
                   </button>
                 </div>
 
