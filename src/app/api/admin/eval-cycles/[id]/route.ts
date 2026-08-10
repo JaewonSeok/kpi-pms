@@ -181,6 +181,139 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
 
     const { id } = await context.params
+    const url = new URL(request.url)
+    const force = url.searchParams.get('force') === 'true'
+
+    if (force) {
+      const cycleForForce = await prisma.evalCycle.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          cycleName: true,
+          evalYear: true,
+          _count: {
+            select: {
+              evaluations: true,
+              multiFeedbackRounds: true,
+              compensationScenarios: true,
+              aiCompetencyResults: true,
+            },
+          },
+          aiCompetencyCycle: { select: { id: true } },
+          aiCompetencyGateCycle: { select: { id: true } },
+        },
+      })
+
+      if (!cycleForForce) {
+        throw new AppError(404, 'EVAL_CYCLE_NOT_FOUND', '평가 주기를 찾을 수 없습니다.')
+      }
+
+      if (cycleForForce._count.evaluations > 0) {
+        throw new AppError(
+          409,
+          'EVAL_CYCLE_FORCE_DELETE_BLOCKED',
+          `평가 ${cycleForForce._count.evaluations}건이 연결되어 있어 강제 삭제도 할 수 없습니다. 실제 평가 데이터는 보호됩니다.`
+        )
+      }
+
+      const counts = {
+        multiFeedbackRounds: cycleForForce._count.multiFeedbackRounds,
+        compensationScenarios: cycleForForce._count.compensationScenarios,
+        aiCompetencyResults: cycleForForce._count.aiCompetencyResults,
+        hasAiCompetencyCycle: cycleForForce.aiCompetencyCycle !== null,
+        hasAiCompetencyGateCycle: cycleForForce.aiCompetencyGateCycle !== null,
+      }
+
+      try {
+        await prisma.$transaction(
+          async (tx) => {
+            // 1. FeedbackResponse (feedbackId·questionId 양쪽 Restrict FK)
+            await tx.feedbackResponse.deleteMany({
+              where: {
+                OR: [
+                  { feedback: { round: { evalCycleId: id } } },
+                  { question: { round: { evalCycleId: id } } },
+                ],
+              },
+            })
+            // 2. FeedbackQuestion (roundId Restrict)
+            await tx.feedbackQuestion.deleteMany({
+              where: { round: { evalCycleId: id } },
+            })
+            // 3. MultiFeedback (roundId Restrict)
+            await tx.multiFeedback.deleteMany({
+              where: { round: { evalCycleId: id } },
+            })
+            // 4. FeedbackNomination (roundId Restrict)
+            await tx.feedbackNomination.deleteMany({
+              where: { round: { evalCycleId: id } },
+            })
+            // 5. FeedbackReportCache (roundId Restrict)
+            await tx.feedbackReportCache.deleteMany({
+              where: { round: { evalCycleId: id } },
+            })
+            // 6. MultiFeedbackRound — FeedbackRoundCollaborator·OnboardingReviewGeneration Cascade
+            await tx.multiFeedbackRound.deleteMany({
+              where: { evalCycleId: id },
+            })
+            // 7. AiCompetencyResult by evalCycleId (Restrict)
+            await tx.aiCompetencyResult.deleteMany({
+              where: { evalCycleId: id },
+            })
+            // 8. AiCompetencyGateCycle and its children (Cascade)
+            await tx.aiCompetencyGateCycle.deleteMany({
+              where: { evalCycleId: id },
+            })
+            // 9. AiCompetencyCycle and remaining children (Cascade; AiCompetencyResult already deleted)
+            await tx.aiCompetencyCycle.deleteMany({
+              where: { evalCycleId: id },
+            })
+            // 10. CompensationScenario — CompensationScenarioEmployee·CompensationApproval Cascade
+            await tx.compensationScenario.deleteMany({
+              where: { evalCycleId: id },
+            })
+            // 11. EvalCycle — EvaluationAssignment·OnboardingReviewWorkflow·MidReviewCycle·DepartmentScoreIntake Cascade
+            await tx.evalCycle.delete({ where: { id } })
+          },
+          { timeout: 30000, maxWait: 10000 }
+        )
+      } catch (error) {
+        const code =
+          typeof error === 'object' && error && 'code' in error
+            ? (error as { code?: string }).code
+            : null
+        if (code === 'P2003') {
+          const meta =
+            typeof error === 'object' && error && 'meta' in error
+              ? (error as { meta?: { modelName?: string; field_name?: string } }).meta
+              : null
+          const location = meta?.modelName ?? meta?.field_name ?? '알 수 없는 테이블'
+          throw new AppError(
+            409,
+            'EVAL_CYCLE_FORCE_DELETE_REFERENCE_BLOCKED',
+            `${location} 테이블의 참조 제약으로 강제 삭제할 수 없습니다. 조사가 필요합니다.`
+          )
+        }
+        throw error
+      }
+
+      await createAuditLog({
+        userId: session.user.id,
+        action: 'EVAL_CYCLE_FORCE_DELETE',
+        entityType: 'EvalCycle',
+        entityId: id,
+        oldValue: {
+          id: cycleForForce.id,
+          cycleName: cycleForForce.cycleName,
+          evalYear: cycleForForce.evalYear,
+          counts,
+        },
+        newValue: { deleted: true, force: true },
+        ...getClientInfo(request),
+      })
+
+      return successResponse({ id, counts })
+    }
 
     const cycle = await prisma.evalCycle.findUnique({
       where: { id },
