@@ -3,6 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { UpdateEvalCycleSchema } from '@/lib/validations'
+import { createAuditLog, getClientInfo } from '@/lib/audit'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -166,6 +167,104 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
 
     return successResponse(cycle)
+  } catch (error) {
+    return errorResponse(error)
+  }
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
+    if (session.user.role !== 'ROLE_ADMIN') {
+      throw new AppError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
+    }
+
+    const { id } = await context.params
+
+    const cycle = await prisma.evalCycle.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        cycleName: true,
+        evalYear: true,
+        _count: {
+          select: {
+            evaluations: true,
+            evaluationAssignments: true,
+            multiFeedbackRounds: true,
+            onboardingReviewWorkflows: true,
+            compensationScenarios: true,
+            aiCompetencyResults: true,
+            wordCloud360Cycles: true,
+            businessPlans: true,
+            jobDescriptions: true,
+            teamKpiRecommendationSets: true,
+            teamKpiReviewRuns: true,
+            midReviewCycles: true,
+            departmentScoreIntakes: true,
+          },
+        },
+        aiCompetencyCycle: { select: { id: true } },
+        aiCompetencyGateCycle: { select: { id: true } },
+      },
+    })
+
+    if (!cycle) {
+      throw new AppError(404, 'EVAL_CYCLE_NOT_FOUND', '평가 주기를 찾을 수 없습니다.')
+    }
+
+    const blockers: string[] = []
+    if (cycle._count.evaluations > 0) blockers.push(`평가 ${cycle._count.evaluations}건`)
+    if (cycle._count.evaluationAssignments > 0) blockers.push(`평가자 배정 ${cycle._count.evaluationAssignments}건`)
+    if (cycle._count.multiFeedbackRounds > 0) blockers.push(`360 라운드 ${cycle._count.multiFeedbackRounds}건`)
+    if (cycle._count.onboardingReviewWorkflows > 0) blockers.push(`온보딩 검토 ${cycle._count.onboardingReviewWorkflows}건`)
+    if (cycle._count.compensationScenarios > 0) blockers.push(`보상 시나리오 ${cycle._count.compensationScenarios}건`)
+    if (cycle._count.aiCompetencyResults > 0) blockers.push(`AI 역량 결과 ${cycle._count.aiCompetencyResults}건`)
+    if (cycle._count.wordCloud360Cycles > 0) blockers.push(`360 워드클라우드 ${cycle._count.wordCloud360Cycles}건`)
+    if (cycle._count.businessPlans > 0) blockers.push(`사업계획 문서 ${cycle._count.businessPlans}건`)
+    if (cycle._count.jobDescriptions > 0) blockers.push(`직무기술서 ${cycle._count.jobDescriptions}건`)
+    if (cycle._count.teamKpiRecommendationSets > 0) blockers.push(`팀 KPI 추천 ${cycle._count.teamKpiRecommendationSets}건`)
+    if (cycle._count.teamKpiReviewRuns > 0) blockers.push(`팀 KPI 검토 실행 ${cycle._count.teamKpiReviewRuns}건`)
+    if (cycle._count.midReviewCycles > 0) blockers.push(`중간검토 주기 ${cycle._count.midReviewCycles}건`)
+    if (cycle._count.departmentScoreIntakes > 0) blockers.push(`조직 점수 ${cycle._count.departmentScoreIntakes}건`)
+    if (cycle.aiCompetencyCycle !== null) blockers.push('AI 역량 주기')
+    if (cycle.aiCompetencyGateCycle !== null) blockers.push('AI 역량 게이트 주기')
+
+    if (blockers.length > 0) {
+      throw new AppError(
+        409,
+        'EVAL_CYCLE_DELETE_BLOCKED',
+        `${blockers.join(', ')}이 남아 있어 평가 주기를 삭제할 수 없습니다. 먼저 정리해 주세요.`
+      )
+    }
+
+    try {
+      await prisma.evalCycle.delete({ where: { id } })
+    } catch (error) {
+      const code =
+        typeof error === 'object' && error && 'code' in error ? (error as { code?: string }).code : null
+      if (code === 'P2003') {
+        throw new AppError(
+          409,
+          'EVAL_CYCLE_DELETE_REFERENCE_BLOCKED',
+          '연결된 데이터를 정리하지 못해 평가 주기를 삭제할 수 없습니다.'
+        )
+      }
+      throw error
+    }
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'EVAL_CYCLE_DELETE',
+      entityType: 'EvalCycle',
+      entityId: id,
+      oldValue: { id: cycle.id, cycleName: cycle.cycleName, evalYear: cycle.evalYear },
+      newValue: { deleted: true },
+      ...getClientInfo(request),
+    })
+
+    return successResponse({ id })
   } catch (error) {
     return errorResponse(error)
   }
