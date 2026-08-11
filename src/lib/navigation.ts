@@ -66,7 +66,7 @@ export const NAV_ITEMS: NavigationItem[] = [
     children: [
       { label: '평가 배정', href: '/admin/performance-assignments', menuKey: 'EVAL_CYCLE' },
       { label: '평가 일정 캘린더', href: '/admin/performance-calendar', menuKey: 'EVAL_CYCLE' },
-      { label: '공식 전환 체크리스트', href: '/admin/evaluation-readiness', menuKey: 'EVAL_CYCLE' },
+      // (2026-08) 평가 전환 체크리스트 메뉴 숨김 — 라우트·API 유지, URL 직접 접근 가능. 2027년 2026정책 활성화 시 복원 예정.
       { label: '평가 주기', href: '/admin/eval-cycle', menuKey: 'EVAL_CYCLE' },
       { label: '조직 점수 입력', href: '/admin/department-score-intake', menuKey: 'DEPARTMENT_SCORE_INTAKE' },
       { label: '등급 설정', href: '/admin/grades', menuKey: 'GRADE_SETTING' },
