@@ -200,10 +200,11 @@ model GradeSetting {
   maxScore       Int
   levelName      String
   description    String?
-  targetDistRate Float?
-  isActive       Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  targetDistRate         Float?
+  isActive               Boolean                  @default(true)
+  departmentScoreIntakes DepartmentScoreIntake[]
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
   @@unique([orgId, evalYear, gradeName])
   @@unique([orgId, evalYear, gradeOrder])
@@ -676,6 +677,8 @@ model DepartmentScoreIntake {
   score        Float
   source       String     @default("전략기획팀")
   note         String?
+  gradeId      String?
+  grade        GradeSetting? @relation(fields: [gradeId], references: [id], onDelete: Restrict)
   receivedAt   DateTime   @default(now())
   receivedById String
   receivedBy   Employee   @relation("DepartmentScoreIntakeReceiver", fields: [receivedById], references: [id], onDelete: Restrict)
@@ -684,6 +687,7 @@ model DepartmentScoreIntake {
 
   @@unique([evalCycleId, deptId])
   @@index([evalCycleId])
+  @@index([gradeId])
   @@map("department_score_intakes")
 }
 

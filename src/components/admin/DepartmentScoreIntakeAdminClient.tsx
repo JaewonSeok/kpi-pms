@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type {
   DepartmentScoreIntakePageData,
   DepartmentScoreIntakePageDepartment,
+  DepartmentScoreIntakePageGradeSetting,
   DepartmentScoreIntakePageIntake,
 } from '@/server/admin/department-score-intake-page'
 
@@ -37,6 +38,7 @@ type IntakeMap = Record<string, DepartmentScoreIntakePageIntake>
 type DraftState = {
   scoreText: string
   noteText: string
+  gradeId: string | null | undefined
 }
 
 type DraftMap = Record<string, DraftState>
@@ -129,6 +131,7 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
       [deptId]: {
         scoreText: patch.scoreText ?? current[deptId]?.scoreText ?? '',
         noteText: patch.noteText ?? current[deptId]?.noteText ?? '',
+        gradeId: 'gradeId' in patch ? patch.gradeId : current[deptId]?.gradeId,
       },
     }))
   }
@@ -143,6 +146,9 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
     const existing = intakes[dept.id]
     const scoreText = (draft?.scoreText ?? (existing ? String(existing.score) : '')).trim()
     const noteText = (draft?.noteText ?? existing?.note ?? '').trim()
+    // gradeId: draft에 있으면 draft 값(null 포함), 없으면 기존 gradeId 유지(undefined → 서버가 skip)
+    const gradeId: string | null | undefined =
+      draft && 'gradeId' in draft ? draft.gradeId : undefined
 
     if (!scoreText) {
       setErrors((current) => ({ ...current, [dept.id]: '점수를 입력해 주세요.' }))
@@ -171,6 +177,7 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
           deptId: dept.id,
           score: scoreValue,
           note: noteText ? noteText : undefined,
+          ...(typeof gradeId !== 'undefined' ? { gradeId } : {}),
         }),
       })
       const json = await response.json().catch(() => null)
@@ -182,6 +189,7 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
         deptId: string
         score: number
         note: string | null
+        gradeId: string | null
         receivedAt: string
         receivedById: string
       }
@@ -192,6 +200,7 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
           deptId: saved.deptId,
           score: saved.score,
           note: saved.note,
+          gradeId: saved.gradeId,
           receivedAt: new Date(saved.receivedAt),
           receivedById: saved.receivedById,
         },
@@ -268,6 +277,10 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
               draft?.scoreText ??
               (existing ? String(existing.score) : '')
             const noteText = draft?.noteText ?? existing?.note ?? ''
+            const gradeIdValue: string | null =
+              draft && 'gradeId' in draft
+                ? (draft.gradeId ?? null)
+                : (existing?.gradeId ?? null)
 
             return (
               <div
@@ -336,6 +349,28 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 disabled:bg-slate-100"
                       />
                     </label>
+                    {props.gradeSettings.length > 0 ? (
+                      <label className="block text-xs font-semibold text-slate-600">
+                        등급
+                        <select
+                          value={gradeIdValue ?? ''}
+                          onChange={(event) =>
+                            updateDraft(dept.id, {
+                              gradeId: event.target.value === '' ? null : event.target.value,
+                            })
+                          }
+                          disabled={isSaving}
+                          className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:bg-slate-100"
+                        >
+                          <option value="">미지정</option>
+                          {props.gradeSettings.map((g: DepartmentScoreIntakePageGradeSetting) => (
+                            <option key={g.id} value={g.id}>
+                              {g.gradeName} ({g.levelName})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
                     {errorMessage ? (
                       <p className="text-xs font-medium text-red-600">{errorMessage}</p>
                     ) : null}
