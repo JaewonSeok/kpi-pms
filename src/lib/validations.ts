@@ -3264,6 +3264,7 @@ export const CreateDepartmentScoreIntakeSchema = z.object({
   deptId: z.string().min(1),
   score: z.number().min(0, '점수는 0 이상이어야 합니다').max(130, '점수는 130 이하여야 합니다'),
   note: z.string().max(1000).optional(),
+  gradeId: z.string().min(1).nullable().optional(),
 })
 
 // M1-C: 조직 30% 점수 내부 가중치 — EvalCycle.performanceDesignConfig.policy2026OrganizationWeights에 저장.

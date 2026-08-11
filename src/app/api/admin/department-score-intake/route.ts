@@ -22,7 +22,7 @@ export async function POST(request: Request) {
       throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0].message)
     }
 
-    const { evalCycleId, deptId, score, note } = validated.data
+    const { evalCycleId, deptId, score, note, gradeId } = validated.data
     const receivedById = session.user.id
     const now = new Date()
 
@@ -33,6 +33,7 @@ export async function POST(request: Request) {
         id: true,
         score: true,
         note: true,
+        gradeId: true,
         receivedById: true,
         receivedAt: true,
       },
@@ -45,12 +46,15 @@ export async function POST(request: Request) {
         deptId,
         score,
         note,
+        gradeId: gradeId ?? null,
         receivedById,
         // source는 DB default '전략기획팀'에 위임 (사용자 명시).
       },
       update: {
         score,
         note: note ?? null,
+        // gradeId: undefined → 기존 값 유지, null → 등급 삭제, string → 갱신
+        ...(typeof gradeId !== 'undefined' ? { gradeId } : {}),
         receivedById,
         receivedAt: now,
       },
@@ -65,6 +69,7 @@ export async function POST(request: Request) {
         ? {
             score: previous.score,
             note: previous.note,
+            gradeId: previous.gradeId,
             receivedById: previous.receivedById,
             receivedAt: previous.receivedAt,
           }
@@ -74,6 +79,7 @@ export async function POST(request: Request) {
         deptId,
         score,
         note: note ?? null,
+        gradeId: gradeId ?? null,
         receivedById,
       },
       ...getClientInfo(request),

@@ -7,6 +7,15 @@ import { SELF_MANAGED_DIVISION_IDS } from '@/config/evaluation-scope'
 // 화면 라우팅 레벨에서 ROLE_ADMIN 게이트가 보장된다고 가정하고 권한 검증은 본 로더에서 안 한다
 // (eval-cycles 등 기존 admin 로더 동일 패턴).
 
+export type DepartmentScoreIntakePageGradeSetting = {
+  id: string
+  gradeName: string
+  levelName: string
+  gradeOrder: number
+  minScore: number
+  maxScore: number
+}
+
 export type DepartmentScoreIntakePageCycle = {
   id: string
   cycleName: string
@@ -28,6 +37,7 @@ export type DepartmentScoreIntakePageIntake = {
   deptId: string
   score: number
   note: string | null
+  gradeId: string | null
   receivedAt: Date
   receivedById: string
 }
@@ -37,6 +47,7 @@ export type DepartmentScoreIntakePageData = {
   selectedCycleId: string | null
   departments: DepartmentScoreIntakePageDepartment[]
   intakes: DepartmentScoreIntakePageIntake[]
+  gradeSettings: DepartmentScoreIntakePageGradeSetting[]
 }
 
 export async function getDepartmentScoreIntakePageData(params: {
@@ -116,9 +127,26 @@ export async function getDepartmentScoreIntakePageData(params: {
           deptId: true,
           score: true,
           note: true,
+          gradeId: true,
           receivedAt: true,
           receivedById: true,
         },
+      })
+    : []
+
+  const selectedEvalYear = cycles.find((c) => c.id === selectedCycleId)?.evalYear ?? null
+  const gradeSettings: DepartmentScoreIntakePageGradeSetting[] = selectedEvalYear
+    ? await prisma.gradeSetting.findMany({
+        where: { evalYear: selectedEvalYear, isActive: true },
+        select: {
+          id: true,
+          gradeName: true,
+          levelName: true,
+          gradeOrder: true,
+          minScore: true,
+          maxScore: true,
+        },
+        orderBy: { gradeOrder: 'asc' },
       })
     : []
 
@@ -127,5 +155,6 @@ export async function getDepartmentScoreIntakePageData(params: {
     selectedCycleId,
     departments,
     intakes,
+    gradeSettings,
   }
 }
