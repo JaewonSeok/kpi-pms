@@ -126,14 +126,28 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
   }
 
   function updateDraft(deptId: string, patch: Partial<DraftState>) {
-    setDrafts((current) => ({
-      ...current,
-      [deptId]: {
-        scoreText: patch.scoreText ?? current[deptId]?.scoreText ?? '',
-        noteText: patch.noteText ?? current[deptId]?.noteText ?? '',
-        gradeId: 'gradeId' in patch ? patch.gradeId : current[deptId]?.gradeId,
-      },
-    }))
+    // intakes는 state — 여기서 읽는 시점은 현재 렌더의 값이므로 stale 없음.
+    // setDrafts 콜백 안에서 직접 읽지 않고 호출 전에 캡처해서 전달.
+    const existingIntake = intakes[deptId]
+    setDrafts((current) => {
+      const currentDraft = current[deptId]
+      return {
+        ...current,
+        [deptId]: {
+          scoreText:
+            patch.scoreText ?? currentDraft?.scoreText ?? (existingIntake ? String(existingIntake.score) : ''),
+          noteText: patch.noteText ?? currentDraft?.noteText ?? (existingIntake?.note ?? ''),
+          // 'gradeId' in patch: null(미지정)과 undefined를 구분하는 현재 패턴 유지.
+          // currentDraft가 없으면 existingIntake.gradeId로 초기화.
+          gradeId:
+            'gradeId' in patch
+              ? patch.gradeId
+              : currentDraft !== undefined
+                ? currentDraft.gradeId
+                : existingIntake?.gradeId,
+        },
+      }
+    })
   }
 
   async function handleSave(dept: DepartmentScoreIntakePageDepartment) {

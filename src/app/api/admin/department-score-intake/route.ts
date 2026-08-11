@@ -69,6 +69,7 @@ export async function POST(request: Request) {
         ? {
             score: previous.score,
             note: previous.note,
+            gradeId: previous.gradeId,
             receivedById: previous.receivedById,
             receivedAt: previous.receivedAt,
           }
