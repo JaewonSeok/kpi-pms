@@ -344,6 +344,17 @@ function parseMutedTypes(value: Prisma.JsonValue | null | undefined) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
+function getEmailAllowlist(): Set<string> {
+  const raw = process.env.NOTIFICATION_EMAIL_ALLOWLIST
+  if (!raw) return new Set()
+  return new Set(
+    raw
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+  )
+}
+
 function getEmailTransport() {
   if (!isFeatureEnabled('emailDelivery') || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     return nodemailer.createTransport({ jsonTransport: true })
@@ -884,6 +895,20 @@ async function deliverEmailJob(
   db: PrismaClient,
   job: Awaited<ReturnType<typeof getProcessableJobs>>[number]
 ) {
+  const allowlist = getEmailAllowlist()
+  const recipientEmail = job.recipient.gwsEmail
+  if (allowlist.size > 0 && (!recipientEmail || !allowlist.has(recipientEmail.trim().toLowerCase()))) {
+    await db.notificationJob.update({
+      where: { id: job.id },
+      data: {
+        status: NotificationJobStatus.SUPPRESSED,
+        suppressedAt: new Date(),
+        suppressReason: 'NOT_IN_ALLOWLIST',
+      },
+    })
+    return
+  }
+
   const payloadRecord =
     job.payload && typeof job.payload === 'object' && !Array.isArray(job.payload)
       ? (job.payload as Record<string, unknown>)
