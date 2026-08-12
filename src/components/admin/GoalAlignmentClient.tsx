@@ -62,6 +62,16 @@ export function GoalAlignmentClient({ data }: { data: GoalAlignmentPageData }) {
 
   async function handleReminder(reminderType: 'goal' | 'checkpoint') {
     setActionMessage('')
+    const label = reminderType === 'goal' ? '목표 수립' : '체크인 현황'
+    const confirmed = window.confirm(
+      `${label} 리마인드를 지금 큐에 등록합니다.\n\n` +
+        '대상자 전원에게 알림이 생성되며, 되돌릴 수 없습니다.\n' +
+        '취소하면 아무 것도 등록되지 않습니다.\n\n' +
+        '계속하시겠습니까?'
+    )
+    if (!confirmed) {
+      return
+    }
     try {
       const response = await fetch('/api/cron/notifications', {
         method: 'POST',
