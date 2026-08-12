@@ -13,6 +13,8 @@ import { prisma } from './prisma'
 import { isFeatureEnabled } from './feature-flags'
 import { buildReviewEmailContent, hasReviewEmailHtml } from './review-email-editor'
 
+const STALE_JOB_EXECUTION_MS = 10 * 60 * 1000
+
 type TemplateSeed = {
   code: string
   name: string
@@ -1308,6 +1310,29 @@ export async function runNotificationJob(
   },
   db: PrismaClient = prisma
 ) {
+  const staleThreshold = new Date(Date.now() - STALE_JOB_EXECUTION_MS)
+  const activeExecution = await db.jobExecution.findFirst({
+    where: {
+      status: JobExecutionStatus.RUNNING,
+      startedAt: { gt: staleThreshold },
+      jobType: { in: [JobExecutionType.SCHEDULER, JobExecutionType.DISPATCH] },
+    },
+    orderBy: { startedAt: 'desc' },
+  })
+  if (activeExecution) {
+    return {
+      executionId: activeExecution.id,
+      skipped: true,
+      skipReason: 'ALREADY_RUNNING',
+      processedCount: 0,
+      successCount: 0,
+      failedCount: 0,
+      retriedCount: 0,
+      deadLetterCount: 0,
+      suppressedCount: 0,
+    }
+  }
+
   const execution = await db.jobExecution.create({
     data: {
       jobName: `notification-${params.mode}`,
@@ -1367,5 +1392,18 @@ export async function runNotificationJob(
       },
     })
     throw error
+  } finally {
+    try {
+      await db.jobExecution.updateMany({
+        where: { id: execution.id, status: JobExecutionStatus.RUNNING },
+        data: {
+          status: JobExecutionStatus.FAILED,
+          finishedAt: new Date(),
+          errorMessage: 'UNRESOLVED_RUNNING_STATE',
+        },
+      })
+    } catch {
+      // finally 내부에서 throw 하면 원래 예외를 덮어쓴다. 삼킨다.
+    }
   }
 }

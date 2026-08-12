@@ -6,6 +6,8 @@ import { NotificationCronSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { isAuthorizedCronRequest } from '@/lib/cron-auth'
 
+export const maxDuration = 120
+
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
