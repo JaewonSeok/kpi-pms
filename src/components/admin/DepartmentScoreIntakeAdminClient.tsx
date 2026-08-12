@@ -351,18 +351,6 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
                         className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 disabled:bg-slate-100"
                       />
                     </label>
-                    <label className="block text-xs font-semibold text-slate-600">
-                      비고
-                      <input
-                        type="text"
-                        value={noteText}
-                        onChange={(event) => updateDraft(dept.id, { noteText: event.target.value })}
-                        disabled={isSaving}
-                        placeholder="선택 입력 (예: 1차 채점)"
-                        maxLength={1000}
-                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 disabled:bg-slate-100"
-                      />
-                    </label>
                     {props.gradeSettings.length > 0 ? (
                       <label className="block text-xs font-semibold text-slate-600">
                         등급
@@ -385,6 +373,18 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
                         </select>
                       </label>
                     ) : null}
+                    <label className="block text-xs font-semibold text-slate-600">
+                      비고
+                      <input
+                        type="text"
+                        value={noteText}
+                        onChange={(event) => updateDraft(dept.id, { noteText: event.target.value })}
+                        disabled={isSaving}
+                        placeholder="선택 입력 (예: 1차 채점)"
+                        maxLength={1000}
+                        className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700 disabled:bg-slate-100"
+                      />
+                    </label>
                     {errorMessage ? (
                       <p className="text-xs font-medium text-red-600">{errorMessage}</p>
                     ) : null}
