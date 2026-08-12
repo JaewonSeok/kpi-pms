@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type {
   DepartmentScoreIntakePageData,
@@ -111,10 +111,18 @@ function buildOrderedTree(
 
 export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePageData) {
   const router = useRouter()
+  const [, startTransition] = useTransition()
   const [intakes, setIntakes] = useState<IntakeMap>(() => buildIntakeMap(props.intakes))
   const [drafts, setDrafts] = useState<DraftMap>({})
   const [saving, setSaving] = useState<SavingMap>({})
   const [errors, setErrors] = useState<ErrorMap>({})
+
+  useEffect(() => {
+    setIntakes(buildIntakeMap(props.intakes))
+    setDrafts({})
+    setSaving({})
+    setErrors({})
+  }, [props.intakes])
 
   const orderedDepartments = useMemo(() => buildOrderedTree(props.departments), [props.departments])
   const inputCount = Object.keys(intakes).length
@@ -122,7 +130,7 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
 
   function handleCycleChange(nextCycleId: string) {
     if (!nextCycleId) return
-    router.push(`/admin/department-score-intake?evalCycleId=${encodeURIComponent(nextCycleId)}`)
+    startTransition(() => router.push(`/admin/department-score-intake?evalCycleId=${encodeURIComponent(nextCycleId)}`))
   }
 
   function updateDraft(deptId: string, patch: Partial<DraftState>) {
