@@ -1219,15 +1219,55 @@ export async function enqueueLifecycleReminders(
   }
 
   const yearMonth = now.toISOString().slice(0, 7)
-  if (shouldQueueCheckpoints) {
+  if (shouldQueueCheckpoints && monthlyKpis.length > 0) {
+    const checkpointDedupeToken = `checkpoint:${yearMonth}`
+    const checkpointChannels = [NotificationDeliveryChannel.IN_APP, NotificationDeliveryChannel.EMAIL]
+
+    const candidateKeys: string[] = []
     for (const record of monthlyKpis) {
+      for (const channel of checkpointChannels) {
+        candidateKeys.push(
+          buildNotificationIdempotencyKey({
+            recipientId: record.employeeId,
+            type: NotificationType.CHECKPOINT_REMINDER,
+            channel,
+            sourceType: 'PersonalKpi',
+            sourceId: record.id,
+            dedupeToken: checkpointDedupeToken,
+          })
+        )
+      }
+    }
+
+    const existingRows = await db.notificationJob.findMany({
+      where: { idempotencyKey: { in: candidateKeys } },
+      select: { idempotencyKey: true },
+    })
+    const existingKeys = new Set(existingRows.map((row) => row.idempotencyKey))
+
+    for (const record of monthlyKpis) {
+      const recordKeys = checkpointChannels.map((channel) =>
+        buildNotificationIdempotencyKey({
+          recipientId: record.employeeId,
+          type: NotificationType.CHECKPOINT_REMINDER,
+          channel,
+          sourceType: 'PersonalKpi',
+          sourceId: record.id,
+          dedupeToken: checkpointDedupeToken,
+        })
+      )
+      if (recordKeys.every((key) => existingKeys.has(key))) {
+        duplicates += recordKeys.length
+        continue
+      }
+
       const result = await queueNotification(
         {
           recipientId: record.employeeId,
           type: NotificationType.CHECKPOINT_REMINDER,
           sourceType: 'PersonalKpi',
           sourceId: record.id,
-          dedupeToken: `checkpoint:${yearMonth}`,
+          dedupeToken: checkpointDedupeToken,
           payload: {
             yearMonth,
             link: '/kpi/monthly',
