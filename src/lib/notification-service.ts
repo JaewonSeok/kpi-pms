@@ -1074,7 +1074,9 @@ export async function enqueueLifecycleReminders(
   db: PrismaClient = prisma,
   reminderTypes?: NotificationReminderType[]
 ) {
+  const t0 = Date.now()
   await ensureDefaultNotificationTemplates(db)
+  console.log(`[cron-perf] ensure-templates ${Date.now() - t0}ms`)
 
   const requestedReminderTypes = reminderTypes?.length ? new Set(reminderTypes) : null
   const shouldQueueGoals = !requestedReminderTypes || requestedReminderTypes.has('goal')
@@ -1136,6 +1138,7 @@ export async function enqueueLifecycleReminders(
       take: 200,
     }),
   ])
+  console.log(`[cron-perf] parallel-queries ${Date.now() - t0}ms employees=${activeEmployees.length} cycles=${cycles.length} checkIns=${checkIns.length} pendingEvals=${pendingEvaluations.length} monthlyKpis=${monthlyKpis.length}`)
 
   let created = 0
   let suppressed = 0
@@ -1164,6 +1167,7 @@ export async function enqueueLifecycleReminders(
         duplicates += result.duplicates
       }
     }
+    console.log(`[cron-perf] goal-block ${Date.now() - t0}ms`)
 
     if (cycle.ceoAdjustStart) {
       for (const employee of activeEmployees.filter((item) =>
@@ -1188,6 +1192,7 @@ export async function enqueueLifecycleReminders(
         duplicates += result.duplicates
       }
     }
+    console.log(`[cron-perf] calibration-block ${Date.now() - t0}ms`)
 
     if (cycle.resultOpenStart) {
       const evaluationTargets = await db.evaluation.findMany({
@@ -1216,6 +1221,7 @@ export async function enqueueLifecycleReminders(
         duplicates += result.duplicates
       }
     }
+    console.log(`[cron-perf] result-block ${Date.now() - t0}ms`)
   }
 
   const yearMonth = now.toISOString().slice(0, 7)
@@ -1279,6 +1285,7 @@ export async function enqueueLifecycleReminders(
       suppressed += result.suppressed
       duplicates += result.duplicates
     }
+    console.log(`[cron-perf] checkpoint-block ${Date.now() - t0}ms candidateKeys=${candidateKeys.length} existingKeys=${existingKeys.size}`)
   }
 
   const evaluationBuckets = new Map<
@@ -1317,6 +1324,7 @@ export async function enqueueLifecycleReminders(
     suppressed += result.suppressed
     duplicates += result.duplicates
   }
+  console.log(`[cron-perf] evaluation-block ${Date.now() - t0}ms`)
 
   for (const checkIn of checkIns) {
     for (const recipient of [checkIn.owner, checkIn.manager]) {
@@ -1341,7 +1349,9 @@ export async function enqueueLifecycleReminders(
       duplicates += result.duplicates
     }
   }
+  console.log(`[cron-perf] meeting-block ${Date.now() - t0}ms`)
 
+  console.log(`[cron-perf] enqueue-total ${Date.now() - t0}ms created=${created} suppressed=${suppressed} duplicates=${duplicates}`)
   return {
     processedCount: created + suppressed + duplicates,
     successCount: created,
@@ -1392,16 +1402,19 @@ export async function runNotificationJob(
     },
   })
 
+  const t0 = Date.now()
   try {
     const scheduleSummary =
       params.mode === 'dispatch'
         ? { processedCount: 0, successCount: 0, failedCount: 0, retriedCount: 0, deadLetterCount: 0, suppressedCount: 0 }
         : await enqueueLifecycleReminders(db, params.reminderTypes)
+    console.log(`[cron-perf] enqueueLifecycleReminders ${Date.now() - t0}ms`)
 
     const dispatchSummary =
       params.mode === 'schedule'
         ? { processedCount: 0, successCount: 0, failedCount: 0, retriedCount: 0, deadLetterCount: 0, suppressedCount: 0 }
         : await dispatchDueNotificationJobs(db)
+    console.log(`[cron-perf] dispatchDueNotificationJobs ${Date.now() - t0}ms`)
 
     const merged = {
       processedCount: scheduleSummary.processedCount + dispatchSummary.processedCount,
