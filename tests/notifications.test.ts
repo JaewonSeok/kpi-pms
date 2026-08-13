@@ -20,6 +20,7 @@ async function main() {
     getNextDigestDispatchTime,
     getRetryDelayMinutes,
     isWithinQuietHours,
+    toAbsoluteNotificationLink,
   } = await import('../src/lib/notification-service')
   const { NotificationCronSchema } = await import('../src/lib/validations')
 
@@ -83,6 +84,33 @@ async function main() {
 
     assert.deepEqual(goalOnly.reminderTypes, ['goal'])
     assert.deepEqual(checkpointOnly.reminderTypes, ['checkpoint'])
+  })
+
+  run('toAbsoluteNotificationLink — 빈 문자열은 빈 문자열 반환', () => {
+    assert.equal(toAbsoluteNotificationLink('', 'https://example.com'), '')
+    assert.equal(toAbsoluteNotificationLink('   ', 'https://example.com'), '')
+  })
+
+  run('toAbsoluteNotificationLink — 상대 경로를 절대 URL로 변환', () => {
+    assert.equal(
+      toAbsoluteNotificationLink('/kpi/monthly', 'https://kpi-pms.vercel.app'),
+      'https://kpi-pms.vercel.app/kpi/monthly'
+    )
+  })
+
+  run('toAbsoluteNotificationLink — 이미 절대 URL이면 원문 반환 (멱등성)', () => {
+    const url = 'https://kpi-pms.vercel.app/evaluation/results'
+    assert.equal(toAbsoluteNotificationLink(url, 'https://other.example.com'), url)
+  })
+
+  run('toAbsoluteNotificationLink — // 로 시작하면 원문 반환', () => {
+    const url = '//cdn.example.com/image.png'
+    assert.equal(toAbsoluteNotificationLink(url, 'https://kpi-pms.vercel.app'), url)
+  })
+
+  run('toAbsoluteNotificationLink — 잘못된 base URL 로 new URL 이 throw 하면 원문 반환', () => {
+    // new URL(link, base) 는 base 가 유효한 절대 URL 이 아니면 throw 한다
+    assert.equal(toAbsoluteNotificationLink('/kpi/monthly', 'not-a-valid-base'), '/kpi/monthly')
   })
 
   console.log('Notification tests completed')

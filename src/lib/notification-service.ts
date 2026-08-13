@@ -15,6 +15,24 @@ import { buildReviewEmailContent, hasReviewEmailHtml } from './review-email-edit
 
 const STALE_JOB_EXECUTION_MS = 10 * 60 * 1000
 
+// Priority mirrors auth-env.ts:194 readRequiredUrl (NEXTAUTH_URL → AUTH_URL → fallback)
+function getNotificationBaseUrl(): string {
+  const raw = (process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? '').trim()
+  return raw.startsWith('http://') || raw.startsWith('https://')
+    ? raw.replace(/\/$/, '')
+    : 'https://kpi-pms.vercel.app'
+}
+
+export function toAbsoluteNotificationLink(link: string, baseUrl: string): string {
+  if (!link.trim()) return ''
+  if (link.startsWith('http://') || link.startsWith('https://') || link.startsWith('//')) return link
+  try {
+    return new URL(link, baseUrl).toString()
+  } catch {
+    return link
+  }
+}
+
 type TemplateSeed = {
   code: string
   name: string
@@ -729,17 +747,22 @@ export async function queueNotification(
       template.defaultLink ??
       ''
 
+    const renderedLink =
+      template.channel === NotificationDeliveryChannel.EMAIL
+        ? toAbsoluteNotificationLink(resolvedLink, getNotificationBaseUrl())
+        : resolvedLink
+
     const title = input.subjectOverride?.trim()
-      ? renderTemplate(input.subjectOverride, payload)
-      : renderTemplate(template.subjectTemplate, payload)
+      ? renderTemplate(input.subjectOverride, { ...payload, link: renderedLink })
+      : renderTemplate(template.subjectTemplate, { ...payload, link: renderedLink })
     const renderedMessage = input.bodyOverride?.trim()
       ? renderTemplate(input.bodyOverride, {
           ...payload,
-          link: resolvedLink,
+          link: renderedLink,
         })
       : renderTemplate(template.bodyTemplate, {
           ...payload,
-          link: resolvedLink,
+          link: renderedLink,
         })
     const richMessage = hasReviewEmailHtml(renderedMessage) ? buildReviewEmailContent(renderedMessage) : null
     const message = richMessage?.text ?? renderedMessage
