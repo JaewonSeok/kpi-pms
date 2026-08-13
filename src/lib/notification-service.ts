@@ -871,12 +871,13 @@ async function markJobFailure(db: PrismaClient, jobId: string, error: unknown) {
   return { deadLetter: false }
 }
 
-async function getProcessableJobs(db: PrismaClient) {
+async function getProcessableJobs(db: PrismaClient, jobIds?: string[]) {
   const now = new Date()
   return db.notificationJob.findMany({
     where: {
       status: { in: [NotificationJobStatus.QUEUED, NotificationJobStatus.RETRY_PENDING] },
       availableAt: { lte: now },
+      ...(jobIds ? { id: { in: jobIds } } : {}),
     },
     include: {
       recipient: {
@@ -1020,8 +1021,11 @@ async function deliverDigestGroup(
   return { processed: jobs.length, success: jobs.length }
 }
 
-export async function dispatchDueNotificationJobs(db: PrismaClient = prisma): Promise<DispatchSummary> {
-  const jobs = await getProcessableJobs(db)
+export async function dispatchDueNotificationJobs(
+  db: PrismaClient = prisma,
+  jobIds?: string[]
+): Promise<DispatchSummary> {
+  const jobs = await getProcessableJobs(db, jobIds)
   const summary: DispatchSummary = {
     processedCount: jobs.length,
     successCount: 0,
