@@ -17,7 +17,7 @@ export const AUTH_PUBLIC_PATHS = [
   '/icon-512.svg',
 ] as const
 
-export const AUTH_PUBLIC_PATH_PREFIXES = ['/_next', '/icons', '/api/auth', '/manifest'] as const
+export const AUTH_PUBLIC_PATH_PREFIXES = ['/_next', '/icons', '/api/auth', '/api/cron', '/api/health', '/manifest'] as const
 const AUTH_LOGIN_PATH_PREFIXES = ['/login', '/signin'] as const
 const STATIC_ASSET_PATTERN =
   /\.(?:css|js|mjs|png|jpg|jpeg|gif|svg|ico|webp|map|txt|xml|json|woff2?|ttf|eot)$/i
