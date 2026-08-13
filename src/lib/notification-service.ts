@@ -299,31 +299,41 @@ function buildTemplateCode(type: NotificationType, channel: NotificationDelivery
   return `${type.toLowerCase().replace(/_/g, '-')}-${channel.toLowerCase().replace(/_/g, '-')}`
 }
 
+let defaultTemplatesReady: Promise<void> | null = null
+
 export async function ensureDefaultNotificationTemplates(db: PrismaClient = prisma) {
-  for (const template of DEFAULT_NOTIFICATION_TEMPLATES) {
-    await db.notificationTemplate.upsert({
-      where: { code: template.code },
-      update: {
-        name: template.name,
-        type: template.type,
-        channel: template.channel,
-        subjectTemplate: template.subjectTemplate,
-        bodyTemplate: template.bodyTemplate,
-        defaultLink: template.defaultLink,
-        isDigestCompatible: template.isDigestCompatible ?? true,
-      },
-      create: {
-        code: template.code,
-        name: template.name,
-        type: template.type,
-        channel: template.channel,
-        subjectTemplate: template.subjectTemplate,
-        bodyTemplate: template.bodyTemplate,
-        defaultLink: template.defaultLink,
-        isDigestCompatible: template.isDigestCompatible ?? true,
-      },
+  if (!defaultTemplatesReady) {
+    defaultTemplatesReady = (async () => {
+      for (const template of DEFAULT_NOTIFICATION_TEMPLATES) {
+        await db.notificationTemplate.upsert({
+          where: { code: template.code },
+          update: {
+            name: template.name,
+            type: template.type,
+            channel: template.channel,
+            subjectTemplate: template.subjectTemplate,
+            bodyTemplate: template.bodyTemplate,
+            defaultLink: template.defaultLink,
+            isDigestCompatible: template.isDigestCompatible ?? true,
+          },
+          create: {
+            code: template.code,
+            name: template.name,
+            type: template.type,
+            channel: template.channel,
+            subjectTemplate: template.subjectTemplate,
+            bodyTemplate: template.bodyTemplate,
+            defaultLink: template.defaultLink,
+            isDigestCompatible: template.isDigestCompatible ?? true,
+          },
+        })
+      }
+    })().catch((error) => {
+      defaultTemplatesReady = null
+      throw error
     })
   }
+  return defaultTemplatesReady
 }
 
 export async function ensureNotificationPreference(employeeId: string, db: PrismaClient = prisma) {
