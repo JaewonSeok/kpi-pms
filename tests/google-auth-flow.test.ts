@@ -174,6 +174,8 @@ run('middleware keeps auth routes and PWA assets public while protecting app pag
   assert.equal(isAuthPublicPath('/signin'), true)
   assert.equal(isAuthPublicPath('/api/auth/callback/google'), true)
   assert.equal(isAuthPublicPath('/api/auth/signin/google'), true)
+  assert.equal(isAuthPublicPath('/api/cron/notifications'), true)
+  assert.equal(isAuthPublicPath('/api/health/live'), true)
   assert.equal(isAuthPublicPath('/manifest.json'), true)
   assert.equal(isAuthPublicPath('/styles/app.css'), true)
   assert.equal(isAuthPublicPath('/dashboard'), false)
