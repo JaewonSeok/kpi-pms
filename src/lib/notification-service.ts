@@ -1135,10 +1135,13 @@ export async function enqueueLifecycleReminders(
       include: {
         employee: { select: { id: true, empName: true } },
       },
-      take: 200,
+      take: 500,
     }),
   ])
   console.log(`[cron-perf] parallel-queries ${Date.now() - t0}ms employees=${activeEmployees.length} cycles=${cycles.length} checkIns=${checkIns.length} pendingEvals=${pendingEvaluations.length} monthlyKpis=${monthlyKpis.length}`)
+  if (monthlyKpis.length >= 500) {
+    console.warn(`[notification] personalKpi take 상한 도달: ${monthlyKpis.length}건. 일부 대상이 누락될 수 있음`)
+  }
 
   let created = 0
   let suppressed = 0
