@@ -6,7 +6,7 @@ import { NotificationCronSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { isAuthorizedCronRequest } from '@/lib/cron-auth'
 
-export const maxDuration = 120
+export const maxDuration = 300
 
 export async function GET(request: Request) {
   try {
