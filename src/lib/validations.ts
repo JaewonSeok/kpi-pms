@@ -2112,6 +2112,11 @@ export const NotificationTemplateTestSendSchema = z.object({
   previewPayload: z.record(z.string(), z.unknown()).default({}),
 })
 
+export const ManualNotificationSendSchema = z.object({
+  employeeIds: z.array(z.string().min(1)).min(1).max(100),
+  reminderType: z.enum(['goal', 'checkpoint']),
+})
+
 export const NotificationOpsAiActionSchema = z.object({
   action: z.enum([
     'summarize-ops',

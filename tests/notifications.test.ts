@@ -24,7 +24,7 @@ async function main() {
     dispatchDueNotificationJobs,
     groupMonthlyKpisByEmployee,
   } = await import('../src/lib/notification-service')
-  const { NotificationCronSchema } = await import('../src/lib/validations')
+  const { NotificationCronSchema, ManualNotificationSendSchema } = await import('../src/lib/validations')
 
   run('idempotency key prevents duplicate reminder identity drift', () => {
     const first = buildNotificationIdempotencyKey({
@@ -185,6 +185,28 @@ async function main() {
   run('groupMonthlyKpisByEmployee — 빈 배열 → 대상 0건', () => {
     const result = groupMonthlyKpisByEmployee([])
     assert.equal(result.size, 0)
+  })
+
+  run('ManualNotificationSendSchema — employeeIds 빈 배열 → 실패', () => {
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: [], reminderType: 'checkpoint' })
+    assert.equal(result.success, false)
+  })
+
+  run('ManualNotificationSendSchema — employeeIds 101개 → 실패', () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `emp-${i}`)
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ids, reminderType: 'checkpoint' })
+    assert.equal(result.success, false)
+  })
+
+  run('ManualNotificationSendSchema — employeeIds 100개 → 통과', () => {
+    const ids = Array.from({ length: 100 }, (_, i) => `emp-${i}`)
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ids, reminderType: 'goal' })
+    assert.equal(result.success, true)
+  })
+
+  run('ManualNotificationSendSchema — reminderType 미지원 값 → 실패', () => {
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], reminderType: 'evaluation' })
+    assert.equal(result.success, false)
   })
 
   console.log('Notification tests completed')

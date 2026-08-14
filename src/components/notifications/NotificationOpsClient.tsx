@@ -4,13 +4,20 @@ import Link from 'next/link'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-type Tab = 'templates' | 'executions' | 'failures' | 'tools' | 'ai'
+type Tab = 'templates' | 'executions' | 'failures' | 'tools' | 'ai' | 'manual'
 type Period = 'TODAY' | 'LAST_7_DAYS' | 'LAST_30_DAYS'
 type Channel = 'ALL' | 'IN_APP' | 'EMAIL'
 type RunMode = 'all' | 'schedule' | 'dispatch'
 type ReminderType = 'goal' | 'checkpoint'
 type Banner = { tone: 'success' | 'error' | 'info'; message: string }
 type AiAction = 'summarize-ops' | 'summarize-dead-letters' | 'validate-template-variables' | 'generate-ops-report'
+
+type ManualEmployee = {
+  id: string
+  empId: string
+  empName: string
+  department: { deptName: string }
+}
 
 type Template = {
   id: string
@@ -147,6 +154,11 @@ export function NotificationOpsClient() {
   const [previewPayloadText, setPreviewPayloadText] = useState(`{\n  "employeeName": "홍길동",\n  "cycleName": "2026 상반기",\n  "dueDate": "2026-03-31",\n  "link": "/evaluation/results"\n}`)
   const [aiPreview, setAiPreview] = useState<AiPreview | null>(null)
   const [lastAiAction, setLastAiAction] = useState<AiAction>('summarize-ops')
+  const [manualDeptFilter, setManualDeptFilter] = useState<string>('ALL')
+  const [manualNameSearch, setManualNameSearch] = useState<string>('')
+  const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set())
+  const [manualReminderType, setManualReminderType] = useState<'goal' | 'checkpoint'>('checkpoint')
+  const [manualResult, setManualResult] = useState<{ queuedCount: number; suppressedCount: number; duplicateCount: number } | null>(null)
 
   const templatesQuery = useQuery({
     queryKey: ['admin-notification-templates'],
@@ -170,10 +182,29 @@ export function NotificationOpsClient() {
     queryFn: async () => parseJson<AiLog[]>(await (await fetch('/api/admin/notifications/ai', { cache: 'no-store' })).json()),
   })
 
+  const manualEmployeesQuery = useQuery({
+    queryKey: ['admin-manual-notification-employees'],
+    queryFn: async () => parseJson<ManualEmployee[]>(await (await fetch('/api/admin/notifications/manual-send', { cache: 'no-store' })).json()),
+    enabled: tab === 'manual',
+  })
+
   const templates = templatesQuery.data ?? EMPTY_TEMPLATES
   const executions = executionsQuery.data?.executions ?? EMPTY_EXECUTIONS
   const queue = executionsQuery.data?.queue ?? EMPTY_QUEUE
   const failures = failuresQuery.data ?? EMPTY_FAILURES
+
+  const manualFilteredEmployees = useMemo(() => {
+    const all = manualEmployeesQuery.data ?? []
+    return all.filter((e) =>
+      (manualDeptFilter === 'ALL' || e.department.deptName === manualDeptFilter) &&
+      (!manualNameSearch.trim() || e.empName.includes(manualNameSearch.trim()))
+    )
+  }, [manualDeptFilter, manualNameSearch, manualEmployeesQuery.data])
+
+  const manualAllDepts = useMemo(() => {
+    const all = manualEmployeesQuery.data ?? []
+    return Array.from(new Set(all.map((e) => e.department.deptName))).sort()
+  }, [manualEmployeesQuery.data])
 
   const filteredTemplates = useMemo(() => templates.filter((item) => channel === 'ALL' || item.channel === channel), [channel, templates])
   const filteredExecutions = useMemo(() => executions.filter((item) => matchesPeriod(item.startedAt, period)), [executions, period])
@@ -294,6 +325,32 @@ export function NotificationOpsClient() {
       void queryClient.invalidateQueries({ queryKey: ['admin-notification-ai-logs'] })
     },
     onError: (error: Error) => setBanner({ tone: 'error', message: error.message }),
+  })
+
+  const manualSendMutation = useMutation({
+    mutationFn: async (input: { employeeIds: string[]; reminderType: 'goal' | 'checkpoint' }) => {
+      const label = input.reminderType === 'goal' ? '목표 수립 리마인드' : '체크인 현황 리마인드'
+      if (!window.confirm(`선택한 ${input.employeeIds.length}명에게 ${label} 알림을 발송합니다. 되돌릴 수 없습니다. 계속할까요?`)) {
+        throw new Error('CANCELLED')
+      }
+      return parseJson<{ queuedCount: number; suppressedCount: number; duplicateCount: number }>(
+        await (
+          await fetch('/api/admin/notifications/manual-send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(input),
+          })
+        ).json()
+      )
+    },
+    onSuccess: (data) => {
+      setManualResult(data)
+      setManualSelectedIds(new Set())
+      setBanner({ tone: 'success', message: `${data.queuedCount}건 큐 등록, ${data.suppressedCount}건 억제, ${data.duplicateCount}건 중복 스킵` })
+    },
+    onError: (error: Error) => {
+      if (error.message !== 'CANCELLED') setBanner({ tone: 'error', message: error.message })
+    },
   })
 
   const aiDecisionMutation = useMutation({
@@ -419,7 +476,7 @@ export function NotificationOpsClient() {
         <MetricCard label="다음 행동" value={filteredFailures.length ? '실패함 점검' : '템플릿 검토'} helper={filteredFailures.length ? '실패함 탭에서 원인을 확인하고 재처리하세요.' : '템플릿과 테스트 발송으로 운영 품질을 점검하세요.'} />
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><div className="flex flex-wrap gap-2">{(['templates', 'executions', 'failures', 'tools', 'ai'] as Tab[]).map((key) => <button key={key} type="button" onClick={() => setTab(key)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>{key === 'templates' ? '템플릿' : key === 'executions' ? '실행 이력' : key === 'failures' ? '실패함' : key === 'tools' ? '설정 / 도구' : 'AI 보조'}</button>)}</div></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm"><div className="flex flex-wrap gap-2">{(['templates', 'executions', 'failures', 'tools', 'ai', 'manual'] as Tab[]).map((key) => <button key={key} type="button" onClick={() => setTab(key)} className={cls('rounded-xl px-4 py-2.5 text-sm font-semibold transition', tab === key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100')}>{key === 'templates' ? '템플릿' : key === 'executions' ? '실행 이력' : key === 'failures' ? '실패함' : key === 'tools' ? '설정 / 도구' : key === 'ai' ? 'AI 보조' : '수동 발송'}</button>)}</div></div>
 
       {tab === 'templates' ? (
         <Split left={<Panel title="템플릿 목록">{filteredTemplates.length ? filteredTemplates.map((item) => <button key={item.code} onClick={() => setSelectedTemplateCode(item.code)} className={cls('mb-3 w-full rounded-2xl border px-4 py-4 text-left transition last:mb-0', currentTemplate?.code === item.code ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:bg-slate-50')}><div className="flex items-center justify-between gap-3"><div><div className="font-semibold text-slate-900">{item.name}</div><div className="mt-1 text-xs text-slate-500">{item.code} · {item.type} · {channelLabel(item.channel)}</div></div><span className={cls('rounded-full border px-2.5 py-1 text-xs font-semibold', item.isActive ? 'border-emerald-200 bg-emerald-100 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-600')}>{item.isActive ? '활성' : '비활성'}</span></div></button>) : <Empty message="표시할 템플릿이 없습니다." />}</Panel>} right={<Panel title={currentTemplate?.name ?? '템플릿 상세'}>{currentTemplate && currentDraft ? <div className="space-y-4"><Field label="제목 템플릿"><input value={currentDraft.subjectTemplate} onChange={(event) => updateDraft('subjectTemplate', event.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" /></Field><Field label="본문 템플릿"><textarea value={currentDraft.bodyTemplate} onChange={(event) => updateDraft('bodyTemplate', event.target.value)} rows={8} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" /></Field><div className="grid gap-3 sm:grid-cols-2"><Field label="기본 링크"><input value={currentDraft.defaultLink} onChange={(event) => updateDraft('defaultLink', event.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" placeholder="/notifications" /></Field><div className="grid gap-3"><label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-3 py-3 text-sm"><input type="checkbox" checked={currentDraft.isActive} onChange={(event) => updateDraft('isActive', event.target.checked)} />활성 상태</label><label className="flex items-center gap-2 rounded-2xl border border-slate-200 px-3 py-3 text-sm"><input type="checkbox" checked={currentDraft.isDigestCompatible} onChange={(event) => updateDraft('isDigestCompatible', event.target.checked)} />묶음 알림 가능</label></div></div><Field label="미리보기 변수(JSON)"><textarea value={previewPayloadText} onChange={(event) => setPreviewPayloadText(event.target.value)} rows={6} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 font-mono text-xs" /></Field>{!previewJsonValid ? <BannerBox tone="error" message="미리보기 변수 JSON 형식을 확인해 주세요." /> : null}{missingPreviewVariables.length ? <BannerBox tone="info" message={`누락된 변수: ${missingPreviewVariables.join(', ')}`} /> : null}<div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">미리보기</div><div className="mt-3 text-sm font-semibold text-slate-900">{renderTemplate(currentDraft.subjectTemplate, previewVariables)}</div><div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{renderTemplate(currentDraft.bodyTemplate, previewVariables)}</div></div><div className="flex flex-wrap gap-2"><ActionButton label="템플릿 저장" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} primary /><ActionButton label={testSendMutation.isPending ? '테스트 발송 실행 중...' : '테스트 발송'} onClick={handleTestSend} disabled={testSendMutation.isPending} /><ActionButton label="AI 변수 점검" onClick={() => aiMutation.mutate('validate-template-variables')} disabled={aiMutation.isPending} /></div></div> : <Empty message="왼쪽에서 템플릿을 선택해 주세요." />}</Panel>} />
@@ -440,6 +497,91 @@ export function NotificationOpsClient() {
       {tab === 'ai' ? (
         <Split left={<Panel title="AI 보조"><div className="space-y-3">{[['summarize-ops', '실행 이력 요약'], ['summarize-dead-letters', '실패함 패턴 요약'], ['validate-template-variables', '템플릿 변수 점검'], ['generate-ops-report', '운영 보고 초안']] .map(([action, label]) => <button key={action} type="button" onClick={() => aiMutation.mutate(action as AiAction)} className="w-full rounded-2xl border border-slate-200 px-4 py-4 text-left transition hover:bg-slate-50"><div className="font-semibold text-slate-900">{label}</div><p className="mt-2 text-sm text-slate-500">결과는 미리보기만 제공되며 자동 저장되지 않습니다.</p></button>)}</div><div className="mt-6 space-y-3">{(aiLogsQuery.data ?? []).length ? (aiLogsQuery.data ?? []).map((log) => <div key={log.id} className="rounded-2xl border border-slate-200 px-4 py-3"><div className="font-medium text-slate-900">{log.sourceType ?? 'AI 요청'}</div><div className="mt-1 text-xs text-slate-500">{formatDateTime(log.createdAt)} · {log.requestStatus} · 승인 {log.approvalStatus}</div>{log.errorMessage ? <div className="mt-2 text-xs text-red-600">{log.errorMessage}</div> : null}</div>) : <Empty message="AI 요청 로그가 없습니다." />}</div></Panel>} right={<Panel title={lastAiAction}>{aiPreview ? <div className="space-y-4">{aiPreview.fallbackReason ? <BannerBox tone="info" message={`대체 응답 사유: ${aiPreview.fallbackReason}`} /> : null}<pre className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">{JSON.stringify(aiPreview.result, null, 2)}</pre><div className="flex gap-2"><ActionButton label="반려" onClick={() => aiDecisionMutation.mutate('reject')} disabled={aiDecisionMutation.isPending} /><ActionButton label="승인" onClick={() => aiDecisionMutation.mutate('approve')} disabled={aiDecisionMutation.isPending} primary /></div></div> : <Empty message="AI 도구를 실행하면 미리보기 결과가 여기에 표시됩니다." />}</Panel>} />
       ) : null}
+
+      {tab === 'manual' ? (() => {
+        const filteredIds = manualFilteredEmployees.map((e) => e.id)
+        const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => manualSelectedIds.has(id))
+        const selectedIds = Array.from(manualSelectedIds)
+        const overLimit = selectedIds.length > 100
+        const canSend = selectedIds.length > 0 && !overLimit && !manualSendMutation.isPending
+        return (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="부서">
+                    <select value={manualDeptFilter} onChange={(e) => setManualDeptFilter(e.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
+                      <option value="ALL">전체 부서</option>
+                      {manualAllDepts.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="이름 검색">
+                    <input value={manualNameSearch} onChange={(e) => setManualNameSearch(e.target.value)} placeholder="이름 입력" className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
+                  </Field>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-600">검색 결과 {manualFilteredEmployees.length}명 · 선택 {selectedIds.length}명</span>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" checked={allFilteredSelected} onChange={(e) => {
+                      setManualSelectedIds((prev) => {
+                        const next = new Set(prev)
+                        if (e.target.checked) { filteredIds.forEach((id) => next.add(id)) } else { filteredIds.forEach((id) => next.delete(id)) }
+                        return next
+                      })
+                    }} />
+                    전체 선택 / 해제
+                  </label>
+                </div>
+                <div className="max-h-80 overflow-y-auto rounded-2xl border border-slate-200">
+                  {manualEmployeesQuery.isLoading
+                    ? <div className="p-6 text-center text-sm text-slate-500">직원 목록을 불러오는 중입니다.</div>
+                    : manualFilteredEmployees.length === 0
+                      ? <div className="p-6 text-center text-sm text-slate-500">검색 결과가 없습니다.</div>
+                      : manualFilteredEmployees.map((emp) => (
+                        <label key={emp.id} className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 hover:bg-slate-50">
+                          <input type="checkbox" checked={manualSelectedIds.has(emp.id)} onChange={(e) => {
+                            setManualSelectedIds((prev) => {
+                              const next = new Set(prev)
+                              if (e.target.checked) next.add(emp.id)
+                              else next.delete(emp.id)
+                              return next
+                            })
+                          }} />
+                          <span className="w-24 shrink-0 text-xs text-slate-400">{emp.department.deptName}</span>
+                          <span className="text-sm text-slate-900">{emp.empName}</span>
+                        </label>
+                      ))
+                  }
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="space-y-4">
+                <Field label="알림 종류">
+                  <select value={manualReminderType} onChange={(e) => setManualReminderType(e.target.value as 'goal' | 'checkpoint')} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
+                    <option value="checkpoint">체크인 현황 리마인드</option>
+                    <option value="goal">목표 수립 리마인드</option>
+                  </select>
+                </Field>
+                {overLimit ? <BannerBox tone="error" message="한 번에 최대 100명까지 발송할 수 있습니다." /> : null}
+                <ActionButton
+                  label={manualSendMutation.isPending ? '발송 중...' : `선택 ${selectedIds.length}명에게 발송`}
+                  onClick={() => manualSendMutation.mutate({ employeeIds: selectedIds, reminderType: manualReminderType })}
+                  disabled={!canSend}
+                  primary
+                />
+                {manualResult ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+                    <div>큐 등록: {manualResult.queuedCount}건</div>
+                    <div className="mt-1">억제: {manualResult.suppressedCount}건</div>
+                    <div className="mt-1">중복 스킵: {manualResult.duplicateCount}건</div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )
+      })() : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Link href="/notifications" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:bg-slate-50"><div className="font-semibold text-slate-900">사용자 알림 센터</div><p className="mt-2 text-sm text-slate-500">실제 수신자의 인앱 알림 상태를 확인합니다.</p></Link>
