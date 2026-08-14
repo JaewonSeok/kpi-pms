@@ -188,25 +188,48 @@ async function main() {
   })
 
   run('ManualNotificationSendSchema — employeeIds 빈 배열 → 실패', () => {
-    const result = ManualNotificationSendSchema.safeParse({ employeeIds: [], reminderType: 'checkpoint' })
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: [], stage: 'checkpoint', subject: '제목', body: '본문' })
     assert.equal(result.success, false)
   })
 
   run('ManualNotificationSendSchema — employeeIds 101개 → 실패', () => {
     const ids = Array.from({ length: 101 }, (_, i) => `emp-${i}`)
-    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ids, reminderType: 'checkpoint' })
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ids, stage: 'checkpoint', subject: '제목', body: '본문' })
     assert.equal(result.success, false)
   })
 
   run('ManualNotificationSendSchema — employeeIds 100개 → 통과', () => {
     const ids = Array.from({ length: 100 }, (_, i) => `emp-${i}`)
-    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ids, reminderType: 'goal' })
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ids, stage: 'goal', subject: '제목', body: '본문' })
     assert.equal(result.success, true)
   })
 
-  run('ManualNotificationSendSchema — reminderType 미지원 값 → 실패', () => {
-    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], reminderType: 'evaluation' })
+  run('ManualNotificationSendSchema — stage 미지원 값 → 실패', () => {
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage: 'calibration', subject: '제목', body: '본문' })
     assert.equal(result.success, false)
+  })
+
+  run('ManualNotificationSendSchema — subject 빈 문자열 → 실패', () => {
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage: 'self', subject: '', body: '본문' })
+    assert.equal(result.success, false)
+  })
+
+  run('ManualNotificationSendSchema — body 빈 문자열 → 실패', () => {
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage: 'first', subject: '제목', body: '' })
+    assert.equal(result.success, false)
+  })
+
+  run('ManualNotificationSendSchema — stage 미지원 값(calibration) → 실패', () => {
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage: 'calibration', subject: '제목', body: '본문' })
+    assert.equal(result.success, false)
+  })
+
+  run('ManualNotificationSendSchema — 7개 stage 값 전부 통과', () => {
+    const stages = ['goal', 'checkpoint', 'self', 'first', 'second', 'final', 'ceo'] as const
+    for (const stage of stages) {
+      const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage, subject: '제목', body: '본문' })
+      assert.equal(result.success, true, `stage=${stage} 통과 실패`)
+    }
   })
 
   console.log('Notification tests completed')
