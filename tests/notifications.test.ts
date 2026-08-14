@@ -22,6 +22,7 @@ async function main() {
     isWithinQuietHours,
     toAbsoluteNotificationLink,
     dispatchDueNotificationJobs,
+    groupMonthlyKpisByEmployee,
   } = await import('../src/lib/notification-service')
   const { NotificationCronSchema } = await import('../src/lib/validations')
 
@@ -154,6 +155,36 @@ async function main() {
     await dispatchDueNotificationJobs(stubDb as any, [])
     assert.notEqual(capturedWhere, null, 'findMany should have been called')
     assert.deepEqual(capturedWhere.id.in, [])
+  })
+
+  run('groupMonthlyKpisByEmployee — KPI 3건 보유 직원 1명 → 대상 1건', () => {
+    const input = [
+      { employeeId: 'emp-1', employee: { empName: '홍길동' } },
+      { employeeId: 'emp-1', employee: { empName: '홍길동' } },
+      { employeeId: 'emp-1', employee: { empName: '홍길동' } },
+    ]
+    const result = groupMonthlyKpisByEmployee(input)
+    assert.equal(result.size, 1)
+    assert.equal(result.get('emp-1')?.count, 3)
+    assert.equal(result.get('emp-1')?.empName, '홍길동')
+  })
+
+  run('groupMonthlyKpisByEmployee — 서로 다른 직원 2명 × 각 2건 → 대상 2건', () => {
+    const input = [
+      { employeeId: 'emp-1', employee: { empName: '홍길동' } },
+      { employeeId: 'emp-1', employee: { empName: '홍길동' } },
+      { employeeId: 'emp-2', employee: { empName: '김철수' } },
+      { employeeId: 'emp-2', employee: { empName: '김철수' } },
+    ]
+    const result = groupMonthlyKpisByEmployee(input)
+    assert.equal(result.size, 2)
+    assert.equal(result.get('emp-1')?.count, 2)
+    assert.equal(result.get('emp-2')?.count, 2)
+  })
+
+  run('groupMonthlyKpisByEmployee — 빈 배열 → 대상 0건', () => {
+    const result = groupMonthlyKpisByEmployee([])
+    assert.equal(result.size, 0)
   })
 
   console.log('Notification tests completed')

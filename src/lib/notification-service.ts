@@ -1097,6 +1097,21 @@ function getEvaluationStageLabel(status: string) {
 
 export type NotificationReminderType = 'goal' | 'checkpoint'
 
+export function groupMonthlyKpisByEmployee(
+  monthlyKpis: Array<{ employeeId: string; employee: { empName: string } }>
+): Map<string, { employeeId: string; empName: string; count: number }> {
+  const map = new Map<string, { employeeId: string; empName: string; count: number }>()
+  for (const record of monthlyKpis) {
+    const existing = map.get(record.employeeId)
+    if (existing) {
+      existing.count += 1
+    } else {
+      map.set(record.employeeId, { employeeId: record.employeeId, empName: record.employee.empName, count: 1 })
+    }
+  }
+  return map
+}
+
 export async function enqueueLifecycleReminders(
   db: PrismaClient = prisma,
   reminderTypes?: NotificationReminderType[]
@@ -1163,6 +1178,7 @@ export async function enqueueLifecycleReminders(
         employee: { select: { id: true, empName: true } },
       },
       take: 500,
+      orderBy: { employeeId: 'asc' },
     }),
   ])
   console.log(`[cron-perf] parallel-queries ${Date.now() - t0}ms employees=${activeEmployees.length} cycles=${cycles.length} checkIns=${checkIns.length} pendingEvals=${pendingEvaluations.length} monthlyKpis=${monthlyKpis.length}`)
@@ -1259,16 +1275,17 @@ export async function enqueueLifecycleReminders(
     const checkpointDedupeToken = `checkpoint:${yearMonth}`
     const checkpointChannels = [NotificationDeliveryChannel.IN_APP, NotificationDeliveryChannel.EMAIL]
 
+    const employeeBuckets = groupMonthlyKpisByEmployee(monthlyKpis)
     const candidateKeys: string[] = []
-    for (const record of monthlyKpis) {
+    for (const { employeeId } of employeeBuckets.values()) {
       for (const channel of checkpointChannels) {
         candidateKeys.push(
           buildNotificationIdempotencyKey({
-            recipientId: record.employeeId,
+            recipientId: employeeId,
             type: NotificationType.CHECKPOINT_REMINDER,
             channel,
-            sourceType: 'PersonalKpi',
-            sourceId: record.id,
+            sourceType: 'Employee',
+            sourceId: employeeId,
             dedupeToken: checkpointDedupeToken,
           })
         )
@@ -1281,14 +1298,14 @@ export async function enqueueLifecycleReminders(
     })
     const existingKeys = new Set(existingRows.map((row) => row.idempotencyKey))
 
-    for (const record of monthlyKpis) {
+    for (const { employeeId } of employeeBuckets.values()) {
       const recordKeys = checkpointChannels.map((channel) =>
         buildNotificationIdempotencyKey({
-          recipientId: record.employeeId,
+          recipientId: employeeId,
           type: NotificationType.CHECKPOINT_REMINDER,
           channel,
-          sourceType: 'PersonalKpi',
-          sourceId: record.id,
+          sourceType: 'Employee',
+          sourceId: employeeId,
           dedupeToken: checkpointDedupeToken,
         })
       )
@@ -1299,10 +1316,10 @@ export async function enqueueLifecycleReminders(
 
       const result = await queueNotification(
         {
-          recipientId: record.employeeId,
+          recipientId: employeeId,
           type: NotificationType.CHECKPOINT_REMINDER,
-          sourceType: 'PersonalKpi',
-          sourceId: record.id,
+          sourceType: 'Employee',
+          sourceId: employeeId,
           dedupeToken: checkpointDedupeToken,
           payload: {
             yearMonth,
