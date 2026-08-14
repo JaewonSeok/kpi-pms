@@ -9,6 +9,18 @@ import { dispatchDueNotificationJobs, queueNotification } from '@/lib/notificati
 
 export const maxDuration = 300
 
+type Stage = 'goal' | 'checkpoint' | 'self' | 'first' | 'second' | 'final' | 'ceo'
+
+const STAGE_MAP: Record<Stage, { type: NotificationType; link: string }> = {
+  goal:       { type: NotificationType.GOAL_REMINDER,       link: '/kpi/personal' },
+  checkpoint: { type: NotificationType.CHECKPOINT_REMINDER, link: '/kpi/monthly' },
+  self:       { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/self' },
+  first:      { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/performance' },
+  second:     { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/performance' },
+  final:      { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/performance' },
+  ceo:        { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/ceo-adjust' },
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
@@ -44,7 +56,7 @@ export async function POST(request: Request) {
       throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0]?.message || '잘못된 요청입니다.')
     }
 
-    const { employeeIds, reminderType } = validated.data
+    const { employeeIds, stage, subject, body: bodyText } = validated.data
 
     // ① employeeIds로 employee 조회 (status ACTIVE만). 요청 수와 조회 수가 다르면 방어
     const employees = await prisma.employee.findMany({
@@ -59,34 +71,9 @@ export async function POST(request: Request) {
     // ② dedupeToken — 요청당 1회만 생성
     const dedupeToken = `manual:${Date.now()}`
 
-    // reminderType별 type과 payload 결정
-    let notificationType: NotificationType
-    let payload: Record<string, string>
-
-    if (reminderType === 'goal') {
-      notificationType = NotificationType.GOAL_REMINDER
-      const evalCycle = await prisma.evalCycle.findFirst({
-        where: { status: { notIn: ['SETUP', 'CLOSED'] } },
-        orderBy: { createdAt: 'desc' },
-        select: { cycleName: true, kpiSetupEnd: true },
-      })
-      if (!evalCycle) {
-        throw new AppError(400, 'NO_ACTIVE_EVAL_CYCLE', '진행 중인 평가 사이클이 없습니다.')
-      }
-      payload = {
-        cycleName: evalCycle.cycleName,
-        dueDate: evalCycle.kpiSetupEnd
-          ? evalCycle.kpiSetupEnd.toISOString().slice(0, 10)
-          : '',
-        link: '/kpi/personal',
-      }
-    } else {
-      notificationType = NotificationType.CHECKPOINT_REMINDER
-      payload = {
-        yearMonth: new Date().toISOString().slice(0, 7),
-        link: '/kpi/monthly',
-      }
-    }
+    const { type: notificationType, link } = STAGE_MAP[stage]
+    // employeeName 은 queueNotification 내부(L678)에서 자동 채워짐
+    const payload: Record<string, string> = { link }
 
     // ③④ 직원마다 queueNotification 1회 호출
     // ★ queueNotification 반환 타입은 { created, suppressed, duplicates } — jobId 미포함
@@ -103,6 +90,8 @@ export async function POST(request: Request) {
           sourceId: employee.id,
           dedupeToken,
           payload,
+          subjectOverride: subject,
+          bodyOverride: bodyText,
         },
         prisma
       )
@@ -136,7 +125,7 @@ export async function POST(request: Request) {
       action: 'NOTIFICATION_MANUAL_SENT',
       entityType: 'Employee',
       entityId: employeeIds[0],
-      newValue: { reminderType, employeeIds, dedupeToken, queuedCount, dispatchedCount, dispatchSummary },
+      newValue: { stage, subject, employeeIds, dedupeToken, queuedCount, dispatchedCount, dispatchSummary },
       ...getClientInfo(request),
     })
 

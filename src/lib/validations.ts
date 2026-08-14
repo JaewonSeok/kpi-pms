@@ -2114,7 +2114,9 @@ export const NotificationTemplateTestSendSchema = z.object({
 
 export const ManualNotificationSendSchema = z.object({
   employeeIds: z.array(z.string().min(1)).min(1).max(100),
-  reminderType: z.enum(['goal', 'checkpoint']),
+  stage: z.enum(['goal', 'checkpoint', 'self', 'first', 'second', 'final', 'ceo']),
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(5000),
 })
 
 export const NotificationOpsAiActionSchema = z.object({

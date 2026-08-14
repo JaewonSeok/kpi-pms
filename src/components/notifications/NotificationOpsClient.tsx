@@ -19,6 +19,28 @@ type ManualEmployee = {
   department: { deptName: string }
 }
 
+type ManualStage = 'goal' | 'checkpoint' | 'self' | 'first' | 'second' | 'final' | 'ceo'
+
+const STAGE_LABELS: { value: ManualStage; label: string }[] = [
+  { value: 'goal',       label: '1. 목표 수립' },
+  { value: 'checkpoint', label: '2. 중간 점검' },
+  { value: 'self',       label: '3. 자기평가' },
+  { value: 'first',      label: '4. 1차 평가' },
+  { value: 'second',     label: '5. 2차 평가' },
+  { value: 'final',      label: '6. 최종 평가' },
+  { value: 'ceo',        label: '7. 대표이사 확정' },
+]
+
+const STAGE_DEFAULTS: Record<ManualStage, { subject: string; body: string }> = {
+  goal:       { subject: '[성과관리] 목표 수립 안내',   body: '{{employeeName}}님,\n\n목표/KPI 수립이 필요합니다.\n기한 내 입력해 주세요.\n\n{{link}}' },
+  checkpoint: { subject: '[성과관리] 월간 점검 안내',   body: '{{employeeName}}님,\n\n월간 점검/실적 입력이 필요합니다.\n\n{{link}}' },
+  self:       { subject: '[성과관리] 자기평가 안내',     body: '{{employeeName}}님,\n\n자기평가 작성이 필요합니다.\n\n{{link}}' },
+  first:      { subject: '[성과관리] 1차 평가 안내',     body: '{{employeeName}}님,\n\n담당 팀원에 대한 1차 평가가 필요합니다.\n\n{{link}}' },
+  second:     { subject: '[성과관리] 2차 평가 안내',     body: '{{employeeName}}님,\n\n담당 팀원에 대한 2차 평가가 필요합니다.\n\n{{link}}' },
+  final:      { subject: '[성과관리] 최종 평가 안내',     body: '{{employeeName}}님,\n\n최종 평가가 필요합니다.\n\n{{link}}' },
+  ceo:        { subject: '[성과관리] 평가 확정 안내',     body: '{{employeeName}}님,\n\n평가 확정 절차가 필요합니다.\n\n{{link}}' },
+}
+
 type Template = {
   id: string
   code: string
@@ -157,7 +179,9 @@ export function NotificationOpsClient() {
   const [manualDeptFilter, setManualDeptFilter] = useState<string>('ALL')
   const [manualNameSearch, setManualNameSearch] = useState<string>('')
   const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set())
-  const [manualReminderType, setManualReminderType] = useState<'goal' | 'checkpoint'>('checkpoint')
+  const [manualStage, setManualStage] = useState<ManualStage>('checkpoint')
+  const [manualSubject, setManualSubject] = useState<string>(STAGE_DEFAULTS.checkpoint.subject)
+  const [manualBody, setManualBody] = useState<string>(STAGE_DEFAULTS.checkpoint.body)
   const [manualResult, setManualResult] = useState<{ queuedCount: number; suppressedCount: number; duplicateCount: number } | null>(null)
 
   const templatesQuery = useQuery({
@@ -328,9 +352,9 @@ export function NotificationOpsClient() {
   })
 
   const manualSendMutation = useMutation({
-    mutationFn: async (input: { employeeIds: string[]; reminderType: 'goal' | 'checkpoint' }) => {
-      const label = input.reminderType === 'goal' ? '목표 수립 리마인드' : '체크인 현황 리마인드'
-      if (!window.confirm(`선택한 ${input.employeeIds.length}명에게 ${label} 알림을 발송합니다. 되돌릴 수 없습니다. 계속할까요?`)) {
+    mutationFn: async (input: { employeeIds: string[]; stage: ManualStage; subject: string; body: string }) => {
+      const label = STAGE_LABELS.find((s) => s.value === input.stage)?.label ?? input.stage
+      if (!window.confirm(`선택한 ${input.employeeIds.length}명에게 [${label}] 알림을 발송합니다. 되돌릴 수 없습니다. 계속할까요?`)) {
         throw new Error('CANCELLED')
       }
       return parseJson<{ queuedCount: number; suppressedCount: number; duplicateCount: number }>(
@@ -503,7 +527,7 @@ export function NotificationOpsClient() {
         const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => manualSelectedIds.has(id))
         const selectedIds = Array.from(manualSelectedIds)
         const overLimit = selectedIds.length > 100
-        const canSend = selectedIds.length > 0 && !overLimit && !manualSendMutation.isPending
+        const canSend = selectedIds.length > 0 && !overLimit && manualSubject.trim().length > 0 && manualBody.trim().length > 0 && !manualSendMutation.isPending
         return (
           <div className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -557,16 +581,27 @@ export function NotificationOpsClient() {
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="space-y-4">
-                <Field label="알림 종류">
-                  <select value={manualReminderType} onChange={(e) => setManualReminderType(e.target.value as 'goal' | 'checkpoint')} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
-                    <option value="checkpoint">체크인 현황 리마인드</option>
-                    <option value="goal">목표 수립 리마인드</option>
+                <Field label="발송 단계">
+                  <select value={manualStage} onChange={(e) => {
+                    const s = e.target.value as ManualStage
+                    setManualStage(s)
+                    setManualSubject(STAGE_DEFAULTS[s].subject)
+                    setManualBody(STAGE_DEFAULTS[s].body)
+                  }} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm">
+                    {STAGE_LABELS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                   </select>
+                </Field>
+                <Field label="제목">
+                  <input value={manualSubject} onChange={(e) => setManualSubject(e.target.value)} maxLength={200} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
+                </Field>
+                <Field label="본문">
+                  <textarea value={manualBody} onChange={(e) => setManualBody(e.target.value)} rows={7} maxLength={5000} className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm" />
+                  <p className="mt-1 text-xs text-slate-400">{'{{employeeName}}'} · {'{{link}}'} 는 발송 시 자동으로 치환됩니다.</p>
                 </Field>
                 {overLimit ? <BannerBox tone="error" message="한 번에 최대 100명까지 발송할 수 있습니다." /> : null}
                 <ActionButton
                   label={manualSendMutation.isPending ? '발송 중...' : `선택 ${selectedIds.length}명에게 발송`}
-                  onClick={() => manualSendMutation.mutate({ employeeIds: selectedIds, reminderType: manualReminderType })}
+                  onClick={() => manualSendMutation.mutate({ employeeIds: selectedIds, stage: manualStage, subject: manualSubject, body: manualBody })}
                   disabled={!canSend}
                   primary
                 />
