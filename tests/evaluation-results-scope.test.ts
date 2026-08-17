@@ -1,6 +1,8 @@
 import './setup-test-env'
 import './register-path-aliases'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 function run(name: string, fn: () => void) {
   try {
@@ -91,8 +93,6 @@ async function main() {
   })
 
   run('본인 조회 시 summary.calibrationAdjusted 가 false — 서버 마스킹 패턴 검증', () => {
-    const { readFileSync } = require('node:fs')
-    const { resolve } = require('node:path')
     const source = readFileSync(resolve(process.cwd(), 'src/server/evaluation-results.ts'), 'utf8') as string
     assert.ok(
       source.includes('calibrationAdjusted: params.isSelfView ? false : calibrationAdjusted'),
@@ -106,8 +106,6 @@ async function main() {
     assert.equal(row.score, 75, 'score 유지')
     assert.equal(row.managerScore, 80, 'managerScore 유지')
 
-    const { readFileSync } = require('node:fs')
-    const { resolve } = require('node:path')
     const source = readFileSync(resolve(process.cwd(), 'src/server/evaluation-results.ts'), 'utf8') as string
     assert.ok(
       source.includes('if (params.isSelfView) return maskScoreItemForSelfView(rest)'),
