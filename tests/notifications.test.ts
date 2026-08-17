@@ -224,12 +224,17 @@ async function main() {
     assert.equal(result.success, false)
   })
 
-  run('ManualNotificationSendSchema — 7개 stage 값 전부 통과', () => {
-    const stages = ['goal', 'checkpoint', 'self', 'first', 'second', 'final', 'ceo'] as const
+  run('ManualNotificationSendSchema — 8개 stage 값 전부 통과', () => {
+    const stages = ['goal', 'checkpoint', 'self', 'first', 'second', 'final', 'ceo', 'result'] as const
     for (const stage of stages) {
       const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage, subject: '제목', body: '본문' })
       assert.equal(result.success, true, `stage=${stage} 통과 실패`)
     }
+  })
+
+  run('ManualNotificationSendSchema — stage result 단독 통과', () => {
+    const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage: 'result', subject: '[성과관리] 평가 결과 확인 안내', body: '본문' })
+    assert.equal(result.success, true)
   })
 
   console.log('Notification tests completed')

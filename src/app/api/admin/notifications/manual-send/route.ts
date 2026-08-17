@@ -9,16 +9,17 @@ import { dispatchDueNotificationJobs, queueNotification } from '@/lib/notificati
 
 export const maxDuration = 300
 
-type Stage = 'goal' | 'checkpoint' | 'self' | 'first' | 'second' | 'final' | 'ceo'
+type Stage = 'goal' | 'checkpoint' | 'self' | 'first' | 'second' | 'final' | 'ceo' | 'result'
 
 const STAGE_MAP: Record<Stage, { type: NotificationType; link: string }> = {
-  goal:       { type: NotificationType.GOAL_REMINDER,       link: '/kpi/personal' },
-  checkpoint: { type: NotificationType.CHECKPOINT_REMINDER, link: '/kpi/monthly' },
-  self:       { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/self' },
-  first:      { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/performance' },
-  second:     { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/performance' },
-  final:      { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/performance' },
-  ceo:        { type: NotificationType.EVALUATION_REMINDER, link: '/evaluation/ceo-adjust' },
+  goal:       { type: NotificationType.GOAL_REMINDER,                  link: '/kpi/personal' },
+  checkpoint: { type: NotificationType.CHECKPOINT_REMINDER,            link: '/kpi/monthly' },
+  self:       { type: NotificationType.EVALUATION_REMINDER,            link: '/evaluation/self' },
+  first:      { type: NotificationType.EVALUATION_REMINDER,            link: '/evaluation/performance' },
+  second:     { type: NotificationType.EVALUATION_REMINDER,            link: '/evaluation/performance' },
+  final:      { type: NotificationType.EVALUATION_REMINDER,            link: '/evaluation/performance' },
+  ceo:        { type: NotificationType.EVALUATION_REMINDER,            link: '/evaluation/ceo-adjust' },
+  result:     { type: NotificationType.RESULT_CONFIRMATION_REMINDER,   link: '/evaluation/results' },
 }
 
 export async function GET() {
