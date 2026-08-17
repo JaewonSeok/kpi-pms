@@ -92,7 +92,7 @@ export type EvaluationResultViewModel = {
     performance: Array<{
       id: string
       title: string
-      score: number
+      score?: number
       weight?: number
       selfScore?: number
       managerScore?: number
@@ -104,7 +104,7 @@ export type EvaluationResultViewModel = {
     competency: Array<{
       id: string
       title: string
-      score: number
+      score?: number
       weight?: number
       selfScore?: number
       reviewerScore?: number
@@ -477,6 +477,8 @@ export async function getEvaluationResultsPageData(params: {
       }
     }
 
+    const isSelfView = employee !== null && targetEmployee.id === employee.id
+
     const baseEvaluations = await prisma.evaluation.findMany({
       where: {
         evalCycleId: selectedCycle.id,
@@ -756,11 +758,10 @@ export async function getEvaluationResultsPageData(params: {
 
     const hasConfirmedFinal = baseEvaluations.some(
       (evaluation) =>
-        evaluation.status === 'CONFIRMED' &&
-        (evaluation.evalStage === 'FINAL' || evaluation.evalStage === 'CEO_ADJUST')
+        evaluation.status === 'CONFIRMED' && evaluation.evalStage === 'CEO_ADJUST'
     )
 
-    const publicationStatus = resolvePublicationStatus(selectedCycle, hasConfirmedFinal)
+    const publicationStatus = resolvePublicationStatus(selectedCycle, hasConfirmedFinal, isSelfView)
 
     if (publicationStatus === 'HIDDEN' && !hasConfirmedFinal) {
       return {
@@ -791,6 +792,7 @@ export async function getEvaluationResultsPageData(params: {
         ? undefined
         : aiCompetencyResults.get(`${selectedCycle.id}:${targetEmployee.id}`)?.finalScore,
       aiCompetencyGateStatus,
+      isSelfView,
       actorId: params.session.user.id,
       canExport: true,
     })
@@ -869,6 +871,7 @@ function buildEvaluationResultViewModel(params: {
     isSatisfied: boolean
     caseId?: string
   }
+  isSelfView: boolean
   actorId: string
   canExport: boolean
 }) {
@@ -1045,7 +1048,7 @@ function buildEvaluationResultViewModel(params: {
       totalScore,
       performanceScore: performanceScore ?? 0,
       competencyScore: competencyScore ?? 0,
-      calibrationAdjusted,
+      calibrationAdjusted: params.isSelfView ? false : calibrationAdjusted,
       previousGrade: previousGrade ?? undefined,
       previousScore,
       percentileLabel: buildPercentileLabel(params.cycleFinalEvaluations, params.employee.id, totalScore),
@@ -1066,17 +1069,20 @@ function buildEvaluationResultViewModel(params: {
         performanceScore: performanceScore ?? 0,
         competencyScore: competencyScore ?? 0,
         calibrationAdjusted,
+        isSelfView: params.isSelfView,
       }),
     },
     scoreBreakdown: {
       performance: performanceRows.map((row) => {
         const { kpiType, ...rest } = row
         void kpiType
+        if (params.isSelfView) return maskScoreItemForSelfView(rest)
         return rest
       }),
       competency: competencyRows.map((row) => {
         const { kpiType, ...rest } = row
         void kpiType
+        if (params.isSelfView) return maskScoreItemForSelfView(rest)
         return rest
       }),
     },
@@ -1107,16 +1113,19 @@ function buildEvaluationResultViewModel(params: {
         checkIns: params.checkIns,
         feedbacks,
         calibrationAdjusted,
+        isSelfView: params.isSelfView,
       }),
     },
     calibration: {
-      draftGrade: draftGrade ?? undefined,
+      draftGrade: params.isSelfView ? undefined : (draftGrade ?? undefined),
       finalGrade: finalGrade ?? undefined,
-      adjusted: calibrationAdjusted,
-      reason: calibrationAdjusted
-        ? finalEvaluation?.comment || '캘리브레이션 회의 결과가 최종 평가에 반영되었습니다.'
-        : '조정 없이 최종 등급이 확정되었습니다.',
-      logs: buildCalibrationLogs({
+      adjusted: params.isSelfView ? false : calibrationAdjusted,
+      reason: params.isSelfView
+        ? undefined
+        : calibrationAdjusted
+          ? finalEvaluation?.comment || '캘리브레이션 회의 결과가 최종 평가에 반영되었습니다.'
+          : '조정 없이 최종 등급이 확정되었습니다.',
+      logs: params.isSelfView ? [] : buildCalibrationLogs({
         employeeName: params.employee.empName,
         finalStage,
         finalGrade,
@@ -1144,12 +1153,13 @@ function buildEvaluationResultViewModel(params: {
   } satisfies EvaluationResultViewModel
 }
 
-function resolvePublicationStatus(
+export function resolvePublicationStatus(
   cycle: {
     status: CycleStatus
     appealDeadline: Date | null
   },
-  hasConfirmedFinal: boolean
+  hasConfirmedFinal: boolean,
+  isSelfView = false
 ): ResultPublicationStatus {
   const now = new Date()
 
@@ -1159,6 +1169,7 @@ function resolvePublicationStatus(
   }
 
   if (cycle.status === 'RESULT_OPEN' || cycle.status === 'CLOSED') {
+    if (isSelfView && !hasConfirmedFinal) return 'HIDDEN'
     if (cycle.appealDeadline && cycle.appealDeadline < now) return 'APPEAL_CLOSED'
     return 'PUBLISHED'
   }
@@ -1169,6 +1180,17 @@ function resolvePublicationStatus(
   }
 
   return 'HIDDEN'
+}
+
+export function maskScoreItemForSelfView<T extends {
+  score?: number
+  managerScore?: number
+  reviewerScore?: number
+  finalScore?: number
+  comment?: string
+  deltaFromSelf?: number
+}>(row: T): T {
+  return { ...row, score: undefined, managerScore: undefined, reviewerScore: undefined, finalScore: undefined, comment: undefined, deltaFromSelf: undefined }
 }
 
 function resolveGradeName(
@@ -1332,7 +1354,7 @@ function buildAttachmentSummaryV2(personalKpis: PersonalKpiWithRecords[]) {
   return attachments.slice(0, 8)
 }
 
-function buildEvidenceHighlights(params: {
+export function buildEvidenceHighlights(params: {
   kpis: PersonalKpiWithRecords[]
   checkIns: Array<{
     status: CheckInStatus
@@ -1344,6 +1366,7 @@ function buildEvidenceHighlights(params: {
     content: string
   }>
   calibrationAdjusted: boolean
+  isSelfView: boolean
 }) {
   const topKpi = params.kpis
     .map((kpi) => ({
@@ -1382,7 +1405,7 @@ function buildEvidenceHighlights(params: {
     })
   }
 
-  if (params.feedbacks[0]) {
+  if (params.feedbacks[0] && !params.isSelfView) {
     highlights.push({
       title: params.calibrationAdjusted ? '조정에 반영된 코멘트' : '최근 평가 코멘트',
       summary: params.feedbacks[0].content,
@@ -1446,9 +1469,10 @@ function buildInterpretation(params: {
   performanceScore: number
   competencyScore: number
   calibrationAdjusted: boolean
+  isSelfView: boolean
 }) {
   if (params.performanceScore >= 90 && params.competencyScore >= 85) {
-    return params.calibrationAdjusted
+    return !params.isSelfView && params.calibrationAdjusted
       ? '성과와 역량이 모두 안정적으로 높은 수준이며, 조직 간 형평성을 반영한 캘리브레이션이 최종 결과에 반영되었습니다.'
       : '성과 달성과 역량 모두 강하게 나타나며, 현재 역할에서 기대 이상의 안정적인 결과를 보여주고 있습니다.'
   }
