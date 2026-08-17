@@ -19,7 +19,7 @@ type ManualEmployee = {
   department: { deptName: string }
 }
 
-type ManualStage = 'goal' | 'checkpoint' | 'self' | 'first' | 'second' | 'final' | 'ceo'
+type ManualStage = 'goal' | 'checkpoint' | 'self' | 'first' | 'second' | 'final' | 'ceo' | 'result'
 
 const STAGE_LABELS: { value: ManualStage; label: string }[] = [
   { value: 'goal',       label: '1. 목표 수립' },
@@ -29,6 +29,7 @@ const STAGE_LABELS: { value: ManualStage; label: string }[] = [
   { value: 'second',     label: '5. 2차 평가' },
   { value: 'final',      label: '6. 최종 평가' },
   { value: 'ceo',        label: '7. 대표이사 확정' },
+  { value: 'result',     label: '8. 결과 확인' },
 ]
 
 const STAGE_DEFAULTS: Record<ManualStage, { subject: string; body: string }> = {
@@ -39,6 +40,7 @@ const STAGE_DEFAULTS: Record<ManualStage, { subject: string; body: string }> = {
   second:     { subject: '[성과관리] 2차 평가 안내',     body: '{{employeeName}}님,\n\n담당 팀원에 대한 2차 평가가 필요합니다.\n\n{{link}}' },
   final:      { subject: '[성과관리] 최종 평가 안내',     body: '{{employeeName}}님,\n\n최종 평가가 필요합니다.\n\n{{link}}' },
   ceo:        { subject: '[성과관리] 평가 확정 안내',     body: '{{employeeName}}님,\n\n평가 확정 절차가 필요합니다.\n\n{{link}}' },
+  result:     { subject: '[성과관리] 평가 결과 확인 안내', body: '{{employeeName}}님,\n\n평가 결과가 확정되었습니다.\n아래에서 확인해 주세요.\n\n{{link}}' },
 }
 
 type Template = {
