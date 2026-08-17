@@ -253,7 +253,7 @@ async function withStubbedOperationalData(
         return [
           {
             id: 'eval-final-1',
-            evalStage: 'FINAL',
+            evalStage: 'CEO_ADJUST',
             status: 'CONFIRMED',
             totalScore: 87,
             gradeId: 'grade-a',
