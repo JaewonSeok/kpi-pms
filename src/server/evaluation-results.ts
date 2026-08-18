@@ -1163,13 +1163,16 @@ export function resolvePublicationStatus(
 ): ResultPublicationStatus {
   const now = new Date()
 
+  // 본인 조회이고 CEO_ADJUST 확정 전이면 어떤 사이클 상태에서도 비공개.
+  // APPEAL 상태에서도 적용해야 상태 역행(§13-2)으로 확정 전 결과가 노출되지 않는다.
+  if (isSelfView && !hasConfirmedFinal) return 'HIDDEN'
+
   if (cycle.status === 'APPEAL') {
     if (cycle.appealDeadline && cycle.appealDeadline < now) return 'APPEAL_CLOSED'
     return 'APPEAL_OPEN'
   }
 
   if (cycle.status === 'RESULT_OPEN' || cycle.status === 'CLOSED') {
-    if (isSelfView && !hasConfirmedFinal) return 'HIDDEN'
     if (cycle.appealDeadline && cycle.appealDeadline < now) return 'APPEAL_CLOSED'
     return 'PUBLISHED'
   }
