@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatDate } from '@/lib/utils'
 
@@ -8,6 +9,7 @@ type NotificationFeed = {
   id: string
   title: string
   message: string
+  link: string | null
   type: string
   channel: string
   sentAt: string
@@ -32,6 +34,7 @@ function parseResponse<T>(json: unknown): T {
 }
 
 export function NotificationsCenterClient() {
+  const router = useRouter()
   const queryClient = useQueryClient()
   const [unreadOnly, setUnreadOnly] = useState(false)
 
@@ -76,6 +79,28 @@ export function NotificationsCenterClient() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
     },
   })
+
+  const readOneMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' })
+      return parseResponse<{ message: string }>(await res.json())
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    },
+  })
+
+  async function handleCardClick(notification: NotificationFeed) {
+    if (!notification.link) return
+    if (!notification.isRead) {
+      try {
+        await readOneMutation.mutateAsync(notification.id)
+      } catch {
+        // 읽음 처리 실패해도 이동 진행
+      }
+    }
+    router.push(notification.link)
+  }
 
   const notifications = notificationsQuery.data?.notifications ?? []
   const preference = preferenceQuery.data
@@ -162,7 +187,14 @@ export function NotificationsCenterClient() {
         </div>
         <div className="divide-y divide-gray-100">
           {notifications.map((notification) => (
-            <div key={notification.id} className="px-5 py-4">
+            <div
+              key={notification.id}
+              className={`px-5 py-4${notification.link ? ' cursor-pointer hover:bg-gray-50' : ''}`}
+              onClick={notification.link ? () => handleCardClick(notification) : undefined}
+              role={notification.link ? 'button' : undefined}
+              tabIndex={notification.link ? 0 : undefined}
+              onKeyDown={notification.link ? (e) => { if (e.key === 'Enter' || e.key === ' ') { void handleCardClick(notification) } } : undefined}
+            >
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="font-medium text-gray-900">{notification.title}</div>
