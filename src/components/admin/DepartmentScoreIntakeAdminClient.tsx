@@ -115,6 +115,7 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
   const [intakes, setIntakes] = useState<IntakeMap>(() => buildIntakeMap(props.intakes))
   const [drafts, setDrafts] = useState<DraftMap>({})
   const [saving, setSaving] = useState<SavingMap>({})
+  const [clearing, setClearing] = useState<SavingMap>({})
   const [errors, setErrors] = useState<ErrorMap>({})
 
   useEffect(() => {
@@ -156,6 +157,42 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
         },
       }
     })
+  }
+
+  async function handleClear(dept: DepartmentScoreIntakePageDepartment) {
+    if (!props.selectedCycleId) return
+    const confirmed = window.confirm(
+      `[${dept.deptName}]의 입력된 점수를 삭제합니다. 되돌릴 수 없습니다. 계속할까요?`
+    )
+    if (!confirmed) return
+
+    setClearing((current) => ({ ...current, [dept.id]: true }))
+    try {
+      const params = new URLSearchParams({ evalCycleId: props.selectedCycleId, deptId: dept.id })
+      const response = await fetch(`/api/admin/department-score-intake?${params}`, { method: 'DELETE' })
+      const json = await response.json().catch(() => null)
+      if (!response.ok || !json?.success) {
+        throw new Error(json?.error?.message ?? '삭제에 실패했습니다.')
+      }
+      setIntakes((current) => {
+        const next = { ...current }
+        delete next[dept.id]
+        return next
+      })
+      setDrafts((current) => {
+        const next = { ...current }
+        delete next[dept.id]
+        return next
+      })
+      setErrors((current) => ({ ...current, [dept.id]: null }))
+    } catch (error) {
+      setErrors((current) => ({
+        ...current,
+        [dept.id]: error instanceof Error ? error.message : '삭제에 실패했습니다.',
+      }))
+    } finally {
+      setClearing((current) => ({ ...current, [dept.id]: false }))
+    }
   }
 
   async function handleSave(dept: DepartmentScoreIntakePageDepartment) {
@@ -289,6 +326,7 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
             const existing = intakes[dept.id]
             const draft = drafts[dept.id]
             const isSaving = Boolean(saving[dept.id])
+            const isClearing = Boolean(clearing[dept.id])
             const errorMessage = errors[dept.id]
             const levelTag = dept.levelTag
             const indent = levelTag ? LEVEL_INDENT[levelTag] : 0
@@ -398,15 +436,25 @@ export function DepartmentScoreIntakeAdminClient(props: DepartmentScoreIntakePag
                     ) : null}
                   </div>
 
-                  <div className="flex items-start justify-end lg:items-center">
+                  <div className="flex flex-col items-end gap-2">
                     <button
                       type="button"
                       onClick={() => handleSave(dept)}
-                      disabled={isSaving || !props.selectedCycleId}
+                      disabled={isSaving || isClearing || !props.selectedCycleId}
                       className="inline-flex min-h-9 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {isSaving ? '저장 중...' : existing ? '갱신' : '저장'}
                     </button>
+                    {existing ? (
+                      <button
+                        type="button"
+                        onClick={() => handleClear(dept)}
+                        disabled={isClearing || isSaving || !props.selectedCycleId}
+                        className="inline-flex min-h-9 items-center justify-center rounded-xl border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isClearing ? '삭제 중...' : '입력 취소'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
