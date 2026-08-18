@@ -930,7 +930,7 @@ async function deliverInAppJob(
 async function deliverEmailJob(
   db: PrismaClient,
   job: Awaited<ReturnType<typeof getProcessableJobs>>[number]
-) {
+): Promise<'SENT' | 'SUPPRESSED'> {
   const allowlist = getEmailAllowlist()
   const recipientEmail = job.recipient.gwsEmail
   if (allowlist.size > 0 && (!recipientEmail || !allowlist.has(recipientEmail.trim().toLowerCase()))) {
@@ -942,7 +942,7 @@ async function deliverEmailJob(
         suppressReason: 'NOT_IN_ALLOWLIST',
       },
     })
-    return
+    return 'SUPPRESSED'
   }
 
   const payloadRecord =
@@ -976,6 +976,7 @@ async function deliverEmailJob(
       },
     })
   })
+  return 'SENT'
 }
 
 async function deliverDigestGroup(
@@ -1052,10 +1053,12 @@ export async function dispatchDueNotificationJobs(
     try {
       if (job.channel === NotificationDeliveryChannel.IN_APP) {
         await deliverInAppJob(db, job)
+        summary.successCount += 1
       } else {
-        await deliverEmailJob(db, job)
+        const outcome = await deliverEmailJob(db, job)
+        if (outcome === 'SUPPRESSED') summary.suppressedCount += 1
+        else summary.successCount += 1
       }
-      summary.successCount += 1
     } catch (error) {
       const result = await markJobFailure(db, job.id, error)
       summary.failedCount += 1

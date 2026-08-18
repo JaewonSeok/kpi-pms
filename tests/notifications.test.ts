@@ -157,6 +157,80 @@ async function main() {
     assert.deepEqual(capturedWhere.id.in, [])
   })
 
+  // test ②: allowlist 안 EMAIL → SENT 경로는 sendEmail() 호출 →
+  // getEmailTransport()가 실 SMTP 트랜스포트를 반환(FEATURE_EMAIL_DELIVERY 미설정 → defaultValue:true,
+  // SMTP_HOST/USER/PASS 모두 .env 설정)하므로 ts-node 직접 실행 환경에서 구조상 불가.
+
+  await run('dispatchDueNotificationJobs — allowlist 밖 EMAIL 잡 1건 → suppressedCount 1 / successCount 0', async () => {
+    const prev = process.env.NOTIFICATION_EMAIL_ALLOWLIST
+    process.env.NOTIFICATION_EMAIL_ALLOWLIST = 'allowed@example.com'
+    try {
+      let updateCalled = false
+      const mockJob = {
+        id: 'j-email-blocked',
+        channel: NotificationDeliveryChannel.EMAIL,
+        isDigestMember: false,
+        digestKey: null,
+        recipientId: 'emp-1',
+        type: NotificationType.GOAL_REMINDER,
+        title: 'Test',
+        message: 'Test message',
+        link: null,
+        templateCode: null,
+        payload: null,
+        priority: 0,
+        retryCount: 0,
+        recipient: { id: 'emp-1', empName: '테스트', gwsEmail: 'blocked@test.com' },
+      }
+      const stubDb = {
+        notificationJob: {
+          findMany: async () => [mockJob],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          update: async () => { updateCalled = true; return mockJob as any },
+        },
+      }
+      const summary = await dispatchDueNotificationJobs(stubDb as any)
+      assert.equal(summary.suppressedCount, 1, 'suppressedCount 는 1 이어야 한다')
+      assert.equal(summary.successCount, 0, 'successCount 는 0 이어야 한다')
+      assert.equal(summary.processedCount, 1, 'processedCount 는 1 이어야 한다')
+      assert.equal(updateCalled, true, 'notificationJob.update 가 SUPPRESSED 처리로 호출돼야 한다')
+    } finally {
+      process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
+    }
+  })
+
+  await run('dispatchDueNotificationJobs — IN_APP 잡 1건 → successCount 1 / suppressedCount 0', async () => {
+    const mockJob = {
+      id: 'j-inapp-1',
+      channel: NotificationDeliveryChannel.IN_APP,
+      isDigestMember: false,
+      digestKey: null,
+      recipientId: 'emp-1',
+      type: NotificationType.GOAL_REMINDER,
+      title: 'Test',
+      message: 'Test message',
+      link: null,
+      templateCode: null,
+      payload: null,
+      priority: 0,
+      retryCount: 0,
+      recipient: { id: 'emp-1', empName: '테스트', gwsEmail: null },
+    }
+    const txStub = {
+      notification: { create: async () => ({}) },
+      notificationAttempt: { create: async () => ({}) },
+      notificationJob: { update: async () => ({}) },
+    }
+    const stubDb = {
+      notificationJob: { findMany: async () => [mockJob] },
+      $transaction: async (fn: (tx: typeof txStub) => Promise<void>) => fn(txStub),
+    }
+    const summary = await dispatchDueNotificationJobs(stubDb as any)
+    assert.equal(summary.successCount, 1, 'successCount 는 1 이어야 한다')
+    assert.equal(summary.suppressedCount, 0, 'suppressedCount 는 0 이어야 한다')
+    assert.equal(summary.processedCount, 1, 'processedCount 는 1 이어야 한다')
+  })
+
   run('groupMonthlyKpisByEmployee — KPI 3건 보유 직원 1명 → 대상 1건', () => {
     const input = [
       { employeeId: 'emp-1', employee: { empName: '홍길동' } },
