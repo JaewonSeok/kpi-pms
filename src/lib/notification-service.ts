@@ -983,9 +983,27 @@ async function deliverDigestGroup(
   db: PrismaClient,
   jobs: Awaited<ReturnType<typeof getProcessableJobs>>
 ) {
-  if (!jobs.length) return { processed: 0, success: 0 }
+  if (!jobs.length) return { processed: 0, success: 0, suppressed: 0 }
 
   const firstJob = jobs[0]
+  const allowlist = getEmailAllowlist()
+  const recipientEmail = firstJob.recipient.gwsEmail
+  if (allowlist.size > 0 && (!recipientEmail || !allowlist.has(recipientEmail.trim().toLowerCase()))) {
+    await db.$transaction(async (tx) => {
+      for (const job of jobs) {
+        await tx.notificationJob.update({
+          where: { id: job.id },
+          data: {
+            status: NotificationJobStatus.SUPPRESSED,
+            suppressedAt: new Date(),
+            suppressReason: 'NOT_IN_ALLOWLIST',
+          },
+        })
+      }
+    })
+    return { processed: jobs.length, success: 0, suppressed: jobs.length }
+  }
+
   const subject = `[성과관리] ${jobs.length}건의 알림 요약`
   const text = jobs
     .map((job, index) => `${index + 1}. ${job.title}\n${job.message}\n${job.link || ''}`)
@@ -1019,7 +1037,7 @@ async function deliverDigestGroup(
     }
   })
 
-  return { processed: jobs.length, success: jobs.length }
+  return { processed: jobs.length, success: jobs.length, suppressed: 0 }
 }
 
 export async function dispatchDueNotificationJobs(
@@ -1071,6 +1089,7 @@ export async function dispatchDueNotificationJobs(
     try {
       const result = await deliverDigestGroup(db, group)
       summary.successCount += result.success
+      summary.suppressedCount += result.suppressed
     } catch (error) {
       for (const job of group) {
         const retry = await markJobFailure(db, job.id, error)

@@ -231,6 +231,45 @@ async function main() {
     assert.equal(summary.processedCount, 1, 'processedCount 는 1 이어야 한다')
   })
 
+  await run('dispatchDueNotificationJobs — allowlist 밖 digest 그룹 2건 → suppressedCount 2 / successCount 0', async () => {
+    const prev = process.env.NOTIFICATION_EMAIL_ALLOWLIST
+    process.env.NOTIFICATION_EMAIL_ALLOWLIST = 'allowed@example.com'
+    try {
+      let updateCallCount = 0
+      const makeDigestJob = (id: string) => ({
+        id,
+        channel: NotificationDeliveryChannel.EMAIL,
+        isDigestMember: true,
+        digestKey: 'emp-1:2026-08-18',
+        recipientId: 'emp-1',
+        type: NotificationType.GOAL_REMINDER,
+        title: 'Digest test',
+        message: 'Test message',
+        link: null,
+        templateCode: null,
+        payload: null,
+        priority: 0,
+        retryCount: 0,
+        recipient: { id: 'emp-1', empName: '테스트', gwsEmail: 'blocked@test.com' },
+      })
+      const txStub = {
+        notificationJob: { update: async () => { updateCallCount += 1; return {} } },
+      }
+      const stubDb = {
+        notificationJob: { findMany: async () => [makeDigestJob('j-d1'), makeDigestJob('j-d2')] },
+        $transaction: async (fn: (tx: typeof txStub) => Promise<void>) => fn(txStub),
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const summary = await dispatchDueNotificationJobs(stubDb as any)
+      assert.equal(summary.suppressedCount, 2, 'suppressedCount 는 2 이어야 한다')
+      assert.equal(summary.successCount, 0, 'successCount 는 0 이어야 한다')
+      assert.equal(summary.processedCount, 2, 'processedCount 는 2 이어야 한다')
+      assert.equal(updateCallCount, 2, 'notificationJob.update 가 잡 2건 각각 호출돼야 한다')
+    } finally {
+      process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
+    }
+  })
+
   run('groupMonthlyKpisByEmployee — KPI 3건 보유 직원 1명 → 대상 1건', () => {
     const input = [
       { employeeId: 'emp-1', employee: { empName: '홍길동' } },
