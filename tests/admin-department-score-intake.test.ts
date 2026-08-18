@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import './register-path-aliases'
 import assert from 'node:assert/strict'
-import { CreateDepartmentScoreIntakeSchema } from '../src/lib/validations'
+import { CreateDepartmentScoreIntakeSchema, DeleteDepartmentScoreIntakeSchema } from '../src/lib/validations'
 
 async function run(name: string, fn: () => void | Promise<void>) {
   try {
@@ -152,6 +152,25 @@ async function main() {
     if (r.success) {
       assert.equal((r.data as { receivedById?: string }).receivedById, undefined)
     }
+  })
+
+  // ────────────────────────────────────────────
+  // DeleteDepartmentScoreIntakeSchema
+  // ────────────────────────────────────────────
+
+  await run('DELETE: deptId 빈 문자열 → reject (min(1))', () => {
+    const r = DeleteDepartmentScoreIntakeSchema.safeParse({ evalCycleId: 'cycle-1', deptId: '' })
+    assert.equal(r.success, false)
+  })
+
+  await run('DELETE: evalCycleId 누락 → reject', () => {
+    const r = DeleteDepartmentScoreIntakeSchema.safeParse({ deptId: 'dept-1' })
+    assert.equal(r.success, false)
+  })
+
+  await run('DELETE: 정상 입력 → 통과', () => {
+    const r = DeleteDepartmentScoreIntakeSchema.safeParse({ evalCycleId: 'cycle-1', deptId: 'dept-1' })
+    assert.equal(r.success, true)
   })
 }
 

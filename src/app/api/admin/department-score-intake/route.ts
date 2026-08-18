@@ -2,7 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
-import { CreateDepartmentScoreIntakeSchema } from '@/lib/validations'
+import { CreateDepartmentScoreIntakeSchema, DeleteDepartmentScoreIntakeSchema } from '@/lib/validations'
 import { createAuditLog, getClientInfo } from '@/lib/audit'
 
 // M1-B2 / POST /api/admin/department-score-intake
@@ -86,6 +86,55 @@ export async function POST(request: Request) {
     })
 
     return successResponse(intake)
+  } catch (error) {
+    return errorResponse(error)
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session) throw new AppError(401, 'UNAUTHORIZED', '인증이 필요합니다.')
+    if (session.user.role !== 'ROLE_ADMIN')
+      throw new AppError(403, 'FORBIDDEN', '관리자 권한이 필요합니다.')
+
+    const { searchParams } = new URL(request.url)
+    const validated = DeleteDepartmentScoreIntakeSchema.safeParse({
+      evalCycleId: searchParams.get('evalCycleId'),
+      deptId: searchParams.get('deptId'),
+    })
+    if (!validated.success) {
+      throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0].message)
+    }
+
+    const { evalCycleId, deptId } = validated.data
+
+    const existing = await prisma.departmentScoreIntake.findFirst({
+      where: { evalCycleId, deptId },
+      select: { id: true, score: true, note: true, gradeId: true, receivedById: true, receivedAt: true },
+    })
+    if (!existing) throw new AppError(404, 'INTAKE_NOT_FOUND', '입력된 점수가 없습니다.')
+
+    await prisma.departmentScoreIntake.delete({ where: { id: existing.id } })
+
+    await createAuditLog({
+      userId: session.user.id,
+      action: 'DEPARTMENT_SCORE_INTAKE_DELETED',
+      entityType: 'DepartmentScoreIntake',
+      entityId: existing.id,
+      oldValue: {
+        deptId,
+        evalCycleId,
+        score: existing.score,
+        note: existing.note,
+        gradeId: existing.gradeId,
+        receivedById: existing.receivedById,
+        receivedAt: existing.receivedAt,
+      },
+      ...getClientInfo(request),
+    })
+
+    return successResponse({ deleted: true })
   } catch (error) {
     return errorResponse(error)
   }

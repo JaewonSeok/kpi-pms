@@ -3274,6 +3274,11 @@ export const CreateDepartmentScoreIntakeSchema = z.object({
   gradeId: z.string().min(1).nullable().optional(),
 })
 
+export const DeleteDepartmentScoreIntakeSchema = z.object({
+  evalCycleId: z.string().min(1),
+  deptId: z.string().min(1),
+})
+
 // M1-C: 조직 30% 점수 내부 가중치 — EvalCycle.performanceDesignConfig.policy2026OrganizationWeights에 저장.
 // 30:70 자체는 고정(personal=0.70), 조직 30%의 내부 분배(본부/실/팀)만 커스텀.
 // withSection: 부서 lineage에 실(SECTION)이 있는 직원용. withoutSection: 본부 직속 팀 직원용.
