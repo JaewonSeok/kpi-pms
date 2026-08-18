@@ -35,8 +35,18 @@ async function main() {
     assert.equal(result, 'PUBLISHED')
   })
 
-  run('resolvePublicationStatus — APPEAL cycle → APPEAL_OPEN regardless of isSelfView/hasConfirmedFinal', () => {
+  run('resolvePublicationStatus — isSelfView=true, not confirmed, APPEAL → HIDDEN (§13-2 gate)', () => {
     const result = resolvePublicationStatus({ status: 'APPEAL', appealDeadline: futureDeadline }, false, true)
+    assert.equal(result, 'HIDDEN')
+  })
+
+  run('resolvePublicationStatus — isSelfView=true, confirmed, APPEAL + future deadline → APPEAL_OPEN', () => {
+    const result = resolvePublicationStatus({ status: 'APPEAL', appealDeadline: futureDeadline }, true, true)
+    assert.equal(result, 'APPEAL_OPEN')
+  })
+
+  run('resolvePublicationStatus — isSelfView=false (admin), not confirmed, APPEAL → APPEAL_OPEN', () => {
+    const result = resolvePublicationStatus({ status: 'APPEAL', appealDeadline: futureDeadline }, false, false)
     assert.equal(result, 'APPEAL_OPEN')
   })
 
