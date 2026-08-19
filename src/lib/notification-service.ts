@@ -12,6 +12,7 @@ import {
 import { prisma } from './prisma'
 import { isFeatureEnabled } from './feature-flags'
 import { buildReviewEmailContent, hasReviewEmailHtml } from './review-email-editor'
+import { isAllowedGoogleWorkspaceEmail } from './google-workspace'
 
 const STALE_JOB_EXECUTION_MS = 10 * 60 * 1000
 
@@ -586,6 +587,9 @@ export async function sendAdhocNotificationTest(params: {
   subject: string
   body: string
 }) {
+  if (!isAllowedGoogleWorkspaceEmail(params.recipientEmail)) {
+    throw new Error('테스트 발송 이메일은 사내 도메인만 허용됩니다.')
+  }
   const renderedBody = renderTemplate(params.body, {
     employeeName: params.recipientName,
     link: '',

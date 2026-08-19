@@ -16,6 +16,7 @@ import {
 } from './calibration-session-setup'
 import { ORG_KPI_SCOPE_VALUES } from './org-kpi-scope'
 import { normalizeCeoAdjustmentReason } from './evaluation-ceo-final'
+import { isAllowedGoogleWorkspaceEmail } from './google-workspace'
 
 // ============================================
 // 議곗쭅??愿??
@@ -1172,6 +1173,14 @@ export const FeedbackRoundReminderSchema = z
         code: z.ZodIssueCode.custom,
         path: ['testEmail'],
         message: '?뚯뒪??諛쒖넚???대찓??二쇱냼瑜??낅젰??二쇱꽭??',
+      })
+    }
+
+    if (data.action === 'test-send' && data.testEmail && !isAllowedGoogleWorkspaceEmail(data.testEmail)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['testEmail'],
+        message: '테스트 발송 이메일은 사내 도메인만 허용됩니다.',
       })
     }
   })

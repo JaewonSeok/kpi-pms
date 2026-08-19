@@ -75,6 +75,41 @@ async function main() {
     assert.equal(emptyRichText.success, false)
   })
 
+  await run('FeedbackRoundReminderSchema testEmail 도메인 검증 — 사내·외부·대문자·없음·비test-send', () => {
+    const prev = process.env.ALLOWED_DOMAIN
+    process.env.ALLOWED_DOMAIN = 'rsupport.com'
+    try {
+      const base = {
+        roundId: 'round-1',
+        targetIds: ['emp-1'],
+        subject: '테스트 발송',
+        body: '<p>본문입니다.</p>',
+      }
+
+      // ① 사내 도메인 → 통과
+      const inDomain = FeedbackRoundReminderSchema.safeParse({ ...base, action: 'test-send', testEmail: 'user@rsupport.com' })
+      assert.equal(inDomain.success, true, '① 사내 도메인은 통과해야 한다')
+
+      // ② 외부 도메인(@gmail.com) → 실패
+      const externalDomain = FeedbackRoundReminderSchema.safeParse({ ...base, action: 'test-send', testEmail: 'user@gmail.com' })
+      assert.equal(externalDomain.success, false, '② 외부 도메인은 실패해야 한다')
+
+      // ③ 대문자 도메인(@RSUPPORT.COM) → 통과 (정규화)
+      const upperDomain = FeedbackRoundReminderSchema.safeParse({ ...base, action: 'test-send', testEmail: 'user@RSUPPORT.COM' })
+      assert.equal(upperDomain.success, true, '③ 대문자 도메인은 정규화 후 통과해야 한다')
+
+      // ④ action=test-send + testEmail 없음 → 실패 (기존 동작 유지)
+      const noEmail = FeedbackRoundReminderSchema.safeParse({ ...base, action: 'test-send' })
+      assert.equal(noEmail.success, false, '④ test-send + testEmail 없음은 실패해야 한다')
+
+      // ⑤ action이 test-send가 아니면 testEmail 없어도 통과
+      const nonTestSend = FeedbackRoundReminderSchema.safeParse({ ...base, action: 'send-review-reminder' })
+      assert.equal(nonTestSend.success, true, '⑤ test-send 외 action은 testEmail 없어도 통과해야 한다')
+    } finally {
+      process.env.ALLOWED_DOMAIN = prev
+    }
+  })
+
   await run('feedback 360 settings schema supports selection visibility and report analysis settings', () => {
     const parsed = FeedbackRoundSettingsSchema.safeParse({
       roundId: 'round-1',

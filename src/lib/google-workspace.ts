@@ -32,3 +32,14 @@ export function assertAllowedGoogleWorkspaceEmail(email: string, allowedDomain?:
 
   return normalizedEmail
 }
+
+export function isAllowedGoogleWorkspaceEmail(email: string): boolean {
+  const normalized = email.trim().toLowerCase()
+  if (!normalized || !normalized.includes('@')) return false
+  try {
+    const domain = getAllowedGoogleWorkspaceDomain()
+    return normalized.endsWith(`@${domain}`)
+  } catch {
+    return false
+  }
+}
