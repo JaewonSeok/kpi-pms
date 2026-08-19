@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { ensureDefaultNotificationTemplates } from '@/lib/notification-service'
+import { ensureDefaultNotificationTemplates, invalidateNotificationTemplateCache } from '@/lib/notification-service'
 import { UpdateNotificationTemplatesSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 
@@ -56,6 +56,8 @@ export async function PUT(request: Request) {
         })
       }
     })
+
+    invalidateNotificationTemplateCache()
 
     const templates = await prisma.notificationTemplate.findMany({
       orderBy: [{ type: 'asc' }, { channel: 'asc' }],
