@@ -5,6 +5,7 @@ import {
   NotificationAttemptStatus,
   NotificationDeliveryChannel,
   NotificationJobStatus,
+  NotificationTemplate,
   NotificationType,
   Prisma,
   PrismaClient,
@@ -320,6 +321,12 @@ function buildTemplateCode(type: NotificationType, channel: NotificationDelivery
 
 let defaultTemplatesReady: Promise<void> | null = null
 
+// cron 실행이 약 215초이므로 한 실행에 3~4회만 재조회된다.
+// 어드민 템플릿 수정(PUT)이 60초 내에 반영된다.
+const NOTIFICATION_TEMPLATE_CACHE_TTL_MS = 60_000
+let _templateCache: Map<string, NotificationTemplate> | null = null
+let _templateCacheLoadedAt: number | null = null
+
 export async function ensureDefaultNotificationTemplates(db: PrismaClient = prisma) {
   if (!defaultTemplatesReady) {
     defaultTemplatesReady = (async () => {
@@ -353,6 +360,42 @@ export async function ensureDefaultNotificationTemplates(db: PrismaClient = pris
     })
   }
   return defaultTemplatesReady
+}
+
+export async function getCachedNotificationTemplate(
+  db: PrismaClient,
+  code: string
+): Promise<NotificationTemplate | null> {
+  const now = Date.now()
+  if (
+    !_templateCache ||
+    _templateCacheLoadedAt === null ||
+    now - _templateCacheLoadedAt > NOTIFICATION_TEMPLATE_CACHE_TTL_MS
+  ) {
+    try {
+      const rows = await db.notificationTemplate.findMany()
+      const map = new Map<string, NotificationTemplate>()
+      for (const row of rows) {
+        map.set(row.code, row)
+      }
+      _templateCache = map
+      _templateCacheLoadedAt = now
+    } catch {
+      // 갱신 실패 시 stale 캐시로 폴백. 캐시가 없으면 null.
+      // 이전 구현(findUnique)은 throw 로 전파됐으나, 여기서 null 을 반환하면
+      // 호출부(L776)가 continue 하여 잡·억제 기록 없이 알림이 사라진다.
+      if (_templateCache) return _templateCache.get(code) ?? null
+      return null
+    }
+  }
+  return _templateCache.get(code) ?? null
+}
+
+// 같은 인스턴스의 캐시만 초기화된다. 서버리스 환경에서 인스턴스가 여러 개면
+// 다른 인스턴스는 TTL 만료 후 자동 갱신된다. 실질 보장은 TTL이다.
+export function invalidateNotificationTemplateCache(): void {
+  _templateCache = null
+  _templateCacheLoadedAt = null
 }
 
 export async function ensureNotificationPreference(employeeId: string, db: PrismaClient = prisma) {
@@ -732,7 +775,7 @@ export async function queueNotification(
     }
 
     const templateCode = buildTemplateCode(input.type, channel)
-    const template = await db.notificationTemplate.findUnique({ where: { code: templateCode } })
+    const template = await getCachedNotificationTemplate(db, templateCode)
     if (!template || !template.isActive) continue
 
     let availableAt = getNextAllowedNotificationTime(scheduledFor, preference)

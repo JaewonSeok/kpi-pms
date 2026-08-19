@@ -1,7 +1,7 @@
 import './setup-test-env'
 import './register-path-aliases'
 import assert from 'node:assert/strict'
-import { NotificationDeliveryChannel, NotificationType } from '@prisma/client'
+import { NotificationDeliveryChannel, NotificationType, PrismaClient } from '@prisma/client'
 
 function run(name: string, fn: () => void) {
   try {
@@ -23,6 +23,8 @@ async function main() {
     toAbsoluteNotificationLink,
     dispatchDueNotificationJobs,
     groupMonthlyKpisByEmployee,
+    getCachedNotificationTemplate,
+    invalidateNotificationTemplateCache,
   } = await import('../src/lib/notification-service')
   const { NotificationCronSchema, ManualNotificationSendSchema } = await import('../src/lib/validations')
 
@@ -348,6 +350,106 @@ async function main() {
   run('ManualNotificationSendSchema — stage result 단독 통과', () => {
     const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage: 'result', subject: '[성과관리] 평가 결과 확인 안내', body: '본문' })
     assert.equal(result.success, true)
+  })
+
+  const runAsync = async (name: string, fn: () => Promise<void>) => {
+    try {
+      await fn()
+      console.log(`PASS ${name}`)
+    } catch (error) {
+      console.error(`FAIL ${name}`)
+      throw error
+    }
+  }
+
+  await runAsync('getCachedNotificationTemplate — 같은 code 2회 호출 → findMany 1회만 실행', async () => {
+    invalidateNotificationTemplateCache()
+    let findManyCount = 0
+    const stubDb = {
+      notificationTemplate: {
+        findMany: async () => {
+          findManyCount++
+          return [{ code: 'goal-reminder-email', isActive: true }]
+        },
+      },
+    } as unknown as PrismaClient
+    await getCachedNotificationTemplate(stubDb, 'goal-reminder-email')
+    await getCachedNotificationTemplate(stubDb, 'goal-reminder-email')
+    assert.equal(findManyCount, 1, 'findMany 가 1회를 초과해서 호출됨')
+  })
+
+  await runAsync('getCachedNotificationTemplate — 다른 code 연속 호출 → findMany 여전히 1회 (전량 로드)', async () => {
+    invalidateNotificationTemplateCache()
+    let findManyCount = 0
+    const stubDb = {
+      notificationTemplate: {
+        findMany: async () => {
+          findManyCount++
+          return [
+            { code: 'goal-reminder-email', isActive: true },
+            { code: 'goal-reminder-in-app', isActive: true },
+          ]
+        },
+      },
+    } as unknown as PrismaClient
+    await getCachedNotificationTemplate(stubDb, 'goal-reminder-email')
+    await getCachedNotificationTemplate(stubDb, 'goal-reminder-in-app')
+    assert.equal(findManyCount, 1, 'findMany 가 1회를 초과해서 호출됨')
+  })
+
+  await runAsync('getCachedNotificationTemplate — 존재하지 않는 code → null 반환, throw 없음', async () => {
+    invalidateNotificationTemplateCache()
+    const stubDb = {
+      notificationTemplate: {
+        findMany: async () => [{ code: 'other-code', isActive: true }],
+      },
+    } as unknown as PrismaClient
+    const result = await getCachedNotificationTemplate(stubDb, 'non-existent-code')
+    assert.equal(result, null)
+  })
+
+  await runAsync('getCachedNotificationTemplate — invalidate 후 재호출 → findMany 다시 실행', async () => {
+    invalidateNotificationTemplateCache()
+    let findManyCount = 0
+    const stubDb = {
+      notificationTemplate: {
+        findMany: async () => {
+          findManyCount++
+          return [{ code: 'goal-reminder-email', isActive: true }]
+        },
+      },
+    } as unknown as PrismaClient
+    await getCachedNotificationTemplate(stubDb, 'goal-reminder-email')
+    assert.equal(findManyCount, 1)
+    invalidateNotificationTemplateCache()
+    await getCachedNotificationTemplate(stubDb, 'goal-reminder-email')
+    assert.equal(findManyCount, 2, 'invalidate 후 findMany 가 재실행되지 않음')
+  })
+
+  await runAsync('getCachedNotificationTemplate — 갱신 실패 시 stale 캐시 폴백 (null 아님)', async () => {
+    invalidateNotificationTemplateCache()
+    let shouldThrow = false
+    const stubDb = {
+      notificationTemplate: {
+        findMany: async () => {
+          if (shouldThrow) throw new Error('DB unavailable')
+          return [{ code: 'goal-reminder-email', isActive: true }]
+        },
+      },
+    } as unknown as PrismaClient
+    // 정상 로드로 캐시 채움
+    const first = await getCachedNotificationTemplate(stubDb, 'goal-reminder-email')
+    assert.notEqual(first, null, '정상 로드 실패')
+    // TTL 만료 시뮬레이션: Date.now 가 61초 후 값을 반환하도록 임시 교체
+    shouldThrow = true
+    const origDateNow = Date.now
+    try {
+      Date.now = () => origDateNow() + 61_000
+      const stale = await getCachedNotificationTemplate(stubDb, 'goal-reminder-email')
+      assert.notEqual(stale, null, '갱신 실패 시 stale 캐시를 반환해야 한다 (null 이면 안 됨)')
+    } finally {
+      Date.now = origDateNow
+    }
   })
 
   console.log('Notification tests completed')
