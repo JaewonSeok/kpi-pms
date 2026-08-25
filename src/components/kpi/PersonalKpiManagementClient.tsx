@@ -532,7 +532,7 @@ function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId 
     evalYear: year,
     goalType: isSalesActor ? 'SALES_REVENUE' : 'GENERAL',
     kpiType: 'QUANTITATIVE',
-    kpiName: isSalesActor ? '개인 매출목표 달성' : '',
+    kpiName: '',
     definition: '',
     formula: '',
     targetAmount: '',
@@ -878,12 +878,6 @@ function derivePersonalSummary(items: PersonalKpiViewModel[], reviewPendingCount
   }
 }
 
-function getWeightSignal(totalWeight: number): PmsSignal {
-  if (totalWeight === 100) return 'green'
-  if (totalWeight > 100) return 'red'
-  return totalWeight >= 80 ? 'amber' : 'gray'
-}
-
 function getWeightTone(totalWeight: number): PmsTone | 'good' {
   if (totalWeight === 100) return 'good'
   if (totalWeight > 100) return 'danger'
@@ -1057,10 +1051,7 @@ function validateKpiForm(form: KpiForm, orgKpiTargetAmount?: string | null) {
 export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
-  const defaultLinkedOrgKpiId =
-    props.orgKpiOptions.find((o) => o.targetAmount)?.id ??
-    props.orgKpiOptions[0]?.id ??
-    ''
+  const defaultLinkedOrgKpiId = findSalesLinkedOrgKpiId(props.orgKpiOptions, props.actor.deptId)
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
   // URL ?tab=… 변경(메뉴 클릭 등 외부 네비게이션) 시 server가 전달하는 props.initialTab을 state로 동기.
   // 페이지 내부 <Tabs> 클릭은 setActiveTab → router.replace로 같은 initialTab을 다시 받지만
@@ -1351,10 +1342,9 @@ export function PersonalKpiManagementClient(props: Props) {
       shouldShowSalesBanner({
         jobCategory: props.actor.jobCategory,
         createDisabledReason,
-        mineItems,
         orgKpiOptions: props.orgKpiOptions,
       }),
-    [props.actor.jobCategory, createDisabledReason, mineItems, props.orgKpiOptions]
+    [props.actor.jobCategory, createDisabledReason, props.orgKpiOptions]
   )
   const reviewDisabledReason =
     props.state === 'error'
@@ -1443,13 +1433,7 @@ export function PersonalKpiManagementClient(props: Props) {
 
     const transition = getPersonalKpiHeroCtaTransition('create')
     setActiveTab(transition.nextTab)
-    // SALES 직군이지만 해당 연도에 이미 SALES_REVENUE KPI가 있으면 GENERAL로 초기화
-    const initialJobCategory: 'GENERAL' | 'SALES' =
-      props.actor.jobCategory === 'SALES' &&
-      mineItems.some((item) => item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED')
-        ? 'GENERAL'
-        : props.actor.jobCategory
-    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, initialJobCategory))
+    openEditorWithForm('create', buildEmptyForm(props.selectedYear, props.selectedEmployeeId, defaultLinkedOrgKpiId, props.actor.jobCategory))
     setAiPreview(null)
     setSelectedAiRecommendationIndex(null)
     setPendingAiRecommendationIndex(null)
@@ -2715,9 +2699,6 @@ export function PersonalKpiManagementClient(props: Props) {
           onClose={() => { setEditorOpen(false); setEditorFormError(undefined) }}
           onSave={handleSaveForm}
           actor={props.actor}
-          hasSalesKpiForYear={mineItems.some(
-            (item) => item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED'
-          )}
           formError={editorFormError}
           isConfirmedEdit={editorMode === 'edit' && !!selectedKpi && !isDraftStatus(selectedKpi.status) && canManagePersonalKpi(props.actor.role)}
           isMirror={editorMode === 'edit' && (selectedKpi?.isMirror ?? false)}
@@ -5452,7 +5433,6 @@ function EditorModal(props: {
   onClose: () => void
   onSave: () => void
   actor: Props['actor']
-  hasSalesKpiForYear: boolean
   formError?: string
   isConfirmedEdit?: boolean
   isMirror?: boolean
@@ -5514,12 +5494,12 @@ function EditorModal(props: {
                     name="goalType"
                     value="SALES_REVENUE"
                     checked={isSalesRevenue}
-                    disabled={(props.hasSalesKpiForYear && !isSalesRevenue) || lockedByConfirmed}
+                    disabled={lockedByConfirmed}
                     onChange={() =>
                       props.onChange((c) => ({
                         ...c,
                         goalType: 'SALES_REVENUE',
-                        kpiName: '개인 매출목표 달성',
+                        kpiName: c.kpiName || '개인 매출목표 달성',
                         kpiType: 'QUANTITATIVE',
                         targetAmount: '',
                         linkedOrgKpiId: c.linkedOrgKpiId || salesDefaultLinkedOrgKpiId,
@@ -5547,9 +5527,6 @@ function EditorModal(props: {
                   <span className="text-sm">일반 목표</span>
                 </label>
               </div>
-              {props.hasSalesKpiForYear && !isSalesRevenue ? (
-                <p className="mt-2 text-xs text-amber-600">이미 이 연도에 매출목표가 등록되어 있어 매출목표 선택이 제한됩니다.</p>
-              ) : null}
             </div>
           ) : null}
 
@@ -5559,8 +5536,8 @@ function EditorModal(props: {
               <input
                 value={props.form.kpiName}
                 onChange={(event) => props.onChange((current) => ({ ...current, kpiName: event.target.value }))}
-                disabled={isSalesRevenue || lockedByConfirmed}
-                className={`w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm ${isSalesRevenue || lockedByConfirmed ? 'bg-slate-50 text-slate-500' : ''}`}
+                disabled={lockedByConfirmed}
+                className={`w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm ${lockedByConfirmed ? 'bg-slate-50 text-slate-500' : ''}`}
                 placeholder="예: 주요 고객 이슈 해결 리드타임 개선"
               />
             </label>

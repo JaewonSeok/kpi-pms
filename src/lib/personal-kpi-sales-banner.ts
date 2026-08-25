@@ -1,19 +1,16 @@
 export type SalesBannerInput = {
   jobCategory: 'GENERAL' | 'SALES'
   createDisabledReason: string | undefined
-  mineItems: Array<{ goalType: string; persistedStatus: string }>
   orgKpiOptions: Array<{ targetAmount: string | null }>
 }
 
 export function shouldShowSalesBanner({
   jobCategory,
   createDisabledReason,
-  mineItems,
   orgKpiOptions,
 }: SalesBannerInput): boolean {
   if (jobCategory !== 'SALES') return false
   if (createDisabledReason) return false
-  if (mineItems.some((i) => i.goalType === 'SALES_REVENUE' && i.persistedStatus !== 'ARCHIVED')) return false
   if (!orgKpiOptions.some((o) => o.targetAmount != null && Number(o.targetAmount) > 0)) return false
   return true
 }
