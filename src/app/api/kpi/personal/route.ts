@@ -141,13 +141,6 @@ export async function POST(request: Request) {
       if (empJobCategory?.jobCategory !== 'SALES') {
         throw new AppError(400, 'NOT_SALES_EMPLOYEE', '영업 직군(SALES)이 아닌 직원에게는 SALES_REVENUE 목표를 생성할 수 없습니다.')
       }
-      const existingSalesKpi = await prisma.personalKpi.findFirst({
-        where: { employeeId: data.employeeId, evalYear: data.evalYear, goalType: 'SALES_REVENUE', status: { not: 'ARCHIVED' } },
-        select: { id: true },
-      })
-      if (existingSalesKpi) {
-        throw new AppError(400, 'SALES_KPI_ALREADY_EXISTS', '같은 평가 연도에 이미 SALES_REVENUE 목표가 등록되어 있습니다.')
-      }
 
       // 참조형: 조직 KPI targetAmount 존재 확인
       if (data.targetAmount === undefined) {

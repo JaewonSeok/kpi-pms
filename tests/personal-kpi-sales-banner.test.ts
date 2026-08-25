@@ -20,7 +20,6 @@ run('비SALES 직군 (GENERAL) → 배너 숨김', () => {
     shouldShowSalesBanner({
       jobCategory: 'GENERAL',
       createDisabledReason: undefined,
-      mineItems: [],
       orgKpiOptions: BASE_ORG_KPI,
     }),
     false
@@ -32,43 +31,17 @@ run('SALES + 게이트 닫힘 (createDisabledReason 있음) → 배너 숨김', 
     shouldShowSalesBanner({
       jobCategory: 'SALES',
       createDisabledReason: '현재 범위에서는 개인 KPI를 추가할 권한이 없습니다.',
-      mineItems: [],
       orgKpiOptions: BASE_ORG_KPI,
     }),
     false
   )
 })
 
-run('SALES + 활성 SALES_REVENUE KPI 보유 → 배너 숨김', () => {
+run('SALES_REVENUE 보유 여부와 무관하게 배너 노출', () => {
   assert.equal(
     shouldShowSalesBanner({
       jobCategory: 'SALES',
       createDisabledReason: undefined,
-      mineItems: [{ goalType: 'SALES_REVENUE', persistedStatus: 'SUBMITTED' }],
-      orgKpiOptions: BASE_ORG_KPI,
-    }),
-    false
-  )
-})
-
-run('SALES + DRAFT 상태 SALES_REVENUE KPI 보유 → 배너 숨김 (ARCHIVED 아님)', () => {
-  assert.equal(
-    shouldShowSalesBanner({
-      jobCategory: 'SALES',
-      createDisabledReason: undefined,
-      mineItems: [{ goalType: 'SALES_REVENUE', persistedStatus: 'DRAFT' }],
-      orgKpiOptions: BASE_ORG_KPI,
-    }),
-    false
-  )
-})
-
-run('SALES + ARCHIVED SALES_REVENUE KPI만 보유 → 배너 표시 (ARCHIVED는 미보유로 취급)', () => {
-  assert.equal(
-    shouldShowSalesBanner({
-      jobCategory: 'SALES',
-      createDisabledReason: undefined,
-      mineItems: [{ goalType: 'SALES_REVENUE', persistedStatus: 'ARCHIVED' }],
       orgKpiOptions: BASE_ORG_KPI,
     }),
     true
@@ -82,7 +55,6 @@ run('SALES + orgKpiOptions 빈 배열 → 배너 숨김', () => {
     shouldShowSalesBanner({
       jobCategory: 'SALES',
       createDisabledReason: undefined,
-      mineItems: [],
       orgKpiOptions: [],
     }),
     false
@@ -94,7 +66,6 @@ run('SALES + orgKpiOptions targetAmount=null → 배너 숨김', () => {
     shouldShowSalesBanner({
       jobCategory: 'SALES',
       createDisabledReason: undefined,
-      mineItems: [],
       orgKpiOptions: [{ targetAmount: null }],
     }),
     false
@@ -106,7 +77,6 @@ run('SALES + orgKpiOptions targetAmount="0" → 배너 숨김 (양수 아님)', 
     shouldShowSalesBanner({
       jobCategory: 'SALES',
       createDisabledReason: undefined,
-      mineItems: [],
       orgKpiOptions: [{ targetAmount: '0' }],
     }),
     false
@@ -118,7 +88,6 @@ run('SALES + orgKpiOptions targetAmount="1" → 배너 표시', () => {
     shouldShowSalesBanner({
       jobCategory: 'SALES',
       createDisabledReason: undefined,
-      mineItems: [],
       orgKpiOptions: [{ targetAmount: '1' }],
     }),
     true
@@ -130,7 +99,6 @@ run('SALES + null 혼재, 양수 하나 있음 → 배너 표시', () => {
     shouldShowSalesBanner({
       jobCategory: 'SALES',
       createDisabledReason: undefined,
-      mineItems: [],
       orgKpiOptions: [{ targetAmount: null }, { targetAmount: '0' }, { targetAmount: '500000000' }],
     }),
     true
@@ -144,7 +112,6 @@ run('모든 조건 충족 → 배너 표시', () => {
     shouldShowSalesBanner({
       jobCategory: 'SALES',
       createDisabledReason: undefined,
-      mineItems: [{ goalType: 'GENERAL', persistedStatus: 'DRAFT' }],
       orgKpiOptions: [{ targetAmount: '1000000000' }],
     }),
     true
