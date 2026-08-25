@@ -634,7 +634,7 @@ function buildPersonalKpiBootstrapPayloadFromOrgKpi(params: {
   }
 }
 
-async function autoBootstrapLeadershipPersonalKpis(params: {
+export async function autoBootstrapLeadershipPersonalKpis(params: {
   sessionUserId: string
   targetEmployee: EmployeeLite
   departmentsById: Map<string, DepartmentLite>
@@ -645,7 +645,7 @@ async function autoBootstrapLeadershipPersonalKpis(params: {
     targetEmployee: params.targetEmployee,
     departmentsById: params.departmentsById,
   })
-  if (!scope || params.goalEditLocked) {
+  if (!scope || params.goalEditLocked || params.targetEmployee.id !== params.sessionUserId) {
     return
   }
 

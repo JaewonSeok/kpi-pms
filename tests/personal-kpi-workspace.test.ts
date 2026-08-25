@@ -859,7 +859,7 @@ async function main() {
     })
   })
 
-  await run('personal KPI leadership bootstrap uses viewed target employee context under impersonation-style access', async () => {
+  await run('personal KPI leadership bootstrap is skipped when admin views another employee page', async () => {
     const personalKpis: Array<Record<string, unknown>> = []
 
     await withStubbedPersonalKpiPageData(
@@ -980,6 +980,131 @@ async function main() {
         })
 
         assert.equal(data.selectedEmployeeId, 'div-head-1')
+        assert.equal(data.mine.length, 0)
+      }
+    )
+  })
+
+  await run('personal KPI leadership bootstrap runs and uses target employee context when accessing own page', async () => {
+    const personalKpis: Array<Record<string, unknown>> = []
+
+    await withStubbedPersonalKpiPageData(
+      {
+        employeeFindMany: async () => [
+          {
+            id: 'div-head-1',
+            empId: 'EMP-DIV',
+            empName: 'Viewed Division Head',
+            role: 'ROLE_DIV_HEAD',
+            deptId: 'dept-division',
+            teamLeaderId: null,
+            sectionChiefId: null,
+            divisionHeadId: null,
+          },
+        ],
+        departmentFindMany: async () => [{ id: 'dept-division', deptName: 'Customer Experience Division', parentDeptId: null }],
+        departmentFindUnique: async () => ({
+          id: 'dept-division',
+          deptName: 'Customer Experience Division',
+          organization: {
+            id: 'org-1',
+            name: 'RSUPPORT',
+          },
+        }),
+        evalCycleFindMany: async () => [
+          {
+            id: 'cycle-2026',
+            cycleName: '2026 KPI 설정',
+            evalYear: 2026,
+            status: 'KPI_SETTING',
+            goalEditMode: 'OPEN',
+          },
+        ],
+        personalKpiFindMany: async (args?: { where?: Record<string, unknown> }) => {
+          const where = args?.where ?? {}
+          return personalKpis.filter((item) => {
+            if (where.employeeId && item.employeeId !== where.employeeId) return false
+            if (where.evalYear && item.evalYear !== where.evalYear) return false
+            if ((where.linkedOrgKpiId as { in?: string[] } | undefined)?.in) {
+              return (where.linkedOrgKpiId as { in: string[] }).in.includes((item.linkedOrgKpiId as string) ?? '')
+            }
+            return true
+          })
+        },
+        personalKpiCreateMany: async ({ data }: { data: Array<Record<string, unknown>> }) => {
+          personalKpis.push(
+            ...data.map((item, index) => ({
+              id: `self-${index}`,
+              ...item,
+              employee: {
+                empName: 'Viewed Division Head',
+                department: {
+                  deptName: 'Customer Experience Division',
+                },
+              },
+              linkedOrgKpi: {
+                id: 'org-division-1',
+                deptId: 'dept-division',
+                kpiName: '본부 KPI 1',
+                department: {
+                  deptName: 'Customer Experience Division',
+                },
+                parentOrgKpiId: null,
+              },
+              monthlyRecords: [],
+              copiedFromPersonalKpi: null,
+              updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+              createdAt: new Date('2026-04-01T00:00:00.000Z'),
+            }))
+          )
+          return { count: data.length }
+        },
+        orgKpiFindMany: async (args?: { where?: Record<string, unknown> }) => {
+          const deptId = args?.where?.deptId as string | { in?: string[] } | undefined
+          if (typeof deptId === 'string' && deptId !== 'dept-division') return []
+          if (deptId && typeof deptId === 'object' && Array.isArray(deptId.in) && !deptId.in.includes('dept-division')) return []
+          return [
+            {
+              id: 'org-division-1',
+              deptId: 'dept-division',
+              evalYear: 2026,
+              kpiType: 'QUANTITATIVE',
+              kpiCategory: '전략',
+              kpiName: '본부 KPI 1',
+              definition: '본부 전략 KPI',
+              formula: 'E/F',
+              targetValue: 95,
+              targetValueT: 93,
+              targetValueE: 95,
+              targetValueS: 97,
+              weight: 40,
+              difficulty: 'HIGH',
+              status: 'CONFIRMED',
+              department: { deptName: 'Customer Experience Division' },
+              parentOrgKpiId: null,
+            },
+          ]
+        },
+        auditLogFindMany: async () => [],
+        aiRequestLogFindMany: async () => [],
+        multiFeedbackFindMany: async () => [],
+      },
+      async () => {
+        const data = await getPersonalKpiPageData({
+          session: {
+            user: {
+              id: 'div-head-1',
+              role: 'ROLE_DIV_HEAD',
+              name: 'Viewed Division Head',
+              deptId: 'dept-division',
+              deptName: 'Customer Experience Division',
+              accessibleDepartmentIds: [],
+            },
+          },
+          year: 2026,
+          employeeId: 'div-head-1',
+        })
+
         assert.equal(data.mine.length, 1)
         assert.equal(data.mine[0]?.employeeId, 'div-head-1')
         assert.equal(data.mine[0]?.orgKpiId, 'org-division-1')
