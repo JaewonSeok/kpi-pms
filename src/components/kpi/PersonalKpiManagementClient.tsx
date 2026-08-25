@@ -1051,7 +1051,11 @@ function validateKpiForm(form: KpiForm, orgKpiTargetAmount?: string | null) {
 export function PersonalKpiManagementClient(props: Props) {
   const router = useRouter()
   const { requestRiskConfirmation, riskDialog } = useImpersonationRiskAction()
-  const defaultLinkedOrgKpiId = findSalesLinkedOrgKpiId(props.orgKpiOptions, props.actor.deptId)
+  const defaultLinkedOrgKpiId =
+    findSalesLinkedOrgKpiId(props.orgKpiOptions, props.actor.deptId) ||
+    (props.orgKpiOptions.find((o) => o.targetAmount)?.id ??
+      props.orgKpiOptions[0]?.id ??
+      '')
   const [activeTabState, setActiveTabState] = useState<PersonalKpiTabKey>(isTabKey(props.initialTab) ? props.initialTab : 'mine')
   // URL ?tab=… 변경(메뉴 클릭 등 외부 네비게이션) 시 server가 전달하는 props.initialTab을 state로 동기.
   // 페이지 내부 <Tabs> 클릭은 setActiveTab → router.replace로 같은 initialTab을 다시 받지만

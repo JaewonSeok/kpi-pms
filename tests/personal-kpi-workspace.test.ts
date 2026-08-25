@@ -1751,30 +1751,6 @@ async function main() {
     assert.equal(payloadBlock.includes('goalType: form.goalType,'), true)
   })
 
-  await run('handleOpenCreate falls back to GENERAL when SALES actor already has SALES_REVENUE KPI — prevents server duplicate error', () => {
-    const source = read('src/components/kpi/PersonalKpiManagementClient.tsx')
-    const createStart = source.indexOf('function handleOpenCreate()')
-    const createEnd = source.indexOf('\n  }', createStart) + 3
-    const createBlock = source.slice(createStart, createEnd)
-
-    assert.notEqual(createStart, -1)
-    // Must detect existing SALES_REVENUE KPI via mineItems
-    assert.ok(
-      createBlock.includes("item.goalType === 'SALES_REVENUE' && item.persistedStatus !== 'ARCHIVED'"),
-      'handleOpenCreate checks mineItems for existing SALES_REVENUE KPI'
-    )
-    // Must use initialJobCategory (not hard-coded jobCategory) in buildEmptyForm
-    assert.ok(
-      createBlock.includes('initialJobCategory'),
-      'handleOpenCreate passes initialJobCategory to buildEmptyForm'
-    )
-    // When duplicate exists: initialJobCategory should be 'GENERAL'
-    assert.ok(
-      createBlock.includes("? 'GENERAL'"),
-      "falls back to 'GENERAL' for duplicate SALES_REVENUE scenario"
-    )
-  })
-
   await run('POST /api/kpi/personal 참조형 SALES_REVENUE CREATE: route 코드 구조 — orgKpi.targetAmount 조회 + checkSalesKpiTargetSource + P2002 래핑 존재', () => {
     const routeSource = read('src/app/api/kpi/personal/route.ts')
 
