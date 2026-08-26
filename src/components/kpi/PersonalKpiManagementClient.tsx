@@ -525,6 +525,13 @@ function formatPercent(value?: number) {
   return `${Math.round(value * 10) / 10}%`
 }
 
+function formatSalesTargetAmount(value: string | null): string | null {
+  if (value === null || value === '') return null
+  const num = Number(value)
+  if (isNaN(num)) return null
+  return num.toLocaleString('ko-KR') + '원'
+}
+
 function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId = '', jobCategory: 'GENERAL' | 'SALES' = 'GENERAL'): KpiForm {
   const isSalesActor = jobCategory === 'SALES'
   return {
@@ -3249,6 +3256,9 @@ function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: bool
           </div>
           <p className="mt-0.5 truncate text-[11px] text-slate-500">
             {props.item.orgKpiTitle ? props.item.orgKpiTitle : '연결 조직 KPI 없음'}
+            {props.item.goalType === 'SALES_REVENUE' && formatSalesTargetAmount(props.item.targetAmount) !== null
+              ? ` · ${formatSalesTargetAmount(props.item.targetAmount)}${props.item.isReferenceSalesTarget ? '(팀)' : ''}`
+              : null}
           </p>
         </div>
         <span className="truncate text-xs leading-5 text-slate-600">{planPreview}</span>
@@ -4725,6 +4735,18 @@ function GoalDetailPanel(props: {
             multiline
             characterCount={item.formula ? `${item.formula.length}/${PERSONAL_KPI_FORMULA_MAX}` : undefined}
           />
+          {item.goalType === 'SALES_REVENUE' ? (
+            <ReadOnlyGoalField
+              label="매출 목표액"
+              value={formatSalesTargetAmount(item.targetAmount) ?? '미설정'}
+              helper={
+                item.isReferenceSalesTarget
+                  ? '팀 목표 자동 적용 — 연결 조직 KPI 기준'
+                  : '개인 직접 입력'
+              }
+              muted={formatSalesTargetAmount(item.targetAmount) === null}
+            />
+          ) : null}
           <ReadOnlyGoalField label="비중(%)" value={`${item.weight}%`} required />
           <div className="grid gap-3 sm:grid-cols-2">
             <ReadOnlyGoalField
