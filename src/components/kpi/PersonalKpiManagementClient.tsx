@@ -5449,13 +5449,6 @@ function EditorModal(props: {
 
   const linkedOrgKpiOption = props.orgKpiOptions.find((o) => o.id === props.form.linkedOrgKpiId)
   const orgKpiTargetAmount = (isSalesRevenue ? (linkedOrgKpiOption?.targetAmount ?? null) : null)
-  const salesTargetMode = resolveSalesTargetMode({
-    goalType: props.form.goalType,
-    formTargetAmount: props.form.targetAmount,
-    orgKpiTargetAmount,
-  })
-  const isAutoMode = salesTargetMode === 'auto'
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
       <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl bg-white shadow-2xl">
@@ -5621,51 +5614,26 @@ function EditorModal(props: {
                   <p className="text-xs text-slate-500">연간 매출 목표액을 원(₩) 단위로 입력하세요.</p>
                 </div>
 
-                {isAutoMode ? (
-                  <div className="space-y-1">
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                      <div className="text-xs font-semibold text-emerald-700">팀 목표 자동 적용</div>
-                      <div className="mt-0.5 text-sm font-bold text-slate-900">
-                        {Number(orgKpiTargetAmount).toLocaleString('ko-KR')}원
-                      </div>
-                      <div className="mt-0.5 text-xs text-slate-500">연결 조직 KPI 기준 — 팀 목표가 변경되면 자동 반영됩니다</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => props.onChange((c) => ({ ...c, targetAmount: orgKpiTargetAmount ?? '' }))}
-                      className="text-xs text-slate-500 underline hover:text-slate-700"
-                    >
-                      직접 입력으로 전환
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <label className="block space-y-2">
-                      <span className="text-sm font-medium text-slate-900">
-                        목표액 <span className="text-rose-600">*</span>
-                      </span>
-                      <input
-                        value={formatTargetAmount(props.form.targetAmount)}
-                        onChange={(event) => {
-                          const raw = event.target.value.replace(/[^0-9]/g, '')
-                          props.onChange((c) => ({ ...c, targetAmount: raw }))
-                        }}
-                        disabled={lockedByConfirmed}
-                        className={`w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm ${lockedByConfirmed ? 'opacity-50' : ''}`}
-                        placeholder="예: 500,000,000"
-                      />
-                    </label>
-                    {orgKpiTargetAmount ? (
-                      <button
-                        type="button"
-                        onClick={() => props.onChange((c) => ({ ...c, targetAmount: '' }))}
-                        className="text-xs text-emerald-600 underline hover:text-emerald-800"
-                      >
-                        팀 목표 자동 적용으로 전환 ({Number(orgKpiTargetAmount).toLocaleString('ko-KR')}원)
-                      </button>
-                    ) : null}
-                  </div>
-                )}
+                <div className="space-y-1">
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-900">목표액</span>
+                    <input
+                      value={formatTargetAmount(props.form.targetAmount)}
+                      onChange={(event) => {
+                        const raw = event.target.value.replace(/[^0-9]/g, '')
+                        props.onChange((c) => ({ ...c, targetAmount: raw }))
+                      }}
+                      disabled={lockedByConfirmed}
+                      className={`w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm ${lockedByConfirmed ? 'opacity-50' : ''}`}
+                      placeholder={orgKpiTargetAmount ? '비워두면 팀 목표 자동 적용' : '예: 500,000,000'}
+                    />
+                  </label>
+                  {orgKpiTargetAmount && !props.form.targetAmount ? (
+                    <p className="text-xs text-emerald-700">
+                      비워두면 팀 목표 {Number(orgKpiTargetAmount).toLocaleString('ko-KR')}원이 자동 적용됩니다
+                    </p>
+                  ) : null}
+                </div>
 
                 <label className="space-y-2">
                   <span className="text-sm font-medium text-slate-900">가중치</span>
