@@ -71,7 +71,7 @@ import { LinkifiedText } from '@/lib/linkify'
 import { getPersonalKpiScheduleGuidance } from '@/lib/evaluation-2026-schedule-readiness'
 import { shouldShowSalesBanner, findSalesLinkedOrgKpiId } from '@/lib/personal-kpi-sales-banner'
 import { SALES_SCORE_BANDS_2026 } from '@/lib/sales-score-policy-2026'
-import { resolveSalesTargetMode, validateSalesKpiTargetAmount } from '@/lib/personal-kpi-sales-target'
+import { validateSalesKpiTargetAmount } from '@/lib/personal-kpi-sales-target'
 import {
   PmsEmptyIllustration,
   PmsMetricRail,
@@ -116,6 +116,7 @@ type KpiForm = {
   definition: string
   formula: string
   targetAmount: string
+  useOrgKpiAmount: boolean
   targetValueT: string
   targetValueE: string
   targetValueS: string
@@ -543,6 +544,7 @@ function buildEmptyForm(year: number, employeeId: string, defaultLinkedOrgKpiId 
     definition: '',
     formula: '',
     targetAmount: '',
+    useOrgKpiAmount: false,
     targetValueT: '',
     targetValueE: '',
     targetValueS: '',
@@ -595,6 +597,7 @@ function buildFormFromKpi(kpi: PersonalKpiViewModel): KpiForm {
     definition: kpi.definition ?? '',
     formula: kpi.formula ?? '',
     targetAmount: kpi.isReferenceSalesTarget ? '' : (kpi.targetAmount ?? ''),
+    useOrgKpiAmount: kpi.isReferenceSalesTarget,
     targetValueT: toNumberString(targetValues.targetValueT),
     targetValueE: toNumberString(targetValues.targetValueE),
     targetValueS: toNumberString(targetValues.targetValueS),
@@ -1036,6 +1039,7 @@ function validateKpiForm(form: KpiForm, orgKpiTargetAmount?: string | null) {
     const error = validateSalesKpiTargetAmount({
       formTargetAmount: form.targetAmount,
       orgKpiTargetAmount: orgKpiTargetAmount ?? null,
+      useOrgKpiAmount: form.useOrgKpiAmount,
     })
     if (error) return error
   }
@@ -1656,11 +1660,6 @@ export function PersonalKpiManagementClient(props: Props) {
 
     try {
       const targetAmountRaw = isSalesRevenue ? form.targetAmount.replace(/,/g, '').trim() : undefined
-      const isAutoMode = resolveSalesTargetMode({
-        goalType: form.goalType,
-        formTargetAmount: form.targetAmount,
-        orgKpiTargetAmount,
-      }) === 'auto'
 
       const payload = {
         employeeId: form.employeeId,
@@ -1671,7 +1670,7 @@ export function PersonalKpiManagementClient(props: Props) {
         definition: form.definition.trim() || undefined,
         formula: form.formula.trim() || undefined,
         ...(isSalesRevenue
-          ? (!isAutoMode ? { targetAmount: targetAmountRaw || null } : {})
+          ? (!form.useOrgKpiAmount ? { targetAmount: targetAmountRaw || null } : {})
           : {}),
         weight: Number(form.weight),
         difficulty: form.difficulty,
@@ -1705,7 +1704,7 @@ export function PersonalKpiManagementClient(props: Props) {
                     }
                   : {
                       ...payload,
-                      ...(isSalesRevenue && isAutoMode ? { targetAmount: null } : {}),
+                      ...(isSalesRevenue && form.useOrgKpiAmount ? { targetAmount: null } : {}),
                       linkedOrgKpiId: form.linkedOrgKpiId || null,
                       policyCategory: policyCategoryValue,
                     }
@@ -3257,7 +3256,7 @@ function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: bool
           <p className="mt-0.5 truncate text-[11px] text-slate-500">
             {props.item.orgKpiTitle ? props.item.orgKpiTitle : '연결 조직 KPI 없음'}
             {props.item.goalType === 'SALES_REVENUE' && formatSalesTargetAmount(props.item.targetAmount) !== null
-              ? ` · ${formatSalesTargetAmount(props.item.targetAmount)}${props.item.isReferenceSalesTarget ? '(팀)' : ''}`
+              ? ` · ${formatSalesTargetAmount(props.item.targetAmount)}${props.item.isReferenceSalesTarget ? '(팀 KPI)' : ''}`
               : null}
           </p>
         </div>
@@ -5636,25 +5635,39 @@ function EditorModal(props: {
                   <p className="text-xs text-slate-500">연간 매출 목표액을 원(₩) 단위로 입력하세요.</p>
                 </div>
 
+                {orgKpiTargetAmount ? (
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={props.form.useOrgKpiAmount}
+                      disabled={lockedByConfirmed}
+                      onChange={(e) =>
+                        props.onChange((c) => ({ ...c, useOrgKpiAmount: e.target.checked, targetAmount: '' }))
+                      }
+                      className="accent-emerald-600"
+                    />
+                    <span className="text-sm">
+                      팀 KPI 금액 사용 ({Number(orgKpiTargetAmount).toLocaleString('ko-KR')}원)
+                    </span>
+                  </label>
+                ) : null}
+
                 <div className="space-y-1">
                   <label className="block space-y-2">
-                    <span className="text-sm font-medium text-slate-900">목표액</span>
+                    <span className="text-sm font-medium text-slate-900">
+                      {!props.form.useOrgKpiAmount ? <span className="text-rose-500">*</span> : null}목표액
+                    </span>
                     <input
                       value={formatTargetAmount(props.form.targetAmount)}
                       onChange={(event) => {
                         const raw = event.target.value.replace(/[^0-9]/g, '')
                         props.onChange((c) => ({ ...c, targetAmount: raw }))
                       }}
-                      disabled={lockedByConfirmed}
-                      className={`w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm ${lockedByConfirmed ? 'opacity-50' : ''}`}
-                      placeholder={orgKpiTargetAmount ? '비워두면 팀 목표 자동 적용' : '예: 500,000,000'}
+                      disabled={lockedByConfirmed || props.form.useOrgKpiAmount}
+                      className={`w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm ${lockedByConfirmed || props.form.useOrgKpiAmount ? 'opacity-50' : ''}`}
+                      placeholder="예: 500,000,000"
                     />
                   </label>
-                  {orgKpiTargetAmount && !props.form.targetAmount ? (
-                    <p className="text-xs text-emerald-700">
-                      비워두면 팀 목표 {Number(orgKpiTargetAmount).toLocaleString('ko-KR')}원이 자동 적용됩니다
-                    </p>
-                  ) : null}
                 </div>
 
                 <label className="space-y-2">
