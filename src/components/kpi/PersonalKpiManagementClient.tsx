@@ -2911,11 +2911,7 @@ function HeroSection(props: {
   onOpenReview: () => void
   onSubmit: () => void
 }) {
-  const aiTone: PmsTone = props.aiDisabledReason ? 'warning' : 'ai'
   const editTone: PmsTone = props.createDisabledReason ? 'locked' : 'success'
-  const orgLinkRate = props.summary.totalCount
-    ? Math.round((props.summary.linkedOrgKpiCount / props.summary.totalCount) * 100)
-    : 0
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -2937,15 +2933,6 @@ function HeroSection(props: {
           </PmsSignalChip>
           <PmsSignalChip tone={props.submitState.disabled ? 'warning' : 'success'} icon={<Send className="h-3.5 w-3.5" />}>
             {props.submitState.disabled ? '제출 점검' : '제출 가능'}
-          </PmsSignalChip>
-          <PmsSignalChip tone={aiTone} icon={<Sparkles className="h-3.5 w-3.5" />}>
-            {props.aiDisabledReason ? 'AI 확인' : 'AI 작성 보조'}
-          </PmsSignalChip>
-          <PmsSignalChip tone={orgLinkRate >= 80 ? 'success' : orgLinkRate > 0 ? 'warning' : 'neutral'} icon={<Link2 className="h-3.5 w-3.5" />}>
-            조직 KPI {props.summary.linkedOrgKpiCount}/{props.summary.totalCount}
-          </PmsSignalChip>
-          <PmsSignalChip tone="locked" icon={<ShieldCheck className="h-3.5 w-3.5" />}>
-            공식 평가 미산정
           </PmsSignalChip>
         </div>
       </div>
