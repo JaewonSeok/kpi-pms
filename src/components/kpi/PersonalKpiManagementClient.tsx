@@ -917,7 +917,7 @@ function getSupplementNeededCount(items: PersonalKpiViewModel[]) {
       !COMPLETION_STATUSES.has(item.status) && (
         item.hasRejectedRevision ||
         !item.policyCategory ||
-        !item.orgKpiId ||
+        (item.policyCategory === 'ORG_GOAL' && !item.orgKpiId) ||
         item.mboPolicy.issues.length > 0 ||
         buildMboQualityChecklist(item).some((check) => !check.done)
       )
