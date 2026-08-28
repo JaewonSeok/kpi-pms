@@ -2135,42 +2135,81 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                     description="조직 체인과 수동 배정 설정을 반영한 실제 평가 단계를 순서대로 보여줍니다."
                   >
                     <div className="grid gap-3 xl:grid-cols-4">
-                      {selected.stageChain.map((entry) => (
-                        <div
-                          key={`${entry.stage}-${entry.reviewOrder}`}
-                          className={`rounded-2xl border p-4 ${
-                            entry.isCurrent
-                              ? 'border-blue-300 bg-blue-50'
-                              : 'border-slate-200 bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                                {entry.stage === 'SELF' ? '본인 단계' : `${entry.reviewOrder}차 승인`}
+                      {selected.stageChain.map((entry) =>
+                        entry.evaluationId ? (
+                          <button
+                            key={`${entry.stage}-${entry.reviewOrder}`}
+                            type="button"
+                            onClick={() => moveToEvaluation(entry.evaluationId!)}
+                            className={`rounded-2xl border p-4 w-full text-left transition hover:border-blue-300 hover:bg-blue-50 ${
+                              entry.isCurrent
+                                ? 'border-blue-300 bg-blue-50'
+                                : 'border-slate-200 bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                  {entry.stage === 'SELF' ? '본인 단계' : `${entry.reviewOrder}차 승인`}
+                                </div>
+                                <div className="mt-1 text-sm font-semibold text-slate-900">
+                                  {entry.stageLabel}
+                                </div>
                               </div>
-                              <div className="mt-1 text-sm font-semibold text-slate-900">
-                                {entry.stageLabel}
+                              <Badge tone={entry.isCurrent ? 'success' : statusTone(entry.status ?? '')}>
+                                {entry.isCurrent ? '현재 단계' : entry.statusLabel}
+                              </Badge>
+                            </div>
+                            <div className="mt-3 space-y-2 text-sm text-slate-700">
+                              <div className="font-semibold text-slate-900">{entry.evaluatorName}</div>
+                              <div>{entry.evaluatorPosition}</div>
+                              <div className="text-slate-500">{entry.evaluatorDepartment}</div>
+                              <div className="text-xs text-slate-500">
+                                {entry.submittedAt
+                                  ? `최근 제출 ${entry.submittedAt}`
+                                  : entry.updatedAt
+                                    ? `최근 수정 ${entry.updatedAt}`
+                                    : '아직 진행 전'}
                               </div>
                             </div>
-                            <Badge tone={entry.isCurrent ? 'success' : statusTone(entry.status ?? '')}>
-                              {entry.isCurrent ? '현재 단계' : entry.statusLabel}
-                            </Badge>
-                          </div>
-                          <div className="mt-3 space-y-2 text-sm text-slate-700">
-                            <div className="font-semibold text-slate-900">{entry.evaluatorName}</div>
-                            <div>{entry.evaluatorPosition}</div>
-                            <div className="text-slate-500">{entry.evaluatorDepartment}</div>
-                            <div className="text-xs text-slate-500">
-                              {entry.submittedAt
-                                ? `최근 제출 ${entry.submittedAt}`
-                                : entry.updatedAt
-                                  ? `최근 수정 ${entry.updatedAt}`
-                                  : '아직 진행 전'}
+                          </button>
+                        ) : (
+                          <div
+                            key={`${entry.stage}-${entry.reviewOrder}`}
+                            className={`rounded-2xl border p-4 ${
+                              entry.isCurrent
+                                ? 'border-blue-300 bg-blue-50'
+                                : 'border-slate-200 bg-slate-50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                  {entry.stage === 'SELF' ? '본인 단계' : `${entry.reviewOrder}차 승인`}
+                                </div>
+                                <div className="mt-1 text-sm font-semibold text-slate-900">
+                                  {entry.stageLabel}
+                                </div>
+                              </div>
+                              <Badge tone={entry.isCurrent ? 'success' : statusTone(entry.status ?? '')}>
+                                {entry.isCurrent ? '현재 단계' : entry.statusLabel}
+                              </Badge>
+                            </div>
+                            <div className="mt-3 space-y-2 text-sm text-slate-700">
+                              <div className="font-semibold text-slate-900">{entry.evaluatorName}</div>
+                              <div>{entry.evaluatorPosition}</div>
+                              <div className="text-slate-500">{entry.evaluatorDepartment}</div>
+                              <div className="text-xs text-slate-500">
+                                {entry.submittedAt
+                                  ? `최근 제출 ${entry.submittedAt}`
+                                  : entry.updatedAt
+                                    ? `최근 수정 ${entry.updatedAt}`
+                                    : '아직 진행 전'}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      )}
                     </div>
                   </Panel>
 
