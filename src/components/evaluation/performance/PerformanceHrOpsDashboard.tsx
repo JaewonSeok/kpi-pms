@@ -59,6 +59,9 @@ type EvaluationSummary = {
   targetId: string
   targetName: string
   targetDepartment: string
+  targetEmployeeNo: string
+  targetPosition: string
+  targetDivision: string
   evaluatorName: string
   totalScore?: number | null
   updatedAt: string
@@ -586,6 +589,9 @@ function buildTargetProgress(evaluations: EvaluationSummary[], selected: Selecte
         targetId: selected.target.id,
         targetName: selected.target.name,
         targetDepartment: selected.target.department,
+        targetEmployeeNo: '확인 필요',
+        targetPosition: selected.target.position,
+        targetDivision: '확인 필요',
         evaluatorName: '-',
         totalScore: selected.totalScore,
         updatedAt: selected.updatedAt,
@@ -605,10 +611,10 @@ function buildTargetProgress(evaluations: EvaluationSummary[], selected: Selecte
     return {
       targetId,
       name: source?.targetName ?? selected?.target.name ?? '-',
-      employeeNo: '확인 필요',
-      division: source?.targetDepartment ?? selected?.target.department ?? '확인 필요',
-      team: selectedMatch ? selected?.target.department ?? '확인 필요' : '확인 필요',
-      position: selectedMatch ? selected?.target.position ?? '확인 필요' : '확인 필요',
+      employeeNo: source?.targetEmployeeNo ?? '확인 필요',
+      division: source?.targetDivision ?? '확인 필요',
+      team: source?.targetDepartment ?? '확인 필요',
+      position: source?.targetPosition ?? '확인 필요',
       selfStatus: resolveStageState(self, '자기평가'),
       leaderStatus: resolveStageState(leader, '팀장 평가'),
       hrStatus: resolveStageState(hr, 'HR 점수 반영'),

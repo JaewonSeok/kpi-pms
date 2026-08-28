@@ -90,6 +90,9 @@ export type EvaluationWorkbenchPageData = {
     targetId: string
     targetName: string
     targetDepartment: string
+    targetEmployeeNo: string
+    targetPosition: string
+    targetDivision: string
     evaluatorName: string
     totalScore?: number | null
     updatedAt: string
@@ -749,10 +752,16 @@ async function loadEvaluations(params: {
         select: {
           id: true,
           empName: true,
+          empId: true,
           position: true,
           department: {
             select: {
               deptName: true,
+              parentDept: {
+                select: {
+                  deptName: true,
+                },
+              },
             },
           },
         },
@@ -1059,6 +1068,9 @@ export async function getEvaluationWorkbenchPageData(
         targetId: evaluation.target.id,
         targetName: evaluation.target.empName,
         targetDepartment: evaluation.target.department.deptName,
+        targetEmployeeNo: evaluation.target.empId,
+        targetPosition: evaluation.target.position,
+        targetDivision: evaluation.target.department.parentDept?.deptName ?? evaluation.target.department.deptName,
         evaluatorName: evaluation.evaluator.empName,
         totalScore: evaluation.totalScore,
         updatedAt: formatDate(evaluation.updatedAt),
