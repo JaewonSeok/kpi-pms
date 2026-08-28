@@ -122,6 +122,7 @@ const PATH_MENU_ENTRIES: Array<{ prefix: string; menuKey: MenuKey }> = [
   { prefix: '/admin/performance-calendar', menuKey: 'EVAL_CYCLE' },
   { prefix: '/admin/performance-design', menuKey: 'EVAL_CYCLE' },
   { prefix: '/admin/goal-alignment', menuKey: 'EVAL_CYCLE' },
+  { prefix: '/admin/kpi-progress', menuKey: 'EVAL_CYCLE' },
   { prefix: '/api/admin/performance-design', menuKey: 'EVAL_CYCLE' },
   { prefix: '/api/admin/goal-alignment', menuKey: 'EVAL_CYCLE' },
   { prefix: '/api/admin/eval-cycles', menuKey: 'EVAL_CYCLE' },
