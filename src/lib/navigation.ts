@@ -72,6 +72,7 @@ export const NAV_ITEMS: NavigationItem[] = [
       { label: '등급 설정', href: '/admin/grades', menuKey: 'GRADE_SETTING' },
       { label: '성과 체계', href: '/admin/performance-design', menuKey: 'EVAL_CYCLE' },
       { label: '성과 얼라인먼트', href: '/admin/goal-alignment', menuKey: 'EVAL_CYCLE' },
+      { label: 'KPI 수립 현황', href: '/admin/kpi-progress', menuKey: 'EVAL_CYCLE' },
       { label: '구성원·조직 관리', href: '/admin/google-access', menuKey: 'SYSTEM_SETTING' },
       { label: '알림 운영', href: '/admin/notifications', menuKey: 'SYSTEM_SETTING' },
       { label: '운영 / 시스템 관리', href: '/admin/ops', menuKey: 'SYSTEM_SETTING' },
