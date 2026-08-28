@@ -1940,38 +1940,56 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                 </select>
               </div>
             </div>
-            {filteredEvaluations.length ? (
-              filteredEvaluations.map((evaluation) => (
-                <button
-                  key={evaluation.id}
-                  type="button"
-                  onClick={() => moveToEvaluation(evaluation.id)}
-                  className={`w-full rounded-2xl border p-4 text-left transition ${
-                    evaluation.id === props.selectedEvaluationId
-                      ? 'border-blue-300 bg-blue-50 shadow-sm'
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{evaluation.targetName}</p>
-                      <p className="mt-1 text-xs text-slate-500">{evaluation.targetDepartment} · {evaluation.stageLabel}</p>
+            {filteredEvaluations.length ? (() => {
+              const groupedEvaluations = filteredEvaluations.reduce<
+                Array<{ targetId: string; items: typeof filteredEvaluations }>
+              >((acc, ev) => {
+                const existing = acc.find((g) => g.targetId === ev.targetId)
+                if (existing) {
+                  existing.items.push(ev)
+                } else {
+                  acc.push({ targetId: ev.targetId, items: [ev] })
+                }
+                return acc
+              }, [])
+              return groupedEvaluations.map((group) => {
+                const representative =
+                  group.items.find((ev) => ev.id === props.selectedEvaluationId) ??
+                  group.items.find((ev) => ev.isActionRequired) ??
+                  group.items[0]
+                const isSelected = group.items.some((ev) => ev.id === props.selectedEvaluationId)
+                const groupLabel = group.items.some((ev) => ev.isEvaluator)
+                  ? '검토 대기 또는 진행 중'
+                  : group.items.some((ev) => ev.isMine)
+                    ? '내 평가'
+                    : '운영 조회'
+                const countSuffix = group.items.length >= 2 ? ` · 단계 ${group.items.length}건` : ''
+                return (
+                  <button
+                    key={group.targetId}
+                    type="button"
+                    onClick={() => moveToEvaluation(representative.id)}
+                    className={`w-full rounded-2xl border p-4 text-left transition ${
+                      isSelected
+                        ? 'border-blue-300 bg-blue-50 shadow-sm'
+                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{representative.targetName}</p>
+                        <p className="mt-1 text-xs text-slate-500">{representative.targetDepartment} · {representative.stageLabel}</p>
+                      </div>
+                      <Badge tone={statusTone(representative.status)}>{representative.statusLabel}</Badge>
                     </div>
-                    <Badge tone={statusTone(evaluation.status)}>{evaluation.statusLabel}</Badge>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                    <span>
-                      {evaluation.isEvaluator
-                        ? '검토 대기 또는 진행 중'
-                        : evaluation.isMine
-                          ? '내 평가'
-                          : '운영 조회'}
-                    </span>
-                    <span>{evaluation.updatedAt}</span>
-                  </div>
-                </button>
-              ))
-            ) : (
+                    <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                      <span>{groupLabel}{countSuffix}</span>
+                      <span>{representative.updatedAt}</span>
+                    </div>
+                  </button>
+                )
+              })
+            })() : (
               <EmptyBlock message="조건에 맞는 평가가 없습니다." />
             )}
           </div>
