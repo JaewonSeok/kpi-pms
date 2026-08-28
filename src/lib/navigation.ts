@@ -34,7 +34,7 @@ export const NAV_ITEMS: NavigationItem[] = [
     label: '평가',
     href: '/evaluation',
     children: [
-      { label: '업적평가', href: '/evaluation/workbench?view=leader', menuKey: 'PERFORMANCE_EVALUATION' },
+      { label: '업적평가', href: '/evaluation/workbench', menuKey: 'PERFORMANCE_EVALUATION' },
       { label: 'AI 활용 제출', href: '/evaluation/ai-competency', menuKey: 'AI_COMPETENCY' },
       { label: '360 다면평가', href: '/evaluation/360', menuKey: 'FEEDBACK_360' },
       { label: '리더십 진단', href: '/evaluation/upward/respond', menuKey: 'FEEDBACK_360' },
