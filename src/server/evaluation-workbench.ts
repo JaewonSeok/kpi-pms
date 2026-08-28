@@ -833,7 +833,9 @@ export async function getEvaluationWorkbenchPageData(
     })
 
     const selectedCycle =
-      availableCycles.find((cycle) => cycle.id === params.cycleId) ?? availableCycles[0] ?? null
+      availableCycles.find((cycle) => cycle.id === params.cycleId) ??
+      availableCycles.find((cycle) => cycle.status !== 'SETUP') ??
+      null
 
     if (!selectedCycle) {
       return {

@@ -74,10 +74,6 @@ export default async function EvaluationWorkbenchPage({ searchParams }: PageProp
     }
   }
 
-  if (!requestedView && (activeView === 'leader' || activeView === 'executive')) {
-    redirect('/evaluation/performance')
-  }
-
   return (
     <div className="space-y-4">
       <PerformanceWorkbenchRoleSwitch
