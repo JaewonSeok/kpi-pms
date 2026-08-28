@@ -38,6 +38,7 @@ export default async function SelfEvaluationDetailPage({
 
   if (evaluation) {
     const isOwner =
+      session.user.role === 'ROLE_ADMIN' ||
       evaluation.evaluatorId === session.user.id ||
       (evaluation.evalStage === 'SELF' && evaluation.targetId === session.user.id)
     if (!isOwner) {

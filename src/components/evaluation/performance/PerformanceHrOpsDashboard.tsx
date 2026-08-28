@@ -355,7 +355,7 @@ export function PerformanceHrOpsDashboard({ data, canSeeAllInCycle }: { data: un
                         <td className="px-4 py-3 text-center font-semibold text-slate-900">{target.finalScoreLabel}</td>
                         <td className="px-4 py-3 text-center"><GradeChip grade={target.grade} /></td>
                         <td className="px-4 py-3 text-center"><StageChip stage={target.finalStatus} /></td>
-                        <EvalLinkCell target={target} currentUserId={dashboardData.currentUser?.id ?? ''} />
+                        <EvalLinkCell target={target} currentUserId={dashboardData.currentUser?.id ?? ''} currentUserRole={dashboardData.currentUser?.role ?? ''} />
                       </tr>
                     ))
                   ) : (
@@ -934,9 +934,11 @@ function resolveEvalHref(target: TargetProgress): string | null {
   return null
 }
 
-function EvalLinkCell({ target, currentUserId }: { target: TargetProgress; currentUserId: string }) {
+function EvalLinkCell({ target, currentUserId, currentUserRole }: { target: TargetProgress; currentUserId: string; currentUserRole: string }) {
   const href = resolveEvalHref(target)
-  const showLink = href !== null && (!href.startsWith('/evaluation/self/') || target.targetId === currentUserId)
+  const showLink =
+    href !== null &&
+    (!href.startsWith('/evaluation/self/') || currentUserRole === 'ROLE_ADMIN' || target.targetId === currentUserId)
   return (
     <td className="px-4 py-3 text-center">
       {showLink && (
