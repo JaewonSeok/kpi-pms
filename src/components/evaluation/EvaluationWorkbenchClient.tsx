@@ -1960,7 +1960,13 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                     <Badge tone={statusTone(evaluation.status)}>{evaluation.statusLabel}</Badge>
                   </div>
                   <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                    <span>{evaluation.isEvaluator ? '검토 대기 또는 진행 중' : '내 평가 작성 건'}</span>
+                    <span>
+                      {evaluation.isEvaluator
+                        ? '검토 대기 또는 진행 중'
+                        : evaluation.isMine
+                          ? '내 평가'
+                          : '운영 조회'}
+                    </span>
                     <span>{evaluation.updatedAt}</span>
                   </div>
                 </button>
