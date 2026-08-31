@@ -1641,7 +1641,7 @@ async function main() {
     const validateEnd = source.indexOf('function getReviewActionState', validateStart)
     const validateSource = source.slice(validateStart, validateEnd > validateStart ? validateEnd : validateStart + 2000)
 
-    assert.equal(source.includes('2026 MBO 정책 점검'), true)
+    assert.equal(source.includes('2026 MBO 정책 점검'), false)
     assert.equal(source.includes('2026 MBO 설정 안내'), true)
     assert.equal(source.includes('현재 화면은 2026 MBO 작성/정렬 준비 단계입니다.'), true)
     assert.equal(source.includes('2026 수행결과 작성 준비 안내'), true)
