@@ -2965,6 +2965,14 @@ function HeroSection(props: {
           >
             {props.submitLabel}
           </CompactActionButton>
+          {props.submitState.disabled && props.submitState.reason ? (
+            <span
+              data-testid="personal-kpi-submit-helper"
+              className="max-w-[200px] text-xs text-slate-500"
+            >
+              {props.submitState.reason}
+            </span>
+          ) : null}
           <CompactActionButton
             icon={<ClipboardList className="h-4 w-4" />}
             onClick={props.onOpenReview}
@@ -2989,10 +2997,11 @@ function HeroSection(props: {
           >
             이력 보기
           </CompactActionButton>
-          <div className="min-w-[220px] flex-1 text-xs leading-5 text-slate-500">
-            <p data-testid="personal-kpi-submit-helper">{props.submitState.reason}</p>
-            {props.aiHelperText ? <p>{props.aiHelperText}</p> : null}
-          </div>
+          {props.aiHelperText ? (
+            <div className="min-w-[220px] flex-1 text-xs leading-5 text-slate-500">
+              {props.aiHelperText ? <p>{props.aiHelperText}</p> : null}
+            </div>
+          ) : null}
         </div>
         {props.rejectedCount > 0 ? (
           <p
