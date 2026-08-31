@@ -2615,16 +2615,12 @@ export function PersonalKpiManagementClient(props: Props) {
               />
             ) : null}
           </PersonalKpiWorkspaceShell>
-          <div className="grid gap-3 xl:grid-cols-[1fr_1fr]">
-            <MboSetupGuidePanel />
-            <ResultWritingGuidePanel />
-          </div>
+          <MboGuideAccordion />
           <MboPolicySummaryPanel summary={derivedSummary.mboPolicy} />
         </>
       ) : (
         <>
-          <MboSetupGuidePanel />
-          <ResultWritingGuidePanel />
+          <MboGuideAccordion />
           <StatePanel state={props.state} message={props.message} />
           <PersonalKpiWorkspaceShell activeTab={activeTab} onTabChange={setActiveTab}>
             {activeTab === 'review' ? (
@@ -3316,22 +3312,10 @@ function MboPolicySummaryPanel(props: { summary: Props['summary']['mboPolicy'] }
 }
 
 function MboSetupGuidePanel() {
-  // 기본 접힘. <details>의 group-open:rotate-180으로 chevron 회전. 영속 0 (브라우저 메모리만).
   return (
-    <details className="group rounded-2xl border border-cyan-100 bg-cyan-50/70 shadow-sm">
-      <summary className="flex cursor-pointer items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-        <span className="rounded-xl bg-white p-2 text-cyan-700">
-          <ClipboardList className="h-4 w-4" />
-        </span>
-        <h2 className="text-sm font-semibold text-slate-900">2026 MBO 설정 안내</h2>
-        <span
-          aria-hidden
-          className="ml-auto text-xs text-slate-500 transition-transform group-open:rotate-180"
-        >
-          ▾
-        </span>
-      </summary>
-      <div className="border-t border-cyan-100 px-4 py-3">
+    <div>
+      <h3 className="text-sm font-semibold text-slate-900">2026 MBO 설정 안내</h3>
+      <div className="mt-2">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <p className="text-xs leading-5 text-slate-600 lg:max-w-md">
             현재 화면은 2026 MBO 작성/정렬 준비 단계입니다. 공식 평가 점수나 등급을 계산하지 않으며, 작성 품질과 정책 카테고리 검토를 돕는 안내만 표시합니다.
@@ -3346,27 +3330,15 @@ function MboSetupGuidePanel() {
           </div>
         </div>
       </div>
-    </details>
+    </div>
   )
 }
 
 function ResultWritingGuidePanel() {
-  // 기본 접힘. MboSetupGuidePanel과 동일 패턴.
   return (
-    <details className="group rounded-2xl border border-emerald-100 bg-emerald-50/70 shadow-sm">
-      <summary className="flex cursor-pointer items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
-        <span className="rounded-xl bg-white p-2 text-emerald-700">
-          <ClipboardList className="h-4 w-4" />
-        </span>
-        <h2 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 준비 안내</h2>
-        <span
-          aria-hidden
-          className="ml-auto text-xs text-slate-500 transition-transform group-open:rotate-180"
-        >
-          ▾
-        </span>
-      </summary>
-      <div className="border-t border-emerald-100 px-4 py-3">
+    <div>
+      <h3 className="text-sm font-semibold text-slate-900">2026 수행결과 작성 준비 안내</h3>
+      <div className="mt-2">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <p className="text-xs leading-5 text-slate-600 lg:max-w-md">
             수행결과는 달성 여부만이 아니라 본인 기여, 산출물, 증빙 중심으로 작성해야 합니다. 이 안내는 read-only이며 저장/제출/점수 계산을 변경하지 않습니다.
@@ -3379,6 +3351,29 @@ function ResultWritingGuidePanel() {
             ))}
           </ul>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function MboGuideAccordion() {
+  return (
+    <details className="group rounded-2xl border border-slate-200 bg-white">
+      <summary className="flex cursor-pointer items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+        <span className="rounded-xl bg-slate-100 p-2 text-slate-700">
+          <ClipboardList className="h-4 w-4" />
+        </span>
+        <h2 className="text-sm font-semibold text-slate-900">2026 작성 안내</h2>
+        <span
+          aria-hidden
+          className="ml-auto text-xs text-slate-500 transition-transform group-open:rotate-180"
+        >
+          ▾
+        </span>
+      </summary>
+      <div className="space-y-4 border-t border-slate-100 px-4 py-3">
+        <MboSetupGuidePanel />
+        <ResultWritingGuidePanel />
       </div>
     </details>
   )
