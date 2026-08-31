@@ -1887,7 +1887,7 @@ async function main() {
     assert.equal(source.includes('PmsProgressRing'), false)
     assert.equal(source.includes('PmsTrafficLight'), false)
     assert.equal(source.includes('buildPersonalCockpitMetrics'), true)
-    assert.equal(source.includes('xl:grid-cols-5'), true)
+    assert.equal(source.includes('xl:grid-cols-3'), true)
     assert.equal(source.includes('grid items-start gap-4 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(540px,620px)]'), true)
     assert.equal(source.includes('h-fit self-start rounded-2xl'), true)
     assert.equal(source.includes('min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(540px,620px)]'), true)

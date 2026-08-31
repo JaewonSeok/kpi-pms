@@ -15,7 +15,6 @@ import {
   Copy,
   FileDown,
   FilePlus2,
-  Gauge,
   History,
   Link2,
   ListChecks,
@@ -903,25 +902,11 @@ function getStatusTone(status?: string): PmsTone {
 }
 
 // Single source of truth for "작성 완료" statuses.
-// getCompletionCount and getSupplementNeededCount share this set so the two
-// metrics are strictly mutually exclusive.
+// getCompletionCount uses this set to determine completed KPI items.
 const COMPLETION_STATUSES = new Set(['SUBMITTED', 'MANAGER_REVIEW', 'CONFIRMED', 'LOCKED'])
 
 function getCompletionCount(items: PersonalKpiViewModel[]) {
   return items.filter((item) => COMPLETION_STATUSES.has(item.status)).length
-}
-
-function getSupplementNeededCount(items: PersonalKpiViewModel[]) {
-  return items.filter(
-    (item) =>
-      !COMPLETION_STATUSES.has(item.status) && (
-        item.hasRejectedRevision ||
-        !item.policyCategory ||
-        (item.policyCategory === 'ORG_GOAL' && !item.orgKpiId) ||
-        item.mboPolicy.issues.length > 0 ||
-        buildMboQualityChecklist(item).some((check) => !check.done)
-      )
-  ).length
 }
 
 function getPersonalKpiReadiness(item?: PersonalKpiViewModel) {
@@ -954,7 +939,6 @@ function getPersonalKpiReadiness(item?: PersonalKpiViewModel) {
 function buildPersonalCockpitMetrics(items: PersonalKpiViewModel[], summary: Props['summary']): PmsMetricRailItem[] {
   const completedCount = getCompletionCount(items)
   const draftCount = items.filter((item) => item.status === 'DRAFT').length
-  const supplementNeededCount = getSupplementNeededCount(items)
 
   return [
     {
@@ -977,21 +961,6 @@ function buildPersonalCockpitMetrics(items: PersonalKpiViewModel[], summary: Pro
       value: `${draftCount}개`,
       helper: '임시저장 또는 작성 단계',
       tone: draftCount ? 'warning' : 'neutral',
-    },
-    {
-      icon: <Gauge className="h-4 w-4" />,
-      label: '가중치 합계',
-      value: `${summary.totalWeight}%`,
-      helper: summary.totalWeight === 100 ? '100% 정렬 완료' : `남은 가중치 ${summary.remainingWeight}%`,
-      chip: summary.totalWeight > 100 ? '초과' : summary.totalWeight === 100 ? '정상' : '점검',
-      tone: getWeightTone(summary.totalWeight),
-    },
-    {
-      icon: <AlertTriangle className="h-4 w-4" />,
-      label: '보완 필요',
-      value: `${supplementNeededCount + summary.reviewPendingCount}개`,
-      helper: `보완 ${supplementNeededCount} · 검토 ${summary.reviewPendingCount}`,
-      tone: supplementNeededCount ? 'warning' : 'success',
     },
   ]
 }
@@ -2913,6 +2882,24 @@ function HeroSection(props: {
 }) {
   const editTone: PmsTone = props.createDisabledReason ? 'locked' : 'success'
 
+  const totalWeight = props.summary.totalWeight
+  const remainingWeight = props.summary.remainingWeight
+  const weightTone = getWeightTone(totalWeight)
+  const weightBarBg =
+    weightTone === 'good'
+      ? 'bg-emerald-500'
+      : weightTone === 'danger'
+        ? 'bg-rose-500'
+        : weightTone === 'warning'
+          ? 'bg-amber-400'
+          : 'bg-slate-300'
+  const weightRightLabel =
+    totalWeight === 100
+      ? '100% 정렬 완료'
+      : totalWeight > 100
+        ? `100% 초과 ${totalWeight - 100}%`
+        : `${totalWeight}% / 100% · 남은 가중치 ${remainingWeight}%`
+
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="grid gap-3 border-b border-slate-100 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
@@ -2938,7 +2925,19 @@ function HeroSection(props: {
       </div>
 
       <div className="space-y-3 px-4 py-3">
-        <PmsMetricRail items={props.metricItems} className="xl:grid-cols-5" />
+        <PmsMetricRail items={props.metricItems} className="xl:grid-cols-3" />
+        <div className="px-1">
+          <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+            <span>가중치 합계</span>
+            <span>{weightRightLabel}</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={`h-full rounded-full ${weightBarBg} transition-all`}
+              style={{ width: `${Math.min(totalWeight, 100)}%` }}
+            />
+          </div>
+        </div>
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
           <CompactActionButton
             icon={<Plus className="h-4 w-4" />}
