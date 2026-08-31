@@ -1641,7 +1641,7 @@ async function main() {
     const validateEnd = source.indexOf('function getReviewActionState', validateStart)
     const validateSource = source.slice(validateStart, validateEnd > validateStart ? validateEnd : validateStart + 2000)
 
-    assert.equal(source.includes('2026 MBO 정책 점검'), true)
+    assert.equal(source.includes('2026 MBO 정책 점검'), false)
     assert.equal(source.includes('2026 MBO 설정 안내'), true)
     assert.equal(source.includes('현재 화면은 2026 MBO 작성/정렬 준비 단계입니다.'), true)
     assert.equal(source.includes('2026 수행결과 작성 준비 안내'), true)
@@ -1657,7 +1657,7 @@ async function main() {
     assert.equal(source.includes('예외 승인 사유: ${option.mboReflection.exceptionReason}'), true)
     assert.equal(source.includes('예외 승인 사유: {exceptionReason}'), true)
     assert.equal(source.includes('공식 점수에는 반영되지 않는 비차단 안내입니다.'), true)
-    assert.equal(source.includes('저장/제출을 막지 않는 참고 정보입니다.'), true)
+    assert.equal(source.includes('저장/제출을 막지 않는 참고 정보입니다.'), false)
     assert.equal(source.includes('2026 목표 수정 일정 안내'), true)
     assert.equal(scheduleSource.includes('현재는 공식 목표 수정 기간이 아닙니다. 수정이 필요한 경우 목표 변경 신청 절차를 확인해 주세요.'), true)
     assert.equal(source.includes('이 안내는 비차단 readiness guidance이며 기존 저장/제출 동작을 변경하지 않습니다.'), true)

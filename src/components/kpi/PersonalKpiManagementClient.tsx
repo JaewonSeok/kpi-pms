@@ -2616,7 +2616,6 @@ export function PersonalKpiManagementClient(props: Props) {
             ) : null}
           </PersonalKpiWorkspaceShell>
           <MboGuideAccordion />
-          <MboPolicySummaryPanel summary={derivedSummary.mboPolicy} />
         </>
       ) : (
         <>
@@ -3274,40 +3273,6 @@ function PersonalKpiListCard(props: { item: PersonalKpiViewModel; selected: bool
         <ChevronRight className="h-4 w-4 text-slate-400 md:justify-self-end" />
       </div>
     </button>
-  )
-}
-
-function MboPolicySummaryPanel(props: { summary: Props['summary']['mboPolicy'] }) {
-  const cells = [
-    { label: '조직목표 후보', value: props.summary.orgGoalCandidateCount },
-    { label: '일상업무 후보', value: props.summary.dailyWorkCandidateCount },
-    { label: '검토 필요', value: props.summary.reviewNeededCount },
-    { label: '중복 가능성', value: props.summary.duplicateRiskCount },
-  ]
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="rounded-xl bg-slate-100 p-2 text-slate-700">
-            <ClipboardList className="h-4 w-4" />
-          </span>
-          <div>
-            <h2 className="text-sm font-semibold text-slate-900">2026 MBO 정책 점검</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              본부 KPI와 HR 반영 완료 팀 KPI 정렬 기준을 안내합니다. 저장/제출을 막지 않는 참고 정보입니다.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {cells.map((cell) => (
-            <span key={cell.label} className="rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-              {cell.label} {cell.value}
-            </span>
-          ))}
-        </div>
-      </div>
-    </section>
   )
 }
 
