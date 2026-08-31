@@ -902,26 +902,11 @@ function getStatusTone(status?: string): PmsTone {
 }
 
 // Single source of truth for "작성 완료" statuses.
-// getCompletionCount and getSupplementNeededCount share this set so the two
-// metrics are strictly mutually exclusive.
+// getCompletionCount uses this set to determine completed KPI items.
 const COMPLETION_STATUSES = new Set(['SUBMITTED', 'MANAGER_REVIEW', 'CONFIRMED', 'LOCKED'])
 
 function getCompletionCount(items: PersonalKpiViewModel[]) {
   return items.filter((item) => COMPLETION_STATUSES.has(item.status)).length
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function getSupplementNeededCount(items: PersonalKpiViewModel[]) {
-  return items.filter(
-    (item) =>
-      !COMPLETION_STATUSES.has(item.status) && (
-        item.hasRejectedRevision ||
-        !item.policyCategory ||
-        (item.policyCategory === 'ORG_GOAL' && !item.orgKpiId) ||
-        item.mboPolicy.issues.length > 0 ||
-        buildMboQualityChecklist(item).some((check) => !check.done)
-      )
-  ).length
 }
 
 function getPersonalKpiReadiness(item?: PersonalKpiViewModel) {
