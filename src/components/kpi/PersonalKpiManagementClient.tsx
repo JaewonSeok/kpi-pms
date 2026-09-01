@@ -15,7 +15,6 @@ import {
   Copy,
   FileDown,
   FilePlus2,
-  History,
   Link2,
   ListChecks,
   Minus,
