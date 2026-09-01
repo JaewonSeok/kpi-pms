@@ -15,7 +15,6 @@ import {
   Copy,
   FileDown,
   FilePlus2,
-  History,
   Link2,
   ListChecks,
   Minus,
@@ -2935,23 +2934,6 @@ function HeroSection(props: {
         </div>
         <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
           <CompactActionButton
-            icon={<Plus className="h-4 w-4" />}
-            onClick={props.onOpenCreate}
-            disabled={Boolean(props.createDisabledReason)}
-            title={props.createDisabledReason}
-          >
-            KPI 추가
-          </CompactActionButton>
-          <CompactActionButton
-            icon={<Sparkles className="h-4 w-4" />}
-            onClick={props.onOpenAiDraft}
-            disabled={Boolean(props.aiDisabledReason)}
-            title={props.aiDisabledReason ? 'AI 작성 보조 준비 중' : undefined}
-            variant="primary"
-          >
-            AI 초안 생성
-          </CompactActionButton>
-          <CompactActionButton
             icon={<Send className="h-4 w-4" />}
             onClick={props.onSubmit}
             disabled={props.submitState.disabled}
@@ -2969,29 +2951,23 @@ function HeroSection(props: {
             </span>
           ) : null}
           <CompactActionButton
-            icon={<ClipboardList className="h-4 w-4" />}
-            onClick={props.onOpenReview}
-            disabled={Boolean(props.reviewDisabledReason)}
-            title={props.reviewDisabledReason || PERSONAL_KPI_REVIEW_CTA_LABEL}
+            icon={<Plus className="h-4 w-4" />}
+            onClick={props.onOpenCreate}
+            disabled={Boolean(props.createDisabledReason)}
+            title={props.createDisabledReason}
           >
-            검토 대기 보기
+            KPI 추가
           </CompactActionButton>
-          <CompactActionButton
-            icon={<ClipboardList className="h-4 w-4" />}
-            onClick={props.onOpenBulkEdit}
-            disabled={Boolean(props.bulkEditDisabledReason)}
-            title={props.bulkEditDisabledReason}
-          >
-            목표 일괄 수정
-          </CompactActionButton>
-          <CompactActionButton
-            icon={<History className="h-4 w-4" />}
-            onClick={props.onOpenHistory}
-            disabled={Boolean(props.historyDisabledReason)}
-            title={props.historyDisabledReason}
-          >
-            이력 보기
-          </CompactActionButton>
+          <ActionMenu
+            onOpenAiDraft={props.onOpenAiDraft}
+            aiDisabledReason={props.aiDisabledReason}
+            onOpenReview={props.onOpenReview}
+            reviewDisabledReason={props.reviewDisabledReason}
+            onOpenBulkEdit={props.onOpenBulkEdit}
+            bulkEditDisabledReason={props.bulkEditDisabledReason}
+            onOpenHistory={props.onOpenHistory}
+            historyDisabledReason={props.historyDisabledReason}
+          />
           {props.aiHelperText ? (
             <div className="min-w-[220px] flex-1 text-xs leading-5 text-slate-500">
               {props.aiHelperText ? <p>{props.aiHelperText}</p> : null}
@@ -3034,6 +3010,67 @@ function CompactActionButton(props: {
       {props.icon}
       {props.children}
     </button>
+  )
+}
+
+function ActionMenu(props: {
+  onOpenAiDraft: () => void
+  aiDisabledReason?: string
+  onOpenReview: () => void
+  reviewDisabledReason?: string
+  onOpenBulkEdit: () => void
+  bulkEditDisabledReason?: string
+  onOpenHistory: () => void
+  historyDisabledReason?: string
+}) {
+  const closeMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.currentTarget.closest('details')?.removeAttribute('open')
+  }
+  return (
+    <details className="group relative">
+      <summary className="inline-flex h-9 cursor-pointer list-none items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+        더 보기
+        <span aria-hidden className="transition-transform group-open:rotate-180">▾</span>
+      </summary>
+      <div className="absolute right-0 z-20 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+        <button
+          type="button"
+          onClick={(e) => { props.onOpenAiDraft(); closeMenu(e) }}
+          disabled={Boolean(props.aiDisabledReason)}
+          title={props.aiDisabledReason ? 'AI 작성 보조 준비 중' : undefined}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          AI 초안 생성
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { props.onOpenReview(); closeMenu(e) }}
+          disabled={Boolean(props.reviewDisabledReason)}
+          title={props.reviewDisabledReason || PERSONAL_KPI_REVIEW_CTA_LABEL}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          검토 대기 보기
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { props.onOpenBulkEdit(); closeMenu(e) }}
+          disabled={Boolean(props.bulkEditDisabledReason)}
+          title={props.bulkEditDisabledReason}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          목표 일괄 수정
+        </button>
+        <button
+          type="button"
+          onClick={(e) => { props.onOpenHistory(); closeMenu(e) }}
+          disabled={Boolean(props.historyDisabledReason)}
+          title={props.historyDisabledReason}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          이력 보기
+        </button>
+      </div>
+    </details>
   )
 }
 
