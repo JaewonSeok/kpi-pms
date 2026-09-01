@@ -263,21 +263,6 @@ function getEditBlockedReason(record: MonthlyRecordViewModel | null, canEdit: bo
   return '현재 상태에서는 월간 실적을 수정할 수 없습니다.'
 }
 
-function getSubmitBlockedReason(record: MonthlyRecordViewModel | null, canSubmit: boolean, draft: Draft | null) {
-  if (!record) return '제출할 KPI를 먼저 선택하세요.'
-  if (!canSubmit) {
-    if (record.status === 'SUBMITTED') return '이미 제출된 월간 실적입니다.'
-    if (record.status === 'REVIEWED') return '리뷰가 완료된 월간 실적은 다시 제출할 수 없습니다.'
-    if (record.status === 'LOCKED') return '잠금 상태의 월간 실적은 제출할 수 없습니다.'
-    return '현재 상태에서는 제출할 수 없습니다.'
-  }
-
-  if (record.type === 'QUANTITATIVE' && draft?.actualValue.trim() && !Number.isFinite(Number(draft.actualValue))) {
-    return '정량 KPI는 숫자 실적값을 입력해야 합니다.'
-  }
-
-  return undefined
-}
 
 function getSubmitValidationResult(
   record: MonthlyRecordViewModel | null,
@@ -1757,14 +1742,6 @@ export function MonthlyKpiManagementClient({
       {tab === 'entry' ? (
         <EntryTab
           monthContext={monthContext}
-          pageData={pageData}
-          canChangeTargetScope={canChangeTargetScope}
-          targetContextLabel={targetContextLabel}
-          advancedFiltersOpen={advancedFiltersOpen}
-          setAdvancedFiltersOpen={setAdvancedFiltersOpen}
-          submitValidationSummary={submitValidation.summary}
-          submitRecommendationReasons={submitValidation.recommendationReasons}
-          midCheckScheduleGuidance={midCheckScheduleGuidance2026}
           allRecords={pageData.records}
           summary={pageData.summary}
           visibleRecords={visibleRecords}
@@ -1792,7 +1769,6 @@ export function MonthlyKpiManagementClient({
           onRequestUpdate={() => void handleReview('REQUEST_UPDATE')}
           onCopyPreviousMonth={handleCopyPreviousMonth}
           copyPreviousReason={copyPreviousReason}
-          handleRouteSelection={handleRouteSelection}
           onAddLinkAttachment={() => handleLinkAttachmentCreate()}
           onUploadClick={() => {
             if (!canEdit) {
@@ -1875,14 +1851,6 @@ export function MonthlyKpiManagementClient({
 
 function EntryTab({
   monthContext,
-  pageData,
-  canChangeTargetScope,
-  targetContextLabel,
-  advancedFiltersOpen,
-  setAdvancedFiltersOpen,
-  submitValidationSummary,
-  submitRecommendationReasons,
-  midCheckScheduleGuidance,
   allRecords,
   summary,
   visibleRecords,
@@ -1910,7 +1878,6 @@ function EntryTab({
   onRequestUpdate,
   onCopyPreviousMonth,
   copyPreviousReason,
-  handleRouteSelection,
   onAddLinkAttachment,
   onUploadClick,
   onAttachmentDownload,
@@ -1921,14 +1888,6 @@ function EntryTab({
   onShowAi,
 }: {
   monthContext: ReturnType<typeof parseYearMonth>
-  pageData: MonthlyPageData
-  canChangeTargetScope: boolean
-  targetContextLabel: string
-  advancedFiltersOpen: boolean
-  setAdvancedFiltersOpen: Dispatch<SetStateAction<boolean>>
-  submitValidationSummary?: string
-  submitRecommendationReasons: string[]
-  midCheckScheduleGuidance: ReturnType<typeof getMonthlyMidCheckScheduleGuidance>
   allRecords: MonthlyRecordViewModel[]
   summary: MonthlyPageData['summary']
   visibleRecords: MonthlyRecordViewModel[]
@@ -1956,14 +1915,6 @@ function EntryTab({
   onRequestUpdate: () => void
   onCopyPreviousMonth: () => void
   copyPreviousReason?: string
-  handleRouteSelection: (next: {
-    year?: number
-    month?: string
-    scope?: string
-    employeeId?: string
-    tab?: TabKey
-    recordId?: string
-  }) => void
   onAddLinkAttachment: () => void
   onUploadClick: () => void
   onAttachmentDownload: (attachment: MonthlyAttachmentViewModel) => void
