@@ -3188,7 +3188,7 @@ function MineSection(props: {
 
   return (
     <div className="grid items-start gap-4 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(540px,620px)]">
-      <section className="h-fit self-start rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <section className="h-fit self-start rounded-2xl border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4 min-[1440px]:max-h-[calc(100vh-2rem)] min-[1440px]:overflow-y-auto">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5">
           <div>
             <h3 className="text-sm font-bold text-slate-950">개인목표 목록</h3>
@@ -4542,7 +4542,7 @@ function GoalDetailPanel(props: {
 
   if (!props.selectedKpi) {
     return (
-      <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4 min-[1440px]:max-h-[calc(100vh-2rem)] min-[1440px]:overflow-y-auto">
+      <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4">
         <div className="border-b border-slate-100 px-5 py-4">
           <h2 className="text-xl font-bold text-slate-950">개인목표 상세</h2>
           <p className="mt-1 text-sm text-slate-500">왼쪽 목록에서 KPI를 선택하면 입력 항목과 관련 상태를 확인합니다.</p>
@@ -4584,7 +4584,7 @@ function GoalDetailPanel(props: {
     : props.editDisabledReason ?? '입력 항목은 현재 목표 수립 기간에만 수정할 수 있습니다.'
 
   return (
-    <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4 min-[1440px]:max-h-[calc(100vh-2rem)] min-[1440px]:overflow-y-auto">
+    <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4">
       <div className="border-b border-slate-100 px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
