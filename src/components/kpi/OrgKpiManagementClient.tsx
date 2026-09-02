@@ -2090,7 +2090,7 @@ export function OrgKpiManagementClient({
             />
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_560px]">
-            <div className="space-y-4">
+            <div className="space-y-4 h-fit self-start xl:sticky xl:top-16 xl:max-h-[calc(100vh-5rem)] xl:overflow-y-auto">
               <OrgKpiHierarchyPanel
                 roots={hierarchyView.roots}
                 disconnected={hierarchyView.disconnected}
@@ -2171,7 +2171,7 @@ export function OrgKpiManagementClient({
             />
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_560px]">
-            <div className="space-y-3">
+            <div className="space-y-3 h-fit self-start xl:sticky xl:top-16 xl:max-h-[calc(100vh-5rem)] xl:overflow-y-auto">
               {filteredList.length ? filteredList.map((kpi) => (
                 <OrgKpiListItemCard
                   key={kpi.id}
