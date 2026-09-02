@@ -25,7 +25,6 @@ import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewRefere
 import {
   PmsActionCard as NextActionCard,
   PmsEmptyIllustration as MonthlyEmptyIllustration,
-  PmsMetricRail,
   PmsProgressRing as MonthlyProgressRing,
   PmsWorkspaceSection,
 } from '@/components/pms-ui'
