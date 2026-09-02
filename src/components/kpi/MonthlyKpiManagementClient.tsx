@@ -25,7 +25,6 @@ import { MidReviewReferencePanel } from '@/components/mid-review/MidReviewRefere
 import {
   PmsActionCard as NextActionCard,
   PmsEmptyIllustration as MonthlyEmptyIllustration,
-  PmsMetricRail,
   PmsProgressRing as MonthlyProgressRing,
   PmsWorkspaceSection,
 } from '@/components/pms-ui'
@@ -620,8 +619,6 @@ function MonthlyWorkspaceHeader({
     recordId?: string
   }) => void
 }) {
-  const totalCount = pageData.records.length
-  const completedCount = pageData.records.filter((record) => ['SUBMITTED', 'REVIEWED', 'LOCKED'].includes(record.status)).length
   const inputNeededCount = pageData.summary.missingCount
   const riskCount = pageData.summary.riskyCount
   const reviewPendingCount = pageData.summary.reviewPendingCount
@@ -681,6 +678,15 @@ function MonthlyWorkspaceHeader({
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
                   리뷰 대기 {formatCountWithUnit(reviewPendingCount, '개')}
                 </span>
+                {inputNeededCount === 0 ? (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                    이번 달 입력 완료
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+                    입력할 항목 {formatCountWithUnit(inputNeededCount, '개')}
+                  </span>
+                )}
                 <span
                   className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                     submitValidationSummary ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'
@@ -848,42 +854,6 @@ function MonthlyWorkspaceHeader({
           </div>
         </div>
 
-        <PmsMetricRail
-          className="mt-3"
-          items={[
-            {
-              icon: <ClipboardList className="h-5 w-5" />,
-              label: '전체 KPI',
-              value: formatCountWithUnit(totalCount, '개'),
-              helper: '이번 달 기록 대상 KPI',
-              chip: '전체',
-            },
-            {
-              icon: <CheckCircle2 className="h-5 w-5" />,
-              label: '입력 완료',
-              value: formatCountWithUnit(completedCount, '개'),
-              helper: `${pageData.summary.submissionRate}% 제출 기준`,
-              chip: '진행',
-              tone: completedCount > 0 ? 'good' : 'neutral',
-            },
-            {
-              icon: <ListChecks className="h-5 w-5" />,
-              label: '입력 필요',
-              value: formatCountWithUnit(inputNeededCount, '개'),
-              helper: '한 줄 요약부터 작성',
-              chip: inputNeededCount ? '확인 필요' : '완료',
-              tone: inputNeededCount ? 'warning' : 'good',
-            },
-            {
-              icon: <AlertTriangle className="h-5 w-5" />,
-              label: '위험 KPI',
-              value: formatCountWithUnit(riskCount, '개'),
-              helper: '원인과 대응만 짧게 보완',
-              chip: riskCount ? '리스크' : '안정',
-              tone: riskCount ? 'danger' : 'good',
-            },
-          ]}
-        />
 
       <MonthlyWorkspaceTabs tab={tab} setTab={setTab} />
     </PmsWorkspaceSection>
