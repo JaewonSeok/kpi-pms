@@ -1918,7 +1918,7 @@ function EntryTab({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(380px,0.95fr)] xl:items-start">
-      <section className="space-y-3">
+      <section className="space-y-3 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
         <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
 
           {showDetailedFilters ? (
@@ -2116,7 +2116,7 @@ function EntryTab({
         </div>
       </section>
 
-      <aside className="overflow-hidden rounded-[32px] border border-blue-100 bg-white shadow-lg shadow-blue-100/40 xl:sticky xl:top-3">
+      <aside className="h-fit self-start overflow-hidden rounded-[32px] border border-blue-100 bg-white shadow-lg shadow-blue-100/40 xl:sticky xl:top-4">
         <div className="border-b border-blue-100 bg-gradient-to-br from-blue-50 via-white to-slate-50 px-5 py-5 lg:px-6">
           <div className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700 shadow-sm">
             <MessageSquare className="h-4 w-4" />
