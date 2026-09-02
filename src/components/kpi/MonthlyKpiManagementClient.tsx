@@ -787,11 +787,6 @@ function MonthlyWorkspaceHeader({
             </div>
           ) : null}
 
-          {submitValidationSummary ? (
-            <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">
-              <span className="font-semibold">제출 차단:</span> {submitValidationSummary}
-            </p>
-          ) : null}
           {submitRecommendationReasons.length ? (
             <p className="mt-2 text-[11px] leading-5 text-slate-500">
               {submitRecommendationReasons.join(' ')}
