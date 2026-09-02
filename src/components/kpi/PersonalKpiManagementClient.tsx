@@ -3084,7 +3084,7 @@ function PersonalKpiWorkspaceShell(props: {
   children: ReactNode
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:overflow-visible">
       <div className="border-b border-slate-100 bg-white px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
