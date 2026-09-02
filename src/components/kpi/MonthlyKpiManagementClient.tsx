@@ -101,8 +101,8 @@ type AiPreview = {
   result: Record<string, unknown>
 }
 
-const TABS: Array<{ key: TabKey; label: string; description: string }> = [
-  { key: 'entry', label: '입력', description: 'KPI별 이번 달 진행 상황과 필요한 근거만 빠르게 정리합니다.' },
+const TABS: Array<{ key: TabKey; label: string; description?: string }> = [
+  { key: 'entry', label: '입력' },
   { key: 'trend', label: '누적 추이', description: '최근 흐름을 보며 이번 달 상태가 좋아졌는지 확인합니다.' },
   { key: 'review', label: '리뷰/피드백', description: '상사 리뷰와 보완 요청, 제출 이력을 한 곳에서 확인합니다.' },
   { key: 'evidence', label: '증빙 항목', description: '파일과 링크 근거를 모아 평가 시점에 다시 찾기 쉽게 합니다.' },
@@ -632,7 +632,6 @@ function MonthlyWorkspaceHeader({
         </p>
       }
       title={`${monthContext.fullLabel} 월간 실적`}
-      description="먼저 이번 달 해야 할 일을 확인하고, 필요한 KPI만 선택해 짧게 기록하세요."
       actions={
         <>
             <button
@@ -695,9 +694,6 @@ function MonthlyWorkspaceHeader({
                   {submitValidationSummary ? '제출 전 확인 필요' : '제출 가능 상태'}
                 </span>
               </div>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                일반 입력 화면은 단순하게 유지하고, 월/대상 설정은 필요할 때만 펼칩니다.
-              </p>
             </div>
             <button
               type="button"
@@ -808,7 +804,6 @@ function MonthlyWorkspaceHeader({
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold text-slate-950">이번 달 먼저 할 일</h3>
-              <p className="text-xs text-slate-500">긴 보고서보다 필요한 KPI부터 짧게 정리합니다.</p>
             </div>
             <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 shadow-sm">
               핵심 행동 4개
@@ -1990,10 +1985,6 @@ function EntryTab({
             <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm font-bold text-slate-950">월간 KPI 입력 카드</p>
-                <p className="text-xs text-slate-500">
-                  선택된 KPI는 오른쪽 상세 패널에 바로 표시됩니다.
-                  {!detailedFiltersDefaultVisible ? ' 상세 필터는 필요할 때만 펼쳐 사용하세요.' : ''}
-                </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 {hasDetailedFilters ? (
