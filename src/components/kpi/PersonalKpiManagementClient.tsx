@@ -3023,54 +3023,58 @@ function ActionMenu(props: {
   onOpenHistory: () => void
   historyDisabledReason?: string
 }) {
-  const closeMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.currentTarget.closest('details')?.removeAttribute('open')
-  }
+  const [open, setOpen] = useState(false)
   return (
-    <details className="group relative">
-      <summary className="inline-flex h-9 cursor-pointer list-none items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 [&::-webkit-details-marker]:hidden [&::marker]:hidden">
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+      >
         더 보기
-        <span aria-hidden className="transition-transform group-open:rotate-180">▾</span>
-      </summary>
-      <div className="absolute right-0 z-20 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-        <button
-          type="button"
-          onClick={(e) => { props.onOpenAiDraft(); closeMenu(e) }}
-          disabled={Boolean(props.aiDisabledReason)}
-          title={props.aiDisabledReason ? 'AI 작성 보조 준비 중' : undefined}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          AI 초안 생성
-        </button>
-        <button
-          type="button"
-          onClick={(e) => { props.onOpenReview(); closeMenu(e) }}
-          disabled={Boolean(props.reviewDisabledReason)}
-          title={props.reviewDisabledReason || PERSONAL_KPI_REVIEW_CTA_LABEL}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          검토 대기 보기
-        </button>
-        <button
-          type="button"
-          onClick={(e) => { props.onOpenBulkEdit(); closeMenu(e) }}
-          disabled={Boolean(props.bulkEditDisabledReason)}
-          title={props.bulkEditDisabledReason}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          목표 일괄 수정
-        </button>
-        <button
-          type="button"
-          onClick={(e) => { props.onOpenHistory(); closeMenu(e) }}
-          disabled={Boolean(props.historyDisabledReason)}
-          title={props.historyDisabledReason}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          이력 보기
-        </button>
-      </div>
-    </details>
+        <span aria-hidden className={`transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+      {open ? (
+        <div className="w-full rounded-xl border border-slate-200 bg-white p-1">
+          <button
+            type="button"
+            onClick={() => { props.onOpenAiDraft(); setOpen(false) }}
+            disabled={Boolean(props.aiDisabledReason)}
+            title={props.aiDisabledReason ? 'AI 작성 보조 준비 중' : undefined}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            AI 초안 생성
+          </button>
+          <button
+            type="button"
+            onClick={() => { props.onOpenReview(); setOpen(false) }}
+            disabled={Boolean(props.reviewDisabledReason)}
+            title={props.reviewDisabledReason || PERSONAL_KPI_REVIEW_CTA_LABEL}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            검토 대기 보기
+          </button>
+          <button
+            type="button"
+            onClick={() => { props.onOpenBulkEdit(); setOpen(false) }}
+            disabled={Boolean(props.bulkEditDisabledReason)}
+            title={props.bulkEditDisabledReason}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            목표 일괄 수정
+          </button>
+          <button
+            type="button"
+            onClick={() => { props.onOpenHistory(); setOpen(false) }}
+            disabled={Boolean(props.historyDisabledReason)}
+            title={props.historyDisabledReason}
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            이력 보기
+          </button>
+        </div>
+      ) : null}
+    </>
   )
 }
 
