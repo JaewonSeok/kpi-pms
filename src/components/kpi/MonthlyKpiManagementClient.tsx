@@ -1918,7 +1918,7 @@ function EntryTab({
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(380px,0.95fr)] xl:items-start">
-      <section className="space-y-3 h-fit self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+      <section className="space-y-3 h-fit self-start xl:sticky xl:top-16 xl:max-h-[calc(100vh-5rem)] xl:overflow-y-auto">
         <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
 
           {showDetailedFilters ? (
