@@ -3188,7 +3188,7 @@ function MineSection(props: {
 
   return (
     <div className="grid items-start gap-4 min-[1440px]:grid-cols-[minmax(0,1fr)_minmax(540px,620px)] xl:grid-cols-[minmax(0,1fr)_minmax(420px,520px)]">
-      <section className="h-fit self-start rounded-2xl border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4 min-[1440px]:max-h-[calc(100vh-2rem)] min-[1440px]:overflow-y-auto xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto">
+      <section className="h-fit self-start rounded-2xl border border-slate-200 bg-white shadow-sm min-[1440px]:sticky min-[1440px]:top-4 min-[1440px]:top-16 min-[1440px]:max-h-[calc(100vh-5rem)] min-[1440px]:overflow-y-auto xl:sticky xl:top-16 xl:max-h-[calc(100vh-5rem)] xl:overflow-y-auto">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5">
           <div>
             <h3 className="text-sm font-bold text-slate-950">개인목표 목록</h3>
