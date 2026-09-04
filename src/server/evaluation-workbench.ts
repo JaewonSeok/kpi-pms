@@ -1147,7 +1147,7 @@ export async function getEvaluationWorkbenchPageData(
       loadWorkbenchSection({
         title: 'evaluation stage chain',
         fallback: [] as Awaited<ReturnType<typeof getEvaluationStageChain>>,
-        alert: '?? ?? ??? ???? ???? ?? ?? ??? ?? ??? ? ????.',
+        alert: '평가 단계 정보를 불러오지 못했지만 현재 평가 화면은 계속 사용할 수 있습니다.',
         load: () =>
           getEvaluationStageChain({
             db: prisma,
@@ -1173,7 +1173,7 @@ export async function getEvaluationWorkbenchPageData(
             position: string
           }
         }>,
-        alert: '?? ?? ?? ??? ???? ???? ?? ?? ??? ?? ??? ? ????.',
+        alert: '이전 단계 평가 요약을 불러오지 못했지만 현재 평가 화면은 계속 사용할 수 있습니다.',
         load: () =>
           prisma.evaluation.findMany({
             where: {
