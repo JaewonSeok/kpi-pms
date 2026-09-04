@@ -135,6 +135,14 @@ async function main() {
     assert.equal(result.success, false)
   })
 
+  await run('Submit: adjustmentScore=null + groupKey=null + reason=null → 통과 (빌더 비가시 반환)', () => {
+    const result = SubmitEvaluationSchema.safeParse({
+      ...validBase,
+      items: [item({ adjustmentScore: null, adjustmentGroupKey: null, adjustmentReason: null })],
+    })
+    assert.equal(result.success, true)
+  })
+
   // ---- SaveEvaluationDraftSchema ----
   await run('Draft: 가감점 없어도 통과', () => {
     const result = SaveEvaluationDraftSchema.safeParse({ items: [item()] })
