@@ -635,9 +635,9 @@ export const SubmitEvaluationSchema = z.object({
       checkScore: z.number().min(0).max(100).optional(),
       actScore: z.number().min(0).max(100).optional(),
       itemComment: z.string().max(500).optional(),
-      adjustmentScore: z.number().int('가감점은 정수만 허용됩니다.').min(-5).max(5).optional(),
-      adjustmentGroupKey: z.string().trim().max(100).optional(),
-      adjustmentReason: z.string().trim().max(500).optional(),
+      adjustmentScore: z.number().int('가감점은 정수만 허용됩니다.').min(-5).max(5).nullable().optional(),
+      adjustmentGroupKey: z.string().trim().max(100).nullable().optional(),
+      adjustmentReason: z.string().trim().max(500).nullable().optional(),
     }).superRefine(refineAdjustmentReason)
   ),
 })
