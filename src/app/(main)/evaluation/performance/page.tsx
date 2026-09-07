@@ -35,6 +35,7 @@ export default async function PerformanceEvaluationPage({ searchParams }: PagePr
     session,
     cycleId: resolvedSearchParams.cycleId,
     evaluationId: resolvedSearchParams.evaluationId,
+    scope: 'org',
   })
 
   const canSeeAllInCycle = session.user.role === 'ROLE_ADMIN'

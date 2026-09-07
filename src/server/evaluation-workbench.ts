@@ -35,6 +35,30 @@ import {
 
 export type EvaluationWorkbenchState = 'ready' | 'empty' | 'permission-denied' | 'error'
 
+export type EvaluationSummary = {
+  id: string
+  cycleId: string
+  cycleName: string
+  cycleYear: number
+  evalStage: EvalStage
+  stageLabel: string
+  status: EvalStatus
+  statusLabel: string
+  targetId: string
+  targetName: string
+  targetDepartment: string
+  targetEmployeeNo: string
+  targetPosition: string
+  targetDivision: string
+  evaluatorName: string
+  totalScore?: number | null
+  updatedAt: string
+  submittedAt?: string
+  isMine: boolean
+  isEvaluator: boolean
+  isActionRequired: boolean
+}
+
 export type EvaluationWorkbenchPageData = {
   state: EvaluationWorkbenchState
   message?: string
@@ -78,29 +102,8 @@ export type EvaluationWorkbenchPageData = {
     canViewFeedback: boolean
     canSeeAllInCycle: boolean
   }
-  evaluations?: Array<{
-    id: string
-    cycleId: string
-    cycleName: string
-    cycleYear: number
-    evalStage: EvalStage
-    stageLabel: string
-    status: EvalStatus
-    statusLabel: string
-    targetId: string
-    targetName: string
-    targetDepartment: string
-    targetEmployeeNo: string
-    targetPosition: string
-    targetDivision: string
-    evaluatorName: string
-    totalScore?: number | null
-    updatedAt: string
-    submittedAt?: string
-    isMine: boolean
-    isEvaluator: boolean
-    isActionRequired: boolean
-  }>
+  evaluations?: EvaluationSummary[]
+  orgEvaluations?: EvaluationSummary[]
   selected?: {
     id: string
     cycle: {
@@ -296,6 +299,7 @@ type GetEvaluationWorkbenchPageDataParams = {
   session: Session
   cycleId?: string
   evaluationId?: string
+  scope?: 'personal' | 'org'
 }
 
 type EvaluationRecord = Awaited<ReturnType<typeof loadEvaluations>>[number]
@@ -792,6 +796,86 @@ async function loadEvaluations(params: {
   })
 }
 
+async function loadOrgEvaluations(params: { session: Session; cycleId: string }) {
+  const sessionUser = getWorkbenchSessionUser(params.session)
+  if (!sessionUser) {
+    return []
+  }
+
+  const role = sessionUser.role
+  const isUnrestricted = role === 'ROLE_CEO' || role === 'ROLE_ADMIN'
+
+  let targetIds: string[] | undefined
+
+  if (!isUnrestricted) {
+    let employeeFilter: Prisma.EmployeeWhereInput | null = null
+    if (role === 'ROLE_TEAM_LEADER') {
+      employeeFilter = { teamLeaderId: sessionUser.id, status: 'ACTIVE' }
+    } else if (role === 'ROLE_SECTION_CHIEF') {
+      employeeFilter = { sectionChiefId: sessionUser.id, status: 'ACTIVE' }
+    } else if (role === 'ROLE_DIV_HEAD') {
+      employeeFilter = { divisionHeadId: sessionUser.id, status: 'ACTIVE' }
+    } else {
+      return []
+    }
+
+    const employees = await prisma.employee.findMany({
+      where: employeeFilter,
+      select: { id: true },
+    })
+    targetIds = employees.map((e) => e.id)
+  }
+
+  const evalWhere: Prisma.EvaluationWhereInput = {
+    evalCycleId: params.cycleId,
+    ...(targetIds !== undefined ? { targetId: { in: targetIds } } : {}),
+  }
+
+  return prisma.evaluation.findMany({
+    where: evalWhere,
+    select: {
+      id: true,
+      evalCycleId: true,
+      evalStage: true,
+      status: true,
+      totalScore: true,
+      updatedAt: true,
+      submittedAt: true,
+      target: {
+        select: {
+          id: true,
+          empName: true,
+          empId: true,
+          position: true,
+          department: {
+            select: {
+              deptName: true,
+              parentDept: {
+                select: {
+                  deptName: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      evaluator: {
+        select: {
+          id: true,
+          empName: true,
+        },
+      },
+      evalCycle: {
+        select: {
+          cycleName: true,
+          evalYear: true,
+        },
+      },
+    },
+    orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+  })
+}
+
 export async function getEvaluationWorkbenchPageData(
   params: GetEvaluationWorkbenchPageDataParams
 ): Promise<EvaluationWorkbenchPageData> {
@@ -860,6 +944,11 @@ export async function getEvaluationWorkbenchPageData(
       session: params.session,
       cycleId: selectedCycle.id,
     })
+
+    const orgEvaluations =
+      params.scope === 'org'
+        ? await loadOrgEvaluations({ session: params.session, cycleId: selectedCycle.id })
+        : null
 
     const confirmedKpiCount = await prisma.personalKpi.count({
       where: {
@@ -1081,6 +1170,38 @@ export async function getEvaluationWorkbenchPageData(
           evaluation.evaluator.id === sessionUser.id &&
           ['PENDING', 'IN_PROGRESS', 'REJECTED'].includes(evaluation.status),
       })),
+      orgEvaluations:
+        params.scope === 'org' && orgEvaluations
+          ? orgEvaluations.map((evaluation) => ({
+              id: evaluation.id,
+              cycleId: evaluation.evalCycleId,
+              cycleName: evaluation.evalCycle.cycleName,
+              cycleYear: evaluation.evalCycle.evalYear,
+              evalStage: evaluation.evalStage,
+              stageLabel: EVAL_STAGE_LABELS[evaluation.evalStage],
+              status: evaluation.status,
+              statusLabel: STATUS_LABELS[evaluation.status],
+              targetId: evaluation.target.id,
+              targetName: evaluation.target.empName,
+              targetDepartment: evaluation.target.department.deptName,
+              targetEmployeeNo: evaluation.target.empId,
+              targetPosition: evaluation.target.position,
+              targetDivision:
+                evaluation.target.department.parentDept?.deptName ??
+                evaluation.target.department.deptName,
+              evaluatorName: evaluation.evaluator.empName,
+              totalScore: evaluation.totalScore,
+              updatedAt: formatDate(evaluation.updatedAt),
+              submittedAt: evaluation.submittedAt
+                ? formatDate(evaluation.submittedAt)
+                : undefined,
+              isMine: evaluation.target.id === sessionUser.id,
+              isEvaluator: evaluation.evaluator.id === sessionUser.id,
+              isActionRequired:
+                evaluation.evaluator.id === sessionUser.id &&
+                ['PENDING', 'IN_PROGRESS', 'REJECTED'].includes(evaluation.status),
+            }))
+          : undefined,
     }
 
     if (!selectedEvaluation) {
