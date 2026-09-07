@@ -78,6 +78,15 @@ async function main() {
     assert.equal(navigationSource.includes("label: '업적평가'"), true)
   })
 
+  await run('HR ops scope resolves org hierarchy for evaluator roles', () => {
+    assert.match(loaderSource, /orgEvaluations/)
+    assert.match(loaderSource, /loadOrgEvaluations/)
+    assert.match(loaderSource, /divisionHeadId/)
+    assert.match(loaderSource, /sectionChiefId/)
+    assert.match(loaderSource, /teamLeaderId/)
+    assert.match(performancePageSource, /scope: 'org'/)
+  })
+
   console.log('Performance evaluator scope tests completed')
 }
 

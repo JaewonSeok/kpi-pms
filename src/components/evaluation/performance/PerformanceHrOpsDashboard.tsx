@@ -44,6 +44,7 @@ type HrOpsData = {
     department: string
   } | null
   evaluations?: EvaluationSummary[] | null
+  orgEvaluations?: EvaluationSummary[] | null
   selected?: SelectedEvaluation | null
 }
 
@@ -174,8 +175,8 @@ export function PerformanceHrOpsDashboard({ data, canSeeAllInCycle }: { data: un
   const dashboardData = data as HrOpsData
   const selectedCycle = dashboardData.availableCycles?.find((cycle) => cycle.id === dashboardData.selectedCycleId) ?? dashboardData.availableCycles?.[0] ?? null
   const targets = useMemo(
-    () => buildTargetProgress(dashboardData.evaluations ?? [], dashboardData.selected ?? null),
-    [dashboardData.evaluations, dashboardData.selected]
+    () => buildTargetProgress(dashboardData.orgEvaluations ?? dashboardData.evaluations ?? [], dashboardData.selected ?? null),
+    [dashboardData.orgEvaluations, dashboardData.evaluations, dashboardData.selected]
   )
   const [selectedTargetId, setSelectedTargetId] = useState(() => dashboardData.selected?.target.id ?? targets[0]?.targetId ?? '')
   const [query, setQuery] = useState('')
