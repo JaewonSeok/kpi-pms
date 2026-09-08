@@ -13,6 +13,16 @@ function run(name: string, fn: () => void) {
   }
 }
 
+async function runAsync(name: string, fn: () => Promise<void>) {
+  try {
+    await fn()
+    console.log(`PASS ${name}`)
+  } catch (error) {
+    console.error(`FAIL ${name}`)
+    throw error
+  }
+}
+
 async function main() {
   const {
     buildNotificationIdempotencyKey,
@@ -117,7 +127,7 @@ async function main() {
     assert.equal(toAbsoluteNotificationLink('/kpi/monthly', 'not-a-valid-base'), '/kpi/monthly')
   })
 
-  await run('dispatchDueNotificationJobs — jobIds 미지정 시 where 에 id 키 없음', async () => {
+  await runAsync('dispatchDueNotificationJobs — jobIds 미지정 시 where 에 id 키 없음', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let capturedWhere: any = null
     const stubDb = {
@@ -131,7 +141,7 @@ async function main() {
     assert.equal('id' in capturedWhere, false, 'where should not contain id key when jobIds is undefined')
   })
 
-  await run('dispatchDueNotificationJobs — jobIds: [a,b] 시 where.id.in 이 [a,b]', async () => {
+  await runAsync('dispatchDueNotificationJobs — jobIds: [a,b] 시 where.id.in 이 [a,b]', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let capturedWhere: any = null
     const stubDb = {
@@ -145,7 +155,7 @@ async function main() {
     assert.deepEqual(capturedWhere.id.in, ['a', 'b'])
   })
 
-  await run('dispatchDueNotificationJobs — jobIds: [] 시 where.id.in 이 []', async () => {
+  await runAsync('dispatchDueNotificationJobs — jobIds: [] 시 where.id.in 이 []', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let capturedWhere: any = null
     const stubDb = {
@@ -163,7 +173,7 @@ async function main() {
   // getEmailTransport()가 실 SMTP 트랜스포트를 반환(FEATURE_EMAIL_DELIVERY 미설정 → defaultValue:true,
   // SMTP_HOST/USER/PASS 모두 .env 설정)하므로 ts-node 직접 실행 환경에서 구조상 불가.
 
-  await run('dispatchDueNotificationJobs — allowlist 밖 EMAIL 잡 1건 → suppressedCount 1 / successCount 0', async () => {
+  await runAsync('dispatchDueNotificationJobs — allowlist 밖 EMAIL 잡 1건 → suppressedCount 1 / successCount 0', async () => {
     const prev = process.env.NOTIFICATION_EMAIL_ALLOWLIST
     process.env.NOTIFICATION_EMAIL_ALLOWLIST = 'allowed@example.com'
     try {
@@ -201,7 +211,7 @@ async function main() {
     }
   })
 
-  await run('dispatchDueNotificationJobs — IN_APP 잡 1건 → successCount 1 / suppressedCount 0', async () => {
+  await runAsync('dispatchDueNotificationJobs — IN_APP 잡 1건 → successCount 1 / suppressedCount 0', async () => {
     const mockJob = {
       id: 'j-inapp-1',
       channel: NotificationDeliveryChannel.IN_APP,
@@ -233,7 +243,7 @@ async function main() {
     assert.equal(summary.processedCount, 1, 'processedCount 는 1 이어야 한다')
   })
 
-  await run('dispatchDueNotificationJobs — allowlist 밖 digest 그룹 2건 → suppressedCount 2 / successCount 0', async () => {
+  await runAsync('dispatchDueNotificationJobs — allowlist 밖 digest 그룹 2건 → suppressedCount 2 / successCount 0', async () => {
     const prev = process.env.NOTIFICATION_EMAIL_ALLOWLIST
     process.env.NOTIFICATION_EMAIL_ALLOWLIST = 'allowed@example.com'
     try {
@@ -272,16 +282,6 @@ async function main() {
     }
   })
 
-  const runAsync = async (name: string, fn: () => Promise<void>) => {
-    try {
-      await fn()
-      console.log(`PASS ${name}`)
-    } catch (error) {
-      console.error(`FAIL ${name}`)
-      throw error
-    }
-  }
-
   await runAsync('dispatchDueNotificationJobs — CEO recipientId EMAIL 잡 → suppressedCount 1 / successCount 0', async () => {
     let capturedSuppressReason: string | undefined
     const mockJob = {
@@ -308,6 +308,7 @@ async function main() {
         update: async (args: any) => { capturedSuppressReason = args.data.suppressReason; return mockJob as any },
       },
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const summary = await dispatchDueNotificationJobs(stubDb as any)
     assert.equal(summary.suppressedCount, 1, 'suppressedCount 는 1 이어야 한다')
     assert.equal(summary.successCount, 0, 'successCount 는 0 이어야 한다')
@@ -344,6 +345,7 @@ async function main() {
           update: async (args: any) => { capturedSuppressReason = args.data.suppressReason; return mockJob as any },
         },
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const summary = await dispatchDueNotificationJobs(stubDb as any)
       assert.equal(summary.suppressedCount, 1, 'suppressedCount 는 1 이어야 한다')
       assert.equal(capturedSuppressReason, 'NOT_IN_ALLOWLIST', '비CEO 잡은 allowlist 경로로 억제돼야 한다')
