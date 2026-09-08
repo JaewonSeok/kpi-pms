@@ -13,6 +13,16 @@ function run(name: string, fn: () => void) {
   }
 }
 
+async function runAsync(name: string, fn: () => Promise<void>) {
+  try {
+    await fn()
+    console.log(`PASS ${name}`)
+  } catch (error) {
+    console.error(`FAIL ${name}`)
+    throw error
+  }
+}
+
 async function main() {
   const {
     buildNotificationIdempotencyKey,
@@ -117,7 +127,7 @@ async function main() {
     assert.equal(toAbsoluteNotificationLink('/kpi/monthly', 'not-a-valid-base'), '/kpi/monthly')
   })
 
-  await run('dispatchDueNotificationJobs — jobIds 미지정 시 where 에 id 키 없음', async () => {
+  await runAsync('dispatchDueNotificationJobs — jobIds 미지정 시 where 에 id 키 없음', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let capturedWhere: any = null
     const stubDb = {
@@ -131,7 +141,7 @@ async function main() {
     assert.equal('id' in capturedWhere, false, 'where should not contain id key when jobIds is undefined')
   })
 
-  await run('dispatchDueNotificationJobs — jobIds: [a,b] 시 where.id.in 이 [a,b]', async () => {
+  await runAsync('dispatchDueNotificationJobs — jobIds: [a,b] 시 where.id.in 이 [a,b]', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let capturedWhere: any = null
     const stubDb = {
@@ -145,7 +155,7 @@ async function main() {
     assert.deepEqual(capturedWhere.id.in, ['a', 'b'])
   })
 
-  await run('dispatchDueNotificationJobs — jobIds: [] 시 where.id.in 이 []', async () => {
+  await runAsync('dispatchDueNotificationJobs — jobIds: [] 시 where.id.in 이 []', async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let capturedWhere: any = null
     const stubDb = {
@@ -163,7 +173,7 @@ async function main() {
   // getEmailTransport()가 실 SMTP 트랜스포트를 반환(FEATURE_EMAIL_DELIVERY 미설정 → defaultValue:true,
   // SMTP_HOST/USER/PASS 모두 .env 설정)하므로 ts-node 직접 실행 환경에서 구조상 불가.
 
-  await run('dispatchDueNotificationJobs — allowlist 밖 EMAIL 잡 1건 → suppressedCount 1 / successCount 0', async () => {
+  await runAsync('dispatchDueNotificationJobs — allowlist 밖 EMAIL 잡 1건 → suppressedCount 1 / successCount 0', async () => {
     const prev = process.env.NOTIFICATION_EMAIL_ALLOWLIST
     process.env.NOTIFICATION_EMAIL_ALLOWLIST = 'allowed@example.com'
     try {
@@ -201,7 +211,7 @@ async function main() {
     }
   })
 
-  await run('dispatchDueNotificationJobs — IN_APP 잡 1건 → successCount 1 / suppressedCount 0', async () => {
+  await runAsync('dispatchDueNotificationJobs — IN_APP 잡 1건 → successCount 1 / suppressedCount 0', async () => {
     const mockJob = {
       id: 'j-inapp-1',
       channel: NotificationDeliveryChannel.IN_APP,
@@ -233,7 +243,7 @@ async function main() {
     assert.equal(summary.processedCount, 1, 'processedCount 는 1 이어야 한다')
   })
 
-  await run('dispatchDueNotificationJobs — allowlist 밖 digest 그룹 2건 → suppressedCount 2 / successCount 0', async () => {
+  await runAsync('dispatchDueNotificationJobs — allowlist 밖 digest 그룹 2건 → suppressedCount 2 / successCount 0', async () => {
     const prev = process.env.NOTIFICATION_EMAIL_ALLOWLIST
     process.env.NOTIFICATION_EMAIL_ALLOWLIST = 'allowed@example.com'
     try {
@@ -267,6 +277,153 @@ async function main() {
       assert.equal(summary.successCount, 0, 'successCount 는 0 이어야 한다')
       assert.equal(summary.processedCount, 2, 'processedCount 는 2 이어야 한다')
       assert.equal(updateCallCount, 2, 'notificationJob.update 가 잡 2건 각각 호출돼야 한다')
+    } finally {
+      process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
+    }
+  })
+
+  await runAsync('dispatchDueNotificationJobs — CEO recipientId EMAIL 잡 → suppressedCount 1 / successCount 0', async () => {
+    let capturedSuppressReason: string | undefined
+    const mockJob = {
+      id: 'j-ceo-email',
+      channel: NotificationDeliveryChannel.EMAIL,
+      isDigestMember: false,
+      digestKey: null,
+      recipientId: 'ceo-1',
+      type: NotificationType.EVALUATION_REMINDER,
+      title: 'CEO test',
+      message: 'CEO message',
+      link: null,
+      templateCode: null,
+      payload: null,
+      priority: 0,
+      retryCount: 0,
+      recipient: { id: 'ceo-1', empName: '대표이사', gwsEmail: 'ceo@example.com' },
+    }
+    const stubDb = {
+      employee: { findMany: async () => [{ id: 'ceo-1' }] },
+      notificationJob: {
+        findMany: async () => [mockJob],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        update: async (args: any) => { capturedSuppressReason = args.data.suppressReason; return mockJob as any },
+      },
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const summary = await dispatchDueNotificationJobs(stubDb as any)
+    assert.equal(summary.suppressedCount, 1, 'suppressedCount 는 1 이어야 한다')
+    assert.equal(summary.successCount, 0, 'successCount 는 0 이어야 한다')
+    assert.equal(summary.processedCount, 1, 'processedCount 는 1 이어야 한다')
+    assert.equal(capturedSuppressReason, 'CEO_EMAIL_SUPPRESSED', '억제 이유가 CEO_EMAIL_SUPPRESSED 이어야 한다')
+  })
+
+  await runAsync('dispatchDueNotificationJobs — 비CEO recipientId 는 CEO 억제 경로가 아닌 allowlist 경로로 처리된다', async () => {
+    const prev = process.env.NOTIFICATION_EMAIL_ALLOWLIST
+    process.env.NOTIFICATION_EMAIL_ALLOWLIST = 'allowed@example.com'
+    try {
+      let capturedSuppressReason: string | undefined
+      const mockJob = {
+        id: 'j-nonceo-email',
+        channel: NotificationDeliveryChannel.EMAIL,
+        isDigestMember: false,
+        digestKey: null,
+        recipientId: 'emp-2',
+        type: NotificationType.GOAL_REMINDER,
+        title: 'Non-CEO test',
+        message: 'Non-CEO message',
+        link: null,
+        templateCode: null,
+        payload: null,
+        priority: 0,
+        retryCount: 0,
+        recipient: { id: 'emp-2', empName: '일반직원', gwsEmail: 'emp2@example.com' },
+      }
+      const stubDb = {
+        employee: { findMany: async () => [{ id: 'ceo-1' }] },
+        notificationJob: {
+          findMany: async () => [mockJob],
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          update: async (args: any) => { capturedSuppressReason = args.data.suppressReason; return mockJob as any },
+        },
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const summary = await dispatchDueNotificationJobs(stubDb as any)
+      assert.equal(summary.suppressedCount, 1, 'suppressedCount 는 1 이어야 한다')
+      assert.equal(capturedSuppressReason, 'NOT_IN_ALLOWLIST', '비CEO 잡은 allowlist 경로로 억제돼야 한다')
+      assert.notEqual(capturedSuppressReason, 'CEO_EMAIL_SUPPRESSED', '비CEO 잡은 CEO 경로로 억제되면 안 된다')
+    } finally {
+      process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
+    }
+  })
+
+  await runAsync('dispatchDueNotificationJobs — CEO recipientId digest 그룹 2건 → suppressedCount 2 / successCount 0', async () => {
+    let updateCallCount = 0
+    const makeCeoDigestJob = (id: string) => ({
+      id,
+      channel: NotificationDeliveryChannel.EMAIL,
+      isDigestMember: true,
+      digestKey: 'ceo-1:2026-09-08',
+      recipientId: 'ceo-1',
+      type: NotificationType.CALIBRATION_REMINDER,
+      title: 'CEO digest test',
+      message: 'CEO digest message',
+      link: null,
+      templateCode: null,
+      payload: null,
+      priority: 0,
+      retryCount: 0,
+      recipient: { id: 'ceo-1', empName: '대표이사', gwsEmail: 'ceo@example.com' },
+    })
+    const txStub = {
+      notificationJob: { update: async () => { updateCallCount += 1; return {} } },
+    }
+    const stubDb = {
+      employee: { findMany: async () => [{ id: 'ceo-1' }] },
+      notificationJob: { findMany: async () => [makeCeoDigestJob('j-cd1'), makeCeoDigestJob('j-cd2')] },
+      $transaction: async (fn: (tx: typeof txStub) => Promise<void>) => fn(txStub),
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const summary = await dispatchDueNotificationJobs(stubDb as any)
+    assert.equal(summary.suppressedCount, 2, 'suppressedCount 는 2 이어야 한다')
+    assert.equal(summary.successCount, 0, 'successCount 는 0 이어야 한다')
+    assert.equal(summary.processedCount, 2, 'processedCount 는 2 이어야 한다')
+    assert.equal(updateCallCount, 2, 'notificationJob.update 가 잡 2건 각각 CEO_EMAIL_SUPPRESSED 처리로 호출돼야 한다')
+  })
+
+  await runAsync('dispatchDueNotificationJobs — 비CEO digest 는 CEO 억제 경로가 아닌 allowlist 경로로 처리된다', async () => {
+    const prev = process.env.NOTIFICATION_EMAIL_ALLOWLIST
+    process.env.NOTIFICATION_EMAIL_ALLOWLIST = 'allowed@example.com'
+    try {
+      const capturedSuppressReasons: string[] = []
+      const makeNonCeoDigestJob = (id: string) => ({
+        id,
+        channel: NotificationDeliveryChannel.EMAIL,
+        isDigestMember: true,
+        digestKey: 'emp-2:2026-09-08',
+        recipientId: 'emp-2',
+        type: NotificationType.GOAL_REMINDER,
+        title: 'Non-CEO digest test',
+        message: 'Non-CEO digest message',
+        link: null,
+        templateCode: null,
+        payload: null,
+        priority: 0,
+        retryCount: 0,
+        recipient: { id: 'emp-2', empName: '일반직원', gwsEmail: 'emp2@example.com' },
+      })
+      const txStub = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        notificationJob: { update: async (args: any) => { capturedSuppressReasons.push(args.data.suppressReason); return {} } },
+      }
+      const stubDb = {
+        employee: { findMany: async () => [{ id: 'ceo-1' }] },
+        notificationJob: { findMany: async () => [makeNonCeoDigestJob('j-nd1'), makeNonCeoDigestJob('j-nd2')] },
+        $transaction: async (fn: (tx: typeof txStub) => Promise<void>) => fn(txStub),
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const summary = await dispatchDueNotificationJobs(stubDb as any)
+      assert.equal(summary.suppressedCount, 2, 'suppressedCount 는 2 이어야 한다')
+      assert.equal(capturedSuppressReasons.length, 2, 'update 가 2건 호출돼야 한다')
+      assert.ok(capturedSuppressReasons.every((r) => r === 'NOT_IN_ALLOWLIST'), '비CEO digest 는 allowlist 경로로 억제돼야 한다')
     } finally {
       process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
     }
@@ -351,16 +508,6 @@ async function main() {
     const result = ManualNotificationSendSchema.safeParse({ employeeIds: ['emp-1'], stage: 'result', subject: '[성과관리] 평가 결과 확인 안내', body: '본문' })
     assert.equal(result.success, true)
   })
-
-  const runAsync = async (name: string, fn: () => Promise<void>) => {
-    try {
-      await fn()
-      console.log(`PASS ${name}`)
-    } catch (error) {
-      console.error(`FAIL ${name}`)
-      throw error
-    }
-  }
 
   await runAsync('getCachedNotificationTemplate — 같은 code 2회 호출 → findMany 1회만 실행', async () => {
     invalidateNotificationTemplateCache()
