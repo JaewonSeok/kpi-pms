@@ -429,6 +429,14 @@ function getEmailAllowlist(): Set<string> {
   )
 }
 
+async function getCeoRecipientIds(db: PrismaClient): Promise<Set<string>> {
+  const employees = await db.employee.findMany({
+    where: { role: 'ROLE_CEO', status: 'ACTIVE' },
+    select: { id: true },
+  })
+  return new Set(employees.map((employee) => employee.id))
+}
+
 function getEmailTransport() {
   if (!isFeatureEnabled('emailDelivery') || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     return nodemailer.createTransport({ jsonTransport: true })
@@ -976,8 +984,21 @@ async function deliverInAppJob(
 
 async function deliverEmailJob(
   db: PrismaClient,
-  job: Awaited<ReturnType<typeof getProcessableJobs>>[number]
+  job: Awaited<ReturnType<typeof getProcessableJobs>>[number],
+  ceoIds: Set<string>
 ): Promise<'SENT' | 'SUPPRESSED'> {
+  if (ceoIds.has(job.recipientId)) {
+    await db.notificationJob.update({
+      where: { id: job.id },
+      data: {
+        status: NotificationJobStatus.SUPPRESSED,
+        suppressedAt: new Date(),
+        suppressReason: 'CEO_EMAIL_SUPPRESSED',
+      },
+    })
+    return 'SUPPRESSED'
+  }
+
   const allowlist = getEmailAllowlist()
   const recipientEmail = job.recipient.gwsEmail
   if (allowlist.size > 0 && (!recipientEmail || !allowlist.has(recipientEmail.trim().toLowerCase()))) {
@@ -1028,11 +1049,28 @@ async function deliverEmailJob(
 
 async function deliverDigestGroup(
   db: PrismaClient,
-  jobs: Awaited<ReturnType<typeof getProcessableJobs>>
+  jobs: Awaited<ReturnType<typeof getProcessableJobs>>,
+  ceoIds: Set<string>
 ) {
   if (!jobs.length) return { processed: 0, success: 0, suppressed: 0 }
 
   const firstJob = jobs[0]
+  if (ceoIds.has(firstJob.recipientId)) {
+    await db.$transaction(async (tx) => {
+      for (const job of jobs) {
+        await tx.notificationJob.update({
+          where: { id: job.id },
+          data: {
+            status: NotificationJobStatus.SUPPRESSED,
+            suppressedAt: new Date(),
+            suppressReason: 'CEO_EMAIL_SUPPRESSED',
+          },
+        })
+      }
+    })
+    return { processed: jobs.length, success: 0, suppressed: jobs.length }
+  }
+
   const allowlist = getEmailAllowlist()
   const recipientEmail = firstJob.recipient.gwsEmail
   if (allowlist.size > 0 && (!recipientEmail || !allowlist.has(recipientEmail.trim().toLowerCase()))) {
@@ -1092,6 +1130,7 @@ export async function dispatchDueNotificationJobs(
   jobIds?: string[]
 ): Promise<DispatchSummary> {
   const jobs = await getProcessableJobs(db, jobIds)
+  const ceoIds = await getCeoRecipientIds(db).catch(() => new Set<string>())
   const summary: DispatchSummary = {
     processedCount: jobs.length,
     successCount: 0,
@@ -1120,7 +1159,7 @@ export async function dispatchDueNotificationJobs(
         await deliverInAppJob(db, job)
         summary.successCount += 1
       } else {
-        const outcome = await deliverEmailJob(db, job)
+        const outcome = await deliverEmailJob(db, job, ceoIds)
         if (outcome === 'SUPPRESSED') summary.suppressedCount += 1
         else summary.successCount += 1
       }
@@ -1134,7 +1173,7 @@ export async function dispatchDueNotificationJobs(
 
   for (const group of digestGroups.values()) {
     try {
-      const result = await deliverDigestGroup(db, group)
+      const result = await deliverDigestGroup(db, group, ceoIds)
       summary.successCount += result.success
       summary.suppressedCount += result.suppressed
     } catch (error) {
