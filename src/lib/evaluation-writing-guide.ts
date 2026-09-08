@@ -4,6 +4,7 @@ export type EvaluationQualityWarningKey =
   | 'short-comment'
   | 'generic-comment'
   | 'missing-evidence'
+  | 'weak-data-evidence'
   | 'bias-risk'
   | 'emotional-tone'
   | 'missing-action'
@@ -12,6 +13,7 @@ export type EvaluationQualityWarning = {
   key: EvaluationQualityWarningKey
   title: string
   message: string
+  source?: string
 }
 
 export type EvaluationGuideSection = {
@@ -163,9 +165,10 @@ export function buildEvaluationQualityWarnings(params: {
     params.evidence.warnings.some((item) => item.includes('근거') || item.includes('추가') || item.includes('보강'))
   ) {
     pushWarning({
-      key: 'missing-evidence',
-      title: '근거가 부족합니다',
-      message: '현재 확인 가능한 KPI, 월간 실적, 피드백 근거가 충분하지 않습니다. 추가 자료를 확인한 뒤 최종 코멘트를 다듬어 주세요.',
+      key: 'weak-data-evidence',
+      title: '월간 실적 데이터가 부족합니다',
+      message: '월간 실적 또는 KPI·피드백 데이터가 아직 충분히 입력되지 않았습니다. 실적 데이터를 보강한 뒤 평가를 진행하세요.',
+      source: 'data',
     })
   }
 

@@ -1892,53 +1892,59 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                   <option value="PENDING_REVIEW">검토 대기</option>
                 </select>
               </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-slate-400">단계</span>
-                <select
-                  value={stageFilter}
-                  onChange={(event) => setStageFilter(event.target.value as typeof stageFilter)}
-                  className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-                >
-                  <option value="ALL">전체</option>
-                  {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.evalStage))].map((stage) => (
-                    <option key={stage} value={stage}>
-                      {(props.evaluations ?? []).find((evaluation) => evaluation.evalStage === stage)?.stageLabel ?? stage}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-slate-400">상태</span>
-                <select
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
-                  className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-                >
-                  <option value="ALL">전체</option>
-                  {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.status))].map((status) => (
-                    <option key={status} value={status}>
-                      {(props.evaluations ?? []).find((evaluation) => evaluation.status === status)?.statusLabel ?? status}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[11px] font-medium text-slate-400">부서</span>
-                <select
-                  value={departmentFilter}
-                  onChange={(event) => setDepartmentFilter(event.target.value)}
-                  className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
-                >
-                  <option value="ALL">전체</option>
-                  {departmentOptions
-                    .filter((department) => department !== 'ALL')
-                    .map((department) => (
-                      <option key={department} value={department}>
-                        {department}
+              {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.evalStage))].length >= 2 ? (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-slate-400">단계</span>
+                  <select
+                    value={stageFilter}
+                    onChange={(event) => setStageFilter(event.target.value as typeof stageFilter)}
+                    className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                  >
+                    <option value="ALL">전체</option>
+                    {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.evalStage))].map((stage) => (
+                      <option key={stage} value={stage}>
+                        {(props.evaluations ?? []).find((evaluation) => evaluation.evalStage === stage)?.stageLabel ?? stage}
                       </option>
                     ))}
-                </select>
-              </div>
+                  </select>
+                </div>
+              ) : null}
+              {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.status))].length >= 2 ? (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-slate-400">상태</span>
+                  <select
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+                    className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                  >
+                    <option value="ALL">전체</option>
+                    {[...new Set((props.evaluations ?? []).map((evaluation) => evaluation.status))].map((status) => (
+                      <option key={status} value={status}>
+                        {(props.evaluations ?? []).find((evaluation) => evaluation.status === status)?.statusLabel ?? status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+              {departmentOptions.filter((department) => department !== 'ALL').length >= 2 ? (
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] font-medium text-slate-400">부서</span>
+                  <select
+                    value={departmentFilter}
+                    onChange={(event) => setDepartmentFilter(event.target.value)}
+                    className="h-9 w-full rounded-xl border border-slate-200 px-2 text-sm text-slate-900 outline-none transition focus:border-blue-400"
+                  >
+                    <option value="ALL">전체</option>
+                    {departmentOptions
+                      .filter((department) => department !== 'ALL')
+                      .map((department) => (
+                        <option key={department} value={department}>
+                          {department}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ) : null}
             </div>
             {filteredEvaluations.length ? (() => {
               const groupedEvaluations = filteredEvaluations.reduce<
@@ -2311,76 +2317,6 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                     </Panel>
                   ) : null}
 
-                  <Panel title="단계별 의견 및 등급" description="종합 의견, 강점, 보완 포인트, 다음 단계 가이드를 함께 기록합니다.">
-                    <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-                      <label className="space-y-2">
-                        <span className="text-sm font-semibold text-slate-700">제안 등급</span>
-                        <select
-                          value={draftGradeId}
-                          onChange={(event) => setDraftGradeId(event.target.value)}
-                          disabled={selected.permissions.readOnly}
-                          className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
-                        >
-                          <option value="">등급 선택 안 함</option>
-                          {selected.gradeOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.gradeName} ({option.scoreRange})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="space-y-2">
-                        <span className="text-sm font-semibold text-slate-700">종합 의견</span>
-                        <textarea
-                          value={draftComment}
-                          onChange={(event) => setDraftComment(event.target.value)}
-                          disabled={selected.permissions.readOnly}
-                          className="min-h-32 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
-                          placeholder="강점, 보완점, 근거를 포함해 작성하세요."
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-4 grid gap-4 lg:grid-cols-3">
-                      <label className="space-y-2">
-                        <span className="text-sm font-semibold text-slate-700">강점 요약</span>
-                        <textarea
-                          value={draftStrengthComment}
-                          onChange={(event) => setDraftStrengthComment(event.target.value)}
-                          disabled={selected.permissions.readOnly}
-                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
-                          placeholder="이번 단계에서 확인한 강점과 핵심 성과를 정리하세요."
-                        />
-                      </label>
-                      <label className="space-y-2">
-                        <span className="text-sm font-semibold text-slate-700">보완 포인트</span>
-                        <textarea
-                          value={draftImprovementComment}
-                          onChange={(event) => setDraftImprovementComment(event.target.value)}
-                          disabled={selected.permissions.readOnly}
-                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
-                          placeholder="추가 확인이 필요한 점이나 보완 포인트를 정리하세요."
-                        />
-                      </label>
-                      <label className="space-y-2">
-                        <span className="text-sm font-semibold text-slate-700">다음 단계 가이드</span>
-                        <textarea
-                          value={draftNextStepGuidance}
-                          onChange={(event) => setDraftNextStepGuidance(event.target.value)}
-                          disabled={selected.permissions.readOnly}
-                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
-                          placeholder="다음 리뷰 단계나 코칭 대화에서 확인할 포인트를 남기세요."
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-4">
-                      <QualityWarningPanel
-                        title="평가 품질 점검"
-                        description="현재 입력한 종합 의견을 기준으로 근거, 편향, 코칭 요소를 함께 점검합니다."
-                        warnings={draftQualityWarnings}
-                      />
-                    </div>
-                  </Panel>
-
                   <Panel title="KPI별 점수 입력" description="정량은 점수 입력, 정성은 PDCA와 코멘트를 함께 남깁니다.">
                     <div className="space-y-4">
                       {editableItems.map((item) => (
@@ -2569,6 +2505,87 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                     </div>
                   </Panel>
 
+                  <Panel title="단계별 의견 및 등급" description="종합 의견, 강점, 보완 포인트, 다음 단계 가이드를 함께 기록합니다.">
+                    <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">제안 등급</span>
+                        <select
+                          value={draftGradeId}
+                          onChange={(event) => setDraftGradeId(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                        >
+                          <option value="">등급 선택 안 함</option>
+                          {selected.gradeOptions.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.gradeName} ({option.scoreRange})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">종합 의견</span>
+                        <textarea
+                          value={draftComment}
+                          onChange={(event) => setDraftComment(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="min-h-32 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                          placeholder="강점, 보완점, 근거를 포함해 작성하세요."
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">강점 요약</span>
+                        <textarea
+                          value={draftStrengthComment}
+                          onChange={(event) => setDraftStrengthComment(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                          placeholder="이번 단계에서 확인한 강점과 핵심 성과를 정리하세요."
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">보완 포인트</span>
+                        <textarea
+                          value={draftImprovementComment}
+                          onChange={(event) => setDraftImprovementComment(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                          placeholder="추가 확인이 필요한 점이나 보완 포인트를 정리하세요."
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-sm font-semibold text-slate-700">다음 단계 가이드</span>
+                        <textarea
+                          value={draftNextStepGuidance}
+                          onChange={(event) => setDraftNextStepGuidance(event.target.value)}
+                          disabled={selected.permissions.readOnly}
+                          className="min-h-28 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-400 disabled:bg-slate-100"
+                          placeholder="다음 리뷰 단계나 코칭 대화에서 확인할 포인트를 남기세요."
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4">
+                      <QualityWarningPanel
+                        title="평가 품질 점검"
+                        description="현재 입력한 종합 의견을 기준으로 근거, 편향, 코칭 요소를 함께 점검합니다."
+                        warnings={draftQualityWarnings.filter((w) => w.source !== 'data')}
+                      />
+                      {draftQualityWarnings.some((w) => w.source === 'data') ? (
+                        <div className="mt-3 space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                          <p className="text-xs font-semibold text-amber-800">월간 실적 데이터 기반 분석</p>
+                          {draftQualityWarnings.filter((w) => w.source === 'data').map((w) => (
+                            <div key={w.key}>
+                              <p className="text-sm font-semibold text-amber-800">{w.title}</p>
+                              <p className="mt-1 text-sm text-amber-700">{w.message}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </Panel>
+
                   <Panel title="반려 사유" description="반려 시 대상자는 같은 평가를 수정해 재제출할 수 있습니다.">
                     <textarea
                       value={rejectReason}
@@ -2635,7 +2652,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                       <QualityWarningPanel
                         title="현재 평가 코멘트 품질 경고"
                         description="지금 작성 중인 종합 의견을 기준으로 편향, 근거, 코칭 요소를 점검합니다."
-                        warnings={draftQualityWarnings}
+                        warnings={draftQualityWarnings.filter((w) => w.source !== 'data')}
                       />
                     </div>
                   </div>
