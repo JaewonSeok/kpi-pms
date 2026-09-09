@@ -147,6 +147,7 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
   const [assistLoadingMode, setAssistLoadingMode] = useState<EvaluationAssistMode | null>(null)
   const [preview, setPreview] = useState<EvaluationAssistPreview | null>(null)
   const [copiedPreviewMode, setCopiedPreviewMode] = useState<EvaluationAssistMode | null>(null)
+  const [pendingAction, setPendingAction] = useState<null | 'createSelf' | 'saveDraft' | 'submit' | 'reject'>(null)
   const [selectedEvidenceSection, setSelectedEvidenceSection] = useState<EvidenceSectionKey>('highlights')
   const [expandedGoalContextId, setExpandedGoalContextId] = useState<string | null>(null)
   const [guideBusy, setGuideBusy] = useState(false)
@@ -1043,6 +1044,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
   ) {
     setNotice('')
     setErrorNotice('')
+    if (pendingAction) return
+    setPendingAction(action)
 
     try {
       if (action === 'createSelf') {
@@ -1116,6 +1119,8 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
       startTransition(() => router.refresh())
     } catch (error) {
       setErrorNotice(error instanceof Error ? error.message : '작업을 처리하지 못했습니다.')
+    } finally {
+      setPendingAction(null)
     }
   }
 
@@ -1631,11 +1636,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
               <button
                 type="button"
                 onClick={() => runMutation('createSelf')}
-                disabled={!props.permissions?.canCreateSelfEvaluation || isPending}
+                disabled={!props.permissions?.canCreateSelfEvaluation || isPending || pendingAction !== null}
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
               >
                 <Sparkles className="mr-2 h-4 w-4" />
-                자기평가 시작
+                {pendingAction === 'createSelf' ? '처리 중…' : '자기평가 시작'}
               </button>
               <Link
                 href="/evaluation/results"
@@ -1686,11 +1691,11 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                   })
                 }
                 disabled={
-                  !selected?.permissions.canEdit || isPending || hasAdjustmentBlockingError
+                  !selected?.permissions.canEdit || isPending || hasAdjustmentBlockingError || pendingAction !== null
                 }
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
               >
-                임시저장
+                {pendingAction === 'saveDraft' ? '처리 중…' : '임시저장'}
               </button>
               <button
                 type="button"
@@ -1724,21 +1729,21 @@ export function EvaluationWorkbenchClient(props: EvaluationWorkbenchClientProps)
                   })
                 }
                 disabled={
-                  !selected?.permissions.canSubmit || isPending || hasAdjustmentBlockingError
+                  !selected?.permissions.canSubmit || isPending || hasAdjustmentBlockingError || pendingAction !== null
                 }
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
               >
                 <Send className="mr-2 h-4 w-4" />
-                {submitActionLabel}
+                {pendingAction === 'submit' ? '처리 중…' : submitActionLabel}
               </button>
               <button
                 type="button"
                 onClick={() => runMutation('reject', { rejectionReason: rejectReason })}
-                disabled={!selected?.permissions.canReject || !rejectReason.trim() || isPending}
+                disabled={!selected?.permissions.canReject || !rejectReason.trim() || isPending || pendingAction !== null}
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:opacity-50"
               >
                 <Undo2 className="mr-2 h-4 w-4" />
-                반려
+                {pendingAction === 'reject' ? '처리 중…' : '반려'}
               </button>
             </div>
             {selected?.permissions.submitDisabledReason ? (
