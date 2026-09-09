@@ -140,7 +140,7 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
   )
 }
 
-function fillAssignmentSlots(candidates: Array<string | null | undefined>) {
+function fillAssignmentSlots(candidates: Array<string | null | undefined>): Assignment {
   const assigned: string[] = []
 
   for (const candidate of candidates) {
@@ -153,7 +153,7 @@ function fillAssignmentSlots(candidates: Array<string | null | undefined>) {
     teamLeaderId: assigned[0] ?? null,
     sectionChiefId: assigned[1] ?? null,
     divisionHeadId: assigned[2] ?? null,
-  } satisfies Assignment
+  }
 }
 
 export function buildAssignments(
@@ -201,12 +201,17 @@ export function buildAssignments(
         divisionHeadId: null,
       }
 
-      const nextAssignment = fillAssignmentSlots([
-        ...leaderChain,
-        excludedLeaderIds.has(fallback.teamLeaderId ?? '') ? null : fallback.teamLeaderId,
-        excludedLeaderIds.has(fallback.sectionChiefId ?? '') ? null : fallback.sectionChiefId,
-        excludedLeaderIds.has(fallback.divisionHeadId ?? '') ? null : fallback.divisionHeadId,
-      ])
+      const nextAssignment = fillAssignmentSlots(leaderChain)
+
+      nextAssignment.teamLeaderId ??= excludedLeaderIds.has(fallback.teamLeaderId ?? '') ? null : fallback.teamLeaderId
+      nextAssignment.sectionChiefId ??= excludedLeaderIds.has(fallback.sectionChiefId ?? '') ? null : fallback.sectionChiefId
+      nextAssignment.divisionHeadId ??= excludedLeaderIds.has(fallback.divisionHeadId ?? '') ? null : fallback.divisionHeadId
+
+      // SECOND(sectionChiefId)가 FIRST(teamLeaderId)와 같으면 제거한다. FINAL(divisionHeadId)은
+      // appendStage('FINAL') 실패 시 즉시 return 되어 CEO_ADJUST 단계까지 함께 사라지므로 중복이어도 유지한다.
+      if (nextAssignment.sectionChiefId === nextAssignment.teamLeaderId) {
+        nextAssignment.sectionChiefId = null
+      }
 
       return [employee.id, nextAssignment]
     })
