@@ -390,23 +390,35 @@ export async function recalculateEmployeeLeadershipLinks() {
     }))
   )
 
-  let updatedCount = 0
+  const targets = employees
+    .map((employee) => {
+      const nextAssignment = nextAssignments.get(employee.id) ?? {
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      }
 
-  for (const employee of employees) {
-    const nextAssignment = nextAssignments.get(employee.id) ?? {
-      teamLeaderId: null,
-      sectionChiefId: null,
-      divisionHeadId: null,
-    }
+      const changed =
+        employee.teamLeaderId !== nextAssignment.teamLeaderId ||
+        employee.sectionChiefId !== nextAssignment.sectionChiefId ||
+        employee.divisionHeadId !== nextAssignment.divisionHeadId
 
-    await prisma.employee.update({
-      where: { id: employee.id },
-      data: nextAssignment,
+      return changed ? { id: employee.id, next: nextAssignment } : null
     })
-    updatedCount += 1
+    .filter((value): value is { id: string; next: Assignment } => value !== null)
+
+  if (targets.length > 0) {
+    await prisma.$transaction(
+      targets.map((target) =>
+        prisma.employee.update({
+          where: { id: target.id },
+          data: target.next,
+        })
+      )
+    )
   }
 
   return {
-    updatedCount,
+    updatedCount: targets.length,
   }
 }
