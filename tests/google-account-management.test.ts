@@ -877,6 +877,201 @@ run('department leader based evaluator assignment skips excluded leaders while k
   assert.notEqual(assignments.get('member-b')?.teamLeaderId, 'leader-b')
 })
 
+run('role based assignment leaves section chief empty when none exists', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const assignments = buildAssignments(
+    [
+      {
+        id: 'dept-root',
+        deptName: '본부',
+        parentDeptId: null,
+        leaderEmployeeId: null,
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-team',
+        deptName: '팀',
+        parentDeptId: 'dept-root',
+        leaderEmployeeId: null,
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+    ],
+    [
+      {
+        id: 'div-head',
+        empId: 'E-9100',
+        empName: '본부장',
+        deptId: 'dept-root',
+        role: 'ROLE_DIV_HEAD',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'team-leader',
+        empId: 'E-9101',
+        empName: '팀장',
+        deptId: 'dept-team',
+        role: 'ROLE_TEAM_LEADER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'member',
+        empId: 'E-9102',
+        empName: '팀원',
+        deptId: 'dept-team',
+        role: 'ROLE_MEMBER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+    ]
+  )
+
+  assert.equal(assignments.get('member')?.teamLeaderId, 'team-leader')
+  assert.equal(assignments.get('member')?.sectionChiefId, null)
+  assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
+})
+
+run('section chief slot is cleared when it duplicates the team leader', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const assignments = buildAssignments(
+    [
+      {
+        id: 'dept-root',
+        deptName: '본부',
+        parentDeptId: null,
+        leaderEmployeeId: null,
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-sec',
+        deptName: '실',
+        parentDeptId: 'dept-root',
+        leaderEmployeeId: null,
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-team',
+        deptName: '팀',
+        parentDeptId: 'dept-sec',
+        leaderEmployeeId: 'sec-chief',
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+    ],
+    [
+      {
+        id: 'div-head',
+        empId: 'E-9200',
+        empName: '본부장',
+        deptId: 'dept-root',
+        role: 'ROLE_DIV_HEAD',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'sec-chief',
+        empId: 'E-9201',
+        empName: '실장',
+        deptId: 'dept-sec',
+        role: 'ROLE_SECTION_CHIEF',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'member',
+        empId: 'E-9202',
+        empName: '팀원',
+        deptId: 'dept-team',
+        role: 'ROLE_MEMBER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+    ]
+  )
+
+  assert.equal(assignments.get('member')?.teamLeaderId, 'sec-chief')
+  assert.equal(assignments.get('member')?.sectionChiefId, null)
+  assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
+})
+
+run('division head slot is kept even when it duplicates the team leader', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const assignments = buildAssignments(
+    [
+      {
+        id: 'dept-root',
+        deptName: '본부',
+        parentDeptId: null,
+        leaderEmployeeId: null,
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-team',
+        deptName: '팀',
+        parentDeptId: 'dept-root',
+        leaderEmployeeId: 'div-head',
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+    ],
+    [
+      {
+        id: 'div-head',
+        empId: 'E-9300',
+        empName: '본부장',
+        deptId: 'dept-root',
+        role: 'ROLE_DIV_HEAD',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'member',
+        empId: 'E-9301',
+        empName: '팀원',
+        deptId: 'dept-team',
+        role: 'ROLE_MEMBER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+    ]
+  )
+
+  assert.equal(assignments.get('member')?.teamLeaderId, 'div-head')
+  assert.equal(assignments.get('member')?.sectionChiefId, null)
+  assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
+})
+
 run('org chart builder returns nested hierarchy for manager relationships', () => {
   const chart = buildEmployeeOrgChart([
     {

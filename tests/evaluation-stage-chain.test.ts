@@ -14,6 +14,7 @@ async function run(name: string, fn: () => Promise<void> | void) {
 }
 
 function createStageChainDb(params?: {
+  teamLeaderId?: string | null
   sectionChiefId?: string | null
   divisionHeadId?: string | null
   ceoPresent?: boolean
@@ -33,7 +34,8 @@ function createStageChainDb(params?: {
           empName: 'Target Employee',
           role: 'ROLE_MEMBER',
           position: 'TEAM_LEADER',
-          teamLeaderId: 'emp-team-leader',
+          teamLeaderId:
+            params?.teamLeaderId === undefined ? 'emp-team-leader' : params.teamLeaderId,
           sectionChiefId:
             params?.sectionChiefId === undefined ? 'emp-section-chief' : params.sectionChiefId,
           divisionHeadId:
@@ -190,6 +192,40 @@ async function main() {
 
     assert.deepEqual(chain.map((entry) => entry.stage), ['SELF', 'FIRST'])
     assert.equal(chain.some((entry) => entry.stage === 'CEO_ADJUST'), false)
+  })
+
+  await run('stage chain continues when first reviewer is absent', async () => {
+    const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
+    const chain = await getEvaluationStageChain({
+      db: createStageChainDb({ teamLeaderId: null }),
+      evalCycleId: 'cycle-1',
+      targetId: 'emp-target',
+    })
+
+    assert.deepEqual(chain.map((entry) => entry.stage), ['SELF', 'SECOND', 'FINAL', 'CEO_ADJUST'])
+    assert.equal(chain.some((entry) => entry.stage === 'FIRST'), false)
+  })
+
+  await run('stage chain for a team leader has no first or second reviewer', async () => {
+    const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
+    const chain = await getEvaluationStageChain({
+      db: createStageChainDb({ teamLeaderId: null, sectionChiefId: null }),
+      evalCycleId: 'cycle-1',
+      targetId: 'emp-target',
+    })
+
+    assert.deepEqual(chain.map((entry) => entry.stage), ['SELF', 'FINAL', 'CEO_ADJUST'])
+  })
+
+  await run('stage chain has only self review when no reviewer is assigned', async () => {
+    const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
+    const chain = await getEvaluationStageChain({
+      db: createStageChainDb({ teamLeaderId: null, sectionChiefId: null, divisionHeadId: null }),
+      evalCycleId: 'cycle-1',
+      targetId: 'emp-target',
+    })
+
+    assert.deepEqual(chain.map((entry) => entry.stage), ['SELF'])
   })
 
   console.log('Evaluation stage chain tests completed')
