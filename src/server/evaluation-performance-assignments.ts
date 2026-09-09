@@ -520,9 +520,8 @@ export async function getEvaluationStageChain(params: {
     return true
   }
 
-  if (!appendStage('FIRST')) {
-    return activeStages
-  }
+  // 리더 본인은 teamLeaderId 가 구조적으로 비므로 FIRST 부재가 체인 중단 사유는 아니다.
+  appendStage('FIRST')
 
   appendStage('SECOND')
 
