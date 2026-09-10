@@ -65,7 +65,8 @@ function shouldAssignSectionChief(role: EmployeeRole) {
 }
 
 function shouldAssignDivisionHead(role: EmployeeRole) {
-  return ROLE_ORDER[role] < ROLE_ORDER.ROLE_DIV_HEAD
+  // 본부장이 없는 조직과 본부장 자신은 대표가 FINAL 이다.
+  return ROLE_ORDER[role] < ROLE_ORDER.ROLE_CEO
 }
 
 function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees: HierarchyEmployee[]) {
@@ -94,6 +95,9 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
       current.sectionChiefIds.push(employee.id)
     }
     if (employee.role === 'ROLE_DIV_HEAD') {
+      current.divisionHeadIds.push(employee.id)
+    }
+    if (employee.role === 'ROLE_CEO') {
       current.divisionHeadIds.push(employee.id)
     }
 
@@ -140,20 +144,11 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
   )
 }
 
-function fillAssignmentSlots(candidates: Array<string | null | undefined>): Assignment {
-  const assigned: string[] = []
-
-  for (const candidate of candidates) {
-    if (!candidate || assigned.includes(candidate)) continue
-    assigned.push(candidate)
-    if (assigned.length === 3) break
-  }
-
-  return {
-    teamLeaderId: assigned[0] ?? null,
-    sectionChiefId: assigned[1] ?? null,
-    divisionHeadId: assigned[2] ?? null,
-  }
+const LEADER_ROLE_SLOT: Partial<Record<EmployeeRole, keyof Assignment>> = {
+  ROLE_TEAM_LEADER: 'teamLeaderId',
+  ROLE_SECTION_CHIEF: 'sectionChiefId',
+  ROLE_DIV_HEAD: 'divisionHeadId',
+  ROLE_CEO: 'divisionHeadId',
 }
 
 export function buildAssignments(
@@ -164,6 +159,7 @@ export function buildAssignments(
   const activeEmployeeIds = new Set(
     employees.filter((employee) => employee.status === 'ACTIVE').map((employee) => employee.id)
   )
+  const employeeRoleById = new Map(employees.map((employee) => [employee.id, employee.role]))
   const departmentById = new Map(departments.map((department) => [department.id, department]))
 
   return new Map(
@@ -172,6 +168,8 @@ export function buildAssignments(
       const excludedLeaderIds = new Set<string>()
       const visited = new Set<string>()
       let currentDeptId: string | null | undefined = employee.deptId
+      let isOwnDepartment = true
+      let ownDepartmentLeaderId: string | null = null
 
       while (currentDeptId && !visited.has(currentDeptId)) {
         visited.add(currentDeptId)
@@ -186,12 +184,18 @@ export function buildAssignments(
           leaderId &&
           !department?.excludeLeaderFromEvaluatorAutoAssign &&
           leaderId !== employee.id &&
-          activeEmployeeIds.has(leaderId) &&
-          !leaderChain.includes(leaderId)
+          activeEmployeeIds.has(leaderId)
         ) {
-          leaderChain.push(leaderId)
+          // 자기 부서의 장은 역할과 무관하게 직속 상사이므로 1차(teamLeaderId)로 배치한다.
+          // 조상 부서 리더들만 leaderChain 을 거쳐 역할별로 배치한다.
+          if (isOwnDepartment) {
+            ownDepartmentLeaderId = leaderId
+          } else if (!leaderChain.includes(leaderId)) {
+            leaderChain.push(leaderId)
+          }
         }
 
+        isOwnDepartment = false
         currentDeptId = department?.parentDeptId ?? null
       }
 
@@ -201,7 +205,18 @@ export function buildAssignments(
         divisionHeadId: null,
       }
 
-      const nextAssignment = fillAssignmentSlots(leaderChain)
+      const nextAssignment: Assignment = {
+        teamLeaderId: ownDepartmentLeaderId,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      }
+
+      for (const leaderId of leaderChain) {
+        const slot = LEADER_ROLE_SLOT[employeeRoleById.get(leaderId) as EmployeeRole]
+        if (slot && nextAssignment[slot] === null) {
+          nextAssignment[slot] = leaderId
+        }
+      }
 
       nextAssignment.teamLeaderId ??= excludedLeaderIds.has(fallback.teamLeaderId ?? '') ? null : fallback.teamLeaderId
       nextAssignment.sectionChiefId ??= excludedLeaderIds.has(fallback.sectionChiefId ?? '') ? null : fallback.sectionChiefId
