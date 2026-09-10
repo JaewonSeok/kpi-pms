@@ -52,6 +52,7 @@ type AssignmentHierarchyEmployee = {
   teamLeaderId: string | null
   sectionChiefId: string | null
   divisionHeadId: string | null
+  jobTitle?: string | null
 }
 
 type AssignmentDbClient = PrismaClient | Prisma.TransactionClient
@@ -619,6 +620,7 @@ async function loadHierarchyInputs(db: AssignmentDbClient) {
         teamLeaderId: true,
         sectionChiefId: true,
         divisionHeadId: true,
+        jobTitle: true,
       },
       orderBy: [{ joinDate: 'asc' }, { createdAt: 'asc' }],
     }),

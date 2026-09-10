@@ -35,6 +35,8 @@ type HierarchyEmployee = {
   teamLeaderId: string | null
   sectionChiefId: string | null
   divisionHeadId: string | null
+  // role 이 ROLE_ADMIN 일 때만 쓰인다. 로더는 반드시 select 할 것.
+  jobTitle?: string | null
 }
 
 type PreviewEmployeeInput = {
@@ -99,6 +101,19 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
     }
     if (employee.role === 'ROLE_CEO') {
       current.divisionHeadIds.push(employee.id)
+    }
+    // ROLE_ADMIN 은 권한 플래그라 평가 역할 정보가 없다. jobTitle 로만 분류한다.
+    // role 이 평가 역할을 담는 경우(위 네 if 문)가 있으면 그것이 권위이므로 이 분기는 타지 않는다.
+    if (employee.role === 'ROLE_ADMIN') {
+      if (employee.jobTitle === '팀장') {
+        current.teamLeaderIds.push(employee.id)
+      }
+      if (employee.jobTitle === '실장' || employee.jobTitle === '부문장') {
+        current.sectionChiefIds.push(employee.id)
+      }
+      if (employee.jobTitle === '본부장' || employee.jobTitle === '대표이사') {
+        current.divisionHeadIds.push(employee.id)
+      }
     }
 
     leadersByDept.set(employee.deptId, current)
@@ -257,6 +272,7 @@ async function loadHierarchyBaseData() {
         teamLeaderId: true,
         sectionChiefId: true,
         divisionHeadId: true,
+        jobTitle: true,
       },
       orderBy: [{ joinDate: 'asc' }, { createdAt: 'asc' }],
     }),
@@ -288,6 +304,7 @@ export async function previewEmployeeLeadershipLinks(
       teamLeaderId: employee.teamLeaderId,
       sectionChiefId: employee.sectionChiefId,
       divisionHeadId: employee.divisionHeadId,
+      jobTitle: employee.jobTitle,
     }
   })
 
@@ -303,6 +320,7 @@ export async function previewEmployeeLeadershipLinks(
     teamLeaderId: null,
     sectionChiefId: null,
     divisionHeadId: null,
+    jobTitle: null,
   }))
 
   const combinedEmployees = [...currentEmployees, ...createdEmployees].sort((a, b) => {
