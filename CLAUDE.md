@@ -64,7 +64,7 @@ kpi-pms/
 │   ├── modules/                # README만 존재 (계획됐으나 미사용)
 │   └── middleware.ts           # 전역 인증/권한 체크 (Next 16 deprecated, proxy 전환 예정)
 ├── tests/                      # 112개 ts-node 기반 테스트 (Vitest/Jest 없음, 자체 러너)
-├── scripts/                    # close-cycle, create-admins, promote-admins, register-google-email, repair-performance-design-korean
+├── scripts/                    # close-cycle, register-google-email, repair-performance-design-korean
 ├── docs/
 │   ├── operations/             # working-rules, current-handoff, runbook, deployment, RBAC matrix
 │   └── product/                # PRD, 백로그, 글로벌 벤치마크 갭 분석, 와이어프레임
@@ -257,7 +257,6 @@ pnpm run register:google-email -- --emp-id=EMP-2022-002 --email=admin@rsupport.c
 - **middleware.ts 경고**: Next 16에서 `middleware` 파일명이 deprecated → 향후 `proxy.ts`로 변경 필요 (현재 동작은 정상)
 - **MEMORY.md (auto-memory) 일부 정보가 오래됨**: "Phase 1 완료" 수준으로 적혀있으나 실제론 AI 역량평가/360/보상까지 들어가 있음 — 메모리는 참고용, **진실의 원천은 코드/스키마**
 - **임시 파일이 루트에 다수**: `tmp-session*.pdf/png`, `..kpi-pms.zip`, `.tmp_lx_report.txt` — 정리 여부 사용자 확인 필요
-- **루트에 오타 파일**: [scriptspromote-admins.ts](scriptspromote-admins.ts) — 실제 스크립트는 [scripts/promote-admins.ts](scripts/promote-admins.ts) (확인 필요)
 - **DATABASE_URL 포트 5433** (5432 아님) — Docker compose가 5432→5433 매핑
 - **pnpm-workspace.yaml** 존재 — 단일 패키지인데 workspace 설정. 의도 확인 필요
 - **테스트 러너가 ts-node 직접 실행** — Vitest/Jest 아님. 새 테스트 추가 시 동일 패턴 유지

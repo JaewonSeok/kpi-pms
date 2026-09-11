@@ -15,7 +15,7 @@ async function main() {
   const gwsEmail = readArg('email')
 
   if (!empId || !gwsEmail) {
-    throw new Error('Usage: npm run register:google-email -- --emp-id=EMP-2022-002 --email=admin@rsupport.com')
+    throw new Error('Usage: npm run register:google-email -- --emp-id=EMP-2022-002 --email=user@example.com')
   }
 
   const connectionString = process.env.DATABASE_URL

@@ -26,7 +26,6 @@ Production: `https://kpi-pms.vercel.app` — Vercel 배포 상태는 실행 전 
 |---|---|---|
 | #126 | chore/remove-compensation | **보상(Compensation) 모듈 코드 전면 제거** |
 | #120 | chore/remove-evaluation-workbench-legacy | 레거시 workbench 제거 |
-| #121 | chore/remove-unused-promote-admins-script | 미사용 스크립트 제거 |
 | #110 | refactor/evaluation-workbench-split | workbench 클라이언트 분리 |
 
 ### 360 피드백·Leadership Diagnosis
