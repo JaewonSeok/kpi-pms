@@ -145,7 +145,7 @@ jobs:
       - name: Run Semgrep
         run: |
           semgrep --config=p/typescript --config=p/nodejs \
-            --json --output semgrep.json --error=false src/
+            --json --output semgrep.json src/
 
       - name: Summarize SAST results
         if: always()
