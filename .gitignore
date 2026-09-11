@@ -51,3 +51,6 @@ claude_activity_*.csv
 # local stash docs
 _stash_docs/
 docs/reference/
+
+# local-only project folder (not part of this repo)
+/rnd-ai-sdlc-main/
