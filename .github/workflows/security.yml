@@ -1,0 +1,272 @@
+name: security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 18 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  sca:
+    name: SCA (dependency CVE scan)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run pnpm audit
+        run: pnpm audit --json > audit.json || true
+
+      - name: Summarize audit results
+        if: always()
+        run: |
+          # "스캔 실패"와 "0건"을 구분한다 — audit.json 이 없거나 비어 있거나
+          # 기대한 형태(metadata.vulnerabilities)가 아니면 실패로 표시하고,
+          # 숫자를 알 수 없음을 N/A 로 명시한다. 0 을 임의로 채우지 않는다.
+          SCAN_STATUS="ok"
+          if [ ! -s audit.json ]; then
+            SCAN_STATUS="failed (audit.json missing or empty — pnpm audit did not run to completion)"
+            CRITICAL="N/A"; HIGH="N/A"; MODERATE="N/A"; LOW="N/A"
+          elif ! jq -e '.metadata.vulnerabilities' audit.json >/dev/null 2>&1; then
+            SCAN_STATUS="failed (unexpected audit.json format — no metadata.vulnerabilities key)"
+            CRITICAL="N/A"; HIGH="N/A"; MODERATE="N/A"; LOW="N/A"
+          else
+            CRITICAL=$(jq '(.metadata.vulnerabilities.critical // 0)' audit.json)
+            HIGH=$(jq '(.metadata.vulnerabilities.high // 0)' audit.json)
+            MODERATE=$(jq '(.metadata.vulnerabilities.moderate // 0)' audit.json)
+            LOW=$(jq '(.metadata.vulnerabilities.low // 0)' audit.json)
+          fi
+          {
+            echo "### SCA — 의존성 CVE 요약 (1차: 비차단·보고 전용)"
+            echo ""
+            echo "스캔 상태: $SCAN_STATUS"
+            echo ""
+            echo "| Severity | Count |"
+            echo "| --- | --- |"
+            echo "| Critical | $CRITICAL |"
+            echo "| High | $HIGH |"
+            echo "| Moderate | $MODERATE |"
+            echo "| Low | $LOW |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sca-report
+          path: audit.json
+          retention-days: 30
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # gitleaks/gitleaks-action 은 GitHub Organization 저장소에서 라이선스 키를
+      # 요구하므로 쓰지 않는다. 바이너리를 릴리스에서 직접 내려받아 실행한다.
+      - name: Download gitleaks binary
+        run: |
+          GITLEAKS_VERSION="8.30.1"
+          curl -fsSL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+
+      - name: Run gitleaks
+        run: ./gitleaks detect --redact --config .gitleaks.toml --report-format json --report-path gitleaks.json --exit-code 0
+
+      - name: Summarize secret scan results
+        if: always()
+        run: |
+          # "스캔 실패"와 "0건"을 구분한다 — gitleaks.json 이 없거나 배열이
+          # 아니면(예: 바이너리 다운로드/실행 실패) 실패로 표시한다.
+          SCAN_STATUS="ok"
+          if [ ! -f gitleaks.json ]; then
+            SCAN_STATUS="failed (gitleaks.json missing — download/run step did not complete)"
+            COUNT="N/A"
+          elif ! jq -e 'type == "array"' gitleaks.json >/dev/null 2>&1; then
+            SCAN_STATUS="failed (unexpected gitleaks.json format)"
+            COUNT="N/A"
+          else
+            COUNT=$(jq 'length' gitleaks.json)
+          fi
+          {
+            echo "### Secret scan — gitleaks (1차: 비차단·보고 전용)"
+            echo ""
+            echo "스캔 상태: $SCAN_STATUS"
+            echo ""
+            echo "탐지 건수: $COUNT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: secrets-report
+          path: gitleaks.json
+          retention-days: 30
+
+  sast:
+    name: SAST (Semgrep OSS)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Semgrep
+        run: pip install semgrep
+
+      - name: Run Semgrep
+        run: |
+          semgrep --config=p/typescript --config=p/nodejs \
+            --json --output semgrep.json src/
+
+      - name: Summarize SAST results
+        if: always()
+        run: |
+          # "스캔 실패"와 "0건"을 구분한다 — semgrep.json 이 없거나 results
+          # 키가 없으면(예: pip install 실패, semgrep 실행 실패) 실패로 표시한다.
+          SCAN_STATUS="ok"
+          if [ ! -f semgrep.json ]; then
+            SCAN_STATUS="failed (semgrep.json missing — semgrep did not run to completion)"
+            ERR="N/A"; WARN="N/A"; INFO="N/A"
+          elif ! jq -e '.results' semgrep.json >/dev/null 2>&1; then
+            SCAN_STATUS="failed (unexpected semgrep.json format — no results key)"
+            ERR="N/A"; WARN="N/A"; INFO="N/A"
+          else
+            ERR=$(jq '[.results[] | select(.extra.severity=="ERROR")] | length' semgrep.json)
+            WARN=$(jq '[.results[] | select(.extra.severity=="WARNING")] | length' semgrep.json)
+            INFO=$(jq '[.results[] | select(.extra.severity=="INFO")] | length' semgrep.json)
+          fi
+          {
+            echo "### SAST — Semgrep OSS (1차: 비차단·보고 전용)"
+            echo ""
+            echo "스캔 상태: $SCAN_STATUS"
+            echo ""
+            echo "| Severity | Count |"
+            echo "| --- | --- |"
+            echo "| Error | $ERR |"
+            echo "| Warning | $WARN |"
+            echo "| Info | $INFO |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sast-report
+          path: semgrep.json
+          retention-days: 30
+
+  pii:
+    name: PII hardcoding scan
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # grep 기반 단순 룰(1차 기준선용). src/ 와 scripts/ 만 대상으로 하며
+      # tests/ · docs/ · .env.example 은 스캔 대상 경로 자체에 포함하지 않는다.
+      # 매칭된 값은 출력하지 않고 건수와 file:line 위치만 남긴다.
+      # 사번 룰은 `['"][0-9]{4}['"]` (연도·포트·타임아웃 값까지 전부 잡는 오탐
+      # 지배적 패턴)를 버리고, empId/employeeNumber/employeeId/empNo 필드에
+      # 붙은 4자리 값만 잡도록 좁힌다.
+      - name: Scan for hardcoded PII
+        if: always()
+        run: |
+          # "스캔 실패"와 "0건"을 구분한다 — grep 은 매치가 없으면 exit 1 을
+          # 반환하지만 그 자체가 "실패"는 아니다. 대신 대상 디렉터리 자체가
+          # 없는 경우(체크아웃 실패 등)를 실패로 표시한다.
+          SCAN_STATUS="ok"
+          if [ ! -d src ] || [ ! -d scripts ]; then
+            SCAN_STATUS="failed (src/ or scripts/ directory not found — checkout may have failed)"
+            EMAIL_COUNT="N/A"; EMPID_COUNT="N/A"
+            EMAIL_LOCATIONS=""; EMPID_LOCATIONS=""
+            EMAIL_EXTRA=""; EMPID_EXTRA=""
+            echo "scan failed: src/ or scripts/ not found" > pii-report.txt
+          else
+            EMAIL_MATCHES=$(grep -rnE "[A-Za-z0-9._%+-]+@rsupport\.com" src/ scripts/ 2>/dev/null | grep -vE ':[0-9]+:\s*(//|\*|/\*)' || true)
+            EMPID_MATCHES=$(grep -rnE "(empId|employeeNumber|employeeId|empNo)\s*[:=]\s*['\"][0-9]{4}['\"]" src/ scripts/ 2>/dev/null | grep -vE ':[0-9]+:\s*(//|\*|/\*)' || true)
+
+            EMAIL_COUNT=0
+            if [ -n "$EMAIL_MATCHES" ]; then
+              EMAIL_COUNT=$(echo "$EMAIL_MATCHES" | wc -l)
+            fi
+            EMPID_COUNT=0
+            if [ -n "$EMPID_MATCHES" ]; then
+              EMPID_COUNT=$(echo "$EMPID_MATCHES" | wc -l)
+            fi
+
+            EMAIL_LOCATIONS=$(echo "$EMAIL_MATCHES" | cut -d: -f1,2 | head -50)
+            EMAIL_EXTRA=""
+            if [ "$EMAIL_COUNT" -gt 50 ]; then
+              EMAIL_EXTRA="... 외 $((EMAIL_COUNT - 50))건"
+            fi
+            EMPID_LOCATIONS=$(echo "$EMPID_MATCHES" | cut -d: -f1,2 | head -50)
+            EMPID_EXTRA=""
+            if [ "$EMPID_COUNT" -gt 50 ]; then
+              EMPID_EXTRA="... 외 $((EMPID_COUNT - 50))건"
+            fi
+
+            # 산출물 보존용 전체 목록(head -50 제한 없음, 값이 아닌 file:line 만)
+            {
+              echo "# email literal matches (file:line only)"
+              echo "$EMAIL_MATCHES" | cut -d: -f1,2
+              echo ""
+              echo "# empId/employeeNumber/employeeId/empNo literal matches (file:line only)"
+              echo "$EMPID_MATCHES" | cut -d: -f1,2
+            } > pii-report.txt
+          fi
+
+          {
+            echo "### PII hardcoding scan (1차: 비차단·보고 전용, 단순 grep 룰)"
+            echo ""
+            echo "스캔 상태: $SCAN_STATUS"
+            echo ""
+            echo "이메일 리터럴(@rsupport.com) 탐지: ${EMAIL_COUNT} 건"
+            echo '```'
+            echo "$EMAIL_LOCATIONS"
+            if [ -n "$EMAIL_EXTRA" ]; then echo "$EMAIL_EXTRA"; fi
+            echo '```'
+            echo ""
+            echo "empId/employeeNumber/employeeId/empNo 4자리 리터럴 탐지: ${EMPID_COUNT} 건"
+            echo '```'
+            echo "$EMPID_LOCATIONS"
+            if [ -n "$EMPID_EXTRA" ]; then echo "$EMPID_EXTRA"; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload PII scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pii-report
+          path: pii-report.txt
+          retention-days: 30

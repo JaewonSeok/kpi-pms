@@ -1,0 +1,15 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  [[rules.allowlists]]
+  condition = "AND"
+  regexTarget = "match"
+  regexes = [
+    '''key:\s*['"][a-zA-Z][a-zA-Z0-9]*['"]''',
+  ]
+  paths = [
+    '''src/lib/feature-flags\.ts''',
+  ]
