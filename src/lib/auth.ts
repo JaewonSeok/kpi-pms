@@ -558,6 +558,36 @@ declare module 'next-auth/jwt' {
   }
 }
 
+function extractEmailDomain(email?: string | null): string | null {
+  if (!email) return null
+  const atIndex = email.indexOf('@')
+  if (atIndex === -1) return null
+  const domain = email.slice(atIndex + 1).trim().toLowerCase()
+  return domain || null
+}
+
+type AuthAuditAction = 'AUTH_SIGNIN_SUCCEEDED' | 'AUTH_SIGNIN_FAILED' | 'AUTH_SIGNOUT'
+
+async function logAuthAudit(params: {
+  userId: string
+  action: AuthAuditAction
+  newValue?: Record<string, unknown>
+}) {
+  try {
+    await createAuditLog({
+      userId: params.userId,
+      action: params.action,
+      entityType: 'AuthSession',
+      newValue: params.newValue,
+    })
+  } catch (error) {
+    authTrace('error', 'AUTH_AUDIT_LOG_FAILED', {
+      action: params.action,
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   secret: authEnv.secret,
   useSecureCookies: authRuntimePolicy.useSecureCookies,
@@ -583,7 +613,18 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null
+        if (!credentials?.email || !credentials?.password) {
+          await logAuthAudit({
+            userId: 'ANONYMOUS',
+            action: 'AUTH_SIGNIN_FAILED',
+            newValue: {
+              provider: 'credentials',
+              reason: 'MISSING_CREDENTIALS',
+              attemptedDomain: extractEmailDomain(credentials?.email),
+            },
+          })
+          return null
+        }
 
         if (
           credentials.email === process.env.ADMIN_EMAIL &&
@@ -594,8 +635,28 @@ export const authOptions: NextAuthOptions = {
           if (employee) {
             return buildAuthClaims(employee)
           }
+
+          await logAuthAudit({
+            userId: 'ANONYMOUS',
+            action: 'AUTH_SIGNIN_FAILED',
+            newValue: {
+              provider: 'credentials',
+              reason: 'EMPLOYEE_NOT_FOUND',
+              attemptedDomain: extractEmailDomain(credentials.email),
+            },
+          })
+          return null
         }
 
+        await logAuthAudit({
+          userId: 'ANONYMOUS',
+          action: 'AUTH_SIGNIN_FAILED',
+          newValue: {
+            provider: 'credentials',
+            reason: 'INVALID_CREDENTIALS',
+            attemptedDomain: extractEmailDomain(credentials.email),
+          },
+        })
         return null
       },
     }),
@@ -649,6 +710,15 @@ export const authOptions: NextAuthOptions = {
             reason: decision.errorCode,
             email: maskAuthEmail(decision.normalizedEmail),
             provider: account.provider,
+          })
+          await logAuthAudit({
+            userId: employee?.id ?? 'ANONYMOUS',
+            action: 'AUTH_SIGNIN_FAILED',
+            newValue: {
+              provider: 'google',
+              reason: decision.errorCode,
+              attemptedDomain: extractEmailDomain(decision.normalizedEmail),
+            },
           })
           return `/login?error=${decision.errorCode}`
         }
@@ -718,11 +788,14 @@ export const authOptions: NextAuthOptions = {
         const now = new Date()
         let expiredAction: 'MASTER_LOGIN_EXPIRED' | 'MASTER_LOGIN_FORCE_ENDED' | null = null
 
+        let sessionTransitioned = false
+
         if (isImpersonationExpired(currentMasterLogin, now)) {
-          await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
+          const endResult = await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
             endedBy: 'ttl',
             expiredAt: now.toISOString(),
           })
+          sessionTransitioned = endResult.count > 0
           expiredAction = 'MASTER_LOGIN_EXPIRED'
         } else {
           const persistedSession = await findActiveImpersonationSession(currentMasterLogin.sessionId)
@@ -733,10 +806,11 @@ export const authOptions: NextAuthOptions = {
             persistedSession.expiresAt.getTime() <= now.getTime()
           ) {
             if (persistedSession?.isActive) {
-              await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
+              const endResult = await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
                 endedBy: 'server-check',
                 expiredAt: now.toISOString(),
               })
+              sessionTransitioned = endResult.count > 0
             }
             expiredAction = 'MASTER_LOGIN_FORCE_ENDED'
           }
@@ -744,7 +818,7 @@ export const authOptions: NextAuthOptions = {
 
         if (expiredAction) {
           const actorClaims = restoreActorClaims(token)
-          if (actorClaims) {
+          if (actorClaims && sessionTransitioned) {
             await createAuditLog({
               userId: actorClaims.id,
               action: expiredAction,
@@ -775,24 +849,26 @@ export const authOptions: NextAuthOptions = {
             const currentMasterLogin = token.masterLogin
             const actorClaims = restoreActorClaims(token)
 
-            await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
+            const endResult = await endImpersonationSessionRecord(currentMasterLogin.sessionId, {
               endedBy: 'actor',
               endedAt: new Date().toISOString(),
             })
 
-            await createAuditLog({
-              userId: actorClaims?.id ?? currentMasterLogin.actor.id,
-              action: 'MASTER_LOGIN_ENDED',
-              entityType: 'ImpersonationSession',
-              entityId: currentMasterLogin.sessionId,
-              newValue: {
-                actorAdminId: currentMasterLogin.actor.id,
-                actorEmail: currentMasterLogin.actor.email,
-                impersonatedUserId: currentMasterLogin.target.id,
-                targetEmail: currentMasterLogin.target.email,
-                impersonationSessionId: currentMasterLogin.sessionId,
-              },
-            })
+            if (endResult.count > 0) {
+              await createAuditLog({
+                userId: actorClaims?.id ?? currentMasterLogin.actor.id,
+                action: 'MASTER_LOGIN_ENDED',
+                entityType: 'ImpersonationSession',
+                entityId: currentMasterLogin.sessionId,
+                newValue: {
+                  actorAdminId: currentMasterLogin.actor.id,
+                  actorEmail: currentMasterLogin.actor.email,
+                  impersonatedUserId: currentMasterLogin.target.id,
+                  targetEmail: currentMasterLogin.target.email,
+                  impersonationSessionId: currentMasterLogin.sessionId,
+                },
+              })
+            }
 
             authTrace('info', 'MASTER_LOGIN_ENDED', {
               sessionId: currentMasterLogin.sessionId,
@@ -1024,6 +1100,45 @@ export const authOptions: NextAuthOptions = {
       }
 
       return session
+    },
+  },
+  events: {
+    async signIn({ user, account, profile }) {
+      const provider = account?.provider === 'google' ? 'google' : 'credentials'
+
+      let userId = 'ANONYMOUS'
+      if (provider === 'google') {
+        const email = (profile as { email?: string } | undefined)?.email ?? user.email
+        const normalizedEmail = email ? normalizeGoogleWorkspaceEmail(email) : null
+
+        let employee: Awaited<ReturnType<typeof findAuthEmployee>> | null = null
+        try {
+          employee = normalizedEmail ? await findAuthEmployee({ gwsEmail: normalizedEmail }) : null
+        } catch (error) {
+          authTrace('error', 'AUTH_AUDIT_EMPLOYEE_LOOKUP_FAILED', {
+            attemptedDomain: extractEmailDomain(normalizedEmail),
+            message: error instanceof Error ? error.message : String(error),
+          })
+        }
+
+        userId = employee?.id ?? 'ANONYMOUS'
+      } else if (typeof user.id === 'string' && user.id) {
+        userId = user.id
+      }
+
+      await logAuthAudit({
+        userId,
+        action: 'AUTH_SIGNIN_SUCCEEDED',
+        newValue: { provider },
+      })
+    },
+    async signOut({ token }) {
+      const userId = typeof token?.sub === 'string' && token.sub ? token.sub : 'ANONYMOUS'
+      await logAuthAudit({
+        userId,
+        action: 'AUTH_SIGNOUT',
+        newValue: {},
+      })
     },
   },
   pages: {
