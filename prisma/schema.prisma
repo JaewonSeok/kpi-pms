@@ -2992,16 +2992,17 @@ enum OperationalEventLevel {
 // ============================================
 
 model AuditLog {
-  id         String   @id @default(cuid())
-  userId     String
-  action     String
-  entityType String
-  entityId   String?
-  oldValue   Json?
-  newValue   Json?
-  ipAddress  String?
-  userAgent  String?
-  timestamp  DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  oldValue    Json?
+  newValue    Json?
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime @default(now())
 
   @@index([entityType, entityId])
   @@index([userId, timestamp])

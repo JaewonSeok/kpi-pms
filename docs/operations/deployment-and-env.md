@@ -88,6 +88,30 @@ If the team prefers Vercel:
 3. Run migrations from CI or a controlled job before switching traffic.
 4. Use `/api/health/ready` and `/api/admin/ops/summary` as smoke-check endpoints after deploy.
 
+## 스키마 마이그레이션 적용 절차
+
+- **적용 주체**: 사람. AI는 `docs/AI_SAFETY_GUARDRAILS.md`에 따라 프로덕션에
+  `prisma migrate deploy`를 실행할 수 없다.
+- **적용 순서**: 마이그레이션을 배포보다 **먼저** 적용한다. 컬럼 추가처럼
+  nullable한 변경은 구코드가 그 컬럼을 몰라도 무시하고 동작하지만, 순서를
+  뒤집어 신코드를 먼저 배포하면 아직 없는 컬럼을 참조하는 요청이 즉시
+  실패한다.
+- **사전 확인**: `prisma migrate status`로 적용 대기 중인 마이그레이션
+  목록을 확인한다.
+- **적용**: `DATABASE_URL`을 운영 DB로 지정한 상태에서 `prisma migrate deploy`를
+  실행한다.
+- ⚠️ **경고 — 별건 개선 과제**: 현재 로컬 `.env`의 `DATABASE_URL`이 운영
+  Supabase 인스턴스를 직접 가리키고 있다. 이 상태에서 로컬에서 `prisma
+  migrate dev`, `prisma db push`, `prisma migrate reset`을 실행하면 그대로
+  운영 DB에 적용된다. 로컬 전용 `DATABASE_URL`(별도 dev/stage DB)로
+  분리하는 작업이 별도로 필요하다 — 이번 문서 신설의 범위 밖.
+- **롤백**: Prisma는 자동 롤백을 제공하지 않는다. 되돌려야 하면 역방향
+  SQL을 직접 작성해 실행해야 한다. 이번 건(`actorUserId` 컬럼 추가)의
+  롤백 예시:
+  ```sql
+  ALTER TABLE "audit_logs" DROP COLUMN "actorUserId";
+  ```
+
 ## Migration runbook
 
 1. Freeze schema-changing releases.
