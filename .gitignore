@@ -54,3 +54,9 @@ docs/reference/
 
 # local-only project folder (not part of this repo)
 /rnd-ai-sdlc-main/
+
+# local session artifacts
+tmp-*
+.tmp_*
+*.zip
+.auth-dev.*.log
