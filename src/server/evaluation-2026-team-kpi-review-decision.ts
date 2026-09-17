@@ -2,7 +2,7 @@ import type { Session } from 'next-auth'
 import { z } from 'zod'
 import type { TeamKpiReviewVerdict } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import { resolveOrgKpiScopeFromDepartmentId } from '@/lib/org-kpi-scope'
 import { AppError } from '@/lib/utils'
 import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026-loader'
@@ -253,7 +253,7 @@ export async function saveEvaluation2026TeamKpiHrReviewDecisionForSession(
   })
 
   await audit({
-    userId: actor.id,
+    ...resolveAuditActor(params.session),
     action: 'UPDATE_2026_TEAM_KPI_HR_REVIEW_DECISION',
     entityType: 'OrgKpi',
     entityId: orgKpi.id,

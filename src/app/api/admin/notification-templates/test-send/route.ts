@@ -48,6 +48,7 @@ export async function POST(request: Request) {
       prisma
     )
 
+    // TODO(F2): userId 가 newValue 에도 쓰여 대행 귀속 미적용
     await createAuditLog({
       userId: session.user.id,
       action: 'NOTIFICATION_TEMPLATE_TEST_SENT',

@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { repairPerformanceDesignPersistedConfig } from '@/lib/performance-design'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
@@ -54,7 +54,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'PERFORMANCE_DESIGN_UPDATED',
       entityType: 'EvalCycle',
       entityId: cycleId,

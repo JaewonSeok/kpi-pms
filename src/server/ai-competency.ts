@@ -18,7 +18,7 @@ import type {
 import type { Session } from 'next-auth'
 import * as XLSX from 'xlsx'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import { AppError } from '@/lib/utils'
 import {
   calculateAiCompetencyFinalScore,
@@ -1424,7 +1424,7 @@ export async function getAiCompetencyPageData(params: {
     if (aiCycleResult.status === 'rejected') {
       if (isAiCompetencyStorageMissing(aiCycleResult.reason)) {
         console.error('[ai-competency] AI competency storage is not initialized', {
-          userId: params.session.user.id,
+          ...resolveAuditActor(params.session),
           role: params.session.user.role,
           orgId: employee.department.orgId,
           code: isPrismaKnownRequestError(aiCycleResult.reason) ? aiCycleResult.reason.code : undefined,
@@ -3329,7 +3329,7 @@ export async function startAiCompetencyAttempt(params: {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: 'AI_COMPETENCY_ATTEMPT_STARTED',
     entityType: 'AiCompetencyAttempt',
     entityId: attempt.id,
@@ -3341,7 +3341,7 @@ export async function startAiCompetencyAttempt(params: {
   })
   if (activeBlueprints.length) {
     await createAuditLog({
-      userId: params.session.user.id,
+      ...resolveAuditActor(params.session),
       action: 'AI_COMPETENCY_EXAM_GENERATED',
       entityType: 'AiCompetencyAttempt',
       entityId: attempt.id,
@@ -3465,7 +3465,7 @@ export async function saveAiCompetencyAttempt(params: {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: params.submit ? 'AI_COMPETENCY_ATTEMPT_SUBMITTED' : 'AI_COMPETENCY_ATTEMPT_SAVED',
     entityType: 'AiCompetencyAttempt',
     entityId: params.attemptId,
@@ -3658,7 +3658,7 @@ export async function submitAiCompetencySecondRound(params: {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: 'AI_COMPETENCY_SECOND_ROUND_SUBMITTED',
     entityType: 'AiCompetencySecondRoundSubmission',
     entityId: submission.id,
@@ -3982,7 +3982,7 @@ export async function reviewAiCompetencySubmission(params: {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: params.input.submitFinal ? 'AI_COMPETENCY_SECOND_ROUND_REVIEWED' : 'AI_COMPETENCY_REVIEW_DRAFT_SAVED',
     entityType: 'AiCompetencySecondRoundSubmission',
     entityId: params.submissionId,
@@ -4053,7 +4053,7 @@ export async function submitAiCompetencyExternalCertClaim(params: {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: 'AI_COMPETENCY_EXTERNAL_CERT_SUBMITTED',
     entityType: 'AiCompetencyExternalCertClaim',
     entityId: claim.id,

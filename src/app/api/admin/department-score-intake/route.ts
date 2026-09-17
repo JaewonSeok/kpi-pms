@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateDepartmentScoreIntakeSchema, DeleteDepartmentScoreIntakeSchema } from '@/lib/validations'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 
 // M1-B2 / POST /api/admin/department-score-intake
 // ADMIN이 cycle×본부/실/팀별 조직 점수를 입력(upsert)한다. unique key (evalCycleId, deptId).
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'DEPARTMENT_SCORE_INTAKE_UPSERT',
       entityType: 'DepartmentScoreIntake',
       entityId: intake.id,
@@ -118,7 +118,7 @@ export async function DELETE(request: Request) {
     await prisma.departmentScoreIntake.delete({ where: { id: existing.id } })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'DEPARTMENT_SCORE_INTAKE_DELETED',
       entityType: 'DepartmentScoreIntake',
       entityId: existing.id,

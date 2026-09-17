@@ -5,7 +5,7 @@ import {
   getPersonalKpiScopeDepartmentIds,
 } from '@/lib/personal-kpi-access'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import type { AuthSession } from '@/types/auth'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { PersonalKpiWorkflowActionSchema } from '@/lib/validations'
@@ -150,7 +150,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'PERSONAL_KPI_DRAFT_SAVED',
         entityType: 'PersonalKpi',
         entityId: id,
@@ -177,7 +177,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'PERSONAL_KPI_SUBMITTED',
         entityType: 'PersonalKpi',
         entityId: id,
@@ -215,7 +215,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'PERSONAL_KPI_REVIEW_STARTED',
         entityType: 'PersonalKpi',
         entityId: id,
@@ -244,7 +244,7 @@ export async function POST(request: Request, context: RouteContext) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'PERSONAL_KPI_REJECTED',
         entityType: 'PersonalKpi',
         entityId: id,
@@ -290,7 +290,7 @@ export async function POST(request: Request, context: RouteContext) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'PERSONAL_KPI_APPROVED',
         entityType: 'PersonalKpi',
         entityId: id,
@@ -329,7 +329,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'PERSONAL_KPI_LOCKED',
         entityType: 'PersonalKpi',
         entityId: id,
@@ -376,7 +376,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'PERSONAL_KPI_REOPENED',
       entityType: 'PersonalKpi',
       entityId: id,

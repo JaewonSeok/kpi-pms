@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { ManualNotificationSendSchema } from '@/lib/validations'
 import { NotificationType } from '@prisma/client'
@@ -122,7 +122,7 @@ export async function POST(request: Request) {
 
     // ⑥ auditLog
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'NOTIFICATION_MANUAL_SENT',
       entityType: 'Employee',
       entityId: employeeIds[0],

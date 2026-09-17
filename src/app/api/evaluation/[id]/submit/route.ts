@@ -1,7 +1,7 @@
 import type { EvalStage, Prisma } from '@prisma/client'
 import { resolveCarrierRecord } from '@/lib/resolve-carrier-record'
 import { getServerSession } from 'next-auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
@@ -392,7 +392,7 @@ export async function PATCH(
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EVALUATION_SUBMIT',
       entityType: 'Evaluation',
       entityId: id,

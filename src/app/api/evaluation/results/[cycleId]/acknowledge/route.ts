@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 
@@ -34,7 +34,7 @@ export async function POST(
 
     const existing = await prisma.auditLog.findFirst({
       where: {
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'EVALUATION_RESULT_ACKNOWLEDGED',
         entityType: 'EvalCycle',
         entityId: cycleId,
@@ -46,7 +46,7 @@ export async function POST(
 
     if (!existing) {
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'EVALUATION_RESULT_ACKNOWLEDGED',
         entityType: 'EvalCycle',
         entityId: cycleId,

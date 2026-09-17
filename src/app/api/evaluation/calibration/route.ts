@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import {
   createDefaultCalibrationCommentHandoff,
   normalizeCalibrationCommentHandoff,
@@ -99,7 +99,7 @@ export async function PATCH(request: Request) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_SESSION_CONFIG_UPDATED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -233,7 +233,7 @@ export async function PATCH(request: Request) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: auditAction,
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -429,7 +429,7 @@ export async function PATCH(request: Request) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: auditAction,
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -492,7 +492,7 @@ export async function PATCH(request: Request) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_EXTERNAL_DATA_UPLOADED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -736,7 +736,7 @@ export async function PATCH(request: Request) {
 
       for (const row of savedRows) {
         await createAuditLog({
-          userId: session.user.id,
+          ...resolveAuditActor(session),
           action: 'CALIBRATION_UPDATED',
           entityType: 'Evaluation',
           entityId: row.evaluationId,
@@ -764,7 +764,7 @@ export async function PATCH(request: Request) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_BULK_IMPORTED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -853,7 +853,7 @@ export async function PATCH(request: Request) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_CLEARED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -953,7 +953,7 @@ export async function PATCH(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'CALIBRATION_UPDATED',
       entityType: 'Evaluation',
       entityId: savedEvaluation.id,

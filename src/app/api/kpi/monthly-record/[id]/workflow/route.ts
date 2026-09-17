@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { parseMonthlyAttachments } from '@/lib/monthly-attachments'
 import { evaluateMonthlySubmit } from '@/lib/monthly-submit-validation'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -108,7 +108,7 @@ export async function POST(request: Request, context: RouteContext) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'MONTHLY_RECORD_SUBMITTED',
         entityType: 'MonthlyRecord',
         entityId: id,
@@ -130,7 +130,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action:
           validated.data.action === 'REQUEST_UPDATE'
             ? 'MONTHLY_RECORD_REVIEW_REQUESTED'
@@ -161,7 +161,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'MONTHLY_RECORD_LOCKED',
         entityType: 'MonthlyRecord',
         entityId: id,
@@ -182,7 +182,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'MONTHLY_RECORD_UNLOCKED',
       entityType: 'MonthlyRecord',
       entityId: id,

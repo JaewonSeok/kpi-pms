@@ -28,7 +28,9 @@ const auditLogs: Array<Record<string, unknown>> = []
 const originalLoad = moduleLoader._load
 moduleLoader._load = function patchedLoad(request, parent, isMain) {
   if (request === '@/lib/audit') {
+    const real = originalLoad.call(this, request, parent, isMain) as Record<string, unknown>
     return {
+      ...real,
       createAuditLog: async (payload: Record<string, unknown>) => {
         auditLogs.push(payload)
       },

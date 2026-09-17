@@ -1,4 +1,4 @@
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { AdminEvaluatorAssignmentActionSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { authorizeMenu } from '@/server/auth/authorize'
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     const result = await applyEvaluatorAssignments()
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EVALUATOR_BULK_ASSIGN_APPLY',
       entityType: 'Employee',
       entityId: 'bulk-evaluator-assignment',

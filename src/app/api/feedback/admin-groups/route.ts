@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackAdminGroupSchema } from '@/lib/validations'
@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_ADMIN_GROUP_CREATED',
       entityType: 'FeedbackAdminGroup',
       entityId: group.id,
@@ -208,7 +208,7 @@ export async function PATCH(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_ADMIN_GROUP_UPDATED',
       entityType: 'FeedbackAdminGroup',
       entityId: existing.id,
@@ -281,7 +281,7 @@ export async function DELETE(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_ADMIN_GROUP_DELETED',
       entityType: 'FeedbackAdminGroup',
       entityId: existing.id,

@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import {
   AppError,
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
         })
 
         await createAuditLog({
-          userId: actor.employee.id,
+          ...resolveAuditActor(actor.session),
           action: 'UPWARD_REVIEW_TEMPLATE_CREATED',
           entityType: 'UpwardReviewTemplate',
           entityId: template.id,
@@ -187,7 +187,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_TEMPLATE_UPDATED',
         entityType: 'UpwardReviewTemplate',
         entityId: existingTemplate.id,
@@ -256,7 +256,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_TEMPLATE_CREATED',
         entityType: 'UpwardReviewTemplate',
         entityId: duplicated.id,
@@ -293,7 +293,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_TEMPLATE_DELETED',
         entityType: 'UpwardReviewTemplate',
         entityId: template.id,
@@ -358,7 +358,7 @@ export async function POST(request: Request) {
       )
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_QUESTION_CREATED',
         entityType: 'UpwardReviewTemplate',
         entityId: template.id,
@@ -422,7 +422,7 @@ export async function POST(request: Request) {
         })
 
         await createAuditLog({
-          userId: actor.employee.id,
+          ...resolveAuditActor(actor.session),
           action: 'UPWARD_REVIEW_QUESTION_UPDATED',
           entityType: 'UpwardReviewTemplateQuestion',
           entityId: existingQuestion.id,
@@ -459,7 +459,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_QUESTION_CREATED',
         entityType: 'UpwardReviewTemplateQuestion',
         entityId: question.id,
@@ -495,7 +495,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_QUESTION_DELETED',
         entityType: 'UpwardReviewTemplateQuestion',
         entityId: question.id,
@@ -564,7 +564,7 @@ export async function POST(request: Request) {
       ])
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_QUESTION_REORDERED',
         entityType: 'UpwardReviewTemplateQuestion',
         entityId: current.id,
@@ -657,7 +657,7 @@ export async function POST(request: Request) {
         })
 
         await createAuditLog({
-          userId: actor.employee.id,
+          ...resolveAuditActor(actor.session),
           action: 'UPWARD_REVIEW_ROUND_UPDATED',
           entityType: 'MultiFeedbackRound',
           entityId: existingRound.id,
@@ -701,7 +701,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_ROUND_CREATED',
         entityType: 'MultiFeedbackRound',
         entityId: round.id,
@@ -821,7 +821,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_ROUND_UPDATED',
         entityType: 'MultiFeedbackRound',
         entityId: round.id,
@@ -877,7 +877,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: data.released ? 'UPWARD_REVIEW_RESULT_RELEASED' : 'UPWARD_REVIEW_RESULT_UNRELEASED',
         entityType: 'MultiFeedbackRound',
         entityId: round.id,
@@ -984,7 +984,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_ASSIGNMENT_UPSERTED',
         entityType: 'MultiFeedback',
         entityId: assignment.id,
@@ -1085,7 +1085,7 @@ export async function POST(request: Request) {
       }
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_ASSIGNMENT_UPSERTED',
         entityType: 'MultiFeedbackRound',
         entityId: round.id,
@@ -1133,7 +1133,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: actor.employee.id,
+        ...resolveAuditActor(actor.session),
         action: 'UPWARD_REVIEW_ASSIGNMENT_DELETED',
         entityType: 'MultiFeedback',
         entityId: assignment.id,

@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { FeedbackFolderSchema } from '@/lib/validations'
 import { resolveFeedbackFolderId } from '@/server/feedback-360-admin'
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_FOLDER_CREATED',
       entityType: 'FeedbackFolder',
       entityId: folder.id,
@@ -141,7 +141,7 @@ export async function PATCH(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_FOLDER_UPDATED',
       entityType: 'FeedbackFolder',
       entityId: folder.id,
@@ -207,7 +207,7 @@ export async function DELETE(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_FOLDER_DELETED',
       entityType: 'FeedbackFolder',
       entityId: existing.id,

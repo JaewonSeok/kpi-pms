@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { UpdateMidReviewCycleSchema } from '@/lib/validations'
 import { updateMidReviewCycle } from '@/server/mid-review'
@@ -31,7 +31,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'MID_REVIEW_CYCLE_UPDATED',
       entityType: 'MidReviewCycle',
       entityId: updated.id,

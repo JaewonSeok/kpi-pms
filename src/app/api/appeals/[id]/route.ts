@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 
@@ -103,7 +103,7 @@ export async function PATCH(
 
       const payload = normalizeAppealPayload(body as Record<string, unknown>)
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'APPEAL_DRAFT_SAVED',
         entityType: 'Appeal',
         entityId: appeal.id,
@@ -140,7 +140,7 @@ export async function PATCH(
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'APPEAL_WITHDRAWN',
         entityType: 'Appeal',
         entityId: updated.id,
@@ -174,7 +174,7 @@ export async function PATCH(
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'APPEAL_RESUBMITTED',
         entityType: 'Appeal',
         entityId: updated.id,
@@ -207,6 +207,7 @@ export async function PATCH(
         },
       })
 
+      // TODO(F2): userId 가 newValue 에도 쓰여 대행 귀속 미적용
       await createAuditLog({
         userId: session.user.id,
         action: 'APPEAL_REVIEW_STARTED',
@@ -238,6 +239,7 @@ export async function PATCH(
         },
       })
 
+      // TODO(F2): userId 가 newValue 에도 쓰여 대행 귀속 미적용
       await createAuditLog({
         userId: session.user.id,
         action: 'APPEAL_INFO_REQUESTED',
@@ -272,6 +274,7 @@ export async function PATCH(
         },
       })
 
+      // TODO(F2): userId 가 newValue 에도 쓰여 대행 귀속 미적용
       await createAuditLog({
         userId: session.user.id,
         action: action === 'resolve' ? 'APPEAL_RESOLVED' : 'APPEAL_REJECTED',

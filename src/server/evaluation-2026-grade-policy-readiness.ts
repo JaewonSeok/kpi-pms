@@ -1,7 +1,7 @@
 import type { Session } from 'next-auth'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import {
   EVALUATION_POLICY_2026,
   type EvaluationPolicyGradeCode,
@@ -930,7 +930,7 @@ export async function saveEvaluation2026GradePolicyMetadataForSession(
   }
 
   await audit({
-    userId: actor.id,
+    ...resolveAuditActor(params.session),
     action: parsed.ambiguityResolution
       ? 'UPDATE_2026_GRADE_POLICY_TEAM_MEMBER_SALES_DECISION'
       : 'UPDATE_2026_GRADE_POLICY_READINESS_METADATA',

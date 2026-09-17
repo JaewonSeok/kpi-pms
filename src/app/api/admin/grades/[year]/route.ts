@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { UpdateGradeSettingsSchema } from '@/lib/validations'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 
 // GET /api/admin/grades/[year]
 export async function GET(
@@ -102,7 +102,7 @@ export async function PUT(
 
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'GRADE_SETTINGS_UPDATE',
       entityType: 'GradeSetting',
       oldValue: { grades: oldGrades },

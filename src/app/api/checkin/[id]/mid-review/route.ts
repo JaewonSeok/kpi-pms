@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { SaveMidReviewRecordSchema, SubmitMidReviewRecordSchema } from '@/lib/validations'
 import { getMidReviewWorkspace, saveMidReviewRecord } from '@/server/mid-review'
@@ -47,7 +47,7 @@ export async function PUT(request: Request, context: RouteContext) {
 
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'MID_REVIEW_RECORD_SAVED',
       entityType: 'MidReviewRecord',
       entityId: result.recordId,
@@ -88,7 +88,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'MID_REVIEW_RECORD_SUBMITTED',
       entityType: 'MidReviewRecord',
       entityId: result.recordId,

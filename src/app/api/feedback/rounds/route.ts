@@ -2,7 +2,7 @@ import type { FeedbackStatus, MultiFeedbackRound } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { buildAnytimeReviewDefaultQuestions, buildFeedbackAnytimeRoundName, parseFeedbackAnytimeDocumentSettings, resolveAnytimeFeedbackRelationship } from '@/lib/feedback-anytime-review'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateFeedbackAnytimeReviewSchema, FeedbackAnytimeBulkActionSchema } from '@/lib/validations'
@@ -65,7 +65,7 @@ function getRoundSummary(round: Pick<MultiFeedbackRound, 'id' | 'roundName' | 'r
 
 export async function GET() {
   try {
-    const { employee } = await getActor()
+    const { employee, session } = await getActor()
 
     const reviewAdminAccess = await getReviewAdminAccess(employee.id, employee.role, employee.department.orgId)
 
@@ -115,7 +115,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { employee } = await getActor()
+    const { employee, session } = await getActor()
     const reviewAdminAccess = await getReviewAdminAccess(employee.id, employee.role, employee.department.orgId)
     if (!reviewAdminAccess.canManageAllRounds && !reviewAdminAccess.canManageCollaboratorRounds) {
       throw new AppError(403, 'FORBIDDEN', '수시 리뷰 문서를 생성할 권한이 없습니다.')
@@ -362,7 +362,7 @@ export async function POST(request: Request) {
         })
 
         await createAuditLog({
-          userId: employee.id,
+          ...resolveAuditActor(session),
           action: 'FEEDBACK_ANYTIME_REVIEW_CREATED',
           entityType: 'MultiFeedbackRound',
           entityId: round.id,
@@ -409,7 +409,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const { employee } = await getActor()
+    const { employee, session } = await getActor()
     const reviewAdminAccess = await getReviewAdminAccess(employee.id, employee.role, employee.department.orgId)
     if (!reviewAdminAccess.canManageAllRounds && !reviewAdminAccess.canManageCollaboratorRounds) {
       throw new AppError(403, 'FORBIDDEN', '수시 리뷰 문서를 운영할 권한이 없습니다.')
@@ -525,7 +525,7 @@ export async function PATCH(request: Request) {
           })
 
           await createAuditLog({
-            userId: employee.id,
+            ...resolveAuditActor(session),
             action: 'FEEDBACK_ANYTIME_DUE_DATE_CHANGED',
             entityType: 'MultiFeedbackRound',
             entityId: round.id,
@@ -565,7 +565,7 @@ export async function PATCH(request: Request) {
           })
 
           await createAuditLog({
-            userId: employee.id,
+            ...resolveAuditActor(session),
             action: 'FEEDBACK_ANYTIME_REVIEWER_TRANSFERRED',
             entityType: 'MultiFeedbackRound',
             entityId: round.id,
@@ -601,7 +601,7 @@ export async function PATCH(request: Request) {
           })
 
           await createAuditLog({
-            userId: employee.id,
+            ...resolveAuditActor(session),
             action: 'FEEDBACK_ANYTIME_REVIEW_CANCELLED',
             entityType: 'MultiFeedbackRound',
             entityId: round.id,
@@ -631,7 +631,7 @@ export async function PATCH(request: Request) {
           })
 
           await createAuditLog({
-            userId: employee.id,
+            ...resolveAuditActor(session),
             action: 'FEEDBACK_ANYTIME_REVIEW_CLOSED',
             entityType: 'MultiFeedbackRound',
             entityId: round.id,
@@ -678,7 +678,7 @@ export async function PATCH(request: Request) {
           ])
 
           await createAuditLog({
-            userId: employee.id,
+            ...resolveAuditActor(session),
             action: 'FEEDBACK_ANYTIME_REVIEW_REOPENED',
             entityType: 'MultiFeedbackRound',
             entityId: round.id,

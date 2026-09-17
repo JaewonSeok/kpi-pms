@@ -1,7 +1,7 @@
 import { NotificationType } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { queueNotification, sendAdhocNotificationTest } from '@/lib/notification-service'
 import { buildReviewEmailContent } from '@/lib/review-email-editor'
@@ -324,7 +324,7 @@ export async function POST(request: Request, context: RouteContext) {
 
       if (validated.data.action === 'send-result-share' && recipient.recipientRole) {
         await createAuditLog({
-          userId: session.user.id,
+          ...resolveAuditActor(session),
           action: 'FEEDBACK_RESULT_SHARED',
           entityType: 'MultiFeedbackRound',
           entityId: round.id,
@@ -342,7 +342,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_REMINDER_SENT',
       entityType: 'MultiFeedbackRound',
       entityId: round.id,

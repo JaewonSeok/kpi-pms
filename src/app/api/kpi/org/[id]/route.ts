@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { DeleteOrgKpiSchema, UpdateOrgKpiSchema } from '@/lib/validations'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import {
   canEditOrgKpiByOperationalStatus,
@@ -37,7 +37,7 @@ export async function GET(_request: Request, context: RouteContext) {
       },
     })
     const scopeDepartmentIds = resolveReadableOrgKpiDepartmentIds({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       role: session.user.role,
       deptId: session.user.deptId,
       accessibleDepartmentIds: session.user.accessibleDepartmentIds,
@@ -113,7 +113,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
     if (
       !canManageOrgKpiWriteScope({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         role: session.user.role,
         deptId: session.user.deptId,
         accessibleDepartmentIds: session.user.accessibleDepartmentIds,
@@ -170,7 +170,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 
     const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       role: session.user.role,
       deptId: session.user.deptId,
       accessibleDepartmentIds: session.user.accessibleDepartmentIds,
@@ -378,7 +378,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: data.status && data.status !== current.status ? 'ORG_KPI_STATUS_CHANGED' : 'ORG_KPI_UPDATED',
       entityType: 'OrgKpi',
       entityId: id,

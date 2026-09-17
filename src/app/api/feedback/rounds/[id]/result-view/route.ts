@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackResultViewReceiptSchema } from '@/lib/validations'
@@ -130,7 +130,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     await createAuditLog({
-      userId: actor.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_RESULT_VIEWED',
       entityType: 'MultiFeedbackRound',
       entityId: round.id,

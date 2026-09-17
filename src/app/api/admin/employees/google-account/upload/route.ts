@@ -1,4 +1,4 @@
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { authorizeMenu } from '@/server/auth/authorize'
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EMPLOYEE_BULK_UPSERT',
       entityType: 'Employee',
       entityId: 'bulk-upload',

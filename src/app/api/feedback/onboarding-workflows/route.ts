@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { OnboardingReviewWorkflowSchema } from '@/lib/validations'
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: existing ? 'ONBOARDING_REVIEW_WORKFLOW_UPDATED' : 'ONBOARDING_REVIEW_WORKFLOW_CREATED',
       entityType: 'OnboardingReviewWorkflow',
       entityId: saved.id,

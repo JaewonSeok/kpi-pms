@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { AppealSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 
 const APPEAL_DRAFT_ENTITY_TYPE = 'AppealDraft'
 
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         where: {
           entityType: APPEAL_DRAFT_ENTITY_TYPE,
           entityId: evaluation.id,
-          userId: session.user.id,
+          ...resolveAuditActor(session),
           action: 'APPEAL_DRAFT_SAVED',
         },
         orderBy: {
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'APPEAL_DRAFT_SAVED',
         entityType: APPEAL_DRAFT_ENTITY_TYPE,
         entityId: evaluation.id,
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'APPEAL_CREATED',
       entityType: 'Appeal',
       entityId: appeal.id,

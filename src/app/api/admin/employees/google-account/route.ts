@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import {
   AdminEmployeeLifecycleActionSchema,
   CreateAdminEmployeeSchema,
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EMPLOYEE_MANUAL_CREATE',
       entityType: 'Employee',
       entityId: result.employee.id,
@@ -131,7 +131,7 @@ export async function PUT(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EMPLOYEE_GOOGLE_ACCESS_UPDATE',
       entityType: 'Employee',
       entityId: result.employee.id,
@@ -172,7 +172,7 @@ export async function PATCH(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: `EMPLOYEE_${validated.data.action}`,
       entityType: 'Employee',
       entityId: result.employee.id,
@@ -195,7 +195,7 @@ export async function DELETE(request: Request) {
     console.info('[admin-google-account] EMPLOYEE_DELETE_ROUTE_ENTER')
     const session = await authorizeMenu('SYSTEM_SETTING')
     console.info('[admin-google-account] EMPLOYEE_DELETE_AUTH_OK', {
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       role: session.user.role,
     })
 
@@ -232,7 +232,7 @@ export async function DELETE(request: Request) {
     const result = await safeDeleteEmployeeRecord(validated.data.employeeId)
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EMPLOYEE_DELETE',
       entityType: 'Employee',
       entityId: validated.data.employeeId,

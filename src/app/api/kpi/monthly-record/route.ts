@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { getMonthlyAttachmentAuditSummary } from '@/lib/monthly-attachments'
 import { evaluateMonthlySubmit } from '@/lib/monthly-submit-validation'
 import { AppError, calcAchievementRate, errorResponse, successResponse } from '@/lib/utils'
@@ -191,7 +191,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: existing ? 'MONTHLY_RECORD_UPDATED' : 'MONTHLY_RECORD_CREATED',
       entityType: 'MonthlyRecord',
       entityId: record.id,
@@ -223,7 +223,7 @@ export async function POST(request: Request) {
 
     if (!data.isDraft) {
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'MONTHLY_RECORD_SUBMITTED',
         entityType: 'MonthlyRecord',
         entityId: record.id,

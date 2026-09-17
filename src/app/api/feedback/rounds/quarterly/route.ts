@@ -2,7 +2,7 @@ import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateFeedbackRoundSchema } from '@/lib/validations'
@@ -82,7 +82,7 @@ function buildQuarterWindow(evalYear: number, quarter: keyof typeof QUARTER_WIND
 
 export async function POST(request: Request) {
   try {
-    const { employee } = await getActor()
+    const { employee, session } = await getActor()
     const reviewAdminAccess = await getFeedbackReviewAdminAccess({
       employeeId: employee.id,
       actorRole: employee.role,
@@ -208,7 +208,7 @@ export async function POST(request: Request) {
     })
 
     await createAuditLog({
-      userId: employee.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_360_QUARTER_ROUND_CREATED',
       entityType: 'MultiFeedbackRound',
       entityId: round.id,

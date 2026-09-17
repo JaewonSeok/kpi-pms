@@ -8,7 +8,7 @@ import {
   resolveOrganizationWeights2026,
   writePolicy2026OrganizationWeightsToConfig,
 } from '@/lib/policy-2026-organization-weights'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -65,7 +65,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EVAL_CYCLE_ORGANIZATION_WEIGHTS_UPDATED',
       entityType: 'EvalCycle',
       entityId: cycleId,
