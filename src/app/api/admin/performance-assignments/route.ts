@@ -1,4 +1,4 @@
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { AdminPerformanceAssignmentActionSchema } from '@/lib/validations'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { authorizeMenu } from '@/server/auth/authorize'
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     }
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: auditAction,
       entityType: 'EvaluationAssignment',
       entityId: auditEntityId,

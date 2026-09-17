@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { OrgKpiWorkflowActionSchema } from '@/lib/validations'
 import {
@@ -57,7 +57,7 @@ export async function POST(request: Request, context: RouteContext) {
     })
     if (
       !canManageOrgKpiWriteScope({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         role: session.user.role,
         deptId: session.user.deptId,
         accessibleDepartmentIds: session.user.accessibleDepartmentIds,
@@ -90,7 +90,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     const editableDepartmentIds = resolveEditableOrgKpiDepartmentIds({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       role: session.user.role,
       deptId: session.user.deptId,
       accessibleDepartmentIds: session.user.accessibleDepartmentIds,
@@ -135,7 +135,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'ORG_KPI_SUBMITTED',
         entityType: 'OrgKpi',
         entityId: id,
@@ -165,7 +165,7 @@ export async function POST(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'ORG_KPI_LOCKED',
         entityType: 'OrgKpi',
         entityId: id,
@@ -194,7 +194,7 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'ORG_KPI_REOPENED',
       entityType: 'OrgKpi',
       entityId: id,

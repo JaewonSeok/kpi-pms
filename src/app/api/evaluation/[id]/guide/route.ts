@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { EvaluationGuideActionSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -52,7 +52,7 @@ export async function PATCH(
     const clientInfo = getClientInfo(request)
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action,
       entityType: 'Evaluation',
       entityId: evaluation.id,

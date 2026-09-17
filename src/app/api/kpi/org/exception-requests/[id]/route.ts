@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { queueNotification } from '@/lib/notification-service'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
@@ -75,7 +75,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       ])
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'EXCEPTION_REQUEST_APPROVED',
         entityType: 'OrgKpiExceptionRequest',
         entityId: id,
@@ -124,7 +124,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EXCEPTION_REQUEST_REJECTED',
       entityType: 'OrgKpiExceptionRequest',
       entityId: id,

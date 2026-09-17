@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { getUpwardRoundResponseGate } from '@/lib/upward-review'
@@ -197,7 +197,7 @@ export async function PATCH(
     })
 
     await createAuditLog({
-      userId: actor.employee.id,
+      ...resolveAuditActor(actor.session),
       action: 'UPWARD_REVIEW_DRAFT_SAVED',
       entityType: 'MultiFeedback',
       entityId: feedback.id,
@@ -277,7 +277,7 @@ export async function POST(
     })
 
     await createAuditLog({
-      userId: actor.employee.id,
+      ...resolveAuditActor(actor.session),
       action: 'UPWARD_REVIEW_SUBMITTED',
       entityType: 'MultiFeedback',
       entityId: feedback.id,

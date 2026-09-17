@@ -6,7 +6,7 @@ import { buildPersonalKpiTargetValuePersistence } from '@/lib/personal-kpi-targe
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreatePersonalKpiSchema } from '@/lib/validations'
 import { canAccessEmployee } from '@/server/auth/authorize'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { validatePersonalOrgLink } from '@/server/goal-alignment'
 import { resolvePersonalKpiTargetValues } from '@/lib/personal-kpi-target-values'
 import { validatePersonalKpiWeightCapForPersistence2026 } from '@/server/kpi-alignment-policy-2026'
@@ -250,7 +250,7 @@ export async function POST(request: Request) {
     const resolvedTargetValues = resolvePersonalKpiTargetValues(kpi)
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'PERSONAL_KPI_CREATED',
       entityType: 'PersonalKpi',
       entityId: kpi.id,

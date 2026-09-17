@@ -1,7 +1,7 @@
 import type { Session } from 'next-auth'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import {
   EVALUATION_POLICY_2026,
   type EvaluationPolicyGradeCode,
@@ -16,6 +16,17 @@ import {
 } from '@/lib/evaluation-policy-2026-preview-metadata'
 import { AppError } from '@/lib/utils'
 import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026-loader'
+
+type SessionWithMasterLogin = Session & {
+  user: Session['user'] & {
+    id?: string
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
+  }
+}
 
 type Evaluation2026TeamMemberSalesGradePolicyDecision =
   | EvaluationPolicy2026TeamMemberSalesThresholdDecision
@@ -856,7 +867,7 @@ export async function getEvaluation2026GradePolicyReadinessForSession(
 
 export async function saveEvaluation2026GradePolicyMetadataForSession(
   params: {
-    session: Session
+    session: SessionWithMasterLogin
     input: z.infer<typeof Evaluation2026GradePolicyMetadataSaveSchema>
   },
   options: {
@@ -930,7 +941,7 @@ export async function saveEvaluation2026GradePolicyMetadataForSession(
   }
 
   await audit({
-    userId: actor.id,
+    ...resolveAuditActor(params.session),
     action: parsed.ambiguityResolution
       ? 'UPDATE_2026_GRADE_POLICY_TEAM_MEMBER_SALES_DECISION'
       : 'UPDATE_2026_GRADE_POLICY_READINESS_METADATA',

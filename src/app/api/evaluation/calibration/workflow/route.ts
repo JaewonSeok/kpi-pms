@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { buildCalibrationSetupReadiness } from '@/lib/calibration-session-setup'
 import {
   buildCeoFinalDivisionScopeMap,
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_SESSION_STARTED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -121,7 +121,7 @@ export async function POST(request: Request) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_REVIEW_CONFIRMED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -224,7 +224,7 @@ export async function POST(request: Request) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_LOCKED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -357,7 +357,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_MERGED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -429,7 +429,7 @@ export async function POST(request: Request) {
       })
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'CALIBRATION_SESSION_DELETED',
         entityType: 'EvalCycle',
         entityId: cycle.id,
@@ -458,7 +458,7 @@ export async function POST(request: Request) {
     }
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'CALIBRATION_REOPEN_REQUESTED',
       entityType: 'EvalCycle',
       entityId: cycle.id,

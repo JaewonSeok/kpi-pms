@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { buildOrgKpiTargetValuePersistence } from '@/lib/org-kpi-target-values'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { CreateOrgKpiSchema } from '@/lib/validations'
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
       },
     })
     const scopeDepartmentIds = resolveReadableOrgKpiDepartmentIds({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       role: session.user.role,
       deptId: session.user.deptId,
       accessibleDepartmentIds: session.user.accessibleDepartmentIds,
@@ -148,7 +148,7 @@ export async function POST(request: Request) {
     })
     if (
       !canManageOrgKpiWriteScope({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         role: session.user.role,
         deptId: session.user.deptId,
         accessibleDepartmentIds: session.user.accessibleDepartmentIds,
@@ -183,7 +183,7 @@ export async function POST(request: Request) {
 
     failureStep = 'resolve-editable-scope'
     const scopeDepartmentIds = resolveEditableOrgKpiDepartmentIds({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       role: session.user.role,
       deptId: session.user.deptId,
       accessibleDepartmentIds: session.user.accessibleDepartmentIds,
@@ -294,7 +294,7 @@ export async function POST(request: Request) {
     failureStep = 'write-audit-log'
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'ORG_KPI_CREATED',
       entityType: 'OrgKpi',
       entityId: kpi.id,

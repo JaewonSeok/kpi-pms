@@ -1,6 +1,6 @@
 import type { AiCompetencyGateDecision, AiCompetencyGateStatus, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import { queueNotification } from '@/lib/notification-service'
 import { AppError } from '@/lib/utils'
 import {
@@ -903,7 +903,7 @@ export async function finalizeAiCompetencyGateDecision(params: {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: 'FINALIZE_AI_COMPETENCY_GATE_DECISION',
     entityType: 'AiCompetencyGateReview',
     entityId: review.id,

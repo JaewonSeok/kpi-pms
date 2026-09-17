@@ -1,4 +1,4 @@
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { AdminDepartmentRecordSchema, DeleteAdminDepartmentSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { authorizeMenu } from '@/server/auth/authorize'
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const result = await upsertDepartmentRecord(validated.data)
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'DEPARTMENT_UPSERT',
       entityType: 'Department',
       entityId: result.department.id,
@@ -61,7 +61,7 @@ export async function DELETE(request: Request) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'DEPARTMENT_DELETE',
       entityType: 'Department',
       entityId: result.deletedDepartment.id,

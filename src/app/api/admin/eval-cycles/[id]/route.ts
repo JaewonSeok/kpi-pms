@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { UpdateEvalCycleSchema } from '@/lib/validations'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -298,7 +298,7 @@ export async function DELETE(request: Request, context: RouteContext) {
       }
 
       await createAuditLog({
-        userId: session.user.id,
+        ...resolveAuditActor(session),
         action: 'EVAL_CYCLE_FORCE_DELETE',
         entityType: 'EvalCycle',
         entityId: id,
@@ -388,7 +388,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EVAL_CYCLE_DELETE',
       entityType: 'EvalCycle',
       entityId: id,

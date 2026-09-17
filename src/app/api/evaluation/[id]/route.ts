@@ -3,7 +3,7 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError, calcPdcaScore, calcWeightedScore } from '@/lib/utils'
 import { SaveEvaluationDraftSchema } from '@/lib/validations'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import {
   applyBelowTargetExceptionForPersistence2026,
   shouldApplyAdjustmentRule2026,
@@ -252,7 +252,7 @@ export async function PATCH(
 
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EVALUATION_SAVE_DRAFT',
       entityType: 'Evaluation',
       entityId: id,

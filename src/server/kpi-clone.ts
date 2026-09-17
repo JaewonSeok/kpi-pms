@@ -1,6 +1,6 @@
 import type { Prisma, SystemRole } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import {
   buildOrgKpiTargetValuePersistence,
   resolveOrgKpiTargetValues,
@@ -16,16 +16,21 @@ type CloneClientInfo = {
   userAgent?: string
 }
 
+type CloneSessionUser = {
+  id: string
+  role: SystemRole
+  deptId: string
+  accessibleDepartmentIds?: string[] | null
+  name: string
+  masterLogin?: {
+    active?: boolean
+    targetId: string
+    actorId: string
+  } | null
+}
+
 type PersonalCloneParams = {
-  session: {
-    user: {
-      id: string
-      role: SystemRole
-      deptId: string
-      accessibleDepartmentIds?: string[] | null
-      name: string
-    }
-  }
+  session: { user: CloneSessionUser }
   sourceId: string
   targetEmployeeId?: string
   assignToSelf: boolean
@@ -37,15 +42,7 @@ type PersonalCloneParams = {
 }
 
 type OrgCloneParams = {
-  session: {
-    user: {
-      id: string
-      role: SystemRole
-      deptId: string
-      accessibleDepartmentIds?: string[] | null
-      name: string
-    }
-  }
+  session: { user: CloneSessionUser }
   sourceId: string
   targetDeptId: string
   targetEvalYear: number
@@ -485,7 +482,7 @@ export async function clonePersonalKpi(params: PersonalCloneParams) {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: 'PERSONAL_KPI_CLONED',
     entityType: 'PersonalKpi',
     entityId: cloned.id,
@@ -673,7 +670,7 @@ export async function cloneOrgKpi(params: OrgCloneParams) {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: 'ORG_KPI_CLONED',
     entityType: 'OrgKpi',
     entityId: cloned.id,

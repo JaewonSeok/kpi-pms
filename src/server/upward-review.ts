@@ -6,7 +6,7 @@ import type {
   SystemRole,
 } from '@prisma/client'
 import type { Session } from 'next-auth'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import { readAiAssistEnv } from '@/lib/ai-env'
 import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import { prisma } from '@/lib/prisma'
@@ -278,8 +278,19 @@ export type UpwardReviewPageData = {
 
 */
 
+type SessionWithMasterLogin = Session & {
+  user: Session['user'] & {
+    id?: string
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
+  }
+}
+
 type GetUpwardReviewPageDataParams = {
-  session: Session
+  session: SessionWithMasterLogin
   mode: UpwardReviewRouteMode
   cycleId?: string
   roundId?: string
@@ -1091,7 +1102,7 @@ export async function getUpwardReviewPageData(
 
   if (!params.skipResultsAuditLog) {
     await createAuditLog({
-      userId: employee.id,
+      ...resolveAuditActor(params.session),
       action: 'UPWARD_REVIEW_RESULTS_VIEWED',
       entityType: 'MultiFeedbackRound',
       entityId: resultsRound.id,

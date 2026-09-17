@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { FeedbackRoundSettingsSchema } from '@/lib/validations'
@@ -300,7 +300,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'FEEDBACK_ROUND_SETTINGS_UPDATED',
       entityType: 'MultiFeedbackRound',
       entityId: updated.id,

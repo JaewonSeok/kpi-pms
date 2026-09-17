@@ -7,7 +7,7 @@ import type {
 import type { z } from 'zod'
 import * as XLSX from 'xlsx'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import { queueNotification } from '@/lib/notification-service'
 import { AppError } from '@/lib/utils'
 import {
@@ -520,7 +520,7 @@ export async function upsertAiCompetencyGateCycle(params: {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: 'UPSERT_AI_COMPETENCY_GATE_CYCLE',
     entityType: 'AiCompetencyGateCycle',
     entityId: cycle.id,
@@ -712,7 +712,7 @@ export async function uploadAiCompetencyGateEvidence(params: {
   })
 
   await createAuditLog({
-    userId: params.session.user.id,
+    ...resolveAuditActor(params.session),
     action: 'UPLOAD_AI_COMPETENCY_GATE_EVIDENCE',
     entityType: 'AiCompetencyGateEvidence',
     entityId: evidence.id,

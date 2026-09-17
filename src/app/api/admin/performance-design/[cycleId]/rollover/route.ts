@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import {
   buildIndicatorDesignKey,
   parsePerformanceDesignConfig,
@@ -140,7 +140,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     const clientInfo = getClientInfo(request)
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'PERFORMANCE_INDICATOR_ROLLOVER',
       entityType: 'EvalCycle',
       entityId: currentCycle.id,

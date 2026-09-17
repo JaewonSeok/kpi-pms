@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { NotificationDeadLetterActionSchema } from '@/lib/validations'
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       await Promise.all(
         letters.map((letter) =>
           createAuditLog({
-            userId: session.user.id,
+            ...resolveAuditActor(session),
             action: 'NOTIFICATION_DEAD_LETTER_RETRIED',
             entityType: 'NotificationDeadLetter',
             entityId: letter.id,
@@ -147,7 +147,7 @@ export async function POST(request: Request) {
     await Promise.all(
       letters.map((letter) =>
         createAuditLog({
-          userId: session.user.id,
+          ...resolveAuditActor(session),
           action: 'NOTIFICATION_DEAD_LETTER_ARCHIVED',
           entityType: 'NotificationDeadLetter',
           entityId: letter.id,

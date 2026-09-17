@@ -1,6 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { prisma } from '@/lib/prisma'
 import { resolveOrgKpiScopeFromDepartmentId } from '@/lib/org-kpi-scope'
 import { queueNotification } from '@/lib/notification-service'
@@ -87,7 +87,7 @@ export async function POST(request: Request, context: RouteContext) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'ORG_KPI_EXCEPTION_REQUEST_SUBMITTED',
       entityType: 'OrgKpiExceptionRequest',
       entityId: exceptionRequest.id,

@@ -1,5 +1,5 @@
 import { getServerSession } from 'next-auth'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import type { AuthSession } from '@/types/auth'
@@ -161,7 +161,7 @@ export async function PATCH(
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EVALUATION_RETURN_TO_PREVIOUS_STAGE',
       entityType: 'Evaluation',
       entityId: id,
@@ -177,7 +177,7 @@ export async function PATCH(
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'EVALUATION_REOPEN_FOR_REVISION',
       entityType: 'Evaluation',
       entityId: previousEvaluation.id,

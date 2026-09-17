@@ -11,7 +11,7 @@ import {
 } from '@/lib/personal-kpi-target-values'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { DeletePersonalKpiSchema, UpdatePersonalKpiSchema } from '@/lib/validations'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import {
   canEditPersonalKpiByOperationalStatus,
   resolvePersonalKpiOperationalStatus,
@@ -375,7 +375,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const resolvedUpdatedTargetValues = resolvePersonalKpiTargetValues(updated)
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'PERSONAL_KPI_UPDATED',
       entityType: 'PersonalKpi',
       entityId: id,

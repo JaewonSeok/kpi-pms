@@ -1,7 +1,7 @@
 import type { Session } from 'next-auth'
 import { z } from 'zod'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import { EVALUATION_POLICY_2026, type EvaluationPolicyItemCategoryCode } from '@/lib/evaluation-policy-2026'
 import {
   classifyEvaluationPolicyItem,
@@ -23,6 +23,17 @@ import {
   resolvePersonalKpiOperationalStatus,
   type PersonalKpiOperationalStatus,
 } from '@/server/personal-kpi-workflow'
+
+type SessionWithMasterLogin = Session & {
+  user: Session['user'] & {
+    id?: string
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
+  }
+}
 
 type EvaluationPreviewMappingDb = Pick<
   typeof prisma,
@@ -1531,7 +1542,7 @@ async function updateCyclePreviewMappings(
 
 export async function updateEvaluationPolicy2026MetadataForSession(
   params: {
-    session: Session
+    session: SessionWithMasterLogin
     input: EvaluationPolicy2026MetadataPatchInput
   },
   options: {
@@ -1657,7 +1668,7 @@ export async function updateEvaluationPolicy2026MetadataForSession(
       }
 
       await audit({
-        userId: actor.id,
+        ...resolveAuditActor(params.session),
         action: 'UPDATE_2026_POLICY_PREVIEW_METADATA',
         entityType: 'EvaluationItem',
         entityId: item.id,
@@ -1725,7 +1736,7 @@ export async function updateEvaluationPolicy2026MetadataForSession(
     }
 
     await audit({
-      userId: actor.id,
+      ...resolveAuditActor(params.session),
       action: 'UPDATE_2026_POLICY_PREVIEW_METADATA',
       entityType: 'PersonalKpi',
       entityId: personalKpi.id,
@@ -1804,7 +1815,7 @@ export async function updateEvaluationPolicy2026MetadataForSession(
 
     updatedDivisionSalesGroupMappings += 1
     await audit({
-      userId: actor.id,
+      ...resolveAuditActor(params.session),
       action: 'UPDATE_2026_POLICY_PREVIEW_DIVISION_SALES_GROUP',
       entityType: 'EvalCycle',
       entityId: mapping.evalCycleId,
@@ -1851,7 +1862,7 @@ export async function updateEvaluationPolicy2026MetadataForSession(
 
     updatedDepartmentSalesGroupMappings += 1
     await audit({
-      userId: actor.id,
+      ...resolveAuditActor(params.session),
       action: 'UPDATE_2026_POLICY_PREVIEW_DEPARTMENT_SALES_GROUP',
       entityType: 'EvalCycle',
       entityId: mapping.evalCycleId,
@@ -1896,7 +1907,7 @@ export async function updateEvaluationPolicy2026MetadataForSession(
 
     updatedSalesGroupMappings += 1
     await audit({
-      userId: actor.id,
+      ...resolveAuditActor(params.session),
       action: 'UPDATE_2026_POLICY_PREVIEW_SALES_GROUP',
       entityType: 'EvalCycle',
       entityId: mapping.evalCycleId,
@@ -1921,7 +1932,7 @@ export async function updateEvaluationPolicy2026MetadataForSession(
 
     updatedThresholdDecisions += 1
     await audit({
-      userId: actor.id,
+      ...resolveAuditActor(params.session),
       action: 'UPDATE_2026_POLICY_PREVIEW_THRESHOLD_DECISION',
       entityType: 'EvalCycle',
       entityId: decision.evalCycleId,

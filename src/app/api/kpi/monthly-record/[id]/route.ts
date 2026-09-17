@@ -1,7 +1,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { getMonthlyAttachmentAuditSummary } from '@/lib/monthly-attachments'
 import { AppError, calcAchievementRate, errorResponse, successResponse } from '@/lib/utils'
 import { UpdateMonthlyRecordSchema } from '@/lib/validations'
@@ -105,7 +105,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     })
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'MONTHLY_RECORD_UPDATED',
       entityType: 'MonthlyRecord',
       entityId: id,

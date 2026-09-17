@@ -2,7 +2,7 @@ import type { Session } from 'next-auth'
 import { z } from 'zod'
 import type { TeamKpiReviewVerdict } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, resolveAuditActor } from '@/lib/audit'
 import { resolveOrgKpiScopeFromDepartmentId } from '@/lib/org-kpi-scope'
 import { AppError } from '@/lib/utils'
 import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026-loader'
@@ -49,6 +49,17 @@ export type Evaluation2026TeamKpiHrReviewDecisionInput = z.infer<
 export type Evaluation2026TeamKpiHrReviewBulkDecisionInput = z.infer<
   typeof Evaluation2026TeamKpiHrReviewBulkDecisionSchema
 >
+
+type SessionWithMasterLogin = Session & {
+  user: Session['user'] & {
+    id?: string
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
+  }
+}
 
 type Evaluation2026TeamKpiHrReviewDecisionDb = Pick<
   typeof prisma,
@@ -111,7 +122,7 @@ function resolveDivisionId(params: {
 
 export async function saveEvaluation2026TeamKpiHrReviewDecisionForSession(
   params: {
-    session: Session
+    session: SessionWithMasterLogin
     input: Evaluation2026TeamKpiHrReviewDecisionInput
   },
   options: {
@@ -253,7 +264,7 @@ export async function saveEvaluation2026TeamKpiHrReviewDecisionForSession(
   })
 
   await audit({
-    userId: actor.id,
+    ...resolveAuditActor(params.session),
     action: 'UPDATE_2026_TEAM_KPI_HR_REVIEW_DECISION',
     entityType: 'OrgKpi',
     entityId: orgKpi.id,

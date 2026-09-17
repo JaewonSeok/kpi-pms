@@ -1,4 +1,4 @@
-import { createAuditLog, getClientInfo } from '@/lib/audit'
+import { createAuditLog, getClientInfo, resolveAuditActor } from '@/lib/audit'
 import { canUseMasterLoginForActor } from '@/lib/master-login'
 import {
   AdminMasterLoginPermissionSchema,
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     }
 
     await createAuditLog({
-      userId: session.user.id,
+      ...resolveAuditActor(session),
       action: 'MASTER_LOGIN_PREVIEW',
       entityType: 'Employee',
       entityId: preview.employee.id,
