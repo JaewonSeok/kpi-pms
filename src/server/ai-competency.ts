@@ -143,6 +143,11 @@ type AuthenticatedSession = Session & {
   user: NonNullable<Session['user']> & {
     id: string
     role: SystemRole
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
   }
 }
 

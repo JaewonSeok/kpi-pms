@@ -50,6 +50,17 @@ export type Evaluation2026TeamKpiHrReviewBulkDecisionInput = z.infer<
   typeof Evaluation2026TeamKpiHrReviewBulkDecisionSchema
 >
 
+type SessionWithMasterLogin = Session & {
+  user: Session['user'] & {
+    id?: string
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
+  }
+}
+
 type Evaluation2026TeamKpiHrReviewDecisionDb = Pick<
   typeof prisma,
   'department' | 'evalCycle' | 'orgKpi' | 'teamKpiReviewRun'
@@ -111,7 +122,7 @@ function resolveDivisionId(params: {
 
 export async function saveEvaluation2026TeamKpiHrReviewDecisionForSession(
   params: {
-    session: Session
+    session: SessionWithMasterLogin
     input: Evaluation2026TeamKpiHrReviewDecisionInput
   },
   options: {

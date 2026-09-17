@@ -24,6 +24,11 @@ export type AuthenticatedSession = Session & {
   user: Session['user'] & {
     id: string
     role: SystemRole
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
   }
 }
 

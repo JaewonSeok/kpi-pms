@@ -24,6 +24,17 @@ import {
   type PersonalKpiOperationalStatus,
 } from '@/server/personal-kpi-workflow'
 
+type SessionWithMasterLogin = Session & {
+  user: Session['user'] & {
+    id?: string
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
+  }
+}
+
 type EvaluationPreviewMappingDb = Pick<
   typeof prisma,
   'evaluation' | 'evaluationItem' | 'personalKpi' | 'evalCycle'
@@ -1531,7 +1542,7 @@ async function updateCyclePreviewMappings(
 
 export async function updateEvaluationPolicy2026MetadataForSession(
   params: {
-    session: Session
+    session: SessionWithMasterLogin
     input: EvaluationPolicy2026MetadataPatchInput
   },
   options: {

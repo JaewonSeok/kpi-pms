@@ -17,6 +17,17 @@ import {
 import { AppError } from '@/lib/utils'
 import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026-loader'
 
+type SessionWithMasterLogin = Session & {
+  user: Session['user'] & {
+    id?: string
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
+  }
+}
+
 type Evaluation2026TeamMemberSalesGradePolicyDecision =
   | EvaluationPolicy2026TeamMemberSalesThresholdDecision
   | 'PPT_SUPER_NOT_APPLICABLE'
@@ -856,7 +867,7 @@ export async function getEvaluation2026GradePolicyReadinessForSession(
 
 export async function saveEvaluation2026GradePolicyMetadataForSession(
   params: {
-    session: Session
+    session: SessionWithMasterLogin
     input: z.infer<typeof Evaluation2026GradePolicyMetadataSaveSchema>
   },
   options: {

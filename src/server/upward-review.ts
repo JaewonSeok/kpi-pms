@@ -278,8 +278,19 @@ export type UpwardReviewPageData = {
 
 */
 
+type SessionWithMasterLogin = Session & {
+  user: Session['user'] & {
+    id?: string
+    masterLogin?: {
+      active?: boolean
+      targetId: string
+      actorId: string
+    } | null
+  }
+}
+
 type GetUpwardReviewPageDataParams = {
-  session: Session
+  session: SessionWithMasterLogin
   mode: UpwardReviewRouteMode
   cycleId?: string
   roundId?: string
