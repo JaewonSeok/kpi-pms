@@ -17,8 +17,11 @@ import {
 import { AppError } from '@/lib/utils'
 import { canAccessEvaluationPreview2026 } from '@/server/evaluation-preview-2026-loader'
 
+// user 를 optional 로 둔다: ts-node 진입점이 src/lib/auth.ts 의 Session 증강을
+// 로드하지 않으면 next-auth 기본 Session.user 는 optional 이라, 이 타입이 user
+// 를 required 로 요구하면 plain Session 대입이 컴파일 에러가 된다(F2-2 회귀).
 type SessionWithMasterLogin = Session & {
-  user: Session['user'] & {
+  user?: Session['user'] & {
     id?: string
     masterLogin?: {
       active?: boolean
