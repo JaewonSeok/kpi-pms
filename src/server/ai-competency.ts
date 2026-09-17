@@ -2494,6 +2494,7 @@ export async function createAiCompetencyCycle(params: {
       createdById: params.actorId,
     },
   })
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_CYCLE_CREATED',
@@ -2543,6 +2544,7 @@ export async function updateAiCompetencyCycle(params: {
     },
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_CYCLE_UPDATED',
@@ -2615,6 +2617,7 @@ export async function upsertAiCompetencyQuestion(params: {
         data: payload,
       })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: params.input.id ? 'AI_COMPETENCY_QUESTION_UPDATED' : 'AI_COMPETENCY_QUESTION_CREATED',
@@ -2722,6 +2725,7 @@ export async function upsertAiCompetencyBlueprint(params: {
     return saved
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: params.input.id ? 'AI_COMPETENCY_BLUEPRINT_UPDATED' : 'AI_COMPETENCY_BLUEPRINT_CREATED',
@@ -2796,6 +2800,7 @@ export async function activateAiCompetencyBlueprint(params: {
     })
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_BLUEPRINT_ACTIVATED',
@@ -2820,6 +2825,7 @@ export async function archiveAiCompetencyBlueprint(params: {
     },
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_BLUEPRINT_ARCHIVED',
@@ -2875,6 +2881,7 @@ export async function duplicateAiCompetencyBlueprint(params: {
     },
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_BLUEPRINT_DUPLICATED',
@@ -3002,6 +3009,7 @@ export async function upsertAiCompetencyRubric(params: {
     return saved
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: params.input.id ? 'AI_COMPETENCY_RUBRIC_UPDATED' : 'AI_COMPETENCY_RUBRIC_CREATED',
@@ -3064,6 +3072,7 @@ export async function activateAiCompetencyRubric(params: {
     })
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_RUBRIC_ACTIVATED',
@@ -3089,6 +3098,7 @@ export async function archiveAiCompetencyRubric(params: {
     },
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_RUBRIC_ARCHIVED',
@@ -3148,6 +3158,7 @@ export async function duplicateAiCompetencyRubric(params: {
     },
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_RUBRIC_DUPLICATED',
@@ -3214,6 +3225,7 @@ export async function upsertAiCompetencyAssignment(params: {
     },
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_ASSIGNMENT_UPSERTED',
@@ -3531,6 +3543,7 @@ export async function scoreAiCompetencyShortAnswer(params: {
     await recomputeResultForAssignment(tx, answer.attempt.assignmentId)
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_SHORT_ANSWER_SCORED',
@@ -3734,6 +3747,7 @@ export async function assignAiCompetencyReviewers(params: {
     })
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_REVIEWERS_ASSIGNED',
@@ -4105,6 +4119,7 @@ export async function reviewAiCompetencyExternalCertClaim(params: {
     return saved
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: params.action === 'APPROVE' ? 'AI_COMPETENCY_EXTERNAL_CERT_APPROVED' : 'AI_COMPETENCY_EXTERNAL_CERT_REJECTED',
@@ -4158,6 +4173,7 @@ export async function overrideAiCompetencyResult(params: {
     },
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_RESULT_OVERRIDDEN',
@@ -4215,6 +4231,7 @@ export async function publishAiCompetencyResults(params: {
     }
   })
 
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.actorId,
     action: 'AI_COMPETENCY_RESULTS_PUBLISHED',

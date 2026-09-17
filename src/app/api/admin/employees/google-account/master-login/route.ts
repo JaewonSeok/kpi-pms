@@ -114,6 +114,7 @@ export async function PATCH(request: Request) {
             canManage: true,
             masterLoginActive: Boolean(session.user.masterLogin?.active),
           },
+          auditActor: resolveAuditActor(session),
           targetEmployeeId: validated.data.targetEmployeeId,
           enabled: validated.data.enabled,
           auditContext: getClientInfo(request),

@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { resolveAuditActor } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { TeamKpiReviewRequestSchema } from '@/lib/validations'
 import { generateTeamKpiReviewRun } from '@/server/org-kpi-team-ai'
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
 
     const created = await generateTeamKpiReviewRun({
       userId: session.user.id,
+      auditActor: resolveAuditActor(session),
       role: session.user.role,
       deptId: session.user.deptId,
       accessibleDepartmentIds: session.user.accessibleDepartmentIds,

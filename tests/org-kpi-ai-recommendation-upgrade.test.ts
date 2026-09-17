@@ -1,3 +1,6 @@
+// TODO(F2-9): OrgKpiManagementClient.tsx 에서 검사 대상 문자열이
+// 사라져 FAIL 한다. 팀 AI 워크스페이스 이동 경위 확인 후 갱신 필요.
+// 그때까지 package.json 체인에 등록하지 않는다.
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'

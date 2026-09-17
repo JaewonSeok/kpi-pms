@@ -22,6 +22,10 @@ const baseActor = {
   masterLoginActive: false,
 }
 
+const baseAuditActor = {
+  userId: baseActor.id,
+}
+
 const baseTarget = {
   id: 'target-1',
   empId: 'E-2001',
@@ -69,6 +73,7 @@ async function main() {
     const result = await updateMasterLoginPermission(
       {
         actor: baseActor,
+        auditActor: baseAuditActor,
         targetEmployeeId: baseTarget.id,
         enabled: true,
         auditContext: {
@@ -103,6 +108,7 @@ async function main() {
     const result = await updateMasterLoginPermission(
       {
         actor: baseActor,
+        auditActor: baseAuditActor,
         targetEmployeeId: grantedTarget.id,
         enabled: false,
         auditContext: {
@@ -130,6 +136,7 @@ async function main() {
               ...baseActor,
               canManage: false,
             },
+            auditActor: baseAuditActor,
             targetEmployeeId: baseTarget.id,
             enabled: true,
             auditContext: {},
@@ -148,6 +155,7 @@ async function main() {
         updateMasterLoginPermission(
           {
             actor: baseActor,
+            auditActor: baseAuditActor,
             targetEmployeeId: 'missing',
             enabled: true,
             auditContext: {},
@@ -174,6 +182,7 @@ async function main() {
           updateMasterLoginPermission(
             {
               actor: baseActor,
+              auditActor: baseAuditActor,
               targetEmployeeId: baseTarget.id,
               enabled: true,
               auditContext: {},
@@ -202,6 +211,7 @@ async function main() {
               ...baseActor,
               masterLoginActive: true,
             },
+            auditActor: baseAuditActor,
             targetEmployeeId: baseTarget.id,
             enabled: true,
             auditContext: {},
