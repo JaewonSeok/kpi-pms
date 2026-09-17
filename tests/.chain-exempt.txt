@@ -1,0 +1,34 @@
+# 이 파일은 면제 목록이 아니라 부채 목록이다.
+# 전부 런타임 assertion 실패이며, 코드가 테스트 기대에서 이탈한 것인지
+# 테스트가 낡은 것인지 미판정이다. 항목을 지우는 것이 목표다.
+#
+# scripts/check-test-chain-coverage.ts 가 이 목록을 읽어, package.json
+# test:* 체인에 없는 테스트 파일이 여기에도 없으면 exit 1 한다.
+# 항목을 지우려면: 원인 규명(코드 회귀 vs 테스트 노후화) → 수정 →
+# test:* 스크립트에 연결 → 이 파일에서 제거.
+#
+# 등록일: 2026-09-17
+
+evaluation-2026-grade-policy-readiness.test.ts
+evaluation-performance-briefing.test.ts
+evaluation-preview-2026-api.test.ts
+evaluation-preview-2026-mapping.test.ts
+evaluation-preview-2026-readiness.test.ts
+evaluation-preview-2026.test.ts
+feedback360-hub-route.test.ts
+kpi-ai-preview-ui.test.ts
+monthly-month-ux.test.ts
+monthly-submit-validation.test.ts
+org-kpi-ai-fallback-rendering.test.ts
+org-kpi-ai-recommendation-modal.test.ts
+org-kpi-ai-recommendation-upgrade.test.ts
+org-kpi-ai-schema-encoding.test.ts
+org-kpi-delete.test.ts
+org-kpi-department-move.test.ts
+org-kpi-selection-latency.test.ts
+org-kpi-structure-ui.test.ts
+org-kpi-team-ai-empty-state.test.ts
+org-kpi-team-ai-fallback.test.ts
+personal-kpi-policy-category-at-create.test.ts
+personal-kpi-target-values.test.ts
+semantic-metric-labels.test.ts
