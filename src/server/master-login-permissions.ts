@@ -1,4 +1,5 @@
 import type { SystemRole } from '@prisma/client'
+import type { AuditActor } from '@/lib/audit'
 import {
   MASTER_LOGIN_PERMISSION_KEY,
   resolveMasterLoginAccess,
@@ -11,6 +12,7 @@ import { AppError } from '@/lib/utils'
 
 type AuditLogPayload = {
   userId: string
+  actorUserId?: string
   action: string
   entityType: string
   entityId?: string
@@ -54,6 +56,7 @@ type MasterLoginPermissionServiceDeps = {
 
 type UpdateMasterLoginPermissionParams = {
   actor: MasterLoginPermissionActor
+  auditActor: AuditActor
   targetEmployeeId: string
   enabled: boolean
   auditContext: MasterLoginPermissionAuditContext
@@ -176,7 +179,7 @@ export async function updateMasterLoginPermission(
   })
 
   await deps.createAuditEntry({
-    userId: params.actor.id,
+    ...params.auditActor,
     action: params.enabled
       ? 'MASTER_LOGIN_PERMISSION_GRANTED'
       : 'MASTER_LOGIN_PERMISSION_REVOKED',

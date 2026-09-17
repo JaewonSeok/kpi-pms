@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { resolveAuditActor } from '@/lib/audit'
 import { EvaluationPerformanceBriefingRequestSchema } from '@/lib/validations'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { generateEvaluationPerformanceBriefing } from '@/server/ai/evaluation-performance-briefing'
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
 
     const result = await generateEvaluationPerformanceBriefing({
       actorId: session.user.id,
+      auditActor: resolveAuditActor(session),
       actorRole: session.user.role,
       evaluationId: validated.data.evaluationId,
     })

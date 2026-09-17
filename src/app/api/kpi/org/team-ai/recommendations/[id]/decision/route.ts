@@ -1,5 +1,6 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { resolveAuditActor } from '@/lib/audit'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { TeamKpiRecommendationDecisionSchema } from '@/lib/validations'
 import { applyTeamKpiRecommendationDecision } from '@/server/org-kpi-team-ai'
@@ -24,6 +25,7 @@ export async function POST(request: Request, context: RouteContext) {
     const { id } = await context.params
     const result = await applyTeamKpiRecommendationDecision({
       userId: session.user.id,
+      auditActor: resolveAuditActor(session),
       role: session.user.role,
       deptId: session.user.deptId,
       accessibleDepartmentIds: session.user.accessibleDepartmentIds,

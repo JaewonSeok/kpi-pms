@@ -6,7 +6,7 @@ import {
   type QuestionType,
   type SystemRole,
 } from '@prisma/client'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, type AuditActor } from '@/lib/audit'
 import { sanitizeAiPayload } from '@/lib/ai-assist'
 import { readExecutivePerformanceBriefingEnv } from '@/lib/ai-env'
 import {
@@ -31,6 +31,7 @@ import { AppError, EVAL_STAGE_LABELS, POSITION_LABELS } from '@/lib/utils'
 
 type GenerateEvaluationPerformanceBriefingParams = {
   actorId: string
+  auditActor: AuditActor
   actorRole: SystemRole
   evaluationId: string
 }
@@ -1204,6 +1205,7 @@ function buildSnapshotFromAiResult(params: {
 async function persistBriefingLog(params: {
   db: PrismaClient
   actorId: string
+  auditActor: AuditActor
   requestStatus: AIRequestStatus
   evaluationId: string
   requestPayload: Record<string, unknown>
@@ -1236,7 +1238,7 @@ async function persistBriefingLog(params: {
   })
 
   await createAuditLog({
-    userId: params.actorId,
+    ...params.auditActor,
     action: 'GENERATE_AI_PERFORMANCE_BRIEFING',
     entityType: 'Evaluation',
     entityId: params.evaluationId,
@@ -1275,6 +1277,7 @@ export async function generateEvaluationPerformanceBriefing(
     const log = await persistBriefingLog({
       db,
       actorId: params.actorId,
+      auditActor: params.auditActor,
       requestStatus: AIRequestStatus.DISABLED,
       evaluationId: params.evaluationId,
       requestPayload: context.payload,
@@ -1316,6 +1319,7 @@ export async function generateEvaluationPerformanceBriefing(
     const log = await persistBriefingLog({
       db,
       actorId: params.actorId,
+      auditActor: params.auditActor,
       requestStatus: AIRequestStatus.SUCCESS,
       evaluationId: params.evaluationId,
       requestPayload: context.payload,
@@ -1341,6 +1345,7 @@ export async function generateEvaluationPerformanceBriefing(
     const log = await persistBriefingLog({
       db,
       actorId: params.actorId,
+      auditActor: params.auditActor,
       requestStatus: AIRequestStatus.FALLBACK,
       evaluationId: params.evaluationId,
       requestPayload: context.payload,

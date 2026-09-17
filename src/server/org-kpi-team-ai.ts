@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
+// TODO(F2-8): @ts-nocheck 로 이 파일은 타입 검사를 받지 않는다.
+// AuditActor 타입도 여기서는 방어 효과가 없다. 별건으로 제거 검토.
 // @ts-nocheck
 import 'server-only'
 
@@ -31,7 +33,7 @@ import {
   sanitizeAndRankTeamRecommendationItem,
 } from '@/lib/org-kpi-team-ai-recommendation'
 import { AppError } from '@/lib/utils'
-import { createAuditLog } from '@/lib/audit'
+import { createAuditLog, type AuditActor } from '@/lib/audit'
 import { validateOrgParentLink } from '@/server/goal-alignment'
 import {
   recommendTeamKpiRecommendations,
@@ -735,6 +737,7 @@ export async function loadOrgKpiTeamAiContext(
 
 type SaveBusinessPlanParams = SessionScopeParams & {
   userId: string
+  auditActor: AuditActor
   id?: string
   targetDepartmentId: string
   evalYear: number
@@ -838,7 +841,7 @@ export async function saveBusinessPlanDocument(params: SaveBusinessPlanParams) {
       })
 
   await createAuditLog({
-    userId: params.userId,
+    ...params.auditActor,
     action: current ? 'BUSINESS_PLAN_UPDATED' : 'BUSINESS_PLAN_CREATED',
     entityType: 'BusinessPlanDocument',
     entityId: saved.id,
@@ -866,6 +869,7 @@ export async function saveBusinessPlanDocument(params: SaveBusinessPlanParams) {
 
 type SaveJobDescriptionParams = SessionScopeParams & {
   userId: string
+  auditActor: AuditActor
   id?: string
   targetDepartmentId: string
   scope: JobDescriptionScope
@@ -969,7 +973,7 @@ export async function saveJobDescriptionDocument(params: SaveJobDescriptionParam
       })
 
   await createAuditLog({
-    userId: params.userId,
+    ...params.auditActor,
     action: current ? 'JOB_DESCRIPTION_UPDATED' : 'JOB_DESCRIPTION_CREATED',
     entityType: 'JobDescriptionDocument',
     entityId: saved.id,
@@ -1186,7 +1190,9 @@ function sanitizeRecommendationItem(
   })
 }
 
-type GenerateRecommendationParams = LoadContextParams
+type GenerateRecommendationParams = LoadContextParams & {
+  auditActor: AuditActor
+}
 
 export async function generateTeamKpiRecommendationSet(params: GenerateRecommendationParams) {
   if (!canOperateTeamKpiAi(params.role)) {
@@ -1417,7 +1423,7 @@ export async function generateTeamKpiRecommendationSet(params: GenerateRecommend
   })
 
   await createAuditLog({
-    userId: params.userId,
+    ...params.auditActor,
     action: 'TEAM_KPI_AI_RECOMMENDATION_CREATED',
     entityType: 'TeamKpiRecommendationSet',
     entityId: created.id,
@@ -1458,6 +1464,7 @@ function buildDraftFromRecommendationItem(
 
 type ApplyRecommendationParams = SessionScopeParams & {
   userId: string
+  auditActor: AuditActor
   recommendationItemId: string
   decision: TeamKpiRecommendationDecision
   draft?: OrgKpiDraftInput
@@ -1505,7 +1512,7 @@ export async function applyTeamKpiRecommendationDecision(params: ApplyRecommenda
     })
 
     await createAuditLog({
-      userId: params.userId,
+      ...params.auditActor,
       action: 'TEAM_KPI_RECOMMENDATION_DISMISSED',
       entityType: 'TeamKpiRecommendationItem',
       entityId: dismissed.id,
@@ -1623,7 +1630,7 @@ export async function applyTeamKpiRecommendationDecision(params: ApplyRecommenda
 
       await tx.auditLog.create({
         data: {
-          userId: params.userId,
+          ...params.auditActor,
           action: 'ORG_KPI_CREATED',
           entityType: 'OrgKpi',
           entityId: created.id,
@@ -1652,7 +1659,7 @@ export async function applyTeamKpiRecommendationDecision(params: ApplyRecommenda
     })
 
     await createAuditLog({
-      userId: params.userId,
+      ...params.auditActor,
       action: 'TEAM_KPI_RECOMMENDATION_APPLIED',
       entityType: 'TeamKpiRecommendationItem',
       entityId: item.id,
@@ -1703,6 +1710,7 @@ type ReviewGenerationContext = {
 }
 
 type ReviewGenerationParams = LoadContextParams & {
+  auditActor: AuditActor
   orgKpiIds?: string[]
 }
 
@@ -1984,7 +1992,7 @@ export async function generateTeamKpiReviewRun(params: ReviewGenerationParams) {
   })
 
   await createAuditLog({
-    userId: params.userId,
+    ...params.auditActor,
     action: 'TEAM_KPI_AI_REVIEW_CREATED',
     entityType: 'TeamKpiReviewRun',
     entityId: created.id,

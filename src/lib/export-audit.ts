@@ -26,6 +26,7 @@ export async function createExportAuditLog(params: {
   userAgent?: string
   extra?: Record<string, unknown>
 }) {
+  // TODO(F2): 미사용 함수. 되살릴 경우 resolveAuditActor 적용 필요
   await createAuditLog({
     userId: params.userId,
     action: params.action,
