@@ -29,7 +29,10 @@ function run(name: string, fn: () => void) {
   }
 }
 
-const loginPageSource = readFileSync(path.resolve(process.cwd(), 'src/app/login/page.tsx'), 'utf8')
+const loginPageSource = readFileSync(
+  path.resolve(process.cwd(), 'src/app/login/LoginPageClient.tsx'),
+  'utf8'
+)
 const authSource = readFileSync(path.resolve(process.cwd(), 'src/lib/auth.ts'), 'utf8')
 const middlewareSource = readFileSync(path.resolve(process.cwd(), 'src/middleware.ts'), 'utf8')
 const nextAuthRouteSource = readFileSync(
