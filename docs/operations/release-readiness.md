@@ -1,5 +1,17 @@
 # Release Readiness
 
+## Red team checklist
+
+Precondition for the release checklist. See `docs/governance/redteam.md`
+for trigger scope and record locations.
+
+- run `/change-simulation` against the release scope; when the skill is
+  unavailable, run a cross-session review instead and note the substitution
+- record objections in the ADR that drove the change, or here when no ADR exists
+- record human-raised objections, not only AI findings
+- record rejected objections with the reason, not only accepted ones
+- confirm the reviewing session is independent from the implementing session
+
 ## Release checklist
 
 1. `pnpm run db:generate`
