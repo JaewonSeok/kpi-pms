@@ -3,6 +3,7 @@ import { unstable_cache } from 'next/cache'
 import type { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import CredentialsProvider from 'next-auth/providers/credentials'
+import bcrypt from 'bcryptjs'
 import { createAuditLog } from '@/lib/audit'
 import {
   isImpersonationExpired,
@@ -613,6 +614,18 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
+        if (process.env.ADMIN_BREAKGLASS_ENABLED !== 'true') {
+          await logAuthAudit({
+            userId: 'ANONYMOUS',
+            action: 'AUTH_SIGNIN_FAILED',
+            newValue: {
+              provider: 'credentials',
+              reason: 'BREAKGLASS_DISABLED',
+            },
+          })
+          return null
+        }
+
         if (!credentials?.email || !credentials?.password) {
           await logAuthAudit({
             userId: 'ANONYMOUS',
@@ -626,26 +639,51 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        if (
-          credentials.email === process.env.ADMIN_EMAIL &&
-          credentials.password === process.env.ADMIN_PASSWORD
-        ) {
-          const employee = await findAuthEmployee({ gwsEmail: credentials.email })
-
-          if (employee) {
-            return buildAuthClaims(employee)
-          }
-
+        if (credentials.email !== process.env.ADMIN_EMAIL) {
           await logAuthAudit({
             userId: 'ANONYMOUS',
             action: 'AUTH_SIGNIN_FAILED',
             newValue: {
               provider: 'credentials',
-              reason: 'EMPLOYEE_NOT_FOUND',
+              reason: 'INVALID_CREDENTIALS',
               attemptedDomain: extractEmailDomain(credentials.email),
             },
           })
           return null
+        }
+
+        const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH
+        if (!adminPasswordHash) {
+          await logAuthAudit({
+            userId: 'ANONYMOUS',
+            action: 'AUTH_SIGNIN_FAILED',
+            newValue: {
+              provider: 'credentials',
+              reason: 'BREAKGLASS_NOT_CONFIGURED',
+              attemptedDomain: extractEmailDomain(credentials.email),
+            },
+          })
+          return null
+        }
+
+        const passwordMatches = await bcrypt.compare(credentials.password, adminPasswordHash)
+        if (!passwordMatches) {
+          await logAuthAudit({
+            userId: 'ANONYMOUS',
+            action: 'AUTH_SIGNIN_FAILED',
+            newValue: {
+              provider: 'credentials',
+              reason: 'INVALID_CREDENTIALS',
+              attemptedDomain: extractEmailDomain(credentials.email),
+            },
+          })
+          return null
+        }
+
+        const employee = await findAuthEmployee({ gwsEmail: credentials.email })
+
+        if (employee) {
+          return buildAuthClaims(employee)
         }
 
         await logAuthAudit({
@@ -653,7 +691,7 @@ export const authOptions: NextAuthOptions = {
           action: 'AUTH_SIGNIN_FAILED',
           newValue: {
             provider: 'credentials',
-            reason: 'INVALID_CREDENTIALS',
+            reason: 'EMPLOYEE_NOT_FOUND',
             attemptedDomain: extractEmailDomain(credentials.email),
           },
         })
