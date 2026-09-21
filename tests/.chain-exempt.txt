@@ -8,27 +8,33 @@
 # test:* 스크립트에 연결 → 이 파일에서 제거.
 #
 # 등록일: 2026-09-17
+#
+# 부채 목록 — CI 체인에 등록되지 않은 테스트
+# 2026-09-21 조사: 23건 전부 런타임 assertion 실패
+# 분류: 코드이탈-의심(소스가 더 최근) / 테스트최신(재검증 필요)
+#      / 판정불가(동일 날짜) / 미구현-기능
+# 인라인 주석(#)은 파서가 잘라낸다
 
-evaluation-2026-grade-policy-readiness.test.ts
-evaluation-performance-briefing.test.ts
-evaluation-preview-2026-api.test.ts
-evaluation-preview-2026-mapping.test.ts
-evaluation-preview-2026-readiness.test.ts
-evaluation-preview-2026.test.ts
-feedback360-hub-route.test.ts
-kpi-ai-preview-ui.test.ts
-monthly-month-ux.test.ts
-monthly-submit-validation.test.ts
-org-kpi-ai-fallback-rendering.test.ts
-org-kpi-ai-recommendation-modal.test.ts
-org-kpi-ai-recommendation-upgrade.test.ts
-org-kpi-ai-schema-encoding.test.ts
-org-kpi-delete.test.ts
-org-kpi-department-move.test.ts
-org-kpi-selection-latency.test.ts
-org-kpi-structure-ui.test.ts
-org-kpi-team-ai-empty-state.test.ts
-org-kpi-team-ai-fallback.test.ts
-personal-kpi-policy-category-at-create.test.ts
-personal-kpi-target-values.test.ts
-semantic-metric-labels.test.ts
+evaluation-2026-grade-policy-readiness.test.ts # 코드이탈-의심
+evaluation-performance-briefing.test.ts # 코드이탈-의심
+evaluation-preview-2026-api.test.ts # 코드이탈-의심
+evaluation-preview-2026-mapping.test.ts # 테스트최신
+evaluation-preview-2026-readiness.test.ts # 테스트최신
+evaluation-preview-2026.test.ts # 판정불가
+feedback360-hub-route.test.ts # 미구현-기능
+kpi-ai-preview-ui.test.ts # 코드이탈-의심
+monthly-month-ux.test.ts # 코드이탈-의심
+monthly-submit-validation.test.ts # 코드이탈-의심
+org-kpi-ai-fallback-rendering.test.ts # 코드이탈-의심
+org-kpi-ai-recommendation-modal.test.ts # 코드이탈-의심
+org-kpi-ai-recommendation-upgrade.test.ts # 테스트최신-재검증
+org-kpi-ai-schema-encoding.test.ts # 코드이탈-의심
+org-kpi-delete.test.ts # 코드이탈-의심
+org-kpi-department-move.test.ts # 판정불가
+org-kpi-selection-latency.test.ts # 테스트최신
+org-kpi-structure-ui.test.ts # 코드이탈-의심
+org-kpi-team-ai-empty-state.test.ts # 테스트최신-재검증
+org-kpi-team-ai-fallback.test.ts # 코드이탈-의심
+personal-kpi-policy-category-at-create.test.ts # 코드이탈-의심
+personal-kpi-target-values.test.ts # 코드이탈-의심
+semantic-metric-labels.test.ts # 코드이탈-의심
