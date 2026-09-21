@@ -37,7 +37,7 @@ function readExemptList(): Set<string> {
     fs
       .readFileSync(exemptListPath, 'utf8')
       .split('\n')
-      .map((line) => line.trim())
+      .map((line) => line.split('#')[0].trim())
       .filter((line) => line.length > 0 && !line.startsWith('#'))
   )
 }
