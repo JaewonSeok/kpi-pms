@@ -105,6 +105,12 @@ If the team prefers Vercel:
   migrate dev`, `prisma db push`, `prisma migrate reset`을 실행하면 그대로
   운영 DB에 적용된다. 로컬 전용 `DATABASE_URL`(별도 dev/stage DB)로
   분리하는 작업이 별도로 필요하다 — 이번 문서 신설의 범위 밖.
+- **로컬/운영 DB 가드**: `db:migrate` / `db:reset` / `db:push` / `db:studio` /
+  `db:seed` 스크립트는 `scripts/db-guard.ts`를 거친다. `DATABASE_URL`
+  호스트가 로컬(`localhost` / `127.0.0.1` / `::1`)이 아니면 차단된다.
+- 운영 적용은 `db:deploy:prod`(`prisma migrate deploy`)를 쓴다.
+- ★ 가드는 `package.json`에 등록된 `pnpm db:*` 경로만 막는다. `npx prisma`를
+  직접 실행하면 가드를 거치지 않고 우회되므로 여전히 주의가 필요하다.
 - **롤백**: Prisma는 자동 롤백을 제공하지 않는다. 되돌려야 하면 역방향
   SQL을 직접 작성해 실행해야 한다. 이번 건(`actorUserId` 컬럼 추가)의
   롤백 예시:
