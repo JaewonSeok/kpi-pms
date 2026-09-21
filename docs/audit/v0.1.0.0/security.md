@@ -17,13 +17,14 @@
 
 | 판정 | 건수 |
 |---|---|
-| 적합 | 4 |
-| 부적합 | 6 |
+| 적합 | 6 |
+| 부적합 | 11 |
 | 해당없음 | 1 |
-| 미수행 | 4 |
-| 확인 불가 | 3 |
+| 미수행 | 3 |
+| 확인 불가 | 2 |
 
-**부적합 6건 중 4건은 이 릴리스에서 조치 완료**, 2건은 미조치다.
+**부적합 11건 중 7건은 이 릴리스에서 조치 완료**, 1건은 부분 완화,
+3건은 미조치다.
 
 ★ 이번 검사에서 **1회차 자가 진단이 검출하지 못한 결함 5건**이 실측으로
 드러났다. 상세는 [자가 진단 2회차](../../self-assessment-202609.md) 3절.
@@ -85,7 +86,7 @@
 
 | # | 항목 | 판정 | 근거 |
 |---|---|---|---|
-| 5-1 | #26 취약 비밀번호 정책 / #31 솔트 없는 해시 | **부적합** | `src/lib/auth.ts` 관리자 로그인이 `credentials.password === process.env.ADMIN_PASSWORD` 평문 비교. `bcryptjs` 의존성은 설치돼 있으나 **미사용** |
+| 5-1 | #26 취약 비밀번호 정책 / #31 솔트 없는 해시 | **부적합 → 조치 완료** | `src/lib/auth.ts` 관리자 로그인이 평문 비교였고 `bcryptjs` 는 설치만 되고 미사용이었다. #314 로 bcrypt 전환 + break-glass 격리. 2026-09-21 운영 실동작 검증 완료 — `AUTH_SIGNIN_SUCCEEDED` / `provider: credentials` 기록 확인 |
 | 5-2 | SAST 상시 구성 | **적합** | Semgrep OSS (`p/typescript`, `p/nodejs`). 기준선 Error 0 / Warning 2 |
 | 5-3 | SCA (CVE) 상시 구성 | **적합** | `pnpm audit`. 기준선 critical 4 / high 60 / moderate 91 / low 9 |
 | 5-4 | 시크릿 스캔 상시 구성 | **적합** | gitleaks. git 이력 기준 **0건** |
@@ -97,6 +98,16 @@
 
 ★ critical 4 / high 60 은 dev 포함 수치다. `--prod` 기준 critical 4 / high 46
 으로, **취약점의 상당수가 프로덕션 의존성 트리에 있다.**
+
+### ★ 5-1 검증 중 발견
+
+#314 이전 break-glass 는 **작동한 적이 없었다.** `ADMIN_EMAIL` 이
+`admin@rsupport.com` 을 가리켰으나 이 계정은 `employees` 에 존재하지
+않는다. 이메일이 일치해도 `findAuthEmployee` 에서 걸려 진입이
+불가능했다. 2026-09-21 검증에서 처음 드러났다.
+
+★ GWS 장애 시 대체 진입로가 없는 상태였다. 검증하지 않았다면
+장애 시점에 알게 됐을 것이다.
 
 ---
 
@@ -122,7 +133,7 @@ On-Premise 납품 계획 없음.
 |---|---|---|---|
 | 8-1 | 시크릿 관리 — `.env` 미커밋 | **적합** | `.gitignore:24` `.env*`. `.env.example` 은 플레이스홀더만 |
 | 8-2 | 시크릿 관리 — 저장 위치 통제 | **부적합 → 조치 완료** | ★★ 운영 Supabase 접속 문자열이 `~/.claude/settings.json` 의 `permissions.allow` 에 **평문 13회** 누적. 호스트·사용자·DB명 포함. 전 직원 평가 데이터 접근 가능 상태. **비밀번호 로테이션 + 평문 제거 완료** |
-| 8-3 | 서버군별 키 분리 | **부적합** | 로컬 `.env` 의 `DATABASE_URL` 이 **운영 Supabase 를 가리킨다**. `migrate reset` 한 번이면 운영 DB 가 비워진다. 미조치 |
+| 8-3 | 서버군별 키 분리 | **부적합 → 부분 완화** | 로컬 `.env` 의 `DATABASE_URL` 이 **운영 Supabase 를 가리킨다**. `migrate reset` 한 번이면 운영 DB 가 비워진다. #315 로 파괴적 prisma 명령에 로컬 DB 가드를 걸었다. `.env` 자체는 여전히 운영을 가리키므로 완전 해소가 아니다 |
 | 8-4 | Supabase RLS / Network Restrictions | **확인 불가** | `@prisma/adapter-pg` 직접 연결 구조. 대시보드 설정은 코드에서 확인 불가 |
 | 8-5 | Vercel 환경변수 Sensitive 처리 | **부적합** | `DATABASE_URL`·`OPENAI_API_KEY`·`ADMIN_PASSWORD`·`GOOGLE_CLIENT_SECRET`·`NEXTAUTH_SECRET` 5건이 Sensitive 미설정 상태로 대시보드에서 평문 열람 가능. 미조치 |
 | 8-6 | Vercel·GitHub 팀 계정 MFA | **확인 불가** | 조직 계정 설정. 저장소 조사로 판정 불가 |
@@ -147,7 +158,7 @@ On-Premise 납품 계획 없음.
 |---|---|---|---|---|
 | 4-1 | MFA — GWS 위임 증적 확보 | 상 | 재원 + 정보보안팀 | 2026-10 |
 | 4-2 | 로그인 실패횟수 제한 구현 | 상 | 재원 | 2026-10 |
-| 5-1 | 관리자 비밀번호 bcrypt 전환 + break-glass 격리 | — | 재원 | 2026-10 |
+| 5-1 | 관리자 비밀번호 bcrypt 전환 + break-glass 격리 | — | 재원 | **완료 (#314)** |
 | 8-3 | 로컬/운영 DB 접속 분리 | — | 재원 | 2026-10 |
 | 8-5 | Vercel 환경변수 5건 Sensitive 전환 | — | 재원 | 2026-10 |
 | 8-2 | AI 도구 설정 시크릿 누적 구조 재발 방지 | — | 재원 | 미정 |
