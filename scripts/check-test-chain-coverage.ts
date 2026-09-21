@@ -1,54 +1,22 @@
-import fs from 'node:fs'
 import path from 'node:path'
+import {
+  collectTestFiles,
+  collectChainReferencedFiles,
+  readExemptList,
+  computeUnapproved,
+} from './lib/test-chain-coverage'
 
 const repoRoot = path.resolve(__dirname, '..')
 const testsDir = path.join(repoRoot, 'tests')
 const packageJsonPath = path.join(repoRoot, 'package.json')
 const exemptListPath = path.join(testsDir, '.chain-exempt.txt')
 
-function collectTestFiles(): string[] {
-  return fs
-    .readdirSync(testsDir)
-    .filter((name) => name.endsWith('.test.ts'))
-    .sort()
-}
-
-function collectChainReferencedFiles(): Set<string> {
-  const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')) as {
-    scripts: Record<string, string>
-  }
-  const referenced = new Set<string>()
-  const pattern = /tests\/([A-Za-z0-9._-]+\.test\.ts)/g
-
-  for (const [key, command] of Object.entries(pkg.scripts)) {
-    if (!key.startsWith('test:')) continue
-    let match: RegExpExecArray | null
-    while ((match = pattern.exec(command))) {
-      referenced.add(match[1])
-    }
-  }
-
-  return referenced
-}
-
-function readExemptList(): Set<string> {
-  if (!fs.existsSync(exemptListPath)) return new Set()
-  return new Set(
-    fs
-      .readFileSync(exemptListPath, 'utf8')
-      .split('\n')
-      .map((line) => line.split('#')[0].trim())
-      .filter((line) => line.length > 0 && !line.startsWith('#'))
-  )
-}
-
 function main() {
-  const allTestFiles = collectTestFiles()
-  const referenced = collectChainReferencedFiles()
-  const exempt = readExemptList()
+  const allTestFiles = collectTestFiles(testsDir)
+  const referenced = collectChainReferencedFiles(packageJsonPath)
+  const exempt = readExemptList(exemptListPath)
 
-  const orphans = allTestFiles.filter((file) => !referenced.has(file))
-  const unapproved = orphans.filter((file) => !exempt.has(file))
+  const { orphans, unapproved } = computeUnapproved(allTestFiles, referenced, exempt)
 
   console.log(`tests/ 전체 *.test.ts: ${allTestFiles.length}개`)
   console.log(`package.json test:* 체인이 실행하는 파일: ${referenced.size}개`)
