@@ -1300,6 +1300,70 @@ run('division head slot is filled from job title when the leader role is admin',
   assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
 })
 
+run('division head falls back to the ceo when the ceo is in a sibling department', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const assignments = buildAssignments(
+    [
+      {
+        id: 'dept-root',
+        deptName: '전사',
+        parentDeptId: null,
+        leaderEmployeeId: null,
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-div',
+        deptName: '본부',
+        parentDeptId: 'dept-root',
+        leaderEmployeeId: null,
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-ceo',
+        deptName: '대표직속',
+        parentDeptId: 'dept-root',
+        leaderEmployeeId: null,
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+    ],
+    [
+      {
+        id: 'ceo',
+        empId: 'E-9700',
+        empName: '대표',
+        deptId: 'dept-ceo',
+        role: 'ROLE_CEO',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'div-head',
+        empId: 'E-9701',
+        empName: '본부장',
+        deptId: 'dept-div',
+        role: 'ROLE_DIV_HEAD',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+    ]
+  )
+
+  assert.equal(assignments.get('div-head')?.teamLeaderId, null)
+  assert.equal(assignments.get('div-head')?.sectionChiefId, null)
+  assert.equal(assignments.get('div-head')?.divisionHeadId, 'ceo')
+  // rank 게이트와 self 삼항 둘 다 무너져야 FAIL 한다. 단일 변이로는 죽지 않는다.
+  assert.equal(assignments.get('ceo')?.divisionHeadId, null)
+  assert.equal(assignments.get('ceo')?.teamLeaderId, null)
+})
+
 run('org chart builder returns nested hierarchy for manager relationships', () => {
   const chart = buildEmployeeOrgChart([
     {
