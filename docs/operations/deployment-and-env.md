@@ -2,9 +2,12 @@
 
 ## Environment strategy
 
-- `dev`: local developer environment, relaxed secrets, sample data allowed
-- `stage`: production-like validation environment, masked data only, release candidate validation
-- `prod`: customer-facing environment, strict secret rotation, audited change control
+- `development`: local and Vercel CLI, relaxed secrets, sample data allowed
+- `preview`: all non-main branches, production-equivalent build, Vercel
+  Authentication required — maps to the standard's 베타 tier
+- `production`: customer-facing `main` deployment, audited change control
+
+See [server-tiers.md](./server-tiers.md) for the 4-tier mapping.
 
 ## Env matrix
 
