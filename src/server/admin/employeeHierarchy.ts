@@ -144,6 +144,12 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
     return null
   }
 
+  // 대표직속은 형제 본부라 조상 체인 밖이다. 조직 계층에서 본부장을 못 찾으면
+  // 전사 유일 ROLE_CEO 로 폴백한다.
+  // 대표 자신은 shouldAssignDivisionHead(ROLE_CEO) = false 로 이미 잘린다.
+  // 아래 self 검사는 그 게이트가 넓어질 경우를 대비한 2차 방어이며 현재는 도달하지 않는다.
+  const companyWideCeoId = activeEmployees.find((employee) => employee.role === 'ROLE_CEO')?.id ?? null
+
   return new Map(
     employees.map((employee) => {
       const nextAssignment: Assignment = {
@@ -154,7 +160,8 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
           ? findLeaderInHierarchy(employee.deptId, 'sectionChiefIds', employee.id)
           : null,
         divisionHeadId: shouldAssignDivisionHead(employee.role)
-          ? findLeaderInHierarchy(employee.deptId, 'divisionHeadIds', employee.id)
+          ? findLeaderInHierarchy(employee.deptId, 'divisionHeadIds', employee.id) ??
+            (companyWideCeoId !== employee.id ? companyWideCeoId : null)
           : null,
       }
 
