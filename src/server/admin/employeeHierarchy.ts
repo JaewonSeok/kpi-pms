@@ -35,7 +35,11 @@ type HierarchyEmployee = {
   teamLeaderId: string | null
   sectionChiefId: string | null
   divisionHeadId: string | null
-  // role 이 ROLE_ADMIN 일 때만 쓰인다. 로더는 반드시 select 할 것.
+  // role 이 ROLE_ADMIN 일 때만 쓰인다. 로더는 반드시 select 할 것 — 빠뜨리면
+  // ROLE_ADMIN 리더가 조용히 사라진다(#286). buildAssignments 입력을 만드는
+  // 로더 전수: 이 파일의 loadHierarchyBaseData·previewEmployeeLeadershipLinks,
+  // evaluation-performance-assignments.ts loadHierarchyInputs,
+  // evaluation-2026-evaluator-routing-readiness.ts getEvaluation2026EvaluatorRoutingReadiness.
   jobTitle?: string | null
 }
 

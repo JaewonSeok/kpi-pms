@@ -44,6 +44,12 @@ export type Evaluation2026EvaluatorRoutingEmployeeInput = {
   divisionHeadId: string | null
   joinDate: Date
   createdAt: Date
+  // buildAssignments() 의 ROLE_ADMIN 분류에 쓰인다(#286). 로더가 select 를
+  // 빠뜨리면 ROLE_ADMIN 리더가 조용히 사라진다. buildAssignments 입력을 만드는
+  // 로더 전수: employeeHierarchy.ts loadHierarchyBaseData·previewEmployeeLeadershipLinks,
+  // evaluation-performance-assignments.ts loadHierarchyInputs, 이 파일의
+  // getEvaluation2026EvaluatorRoutingReadiness.
+  jobTitle?: string | null
 }
 
 export type Evaluation2026EvaluatorRoutingAssignmentInput = {
@@ -472,6 +478,7 @@ export async function getEvaluation2026EvaluatorRoutingReadiness(params: {
         divisionHeadId: true,
         joinDate: true,
         createdAt: true,
+        jobTitle: true,
       },
       orderBy: [{ joinDate: 'asc' }, { createdAt: 'asc' }],
     }),
