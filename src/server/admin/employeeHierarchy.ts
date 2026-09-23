@@ -454,17 +454,44 @@ export async function recalculateEmployeeLeadershipLinks() {
     .filter((value): value is { id: string; next: Assignment } => value !== null)
 
   if (targets.length > 0) {
+    // 215건 개별 update 가 P2028(5000ms 초과)로 실패했다. 2026-09-23.
+    const groups = groupAssignmentUpdates(targets)
     await prisma.$transaction(
-      targets.map((target) =>
-        prisma.employee.update({
-          where: { id: target.id },
-          data: target.next,
-        })
-      )
+      async (tx) => {
+        for (const group of groups) {
+          await tx.employee.updateMany({
+            where: { id: { in: group.ids } },
+            data: group.next,
+          })
+        }
+      },
+      { timeout: 30000, maxWait: 10000 }
     )
   }
 
   return {
     updatedCount: targets.length,
   }
+}
+
+export function groupAssignmentUpdates(
+  targets: Array<{ id: string; next: Assignment }>
+): Array<{ ids: string[]; next: Assignment }> {
+  const groups = new Map<string, { ids: string[]; next: Assignment }>()
+
+  for (const target of targets) {
+    const key = JSON.stringify([
+      target.next.teamLeaderId,
+      target.next.sectionChiefId,
+      target.next.divisionHeadId,
+    ])
+    const existing = groups.get(key)
+    if (existing) {
+      existing.ids.push(target.id)
+    } else {
+      groups.set(key, { ids: [target.id], next: target.next })
+    }
+  }
+
+  return Array.from(groups.values())
 }

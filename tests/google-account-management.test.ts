@@ -34,7 +34,7 @@ const {
   validateEmployeeUploadRows,
 } = require('../src/server/admin/google-account-management') as typeof import('../src/server/admin/google-account-management')
 
-const { buildAssignments } = require('../src/server/admin/employeeHierarchy') as typeof import('../src/server/admin/employeeHierarchy')
+const { buildAssignments, groupAssignmentUpdates } = require('../src/server/admin/employeeHierarchy') as typeof import('../src/server/admin/employeeHierarchy')
 
 function run(name: string, fn: () => void) {
   try {
@@ -1434,6 +1434,55 @@ run('section chief leader of own department takes the section chief slot', () =>
   assert.equal(assignments.get('member')?.teamLeaderId, null)
   assert.equal(assignments.get('member')?.sectionChiefId, 'sec-chief')
   assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
+})
+
+run('group assignment updates merges targets that share the same three slots', () => {
+  const targets = [
+    { id: 't1', next: { teamLeaderId: 'tl-a', sectionChiefId: 'sc-a', divisionHeadId: 'dh-a' } },
+    { id: 't2', next: { teamLeaderId: 'tl-a', sectionChiefId: 'sc-a', divisionHeadId: 'dh-a' } },
+    { id: 't3', next: { teamLeaderId: 'tl-a', sectionChiefId: 'sc-a', divisionHeadId: 'dh-a' } },
+    { id: 't4', next: { teamLeaderId: 'tl-b', sectionChiefId: 'sc-b', divisionHeadId: 'dh-b' } },
+    { id: 't5', next: { teamLeaderId: 'tl-b', sectionChiefId: 'sc-b', divisionHeadId: 'dh-b' } },
+  ]
+
+  const groups = groupAssignmentUpdates(targets)
+
+  assert.equal(groups.length, 2)
+  const groupA = groups.find((group) => group.next.teamLeaderId === 'tl-a')
+  const groupB = groups.find((group) => group.next.teamLeaderId === 'tl-b')
+  assert.equal(groupA?.ids.length, 3)
+  assert.equal(groupB?.ids.length, 2)
+  assert.deepEqual([...(groupA?.ids ?? [])].sort(), ['t1', 't2', 't3'])
+  assert.deepEqual([...(groupB?.ids ?? [])].sort(), ['t4', 't5'])
+})
+
+run('group assignment updates keeps null slots distinct from ids', () => {
+  const targets = [
+    { id: 'a', next: { teamLeaderId: null, sectionChiefId: null, divisionHeadId: 'div-a' } },
+    { id: 'b', next: { teamLeaderId: null, sectionChiefId: 'sec-a', divisionHeadId: 'div-a' } },
+  ]
+
+  const groups = groupAssignmentUpdates(targets)
+
+  assert.equal(groups.length, 2)
+})
+
+run('group assignment updates preserves every target id exactly once', () => {
+  const targets = Array.from({ length: 10 }, (_, index) => ({
+    id: `t${index}`,
+    next: {
+      teamLeaderId: index % 3 === 0 ? 'tl-a' : 'tl-b',
+      sectionChiefId: index % 2 === 0 ? 'sc-a' : null,
+      divisionHeadId: 'dh-a',
+    },
+  }))
+
+  const groups = groupAssignmentUpdates(targets)
+  const allIds = groups.flatMap((group) => group.ids)
+
+  assert.equal(allIds.length, 10)
+  assert.equal(new Set(allIds).size, 10)
+  assert.deepEqual([...allIds].sort(), targets.map((target) => target.id).sort())
 })
 
 run('org chart builder returns nested hierarchy for manager relationships', () => {
