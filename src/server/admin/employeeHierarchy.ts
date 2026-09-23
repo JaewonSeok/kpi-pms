@@ -232,12 +232,14 @@ export function buildAssignments(
       }
 
       const nextAssignment: Assignment = {
-        teamLeaderId: ownDepartmentLeaderId,
+        teamLeaderId: null,
         sectionChiefId: null,
         divisionHeadId: null,
       }
 
-      for (const leaderId of leaderChain) {
+      // 자기 부서의 장을 앞에 둬 같은 역할이면 직속이 우선한다. 슬롯은 역할이 정한다.
+      for (const leaderId of [ownDepartmentLeaderId, ...leaderChain]) {
+        if (!leaderId) continue
         const slot = LEADER_ROLE_SLOT[employeeRoleById.get(leaderId) as EmployeeRole]
         if (slot && nextAssignment[slot] === null) {
           nextAssignment[slot] = leaderId

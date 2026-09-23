@@ -948,7 +948,7 @@ run('role based assignment leaves section chief empty when none exists', () => {
   assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
 })
 
-run('section chief slot is cleared when it duplicates the team leader', () => {
+run('section chief leader of own department does not occupy the team slot', () => {
   const now = new Date('2026-01-01T00:00:00Z')
   const assignments = buildAssignments(
     [
@@ -1017,12 +1017,13 @@ run('section chief slot is cleared when it duplicates the team leader', () => {
     ]
   )
 
-  assert.equal(assignments.get('member')?.teamLeaderId, 'sec-chief')
-  assert.equal(assignments.get('member')?.sectionChiefId, null)
+  // 역할별 배치로 team/section 중복이 구조적으로 생기지 않는다
+  assert.equal(assignments.get('member')?.teamLeaderId, null)
+  assert.equal(assignments.get('member')?.sectionChiefId, 'sec-chief')
   assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
 })
 
-run('division head slot is kept even when it duplicates the team leader', () => {
+run('division head leader of own department takes only the division head slot', () => {
   const now = new Date('2026-01-01T00:00:00Z')
   const assignments = buildAssignments(
     [
@@ -1071,7 +1072,11 @@ run('division head slot is kept even when it duplicates the team leader', () => 
     ]
   )
 
-  assert.equal(assignments.get('member')?.teamLeaderId, 'div-head')
+  // 자기 부서의 장이 본부장이면 역할 슬롯 하나만 차지한다. SELF → FINAL → CEO_ADJUST 3단계.
+  // 영업운영기획팀(남양원) 1명이 production 의 이 형태다.
+  // 이 블록은 #281 의 'division 중복 유지' 계약이었다. 역할별 배치로 team/division
+  // 중복이 안 생기면서 전제가 사라져 재작성했다. 계약 폐기가 아니라 전제 소멸이다.
+  assert.equal(assignments.get('member')?.teamLeaderId, null)
   assert.equal(assignments.get('member')?.sectionChiefId, null)
   assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
 })
@@ -1362,6 +1367,73 @@ run('division head falls back to the ceo when the ceo is in a sibling department
   // rank 게이트와 self 삼항 둘 다 무너져야 FAIL 한다. 단일 변이로는 죽지 않는다.
   assert.equal(assignments.get('ceo')?.divisionHeadId, null)
   assert.equal(assignments.get('ceo')?.teamLeaderId, null)
+})
+
+run('section chief leader of own department takes the section chief slot', () => {
+  const now = new Date('2026-01-01T00:00:00Z')
+  const assignments = buildAssignments(
+    [
+      {
+        id: 'dept-div',
+        deptName: '본부',
+        parentDeptId: null,
+        leaderEmployeeId: 'div-head',
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+      {
+        id: 'dept-team',
+        deptName: '팀',
+        parentDeptId: 'dept-div',
+        leaderEmployeeId: 'sec-chief',
+        excludeLeaderFromEvaluatorAutoAssign: false,
+      },
+    ],
+    [
+      {
+        id: 'div-head',
+        empId: 'E-9800',
+        empName: '본부장',
+        deptId: 'dept-div',
+        role: 'ROLE_DIV_HEAD',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'sec-chief',
+        empId: 'E-9801',
+        empName: '실장',
+        deptId: 'dept-team',
+        role: 'ROLE_SECTION_CHIEF',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+      {
+        id: 'member',
+        empId: 'E-9802',
+        empName: '팀원',
+        deptId: 'dept-team',
+        role: 'ROLE_MEMBER',
+        status: 'ACTIVE',
+        joinDate: now,
+        createdAt: now,
+        teamLeaderId: null,
+        sectionChiefId: null,
+        divisionHeadId: null,
+      },
+    ]
+  )
+
+  assert.equal(assignments.get('member')?.teamLeaderId, null)
+  assert.equal(assignments.get('member')?.sectionChiefId, 'sec-chief')
+  assert.equal(assignments.get('member')?.divisionHeadId, 'div-head')
 })
 
 run('org chart builder returns nested hierarchy for manager relationships', () => {
