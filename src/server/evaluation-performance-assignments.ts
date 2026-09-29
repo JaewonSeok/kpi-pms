@@ -8,6 +8,7 @@ import {
   type SystemRole,
 } from '@prisma/client'
 import { EVAL_STAGE_LABELS, POSITION_LABELS, AppError } from '@/lib/utils'
+import { resolveEmployeePositionLabel } from '@/lib/employee-position-label'
 import { prisma } from '@/lib/prisma'
 import { buildAssignments } from '@/server/admin/employeeHierarchy'
 import {
@@ -63,6 +64,7 @@ type StageAssigneeProfile = {
   role: SystemRole
   position: Position
   departmentName: string
+  jobTitle: string | null
 }
 
 type RuntimeTargetProfile = {
@@ -226,13 +228,22 @@ async function runAssignmentTransaction<T>(
   return fn(db)
 }
 
-function getStageRoleLabel(stage: EvalStage, evaluatorRole: SystemRole | null) {
+// 순번은 단계가 정한다. 빈 단계는 칸을 건너뛰되 뒤 번호는 유지한다(§83).
+const STAGE_REVIEW_ORDER: Record<EvalStage, number> = {
+  SELF: 0, FIRST: 1, SECOND: 2, FINAL: 3, CEO_ADJUST: 4,
+}
+
+function getStageRoleLabel(stage: EvalStage, evaluatorRole: SystemRole | null, jobTitle: string | null) {
   if (stage === 'SELF') {
     return '자기평가'
   }
 
-  if (stage === 'CEO_ADJUST' || evaluatorRole === 'ROLE_CEO') {
+  if (stage === 'CEO_ADJUST') {
     return '대표이사 확정'
+  }
+
+  if (evaluatorRole === 'ROLE_CEO') {
+    return stage === 'FINAL' ? '본부장평가(대표 대행)' : '대표이사 확정'
   }
 
   switch (evaluatorRole) {
@@ -243,7 +254,17 @@ function getStageRoleLabel(stage: EvalStage, evaluatorRole: SystemRole | null) {
     case 'ROLE_DIV_HEAD':
       return '본부장평가'
     case 'ROLE_ADMIN':
-      return stage === 'FINAL' ? '최종 검토' : '관리자 검토'
+      switch (jobTitle) {
+        case '팀장':
+          return '팀장평가'
+        case '실장':
+        case '부문장':
+          return '실장평가'
+        case '본부장':
+          return '본부장평가'
+        default:
+          return stage === 'FINAL' ? '최종 검토' : '관리자 검토'
+      }
     default:
       break
   }
@@ -258,8 +279,13 @@ function getStageRoleLabel(stage: EvalStage, evaluatorRole: SystemRole | null) {
   }
 }
 
-function buildStageDisplayLabel(stage: EvalStage, reviewOrder: number, evaluatorRole: SystemRole | null) {
-  const roleLabel = getStageRoleLabel(stage, evaluatorRole)
+function buildStageDisplayLabel(
+  stage: EvalStage,
+  reviewOrder: number,
+  evaluatorRole: SystemRole | null,
+  jobTitle: string | null
+) {
+  const roleLabel = getStageRoleLabel(stage, evaluatorRole, jobTitle)
   return stage === 'SELF' ? roleLabel : `${reviewOrder}차 ${roleLabel}`
 }
 
@@ -318,6 +344,7 @@ async function loadStageAssigneeProfiles(
       empName: true,
       role: true,
       position: true,
+      jobTitle: true,
       department: {
         select: {
           deptName: true,
@@ -335,6 +362,7 @@ async function loadStageAssigneeProfiles(
         role: employee.role,
         position: employee.position,
         departmentName: employee.department.deptName,
+        jobTitle: employee.jobTitle,
       } satisfies StageAssigneeProfile,
     ])
   )
@@ -363,6 +391,7 @@ async function loadRuntimeStageAssignments(params: {
           role: true,
           position: true,
           status: true,
+          jobTitle: true,
           department: {
             select: {
               deptName: true,
@@ -405,6 +434,7 @@ async function loadRuntimeStageAssignments(params: {
         empName: true,
         role: true,
         position: true,
+        jobTitle: true,
         department: {
           select: {
             deptName: true,
@@ -420,6 +450,7 @@ async function loadRuntimeStageAssignments(params: {
         role: ceo.role,
         position: ceo.position,
         departmentName: ceo.department.deptName,
+        jobTitle: ceo.jobTitle,
       }
     }
   }
@@ -447,6 +478,7 @@ async function loadRuntimeStageAssignments(params: {
           role: persisted.evaluator.role,
           position: persisted.evaluator.position,
           departmentName: persisted.evaluator.department.deptName,
+          jobTitle: persisted.evaluator.jobTitle,
         } satisfies StageAssigneeProfile,
       } satisfies RuntimeStageAssignment
     }
@@ -502,19 +534,27 @@ export async function getEvaluationStageChain(params: {
       return false
     }
 
-    const reviewOrder = activeStages.filter((entry) => entry.stage !== 'SELF').length + 1
-    const stageRoleLabel = getStageRoleLabel(assignment.stage, assignment.evaluator.role)
+    const reviewOrder = STAGE_REVIEW_ORDER[assignment.stage]
+    const stageRoleLabel = getStageRoleLabel(assignment.stage, assignment.evaluator.role, assignment.evaluator.jobTitle)
 
     activeStages.push({
       stage: assignment.stage,
       reviewOrder,
       stageRoleLabel,
-      stageLabel: buildStageDisplayLabel(assignment.stage, reviewOrder, assignment.evaluator.role),
+      stageLabel: buildStageDisplayLabel(
+        assignment.stage,
+        reviewOrder,
+        assignment.evaluator.role,
+        assignment.evaluator.jobTitle
+      ),
       evaluatorId: assignment.evaluator.id,
       evaluatorName: assignment.evaluator.empName,
       evaluatorRole: assignment.evaluator.role,
-      evaluatorPosition:
-        POSITION_LABELS[assignment.evaluator.position] ?? assignment.evaluator.position,
+      evaluatorPosition: resolveEmployeePositionLabel({
+        role: assignment.evaluator.role,
+        position: assignment.evaluator.position,
+        jobTitle: assignment.evaluator.jobTitle,
+      }),
       evaluatorDepartment: assignment.evaluator.departmentName,
     })
 

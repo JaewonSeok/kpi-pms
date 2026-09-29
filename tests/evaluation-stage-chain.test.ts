@@ -40,6 +40,7 @@ function createStageChainDb(params?: {
             params?.sectionChiefId === undefined ? 'emp-section-chief' : params.sectionChiefId,
           divisionHeadId:
             params?.divisionHeadId === undefined ? 'emp-div-head' : params.divisionHeadId,
+          jobTitle: null,
           department: {
             deptName: 'Sales',
           },
@@ -53,6 +54,7 @@ function createStageChainDb(params?: {
             empName: 'Leader Reviewer',
             role: 'ROLE_TEAM_LEADER',
             position: 'TEAM_LEADER',
+            jobTitle: '팀장',
             department: { deptName: 'Sales' },
             status: 'ACTIVE',
           },
@@ -61,6 +63,7 @@ function createStageChainDb(params?: {
             empName: 'Section Reviewer',
             role: 'ROLE_SECTION_CHIEF',
             position: 'DIRECTOR',
+            jobTitle: '실장',
             department: { deptName: 'Section Office' },
             status: 'ACTIVE',
           },
@@ -69,6 +72,7 @@ function createStageChainDb(params?: {
             empName: 'Division Reviewer',
             role: 'ROLE_DIV_HEAD',
             position: 'DIRECTOR',
+            jobTitle: '본부장',
             department: { deptName: 'Division HQ' },
             status: 'ACTIVE',
           },
@@ -77,7 +81,26 @@ function createStageChainDb(params?: {
             empName: 'CEO Reviewer',
             role: 'ROLE_CEO',
             position: 'CEO',
+            jobTitle: '대표이사',
             department: { deptName: 'CEO Office' },
+            status: 'ACTIVE',
+          },
+          {
+            id: 'emp-admin-leader',
+            empName: 'Admin Leader Reviewer',
+            role: 'ROLE_ADMIN',
+            position: 'MEMBER',
+            jobTitle: '팀장',
+            department: { deptName: 'Sales' },
+            status: 'ACTIVE',
+          },
+          {
+            id: 'emp-admin-plain',
+            empName: 'Admin Plain Reviewer',
+            role: 'ROLE_ADMIN',
+            position: 'MEMBER',
+            jobTitle: null,
+            department: { deptName: 'Sales' },
             status: 'ACTIVE',
           },
         ]
@@ -119,6 +142,7 @@ async function main() {
     )
     assert.equal(chain.find((entry) => entry.stage === 'SECOND')?.evaluatorName, 'Section Reviewer')
     assert.equal(chain.find((entry) => entry.stage === 'FINAL')?.evaluatorName, 'Division Reviewer')
+    assert.deepEqual(chain.map((entry) => entry.reviewOrder), [0, 1, 2, 3, 4])
   })
 
   await run('stage chain skips section chief and falls back to division head when section chief is absent', async () => {
@@ -132,6 +156,7 @@ async function main() {
     assert.deepEqual(chain.map((entry) => entry.stage), ['SELF', 'FIRST', 'FINAL', 'CEO_ADJUST'])
     assert.equal(chain.some((entry) => entry.stage === 'SECOND'), false)
     assert.equal(chain.find((entry) => entry.stage === 'FINAL')?.evaluatorName, 'Division Reviewer')
+    assert.deepEqual(chain.map((entry) => entry.reviewOrder), [0, 1, 3, 4])
   })
 
   await run('stage chain respects manual stage assignments even when hierarchy does not provide section chief', async () => {
@@ -226,6 +251,46 @@ async function main() {
     })
 
     assert.deepEqual(chain.map((entry) => entry.stage), ['SELF'])
+  })
+
+  await run('final stage shows ceo as acting division head', async () => {
+    const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
+    const chain = await getEvaluationStageChain({
+      db: createStageChainDb({ divisionHeadId: 'emp-ceo' }),
+      evalCycleId: 'cycle-1',
+      targetId: 'emp-target',
+    })
+
+    const finalLabel = chain.find((entry) => entry.stage === 'FINAL')?.stageLabel
+    const ceoAdjustLabel = chain.find((entry) => entry.stage === 'CEO_ADJUST')?.stageLabel
+
+    assert.equal(finalLabel, '3차 본부장평가(대표 대행)')
+    assert.equal(ceoAdjustLabel, '4차 대표이사 확정')
+    assert.notEqual(finalLabel, ceoAdjustLabel)
+  })
+
+  await run('admin role leader is labeled by job title', async () => {
+    const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
+    const chain = await getEvaluationStageChain({
+      db: createStageChainDb({ teamLeaderId: 'emp-admin-leader' }),
+      evalCycleId: 'cycle-1',
+      targetId: 'emp-target',
+    })
+
+    const firstStage = chain.find((entry) => entry.stage === 'FIRST')
+    assert.equal(firstStage?.stageRoleLabel, '팀장평가')
+    assert.equal(firstStage?.evaluatorPosition, '팀장')
+  })
+
+  await run('admin role without job title keeps the generic label', async () => {
+    const { getEvaluationStageChain } = await import('../src/server/evaluation-performance-assignments')
+    const chain = await getEvaluationStageChain({
+      db: createStageChainDb({ teamLeaderId: 'emp-admin-plain' }),
+      evalCycleId: 'cycle-1',
+      targetId: 'emp-target',
+    })
+
+    assert.equal(chain.find((entry) => entry.stage === 'FIRST')?.stageRoleLabel, '관리자 검토')
   })
 
   console.log('Evaluation stage chain tests completed')
