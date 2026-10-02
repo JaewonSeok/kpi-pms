@@ -168,7 +168,12 @@ run('evaluation workbench exposes integrated guide and guide audit route for eva
   assert.equal(file.includes("props.currentUser?.role === 'ROLE_ADMIN' && props.adminSummary ? ("), true)
   assert.equal(guideRoute.includes('EVALUATION_GUIDE_VIEWED'), true)
   assert.equal(guideRoute.includes('EVALUATION_GUIDE_CONFIRMED'), true)
-  assert.equal(guideRoute.includes("evaluation.evaluatorId === session.user.id || session.user.role === 'ROLE_ADMIN'"), true)
+  assert.equal(
+    guideRoute.includes(
+      "(session.user.role === 'ROLE_ADMIN' && evaluation.targetId !== session.user.id)"
+    ),
+    true
+  )
 })
 
 run('evaluation workbench quality warnings guide without blocking the existing save flow', () => {

@@ -23,7 +23,7 @@
     "test:google-account-admin": "ts-node -P tsconfig.seed.json tests/google-account-management.test.ts && ts-node -P tsconfig.seed.json tests/department-delete.test.ts && ts-node -P tsconfig.seed.json tests/employee-force-delete.test.ts",
     "test:navigation": "ts-node -P tsconfig.seed.json tests/navigation-integrity.test.ts",
     "test:dashboard": "ts-node -P tsconfig.seed.json tests/dashboard-page.test.ts",
-    "test:interactions": "ts-node -P tsconfig.seed.json tests/interaction-integrity.test.ts && ts-node -P tsconfig.seed.json tests/personal-kpi-workspace.test.ts && ts-node -P tsconfig.seed.json tests/monthly-kpi-workspace.test.ts && ts-node -P tsconfig.seed.json tests/evaluation-results-workspace.test.ts && ts-node -P tsconfig.seed.json tests/evaluation-appeal-workspace.test.ts",
+    "test:interactions": "ts-node -P tsconfig.seed.json tests/interaction-integrity.test.ts && ts-node -P tsconfig.seed.json tests/personal-kpi-workspace.test.ts && ts-node -P tsconfig.seed.json tests/monthly-kpi-workspace.test.ts && ts-node -P tsconfig.seed.json tests/evaluation-results-workspace.test.ts && ts-node -P tsconfig.seed.json tests/evaluation-appeal-workspace.test.ts && ts-node -P tsconfig.seed.json tests/evaluation-self-reference-guard.test.ts",
     "test:performance-calendar": "ts-node -P tsconfig.seed.json tests/performance-calendar.test.ts",
     "test:performance-design": "ts-node -P tsconfig.seed.json tests/performance-design.test.ts",
     "test:leadership-insight": "ts-node -P tsconfig.seed.json tests/leadership-insight-page.test.ts",
