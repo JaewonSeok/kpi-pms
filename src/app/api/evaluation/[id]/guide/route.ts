@@ -26,6 +26,7 @@ export async function PATCH(
       select: {
         id: true,
         evaluatorId: true,
+        targetId: true,
       },
     })
 
@@ -33,7 +34,9 @@ export async function PATCH(
       throw new AppError(404, 'NOT_FOUND', '평가를 찾을 수 없습니다.')
     }
 
-    const canAccess = evaluation.evaluatorId === session.user.id || session.user.role === 'ROLE_ADMIN'
+    const canAccess =
+      evaluation.evaluatorId === session.user.id ||
+      (session.user.role === 'ROLE_ADMIN' && evaluation.targetId !== session.user.id)
     if (!canAccess) {
       throw new AppError(403, 'FORBIDDEN', '평가 가이드를 확인할 권한이 없습니다.')
     }
