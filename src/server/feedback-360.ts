@@ -859,7 +859,7 @@ function describeReminderStatus(
   return { key: 'RESULT_READY', label: '공유 대기', tone: 'blue' }
 }
 
-function buildGroupedResponses(params: {
+export function buildGroupedResponses(params: {
   feedbacks: Array<{
     id: string
     relationship: string
