@@ -57,7 +57,10 @@ export async function POST(request: Request) {
       throw new AppError(400, 'VALIDATION_ERROR', validated.error.issues[0].message)
     }
 
-    const { roundId, receiverId, relationship, overallComment, responses } = validated.data
+    // relationship은 body에서 받지 않는다. 발행(publish / ANYTIME 생성 / 온보딩 생성) 시점에
+    // MultiFeedback 행에 확정된 값만 사용한다. body 값을 신뢰하면 응답자가 자신의 관계를
+    // 바꿔 익명성·결과 노출 범위(feedback-360.ts의 visibilitySettings 분기)를 선택할 수 있다.
+    const { roundId, receiverId, overallComment, responses } = validated.data
 
     const round = await prisma.multiFeedbackRound.findUnique({
       where: { id: roundId },
@@ -98,6 +101,9 @@ export async function POST(request: Request) {
       targetResourceId: existingFeedback.id,
       confirmationText: '제출',
     })
+
+    // 발행 시 확정된 관계
+    const relationship = existingFeedback.relationship
 
     if (relationship === 'SELF' && receiverId !== session.user.id) {
       throw new AppError(400, 'INVALID_SELF_FEEDBACK', 'SELF 관계는 자기 자신에게만 제출할 수 있습니다.')
@@ -199,31 +205,40 @@ export async function POST(request: Request) {
       }
     }
 
-    const feedback = await prisma.multiFeedback.update({
-      where: { id: existingFeedback.id },
-      data: {
-        relationship,
-        overallComment,
-        status: 'SUBMITTED',
-        submittedAt: new Date(),
-      },
-    })
-
-    for (const response of responses) {
-      await prisma.feedbackResponse.upsert({
-        where: { feedbackId_questionId: { feedbackId: feedback.id, questionId: response.questionId } },
-        create: {
-          feedbackId: feedback.id,
-          questionId: response.questionId,
-          ratingValue: response.ratingValue,
-          textValue: response.textValue,
-        },
-        update: {
-          ratingValue: response.ratingValue,
-          textValue: response.textValue,
+    // 상태 변경과 응답 저장을 한 트랜잭션으로 묶는다. 분리돼 있으면 중간 실패 시
+    // status만 SUBMITTED이고 응답이 없는 행이 남는다.
+    // 재제출은 허용하되 최초 제출시각(submittedAt)은 보존한다 — 마감 판정 기준이기 때문.
+    await prisma.$transaction(async (tx) => {
+      await tx.multiFeedback.update({
+        where: { id: existingFeedback.id },
+        data: {
+          overallComment,
+          status: 'SUBMITTED',
+          ...(existingFeedback.submittedAt ? {} : { submittedAt: new Date() }),
         },
       })
-    }
+
+      for (const response of responses) {
+        await tx.feedbackResponse.upsert({
+          where: {
+            feedbackId_questionId: {
+              feedbackId: existingFeedback.id,
+              questionId: response.questionId,
+            },
+          },
+          create: {
+            feedbackId: existingFeedback.id,
+            questionId: response.questionId,
+            ratingValue: response.ratingValue,
+            textValue: response.textValue,
+          },
+          update: {
+            ratingValue: response.ratingValue,
+            textValue: response.textValue,
+          },
+        })
+      }
+    })
 
     if (round.roundType === 'ANYTIME') {
       const remainingOpenFeedbacks = await prisma.multiFeedback.count({
