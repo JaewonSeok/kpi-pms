@@ -203,11 +203,24 @@ export async function POST(
     }
 
     if (action === 'reject') {
+      // 이미 발행(PUBLISHED)된 매핑은 반려 대상에서 제외한다.
+      // 반려만으로 되돌리면 publish 때 만들어진 MultiFeedback 행이 그대로 남아
+      // '매핑은 반려됐는데 응답은 제출 가능한' 상태가 된다.
+      const publishedCount = nominations.filter((item) => item.status === 'PUBLISHED').length
+      if (publishedCount > 0) {
+        throw new AppError(
+          400,
+          'NOMINATION_ALREADY_PUBLISHED',
+          '이미 응답이 시작된 평가자 매핑은 반려할 수 없습니다. 라운드를 취소한 뒤 다시 구성해 주세요.'
+        )
+      }
+
       await prisma.$transaction([
         prisma.feedbackNomination.updateMany({
           where: {
             roundId,
             targetId: validated.data.targetId,
+            status: { in: ['DRAFT', 'SUBMITTED', 'APPROVED'] },
           },
           data: {
             status: 'REJECTED',
@@ -235,6 +248,19 @@ export async function POST(
         message: '평가자 매핑을 반려했습니다.',
         workflowStatus: 'REJECTED',
       })
+    }
+
+    // 종료된 라운드를 publish가 IN_PROGRESS로 되살리지 못하게 막는다.
+    if (
+      round.status === 'COMPLETED' ||
+      round.status === 'CLOSED' ||
+      round.status === 'CANCELLED'
+    ) {
+      throw new AppError(
+        400,
+        'ROUND_ALREADY_CLOSED',
+        '이미 종료된 라운드는 응답을 시작할 수 없습니다.'
+      )
     }
 
     const reviewAdminAccess = await getFeedbackReviewAdminAccess({

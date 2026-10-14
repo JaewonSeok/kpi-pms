@@ -589,6 +589,12 @@ export async function POST(request: Request) {
       }
 
       const data = parsed.data
+
+      // 신규 생성 경로에는 권한 검사가 없었다. 수정 경로(data.roundId)는 아래에서
+      // ensureCanManageRound로 보호된다. 문항 세트 관리와 같은 기준을 적용한다.
+      if (!data.roundId && !actor.access.canManageAllRounds) {
+        throw new AppError(403, 'FORBIDDEN', '리더십 진단 기간을 생성할 권한이 없습니다.')
+      }
       const template = await prisma.upwardReviewTemplate.findFirst({
         where: {
           id: data.templateId,
