@@ -41,7 +41,8 @@ export async function PATCH(
     if (!evaluation) throw new AppError(404, 'NOT_FOUND', '평가를 찾을 수 없습니다.')
 
     const canEdit =
-      evaluation.evaluatorId === session.user.id || session.user.role === 'ROLE_ADMIN'
+      evaluation.evaluatorId === session.user.id ||
+      (session.user.role === 'ROLE_ADMIN' && evaluation.targetId !== session.user.id)
 
     if (!canEdit) {
       throw new AppError(403, 'FORBIDDEN', '초안을 수정할 권한이 없습니다.')

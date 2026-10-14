@@ -42,7 +42,8 @@ export async function PATCH(
     }
 
     const canReview =
-      evaluation.evaluatorId === session.user.id || session.user.role === 'ROLE_ADMIN'
+      evaluation.evaluatorId === session.user.id ||
+      (session.user.role === 'ROLE_ADMIN' && evaluation.targetId !== session.user.id)
 
     if (!canReview) {
       throw new AppError(403, 'FORBIDDEN', '평가 반려 권한이 없습니다.')

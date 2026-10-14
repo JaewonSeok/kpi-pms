@@ -75,7 +75,8 @@ export async function PATCH(
     }
 
     const canSubmit =
-      evaluation.evaluatorId === session.user.id || session.user.role === 'ROLE_ADMIN'
+      evaluation.evaluatorId === session.user.id ||
+      (session.user.role === 'ROLE_ADMIN' && evaluation.targetId !== session.user.id)
 
     if (!canSubmit) {
       throw new AppError(403, 'FORBIDDEN', '제출 권한이 없습니다.')
