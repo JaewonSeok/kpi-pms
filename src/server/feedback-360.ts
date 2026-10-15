@@ -2449,7 +2449,12 @@ export async function getFeedback360PageData(
 
     const targetFeedbacks = selectedRound.feedbacks.filter((feedback) => feedback.receiverId === target.id)
     const submittedTargetFeedbacks = targetFeedbacks.filter((feedback) => feedback.status === 'SUBMITTED')
-    const thresholdMet = submittedTargetFeedbacks.length >= selectedRound.minRaters
+    // 자기평가는 익명 임계 인원에 세지 않는다. 익명성은 타인 응답 수로 보장된다.
+    // 목록(submittedTargetFeedbacks)은 그대로다. 집계·표시에 SELF 가 남는다.
+    const thresholdRaterCount = submittedTargetFeedbacks.filter(
+      (feedback) => feedback.relationship !== 'SELF'
+    ).length
+    const thresholdMet = thresholdRaterCount >= selectedRound.minRaters
     const categoryMap = new Map<string, number[]>()
     const textHighlights: string[] = []
 
@@ -2722,7 +2727,7 @@ export async function getFeedback360PageData(
     const aiCoachingProviderConfigured = aiCoachingEnv.enabled && Boolean(aiCoachingEnv.apiKey)
     const aiCoachingDisabledReason = !aiCoachingProviderConfigured
       ? 'AI 코칭을 사용하려면 AI 설정이 필요합니다.'
-      : !thresholdMet || submittedTargetFeedbacks.length < selectedRound.minRaters
+      : !thresholdMet || thresholdRaterCount < selectedRound.minRaters
         ? '응답 수와 익명 기준이 충족되면 AI 코칭을 생성할 수 있습니다.'
         : null
     const summaryCards = [
@@ -2844,6 +2849,7 @@ export async function getFeedback360PageData(
                 ],
           presentationSettings,
           anonymityThreshold: selectedRound.minRaters,
+          // feedbackCount 는 제출 건수(SELF 포함)다. 임계 판정 인원(thresholdRaterCount)과 다른 값이다.
           feedbackCount: reportCache?.feedbackCount ?? submittedTargetFeedbacks.length,
           thresholdMet: reportCache?.thresholdMet ?? thresholdMet,
           roundWeight: selectedRound.weightInFinal,
@@ -2853,7 +2859,7 @@ export async function getFeedback360PageData(
           improvements: improvements.length ? improvements : ['익명 기준을 충족하면 개선 신호를 더 선명하게 볼 수 있습니다.'],
           anonymousSummary: thresholdMet
             ? '익명성을 유지한 상태로 강점, blind spot, 개발 시그널을 요약해 제공합니다.'
-            : `현재 응답 수는 ${submittedTargetFeedbacks.length}건이며 익명 요약 공개 기준 ${selectedRound.minRaters}건에 아직 미달합니다.`,
+            : `현재 응답 수는 ${thresholdRaterCount}건이며 익명 요약 공개 기준 ${selectedRound.minRaters}건에 아직 미달합니다.`,
           textHighlights: persistedTextHighlights,
           groupedResponses,
           overallTagSummaries,
@@ -3674,8 +3680,12 @@ export async function getFeedback360PageData(
               },
             })
           : []
-      // 응답 화면은 자기 응답을 뺀 다른 제출 수로 센다. 결과 화면(전체 제출 수)과 다른 값이다.
-      const thresholdMet = submittedReferenceFeedbacks.length >= feedback.round.minRaters
+      // 응답 화면은 자기 응답을 뺀 다른 제출 수로 센다. 결과 화면(전체 타인 제출 수)과 다른 값이다.
+      // id 로 자기 응답만 뺐으므로 대상자의 SELF 응답은 남는다. 관계 필터가 따로 필요하다.
+      const thresholdRaterCount = submittedReferenceFeedbacks.filter(
+        (feedback) => feedback.relationship !== 'SELF'
+      ).length
+      const thresholdMet = thresholdRaterCount >= feedback.round.minRaters
       const groupedResponses = buildGroupedResponses({
         feedbacks: submittedReferenceFeedbacks.map((item) => ({
           id: item.id,
