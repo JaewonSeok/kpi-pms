@@ -5,6 +5,7 @@ import type {
   Position,
   SystemRole,
 } from '@prisma/client'
+import { resolveAdminJobTitleLeaderTier } from '@/lib/evaluation-leader-role'
 import { prisma } from '@/lib/prisma'
 import { POSITION_LABELS } from '@/lib/utils'
 import { buildAssignments } from '@/server/admin/employeeHierarchy'
@@ -176,7 +177,23 @@ function assignmentKey(params: { targetId: string; evalStage: EvalStage }) {
   return `${params.targetId}:${params.evalStage}`
 }
 
-function requiredMissingTypesForRole(role: SystemRole) {
+const ADMIN_TIER_ROLE: Record<NonNullable<ReturnType<typeof resolveAdminJobTitleLeaderTier>>, SystemRole> = {
+  TEAM_LEADER: 'ROLE_TEAM_LEADER',
+  SECTION_CHIEF: 'ROLE_SECTION_CHIEF',
+  DIV_HEAD: 'ROLE_DIV_HEAD',
+}
+
+// ROLE_ADMIN 은 권한 플래그다. 평가 역할은 jobTitle 에 있다.
+// #322 가 로더에 jobTitle 을 넣고 #326 이 필수로 만든 값이다.
+function resolveEvaluationRole(employee: { role: SystemRole; jobTitle?: string | null }): SystemRole {
+  if (employee.role !== 'ROLE_ADMIN') return employee.role
+  const tier = resolveAdminJobTitleLeaderTier(employee.jobTitle)
+  return tier ? ADMIN_TIER_ROLE[tier] : employee.role
+}
+
+function requiredMissingTypesForRole(employee: { role: SystemRole; jobTitle?: string | null }) {
+  // ROLE_ORDER.ROLE_ADMIN = 0 이라 ADMIN 은 팀원 취급된다. 상수는 두고 ADMIN 일 때만 jobTitle 로 등급을 대체한다.
+  const role = resolveEvaluationRole(employee)
   if (role === 'ROLE_CEO') return [] satisfies Evaluation2026EvaluatorMissingType[]
   if (role === 'ROLE_DIV_HEAD') return ['FINAL'] satisfies Evaluation2026EvaluatorMissingType[]
 
@@ -278,7 +295,7 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
   const usedEvaluatorIds = new Set<string>()
   const rows = targetEmployees.map((employee) => {
     const chain = assignmentMap.get(employee.id)
-    const requiredMissingTypes = requiredMissingTypesForRole(employee.role)
+    const requiredMissingTypes = requiredMissingTypesForRole(employee)
     const firstId = resolveEffectiveEvaluatorId({
       stage: 'FIRST',
       targetId: employee.id,
@@ -308,13 +325,18 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
     const secondEvaluator = secondId ? employeeById.get(secondId) ?? null : null
     const finalEvaluator = finalId ? employeeById.get(finalId) ?? null : null
     const ceoApprover = ceoApproverId ? employeeById.get(ceoApproverId) ?? null : null
+    // ROLE_ADMIN 은 권한 플래그다. 평가 역할은 jobTitle 에 있다.
+    // #322 가 로더에 jobTitle 을 넣고 #326 이 필수로 만든 값이다.
+    const firstRole = firstEvaluator ? resolveEvaluationRole(firstEvaluator) : null
+    const secondRole = secondEvaluator ? resolveEvaluationRole(secondEvaluator) : null
+    const finalRole = finalEvaluator ? resolveEvaluationRole(finalEvaluator) : null
     const validByMissingType: Record<Evaluation2026EvaluatorMissingType, boolean> = {
-      FIRST: firstEvaluator?.role === 'ROLE_TEAM_LEADER',
-      SECOND: secondEvaluator?.role === 'ROLE_SECTION_CHIEF' || secondEvaluator?.role === 'ROLE_DIV_HEAD',
+      FIRST: firstRole === 'ROLE_TEAM_LEADER',
+      SECOND: secondRole === 'ROLE_SECTION_CHIEF' || secondRole === 'ROLE_DIV_HEAD',
       FINAL:
-        finalEvaluator?.role === 'ROLE_DIV_HEAD' ||
-        finalEvaluator?.role === 'ROLE_CEO' ||
-        (employee.role === 'ROLE_DIV_HEAD' && ceoApprover?.role === 'ROLE_CEO'),
+        finalRole === 'ROLE_DIV_HEAD' ||
+        finalRole === 'ROLE_CEO' ||
+        (resolveEvaluationRole(employee) === 'ROLE_DIV_HEAD' && ceoApprover?.role === 'ROLE_CEO'),
     }
     const missingEvaluatorTypes = requiredMissingTypes.filter((stage) => !validByMissingType[stage])
     const currentAssignments = ASSIGNABLE_ROUTING_STAGES
@@ -342,7 +364,14 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
     const inactiveEvaluator = currentAssignments.some((assignment) => assignment.evaluatorStatus !== 'ACTIVE')
     const effectiveEvaluatorIds = [firstId, secondId, finalId, ceoApproverId].filter((value): value is string => Boolean(value))
     for (const evaluatorId of effectiveEvaluatorIds) usedEvaluatorIds.add(evaluatorId)
-    const duplicateEvaluator = new Set(effectiveEvaluatorIds).size < effectiveEvaluatorIds.length
+    // FINAL 과 CEO_ADJUST 가 같은 것은 정상이다. 본부장의 FINAL 은 대표이고
+    // CEO_ADJUST 도 대표다(#323 전사 폴백). 구조적으로 피할 수 없다.
+    // 배정 가능한 3단계(FIRST·SECOND·FINAL)는 서로 중복을 본다. CEO_ADJUST 는 FINAL 과 같을 때만 예외다.
+    const stagedEvaluatorIds = [firstId, secondId, finalId].filter((value): value is string => Boolean(value))
+    const ceoApproverDuplicatesNonFinal =
+      Boolean(ceoApproverId) && ceoApproverId !== finalId && (ceoApproverId === firstId || ceoApproverId === secondId)
+    const duplicateEvaluator =
+      new Set(stagedEvaluatorIds).size < stagedEvaluatorIds.length || ceoApproverDuplicatesNonFinal
     const selfEvaluator = effectiveEvaluatorIds.includes(employee.id)
     const orgPathMissing = path.invalid
     const manualReview = duplicateEvaluator || selfEvaluator || orgPathMissing
@@ -423,7 +452,8 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
     selfEvaluatorWarningCount: rows.filter((row) => row.warnings.some((warning) => warning.includes('자기 자신'))).length,
     inactiveEvaluatorWarningCount: rows.filter((row) => row.warnings.some((warning) => warning.includes('비활성'))).length,
     orgPathMissingInvalidCount: rows.filter((row) => row.warnings.some((warning) => warning.includes('조직 경로'))).length,
-    manualReviewCount: rows.filter((row) => row.status !== 'READY').length,
+    // manual review 는 MANUAL_REVIEW 상태만이다. MISSING_* 까지 세면 blockerCount 와 같은 값이 된다.
+    manualReviewCount: rows.filter((row) => row.status === 'MANUAL_REVIEW').length,
     blockerCount: rows.filter((row) => row.status !== 'READY').length,
   }
 
