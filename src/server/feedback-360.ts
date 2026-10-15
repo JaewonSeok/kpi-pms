@@ -859,7 +859,7 @@ function describeReminderStatus(
   return { key: 'RESULT_READY', label: '공유 대기', tone: 'blue' }
 }
 
-function buildGroupedResponses(params: {
+export function buildGroupedResponses(params: {
   feedbacks: Array<{
     id: string
     relationship: string
@@ -875,6 +875,7 @@ function buildGroupedResponses(params: {
     }>
   }>
   thresholdMet: boolean
+  isAnonymous: boolean
   visibilitySettings: Record<string, 'FULL' | 'ANONYMOUS' | 'PRIVATE'>
 }) {
   const questionMap = new Map<
@@ -893,9 +894,16 @@ function buildGroupedResponses(params: {
     }
   >()
 
+  // 기준 미달이면 비공개다. 실명도 익명도 아니다.
+  // "익명 2명"은 누군지 추론 가능해 보호가 되지 않는다.
+  // 같은 파일의 nomination guidance · respond instructions 문구가 이 의도를 적고 있다.
+  if (params.isAnonymous && !params.thresholdMet) return []
+
   for (const feedback of params.feedbacks) {
     const visibility = params.visibilitySettings[feedback.relationship] ?? 'ANONYMOUS'
     if (visibility === 'PRIVATE') continue
+    // 비익명 라운드(온보딩: minRaters 1 · isAnonymous false)는 PRIVATE 가 아니면 기준과 무관하게 실명이다.
+    const showGiverName = !params.isAnonymous || visibility === 'FULL'
 
     for (const response of feedback.responses) {
       const current = questionMap.get(response.questionId) ?? {
@@ -909,7 +917,7 @@ function buildGroupedResponses(params: {
         feedbackId: feedback.id,
         relationship: feedback.relationship,
         authorLabel:
-          visibility === 'FULL' || !params.thresholdMet
+          showGiverName
             ? `${feedback.relationship} · ${feedback.giver.empName}`
             : `${feedback.relationship} · 익명`,
         ratingValue: response.ratingValue,
@@ -2552,6 +2560,7 @@ export async function getFeedback360PageData(
         })),
       })),
       thresholdMet,
+      isAnonymous: selectedRound.isAnonymous,
       visibilitySettings: parseFeedbackVisibilitySettings(selectedRound.visibilitySettings),
     })
     const visibilitySettings = parseFeedbackVisibilitySettings(selectedRound.visibilitySettings)
@@ -3665,6 +3674,7 @@ export async function getFeedback360PageData(
               },
             })
           : []
+      // 응답 화면은 자기 응답을 뺀 다른 제출 수로 센다. 결과 화면(전체 제출 수)과 다른 값이다.
       const thresholdMet = submittedReferenceFeedbacks.length >= feedback.round.minRaters
       const groupedResponses = buildGroupedResponses({
         feedbacks: submittedReferenceFeedbacks.map((item) => ({
@@ -3684,11 +3694,21 @@ export async function getFeedback360PageData(
           })),
         })),
         thresholdMet,
+        isAnonymous: feedback.round.isAnonymous,
         visibilitySettings: respondVisibilitySettings,
       })
 
+      // 익명 판정은 buildGroupedResponses 한 곳에만 있다. 여기서 다시 판정하지 않는다.
+      // priorScores 는 totalScore != null 인 경우만 만들어지므로, RATING_SCALE 응답이
+      // 하나라도 있으면 groupedResponses 에도 반드시 나타난다. 그 조건이 바뀌면 이 결합이 깨진다.
+      const authorLabelByFeedbackId = new Map(
+        groupedResponses.flatMap((group) => group.answers.map((answer) => [answer.feedbackId, answer.authorLabel] as const))
+      )
       const priorScores = totalScoreEnabled
         ? submittedReferenceFeedbacks.flatMap((item) => {
+            const authorLabel = authorLabelByFeedbackId.get(item.id)
+            if (!authorLabel) return []
+
             const totalScore = calculateFeedbackResponseTotalScore({
               responses: item.responses.map((response) => ({
                 ratingValue: response.ratingValue,
@@ -3704,7 +3724,7 @@ export async function getFeedback360PageData(
               {
                 feedbackId: item.id,
                 relationship: item.relationship,
-                authorLabel: `${item.relationship} · ${item.giver.empName}`,
+                authorLabel,
                 totalScore,
                 submittedAt: item.submittedAt ? formatDate(item.submittedAt) : undefined,
               },
