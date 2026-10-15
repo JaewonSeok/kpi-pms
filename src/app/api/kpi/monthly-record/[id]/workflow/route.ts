@@ -6,6 +6,7 @@ import { parseMonthlyAttachments } from '@/lib/monthly-attachments'
 import { evaluateMonthlySubmit } from '@/lib/monthly-submit-validation'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { MonthlyRecordWorkflowActionSchema } from '@/lib/validations'
+import { canAccessManagedEmployeeContext } from '@/server/checkin-access'
 import {
   canLockMonthlyRecord,
   canReviewMonthlyRecord,
@@ -121,7 +122,10 @@ export async function POST(request: Request, context: RouteContext) {
     }
 
     if (validated.data.action === 'REVIEW' || validated.data.action === 'REQUEST_UPDATE') {
-      if (!canReview(session.user.role)) {
+      if (
+        !canReview(session.user.role) ||
+        !canAccessManagedEmployeeContext(session.user.id, session.user.role, record.personalKpi.employee)
+      ) {
         throw new AppError(403, 'FORBIDDEN', '월간 실적을 리뷰할 권한이 없습니다.')
       }
 

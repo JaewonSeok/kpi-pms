@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client'
+import type { Employee, Prisma, SystemRole } from '@prisma/client'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import {
@@ -10,6 +10,7 @@ import {
 import { prisma } from '@/lib/prisma'
 import { AppError, errorResponse, successResponse } from '@/lib/utils'
 import { DevelopmentPlanCreateSchema, DevelopmentPlanUpdateSchema } from '@/lib/validations'
+import { canAccessManagedEmployeeContext } from '@/server/checkin-access'
 
 type DevelopmentPlanSession = {
   user: {
@@ -18,9 +19,32 @@ type DevelopmentPlanSession = {
   }
 }
 
-function canManageEmployeePlan(session: DevelopmentPlanSession, employeeId: string) {
+type ManagedEmployee = Pick<Employee, 'id' | 'teamLeaderId' | 'sectionChiefId' | 'divisionHeadId'>
+
+const MANAGED_EMPLOYEE_SELECT = {
+  id: true,
+  teamLeaderId: true,
+  sectionChiefId: true,
+  divisionHeadId: true,
+} as const
+
+async function canManageEmployeePlan(
+  session: DevelopmentPlanSession,
+  employeeId: string,
+  preloadedEmployee?: ManagedEmployee
+) {
+  // 헬퍼는 employee.id === sessionUserId 를 false 로 처리한다. 본인 분기가 앞에 있어야 자기 계획을 본다.
   if (session.user.id === employeeId) return true
-  return session.user.role !== 'ROLE_MEMBER'
+
+  const employee =
+    preloadedEmployee ??
+    (await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: MANAGED_EMPLOYEE_SELECT,
+    }))
+  if (!employee) return false
+
+  return canAccessManagedEmployeeContext(session.user.id, session.user.role as SystemRole, employee)
 }
 
 export async function GET(request: Request) {
@@ -32,7 +56,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const employeeId = searchParams.get('employeeId') || actor.user.id
 
-    if (!canManageEmployeePlan(actor, employeeId)) {
+    if (!(await canManageEmployeePlan(actor, employeeId))) {
       throw new AppError(403, 'FORBIDDEN', '다른 구성원의 성장 계획을 조회할 권한이 없습니다.')
     }
 
@@ -64,7 +88,7 @@ export async function POST(request: Request) {
       )
     }
 
-    if (!canManageEmployeePlan(actor, validated.data.employeeId)) {
+    if (!(await canManageEmployeePlan(actor, validated.data.employeeId))) {
       throw new AppError(403, 'FORBIDDEN', '다른 구성원의 성장 계획을 생성할 권한이 없습니다.')
     }
 
@@ -140,13 +164,14 @@ export async function PATCH(request: Request) {
 
     const plan = await prisma.developmentPlan.findUnique({
       where: { id: validated.data.id },
+      include: { employee: { select: MANAGED_EMPLOYEE_SELECT } },
     })
 
     if (!plan) {
       throw new AppError(404, 'NOT_FOUND', '수정할 성장 계획을 찾을 수 없습니다.')
     }
 
-    if (!canManageEmployeePlan(actor, plan.employeeId)) {
+    if (!(await canManageEmployeePlan(actor, plan.employeeId, plan.employee))) {
       throw new AppError(403, 'FORBIDDEN', '해당 성장 계획을 수정할 권한이 없습니다.')
     }
 
