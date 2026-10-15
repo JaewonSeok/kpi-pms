@@ -1,4 +1,5 @@
 import type { EmployeeStatus } from '@prisma/client'
+import { resolveAdminJobTitleLeaderTier } from '@/lib/evaluation-leader-role'
 import { prisma } from '@/lib/prisma'
 
 type EmployeeRole =
@@ -109,13 +110,14 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
     // ROLE_ADMIN 은 권한 플래그라 평가 역할 정보가 없다. jobTitle 로만 분류한다.
     // role 이 평가 역할을 담는 경우(위 네 if 문)가 있으면 그것이 권위이므로 이 분기는 타지 않는다.
     if (employee.role === 'ROLE_ADMIN') {
-      if (employee.jobTitle === '팀장') {
+      const adminTier = resolveAdminJobTitleLeaderTier(employee.jobTitle)
+      if (adminTier === 'TEAM_LEADER') {
         current.teamLeaderIds.push(employee.id)
       }
-      if (employee.jobTitle === '실장' || employee.jobTitle === '부문장') {
+      if (adminTier === 'SECTION_CHIEF') {
         current.sectionChiefIds.push(employee.id)
       }
-      if (employee.jobTitle === '본부장' || employee.jobTitle === '대표이사') {
+      if (adminTier === 'DIV_HEAD') {
         current.divisionHeadIds.push(employee.id)
       }
     }
