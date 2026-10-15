@@ -176,7 +176,11 @@ export async function persistFeedback360Report(params: {
   }
 
   const submittedFeedbacks = round.feedbacks
-  const thresholdMet = submittedFeedbacks.length >= round.minRaters
+  // 자기평가는 익명 임계 인원에 세지 않는다. 익명성은 타인 응답 수로 보장된다.
+  const thresholdRaterCount = submittedFeedbacks.filter(
+    (feedback) => feedback.relationship !== 'SELF'
+  ).length
+  const thresholdMet = thresholdRaterCount >= round.minRaters
   const categoryMap = new Map<string, number[]>()
   const textHighlights: string[] = []
 
@@ -219,7 +223,7 @@ export async function persistFeedback360Report(params: {
   const focusArea = improvements[0]?.split(' 영역')[0] ?? '협업 방식'
   const anonymousSummary = thresholdMet
     ? '응답 수가 anonymity threshold를 충족하여 익명 요약을 저장했습니다.'
-    : `현재 응답 수는 ${submittedFeedbacks.length}건이며 anonymity threshold ${round.minRaters}건에 아직 미달입니다.`
+    : `현재 응답 수는 ${thresholdRaterCount}건이며 anonymity threshold ${round.minRaters}건에 아직 미달입니다.`
 
   const reportPayload = {
     categoryScores,

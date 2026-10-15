@@ -114,4 +114,43 @@ run('⑫ isAnonymous false · PRIVATE · thresholdMet 무관 → 응답 제외',
   assert.equal(answersOf(buildFor('PRIVATE', false, false)).length, 0)
 })
 
+// 자기평가는 익명 임계 인원에 세지 않는다. 세 곳이 각자 센다 — 구간을 좁혀 서로 겹치지 않게 본다.
+// 목록·조회는 그대로 두고 인원 계산만 SELF 를 뺀다. 그래서 where 조건이 아니라 계산식을 찾는다.
+const feedback360WorkflowSource = readFileSync(
+  path.resolve(process.cwd(), 'src/server/feedback-360-workflow.ts'),
+  'utf8'
+)
+const SELF_EXCLUSION = "relationship !== 'SELF'"
+
+function sliceUnique(source: string, startMarker: string, endMarker: string) {
+  assert.equal(countOccurrences(source, startMarker), 1, `시작 표식이 1회가 아니다: ${startMarker}`)
+  const start = source.indexOf(startMarker)
+  const end = source.indexOf(endMarker, start)
+  assert.notEqual(end, -1, `끝 표식을 찾지 못했다: ${endMarker}`)
+  return source.slice(start, end)
+}
+
+run('⑬ 결과 화면 임계 인원 계산이 SELF 를 제외한다', () => {
+  const block = sliceUnique(feedback360Source, 'const submittedTargetFeedbacks = ', 'const categoryMap =')
+  assert.equal(block.includes(SELF_EXCLUSION), true)
+})
+
+run('⑭ 응답 화면 임계 인원 계산이 SELF 를 제외한다', () => {
+  const block = sliceUnique(
+    feedback360Source,
+    '// 응답 화면은 자기 응답을 뺀 다른 제출 수로 센다.',
+    'const groupedResponses = buildGroupedResponses({'
+  )
+  assert.equal(block.includes(SELF_EXCLUSION), true)
+})
+
+run('⑮ 리포트 캐시 임계 인원 계산이 SELF 를 제외한다', () => {
+  const block = sliceUnique(
+    feedback360WorkflowSource,
+    'const submittedFeedbacks = round.feedbacks',
+    'const categoryMap ='
+  )
+  assert.equal(block.includes(SELF_EXCLUSION), true)
+})
+
 console.log('Feedback 360 anonymity tests completed')
