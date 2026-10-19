@@ -19,6 +19,7 @@ export type Evaluation2026EvaluatorRoutingStatus =
   | 'MANAGER_MISSING'
   | 'EVALUATOR_INACTIVE'
   | 'MANUAL_REVIEW'
+  | 'STAGE_SKIPPED'
 
 export type Evaluation2026EvaluatorMissingType = 'FIRST' | 'SECOND' | 'FINAL'
 
@@ -102,6 +103,8 @@ export type Evaluation2026EvaluatorRoutingRow = {
   currentAssignments: Evaluation2026EvaluatorRoutingCurrentAssignment[]
   currentAssignmentExists: boolean
   missingEvaluatorTypes: Evaluation2026EvaluatorMissingType[]
+  // 조직에 그 계층이 없어(chain 슬롯 null · 저장 배정 없음) 건너뛴 단계다. blocker 가 아니다.
+  skippedEvaluatorTypes: Evaluation2026EvaluatorMissingType[]
   warnings: string[]
   status: Evaluation2026EvaluatorRoutingStatus
 }
@@ -121,6 +124,9 @@ export type Evaluation2026EvaluatorRoutingReadinessSummary = {
   inactiveEvaluatorWarningCount: number
   orgPathMissingInvalidCount: number
   manualReviewCount: number
+  stageSkippedCount: number
+  skippedFirstCount: number
+  skippedSecondCount: number
   blockerCount: number
 }
 
@@ -255,6 +261,7 @@ function getRowStatus(params: {
   managerMissing: boolean
   inactiveEvaluator: boolean
   manualReview: boolean
+  skippedTypes: Evaluation2026EvaluatorMissingType[]
 }): Evaluation2026EvaluatorRoutingStatus {
   if (params.missingTypes.includes('FIRST')) return 'MISSING_FIRST'
   if (params.missingTypes.includes('SECOND')) return 'MISSING_SECOND'
@@ -263,6 +270,8 @@ function getRowStatus(params: {
   if (params.managerMissing) return 'MANAGER_MISSING'
   if (params.inactiveEvaluator) return 'EVALUATOR_INACTIVE'
   if (params.manualReview) return 'MANUAL_REVIEW'
+  // 건너뛴 단계만 남은 행이다. 다른 문제가 하나라도 있으면 그 상태가 먼저다 — 건너뜀이 문제를 가리지 않게 한다.
+  if (params.skippedTypes.length) return 'STAGE_SKIPPED'
   return 'READY'
 }
 
@@ -338,7 +347,19 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
         finalRole === 'ROLE_CEO' ||
         (resolveEvaluationRole(employee) === 'ROLE_DIV_HEAD' && ceoApprover?.role === 'ROLE_CEO'),
     }
-    const missingEvaluatorTypes = requiredMissingTypes.filter((stage) => !validByMissingType[stage])
+    // 조직에 그 계층이 없으면 blocker 가 아니다. 실장·부문장은 전사 7명이고
+    // 겸직 팀장은 #324 로 자기 역할 슬롯에 간다. 사람이 없는 자리를 세지 않는다.
+    // 판정은 평가자를 정하는 근거와 같은 chain 으로 한다. 저장된 배정이 있으면
+    // 조직 상태가 아니라 배정 실수이므로 건너뛰지 않는다. FINAL 은 #323 의 대표 폴백이 채운다.
+    const isStageSkipped = (stage: Evaluation2026EvaluatorMissingType) => {
+      if (persistedByKey.has(assignmentKey({ targetId: employee.id, evalStage: stage }))) return false
+      if (stage === 'FIRST') return !chain?.teamLeaderId
+      if (stage === 'SECOND') return !chain?.sectionChiefId
+      return false
+    }
+    const invalidRequiredTypes = requiredMissingTypes.filter((stage) => !validByMissingType[stage])
+    const skippedEvaluatorTypes = invalidRequiredTypes.filter((stage) => isStageSkipped(stage))
+    const missingEvaluatorTypes = invalidRequiredTypes.filter((stage) => !isStageSkipped(stage))
     const currentAssignments = ASSIGNABLE_ROUTING_STAGES
       .map((stage) =>
         persistedByKey.get(assignmentKey({
@@ -413,6 +434,7 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
       currentAssignments,
       currentAssignmentExists: currentAssignments.length > 0,
       missingEvaluatorTypes,
+      skippedEvaluatorTypes,
       warnings,
       status: getRowStatus({
         missingTypes: missingEvaluatorTypes,
@@ -420,6 +442,7 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
         managerMissing,
         inactiveEvaluator,
         manualReview,
+        skippedTypes: skippedEvaluatorTypes,
       }),
     } satisfies Evaluation2026EvaluatorRoutingRow
   }).sort((left, right) => {
@@ -429,9 +452,10 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
     return left.name.localeCompare(right.name, 'ko')
   })
 
+  // 조직 지표다. 팀장이 없어 건너뛴 팀도 "팀장 없는 팀"이다.
   const teamsWithoutLeader = new Set(
     rows
-      .filter((row) => row.missingEvaluatorTypes.includes('FIRST'))
+      .filter((row) => row.missingEvaluatorTypes.includes('FIRST') || row.skippedEvaluatorTypes.includes('FIRST'))
       .map((row) => row.team ?? row.departmentPath)
   )
   const leadersWithoutEvaluatableTeamMembers = activeEmployees
@@ -440,7 +464,8 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
 
   const summary: Evaluation2026EvaluatorRoutingReadinessSummary = {
     activeEmployeeCount: targetEmployees.length,
-    completeEvaluatorChainCount: rows.filter((row) => row.status === 'READY').length,
+    // 건너뛴 단계만 남은 행도 평가자 체인이 완성된 것이다.
+    completeEvaluatorChainCount: rows.filter((row) => row.status === 'READY' || row.status === 'STAGE_SKIPPED').length,
     missingFirstEvaluatorCount: rows.filter((row) => row.missingEvaluatorTypes.includes('FIRST')).length,
     missingSecondEvaluatorCount: rows.filter((row) => row.missingEvaluatorTypes.includes('SECOND')).length,
     missingFinalApproverCount: rows.filter((row) => row.missingEvaluatorTypes.includes('FINAL')).length,
@@ -454,7 +479,11 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
     orgPathMissingInvalidCount: rows.filter((row) => row.warnings.some((warning) => warning.includes('조직 경로'))).length,
     // manual review 는 MANUAL_REVIEW 상태만이다. MISSING_* 까지 세면 blockerCount 와 같은 값이 된다.
     manualReviewCount: rows.filter((row) => row.status === 'MANUAL_REVIEW').length,
-    blockerCount: rows.filter((row) => row.status !== 'READY').length,
+    stageSkippedCount: rows.filter((row) => row.status === 'STAGE_SKIPPED').length,
+    skippedFirstCount: rows.filter((row) => row.skippedEvaluatorTypes.includes('FIRST')).length,
+    skippedSecondCount: rows.filter((row) => row.skippedEvaluatorTypes.includes('SECOND')).length,
+    // STAGE_SKIPPED 는 조직에 그 계층이 없는 것이라 blocker 가 아니다.
+    blockerCount: rows.filter((row) => row.status !== 'READY' && row.status !== 'STAGE_SKIPPED').length,
   }
 
   return {
