@@ -418,15 +418,34 @@ function parseMutedTypes(value: Prisma.JsonValue | null | undefined) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
-function getEmailAllowlist(): Set<string> {
-  const raw = process.env.NOTIFICATION_EMAIL_ALLOWLIST
-  if (!raw) return new Set()
-  return new Set(
+type EmailAllowlistMode =
+  | { kind: 'NOT_CONFIGURED' }
+  | { kind: 'ALLOW_ALL' }
+  | { kind: 'LIST'; emails: Set<string> }
+
+// 미설정이면 막는다. 설정을 깜빡한 것과 전원 발송을 의도한 것은 다르다.
+// 전원 발송은 '*' 를 명시해야 한다. 그 값을 넣는 행위가 의도의 기록이다.
+// 같은 저장소의 master-login-shared.ts · cron-auth.ts 가 같은 방향이다.
+function getEmailAllowlistMode(): EmailAllowlistMode {
+  const raw = process.env.NOTIFICATION_EMAIL_ALLOWLIST?.trim()
+  if (!raw) return { kind: 'NOT_CONFIGURED' }
+  if (raw === '*') return { kind: 'ALLOW_ALL' }
+  const emails = new Set(
     raw
       .split(',')
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean)
   )
+  return emails.size ? { kind: 'LIST', emails } : { kind: 'NOT_CONFIGURED' }
+}
+
+// 차단 사유를 돌려준다. null 이면 통과다.
+function resolveAllowlistSuppressReason(recipientEmail: string | null | undefined) {
+  const mode = getEmailAllowlistMode()
+  if (mode.kind === 'NOT_CONFIGURED') return 'ALLOWLIST_NOT_CONFIGURED'
+  if (mode.kind === 'ALLOW_ALL') return null
+  if (!recipientEmail || !mode.emails.has(recipientEmail.trim().toLowerCase())) return 'NOT_IN_ALLOWLIST'
+  return null
 }
 
 async function getCeoRecipientIds(db: PrismaClient): Promise<Set<string>> {
@@ -999,15 +1018,14 @@ async function deliverEmailJob(
     return 'SUPPRESSED'
   }
 
-  const allowlist = getEmailAllowlist()
-  const recipientEmail = job.recipient.gwsEmail
-  if (allowlist.size > 0 && (!recipientEmail || !allowlist.has(recipientEmail.trim().toLowerCase()))) {
+  const allowlistSuppressReason = resolveAllowlistSuppressReason(job.recipient.gwsEmail)
+  if (allowlistSuppressReason) {
     await db.notificationJob.update({
       where: { id: job.id },
       data: {
         status: NotificationJobStatus.SUPPRESSED,
         suppressedAt: new Date(),
-        suppressReason: 'NOT_IN_ALLOWLIST',
+        suppressReason: allowlistSuppressReason,
       },
     })
     return 'SUPPRESSED'
@@ -1071,9 +1089,8 @@ async function deliverDigestGroup(
     return { processed: jobs.length, success: 0, suppressed: jobs.length }
   }
 
-  const allowlist = getEmailAllowlist()
-  const recipientEmail = firstJob.recipient.gwsEmail
-  if (allowlist.size > 0 && (!recipientEmail || !allowlist.has(recipientEmail.trim().toLowerCase()))) {
+  const allowlistSuppressReason = resolveAllowlistSuppressReason(firstJob.recipient.gwsEmail)
+  if (allowlistSuppressReason) {
     await db.$transaction(async (tx) => {
       for (const job of jobs) {
         await tx.notificationJob.update({
@@ -1081,7 +1098,7 @@ async function deliverDigestGroup(
           data: {
             status: NotificationJobStatus.SUPPRESSED,
             suppressedAt: new Date(),
-            suppressReason: 'NOT_IN_ALLOWLIST',
+            suppressReason: allowlistSuppressReason,
           },
         })
       }
