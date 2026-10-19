@@ -654,6 +654,7 @@ function EvaluatorRoutingReadinessPanel(props: { readiness: RoutingReadiness }) 
               'MANAGER_MISSING',
               'EVALUATOR_INACTIVE',
               'MANUAL_REVIEW',
+              'STAGE_SKIPPED',
             ].map((status) => (
               <option key={status} value={status}>
                 {status}
@@ -778,7 +779,10 @@ function EvaluatorRoutingReadinessPanel(props: { readiness: RoutingReadiness }) 
                       className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
                         row.status === 'READY'
                           ? 'bg-emerald-100 text-emerald-800'
-                          : row.status === 'EVALUATOR_INACTIVE' || row.status === 'MANUAL_REVIEW'
+                          : // 조직에 그 계층이 없어 건너뛴 단계다. 완료(초록)도 오류(빨강)도 아니다.
+                            row.status === 'STAGE_SKIPPED'
+                            ? 'bg-slate-100 text-slate-700'
+                            : row.status === 'EVALUATOR_INACTIVE' || row.status === 'MANUAL_REVIEW'
                             ? 'bg-amber-100 text-amber-800'
                             : 'bg-rose-100 text-rose-800'
                       }`}

@@ -173,6 +173,17 @@ async function main() {
     assert.equal(member?.expectedFinalApprover, '본부장 (D001)')
   })
 
+  // 무효한 평가자로 쓰는 직원들이다. 대상자 행을 더 만들지 않도록 기본 픽스처의 직원을 다른 단계에 배정한다.
+  const sectionChiefEvaluator = employee({
+    id: 'emp-sec', empId: 'S001', empName: '실장', deptId: 'sec-1', role: 'ROLE_SECTION_CHIEF', position: 'SECTION_CHIEF', managerId: 'emp-div',
+  })
+  const teamLeaderEvaluator = employee({
+    id: 'emp-tl', empId: 'L001', empName: '팀장', role: 'ROLE_TEAM_LEADER', position: 'TEAM_LEADER', managerId: 'emp-sec',
+  })
+  const memberEvaluator = employee({ id: 'emp-member', empId: 'M001', empName: '멤버' })
+
+  // 사람이 없는 자리는 STAGE_SKIPPED 다. 이 케이스들은 "배정은 있는데
+  // 그 평가자가 무효한" 진짜 누락을 지킨다. 둘을 섞지 않는다.
   await run('missing team leader creates MISSING_FIRST', () => {
     const result = buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
       departments: departments.map((department) =>
@@ -181,6 +192,7 @@ async function main() {
       employees: baseEmployees({
         'emp-tl': { status: 'INACTIVE' },
       }),
+      assignments: [activeAssignment('emp-member', 'FIRST', 'emp-sec', sectionChiefEvaluator)],
       checkedAt: now,
     })
     const member = result.rows.find((row: any) => row.employeeId === 'emp-member')
@@ -189,6 +201,8 @@ async function main() {
     assert.equal(result.summary.missingFirstEvaluatorCount, 1)
   })
 
+  // 사람이 없는 자리는 STAGE_SKIPPED 다. 이 케이스들은 "배정은 있는데
+  // 그 평가자가 무효한" 진짜 누락을 지킨다. 둘을 섞지 않는다.
   await run('missing section or division evaluator creates MISSING_SECOND', () => {
     const result = buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
       departments: [
@@ -200,6 +214,7 @@ async function main() {
         'emp-sec': { status: 'INACTIVE' },
         'emp-div': { status: 'INACTIVE' },
       }),
+      assignments: [activeAssignment('emp-member', 'SECOND', 'emp-tl', teamLeaderEvaluator)],
       checkedAt: now,
     })
     const member = result.rows.find((row: any) => row.employeeId === 'emp-member')
@@ -347,14 +362,14 @@ async function main() {
     // FIRST 가 비어 있어도 요구하지 않으므로 누락이 아니다.
     assert.deepEqual(rowOf(complete, 'emp-tl')?.missingEvaluatorTypes, [])
 
+    // 사람이 없는 자리는 STAGE_SKIPPED 다. 이 케이스들은 "배정은 있는데
+    // 그 평가자가 무효한" 진짜 누락을 지킨다. 둘을 섞지 않는다.
     const withoutSecond = buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
-      departments: departments.map((department) =>
-        department.id === 'sec-1' ? { ...department, leaderEmployeeId: null } : department
-      ),
+      departments,
       employees: baseEmployees({
         'emp-tl': { role: 'ROLE_ADMIN', jobTitle: '팀장' },
-        'emp-sec': { status: 'INACTIVE' },
       }),
+      assignments: [activeAssignment('emp-tl', 'SECOND', 'emp-member', memberEvaluator)],
       checkedAt: now,
     })
     // SECOND 는 여전히 요구한다.
@@ -433,6 +448,8 @@ async function main() {
   })
 
   // manual review 는 MANUAL_REVIEW 상태만 센다. MISSING_* 까지 세면 blockerCount 와 같은 값이 된다.
+  // 사람이 없는 자리는 STAGE_SKIPPED 다. 이 케이스들은 "배정은 있는데
+  // 그 평가자가 무효한" 진짜 누락을 지킨다. 둘을 섞지 않는다.
   await run('(카) MISSING_FIRST 는 manualReviewCount 에 세지 않고 blockerCount 에만 센다', () => {
     const result = buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
       departments: departments.map((department) =>
@@ -441,6 +458,7 @@ async function main() {
       employees: baseEmployees({
         'emp-tl': { status: 'INACTIVE' },
       }),
+      assignments: [activeAssignment('emp-member', 'FIRST', 'emp-sec', sectionChiefEvaluator)],
       checkedAt: now,
     })
     // 절대값 0 으로 박으면 다른 수정(B-3-3)에 묶인다. 집계식이 맞는지를 잰다.
@@ -448,6 +466,112 @@ async function main() {
     assert.equal(rowOf(result, 'emp-member')?.status, 'MISSING_FIRST')
     assert.equal(result.summary.manualReviewCount, manualReviewRows)
     assert.ok(result.summary.manualReviewCount < result.summary.blockerCount)
+  })
+
+  // 조직에 그 계층이 없으면(chain 슬롯 null · 저장 배정 없음) blocker 가 아니라 STAGE_SKIPPED 다.
+  // 단언은 불변식으로 쓴다. 절대값을 박으면 다른 수정에 묶인다.
+  const withoutTeamLeader = () =>
+    buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
+      departments: departments.map((department) =>
+        department.id === 'team-1' ? { ...department, leaderEmployeeId: null } : department
+      ),
+      employees: baseEmployees({ 'emp-tl': { status: 'INACTIVE' } }),
+      checkedAt: now,
+    })
+  const withoutSectionChief = () =>
+    buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
+      departments: departments.map((department) =>
+        department.id === 'sec-1' ? { ...department, leaderEmployeeId: null } : department
+      ),
+      employees: baseEmployees({ 'emp-sec': { status: 'INACTIVE' } }),
+      checkedAt: now,
+    })
+  const skippedOf = (row: unknown) => (row as { skippedEvaluatorTypes?: unknown } | undefined)?.skippedEvaluatorTypes
+  const summaryField = (result: Evaluation2026EvaluatorRoutingReadinessResult, key: string) =>
+    (result.summary as unknown as Record<string, unknown>)[key]
+
+  await run('(타) 팀장 슬롯이 비면 STAGE_SKIPPED 이고 blockerCount 에 들어가지 않는다', () => {
+    const result = withoutTeamLeader()
+    const member = rowOf(result, 'emp-member')
+    assert.equal(member?.status, 'STAGE_SKIPPED')
+    assert.deepEqual(skippedOf(member), ['FIRST'])
+    assert.deepEqual(member?.missingEvaluatorTypes, [])
+    const blockerRows = result.rows.filter((row) => row.status !== 'READY' && (row.status as string) !== 'STAGE_SKIPPED').length
+    assert.equal(result.summary.blockerCount, blockerRows)
+  })
+
+  await run('(파) 실장 슬롯이 비면 STAGE_SKIPPED 다', () => {
+    const member = rowOf(withoutSectionChief(), 'emp-member')
+    assert.equal(member?.status, 'STAGE_SKIPPED')
+    assert.deepEqual(skippedOf(member), ['SECOND'])
+  })
+
+  await run('(하) 팀장·실장 슬롯이 둘 다 비면 FIRST·SECOND 둘 다 건너뛴다', () => {
+    const result = buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
+      departments: departments.map((department) =>
+        department.id === 'team-1' || department.id === 'sec-1' ? { ...department, leaderEmployeeId: null } : department
+      ),
+      employees: baseEmployees({ 'emp-tl': { status: 'INACTIVE' }, 'emp-sec': { status: 'INACTIVE' } }),
+      checkedAt: now,
+    })
+    const member = rowOf(result, 'emp-member')
+    assert.equal(member?.status, 'STAGE_SKIPPED')
+    assert.deepEqual(skippedOf(member), ['FIRST', 'SECOND'])
+  })
+
+  await run('(거) 팀장 슬롯이 있는데 평가자가 유효하지 않은 역할이면 MISSING_FIRST 를 유지한다', () => {
+    const plainMember = employee({ id: 'emp-peer', empId: 'P001', empName: '동료' })
+    const result = buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
+      departments,
+      employees: [...baseEmployees(), plainMember],
+      assignments: [activeAssignment('emp-member', 'FIRST', 'emp-peer', plainMember)],
+      checkedAt: now,
+    })
+    assert.equal(rowOf(result, 'emp-member')?.status, 'MISSING_FIRST')
+  })
+
+  await run('(너) 팀장 슬롯이 비었어도 저장된 FIRST 배정이 무효하면 MISSING_FIRST 다', () => {
+    const plainMember = employee({ id: 'emp-peer', empId: 'P001', empName: '동료' })
+    const result = buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
+      departments: departments.map((department) =>
+        department.id === 'team-1' ? { ...department, leaderEmployeeId: null } : department
+      ),
+      employees: [...baseEmployees({ 'emp-tl': { status: 'INACTIVE' } }), plainMember],
+      assignments: [activeAssignment('emp-member', 'FIRST', 'emp-peer', plainMember)],
+      checkedAt: now,
+    })
+    assert.equal(rowOf(result, 'emp-member')?.status, 'MISSING_FIRST')
+  })
+
+  await run('(더) completeEvaluatorChainCount 는 READY + STAGE_SKIPPED 행 수다', () => {
+    const result = withoutTeamLeader()
+    const readyRows = result.rows.filter((row) => row.status === 'READY').length
+    const stageSkippedRows = result.rows.filter((row) => (row.status as string) === 'STAGE_SKIPPED').length
+    assert.equal(summaryField(result, 'stageSkippedCount'), stageSkippedRows)
+    assert.equal(result.summary.completeEvaluatorChainCount, readyRows + stageSkippedRows)
+  })
+
+  await run('(러) 건너뛴 FIRST 는 missingFirstEvaluatorCount 가 아니라 skippedFirstCount 에 센다', () => {
+    const result = withoutTeamLeader()
+    const missingFirstRows = result.rows.filter((row) => row.missingEvaluatorTypes.includes('FIRST')).length
+    const skippedFirstRows = result.rows.filter((row) => (skippedOf(row) as string[] | undefined)?.includes('FIRST')).length
+    assert.equal(result.summary.missingFirstEvaluatorCount, missingFirstRows)
+    assert.equal(summaryField(result, 'skippedFirstCount'), skippedFirstRows)
+    assert.equal(
+      summaryField(result, 'skippedSecondCount'),
+      result.rows.filter((row) => (skippedOf(row) as string[] | undefined)?.includes('SECOND')).length
+    )
+  })
+
+  await run('(머) teamsWithoutLeaderCount 는 FIRST 누락과 건너뜀을 함께 센다', () => {
+    const result = withoutTeamLeader()
+    assert.equal(result.rows.every((row) => Array.isArray(skippedOf(row))), true)
+    const teams = new Set(
+      result.rows
+        .filter((row) => row.missingEvaluatorTypes.includes('FIRST') || (skippedOf(row) as string[]).includes('FIRST'))
+        .map((row) => row.team ?? row.departmentPath)
+    )
+    assert.equal(result.summary.teamsWithoutLeaderCount, teams.size)
   })
 
   console.log('2026 evaluator routing readiness tests completed')
