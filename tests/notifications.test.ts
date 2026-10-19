@@ -207,7 +207,9 @@ async function main() {
       assert.equal(summary.processedCount, 1, 'processedCount 는 1 이어야 한다')
       assert.equal(updateCalled, true, 'notificationJob.update 가 SUPPRESSED 처리로 호출돼야 한다')
     } finally {
-      process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
+      // 원래 미설정이었으면 지운다. undefined 를 대입하면 문자열 'undefined' 가 들어가 뒤 테스트를 오염시킨다.
+      if (prev === undefined) delete process.env.NOTIFICATION_EMAIL_ALLOWLIST
+      else process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
     }
   })
 
@@ -278,7 +280,9 @@ async function main() {
       assert.equal(summary.processedCount, 2, 'processedCount 는 2 이어야 한다')
       assert.equal(updateCallCount, 2, 'notificationJob.update 가 잡 2건 각각 호출돼야 한다')
     } finally {
-      process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
+      // 원래 미설정이었으면 지운다. undefined 를 대입하면 문자열 'undefined' 가 들어가 뒤 테스트를 오염시킨다.
+      if (prev === undefined) delete process.env.NOTIFICATION_EMAIL_ALLOWLIST
+      else process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
     }
   })
 
@@ -351,7 +355,9 @@ async function main() {
       assert.equal(capturedSuppressReason, 'NOT_IN_ALLOWLIST', '비CEO 잡은 allowlist 경로로 억제돼야 한다')
       assert.notEqual(capturedSuppressReason, 'CEO_EMAIL_SUPPRESSED', '비CEO 잡은 CEO 경로로 억제되면 안 된다')
     } finally {
-      process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
+      // 원래 미설정이었으면 지운다. undefined 를 대입하면 문자열 'undefined' 가 들어가 뒤 테스트를 오염시킨다.
+      if (prev === undefined) delete process.env.NOTIFICATION_EMAIL_ALLOWLIST
+      else process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
     }
   })
 
@@ -425,7 +431,9 @@ async function main() {
       assert.equal(capturedSuppressReasons.length, 2, 'update 가 2건 호출돼야 한다')
       assert.ok(capturedSuppressReasons.every((r) => r === 'NOT_IN_ALLOWLIST'), '비CEO digest 는 allowlist 경로로 억제돼야 한다')
     } finally {
-      process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
+      // 원래 미설정이었으면 지운다. undefined 를 대입하면 문자열 'undefined' 가 들어가 뒤 테스트를 오염시킨다.
+      if (prev === undefined) delete process.env.NOTIFICATION_EMAIL_ALLOWLIST
+      else process.env.NOTIFICATION_EMAIL_ALLOWLIST = prev
     }
   })
 
@@ -597,6 +605,157 @@ async function main() {
     } finally {
       Date.now = origDateNow
     }
+  })
+
+  // ── 이메일 허용 목록 fail-closed ─────────────────────────────────────────────
+  // 미설정이면 막는다. 전원 발송은 '*' 를 명시해야 한다.
+  // 한 건이 실패해도 나머지를 함께 보도록 끝까지 돌고, 실패가 있으면 exit 1 로 끝낸다.
+  async function runAsyncCollect(name: string, fn: () => Promise<void>) {
+    try {
+      await fn()
+      console.log(`PASS ${name}`)
+    } catch (error) {
+      console.error(`FAIL ${name}`)
+      console.error(error instanceof Error ? error.message : error)
+      process.exitCode = 1
+    }
+  }
+
+  // ★ 실제 SMTP 로 나가지 않게 한다. getEmailTransport 는 FEATURE_EMAIL_DELIVERY 가 false 이거나
+  //   SMTP_HOST·USER·PASS 중 하나라도 없으면 jsonTransport(네트워크 없음)를 쓴다. 두 조건을 모두 건다.
+  //   수정 전 코드는 fail-open 이라 차단 케이스도 발송 경로로 가므로 신규 케이스 전부에 건다.
+  const NO_SMTP_ENV = {
+    FEATURE_EMAIL_DELIVERY: 'false',
+    SMTP_HOST: undefined,
+    SMTP_USER: undefined,
+    SMTP_PASS: undefined,
+  }
+
+  async function withEnv(overrides: Record<string, string | undefined>, fn: () => Promise<void>) {
+    const previous = new Map(Object.keys(overrides).map((key) => [key, process.env[key]] as const))
+    for (const [key, value] of Object.entries(overrides)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    try {
+      await fn()
+    } finally {
+      for (const [key, value] of previous) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+  }
+
+  type CapturedUpdate = { status?: string; suppressReason?: string }
+
+  function makeEmailJob(id: string, overrides: Partial<{ isDigestMember: boolean; digestKey: string | null; gwsEmail: string }> = {}) {
+    return {
+      id,
+      channel: NotificationDeliveryChannel.EMAIL,
+      isDigestMember: overrides.isDigestMember ?? false,
+      digestKey: overrides.digestKey ?? null,
+      recipientId: 'emp-allow',
+      type: NotificationType.GOAL_REMINDER,
+      title: 'Allowlist test',
+      message: 'Allowlist message',
+      link: null,
+      templateCode: null,
+      payload: null,
+      priority: 0,
+      retryCount: 0,
+      recipient: { id: 'emp-allow', empName: '수신자', gwsEmail: overrides.gwsEmail ?? 'member@example.com' },
+    }
+  }
+
+  // 직접 update(차단)와 $transaction 안 update(발송 완료) 둘 다 기록한다.
+  function makeDispatchDb(jobs: unknown[]) {
+    const updates: CapturedUpdate[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recordUpdate = async (args: any) => {
+      updates.push({ status: args.data.status, suppressReason: args.data.suppressReason })
+      return {}
+    }
+    const tx = {
+      notification: { create: async () => ({}) },
+      notificationAttempt: { create: async () => ({}) },
+      notificationJob: { update: recordUpdate },
+    }
+    const db = {
+      employee: { findMany: async () => [] },
+      notificationJob: { findMany: async () => jobs, update: recordUpdate },
+      $transaction: async (fn: (client: typeof tx) => Promise<void>) => fn(tx),
+    }
+    return { db: db as unknown as PrismaClient, updates }
+  }
+
+  await runAsyncCollect('(ㄱ) 허용 목록 미설정 + EMAIL 잡 → SUPPRESSED · ALLOWLIST_NOT_CONFIGURED', async () => {
+    await withEnv({ ...NO_SMTP_ENV, NOTIFICATION_EMAIL_ALLOWLIST: undefined }, async () => {
+      const { db, updates } = makeDispatchDb([makeEmailJob('j-unset')])
+      const summary = await dispatchDueNotificationJobs(db)
+      assert.equal(summary.suppressedCount, 1)
+      assert.equal(summary.successCount, 0)
+      assert.deepEqual(updates.map((update) => update.suppressReason), ['ALLOWLIST_NOT_CONFIGURED'])
+    })
+  })
+
+  await runAsyncCollect('(ㄴ) 허용 목록 빈 문자열 + EMAIL 잡 → SUPPRESSED · ALLOWLIST_NOT_CONFIGURED', async () => {
+    await withEnv({ ...NO_SMTP_ENV, NOTIFICATION_EMAIL_ALLOWLIST: '' }, async () => {
+      const { db, updates } = makeDispatchDb([makeEmailJob('j-empty')])
+      const summary = await dispatchDueNotificationJobs(db)
+      assert.equal(summary.suppressedCount, 1)
+      assert.deepEqual(updates.map((update) => update.suppressReason), ['ALLOWLIST_NOT_CONFIGURED'])
+    })
+  })
+
+  await runAsyncCollect("(ㄷ) 허용 목록 '*' + EMAIL 잡 → 발송 경로로 간다", async () => {
+    await withEnv({ ...NO_SMTP_ENV, NOTIFICATION_EMAIL_ALLOWLIST: '*' }, async () => {
+      const { db, updates } = makeDispatchDb([makeEmailJob('j-all')])
+      const summary = await dispatchDueNotificationJobs(db)
+      assert.equal(summary.suppressedCount, 0)
+      assert.equal(summary.successCount, 1)
+      assert.deepEqual(updates.map((update) => update.status), ['SENT'])
+    })
+  })
+
+  await runAsyncCollect('(ㄹ) 목록에 있는 수신자 → 발송', async () => {
+    await withEnv({ ...NO_SMTP_ENV, NOTIFICATION_EMAIL_ALLOWLIST: 'other@example.com, Member@Example.com' }, async () => {
+      const { db, updates } = makeDispatchDb([makeEmailJob('j-listed')])
+      const summary = await dispatchDueNotificationJobs(db)
+      assert.equal(summary.successCount, 1)
+      assert.deepEqual(updates.map((update) => update.status), ['SENT'])
+    })
+  })
+
+  await runAsyncCollect('(ㅁ) 목록에 없는 수신자 → SUPPRESSED · NOT_IN_ALLOWLIST', async () => {
+    await withEnv({ ...NO_SMTP_ENV, NOTIFICATION_EMAIL_ALLOWLIST: 'other@example.com' }, async () => {
+      const { db, updates } = makeDispatchDb([makeEmailJob('j-unlisted')])
+      const summary = await dispatchDueNotificationJobs(db)
+      assert.equal(summary.suppressedCount, 1)
+      assert.deepEqual(updates.map((update) => update.suppressReason), ['NOT_IN_ALLOWLIST'])
+    })
+  })
+
+  await runAsyncCollect('(ㅂ) 허용 목록 미설정 + IN_APP 잡 → 영향 없이 SENT', async () => {
+    await withEnv({ ...NO_SMTP_ENV, NOTIFICATION_EMAIL_ALLOWLIST: undefined }, async () => {
+      const inAppJob = { ...makeEmailJob('j-inapp-unset'), channel: NotificationDeliveryChannel.IN_APP }
+      const { db, updates } = makeDispatchDb([inAppJob])
+      const summary = await dispatchDueNotificationJobs(db)
+      assert.equal(summary.successCount, 1)
+      assert.equal(summary.suppressedCount, 0)
+      assert.deepEqual(updates.map((update) => update.status), ['SENT'])
+    })
+  })
+
+  await runAsyncCollect('(ㅅ) 허용 목록 미설정 + digest 그룹 → 전원 SUPPRESSED · ALLOWLIST_NOT_CONFIGURED', async () => {
+    await withEnv({ ...NO_SMTP_ENV, NOTIFICATION_EMAIL_ALLOWLIST: undefined }, async () => {
+      const digest = { isDigestMember: true, digestKey: 'emp-allow:2026-10-19' }
+      const { db, updates } = makeDispatchDb([makeEmailJob('j-dg1', digest), makeEmailJob('j-dg2', digest)])
+      const summary = await dispatchDueNotificationJobs(db)
+      assert.equal(summary.suppressedCount, 2)
+      assert.equal(summary.successCount, 0)
+      assert.deepEqual(updates.map((update) => update.suppressReason), ['ALLOWLIST_NOT_CONFIGURED', 'ALLOWLIST_NOT_CONFIGURED'])
+    })
   })
 
   console.log('Notification tests completed')
