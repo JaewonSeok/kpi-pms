@@ -18,6 +18,15 @@ import {
   type SyncPreviewContext,
   type SyncPreviewRow,
 } from '@/lib/performance-assignment-sync-preview'
+import {
+  buildPopulationPreviewRows,
+  formatPopulationRunMessage,
+  loadPopulationPreview,
+  populationRunBlockedReason,
+  runPopulationPlan,
+  summarizePopulationPlan,
+  type PopulationPlan,
+} from '@/lib/self-evaluation-population-preview'
 
 type PerformanceAssignmentAdminClientProps = {
   initialData: PerformanceAssignmentPageData
@@ -99,6 +108,9 @@ export function PerformanceAssignmentAdminClient({
     buildDraftEvaluatorMap(initialData)
   )
   const [syncPlan, setSyncPlan] = useState<SyncPlan | null>(null)
+  const [populationPlan, setPopulationPlan] = useState<PopulationPlan | null>(null)
+  const selectedCycleStatus =
+    data.availableCycles.find((cycle) => cycle.id === data.selectedCycleId)?.status ?? null
 
   useEffect(() => {
     setData(initialData)
@@ -107,7 +119,52 @@ export function PerformanceAssignmentAdminClient({
     setErrorNotice('')
     setBusyKey(null)
     setSyncPlan(null)
+    setPopulationPlan(null)
   }, [initialData])
+
+  // 자기평가 일괄 생성도 바로 실행하지 않는다. 미리보기는 사이클 단계와 관계없이 언제든 볼 수 있다.
+  async function openPopulationPreview() {
+    if (!data.selectedCycleId) return
+    setNotice('')
+    setErrorNotice('')
+    setBusyKey('population')
+    try {
+      setPopulationPlan(await loadPopulationPreview({ evalCycleId: data.selectedCycleId, post: postAssignmentAction }))
+    } catch (error) {
+      setErrorNotice(error instanceof Error ? error.message : '자기평가 생성 미리보기를 불러오지 못했습니다.')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  async function runPopulation() {
+    if (!data.selectedCycleId || !populationPlan) return
+    setNotice('')
+    setErrorNotice('')
+    setBusyKey('population-run')
+    try {
+      const outcome = await runPopulationPlan<PerformanceAssignmentPageData>({
+        plan: populationPlan,
+        evalCycleId: data.selectedCycleId,
+        post: postAssignmentAction,
+      })
+      if (outcome.kind === 'applied') {
+        setData(outcome.page)
+        setDraftEvaluatorIds(buildDraftEvaluatorMap(outcome.page))
+        setPopulationPlan(null)
+        setNotice(formatPopulationRunMessage(outcome.result))
+      } else if (outcome.kind === 'plan-changed') {
+        setPopulationPlan(outcome.plan)
+        setErrorNotice(outcome.message)
+      } else {
+        setErrorNotice(outcome.message)
+      }
+    } catch (error) {
+      setErrorNotice(error instanceof Error ? error.message : '자기평가를 생성하지 못했습니다.')
+    } finally {
+      setBusyKey(null)
+    }
+  }
 
   // 자동 동기화는 바로 적용하지 않는다. 먼저 미리보기를 불러와 확인받는다.
   async function openSyncPreview() {
@@ -272,7 +329,7 @@ export function PerformanceAssignmentAdminClient({
             </div>
           </div>
 
-          <div className="grid w-full gap-3 xl:w-[420px]">
+          <div className="grid w-full gap-3 xl:w-[560px]">
             <label className="space-y-2">
               <span className="text-sm font-semibold text-slate-700">평가 주기</span>
               <select
@@ -288,7 +345,7 @@ export function PerformanceAssignmentAdminClient({
                 ))}
               </select>
             </label>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
               <button
                 type="button"
                 onClick={() => void openSyncPreview()}
@@ -297,6 +354,14 @@ export function PerformanceAssignmentAdminClient({
               >
                 <RefreshCcw className="mr-2 h-4 w-4" />
                 자동 배정 미리보기
+              </button>
+              <button
+                type="button"
+                onClick={() => void openPopulationPreview()}
+                disabled={!data.selectedCycleId || busyKey !== null}
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                자기평가 생성 미리보기
               </button>
               <Link
                 href="/admin/eval-cycle"
@@ -321,6 +386,16 @@ export function PerformanceAssignmentAdminClient({
           busy={busyKey !== null}
           onApply={() => void applySync()}
           onClose={() => setSyncPlan(null)}
+        />
+      ) : null}
+
+      {populationPlan ? (
+        <PerformanceAssignmentPopulationPreviewPanel
+          plan={populationPlan}
+          cycleStatus={selectedCycleStatus}
+          busy={busyKey !== null}
+          onRun={() => void runPopulation()}
+          onClose={() => setPopulationPlan(null)}
         />
       ) : null}
 
@@ -637,6 +712,112 @@ export function PerformanceAssignmentSyncPreviewPanel(props: {
       )}
       {rows.locked.length ? <SyncPreviewTable title="잠겨서 못 바꿈" rows={rows.locked} /> : null}
       {rows.manualInactive.length ? <SyncPreviewTable title="퇴사자 수동 배정" rows={rows.manualInactive} /> : null}
+    </section>
+  )
+}
+
+export function PerformanceAssignmentPopulationPreviewPanel(props: {
+  plan: PopulationPlan
+  cycleStatus: string | null
+  busy: boolean
+  onRun: () => void
+  onClose: () => void
+}) {
+  const summary = summarizePopulationPlan(props.plan)
+  const rows = buildPopulationPreviewRows(props.plan)
+  const blockedReason = populationRunBlockedReason({ plan: props.plan, cycleStatus: props.cycleStatus })
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-500">자기평가 생성 미리보기</p>
+          <h2 className="mt-2 text-xl font-bold text-slate-900">실행하면 아래 직원의 자기평가가 만들어집니다</h2>
+          <p className="mt-2 max-w-3xl text-sm text-slate-500">
+            이미 자기평가가 있는 직원은 건너뜁니다. 미리보기 이후 대상이 바뀌면 실행이 거절되고 미리보기를 다시 불러옵니다.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            data-population-run="true"
+            onClick={props.onRun}
+            disabled={blockedReason !== null || props.busy}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+          >
+            실행
+          </button>
+          <button
+            type="button"
+            onClick={props.onClose}
+            disabled={props.busy}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="생성" value={`${summary.createCount.toLocaleString()}명`} />
+        <MetricCard label="생성 항목" value={`${summary.createItemCount.toLocaleString()}개`} />
+        <MetricCard label="이미 있음" value={`${summary.skippedExistingCount.toLocaleString()}명`} />
+        <MetricCard label="확정 KPI 없음" value={`${summary.noConfirmedKpiCount.toLocaleString()}명`} />
+      </div>
+
+      {blockedReason ? (
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">{blockedReason}</div>
+      ) : null}
+
+      {rows.create.length ? (
+        <div className="mt-5">
+          <div className="text-sm font-semibold text-slate-900">생성 예정 {rows.create.length.toLocaleString()}명</div>
+          <div className="mt-2 overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">대상자</th>
+                  <th className="px-4 py-3 text-left font-semibold">부서</th>
+                  <th className="px-4 py-3 text-left font-semibold">확정 KPI</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.create.map((row) => (
+                  <tr key={row.key} className="align-top">
+                    <td className="px-4 py-3 font-semibold text-slate-900">{row.name}</td>
+                    <td className="px-4 py-3 text-slate-700">{row.department}</td>
+                    <td className="px-4 py-3 text-slate-700">{row.kpiCount.toLocaleString()}개</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {rows.noConfirmedKpi.length ? (
+        <div className="mt-5">
+          <div className="text-sm font-semibold text-slate-900">확정 KPI 없음 {rows.noConfirmedKpi.length.toLocaleString()}명</div>
+          <div className="mt-2 overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">대상자</th>
+                  <th className="px-4 py-3 text-left font-semibold">부서</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.noConfirmedKpi.map((row) => (
+                  <tr key={row.key} className="align-top">
+                    <td className="px-4 py-3 font-semibold text-slate-900">{row.name}</td>
+                    <td className="px-4 py-3 text-slate-700">{row.department}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
