@@ -9,6 +9,8 @@ import {
   upsertPerformanceAssignment,
 } from '@/server/evaluation-performance-assignments'
 
+export const maxDuration = 300
+
 export async function GET(request: Request) {
   try {
     const session = await authorizeMenu('EVAL_CYCLE')
