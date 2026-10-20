@@ -48,7 +48,14 @@ function person(id: string, deptId: string, role: Role, slots: Slots = { teamLea
 // 대상자 슬롯은 조직 계층과 일부러 다른 사람을 가리킨다. 슬롯을 읽으면 체인에 드러난다.
 const SLOT_DECOYS: Slots = { teamLeaderId: 'emp-decoy-tl', sectionChiefId: 'emp-decoy-sc', divisionHeadId: 'emp-decoy-dh' }
 
-function buildEmployees(targetSlots: Slots) {
+// 퇴사한 평가자. 배정 행에는 남아 있지만 기본 배정 계산에서는 빠진다.
+function resigned(id: string, deptId: string, role: Role) {
+  return { ...person(id, deptId, role), status: 'RESIGNED' }
+}
+
+type Employee = ReturnType<typeof person>
+
+function buildEmployees(targetSlots: Slots): Employee[] {
   return [
     person('emp-div', 'div-1', 'ROLE_DIV_HEAD'),
     person('emp-sec', 'sec-1', 'ROLE_SECTION_CHIEF'),
@@ -57,14 +64,35 @@ function buildEmployees(targetSlots: Slots) {
     person('emp-decoy-tl', 'div-1', 'ROLE_TEAM_LEADER'),
     person('emp-decoy-sc', 'div-1', 'ROLE_SECTION_CHIEF'),
     person('emp-decoy-dh', 'div-1', 'ROLE_DIV_HEAD'),
+    resigned('emp-gone-tl', 'team-1', 'ROLE_TEAM_LEADER'),
+    resigned('emp-gone-sc', 'sec-1', 'ROLE_SECTION_CHIEF'),
+    resigned('emp-gone-ceo', 'div-1', 'ROLE_CEO'),
     person('emp-target', 'team-1', 'ROLE_MEMBER', targetSlots),
+  ]
+}
+
+// 팀장 · 실장 자리가 퇴사자뿐인 조직: 기본 배정에 FIRST · SECOND 평가자가 없다.
+const VACANT_DEPARTMENTS = [
+  { id: 'div-1', deptName: '본부', parentDeptId: null, leaderEmployeeId: 'emp-div', excludeLeaderFromEvaluatorAutoAssign: false },
+  { id: 'sec-1', deptName: '실', parentDeptId: 'div-1', leaderEmployeeId: 'emp-gone-sc', excludeLeaderFromEvaluatorAutoAssign: false },
+  { id: 'team-1', deptName: '팀', parentDeptId: 'sec-1', leaderEmployeeId: 'emp-gone-tl', excludeLeaderFromEvaluatorAutoAssign: false },
+]
+
+function buildVacantEmployees(): Employee[] {
+  return [
+    person('emp-div', 'div-1', 'ROLE_DIV_HEAD'),
+    person('emp-ceo', 'div-1', 'ROLE_CEO'),
+    resigned('emp-gone-tl', 'team-1', 'ROLE_TEAM_LEADER'),
+    resigned('emp-gone-sc', 'sec-1', 'ROLE_SECTION_CHIEF'),
+    person('emp-target', 'team-1', 'ROLE_MEMBER'),
   ]
 }
 
 type Row = { evalStage: Stage; evaluatorId: string }
 
-function createDb(params: { targetSlots: Slots; rows: Row[] }) {
-  const employees = buildEmployees(params.targetSlots)
+function createDb(params: { targetSlots: Slots; rows: Row[]; departments?: typeof departments; employees?: Employee[] }) {
+  const employees = params.employees ?? buildEmployees(params.targetSlots)
+  const hierarchy = params.departments ?? departments
   const byId = new Map(employees.map((employee) => [employee.id, employee]))
   const counters = { hierarchyLoads: 0 }
   const persisted = params.rows.map((row) => ({
@@ -79,16 +107,19 @@ function createDb(params: { targetSlots: Slots; rows: Row[] }) {
     department: {
       findMany: async () => {
         counters.hierarchyLoads += 1
-        return departments
+        return hierarchy
       },
     },
     employee: {
       findUnique: async (args: { where?: { id?: string } }) => byId.get(args?.where?.id ?? '') ?? null,
       findFirst: async (args: { where?: { role?: string } }) =>
         employees.find((employee) => employee.role === args?.where?.role && employee.status === 'ACTIVE') ?? null,
-      findMany: async (args?: { where?: { id?: { in?: string[] } } }) => {
+      findMany: async (args?: { where?: { id?: { in?: string[] }; status?: string } }) => {
         const ids = args?.where?.id?.in
-        return ids ? employees.filter((employee) => ids.includes(employee.id)) : employees
+        const status = args?.where?.status
+        return employees.filter(
+          (employee) => (!ids || ids.includes(employee.id)) && (!status || employee.status === status)
+        )
       },
     },
     evaluationAssignment: {
@@ -112,10 +143,13 @@ async function main() {
       evaluatorId: entry.evaluatorId,
     }))
 
-  // buildDefaultAssignmentRecords 와 같은 계산: buildAssignments 의 chain + CEO_ADJUST 는 활성 ROLE_CEO.
-  const defaultRows = (): Row[] => {
-    const employees = buildEmployees(SLOT_DECOYS)
-    const chain = buildAssignments(departments, employees as never).get('emp-target')
+  // buildDefaultAssignmentRecords 와 같은 계산: 활성 직원만으로 buildAssignments 의 chain + CEO_ADJUST 는 활성 ROLE_CEO.
+  const defaultRows = (
+    hierarchy: typeof departments = departments,
+    allEmployees: Employee[] = buildEmployees(SLOT_DECOYS)
+  ): Row[] => {
+    const employees = allEmployees.filter((employee) => employee.status === 'ACTIVE')
+    const chain = buildAssignments(hierarchy, employees as never).get('emp-target')
     const ceoId = employees.find((employee) => employee.role === 'ROLE_CEO')?.id ?? null
     const byStage: Record<Stage, string | null> = {
       FIRST: chain?.teamLeaderId ?? null,
@@ -179,6 +213,94 @@ async function main() {
       await resolveEvaluationStageAssignee({ db: noRows.db, evalCycleId: 'cycle-1', targetId: 'emp-target', evalStage: 'CEO_ADJUST' }),
       'emp-ceo'
     )
+  })
+
+  const defaultEvaluatorOf = (stage: Stage, rows: Row[] = defaultRows()) =>
+    rows.find((row) => row.evalStage === stage)?.evaluatorId ?? null
+
+  await run('⑦ 행의 평가자가 비활성이면 그 단계는 기본 배정의 평가자다. 다른 단계는 행 그대로', async () => {
+    const chain = await chainOf(
+      createDb({
+        targetSlots: SLOT_DECOYS,
+        rows: [
+          { evalStage: 'FIRST', evaluatorId: 'emp-gone-tl' },
+          { evalStage: 'SECOND', evaluatorId: 'emp-decoy-sc' },
+          { evalStage: 'FINAL', evaluatorId: 'emp-div' },
+          { evalStage: 'CEO_ADJUST', evaluatorId: 'emp-ceo' },
+        ],
+      }).db
+    )
+    assert.notEqual(defaultEvaluatorOf('FIRST'), null)
+    assert.deepEqual(chain, [
+      { stage: 'SELF', evaluatorId: 'emp-target' },
+      { stage: 'FIRST', evaluatorId: defaultEvaluatorOf('FIRST') },
+      { stage: 'SECOND', evaluatorId: 'emp-decoy-sc' },
+      { stage: 'FINAL', evaluatorId: 'emp-div' },
+      { stage: 'CEO_ADJUST', evaluatorId: 'emp-ceo' },
+    ])
+  })
+
+  await run('⑧ 기본 배정에도 평가자가 없으면 그 단계는 체인에 없다(FIRST · SECOND)', async () => {
+    const vacantDefaults = defaultRows(VACANT_DEPARTMENTS, buildVacantEmployees())
+    assert.equal(defaultEvaluatorOf('FIRST', vacantDefaults), null)
+    assert.equal(defaultEvaluatorOf('SECOND', vacantDefaults), null)
+
+    const chain = await chainOf(
+      createDb({
+        targetSlots: NO_SLOTS,
+        departments: VACANT_DEPARTMENTS,
+        employees: buildVacantEmployees(),
+        rows: [
+          { evalStage: 'FIRST', evaluatorId: 'emp-gone-tl' },
+          { evalStage: 'SECOND', evaluatorId: 'emp-gone-sc' },
+          { evalStage: 'FINAL', evaluatorId: 'emp-div' },
+          { evalStage: 'CEO_ADJUST', evaluatorId: 'emp-ceo' },
+        ],
+      }).db
+    )
+    assert.deepEqual(chain.map((entry) => entry.stage), ['SELF', 'FINAL', 'CEO_ADJUST'])
+  })
+
+  await run('⑨ resolveEvaluationStageAssignee: 행의 평가자가 비활성이면 기본 배정의 평가자(CEO_ADJUST 포함)', async () => {
+    const rows: Row[] = [
+      { evalStage: 'FIRST', evaluatorId: 'emp-gone-tl' },
+      { evalStage: 'FINAL', evaluatorId: 'emp-div' },
+      { evalStage: 'CEO_ADJUST', evaluatorId: 'emp-gone-ceo' },
+    ]
+    const resolve = (evalStage: Stage) =>
+      resolveEvaluationStageAssignee({
+        db: createDb({ targetSlots: SLOT_DECOYS, rows }).db,
+        evalCycleId: 'cycle-1',
+        targetId: 'emp-target',
+        evalStage,
+      })
+    assert.equal(await resolve('CEO_ADJUST'), 'emp-ceo')
+    assert.equal(await resolve('FIRST'), defaultEvaluatorOf('FIRST'))
+    assert.equal(await resolve('FINAL'), 'emp-div')
+  })
+
+  await run('⑩ 비활성 행이 2개여도 계층 로드는 1회, 비활성 행이 없으면 0회', async () => {
+    const twoInactive: Row[] = [
+      { evalStage: 'FIRST', evaluatorId: 'emp-gone-tl' },
+      { evalStage: 'SECOND', evaluatorId: 'emp-gone-sc' },
+      { evalStage: 'FINAL', evaluatorId: 'emp-div' },
+      { evalStage: 'CEO_ADJUST', evaluatorId: 'emp-ceo' },
+    ]
+    const withInactive = createDb({ targetSlots: SLOT_DECOYS, rows: twoInactive })
+    await chainOf(withInactive.db)
+    assert.equal(withInactive.counters.hierarchyLoads, 1)
+
+    const allActive = createDb({ targetSlots: SLOT_DECOYS, rows: ROWS_WITHOUT_SECOND })
+    await chainOf(allActive.db)
+    assert.equal(allActive.counters.hierarchyLoads, 0)
+
+    const resolverInactive = createDb({ targetSlots: SLOT_DECOYS, rows: twoInactive })
+    await resolveEvaluationStageAssignee({ db: resolverInactive.db, evalCycleId: 'cycle-1', targetId: 'emp-target', evalStage: 'FIRST' })
+    assert.equal(resolverInactive.counters.hierarchyLoads, 1)
+
+    const resolverActive = createDb({ targetSlots: SLOT_DECOYS, rows: twoInactive })
+    await resolveEvaluationStageAssignee({ db: resolverActive.db, evalCycleId: 'cycle-1', targetId: 'emp-target', evalStage: 'FINAL' })
+    assert.equal(resolverActive.counters.hierarchyLoads, 0)
   })
 
   console.log('Evaluation runtime stage chain tests completed')
