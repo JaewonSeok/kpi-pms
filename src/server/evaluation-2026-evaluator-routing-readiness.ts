@@ -5,7 +5,7 @@ import type {
   Position,
   SystemRole,
 } from '@prisma/client'
-import { resolveAdminJobTitleLeaderTier } from '@/lib/evaluation-leader-role'
+import { EVALUATION_ROLE_ORDER, resolveEvaluationRole } from '@/lib/evaluation-leader-role'
 import { prisma } from '@/lib/prisma'
 import { POSITION_LABELS } from '@/lib/utils'
 import { buildAssignments } from '@/server/admin/employeeHierarchy'
@@ -170,43 +170,21 @@ const ROLE_LABELS: Record<SystemRole, string> = {
   ROLE_ADMIN: '관리자',
 }
 
-const ROLE_ORDER: Record<SystemRole, number> = {
-  ROLE_MEMBER: 0,
-  ROLE_ADMIN: 0,
-  ROLE_TEAM_LEADER: 1,
-  ROLE_SECTION_CHIEF: 2,
-  ROLE_DIV_HEAD: 3,
-  ROLE_CEO: 4,
-}
-
 function assignmentKey(params: { targetId: string; evalStage: EvalStage }) {
   return `${params.targetId}:${params.evalStage}`
 }
 
-const ADMIN_TIER_ROLE: Record<NonNullable<ReturnType<typeof resolveAdminJobTitleLeaderTier>>, SystemRole> = {
-  TEAM_LEADER: 'ROLE_TEAM_LEADER',
-  SECTION_CHIEF: 'ROLE_SECTION_CHIEF',
-  DIV_HEAD: 'ROLE_DIV_HEAD',
-}
-
-// ROLE_ADMIN 은 권한 플래그다. 평가 역할은 jobTitle 에 있다.
-// #322 가 로더에 jobTitle 을 넣고 #326 이 필수로 만든 값이다.
-function resolveEvaluationRole(employee: { role: SystemRole; jobTitle?: string | null }): SystemRole {
-  if (employee.role !== 'ROLE_ADMIN') return employee.role
-  const tier = resolveAdminJobTitleLeaderTier(employee.jobTitle)
-  return tier ? ADMIN_TIER_ROLE[tier] : employee.role
-}
-
+// 평가 역할 판정은 전부 resolveEvaluationRole 을 거친다. ROLE_ADMIN 은 권한 플래그라
+// 평가 역할이 jobTitle 에 있다. 권한·표시(role·roleLabel)와 ceoId 조회만 원래 role 을 본다.
 function requiredMissingTypesForRole(employee: { role: SystemRole; jobTitle?: string | null }) {
-  // ROLE_ORDER.ROLE_ADMIN = 0 이라 ADMIN 은 팀원 취급된다. 상수는 두고 ADMIN 일 때만 jobTitle 로 등급을 대체한다.
   const role = resolveEvaluationRole(employee)
   if (role === 'ROLE_CEO') return [] satisfies Evaluation2026EvaluatorMissingType[]
   if (role === 'ROLE_DIV_HEAD') return ['FINAL'] satisfies Evaluation2026EvaluatorMissingType[]
 
   const required: Evaluation2026EvaluatorMissingType[] = []
-  if (ROLE_ORDER[role] < ROLE_ORDER.ROLE_TEAM_LEADER) required.push('FIRST')
-  if (ROLE_ORDER[role] < ROLE_ORDER.ROLE_SECTION_CHIEF) required.push('SECOND')
-  if (ROLE_ORDER[role] < ROLE_ORDER.ROLE_DIV_HEAD) required.push('FINAL')
+  if (EVALUATION_ROLE_ORDER[role] < EVALUATION_ROLE_ORDER.ROLE_TEAM_LEADER) required.push('FIRST')
+  if (EVALUATION_ROLE_ORDER[role] < EVALUATION_ROLE_ORDER.ROLE_SECTION_CHIEF) required.push('SECOND')
+  if (EVALUATION_ROLE_ORDER[role] < EVALUATION_ROLE_ORDER.ROLE_DIV_HEAD) required.push('FINAL')
   return required
 }
 
@@ -292,7 +270,7 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
   checkedAt?: Date
 }): Evaluation2026EvaluatorRoutingReadinessResult {
   const activeEmployees = params.employees.filter((employee) => employee.status === 'ACTIVE')
-  const targetEmployees = activeEmployees.filter((employee) => employee.role !== 'ROLE_CEO')
+  const targetEmployees = activeEmployees.filter((employee) => resolveEvaluationRole(employee) !== 'ROLE_CEO')
   const employeeById = new Map(activeEmployees.map((employee) => [employee.id, employee]))
   const departmentById = new Map(params.departments.map((department) => [department.id, department]))
   const persistedByKey = new Map(
@@ -345,7 +323,9 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
       FINAL:
         finalRole === 'ROLE_DIV_HEAD' ||
         finalRole === 'ROLE_CEO' ||
-        (resolveEvaluationRole(employee) === 'ROLE_DIV_HEAD' && ceoApprover?.role === 'ROLE_CEO'),
+        (resolveEvaluationRole(employee) === 'ROLE_DIV_HEAD' &&
+          Boolean(ceoApprover) &&
+          resolveEvaluationRole(ceoApprover as Evaluation2026EvaluatorRoutingEmployeeInput) === 'ROLE_CEO'),
     }
     // 조직에 그 계층이 없으면 blocker 가 아니다. 실장·부문장은 전사 7명이고
     // 겸직 팀장은 #324 로 자기 역할 슬롯에 간다. 사람이 없는 자리를 세지 않는다.
@@ -380,8 +360,10 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
 
     const path = buildDepartmentPath(employee.deptId, departmentById)
     const managerName = evaluatorName(employee.managerId, employeeById)
-    const managerMissing = employee.role === 'ROLE_MEMBER' && !employee.managerId
-    const orgAmbiguous = employee.role === 'ROLE_MEMBER' && path.path.length < 2
+    // 직책이 리더가 아닌 ROLE_ADMIN 도 평가에서는 팀원이다. 매니저·조직 경로 검사를 같이 받는다.
+    const isEvaluationMember = resolveEvaluationRole(employee) === 'ROLE_MEMBER'
+    const managerMissing = isEvaluationMember && !employee.managerId
+    const orgAmbiguous = isEvaluationMember && path.path.length < 2
     const inactiveEvaluator = currentAssignments.some((assignment) => assignment.evaluatorStatus !== 'ACTIVE')
     const effectiveEvaluatorIds = [firstId, secondId, finalId, ceoApproverId].filter((value): value is string => Boolean(value))
     for (const evaluatorId of effectiveEvaluatorIds) usedEvaluatorIds.add(evaluatorId)
@@ -459,7 +441,10 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
       .map((row) => row.team ?? row.departmentPath)
   )
   const leadersWithoutEvaluatableTeamMembers = activeEmployees
-    .filter((employee) => employee.role !== 'ROLE_MEMBER' && employee.role !== 'ROLE_ADMIN' && employee.role !== 'ROLE_CEO')
+    .filter((employee) => {
+      const evaluationRole = resolveEvaluationRole(employee)
+      return evaluationRole !== 'ROLE_MEMBER' && evaluationRole !== 'ROLE_CEO'
+    })
     .filter((employee) => !usedEvaluatorIds.has(employee.id))
 
   const summary: Evaluation2026EvaluatorRoutingReadinessSummary = {

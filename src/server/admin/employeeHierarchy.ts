@@ -1,5 +1,9 @@
 import type { EmployeeStatus } from '@prisma/client'
-import { resolveAdminJobTitleLeaderTier } from '@/lib/evaluation-leader-role'
+import {
+  EVALUATION_ROLE_ORDER,
+  resolveEvaluationRole,
+  type EvaluationRole,
+} from '@/lib/evaluation-leader-role'
 import { prisma } from '@/lib/prisma'
 
 type EmployeeRole =
@@ -54,26 +58,19 @@ type PreviewEmployeeInput = {
   joinDate?: Date
 }
 
-const ROLE_ORDER: Record<EmployeeRole, number> = {
-  ROLE_MEMBER: 0,
-  ROLE_ADMIN: 0,
-  ROLE_TEAM_LEADER: 1,
-  ROLE_SECTION_CHIEF: 2,
-  ROLE_DIV_HEAD: 3,
-  ROLE_CEO: 4,
+// 아래 판정은 모두 평가 역할(resolveEvaluationRole 결과)을 받는다. 원래 role 을 넘기면
+// ROLE_ADMIN 리더가 팀원처럼 판정되어 하위 리더를 평가자로 끌어온다.
+function shouldAssignTeamLeader(evaluationRole: EvaluationRole) {
+  return EVALUATION_ROLE_ORDER[evaluationRole] < EVALUATION_ROLE_ORDER.ROLE_TEAM_LEADER
 }
 
-function shouldAssignTeamLeader(role: EmployeeRole) {
-  return ROLE_ORDER[role] < ROLE_ORDER.ROLE_TEAM_LEADER
+function shouldAssignSectionChief(evaluationRole: EvaluationRole) {
+  return EVALUATION_ROLE_ORDER[evaluationRole] < EVALUATION_ROLE_ORDER.ROLE_SECTION_CHIEF
 }
 
-function shouldAssignSectionChief(role: EmployeeRole) {
-  return ROLE_ORDER[role] < ROLE_ORDER.ROLE_SECTION_CHIEF
-}
-
-function shouldAssignDivisionHead(role: EmployeeRole) {
+function shouldAssignDivisionHead(evaluationRole: EvaluationRole) {
   // 본부장이 없는 조직과 본부장 자신은 대표가 FINAL 이다.
-  return ROLE_ORDER[role] < ROLE_ORDER.ROLE_CEO
+  return EVALUATION_ROLE_ORDER[evaluationRole] < EVALUATION_ROLE_ORDER.ROLE_CEO
 }
 
 function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees: HierarchyEmployee[]) {
@@ -95,31 +92,16 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
       divisionHeadIds: [],
     }
 
-    if (employee.role === 'ROLE_TEAM_LEADER') {
+    // ROLE_ADMIN 은 jobTitle 로 평가 역할을 구한다. 그 변환은 resolveEvaluationRole 한 곳에만 있다.
+    const evaluationRole = resolveEvaluationRole(employee)
+    if (evaluationRole === 'ROLE_TEAM_LEADER') {
       current.teamLeaderIds.push(employee.id)
     }
-    if (employee.role === 'ROLE_SECTION_CHIEF') {
+    if (evaluationRole === 'ROLE_SECTION_CHIEF') {
       current.sectionChiefIds.push(employee.id)
     }
-    if (employee.role === 'ROLE_DIV_HEAD') {
+    if (evaluationRole === 'ROLE_DIV_HEAD' || evaluationRole === 'ROLE_CEO') {
       current.divisionHeadIds.push(employee.id)
-    }
-    if (employee.role === 'ROLE_CEO') {
-      current.divisionHeadIds.push(employee.id)
-    }
-    // ROLE_ADMIN 은 권한 플래그라 평가 역할 정보가 없다. jobTitle 로만 분류한다.
-    // role 이 평가 역할을 담는 경우(위 네 if 문)가 있으면 그것이 권위이므로 이 분기는 타지 않는다.
-    if (employee.role === 'ROLE_ADMIN') {
-      const adminTier = resolveAdminJobTitleLeaderTier(employee.jobTitle)
-      if (adminTier === 'TEAM_LEADER') {
-        current.teamLeaderIds.push(employee.id)
-      }
-      if (adminTier === 'SECTION_CHIEF') {
-        current.sectionChiefIds.push(employee.id)
-      }
-      if (adminTier === 'DIV_HEAD') {
-        current.divisionHeadIds.push(employee.id)
-      }
     }
 
     leadersByDept.set(employee.deptId, current)
@@ -154,14 +136,15 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
 
   return new Map(
     employees.map((employee) => {
+      const evaluationRole = resolveEvaluationRole(employee)
       const nextAssignment: Assignment = {
-        teamLeaderId: shouldAssignTeamLeader(employee.role)
+        teamLeaderId: shouldAssignTeamLeader(evaluationRole)
           ? findLeaderInHierarchy(employee.deptId, 'teamLeaderIds', employee.id)
           : null,
-        sectionChiefId: shouldAssignSectionChief(employee.role)
+        sectionChiefId: shouldAssignSectionChief(evaluationRole)
           ? findLeaderInHierarchy(employee.deptId, 'sectionChiefIds', employee.id)
           : null,
-        divisionHeadId: shouldAssignDivisionHead(employee.role)
+        divisionHeadId: shouldAssignDivisionHead(evaluationRole)
           ? findLeaderInHierarchy(employee.deptId, 'divisionHeadIds', employee.id) ??
             (companyWideCeoId !== employee.id ? companyWideCeoId : null)
           : null,
@@ -172,7 +155,7 @@ function buildRoleBasedAssignments(departments: HierarchyDepartment[], employees
   )
 }
 
-const LEADER_ROLE_SLOT: Partial<Record<EmployeeRole, keyof Assignment>> = {
+const LEADER_ROLE_SLOT: Partial<Record<EvaluationRole, keyof Assignment>> = {
   ROLE_TEAM_LEADER: 'teamLeaderId',
   ROLE_SECTION_CHIEF: 'sectionChiefId',
   ROLE_DIV_HEAD: 'divisionHeadId',
@@ -187,7 +170,8 @@ export function buildAssignments(
   const activeEmployeeIds = new Set(
     employees.filter((employee) => employee.status === 'ACTIVE').map((employee) => employee.id)
   )
-  const employeeRoleById = new Map(employees.map((employee) => [employee.id, employee.role]))
+  // 슬롯은 평가 역할이 정한다. ROLE_ADMIN 리더도 jobTitle 로 구한 역할의 슬롯에 간다.
+  const evaluationRoleById = new Map(employees.map((employee) => [employee.id, resolveEvaluationRole(employee)]))
   const departmentById = new Map(departments.map((department) => [department.id, department]))
 
   return new Map(
@@ -242,7 +226,7 @@ export function buildAssignments(
       // 자기 부서의 장을 앞에 둬 같은 역할이면 직속이 우선한다. 슬롯은 역할이 정한다.
       for (const leaderId of [ownDepartmentLeaderId, ...leaderChain]) {
         if (!leaderId) continue
-        const slot = LEADER_ROLE_SLOT[employeeRoleById.get(leaderId) as EmployeeRole]
+        const slot = LEADER_ROLE_SLOT[evaluationRoleById.get(leaderId) as EvaluationRole]
         if (slot && nextAssignment[slot] === null) {
           nextAssignment[slot] = leaderId
         }
