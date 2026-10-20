@@ -233,6 +233,10 @@ export type PerformanceAssignmentSyncPlan = SyncPlanWrites & {
   preservedManualCount: number
   lockedSkipped: SyncLockedSkipped[]
   manualInactive: Array<{ targetId: string; evalStage: EvalStage; evaluatorId: string }>
+  // 계획에 나오는 직원 id → 이름. lockedSkipped · manualInactive 는 모양을 유지하고 이름은 여기서 찾는다.
+  employeeNames: Record<string, string>
+  // 계획에 나오는 직원 id → 부서명. 배정 행이 없는 대상도 부서를 보여 줄 수 있다.
+  employeeDepartments: Record<string, string>
 }
 
 function getDueAtForStage(
@@ -755,7 +759,7 @@ async function buildDefaultAssignmentContext(db: AssignmentDbClient) {
     }
   }
 
-  return { rows, employees }
+  return { rows, employees, departments }
 }
 
 function ensureAssignableStage(stage: EvalStage) {
@@ -1074,6 +1078,36 @@ async function computePerformanceAssignmentSyncPlan(db: AssignmentDbClient, eval
     })
   }
 
+  const referencedEmployeeIds = new Set<string>()
+  for (const item of [...writes.create, ...writes.update, ...writes.delete, ...writes.transfer]) {
+    referencedEmployeeIds.add(item.targetId)
+  }
+  for (const item of writes.create) referencedEmployeeIds.add(item.evaluatorId)
+  for (const item of [...writes.update, ...writes.transfer]) {
+    referencedEmployeeIds.add(item.beforeEvaluatorId)
+    referencedEmployeeIds.add(item.afterEvaluatorId)
+  }
+  for (const item of writes.delete) referencedEmployeeIds.add(item.beforeEvaluatorId)
+  for (const item of lockedSkipped) {
+    referencedEmployeeIds.add(item.targetId)
+    if (item.storedEvaluatorId) referencedEmployeeIds.add(item.storedEvaluatorId)
+    if (item.defaultEvaluatorId) referencedEmployeeIds.add(item.defaultEvaluatorId)
+  }
+  for (const item of manualInactive) {
+    referencedEmployeeIds.add(item.targetId)
+    referencedEmployeeIds.add(item.evaluatorId)
+  }
+  const deptNameById = new Map(defaultContext.departments.map((department) => [department.id, department.deptName]))
+  const deptIdByEmployeeId = new Map(defaultContext.employees.map((employee) => [employee.id, employee.deptId]))
+  const employeeNames: Record<string, string> = {}
+  const employeeDepartments: Record<string, string> = {}
+  for (const employeeId of referencedEmployeeIds) {
+    const name = nameById.get(employeeId)
+    if (name) employeeNames[employeeId] = name
+    const deptName = deptNameById.get(deptIdByEmployeeId.get(employeeId) ?? '')
+    if (deptName) employeeDepartments[employeeId] = deptName
+  }
+
   const plan: PerformanceAssignmentSyncPlan = {
     evalCycleId,
     fingerprint: fingerprintSyncWrites(writes),
@@ -1082,6 +1116,8 @@ async function computePerformanceAssignmentSyncPlan(db: AssignmentDbClient, eval
     preservedManualCount: manualKeys.size,
     lockedSkipped,
     manualInactive,
+    employeeNames,
+    employeeDepartments,
   }
 
   return { plan, unlockedAutoAssignments }

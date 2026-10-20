@@ -18,6 +18,7 @@ function read(relativePath: string) {
 
 const pageSource = read('src/app/(main)/admin/performance-assignments/page.tsx')
 const clientSource = read('src/components/admin/PerformanceAssignmentAdminClient.tsx')
+const syncPreviewSource = read('src/lib/performance-assignment-sync-preview.ts')
 const routeSource = read('src/app/api/admin/performance-assignments/route.ts')
 const serviceSource = read('src/server/evaluation-performance-assignments.ts')
 const routingReadinessSource = read('src/server/evaluation-2026-evaluator-routing-readiness.ts')
@@ -61,11 +62,14 @@ run('performance assignment admin page loads real server data and renders the in
 
 run('performance assignment client supports sync, override, reset, and evaluation deep links', () => {
   assert.equal(clientSource.includes("/api/admin/performance-assignments"), true)
-  assert.equal(clientSource.includes("action: 'sync'"), true)
+  // sync 요청은 미리보기 → 적용 흐름의 순수 로직 모듈이 만든다. 클라이언트는 그 함수를 부른다.
+  assert.equal(syncPreviewSource.includes("action: 'sync'"), true)
+  assert.equal(syncPreviewSource.includes("action: 'syncPreview'"), true)
+  assert.equal(clientSource.includes('applySyncPlan'), true)
   assert.equal(clientSource.includes("action: 'override'"), true)
   assert.equal(clientSource.includes("action: 'reset'"), true)
   assert.equal(clientSource.includes('/evaluation/performance/'), true)
-  assert.equal(clientSource.includes('자동 동기화'), true)
+  assert.equal(clientSource.includes('자동 배정 미리보기'), true)
   assert.equal(clientSource.includes('자동 기준 복원'), true)
 })
 
