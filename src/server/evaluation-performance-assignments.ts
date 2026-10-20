@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import {
   EvaluationAssignmentSource,
   EvalStage,
@@ -175,6 +176,63 @@ type ResetPerformanceAssignmentParams = {
 type SyncPerformanceAssignmentsParams = {
   actorId: string
   evalCycleId: string
+  // 미리보기 계획의 지문. 없거나 지금 계획과 다르면 쓰지 않는다.
+  fingerprint?: string | null
+}
+
+type SyncPlanEntryBase = {
+  targetId: string
+  targetName: string | null
+  evalStage: EvalStage
+}
+
+type SyncPlanWrites = {
+  // id 는 (대상 · 단계) 키다. 아직 행이 없다.
+  create: Array<SyncPlanEntryBase & { id: string; evaluatorId: string; evaluatorName: string | null }>
+  // id 는 배정 행 id 다.
+  update: Array<
+    SyncPlanEntryBase & {
+      id: string
+      beforeEvaluatorId: string
+      beforeEvaluatorName: string | null
+      afterEvaluatorId: string
+      afterEvaluatorName: string | null
+    }
+  >
+  delete: Array<
+    SyncPlanEntryBase & {
+      id: string
+      beforeEvaluatorId: string
+      beforeEvaluatorName: string | null
+      hasInProgressEvaluation: boolean
+    }
+  >
+  // id 는 평가 id 다.
+  transfer: Array<
+    SyncPlanEntryBase & {
+      id: string
+      beforeEvaluatorId: string
+      beforeEvaluatorName: string | null
+      afterEvaluatorId: string
+      afterEvaluatorName: string | null
+    }
+  >
+}
+
+type SyncLockedSkipped = {
+  targetId: string
+  evalStage: EvalStage
+  storedEvaluatorId: string | null
+  defaultEvaluatorId: string | null
+}
+
+export type PerformanceAssignmentSyncPlan = SyncPlanWrites & {
+  evalCycleId: string
+  fingerprint: string
+  unchangedCount: number
+  preservedManualCount: number
+  lockedSkipped: SyncLockedSkipped[]
+  manualInactive: Array<{ targetId: string; evalStage: EvalStage; evaluatorId: string }>
 }
 
 function getDueAtForStage(
@@ -673,6 +731,11 @@ async function loadHierarchyInputs(db: AssignmentDbClient) {
 }
 
 async function buildDefaultAssignmentRecords(db: AssignmentDbClient): Promise<DefaultAssignmentRecord[]> {
+  return (await buildDefaultAssignmentContext(db)).rows
+}
+
+// 기본 배정과, 그 계산에 쓴 전체 직원(비활성 포함). sync 계획이 이름을 붙일 때 직원 목록을 다시 읽지 않게 한다.
+async function buildDefaultAssignmentContext(db: AssignmentDbClient) {
   const { departments, employees } = await loadHierarchyInputs(db)
   const activeEmployees = employees.filter((employee) => employee.status === 'ACTIVE')
   const assignmentMap = buildAssignments(departments, activeEmployees)
@@ -692,7 +755,7 @@ async function buildDefaultAssignmentRecords(db: AssignmentDbClient): Promise<De
     }
   }
 
-  return rows
+  return { rows, employees }
 }
 
 function ensureAssignableStage(stage: EvalStage) {
@@ -813,17 +876,38 @@ async function resolveDefaultEvaluationStageAssignee(params: {
   )
 }
 
-export async function syncPerformanceAssignmentsForCycle(
-  params: SyncPerformanceAssignmentsParams,
-  db: AssignmentDbClient = prisma
-) {
-  await assertCycleExists(db, params.evalCycleId)
+const SYNC_IN_PROGRESS_STATUSES: EvalStatus[] = ['PENDING', 'IN_PROGRESS', 'REJECTED']
+const SYNC_LOCKED_STATUSES: EvalStatus[] = ['SUBMITTED', 'CONFIRMED']
 
-  const [defaults, existingAssignments, lockedEvaluations] = await Promise.all([
-    buildDefaultAssignmentRecords(db),
+function compareById(left: { id: string }, right: { id: string }) {
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+}
+
+// 계획 지문: 쓰기 목록을 id 로만 정렬해 쓰기를 정하는 값만 해시한다. 이름은 넣지 않는다.
+function fingerprintSyncWrites(writes: SyncPlanWrites) {
+  const payload = {
+    create: [...writes.create].sort(compareById).map((item) => [item.id, item.evaluatorId]),
+    update: [...writes.update].sort(compareById).map((item) => [item.id, item.beforeEvaluatorId, item.afterEvaluatorId]),
+    delete: [...writes.delete].sort(compareById).map((item) => [item.id, item.beforeEvaluatorId]),
+    transfer: [...writes.transfer].sort(compareById).map((item) => [item.id, item.beforeEvaluatorId, item.afterEvaluatorId]),
+  }
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+}
+
+// 행에 쓸 (대상 · 단계 · 평가자). 계획의 create · update 만이다.
+function planRowUpserts(plan: PerformanceAssignmentSyncPlan): DefaultAssignmentRecord[] {
+  return [
+    ...plan.create.map((item) => ({ targetId: item.targetId, evalStage: item.evalStage, evaluatorId: item.evaluatorId })),
+    ...plan.update.map((item) => ({ targetId: item.targetId, evalStage: item.evalStage, evaluatorId: item.afterEvaluatorId })),
+  ]
+}
+
+async function computePerformanceAssignmentSyncPlan(db: AssignmentDbClient, evalCycleId: string) {
+  const [defaultContext, existingAssignments, lockedEvaluations, inProgressEvaluations] = await Promise.all([
+    buildDefaultAssignmentContext(db),
     db.evaluationAssignment.findMany({
       where: {
-        evalCycleId: params.evalCycleId,
+        evalCycleId,
       },
       select: {
         id: true,
@@ -840,9 +924,9 @@ export async function syncPerformanceAssignmentsForCycle(
     }),
     db.evaluation.findMany({
       where: {
-        evalCycleId: params.evalCycleId,
+        evalCycleId,
         status: {
-          in: ['SUBMITTED', 'CONFIRMED'],
+          in: SYNC_LOCKED_STATUSES,
         },
       },
       select: {
@@ -850,7 +934,25 @@ export async function syncPerformanceAssignmentsForCycle(
         evalStage: true,
       },
     }),
+    db.evaluation.findMany({
+      where: {
+        evalCycleId,
+        status: {
+          in: SYNC_IN_PROGRESS_STATUSES,
+        },
+      },
+      select: {
+        id: true,
+        targetId: true,
+        evalStage: true,
+        evaluatorId: true,
+      },
+    }),
   ])
+
+  const defaults = defaultContext.rows
+  const nameById = new Map(defaultContext.employees.map((employee) => [employee.id, employee.empName]))
+  const nameOf = (employeeId: string | null) => (employeeId ? nameById.get(employeeId) ?? null : null)
 
   const defaultMap = new Map(
     defaults.map((item) => [buildAssignmentKey(item), item])
@@ -891,12 +993,7 @@ export async function syncPerformanceAssignmentsForCycle(
   )
 
   // 바뀌어야 했는데 잠겨서 못 바꾼 단계만 보고한다. 이미 기본 평가자인 잠긴 단계는 넣지 않는다.
-  const lockedSkipped: Array<{
-    targetId: string
-    evalStage: EvalStage
-    storedEvaluatorId: string | null
-    defaultEvaluatorId: string | null
-  }> = []
+  const lockedSkipped: SyncLockedSkipped[] = []
   for (const item of autoCandidates) {
     const stored = existingMap.get(buildAssignmentKey(item))
     if (lockedKeys.has(buildAssignmentKey(item)) && stored?.evaluatorId !== item.evaluatorId) {
@@ -919,13 +1016,135 @@ export async function syncPerformanceAssignmentsForCycle(
     }
   }
 
-  const autoAssignments = autoCandidates.filter((item) => !lockedKeys.has(buildAssignmentKey(item)))
-  const staleAutoAssignmentIds = staleCandidates
-    .filter((item) => !lockedKeys.has(buildAssignmentKey(item)))
-    .map((item) => item.id)
+  const unlockedAutoAssignments = autoCandidates.filter((item) => !lockedKeys.has(buildAssignmentKey(item)))
+
+  const writes: SyncPlanWrites = { create: [], update: [], delete: [], transfer: [] }
+  let unchangedCount = 0
+  for (const item of unlockedAutoAssignments) {
+    const assignmentKey = buildAssignmentKey(item)
+    const stored = existingMap.get(assignmentKey)
+    const evaluatorId = item.evaluatorId as string
+    const base = { targetId: item.targetId, targetName: nameOf(item.targetId), evalStage: item.evalStage }
+
+    if (!stored) {
+      writes.create.push({ id: assignmentKey, ...base, evaluatorId, evaluatorName: nameOf(evaluatorId) })
+    } else if (stored.evaluatorId !== evaluatorId) {
+      writes.update.push({
+        id: stored.id,
+        ...base,
+        beforeEvaluatorId: stored.evaluatorId,
+        beforeEvaluatorName: nameOf(stored.evaluatorId),
+        afterEvaluatorId: evaluatorId,
+        afterEvaluatorName: nameOf(evaluatorId),
+      })
+    } else {
+      unchangedCount += 1
+    }
+  }
+
+  const inProgressMap = new Map(inProgressEvaluations.map((item) => [buildAssignmentKey(item), item]))
+  for (const item of staleCandidates) {
+    if (lockedKeys.has(buildAssignmentKey(item))) continue
+    writes.delete.push({
+      id: item.id,
+      targetId: item.targetId,
+      targetName: nameOf(item.targetId),
+      evalStage: item.evalStage,
+      beforeEvaluatorId: item.evaluatorId,
+      beforeEvaluatorName: nameOf(item.evaluatorId),
+      hasInProgressEvaluation: inProgressMap.has(buildAssignmentKey(item)),
+    })
+  }
+
+  // 이관은 바뀐 행만이 아니라 계획상 평가자가 있는 잠기지 않은 AUTO 단계 전부를 본다.
+  // 행은 맞는데 진행 중 평가만 예전 평가자인 단계도 옮긴다. MANUAL 행의 단계는 옮기지 않는다.
+  for (const item of unlockedAutoAssignments) {
+    const evaluation = inProgressMap.get(buildAssignmentKey(item))
+    const evaluatorId = item.evaluatorId as string
+    if (!evaluation || evaluation.evaluatorId === evaluatorId) continue
+    writes.transfer.push({
+      id: evaluation.id,
+      targetId: item.targetId,
+      targetName: nameOf(item.targetId),
+      evalStage: item.evalStage,
+      beforeEvaluatorId: evaluation.evaluatorId,
+      beforeEvaluatorName: nameOf(evaluation.evaluatorId),
+      afterEvaluatorId: evaluatorId,
+      afterEvaluatorName: nameOf(evaluatorId),
+    })
+  }
+
+  const plan: PerformanceAssignmentSyncPlan = {
+    evalCycleId,
+    fingerprint: fingerprintSyncWrites(writes),
+    ...writes,
+    unchangedCount,
+    preservedManualCount: manualKeys.size,
+    lockedSkipped,
+    manualInactive,
+  }
+
+  return { plan, unlockedAutoAssignments }
+}
+
+// 미리보기: 쓰기 없이 계획과 지문을 돌려준다.
+export async function planPerformanceAssignmentSync(
+  params: { evalCycleId: string },
+  db: AssignmentDbClient = prisma
+) {
+  await assertCycleExists(db, params.evalCycleId)
+  return (await computePerformanceAssignmentSyncPlan(db, params.evalCycleId)).plan
+}
+
+export async function syncPerformanceAssignmentsForCycle(
+  params: SyncPerformanceAssignmentsParams,
+  db: AssignmentDbClient = prisma
+) {
+  await assertCycleExists(db, params.evalCycleId)
+
+  const computed = await computePerformanceAssignmentSyncPlan(db, params.evalCycleId)
+  const { plan } = computed
+
+  // 미리보기에서 본 계획과 지금 계획이 같을 때만 쓴다.
+  if (!params.fingerprint || params.fingerprint !== plan.fingerprint) {
+    throw new AppError(
+      409,
+      'ASSIGNMENT_SYNC_PLAN_CHANGED',
+      '미리보기 이후 배정 계획이 바뀌었습니다. 미리보기를 다시 확인한 뒤 적용해 주세요.'
+    )
+  }
+
+  const lockedSkipped = [...plan.lockedSkipped]
+  const written: SyncPlanWrites = { create: [], update: [], delete: [], transfer: [] }
 
   await runAssignmentTransaction(db, async (tx) => {
-    for (const assignment of autoAssignments) {
+    // 계획 이후 제출 · 확정된 단계는 쓰지 않는다. 계획 키의 잠금을 트랜잭션 안에서 한 번 더 본다.
+    const plannedTargetIds = [
+      ...new Set([...plan.create, ...plan.update, ...plan.delete, ...plan.transfer].map((item) => item.targetId)),
+    ]
+    const lateLocked = plannedTargetIds.length
+      ? await tx.evaluation.findMany({
+          where: {
+            evalCycleId: params.evalCycleId,
+            targetId: {
+              in: plannedTargetIds,
+            },
+            status: {
+              in: SYNC_LOCKED_STATUSES,
+            },
+          },
+          select: {
+            targetId: true,
+            evalStage: true,
+          },
+        })
+      : []
+    const lateLockedKeys = new Set(lateLocked.map((item) => buildAssignmentKey(item)))
+    const isWritable = (item: { targetId: string; evalStage: EvalStage }) => !lateLockedKeys.has(buildAssignmentKey(item))
+
+    const rowUpserts = planRowUpserts(plan)
+    for (const assignment of rowUpserts) {
+      if (!isWritable(assignment)) continue
       await tx.evaluationAssignment.upsert({
         where: {
           evalCycleId_targetId_evalStage: {
@@ -950,39 +1169,68 @@ export async function syncPerformanceAssignmentsForCycle(
           updatedById: params.actorId,
         },
       })
+    }
 
+    for (const entry of plan.transfer) {
+      if (!isWritable(entry)) continue
       await tx.evaluation.updateMany({
         where: {
           evalCycleId: params.evalCycleId,
-          targetId: assignment.targetId,
-          evalStage: assignment.evalStage,
+          targetId: entry.targetId,
+          evalStage: entry.evalStage,
           status: {
-            in: ['PENDING', 'IN_PROGRESS', 'REJECTED'],
+            in: SYNC_IN_PROGRESS_STATUSES,
           },
         },
         data: {
-          evaluatorId: assignment.evaluatorId as string,
+          evaluatorId: entry.afterEvaluatorId,
         },
       })
     }
 
-    if (staleAutoAssignmentIds.length) {
+    const deleteIds = plan.delete.filter(isWritable).map((item) => item.id)
+    if (deleteIds.length) {
       await tx.evaluationAssignment.deleteMany({
         where: {
           id: {
-            in: staleAutoAssignmentIds,
+            in: deleteIds,
           },
         },
       })
+    }
+
+    written.create = plan.create.filter(isWritable)
+    written.update = plan.update.filter(isWritable)
+    written.delete = plan.delete.filter(isWritable)
+    written.transfer = plan.transfer.filter(isWritable)
+
+    for (const item of plan.create.filter((entry) => !isWritable(entry))) {
+      lockedSkipped.push({ targetId: item.targetId, evalStage: item.evalStage, storedEvaluatorId: null, defaultEvaluatorId: item.evaluatorId })
+    }
+    for (const item of plan.update.filter((entry) => !isWritable(entry))) {
+      lockedSkipped.push({
+        targetId: item.targetId,
+        evalStage: item.evalStage,
+        storedEvaluatorId: item.beforeEvaluatorId,
+        defaultEvaluatorId: item.afterEvaluatorId,
+      })
+    }
+    for (const item of plan.delete.filter((entry) => !isWritable(entry))) {
+      lockedSkipped.push({ targetId: item.targetId, evalStage: item.evalStage, storedEvaluatorId: item.beforeEvaluatorId, defaultEvaluatorId: null })
     }
   }, SYNC_TRANSACTION_OPTIONS)
 
   return {
-    syncedCount: autoAssignments.length,
-    preservedManualCount: manualKeys.size,
-    removedAutoCount: staleAutoAssignmentIds.length,
+    fingerprint: plan.fingerprint,
+    syncedCount: written.create.length + written.update.length + written.delete.length,
+    transferCount: written.transfer.length,
+    unchangedCount: plan.unchangedCount,
+    preservedManualCount: plan.preservedManualCount,
+    removedAutoCount: written.delete.length,
     lockedSkipped,
-    manualInactive,
+    manualInactive: plan.manualInactive,
+    // 감사 로그에 그대로 들어간다: 쓴 행마다 이전 · 이후 평가자.
+    writes: written,
   }
 }
 

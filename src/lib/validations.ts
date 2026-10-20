@@ -2283,6 +2283,12 @@ export const AdminPerformanceAssignmentActionSchema = z.discriminatedUnion('acti
   z.object({
     action: z.literal('sync'),
     evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
+    // 미리보기 계획의 지문. 없으면 서비스가 409 로 거절한다.
+    fingerprint: z.string().optional(),
+  }),
+  z.object({
+    action: z.literal('syncPreview'),
+    evalCycleId: z.string().min(1, '평가 주기를 선택해 주세요.'),
   }),
   z.object({
     action: z.literal('override'),

@@ -149,7 +149,9 @@ function createDb(params: { rows: Omit<AssignmentRow, 'id' | 'evalCycleId'>[]; e
 }
 
 async function main() {
-  const { syncPerformanceAssignmentsForCycle } = await import('../src/server/evaluation-performance-assignments')
+  const { planPerformanceAssignmentSync, syncPerformanceAssignmentsForCycle } = await import(
+    '../src/server/evaluation-performance-assignments'
+  )
   const { buildAssignments } = await import('../src/server/admin/employeeHierarchy')
 
   // buildDefaultAssignmentRecords 와 같은 계산: 활성 직원으로 buildAssignments + CEO_ADJUST 는 활성 ROLE_CEO.
@@ -163,7 +165,11 @@ async function main() {
     return stage === 'FIRST' ? chain.teamLeaderId : stage === 'SECOND' ? chain.sectionChiefId : chain.divisionHeadId
   }
 
-  const sync = (db: never) => syncPerformanceAssignmentsForCycle({ actorId: 'emp-admin', evalCycleId: CYCLE }, db)
+  // 적용은 미리보기 계획의 지문을 받아야 한다.
+  const sync = async (db: never) => {
+    const plan = await planPerformanceAssignmentSync({ evalCycleId: CYCLE }, db)
+    return syncPerformanceAssignmentsForCycle({ actorId: 'emp-admin', evalCycleId: CYCLE, fingerprint: plan.fingerprint }, db)
+  }
   const rowOf = (state: { rows: AssignmentRow[] }, targetId: string, stage: Stage) =>
     state.rows.find((row) => row.targetId === targetId && row.evalStage === stage) ?? null
   const evaluationOf = (state: { evaluations: EvaluationRow[] }, targetId: string, stage: Stage) =>

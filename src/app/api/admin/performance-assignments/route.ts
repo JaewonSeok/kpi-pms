@@ -4,6 +4,7 @@ import { errorResponse, successResponse, AppError } from '@/lib/utils'
 import { authorizeMenu } from '@/server/auth/authorize'
 import {
   getPerformanceAssignmentPageData,
+  planPerformanceAssignmentSync,
   resetPerformanceAssignmentToAuto,
   syncPerformanceAssignmentsForCycle,
   upsertPerformanceAssignment,
@@ -44,6 +45,14 @@ export async function POST(request: Request) {
     }
 
     const input = validated.data
+
+    // 미리보기는 계획과 지문만 돌려준다. 아무것도 쓰지 않으므로 감사 로그도 남기지 않는다.
+    if (input.action === 'syncPreview') {
+      return successResponse({
+        plan: await planPerformanceAssignmentSync({ evalCycleId: input.evalCycleId }),
+      })
+    }
+
     let result: Record<string, unknown>
     let auditAction = 'PERFORMANCE_ASSIGNMENT_SYNC'
     let auditEntityId = input.evalCycleId
@@ -52,6 +61,7 @@ export async function POST(request: Request) {
       result = await syncPerformanceAssignmentsForCycle({
         actorId: session.user.id,
         evalCycleId: input.evalCycleId,
+        fingerprint: input.fingerprint ?? null,
       })
     } else if (input.action === 'override') {
       auditAction = 'PERFORMANCE_ASSIGNMENT_OVERRIDE'
