@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { errorResponse, successResponse, AppError } from '@/lib/utils'
+import { createSelfEvaluation } from '@/server/evaluation-self-population'
 
 // GET /api/evaluation - 내 평가 현황 (피평가자 or 평가자)
 export async function GET(request: Request) {
@@ -86,40 +87,11 @@ export async function POST(request: Request) {
     })
     if (existing) throw new AppError(409, 'ALREADY_EXISTS', '이미 자기평가가 존재합니다.')
 
-    // 개인 KPI 조회
-    const kpis = await prisma.personalKpi.findMany({
-      where: {
-        employeeId: session.user.id,
-        evalYear: cycle.evalYear,
-        status: 'CONFIRMED',
-      },
-    })
-    if (kpis.length === 0) {
-      throw new AppError(400, 'NO_KPI', '확정된 KPI가 없습니다. 먼저 KPI를 설정하고 확정해주세요.')
-    }
-
-    // 자기평가 생성 (평가자 = 본인)
-    const evaluation = await prisma.evaluation.create({
-      data: {
-        evalCycleId,
-        targetId: session.user.id,
-        evaluatorId: session.user.id,
-        evalStage: 'SELF',
-        status: 'IN_PROGRESS',
-        isDraft: true,
-        items: {
-          create: kpis.map(kpi => ({
-            personalKpiId: kpi.id,
-          })),
-        },
-      },
-      include: {
-        items: {
-          include: {
-            personalKpi: true,
-          },
-        },
-      },
+    // 자기평가 생성 (평가자 = 본인). 확정 KPI 가 없으면 NO_KPI. 일괄 생성(population)과 같은 함수다.
+    const evaluation = await createSelfEvaluation(prisma, {
+      evalCycleId,
+      employeeId: session.user.id,
+      evalYear: cycle.evalYear,
     })
 
     return successResponse(evaluation)

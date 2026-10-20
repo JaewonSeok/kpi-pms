@@ -6,6 +6,7 @@ import type {
   SystemRole,
 } from '@prisma/client'
 import { EVALUATION_ROLE_ORDER, resolveEvaluationRole } from '@/lib/evaluation-leader-role'
+import { selectEvaluationTargets } from '@/lib/evaluation-targets'
 import { prisma } from '@/lib/prisma'
 import { POSITION_LABELS } from '@/lib/utils'
 import { buildAssignments } from '@/server/admin/employeeHierarchy'
@@ -149,7 +150,8 @@ export type Evaluation2026EvaluatorRoutingReadinessResult = {
   }
 }
 
-type EvaluatorRoutingDb = Pick<typeof prisma, 'department' | 'employee' | 'evaluationAssignment'>
+type EvaluatorRoutingDb = Pick<typeof prisma, 'department' | 'employee' | 'evaluationAssignment'> &
+  Partial<Pick<typeof prisma, 'evalCycle'>>
 
 const ASSIGNABLE_ROUTING_STAGES: EvalStage[] = ['FIRST', 'SECOND', 'FINAL', 'CEO_ADJUST']
 
@@ -267,10 +269,13 @@ export function buildEvaluation2026EvaluatorRoutingReadinessFromInputs(params: {
   departments: Evaluation2026EvaluatorRoutingDepartmentInput[]
   employees: Evaluation2026EvaluatorRoutingEmployeeInput[]
   assignments?: Evaluation2026EvaluatorRoutingAssignmentInput[]
+  // 사이클 조직의 부서 id. 없으면 조직으로 거르지 않는다.
+  orgDepartmentIds?: ReadonlySet<string> | null
   checkedAt?: Date
 }): Evaluation2026EvaluatorRoutingReadinessResult {
   const activeEmployees = params.employees.filter((employee) => employee.status === 'ACTIVE')
-  const targetEmployees = activeEmployees.filter((employee) => resolveEvaluationRole(employee) !== 'ROLE_CEO')
+  // 평가 대상의 정의는 자기평가 일괄 생성과 같은 함수 하나다.
+  const targetEmployees = selectEvaluationTargets(params.employees, { orgDepartmentIds: params.orgDepartmentIds ?? null })
   const employeeById = new Map(activeEmployees.map((employee) => [employee.id, employee]))
   const departmentById = new Map(params.departments.map((department) => [department.id, department]))
   const persistedByKey = new Map(
@@ -496,7 +501,7 @@ export async function getEvaluation2026EvaluatorRoutingReadiness(params: {
   evalCycleId?: string | null
 } = {}) {
   const db = params.db ?? prisma
-  const [departments, employees, assignments] = await Promise.all([
+  const [departments, employees, assignments, cycle] = await Promise.all([
     db.department.findMany({
       select: {
         id: true,
@@ -504,6 +509,7 @@ export async function getEvaluation2026EvaluatorRoutingReadiness(params: {
         parentDeptId: true,
         leaderEmployeeId: true,
         excludeLeaderFromEvaluatorAutoAssign: true,
+        orgId: true,
       },
     }),
     db.employee.findMany({
@@ -551,12 +557,21 @@ export async function getEvaluation2026EvaluatorRoutingReadiness(params: {
           },
         })
       : Promise.resolve([]),
+    params.evalCycleId && db.evalCycle
+      ? db.evalCycle.findUnique({ where: { id: params.evalCycleId }, select: { orgId: true } })
+      : Promise.resolve(null),
   ])
+
+  // 사이클을 알면 그 조직의 부서만 평가 대상 범위로 본다.
+  const orgDepartmentIds = cycle
+    ? new Set(departments.filter((department) => department.orgId === cycle.orgId).map((department) => department.id))
+    : null
 
   return buildEvaluation2026EvaluatorRoutingReadinessFromInputs({
     evalCycleId: params.evalCycleId ?? null,
     departments,
     employees,
     assignments,
+    orgDepartmentIds,
   })
 }

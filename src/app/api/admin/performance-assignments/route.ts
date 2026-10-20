@@ -9,6 +9,7 @@ import {
   syncPerformanceAssignmentsForCycle,
   upsertPerformanceAssignment,
 } from '@/server/evaluation-performance-assignments'
+import { planSelfEvaluationPopulation, runSelfEvaluationPopulation } from '@/server/evaluation-self-population'
 
 export const maxDuration = 300
 
@@ -53,11 +54,26 @@ export async function POST(request: Request) {
       })
     }
 
+    if (input.action === 'populationPreview') {
+      return successResponse({
+        plan: await planSelfEvaluationPopulation({ evalCycleId: input.evalCycleId }),
+      })
+    }
+
     let result: Record<string, unknown>
     let auditAction = 'PERFORMANCE_ASSIGNMENT_SYNC'
+    let auditEntityType = 'EvaluationAssignment'
     let auditEntityId = input.evalCycleId
 
-    if (input.action === 'sync') {
+    if (input.action === 'population') {
+      // 감사 로그 1건: 생성 · 건너뜀 · 확정 KPI 없음 건수, 직원 id 목록, 지문(반환값이 펼쳐진다).
+      auditAction = 'SELF_EVALUATION_POPULATION'
+      auditEntityType = 'Evaluation'
+      result = await runSelfEvaluationPopulation({
+        evalCycleId: input.evalCycleId,
+        fingerprint: input.fingerprint ?? null,
+      })
+    } else if (input.action === 'sync') {
       result = await syncPerformanceAssignmentsForCycle({
         actorId: session.user.id,
         evalCycleId: input.evalCycleId,
@@ -88,7 +104,7 @@ export async function POST(request: Request) {
     await createAuditLog({
       ...resolveAuditActor(session),
       action: auditAction,
-      entityType: 'EvaluationAssignment',
+      entityType: auditEntityType,
       entityId: auditEntityId,
       newValue: {
         action: input.action,
