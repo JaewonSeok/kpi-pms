@@ -361,6 +361,36 @@ async function loadStageAssigneeProfiles(
   )
 }
 
+// 비활성 평가자 행의 단계들을 기본 배정의 평가자로 대체할 프로필. 단계가 없으면 기본 배정을 계산하지 않는다.
+async function loadReplacementProfiles(
+  db: AssignmentDbClient,
+  targetId: string,
+  stages: EvalStage[]
+) {
+  const replacements = new Map<EvalStage, StageAssigneeProfile>()
+  if (!stages.length) {
+    return replacements
+  }
+
+  const defaults = await buildDefaultAssignmentRecords(db)
+  const evaluatorIdByStage = new Map<EvalStage, string>()
+  for (const item of defaults) {
+    if (item.targetId === targetId && item.evaluatorId && stages.includes(item.evalStage)) {
+      evaluatorIdByStage.set(item.evalStage, item.evaluatorId)
+    }
+  }
+
+  const profiles = await loadStageAssigneeProfiles(db, [...new Set(evaluatorIdByStage.values())])
+  for (const [stage, evaluatorId] of evaluatorIdByStage) {
+    const profile = profiles.get(evaluatorId)
+    if (profile) {
+      replacements.set(stage, profile)
+    }
+  }
+
+  return replacements
+}
+
 async function loadRuntimeStageAssignments(params: {
   db: AssignmentDbClient
   evalCycleId: string
@@ -396,13 +426,27 @@ async function loadRuntimeStageAssignments(params: {
   })
 
   // 배정 행이 하나라도 있으면 행만 쓴다. 행 없는 단계는 건너뛴다(평가자 없음).
-  // 비활성 평가자의 행도 그 단계를 비운다 — 다른 출처로 메우지 않는다.
+  // 평가자가 비활성인 행만 그 단계를 기본 배정의 평가자로 채운다. 기본 배정에도 없으면 빈다.
   if (persistedAssignments.length > 0) {
     const persistedMap = new Map(
       persistedAssignments.map((assignment) => [assignment.evalStage, assignment])
     )
+    const inactiveStages = persistedAssignments
+      .filter((assignment) => assignment.evaluator?.status !== 'ACTIVE')
+      .map((assignment) => assignment.evalStage)
+    const replacementProfiles = await loadReplacementProfiles(db, targetId, inactiveStages)
+
     const assignments = PERFORMANCE_ASSIGNABLE_STAGES.map((stage) => {
       const persisted = persistedMap.get(stage)
+      if (persisted && persisted.evaluator?.status !== 'ACTIVE') {
+        const replacement = replacementProfiles.get(stage) ?? null
+        return {
+          stage,
+          evaluatorId: replacement?.id ?? null,
+          evaluator: replacement,
+        } satisfies RuntimeStageAssignment
+      }
+
       if (persisted?.evaluator?.status === 'ACTIVE') {
         return {
           stage,
@@ -723,9 +767,18 @@ export async function resolveEvaluationStageAssignee(params: {
     },
   })
 
+  // 평가자가 비활성인 행은 기본 배정의 평가자로 대체한다(행 없는 단계는 null).
   if (persistedAssignments.length > 0) {
     const persisted = persistedAssignments.find((assignment) => assignment.evalStage === params.evalStage)
-    return persisted?.evaluator.status === 'ACTIVE' ? persisted.evaluatorId : null
+    if (!persisted) {
+      return null
+    }
+    if (persisted.evaluator.status === 'ACTIVE') {
+      return persisted.evaluatorId
+    }
+
+    const replacements = await loadReplacementProfiles(db, params.targetId, [params.evalStage])
+    return replacements.get(params.evalStage)?.id ?? null
   }
 
   const defaults = await buildDefaultAssignmentRecords(db)
