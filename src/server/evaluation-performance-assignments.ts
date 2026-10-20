@@ -218,14 +218,19 @@ function buildAssignmentKey(params: { targetId: string; evalStage: EvalStage }) 
 
 async function runAssignmentTransaction<T>(
   db: AssignmentDbClient,
-  fn: (tx: Prisma.TransactionClient) => Promise<T>
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  options?: { timeout: number; maxWait: number }
 ) {
   if ('$transaction' in db) {
-    return db.$transaction(async (tx) => fn(tx))
+    return db.$transaction(async (tx) => fn(tx), options)
   }
 
   return fn(db)
 }
+
+// sync 트랜잭션 상한. 활성 직원 289명 × 4단계 = 1,156행, 잠기지 않은 행마다 upsert · updateMany 2쿼리라
+// 최대 약 2,313쿼리다. 쿼리당 50ms 를 잡아 약 116초 → 120초.
+const SYNC_TRANSACTION_OPTIONS = { timeout: 120_000, maxWait: 10_000 }
 
 // 순번은 단계가 정한다. 빈 단계는 칸을 건너뛰되 뒤 번호는 유지한다(§83).
 const STAGE_REVIEW_ORDER: Record<EvalStage, number> = {
@@ -814,7 +819,7 @@ export async function syncPerformanceAssignmentsForCycle(
 ) {
   await assertCycleExists(db, params.evalCycleId)
 
-  const [defaults, existingAssignments] = await Promise.all([
+  const [defaults, existingAssignments, lockedEvaluations] = await Promise.all([
     buildDefaultAssignmentRecords(db),
     db.evaluationAssignment.findMany({
       where: {
@@ -824,7 +829,25 @@ export async function syncPerformanceAssignmentsForCycle(
         id: true,
         targetId: true,
         evalStage: true,
+        evaluatorId: true,
         assignmentSource: true,
+        evaluator: {
+          select: {
+            status: true,
+          },
+        },
+      },
+    }),
+    db.evaluation.findMany({
+      where: {
+        evalCycleId: params.evalCycleId,
+        status: {
+          in: ['SUBMITTED', 'CONFIRMED'],
+        },
+      },
+      select: {
+        targetId: true,
+        evalStage: true,
       },
     }),
   ])
@@ -832,6 +855,13 @@ export async function syncPerformanceAssignmentsForCycle(
   const defaultMap = new Map(
     defaults.map((item) => [buildAssignmentKey(item), item])
   )
+  const existingMap = new Map(
+    existingAssignments.map((item) => [buildAssignmentKey(item), item])
+  )
+
+  // 잠긴 단계(평가가 이미 제출 · 확정됨)는 sync 가 실패하지 않고 건너뛴다. 행도 평가도 그대로 둔다.
+  // 수동 지정 경로는 assertEditableAssignmentStage 로 계속 막는다.
+  const lockedKeys = new Set(lockedEvaluations.map((item) => buildAssignmentKey(item)))
 
   const manualKeys = new Set(
     existingAssignments
@@ -839,27 +869,63 @@ export async function syncPerformanceAssignmentsForCycle(
       .map((item) => buildAssignmentKey(item))
   )
 
-  const autoAssignments = defaults.filter(
-    (item) => !manualKeys.has(buildAssignmentKey(item)) && item.evaluatorId
-  )
-
-  const staleAutoAssignmentIds = existingAssignments
+  const manualInactive = existingAssignments
     .filter(
       (item) =>
-        item.assignmentSource === EvaluationAssignmentSource.AUTO &&
-        !defaultMap.get(buildAssignmentKey(item))?.evaluatorId
+        item.assignmentSource === EvaluationAssignmentSource.MANUAL &&
+        item.evaluator.status !== 'ACTIVE'
     )
+    .map((item) => ({
+      targetId: item.targetId,
+      evalStage: item.evalStage,
+      evaluatorId: item.evaluatorId,
+    }))
+
+  const autoCandidates = defaults.filter(
+    (item) => !manualKeys.has(buildAssignmentKey(item)) && item.evaluatorId
+  )
+  const staleCandidates = existingAssignments.filter(
+    (item) =>
+      item.assignmentSource === EvaluationAssignmentSource.AUTO &&
+      !defaultMap.get(buildAssignmentKey(item))?.evaluatorId
+  )
+
+  // 바뀌어야 했는데 잠겨서 못 바꾼 단계만 보고한다. 이미 기본 평가자인 잠긴 단계는 넣지 않는다.
+  const lockedSkipped: Array<{
+    targetId: string
+    evalStage: EvalStage
+    storedEvaluatorId: string | null
+    defaultEvaluatorId: string | null
+  }> = []
+  for (const item of autoCandidates) {
+    const stored = existingMap.get(buildAssignmentKey(item))
+    if (lockedKeys.has(buildAssignmentKey(item)) && stored?.evaluatorId !== item.evaluatorId) {
+      lockedSkipped.push({
+        targetId: item.targetId,
+        evalStage: item.evalStage,
+        storedEvaluatorId: stored?.evaluatorId ?? null,
+        defaultEvaluatorId: item.evaluatorId,
+      })
+    }
+  }
+  for (const item of staleCandidates) {
+    if (lockedKeys.has(buildAssignmentKey(item))) {
+      lockedSkipped.push({
+        targetId: item.targetId,
+        evalStage: item.evalStage,
+        storedEvaluatorId: item.evaluatorId,
+        defaultEvaluatorId: null,
+      })
+    }
+  }
+
+  const autoAssignments = autoCandidates.filter((item) => !lockedKeys.has(buildAssignmentKey(item)))
+  const staleAutoAssignmentIds = staleCandidates
+    .filter((item) => !lockedKeys.has(buildAssignmentKey(item)))
     .map((item) => item.id)
 
   await runAssignmentTransaction(db, async (tx) => {
     for (const assignment of autoAssignments) {
-      await assertEditableAssignmentStage({
-        db: tx,
-        evalCycleId: params.evalCycleId,
-        targetId: assignment.targetId,
-        evalStage: assignment.evalStage,
-      })
-
       await tx.evaluationAssignment.upsert({
         where: {
           evalCycleId_targetId_evalStage: {
@@ -909,12 +975,14 @@ export async function syncPerformanceAssignmentsForCycle(
         },
       })
     }
-  })
+  }, SYNC_TRANSACTION_OPTIONS)
 
   return {
     syncedCount: autoAssignments.length,
     preservedManualCount: manualKeys.size,
     removedAutoCount: staleAutoAssignmentIds.length,
+    lockedSkipped,
+    manualInactive,
   }
 }
 
