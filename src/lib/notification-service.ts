@@ -11,6 +11,7 @@ import {
   PrismaClient,
 } from '@prisma/client'
 import { prisma } from './prisma'
+import { EVAL_STAGE_LABELS } from './utils'
 import { isFeatureEnabled } from './feature-flags'
 import { buildReviewEmailContent, hasReviewEmailHtml } from './review-email-editor'
 import { isAllowedGoogleWorkspaceEmail } from './google-workspace'
@@ -1210,16 +1211,6 @@ function formatDateTime(value: Date) {
   return value.toLocaleString('ko-KR', { hour12: false })
 }
 
-function getEvaluationStageLabel(status: string) {
-  const map: Record<string, string> = {
-    SELF_EVAL: '자기평가',
-    FIRST_EVAL: '1차 평가',
-    SECOND_EVAL: '2차 평가',
-    FINAL_EVAL: '최종 평가',
-  }
-  return map[status] ?? status
-}
-
 export type NotificationReminderType = 'goal' | 'checkpoint'
 
 export function groupMonthlyKpisByEmployee(
@@ -1476,7 +1467,8 @@ export async function enqueueLifecycleReminders(
     const key = `${evaluation.evaluatorId}:${evaluation.evalCycleId}:${evaluation.evalCycle.status}`
     const bucket = evaluationBuckets.get(key) ?? {
       evaluatorId: evaluation.evaluatorId,
-      stageLabel: getEvaluationStageLabel(evaluation.evalCycle.status),
+      // 단계명은 그 평가의 단계다(사이클 상태가 아니다). 배정 화면과 같은 EVAL_STAGE_LABELS 를 쓴다.
+      stageLabel: EVAL_STAGE_LABELS[evaluation.evalStage] ?? evaluation.evalStage,
       count: 0,
       cycleId: evaluation.evalCycle.id,
     }
